@@ -15,7 +15,7 @@
 use crate::context::{Context, Environment};
 use crate::error::{Error, Result};
 use crate::host::{self, LoginPath, OS};
-use crate::provider::ProviderId;
+use crate::provider::{self, LoginKind, ProviderId};
 use crate::service::Permit;
 use crate::{atomic, home};
 use std::ffi::OsStr;
@@ -84,8 +84,18 @@ impl AppContext {
             .unwrap_or_default();
         let mut found = Vec::new();
         for &tool in ProviderId::ALL {
+            let Some(cli) = tool.cli() else {
+                let here = match provider::of(tool) {
+                    LoginKind::Folder(app) => app.root(&context).is_ok_and(|root| root.is_dir()),
+                    LoginKind::Document(_) => false,
+                };
+                if here {
+                    found.push(tool);
+                }
+                continue;
+            };
             if env
-                .path(tool.program_variable())
+                .path(cli.program_variable)
                 .is_some_and(|named| !named.is_empty())
             {
                 found.push(tool);
@@ -94,7 +104,7 @@ impl AppContext {
             let places = looked
                 .iter()
                 .cloned()
-                .chain(tool.install_places(&context.home));
+                .chain((cli.install_places)(&context.home));
             if let Some(program) =
                 host::program::find_among(Path::new(tool.program()), places, &runnable)
             {
@@ -381,13 +391,69 @@ mod tests {
         assert_eq!(late.search_path, None);
     }
 
+    // On a volume that ignores case `Claude` would find Claude Code's `claude`.
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W17: where an app finds programs on Windows, whose PATH no login shell builds"
+    )]
+    fn a_tool_with_no_command_line_is_never_looked_for_on_the_search_path() {
+        let looked = RefCell::new(Vec::new());
+        let read = AppContext::read(
+            &env(&[("HOME", "/Users/x")]),
+            None,
+            said("/usr/bin:/Users/x/bin"),
+            |path| {
+                looked.borrow_mut().push(path.to_path_buf());
+                path.file_name()
+                    .and_then(OsStr::to_str)
+                    .is_some_and(|name| name.eq_ignore_ascii_case("claude"))
+            },
+        );
+        assert!(
+            looked
+                .borrow()
+                .iter()
+                .all(|path| path.file_name() != Some(OsStr::new("Claude"))),
+            "{looked:?}"
+        );
+        assert_eq!(read.found, [ProviderId::Claude]);
+        assert_eq!(read.context.program_for(ProviderId::Desktop), None);
+    }
+
+    #[test]
+    fn its_data_folder_makes_it_found() {
+        let scratch =
+            std::env::temp_dir().join(format!("pitboard-app-desktop-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&scratch);
+        let named = scratch.to_string_lossy().into_owned();
+        let read = || {
+            AppContext::read(
+                &env(&[
+                    ("HOME", "/Users/x"),
+                    ("PITBOARD_TEST_CLAUDE_DESKTOP", &named),
+                ]),
+                None,
+                LoginPath::Unknown,
+                |_| false,
+            )
+        };
+        assert!(read().found.is_empty(), "no data folder yet");
+        std::fs::create_dir_all(scratch.join("data")).unwrap();
+        assert_eq!(read().found, [ProviderId::Desktop]);
+        std::fs::remove_dir_all(&scratch).unwrap();
+    }
+
     /// The installers' places come after the login shell's `PATH`, in the order each tool
     /// says, and every tool's own installer goes first.
     #[test]
     fn each_tool_is_looked_for_where_its_installers_put_it() {
         let home = Path::new("/Users/x");
-        for &tool in ProviderId::ALL {
-            let places = tool.install_places(home);
+        for (tool, cli) in ProviderId::ALL
+            .iter()
+            .filter_map(|&tool| tool.cli().map(|cli| (tool, cli)))
+        {
+            let places = (cli.install_places)(home);
             assert_eq!(places.first(), Some(&home.join(".local/bin")), "{tool}");
             let after: Vec<&Path> = places[1..].iter().map(PathBuf::as_path).collect();
             let expected: Vec<&Path> = OS.package_bins().iter().map(Path::new).collect();
@@ -521,7 +587,10 @@ mod tests {
             // asks about, if any, W17 reads.
             Os::Linux | Os::Windows => &entries,
         };
-        let places = ProviderId::Claude.install_places(Path::new("/Users/x"));
+        let places = (ProviderId::Claude
+            .cli()
+            .expect("Claude Code has a command line")
+            .install_places)(Path::new("/Users/x"));
         let claude: Vec<PathBuf> = kept
             .iter()
             .map(PathBuf::from)

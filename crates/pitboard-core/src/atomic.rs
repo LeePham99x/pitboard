@@ -59,7 +59,7 @@ static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 
 /// The pid in a temporary name `write` creates, `.<file>.<pid>.<n>.pitboard`, or in the
 /// `.<file>.<pid>.pitboard` of earlier versions; `None` for any other name.
-fn temp_owner(file_name: &str) -> Option<u32> {
+pub(crate) fn temp_owner(file_name: &str) -> Option<u32> {
     let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
     let (rest, last) = file_name
         .strip_prefix('.')?
@@ -101,7 +101,7 @@ fn remove_stale(permit: Permit, path: &Path) -> io::Result<()> {
 
 /// Remove temporaries a killed run left in `dir`: each can hold a whole credential. Only a
 /// dead process's are touched; this process's may be mid-write on another thread.
-fn sweep(permit: Permit, dir: &Path) {
+pub(crate) fn sweep(permit: Permit, dir: &Path) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };

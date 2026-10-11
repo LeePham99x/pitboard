@@ -142,6 +142,7 @@ pub fn of(provider: ProviderId) -> &'static [Assumption] {
     match provider {
         ProviderId::Claude => crate::provider::claude::assumptions::ASSUMPTIONS,
         ProviderId::Codex => crate::provider::codex::assumptions::ASSUMPTIONS,
+        ProviderId::Desktop => crate::provider::desktop::assumptions::ASSUMPTIONS,
     }
 }
 
@@ -154,6 +155,7 @@ pub fn per_system(provider: ProviderId) -> &'static [PerSystem] {
     match provider {
         ProviderId::Claude => crate::provider::claude::assumptions::PER_SYSTEM,
         ProviderId::Codex => crate::provider::codex::assumptions::PER_SYSTEM,
+        ProviderId::Desktop => crate::provider::desktop::assumptions::PER_SYSTEM,
     }
 }
 
@@ -205,7 +207,7 @@ pub fn pending() -> Vec<(ProviderId, &'static str, Platform)> {
 /// The build one provider's register was read from on one system, unless an entry names
 /// its own.
 pub fn verified_against(provider: ProviderId, platform: Platform) -> &'static str {
-    use crate::provider::{claude, codex};
+    use crate::provider::{claude, codex, desktop};
     match (provider, platform) {
         (ProviderId::Claude, Platform::MacOs | Platform::Linux) => {
             claude::assumptions::VERIFIED_AGAINST
@@ -215,6 +217,7 @@ pub fn verified_against(provider: ProviderId, platform: Platform) -> &'static st
             codex::assumptions::VERIFIED_AGAINST
         }
         (ProviderId::Codex, Platform::Windows) => codex::assumptions::WINDOWS_VERIFIED_AGAINST,
+        (ProviderId::Desktop, _) => desktop::assumptions::VERIFIED_AGAINST,
     }
 }
 

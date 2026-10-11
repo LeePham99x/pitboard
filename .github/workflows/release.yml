@@ -73,7 +73,25 @@ jobs:
           sudo apt-get install -y musl-tools
           echo "CC_$(echo '${{ matrix.target }}' | tr '-' '_')=musl-gcc" >> "$GITHUB_ENV"
 
+      # The SDK's SQLite is named, so pkg-config never picks Homebrew's, which a Mac may lack.
+      - if: runner.os == 'macOS'
+        run: echo "SQLITE3_LIB_DIR=$(xcrun --show-sdk-path)/usr/lib" >> "$GITHUB_ENV"
       - run: cargo build --release --locked -p pitboard --target ${{ matrix.target }}
+      - if: runner.os == 'macOS'
+        run: |
+          linked=$(otool -L "target/${{ matrix.target }}/release/pitboard" |
+            awk 'tolower($1) ~ /sqlite/ {print $1}')
+          if [ "$linked" != /usr/lib/libsqlite3.dylib ]; then
+            echo "pitboard links a sqlite other than the system's: $linked" >&2
+            exit 1
+          fi
+      # What only a build for tests reads is in no binary that ships.
+      - run: |
+          if LC_ALL=C grep -a -q 'PITBOARD_TEST_CLAUDE_DESKTOP' \
+            "target/${{ matrix.target }}/release/pitboard"; then
+            echo "pitboard holds a variable only a build for tests reads" >&2
+            exit 1
+          fi
 
       # Signed and notarised like the app, so a tarball opened from a browser, which
       # arrives quarantined, is not stopped by Gatekeeper. Without a certificate an ad-hoc

@@ -5,7 +5,7 @@ use crate::context::Context;
 use crate::error::{Error, Result};
 use crate::provider::{LoginKind, Provider, ProviderId};
 use crate::service::Permit;
-use crate::state::{Dropped, Key, Park, ParkKind, State};
+use crate::state::{Aside, Dropped, Key, Park, ParkKind, SetAside, State};
 use crate::store;
 use serde_json::Value;
 
@@ -17,7 +17,7 @@ pub(crate) enum Orphan {
     // a login whose own record names the account `id`
     Login {
         id: String,
-        park: Park,
+        park: Box<Park>,
         document: Value,
     },
     Unnamed,
@@ -34,17 +34,16 @@ pub(crate) trait Parks: Send + Sync {
         dropped: &Dropped,
     ) -> std::result::Result<(), store::Error>;
     fn shared(&self, ctx: &Context) -> bool;
-    // what becomes of a name this home wrote down, that holds a login no account can take
-    fn let_go(&self, state: &mut State, name: &str);
 }
 
 pub(crate) fn parks(kind: ParkKind) -> &'static dyn Parks {
     match kind {
         ParkKind::Vault => &VaultParks,
+        ParkKind::Folder => &FolderParks,
     }
 }
 
-pub(crate) const EVERY_KIND: [ParkKind; 1] = [ParkKind::Vault];
+pub(crate) const EVERY_KIND: [ParkKind; 2] = [ParkKind::Vault, ParkKind::Folder];
 
 struct VaultParks;
 
@@ -69,12 +68,20 @@ impl Parks for VaultParks {
         ) else {
             return Orphan::Unnamed;
         };
-        let LoginKind::Document(tool) = crate::provider::of(account.provider());
+        let tool = match crate::provider::of(account.provider()) {
+            LoginKind::Document(tool) => tool,
+            // A vault item whose id is a folder tool's account is not that account's.
+            LoginKind::Folder(_) => return Orphan::Unnamed,
+        };
         let park = describe(tool, name, at_millis / 1000, &document);
-        if park.refresh_fingerprint.is_empty() {
+        if park.login.is_empty() {
             return Orphan::Unnamed;
         }
-        Orphan::Login { id, park, document }
+        Orphan::Login {
+            id,
+            park: Box::new(park),
+            document,
+        }
     }
 
     fn list(&self, ctx: &Context) -> std::result::Result<Option<Vec<String>>, store::Error> {
@@ -93,10 +100,159 @@ impl Parks for VaultParks {
     fn shared(&self, ctx: &Context) -> bool {
         store::vault_is_shared(ctx)
     }
+}
 
-    fn let_go(&self, state: &mut State, name: &str) {
-        state.release(name);
+struct FolderParks;
+
+impl Parks for FolderParks {
+    // Only "not found" says a name is free.
+    fn taken(&self, ctx: &Context, name: &str) -> std::result::Result<bool, store::Error> {
+        match std::fs::symlink_metadata(store::folder::at(ctx, name)) {
+            Ok(_) => Ok(true),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(e) => Err(store::Error::Unreadable(e.to_string())),
+        }
     }
+
+    // `Login` only where the name, the manifest, this Mac, the items, the keys and the jar agree.
+    fn orphan(&self, ctx: &Context, _: &State, name: &str) -> Orphan {
+        match store::folder::holds_anything(ctx, name) {
+            Ok(false) => return Orphan::Nothing,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Orphan::Nothing,
+            Err(_) => return Orphan::Unreadable,
+            Ok(true) => {}
+        }
+        let manifest = match store::folder::manifest(ctx, name) {
+            Ok(Some(manifest)) => manifest,
+            Ok(None) => return Orphan::Unnamed,
+            Err(_) => return Orphan::Unreadable,
+        };
+        let Some(tool) = ProviderId::parse(&manifest.tool) else {
+            return Orphan::Unnamed;
+        };
+        let app = match crate::provider::of(tool) {
+            LoginKind::Folder(app) => app,
+            LoginKind::Document(_) => return Orphan::Unnamed,
+        };
+        let id = match parts_of(name) {
+            Some((id, _)) => Some(id),
+            None => manifest.account.clone(),
+        };
+        let (Some(id), Some(login)) = (id, manifest.login.clone()) else {
+            return Orphan::Unnamed;
+        };
+        let machine = ctx.this_machine();
+        if manifest.account.as_deref() != Some(id.as_str())
+            || machine == "unknown"
+            || manifest.machine != machine
+        {
+            return Orphan::Unnamed;
+        }
+        match store::folder::held_items(ctx, name, &manifest.items) {
+            Ok(held) if held == manifest.items => {}
+            Ok(_) => return Orphan::Unnamed,
+            Err(_) => return Orphan::Unreadable,
+        }
+        let keys = match std::fs::read(store::folder::keys_file(ctx, name)) {
+            Ok(raw) => crate::provider::folder::Keys::from_json(&raw),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Orphan::Unnamed,
+            Err(_) => return Orphan::Unreadable,
+        };
+        let named = |keys: &crate::provider::folder::Keys| {
+            keys.get(app.naming_key())
+                .and_then(|value| serde_json::from_str::<String>(value.get()).ok())
+        };
+        match keys {
+            Ok(keys) if keys.digests() == manifest.keys && named(&keys) == manifest.named => {}
+            _ => return Orphan::Unnamed,
+        }
+        let jar = store::folder::item(ctx, name, app.items()[0]);
+        match app.session(ctx, &jar) {
+            Ok(Some(session)) if session.login == login => Orphan::Login {
+                id,
+                park: Box::new(Park {
+                    service: name.to_string(),
+                    kind: ParkKind::Folder,
+                    parked_at: manifest.parked_at,
+                    login,
+                    access_expires_at: None,
+                    refresh_expires_at: None,
+                    session_expires_at: manifest.session_expires_at,
+                }),
+                document: Value::Null,
+            },
+            Ok(_) => Orphan::Unnamed,
+            Err(_) => Orphan::Unreadable,
+        }
+    }
+
+    fn list(&self, ctx: &Context) -> std::result::Result<Option<Vec<String>>, store::Error> {
+        store::folder::list(ctx).map_err(|e| store::Error::Unreadable(e.to_string()))
+    }
+
+    // A folder that holds a login goes only once its account is forgotten.
+    fn remove(
+        &self,
+        ctx: &Context,
+        permit: Permit,
+        dropped: &Dropped,
+    ) -> std::result::Result<(), store::Error> {
+        let removed = if dropped.forgotten {
+            store::folder::delete(ctx, permit, &dropped.service)
+        } else {
+            store::folder::remove_emptied(ctx, permit, &dropped.service)
+        };
+        removed.map_err(|e| store::Error::Write(e.to_string()))
+    }
+
+    fn shared(&self, _: &Context) -> bool {
+        false
+    }
+}
+
+// Never deleted on a guess: a folder no account can take is kept in `state.aside`.
+pub(crate) fn set_aside_orphan(
+    ctx: &Context,
+    state: &mut State,
+    name: &str,
+    found: &Orphan,
+    at: i64,
+) {
+    if state.aside.iter().any(|aside| aside.name == name) {
+        return;
+    }
+    let (account, login) = match found {
+        Orphan::Login { id, park, .. } => (Some(id.clone()), Some(park.login.clone())),
+        Orphan::Nothing | Orphan::Unreadable | Orphan::Unnamed => (None, None),
+    };
+    state.aside.push(Aside {
+        name: name.to_string(),
+        tool: folder_tool(ctx, name),
+        at,
+        why: SetAside::Orphan,
+        account,
+        login,
+    });
+}
+
+// The tool a folder's manifest names, or the one folder tool where it names none.
+fn folder_tool(ctx: &Context, name: &str) -> ProviderId {
+    let folders = || {
+        ProviderId::ALL
+            .iter()
+            .copied()
+            .filter(|&tool| match crate::provider::of(tool) {
+                LoginKind::Folder(_) => true,
+                LoginKind::Document(_) => false,
+            })
+    };
+    store::folder::manifest(ctx, name)
+        .ok()
+        .flatten()
+        .and_then(|manifest| ProviderId::parse(&manifest.tool))
+        .filter(|tool| folders().any(|folder| folder == *tool))
+        .or_else(|| folders().next())
+        .expect("a tool whose login is a folder")
 }
 
 pub fn service_name(id: &str, at_millis: i64) -> String {
@@ -209,7 +365,7 @@ pub fn store_at(
     document: &Value,
 ) -> Result<Park> {
     let park = describe(tool, service, ctx.now(), document);
-    if park.refresh_fingerprint.is_empty() {
+    if park.login.is_empty() {
         return Err(Error::LiveCredentialShapeUnexpected {
             tool: tool.id(),
             detail: "it has no refresh token, so it could never be restored".into(),
@@ -233,9 +389,11 @@ pub fn describe(
     Park {
         service: service.to_string(),
         parked_at,
-        refresh_fingerprint: tool.fingerprint(document),
+        kind: ParkKind::Vault,
+        login: tool.fingerprint(document),
         access_expires_at: expiry.access_expires_at,
         refresh_expires_at: expiry.refresh_expires_at,
+        session_expires_at: None,
     }
 }
 
@@ -251,7 +409,7 @@ pub fn load(ctx: &Context, tool: &'static dyn Provider, key: &Key, park: &Park) 
         detail: e.to_string(),
     })?;
     let found = tool.fingerprint(&value);
-    if park.refresh_fingerprint.is_empty() || found != park.refresh_fingerprint {
+    if park.login.is_empty() || found != park.login {
         return Err(Error::ParkedCredentialCorrupt {
             label,
             detail: "it does not match the fingerprint Pitboard recorded".into(),
@@ -282,14 +440,7 @@ fn live_fingerprint(ctx: &Context, tool: &'static dyn Provider) -> Option<String
     Some(tool.fingerprint(&live.raw)).filter(|found| !found.is_empty())
 }
 
-/// Every park an account holds that is a copy of the login its tool has in use now.
-///
-/// For every tool, where `is_live_twin` asks only for a tool whose park may never be a
-/// copy: whatever a tool does about copies, a copy of the login in use is one refresh token
-/// in two places, and renewing it spends the token the tool itself is about to present. One
-/// is left when a new login was put in use and could not be read back, so it was parked as
-/// well. A tool no account holds a park of is not read at all, and neither is Claude Code's
-/// login under a custom OAuth endpoint, which is somewhere Pitboard does not act on.
+// One refresh token in two places, which a renewal would spend. A folder login is never copied.
 pub fn live_twins(ctx: &Context, state: &State) -> Vec<String> {
     let mut twins = Vec::new();
     for &provider in ProviderId::ALL {
@@ -303,13 +454,16 @@ pub fn live_twins(ctx: &Context, state: &State) -> Vec<String> {
         {
             continue;
         }
-        let LoginKind::Document(tool) = crate::provider::of(provider);
+        let tool = match crate::provider::of(provider) {
+            LoginKind::Document(tool) => tool,
+            LoginKind::Folder(_) => continue,
+        };
         let Some(live) = live_fingerprint(ctx, tool) else {
             continue;
         };
         twins.extend(
             held.into_iter()
-                .filter(|park| park.refresh_fingerprint == live)
+                .filter(|park| park.login == live)
                 .map(|park| park.service.clone()),
         );
     }
@@ -370,6 +524,72 @@ mod tests {
     impl Drop for Scratch {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Claude Desktop is macOS only: Windows makes and removes no folder"
+    )]
+    fn a_folder_that_holds_an_item_is_not_removed_unless_forgotten() {
+        use crate::host::fs::testing;
+        let (ctx, mem, _scratch) = machine();
+        let permit = Permit::for_a_test();
+        let parks = store::folder::parks_dir(&ctx);
+        let (held, emptied) = ("pitboard-park-desktop_a-1", "pitboard-park-desktop_a-2");
+        std::fs::create_dir_all(parks.join(held).join("items")).unwrap();
+        std::fs::write(parks.join(held).join("items/Cookies"), b"a jar").unwrap();
+        std::fs::write(parks.join(held).join("keys.json"), b"{}").unwrap();
+        std::fs::create_dir_all(parks.join(emptied).join("items/IndexedDB")).unwrap();
+        std::fs::write(parks.join(emptied).join("manifest.json"), b"{}").unwrap();
+        testing::make_private(&crate::home::dir(&ctx)).unwrap();
+        testing::make_private(&parks).unwrap();
+
+        let mut state = State::default();
+        state.discard(held, ParkKind::Folder);
+        state.discard(emptied, ParkKind::Folder);
+        assert_eq!(
+            purge(&ctx, permit, &mut state),
+            1,
+            "the one that holds an item stays"
+        );
+        assert_eq!(state.discarded[0].service, held);
+        assert!(parks.join(held).join("items/Cookies").exists());
+        assert!(!parks.join(emptied).exists());
+
+        state.discarded[0].forgotten = true;
+        assert_eq!(purge(&ctx, permit, &mut state), 0);
+        assert!(!parks.join(held).exists());
+        assert!(
+            mem.trail().iter().all(|touch| touch.store != "vault"),
+            "no folder is asked of the vault: {:?}",
+            mem.trail()
+        );
+    }
+
+    #[test]
+    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
+    fn a_folder_name_is_free_only_where_nothing_is_seen_there() {
+        use crate::host::fs::testing;
+        let (ctx, _mem, _scratch) = machine();
+        let folders = parks(ParkKind::Folder);
+        let dir = store::folder::parks_dir(&ctx);
+        let (held, free) = ("pitboard-park-desktop_a-1", "pitboard-park-desktop_a-2");
+        std::fs::create_dir_all(dir.join(held)).unwrap();
+        assert!(folders.taken(&ctx, held).unwrap());
+        assert!(!folders.taken(&ctx, free).unwrap());
+
+        testing::deny_reading(&dir).unwrap();
+        let unseen = folders.taken(&ctx, free);
+        // The system's administrator is denied nothing, so there is nothing to see there.
+        let denied = std::fs::symlink_metadata(dir.join(held)).is_err();
+        testing::make_private(&dir).unwrap();
+        if denied {
+            assert!(
+                matches!(unseen, Err(store::Error::Unreadable(_))),
+                "{unseen:?}"
+            );
         }
     }
 
@@ -506,7 +726,7 @@ mod tests {
         assert_eq!(park.access_expires_at, Some(1_790_000_000));
         assert_eq!(park.refresh_expires_at, Some(1_792_000_000));
         assert_eq!(
-            park.refresh_fingerprint,
+            park.login,
             crate::provider::claude::document::fingerprint_of(&serde_json::json!({
                 "refreshToken": "r"
             }))

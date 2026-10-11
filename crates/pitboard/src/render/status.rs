@@ -24,15 +24,6 @@ fn typed(row: &Row) -> String {
         .typed()
 }
 
-/// The tool, as a heading over its accounts.
-fn tool_name(which: ProviderId) -> &'static str {
-    match which {
-        ProviderId::Claude => "Claude Code",
-        ProviderId::Codex => "Codex",
-        other => other.code(),
-    }
-}
-
 /// Whether the account can be switched to, and what to do when it cannot.
 fn standing(row: &Row, now: i64) -> String {
     // A login Pitboard could not pin on any account: nothing to type at it but `doctor`,
@@ -168,7 +159,7 @@ pub fn human(report: &Report) -> String {
         let mut block = String::new();
         if tools > 1 && heading != Some(row.provider) {
             heading = Some(row.provider);
-            block.push_str(&format!("{}\n", paint(BOLD, tool_name(row.provider))));
+            block.push_str(&format!("{}\n", paint(BOLD, row.provider.name())));
         }
         let plan = match plan_width {
             0 => String::new(),
@@ -388,9 +379,11 @@ mod tests {
         Park {
             service: "pitboard-park-x-1".into(),
             parked_at: NOW - 86_400,
-            refresh_fingerprint: "f".into(),
+            kind: pitboard_core::state::ParkKind::Vault,
+            login: "f".into(),
             access_expires_at: Some(NOW - 3_600),
             refresh_expires_at: Some(refresh_expires_at),
+            session_expires_at: None,
         }
     }
 
@@ -408,6 +401,7 @@ mod tests {
             usage: Some(reading(30.0, Source::Live)),
             stale: None,
             plan: None,
+            read_at: None,
         }
     }
 

@@ -25,6 +25,13 @@ guide; this file is what an agent needs before it touches anything.
   and keep their data in memory. Never read, copy or delete anything under
   `~/Library/WebKit/com.usepitboard.Pitboard`, where the account windows keep real
   sign-ins.
+- Never read, list, move, write or delete anything under
+  `~/Library/Application Support/Claude` or `Claude-3p` from a test, a script, or a branch
+  build on a macOS user account that holds a real login. A test's Claude data folder is a
+  scratch one it names with `Context::with_scratch_claude` or `PITBOARD_TEST_CLAUDE_DESKTOP`,
+  and a build for tests cannot find the real one.
+- Never start, quit or signal Claude (`com.anthropic.claudefordesktop`) from a test or a
+  script. A test's Claude is the stand-in under its own scratch `Claude.app`.
 - Never open a `pitboard://` or `pitboard-debug://` link against a real home: it starts
   whichever copy claims the scheme, with the real home. UI tests send `pitboard-debug://`
   links only to a debug build they launched in a fixture.

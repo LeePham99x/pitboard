@@ -25,13 +25,29 @@ pub fn forget(settled: Settled, key: &Key) -> Result<(String, Vec<Warning>)> {
     } = settled;
     let account = enrolled(&state, key)?;
     let mut lost = None;
-    let LoginKind::Document(tool) = provider::of(key.provider);
-    let in_use = match identify::now(&ctx, permit, &mut state, tool) {
-        Ok(Live::Login(login)) => {
-            lost = login.lock_warning(key.provider);
-            account.owned_by(&login.owner)
+    // An app's data folder stays held until the account is gone.
+    let mut _closed = None;
+    let asked = match provider::of(key.provider) {
+        LoginKind::Document(tool) => match identify::now(&ctx, permit, &mut state, tool) {
+            Ok(Live::Login(login)) => {
+                lost = login.lock_warning(key.provider);
+                Ok(account.owned_by(&login.owner))
+            }
+            Ok(Live::Nothing) => Ok(false),
+            Err(unknown) => Err(unknown),
+        },
+        LoginKind::Folder(app) => {
+            match super::folder::in_use_for_forget(&ctx, permit, &mut state, key, app) {
+                Ok((in_use, closed)) => {
+                    _closed = Some(closed);
+                    Ok(in_use)
+                }
+                Err(unknown) => Err(unknown),
+            }
         }
-        Ok(Live::Nothing) => false,
+    };
+    let in_use = match asked {
+        Ok(in_use) => in_use,
         Err(unknown) => {
             let recorded = state
                 .account_in_use(key.provider)

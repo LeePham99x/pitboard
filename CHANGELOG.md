@@ -18,6 +18,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   as `pitboard status --offline`, shows it too. A read sends nothing more anywhere to learn
   it: Claude Code's login keeps `subscriptionType` and `rateLimitTier`, and Codex's ID
   token keeps `chatgpt_plan_type`.
+- Pitboard enrols a Claude Desktop account on macOS: `pitboard enroll desktop/<label>` with
+  Claude closed.
 
 ### Changed
 

@@ -52,9 +52,19 @@ const READ: &[&str] = &[
     "SUDO_UID",
 ];
 
+// Read only by a build for tests: a release lists none and reads none.
+#[cfg(any(test, feature = "test-support"))]
+const READ_BY_BUILDS_FOR_TESTS: &[&str] = &[TEST_CLAUDE_DESKTOP];
+#[cfg(not(any(test, feature = "test-support")))]
+const READ_BY_BUILDS_FOR_TESTS: &[&str] = &[];
+
+#[cfg(any(test, feature = "test-support"))]
+const TEST_CLAUDE_DESKTOP: &str = "PITBOARD_TEST_CLAUDE_DESKTOP";
+
 /// Every variable Pitboard reads from its environment, by name.
 pub(crate) fn variables() -> impl Iterator<Item = &'static str> {
     READ.iter()
+        .chain(READ_BY_BUILDS_FOR_TESTS.iter())
         .chain(crate::settings::OVERRIDING_ENV.iter())
         .chain(crate::proxy::NAMING.iter())
         .chain(crate::proxy::EXEMPTING.iter())
@@ -161,6 +171,13 @@ impl<K: Into<OsString>, V: Into<OsString>> FromIterator<(K, V)> for Environment 
     }
 }
 
+// Declared in every build, so code behind `cfg!` compiles in a release too.
+#[derive(Debug, Clone)]
+pub struct ScratchClaude {
+    pub data: PathBuf,
+    pub app: PathBuf,
+}
+
 #[derive(Clone, Debug)]
 pub struct Context {
     pub(crate) home: PathBuf,
@@ -191,8 +208,8 @@ pub struct Context {
     /// Which front end asked, for the audit log. A change made from the menu bar and one
     /// typed at a prompt read the same otherwise.
     pub(crate) caller: String,
-    /// The `claude` that runs a sign-in; a bare name is looked up on the search path.
-    pub(crate) claude_program: PathBuf,
+    // each tool's program for a sign-in; a bare name is looked up on the search path
+    pub(crate) programs: std::collections::BTreeMap<ProviderId, PathBuf>,
     /// Where Anthropic's endpoints are reached instead, for tests; `api` honours loopback only.
     pub(crate) api_base: Option<String>,
     /// The proxy the environment names for Pitboard's requests, read as ureq 3.4.2 reads one.
@@ -205,8 +222,6 @@ pub struct Context {
     pub(crate) hover_rest: bool,
     /// `CODEX_HOME`, which moves everything Codex keeps, including its keyring account.
     pub(crate) codex_home: Option<String>,
-    /// The `codex` that runs a sign-in; a bare name is looked up on the search path.
-    pub(crate) codex_program: PathBuf,
     /// The Pitboard the daily renewal schedule runs. `None` is this program, which is right
     /// for the command line and wrong for an app: the schedule runs `pitboard renew`, so an
     /// app names the command line it comes with.
@@ -242,6 +257,19 @@ pub struct Context {
     /// nothing here at all.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) sign_in_script: Option<Arc<dyn crate::switch::SignInScript>>,
+    #[cfg(any(test, feature = "test-support"))]
+    scratch_claude: Option<ScratchClaude>,
+    #[cfg(test)]
+    unknown_machine: bool,
+}
+
+fn programs(
+    named: impl Fn(ProviderId, crate::provider::Cli) -> PathBuf,
+) -> std::collections::BTreeMap<ProviderId, PathBuf> {
+    ProviderId::ALL
+        .iter()
+        .filter_map(|&tool| Some((tool, named(tool, tool.cli()?))))
+        .collect()
 }
 
 impl Context {
@@ -289,13 +317,12 @@ impl Context {
             argv_fallback: true,
             overriding_auth: Vec::new(),
             caller: "unknown".into(),
-            claude_program: PathBuf::from("claude"),
+            programs: programs(|tool, _| PathBuf::from(tool.program())),
             api_base: None,
             proxy: crate::proxy::Proxies::default(),
             agent: crate::api::Agents::default(),
             hover_rest: false,
             codex_home: None,
-            codex_program: PathBuf::from("codex"),
             schedule_program: None,
             search_path: None,
             scheduled_job: None,
@@ -307,6 +334,10 @@ impl Context {
             openai: Arc::new(OpenAiNetwork),
             #[cfg(any(test, feature = "test-support"))]
             sign_in_script: None,
+            #[cfg(any(test, feature = "test-support"))]
+            scratch_claude: None,
+            #[cfg(test)]
+            unknown_machine: false,
         }
     }
 
@@ -355,7 +386,7 @@ impl Context {
 
     /// The `claude` Pitboard would run to sign someone in.
     pub fn claude_program(&self) -> &std::path::Path {
-        &self.claude_program
+        &self.programs[&ProviderId::Claude]
     }
 
     /// Whether the argument-line write is allowed for an oversized login.
@@ -381,19 +412,19 @@ impl Context {
 
     /// An app started from Finder does not see the shell's `PATH`, so it names `claude` itself.
     pub fn with_claude_program(mut self, program: PathBuf) -> Context {
-        self.claude_program = program;
+        self.programs.insert(ProviderId::Claude, program);
         self
     }
 
     /// The same for `codex`.
     pub fn with_codex_program(mut self, program: PathBuf) -> Context {
-        self.codex_program = program;
+        self.programs.insert(ProviderId::Codex, program);
         self
     }
 
     /// The `codex` Pitboard would run to sign someone in.
     pub fn codex_program(&self) -> &std::path::Path {
-        &self.codex_program
+        &self.programs[&ProviderId::Codex]
     }
 
     /// An app is not a command line, so it names the one it comes with for the schedule to
@@ -458,20 +489,57 @@ impl Context {
         self.marked_as_scheduled
     }
 
-    /// The program named for this tool, found or not.
-    pub fn program_for(&self, tool: ProviderId) -> &std::path::Path {
-        match tool {
-            ProviderId::Claude => &self.claude_program,
-            ProviderId::Codex => &self.codex_program,
-        }
+    // The program named for this tool, found or not; None for a tool with no program to run.
+    pub fn program_for(&self, tool: ProviderId) -> Option<&std::path::Path> {
+        self.programs.get(&tool).map(PathBuf::as_path)
     }
 
     /// Run `program` for this tool, where an app found it.
     pub(crate) fn set_program(&mut self, tool: ProviderId, program: PathBuf) {
-        match tool {
-            ProviderId::Claude => self.claude_program = program,
-            ProviderId::Codex => self.codex_program = program,
+        self.programs.insert(tool, program);
+    }
+
+    // The Claude a test named; None in a release.
+    pub(crate) fn scratch_claude(&self) -> Option<&ScratchClaude> {
+        #[cfg(any(test, feature = "test-support"))]
+        {
+            self.scratch_claude.as_ref()
         }
+        #[cfg(not(any(test, feature = "test-support")))]
+        {
+            None
+        }
+    }
+
+    // Refuses a folder in this account's own Application Support, without listing anything.
+    #[cfg(any(test, feature = "test-support"))]
+    #[doc(hidden)]
+    pub fn with_scratch_claude(mut self, folder: PathBuf) -> Context {
+        assert!(
+            !crate::host::user::lies_in_the_accounts_own(&folder, "Library/Application Support"),
+            "a test named a Claude data folder inside this account's own Application Support: \
+             give it a folder of its own"
+        );
+        self.scratch_claude = Some(ScratchClaude {
+            data: folder.join("data"),
+            app: folder.join("Claude.app"),
+        });
+        self
+    }
+
+    // What every park's manifest names its Mac by; `unknown` where a unit test said so.
+    pub(crate) fn this_machine(&self) -> String {
+        #[cfg(test)]
+        if self.unknown_machine {
+            return "unknown".into();
+        }
+        crate::state::machine_id()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_unknown_machine(mut self) -> Context {
+        self.unknown_machine = true;
+        self
     }
 
     /// The command line's context, from this process's own environment.
@@ -516,12 +584,12 @@ impl Context {
     pub(crate) fn read(env: &Environment, caller: &str) -> Context {
         let home = env.home();
         let owned = |name: &str| env.text(name).map(str::to_owned);
-        let program = |tool: ProviderId| {
-            env.path(tool.program_variable())
+        let program = |tool: ProviderId, cli: crate::provider::Cli| {
+            env.path(cli.program_variable)
                 .filter(|named| !named.is_empty())
                 .map_or_else(|| PathBuf::from(tool.program()), PathBuf::from)
         };
-        Context {
+        let read = Context {
             pitboard_home: env.pitboard_home(),
             home,
             claude_config_dir: owned("CLAUDE_CONFIG_DIR"),
@@ -535,13 +603,12 @@ impl Context {
                 .map(|name| (*name).to_string())
                 .collect(),
             caller: caller.into(),
-            claude_program: program(ProviderId::Claude),
+            programs: programs(program),
             api_base: owned("PITBOARD_API_BASE"),
             proxy: crate::proxy::Proxies::read(env),
             agent: crate::api::Agents::default(),
             hover_rest: matches!(env.text("CLAUDE_CODE_HOVER_REST"), Some("1" | "true")),
             codex_home: owned("CODEX_HOME").filter(|v| !v.is_empty()),
-            codex_program: program(ProviderId::Codex),
             schedule_program: None,
             // Unset is nowhere, as it is to the shell: nothing is found on an empty `PATH`.
             search_path: Some(env.path("PATH").unwrap_or_default().to_os_string()),
@@ -554,7 +621,16 @@ impl Context {
             openai: Arc::new(OpenAiNetwork),
             #[cfg(any(test, feature = "test-support"))]
             sign_in_script: None,
+            #[cfg(any(test, feature = "test-support"))]
+            scratch_claude: None,
+            #[cfg(test)]
+            unknown_machine: false,
+        };
+        #[cfg(any(test, feature = "test-support"))]
+        if let Some(folder) = env.path(TEST_CLAUDE_DESKTOP).filter(|f| !f.is_empty()) {
+            return read.with_scratch_claude(PathBuf::from(folder));
         }
+        read
     }
 
     /// Answer for every service from a script, where a test can produce a 429 or a
@@ -626,6 +702,62 @@ mod tests {
     use super::*;
     use std::path::Path;
 
+    #[test]
+    fn the_test_variable_is_listed_only_in_a_build_for_tests() {
+        assert!(variables().any(|name| name == "PITBOARD_TEST_CLAUDE_DESKTOP"));
+        assert!(!READ.contains(&"PITBOARD_TEST_CLAUDE_DESKTOP"));
+        assert!(Context::for_unit_test().scratch_claude().is_none());
+        let env: Environment = [
+            ("HOME", "/home/x"),
+            (
+                "PITBOARD_TEST_CLAUDE_DESKTOP",
+                "/tmp/pitboard-scratch-claude",
+            ),
+        ]
+        .into_iter()
+        .collect();
+        let read = Context::for_command_line(&env);
+        let scratch = read.scratch_claude().expect("named");
+        assert_eq!(scratch.data, Path::new("/tmp/pitboard-scratch-claude/data"));
+        assert_eq!(
+            scratch.app,
+            Path::new("/tmp/pitboard-scratch-claude/Claude.app")
+        );
+    }
+
+    // It panics before anything there is listed or opened.
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Claude Desktop is macOS only: Windows names no Application Support"
+    )]
+    fn a_scratch_inside_the_real_application_support_panics() {
+        let home = {
+            let _reaching = crate::host::user::testing::reaching_the_real_home();
+            crate::host::user::home().expect("this account has a home")
+        };
+        let support = home.join("Library/Application Support");
+        let named = |folder: PathBuf| {
+            std::panic::catch_unwind(move || {
+                Context::new("/nowhere".into()).with_scratch_claude(folder)
+            })
+            .is_err()
+        };
+        assert!(named(support.join("pitboard-test-never-made")));
+        assert!(named(support.clone()));
+        assert!(named(home.join("Library")), "it holds it");
+        // The home is linked, since Linux has no `Library` for a link to resolve through.
+        let link = std::env::temp_dir().join(format!("pitboard-home-link-{}", std::process::id()));
+        let _ = std::fs::remove_file(&link);
+        crate::host::fs::testing::link_dir(&home, &link).expect("a link");
+        let through = named(link.join("Library/Application Support/pitboard-test-never-made"));
+        let _ = std::fs::remove_file(&link);
+        assert!(through, "through a link");
+        assert!(!named(
+            std::env::temp_dir().join("pitboard-scratch-elsewhere")
+        ));
+    }
+
     /// An empty `CLAUDE_CONFIG_DIR` is kept, by the builder as by the environment, since
     /// Claude Code takes it as the empty path for its config dir; the context is then
     /// refused as one whose home is not a full path. It was read as unset, which pointed
@@ -647,7 +779,7 @@ mod tests {
             Some(""),
             "empty is set, and pins the default slot"
         );
-        assert_eq!(ctx.claude_program, PathBuf::from("claude"));
+        assert_eq!(ctx.claude_program(), Path::new("claude"));
         let env: Environment = [("HOME", "/home/x"), ("CLAUDE_CONFIG_DIR", "")]
             .into_iter()
             .collect();

@@ -5,6 +5,7 @@
 //! here holds on every machine: the chain rules, and the stores that are only files.
 
 mod file;
+pub(crate) mod folder;
 #[cfg(any(test, feature = "test-support"))]
 pub mod memory;
 // macOS parks in the login keychain, so there nothing outside the tests opens a vault of

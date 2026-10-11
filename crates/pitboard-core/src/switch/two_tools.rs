@@ -445,10 +445,7 @@ fn a_codex_sign_in_is_parked_as_a_codex_account() {
     assert_eq!(third.provider(), ProviderId::Codex);
     assert_eq!(third.account_uuid, codex_id("third"));
     let parked = third.parked.clone().expect("parked");
-    assert_eq!(
-        parked.refresh_fingerprint,
-        store::fingerprint("third-refresh")
-    );
+    assert_eq!(parked.login, store::fingerprint("third-refresh"));
     hold(&m, "after a Codex sign-in");
 }
 

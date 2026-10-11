@@ -348,9 +348,22 @@ pub(super) fn abandon(
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(source) => return Err(Error::RecoveryFailed { path, source }),
     };
-    let journal = serde_json::from_str::<Journal>(&raw)
-        .map_err(|source| Error::RecoveryRecordCorrupt { path, source })?;
-    let LoginKind::Document(tool) = provider::of(journal.provider);
+    let journal =
+        serde_json::from_str::<Journal>(&raw).map_err(|source| Error::RecoveryRecordCorrupt {
+            path: path.clone(),
+            source,
+        })?;
+    let tool = match provider::of(journal.provider) {
+        LoginKind::Document(tool) => tool,
+        LoginKind::Folder(_) => {
+            return Err(Error::RecoveryRecordCorrupt {
+                path,
+                source: serde::de::Error::custom(
+                    "it names a tool whose login no switch records here",
+                ),
+            });
+        }
+    };
 
     // The copy the interrupted run parked is recorded against the account it came from, so
     // nothing holds a keychain item that no file names.
@@ -411,9 +424,22 @@ fn read(ctx: &Context, state: &State) -> Result<Option<Waiting>> {
     };
     // Written atomically, so a record that does not parse was damaged afterwards and says
     // nothing about how far its switch got.
-    let journal = serde_json::from_str::<Journal>(&raw)
-        .map_err(|source| Error::RecoveryRecordCorrupt { path, source })?;
-    let LoginKind::Document(tool) = provider::of(journal.provider);
+    let journal =
+        serde_json::from_str::<Journal>(&raw).map_err(|source| Error::RecoveryRecordCorrupt {
+            path: path.clone(),
+            source,
+        })?;
+    let tool = match provider::of(journal.provider) {
+        LoginKind::Document(tool) => tool,
+        LoginKind::Folder(_) => {
+            return Err(Error::RecoveryRecordCorrupt {
+                path,
+                source: serde::de::Error::custom(
+                    "it names a tool whose login no switch records here",
+                ),
+            });
+        }
+    };
 
     if let Some(slot) = &journal.slot {
         let here = tool.slot(ctx);
@@ -638,9 +664,11 @@ mod tests {
             parked: parked.map(|s| Park {
                 service: s.into(),
                 parked_at: 1_699_000_000,
-                refresh_fingerprint: "f".into(),
+                kind: crate::state::ParkKind::Vault,
+                login: "f".into(),
                 access_expires_at: None,
                 refresh_expires_at: None,
+                session_expires_at: None,
             }),
         }
     }

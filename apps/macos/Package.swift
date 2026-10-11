@@ -23,7 +23,9 @@ let package = Package(
             name: "PitboardBindings",
             dependencies: ["PitboardFFI"],
             // UniFFI's generated code does not yet meet Swift 6's strict concurrency checks.
-            swiftSettings: [.swiftLanguageMode(.v5)]
+            swiftSettings: [.swiftLanguageMode(.v5)],
+            // The core links the system's SQLite, and a static library carries no link line.
+            linkerSettings: [.linkedLibrary("sqlite3")]
         ),
         // The check of a shared link and the Pitboard link that hands it over, from Rust's
         // pitboard-sites, for the Share extension alone. Nothing here links it with

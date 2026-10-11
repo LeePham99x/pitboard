@@ -10,11 +10,11 @@ pub(crate) use super::unix::{fs, proc, user};
 
 use super::administered::Administered;
 use super::unix::service;
-use super::{Elevation, Floor, Host, LoginPath, Os, Process, Scheduler};
+use super::{Elevation, Floor, Host, Jar, JarError, Listed, LoginPath, Os, Process, Scheduler};
 use crate::context::{Context, Environment};
 use crate::store::vault::FileVault;
 use crate::store::{PlainFile, RawStore};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 pub(super) const OS: Os = Os::Linux;
@@ -51,8 +51,22 @@ impl Host for Linux {
         false
     }
 
+    // Nothing asks: Claude Desktop's data folder is refused here first.
+    fn listing(&self) -> Result<Vec<Listed>, String> {
+        Err("this system's process list is not read for Claude Desktop".into())
+    }
+
+    // By `comm`, the name a script runs as, where `/proc/<pid>/exe` is its interpreter.
     fn processes(&self, program: &str) -> Option<Vec<Process>> {
         procfs::processes(program)
+    }
+
+    fn cookies(&self, _jar: &Path, _hosts: &[&str], _names: &[&str]) -> Result<Jar, JarError> {
+        Err(JarError::Unsupported)
+    }
+
+    fn app_version(&self, _bundle: &Path) -> Option<String> {
+        None
     }
 
     fn scheduler(&self) -> Option<&dyn Scheduler> {
@@ -71,6 +85,11 @@ impl Host for Linux {
     fn managed_preference(&self, _domain: &str, _key: &str) -> Administered {
         Administered::Unset
     }
+}
+
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn write_jar(_path: &Path, _cookies: &[super::Cookie]) -> std::io::Result<()> {
+    Err(std::io::ErrorKind::Unsupported.into())
 }
 
 pub(super) fn host() -> Arc<dyn Host> {

@@ -9,7 +9,7 @@
 //! or a directory, giving one an access or a time, and moving, copying or removing one. So
 //! nothing removes or makes a file without having asked whether this process may.
 
-use crate::host::Access;
+use crate::host::{Access, Private};
 use crate::service::Permit;
 use std::fs::{File, OpenOptions};
 use std::io;
@@ -121,6 +121,38 @@ pub(crate) fn remove_dir(_: Permit, path: &Path) -> io::Result<()> {
 /// Remove the directory at `path` and everything in it.
 pub(crate) fn remove_dir_all(_: Permit, path: &Path) -> io::Result<()> {
     std::fs::remove_dir_all(path)
+}
+
+pub(crate) fn private_dir(path: &Path) -> io::Result<Private> {
+    use std::os::unix::fs::MetadataExt;
+    let found = match std::fs::symlink_metadata(path) {
+        Ok(found) => found,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Private::Missing),
+        Err(e) => return Err(e),
+    };
+    // SAFETY: geteuid only reports this process's effective user id.
+    let me = unsafe { libc::geteuid() };
+    Ok(if found.file_type().is_symlink() {
+        Private::Link
+    } else if !found.is_dir() {
+        Private::NotADirectory
+    } else if found.uid() != me {
+        Private::NotOwn
+    } else if found.mode() & 0o077 != 0 {
+        Private::Shared
+    } else {
+        Private::Yes
+    })
+}
+
+// An advisory lock on a read-only descriptor, never waited for: nothing is written there.
+pub(crate) fn lock_dir(path: &Path) -> io::Result<File> {
+    let folder = File::open(path)?;
+    match folder.try_lock() {
+        Ok(()) => Ok(folder),
+        Err(std::fs::TryLockError::WouldBlock) => Err(io::ErrorKind::WouldBlock.into()),
+        Err(std::fs::TryLockError::Error(e)) => Err(e),
+    }
 }
 
 /// Who besides its owner can reach `path`. `None` where it cannot be looked at.
@@ -242,6 +274,55 @@ mod tests {
 
     fn mode(p: &Path) -> u32 {
         std::fs::metadata(p).unwrap().permissions().mode() & 0o777
+    }
+
+    #[test]
+    fn a_folder_is_private_only_where_it_is_this_users_own_directory_closed_to_others() {
+        let dir = scratch("private");
+        assert_eq!(private_dir(&dir).unwrap(), Private::Missing);
+        create_private_dir(Permit::for_a_test(), &dir).unwrap();
+        assert_eq!(private_dir(&dir).unwrap(), Private::Yes);
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o750)).unwrap();
+        assert_eq!(private_dir(&dir).unwrap(), Private::Shared);
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let link = dir.with_extension("link");
+        let _ = std::fs::remove_file(&link);
+        std::os::unix::fs::symlink(&dir, &link).unwrap();
+        assert_eq!(private_dir(&link).unwrap(), Private::Link);
+        std::fs::write(dir.join("file"), b"").unwrap();
+        assert_eq!(
+            private_dir(&dir.join("file")).unwrap(),
+            Private::NotADirectory
+        );
+        use std::os::unix::fs::MetadataExt;
+        let mine = std::fs::metadata(&dir).unwrap().uid();
+        if std::fs::metadata("/").unwrap().uid() != mine {
+            assert_eq!(private_dir(Path::new("/")).unwrap(), Private::NotOwn);
+        }
+        std::fs::remove_file(&link).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_locked_folder_refuses_a_second_lock() {
+        let dir = scratch("lock");
+        create_private_dir(Permit::for_a_test(), &dir).unwrap();
+        let before: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().collect();
+        let held = lock_dir(&dir).unwrap();
+        assert_eq!(
+            lock_dir(&dir).map(drop).map_err(|e| e.kind()),
+            Err(io::ErrorKind::WouldBlock)
+        );
+        held.unlock().unwrap();
+        let again = lock_dir(&dir).unwrap();
+        drop(again);
+        assert!(before.is_empty());
+        assert_eq!(
+            std::fs::read_dir(&dir).unwrap().count(),
+            0,
+            "nothing written"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

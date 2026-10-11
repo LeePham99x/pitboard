@@ -45,6 +45,8 @@
 
 pub(crate) mod claude;
 pub(crate) mod codex;
+pub(crate) mod desktop;
+pub(crate) mod folder;
 pub(crate) mod jwt;
 pub mod names;
 mod printed;
@@ -67,6 +69,22 @@ use serde_json::Value;
 pub enum ProviderId {
     Claude,
     Codex,
+    Desktop,
+}
+
+// What a tool that is a program a person runs has, which an app's login has not.
+#[derive(Debug, Clone, Copy)]
+pub struct Cli {
+    // Pitboard's own variable naming the tool's program outright
+    pub program_variable: &'static str,
+    // where the tool's own installers put its program under a home
+    pub install_places: fn(&std::path::Path) -> Vec<std::path::PathBuf>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SignsIn {
+    ByItsProgram,
+    InItsApp,
 }
 
 impl ProviderId {
@@ -75,7 +93,8 @@ impl ProviderId {
     /// Named rather than written out at each call site, because resolving a bare label has
     /// to look at all of them and a provider missing from one such list would simply never
     /// be found, with nothing failing to say so.
-    pub const ALL: &'static [ProviderId] = &[ProviderId::Claude, ProviderId::Codex];
+    pub const ALL: &'static [ProviderId] =
+        &[ProviderId::Claude, ProviderId::Codex, ProviderId::Desktop];
 
     /// The one spelling used in a label prefix, in the state file, in a park's name and in
     /// the audit log. Written once so those four cannot drift, and chosen from the command
@@ -85,6 +104,7 @@ impl ProviderId {
         match self {
             ProviderId::Claude => "claude",
             ProviderId::Codex => "codex",
+            ProviderId::Desktop => "desktop",
         }
     }
 
@@ -95,7 +115,7 @@ impl ProviderId {
     /// somebody can act on and "could not reach the service" is not.
     pub fn service(self) -> &'static str {
         match self {
-            ProviderId::Claude => "Anthropic",
+            ProviderId::Claude | ProviderId::Desktop => "Anthropic",
             ProviderId::Codex => "OpenAI",
         }
     }
@@ -105,49 +125,46 @@ impl ProviderId {
         match self {
             ProviderId::Claude => "Claude Code",
             ProviderId::Codex => "Codex",
+            ProviderId::Desktop => "Claude Desktop",
         }
     }
 
-    /// The command a person types to run the tool.
+    // The program a person runs, or opens and quits.
     pub fn program(self) -> &'static str {
         match self {
             ProviderId::Claude => "claude",
             ProviderId::Codex => "codex",
+            ProviderId::Desktop => "Claude",
         }
     }
 
-    /// Pitboard's own environment variable naming the tool's program outright, in place of
-    /// the one it would find: one installed where nothing looks, or a stand-in.
-    pub fn program_variable(self) -> &'static str {
+    pub fn cli(self) -> Option<Cli> {
         match self {
-            ProviderId::Claude => "PITBOARD_CLAUDE",
-            ProviderId::Codex => "PITBOARD_CODEX",
+            ProviderId::Claude => Some(Cli {
+                program_variable: "PITBOARD_CLAUDE",
+                install_places: claude::paths::install_places,
+            }),
+            ProviderId::Codex => Some(Cli {
+                program_variable: "PITBOARD_CODEX",
+                install_places: codex::paths::install_places,
+            }),
+            ProviderId::Desktop => None,
         }
     }
 
-    /// Where the tool's own installers put its program under `home`, for an app that has no
-    /// shell's `PATH` to find it on. Each tool says its own, read from its own build.
-    pub fn install_places(self, home: &std::path::Path) -> Vec<std::path::PathBuf> {
-        match self {
-            ProviderId::Claude => claude::paths::install_places(home),
-            ProviderId::Codex => codex::paths::install_places(home),
+    pub fn signs_in(self) -> SignsIn {
+        match of(self) {
+            LoginKind::Document(_) => SignsIn::ByItsProgram,
+            LoginKind::Folder(_) => SignsIn::InItsApp,
         }
     }
 
-    /// The environment variable that moves where the tool keeps its login.
-    pub fn home_variable(self) -> &'static str {
-        match self {
-            ProviderId::Claude => "CLAUDE_CONFIG_DIR",
-            ProviderId::Codex => "CODEX_HOME",
-        }
-    }
-
-    /// What a person runs to sign in with the tool's own command. Claude Code signs in from
-    /// inside the program it starts; Codex has a subcommand for it.
-    pub fn login_command(self) -> &'static str {
-        match self {
-            ProviderId::Claude => "claude",
-            ProviderId::Codex => "codex login",
+    pub fn supported_on(self, os: crate::host::Os) -> bool {
+        use crate::host::Os;
+        match (self, os) {
+            (ProviderId::Claude | ProviderId::Codex, _) => true,
+            (ProviderId::Desktop, Os::MacOs) => true,
+            (ProviderId::Desktop, Os::Linux | Os::Windows) => false,
         }
     }
 
@@ -155,6 +172,7 @@ impl ProviderId {
         match code {
             "claude" => Some(ProviderId::Claude),
             "codex" => Some(ProviderId::Codex),
+            "desktop" => Some(ProviderId::Desktop),
             _ => None,
         }
     }
@@ -598,19 +616,26 @@ pub struct SignInView {
 /// What `provider`'s sign-in has printed so far, `said`, comes to. `pasted` is whether a
 /// code has been typed back already, after which none is asked for.
 pub fn sign_in_view(provider: ProviderId, said: &str, pasted: bool) -> SignInView {
-    let LoginKind::Document(tool) = of(provider);
-    let read = tool.read_sign_in(said);
-    SignInView {
-        wants_code: read.wants_code && !pasted,
-        ..read
+    match of(provider) {
+        LoginKind::Document(tool) => {
+            let read = tool.read_sign_in(said);
+            SignInView {
+                wants_code: read.wants_code && !pasted,
+                ..read
+            }
+        }
+        // An app's sign-in prints no address and takes no code.
+        LoginKind::Folder(_) => SignInView::default(),
     }
 }
 
 /// Whether `provider`'s sign-in refused the code typed back last, by what it said after it,
 /// `since`, and reads another in its place.
 pub fn refused_code(provider: ProviderId, since: &str) -> bool {
-    let LoginKind::Document(tool) = of(provider);
-    tool.refused_code(since)
+    match of(provider) {
+        LoginKind::Document(tool) => tool.refused_code(since),
+        LoginKind::Folder(_) => false,
+    }
 }
 
 /// The first `https` address in what a tool printed, read as a terminal reads it: where a
@@ -651,7 +676,7 @@ fn ends_an_address(c: char) -> bool {
 
 /// Where `tool`'s own program is, looked for the way the context says to look.
 pub(crate) fn program_of(ctx: &Context, tool: ProviderId) -> Option<std::path::PathBuf> {
-    crate::host::program::find(ctx.program_for(tool), &ctx.search_path())
+    crate::host::program::find(ctx.program_for(tool)?, &ctx.search_path())
 }
 
 /// A command that runs `tool`'s own program, by the path it was found at, with the search
@@ -675,7 +700,10 @@ pub(crate) fn program_of(ctx: &Context, tool: ProviderId) -> Option<std::path::P
 pub(crate) fn command(ctx: &Context, _: Permit, tool: ProviderId) -> std::process::Command {
     let search = ctx.search_path();
     let Some(program) = program_of(ctx, tool) else {
-        let mut command = std::process::Command::new(ctx.program_for(tool));
+        let named = ctx
+            .program_for(tool)
+            .unwrap_or(std::path::Path::new(tool.program()));
+        let mut command = std::process::Command::new(named);
         command.env("PATH", search);
         return command;
     };
@@ -704,6 +732,7 @@ pub(crate) fn command(ctx: &Context, _: Permit, tool: ProviderId) -> std::proces
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum LoginKind {
     Document(&'static dyn Provider),
+    Folder(&'static dyn folder::Folder),
 }
 
 /// An exhaustive match rather than a lookup, so a tool added to [`ProviderId`] and not to
@@ -712,6 +741,7 @@ pub(crate) fn of(tool: ProviderId) -> LoginKind {
     match tool {
         ProviderId::Claude => LoginKind::Document(&claude::engine::Claude),
         ProviderId::Codex => LoginKind::Document(&codex::engine::Codex),
+        ProviderId::Desktop => LoginKind::Folder(&desktop::Desktop),
     }
 }
 
@@ -723,15 +753,31 @@ pub(crate) fn codex() -> &'static dyn Provider {
     &codex::engine::Codex
 }
 
-pub(crate) fn slot(ctx: &Context, tool: ProviderId) -> String {
-    let LoginKind::Document(found) = of(tool);
-    found.slot(ctx)
+// None: the tool keeps nothing Pitboard acts on here
+pub(crate) fn slot(ctx: &Context, tool: ProviderId) -> Option<String> {
+    match of(tool) {
+        LoginKind::Document(found) => Some(found.slot(ctx)),
+        LoginKind::Folder(app) => app
+            .root(ctx)
+            .ok()
+            .map(|root| root.to_string_lossy().into_owned()),
+    }
 }
 
 #[cfg(test)]
 pub(crate) fn document(tool: ProviderId) -> &'static dyn Provider {
-    let LoginKind::Document(found) = of(tool);
-    found
+    match of(tool) {
+        LoginKind::Document(found) => found,
+        LoginKind::Folder(_) => panic!("{tool} keeps no login document"),
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn documents() -> impl Iterator<Item = &'static dyn Provider> {
+    ProviderId::ALL.iter().filter_map(|&tool| match of(tool) {
+        LoginKind::Document(found) => Some(found),
+        LoginKind::Folder(_) => None,
+    })
 }
 
 #[cfg(test)]
@@ -761,10 +807,47 @@ mod tests {
         // compiling, which is the point.
         for &id in ProviderId::ALL {
             match id {
-                ProviderId::Claude | ProviderId::Codex => {}
+                ProviderId::Claude | ProviderId::Codex | ProviderId::Desktop => {}
             }
         }
-        assert_eq!(ProviderId::ALL.len(), 2, "add the new provider to ALL");
+        assert_eq!(ProviderId::ALL.len(), 3, "add the new provider to ALL");
+    }
+
+    #[test]
+    fn desktop_parses_as_a_tool_and_keeps_no_command_line() {
+        assert_eq!(ProviderId::parse("desktop"), Some(ProviderId::Desktop));
+        assert_eq!(ProviderId::Desktop.name(), "Claude Desktop");
+        assert_eq!(ProviderId::Desktop.program(), "Claude");
+        assert!(ProviderId::Desktop.cli().is_none());
+        assert_eq!(ProviderId::Desktop.signs_in(), SignsIn::InItsApp);
+        assert!(matches!(of(ProviderId::Desktop), LoginKind::Folder(_)));
+        for tool in [ProviderId::Claude, ProviderId::Codex] {
+            assert!(tool.cli().is_some(), "{tool}");
+            assert_eq!(tool.signs_in(), SignsIn::ByItsProgram, "{tool}");
+        }
+        assert_eq!(
+            documents().map(|tool| tool.id()).collect::<Vec<_>>(),
+            [ProviderId::Claude, ProviderId::Codex]
+        );
+        assert_eq!(
+            sign_in_view(ProviderId::Desktop, "https://claude.ai/login", false),
+            SignInView::default()
+        );
+        assert!(!refused_code(ProviderId::Desktop, "Invalid code"));
+    }
+
+    #[test]
+    fn the_tool_is_absent_off_macos() {
+        use crate::host::Os;
+        for os in [Os::MacOs, Os::Linux, Os::Windows] {
+            assert_eq!(
+                ProviderId::Desktop.supported_on(os),
+                os == Os::MacOs,
+                "{os:?}"
+            );
+            assert!(ProviderId::Claude.supported_on(os), "{os:?}");
+            assert!(ProviderId::Codex.supported_on(os), "{os:?}");
+        }
     }
 
     /// A code is also what serde writes, so the two spellings must not drift.
@@ -781,11 +864,11 @@ mod tests {
     #[test]
     fn every_implementation_agrees_about_which_tool_it_is() {
         for &id in ProviderId::ALL {
-            assert_eq!(
-                document(id).id(),
-                id,
-                "{id} is registered against another tool"
-            );
+            let said = match of(id) {
+                LoginKind::Document(tool) => tool.id(),
+                LoginKind::Folder(app) => app.id(),
+            };
+            assert_eq!(said, id, "{id} is registered against another tool");
         }
     }
 
@@ -835,7 +918,7 @@ mod tests {
             let _ = std::fs::remove_dir_all(&root);
             let bin = root.join("npm/bin");
             std::fs::create_dir_all(&bin).expect("a scratch prefix");
-            for &tool in ProviderId::ALL {
+            for tool in documents().map(|tool| tool.id()) {
                 let program = bin.join(tool.program());
                 std::fs::write(&program, "").expect("a program");
                 crate::host::fs::testing::make_runnable(&program).expect("runnable");
@@ -851,7 +934,7 @@ mod tests {
         /// cannot be run: a directory of that name, or a file with no execute bit.
         fn decoys(&self) -> (std::path::PathBuf, std::path::PathBuf) {
             let (dirs, files) = (self.0.join("dirs"), self.0.join("files"));
-            for &tool in ProviderId::ALL {
+            for tool in documents().map(|tool| tool.id()) {
                 std::fs::create_dir_all(dirs.join(tool.program())).expect("a directory");
                 std::fs::create_dir_all(&files).expect("a directory");
                 std::fs::write(files.join(tool.program()), "").expect("a file");
@@ -928,7 +1011,7 @@ mod tests {
         let ctx =
             Context::new(std::path::PathBuf::from("/nowhere")).with_search_path(search.clone());
         let dir = std::path::Path::new("/tmp/pitboard-signin-scratch");
-        for &tool in ProviderId::ALL {
+        for tool in documents().map(|tool| tool.id()) {
             let command = document(tool).sign_in(&ctx, Permit::for_a_test(), dir);
             let program = prefix.bin().join(tool.program());
             assert_eq!(command.get_program(), program.as_os_str(), "{tool}");
@@ -950,7 +1033,7 @@ mod tests {
             .with_codex_program(prefix.bin().join("codex"))
             .with_search_path("/usr/bin:/bin".into());
         let dir = std::path::Path::new("/tmp/pitboard-signin-scratch");
-        for &tool in ProviderId::ALL {
+        for tool in documents().map(|tool| tool.id()) {
             let command = document(tool).sign_in(&ctx, Permit::for_a_test(), dir);
             assert_eq!(
                 command.get_program(),
@@ -965,7 +1048,7 @@ mod tests {
         }
         let on_it = format!("/usr/bin:{}/", prefix.bin().display());
         let ctx = ctx.with_search_path(on_it.clone());
-        for &tool in ProviderId::ALL {
+        for tool in documents().map(|tool| tool.id()) {
             let command = document(tool).sign_in(&ctx, Permit::for_a_test(), dir);
             assert_eq!(env_of(&command, "PATH"), Some(on_it.as_ref()), "{tool}");
         }
@@ -978,7 +1061,7 @@ mod tests {
         let ctx = Context::new(std::path::PathBuf::from("/nowhere"))
             .with_search_path("/nowhere/at/all".into());
         let dir = std::path::Path::new("/tmp/pitboard-signin-scratch");
-        for &tool in ProviderId::ALL {
+        for tool in documents().map(|tool| tool.id()) {
             let command = document(tool).sign_in(&ctx, Permit::for_a_test(), dir);
             assert_eq!(command.get_program(), tool.program(), "{tool}");
             assert_eq!(

@@ -788,9 +788,7 @@ impl AppCore {
         let Ok(made) = self.readable_asking_again() else {
             return Vec::new();
         };
-        ProviderId::ALL
-            .iter()
-            .copied()
+        crate::listed(pitboard_core::host::OS)
             .filter(|tool| made.found.contains(tool))
             .map(tool)
             .collect()

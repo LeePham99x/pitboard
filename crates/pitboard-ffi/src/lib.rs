@@ -24,7 +24,8 @@
 //! it was at commit a3e5ce0, where the comment says so.
 
 use pitboard_core::context::Environment;
-use pitboard_core::provider::ProviderId;
+use pitboard_core::host::Os;
+use pitboard_core::provider::{ProviderId, SignsIn};
 use pitboard_core::{doctor, switch, words};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -96,10 +97,23 @@ pub struct Tool {
     pub service: String,
 }
 
-/// Every tool Pitboard handles, in the order a listing shows them. A snapshot carries those
-/// whose program was found, in this order.
+// The tools the app lists on `os`, in the order a listing shows them.
+pub(crate) fn listed(os: Os) -> impl Iterator<Item = ProviderId> {
+    ProviderId::ALL
+        .iter()
+        .copied()
+        .filter(move |tool| tool.supported_on(os))
+        // The app has no model yet for a tool that signs in inside its own app.
+        .filter(|tool| tool.signs_in() == SignsIn::ByItsProgram)
+}
+
+pub(crate) fn tools_on(os: Os) -> Vec<Tool> {
+    listed(os).map(tool).collect()
+}
+
+#[cfg(test)]
 pub(crate) fn tools() -> Vec<Tool> {
-    ProviderId::ALL.iter().copied().map(tool).collect()
+    tools_on(pitboard_core::host::OS)
 }
 
 fn tool(tool: ProviderId) -> Tool {

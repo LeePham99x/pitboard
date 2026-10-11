@@ -237,6 +237,17 @@ pub struct Access {
     pub described: String,
 }
 
+// What a folder Pitboard keeps logins in is, as `fs::private_dir` finds it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Private {
+    Yes,
+    Shared,
+    NotOwn,
+    Link,
+    NotADirectory,
+    Missing,
+}
+
 /// What a person makes private with the command [`Os::make_private_command`] gives.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
@@ -292,6 +303,65 @@ pub struct Process {
     pub path: PathBuf,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Listed {
+    pub pid: u32,
+    pub parent: u32,
+    pub path: PathBuf,
+}
+
+// Those of `all` whose program's own name is `program`, as `Host::processes` answers.
+pub(crate) fn named(all: Vec<Listed>, program: &str) -> Vec<Process> {
+    all.into_iter()
+        .filter(|p| p.path.file_name().is_some_and(|name| name == program))
+        .map(|p| Process {
+            pid: p.pid,
+            path: p.path,
+        })
+        .collect()
+}
+
+pub struct Jar {
+    pub version: i64,
+    pub compatible: i64,
+    pub cookies: Vec<Cookie>,
+}
+
+pub struct Cookie {
+    pub host: String,
+    pub name: String,
+    pub path: String,
+    pub stored: Vec<u8>,
+    pub expires_utc: i64,
+}
+
+// Lengths only: a cookie's value is a login.
+impl std::fmt::Debug for Cookie {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Cookie")
+            .field("host", &self.host)
+            .field("name", &self.name)
+            .field("path", &self.path)
+            .field("stored", &format_args!("{} bytes", self.stored.len()))
+            .field("expires_utc", &self.expires_utc)
+            .finish()
+    }
+}
+
+#[derive(Debug)]
+pub enum JarError {
+    Absent,
+    // a write is under way, or the jar is held
+    Unsettled(String),
+    // read, and not a shape Pitboard knows
+    Unknown(String),
+    Unreadable(String),
+    Unsupported,
+}
+
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) use os::write_jar;
+
 /// The machine Pitboard is standing on, as one value rather than a set of `cfg` branches
 /// spread through the crate. A host answers where another program's secrets may be, where
 /// Pitboard's own parked logins go, what this user is running and how daily renewal is
@@ -327,13 +397,28 @@ pub(crate) trait Host: Send + Sync + std::fmt::Debug {
     /// nothing in it can be anybody else's.
     fn vault_is_shared(&self) -> bool;
 
+    // every process this user runs; Err says why the list could not be read
+    fn listing(&self) -> std::result::Result<Vec<Listed>, String>;
+
     /// The processes this user is running `program` in, with where each runs from. `None`
     /// where the process list could not be read, which is not the same as none running.
     ///
     /// What is compared is the program's own name, so a script or a shell that merely
     /// mentions the program is not counted. Only this user's: another user's sessions use
     /// another user's login, which a switch here never touches.
-    fn processes(&self, program: &str) -> Option<Vec<Process>>;
+    fn processes(&self, program: &str) -> Option<Vec<Process>> {
+        Some(named(self.listing().ok()?, program))
+    }
+
+    // a Chromium jar's rows for `hosts`, and those named one of `names` on any host, as stored
+    fn cookies(
+        &self,
+        jar: &Path,
+        hosts: &[&str],
+        names: &[&str],
+    ) -> std::result::Result<Jar, JarError>;
+
+    fn app_version(&self, bundle: &Path) -> Option<String>;
 
     /// The system's own scheduler, which runs daily renewal. `None` where there is none
     /// Pitboard knows how to ask.

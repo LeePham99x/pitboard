@@ -508,7 +508,7 @@ fn judge(
             account
                 .parked
                 .as_ref()
-                .filter(|park| account.provider() == TOOL && park.refresh_fingerprint == login)
+                .filter(|park| account.provider() == TOOL && park.login == login)
                 .map(|park| (account, park))
         }) {
             // A park that does not read back keeps nothing: the login is that account's, and
@@ -749,7 +749,7 @@ mod tests {
     fn parked_fingerprint(m: &Machine, label: &str) -> Option<String> {
         let state = state::load(&m.ctx).expect("state");
         let parked = state.get(&m.key(label))?.parked.clone()?;
-        Some(parked.refresh_fingerprint)
+        Some(parked.login)
     }
 
     fn fingerprint(refresh: &str) -> String {

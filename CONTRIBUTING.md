@@ -154,9 +154,11 @@ CI also runs:
   with its fixtures, on Linux and on Windows
 - the Windows job, on x64 and ARM64: the release gate proved on a build made as a release is,
   then clippy and the tests [Windows](#windows) lists
-- the app job: `swift format lint --strict`, `./apps/macos/scripts/build-app.sh`, a check that
-  the command line inside the app runs and holds both architectures, then
-  `./apps/macos/scripts/build-xcframework.sh --fixture`, `swift test` and the UI tests
+- the app job: the core, the command line and the bindings checked on Rust 1.91, since only
+  a Mac compiles `rusqlite`, then `swift format lint --strict`,
+  `./apps/macos/scripts/build-app.sh`, a check that the command line inside the app runs and
+  holds both architectures, then `./apps/macos/scripts/build-xcframework.sh --fixture`,
+  `swift test` and the UI tests
 - the C# job: the core's C# bindings generated, compiled and called against the core on
   Linux, as the Windows app will call them, then against the core built with its fixtures,
   whose bindings must be the same and whose model a test starts
@@ -427,6 +429,11 @@ read from its macOS build alone. `.github/workflows/conformance.yml` takes Claud
 builds from the packages `@anthropic-ai/claude-code-<system>`, and Codex's from `vendor/`
 in `@openai/codex@<version>-<system>`, for `linux-x64`, `darwin-arm64`, `win32-x64` and
 `win32-arm64`.
+
+Claude Desktop's register, `provider/desktop/assumptions.rs`, was read by hand from two
+builds: 2.19675.0, which the experiments ran, and 2.7032.0, whose `app.asar` was read and
+never run. Each entry says which. No conformance job reads it: the checker reads no
+archive yet.
 
 To add a fact, add an `Assumption` to the tool's register:
 

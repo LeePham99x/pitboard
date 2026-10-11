@@ -33,6 +33,20 @@ pub(crate) fn is_the_accounts_own_home(_path: &std::path::Path) -> bool {
     false
 }
 
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn lies_in_the_accounts_own(path: &std::path::Path, below: &str) -> bool {
+    let Some(own) =
+        known_folder(&windows_sys::Win32::UI::Shell::FOLDERID_Profile).map(|home| home.join(below))
+    else {
+        return false;
+    };
+    let resolved = |p: &std::path::Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.into());
+    let near = |a: &std::path::Path, b: &std::path::Path| {
+        crate::host::same_path_in_any_case(a, b) || a.starts_with(b) || b.starts_with(a)
+    };
+    near(path, &own) || near(&resolved(path), &resolved(&own))
+}
+
 #[cfg(feature = "test-support")]
 pub(crate) fn accounts_own_home() -> Option<PathBuf> {
     known_folder(&windows_sys::Win32::UI::Shell::FOLDERID_Profile)

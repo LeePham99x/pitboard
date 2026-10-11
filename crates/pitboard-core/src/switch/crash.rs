@@ -677,7 +677,7 @@ fn renewing_killed_between_the_write_and_the_record_leaves_nothing_unnamed() {
         .and_then(|a| a.parked.clone())
         .expect("`there` still holds a login");
     assert_eq!(
-        kept.refresh_fingerprint,
+        kept.login,
         crate::provider::claude::document::fingerprint_of(&json!({"refreshToken": "fresh"})),
         "the fresh login is kept and the spent one dropped, not the other way round"
     );
@@ -754,7 +754,7 @@ fn a_renewal_that_cannot_record_its_answer_keeps_it_for_the_next_run() {
         .and_then(|a| a.parked.clone())
         .expect("`there` still holds a login");
     assert_eq!(
-        kept.refresh_fingerprint,
+        kept.login,
         crate::provider::claude::document::fingerprint_of(&json!({"refreshToken": "fresh"})),
     );
     hold(&m, "after a renewal that could not be recorded");

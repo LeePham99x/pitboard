@@ -53,6 +53,10 @@ pub mod audit;
 pub mod autoswitch;
 pub mod budget;
 pub mod context;
+// The Claude Desktop the tests play, reached as `testing::desktop`.
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
+pub mod desktop_testing;
 pub mod doctor;
 pub mod error;
 pub mod in_use;
@@ -96,6 +100,7 @@ pub(crate) mod store;
 #[doc(hidden)]
 pub mod testing {
     pub use crate::api::scripted::{Answer, Asked, ScriptedApi, Trouble};
+    pub use crate::desktop_testing as desktop;
     /// What a test or a fixture does to a file's access, or to make a link, which only this
     /// system's face says how to do: the integration tests and the apps' fixtures do it here,
     /// as the core's own tests do.
@@ -133,6 +138,9 @@ pub mod testing {
                     crate::provider::claude::paths::config_file(ctx),
                     crate::provider::codex::paths::home(ctx),
                     ctx.pitboard_home.clone(),
+                    ctx.home.join("Library/Application Support/Claude"),
+                    ctx.home.join("Library/Application Support/Claude-3p"),
+                    std::path::PathBuf::from("/Applications/Claude.app"),
                 ]
             })
             .filter(|place| place.is_absolute())
@@ -167,7 +175,13 @@ pub mod testing {
     ) -> crate::error::Result<crate::switch::SignIn> {
         use crate::provider::LoginKind;
         let document = serde_json::from_str(document).expect("a login a test wrote as JSON");
-        let LoginKind::Document(tool) = crate::provider::of(which);
-        crate::switch::planted(ctx, crate::service::gate(ctx)?, tool, document)
+        match crate::provider::of(which) {
+            LoginKind::Document(tool) => {
+                crate::switch::planted(ctx, crate::service::gate(ctx)?, tool, document)
+            }
+            LoginKind::Folder(_) => Err(crate::error::Error::Usage(
+                "a Claude Desktop sign-in is played by testing::desktop".into(),
+            )),
+        }
     }
 }

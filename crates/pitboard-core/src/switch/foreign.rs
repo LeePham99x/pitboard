@@ -10,7 +10,7 @@
 //! there a park `repair` finds is this Pitboard's own.
 
 use super::harness::{
-    Machine, NOW, account, codex_access, codex_account, codex_id, codex_login, codex_machine,
+    Machine, NOW, Tool, account, codex_access, codex_account, codex_id, codex_login, codex_machine,
     machine, oauth, owner, renews,
 };
 use super::*;
@@ -24,29 +24,29 @@ const MACHINES: [Make; 2] = [machine, codex_machine];
 
 /// The account id this machine's tool gives `who`.
 fn id(m: &Machine, who: &str) -> String {
-    match m.which {
-        ProviderId::Claude => who.to_string(),
-        ProviderId::Codex => codex_id(who),
+    match Tool::of(m.which) {
+        Tool::Claude => who.to_string(),
+        Tool::Codex => codex_id(who),
     }
 }
 
 /// `who`'s account, enrolled the way this machine's tool enrols one.
 fn enrolled(m: &Machine, who: &str, parked: Option<Park>) -> Account {
-    match m.which {
-        ProviderId::Claude => account(who, who, parked),
-        ProviderId::Codex => codex_account(who, who, parked),
+    match Tool::of(m.which) {
+        Tool::Claude => account(who, who, parked),
+        Tool::Codex => codex_account(who, who, parked),
     }
 }
 
 /// A login of `who`'s on a refresh chain of its own, as this machine's tool parks one, and
 /// a service that answers for it.
 fn login(m: &Machine, who: &str, refresh: &str) -> Value {
-    match m.which {
-        ProviderId::Claude => {
+    match Tool::of(m.which) {
+        Tool::Claude => {
             m.api.owned_by(&format!("access-{refresh}"), owner(who));
             oauth(refresh, 30)
         }
-        ProviderId::Codex => {
+        Tool::Codex => {
             m.api.using(
                 &codex_access(refresh),
                 crate::usage::Snapshot {
@@ -65,9 +65,9 @@ fn login(m: &Machine, who: &str, refresh: &str) -> Value {
 /// The same, with its access token lapsed, so the next renewal is due.
 fn lapsed(m: &Machine, who: &str, refresh: &str) -> Value {
     let mut document = login(m, who, refresh);
-    match m.which {
-        ProviderId::Claude => document["expiresAt"] = json!((NOW - 60) * 1000),
-        ProviderId::Codex => {
+    match Tool::of(m.which) {
+        Tool::Claude => document["expiresAt"] = json!((NOW - 60) * 1000),
+        Tool::Codex => {
             document["tokens"]["access_token"] = json!(crate::provider::jwt::unsigned(
                 &json!({"exp": NOW - 60, "for": refresh})
             ));
@@ -326,7 +326,7 @@ fn a_park_repair_gave_back_is_deleted_once_a_killed_renewal_spends_it() {
             state
                 .get(&m.key("away"))
                 .and_then(|a| a.parked.as_ref())
-                .map(|p| p.refresh_fingerprint.clone()),
+                .map(|p| p.login.clone()),
             Some(store::fingerprint("away-renewed")),
             "{:?}",
             m.which
@@ -350,9 +350,9 @@ fn a_park_repair_gave_back_that_the_service_refuses_is_let_go_and_left() {
         let m = make("foreign-refused");
         enrol_away(&m);
         let (_, recorded) = parked_elsewhere(&m, "away", &lapsed(&m, "away", "away-elsewhere"));
-        match m.which {
-            ProviderId::Claude => m.api.renew_trouble("away-elsewhere", Trouble::InvalidGrant),
-            ProviderId::Codex => m
+        match Tool::of(m.which) {
+            Tool::Claude => m.api.renew_trouble("away-elsewhere", Trouble::InvalidGrant),
+            Tool::Codex => m
                 .api
                 .codex_renew_trouble("away-elsewhere", Trouble::InvalidGrant),
         };

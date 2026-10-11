@@ -14,6 +14,7 @@ mod auto;
 #[cfg(test)]
 mod crash;
 mod enroll;
+pub(crate) mod folder;
 #[cfg(test)]
 mod foreign;
 mod forget;
@@ -197,9 +198,37 @@ pub fn repair(settled: Settled) -> Result<pending::Reclaimed> {
         ctx,
         permit,
     } = settled;
-    let reclaimed = pending::reclaim(&ctx, permit, &mut state)?;
+    let mut reclaimed = pending::reclaim(&ctx, permit, &mut state)?;
+    give_back_asides(&ctx, permit, &mut state, &mut reclaimed)?;
     purge(&ctx, permit, &mut state);
     Ok(reclaimed)
+}
+
+// A folder set aside goes back to its account where its manifest, keys and jar agree.
+fn give_back_asides(
+    ctx: &Context,
+    permit: Permit,
+    state: &mut State,
+    reclaimed: &mut pending::Reclaimed,
+) -> Result<()> {
+    let folders = park::parks(ParkKind::Folder);
+    let names: Vec<String> = state.aside.iter().map(|aside| aside.name.clone()).collect();
+    let mut given = false;
+    for name in names {
+        let park::Orphan::Login { id, park, .. } = folders.orphan(ctx, state, &name) else {
+            continue;
+        };
+        let Some(key) = pending::takes(state, &id) else {
+            continue;
+        };
+        state.drop_aside(&name);
+        pending::give_back(ctx, permit, state, &key, *park, reclaimed);
+        given = true;
+    }
+    if given {
+        state::save(ctx, permit, state)?;
+    }
+    Ok(())
 }
 
 /// Drop every park that is a copy of the login its tool has in use now, and say so in the
@@ -367,7 +396,10 @@ fn read_stored(
 }
 
 pub fn switch(settled: Settled, key: &Key) -> Result<(Outcome, Vec<Warning>)> {
-    let LoginKind::Document(tool) = provider::of(key.provider);
+    let tool = match provider::of(key.provider) {
+        LoginKind::Document(tool) => tool,
+        LoginKind::Folder(app) => return folder::switch(settled, key, app),
+    };
     let Settled {
         _exclusive,
         mut state,
@@ -394,7 +426,10 @@ pub fn switch(settled: Settled, key: &Key) -> Result<(Outcome, Vec<Warning>)> {
 /// into its tool's own record where that names another account. Refused, moving nothing,
 /// where another account's login is stored by then, which [`switch`] would switch back from.
 pub fn update_config(settled: Settled, key: &Key) -> Result<(Outcome, Vec<Warning>)> {
-    let LoginKind::Document(tool) = provider::of(key.provider);
+    let tool = match provider::of(key.provider) {
+        LoginKind::Document(tool) => tool,
+        LoginKind::Folder(app) => return folder::confirm(settled, key, app),
+    };
     let Settled {
         _exclusive,
         mut state,
@@ -542,7 +577,7 @@ fn switch_from(
             incoming_service: held.service.clone(),
             // Which side the live credential came from, answerable without asking anyone.
             from_fingerprint: tool.fingerprint(&before),
-            to_fingerprint: held.refresh_fingerprint.clone(),
+            to_fingerprint: held.login.clone(),
             slot: Some(tool.slot(ctx)),
         },
     )?;
@@ -902,7 +937,19 @@ pub(crate) enum StillHolding {
 pub(crate) fn still_holding(ctx: &Context, which: ProviderId) -> StillHolding {
     // What sits behind a store only delays sessions that follow by themselves, which hold
     // nothing here, so it is not read.
-    let LoginKind::Document(tool) = provider::of(which);
+    let tool = match provider::of(which) {
+        LoginKind::Document(tool) => tool,
+        LoginKind::Folder(app) => {
+            return match folder::open(ctx, app) {
+                folder::Open::No => StillHolding::Nothing,
+                folder::Open::Yes(listed) => StillHolding::These(vec![holder::Holding {
+                    holder: *app.holder(),
+                    pids: listed.iter().map(|one| one.pid).collect(),
+                }]),
+                folder::Open::Unknown(_) => StillHolding::Unknown,
+            };
+        }
+    };
     match tool.adoption(None) {
         provider::Adoption::RestartRequired { program, holders } => {
             match holder::find(ctx, program, holders) {
@@ -1171,11 +1218,7 @@ mod tests {
                 .get(&m.key("here"))
                 .and_then(|account| account.parked.clone())
                 .expect("the outgoing login is parked");
-            assert_eq!(
-                parked.refresh_fingerprint,
-                store::fingerprint("here-refresh"),
-                "{point}"
-            );
+            assert_eq!(parked.login, store::fingerprint("here-refresh"), "{point}");
             assert!(
                 !refreshing(&m).exists(),
                 "{point}: the refresh lock is let go of"

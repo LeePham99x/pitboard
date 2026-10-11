@@ -464,9 +464,10 @@ pub(crate) fn record_read(
     let mut held = BTreeMap::new();
     let mut stored = |which: ProviderId| {
         held.entry(which)
-            .or_insert_with(|| {
-                let LoginKind::Document(tool) = provider::of(which);
-                holding(ctx, tool)
+            .or_insert_with(|| match provider::of(which) {
+                LoginKind::Document(tool) => holding(ctx, tool),
+                // A read records nothing of an app's login.
+                LoginKind::Folder(_) => None,
             })
             .clone()
     };
@@ -1314,7 +1315,7 @@ mod tests {
                 .expect("state")
                 .get(&m.key("here"))
                 .and_then(|account| account.parked.clone())
-                .map(|parked| parked.refresh_fingerprint)
+                .map(|parked| parked.login)
         };
         let pitboard = Pitboard::new(m.ctx.clone());
 

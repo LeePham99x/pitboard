@@ -246,8 +246,13 @@ fn finish_where(
 ) -> crate::error::Result<()> {
     let mut finished = Ok(());
     for left in state.renewing.clone().iter().filter(|left| whose(left)) {
-        let LoginKind::Document(tool) = provider::of(left.tool);
-        finished = finished.and(save_left(ctx, permit, state, tool, left));
+        match provider::of(left.tool) {
+            LoginKind::Document(tool) => {
+                finished = finished.and(save_left(ctx, permit, state, tool, left));
+            }
+            // No renewal is ever recorded for an app's login: left as it is.
+            LoginKind::Folder(_) => {}
+        }
     }
     finished
 }

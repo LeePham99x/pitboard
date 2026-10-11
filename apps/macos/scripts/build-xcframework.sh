@@ -28,6 +28,9 @@ esac
 
 cd "$(dirname "$0")/../../.."
 export MACOSX_DEPLOYMENT_TARGET=14.0
+# The core links SQLite for Claude's cookie jar: the SDK's, so pkg-config never picks another.
+SQLITE3_LIB_DIR="$(xcrun --show-sdk-path)/usr/lib"
+export SQLITE3_LIB_DIR
 out=apps/macos/build
 package=apps/macos
 rm -rf "$out"

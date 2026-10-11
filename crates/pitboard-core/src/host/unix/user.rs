@@ -61,6 +61,27 @@ pub(crate) fn is_the_accounts_own_home(path: &std::path::Path) -> bool {
     passwd_home().is_some_and(|own| resolved(&own) == resolved(path))
 }
 
+// As text and as the file system resolves each, so a link into the home is caught too.
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn lies_in_the_accounts_own(path: &std::path::Path, below: &str) -> bool {
+    let Some(own) = passwd_home().map(|home| home.join(below)) else {
+        return false;
+    };
+    let near = |a: &std::path::Path, b: &std::path::Path| a.starts_with(b) || b.starts_with(a);
+    near(path, &own) || near(&resolved(path), &resolved(&own))
+}
+
+// The deepest part of `path` that exists, resolved, with the rest after it as it is.
+#[cfg(any(test, feature = "test-support"))]
+fn resolved(path: &std::path::Path) -> PathBuf {
+    path.ancestors()
+        .find_map(|found| {
+            let real = std::fs::canonicalize(found).ok()?;
+            Some(real.join(path.strip_prefix(found).ok()?))
+        })
+        .unwrap_or_else(|| path.to_path_buf())
+}
+
 /// The one way a unit test reaches this account's real home.
 #[cfg(test)]
 pub(crate) mod testing {

@@ -7,7 +7,7 @@
 //! every change here fails as unsupported, which every caller already reports as a write that
 //! failed, and [`access`] says nothing.
 
-use crate::host::Access;
+use crate::host::{Access, Private};
 use crate::service::Permit;
 use std::fs::File;
 use std::io;
@@ -88,6 +88,15 @@ pub(crate) fn remove_dir(_: Permit, _path: &Path) -> io::Result<()> {
 
 /// W16.
 pub(crate) fn remove_dir_all(_: Permit, _path: &Path) -> io::Result<()> {
+    Err(not_yet())
+}
+
+// Claude Desktop is macOS only, so nothing asks these here.
+pub(crate) fn private_dir(_path: &Path) -> io::Result<Private> {
+    Err(not_yet())
+}
+
+pub(crate) fn lock_dir(_path: &Path) -> io::Result<File> {
     Err(not_yet())
 }
 

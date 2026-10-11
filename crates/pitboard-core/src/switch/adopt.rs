@@ -10,8 +10,7 @@
 //!
 //! So this is that command. It keeps everything that is a fact about an account rather than
 //! about a machine: the label, the email, the account and organisation uuid, and the
-//! numbers Pitboard remembers. It drops every parked login, because a login is the one
-//! thing that does not move. The way back is one sign-in per account.
+//! numbers Pitboard remembers.
 //!
 //! What it deliberately does not do is ask Anthropic whether a parked token still works.
 //! Finding out means exchanging it, and exchanging it is exactly the act that would rotate
@@ -23,7 +22,8 @@ use super::{exclusive, purge};
 use crate::context::Context;
 use crate::error::Result;
 use crate::service::Permit;
-use crate::{audit, state};
+use crate::state::{ParkKind, SetAside};
+use crate::{audit, state, store};
 
 /// What taking over found.
 #[derive(Debug, PartialEq, Eq)]
@@ -33,6 +33,8 @@ pub struct Adopted {
     pub accounts: Vec<String>,
     /// Accounts that arrived holding a parked login, now dropped, named the same way.
     pub logins_dropped: Vec<String>,
+    // Parked on another Mac, where Claude's key differs: set aside, never deleted.
+    pub set_aside: Vec<String>,
 }
 
 /// Take over this Pitboard directory. `None` when it was already this machine's, which is
@@ -47,11 +49,32 @@ pub fn adopt(ctx: &Context, permit: Permit) -> Result<Option<Adopted>> {
     let accounts: Vec<String> = state.accounts.iter().map(|a| a.key().typed()).collect();
     let mut logins_dropped = Vec::new();
     let mut parks = Vec::new();
+    let mut elsewhere = Vec::new();
+    let machine = ctx.this_machine();
     for account in &state.accounts {
-        if let Some(park) = &account.parked {
-            logins_dropped.push(account.key().typed());
-            parks.push(park.service.clone());
+        let Some(park) = &account.parked else {
+            continue;
+        };
+        match park.kind {
+            ParkKind::Vault => {
+                logins_dropped.push(account.key().typed());
+                parks.push(park.service.clone());
+            }
+            // One parked here stays its account's.
+            ParkKind::Folder => {
+                let here = store::folder::manifest(ctx, &park.service)
+                    .ok()
+                    .flatten()
+                    .is_some_and(|manifest| machine != "unknown" && manifest.machine == machine);
+                if !here {
+                    elsewhere.push((account.key(), park.clone()));
+                }
+            }
         }
+    }
+    let set_aside = elsewhere.iter().map(|(key, _)| key.typed()).collect();
+    for (key, park) in elsewhere {
+        state.set_aside(&key, park, SetAside::AnotherMachine, ctx.now());
     }
     // Listed rather than deleted outright, so a delete that fails is retried. On a machine
     // that did not receive the keychain there is nothing there to delete, and deleting what
@@ -74,6 +97,7 @@ pub fn adopt(ctx: &Context, permit: Permit) -> Result<Option<Adopted>> {
     Ok(Some(Adopted {
         accounts,
         logins_dropped,
+        set_aside,
     }))
 }
 
@@ -154,6 +178,82 @@ mod tests {
         let raw = serde_json::to_string(&state).expect("serialisable");
         std::fs::write(crate::home::dir(ctx).join("state.json"), raw).expect("written");
         service.to_string()
+    }
+
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Claude Desktop is macOS only: Windows makes and removes no folder"
+    )]
+    fn adopting_sets_aside_the_folder_parks_of_another_mac_and_deletes_none() {
+        let (ctx, mem, _scratch) = machine("folders");
+        from_elsewhere(&ctx, &mem);
+        let path = crate::home::dir(&ctx).join("state.json");
+        let mut state: State =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let manifest = |machine: &str| {
+            json!({
+                "v": 1, "tool": "desktop", "account": null, "named": null, "login": null,
+                "parked_at": NOW, "machine": machine, "items": [], "keys": {}
+            })
+        };
+        let mut desktop = |label: &str, machine: &str| {
+            let service = format!("pitboard-park-desktop_{label}-1");
+            let folder = store::folder::at(&ctx, &service);
+            std::fs::create_dir_all(folder.join("items")).unwrap();
+            std::fs::write(folder.join("items/Cookies"), b"a jar").unwrap();
+            std::fs::write(folder.join("manifest.json"), manifest(machine).to_string()).unwrap();
+            state.accounts.push(Account {
+                last_used_at: None,
+                replaced_at: None,
+                plan: None,
+                label: label.into(),
+                id: format!("desktop_{label}"),
+                account_uuid: label.into(),
+                email: String::new(),
+                detail: state::Detail::Desktop {},
+                parked: Some(state::Park {
+                    service: service.clone(),
+                    kind: ParkKind::Folder,
+                    parked_at: NOW,
+                    login: format!("login-{label}"),
+                    access_expires_at: None,
+                    refresh_expires_at: None,
+                    session_expires_at: None,
+                }),
+            });
+            folder
+        };
+        let elsewhere = desktop("work", "a hash from another computer");
+        let here = desktop("home", &ctx.this_machine());
+        std::fs::write(&path, serde_json::to_string(&state).unwrap()).unwrap();
+
+        let adopted = adopt(&ctx, Permit::for_a_test())
+            .expect("adopting")
+            .expect("there was work to do");
+        assert_eq!(adopted.set_aside, ["desktop/work"]);
+        assert_eq!(adopted.logins_dropped, ["work"], "the vault's, as before");
+
+        let state = state::load(&ctx).expect("now it is this machine's");
+        let key = |label: &str| state::Key::new(ProviderId::Desktop, label);
+        assert!(state.get(&key("work")).unwrap().parked.is_none());
+        assert!(
+            state.get(&key("home")).unwrap().parked.is_some(),
+            "parked here: kept"
+        );
+        assert_eq!(state.aside.len(), 1);
+        assert_eq!(state.aside[0].why, SetAside::AnotherMachine);
+        assert_eq!(state.aside[0].account.as_deref(), Some("desktop_work"));
+        assert!(state.discarded.iter().all(|d| d.kind == ParkKind::Vault));
+        assert!(elsewhere.join("items/Cookies").exists(), "deleted none");
+        assert!(here.join("items/Cookies").exists());
+        assert!(
+            mem.trail()
+                .iter()
+                .all(|touch| !touch.service.starts_with("pitboard-park-desktop_")),
+            "{:?}",
+            mem.trail()
+        );
     }
 
     #[test]

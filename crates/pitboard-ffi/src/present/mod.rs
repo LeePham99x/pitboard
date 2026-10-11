@@ -481,7 +481,7 @@ impl<'a> Seen<'a> {
             state,
             now,
             local,
-            tools: crate::tools(),
+            tools: crate::tools_on(os),
             os,
         }
     }

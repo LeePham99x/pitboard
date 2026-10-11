@@ -1,19 +1,23 @@
 //! macOS: the login keychain, files, `ps`, launchd and managed preferences.
 
+mod bundle;
 mod helper;
 mod keychain;
 mod launchd;
 mod preferences;
 mod ps;
+mod sqlite;
 
 pub(crate) use super::unix::{fs, proc, user};
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) use sqlite::write_jar;
 
 use super::administered::{self, Administered};
 use super::unix::service;
-use super::{Elevation, Floor, Host, LoginPath, Os, Process, Scheduler};
+use super::{Elevation, Floor, Host, Jar, JarError, Listed, LoginPath, Os, Scheduler};
 use crate::context::{Context, Environment};
 use crate::store::{PlainFile, RawStore};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 pub(super) const OS: Os = Os::MacOs;
@@ -65,8 +69,20 @@ impl Host for MacOs {
         true
     }
 
-    fn processes(&self, program: &str) -> Option<Vec<Process>> {
-        ps::processes(program)
+    fn listing(&self) -> Result<Vec<Listed>, String> {
+        ps::listing()
+    }
+
+    fn cookies(&self, jar: &Path, hosts: &[&str], names: &[&str]) -> Result<Jar, JarError> {
+        sqlite::cookies(jar, hosts, names)
+    }
+
+    fn app_version(&self, bundle: &Path) -> Option<String> {
+        if administered::READ_BY_REAL_HOSTS {
+            bundle::version(bundle)
+        } else {
+            None
+        }
     }
 
     fn scheduler(&self) -> Option<&dyn Scheduler> {

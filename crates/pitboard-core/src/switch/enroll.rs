@@ -113,8 +113,11 @@ fn reserve_signin(ctx: &Context, permit: Permit, tool: &'static dyn Provider) ->
     // lock above means no other sign-in is using it. Every tool's leftovers, because the
     // one that was killed need not be the one starting now.
     for &which in ProviderId::ALL {
-        let LoginKind::Document(each) = provider::of(which);
-        each.discard_signin(ctx, permit, &dir);
+        match provider::of(which) {
+            LoginKind::Document(each) => each.discard_signin(ctx, permit, &dir),
+            // No private directory is an app's.
+            LoginKind::Folder(_) => {}
+        }
     }
     let _ = crate::host::fs::remove_dir_all(permit, &dir);
     crate::host::fs::create_private_dir(permit, &dir).map_err(|source| Error::HomeUnwritable {
@@ -425,16 +428,25 @@ pub fn enroll(
             key.provider.name()
         ))),
         Some(login) => from_sign_in(&ctx, login.tool, key, &mut state, &login),
-        None => {
-            let LoginKind::Document(tool) = provider::of(key.provider);
-            record_current(&ctx, permit, tool, key, &mut state)
-        }
+        None => match provider::of(key.provider) {
+            LoginKind::Document(tool) => record_current(&ctx, permit, tool, key, &mut state),
+            LoginKind::Folder(app) => super::folder::enroll(
+                Settled {
+                    _exclusive,
+                    state,
+                    ctx,
+                    permit,
+                },
+                key,
+                app,
+            ),
+        },
     }
 }
 
 /// A label names one account of its tool for good: its own, or one not enrolled under
 /// another label.
-fn claim(state: &State, key: &Key, owner: &Owner) -> Result<()> {
+pub(super) fn claim(state: &State, key: &Key, owner: &Owner) -> Result<()> {
     if let Some(taken) = state.get(key)
         && !taken.owned_by(owner)
     {
@@ -450,6 +462,7 @@ fn claim(state: &State, key: &Key, owner: &Owner) -> Result<()> {
             tool: key.provider,
             email: owner.email.clone(),
             label: existing.key().typed(),
+            asked: key.typed(),
         });
     }
     Ok(())
@@ -803,7 +816,7 @@ fn park_signed_in(
 ///
 /// For Claude Code, only what Anthropic just confirmed: leaving the rest out makes Claude
 /// Code fetch its own profile after a switch rather than trust a copy Pitboard wrote.
-fn account(
+pub(super) fn account(
     which: ProviderId,
     id: String,
     label: &str,
@@ -838,6 +851,7 @@ fn detail(which: ProviderId, owner: &Owner) -> state::Detail {
         ProviderId::Codex => state::Detail::Codex {
             workspace_id: Some(owner.organization_uuid.clone()).filter(|id| !id.is_empty()),
         },
+        ProviderId::Desktop => state::Detail::Desktop {},
     }
 }
 
@@ -847,8 +861,8 @@ mod tests {
     use crate::api::scripted::Trouble;
     use crate::store::memory::Fault;
     use crate::switch::harness::{
-        self, Machine, NOW, codex_id, codex_login, codex_machine, hold, login_of, machine, oauth,
-        renews, signed_in,
+        self, Machine, NOW, Tool, codex_id, codex_login, codex_machine, hold, login_of, machine,
+        oauth, renews, signed_in,
     };
     use crate::switch::{Due, Outcome, renew_due, settle, switch};
     use crate::time::FixedClock;
@@ -1023,9 +1037,9 @@ mod tests {
     fn signing_in_again_to_the_account_in_use_keeps_the_park_it_holds() {
         for (tool, make) in MACHINES {
             let m = make("again-keeps-park");
-            let (uuid, older) = match m.which {
-                ProviderId::Claude => ("here".to_string(), oauth("here-older", 30)),
-                ProviderId::Codex => (codex_id("here"), codex_login("here", "here-older")),
+            let (uuid, older) = match Tool::of(m.which) {
+                Tool::Claude => ("here".to_string(), oauth("here-older", 30)),
+                Tool::Codex => (codex_id("here"), codex_login("here", "here-older")),
             };
             let service = park::reserve(&m.ctx, Permit::for_a_test(), &uuid).expect("a free name");
             let held = park::store_at(
@@ -1078,7 +1092,7 @@ mod tests {
 
             let parked = park_of(&m, "here").expect("the outgoing login is parked");
             assert_eq!(
-                parked.refresh_fingerprint,
+                parked.login,
                 store::fingerprint("here-refresh-2"),
                 "{tool}: the new login is parked, not the one it replaced"
             );
@@ -1104,7 +1118,7 @@ mod tests {
             );
             assert_eq!(m.live(), live, "{tool}: the login in use is untouched");
             assert_eq!(
-                park_of(&m, "third").map(|p| p.refresh_fingerprint),
+                park_of(&m, "third").map(|p| p.login),
                 Some(store::fingerprint("third-refresh")),
                 "{tool}"
             );
@@ -1175,7 +1189,7 @@ mod tests {
             );
             assert_eq!(m.live(), live, "{case}: the login in use is untouched");
             assert_eq!(
-                park_of(&m, "here").map(|p| p.refresh_fingerprint),
+                park_of(&m, "here").map(|p| p.login),
                 Some(store::fingerprint("here-refresh-2")),
                 "{case}: the new login is parked"
             );
@@ -1405,7 +1419,7 @@ mod tests {
                 "{tool}: {failed}"
             );
             assert_eq!(
-                park_of(&m, "here").map(|p| p.refresh_fingerprint),
+                park_of(&m, "here").map(|p| p.login),
                 Some(store::fingerprint("here-refresh-2")),
                 "{tool}"
             );
@@ -1447,7 +1461,7 @@ mod tests {
                         "{at}: {failed:?}"
                     );
                     assert_eq!(
-                        park_of(&m, "here").map(|p| p.refresh_fingerprint),
+                        park_of(&m, "here").map(|p| p.login),
                         Some(store::fingerprint("here-refresh-2")),
                         "{at}: parked as well"
                     );
@@ -1497,9 +1511,9 @@ mod tests {
             let said = warnings
                 .iter()
                 .find(|w| w.code() == "sessions_keep_old_login");
-            match m.which {
-                ProviderId::Claude => assert!(said.is_none(), "{warnings:?}"),
-                ProviderId::Codex => {
+            match Tool::of(m.which) {
+                Tool::Claude => assert!(said.is_none(), "{warnings:?}"),
+                Tool::Codex => {
                     let text = said.expect("warned").to_string();
                     assert!(text.contains("2 `codex` sessions"), "{text}");
                     assert!(text.contains("`codex/here`'s old login"), "{text}");
@@ -1530,9 +1544,9 @@ mod tests {
                 .unwrap_or_else(|e| panic!("{tool}: {e}"));
 
             let said = warnings.iter().find(|w| w.code() == "sessions_unknown");
-            match m.which {
-                ProviderId::Claude => assert!(said.is_none(), "{warnings:?}"),
-                ProviderId::Codex => {
+            match Tool::of(m.which) {
+                Tool::Claude => assert!(said.is_none(), "{warnings:?}"),
+                Tool::Codex => {
                     let text = said
                         .unwrap_or_else(|| panic!("warned: {warnings:?}"))
                         .to_string();
@@ -1606,12 +1620,12 @@ mod tests {
                     return false;
                 };
                 // Where each tool stores the login of a sign-in into `dir`.
-                match which {
-                    ProviderId::Claude => host.live().plant(
+                match Tool::of(which) {
+                    Tool::Claude => host.live().plant(
                         &crate::provider::claude::slot::service_for_dir(&dir.to_string_lossy()),
                         &document,
                     ),
-                    ProviderId::Codex => host
+                    Tool::Codex => host
                         .file_at(dir.join("auth.json"))
                         .plant("auth.json", &document),
                 }

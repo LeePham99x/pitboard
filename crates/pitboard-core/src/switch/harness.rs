@@ -36,6 +36,23 @@ pub(crate) const POINTS: [&str; 6] = [
     "switch.config_updated",
 ];
 
+// The tools whose login is a document, for a test's match on a document machine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Tool {
+    Claude,
+    Codex,
+}
+
+impl Tool {
+    pub(crate) fn of(which: ProviderId) -> Tool {
+        match which {
+            ProviderId::Claude => Tool::Claude,
+            ProviderId::Codex => Tool::Codex,
+            ProviderId::Desktop => panic!("{which} keeps no login document"),
+        }
+    }
+}
+
 pub(crate) struct Machine {
     pub(crate) ctx: Context,
     pub(crate) mem: Arc<MemoryHost>,
@@ -93,9 +110,9 @@ impl Machine {
         let live = crate::provider::document(self.which)
             .live(&self.ctx)
             .expect("a live store");
-        let store = match self.which {
-            ProviderId::Claude => Arc::clone(self.mem.live()),
-            ProviderId::Codex => self
+        let store = match Tool::of(self.which) {
+            Tool::Claude => Arc::clone(self.mem.live()),
+            Tool::Codex => self
                 .mem
                 .file_at(crate::provider::codex::paths::auth_file(&self.ctx)),
         };
@@ -322,6 +339,57 @@ pub(crate) fn codex_account(label: &str, who: &str, parked: Option<Park>) -> Acc
     }
 }
 
+pub(crate) const WORK: crate::desktop_testing::Person = crate::desktop_testing::Person {
+    uuid: "6f1c0a52-1111-4a6e-9d0b-2f6c1a9e7b10",
+    session: "work-session",
+};
+pub(crate) const HOME: crate::desktop_testing::Person = crate::desktop_testing::Person {
+    uuid: "b2aa91c4-3333-4c7a-a1d2-5e8f0c21d4e5",
+    session: "home-session",
+};
+
+// Claude closed and signed in to `work`, enrolled as `desktop/work` by the real `enroll`.
+pub(crate) fn desktop_machine(name: &str) -> Machine {
+    let root = std::env::temp_dir().join(format!(
+        "pitboard-desktop-{name}-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("a scratch home");
+    let mem = MemoryHost::new();
+    let api = ScriptedApi::new();
+    let ctx = Context::new(root.clone())
+        .with_pitboard_home(root.join(".pitboard"))
+        .with_memory_stores(Arc::clone(&mem))
+        .with_scripted_api(Arc::clone(&api))
+        .with_clock(Arc::new(FixedClock::at(NOW)) as Arc<dyn Clock>)
+        .with_scratch_claude(root.join("claude"));
+    let m = Machine {
+        ctx,
+        mem,
+        api,
+        root,
+        service: String::new(),
+        which: ProviderId::Desktop,
+    };
+    m.claude().signed_in_as(&WORK);
+    let (settled, _) = settle(&m.ctx, Permit::for_a_test(), Some(ProviderId::Desktop))
+        .expect("nothing to recover");
+    enroll(settled, &m.key("work"), None).expect("`work` enrolled");
+    m
+}
+
+impl Machine {
+    pub(crate) fn claude(&self) -> crate::desktop_testing::FakeClaude {
+        crate::desktop_testing::FakeClaude::on(
+            Arc::clone(&self.mem),
+            &self.root.join("claude"),
+            crate::desktop_testing::JarAs::StandIn,
+        )
+    }
+}
+
 /// The same shape for Codex: `here` is signed in, `there` is parked and ready, and OpenAI
 /// answers for both.
 pub(crate) fn codex_machine(name: &str) -> Machine {
@@ -410,12 +478,12 @@ pub(crate) fn record_in_use(ctx: &Context, state: &mut State, which: ProviderId,
 /// A login of the account `who` as this machine's tool writes one, with the service taught
 /// whose it is where the tool has to ask.
 pub(crate) fn login_of(m: &Machine, who: &str, refresh: &str) -> Value {
-    match m.which {
-        ProviderId::Claude => {
+    match Tool::of(m.which) {
+        Tool::Claude => {
             m.api.owned_by(&format!("access-{refresh}"), owner(who));
             document(refresh)
         }
-        ProviderId::Codex => codex_login(who, refresh),
+        Tool::Codex => codex_login(who, refresh),
     }
 }
 
@@ -432,8 +500,8 @@ pub(crate) fn signed_in(m: &Machine, who: &str, refresh: &str) -> enroll::SignIn
 
 /// The service answers a renewal of the login on `refresh` with one on `renewed`.
 pub(crate) fn renews(m: &Machine, refresh: &str, renewed: &str) {
-    match m.which {
-        ProviderId::Claude => {
+    match Tool::of(m.which) {
+        Tool::Claude => {
             m.api.renews(
                 refresh,
                 crate::api::Renewed {
@@ -446,7 +514,7 @@ pub(crate) fn renews(m: &Machine, refresh: &str, renewed: &str) {
                 },
             );
         }
-        ProviderId::Codex => {
+        Tool::Codex => {
             m.api.codex_renews(
                 refresh,
                 crate::provider::codex::api::Fresh {
@@ -659,6 +727,10 @@ pub(crate) fn in_organisation(label: &str, who: &str, org: &str, parked: Option<
 pub(crate) fn hold(m: &Machine, after: &str) {
     let state = state::load(&m.ctx)
         .unwrap_or_else(|e| panic!("{after}: the state file must still parse, got {e}"));
+    match crate::provider::of(m.which) {
+        crate::provider::LoginKind::Document(_) => {}
+        crate::provider::LoginKind::Folder(app) => return hold_folder(m, after, &state, app),
+    }
 
     // Nothing in the vault that the state does not name. An item nobody names holds a live
     // refresh token that no command will ever renew or delete, and on macOS nothing can
@@ -723,6 +795,106 @@ pub(crate) fn hold(m: &Machine, after: &str) {
                 a.label
             );
         }
+    }
+}
+
+// What must hold of a tool whose login is its app's files, after every step of a change.
+fn hold_folder(
+    m: &Machine,
+    after: &str,
+    state: &State,
+    app: &'static dyn crate::provider::folder::Folder,
+) {
+    // Every folder under `parks` is named, and no folder's name reaches the vault.
+    let parks = crate::store::folder::list(&m.ctx)
+        .expect("parks listed")
+        .unwrap_or_default();
+    let pending = std::fs::read_to_string(home::dir(&m.ctx).join("pending")).unwrap_or_default();
+    for name in &parks {
+        let named =
+            state.names(name) || pending.lines().any(|line| line == format!("folder {name}"));
+        assert!(named, "{after}: {name} under parks is named by nothing");
+    }
+    for dropped in &state.discarded {
+        if parks.contains(&dropped.service) {
+            assert_eq!(
+                dropped.kind,
+                ParkKind::Folder,
+                "{after}: {}",
+                dropped.service
+            );
+        }
+    }
+    for touch in m.mem.trail() {
+        assert!(
+            !(touch.store == "vault"
+                && (touch.service.starts_with("pitboard-park-desktop_")
+                    || touch.service.starts_with("pitboard-aside-"))),
+            "{after}: {touch:?} asked the vault of a folder"
+        );
+    }
+
+    // Every account is in use, holds a park whose folder holds its session, or holds nothing.
+    let in_use = state.account_in_use(m.which).map(Account::key);
+    for account in state.accounts.iter().filter(|a| a.provider() == m.which) {
+        let Some(park) = &account.parked else {
+            continue;
+        };
+        if in_use.as_ref() == Some(&account.key()) {
+            continue;
+        }
+        let manifest = crate::store::folder::manifest(&m.ctx, &park.service)
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| panic!("{after}: {} names a park with no manifest", account.label));
+        assert_eq!(
+            manifest.login.as_deref(),
+            Some(park.login.as_str()),
+            "{after}"
+        );
+        let jar = crate::store::folder::item(&m.ctx, &park.service, app.items()[0]);
+        let session = app.session(&m.ctx, &jar).expect("its jar reads");
+        assert_eq!(
+            session.map(|s| s.login),
+            Some(park.login.clone()),
+            "{after}"
+        );
+    }
+
+    // What is not an account's, in the settings and in the folder, is as `plant` wrote it.
+    let data = m.root.join("claude/data");
+    if !data.exists() {
+        return;
+    }
+    let config = data.join("config.json");
+    assert!(config.exists(), "{after}: config.json is gone");
+    let settings = app
+        .settings(&data)
+        .unwrap_or_else(|e| panic!("{after}: config.json: {e:?}"));
+    let others: Vec<(&str, &str)> = settings
+        .body
+        .iter()
+        .filter(|(key, _)| !app.keys().contains(&key.as_str()))
+        .map(|(key, value)| (key.as_str(), value.get()))
+        .collect();
+    assert_eq!(
+        others,
+        [("locale", "\"en-US\""), ("userThemeMode", "\"dark\"")],
+        "{after}"
+    );
+    assert!(
+        crate::host::fs::testing::is_private(&config).expect("its mode"),
+        "{after}: config.json's mode changed"
+    );
+    for (stays, held) in [
+        ("Preferences", "{}"),
+        ("Cache/Cache_Data/index", WORK.session),
+    ] {
+        assert_eq!(
+            std::fs::read_to_string(data.join(stays)).ok().as_deref(),
+            Some(held),
+            "{after}: {stays}"
+        );
     }
 }
 

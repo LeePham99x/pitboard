@@ -66,6 +66,8 @@ pub enum Stale {
     Interrupted,
     /// Nobody was asked: this reading was taken without touching the network.
     NotAsked,
+    // A tool no service is asked about: Claude Desktop's.
+    NoUsage,
 }
 
 impl Stale {
@@ -103,6 +105,7 @@ impl Stale {
             Stale::AskedRecently => "asked_recently",
             Stale::Interrupted => "interrupted",
             Stale::NotAsked => "not_asked",
+            Stale::NoUsage => "no_usage",
         }
     }
 
@@ -123,53 +126,61 @@ impl Stale {
         // A sentence per tool rather than one assembled at run time, so every word a person
         // reads is here to be read, and Claude Code's are exactly what they always were.
         let per_tool = |claude: &'static str, codex: &'static str| match provider {
-            ProviderId::Claude => claude,
-            ProviderId::Codex => codex,
+            ProviderId::Claude => Some(claude),
+            ProviderId::Codex => Some(codex),
+            // No service is asked for it, so no service's answer is said of it.
+            ProviderId::Desktop => None,
         };
         match self {
             Stale::NothingSignedIn => Some("nothing is signed in"),
-            Stale::LoginUnreadable => Some(per_tool(
+            Stale::LoginUnreadable => per_tool(
                 "Claude Code's login could not be read; run `pitboard doctor`",
                 "Codex's login could not be read; run `pitboard doctor`",
-            )),
-            Stale::LoginUnusable => Some(per_tool(
+            ),
+            Stale::LoginUnusable => per_tool(
                 "Claude Code's login is not one Pitboard can park or switch; run `pitboard doctor`",
                 "Codex's login is not one Pitboard can park or switch; run `pitboard doctor`",
-            )),
-            Stale::SessionExpired => Some(per_tool(
+            ),
+            Stale::SessionExpired => per_tool(
                 "Claude Code's session has expired; `claude` renews it",
                 "Codex's session has expired; `codex` renews it",
-            )),
+            ),
             Stale::ParkedAccessExpired | Stale::NothingParked => None,
-            Stale::LoginReplaced => {
-                Some("its login was replaced by a sign-in outside Pitboard; sign in again")
-            }
+            Stale::LoginReplaced => Some(match provider {
+                ProviderId::Claude | ProviderId::Codex => {
+                    "its login was replaced by a sign-in outside Pitboard; sign in again"
+                }
+                ProviderId::Desktop => {
+                    "its login was signed out or replaced in Claude; sign in again"
+                }
+            }),
             Stale::ParkUnreadable => Some("its parked login cannot be read; run `pitboard doctor`"),
-            Stale::RateLimited => Some(per_tool(
+            Stale::RateLimited => per_tool(
                 "Anthropic is rate limiting usage checks",
                 "OpenAI is rate limiting usage checks",
-            )),
-            Stale::Unreachable => Some(per_tool(
+            ),
+            Stale::Unreachable => per_tool(
                 "Anthropic could not be reached",
                 "OpenAI could not be reached",
-            )),
-            Stale::ServerError => Some(per_tool(
+            ),
+            Stale::ServerError => per_tool(
                 "Anthropic answered with an error; try again later",
                 "OpenAI answered with an error; try again later",
-            )),
-            Stale::AnswerNotUnderstood => Some(per_tool(
+            ),
+            Stale::AnswerNotUnderstood => per_tool(
                 "Anthropic's answer was not understood",
                 "OpenAI's answer was not understood",
-            )),
+            ),
             Stale::LoginRefused => Some("its parked login is no longer accepted; sign in again"),
             // Not worth a word: it is the ordinary state of a number that is
             // already as true as asking again would make it.
             Stale::AskedRecently => None,
             Stale::Interrupted => Some("the check did not finish"),
-            Stale::NotAsked => Some(per_tool(
+            Stale::NotAsked => per_tool(
                 "read without asking Anthropic",
                 "read without asking OpenAI",
-            )),
+            ),
+            Stale::NoUsage => Some("Pitboard reads no usage for Claude Desktop"),
         }
     }
 }
@@ -198,6 +209,8 @@ pub struct Row {
     pub stale: Option<Stale>,
     /// The plan its login says, or last said where this read did not see it: "Max 20x".
     pub plan: Option<String>,
+    // when Pitboard last read this login in use, for a tool no read asks: Claude Desktop's
+    pub read_at: Option<i64>,
 }
 
 impl Row {
@@ -339,6 +352,14 @@ fn parked_document(
         None => Err(Stale::NothingParked),
         Some(p) if !p.askable_at(now) => Err(Stale::ParkedAccessExpired),
         Some(p) => park::load(ctx, tool, key, p).map_err(|_| Stale::ParkUnreadable),
+    }
+}
+
+// An app's login: no store is read and no service asked, and its row says when it was read.
+fn asks_nobody(which: ProviderId) -> bool {
+    match crate::provider::of(which) {
+        LoginKind::Document(_) => false,
+        LoginKind::Folder(_) => true,
     }
 }
 
@@ -692,28 +713,37 @@ pub(crate) struct Answers {
 /// login renewed to tell whose it is is saved where its tool keeps it.
 pub(crate) fn ask(ctx: &Context, permit: Permit, state: &State, fresh: bool) -> Answers {
     let now = ctx.now();
+    let mut unasked = Vec::new();
     // Each tool's live login, whole, or why it could not be read. Not a token out of it:
     // what a usage call needs is not the same everywhere, and pulling one field out here
     // would decide that for all of them. What the tool's own record names is read first,
     // as `in_use::named` says why.
     let live_reads: Vec<(&'static dyn Provider, LiveRead)> = tools(state)
         .into_iter()
-        .map(|which| {
+        .filter_map(|which| {
+            let tool = match crate::provider::of(which) {
+                LoginKind::Document(tool) => tool,
+                LoginKind::Folder(_) => {
+                    unasked.push(which);
+                    return None;
+                }
+            };
             let named = in_use::named(ctx, which);
-            let LoginKind::Document(tool) = crate::provider::of(which);
             let login = tool
                 .read_live(ctx)
                 .map(|found| found.map(|credential| credential.raw));
-            (tool, LiveRead { named, login })
+            Some((tool, LiveRead { named, login }))
         })
         .collect();
     let parked_documents: Vec<Result<(&'static dyn Provider, Value), Stale>> = state
         .accounts
         .iter()
-        .map(|a| {
-            let LoginKind::Document(tool) = crate::provider::of(a.provider());
-            parked_document(ctx, tool, &a.key(), a.parked.as_ref(), now)
-                .map(|document| (tool, document))
+        .map(|a| match crate::provider::of(a.provider()) {
+            LoginKind::Document(tool) => {
+                parked_document(ctx, tool, &a.key(), a.parked.as_ref(), now)
+                    .map(|document| (tool, document))
+            }
+            LoginKind::Folder(_) => Err(Stale::NoUsage),
         })
         .collect();
     let mut plans: BTreeMap<String, Plan> = state
@@ -776,7 +806,17 @@ pub(crate) fn ask(ctx: &Context, permit: Permit, state: &State, fresh: bool) -> 
             )
         });
 
-    let mut live = BTreeMap::new();
+    let mut live: BTreeMap<ProviderId, LiveLogin> = unasked
+        .into_iter()
+        .map(|which| {
+            let login = LiveLogin {
+                known: last_known(state, which),
+                usage: Some(Err(Stale::NoUsage)),
+                ..LiveLogin::default()
+            };
+            (which, login)
+        })
+        .collect();
     let mut learned = Vec::new();
     let mut found = Vec::new();
     for (which, answered) in settle(state, answers) {
@@ -871,6 +911,12 @@ fn rank(which: ProviderId) -> usize {
         .unwrap_or(usize::MAX)
 }
 
+fn read_at(state: &State, which: ProviderId, signed_in: bool) -> Option<i64> {
+    (signed_in && asks_nobody(which))
+        .then(|| state.in_use(which).map(|record| record.known_at))
+        .flatten()
+}
+
 fn assemble(
     state: &State,
     facts: &Facts,
@@ -889,6 +935,7 @@ fn assemble(
                 // Unreachable, unreadable, or never asked. The service decides who is
                 // signed in; without its answer this time, what it last said stands in.
                 (Some(Err(_)), _) | (None, false) => live.known.as_ref(),
+                (None, true) if asks_nobody(which) => live.known.as_ref(),
                 (None, true) => None,
             }?;
             Some((which, owner))
@@ -916,12 +963,20 @@ fn assemble(
             let id = account.id.as_str();
             let which = account.provider();
             let signed_in = live_ids.get(&which).is_some_and(|live| live == id);
-            let (usage, stale) = if signed_in {
+            let replaced = account.parked.is_none() && account.replaced_at.is_some();
+            let (usage, stale) = if asks_nobody(which) {
+                let why = if replaced && !signed_in {
+                    Stale::LoginReplaced
+                } else {
+                    Stale::NoUsage
+                };
+                (None, Some(why))
+            } else if signed_in {
                 let live = facts
                     .live_for(which)
                     .map_or(Err(Stale::NothingSignedIn), LiveLogin::usage);
                 reading(id, &live)
-            } else if account.parked.is_none() && account.replaced_at.is_some() {
+            } else if replaced {
                 reading(id, &Err(Stale::LoginReplaced))
             } else {
                 let parked = facts.parked.get(id).cloned();
@@ -945,6 +1000,7 @@ fn assemble(
                 usage,
                 stale,
                 plan,
+                read_at: read_at(state, which, signed_in),
             }
         })
         .collect();
@@ -977,6 +1033,7 @@ fn assemble(
                 usage,
                 stale,
                 plan,
+                read_at: read_at(state, which, true),
             });
             continue;
         }
@@ -999,6 +1056,7 @@ fn assemble(
                 usage: None,
                 stale: live.usage().err(),
                 plan: None,
+                read_at: None,
             });
         }
     }
@@ -1056,9 +1114,11 @@ mod tests {
         Park {
             service: "pitboard-park-x-1".into(),
             parked_at: NOW - 86_400,
-            refresh_fingerprint: "f".into(),
+            kind: crate::state::ParkKind::Vault,
+            login: "f".into(),
             access_expires_at: Some(NOW - 3_600),
             refresh_expires_at: Some(refresh_expires_at),
+            session_expires_at: None,
         }
     }
 
@@ -1635,7 +1695,7 @@ mod tests {
     }
 
     /// Every stale reason, for the tests that hold each one to something.
-    const EVERY_STALE: [Stale; 16] = [
+    const EVERY_STALE: [Stale; 17] = [
         Stale::NothingSignedIn,
         Stale::LoginUnreadable,
         Stale::LoginUnusable,
@@ -1652,6 +1712,7 @@ mod tests {
         Stale::AskedRecently,
         Stale::Interrupted,
         Stale::NotAsked,
+        Stale::NoUsage,
     ];
 
     /// What a Claude Code row said before a row knew its tool, word for word. A person who
@@ -1680,6 +1741,7 @@ mod tests {
             Stale::LoginUnusable => Some(
                 "Claude Code's login is not one Pitboard can park or switch; run `pitboard doctor`",
             ),
+            Stale::NoUsage => Some("Pitboard reads no usage for Claude Desktop"),
         };
         for stale in EVERY_STALE {
             assert_eq!(
@@ -1701,6 +1763,10 @@ mod tests {
     #[test]
     fn a_codex_row_names_openai_and_codex_never_anthropic_or_claude() {
         for stale in EVERY_STALE {
+            // Only a row of a tool no service is asked about carries it, which Codex is not.
+            if stale == Stale::NoUsage {
+                continue;
+            }
             let Some(said) = stale.explanation_for(ProviderId::Codex) else {
                 assert_eq!(stale.explanation_for(ProviderId::Claude), None, "{stale:?}");
                 continue;
@@ -2532,6 +2598,7 @@ mod tests {
             usage: None,
             stale: Some(Stale::LoginUnreadable),
             plan: None,
+            read_at: None,
         };
         assert!(row.unplaced());
         row.stale = Some(Stale::LoginUnusable);

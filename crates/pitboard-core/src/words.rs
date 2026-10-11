@@ -482,14 +482,105 @@ pub fn renewal_note(due: usize, renewed: usize) -> String {
 /// Codex another workspace's, where the account it is told apart from has that email too.
 pub fn login(tool: crate::provider::ProviderId, email: &str, shares_email: bool) -> String {
     use crate::provider::ProviderId;
-    if !shares_email {
-        return email.to_owned();
-    }
     let group = match tool {
         ProviderId::Claude => "organisation",
         ProviderId::Codex => "workspace",
+        // Nobody tells Pitboard a Claude Desktop account's email.
+        ProviderId::Desktop if email.is_empty() => return "another Claude Desktop account".into(),
+        ProviderId::Desktop => "account",
     };
+    if !shares_email {
+        return email.to_owned();
+    }
     format!("{email} in another {group}")
+}
+
+// What signs a tool in, to start a sentence (`starts`) or to go on with one.
+pub(crate) fn sign_in_yourself(tool: crate::provider::ProviderId, starts: bool) -> String {
+    use crate::provider::ProviderId;
+    let said = match tool {
+        ProviderId::Claude => "Run `claude`",
+        ProviderId::Codex => "Run `codex login`",
+        ProviderId::Desktop => "Open Claude",
+    };
+    starting(said, starts)
+}
+
+// What runs a tool once, as its sessions do.
+pub(crate) fn run_it(tool: crate::provider::ProviderId, starts: bool) -> String {
+    use crate::provider::ProviderId;
+    let said = match tool {
+        ProviderId::Claude => "Run `claude`",
+        ProviderId::Codex => "Run `codex`",
+        ProviderId::Desktop => "Open Claude",
+    };
+    starting(said, starts)
+}
+
+// What reads a tool's login from where it was, where this run reads another place.
+pub(crate) fn pointing_where_it_did(tool: crate::provider::ProviderId) -> String {
+    use crate::provider::ProviderId;
+    match tool {
+        ProviderId::Claude => "Run Pitboard with CLAUDE_CONFIG_DIR pointing where it did",
+        ProviderId::Codex => "Run Pitboard with CODEX_HOME pointing where it did",
+        ProviderId::Desktop => "Run Pitboard as the account whose Claude that is",
+    }
+    .into()
+}
+
+fn starting(said: &str, starts: bool) -> String {
+    if starts {
+        return said.into();
+    }
+    let mut chars = said.chars();
+    chars
+        .next()
+        .map(|first| first.to_lowercase().chain(chars).collect())
+        .unwrap_or_default()
+}
+
+pub(crate) fn nothing_signed_in(tool: crate::provider::ProviderId) -> String {
+    use crate::provider::ProviderId;
+    match tool {
+        ProviderId::Claude | ProviderId::Codex => format!(
+            "nothing is signed in to {} right now. {}, sign in, then try again.",
+            tool.name(),
+            sign_in_yourself(tool, true)
+        ),
+        ProviderId::Desktop => "Claude is not signed in. Open Claude, sign in, quit it with \
+                                Command-Q, then run this again."
+            .into(),
+    }
+}
+
+// Whose a login is, to start a sentence: its email, where its service gave one.
+pub fn whose(tool: crate::provider::ProviderId, email: &str) -> String {
+    use crate::provider::ProviderId;
+    match tool {
+        ProviderId::Desktop if email.is_empty() => "The account Claude is signed in to".into(),
+        ProviderId::Claude | ProviderId::Codex | ProviderId::Desktop => email.into(),
+    }
+}
+
+// By the date the session cookie carries, hedged: claude.ai may end it sooner or keep it.
+pub fn session_life(session_expires_at: Option<i64>, now: i64) -> Option<String> {
+    let left = session_expires_at? - now;
+    Some(match left / DAY {
+        _ if left <= 0 => "Its sign-in may have lapsed".into(),
+        0 => "Its sign-in may lapse in under a day".into(),
+        1 => "Its sign-in may lapse in 1 day".into(),
+        days => format!("Its sign-in may lapse in {days} days"),
+    })
+}
+
+// What `adopt` says of the Claude Desktop logins it set aside, each account as typed.
+pub fn adopted_folders(labels: &[String]) -> String {
+    let named = listed(labels.iter().map(|label| format!("`{label}`")).collect());
+    format!(
+        "Pitboard set aside the parked Claude Desktop logins of {named}. They were parked on \
+         another Mac, and Claude cannot read them here where its key differs. `pitboard \
+         forget` of an account deletes its own."
+    )
 }
 
 /// The line under doctor's checks, or over them in the app. Checks that only warn are
@@ -611,6 +702,44 @@ pub(crate) fn listed(mut items: Vec<String>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn claude_desktops_words_hedge_what_nobody_measured() {
+        use crate::provider::ProviderId;
+        assert_eq!(
+            whose(ProviderId::Desktop, ""),
+            "The account Claude is signed in to"
+        );
+        assert_eq!(whose(ProviderId::Claude, "a@b.example"), "a@b.example");
+        let now = 1_791_000_000;
+        let life = |left: i64| session_life(Some(now + left), now);
+        assert_eq!(
+            life(25 * DAY + 60).as_deref(),
+            Some("Its sign-in may lapse in 25 days")
+        );
+        assert_eq!(life(DAY).as_deref(), Some("Its sign-in may lapse in 1 day"));
+        assert_eq!(
+            life(60).as_deref(),
+            Some("Its sign-in may lapse in under a day")
+        );
+        assert_eq!(life(0).as_deref(), Some("Its sign-in may have lapsed"));
+        assert_eq!(session_life(None, now), None);
+        assert_eq!(
+            adopted_folders(&["desktop/work".into(), "desktop/home".into()]),
+            "Pitboard set aside the parked Claude Desktop logins of `desktop/work` and \
+             `desktop/home`. They were parked on another Mac, and Claude cannot read them here \
+             where its key differs. `pitboard forget` of an account deletes its own."
+        );
+        assert_eq!(
+            login(ProviderId::Desktop, "", false),
+            "another Claude Desktop account"
+        );
+        assert_eq!(sign_in_yourself(ProviderId::Desktop, false), "open Claude");
+        assert_eq!(
+            pointing_where_it_did(ProviderId::Desktop),
+            "Run Pitboard as the account whose Claude that is"
+        );
+    }
 
     /// Why Pitboard did not switch by itself is said in the app as well as in a terminal,
     /// so it names no command: the app gives up on an interrupted switch with a button.

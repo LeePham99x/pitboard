@@ -321,11 +321,7 @@ pub enum Error {
         source: serde_json::Error,
     },
 
-    #[error(
-        "nothing is signed in to {} right now. Run `{}`, sign in, then try again.",
-        tool.name(),
-        tool.login_command()
-    )]
+    #[error("{}", crate::words::nothing_signed_in(*tool))]
     LiveCredentialAbsent { tool: ProviderId },
 
     #[error(
@@ -372,22 +368,16 @@ pub enum Error {
     )]
     ParkedLoginExpired { label: String },
 
-    #[error(
-        "{who} is signed in but not enrolled, so it cannot be parked. \
-         Run `pitboard enroll {}` for it first.",
-        Key::new(*tool, "<label>").typed()
-    )]
+    #[error("{}", not_enrolled(*tool, who))]
     LiveAccountNotEnrolled { tool: ProviderId, who: String },
 
-    #[error(
-        "{email} is already enrolled as `{label}`. To add a different account, run \
-         `pitboard enroll {} --sign-in`.",
-        Key::new(*tool, "<label>").typed()
-    )]
+    #[error("{}", already_enrolled(*tool, email, label, asked))]
     AlreadyEnrolled {
         tool: ProviderId,
         email: String,
         label: String,
+        // the label typed
+        asked: String,
     },
 
     #[error("`{label}` already refers to {who}. Choose a different label.")]
@@ -469,12 +459,7 @@ pub enum Error {
     #[error("the signed-in account changed while switching. Nothing was moved; try again.")]
     SignedInAccountChanged,
 
-    #[error(
-        "an earlier switch from `{from}` to `{to}` was interrupted, and Pitboard cannot yet \
-         tell whether it finished ({detail}). Nothing was changed. Run `{}` once so its \
-         session is current, then try again.",
-        tool.program()
-    )]
+    #[error("{}", recovery_undetermined(*tool, from, to, detail))]
     RecoveryUndetermined {
         tool: ProviderId,
         from: String,
@@ -532,9 +517,9 @@ pub enum Error {
 
     #[error(
         "could not sign in as `{to}`, and could not put `{from}` back either ({detail}). \
-         `{from}`'s login is still parked: run `{}` and sign in to any enrolled account, \
-         then `pitboard use {from}`.",
-        tool.login_command()
+         `{from}`'s login is still parked: {} and sign in to any enrolled account, then \
+         `pitboard use {from}`.",
+        crate::words::sign_in_yourself(*tool, false)
     )]
     SwitchCorrupted {
         tool: ProviderId,
@@ -583,14 +568,7 @@ pub enum Error {
         source: serde_json::Error,
     },
 
-    #[error(
-        "an earlier switch of {} from `{from}` to `{to}` was interrupted while its login was \
-         at {slot}, and this run reads it from somewhere else, so it cannot tell what that \
-         switch did. Nothing was changed. Run Pitboard with {} pointing where it did to \
-         finish it, or `pitboard abandon` to keep every login it names and move on.",
-        tool.name(),
-        tool.home_variable()
-    )]
+    #[error("{}", recovery_elsewhere(*tool, from, to, slot))]
     RecoveryElsewhere {
         tool: ProviderId,
         from: String,
@@ -690,10 +668,10 @@ pub enum Error {
     /// is spent. Its code, cause and exit status are `error`'s.
     #[error(
         "{} Pitboard renewed {}'s login and could not save the renewed login, so the refresh \
-         token stored is spent. Run `{}`, sign in, then try again.",
+         token stored is spent. {}, sign in, then try again.",
         sentence(error),
         tool.name(),
-        tool.login_command()
+        crate::words::sign_in_yourself(*tool, true)
     )]
     RenewalLost { tool: ProviderId, error: Box<Error> },
 
@@ -711,6 +689,54 @@ pub enum Error {
          cancel that one first."
     )]
     SignInInProgress,
+
+    #[error("{}", app_open(app, still))]
+    AppOpen {
+        app: &'static str,
+        // what of the app still runs once its own program has quit, as `ShipIt (pid 812)`
+        still: Vec<String>,
+    },
+
+    #[error(
+        "Pitboard could not tell whether {app} is open ({why}), so nothing has changed. Run \
+         this again."
+    )]
+    AppStateUnknown { app: &'static str, why: String },
+
+    #[error(
+        "{}'s data folder {what}, so Pitboard moves no {} login. {}Nothing has changed.",
+        tool.program(),
+        tool.name(),
+        then.said()
+    )]
+    LoginFolderUnknown {
+        tool: ProviderId,
+        what: String,
+        then: Then,
+    },
+
+    #[error(
+        "Pitboard could not read {program}'s cookie store ({detail}). Open {program}, quit it \
+         with Command-Q, then run this again. Nothing has changed.",
+        program = tool.program()
+    )]
+    LoginFolderUnreadable { tool: ProviderId, detail: String },
+
+    #[error(
+        "{program} has not finished signing in. Open {program}, wait until it shows your \
+         chats, quit it with Command-Q, then run this again. Nothing has changed.",
+        program = tool.program()
+    )]
+    SignInUnfinished { tool: ProviderId },
+
+    #[error("{}", in_doubt(*tool, why))]
+    LoginInDoubt { tool: ProviderId, why: LoginDoubt },
+
+    #[error(
+        "Another Pitboard is changing {app}'s login now, so nothing has changed. Run this \
+         again once it has finished."
+    )]
+    LoginFolderBusy { app: &'static str },
 
     /// This process runs as root or under sudo, or elevated on Windows, or the system could
     /// not say whether it does, so Pitboard changes nothing: the one gate every change passes
@@ -756,6 +782,7 @@ impl Error {
             ProgramMissing { tool, .. } => match tool {
                 ProviderId::Claude => "claude_program_missing",
                 ProviderId::Codex => "codex_program_missing",
+                ProviderId::Desktop => "desktop_program_missing",
             },
             CredentialTooLarge { .. } => "credential_too_large",
             CustomOauthEndpoint => "custom_oauth_endpoint",
@@ -813,6 +840,7 @@ impl Error {
             ProgramNotFound { tool } => match tool {
                 ProviderId::Claude => "claude_not_found",
                 ProviderId::Codex => "codex_not_found",
+                ProviderId::Desktop => "desktop_not_found",
             },
             SignInIncomplete => "sign_in_incomplete",
             LeftLoginChanged { .. } => "left_login_changed",
@@ -823,6 +851,13 @@ impl Error {
             SignInNotIsolated { .. } => "sign_in_not_isolated",
             RenewalFailed { .. } => "renewal_failed",
             SignInInProgress => "sign_in_in_progress",
+            AppOpen { .. } => "app_open",
+            AppStateUnknown { .. } => "app_state_unknown",
+            LoginFolderUnknown { .. } => "login_folder_unknown",
+            LoginFolderUnreadable { .. } => "login_folder_unreadable",
+            SignInUnfinished { .. } => "sign_in_unfinished",
+            LoginInDoubt { .. } => "login_in_doubt",
+            LoginFolderBusy { .. } => "login_folder_busy",
             Elevated { .. } => "elevated",
             SystemTooOld { .. } => "system_too_old",
             WindowsNotReleased => "windows_not_released",
@@ -879,7 +914,9 @@ impl Error {
             | LiveCredentialElsewhere { .. }
             | CredentialTooLarge { .. }
             | CustomOauthEndpoint
-            | RecoveryRecordCorrupt { .. } => 3,
+            | RecoveryRecordCorrupt { .. }
+            | LoginFolderUnknown { .. }
+            | LoginInDoubt { .. } => 3,
             Usage(_) | ConfirmationNeeded { .. } => 2,
             Store(e) => e.exit_code(),
             StowStopped { error, .. } | RenewalLost { error, .. } => error.exit_code(),
@@ -921,16 +958,16 @@ fn session_expired(tool: ProviderId, refused: bool) -> String {
     if refused {
         return format!(
             "{}'s login in use has expired and cannot be renewed, so Pitboard cannot confirm \
-             which account is signed in. Run `{}`, sign in, then try again.",
+             which account is signed in. {}, sign in, then try again.",
             tool.name(),
-            tool.login_command()
+            crate::words::sign_in_yourself(tool, true)
         );
     }
     format!(
         "{}'s session has expired, so Pitboard cannot confirm which account is signed in. \
-         Run `{}` once so it refreshes, then try again.",
+         {} once so it refreshes, then try again.",
         tool.name(),
-        tool.program()
+        crate::words::run_it(tool, true)
     )
 }
 
@@ -939,6 +976,7 @@ fn make_readable(tool: ProviderId) -> &'static str {
     match tool {
         ProviderId::Claude => "Unlock the keychain",
         ProviderId::Codex => "Make Codex's auth.json readable to you again",
+        ProviderId::Desktop => "Quit Claude",
     }
 }
 
@@ -948,7 +986,7 @@ fn smaller(tool: ProviderId) -> &'static str {
         ProviderId::Claude => {
             "Unset it, or sign out of MCP servers you no longer use to make the login smaller."
         }
-        ProviderId::Codex => "Unset it to let Pitboard write it.",
+        ProviderId::Codex | ProviderId::Desktop => "Unset it to let Pitboard write it.",
     }
 }
 
@@ -972,6 +1010,10 @@ fn after_it_did_not_hold(tool: ProviderId, from: &str, to: &str) -> String {
              codex, then run `pitboard` to see what is signed in; do not run `codex login` \
              or `codex logout` until you have, because either revokes the login they find."
         ),
+        ProviderId::Desktop => "Claude was opened before Pitboard finished and wrote its own \
+                                login back. Quit Claude, then run `pitboard` to see which \
+                                account it holds."
+            .into(),
     }
 }
 
@@ -980,21 +1022,348 @@ fn not_in_use(tool: ProviderId, label: &str, parked: bool) -> String {
     if parked {
         format!(
             "The new login is parked, so it is not lost. Run `pitboard` to see what is \
-             signed in; if nothing is, run `{}` and sign in to any enrolled account, then \
+             signed in; if nothing is, {} and sign in to any enrolled account, then \
              `pitboard use {label}`.",
-            tool.login_command()
+            crate::words::sign_in_yourself(tool, false)
         )
     } else {
         format!(
-            "It could not be parked either: run `{}` and sign in to `{label}` again.",
-            tool.login_command()
+            "It could not be parked either: {} and sign in to `{label}` again.",
+            crate::words::sign_in_yourself(tool, false)
         )
+    }
+}
+
+// What a step of a Claude Desktop change says to do once it has refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Then {
+    Nothing,
+    OpenAndQuit,
+    UpdatePitboard,
+    CopyAside,
+    SignInAndEnrol,
+}
+
+impl Then {
+    // With a space after it, where it says anything.
+    pub(crate) fn said(self) -> &'static str {
+        match self {
+            Then::Nothing => "",
+            Then::OpenAndQuit => "Open Claude, quit it with Command-Q, then run this again. ",
+            Then::UpdatePitboard => {
+                "Update Pitboard, or report it at https://github.com/datlechin/pitboard/issues if \
+                 no release reads it yet. "
+            }
+            Then::CopyAside => {
+                "Claude resets a settings file it cannot read when it opens, so copy it aside, \
+                 open Claude, quit it with Command-Q, then run this again. "
+            }
+            Then::SignInAndEnrol => {
+                "Open Claude. If it asks you to sign in, sign in. Quit it with Command-Q, then \
+                 run `pitboard enroll desktop/<label>` for the account it shows. "
+            }
+        }
+    }
+}
+
+// Why the login Claude holds cannot be taken as any account's without the person's word.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LoginDoubt {
+    // `named`: the account Claude names, as typed; None for one Pitboard has not enrolled
+    NamedAnother {
+        recorded: String,
+        named: Option<String>,
+    },
+    // `label` was signed in to outside Pitboard, beside the login it parked
+    SignedInOutside {
+        label: String,
+    },
+}
+
+fn app_open(app: &str, still: &[String]) -> String {
+    if still.is_empty() {
+        return format!(
+            "{app} is open, and Pitboard changes its login only while it is closed. Quit {app} \
+             with Command-Q, then run this again. Nothing has changed."
+        );
+    }
+    format!(
+        "{app} has quit, and {} from it is still running, and Pitboard changes {app}'s login \
+         only while all of it is closed. Wait until it ends, or quit it in Activity Monitor, \
+         then run this again. Nothing has changed.",
+        crate::words::listed(still.to_vec())
+    )
+}
+
+fn in_doubt(tool: ProviderId, why: &LoginDoubt) -> String {
+    let enroll = Key::new(tool, "<label>").typed();
+    match why {
+        LoginDoubt::NamedAnother { recorded, named } => {
+            let named = named.as_ref().map_or_else(
+                || "an account Pitboard has not enrolled".to_string(),
+                |label| format!("`{label}`"),
+            );
+            format!(
+                "Pitboard recorded this {program} login as `{recorded}`'s, and {program} names \
+                 {named} for it. Open {program}, check which account it shows, quit it with \
+                 Command-Q, then run `pitboard enroll {enroll}` under that account's name. \
+                 Nothing has changed.",
+                program = tool.program()
+            )
+        }
+        LoginDoubt::SignedInOutside { label } => format!(
+            "{program} was signed in to `{label}` outside Pitboard, so Pitboard cannot tell this \
+             login from the one it parked. Open {program}, check which account it shows, and \
+             quit it with Command-Q. If it shows `{label}`, run `pitboard enroll {label}`, then \
+             this again. If it shows another account, run `pitboard enroll {enroll}` under that \
+             account's name. Nothing has changed.",
+            program = tool.program()
+        ),
+    }
+}
+
+fn not_enrolled(tool: ProviderId, who: &str) -> String {
+    let enroll = Key::new(tool, "<label>").typed();
+    match tool {
+        ProviderId::Claude | ProviderId::Codex => format!(
+            "{who} is signed in but not enrolled, so it cannot be parked. Run `pitboard enroll \
+             {enroll}` for it first."
+        ),
+        ProviderId::Desktop => format!(
+            "Claude is signed in to an account Pitboard has not enrolled, so it cannot be \
+             parked. Run `pitboard enroll {enroll}` for it first."
+        ),
+    }
+}
+
+fn already_enrolled(tool: ProviderId, email: &str, label: &str, asked: &str) -> String {
+    match tool {
+        ProviderId::Claude | ProviderId::Codex => format!(
+            "{email} is already enrolled as `{label}`. To add a different account, run \
+             `pitboard enroll {} --sign-in`.",
+            Key::new(tool, "<label>").typed()
+        ),
+        ProviderId::Desktop => format!(
+            "Claude is signed in to `{label}`, which is enrolled already. To add `{asked}`, run \
+             `pitboard enroll {asked} --sign-in`."
+        ),
+    }
+}
+
+fn recovery_undetermined(tool: ProviderId, from: &str, to: &str, detail: &str) -> String {
+    match tool {
+        ProviderId::Claude | ProviderId::Codex => format!(
+            "an earlier switch from `{from}` to `{to}` was interrupted, and Pitboard cannot yet \
+             tell whether it finished ({detail}). Nothing was changed. {} once so its session \
+             is current, then try again.",
+            crate::words::run_it(tool, true)
+        ),
+        ProviderId::Desktop => format!(
+            "An earlier move of `{to}`'s login was interrupted, and Pitboard cannot tell where it \
+             stopped ({detail}). Nothing has changed. Open Claude to see whether it is signed \
+             in and to which account, then quit it with Command-Q. If it is signed in, run \
+             `pitboard enroll {}` for the account it shows. If it is signed out, `pitboard \
+             abandon` keeps every folder and moves on.",
+            Key::new(tool, "<label>").typed()
+        ),
+    }
+}
+
+fn recovery_elsewhere(tool: ProviderId, from: &str, to: &str, slot: &str) -> String {
+    match tool {
+        ProviderId::Claude | ProviderId::Codex => format!(
+            "an earlier switch of {} from `{from}` to `{to}` was interrupted while its login was \
+             at {slot}, and this run reads it from somewhere else, so it cannot tell what that \
+             switch did. Nothing was changed. {} to finish it, or `pitboard abandon` to keep \
+             every login it names and move on.",
+            tool.name(),
+            crate::words::pointing_where_it_did(tool)
+        ),
+        ProviderId::Desktop => format!(
+            "An earlier move of `{to}`'s login was interrupted while Claude kept its data in \
+             {slot}, and this run finds it somewhere else. Nothing has changed. {}, or \
+             `pitboard abandon` to keep every folder and move on.",
+            crate::words::pointing_where_it_did(tool)
+        ),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Word for word what each said before a tool could be an app.
+    #[test]
+    fn every_claude_code_and_codex_sentence_reads_as_it_did() {
+        let said = |tool: ProviderId| {
+            let moved = |make: fn(ProviderId, String, String, String) -> Error| {
+                make(tool, "a".into(), "b".into(), "d".into()).to_string()
+            };
+            let not_installed = |parked| Error::SignInNotInstalled {
+                tool,
+                label: "l".into(),
+                detail: "d".into(),
+                parked,
+                warnings: Vec::new(),
+            };
+            vec![
+                Error::LiveCredentialAbsent { tool }.to_string(),
+                moved(|tool, from, to, detail| Error::RecoveryUndetermined {
+                    tool,
+                    from,
+                    to,
+                    detail,
+                }),
+                moved(|tool, from, to, detail| Error::SwitchCorrupted {
+                    tool,
+                    from,
+                    to,
+                    detail,
+                }),
+                moved(|tool, from, to, slot| Error::RecoveryElsewhere {
+                    tool,
+                    from,
+                    to,
+                    slot,
+                }),
+                Error::RenewalLost {
+                    tool,
+                    error: Box::new(Error::SignedInAccountChanged),
+                }
+                .to_string(),
+                Error::SessionExpired {
+                    tool,
+                    refused: true,
+                }
+                .to_string(),
+                Error::SessionExpired {
+                    tool,
+                    refused: false,
+                }
+                .to_string(),
+                not_installed(true).to_string(),
+                not_installed(false).to_string(),
+                crate::service::Warning::SignInParkedNotInUse {
+                    tool,
+                    label: "l".into(),
+                    why: "w".into(),
+                }
+                .to_string(),
+                Error::LiveAccountNotEnrolled {
+                    tool,
+                    who: "a@b.c".into(),
+                }
+                .to_string(),
+                Error::AlreadyEnrolled {
+                    tool,
+                    email: "a@b.c".into(),
+                    label: "l".into(),
+                    asked: "other".into(),
+                }
+                .to_string(),
+            ]
+        };
+        let before = |name: &str, sign_in: &str, run: &str, home: &str, enroll: &str| {
+            vec![
+                format!(
+                    "nothing is signed in to {name} right now. Run `{sign_in}`, sign in, then try again."
+                ),
+                format!(
+                    "an earlier switch from `a` to `b` was interrupted, and Pitboard cannot yet \
+                     tell whether it finished (d). Nothing was changed. Run `{run}` once so its \
+                     session is current, then try again."
+                ),
+                format!(
+                    "could not sign in as `b`, and could not put `a` back either (d). `a`'s login \
+                     is still parked: run `{sign_in}` and sign in to any enrolled account, then \
+                     `pitboard use a`."
+                ),
+                format!(
+                    "an earlier switch of {name} from `a` to `b` was interrupted while its login \
+                     was at d, and this run reads it from somewhere else, so it cannot tell what \
+                     that switch did. Nothing was changed. Run Pitboard with {home} pointing \
+                     where it did to finish it, or `pitboard abandon` to keep every login it \
+                     names and move on."
+                ),
+                format!(
+                    "the signed-in account changed while switching. Nothing was moved; try again. \
+                     Pitboard renewed {name}'s login and could not save the renewed login, so \
+                     the refresh token stored is spent. Run `{sign_in}`, sign in, then try again."
+                ),
+                format!(
+                    "{name}'s login in use has expired and cannot be renewed, so Pitboard cannot \
+                     confirm which account is signed in. Run `{sign_in}`, sign in, then try again."
+                ),
+                format!(
+                    "{name}'s session has expired, so Pitboard cannot confirm which account is \
+                     signed in. Run `{run}` once so it refreshes, then try again."
+                ),
+                format!(
+                    "signed in to `l` again, and Pitboard could not confirm that its new login \
+                     took the place of the one in use (d), so {name} may have no login for it \
+                     now. The new login is parked, so it is not lost. Run `pitboard` to see what \
+                     is signed in; if nothing is, run `{sign_in}` and sign in to any enrolled \
+                     account, then `pitboard use l`."
+                ),
+                format!(
+                    "signed in to `l` again, and Pitboard could not confirm that its new login \
+                     took the place of the one in use (d), so {name} may have no login for it \
+                     now. It could not be parked either: run `{sign_in}` and sign in to `l` again."
+                ),
+                format!(
+                    "{name} goes on with the login it has: Pitboard could not tell whose it is \
+                     (w), so it parked the new login for `l` rather than write over that one. If \
+                     that login no longer works, run `{sign_in}` and sign in to `l` there."
+                ),
+                format!(
+                    "a@b.c is signed in but not enrolled, so it cannot be parked. Run `pitboard \
+                     enroll {enroll}` for it first."
+                ),
+                format!(
+                    "a@b.c is already enrolled as `l`. To add a different account, run `pitboard \
+                     enroll {enroll} --sign-in`."
+                ),
+            ]
+        };
+        let pairs = |tool, expected: Vec<String>| {
+            for (now, then) in said(tool).into_iter().zip(expected) {
+                assert_eq!(now, then, "{tool}");
+            }
+        };
+        pairs(
+            ProviderId::Claude,
+            before(
+                "Claude Code",
+                "claude",
+                "claude",
+                "CLAUDE_CONFIG_DIR",
+                "<label>",
+            ),
+        );
+        pairs(
+            ProviderId::Codex,
+            before(
+                "Codex",
+                "codex login",
+                "codex",
+                "CODEX_HOME",
+                "codex/<label>",
+            ),
+        );
+        // Claude Desktop has words of its own for each, and none names a program to run.
+        for sentence in said(ProviderId::Desktop) {
+            assert!(!sentence.contains("Run `Claude`"), "{sentence}");
+            assert!(!sentence.contains("run `Claude`"), "{sentence}");
+        }
+        assert_eq!(
+            Error::LiveCredentialAbsent {
+                tool: ProviderId::Desktop
+            }
+            .to_string(),
+            "Claude is not signed in. Open Claude, sign in, quit it with Command-Q, then run \
+             this again."
+        );
+    }
 
     #[test]
     fn codes_are_unique_so_a_caller_can_branch_on_them() {
@@ -1261,6 +1630,7 @@ mod tests {
             tool: ProviderId::Codex,
             email: "a@b.c".into(),
             label: "codex/work".into(),
+            asked: "codex/other".into(),
         }
         .to_string();
         assert!(

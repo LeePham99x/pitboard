@@ -19,6 +19,13 @@
 /// that hung something on it, that runs here first.
 #[cfg(test)]
 pub(crate) fn point(name: &'static str) {
+    COUNTED.with(|counted| {
+        if let Some((at, reached)) = counted.borrow_mut().as_mut()
+            && at == name
+        {
+            *reached += 1;
+        }
+    });
     let hung = MEANWHILE.with(|meanwhile| {
         let mut meanwhile = meanwhile.borrow_mut();
         match meanwhile.as_ref() {
@@ -56,6 +63,15 @@ pub(crate) fn meanwhile<T>(
     outcome
 }
 
+// How many times `change` reached `name`, with what it returned.
+#[cfg(test)]
+pub(crate) fn counting<T>(name: &'static str, change: impl FnOnce() -> T) -> (T, usize) {
+    COUNTED.with(|counted| *counted.borrow_mut() = Some((name.to_string(), 0)));
+    let outcome = change();
+    let reached = COUNTED.with(|counted| counted.borrow_mut().take());
+    (outcome, reached.map_or(0, |(_, reached)| reached))
+}
+
 #[cfg(not(test))]
 #[inline(always)]
 pub(crate) fn point(_name: &'static str) {}
@@ -70,6 +86,8 @@ type Elsewhere = Box<dyn FnOnce()>;
 thread_local! {
     static ARMED: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
     static MEANWHILE: std::cell::RefCell<Option<(String, Elsewhere)>> =
+        const { std::cell::RefCell::new(None) };
+    static COUNTED: std::cell::RefCell<Option<(String, usize)>> =
         const { std::cell::RefCell::new(None) };
 }
 
@@ -127,6 +145,19 @@ mod tests {
             "finished"
         });
         assert_eq!(done.expect("no kill"), "finished");
+    }
+
+    #[test]
+    fn a_count_is_of_the_point_named_and_of_that_run() {
+        let (done, reached) = counting("second", || {
+            point("first");
+            point("second");
+            point("second");
+            "finished"
+        });
+        assert_eq!((done, reached), ("finished", 2));
+        point("second");
+        assert_eq!(counting("second", || ()).1, 0);
     }
 
     #[test]

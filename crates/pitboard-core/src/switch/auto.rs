@@ -1331,10 +1331,7 @@ mod tests {
             .get(&m.key("here"))
             .and_then(|account| account.parked.clone())
             .expect("the login switched from is parked");
-        assert_eq!(
-            parked.refresh_fingerprint,
-            crate::store::fingerprint("here-again")
-        );
+        assert_eq!(parked.login, crate::store::fingerprint("here-again"));
         hold(&m, "after a switch from a renewed login");
     }
 

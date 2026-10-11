@@ -1476,7 +1476,7 @@ impl State {
         if self.loading_kept {
             return;
         }
-        let tools = crate::tools();
+        let tools = crate::tools_on(pitboard_core::host::OS);
         let new = Advice::about(read, &tools, &self.told_this_launch);
         let mut kept = false;
         for advice in &new {

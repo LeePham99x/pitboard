@@ -298,6 +298,12 @@ jobs:
       - run: rustup toolchain install
       - run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - run: |
+          floor=$(sed -n '/^\[workspace.package\]/,/^\[/s/^rust-version = "\(.*\)"/\1/p' Cargo.toml)
+          rustup toolchain install "$floor" --profile minimal
+          echo "FLOOR=$floor" >> "$GITHUB_ENV"
+      # rusqlite is macOS's alone, so only a Mac proves the floor builds it.
+      - run: cargo "+$FLOOR" check --locked --all-targets -p pitboard-core -p pitboard -p pitboard-ffi
       # PitboardBindings and PitboardShareBindings are generated, so only what is written by
       # hand is checked.
       - run: >
@@ -388,7 +394,7 @@ jobs:
       # set serve both, and the library without them must hold none of a fixture's text.
       - run: |
           if LC_ALL=C grep -a -q -e 'A Pitboard fixture page' -e 'dana@work.example' \
-            target/release/libpitboard_ffi.so; then
+            -e 'PITBOARD_TEST_CLAUDE_DESKTOP' target/release/libpitboard_ffi.so; then
             echo "a library built without the fixture feature holds a fixture" >&2
             exit 1
           fi

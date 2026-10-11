@@ -153,8 +153,15 @@ pub fn check_absolute(ctx: &Context) -> Result<()> {
         ),
         ("CODEX_HOME", ctx.codex_home().map(Path::new)),
     ];
+    let homes = homes.into_iter();
+    #[cfg(any(test, feature = "test-support"))]
+    let homes = homes.chain([(
+        "PITBOARD_TEST_CLAUDE_DESKTOP",
+        ctx.scratch_claude()
+            .and_then(|scratch| scratch.data.parent()),
+    )]);
+    let mut homes = homes;
     match homes
-        .into_iter()
         .find_map(|(variable, path)| path.filter(|p| !p.is_absolute()).map(|p| (variable, p)))
     {
         Some((variable, path)) => Err(Error::HomeNotAbsolute {

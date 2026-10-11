@@ -900,9 +900,11 @@ mod tests {
             parked: (!signed_in).then(|| Park {
                 service: format!("pitboard-park-{label}-1"),
                 parked_at: NOW,
-                refresh_fingerprint: label.into(),
+                kind: crate::state::ParkKind::Vault,
+                login: label.into(),
                 access_expires_at: Some(NOW + 3600),
                 refresh_expires_at: Some(NOW + 30 * 86_400),
+                session_expires_at: None,
             }),
             usage: Some(Snapshot {
                 windows,
@@ -913,6 +915,7 @@ mod tests {
             }),
             stale: None,
             plan: None,
+            read_at: None,
         }
     }
 

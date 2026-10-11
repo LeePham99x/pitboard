@@ -320,9 +320,14 @@ fn every_tool_is_pointed_at_a_scratch_home() {
         })
         .collect();
     let folders = os::account_folders(&env.root);
-    let homes = ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "PITBOARD_HOME"]
-        .into_iter()
-        .chain(folders.iter().map(|(name, _)| *name));
+    let homes = [
+        "CLAUDE_CONFIG_DIR",
+        "CODEX_HOME",
+        "PITBOARD_HOME",
+        "PITBOARD_TEST_CLAUDE_DESKTOP",
+    ]
+    .into_iter()
+    .chain(folders.iter().map(|(name, _)| *name));
     for (_, folder) in &folders {
         assert!(folder.is_dir(), "{} is not made", folder.display());
     }
@@ -492,6 +497,10 @@ impl Env {
             ("CLAUDE_CONFIG_DIR", self.root.clone().into_os_string()),
             ("CODEX_HOME", self.codex_home().into_os_string()),
             ("PITBOARD_HOME", self.root.join("pitboard").into_os_string()),
+            (
+                "PITBOARD_TEST_CLAUDE_DESKTOP",
+                self.root.join("claude").into_os_string(),
+            ),
             ("PITBOARD_API_BASE", self.server.url().into()),
             ("PATH", os::search_path(&self.root.join("bin"))),
         ];

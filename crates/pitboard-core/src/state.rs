@@ -24,6 +24,8 @@ const SCHEMA: u32 = 8;
 pub enum ParkKind {
     #[default]
     Vault,
+    // a folder under `<pitboard home>/parks`, holding an app's own files
+    Folder,
 }
 
 impl ParkKind {
@@ -38,6 +40,34 @@ pub struct Dropped {
     pub service: String,
     #[serde(default, skip_serializing_if = "ParkKind::is_vault")]
     pub kind: ParkKind,
+    // Set by `forget_folder` alone, for `State::remove` and `uninstall`: a held login goes then.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub forgotten: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SetAside {
+    InTheWay,
+    Superseded,
+    AnotherMachine,
+    GivenUp,
+    Orphan,
+}
+
+// A folder under `parks` no account holds as its park: only `forget` and `uninstall` delete it.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct Aside {
+    pub name: String,
+    pub tool: ProviderId,
+    pub at: i64,
+    pub why: SetAside,
+    // the id it was parked for
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
+    // the fingerprint of the session its jar holds
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub login: Option<String>,
 }
 
 /// A login held for an account while another is signed in. There is at most one per
@@ -46,12 +76,19 @@ pub struct Dropped {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Park {
     pub service: String,
+    #[serde(default, skip_serializing_if = "ParkKind::is_vault")]
+    pub kind: ParkKind,
     pub parked_at: i64,
-    pub refresh_fingerprint: String,
+    // a document's refresh token's, a folder login's session cookie's as stored
+    #[serde(rename = "refresh_fingerprint")]
+    pub login: String,
     /// Until then its usage can be asked without renewing it first.
     pub access_expires_at: Option<i64>,
     /// Until then it can be restored.
     pub refresh_expires_at: Option<i64>,
+    // the jar's own date for the session cookie: said, never a refusal
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_expires_at: Option<i64>,
 }
 
 /// A login of a tool's own that Pitboard renewed and has not saved where the tool keeps it
@@ -100,6 +137,7 @@ pub enum Detail {
         #[serde(default)]
         workspace_id: Option<String>,
     },
+    Desktop {},
 }
 
 /// Claude Code's own extras, for a caller that has already established it is holding a
@@ -208,6 +246,7 @@ impl Account {
         match self.detail {
             Detail::Claude { .. } => ProviderId::Claude,
             Detail::Codex { .. } => ProviderId::Codex,
+            Detail::Desktop {} => ProviderId::Desktop,
         }
     }
 
@@ -221,6 +260,7 @@ impl Account {
                     organization_uuid, ..
                 } => organization_uuid.clone(),
                 Detail::Codex { workspace_id, .. } => workspace_id.clone().unwrap_or_default(),
+                Detail::Desktop {} => String::new(),
             },
         }
     }
@@ -235,6 +275,8 @@ impl Account {
                 } => *organization_uuid == owner.organization_uuid,
                 // Codex's account id already joins the workspace with the person in it.
                 Detail::Codex { .. } => true,
+                // One claude.ai session covers the person's organisations.
+                Detail::Desktop {} => true,
             }
     }
 
@@ -248,7 +290,7 @@ impl Account {
                 organization_uuid,
                 oauth_account,
             }),
-            Detail::Codex { .. } => None,
+            Detail::Codex { .. } | Detail::Desktop {} => None,
         }
     }
 }
@@ -295,6 +337,8 @@ pub struct State {
     /// each written down before the refresh token is sent. At most one per slot.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub renewing: Vec<Renewing>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub aside: Vec<Aside>,
 }
 
 impl Default for State {
@@ -310,6 +354,7 @@ impl Default for State {
             foreign: Vec::new(),
             from_file: Vec::new(),
             renewing: Vec::new(),
+            aside: Vec::new(),
         }
     }
 }
@@ -437,8 +482,7 @@ impl State {
         )
     }
 
-    /// Whether anything in the state refers to this vault item: an account holding it, the
-    /// list of ones waiting to be deleted, or a renewal not saved yet.
+    // A vault item's name or a folder's: held, waiting to be deleted, renewing or set aside.
     pub fn names(&self, service: &str) -> bool {
         self.accounts
             .iter()
@@ -449,6 +493,7 @@ impl State {
                 .renewing
                 .iter()
                 .any(|renewing| renewing.service == service)
+            || self.aside.iter().any(|aside| aside.name == service)
     }
 
     /// The account under this key.
@@ -499,10 +544,9 @@ impl State {
             .find(|a| a.provider() == provider && a.owned_by(owner))
     }
 
-    /// Hold `park` for the account, releasing whatever it replaces. A newer park does not
-    /// use the one before it, so that one is let go rather than consumed.
+    // The park it replaces: a vault item is released, a folder is set aside.
     pub fn park(&mut self, key: &Key, park: Park) {
-        let service = park.service.clone();
+        let (service, at) = (park.service.clone(), park.parked_at);
         let Some(account) = self.get_mut(key) else {
             return;
         };
@@ -510,8 +554,42 @@ impl State {
         if let Some(previous) = account.parked.replace(park)
             && previous.service != service
         {
-            self.release(&previous.service);
+            match previous.kind {
+                ParkKind::Vault => self.release(&previous.service),
+                ParkKind::Folder => self.set_aside(key, previous, SetAside::Superseded, at),
+            }
         }
+    }
+
+    // Keep `park` of `key`'s account as a folder no account holds, and stop holding it.
+    pub fn set_aside(&mut self, key: &Key, park: Park, why: SetAside, at: i64) {
+        let account = self.get_mut(key).map(|account| {
+            account.parked.take_if(|held| held.service == park.service);
+            account.id.clone()
+        });
+        if self.aside.iter().any(|aside| aside.name == park.service) {
+            return;
+        }
+        self.aside.push(Aside {
+            name: park.service,
+            tool: key.provider,
+            at,
+            why,
+            account,
+            login: Some(park.login),
+        });
+    }
+
+    // An aside given back as a park, or deleted.
+    pub fn drop_aside(&mut self, name: &str) -> Option<Aside> {
+        let at = self.aside.iter().position(|aside| aside.name == name)?;
+        Some(self.aside.remove(at))
+    }
+
+    pub fn aside_of(&self, id: &str) -> impl Iterator<Item = &Aside> {
+        self.aside
+            .iter()
+            .filter(move |aside| aside.account.as_deref() == Some(id))
     }
 
     /// Hold a park this home did not write, found in the store and given back. It is used
@@ -549,6 +627,7 @@ impl State {
             self.discarded.push(Dropped {
                 service: service.to_string(),
                 kind,
+                forgotten: false,
             });
         }
     }
@@ -635,15 +714,43 @@ impl State {
         Ok(account)
     }
 
-    /// Drop the account, releasing its park. Whose login its tool has stored stays recorded:
-    /// the login is where it was, and the record names its owner, not a label.
+    // Whose login its tool has stored stays recorded: the record names its owner, not a label.
     pub fn remove(&mut self, key: &Key) -> Option<Account> {
         let index = self.accounts.iter().position(|a| a.is(key))?;
         let account = self.accounts.remove(index);
         if let Some(park) = &account.parked {
-            self.release(&park.service);
+            match park.kind {
+                ParkKind::Vault => self.release(&park.service),
+                ParkKind::Folder => self.forget_folder(&park.service),
+            }
+        }
+        let filed: Vec<String> = self
+            .aside_of(&account.id)
+            .map(|aside| aside.name.clone())
+            .collect();
+        for name in filed {
+            self.drop_aside(&name);
+            self.forget_folder(&name);
         }
         Some(account)
+    }
+
+    // Every folder set aside listed for deletion, as `uninstall` asks.
+    pub fn forget_asides(&mut self) {
+        for aside in std::mem::take(&mut self.aside) {
+            self.forget_folder(&aside.name);
+        }
+    }
+
+    // The one way a folder that holds a login is listed to be deleted.
+    fn forget_folder(&mut self, name: &str) {
+        self.let_go(name);
+        self.discarded.retain(|listed| listed.service != name);
+        self.discarded.push(Dropped {
+            service: name.to_string(),
+            kind: ParkKind::Folder,
+            forgotten: true,
+        });
     }
 }
 
@@ -654,6 +761,7 @@ pub fn new_id(provider: ProviderId, owner: &Owner) -> String {
     match provider {
         ProviderId::Claude => format!("{}_{}", owner.account_uuid, owner.organization_uuid),
         ProviderId::Codex => owner.account_uuid.clone(),
+        ProviderId::Desktop => format!("desktop_{}", owner.account_uuid),
     }
 }
 
@@ -745,7 +853,9 @@ pub(crate) fn load_any_machine(ctx: &Context) -> Result<(State, bool)> {
     // `CLAUDE_CONFIG_DIR` says nothing about Codex's record, nor `CODEX_HOME` about Claude
     // Code's.
     for &tool in ProviderId::ALL {
-        state.in_slot(tool, crate::provider::slot(ctx, tool));
+        if let Some(slot) = crate::provider::slot(ctx, tool) {
+            state.in_slot(tool, slot);
+        }
     }
     Ok((state, here))
 }
@@ -912,7 +1022,9 @@ pub(crate) fn save(ctx: &Context, permit: Permit, state: &State) -> Result<()> {
     home::check_location(&home::dir(ctx))?;
     let mut state = state.clone();
     for &tool in ProviderId::ALL {
-        state.in_slot(tool, crate::provider::slot(ctx, tool));
+        if let Some(slot) = crate::provider::slot(ctx, tool) {
+            state.in_slot(tool, slot);
+        }
     }
     let state = &state;
     let path = file(ctx);
@@ -1210,6 +1322,7 @@ mod tests {
         state.discarded.push(Dropped {
             service: "gone".into(),
             kind: ParkKind::Vault,
+            forgotten: false,
         });
         save(&ctx, Permit::for_a_test(), &state).expect("saved");
         let path = home.join("state.json");
@@ -1266,6 +1379,148 @@ mod tests {
         ]);
         assert_eq!(read(&path), written);
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn a_schema_7_park_reads_and_writes_as_it_was() {
+        let written = serde_json::json!({
+            "service": "pitboard-park-a-1", "parked_at": 100, "refresh_fingerprint": "0a1b",
+            "access_expires_at": 200, "refresh_expires_at": null
+        });
+        let park: Park = serde_json::from_value(written.clone()).expect("a schema 7 park");
+        assert_eq!(park.kind, ParkKind::Vault);
+        assert_eq!(park.login, "0a1b");
+        assert_eq!(park.session_expires_at, None);
+        assert_eq!(serde_json::to_value(&park).unwrap(), written);
+
+        let folder = Park {
+            kind: ParkKind::Folder,
+            session_expires_at: Some(900),
+            ..park
+        };
+        let written = serde_json::to_value(&folder).unwrap();
+        assert_eq!(written["kind"], "folder");
+        assert_eq!(written["refresh_fingerprint"], "0a1b");
+        assert_eq!(written["session_expires_at"], 900);
+        assert_eq!(serde_json::from_value::<Park>(written).unwrap(), folder);
+        let dropped = Dropped {
+            service: "pitboard-park-a-1".into(),
+            kind: ParkKind::Folder,
+            forgotten: false,
+        };
+        assert_eq!(
+            serde_json::to_value(&dropped).unwrap(),
+            serde_json::json!({"service": "pitboard-park-a-1", "kind": "folder"})
+        );
+    }
+
+    fn folder_park(service: &str, login: &str, at: i64) -> Park {
+        Park {
+            service: service.into(),
+            kind: ParkKind::Folder,
+            parked_at: at,
+            login: login.into(),
+            access_expires_at: None,
+            refresh_expires_at: None,
+            session_expires_at: None,
+        }
+    }
+
+    #[test]
+    fn a_folder_park_replaced_is_set_aside_and_never_listed_for_deletion() {
+        let mut s = State::default();
+        s.accounts.push(account("work", None));
+        s.accounts.push(account("home", Some(park("vault-old"))));
+        let (work, home) = (
+            Key::new(ProviderId::Claude, "work"),
+            Key::new(ProviderId::Claude, "home"),
+        );
+        s.park(&work, folder_park("folder-old", "f1", 100));
+        s.park(&work, folder_park("folder-new", "f2", 200));
+        assert_eq!(
+            s.get(&work).unwrap().parked.as_ref().unwrap().service,
+            "folder-new"
+        );
+        assert_eq!(
+            s.aside,
+            [Aside {
+                name: "folder-old".into(),
+                tool: ProviderId::Claude,
+                at: 200,
+                why: SetAside::Superseded,
+                account: Some("work-uuid".into()),
+                login: Some("f1".into()),
+            }]
+        );
+        assert!(discarded(&s).is_empty(), "never listed for deletion");
+        assert!(s.names("folder-old") && s.names("folder-new"));
+        assert_eq!(s.aside_of("work-uuid").count(), 1);
+
+        // A vault park replaced is let go as it always was.
+        s.park(&home, park("vault-new"));
+        assert_eq!(discarded(&s), ["vault-old"]);
+        assert_eq!(s.aside.len(), 1);
+
+        assert_eq!(
+            s.drop_aside("folder-old").map(|a| a.name).as_deref(),
+            Some("folder-old")
+        );
+        assert!(!s.names("folder-old"));
+    }
+
+    #[test]
+    fn forgetting_an_account_is_the_only_way_its_folder_is_listed_forgotten() {
+        let mut s = State::default();
+        s.accounts.push(account("work", None));
+        s.accounts.push(account("home", None));
+        let (work, home) = (
+            Key::new(ProviderId::Claude, "work"),
+            Key::new(ProviderId::Claude, "home"),
+        );
+        s.park(&work, folder_park("work-1", "f1", 100));
+        s.park(&work, folder_park("work-2", "f2", 200));
+        s.park(&home, folder_park("home-1", "f3", 100));
+        s.set_aside(
+            &home,
+            folder_park("home-0", "f0", 50),
+            SetAside::GivenUp,
+            300,
+        );
+        s.discard("emptied", ParkKind::Folder);
+        assert!(
+            s.discarded.iter().all(|d| !d.forgotten),
+            "{:?}",
+            s.discarded
+        );
+
+        s.remove(&work);
+        let forgotten: Vec<&str> = s
+            .discarded
+            .iter()
+            .filter(|d| d.forgotten)
+            .map(|d| d.service.as_str())
+            .collect();
+        assert_eq!(
+            forgotten,
+            ["work-2", "work-1"],
+            "its park, and what was set aside for it"
+        );
+        assert!(s.discarded.iter().all(|d| d.kind == ParkKind::Folder));
+        assert_eq!(
+            s.aside.iter().map(|a| a.name.as_str()).collect::<Vec<_>>(),
+            ["home-0"],
+            "another account's stays"
+        );
+        assert!(s.get(&home).unwrap().parked.is_some());
+
+        s.forget_asides();
+        assert!(s.aside.is_empty());
+        assert!(
+            s.discarded
+                .iter()
+                .any(|d| d.service == "home-0" && d.forgotten)
+        );
+        assert!(!s.discarded.iter().any(|d| d.service == "home-1"));
     }
 
     #[test]
@@ -1570,9 +1825,11 @@ mod tests {
         Park {
             service: service.into(),
             parked_at: 100,
-            refresh_fingerprint: "f".into(),
+            kind: crate::state::ParkKind::Vault,
+            login: "f".into(),
             access_expires_at: Some(200),
             refresh_expires_at: Some(300),
+            session_expires_at: None,
         }
     }
 

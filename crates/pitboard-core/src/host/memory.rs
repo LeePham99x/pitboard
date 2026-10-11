@@ -5,14 +5,16 @@
 //! no test ever ran Claude Code's own slot hashing on the sign-in path: the double answered
 //! the question the code was supposed to answer.
 
-use super::{Administered, Elevation, Floor, Host, Process, Scheduler};
+use super::{
+    Administered, Cookie, Elevation, Floor, Host, Jar, JarError, Listed, Process, Scheduler,
+};
 use crate::context::Context;
 use crate::service::Permit;
 use crate::store::memory::{Fault, MemoryStore, Touch};
 use crate::store::{Backend, Cost, Error, RawStore};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 /// The vault or the keychain as one context opens it. A real keychain takes
@@ -76,6 +78,14 @@ pub struct MemoryHost {
     /// Whether the process list cannot be read here, which is not the same as nothing
     /// running.
     listless: AtomicBool,
+    // the process that started each, by path; 1 where nothing is said
+    parents: Mutex<HashMap<PathBuf, PathBuf>>,
+    // each path listed from the `listing` call of that number on
+    later: Mutex<Vec<(usize, PathBuf)>>,
+    listings: AtomicUsize,
+    jars_asked: Mutex<Vec<PathBuf>>,
+    jar_faults: Mutex<HashMap<PathBuf, JarFault>>,
+    versions: Mutex<HashMap<PathBuf, String>>,
     /// Whether every home parks in `vault`, the way every home on macOS parks in the login
     /// keychain. So by default, because that is where the rules about another Pitboard's
     /// parks are needed.
@@ -108,6 +118,12 @@ impl Default for MemoryHost {
             trail,
             running: Mutex::new(HashMap::new()),
             listless: AtomicBool::new(false),
+            parents: Mutex::new(HashMap::new()),
+            later: Mutex::new(Vec::new()),
+            listings: AtomicUsize::new(0),
+            jars_asked: Mutex::new(Vec::new()),
+            jar_faults: Mutex::new(HashMap::new()),
+            versions: Mutex::new(HashMap::new()),
             shared_vault: AtomicBool::new(true),
             scheduler: super::os::pretend_scheduler(Arc::clone(&refuse_start)),
             refuse_start,
@@ -202,6 +218,37 @@ impl MemoryHost {
         self.listless.store(true, Ordering::SeqCst);
     }
 
+    // The process running `child` was started by the one running `parent`, by path.
+    pub fn child_of(&self, child: &str, parent: &str) {
+        locked(&self.parents).insert(child.into(), parent.into());
+    }
+
+    // `path` is listed from the `n`th `listing` after this: an app opened partway through.
+    pub fn listed_from(&self, n: usize, path: &str) {
+        let from = self.listings() + n;
+        locked(&self.later).push((from, path.into()));
+    }
+
+    pub fn listings(&self) -> usize {
+        self.listings.load(Ordering::SeqCst)
+    }
+
+    pub fn jars_asked(&self) -> Vec<PathBuf> {
+        locked(&self.jars_asked).clone()
+    }
+
+    pub fn jar_unsettled(&self, path: &Path) {
+        locked(&self.jar_faults).insert(path.into(), JarFault::Unsettled);
+    }
+
+    pub fn jar_unknown(&self, path: &Path, why: &str) {
+        locked(&self.jar_faults).insert(path.into(), JarFault::Unknown(why.into()));
+    }
+
+    pub fn app_at(&self, bundle: &Path, version: &str) {
+        locked(&self.versions).insert(bundle.into(), version.into());
+    }
+
     /// The next time a schedule is to be started, the system will not start it.
     pub fn refuse_next_start(&self) {
         self.refuse_start.store(true, Ordering::SeqCst);
@@ -283,8 +330,88 @@ impl Host for MemoryHost {
         self.shared_vault.load(Ordering::SeqCst)
     }
 
+    // What `runs`, `runs_at` and `listed_from` said, each with a pid of its own.
+    fn listing(&self) -> Result<Vec<Listed>, String> {
+        let call = self.listings.fetch_add(1, Ordering::SeqCst) + 1;
+        if self.listless.load(Ordering::SeqCst) {
+            return Err("a test withheld the process list".into());
+        }
+        let mut paths: Vec<PathBuf> = {
+            let running = locked(&self.running);
+            let mut programs: Vec<&String> = running.keys().collect();
+            programs.sort();
+            programs
+                .into_iter()
+                .flat_map(|program| running[program].iter().map(|p| p.path.clone()))
+                .collect()
+        };
+        paths.extend(
+            locked(&self.later)
+                .iter()
+                .filter(|(from, _)| call >= *from)
+                .map(|(_, path)| path.clone()),
+        );
+        let pid = |index: usize| 1000 + u32::try_from(index).unwrap_or(u32::MAX - 1000);
+        let parents = locked(&self.parents);
+        Ok(paths
+            .iter()
+            .enumerate()
+            .map(|(index, path)| Listed {
+                pid: pid(index),
+                parent: parents
+                    .get(path)
+                    .and_then(|parent| paths.iter().position(|p| p == parent))
+                    .map_or(1, pid),
+                path: path.clone(),
+            })
+            .collect())
+    }
+
+    // Read as JSON, a real file on the scratch disk, so a rename carries it.
+    fn cookies(&self, jar: &Path, hosts: &[&str], names: &[&str]) -> Result<Jar, JarError> {
+        locked(&self.jars_asked).push(jar.to_path_buf());
+        match locked(&self.jar_faults).get(jar) {
+            Some(JarFault::Unsettled) => {
+                return Err(JarError::Unsettled("a test held the jar".into()));
+            }
+            Some(JarFault::Unknown(why)) => return Err(JarError::Unknown(why.clone())),
+            None => {}
+        }
+        let raw = match std::fs::read(jar) {
+            Ok(raw) => raw,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(JarError::Absent),
+            Err(e) => return Err(JarError::Unreadable(e.to_string())),
+        };
+        let stand_in: StandInJar =
+            serde_json::from_slice(&raw).map_err(|e| JarError::Unknown(e.to_string()))?;
+        Ok(Jar {
+            version: stand_in.version,
+            compatible: stand_in.compatible,
+            cookies: stand_in
+                .cookies
+                .into_iter()
+                .filter(|c| hosts.contains(&c.host.as_str()) || names.contains(&c.name.as_str()))
+                .map(|c| {
+                    Ok(Cookie {
+                        stored: hex::decode(&c.stored)
+                            .map_err(|e| JarError::Unknown(e.to_string()))?,
+                        host: c.host,
+                        name: c.name,
+                        path: c.path,
+                        expires_utc: c.expires_utc,
+                    })
+                })
+                .collect::<Result<_, _>>()?,
+        })
+    }
+
+    fn app_version(&self, bundle: &Path) -> Option<String> {
+        locked(&self.versions).get(bundle).cloned()
+    }
+
     /// What a test said is running, and nothing on the machine running the tests. `None`
     /// once a test has said the list cannot be read.
+    // Not over `listing`: `doctor` asks this on every machine, and it must not count as one.
     fn processes(&self, program: &str) -> Option<Vec<Process>> {
         if self.listless.load(Ordering::SeqCst) {
             return None;
@@ -339,4 +466,32 @@ impl Host for MemoryHost {
             .cloned()
             .unwrap_or(Administered::Unset)
     }
+}
+
+#[derive(Debug)]
+enum JarFault {
+    Unsettled,
+    Unknown(String),
+}
+
+// What `MemoryHost::cookies` reads: `desktop_testing` writes it with `JarAs::StandIn`.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub(crate) struct StandInJar {
+    pub version: i64,
+    pub compatible: i64,
+    pub cookies: Vec<StandInCookie>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub(crate) struct StandInCookie {
+    pub host: String,
+    pub name: String,
+    pub path: String,
+    // hex
+    pub stored: String,
+    pub expires_utc: i64,
+}
+
+fn locked<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex.lock().expect("a poisoned test host is a failed test")
 }

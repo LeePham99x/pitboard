@@ -100,7 +100,11 @@ pub fn renew_due(ctx: &Context, permit: Permit, due: Due) -> Vec<(Key, Renewal)>
             .accounts
             .iter()
             .filter_map(|a| {
-                let LoginKind::Document(tool) = crate::provider::of(a.provider());
+                let tool = match crate::provider::of(a.provider()) {
+                    LoginKind::Document(tool) => tool,
+                    // An app's login is never renewed.
+                    LoginKind::Folder(_) => return None,
+                };
                 let held = a.parked.as_ref()?;
                 due.covers(held, now).then(|| (a.key(), tool, held.clone()))
             })
