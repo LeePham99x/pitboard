@@ -33,6 +33,7 @@ Checking a change uses these tools as well:
 - `cargo-insta`, for `cargo insta review`.
 - `cargo-zigbuild` and Zig, to lint the Linux code from a Mac. Rust also needs the
   `x86_64-unknown-linux-gnu` target for that.
+- `shellcheck` 0.11.0 or later and Python 3.9 or later, for the install script.
 
 To work on the app, you need a Mac with Xcode, and its Swift must be 6.2 or later, as
 `apps/macos/Package.swift` asks. Rust needs both Mac targets, as [The app](#the-app) shows.
@@ -101,7 +102,7 @@ cargo test --locked -p pitboard-ffi --features fixture
 cargo clippy -p pitboard-ffi --all-targets --locked --features fixture
 ```
 
-Every program a test starts in place of `claude`, `codex` or any other tool is one compiled
+Every program a Rust test starts in place of `claude`, `codex` or any other tool is one compiled
 stand-in, the `pitboard` crate's example `stand-in`, which plays a script written beside it,
 the same on every system. `cargo test` with no target named, and `cargo test -p pitboard`,
 build it. Neither a test run alone with `--test` nor a run of `pitboard-ffi`'s tests does, so
@@ -142,6 +143,20 @@ home panics, unless it tests that lookup and keeps what
 tests, such as the `pitboard` the integration tests run, gets no home from there, so a
 command run there without `HOME` is refused with `home_not_absolute`.
 
+The install script, `packaging/install.sh`, and `.github/scripts/fill-template.sh`, which
+fills it and the casks at release time, are POSIX `sh`. Check a change to either with:
+
+```sh
+shellcheck -s sh packaging/install.sh .github/scripts/fill-template.sh
+python3 .github/scripts/test-install.py
+```
+
+The test fills the template from stub releases and runs it under each of `sh`, `dash`,
+`bash`, `zsh` and `busybox sh` it finds on `PATH`. Every run has a scratch home and no
+network: shims first on `PATH` play `curl`, `wget`, `uname`, `id` and `sysctl`.
+`TEST_INSTALL_SHELLS` names shells that must be found. CI sets it, so a shell missing from
+a runner fails the job.
+
 The snapshots in `crates/pitboard/tests/snapshots` pin the `--json` contract. A snapshot
 changes only when the contract changes on purpose. Review the difference with
 `cargo insta review`, and say in the pull request why the contract moved.
@@ -161,6 +176,9 @@ CI also runs:
   Linux, as the Windows app will call them, then against the core built with its fixtures,
   whose bindings must be the same and whose model a test starts
 - `cargo semver-checks --package pitboard-core`, which reports and does not block
+- the install script job, on macOS and Linux: `shellcheck` 0.11.0 on Linux, then
+  `test-install.py` under every shell the job names for that system, with zsh and BusyBox
+  installed on Linux
 - a guard that fails when `.github/workflows/rotation.yml` names a repository secret
 
 ## The app

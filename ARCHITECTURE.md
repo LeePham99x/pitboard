@@ -493,9 +493,10 @@ pages load, as a browser would.
     `xcodebuild`, with the command line inside at `Contents/Helpers/pitboard`. It never
     passes `--fixture`, and fails where the core's library or the app holds a fixture
     world's text.
-- `packaging/`: the files a release writes into the tap `datlechin/homebrew-tap`. They are
-  the casks `pitboard.rb` for the command line and `pitboard-app.rb` for the app,
-  `tap_migrations.json`, and the tap's README.
+- `packaging/`: the templates a release fills and publishes, and the tap's other files.
+  The casks `pitboard.rb` for the command line and `pitboard-app.rb` for the app go into the
+  tap `datlechin/homebrew-tap`, with `tap_migrations.json` and the tap's README.
+  `install.sh`, the install script, goes on the release.
 - `docs/`: the Mintlify source of docs.usepitboard.com.
 - `website/`: reserved for the usepitboard.com site, to be built with Astro; empty.
 - `.github/`:
@@ -511,6 +512,8 @@ pages load, as a browser would.
   - `actions/apple-keychain` imports the Developer ID certificate for every job that signs.
   - `scripts/` holds the EdDSA key and signature helpers, and the scripts that add Sparkle,
     the command line and the Share extension's library to the app's bill of materials.
+    `fill-template.sh` writes a release's version and checksums into a `packaging/`
+    template, and `test-install.py` tests it and the install script.
   - `dependabot.yml` asks for weekly updates of Cargo dependencies and GitHub Actions.
 
 ## Invariants
