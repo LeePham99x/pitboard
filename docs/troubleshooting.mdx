@@ -187,6 +187,8 @@ env -u SUDO_UID pitboard use work
 
 To stop it for good, start that shell or tmux again without `sudo`.
 
+The install script reads `SUDO_UID` the same way. There, pipe it to `env -u SUDO_UID sh` in place of `sh`.
+
 ## Report a problem
 
 Open a [GitHub issue](https://github.com/datlechin/pitboard/issues/new/choose) with:

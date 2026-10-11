@@ -492,7 +492,7 @@ jobs:
           attested "$RUNNER_TEMP/SHA256SUMS"
           attested "$RUNNER_TEMP/update.zip"
 
-  # `brew install datlechin/tap/pitboard` is the first line of the README, so the tap is
+  # `brew install datlechin/tap/pitboard` is in the README's install section, so the tap is
   # part of a release rather than something done to it afterwards. It used to be a workflow
   # in the tap repository, waking every six hours and taking the checksum of whatever it
   # downloaded; between those two a release could be finished and green for most of a day
