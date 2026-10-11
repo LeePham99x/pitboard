@@ -56,6 +56,37 @@ jobs:
       - if: runner.os == 'macOS'
         run: cargo test --locked -p pitboard --test keychain_write_is_harmless writing_preserves_attributes
 
+  # The install script under each shell named here, against a stub release and with no network.
+  install-script:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            shells: sh dash bash zsh busybox
+          - os: macos-latest
+            shells: sh dash bash zsh
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The Ubuntu image has neither zsh nor BusyBox, and the script has to run under both.
+      - if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zsh busybox
+      # 0.11.0 takes test's -ef from POSIX.1-2024; the Ubuntu image has 0.9.0.
+      - if: runner.os == 'Linux'
+        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
+        with:
+          tool: shellcheck@0.11.0
+      - if: runner.os == 'Linux'
+        run: shellcheck -s sh packaging/install.sh .github/scripts/fill-template.sh
+      - env:
+          TEST_INSTALL_SHELLS: ${{ matrix.shells }}
+        run: python3 .github/scripts/test-install.py
+
   # Windows, where the core compiles and refuses whatever is not built yet. Each image is
   # named, never windows-latest, so a new image is a change made on purpose.
   windows:
