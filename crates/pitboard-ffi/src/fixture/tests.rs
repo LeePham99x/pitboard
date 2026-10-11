@@ -1215,7 +1215,7 @@ fn the_menu_lists_every_account_under_its_tool() {
                 section
                     .accounts
                     .iter()
-                    .map(|item| item.title.clone())
+                    .map(|item| item.menu_title.clone())
                     .collect(),
             )
         })
@@ -1227,7 +1227,10 @@ fn the_menu_lists_every_account_under_its_tool() {
                 Some("Claude Code".into()),
                 vec!["work".into(), "old".into(), "personal".into()]
             ),
-            (Some("Codex".into()), vec!["main".into(), "spare".into()]),
+            (
+                Some("Codex".into()),
+                vec!["main · Pro".into(), "spare · Pro".into()]
+            ),
         ]
     );
     model.shutdown();

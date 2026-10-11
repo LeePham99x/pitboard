@@ -2279,6 +2279,11 @@ impl State {
             Why::Changed { measured } => {
                 self.look_to_switch(jobs);
                 if let Some(read) = read {
+                    // A read that asks nobody knows no plan for a login nobody enrolled.
+                    let read = match &self.status {
+                        Some(shown) => plans_kept(read, shown),
+                        None => read,
+                    };
                     // A read that asks nobody says a switch is stuck wherever that can be
                     // told without a request. Saying nothing, it cannot tell a switch given
                     // up on or finished elsewhere from one only a service could judge, so
@@ -2983,6 +2988,22 @@ impl State {
     pub(super) fn changes_seen(&self) -> u64 {
         self.changes_seen
     }
+}
+
+/// `read`, where a login nobody enrolled that it has no plan for keeps the one `shown` has.
+fn plans_kept(mut read: Status, shown: &Status) -> Status {
+    for account in read
+        .accounts
+        .iter_mut()
+        .filter(|a| a.label.is_none() && a.plan.is_none())
+    {
+        account.plan = shown
+            .accounts
+            .iter()
+            .find(|a| a.provider == account.provider && a.id == account.id)
+            .and_then(|a| a.plan.clone());
+    }
+    read
 }
 
 /// `shown` with each account's numbers as `read` has them, and everything else as it was. An

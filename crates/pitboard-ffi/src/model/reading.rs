@@ -5,11 +5,11 @@
 
 use super::state::{Answer, Job};
 use super::testing::{
-    Hand, Machine, any_read, claude, claude_code, codex, codex_account, fresh_read, installed_ask,
-    offline_read, percent, refusal, status, warned, warning,
+    Hand, Machine, account, any_read, claude, claude_code, codex, codex_account, fresh_read,
+    installed_ask, offline_read, percent, refusal, status, warned, warning,
 };
 use super::{Intent, ReadFailure};
-use crate::Warning;
+use crate::{Account, Warning};
 use std::time::Duration;
 
 /// AppModelTests.swift's aReadFillsInTheTitleAndTheRows. The title is said with the menu
@@ -557,6 +557,37 @@ fn a_change_made_during_a_read_is_noticed_on_the_next_look() {
     assert_eq!(model.shown().status, Some(elsewhere));
     assert_eq!(model.count(offline_read), 1);
     assert_eq!(model.count(fresh_read), 0);
+}
+
+/// A read that asks nobody knows no plan for a login nobody enrolled, so the one shown stays.
+/// An enrolled account's says what its record says.
+#[test]
+fn a_change_noticed_keeps_the_plan_shown_for_a_login_nobody_enrolled() {
+    let with = |plan: Option<&str>, account: Account| Account {
+        plan: plan.map(str::to_owned),
+        ..account
+    };
+    let stranger = || account(None, "claude", true, Vec::new());
+    let mut model = Hand::new();
+    let mut machine = Machine::reading(Ok(status(vec![
+        with(Some("Pro"), stranger()),
+        with(Some("Pro"), claude("work", false, 10.0)),
+    ])));
+    model.send(Intent::Refresh { asked: false });
+    let ask = model.next();
+    model.give(machine.answer(ask));
+    let read = machine.answer(model.next());
+    machine.changed += 1;
+    machine.offline = Ok(status(vec![stranger(), claude("work", false, 30.0)]));
+    model.give(read);
+
+    model.notice(&mut machine);
+    assert_eq!(model.count(offline_read), 1);
+    let shown = model.shown();
+    assert_eq!(percent(&shown, 1), Some(30.0), "the read that asks nobody");
+    let accounts = shown.status.unwrap().accounts;
+    assert_eq!(accounts[0].plan.as_deref(), Some("Pro"));
+    assert_eq!(accounts[1].plan, None);
 }
 
 /// Reads overlap: the timer's with one somebody asked for, a menu opening with the read after

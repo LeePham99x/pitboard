@@ -608,7 +608,8 @@ public sealed class ModelTests
             ])[0];
         var spare = new AccountItem(
             Id: "codex:spare", Provider: "codex", Qualified: "codex/spare", Title: "spare",
-            Email: "spare@example.com", Plan: null, SpokenName: "spare (Codex)", Spoken: "spare (Codex)", InUse: false,
+            Email: "spare@example.com", Plan: null, MenuTitle: "spare", SpokenName: "spare (Codex)",
+            Spoken: "spare (Codex)", InUse: false,
             NeedsSignIn: false, Unplaced: false, Switching: false, Action: use,
             Summary: "5-hour 72%", Problem: null, StaleNote: null, Pace: null,
             ParkedNote: "Parked login good for 3 more days", Help: null, Limits: [limit],

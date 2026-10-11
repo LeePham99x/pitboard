@@ -310,6 +310,7 @@ pub(crate) fn codex_account(label: &str, who: &str, parked: Option<Park>) -> Acc
     Account {
         last_used_at: None,
         replaced_at: None,
+        plan: Some("Pro".into()),
         label: label.into(),
         id: codex_id(who),
         account_uuid: codex_id(who),
@@ -317,7 +318,6 @@ pub(crate) fn codex_account(label: &str, who: &str, parked: Option<Park>) -> Acc
         parked,
         detail: crate::state::Detail::Codex {
             workspace_id: Some(who.into()),
-            plan: Some("pro".into()),
         },
     }
 }
@@ -615,6 +615,7 @@ pub(crate) fn account(label: &str, uuid: &str, parked: Option<Park>) -> Account 
     Account {
         last_used_at: None,
         replaced_at: None,
+        plan: None,
         label: label.into(),
         id: uuid.into(),
         account_uuid: uuid.into(),
@@ -640,6 +641,7 @@ pub(crate) fn in_organisation(label: &str, who: &str, org: &str, parked: Option<
     Account {
         last_used_at: None,
         replaced_at: None,
+        plan: None,
         label: label.into(),
         id: crate::state::new_id(ProviderId::Claude, &owner),
         account_uuid: owner.account_uuid,

@@ -19,8 +19,10 @@ use crate::in_use::{self, InUse};
 use crate::provider::{self, ProviderError, ProviderId};
 use crate::service::Permit;
 use crate::state::{self, Account, Key, State};
+use crate::status::{Plan, Seen};
 use crate::{audit, fault, store};
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 /// Whose a login is, and since when that has been known.
 #[derive(Debug, Clone, PartialEq)]
@@ -416,8 +418,14 @@ pub(crate) fn untold(error: &Error) -> String {
 /// what it finds then. Each tool's own record and store are read again under the lock, and a
 /// tool where either moved since the read is not recorded, so an answer about one login is
 /// never filed for another, and what the read saw the tool's own record name is never filed
-/// over what `use` wrote there since. Nothing of the tool's own is written.
-pub(crate) fn record_read(ctx: &Context, permit: Permit, found: &[(ProviderId, InUse)]) {
+/// over what `use` wrote there since. Nothing of the tool's own is written. Each account's
+/// plan is recorded too, where the login read is still the account's and says another.
+pub(crate) fn record_read(
+    ctx: &Context,
+    permit: Permit,
+    found: &[(ProviderId, InUse)],
+    plans: &BTreeMap<String, Plan>,
+) {
     let news = |state: &State| -> Vec<(ProviderId, InUse)> {
         found
             .iter()
@@ -429,10 +437,16 @@ pub(crate) fn record_read(ctx: &Context, permit: Permit, found: &[(ProviderId, I
             .cloned()
             .collect()
     };
+    let replanned = |state: &State| {
+        state
+            .accounts
+            .iter()
+            .any(|a| plans.get(&a.id).is_some_and(|plan| plan.said != a.plan))
+    };
     let Ok(state) = state::load(ctx) else {
         return;
     };
-    if news(&state).is_empty() {
+    if news(&state).is_empty() && !replanned(&state) {
         return;
     }
     let Some(_exclusive) = super::try_exclusive(ctx, permit) else {
@@ -447,14 +461,39 @@ pub(crate) fn record_read(ctx: &Context, permit: Permit, found: &[(ProviderId, I
     fault::point("identify.recording");
     let mut changed = false;
     let mut noticed = Vec::new();
+    let mut held = BTreeMap::new();
+    let mut stored = |which: ProviderId| {
+        held.entry(which)
+            .or_insert_with(|| holding(ctx, which))
+            .clone()
+    };
     for (which, found) in news(&state) {
         let expected = found.owner.as_ref().map(|_| found.login.clone());
-        if in_use::named(ctx, which) != found.named || holding(ctx, which) != Some(expected) {
+        if in_use::named(ctx, which) != found.named || stored(which) != Some(expected) {
             continue;
         }
         let (recorded, said) = record(&mut state, which, found, ctx.now());
         changed |= recorded;
         noticed.extend(said);
+    }
+    for account in &mut state.accounts {
+        let Some(plan) = plans
+            .get(&account.id)
+            .filter(|plan| plan.said != account.plan)
+        else {
+            continue;
+        };
+        let still = match &plan.seen {
+            Seen::Parked(service) => account
+                .parked
+                .as_ref()
+                .is_some_and(|p| p.service == *service),
+            Seen::Live(login) => stored(account.provider()).flatten().as_ref() == Some(login),
+        };
+        if still {
+            account.plan.clone_from(&plan.said);
+            changed = true;
+        }
     }
     if changed && state::save(ctx, permit, &state).is_ok() {
         write_down(ctx, permit, &noticed);
@@ -538,9 +577,9 @@ mod tests {
     use super::super::Settled;
     use super::super::harness::{
         Machine, NOW, Session, audit_lines, codex_id, codex_login, codex_machine, config_names,
-        document, hold, lapsed, lock_dir, machine, owner, record_in_use, recover, renews,
-        renews_meanwhile, saves, signed_in_outside, state_file, takes_the_write_lock, window,
-        write_target,
+        document, hold, lapsed, lock_dir, login_of, machine, oauth, owner, record_in_use, recover,
+        renews, renews_meanwhile, saves, signed_in_outside, state_file, takes_the_write_lock,
+        window, write_target,
     };
     use super::*;
     use crate::api::scripted::{Asked, Trouble};
@@ -602,7 +641,12 @@ mod tests {
         pitboard.switch_to("here").expect("already in use");
         let before = state_file(&m);
 
-        record_read(&m.ctx, Permit::for_a_test(), &[(ProviderId::Claude, found)]);
+        record_read(
+            &m.ctx,
+            Permit::for_a_test(),
+            &[(ProviderId::Claude, found)],
+            &BTreeMap::new(),
+        );
 
         assert_eq!(state_file(&m), before);
         let read = pitboard.status_offline().expect("a read of what is known");
@@ -612,6 +656,124 @@ mod tests {
             .map(crate::service::Warning::code)
             .collect();
         assert!(codes.is_empty(), "{codes:?}");
+    }
+
+    /// The plan `label`'s record keeps.
+    fn recorded_plan(m: &Machine, label: &str) -> Option<String> {
+        state::load(&m.ctx)
+            .expect("state")
+            .get(&m.key(label))
+            .and_then(|account| account.plan.clone())
+    }
+
+    /// A Claude Code park in the shape older versions wrote, and Codex gone from Plus to Pro.
+    #[test]
+    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
+    fn a_read_records_the_plan_a_login_says() {
+        let m = machine("identify-plan");
+        let there = state::load(&m.ctx)
+            .expect("state")
+            .get(&m.key("there"))
+            .and_then(|a| a.parked.clone())
+            .expect("parked");
+        let mut parked = oauth("there-refresh", 30);
+        parked["subscriptionType"] = "max".into();
+        parked["rateLimitTier"] = "default_claude_max_20x".into();
+        m.mem.vault().plant(&there.service, &parked.to_string());
+
+        Pitboard::new(m.ctx.clone()).status(false).expect("a read");
+
+        assert_eq!(recorded_plan(&m, "there").as_deref(), Some("Max 20x"));
+        assert_eq!(recorded_plan(&m, "here"), None, "its login says none");
+
+        let m = codex_machine("identify-plan");
+        let mut state = state::load(&m.ctx).expect("state");
+        for account in &mut state.accounts {
+            account.plan = Some("Plus".into());
+        }
+        state::save(&m.ctx, Permit::for_a_test(), &state).expect("saved");
+
+        Pitboard::new(m.ctx.clone()).status(false).expect("a read");
+
+        assert_eq!(recorded_plan(&m, "here").as_deref(), Some("Pro"));
+        assert_eq!(recorded_plan(&m, "there").as_deref(), Some("Pro"));
+    }
+
+    /// Enrols `login` under `label` again, the way `pitboard add` does.
+    fn enrolled_again(m: &Machine, label: &str, login: Value) {
+        let settled = super::super::settle(&m.ctx, Permit::for_a_test(), Some(m.which))
+            .expect("nothing to recover")
+            .0;
+        let signed = super::super::enroll::planted(&m.ctx, Permit::for_a_test(), m.which, login)
+            .expect("a sign-in");
+        super::super::enroll::enroll(settled, &m.key(label), Some(signed)).expect("enrolled");
+    }
+
+    /// A login of `who` on Max 20x.
+    fn on_max(m: &Machine, who: &str, refresh: &str) -> Value {
+        let mut login = login_of(m, who, refresh);
+        login["claudeAiOauth"]["subscriptionType"] = "max".into();
+        login["claudeAiOauth"]["rateLimitTier"] = "default_claude_max_20x".into();
+        login
+    }
+
+    /// Signed in again on Max 20x while a read held the Pro login, parked and then in use.
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    )]
+    fn a_plan_read_off_a_login_replaced_meanwhile_is_not_recorded() {
+        let m = machine("identify-plan-parked-meanwhile");
+        let there = state::load(&m.ctx)
+            .expect("state")
+            .get(&m.key("there"))
+            .and_then(|a| a.parked.clone())
+            .expect("parked");
+        let mut parked = oauth("there-refresh", 30);
+        parked["subscriptionType"] = "pro".into();
+        m.mem.vault().plant(&there.service, &parked.to_string());
+        let read = state::load(&m.ctx).expect("state");
+        let answers = crate::status::ask(&m.ctx, Permit::for_a_test(), &read, true);
+        enrolled_again(&m, "there", on_max(&m, "there", "there-new"));
+
+        record_read(&m.ctx, Permit::for_a_test(), &answers.found, &answers.plans);
+
+        assert_eq!(recorded_plan(&m, "there").as_deref(), Some("Max 20x"));
+
+        let m = machine("identify-plan-live-meanwhile");
+        let mut live = document("here-refresh");
+        live["claudeAiOauth"]["subscriptionType"] = "pro".into();
+        m.sign_in(&live);
+        let read = state::load(&m.ctx).expect("state");
+        let answers = crate::status::ask(&m.ctx, Permit::for_a_test(), &read, true);
+        enrolled_again(&m, "here", on_max(&m, "here", "here-new"));
+
+        record_read(&m.ctx, Permit::for_a_test(), &answers.found, &answers.plans);
+
+        assert_eq!(recorded_plan(&m, "here").as_deref(), Some("Max 20x"));
+    }
+
+    #[test]
+    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
+    fn a_read_whose_plans_agree_with_the_record_writes_nothing() {
+        let m = codex_machine("identify-plans-agree");
+        let pitboard = Pitboard::new(m.ctx.clone());
+        // The first records that Claude Code holds no login.
+        pitboard.status(false).expect("a read");
+        let before = state_file(&m);
+
+        pitboard.status(false).expect("a read");
+        assert_eq!(state_file(&m), before);
+
+        // An account no longer enrolled.
+        let pro = Plan {
+            said: Some("Pro".into()),
+            seen: Seen::Live(String::new()),
+        };
+        let gone = BTreeMap::from([("gone".to_string(), pro)]);
+        record_read(&m.ctx, Permit::for_a_test(), &[], &gone);
+        assert_eq!(state_file(&m), before);
     }
 
     /// A switch that stopped partway may be about to put another login in the store, and the

@@ -280,7 +280,7 @@ pub struct Account {
     pub stale: Option<String>,
     /// What to tell a person about `stale`, when it is worth a word.
     pub stale_explanation: Option<String>,
-    /// What its login says it is on, "Max 20x" or "Plus", where a read says.
+    /// The plan its login says it is on, or last said: "Max 20x", "Pro".
     pub plan: Option<String>,
 }
 

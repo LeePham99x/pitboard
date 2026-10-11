@@ -160,8 +160,7 @@ private struct AccountMenuItem: View {
                     if let action = item.action { perform(action.intent) }
                 })
         ) {
-            // A menu item draws plain text, so the plan's tag is said beside the name.
-            Text(item.plan.map { "\(item.title) · \($0)" } ?? item.title)
+            Text(item.menuTitle)
             Text(item.summary)
         }
         .disabled(!item.inUse && item.action == nil)

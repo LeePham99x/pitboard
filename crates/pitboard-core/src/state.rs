@@ -78,10 +78,6 @@ pub enum Detail {
         /// The ChatGPT workspace this account belongs to, where it belongs to one.
         #[serde(default)]
         workspace_id: Option<String>,
-        /// `plus`, `pro`, `team` and so on, read out of the login's own ID token. Kept
-        /// because it is free to know and explains a limit somebody is surprised by.
-        #[serde(default)]
-        plan: Option<String>,
     },
 }
 
@@ -122,6 +118,9 @@ pub struct Account {
     /// the account holds a parked login or is in use again.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub replaced_at: Option<i64>,
+    /// The plan its login last said, as a label: "Max 20x", "Pro".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<String>,
     /// Which tool's login this is, and whatever only that tool keeps.
     #[serde(flatten)]
     pub detail: Detail,
@@ -216,21 +215,6 @@ impl Account {
                 // Codex's account id already joins the workspace with the person in it.
                 Detail::Codex { .. } => true,
             }
-    }
-
-    /// The plan this account's record keeps, as a tag: only Codex's, which enrolling reads
-    /// out of the login's ID token. What a read of its login says is newer, and wins.
-    pub fn recorded_plan(&self) -> Option<String> {
-        match &self.detail {
-            Detail::Codex {
-                plan: Some(plan), ..
-            } => {
-                let mut chars = plan.trim().chars();
-                let first = chars.next()?;
-                Some(first.to_uppercase().chain(chars).collect())
-            }
-            _ => None,
-        }
     }
 
     /// Claude Code's extras, or `None` when this account belongs to another tool.
@@ -1199,6 +1183,42 @@ mod tests {
         let _ = std::fs::remove_dir_all(&home);
     }
 
+    /// 0.11.0 kept a Codex plan beside the workspace, as its token says it.
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
+    fn a_codex_plan_0_11_0_recorded_is_the_accounts_plan() {
+        let home = std::env::temp_dir().join(format!(
+            "pitboard-plan-0-11-0-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        let ctx = Context::new(home.clone()).with_pitboard_home(home.clone());
+        let mut state = State::default();
+        state.accounts.push(codex_account("work"));
+        save(&ctx, Permit::for_a_test(), &state).expect("saved");
+        let path = home.join("state.json");
+        let read = |path: &PathBuf| -> Value {
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+        };
+        let mut written = read(&path);
+        assert_eq!(written["schema"], 7);
+        written["accounts"][0]["plan"] = "pro".into();
+        std::fs::write(&path, written.to_string()).unwrap();
+
+        let state = load(&ctx).expect("read");
+        assert_eq!(state.accounts[0].plan.as_deref(), Some("pro"));
+        save(&ctx, Permit::for_a_test(), &state).expect("saved");
+
+        assert_eq!(read(&path), written);
+        assert_eq!(read(&path)["accounts"][0]["label"], "work");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
     /// A file as 0.8.0 writes it. Each account keeps the id its parks, readings and windows
     /// are already filed under.
     #[test]
@@ -1276,6 +1296,7 @@ mod tests {
         let in_org = |label: &str, id: &str, org: &str| Account {
             last_used_at: None,
             replaced_at: None,
+            plan: None,
             label: label.into(),
             id: id.into(),
             account_uuid: "acc".into(),
@@ -1327,6 +1348,7 @@ mod tests {
             parked: None,
             last_used_at: None,
             replaced_at: None,
+            plan: None,
             detail: Detail::Claude {
                 organization_uuid: "org".into(),
                 oauth_account: serde_json::json!({"emailAddress": "a@b.c"}),
@@ -1459,6 +1481,7 @@ mod tests {
         Account {
             last_used_at: None,
             replaced_at: None,
+            plan: None,
             label: label.into(),
             id: format!("{label}-uuid"),
             account_uuid: format!("{label}-uuid"),
@@ -1820,14 +1843,12 @@ mod tests {
         Account {
             last_used_at: None,
             replaced_at: None,
+            plan: None,
             label: label.into(),
             id: format!("codex-{label}-uuid"),
             account_uuid: format!("codex-{label}-uuid"),
             email: format!("{label}@openai.example"),
-            detail: Detail::Codex {
-                workspace_id: None,
-                plan: None,
-            },
+            detail: Detail::Codex { workspace_id: None },
             parked: None,
         }
     }

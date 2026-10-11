@@ -378,6 +378,7 @@ mod tests {
         let account = |label: &str| Account {
             last_used_at: None,
             replaced_at: None,
+            plan: None,
             label: label.into(),
             id: format!("{label}-uuid"),
             account_uuid: format!("{label}-uuid"),
@@ -695,14 +696,12 @@ mod tests {
         let codex = |label: &str, uuid: &str| Account {
             last_used_at: None,
             replaced_at: None,
+            plan: None,
             label: label.into(),
             id: uuid.into(),
             account_uuid: uuid.into(),
             email: format!("{label}@example.com"),
-            detail: crate::state::Detail::Codex {
-                workspace_id: None,
-                plan: None,
-            },
+            detail: crate::state::Detail::Codex { workspace_id: None },
             parked: None,
         };
         let mut s = state();
@@ -788,6 +787,7 @@ mod tests {
         accounts.upsert(Account {
             last_used_at: None,
             replaced_at: None,
+            plan: None,
             label: "team".into(),
             id: "work-uuid_team-org".into(),
             account_uuid: "work-uuid".into(),

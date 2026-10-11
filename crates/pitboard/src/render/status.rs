@@ -118,7 +118,7 @@ pub fn human(report: &Report) -> String {
         .map(|r| ui::columns(&email(r)))
         .max()
         .unwrap_or(0);
-    // Only where some login says its plan, so a read that learned none reads as it always did.
+    // Only where some row has a plan, so a machine with none reads as it always did.
     let plan_width = report
         .rows
         .iter()
@@ -352,8 +352,7 @@ pub fn json(report: &Report) -> Value {
             // reads moves.
             "provider": r.provider.code(),
             "qualified": r.key().map(|k| k.qualified()),
-            // What its login says it is on, "Max 20x" or "Plus"; null where no login read
-            // says.
+            // What its login says or last said, "Max 20x" or "Plus", or null.
             "plan": r.plan,
         })).collect::<Vec<_>>(),
     })
@@ -615,8 +614,7 @@ mod tests {
         );
     }
 
-    /// The plan a login says goes after the address, in a column of its own, so what each
-    /// account stands at still lines up; a read that learned no plan has no such column.
+    /// The plan has a column of its own after the address, and none where no row has a plan.
     #[test]
     fn the_plan_goes_after_the_address_in_a_column_of_its_own() {
         let mut work = row(Some("work"), true);

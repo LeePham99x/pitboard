@@ -77,12 +77,12 @@ Before the switch, `pitboard` shows each account and what it has left. Each limi
 its use compares with an even pace, and the account in use says which limit runs out first:
 
 ```text
-● personal  me@example.com  signed in
+● personal  me@example.com  Max 20x  signed in
     5h    ██████░│░░   59%  resets in 1h 10m  18% under pace
     week  █│█████░░░   73%  resets in 5d 18h  55% over pace
           weekly limit runs out in 11h 05m at this pace
 
-○ work      me@company.com  ready · good for 26d 4h
+○ work      me@company.com  Team 5x  ready · good for 26d 4h
     5h    █░░│░░░░░░   12%  resets in 3h 02m  27% under pace
     week  ████░░│░░░   40%  resets in 2d 4h   29% under pace
 ```

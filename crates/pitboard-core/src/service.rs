@@ -685,7 +685,7 @@ impl Pitboard {
             let answers = status::ask(&self.ctx, permit, &state, fresh);
             (stuck.join().ok().flatten(), answers)
         });
-        switch::identify::record_read(&self.ctx, permit, &answers.found);
+        switch::identify::record_read(&self.ctx, permit, &answers.found, &answers.plans);
         let found = answers.found.clone();
         // Again, so the rows and what stands are of whose login each tool has stored as it
         // was just recorded.

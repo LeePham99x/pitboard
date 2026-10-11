@@ -14,7 +14,7 @@ Pitboard creates each directory at mode 0700 and each file at 0600. A directory 
 
 | File | Holds | Written or taken by |
 | --- | --- | --- |
-| `state.json` | The enrolled accounts with their email addresses and ids, their parked logins' names and expiry, whose login each tool has stored, and a renewal of Claude Code's login not saved yet | Every change and renewal, and a read that finds a tool's stored login changed |
+| `state.json` | The enrolled accounts with their email addresses, ids and plans, their parked logins' names and expiry, whose login each tool has stored, and a renewal of Claude Code's login not saved yet | Every change and renewal, and a read that finds a tool's stored login changed or an account's plan different from the one recorded |
 | `state.lock` | The lock that lets one change run at a time | As `state.json`, and every automatic switch |
 | `journal.json` | The record of a switch until it is done. One left behind marks an [interrupted switch](/concepts/switching#interrupted-switches). | A switch |
 | `pending` | Names of parked logins about to be written, one per line, which the next change resolves. Absent when empty. | Anything that parks a login |

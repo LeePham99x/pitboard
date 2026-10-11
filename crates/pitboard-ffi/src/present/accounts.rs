@@ -210,7 +210,14 @@ pub(crate) fn item(seen: &Seen, account: &Account) -> AccountItem {
         let windows = account.usage.as_ref().map_or(&[][..], |u| &u.windows);
         words::capitalised(&said::runs_out(&scoped_name(&windows[limit]), in_seconds))
     });
+    let menu_title = match &account.plan {
+        Some(plan) => words::named_with_plan(&title, plan),
+        None => title.clone(),
+    };
     let mut spoken = vec![spoken_name.clone()];
+    if let Some(plan) = &account.plan {
+        spoken.push(plan.clone());
+    }
     if in_use {
         spoken.push("in use".into());
     }
@@ -225,6 +232,7 @@ pub(crate) fn item(seen: &Seen, account: &Account) -> AccountItem {
         title,
         email: account.email.clone(),
         plan: account.plan.clone(),
+        menu_title,
         spoken: spoken.join(", "),
         in_use,
         needs_sign_in,

@@ -127,17 +127,12 @@ pub(crate) fn renewed(document: &Value, fresh: &api::Renewed, now_millis: i64) -
     next
 }
 
-/// The plan a slice's login was issued on, as Claude Code records it beside the tokens:
-/// `subscriptionType` named, and the multiple `rateLimitTier` ends with, where it ends with
-/// one. `max` with `default_claude_max_20x` is "Max 20x"; `pro` with a tier that names no
-/// multiple is "Pro". Renewal leaves both as they were ([`renewed`]), so a parked login still
-/// says what it said at sign-in.
-pub(crate) fn plan(slice: &Value) -> Option<String> {
-    let oauth = slice.get("claudeAiOauth")?;
-    let kind = oauth.get("subscriptionType")?.as_str()?.trim();
-    let mut chars = kind.chars();
-    let first = chars.next()?;
-    let named = first.to_uppercase().chain(chars).collect::<String>();
+/// `subscriptionType` and the multiple `rateLimitTier` ends in: "Max 20x", "Pro".
+pub(crate) fn plan(document: &Value) -> Option<String> {
+    let oauth = oauth_in(document);
+    let named = Some(oauth.get("subscriptionType")?.as_str()?.trim())
+        .filter(|kind| !kind.is_empty())
+        .map(crate::holder::capitalised)?;
     let multiple = oauth
         .get("rateLimitTier")
         .and_then(Value::as_str)
@@ -252,7 +247,13 @@ mod tests {
 
     #[test]
     fn the_plan_is_named_with_the_multiple_its_tier_ends_with() {
-        let slice = |kind: Value, tier: Value| json!({"claudeAiOauth": {"accessToken": "a", "subscriptionType": kind, "rateLimitTier": tier}});
+        let slice = |kind: Value, tier: Value| {
+            json!({"claudeAiOauth": {
+                "accessToken": "a",
+                "subscriptionType": kind,
+                "rateLimitTier": tier,
+            }})
+        };
         assert_eq!(
             plan(&slice(json!("max"), json!("default_claude_max_20x"))).as_deref(),
             Some("Max 20x")
@@ -276,6 +277,20 @@ mod tests {
         );
         assert_eq!(plan(&slice(json!(""), Value::Null)), None);
         assert_eq!(plan(&json!({"claudeAiOauth": {"accessToken": "a"}})), None);
+    }
+
+    #[test]
+    fn a_park_of_the_oauth_block_alone_still_says_its_plan() {
+        let block = json!({
+            "accessToken": "a",
+            "subscriptionType": "max",
+            "rateLimitTier": "default_claude_max_20x",
+        });
+        assert_eq!(plan(&block).as_deref(), Some("Max 20x"));
+        assert_eq!(
+            plan(&json!({"claudeAiOauth": block, "organizationUuid": "o"})).as_deref(),
+            Some("Max 20x")
+        );
     }
 
     #[test]

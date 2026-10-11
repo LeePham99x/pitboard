@@ -300,8 +300,8 @@ impl Provider for Claude {
         })
     }
 
-    fn plan(&self, slice: &Value) -> Option<String> {
-        document::plan(slice)
+    fn plan(&self, document: &Value) -> Option<String> {
+        document::plan(document)
     }
 
     fn splice(&self, live: &Value, incoming: &Value) -> Result<Value, ProviderError> {

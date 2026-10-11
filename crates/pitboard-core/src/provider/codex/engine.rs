@@ -355,14 +355,12 @@ impl Provider for Codex {
         }
     }
 
-    /// `chatgpt_plan_type` out of the ID token, as enrolling records it: "Plus", "Pro",
-    /// "Prolite". Tells nobody anything the login does not already say.
-    fn plan(&self, slice: &Value) -> Option<String> {
-        let claims = jwt::claims(slice["tokens"]["id_token"].as_str()?)?;
-        let kind = jwt::claim(&claims, &[OPENAI, "chatgpt_plan_type"])?.trim();
-        let mut chars = kind.chars();
-        let first = chars.next()?;
-        Some(first.to_uppercase().chain(chars).collect())
+    /// `chatgpt_plan_type` out of the ID token: `pro` is "Pro".
+    fn plan(&self, document: &Value) -> Option<String> {
+        let claims = jwt::claims(document["tokens"]["id_token"].as_str()?)?;
+        Some(jwt::claim(&claims, &[OPENAI, "chatgpt_plan_type"])?.trim())
+            .filter(|kind| !kind.is_empty())
+            .map(crate::holder::capitalised)
     }
 
     /// One account per file, so an account's share is the whole of it.

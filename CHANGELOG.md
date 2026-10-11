@@ -9,11 +9,15 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Added
 
 - Each account shows the plan its login says it is on, such as `Max 20x`, `Team 5x` or
-  `Plus`: as a tag beside its name in the window, after its name in the menu, in a column
-  after its address in `pitboard`, and as `plan` in `pitboard --json`. It is read off the
-  login a read already holds, Claude Code's `subscriptionType` and `rateLimitTier` and
-  Codex's `chatgpt_plan_type`, and sends nothing more anywhere. Offline, and for an account
-  whose parked login was not read, a Claude Code account shows none.
+  `Pro` for Claude Code and `Plus` or `Pro` for Codex. The window shows it as a tag beside
+  the account's name, the menu after the name, as in **work · Team 5x**, and VoiceOver
+  says it after the name. `pitboard` shows it in a dim column after the address, there
+  only when some account has a plan. `pitboard --json` gives it as `plan`, `null` where no
+  login Pitboard read for the account said one. Pitboard records the plan on the account
+  when it enrols it and each time a read sees its login, so a read that asks nothing, such
+  as `pitboard status --offline`, shows it too. A read sends nothing more anywhere to learn
+  it: Claude Code's login keeps `subscriptionType` and `rateLimitTier`, and Codex's ID
+  token keeps `chatgpt_plan_type`.
 
 ## [0.11.0] - 2026-10-10
 

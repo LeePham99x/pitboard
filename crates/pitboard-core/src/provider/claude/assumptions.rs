@@ -224,6 +224,12 @@ pub const PER_SYSTEM: &[PerSystem] = &[
         linux: Read("2.1.294"),
         windows: Read("2.1.294"),
     },
+    PerSystem {
+        name: "login_carries_its_plan",
+        macos: Read("2.1.296"),
+        linux: Read("2.1.296"),
+        windows: Read("2.1.296"),
+    },
 ];
 
 pub const ASSUMPTIONS: &[Assumption] = &[
@@ -816,6 +822,37 @@ pub const ASSUMPTIONS: &[Assumption] = &[
         ],
         absent: &[],
     },
+    Assumption {
+        name: "login_carries_its_plan",
+        fact: "the stored login keeps its plan in `claudeAiOauth`, beside the tokens: \
+               `subscriptionType`, which a sign-in takes from the profile's \
+               `organization.organization_type`, so `claude_max`, `claude_pro`, `claude_team` \
+               and `claude_enterprise` are stored as `max`, `pro`, `team` and `enterprise`, and \
+               `rateLimitTier`, the profile's `organization.rate_limit_tier` as Anthropic gives \
+               it, such as `default_claude_max_20x` or `default_claude_max_5x`. Each is null \
+               where neither the profile nor the login stored before says one. Every save into \
+               `claudeAiOauth` keeps the stored value of either where the new login has none, \
+               and a token refresh asks for the profile again only where the login lacks \
+               either or the config's `oauthAccount` lacks one of its profile fields. So a \
+               plan changed since the login's last sign-in can go unseen in it",
+        read_from: "the profile read, which maps `organization_type` through a table and takes \
+                    `rate_limit_tier` whole; the function every save of the login into \
+                    `claudeAiOauth` goes through, which writes both beside the tokens; the \
+                    sign-in's save; and the refresh's check of whether to ask for the profile. \
+                    Measured on 2026-10-10 in the stored logins of five accounts on one Mac: \
+                    `max` with `default_claude_max_20x`, and `team` with `default_claude_max_5x`",
+        // Read on 2026-10-11 from macOS 2.1.294 to 2.1.296, and Linux x64 and Windows 2.1.296.
+        verified_against: "2.1.296",
+        depends: "provider::claude::document::plan, which reads the plan off a login or a park \
+                  of it for `pitboard status`, the app and the account's record, as \
+                  `subscriptionType` capitalised and the multiple `rateLimitTier` ends with",
+        probe: &[
+            r#"[["claude_max","max"],["claude_pro","pro"],["claude_enterprise","enterprise"],["claude_team","team"]]"#,
+            "organization?.rate_limit_tier??null",
+            "?.subscriptionType??null,rateLimitTier:",
+        ],
+        absent: &[],
+    },
 ];
 
 #[cfg(test)]
@@ -849,6 +886,7 @@ mod tests {
                 "config_identity_is_the_last_writers",
                 "status_line_input_names_no_account",
                 "refresh_lock",
+                "login_carries_its_plan",
             ]
         );
         for name in [

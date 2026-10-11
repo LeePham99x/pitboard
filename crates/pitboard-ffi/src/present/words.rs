@@ -297,6 +297,11 @@ pub(crate) fn named_with_tool(label: &str, tool: &str) -> String {
     format!("{label} ({tool})")
 }
 
+/// An account as the menu names it, with the plan its login says: "work · Team 5x".
+pub(crate) fn named_with_plan(title: &str, plan: &str) -> String {
+    format!("{title} · {plan}")
+}
+
 /// The line in a menu when the numbers were read, as a time rather than an age: a menu can
 /// stay open, and "just now" would still say so ten minutes later.
 pub(crate) fn updated(clock: &str) -> String {

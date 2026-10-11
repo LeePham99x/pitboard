@@ -89,7 +89,6 @@ struct AccountRow: View {
     }
 }
 
-/// The plan an account's login says it is on, as a tag beside its name: "Team 5x", "Plus".
 private struct PlanTag: View {
     let plan: String
 

@@ -133,6 +133,7 @@ mod tests {
         state.accounts.push(Account {
             last_used_at: None,
             replaced_at: None,
+            plan: None,
             label: "work".into(),
             id: "acc".into(),
             account_uuid: "acc".into(),
@@ -249,6 +250,7 @@ mod tests {
         state.accounts.push(Account {
             last_used_at: None,
             replaced_at: None,
+            plan: None,
             label: "work".into(),
             id: "acc".into(),
             account_uuid: "acc".into(),

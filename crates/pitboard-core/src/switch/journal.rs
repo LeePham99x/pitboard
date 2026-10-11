@@ -625,6 +625,7 @@ mod tests {
         Account {
             last_used_at: None,
             replaced_at: None,
+            plan: None,
             label: label.into(),
             id: format!("{label}-uuid"),
             account_uuid: format!("{label}-uuid"),

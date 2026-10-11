@@ -2883,6 +2883,7 @@ mod tests {
                 parked: parked("work", Some(NOW + 20 * 86_400)).park,
                 last_used_at: None,
                 replaced_at: None,
+                plan: None,
                 detail: crate::state::Detail::Claude {
                     organization_uuid: "org".into(),
                     oauth_account: json!({}),
@@ -4045,16 +4046,14 @@ mod tests {
                 parked: None,
                 last_used_at: None,
                 replaced_at: None,
+                plan: None,
                 detail,
             };
         let claude = || crate::state::Detail::Claude {
             organization_uuid: "org".into(),
             oauth_account: json!({}),
         };
-        let codex = || crate::state::Detail::Codex {
-            workspace_id: None,
-            plan: None,
-        };
+        let codex = || crate::state::Detail::Codex { workspace_id: None };
         let mut state = State {
             accounts: vec![
                 account("alpha", "alpha-uuid", claude()),

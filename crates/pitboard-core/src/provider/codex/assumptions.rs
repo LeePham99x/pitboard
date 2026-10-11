@@ -171,7 +171,9 @@ pub const ASSUMPTIONS: &[Assumption] = &[
                So who a parked Codex login belongs to costs no network call at all",
         read_from: "the real id_token this machine's Codex had written",
         verified_against: VERIFIED_AGAINST,
-        depends: "provider::codex::engine::identify",
+        depends: "provider::codex::engine::identify, and provider::codex::engine's plan, which \
+                  reads `chatgpt_plan_type` for `pitboard status`, the app and the account's \
+                  record",
         probe: &["chatgpt_account_id", "chatgpt_plan_type"],
         absent: &[],
     },

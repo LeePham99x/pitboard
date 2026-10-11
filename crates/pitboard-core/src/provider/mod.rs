@@ -567,12 +567,8 @@ pub(crate) trait Provider: Send + Sync + std::fmt::Debug {
     /// document.
     fn slice(&self, live: &Value) -> Result<Value, ProviderError>;
 
-    /// The subscription a slice says its account is on, as a tag beside its name: "Max 20x",
-    /// "Team 5x", "Plus". Read from the slice alone and sent nowhere. `None` where the tool
-    /// keeps no such thing, or this login does not say.
-    fn plan(&self, _slice: &Value) -> Option<String> {
-        None
-    }
+    /// The plan a login or a park of it says, as a label: "Max 20x", "Pro".
+    fn plan(&self, document: &Value) -> Option<String>;
 
     /// `live` with `incoming` in place of whatever account was there, and nothing of the
     /// outgoing account left behind.
