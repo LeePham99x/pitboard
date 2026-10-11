@@ -21,6 +21,8 @@ mod forget;
 pub(crate) mod harness;
 pub(crate) mod identify;
 mod journal;
+#[cfg(test)]
+mod pinned;
 mod refresh;
 #[cfg(test)]
 mod refusals;

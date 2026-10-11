@@ -8,7 +8,7 @@
 use super::{Administered, Elevation, Floor, Host, Process, Scheduler};
 use crate::context::Context;
 use crate::service::Permit;
-use crate::store::memory::{Fault, MemoryStore};
+use crate::store::memory::{Fault, MemoryStore, Touch};
 use crate::store::{Backend, Cost, Error, RawStore};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -71,6 +71,7 @@ pub struct MemoryHost {
     keychain: Arc<MemoryStore>,
     vault: Arc<MemoryStore>,
     files: Mutex<HashMap<PathBuf, Arc<MemoryStore>>>,
+    trail: Arc<Mutex<Vec<Touch>>>,
     running: Mutex<HashMap<String, Vec<Process>>>,
     /// Whether the process list cannot be read here, which is not the same as nothing
     /// running.
@@ -98,11 +99,13 @@ pub struct MemoryHost {
 impl Default for MemoryHost {
     fn default() -> MemoryHost {
         let refuse_start = Arc::new(AtomicBool::new(false));
+        let trail = Arc::default();
         MemoryHost {
             // Keychain, because that is the chain the interesting rules are written for.
-            keychain: MemoryStore::of(Backend::Keychain),
-            vault: MemoryStore::of(Backend::Keychain),
+            keychain: MemoryStore::on_trail(Backend::Keychain, "live".into(), Arc::clone(&trail)),
+            vault: MemoryStore::on_trail(Backend::Keychain, "vault".into(), Arc::clone(&trail)),
             files: Mutex::new(HashMap::new()),
+            trail,
             running: Mutex::new(HashMap::new()),
             listless: AtomicBool::new(false),
             shared_vault: AtomicBool::new(true),
@@ -134,13 +137,23 @@ impl MemoryHost {
 
     /// The file at `path`, where a tool that keeps its login in a file keeps it.
     pub fn file_at(&self, path: PathBuf) -> Arc<MemoryStore> {
+        let name = format!("file {}", path.display());
         Arc::clone(
             self.files
                 .lock()
                 .expect("a poisoned test host is a failed test")
                 .entry(path)
-                .or_insert_with(|| MemoryStore::of(Backend::File)),
+                .or_insert_with(|| {
+                    MemoryStore::on_trail(Backend::File, name, Arc::clone(&self.trail))
+                }),
         )
+    }
+
+    pub fn trail(&self) -> Vec<Touch> {
+        self.trail
+            .lock()
+            .expect("a poisoned test host is a failed test")
+            .clone()
     }
 
     /// Locks the keychain from now on, as a screen lock does on macOS, where Claude Code's
