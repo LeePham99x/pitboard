@@ -306,6 +306,7 @@ mod tests {
         crate::state::Account {
             last_used_at: None,
             replaced_at: None,
+            plan: None,
             label: label.into(),
             id: uuid.into(),
             account_uuid: uuid.into(),

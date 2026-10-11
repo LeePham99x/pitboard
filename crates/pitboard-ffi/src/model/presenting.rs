@@ -191,6 +191,20 @@ fn an_account_is_called_by_its_name_or_its_address_or_what_is_wrong_with_it() {
     );
 }
 
+/// The menu and VoiceOver say the plan after the name, and an account with none is its name.
+#[test]
+fn an_account_carries_the_plan_its_login_says() {
+    let mut team = account(Some("work")).signed_in().build();
+    team.plan = Some("Team 5x".into());
+    let team = described(team);
+    assert_eq!(team.plan.as_deref(), Some("Team 5x"));
+    assert_eq!(team.menu_title, "work · Team 5x");
+    assert_eq!(team.spoken, "work, Team 5x, in use");
+    assert_eq!(team.spoken_name, "work");
+    let spare = described(account(Some("spare")).build());
+    assert_eq!((spare.plan, spare.menu_title.as_str()), (None, "spare"));
+}
+
 /// The window's row draws every limit and says whose address it is and whether it is in
 /// use, from the row alone.
 ///

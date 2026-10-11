@@ -26,12 +26,12 @@ description: "Read each account's five-hour and weekly limits, when they reset a
     ```
 
     ```text
-    ● work      me@company.com  signed in
+    ● work      me@company.com  Team 5x  signed in
         5h    ██████░│░░   59%  resets in 1h 10m  18% under pace
         week  █│█████░░░   73%  resets in 5d 18h  55% over pace
               weekly limit runs out in 11h 05m at this pace
 
-    ○ personal  me@example.com  ready · good for 26d 4h
+    ○ personal  me@example.com  Max 20x  ready · good for 26d 4h
         5h    █░░│░░░░░░   12%  resets in 3h 02m  27% under pace
         week  ████░░│░░░   40%  resets in 2d 4h   29% under pace
     ```
@@ -45,6 +45,7 @@ With accounts of both tools, each tool has its own heading and its own account i
 | App | Command line | Meaning |
 | --- | --- | --- |
 | A check mark in the menu, **In Use** in the window | `●` and `signed in`, and `○` on the others | The tool is using this account. |
+| **work · Team 5x** in the menu, a **Team 5x** tag beside the name in the window | `Team 5x` after the address | The plan the account's login says it is on. |
 | **5-hour 59%, weekly 73%** in the menu, a bar per limit in the window | `5h`, `week` and a bar per limit | How much of each limit the account has used. A limit for one model adds the model's name. |
 | A green, orange or red bar | A green, yellow or red bar and percentage | Under 70%, from 70% and from 90% used. |
 | **resetting now** in the window | `resetting now` | The reset time has passed. The figure is the last one measured until the next reading. |

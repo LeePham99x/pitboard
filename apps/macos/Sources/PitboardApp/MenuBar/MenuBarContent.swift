@@ -160,7 +160,7 @@ private struct AccountMenuItem: View {
                     if let action = item.action { perform(action.intent) }
                 })
         ) {
-            Text(item.title)
+            Text(item.menuTitle)
             Text(item.summary)
         }
         .disabled(!item.inUse && item.action == nil)

@@ -11,7 +11,9 @@ final class MenuBarTests: XCTestCase {
     func testTheMenuListsEveryAccountUnderItsTool() {
         let app = XCUIApplication.launched(.twoTools)
         app.openMenu()
-        for title in ["Claude Code", "Codex", "work", "personal", "old", "main", "spare"] {
+        for title in [
+            "Claude Code", "Codex", "work", "personal", "old", "main · Pro", "spare · Pro",
+        ] {
             XCTAssertTrue(app.menuItem(title).waitForExistence(timeout: 5), title)
         }
         for command in [

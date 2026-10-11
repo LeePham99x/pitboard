@@ -54,6 +54,10 @@ anything public in `pitboard-core` is a new minor version, as Cargo reads one: 0
   `error::Partway` has new variants, which break an exhaustive `match` on it. The account
   index is schema 7, which 0.10.0 refuses, so the release's notes say to update the command
   line and the app together.
+- The first release after 0.11.0 is 0.12.0. In `pitboard-core`, `status::Row` and
+  `state::Account` have the new field `plan`, and `state::Detail::Codex` no longer has
+  one. The account index stays schema 7: 0.11.0 reads a Codex account's plan where it was
+  and drops a Claude Code account's at its next save.
 
 1. In CHANGELOG.md, add `## [<version>] - YYYY-MM-DD` directly under `## [Unreleased]`, so
    the entries there fall under the version. The guard looks for a line that starts

@@ -788,9 +788,7 @@ fn park_signed_in(
 /// What Pitboard records about a newly enrolled account.
 ///
 /// For Claude Code, only what Anthropic just confirmed: leaving the rest out makes Claude
-/// Code fetch its own profile after a switch rather than trust a copy Pitboard wrote. For
-/// Codex there is no such cache to correct, and what is kept instead is what its own login
-/// already said, which costs nothing to read and explains a limit somebody is surprised by.
+/// Code fetch its own profile after a switch rather than trust a copy Pitboard wrote.
 fn account(
     which: ProviderId,
     id: String,
@@ -809,22 +807,14 @@ fn account(
                 "organizationUuid": owner.organization_uuid,
             }),
         },
-        ProviderId::Codex => {
-            let claims = login["tokens"]["id_token"]
-                .as_str()
-                .and_then(crate::provider::jwt::claims)
-                .unwrap_or(Value::Null);
-            let openai = "https://api.openai.com/auth";
-            state::Detail::Codex {
-                workspace_id: Some(owner.organization_uuid.clone()).filter(|id| !id.is_empty()),
-                plan: crate::provider::jwt::claim(&claims, &[openai, "chatgpt_plan_type"])
-                    .map(str::to_owned),
-            }
-        }
+        ProviderId::Codex => state::Detail::Codex {
+            workspace_id: Some(owner.organization_uuid.clone()).filter(|id| !id.is_empty()),
+        },
     };
     Account {
         last_used_at,
         replaced_at: None,
+        plan: provider::of(which).plan(login),
         label: label.to_string(),
         id,
         account_uuid: owner.account_uuid.clone(),
@@ -1096,6 +1086,26 @@ mod tests {
                 "{tool}"
             );
             hold(&m, &format!("{tool}, after another account's sign-in"));
+        }
+    }
+
+    #[test]
+    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
+    fn enrolling_records_the_plan_the_login_says() {
+        for ((tool, make), plan) in MACHINES.into_iter().zip(["Max 20x", "Pro"]) {
+            let m = make("enrol-plan");
+            let mut login = login_of(&m, "third", "third-refresh");
+            if m.which == ProviderId::Claude {
+                login["claudeAiOauth"]["subscriptionType"] = json!("max");
+                login["claudeAiOauth"]["rateLimitTier"] = json!("default_claude_max_20x");
+            }
+            let signed = planted(&m.ctx, Permit::for_a_test(), m.which, login).expect("a sign-in");
+
+            enrolled_as(&m, "third", signed).unwrap_or_else(|e| panic!("{tool}: {e}"));
+
+            let state = state::load(&m.ctx).expect("state");
+            let third = state.get(&m.key("third")).expect("enrolled");
+            assert_eq!(third.plan.as_deref(), Some(plan), "{tool}");
         }
     }
 

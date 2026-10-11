@@ -57,7 +57,8 @@ expression: "serde_json :: json! ({ \"exit\" : code, \"envelope\" : value })"
           },
           "stale": null,
           "provider": "claude",
-          "qualified": "claude/Đạt"
+          "qualified": "claude/Đạt",
+          "plan": "Max"
         },
         {
           "label": "🏁",
@@ -100,7 +101,8 @@ expression: "serde_json :: json! ({ \"exit\" : code, \"envelope\" : value })"
           },
           "stale": null,
           "provider": "claude",
-          "qualified": "claude/🏁"
+          "qualified": "claude/🏁",
+          "plan": "Max"
         }
       ]
     },

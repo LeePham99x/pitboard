@@ -300,6 +300,10 @@ impl Provider for Claude {
         })
     }
 
+    fn plan(&self, document: &Value) -> Option<String> {
+        document::plan(document)
+    }
+
     fn splice(&self, live: &Value, incoming: &Value) -> Result<Value, ProviderError> {
         document::splice(live, incoming).map_err(|detail| ProviderError::ShapeUnexpected {
             provider: ProviderId::Claude,
