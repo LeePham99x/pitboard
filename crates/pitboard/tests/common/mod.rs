@@ -274,6 +274,32 @@ fn the_harness_can_park_a_login_find_it_and_take_it_away() {
     env.delete_park(&service);
 }
 
+#[test]
+#[cfg_attr(windows, ignore = "W20: parking logins on Windows")]
+fn a_discarded_test_park_is_deleted_by_env_drop() {
+    let env = Env::new("discarded-park");
+    let service = format!(
+        "pitboard-park-{}-1",
+        pitboard_core::testing::dir_hash("discarded-park")
+    );
+    std::fs::create_dir_all(env.root.join("pitboard")).unwrap();
+    std::fs::write(
+        env.root.join("pitboard/state.json"),
+        serde_json::json!({"schema": 8, "discarded": [{"service": service}]}).to_string(),
+    )
+    .unwrap();
+    env.write_park(&service, r#"{"claudeAiOauth":{"refreshToken":"r"}}"#);
+    let ctx = env.context();
+    drop(env);
+
+    let left = pitboard_core::testing::vault_read(&ctx, &service).map(|found| found.is_some());
+    let _ = pitboard_core::testing::vault_delete(&ctx, &service);
+    assert!(
+        matches!(left, Ok(false)),
+        "{service} outlived the test that parked it: {left:?}"
+    );
+}
+
 /// No test may read a login the person running it is actually using.
 ///
 /// The harness gives Claude Code a scratch config directory and a keychain slot hashed from
@@ -1094,12 +1120,18 @@ impl Env {
         };
         let mut named = Vec::new();
         if let Some(v) = read("state.json") {
+            // Schema 7 lists each as its name.
+            let discarded = v["discarded"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|d| if d.is_string() { d } else { &d["service"] });
             let parked = v["accounts"]
                 .as_array()
                 .into_iter()
                 .flatten()
                 .map(|a| &a["parked"]["service"])
-                .chain(v["discarded"].as_array().into_iter().flatten());
+                .chain(discarded);
             named.extend(
                 parked
                     .filter_map(serde_json::Value::as_str)

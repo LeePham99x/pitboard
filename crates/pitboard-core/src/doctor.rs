@@ -3916,7 +3916,10 @@ mod tests {
         let mut f = facts();
         f.interrupted = true;
         f.state = Ok(State {
-            discarded: vec!["pitboard-park-x-1".into()],
+            discarded: vec![crate::state::Dropped {
+                service: "pitboard-park-x-1".into(),
+                kind: crate::state::ParkKind::Vault,
+            }],
             ..State::default()
         });
         let checks = evaluate(&f);

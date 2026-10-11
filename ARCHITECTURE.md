@@ -1290,6 +1290,13 @@ file with it and drops it at its next save, leaving the copy of the renewed logi
 nothing, so the next renewal of that login, by this version or by 0.10.0's `stow`, sends the
 spent refresh token again. So it is a bump, and 0.10.0 refuses the file and says to update.
 
+Schema 8 lists each parked login waiting to be deleted in `discarded` as an object: its
+`service`, and `kind`, how it was kept. An item of the vault leaves `kind` out. A schema 7
+file's names come forward as items of the vault. `park::purge`, `pending`'s sweep and
+`repair` reach a park of each kind through `park::parks(kind)`. 0.11.0 reads `discarded` as
+names and would call such a file corrupt. So it is a bump, and 0.11.0 refuses the file and
+says to update.
+
 A file naming a tool this build does not know is reported as written by a newer Pitboard,
 not as corrupt. The advice for a corrupt file is to delete it, and following that here would
 orphan every parked login.

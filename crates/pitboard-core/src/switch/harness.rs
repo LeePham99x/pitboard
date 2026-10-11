@@ -668,7 +668,7 @@ pub(crate) fn hold(m: &Machine, after: &str) {
         .iter()
         .filter_map(|a| a.parked.as_ref())
         .map(|p| p.service.as_str())
-        .chain(state.discarded.iter().map(String::as_str))
+        .chain(state.discarded.iter().map(|d| d.service.as_str()))
         .collect();
     for service in m.mem.vault().services() {
         assert!(

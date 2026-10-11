@@ -67,7 +67,7 @@ fn a_parked_login_anthropic_refuses_is_not_installed() {
         state
             .discarded
             .iter()
-            .any(|s| s.starts_with("pitboard-park-there-")),
+            .any(|d| d.service.starts_with("pitboard-park-there-")),
         "the dead copy is listed for deletion, so a delete that fails is retried"
     );
 

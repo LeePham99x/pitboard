@@ -10,7 +10,7 @@ use crate::context::Context;
 use crate::in_use::{self, InUse};
 use crate::provider::{self, LoginKind, Provider, ProviderId};
 use crate::service::Permit;
-use crate::state::{Account, Key, Park, State};
+use crate::state::{Account, Key, Park, ParkKind, State};
 use crate::{atomic, home, park, state, store};
 use serde_json::Value;
 use std::path::PathBuf;
@@ -196,7 +196,7 @@ fn repair_for(
 /// destination's, at `at`.
 fn apply(state: &mut State, journal: &Journal, repair: Repair, seen: Seen, at: i64) {
     if repair.drop {
-        state.discard(&journal.park_service);
+        state.discard(&journal.park_service, ParkKind::Vault);
     }
     if let Some((id, park)) = repair.hold {
         match state.by_id(journal.provider, &id).map(Account::key) {
@@ -221,7 +221,7 @@ fn apply(state: &mut State, journal: &Journal, repair: Repair, seen: Seen, at: i
                 named: seen.named,
             };
             state.identified(journal.provider, installed, at);
-            state.discard(&journal.incoming_service);
+            state.discard(&journal.incoming_service, ParkKind::Vault);
         }
         // The destination was forgotten since, whichever account holds its label now, and an
         // id alone does not say whose its login is as the service names one. What the record
@@ -358,7 +358,7 @@ pub(super) fn abandon(
     if let Some(Some(document)) = read_park(ctx, &journal.park_service)
         && park::is_live_twin(ctx, tool, &document)
     {
-        state.discard(&journal.park_service);
+        state.discard(&journal.park_service, ParkKind::Vault);
     } else if let Some(Some(document)) = read_park(ctx, &journal.park_service)
         && let Some(key) = state
             .by_id(journal.provider, &journal.from_id)
@@ -372,7 +372,7 @@ pub(super) fn abandon(
     }
     let incoming = read_park(ctx, &journal.incoming_service).flatten();
     if incoming.is_some_and(|document| park::is_live_twin(ctx, tool, &document)) {
-        state.discard(&journal.incoming_service);
+        state.discard(&journal.incoming_service, ParkKind::Vault);
     } else if state
         .by_id(journal.provider, &journal.to_id)
         .and_then(|a| a.parked.as_ref())
@@ -708,7 +708,7 @@ mod tests {
                 NOW,
             );
             assert!(!applied.references(PARK));
-            assert!(applied.discarded.contains(&PARK.to_string()));
+            assert!(applied.discarded.iter().any(|d| d.service == PARK));
         }
     }
 
@@ -764,7 +764,7 @@ mod tests {
             .is_none(),
             "the copy now live must never be offered again"
         );
-        assert!(s.discarded.contains(&INCOMING.to_string()));
+        assert!(s.discarded.iter().any(|d| d.service == INCOMING));
     }
 
     /// Someone signed in as a third account since: the orphan may be the only copy of
@@ -889,7 +889,7 @@ mod tests {
         assert_eq!(to.last_used_at, None, "never in use");
         assert_eq!(to.parked.as_ref().map(|p| p.service.as_str()), Some(THEIRS));
         assert!(
-            !s.discarded.contains(&INCOMING.to_string()),
+            !s.discarded.iter().any(|d| d.service == INCOMING),
             "the destination's park is no account's here to consume"
         );
     }

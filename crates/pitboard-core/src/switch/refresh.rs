@@ -21,7 +21,7 @@ use crate::error::Error;
 use crate::provider::claude::live;
 use crate::provider::{self, LoginKind, Provider, ProviderError, ProviderId};
 use crate::service::Permit;
-use crate::state::{self, Renewing, State};
+use crate::state::{self, ParkKind, Renewing, State};
 use crate::store::{self, RawStore};
 use crate::{fault, lock, park};
 use serde_json::Value;
@@ -382,7 +382,7 @@ fn reserve(
 /// or was never copied.
 fn let_go(ctx: &Context, permit: Permit, state: &mut State, service: &str) {
     state.renewing.retain(|left| left.service != service);
-    state.discard(service);
+    state.discard(service, ParkKind::Vault);
     if state::save(ctx, permit, state).is_ok() {
         super::purge(ctx, permit, state);
     }

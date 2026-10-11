@@ -17,7 +17,28 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-const SCHEMA: u32 = 7;
+const SCHEMA: u32 = 8;
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ParkKind {
+    #[default]
+    Vault,
+}
+
+impl ParkKind {
+    // By reference, as `skip_serializing_if` calls it.
+    pub fn is_vault(&self) -> bool {
+        matches!(self, ParkKind::Vault)
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct Dropped {
+    pub service: String,
+    #[serde(default, skip_serializing_if = "ParkKind::is_vault")]
+    pub kind: ParkKind,
+}
 
 /// A login held for an account while another is signed in. There is at most one per
 /// account: once installed it is Claude Code's again, and Claude Code rotates it from then
@@ -254,7 +275,7 @@ pub struct State {
     /// Parked items no account refers to any more. Listed in the same save that drops them
     /// and removed once deleted, so a delete that fails or is interrupted is retried.
     #[serde(default)]
-    pub discarded: Vec<String>,
+    pub discarded: Vec<Dropped>,
     /// Parked items an account here holds that this home never wrote down: logins
     /// `pitboard repair` found in the store and gave back. On macOS every `PITBOARD_HOME`
     /// shares the login keychain, so each may be another Pitboard's parked login, and
@@ -423,7 +444,7 @@ impl State {
             .iter()
             .filter_map(|a| a.parked.as_ref())
             .any(|p| p.service == service)
-            || self.discarded.iter().any(|s| s == service)
+            || self.discarded.iter().any(|d| d.service == service)
             || self
                 .renewing
                 .iter()
@@ -518,10 +539,17 @@ impl State {
     /// whoever wrote it: it has been installed, a renewal has spent it, or it copies a login
     /// that is still signed in. Nothing can use it again, and for a tool whose park may
     /// never be a copy it must not stay beside the login it copies.
-    pub fn discard(&mut self, service: &str) {
+    pub fn discard(&mut self, service: &str, kind: ParkKind) {
         self.let_go(service);
-        if !self.discarded.iter().any(|listed| listed == service) {
-            self.discarded.push(service.to_string());
+        if !self
+            .discarded
+            .iter()
+            .any(|listed| listed.service == service)
+        {
+            self.discarded.push(Dropped {
+                service: service.to_string(),
+                kind,
+            });
         }
     }
 
@@ -534,7 +562,7 @@ impl State {
         if self.is_foreign(service) {
             self.let_go(service);
         } else {
-            self.discard(service);
+            self.discard(service, ParkKind::Vault);
         }
     }
 
@@ -757,7 +785,10 @@ fn migrate(document: &mut serde_json::Value, path: &std::path::Path) -> Result<(
             if found <= 5 {
                 five_to_six(document);
             }
-            six_to_seven(document);
+            if found <= 6 {
+                six_to_seven(document);
+            }
+            seven_to_eight(document);
             Ok(())
         }
         // Nothing released wrote 1 or 2: the schema reached 3 before the first release.
@@ -861,7 +892,19 @@ fn five_to_six(document: &mut serde_json::Value) {
 /// copy of the renewed login named by nothing, so the next renewal of that login, by this
 /// version or by 0.10.0's `stow`, would send the spent refresh token again.
 fn six_to_seven(document: &mut serde_json::Value) {
-    document["schema"] = serde_json::json!(SCHEMA);
+    document["schema"] = serde_json::json!(7);
+}
+
+// A bump: 0.11.0 reads `discarded` as names, and would call a file of typed entries corrupt.
+fn seven_to_eight(document: &mut serde_json::Value) {
+    if let Some(discarded) = document.get_mut("discarded").and_then(Value::as_array_mut) {
+        for entry in discarded {
+            if let Value::String(service) = entry {
+                *entry = serde_json::json!({ "service": service });
+            }
+        }
+    }
+    document["schema"] = serde_json::json!(8);
 }
 
 pub(crate) fn save(ctx: &Context, permit: Permit, state: &State) -> Result<()> {
@@ -1041,11 +1084,12 @@ mod tests {
             }],
             "active": "work",
             "slot": "Claude Code-credentials",
-            "discarded": []
+            "discarded": ["gone"]
         });
-        migrate(&mut once, std::path::Path::new("/tmp/state.json")).expect("3 to 7");
+        migrate(&mut once, std::path::Path::new("/tmp/state.json")).expect("3 to 8");
+        assert_eq!(once["discarded"], serde_json::json!([{"service": "gone"}]));
         let mut twice = once.clone();
-        migrate(&mut twice, std::path::Path::new("/tmp/state.json")).expect("7 is current");
+        migrate(&mut twice, std::path::Path::new("/tmp/state.json")).expect("8 is current");
         assert_eq!(once, twice, "a second migration must change nothing");
         assert!(once.get("active").is_none());
         assert_eq!(
@@ -1068,7 +1112,7 @@ mod tests {
         let mut document = serde_json::json!({
             "schema": 3, "machine": machine_id(), "accounts": [], "discarded": []
         });
-        migrate(&mut document, std::path::Path::new("/tmp/state.json")).expect("3 to 7");
+        migrate(&mut document, std::path::Path::new("/tmp/state.json")).expect("3 to 8");
         let state: State = serde_json::from_value(document).expect("parses");
         assert!(state.in_use.is_empty() && state.slot.is_empty());
     }
@@ -1145,14 +1189,12 @@ mod tests {
         let _ = std::fs::remove_dir_all(&home);
     }
 
-    /// A file as 0.10.0 writes it is read as it is, and written back at schema 7 with nothing
-    /// else changed, which 0.10.0 refuses.
     #[test]
     #[cfg_attr(
         windows,
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
-    fn a_schema_6_file_is_written_back_at_schema_7_and_otherwise_as_it_was() {
+    fn a_schema_6_file_is_written_back_at_schema_8_and_otherwise_as_it_was() {
         let home = std::env::temp_dir().join(format!(
             "pitboard-schema-6-{}-{:?}",
             std::process::id(),
@@ -1165,7 +1207,10 @@ mod tests {
         state.accounts.push(account("work", Some(park("parked"))));
         let found = InUse::of(&state.accounts[0], "f", 100);
         state.identified(ProviderId::Claude, found, 100);
-        state.discarded.push("gone".into());
+        state.discarded.push(Dropped {
+            service: "gone".into(),
+            kind: ParkKind::Vault,
+        });
         save(&ctx, Permit::for_a_test(), &state).expect("saved");
         let path = home.join("state.json");
         let read = |path: &PathBuf| -> Value {
@@ -1178,9 +1223,62 @@ mod tests {
         let state = load(&ctx).expect("a schema 6 file is read");
         save(&ctx, Permit::for_a_test(), &state).expect("saved");
 
-        written["schema"] = 7.into();
+        written["schema"] = 8.into();
         assert_eq!(read(&path), written);
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
+    fn a_schema_7_file_0_11_0_wrote_is_written_back_at_schema_8_with_its_discarded_parks_typed() {
+        let home = std::env::temp_dir().join(format!(
+            "pitboard-schema-7-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        let ctx = Context::new(home.clone()).with_pitboard_home(home.clone());
+        let mut state = State::default();
+        state.accounts.push(account("work", Some(park("parked"))));
+        let found = InUse::of(&state.accounts[0], "f", 100);
+        state.identified(ProviderId::Claude, found, 100);
+        save(&ctx, Permit::for_a_test(), &state).expect("saved");
+        let path = home.join("state.json");
+        let read = |path: &PathBuf| -> Value {
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+        };
+        let mut written = read(&path);
+        written["schema"] = 7.into();
+        written["discarded"] = serde_json::json!(["pitboard-park-a-1", "pitboard-park-b-2"]);
+        std::fs::write(&path, written.to_string()).unwrap();
+
+        let state = load(&ctx).expect("a schema 7 file is read");
+        save(&ctx, Permit::for_a_test(), &state).expect("saved");
+
+        written["schema"] = 8.into();
+        written["discarded"] = serde_json::json!([
+            {"service": "pitboard-park-a-1"},
+            {"service": "pitboard-park-b-2"}
+        ]);
+        assert_eq!(read(&path), written);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn a_discarded_entry_already_typed_is_left_as_it_is() {
+        let mut document = serde_json::json!({
+            "schema": 7, "machine": machine_id(), "accounts": [],
+            "discarded": ["pitboard-park-a-1", {"service": "pitboard-park-b-2"}]
+        });
+        migrate(&mut document, std::path::Path::new("/tmp/state.json")).expect("7 to 8");
+        assert_eq!(
+            document["discarded"],
+            serde_json::json!([{"service": "pitboard-park-a-1"}, {"service": "pitboard-park-b-2"}])
+        );
     }
 
     /// 0.11.0 kept a Codex plan beside the workspace, as its token says it.
@@ -1206,7 +1304,7 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
         };
         let mut written = read(&path);
-        assert_eq!(written["schema"], 7);
+        written["schema"] = 7.into();
         written["accounts"][0]["plan"] = "pro".into();
         std::fs::write(&path, written.to_string()).unwrap();
 
@@ -1214,6 +1312,7 @@ mod tests {
         assert_eq!(state.accounts[0].plan.as_deref(), Some("pro"));
         save(&ctx, Permit::for_a_test(), &state).expect("saved");
 
+        written["schema"] = 8.into();
         assert_eq!(read(&path), written);
         assert_eq!(read(&path)["accounts"][0]["label"], "work");
         let _ = std::fs::remove_dir_all(&home);
@@ -1477,6 +1576,10 @@ mod tests {
         }
     }
 
+    fn discarded(s: &State) -> Vec<&str> {
+        s.discarded.iter().map(|d| d.service.as_str()).collect()
+    }
+
     fn account(label: &str, parked: Option<Park>) -> Account {
         Account {
             last_used_at: None,
@@ -1508,7 +1611,7 @@ mod tests {
                 .service,
             "new"
         );
-        assert_eq!(s.discarded, ["old"]);
+        assert_eq!(discarded(&s), ["old"]);
         assert!(!s.references("old"));
     }
 
@@ -1516,12 +1619,12 @@ mod tests {
     fn discarding_releases_whichever_account_held_it_and_lists_it_once() {
         let mut s = State::default();
         s.upsert(account("work", Some(park("current"))));
-        s.discard("something-else");
+        s.discard("something-else", ParkKind::Vault);
         assert!(s.get(&claude("work")).unwrap().parked.is_some());
-        s.discard("current");
-        s.discard("current");
+        s.discard("current", ParkKind::Vault);
+        s.discard("current", ParkKind::Vault);
         assert!(s.get(&claude("work")).unwrap().parked.is_none());
-        assert_eq!(s.discarded, ["something-else", "current"]);
+        assert_eq!(discarded(&s), ["something-else", "current"]);
     }
 
     /// A park let go of, installed or replaced, is no longer written down as a copy of a
@@ -1735,7 +1838,7 @@ mod tests {
         s.upsert(account("work", Some(park("p"))));
         assert_eq!(s.remove(&claude("work")).unwrap().label, "work");
         assert!(s.accounts.is_empty());
-        assert_eq!(s.discarded, ["p"]);
+        assert_eq!(discarded(&s), ["p"]);
     }
 
     /// A park `repair` gave back may be another Pitboard's. Replaced by a newer one, or
@@ -1762,7 +1865,7 @@ mod tests {
         s.remove(&claude("home"));
         s.release("ours");
 
-        assert_eq!(s.discarded, ["ours"], "only the park this home wrote");
+        assert_eq!(discarded(&s), ["ours"], "only the park this home wrote");
         assert!(s.foreign.is_empty(), "and nothing here holds the others");
     }
 
@@ -1773,9 +1876,9 @@ mod tests {
         let mut s = State::default();
         s.upsert(account("work", None));
         s.park_foreign(&claude("work"), park("found"));
-        s.discard("found");
+        s.discard("found", ParkKind::Vault);
         assert!(s.get(&claude("work")).unwrap().parked.is_none());
-        assert_eq!(s.discarded, ["found"]);
+        assert_eq!(discarded(&s), ["found"]);
         assert!(s.foreign.is_empty());
     }
 
@@ -1805,7 +1908,7 @@ mod tests {
         assert!(state.foreign.is_empty());
         state.remove(&Key::new(ProviderId::Codex, "work"));
         assert_eq!(
-            state.discarded,
+            discarded(&state),
             ["pitboard-park-acc-1-1789935600123"],
             "a park recorded before is this home's own, and goes as it always did"
         );
@@ -1888,7 +1991,7 @@ mod tests {
 
         s.remove(&codex);
         assert!(s.get(&claude("work")).is_some(), "and so does dropping it");
-        assert_eq!(s.discarded, ["codex-park"]);
+        assert_eq!(discarded(&s), ["codex-park"]);
     }
 
     /// A label is unique within a tool, so renaming into a name only another tool uses is

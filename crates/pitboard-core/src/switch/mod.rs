@@ -55,7 +55,7 @@ use crate::context::Context;
 use crate::error::{Error, Result};
 use crate::in_use::{self, InUse};
 use crate::service::{Permit, Warning};
-use crate::state::{Account, Key, Park, State};
+use crate::state::{Account, Key, Park, ParkKind, State};
 use crate::{api, fault, holder, home, lock, park, pending, state, store};
 use journal::{Journal, clear_journal, reconcile, write_journal};
 use refresh::Refreshing;
@@ -212,7 +212,7 @@ fn drop_live_twins(ctx: &Context, permit: Permit, state: &mut State) -> Result<(
         return Ok(());
     }
     for service in &twins {
-        state.discard(service);
+        state.discard(service, ParkKind::Vault);
     }
     state::save(ctx, permit, state)
 }
@@ -598,7 +598,7 @@ fn switch_from(
             .and_then(|document| identify_document(ctx, tool, &document).ok())
             .is_some_and(|found| found.same_login(&outgoing));
         if still_outgoing {
-            state.discard(&parked.service);
+            state.discard(&parked.service, ParkKind::Vault);
         }
         state::save(ctx, permit, &state)?;
         clear_journal(ctx, permit);
@@ -623,7 +623,7 @@ fn switch_from(
             return Err(e);
         }
         if !only_copy_left(&e) {
-            state.discard(&parked.service);
+            state.discard(&parked.service, ParkKind::Vault);
         }
         state::save(ctx, permit, &state)?;
         clear_journal(ctx, permit);
@@ -661,7 +661,7 @@ fn switch_from(
         }
     }
 
-    state.discard(&held.service);
+    state.discard(&held.service, ParkKind::Vault);
     let installed = InUse {
         owner: Some(target.owner()),
         login: tool.fingerprint(&incoming),

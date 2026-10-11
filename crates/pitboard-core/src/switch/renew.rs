@@ -7,7 +7,7 @@ use crate::context::Context;
 use crate::error::{Error, Result};
 use crate::provider::{LoginKind, Provider};
 use crate::service::Permit;
-use crate::state::{Key, Park, State};
+use crate::state::{Key, Park, ParkKind, State};
 use crate::{park, state};
 use serde_json::Value;
 
@@ -283,7 +283,7 @@ fn apply(
             // Anthropic has already spent the old refresh token, so the copy Pitboard holds
             // is dead whatever happens next. Dropping it now means status stops offering a
             // login that cannot work and says to sign in again instead.
-            state.discard(&held.service);
+            state.discard(&held.service, ParkKind::Vault);
             let _ = state::save(ctx, permit, state);
             return Err(Error::RenewalFailed {
                 label: state.typed(key),
@@ -296,7 +296,7 @@ fn apply(
     crate::fault::point("renew.park_stored");
     // The renewal spent the copy it replaces, whoever wrote it, so that one is discarded
     // rather than merely replaced.
-    state.discard(&held.service);
+    state.discard(&held.service, ParkKind::Vault);
     state.park(key, parked.clone());
     // A save that fails leaves the fresh copy where it is. Its name is on Pitboard's own
     // list of names it wrote, so the next command gives it back to the account in place of

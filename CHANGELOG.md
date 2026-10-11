@@ -19,6 +19,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   it: Claude Code's login keeps `subscriptionType` and `rateLimitTier`, and Codex's ID
   token keeps `chatgpt_plan_type`.
 
+### Changed
+
+- `state.json` is schema 8. Pitboard 0.11.0 and earlier refuse it and say to update.
+
 ## [0.11.0] - 2026-10-10
 
 ### Changed

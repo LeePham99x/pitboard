@@ -5,11 +5,99 @@ use crate::context::Context;
 use crate::error::{Error, Result};
 use crate::provider::{LoginKind, Provider, ProviderId};
 use crate::service::Permit;
-use crate::state::{Key, Park, State};
+use crate::state::{Dropped, Key, Park, ParkKind, State};
 use crate::store;
 use serde_json::Value;
 
 const PREFIX: &str = "pitboard-park-";
+
+pub(crate) enum Orphan {
+    Nothing,
+    Unreadable,
+    // a login whose own record names the account `id`
+    Login {
+        id: String,
+        park: Park,
+        document: Value,
+    },
+    Unnamed,
+}
+
+pub(crate) trait Parks: Send + Sync {
+    fn taken(&self, ctx: &Context, name: &str) -> std::result::Result<bool, store::Error>;
+    fn orphan(&self, ctx: &Context, state: &State, name: &str) -> Orphan;
+    fn list(&self, ctx: &Context) -> std::result::Result<Option<Vec<String>>, store::Error>;
+    fn remove(
+        &self,
+        ctx: &Context,
+        permit: Permit,
+        dropped: &Dropped,
+    ) -> std::result::Result<(), store::Error>;
+    fn shared(&self, ctx: &Context) -> bool;
+    // what becomes of a name this home wrote down, that holds a login no account can take
+    fn let_go(&self, state: &mut State, name: &str);
+}
+
+pub(crate) fn parks(kind: ParkKind) -> &'static dyn Parks {
+    match kind {
+        ParkKind::Vault => &VaultParks,
+    }
+}
+
+pub(crate) const EVERY_KIND: [ParkKind; 1] = [ParkKind::Vault];
+
+struct VaultParks;
+
+impl Parks for VaultParks {
+    fn taken(&self, ctx: &Context, name: &str) -> std::result::Result<bool, store::Error> {
+        Ok(store::vault_read(ctx, name)?.is_some())
+    }
+
+    // The tool is the account's whose id the name carries: a vault item names none itself.
+    fn orphan(&self, ctx: &Context, state: &State, name: &str) -> Orphan {
+        let raw = match store::vault_read(ctx, name) {
+            Ok(None) => return Orphan::Nothing,
+            Err(_) => return Orphan::Unreadable,
+            Ok(Some(raw)) => raw,
+        };
+        let Some((id, at_millis)) = parts_of(name) else {
+            return Orphan::Unnamed;
+        };
+        let (Ok(document), Some(account)) = (
+            serde_json::from_str::<Value>(&raw),
+            state.owner_of_park(&id),
+        ) else {
+            return Orphan::Unnamed;
+        };
+        let LoginKind::Document(tool) = crate::provider::of(account.provider());
+        let park = describe(tool, name, at_millis / 1000, &document);
+        if park.refresh_fingerprint.is_empty() {
+            return Orphan::Unnamed;
+        }
+        Orphan::Login { id, park, document }
+    }
+
+    fn list(&self, ctx: &Context) -> std::result::Result<Option<Vec<String>>, store::Error> {
+        store::vault_list(ctx)
+    }
+
+    fn remove(
+        &self,
+        ctx: &Context,
+        permit: Permit,
+        dropped: &Dropped,
+    ) -> std::result::Result<(), store::Error> {
+        store::vault_delete(ctx, permit, &dropped.service)
+    }
+
+    fn shared(&self, ctx: &Context) -> bool {
+        store::vault_is_shared(ctx)
+    }
+
+    fn let_go(&self, state: &mut State, name: &str) {
+        state.release(name);
+    }
+}
 
 pub fn service_name(id: &str, at_millis: i64) -> String {
     format!("{PREFIX}{id}-{at_millis}")
@@ -47,7 +135,7 @@ pub(crate) fn free_name(ctx: &Context, id: &str) -> Result<String> {
     let start = ctx.now_millis();
     for offset in 0..1_000 {
         let candidate = service_name(id, start + offset);
-        if store::vault_read(ctx, &candidate)?.is_none() {
+        if !parks(ParkKind::Vault).taken(ctx, &candidate)? {
             return Ok(candidate);
         }
     }
@@ -233,7 +321,7 @@ pub fn live_twins(ctx: &Context, state: &State) -> Vec<String> {
 pub fn purge(ctx: &Context, permit: Permit, state: &mut State) -> usize {
     state
         .discarded
-        .retain(|service| store::vault_delete(ctx, permit, service).is_err());
+        .retain(|dropped| parks(dropped.kind).remove(ctx, permit, dropped).is_err());
     state.discarded.len()
 }
 

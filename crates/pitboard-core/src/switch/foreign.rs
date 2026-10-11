@@ -150,7 +150,12 @@ fn a_park_repair_gave_back_outlives_a_switch_away_from_its_account() {
             recorded.service
         );
         assert!(state.foreign.is_empty(), "nothing here holds it now");
-        assert!(!state.discarded.contains(&recorded.service));
+        assert!(
+            !state
+                .discarded
+                .iter()
+                .any(|d| d.service == recorded.service)
+        );
         assert_eq!(
             park::load(
                 &other,
@@ -183,7 +188,12 @@ fn forgetting_its_account_leaves_a_park_repair_gave_back() {
 
         let state = state::load(&m.ctx).expect("state");
         assert!(state.foreign.is_empty());
-        assert!(!state.discarded.contains(&recorded.service));
+        assert!(
+            !state
+                .discarded
+                .iter()
+                .any(|d| d.service == recorded.service)
+        );
         assert!(
             m.mem.vault().peek(&recorded.service).is_some(),
             "{:?}: it is still where the other Pitboard left it",
