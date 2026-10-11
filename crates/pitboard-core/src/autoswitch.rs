@@ -862,7 +862,7 @@ pub(crate) fn judge(
         Decision::Hold(hold) => return Judged::Hold(hold),
         Decision::Switch(plan) => plan,
     };
-    let overridden = crate::provider::of(ProviderId::Claude).overridden_by(ctx);
+    let overridden = crate::provider::claude_code().overridden_by(ctx);
     if overridden.is_empty() {
         return Judged::Switch(plan);
     }

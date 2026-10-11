@@ -92,8 +92,14 @@ fn parked_elsewhere(m: &Machine, who: &str, document: &Value) -> (Context, Park)
         .clone()
         .with_pitboard_home(m.ctx_home().join(".pitboard-elsewhere"));
     let service = park::reserve(&other, Permit::for_a_test(), &id(m, who)).expect("a free name");
-    let parked =
-        park::store_at(&other, Permit::for_a_test(), m.which, &service, document).expect("parked");
+    let parked = park::store_at(
+        &other,
+        Permit::for_a_test(),
+        provider::document(m.which),
+        &service,
+        document,
+    )
+    .expect("parked");
     let mut theirs = State::default();
     theirs.accounts.push(enrolled(m, who, Some(parked.clone())));
     state::save(&other, Permit::for_a_test(), &theirs).expect("saved");
@@ -146,7 +152,13 @@ fn a_park_repair_gave_back_outlives_a_switch_away_from_its_account() {
         assert!(state.foreign.is_empty(), "nothing here holds it now");
         assert!(!state.discarded.contains(&recorded.service));
         assert_eq!(
-            park::load(&other, &m.key("here"), &recorded).expect("the other Pitboard's park"),
+            park::load(
+                &other,
+                provider::document(m.which),
+                &m.key("here"),
+                &recorded
+            )
+            .expect("the other Pitboard's park"),
             theirs,
             "{:?}",
             m.which
@@ -235,7 +247,7 @@ fn a_park_repair_gave_back_is_deleted_once_a_switch_installs_it() {
             .0;
         switch(settled, &m.key("away")).expect("switched");
 
-        let tool = provider::of(m.which);
+        let tool = provider::document(m.which);
         assert_eq!(
             tool.fingerprint(&m.live().expect("a live login")),
             tool.fingerprint(&theirs)
@@ -366,7 +378,7 @@ fn a_park_this_pitboard_wrote_down_and_lost_is_still_deleted_when_replaced() {
         park::store_at(
             &m.ctx,
             Permit::for_a_test(),
-            m.which,
+            provider::document(m.which),
             &service,
             &login(&m, "here", "here-lost"),
         )
@@ -399,7 +411,14 @@ fn a_park_this_pitboard_wrote_down_and_lost_is_still_deleted_when_replaced() {
 /// restored from a backup leaves it. Only its account names it.
 fn lost(m: &Machine, who: &str, document: &Value) -> Park {
     let service = park::service_name(&id(m, who), (NOW - 60) * 1000);
-    park::store_at(&m.ctx, Permit::for_a_test(), m.which, &service, document).expect("parked")
+    park::store_at(
+        &m.ctx,
+        Permit::for_a_test(),
+        provider::document(m.which),
+        &service,
+        document,
+    )
+    .expect("parked")
 }
 
 /// Off macOS the vault is a directory inside Pitboard's own, which no other Pitboard parks

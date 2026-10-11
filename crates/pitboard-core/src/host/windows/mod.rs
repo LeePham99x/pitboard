@@ -142,7 +142,7 @@ mod tests {
     fn claude_codes_chain_is_unreadable_and_never_the_file() {
         let ctx = ctx();
         let why = "Pitboard does not switch Claude Code on Windows yet";
-        let live = crate::provider::of(ProviderId::Claude)
+        let live = crate::provider::document(ProviderId::Claude)
             .live(&ctx)
             .expect("a chain");
         assert_eq!(
@@ -168,7 +168,7 @@ mod tests {
     #[test]
     fn codexs_store_is_refused_until_its_configuration_is_read() {
         let ctx = ctx();
-        match crate::provider::of(ProviderId::Codex).live(&ctx) {
+        match crate::provider::document(ProviderId::Codex).live(&ctx) {
             Err(crate::provider::ProviderError::Unsupported {
                 provider: ProviderId::Codex,
                 reason,

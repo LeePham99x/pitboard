@@ -10,12 +10,12 @@
 use crate::context::Context;
 use crate::error::Error;
 use crate::host::{Access, Kind, Os};
-use crate::provider::ProviderId;
 use crate::provider::claude::daemon;
 use crate::provider::claude::live as claude_live;
 use crate::provider::claude::paths as claude;
 use crate::provider::claude::slot;
 use crate::provider::codex::paths as codex;
+use crate::provider::{LoginKind, ProviderId};
 use crate::service::Stored;
 use crate::state::{Park, State};
 use crate::{home, park, store, switch, time, words};
@@ -300,7 +300,8 @@ fn park_facts(ctx: &Context, state: &State) -> Vec<ParkFact> {
                 .is_some_and(|owner| a.owned_by(owner)),
             park: a.parked.clone(),
             unreadable: a.parked.as_ref().and_then(|p| {
-                park::load(ctx, &a.key(), p).err().map(|e| match e {
+                let LoginKind::Document(tool) = crate::provider::of(a.provider());
+                park::load(ctx, tool, &a.key(), p).err().map(|e| match e {
                     Error::Store(store::Error::Locked) => Unreadable::Locked,
                     Error::ParkedCredentialMissing { .. } => {
                         Unreadable::Broken("missing from the vault".into())
@@ -574,7 +575,7 @@ const PROJECTS_NOT_READ: &str = "Pitboard does not read a project's own \
 
 /// Whose login Codex's file holds, from the login's own ID token and with no network call.
 fn codex_login(ctx: &Context) -> Result<Option<CodexLogin>, CodexLoginTrouble> {
-    let tool = crate::provider::of(ProviderId::Codex);
+    let tool = crate::provider::codex();
     let unusable = |e: crate::provider::ProviderError| CodexLoginTrouble::Unusable(e.to_string());
     let Some(credential) = tool.read_live(ctx).map_err(unusable)? else {
         return Ok(None);
@@ -639,7 +640,7 @@ fn codex_package_version(path: &std::path::Path) -> Option<String> {
 /// Every `codex` running as this user, by kind, asked the way a switch asks so the two
 /// cannot disagree.
 fn running_codex(ctx: &Context) -> Option<Vec<crate::holder::Holding>> {
-    match crate::provider::of(ProviderId::Codex).adoption(None) {
+    match crate::provider::codex().adoption(None) {
         crate::provider::Adoption::RestartRequired { program, holders } => {
             crate::holder::find(ctx, program, holders)
         }
@@ -1107,6 +1108,8 @@ const A_TOKEN_LIFETIME: i64 = 30 * 86_400;
 /// silently. Nothing is dropped on a timer Pitboard chose: the threshold here is the
 /// token's own lifetime, and all it does is say so.
 fn judge_dormant(park: &ParkFact, now: i64) -> Option<Check> {
+    // The sentence below says Pitboard renews the login, which it does only for a document.
+    let LoginKind::Document(_) = crate::provider::of(park.provider);
     if park.active || park.park.is_none() {
         return None;
     }
@@ -1201,9 +1204,9 @@ fn judge_in_use(facts: &Facts) -> Option<Check> {
     // The login stored now by its fingerprint, empty for a login with no refresh token:
     // `Some(None)` where none is stored, and `None` where the store cannot be read.
     let stored = match &facts.credential {
-        Ok(Some(document)) if document.get("claudeAiOauth").is_some() => Some(Some(
-            crate::provider::of(ProviderId::Claude).fingerprint(document),
-        )),
+        Ok(Some(document)) if document.get("claudeAiOauth").is_some() => {
+            Some(Some(crate::provider::claude_code().fingerprint(document)))
+        }
         Ok(_) => Some(None),
         Err(_) => None,
     };
@@ -2418,7 +2421,7 @@ mod tests {
         crate::in_use::Known {
             last: Some(crate::in_use::InUse {
                 owner: Some(owner.clone()),
-                login: crate::provider::of(ProviderId::Claude).fingerprint(&stored),
+                login: crate::provider::document(ProviderId::Claude).fingerprint(&stored),
                 known_at: NOW - 60,
                 named: Some(crate::state::new_id(ProviderId::Claude, &owner)),
             }),
@@ -4079,7 +4082,7 @@ mod tests {
         assert_eq!(active(&park_facts(&ctx, &state)), ["alpha"]);
 
         // A Codex login that cannot be read: Pitboard's record of whose it was stands in.
-        let live = crate::provider::of(ProviderId::Codex)
+        let live = crate::provider::document(ProviderId::Codex)
             .live(&ctx)
             .expect("Codex keeps its login in a file here");
         store::write_raw(

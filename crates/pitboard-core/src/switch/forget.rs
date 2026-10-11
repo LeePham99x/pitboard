@@ -2,6 +2,7 @@
 
 use super::identify::{self, Live};
 use super::{Error, Result, Settled, enrolled, purge};
+use crate::provider::{self, LoginKind};
 use crate::service::Warning;
 use crate::state::{self, Key};
 
@@ -24,7 +25,8 @@ pub fn forget(settled: Settled, key: &Key) -> Result<(String, Vec<Warning>)> {
     } = settled;
     let account = enrolled(&state, key)?;
     let mut lost = None;
-    let in_use = match identify::now(&ctx, permit, &mut state, key.provider) {
+    let LoginKind::Document(tool) = provider::of(key.provider);
+    let in_use = match identify::now(&ctx, permit, &mut state, tool) {
         Ok(Live::Login(login)) => {
             lost = login.lock_warning(key.provider);
             account.owned_by(&login.owner)
@@ -73,7 +75,7 @@ mod tests {
         let m = machine(name);
         let mut state = state::load(&m.ctx).expect("state");
         state.upsert(in_organisation("team", "here", "org-team", None));
-        let login = crate::provider::of(m.which).fingerprint(&document("here-refresh"));
+        let login = crate::provider::document(m.which).fingerprint(&document("here-refresh"));
         let named = InUse::of(state.get(&m.key(recorded)).expect("enrolled"), &login, NOW);
         state.identified(m.which, named, NOW);
         state::save(&m.ctx, Permit::for_a_test(), &state).expect("saved");

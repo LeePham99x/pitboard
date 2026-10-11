@@ -598,7 +598,8 @@ pub struct SignInView {
 /// What `provider`'s sign-in has printed so far, `said`, comes to. `pasted` is whether a
 /// code has been typed back already, after which none is asked for.
 pub fn sign_in_view(provider: ProviderId, said: &str, pasted: bool) -> SignInView {
-    let read = of(provider).read_sign_in(said);
+    let LoginKind::Document(tool) = of(provider);
+    let read = tool.read_sign_in(said);
     SignInView {
         wants_code: read.wants_code && !pasted,
         ..read
@@ -608,7 +609,8 @@ pub fn sign_in_view(provider: ProviderId, said: &str, pasted: bool) -> SignInVie
 /// Whether `provider`'s sign-in refused the code typed back last, by what it said after it,
 /// `since`, and reads another in its place.
 pub fn refused_code(provider: ProviderId, since: &str) -> bool {
-    of(provider).refused_code(since)
+    let LoginKind::Document(tool) = of(provider);
+    tool.refused_code(since)
 }
 
 /// The first `https` address in what a tool printed, read as a terminal reads it: where a
@@ -699,15 +701,37 @@ pub(crate) fn command(ctx: &Context, _: Permit, tool: ProviderId) -> std::proces
     command
 }
 
-/// The implementation for one tool.
-///
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum LoginKind {
+    Document(&'static dyn Provider),
+}
+
 /// An exhaustive match rather than a lookup, so a tool added to [`ProviderId`] and not to
 /// here stops compiling instead of being silently absent.
-pub(crate) fn of(provider: ProviderId) -> &'static dyn Provider {
-    match provider {
-        ProviderId::Claude => &claude::engine::Claude,
-        ProviderId::Codex => &codex::engine::Codex,
+pub(crate) fn of(tool: ProviderId) -> LoginKind {
+    match tool {
+        ProviderId::Claude => LoginKind::Document(&claude::engine::Claude),
+        ProviderId::Codex => LoginKind::Document(&codex::engine::Codex),
     }
+}
+
+pub(crate) fn claude_code() -> &'static dyn Provider {
+    &claude::engine::Claude
+}
+
+pub(crate) fn codex() -> &'static dyn Provider {
+    &codex::engine::Codex
+}
+
+pub(crate) fn slot(ctx: &Context, tool: ProviderId) -> String {
+    let LoginKind::Document(found) = of(tool);
+    found.slot(ctx)
+}
+
+#[cfg(test)]
+pub(crate) fn document(tool: ProviderId) -> &'static dyn Provider {
+    let LoginKind::Document(found) = of(tool);
+    found
 }
 
 #[cfg(test)]
@@ -757,7 +781,11 @@ mod tests {
     #[test]
     fn every_implementation_agrees_about_which_tool_it_is() {
         for &id in ProviderId::ALL {
-            assert_eq!(of(id).id(), id, "{id} is registered against another tool");
+            assert_eq!(
+                document(id).id(),
+                id,
+                "{id} is registered against another tool"
+            );
         }
     }
 
@@ -765,7 +793,7 @@ mod tests {
     /// to a test rather than a surprise on somebody's machine.
     #[test]
     fn claude_code_follows_a_switch_on_its_own_and_tolerates_a_copy() {
-        let claude = of(ProviderId::Claude);
+        let claude = document(ProviderId::Claude);
         assert_eq!(
             claude.adoption(None),
             Adoption::PollingWithin(33),
@@ -788,7 +816,7 @@ mod tests {
     /// what is true.
     #[test]
     fn a_restart_is_not_a_countdown_of_zero() {
-        let restart = of(ProviderId::Codex).adoption(None);
+        let restart = document(ProviderId::Codex).adoption(None);
         assert_ne!(restart, Adoption::PollingWithin(0));
         assert!(matches!(Adoption::PollingWithin(33), Adoption::PollingWithin(s) if s == 33));
     }
@@ -901,11 +929,11 @@ mod tests {
             Context::new(std::path::PathBuf::from("/nowhere")).with_search_path(search.clone());
         let dir = std::path::Path::new("/tmp/pitboard-signin-scratch");
         for &tool in ProviderId::ALL {
-            let command = of(tool).sign_in(&ctx, Permit::for_a_test(), dir);
+            let command = document(tool).sign_in(&ctx, Permit::for_a_test(), dir);
             let program = prefix.bin().join(tool.program());
             assert_eq!(command.get_program(), program.as_os_str(), "{tool}");
             assert_eq!(env_of(&command, "PATH"), Some(search.as_ref()), "{tool}");
-            assert_eq!(of(tool).program(&ctx), Some(program), "{tool}");
+            assert_eq!(document(tool).program(&ctx), Some(program), "{tool}");
         }
     }
 
@@ -923,7 +951,7 @@ mod tests {
             .with_search_path("/usr/bin:/bin".into());
         let dir = std::path::Path::new("/tmp/pitboard-signin-scratch");
         for &tool in ProviderId::ALL {
-            let command = of(tool).sign_in(&ctx, Permit::for_a_test(), dir);
+            let command = document(tool).sign_in(&ctx, Permit::for_a_test(), dir);
             assert_eq!(
                 command.get_program(),
                 prefix.bin().join(tool.program()).as_os_str(),
@@ -938,7 +966,7 @@ mod tests {
         let on_it = format!("/usr/bin:{}/", prefix.bin().display());
         let ctx = ctx.with_search_path(on_it.clone());
         for &tool in ProviderId::ALL {
-            let command = of(tool).sign_in(&ctx, Permit::for_a_test(), dir);
+            let command = document(tool).sign_in(&ctx, Permit::for_a_test(), dir);
             assert_eq!(env_of(&command, "PATH"), Some(on_it.as_ref()), "{tool}");
         }
     }
@@ -951,14 +979,14 @@ mod tests {
             .with_search_path("/nowhere/at/all".into());
         let dir = std::path::Path::new("/tmp/pitboard-signin-scratch");
         for &tool in ProviderId::ALL {
-            let command = of(tool).sign_in(&ctx, Permit::for_a_test(), dir);
+            let command = document(tool).sign_in(&ctx, Permit::for_a_test(), dir);
             assert_eq!(command.get_program(), tool.program(), "{tool}");
             assert_eq!(
                 env_of(&command, "PATH"),
                 Some("/nowhere/at/all".as_ref()),
                 "{tool}"
             );
-            assert_eq!(of(tool).program(&ctx), None, "{tool}");
+            assert_eq!(document(tool).program(&ctx), None, "{tool}");
         }
     }
 

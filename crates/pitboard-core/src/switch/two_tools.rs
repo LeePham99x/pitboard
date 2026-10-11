@@ -17,7 +17,7 @@ use crate::service::Permit;
 
 fn whose(m: &super::harness::Machine) -> Option<String> {
     let live = m.live()?;
-    provider::of(m.which)
+    provider::document(m.which)
         .identify(&m.ctx, &Credential::new(m.which, live))
         .ok()
         .map(|found| found.account_id)
@@ -178,7 +178,7 @@ fn a_park_openai_will_not_renew_moves_nothing() {
         let parked: Value =
             serde_json::from_str(&m.mem.vault().peek(&service).expect("listed")).expect("json");
         assert_ne!(
-            provider::of(ProviderId::Codex).fingerprint(&parked),
+            provider::document(ProviderId::Codex).fingerprint(&parked),
             here,
             "nothing of `here` was parked"
         );
@@ -221,7 +221,7 @@ fn a_codex_account_is_a_codex_account() {
     assert!(account.claude().is_none());
     let login = codex_login("acc", "r");
     assert_eq!(
-        provider::of(ProviderId::Codex).fingerprint(&login),
+        provider::document(ProviderId::Codex).fingerprint(&login),
         store::fingerprint("r")
     );
 }
@@ -410,7 +410,7 @@ fn a_sign_in_is_enrolled_only_under_its_own_tool() {
     let login = super::enroll::planted(
         &m.ctx,
         Permit::for_a_test(),
-        ProviderId::Codex,
+        provider::document(ProviderId::Codex),
         codex_login("third", "third-refresh"),
     )
     .expect("a sign-in");
@@ -430,7 +430,7 @@ fn a_codex_sign_in_is_parked_as_a_codex_account() {
     let login = super::enroll::planted(
         &m.ctx,
         Permit::for_a_test(),
-        ProviderId::Codex,
+        provider::document(ProviderId::Codex),
         codex_login("third", "third-refresh"),
     )
     .expect("a sign-in");
@@ -498,7 +498,7 @@ fn a_codex_refresh_during_a_switch_is_not_written_over() {
     let refused = crate::fault::meanwhile(
         "switch.park_recorded",
         move || {
-            let live = provider::of(ProviderId::Codex).live(&writer).unwrap();
+            let live = provider::document(ProviderId::Codex).live(&writer).unwrap();
             store::write_raw(
                 &live.chain,
                 Permit::for_a_test(),
@@ -543,7 +543,7 @@ fn another_sign_in_during_a_switch_keeps_the_outgoing_park() {
     let refused = crate::fault::meanwhile(
         "switch.park_recorded",
         move || {
-            let live = provider::of(ProviderId::Codex).live(&writer).unwrap();
+            let live = provider::document(ProviderId::Codex).live(&writer).unwrap();
             store::write_raw(
                 &live.chain,
                 Permit::for_a_test(),

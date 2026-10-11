@@ -3,7 +3,7 @@
 
 use crate::context::Context;
 use crate::error::{Error, Result};
-use crate::provider::ProviderId;
+use crate::provider::{LoginKind, Provider, ProviderId};
 use crate::service::Permit;
 use crate::state::{Key, Park, State};
 use crate::store;
@@ -95,20 +95,20 @@ pub fn price(
 pub fn keep(
     ctx: &Context,
     permit: Permit,
-    provider: ProviderId,
+    tool: &'static dyn Provider,
     label: &str,
     id: &str,
     document: &Value,
 ) -> Result<(Park, Option<crate::service::Warning>)> {
     let parking = price(
         ctx,
-        provider,
+        tool.id(),
         label,
         &service_name(id, ctx.now_millis()),
         document,
     )?;
     let service = reserve(ctx, permit, id)?;
-    let park = store_at(ctx, permit, provider, &service, document)?;
+    let park = store_at(ctx, permit, tool, &service, document)?;
     Ok((park, parking))
 }
 
@@ -116,14 +116,14 @@ pub fn keep(
 pub fn store_at(
     ctx: &Context,
     permit: Permit,
-    provider: ProviderId,
+    tool: &'static dyn Provider,
     service: &str,
     document: &Value,
 ) -> Result<Park> {
-    let park = describe(provider, service, ctx.now(), document);
+    let park = describe(tool, service, ctx.now(), document);
     if park.refresh_fingerprint.is_empty() {
         return Err(Error::LiveCredentialShapeUnexpected {
-            tool: provider,
+            tool: tool.id(),
             detail: "it has no refresh token, so it could never be restored".into(),
         });
     }
@@ -133,10 +133,14 @@ pub fn store_at(
 }
 
 /// What the account index records about a login: nothing secret.
-pub fn describe(provider: ProviderId, service: &str, parked_at: i64, document: &Value) -> Park {
+pub fn describe(
+    tool: &'static dyn Provider,
+    service: &str,
+    parked_at: i64,
+    document: &Value,
+) -> Park {
     // Through the provider: where the dates are and what unit they are in is a fact about
     // the tool, and the three disagree on both.
-    let tool = crate::provider::of(provider);
     let expiry = tool.expiry(document);
     Park {
         service: service.to_string(),
@@ -147,9 +151,8 @@ pub fn describe(provider: ProviderId, service: &str, parked_at: i64, document: &
     }
 }
 
-/// Takes the account so a failure names it, not an item the user has never seen, and so
-/// the fingerprint is read the way that account's tool lays its login out.
-pub fn load(ctx: &Context, key: &Key, park: &Park) -> Result<Value> {
+/// Takes the account so a failure names it, not an item the user has never seen.
+pub fn load(ctx: &Context, tool: &'static dyn Provider, key: &Key, park: &Park) -> Result<Value> {
     let label = key.typed();
     let raw =
         store::vault_read(ctx, &park.service)?.ok_or_else(|| Error::ParkedCredentialMissing {
@@ -159,7 +162,7 @@ pub fn load(ctx: &Context, key: &Key, park: &Park) -> Result<Value> {
         label: label.clone(),
         detail: e.to_string(),
     })?;
-    let found = crate::provider::of(key.provider).fingerprint(&value);
+    let found = tool.fingerprint(&value);
     if park.refresh_fingerprint.is_empty() || found != park.refresh_fingerprint {
         return Err(Error::ParkedCredentialCorrupt {
             label,
@@ -176,19 +179,17 @@ pub fn load(ctx: &Context, key: &Key, park: &Park) -> Result<Value> {
 /// whose own sign-out revokes what it finds, keeping such a copy is keeping a token the
 /// person's next sign-out would end in both places; it is discarded instead. For a tool
 /// that tolerates a copy this is never true, and what was always done still is.
-pub fn is_live_twin(ctx: &Context, provider: ProviderId, document: &Value) -> bool {
-    let tool = crate::provider::of(provider);
+pub fn is_live_twin(ctx: &Context, tool: &'static dyn Provider, document: &Value) -> bool {
     if tool.park_semantics() != crate::provider::ParkSemantics::MoveOnly {
         return false;
     }
     let parked = tool.fingerprint(document);
-    !parked.is_empty() && live_fingerprint(ctx, provider).is_some_and(|live| live == parked)
+    !parked.is_empty() && live_fingerprint(ctx, tool).is_some_and(|live| live == parked)
 }
 
 /// The fingerprint of the refresh token the tool has in use now, where there is one and it
 /// can be read.
-fn live_fingerprint(ctx: &Context, provider: ProviderId) -> Option<String> {
-    let tool = crate::provider::of(provider);
+fn live_fingerprint(ctx: &Context, tool: &'static dyn Provider) -> Option<String> {
     let live = tool.read_live(ctx).ok().flatten()?;
     Some(tool.fingerprint(&live.raw)).filter(|found| !found.is_empty())
 }
@@ -214,7 +215,8 @@ pub fn live_twins(ctx: &Context, state: &State) -> Vec<String> {
         {
             continue;
         }
-        let Some(live) = live_fingerprint(ctx, provider) else {
+        let LoginKind::Document(tool) = crate::provider::of(provider);
+        let Some(live) = live_fingerprint(ctx, tool) else {
             continue;
         };
         twins.extend(
@@ -297,14 +299,23 @@ mod tests {
         let park = store_at(
             &ctx,
             Permit::for_a_test(),
-            ProviderId::Claude,
+            crate::provider::document(ProviderId::Claude),
             &name,
             &oauth("r"),
         )
         .expect("stored");
 
         assert_eq!(mem.vault().services(), vec![name.clone()]);
-        assert_eq!(load(&ctx, &work(), &park).expect("loads"), oauth("r"));
+        assert_eq!(
+            load(
+                &ctx,
+                crate::provider::document(ProviderId::Claude),
+                &work(),
+                &park
+            )
+            .expect("loads"),
+            oauth("r")
+        );
     }
 
     /// The distinction the whole store layer exists to keep. A park that is gone is gone and
@@ -321,7 +332,7 @@ mod tests {
         let park = store_at(
             &ctx,
             Permit::for_a_test(),
-            ProviderId::Claude,
+            crate::provider::document(ProviderId::Claude),
             &name,
             &oauth("r"),
         )
@@ -329,7 +340,12 @@ mod tests {
 
         mem.vault().fault(&name, Fault::Vanish);
         assert!(matches!(
-            load(&ctx, &work(), &park),
+            load(
+                &ctx,
+                crate::provider::document(ProviderId::Claude),
+                &work(),
+                &park
+            ),
             Err(Error::ParkedCredentialMissing { .. })
         ));
 
@@ -337,7 +353,12 @@ mod tests {
             .fault(&name, Fault::Unreadable("the keychain is locked".into()));
         assert!(
             matches!(
-                load(&ctx, &work(), &park),
+                load(
+                    &ctx,
+                    crate::provider::document(ProviderId::Claude),
+                    &work(),
+                    &park
+                ),
                 Err(Error::Store(crate::store::Error::Unreadable(_)))
             ),
             "a store that could not answer must never read as an absent login"
@@ -373,7 +394,7 @@ mod tests {
             store_at(
                 &ctx,
                 Permit::for_a_test(),
-                ProviderId::Claude,
+                crate::provider::document(ProviderId::Claude),
                 &name,
                 &json!({"accessToken": "a"})
             ),
@@ -385,7 +406,7 @@ mod tests {
     #[test]
     fn a_park_records_when_its_login_stops_working() {
         let park = describe(
-            ProviderId::Claude,
+            crate::provider::document(ProviderId::Claude),
             "pitboard-park-x-1",
             50,
             &serde_json::json!({
@@ -423,7 +444,7 @@ mod tests {
         let refused = store_at(
             &Context::for_unit_test(),
             Permit::for_a_test(),
-            ProviderId::Claude,
+            crate::provider::document(ProviderId::Claude),
             "pitboard-park-test-no-refresh",
             &serde_json::json!({"accessToken": "a"}),
         );

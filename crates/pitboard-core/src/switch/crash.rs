@@ -197,7 +197,7 @@ fn a_switch_between_two_organisations_is_settled_by_the_organisation_anthropic_n
     let parked = crate::park::store_at(
         &m.ctx,
         Permit::for_a_test(),
-        crate::provider::ProviderId::Claude,
+        crate::provider::document(crate::provider::ProviderId::Claude),
         &service,
         &super::harness::oauth("team-refresh", 30),
     )
@@ -234,7 +234,7 @@ fn a_switch_between_two_organisations_is_settled_by_the_organisation_anthropic_n
     );
     assert_eq!(
         settled.state.in_use(claude).map(|r| r.login.clone()),
-        Some(provider::of(claude).fingerprint(&rotated)),
+        Some(provider::document(claude).fingerprint(&rotated)),
         "the login Anthropic named, not the one the switch installed"
     );
 }
@@ -426,7 +426,7 @@ fn enrolling_killed_between_the_write_and_the_record_leaves_nothing_unnamed() {
         let login = enroll::planted(
             &m.ctx,
             Permit::for_a_test(),
-            ProviderId::Claude,
+            crate::provider::document(ProviderId::Claude),
             document("third-refresh"),
         )
         .expect("a sign-in");
@@ -476,7 +476,7 @@ fn signing_in_again_killed_at_any_step_recovers_to_something_whole() {
             hold(&m, &at);
             let live = m.live().expect("a login in use");
             assert_eq!(
-                crate::provider::of(m.which).fingerprint(&live),
+                crate::provider::document(m.which).fingerprint(&live),
                 store::fingerprint("here-refresh-2"),
                 "{at}: the new login is the one in use"
             );
@@ -635,7 +635,7 @@ fn renewing_killed_between_the_write_and_the_record_leaves_nothing_unnamed() {
     state.park(
         &crate::state::Key::new(crate::provider::ProviderId::Claude, "there"),
         park::describe(
-            crate::provider::ProviderId::Claude,
+            crate::provider::document(crate::provider::ProviderId::Claude),
             &park.service,
             NOW,
             &json!({
@@ -709,7 +709,7 @@ fn a_renewal_that_cannot_record_its_answer_keeps_it_for_the_next_run() {
     state.park(
         &key,
         park::describe(
-            crate::provider::ProviderId::Claude,
+            crate::provider::document(crate::provider::ProviderId::Claude),
             &held.service,
             NOW,
             &lapsed,

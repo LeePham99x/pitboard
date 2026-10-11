@@ -9,7 +9,7 @@ use crate::error::{Error, Result};
 use crate::holder::{self, capitalised};
 use crate::host::{Elevation, Floor};
 use crate::in_use::{self, Doubt, InUse, Known};
-use crate::provider::{Held, ProviderId};
+use crate::provider::{Held, LoginKind, Provider, ProviderId};
 use crate::state::{self, Account, Key, new_id};
 use crate::switch::{self, Enrolled, Outcome, Recovered, Renewal, Settled, SignIn};
 use crate::{audit, readings, schedule, status, statusline};
@@ -726,7 +726,10 @@ impl Pitboard {
     fn standing(&self, state: &state::State, found: &[(ProviderId, InUse)]) -> Vec<Warning> {
         let doubts = ProviderId::ALL
             .iter()
-            .filter(|&&tool| !crate::provider::of(tool).identifies_by_itself())
+            .filter(|&&tool| {
+                let LoginKind::Document(driver) = crate::provider::of(tool);
+                !driver.identifies_by_itself()
+            })
             .filter_map(|&tool| {
                 let known = match found.iter().find(|(which, _)| *which == tool) {
                     Some((_, found)) => in_use::judged(&self.ctx, tool, Some(found.clone())),
@@ -966,8 +969,10 @@ impl Pitboard {
     /// switch.
     pub fn sign_in(&self, typed: &str) -> std::result::Result<SignIn, Failed> {
         let permit = self.permitted()?;
-        let key = self.signing_in(permit, typed)?;
-        switch::sign_in(&self.ctx, permit, key.provider)
+        let key = self.chosen(permit, "enroll", typed)?;
+        let LoginKind::Document(driver) = crate::provider::of(key.provider);
+        self.ready_to_sign_in(driver)
+            .and_then(|()| switch::sign_in(&self.ctx, permit, driver))
             .map_err(|error| self.not_started(permit, typed, error))
     }
 
@@ -978,21 +983,11 @@ impl Pitboard {
         typed: &str,
     ) -> std::result::Result<switch::WatchedSignIn, Failed> {
         let permit = self.permitted()?;
-        let key = self.signing_in(permit, typed)?;
-        switch::sign_in_watched_as(&self.ctx, permit, &key)
-            .map_err(|error| self.not_started(permit, typed, error))
-    }
-
-    /// Which account a sign-in is for, once everything that could refuse it has been asked.
-    ///
-    /// A name no account could have is refused the way every change refuses one, settling
-    /// an interrupted switch on the way; anything else refused here is recorded and nothing
-    /// more, since nothing was about to change.
-    fn signing_in(&self, permit: Permit, typed: &str) -> std::result::Result<Key, Failed> {
         let key = self.chosen(permit, "enroll", typed)?;
-        self.ready_to_sign_in(key.provider)
-            .map_err(|error| self.not_started(permit, typed, error))?;
-        Ok(key)
+        let LoginKind::Document(driver) = crate::provider::of(key.provider);
+        self.ready_to_sign_in(driver)
+            .and_then(|()| switch::sign_in_watched_as(&self.ctx, permit, driver, &key))
+            .map_err(|error| self.not_started(permit, typed, error))
     }
 
     /// A sign-in that did not start, or did not finish, for a reason other than its name.
@@ -1007,15 +1002,15 @@ impl Pitboard {
     /// Checked before a sign-in starts, so a person does not sign in through a browser
     /// only to be told the state file belongs to another machine, that the tool is not
     /// installed, or that the account could never be switched to afterwards.
-    fn ready_to_sign_in(&self, tool: crate::provider::ProviderId) -> Result<()> {
+    fn ready_to_sign_in(&self, driver: &'static dyn Provider) -> Result<()> {
+        let tool = driver.id();
         if tool == crate::provider::ProviderId::Claude && self.ctx.custom_oauth() {
             return Err(Error::CustomOauthEndpoint);
         }
         state::load(&self.ctx)?;
-        let driver = crate::provider::of(tool);
         // An account signed in here is one to switch to later, which needs a live store
         // Pitboard can write. Asked now rather than after a browser round trip.
-        switch::live_store(&self.ctx, tool)?;
+        switch::live_store(&self.ctx, driver)?;
         // A private sign-in works by pointing the tool's own login at a scratch directory
         // through its home variable. Where that does not really isolate it, running one
         // would write over the login somebody is using, and there is no override: forcing
@@ -1256,14 +1251,16 @@ impl Pitboard {
     /// files as well as from this process's environment, so the app, which has no shell
     /// environment at all, gets the same answer as the command line.
     fn overridden(&self, tool: ProviderId) -> Option<Warning> {
-        let names = crate::provider::of(tool).overridden_by(&self.ctx);
+        let LoginKind::Document(driver) = crate::provider::of(tool);
+        let names = driver.overridden_by(&self.ctx);
         (!names.is_empty()).then_some(Warning::AuthOverridden { tool, names })
     }
 
     /// What a file behind `tool`'s store says, where one is there. It reads that store, so a
     /// read that asks nobody does not ask it.
     fn left_behind(&self, tool: ProviderId) -> Option<Warning> {
-        let behind = crate::provider::of(tool).behind(&self.ctx)?;
+        let LoginKind::Document(driver) = crate::provider::of(tool);
+        let behind = driver.behind(&self.ctx)?;
         Some(Warning::FallbackLogin {
             tool,
             path: behind.path,

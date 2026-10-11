@@ -14,7 +14,7 @@ use crate::context::Context;
 use crate::error::Cause;
 use crate::in_use::{self, InUse};
 use crate::provider::claude::paths as claude;
-use crate::provider::{ProviderError, ProviderId};
+use crate::provider::{LoginKind, Provider, ProviderError, ProviderId};
 use crate::service::Permit;
 use crate::state::{Key, Park, State};
 use crate::switch::identify;
@@ -330,6 +330,7 @@ impl Facts {
 /// when it is asked: a Codex login keeps its token somewhere a Claude Code login does not.
 fn parked_document(
     ctx: &Context,
+    tool: &'static dyn Provider,
     key: &Key,
     parked: Option<&Park>,
     now: i64,
@@ -337,7 +338,7 @@ fn parked_document(
     match parked {
         None => Err(Stale::NothingParked),
         Some(p) if !p.askable_at(now) => Err(Stale::ParkedAccessExpired),
-        Some(p) => park::load(ctx, key, p).map_err(|_| Stale::ParkUnreadable),
+        Some(p) => park::load(ctx, tool, key, p).map_err(|_| Stale::ParkUnreadable),
     }
 }
 
@@ -467,7 +468,7 @@ fn to_api(error: crate::provider::ProviderError) -> ApiError {
 /// Ask about the account filed under `id`, or say why not.
 fn ask_usage(
     ctx: &Context,
-    which: ProviderId,
+    tool: &'static dyn Provider,
     id: &str,
     document: &Value,
     signed_in: bool,
@@ -485,9 +486,9 @@ fn ask_usage(
     // Through the provider, because what a usage call needs is not the same everywhere:
     // Codex sends an account id header it reads out of the credential, and Gemini needs a
     // project id from a file the credential never mentions.
-    let answer = crate::provider::of(which).usage(
+    let answer = tool.usage(
         ctx,
-        &crate::provider::Credential::new(which, document.clone()),
+        &crate::provider::Credential::new(tool.id(), document.clone()),
     );
     // A park that is not the shape its own tool keeps was damaged at rest, which is a fact
     // about the vault and not about the service. Said as such rather than as an answer the
@@ -539,12 +540,12 @@ fn ask_live(
     ctx: &Context,
     permit: Permit,
     state: &State,
-    which: ProviderId,
+    tool: &'static dyn Provider,
     read: &LiveRead,
     remembered: &HashMap<String, Snapshot>,
     fresh: bool,
 ) -> Answered {
-    let tool = crate::provider::of(which);
+    let which = tool.id();
     let recorded = || last_known(state, which);
     let nobody = || Answered {
         found: identify::nobody(read.named.as_deref(), ctx.now()),
@@ -596,7 +597,7 @@ fn ask_live(
             });
         }
     }
-    let (renewed, found) = match identify::told_by_a_read(ctx, permit, state, which, document) {
+    let (renewed, found) = match identify::told_by_a_read(ctx, permit, state, tool, document) {
         Ok(told) => told,
         Err(error) => {
             let error = to_api(error);
@@ -610,7 +611,7 @@ fn ask_live(
     };
     let id = state.id_of(which, &found.owner);
     let document = renewed.as_ref().unwrap_or(document);
-    let (usage, learned) = ask_usage(ctx, which, &id, document, true, remembered.get(&id), fresh);
+    let (usage, learned) = ask_usage(ctx, tool, &id, document, true, remembered.get(&id), fresh);
     Answered {
         login: LiveLogin {
             signed_in: Some(Ok(found.owner.clone())),
@@ -695,28 +696,34 @@ pub(crate) fn ask(ctx: &Context, permit: Permit, state: &State, fresh: bool) -> 
     // what a usage call needs is not the same everywhere, and pulling one field out here
     // would decide that for all of them. What the tool's own record names is read first,
     // as `in_use::named` says why.
-    let live_reads: Vec<(ProviderId, LiveRead)> = tools(state)
+    let live_reads: Vec<(&'static dyn Provider, LiveRead)> = tools(state)
         .into_iter()
         .map(|which| {
             let named = in_use::named(ctx, which);
-            let login = crate::provider::of(which)
+            let LoginKind::Document(tool) = crate::provider::of(which);
+            let login = tool
                 .read_live(ctx)
                 .map(|found| found.map(|credential| credential.raw));
-            (which, LiveRead { named, login })
+            (tool, LiveRead { named, login })
         })
         .collect();
-    let parked_documents: Vec<Result<Value, Stale>> = state
+    let parked_documents: Vec<Result<(&'static dyn Provider, Value), Stale>> = state
         .accounts
         .iter()
-        .map(|a| parked_document(ctx, &a.key(), a.parked.as_ref(), now))
+        .map(|a| {
+            let LoginKind::Document(tool) = crate::provider::of(a.provider());
+            parked_document(ctx, tool, &a.key(), a.parked.as_ref(), now)
+                .map(|document| (tool, document))
+        })
         .collect();
     let mut plans: BTreeMap<String, Plan> = state
         .accounts
         .iter()
         .zip(&parked_documents)
-        .filter_map(|(account, document)| {
+        .filter_map(|(account, parked)| {
+            let (tool, document) = parked.as_ref().ok()?;
             let plan = Plan {
-                said: crate::provider::of(account.provider()).plan(document.as_ref().ok()?),
+                said: tool.plan(document),
                 seen: Seen::Parked(account.parked.as_ref()?.service.clone()),
             };
             Some((account.id.clone(), plan))
@@ -730,13 +737,12 @@ pub(crate) fn ask(ctx: &Context, permit: Permit, state: &State, fresh: bool) -> 
             // only ever stand in for its own tool.
             let per_tool: Vec<_> = live_reads
                 .iter()
-                .map(|(which, read)| {
+                .map(|(tool, read)| {
                     let remembered = &remembered;
-                    let which = *which;
-                    let handle = scope.spawn(move || {
-                        ask_live(ctx, permit, state, which, read, remembered, fresh)
-                    });
-                    (which, handle)
+                    let tool = *tool;
+                    let handle = scope
+                        .spawn(move || ask_live(ctx, permit, state, tool, read, remembered, fresh));
+                    (tool.id(), handle)
                 })
                 .collect();
             let parked: Vec<_> = parked_documents
@@ -746,9 +752,9 @@ pub(crate) fn ask(ctx: &Context, permit: Permit, state: &State, fresh: bool) -> 
                     let remembered = &remembered;
                     scope.spawn(move || match token.as_ref() {
                         Err(stale) => (Err(*stale), None),
-                        Ok(document) => ask_usage(
+                        Ok((tool, document)) => ask_usage(
                             ctx,
-                            account.provider(),
+                            *tool,
                             &account.id,
                             document,
                             false,
@@ -1356,7 +1362,7 @@ mod tests {
             &ctx,
             Permit::for_a_test(),
             &state(&["work"]),
-            ProviderId::Claude,
+            crate::provider::document(ProviderId::Claude),
             &stored(json!({"claudeAiOauth": {
                 "accessToken": "access-w",
                 "subscriptionType": "team",
@@ -1420,7 +1426,7 @@ mod tests {
             park::store_at(
                 &ctx,
                 Permit::for_a_test(),
-                ProviderId::Claude,
+                crate::provider::document(ProviderId::Claude),
                 &service,
                 &block,
             )
@@ -1535,7 +1541,7 @@ mod tests {
         let ask = |signed_in| {
             ask_usage(
                 &ctx,
-                ProviderId::Claude,
+                crate::provider::document(ProviderId::Claude),
                 "t-uuid",
                 &login,
                 signed_in,
@@ -1557,7 +1563,7 @@ mod tests {
         let not_codex = serde_json::json!({"claudeAiOauth": {"accessToken": "t"}});
         let (answer, learned) = ask_usage(
             &ctx,
-            ProviderId::Codex,
+            crate::provider::document(ProviderId::Codex),
             "t-acc",
             &not_codex,
             false,
@@ -1575,10 +1581,22 @@ mod tests {
     fn a_parked_login_past_its_access_expiry_is_not_asked() {
         let ctx = Context::for_unit_test();
         let personal = Key::new(ProviderId::Claude, "personal");
-        let token = parked_document(&ctx, &personal, Some(&parked(NOW + 86_400)), NOW);
+        let token = parked_document(
+            &ctx,
+            crate::provider::document(ProviderId::Claude),
+            &personal,
+            Some(&parked(NOW + 86_400)),
+            NOW,
+        );
         assert_eq!(token, Err(Stale::ParkedAccessExpired));
         assert_eq!(
-            parked_document(&ctx, &personal, None, NOW),
+            parked_document(
+                &ctx,
+                crate::provider::document(ProviderId::Claude),
+                &personal,
+                None,
+                NOW
+            ),
             Err(Stale::NothingParked)
         );
     }
@@ -1930,7 +1948,7 @@ mod tests {
             &ctx,
             Permit::for_a_test(),
             &State::default(),
-            ProviderId::Claude,
+            crate::provider::document(ProviderId::Claude),
             &stored(logged_out),
             &HashMap::new(),
             true,
@@ -2108,7 +2126,7 @@ mod tests {
             &ctx,
             Permit::for_a_test(),
             &State::default(),
-            ProviderId::Claude,
+            crate::provider::document(ProviderId::Claude),
             &stored(json!({"claudeAiOauth": {"accessToken": "access-x"}})),
             &HashMap::new(),
             true,
@@ -2128,7 +2146,7 @@ mod tests {
     fn offline_every_tool_names_its_own_signed_in_account() {
         let home = scratch("offline");
         let (ctx, _mem, api) = machine(&home.0, Some("alpha-uuid"));
-        let codex = crate::provider::of(ProviderId::Codex)
+        let codex = crate::provider::document(ProviderId::Codex)
             .live(&ctx)
             .expect("Codex keeps its login in a file here");
         let login = json!({
@@ -2223,7 +2241,7 @@ mod tests {
 
     /// Put `raw` where this machine's Codex keeps its login, exactly as written.
     fn plant_codex(ctx: &Context, raw: &str) {
-        let codex = crate::provider::of(ProviderId::Codex)
+        let codex = crate::provider::document(ProviderId::Codex)
             .live(ctx)
             .expect("Codex keeps its login in a file here");
         crate::store::write_raw(&codex.chain, Permit::for_a_test(), &codex.service, raw)
@@ -2421,7 +2439,7 @@ mod tests {
                 &ctx,
                 Permit::for_a_test(),
                 &beta_in_use,
-                ProviderId::Claude,
+                crate::provider::document(ProviderId::Claude),
                 &stored(document),
                 &HashMap::new(),
                 true,

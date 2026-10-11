@@ -55,7 +55,7 @@ impl Machine {
 
     /// The live login, read the way the tool reads it.
     pub(crate) fn live(&self) -> Option<Value> {
-        crate::provider::of(self.which)
+        crate::provider::document(self.which)
             .read_live(&self.ctx)
             .ok()
             .flatten()
@@ -64,7 +64,7 @@ impl Machine {
 
     /// Replace the live login, the way the tool itself would write it.
     pub(crate) fn sign_in(&self, document: &Value) {
-        let live = crate::provider::of(self.which)
+        let live = crate::provider::document(self.which)
             .live(&self.ctx)
             .expect("a store to write to");
         store::write_raw(
@@ -90,7 +90,7 @@ impl Machine {
     /// The store the live login is in, and its name there, for a test that has to fault it
     /// from inside a change.
     pub(crate) fn live_store(&self) -> (Arc<crate::store::memory::MemoryStore>, String) {
-        let live = crate::provider::of(self.which)
+        let live = crate::provider::document(self.which)
             .live(&self.ctx)
             .expect("a live store");
         let store = match self.which {
@@ -189,7 +189,7 @@ pub(crate) fn machine(name: &str) -> Machine {
     let parked = park::store_at(
         &ctx,
         Permit::for_a_test(),
-        crate::provider::ProviderId::Claude,
+        crate::provider::document(crate::provider::ProviderId::Claude),
         &parked_service,
         &oauth("there-refresh", 30),
     )
@@ -369,7 +369,7 @@ pub(crate) fn codex_machine(name: &str) -> Machine {
     let parked = park::store_at(
         &machine.ctx,
         Permit::for_a_test(),
-        ProviderId::Codex,
+        crate::provider::document(ProviderId::Codex),
         &parked_service,
         &codex_login("there", "there-refresh"),
     )
@@ -400,7 +400,7 @@ pub(crate) fn record_in_use(ctx: &Context, state: &mut State, which: ProviderId,
         .expect("`here` is enrolled");
     let found = crate::in_use::InUse {
         owner: Some(here.owner()),
-        login: crate::provider::of(which).fingerprint(login),
+        login: crate::provider::document(which).fingerprint(login),
         known_at: NOW,
         named: crate::in_use::named(ctx, which),
     };
@@ -424,7 +424,7 @@ pub(crate) fn signed_in(m: &Machine, who: &str, refresh: &str) -> enroll::SignIn
     enroll::planted(
         &m.ctx,
         Permit::for_a_test(),
-        m.which,
+        crate::provider::document(m.which),
         login_of(m, who, refresh),
     )
     .expect("a sign-in")
@@ -484,7 +484,7 @@ pub(crate) fn lock_dir(target: &std::path::Path) -> PathBuf {
 
 /// What Claude Code's write lock guards.
 pub(crate) fn write_target(m: &Machine) -> PathBuf {
-    crate::provider::of(ProviderId::Claude)
+    crate::provider::document(ProviderId::Claude)
         .write_lock(&m.ctx)
         .expect("Claude Code takes one")
 }
@@ -680,7 +680,7 @@ pub(crate) fn hold(m: &Machine, after: &str) {
     // One refresh token, one place. A token in two places is a token one holder will rotate
     // past, which ends the login for the other; for a tool whose sign-out revokes what it
     // finds, it is a token the person's own next sign-out kills in both.
-    let tool = crate::provider::of(m.which);
+    let tool = crate::provider::document(m.which);
     let mut seen: HashSet<String> = HashSet::new();
     let mut fingerprints = Vec::new();
     for service in m.mem.vault().services() {

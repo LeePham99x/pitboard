@@ -165,7 +165,9 @@ pub mod testing {
         which: crate::provider::ProviderId,
         document: &str,
     ) -> crate::error::Result<crate::switch::SignIn> {
+        use crate::provider::LoginKind;
         let document = serde_json::from_str(document).expect("a login a test wrote as JSON");
-        crate::switch::planted(ctx, crate::service::gate(ctx)?, which, document)
+        let LoginKind::Document(tool) = crate::provider::of(which);
+        crate::switch::planted(ctx, crate::service::gate(ctx)?, tool, document)
     }
 }

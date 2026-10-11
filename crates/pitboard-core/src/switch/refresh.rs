@@ -19,7 +19,7 @@ use super::{shape, to_body, write_lock};
 use crate::context::Context;
 use crate::error::Error;
 use crate::provider::claude::live;
-use crate::provider::{self, ProviderError, ProviderId};
+use crate::provider::{self, LoginKind, Provider, ProviderError, ProviderId};
 use crate::service::Permit;
 use crate::state::{self, Renewing, State};
 use crate::store::{self, RawStore};
@@ -33,7 +33,7 @@ const SAVE_ROUNDS: u32 = 4;
 /// What the vault copy of a renewed login is named after, in place of an account's id.
 const COPY: &str = "renewing";
 
-/// The locks `which`'s tool takes before it renews its login, held: its own, then the one
+/// The locks `tool` takes before it renews its login, held: its own, then the one
 /// beside it, taken as a renewal takes them (Claude Code's are the register's `refresh_lock`),
 /// so no session renews the login meanwhile. The second is gone without where it cannot be
 /// made, as the tool goes without it, and let go of first, as the tool lets go of it.
@@ -48,9 +48,9 @@ impl Refreshing {
     pub(super) fn take(
         ctx: &Context,
         permit: Permit,
-        which: ProviderId,
+        tool: &'static dyn Provider,
     ) -> crate::error::Result<Option<Refreshing>> {
-        let Some((own, legacy)) = provider::of(which).refresh_lock(ctx) else {
+        let Some((own, legacy)) = tool.refresh_lock(ctx) else {
             return Ok(None);
         };
         let own = lock::acquire(permit, &own, lock::REFRESH)?;
@@ -145,13 +145,13 @@ pub(super) fn renew(
     ctx: &Context,
     permit: Permit,
     state: &mut State,
-    which: ProviderId,
+    tool: &'static dyn Provider,
     place: Place<'_>,
     seen: &str,
     login: &Value,
     progress: &mut Progress,
 ) -> Result<Renewed, Stop> {
-    let tool = provider::of(which);
+    let which = tool.id();
     // A renewed login is this one with new tokens of the same length.
     if let Some(price) = place
         .store
@@ -165,7 +165,7 @@ pub(super) fn renew(
             limit: price.limit,
         }));
     }
-    let writing = write_lock(ctx, permit, which)?;
+    let writing = write_lock(ctx, permit, tool)?;
     if place.store.read(place.service)?.as_deref() != Some(seen) {
         return Err(Stop::Changed);
     }
@@ -199,8 +199,8 @@ pub(super) fn renew(
         )
     });
     fault::point("refresh.exchanged");
-    let writing = write_lock_to_save(ctx, permit, which, progress);
-    let saved = save(permit, which, place, &sent, &fresh);
+    let writing = write_lock_to_save(ctx, permit, tool, progress);
+    let saved = save(permit, tool, place, &sent, &fresh);
     progress.lock_lost |= writing.as_ref().is_some_and(lock::Guard::compromised);
     drop(writing);
     if saved.is_ok() {
@@ -246,7 +246,8 @@ fn finish_where(
 ) -> crate::error::Result<()> {
     let mut finished = Ok(());
     for left in state.renewing.clone().iter().filter(|left| whose(left)) {
-        finished = finished.and(save_left(ctx, permit, state, left));
+        let LoginKind::Document(tool) = provider::of(left.tool);
+        finished = finished.and(save_left(ctx, permit, state, tool, left));
     }
     finished
 }
@@ -256,6 +257,7 @@ fn save_left(
     ctx: &Context,
     permit: Permit,
     state: &mut State,
+    tool: &'static dyn Provider,
     left: &Renewing,
 ) -> crate::error::Result<()> {
     let fresh = store::vault_read(ctx, &left.service)?
@@ -267,7 +269,7 @@ fn save_left(
     if left.tool == ProviderId::Claude && crate::settings::custom_oauth(ctx) {
         return Err(Error::CustomOauthEndpoint);
     }
-    let live = super::live_store(ctx, left.tool)?;
+    let live = super::live_store(ctx, tool)?;
     if live.service != left.slot {
         return Ok(());
     }
@@ -282,10 +284,10 @@ fn save_left(
         store: kept,
         service: &live.service,
     };
-    let refreshing = Refreshing::take(ctx, permit, left.tool)?;
-    let saved = write_lock(ctx, permit, left.tool)
+    let refreshing = Refreshing::take(ctx, permit, tool)?;
+    let saved = write_lock(ctx, permit, tool)
         .map_err(Stop::from)
-        .and_then(|_writing| save(permit, left.tool, place, &left.sent, &fresh));
+        .and_then(|_writing| save(permit, tool, place, &left.sent, &fresh));
     Refreshing::let_go(refreshing);
     match saved {
         Ok(_) | Err(Stop::Changed) => {
@@ -304,11 +306,11 @@ fn save_left(
 fn write_lock_to_save(
     ctx: &Context,
     permit: Permit,
-    which: ProviderId,
+    tool: &'static dyn Provider,
     progress: &mut Progress,
 ) -> Option<lock::Guard> {
     for _ in 0..SAVE_ROUNDS {
-        match write_lock(ctx, permit, which) {
+        match write_lock(ctx, permit, tool) {
             Ok(writing) => return writing,
             Err(Error::Lock(lock::LockError::Busy)) => {}
             Err(_) => break,
@@ -323,19 +325,18 @@ fn write_lock_to_save(
 /// that refresh token, keeping whatever else it has come to hold. What it holds then.
 fn save(
     permit: Permit,
-    which: ProviderId,
+    tool: &'static dyn Provider,
     place: Place<'_>,
     sent: &str,
     fresh: &Value,
 ) -> Result<String, Stop> {
-    let tool = provider::of(which);
     let now = place
         .store
         .read(place.service)?
         .map(|now| live::document_in(&now))
         .filter(|now| tool.fingerprint(now) == sent)
         .ok_or(Stop::Changed)?;
-    let renewed = to_body(tool.splice(&now, fresh).map_err(|e| shape(which, e))?);
+    let renewed = to_body(tool.splice(&now, fresh).map_err(|e| shape(tool.id(), e))?);
     match place.store.write(permit, place.service, &renewed) {
         // Nothing landed, so once more: nothing else holds the renewed login.
         Err(store::Error::Write(_)) => place.store.write(permit, place.service, &renewed)?,

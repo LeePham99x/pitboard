@@ -13,7 +13,7 @@ use super::{Settled, Switched, identify, switch_from};
 use crate::audit;
 use crate::autoswitch::{self, Auto, Blind, Judged, Ledger, Threshold};
 use crate::error::{Error, Result};
-use crate::provider::ProviderId;
+use crate::provider::{self, ProviderId};
 use crate::service::Warning;
 
 /// Switches Claude Code where a limit of the account in use has reached `threshold` and
@@ -45,6 +45,7 @@ pub(crate) fn automatically(
     let ctx = &ctx;
     let now = ctx.now();
     let which = ProviderId::Claude;
+    let tool = provider::claude_code();
     let stopped = |subject: &str, error: Error| {
         audit::record(ctx, permit, "auto-switch", subject, error.code());
         error
@@ -55,7 +56,7 @@ pub(crate) fn automatically(
     if let Some(why) = ledger.unidentified(known_at, now) {
         return Ok((Auto::NotWatching { why }, Vec::new()));
     }
-    let (live, found) = match identify::look(ctx, permit, &mut state, which) {
+    let (live, found) = match identify::look(ctx, permit, &mut state, tool) {
         Ok(looked) => looked,
         Err(error) if unreadable_here(&error) => return Err(stopped(unchosen, error)),
         Err(error) => {
@@ -71,7 +72,7 @@ pub(crate) fn automatically(
             return Ok((Auto::NotWatching { why }, Vec::new()));
         }
     };
-    identify::keep(ctx, permit, &mut state, which, found)
+    identify::keep(ctx, permit, &mut state, tool, found)
         .map_err(|error| stopped(unchosen, error))?;
     if ledger.told() {
         ledger
@@ -121,7 +122,7 @@ pub(crate) fn automatically(
     ledger
         .save(ctx, permit)
         .map_err(|error| stopped(&to, error))?;
-    match switch_from(state, ctx, permit, &plan.to, outgoing) {
+    match switch_from(state, ctx, permit, tool, &plan.to, outgoing) {
         Ok((
             Switched {
                 from, to, adoption, ..
@@ -1085,7 +1086,7 @@ mod tests {
         let parked = park::store_at(
             &m.ctx,
             Permit::for_a_test(),
-            ProviderId::Claude,
+            crate::provider::document(ProviderId::Claude),
             &parked,
             &super::super::harness::oauth("other-refresh", 30),
         )

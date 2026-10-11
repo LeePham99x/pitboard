@@ -149,7 +149,13 @@ mod tests {
             assert_eq!(state.accounts.len(), 2, "{:?}", m.which);
             let there = state.get(&m.key("there")).expect("`there` is enrolled");
             let park = there.parked.as_ref().expect("`there` is still parked");
-            crate::park::load(&m.ctx, &m.key("there"), park).expect("its parked login is kept");
+            crate::park::load(
+                &m.ctx,
+                crate::provider::document(m.which),
+                &m.key("there"),
+                park,
+            )
+            .expect("its parked login is kept");
             assert!(home::dir(&m.ctx).is_dir());
             assert!(matches!(
                 schedule::status(&m.ctx),

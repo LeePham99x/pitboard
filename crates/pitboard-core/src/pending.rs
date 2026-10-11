@@ -13,6 +13,7 @@
 
 use crate::context::Context;
 use crate::error::{Error, Result};
+use crate::provider::LoginKind;
 use crate::service::Permit;
 use crate::state::State;
 use crate::{atomic, home, park, store};
@@ -204,7 +205,8 @@ fn adopt(
     let oauth = serde_json::from_str::<serde_json::Value>(raw).ok()?;
     let account = state.owner_of_park(&id)?;
     let key = account.key();
-    let park = park::describe(key.provider, service, at_millis / 1000, &oauth);
+    let LoginKind::Document(tool) = crate::provider::of(key.provider);
+    let park = park::describe(tool, service, at_millis / 1000, &oauth);
     if park.refresh_fingerprint.is_empty() || !park.restorable_at(ctx.now()) {
         return None;
     }
@@ -222,7 +224,7 @@ fn adopt(
     }
     // A copy of the login signed in now is not something to give back, for a tool whose
     // park may never be a copy.
-    if park::is_live_twin(ctx, key.provider, &oauth) {
+    if park::is_live_twin(ctx, tool, &oauth) {
         return None;
     }
     // A vault of files lives inside this home, so whatever is in it is this Pitboard's
@@ -357,7 +359,12 @@ mod tests {
         state.accounts.push(account("work", "acc"));
         state.park(
             &work(),
-            park::describe(ProviderId::Claude, service, NOW, &oauth("r")),
+            park::describe(
+                crate::provider::document(ProviderId::Claude),
+                service,
+                NOW,
+                &oauth("r"),
+            ),
         );
 
         assert!(outstanding(&ctx, Some(&state)).is_empty());
@@ -420,7 +427,12 @@ mod tests {
         state.accounts.push(account("work", "acc"));
         state.park(
             &work(),
-            park::describe(ProviderId::Claude, held.0, held.2, &oauth(held.1)),
+            park::describe(
+                crate::provider::document(ProviderId::Claude),
+                held.0,
+                held.2,
+                &oauth(held.1),
+            ),
         );
         (ctx, state, root)
     }
@@ -651,7 +663,12 @@ mod tests {
         state.accounts.push(account("work", "acc"));
         state.park(
             &work(),
-            park::describe(ProviderId::Claude, service, NOW, &oauth("r")),
+            park::describe(
+                crate::provider::document(ProviderId::Claude),
+                service,
+                NOW,
+                &oauth("r"),
+            ),
         );
 
         assert_eq!(

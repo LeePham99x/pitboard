@@ -143,7 +143,7 @@ mod tests {
                 oauth_account: json!({"accountUuid": "acc"}),
             },
             parked: Some(crate::park::describe(
-                crate::provider::ProviderId::Claude,
+                crate::provider::document(crate::provider::ProviderId::Claude),
                 service,
                 NOW,
                 &oauth(),

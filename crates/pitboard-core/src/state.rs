@@ -717,7 +717,7 @@ pub(crate) fn load_any_machine(ctx: &Context) -> Result<(State, bool)> {
     // `CLAUDE_CONFIG_DIR` says nothing about Codex's record, nor `CODEX_HOME` about Claude
     // Code's.
     for &tool in ProviderId::ALL {
-        state.in_slot(tool, crate::provider::of(tool).slot(ctx));
+        state.in_slot(tool, crate::provider::slot(ctx, tool));
     }
     Ok((state, here))
 }
@@ -869,7 +869,7 @@ pub(crate) fn save(ctx: &Context, permit: Permit, state: &State) -> Result<()> {
     home::check_location(&home::dir(ctx))?;
     let mut state = state.clone();
     for &tool in ProviderId::ALL {
-        state.in_slot(tool, crate::provider::of(tool).slot(ctx));
+        state.in_slot(tool, crate::provider::slot(ctx, tool));
     }
     let state = &state;
     let path = file(ctx);

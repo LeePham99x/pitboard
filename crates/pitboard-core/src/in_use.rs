@@ -10,7 +10,7 @@
 
 use crate::api::Owner;
 use crate::context::Context;
-use crate::provider::{self, ProviderId};
+use crate::provider::{self, LoginKind, ProviderId};
 use crate::state::{Key, State, new_id};
 use serde::{Deserialize, Serialize};
 
@@ -111,7 +111,7 @@ impl Known {
 /// account, the login's own claims, or the record where the login cannot be read. For
 /// another, the record, judged against what the tool's own record names now ([`judged`]).
 pub(crate) fn known(ctx: &Context, state: &State, which: ProviderId) -> Known {
-    let tool = provider::of(which);
+    let LoginKind::Document(tool) = provider::of(which);
     if !tool.identifies_by_itself() {
         return judged(ctx, which, state.in_use(which).cloned());
     }
@@ -165,7 +165,8 @@ pub(crate) fn judged(ctx: &Context, which: ProviderId, last: Option<InUse>) -> K
 /// The account `which`'s own record names now, as [`provider::Provider::own_record`] reads
 /// it.
 pub(crate) fn names(ctx: &Context, which: ProviderId) -> Option<Owner> {
-    provider::of(which).own_record(ctx).map(Owner::from)
+    let LoginKind::Document(tool) = provider::of(which);
+    tool.own_record(ctx).map(Owner::from)
 }
 
 /// What `which`'s own record names now, by the id [`new_id`] gives that account's login.
@@ -178,7 +179,8 @@ pub(crate) fn named(ctx: &Context, which: ProviderId) -> Option<String> {
 
 /// What `which`'s own record names once a switch has written `owner`'s account there.
 pub(crate) fn naming(which: ProviderId, owner: &Owner) -> Option<String> {
-    (!provider::of(which).identifies_by_itself()).then(|| new_id(which, owner))
+    let LoginKind::Document(tool) = provider::of(which);
+    (!tool.identifies_by_itself()).then(|| new_id(which, owner))
 }
 
 #[cfg(test)]

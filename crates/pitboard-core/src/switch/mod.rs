@@ -8,7 +8,7 @@
 //! never a missing one.
 
 use crate::provider;
-use crate::provider::ProviderId;
+use crate::provider::{LoginKind, Provider, ProviderId};
 mod adopt;
 mod auto;
 #[cfg(test)]
@@ -38,10 +38,10 @@ pub use adopt::{Adopted, adopt};
 pub(crate) use auto::automatically;
 #[cfg(feature = "test-support")]
 pub(crate) use enroll::planted;
-pub(crate) use enroll::sign_in_watched_as;
-pub use enroll::{Enrolled, Said, SignIn, WatchedSignIn, enroll, sign_in, sign_in_watched};
+pub use enroll::{Enrolled, Said, SignIn, WatchedSignIn, enroll};
 #[cfg(any(test, feature = "test-support"))]
 pub use enroll::{ScriptedSignIn, SignInScript};
+pub(crate) use enroll::{sign_in, sign_in_watched_as};
 pub use forget::forget;
 pub use journal::{Abandoned, Recovered, pending as interrupted};
 pub(crate) use journal::{Asking, interrupted_tool};
@@ -290,14 +290,13 @@ fn lock_file(ctx: &Context, permit: Permit) -> Result<(std::fs::File, PathBuf)> 
 /// caller wants the answer and should not have to know which.
 pub(super) fn identify_document(
     ctx: &Context,
-    which: ProviderId,
+    tool: &'static dyn Provider,
     document: &Value,
 ) -> Result<api::Owner> {
-    let credential = provider::Credential::new(which, document.clone());
-    provider::of(which)
-        .identify(ctx, &credential)
+    let credential = provider::Credential::new(tool.id(), document.clone());
+    tool.identify(ctx, &credential)
         .map(api::Owner::from)
-        .map_err(|e| unidentified(which, e))
+        .map_err(|e| unidentified(tool.id(), e))
 }
 
 /// Why nobody could say whose a login of `which` is, as a change refuses over it.
@@ -322,16 +321,19 @@ fn unidentified(which: ProviderId, error: provider::ProviderError) -> Error {
 /// Nothing in any store Pitboard reads, and the tool's own record naming somebody as signed
 /// in, are two different situations. The second means Pitboard is looking in the wrong
 /// place, and writing a login there would put it where nobody reads.
-pub(super) fn nothing_signed_in(ctx: &Context, which: ProviderId) -> Error {
-    match provider::of(which).own_record(ctx) {
+pub(super) fn nothing_signed_in(ctx: &Context, tool: &'static dyn Provider) -> Error {
+    match tool.own_record(ctx) {
         Some(found) => Error::LiveCredentialElsewhere { email: found.email },
-        None => Error::LiveCredentialAbsent { tool: which },
+        None => Error::LiveCredentialAbsent { tool: tool.id() },
     }
 }
 
 /// Where this tool's live login is, or why Pitboard cannot act on it here.
-pub(super) fn live_store(ctx: &Context, which: ProviderId) -> Result<provider::LiveStore> {
-    provider::of(which).live(ctx).map_err(|e| shape(which, e))
+pub(super) fn live_store(
+    ctx: &Context,
+    tool: &'static dyn Provider,
+) -> Result<provider::LiveStore> {
+    tool.live(ctx).map_err(|e| shape(tool.id(), e))
 }
 
 /// The live login as it is stored, byte for byte, and as a document.
@@ -340,28 +342,32 @@ pub(super) fn live_store(ctx: &Context, which: ProviderId) -> Result<provider::L
 /// document read back through a parser would compare equal to one whose bytes had moved.
 fn read_live(
     ctx: &Context,
-    which: ProviderId,
+    tool: &'static dyn Provider,
     live: &provider::LiveStore,
 ) -> Result<(String, Value)> {
-    read_stored(which, live)?.ok_or_else(|| nothing_signed_in(ctx, which))
+    read_stored(tool, live)?.ok_or_else(|| nothing_signed_in(ctx, tool))
 }
 
 /// [`read_live`], with `None` where nothing is signed in: nothing stored, or a document with
 /// no account's login in it, as Claude Code's `/logout` leaves.
-fn read_stored(which: ProviderId, live: &provider::LiveStore) -> Result<Option<(String, Value)>> {
+fn read_stored(
+    tool: &'static dyn Provider,
+    live: &provider::LiveStore,
+) -> Result<Option<(String, Value)>> {
     let Some(raw) = store::read_raw(&live.chain, &live.service)? else {
         return Ok(None);
     };
     let document = serde_json::from_str(&raw)
         .map_err(|e| Error::Store(store::Error::Malformed(e.to_string())))?;
-    match provider::of(which).slice(&document) {
+    match tool.slice(&document) {
         Err(provider::ProviderError::NoLogin { .. }) => Ok(None),
-        Err(other) => Err(shape(which, other)),
+        Err(other) => Err(shape(tool.id(), other)),
         Ok(_) => Ok(Some((raw, document))),
     }
 }
 
 pub fn switch(settled: Settled, key: &Key) -> Result<(Outcome, Vec<Warning>)> {
+    let LoginKind::Document(tool) = provider::of(key.provider);
     let Settled {
         _exclusive,
         mut state,
@@ -372,16 +378,15 @@ pub fn switch(settled: Settled, key: &Key) -> Result<(Outcome, Vec<Warning>)> {
     // Known before taking the tool's own lock so a round trip does not hold up its writes,
     // then confirmed under the lock. Recorded at once, so the record names the account a
     // switch moves out of when it records the one it moves to, whatever it named before.
-    let identify::Live::Login(outgoing) = identify::now(&ctx, permit, &mut state, key.provider)?
-    else {
+    let identify::Live::Login(outgoing) = identify::now(&ctx, permit, &mut state, tool)? else {
         return Err(Error::LiveCredentialAbsent { tool: key.provider });
     };
     if target.owned_by(&outgoing.owner) {
         let lost = outgoing.lock_warning(key.provider);
-        return already_active(&ctx, permit, &mut state, key, &target)
+        return already_active(&ctx, permit, &mut state, tool, key, &target)
             .map(|(outcome, warnings)| (outcome, lost.into_iter().chain(warnings).collect()));
     }
-    let (switched, warnings) = switch_from(state, &ctx, permit, key, outgoing)?;
+    let (switched, warnings) = switch_from(state, &ctx, permit, tool, key, outgoing)?;
     Ok((switched.into(), warnings))
 }
 
@@ -389,6 +394,7 @@ pub fn switch(settled: Settled, key: &Key) -> Result<(Outcome, Vec<Warning>)> {
 /// into its tool's own record where that names another account. Refused, moving nothing,
 /// where another account's login is stored by then, which [`switch`] would switch back from.
 pub fn update_config(settled: Settled, key: &Key) -> Result<(Outcome, Vec<Warning>)> {
+    let LoginKind::Document(tool) = provider::of(key.provider);
     let Settled {
         _exclusive,
         mut state,
@@ -396,10 +402,10 @@ pub fn update_config(settled: Settled, key: &Key) -> Result<(Outcome, Vec<Warnin
         permit,
     } = settled;
     let target = enrolled(&state, key)?;
-    match identify::now(&ctx, permit, &mut state, key.provider)? {
+    match identify::now(&ctx, permit, &mut state, tool)? {
         identify::Live::Login(stored) if target.owned_by(&stored.owner) => {
             let lost = stored.lock_warning(key.provider);
-            already_active(&ctx, permit, &mut state, key, &target)
+            already_active(&ctx, permit, &mut state, tool, key, &target)
                 .map(|(outcome, warnings)| (outcome, lost.into_iter().chain(warnings).collect()))
         }
         _ => Err(Error::AccountNotInUse {
@@ -457,11 +463,11 @@ fn switch_from(
     mut state: State,
     ctx: &Context,
     permit: Permit,
+    tool: &'static dyn Provider,
     key: &Key,
     outgoing: identify::Login,
 ) -> Result<(Switched, Vec<Warning>)> {
     let label = &key.label;
-    let tool = provider::of(key.provider);
     let target = enrolled(&state, key)?;
     let identify::Login {
         store: live,
@@ -491,23 +497,24 @@ fn switch_from(
     if !held.restorable_at(ctx.now()) {
         return Err(Error::ParkedLoginExpired { label: to.clone() });
     }
-    let incoming = park::load(ctx, key, &held)?;
+    let incoming = park::load(ctx, tool, key, &held)?;
     // Asked before the tool's lock is taken, like the outgoing question, so the round trip
     // does not hold up its writes.
-    let (held, incoming) = prove_incoming(ctx, permit, &mut state, key, &target, held, incoming)?;
+    let (held, incoming) =
+        prove_incoming(ctx, permit, &mut state, tool, key, &target, held, incoming)?;
 
     // A renewal by a running session spends the refresh token it sends, and the tool's write
     // lock does not keep one from starting. So the lock a renewal takes first is held from
     // before the outgoing login is read for the last time until the login installed in its
     // place is recorded: the copy parked is then never one a session has spent.
-    let refreshing = Refreshing::take(ctx, permit, key.provider)?;
-    let guard = write_lock(ctx, permit, key.provider)?;
+    let refreshing = Refreshing::take(ctx, permit, tool)?;
+    let guard = write_lock(ctx, permit, tool)?;
     let Readied {
         before_raw,
         before,
         next,
         on_the_command_line,
-    } = ready(ctx, key.provider, &live, &first, &outgoing, &incoming, &to)?;
+    } = ready(ctx, tool, &live, &first, &outgoing, &incoming, &to)?;
 
     // The outgoing login's park has a ceiling of its own on a machine whose vault is the
     // keychain, and it is asked about now, while refusing still changes nothing. The name
@@ -545,7 +552,7 @@ fn switch_from(
     // a failure here takes the record of intent away with it. A copy that was written but
     // could not be recorded is deleted: nothing that survives would name it.
     let slice = tool.slice(&before).map_err(|e| shape(key.provider, e))?;
-    let parked = match park::store_at(ctx, permit, key.provider, &park_service, &slice) {
+    let parked = match park::store_at(ctx, permit, tool, &park_service, &slice) {
         Ok(parked) => parked,
         Err(e) => {
             clear_journal(ctx, permit);
@@ -588,7 +595,7 @@ fn switch_from(
             .ok()
             .flatten()
             .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
-            .and_then(|document| identify_document(ctx, key.provider, &document).ok())
+            .and_then(|document| identify_document(ctx, tool, &document).ok())
             .is_some_and(|found| found.same_login(&outgoing));
         if still_outgoing {
             state.discard(&parked.service);
@@ -634,7 +641,7 @@ fn switch_from(
     // Checked before the incoming copy is discarded, so finding it did not hold leaves both
     // logins parked rather than neither.
     let lock_lost = guard.as_ref().is_some_and(lock::Guard::compromised);
-    match holds(key.provider, &live) {
+    match holds(tool, &live) {
         Ok(true) => {}
         Ok(false) => {
             clear_journal(ctx, permit);
@@ -676,14 +683,7 @@ fn switch_from(
         email: outgoing.email.clone(),
         group: Some(outgoing.organization_uuid.clone()).filter(|g| !g.is_empty()),
     };
-    let cache_warning = write_config(
-        ctx,
-        permit,
-        &mut state,
-        key.provider,
-        &target,
-        &outgoing_identity,
-    );
+    let cache_warning = write_config(ctx, permit, &mut state, tool, &target, &outgoing_identity);
     fault::point("switch.config_updated");
     let parks_pending = purge(ctx, permit, &mut state);
     clear_journal(ctx, permit);
@@ -730,17 +730,18 @@ fn already_active(
     ctx: &Context,
     permit: Permit,
     state: &mut State,
+    tool: &'static dyn Provider,
     key: &Key,
     target: &Account,
 ) -> Result<(Outcome, Vec<Warning>)> {
     let which = key.provider;
     let naming = in_use::naming(which, &target.owner());
-    let named = provider::of(which)
+    let named = tool
         .own_record(ctx)
         .filter(|named| Some(state::new_id(which, &api::Owner::from(named.clone()))) != naming);
     let (config_updated, warnings) = match named {
         None => (false, Vec::new()),
-        Some(named) => match write_config(ctx, permit, state, which, target, &named) {
+        Some(named) => match write_config(ctx, permit, state, tool, target, &named) {
             None => (true, Vec::new()),
             Some(warning) => (false, vec![warning]),
         },
@@ -754,7 +755,7 @@ fn already_active(
     ))
 }
 
-/// Writes `target`, whose login `which` has stored and is recorded as in use, into the
+/// Writes `target`, whose login `tool` has stored and is recorded as in use, into the
 /// tool's own record over `named`, and records that it names `target` once the write lands.
 /// A write that fails is the warning returned, and leaves the record naming what the tool's
 /// own record named when the store was read, so every read says it names another account.
@@ -762,11 +763,12 @@ fn write_config(
     ctx: &Context,
     permit: Permit,
     state: &mut State,
-    which: ProviderId,
+    tool: &'static dyn Provider,
     target: &Account,
     named: &provider::Identity,
 ) -> Option<Warning> {
-    if let Err(error) = provider::of(which).after_switch(ctx, permit, target, named) {
+    let which = tool.id();
+    if let Err(error) = tool.after_switch(ctx, permit, target, named) {
         return Some(Warning::ConfigNotUpdated(error));
     }
     if let Some(record) = state.in_use(which).cloned() {
@@ -792,11 +794,15 @@ struct Readied {
     on_the_command_line: Option<Warning>,
 }
 
-/// The lock `which`'s tool takes around its own writes to its live login, taken the way it
+/// The lock `tool` takes around its own writes to its live login, taken the way it
 /// takes it, where it takes one. The caller holds it from before it readies a write until it
 /// has recorded what it wrote.
-fn write_lock(ctx: &Context, permit: Permit, which: ProviderId) -> Result<Option<lock::Guard>> {
-    Ok(provider::of(which)
+fn write_lock(
+    ctx: &Context,
+    permit: Permit,
+    tool: &'static dyn Provider,
+) -> Result<Option<lock::Guard>> {
+    Ok(tool
         .write_lock(ctx)
         .map(|dir| lock::acquire(permit, &dir, lock::WRITE))
         .transpose()?)
@@ -810,19 +816,19 @@ fn write_lock(ctx: &Context, permit: Permit, which: ProviderId) -> Result<Option
 /// would be written could never be.
 fn ready(
     ctx: &Context,
-    which: ProviderId,
+    tool: &'static dyn Provider,
     live: &provider::LiveStore,
     first: &Value,
     signed_in: &api::Owner,
     incoming: &Value,
     label: &str,
 ) -> Result<Readied> {
-    let tool = provider::of(which);
-    let (before_raw, before) = read_live(ctx, which, live)?;
+    let which = tool.id();
+    let (before_raw, before) = read_live(ctx, tool, live)?;
     // A refresh keeps the account, so an unchanged share of the document needs no second
     // question. A sign-in between the two reads would not keep it.
     if tool.slice(&before).ok() != tool.slice(first).ok()
-        && !identify_document(ctx, which, &before)?.same_login(signed_in)
+        && !identify_document(ctx, tool, &before)?.same_login(signed_in)
     {
         return Err(Error::SignedInAccountChanged);
     }
@@ -867,8 +873,10 @@ fn ready(
 ///
 /// The tool may have rotated the token it was just given, which keeps the account and
 /// changes the bytes: a login of its shape being there at all is the fact.
-fn holds(which: ProviderId, live: &provider::LiveStore) -> std::result::Result<bool, store::Error> {
-    let tool = provider::of(which);
+fn holds(
+    tool: &'static dyn Provider,
+    live: &provider::LiveStore,
+) -> std::result::Result<bool, store::Error> {
     store::read_raw(&live.chain, &live.service).map(|now| {
         now.and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
             .is_some_and(|document| tool.slice(&document).is_ok())
@@ -894,7 +902,8 @@ pub(crate) enum StillHolding {
 pub(crate) fn still_holding(ctx: &Context, which: ProviderId) -> StillHolding {
     // What sits behind a store only delays sessions that follow by themselves, which hold
     // nothing here, so it is not read.
-    match provider::of(which).adoption(None) {
+    let LoginKind::Document(tool) = provider::of(which);
+    match tool.adoption(None) {
         provider::Adoption::RestartRequired { program, holders } => {
             match holder::find(ctx, program, holders) {
                 None => StillHolding::Unknown,
@@ -919,10 +928,12 @@ pub(crate) fn still_holding(ctx: &Context, which: ProviderId) -> StillHolding {
 /// A lapsed park is renewed rather than refused, which is the whole point of parking one.
 /// That is a write, so it happens here, before anything is parked, while both copies are
 /// still where they were.
+#[allow(clippy::too_many_arguments)]
 fn prove_incoming(
     ctx: &Context,
     permit: Permit,
     state: &mut State,
+    tool: &'static dyn Provider,
     key: &Key,
     target: &Account,
     held: Park,
@@ -931,10 +942,7 @@ fn prove_incoming(
     let label = state.typed(key);
     if held.askable_at(ctx.now()) {
         let credential = provider::Credential::new(key.provider, incoming.clone());
-        match provider::of(key.provider)
-            .verify(ctx, &credential)
-            .map(api::Owner::from)
-        {
+        match tool.verify(ctx, &credential).map(api::Owner::from) {
             Ok(found) if target.owned_by(&found) => return Ok((held, incoming)),
             Ok(other) => {
                 return Err(Error::ParkedLoginBelongsElsewhere {
@@ -963,7 +971,7 @@ fn prove_incoming(
     }
 
     // Lapsed, or refused as lapsed. Renew it and switch to what comes back.
-    let Some(fresh) = renew::renew_one(ctx, permit, state, key, &held)? else {
+    let Some(fresh) = renew::renew_one(ctx, permit, state, tool, key, &held)? else {
         return Err(Error::IdentityUnverifiable {
             tool: key.provider,
             cause: crate::error::Cause::Unreachable,
@@ -973,7 +981,7 @@ fn prove_incoming(
             ),
         });
     };
-    let document = park::load(ctx, key, &fresh)?;
+    let document = park::load(ctx, tool, key, &fresh)?;
     Ok((fresh, document))
 }
 
@@ -1109,7 +1117,7 @@ mod tests {
         assert_eq!(
             state.in_use(ProviderId::Claude).map(|r| r.login.as_str()),
             Some(
-                provider::of(ProviderId::Claude)
+                provider::document(ProviderId::Claude)
                     .fingerprint(&harness::oauth("there-refresh", 30))
                     .as_str()
             )
