@@ -1,7 +1,8 @@
 import XCTest
 
 /// A machine in a known state, as the app's debug build knows it from `PITBOARD_FIXTURE`.
-/// Named the same as the app's own `Fixture` cases.
+/// Named as the core's fixtures are, which `fixture_names()` gives and the app's unit tests
+/// hold to this list.
 enum Fixture: String {
     case twoTools
     case oneTool
@@ -13,7 +14,6 @@ enum Fixture: String {
     case readFailure
     case stuck
     case chatGPTOpen
-    case claudeDesktop
 }
 
 @MainActor

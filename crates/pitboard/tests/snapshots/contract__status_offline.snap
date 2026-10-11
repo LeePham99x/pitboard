@@ -24,6 +24,7 @@ expression: "serde_json :: json! ({ \"exit\" : code, \"envelope\" : value })"
           "label": "alpha",
           "email": "a@example.com",
           "account_uuid": "2b118e99-a111-4111-8111-111111111111",
+          "organization_uuid": "2b118e99-o111-4111-8111-111111111111",
           "signed_in": true,
           "switchable": false,
           "parked": null,
@@ -39,7 +40,8 @@ expression: "serde_json :: json! ({ \"exit\" : code, \"envelope\" : value })"
                 "resets_at": 1789986600,
                 "is_active": false,
                 "severity": null,
-                "length_seconds": 18000
+                "length_seconds": 18000,
+                "pace": null
               },
               {
                 "kind": "seven_day",
@@ -48,18 +50,21 @@ expression: "serde_json :: json! ({ \"exit\" : code, \"envelope\" : value })"
                 "resets_at": 1790474400,
                 "is_active": false,
                 "severity": null,
-                "length_seconds": 604800
+                "length_seconds": 604800,
+                "pace": null
               }
             ]
           },
           "stale": "not_asked",
           "provider": "claude",
-          "qualified": "claude/alpha"
+          "qualified": "claude/alpha",
+          "plan": "Max"
         },
         {
           "label": "beta",
           "email": "b@example.com",
           "account_uuid": "2b118e99-b111-4111-8111-111111111111",
+          "organization_uuid": "2b118e99-p111-4111-8111-111111111111",
           "signed_in": false,
           "switchable": true,
           "parked": {
@@ -79,7 +84,8 @@ expression: "serde_json :: json! ({ \"exit\" : code, \"envelope\" : value })"
                 "resets_at": 1789986600,
                 "is_active": false,
                 "severity": null,
-                "length_seconds": 18000
+                "length_seconds": 18000,
+                "pace": null
               },
               {
                 "kind": "seven_day",
@@ -88,13 +94,15 @@ expression: "serde_json :: json! ({ \"exit\" : code, \"envelope\" : value })"
                 "resets_at": 1790474400,
                 "is_active": false,
                 "severity": null,
-                "length_seconds": 604800
+                "length_seconds": 604800,
+                "pace": null
               }
             ]
           },
           "stale": "not_asked",
           "provider": "claude",
-          "qualified": "claude/beta"
+          "qualified": "claude/beta",
+          "plan": "Max"
         }
       ]
     },

@@ -92,26 +92,38 @@ private func settled() async {
 
 // MARK: - Windows and their sessions
 
-/// The account windows of a fixture's accounts, read once, on stand-in pages and with stores
-/// a test can see.
+// Which windows each account has, which open and close, what each shows first and which
+// stores go are the model's, tested in pitboard-ffi's `model/windowing.rs`. These are what
+// the app does with what it says, and what it tells it.
+
+/// The accounts of the fixture both tools are in, as a read lists them: Claude Code's work
+/// in use, personal, and old, Codex's main in use and spare.
+private let twoTools = [
+    account("work", email: "dana@work.example", signedIn: true),
+    account("personal", email: "dana@home.example"),
+    account("old", email: "dana@old.example"),
+    account("main", of: "codex", email: "dana@work.example", signedIn: true),
+    account("spare", of: "codex", email: "dana@home.example"),
+]
+
+/// The account windows of `accounts`, read once through the app's model, on stand-in pages
+/// and with stores a test can see. The model is a stand-in that reads nothing and keeps what
+/// it is sent: a test hands the app's model each snapshot, as the Rust model would.
 @MainActor
 private func windows(
-    _ fixture: Fixture = .twoTools, stores: StandInStores = StandInStores(),
-    defaults: UserDefaults = TestDefaults()
-) async -> AccountWindows {
-    let model = AppModel(testing: FixtureCore(fixture))
+    _ accounts: [Account] = twoTools, stores: StandInStores = StandInStores()
+) -> (AccountWindows, StandInModel) {
+    let standIn = StandInModel(snapshot(0))
+    let model = AppModel(model: standIn)
     let environment = WebEnvironment(
         scheme: WebEnvironment.fixtureScheme, stores: stores,
-        record: StoreRecord(defaults: defaults, directory: "/test"),
-        pages: PageRecord(defaults: defaults, directory: "/test"),
         downloads: FileManager.default.temporaryDirectory, openElsewhere: { _ in },
         configure: { _ in }, pause: { _ in })
     let windows = AccountWindows(
         model: model, environment: environment,
-        presence: AppPresence(apply: { _ in }, bringForward: {}, settle: {}),
-        scheme: "pitboard-debug")
-    await model.refresh()
-    return windows
+        presence: AppPresence(apply: { _ in }, bringForward: {}, settle: {}))
+    model.apply(snapshot(1, status: status(accounts)))
+    return (windows, standIn)
 }
 
 @MainActor
@@ -119,9 +131,29 @@ private func account(_ label: String, in windows: AccountWindows) -> WindowAccou
     windows.accounts.first { $0.label == label }!
 }
 
+/// The window the model has open for `account`, loading `url` as its page `serial`, and
+/// saying `note` as it opens.
+private func opened(
+    _ account: WindowAccount, _ url: String, serial: UInt64 = 1, note: WindowNoteKind? = nil
+) -> OpenWindow {
+    OpenWindow(
+        store: account.store, account: account, load: PageLoad(serial: serial, url: url),
+        note: note,
+        clearDownloads: Choice(
+            title: "Clear", intent: .clearDownloads(store: account.store), enabled: false))
+}
+
+/// Lets what the janitor started run.
 @MainActor
-@Test func theWindowsAreTheEnrolledAccountsOfEachSite() async {
-    let windows = await windows()
+private func settle(until done: () -> Bool) async {
+    for _ in 0..<500 where !done() { await Task.yield() }
+}
+
+/// The windows are the model's accounts, each found by its store whichever case it is
+/// written in, as the window's scene keeps it.
+@MainActor
+@Test func theWindowsAreTheModelsAccounts() {
+    let (windows, _) = windows()
     #expect(windows.accounts.map(\.label) == ["work", "personal", "old", "main", "spare"])
     let titles = windows.menus.map { menu in
         switch menu {
@@ -136,137 +168,107 @@ private func account(_ label: String, in windows: AccountWindows) -> WindowAccou
         "a window's store read back from its scene, as UUID writes one")
 }
 
-/// A window starts at a link chosen for it, else at the page it was last on if that is one
-/// of the site's own, else at the site's home: after it is closed as well as after a relaunch.
+/// What a window does is told to the model, which decides the rest: that it opened, the page
+/// it is on, and that it closed.
 @MainActor
-@Test func aWindowStartsAtItsLinkItsLastPageOrItsHome() async throws {
-    let windows = await windows()
+@Test func whatAWindowDoesIsToldToTheModel() {
+    let (windows, standIn) = windows()
     let work = account("work", in: windows)
-    let home = windows.session(for: work)
-    #expect(home.page.webView.url?.absoluteString == "pitboard-fixture://claude.ai/")
-    windows.remember(URL(string: "pitboard-fixture://claude.ai/chat/old"), of: work)
+    windows.opening(work.id)
+    windows.remember(URL(string: "pitboard-fixture://claude.ai/chat/1"), of: work)
+    windows.remember(nil, of: work)
     windows.closed(work.id)
-
-    let reopened = windows.session(for: work)
+    windows.receive(URL(string: "pitboard-debug://open?url=https%3A%2F%2Fclaude.ai%2F")!)
     #expect(
-        reopened.page.webView.url?.absoluteString == "pitboard-fixture://claude.ai/chat/old")
-    windows.closed(work.id)
-
-    windows.remember(URL(string: "https://example.com/somewhere"), of: work)
-    #expect(
-        windows.session(for: work).page.webView.url?.absoluteString
-            == "pitboard-fixture://claude.ai/chat/old",
-        "a page off the site is never kept")
-    windows.closed(work.id)
-
-    windows.open(try SiteLink("https://claude.ai/chat/shared"), as: work)
-    let linked = windows.session(for: work)
-    #expect(
-        linked.page.webView.url?.absoluteString == "pitboard-fixture://claude.ai/chat/shared")
-    windows.closed(work.id)
+        standIn.sent == [
+            .windowOpened(store: work.id.uuidString),
+            .pageShown(store: work.store, url: "pitboard-fixture://claude.ai/chat/1"),
+            .windowClosed(store: work.id.uuidString),
+            .linkArrived(text: "pitboard-debug://open?url=https%3A%2F%2Fclaude.ai%2F"),
+        ])
 }
 
-/// A link chosen for an account whose window is open loads in that window, where Back returns
-/// to what it showed.
+/// A window starts at the page the model says, says what the model says as it opens, and
+/// loads each page the model asks of it once, where Back returns to what it showed: a window
+/// per account.
+///
+/// AccountWindowsTests.swift's aWindowStartsAtItsLinkItsLastPageOrItsHome,
+/// aLinkForAnOpenWindowLoadsInIt and onlyAWindowsFirstOpeningSaysHowToSignIn, as they were at
+/// a3e5ce0, whose rules are the model's now.
 @MainActor
-@Test func aLinkForAnOpenWindowLoadsInIt() async throws {
-    let windows = await windows()
+@Test func aWindowLoadsWhatTheModelSaysOnce() {
+    let (windows, _) = windows()
     let main = account("main", in: windows)
-    let session = windows.session(for: main)
-    #expect(windows.session(for: main) === session, "one window per account")
+    let session = windows.session(
+        for: opened(main, "pitboard-fixture://chatgpt.com/c/old", note: .signIn))
+    #expect(session.page.webView.url?.absoluteString == "pitboard-fixture://chatgpt.com/c/old")
+    #expect(session.note?.kind == .signIn)
+    #expect(session.note?.text.contains("dana@work.example") == true)
+    #expect(
+        windows.session(for: opened(main, "pitboard-fixture://chatgpt.com/c/abc")) === session,
+        "one window per account")
+    #expect(
+        session.page.webView.url?.absoluteString == "pitboard-fixture://chatgpt.com/c/old",
+        "a page loads once")
 
-    windows.open(try SiteLink("https://chatgpt.com/c/abc"), as: main)
+    _ = windows.session(for: opened(main, "pitboard-fixture://chatgpt.com/c/abc", serial: 2))
     #expect(session.page.webView.url?.absoluteString == "pitboard-fixture://chatgpt.com/c/abc")
     windows.closed(main.id)
     #expect(windows.sessions.isEmpty)
-}
-
-/// A window that has never opened on this Mac says how to sign in; one that has does not.
-@MainActor
-@Test func onlyAWindowsFirstOpeningSaysHowToSignIn() async {
-    let windows = await windows()
-    let main = account("main", in: windows)
-    let first = windows.session(for: main)
-    #expect(first.note?.kind == .signIn)
-    #expect(first.note?.text.contains("dana@work.example") == true)
-    windows.closed(main.id)
-    #expect(windows.session(for: main).note == nil)
+    #expect(
+        windows.session(for: opened(main, "pitboard-fixture://chatgpt.com/", serial: 3)).note
+            == nil)
     windows.closed(main.id)
 }
 
-/// Forgetting an account closes its window and deletes its store, and nobody else's.
+/// A window the model closes, once a read no longer lists its account, stops, and each store
+/// it asks for is deleted once, however many snapshots ask for it, and the model told how it
+/// went: deleted, or held where WebKit still held it after every try.
+///
+/// AccountWindowsTests.swift's forgettingAnAccountClosesItsWindowAndDeletesItsStore, as it
+/// was at a3e5ce0, whose decisions are the model's now.
 @MainActor
-@Test func forgettingAnAccountClosesItsWindowAndDeletesItsStore() async {
+@Test func whatTheModelClosesAndDeletesIsClosedAndDeletedOnce() async {
     let stores = StandInStores()
-    let windows = await windows(stores: stores)
+    let (windows, standIn) = windows(stores: stores)
     let personal = account("personal", in: windows)
     let spare = account("spare", in: windows)
-    _ = windows.session(for: personal)
-    _ = windows.session(for: spare)
+    _ = windows.session(for: opened(personal, "pitboard-fixture://claude.ai/"))
+    _ = windows.session(for: opened(spare, "pitboard-fixture://chatgpt.com/"))
 
-    _ = await windows.model.forget("claude/personal")
+    let forgotten = twoTools.filter { $0.label != "personal" }
+    let ask = StoreDeletion(store: personal.store, ask: 1)
+    windows.model.apply(
+        snapshot(
+            2, status: status(forgotten),
+            windows: windowsShown(forgotten, closing: [personal.store], deleting: [ask])))
     #expect(windows.sessions.keys.sorted() == [spare.id])
-    #expect(windows.account(personal.id) == nil)
-    // The sweep runs after the read; give it its turn.
-    for _ in 0..<50 where stores.removed.isEmpty { await Task.yield() }
+    #expect(windows.isClosing(personal.id))
+    await settle { !standIn.sent.isEmpty }
     #expect(stores.removed == [personal.id])
+    #expect(standIn.sent == [.storeDeleted(store: personal.id.uuidString)])
+
+    windows.model.apply(
+        snapshot(
+            3, status: status(forgotten), windows: windowsShown(forgotten, deleting: [ask])))
+    await settle { false }
+    #expect(stores.attempts[personal.id] == 1, "an ask is deleted once")
+
+    stores.refusals[spare.id] = 100
+    windows.model.apply(
+        snapshot(
+            4, status: status(forgotten),
+            windows: windowsShown(
+                forgotten, deleting: [StoreDeletion(store: spare.store, ask: 2)])))
+    await settle { standIn.sent.count > 1 }
+    #expect(standIn.sent.last == .storeHeld(store: spare.id.uuidString))
     windows.closed(spare.id)
-}
-
-/// A read that failed says nothing about who was forgotten, so nothing is deleted, not even a
-/// store no account derives.
-@MainActor
-@Test func aFailedReadDeletesNothing() async {
-    let stores = StandInStores()
-    let windows = await windows(.readFailure, stores: stores)
-    _ = windows.session(for: account("work", in: windows))
-    let orphan = UUID()
-    _ = windows.janitor.store(for: orphan)
-    await windows.model.refresh(asked: true)
-    for _ in 0..<20 { await Task.yield() }
-    #expect(stores.removed.isEmpty)
-    #expect(windows.janitor.hasMade(orphan))
-    #expect(windows.sessions.count == 1)
-}
-
-/// `pitboard forget` in a terminal reaches the app through the change it notices on this Mac:
-/// the account's window closes and its store is deleted.
-@MainActor
-@Test func forgettingOnTheCommandLineClosesTheWindowAndDeletesItsStore() async throws {
-    let stores = StandInStores()
-    let core = FixtureCore(.twoTools)
-    let model = AppModel(testing: core)
-    let defaults = TestDefaults()
-    let windows = AccountWindows(
-        model: model,
-        environment: WebEnvironment(
-            scheme: WebEnvironment.fixtureScheme, stores: stores,
-            record: StoreRecord(defaults: defaults, directory: "/test"),
-            pages: PageRecord(defaults: defaults, directory: "/test"),
-            downloads: FileManager.default.temporaryDirectory, openElsewhere: { _ in },
-            configure: { _ in }, pause: { _ in }),
-        presence: AppPresence(apply: { _ in }, bringForward: {}, settle: {}),
-        scheme: "pitboard-debug")
-    await model.refresh()
-    await model.noticeOtherChangesForTesting()
-    let personal = account("personal", in: windows)
-    _ = windows.session(for: personal)
-    windows.remember(URL(string: "pitboard-fixture://claude.ai/chat/x"), of: personal)
-
-    _ = try await core.forget("claude/personal")
-    await model.noticeOtherChangesForTesting()
-    #expect(windows.sessions.isEmpty)
-    for _ in 0..<50 where stores.removed.isEmpty { await Task.yield() }
-    #expect(stores.removed == [personal.id])
-    #expect(
-        PageRecord(defaults: defaults, directory: "/test").page(of: personal.id) == nil,
-        "its last page goes with it")
 }
 
 /// The Dock icon's menu asks for a window from outside any view; the menu bar item opens it.
 @MainActor
-@Test func aWindowAskedForFromTheDockWaitsForTheMenuBarItem() async {
-    let windows = await windows()
+@Test func aWindowAskedForFromTheDockWaitsForTheMenuBarItem() {
+    let (windows, _) = windows()
     let work = account("work", in: windows)
     windows.request(work)
     #expect(windows.requested == [work.id])

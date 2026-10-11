@@ -5,16 +5,19 @@
 //! machine: presenting a refresh token another machine has since rotated ends the login on
 //! both.
 
+use crate::api::Owner;
 use crate::context::Context;
 use crate::error::{Error, Result};
+use crate::in_use::{Identified, InUse, Replaced};
 use crate::provider::ProviderId;
+use crate::service::Permit;
 use crate::{atomic, home};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-const SCHEMA: u32 = 4;
+const SCHEMA: u32 = 7;
 
 /// A login held for an account while another is signed in. There is at most one per
 /// account: once installed it is Claude Code's again, and Claude Code rotates it from then
@@ -28,6 +31,21 @@ pub struct Park {
     pub access_expires_at: Option<i64>,
     /// Until then it can be restored.
     pub refresh_expires_at: Option<i64>,
+}
+
+/// A login of a tool's own that Pitboard renewed and has not saved where the tool keeps it
+/// yet, with the vault item holding a copy of the renewed login meanwhile.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct Renewing {
+    pub tool: ProviderId,
+    /// The tool's credential slot it is kept in.
+    pub slot: String,
+    /// Which of the tool's stores keeps it, as [`crate::store::Backend::name`] names it.
+    pub store: String,
+    /// The fingerprint of the refresh token the renewal sent.
+    pub sent: String,
+    /// The vault item holding the renewed login.
+    pub service: String,
 }
 
 impl Park {
@@ -60,31 +78,7 @@ pub enum Detail {
         /// The ChatGPT workspace this account belongs to, where it belongs to one.
         #[serde(default)]
         workspace_id: Option<String>,
-        /// `plus`, `pro`, `team` and so on, read out of the login's own ID token. Kept
-        /// because it is free to know and explains a limit somebody is surprised by.
-        #[serde(default)]
-        plan: Option<String>,
     },
-    Desktop {
-        /// The organisation live usage last asked about, where it ever has.
-        #[serde(default)]
-        organization_uuid: Option<String>,
-        /// The SHA-256 of the session cookie's ciphertext when this account was last seen,
-        /// in hex. Never the cookie.
-        session_fingerprint: String,
-        /// When that session cookie expires, in epoch seconds.
-        #[serde(default)]
-        session_expires_at: Option<i64>,
-    },
-}
-
-/// What the usage of `provider`'s account `account_uuid` is filed under, whether or not
-/// anybody has enrolled it: see [`Account::usage_key`].
-pub fn usage_key(provider: ProviderId, account_uuid: &str) -> String {
-    match provider {
-        ProviderId::Desktop => format!("desktop:{account_uuid}"),
-        ProviderId::Claude | ProviderId::Codex => account_uuid.to_owned(),
-    }
 }
 
 /// Claude Code's own extras, for a caller that has already established it is holding a
@@ -97,10 +91,16 @@ pub struct ClaudeDetail<'a> {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Account {
     pub label: String,
+    /// What Pitboard files the account's parked logins, readings, budget and windows under.
+    /// Set at enrolment and never changed, so none of them has to move.
+    pub id: String,
+    /// The account as its tool names it: Anthropic's account uuid, which is the person and
+    /// not the login, or Codex's ChatGPT account joined with the person in it.
     pub account_uuid: String,
     pub email: String,
     pub parked: Option<Park>,
-    /// When this account was last switched to, in epoch seconds.
+    /// When this account last came to be in use, in epoch seconds: switched to, enrolled
+    /// while signed in, or named by its service for the login its tool has stored.
     ///
     /// Pitboard renews a parked login for as long as the account is enrolled, so an account
     /// somebody enrolled once and never came back to keeps a live, continuously rotated
@@ -108,9 +108,19 @@ pub struct Account {
     /// Recording this is what lets `doctor` say it.
     ///
     /// `None` on an account enrolled before this was recorded, and on one that has never
-    /// been switched to.
+    /// been in use.
     #[serde(default)]
     pub last_used_at: Option<i64>,
+    /// When the account's only login was replaced by a sign-in outside Pitboard, in epoch
+    /// seconds: its tool's store held that login with nothing parked for it and no other
+    /// slot's record naming it, and its service then named another account's login there, or
+    /// none. Pitboard keeps no copy of a login in use, so nothing brings it back. Cleared once
+    /// the account holds a parked login or is in use again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replaced_at: Option<i64>,
+    /// The plan its login last said, as a label: "Max 20x", "Pro".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<String>,
     /// Which tool's login this is, and whatever only that tool keeps.
     #[serde(flatten)]
     pub detail: Detail,
@@ -177,17 +187,34 @@ impl Account {
         match self.detail {
             Detail::Claude { .. } => ProviderId::Claude,
             Detail::Codex { .. } => ProviderId::Codex,
-            Detail::Desktop { .. } => ProviderId::Desktop,
         }
     }
 
-    /// What this account's usage readings, budget and history are filed under.
-    ///
-    /// Its identity, for Claude Code and Codex, as it always was. Claude Desktop signs in
-    /// to the same Anthropic account Claude Code can, under the same uuid, and its usage is
-    /// read from somewhere else and judged differently, so it is filed apart.
-    pub fn usage_key(&self) -> String {
-        usage_key(self.provider(), &self.account_uuid)
+    /// Whose login this account's is, as its tool's service names one.
+    pub fn owner(&self) -> Owner {
+        Owner {
+            account_uuid: self.account_uuid.clone(),
+            email: self.email.clone(),
+            organization_uuid: match &self.detail {
+                Detail::Claude {
+                    organization_uuid, ..
+                } => organization_uuid.clone(),
+                Detail::Codex { workspace_id, .. } => workspace_id.clone().unwrap_or_default(),
+            },
+        }
+    }
+
+    /// Whether `owner`'s login is this account's.
+    pub fn owned_by(&self, owner: &Owner) -> bool {
+        self.account_uuid == owner.account_uuid
+            && match &self.detail {
+                // One person in two organisations holds two logins, each on its own plan.
+                Detail::Claude {
+                    organization_uuid, ..
+                } => *organization_uuid == owner.organization_uuid,
+                // Codex's account id already joins the workspace with the person in it.
+                Detail::Codex { .. } => true,
+            }
     }
 
     /// Claude Code's extras, or `None` when this account belongs to another tool.
@@ -200,7 +227,7 @@ impl Account {
                 organization_uuid,
                 oauth_account,
             }),
-            Detail::Codex { .. } | Detail::Desktop { .. } => None,
+            Detail::Codex { .. } => None,
         }
     }
 }
@@ -210,18 +237,20 @@ pub struct State {
     pub schema: u32,
     pub machine: String,
     pub accounts: Vec<Account>,
-    /// Which account is signed in, per provider.
-    ///
-    /// One string until schema 4, which stopped being true the moment a machine could have
-    /// a Claude Code login and a Codex login at the same time. They are different programs
-    /// reading different stores; neither signs the other out.
+    /// Whose login each tool has stored, as its service last said, by the tool's code: the
+    /// record of the credential slot `slot` names for that tool.
     #[serde(default)]
-    pub active: BTreeMap<String, String>,
-    /// The credential slot each provider's `active` was recorded for. One state file serves
+    pub in_use: BTreeMap<String, InUse>,
+    /// The credential slot each tool's `in_use` was recorded for. One state file serves
     /// every slot a machine uses, and a tool's own home variable changes which store is the
     /// live one, so a record made in one slot says nothing about another.
     #[serde(default)]
     pub slot: BTreeMap<String, String>,
+    /// The record of each other slot a tool was read in, by the tool's code and then the
+    /// slot. [`load`] puts the slot it reads in place of the one `slot` names, so a read or a
+    /// change in one slot keeps every other slot's record for when that slot is read again.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub other_slots: BTreeMap<String, BTreeMap<String, InUse>>,
     /// Parked items no account refers to any more. Listed in the same save that drops them
     /// and removed once deleted, so a delete that fails or is interrupted is retried.
     #[serde(default)]
@@ -234,6 +263,17 @@ pub struct State {
     /// parks in.
     #[serde(default)]
     pub foreign: Vec<String>,
+    /// Parked items that copy the login in a file behind a tool's store which is still
+    /// there, each written down before the copy is. A put-away that stopped leaves the login
+    /// in both, and a session that signs in with the file can renew it there, which spends
+    /// the copy. So the next put-away never keeps one of these in place of what the file
+    /// holds by then. Emptied once the file has gone.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub from_file: Vec<String>,
+    /// Renewals of a tool's own login whose answer is not saved where the tool keeps it yet,
+    /// each written down before the refresh token is sent. At most one per slot.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub renewing: Vec<Renewing>,
 }
 
 impl Default for State {
@@ -242,34 +282,112 @@ impl Default for State {
             schema: SCHEMA,
             machine: machine_id(),
             accounts: Vec::new(),
-            active: BTreeMap::new(),
+            in_use: BTreeMap::new(),
             slot: BTreeMap::new(),
+            other_slots: BTreeMap::new(),
             discarded: Vec::new(),
             foreign: Vec::new(),
+            from_file: Vec::new(),
+            renewing: Vec::new(),
         }
     }
 }
 
 impl State {
-    /// Which account is signed in for this provider, as Pitboard last recorded it.
-    pub fn active_for(&self, provider: ProviderId) -> Option<&str> {
-        self.active.get(provider.code()).map(String::as_str)
+    /// Whose login `which` has stored, as its service last said.
+    pub fn in_use(&self, which: ProviderId) -> Option<&InUse> {
+        self.in_use.get(which.code())
     }
 
-    pub fn set_active(&mut self, provider: ProviderId, label: Option<String>) {
-        match label {
-            Some(label) => self.active.insert(provider.code().to_string(), label),
-            None => self.active.remove(provider.code()),
-        };
+    /// The account whose login `which` has stored, as its service last said. `None` where
+    /// it stored none, where nothing is recorded, and where that login's account is not
+    /// enrolled.
+    pub fn account_in_use(&self, which: ProviderId) -> Option<&Account> {
+        let owner = self.in_use(which)?.owner.as_ref()?;
+        self.account_of(which, owner)
     }
 
-    /// The credential slot this provider's `active` was recorded for.
-    pub fn slot_for(&self, provider: ProviderId) -> Option<&str> {
-        self.slot.get(provider.code()).map(String::as_str)
+    /// Record whose login `which` has stored, as its service said it at `at`.
+    ///
+    /// A record that agrees with `found` is kept as it is, with when it was first said.
+    /// Where the login is another account's than before, that account came to be in use at
+    /// `at`, and the one before lost the login it had in use. With nothing parked for it and
+    /// no other slot's record naming it, that was its only login, gone to a sign-in outside
+    /// Pitboard: a switch parks the login it moves out first.
+    pub fn identified(&mut self, which: ProviderId, found: InUse, at: i64) -> Identified {
+        let before = self.in_use.get(which.code());
+        if before.is_some_and(|known| known.agrees(which, &found)) {
+            return Identified {
+                changed: false,
+                replaced: None,
+            };
+        }
+        let was = before.and_then(|known| known.owner.clone());
+        let mut replaced = None;
+        if before.and_then(|known| known.account(which)) != found.account(which) {
+            if let Some(previous) = was
+                .as_ref()
+                .filter(|owner| !self.stored_in_another_slot(which, owner))
+                .and_then(|owner| self.account_of_mut(which, owner))
+                && previous.parked.is_none()
+            {
+                previous.replaced_at = Some(at);
+                replaced = Some(Replaced {
+                    key: previous.key(),
+                });
+            }
+            if let Some(now) = found
+                .owner
+                .as_ref()
+                .and_then(|owner| self.account_of_mut(which, owner))
+            {
+                now.replaced_at = None;
+                now.last_used_at = Some(at);
+            }
+        }
+        self.in_use.insert(which.code().to_string(), found);
+        Identified {
+            changed: true,
+            replaced,
+        }
     }
 
-    pub fn set_slot(&mut self, provider: ProviderId, slot: String) {
-        self.slot.insert(provider.code().to_string(), slot);
+    /// Whether another slot's record says `which` has `owner`'s login stored there, which a
+    /// change in this slot leaves where it is.
+    fn stored_in_another_slot(&self, which: ProviderId, owner: &Owner) -> bool {
+        let account = Some(new_id(which, owner));
+        self.other_slots.get(which.code()).is_some_and(|records| {
+            records
+                .values()
+                .any(|record| record.account(which) == account)
+        })
+    }
+
+    /// Make `which`'s record the one of `slot`. Where it is of another slot, that one waits
+    /// with the other slots' records, and the record `slot` was last given, where there is
+    /// one, comes back. A record with no slot named is taken as `slot`'s.
+    fn in_slot(&mut self, which: ProviderId, slot: String) {
+        let code = which.code();
+        if let Some(recorded) = self.slot.get(code).filter(|recorded| **recorded != slot) {
+            let others = self.other_slots.entry(code.to_string()).or_default();
+            if let Some(record) = self.in_use.remove(code) {
+                others.insert(recorded.clone(), record);
+            }
+            if let Some(record) = others.remove(&slot) {
+                self.in_use.insert(code.to_string(), record);
+            }
+            if others.is_empty() {
+                self.other_slots.remove(code);
+            }
+        }
+        self.slot.insert(code.to_string(), slot);
+    }
+
+    /// Forget whose login every tool has stored, in every slot.
+    pub(crate) fn forget_in_use(&mut self) {
+        self.in_use.clear();
+        self.slot.clear();
+        self.other_slots.clear();
     }
 
     /// The account's name as a command would take it here: bare for the tool a bare name
@@ -298,14 +416,18 @@ impl State {
         )
     }
 
-    /// Whether anything in the state refers to this vault item: an account holding it, or
-    /// the list of ones waiting to be deleted.
+    /// Whether anything in the state refers to this vault item: an account holding it, the
+    /// list of ones waiting to be deleted, or a renewal not saved yet.
     pub fn names(&self, service: &str) -> bool {
         self.accounts
             .iter()
             .filter_map(|a| a.parked.as_ref())
             .any(|p| p.service == service)
             || self.discarded.iter().any(|s| s == service)
+            || self
+                .renewing
+                .iter()
+                .any(|renewing| renewing.service == service)
     }
 
     /// The account under this key.
@@ -316,45 +438,55 @@ impl State {
         self.accounts.iter().find(|a| a.is(key))
     }
 
-    /// This tool's account with this identity.
-    pub fn by_uuid(&self, provider: ProviderId, uuid: &str) -> Option<&Account> {
+    /// This tool's account holding `owner`'s login.
+    pub fn account_of(&self, provider: ProviderId, owner: &Owner) -> Option<&Account> {
         self.accounts
             .iter()
-            .find(|a| a.provider() == provider && a.account_uuid == uuid)
+            .find(|a| a.provider() == provider && a.owned_by(owner))
     }
 
-    /// The account of `provider`'s a parked item was written for.
+    /// What `owner`'s login is filed under: its account's id, or the one it would be
+    /// enrolled with.
+    pub fn id_of(&self, provider: ProviderId, owner: &Owner) -> String {
+        self.account_of(provider, owner)
+            .map_or_else(|| new_id(provider, owner), |a| a.id.clone())
+    }
+
+    /// This tool's account filed under `id`.
+    pub fn by_id(&self, provider: ProviderId, id: &str) -> Option<&Account> {
+        self.accounts
+            .iter()
+            .find(|a| a.provider() == provider && a.id == id)
+    }
+
+    /// The account a parked item was written for.
     ///
-    /// A park's name carries the account's identity and not its tool, because names were
-    /// fixed before there was a second tool and every item already on a machine is filed
-    /// under one. Claude Code's and Codex's identities cannot collide, but Claude Desktop
-    /// signs in to the same Anthropic account as Claude Code under the same uuid, so the
-    /// owner is looked for within one tool.
-    pub fn owner_of_park(&self, provider: ProviderId, uuid: &str) -> Option<&Account> {
-        self.by_uuid(provider, uuid)
-    }
-
-    /// The account a parked credential in the vault was written for, of whichever tool
-    /// parks in the vault. A tool whose login is a folder parks it as a folder and never in
-    /// the vault, so its accounts own nothing there, even under a uuid they share.
-    pub fn vault_owner_of_park(&self, uuid: &str) -> Option<&Account> {
-        self.accounts
-            .iter()
-            .filter(|a| crate::provider::of(a.provider()).tree().is_none())
-            .find(|a| a.account_uuid == uuid)
+    /// A park's name carries the account's id and not its tool, because names were fixed
+    /// before there was a second tool and every item already on a machine is filed under
+    /// one. The ids cannot collide in practice: each is built from its tool's UUIDs.
+    pub fn owner_of_park(&self, id: &str) -> Option<&Account> {
+        self.accounts.iter().find(|a| a.id == id)
     }
 
     fn get_mut(&mut self, key: &Key) -> Option<&mut Account> {
         self.accounts.iter_mut().find(|a| a.is(key))
     }
 
+    fn account_of_mut(&mut self, provider: ProviderId, owner: &Owner) -> Option<&mut Account> {
+        self.accounts
+            .iter_mut()
+            .find(|a| a.provider() == provider && a.owned_by(owner))
+    }
+
     /// Hold `park` for the account, releasing whatever it replaces. A newer park does not
     /// use the one before it, so that one is let go rather than consumed.
     pub fn park(&mut self, key: &Key, park: Park) {
         let service = park.service.clone();
-        if let Some(previous) = self
-            .get_mut(key)
-            .and_then(|account| account.parked.replace(park))
+        let Some(account) = self.get_mut(key) else {
+            return;
+        };
+        account.replaced_at = None;
+        if let Some(previous) = account.parked.replace(park)
             && previous.service != service
         {
             self.release(&previous.service);
@@ -406,25 +538,39 @@ impl State {
         }
     }
 
-    /// No account holds `service` afterwards, and nothing records who wrote it.
+    /// No account holds `service` afterwards, and nothing records who wrote it or what it
+    /// copied.
     fn let_go(&mut self, service: &str) {
         for account in &mut self.accounts {
             account.parked.take_if(|p| p.service == service);
         }
         self.foreign.retain(|listed| listed != service);
+        self.from_file.retain(|listed| listed != service);
+    }
+
+    /// `service` is about to hold a copy of the login in a file behind a tool's store.
+    pub(crate) fn copying_from_file(&mut self, service: &str) {
+        if !self.is_from_file(service) {
+            self.from_file.push(service.to_string());
+        }
+    }
+
+    /// Whether `service` copies the login a file behind a tool's store held, with that file
+    /// still there as far as anything recorded.
+    pub(crate) fn is_from_file(&self, service: &str) -> bool {
+        self.from_file.iter().any(|listed| listed == service)
+    }
+
+    /// The file behind a tool's store has gone, so no park copies it any more. Whether any
+    /// was written down as one.
+    pub(crate) fn file_gone(&mut self) -> bool {
+        !std::mem::take(&mut self.from_file).is_empty()
     }
 
     pub fn references(&self, service: &str) -> bool {
         self.accounts
             .iter()
             .any(|a| a.parked.as_ref().is_some_and(|p| p.service == service))
-    }
-
-    /// Record that the account under `key` was just put to use.
-    pub fn used(&mut self, key: &Key, at: i64) {
-        if let Some(account) = self.get_mut(key) {
-            account.last_used_at = Some(at);
-        }
     }
 
     /// Add the account, or replace the one this tool already has under its label.
@@ -442,18 +588,15 @@ impl State {
         if from.label != to
             && let Some(taken) = self.get(&target)
         {
-            // A Claude Desktop account has no email to name it by.
+            let renamed = self.get(from).map(|a| a.email.as_str());
             return Err(Error::LabelTaken {
                 label: target.typed(),
-                email: if taken.email.is_empty() {
-                    "another account".into()
-                } else {
-                    taken.email.clone()
-                },
+                who: crate::words::login(
+                    from.provider,
+                    &taken.email,
+                    renamed == Some(taken.email.as_str()),
+                ),
             });
-        }
-        if self.active_for(from.provider) == Some(from.label.as_str()) {
-            self.set_active(from.provider, Some(to.to_string()));
         }
         let enrolled = self.labels(from.provider);
         let account = self.get_mut(from).ok_or_else(|| Error::AccountUnknown {
@@ -464,17 +607,25 @@ impl State {
         Ok(account)
     }
 
-    /// Drop the account, releasing its park.
+    /// Drop the account, releasing its park. Whose login its tool has stored stays recorded:
+    /// the login is where it was, and the record names its owner, not a label.
     pub fn remove(&mut self, key: &Key) -> Option<Account> {
         let index = self.accounts.iter().position(|a| a.is(key))?;
         let account = self.accounts.remove(index);
         if let Some(park) = &account.parked {
             self.release(&park.service);
         }
-        if self.active_for(key.provider) == Some(key.label.as_str()) {
-            self.set_active(key.provider, None);
-        }
         Some(account)
+    }
+}
+
+/// The id a login is enrolled with. Claude's joins the organisation, since Anthropic's
+/// account uuid is the person and each of their organisations is a login of its own. `_`
+/// is in neither uuid, and is safe in a park's name and a readings file.
+pub fn new_id(provider: ProviderId, owner: &Owner) -> String {
+    match provider {
+        ProviderId::Claude => format!("{}_{}", owner.account_uuid, owner.organization_uuid),
+        ProviderId::Codex => owner.account_uuid.clone(),
     }
 }
 
@@ -491,7 +642,8 @@ fn file(ctx: &Context) -> PathBuf {
     home::dir(ctx).join("state.json")
 }
 
-/// When Pitboard's account index last changed, in epoch seconds, or 0 when there is none.
+/// When Pitboard's account index last changed, in epoch milliseconds, or 0 when there is
+/// none.
 ///
 /// Three front ends run on one machine and none of them could tell when another had
 /// changed anything. A switch typed in a terminal left the menu bar naming the account the
@@ -502,13 +654,15 @@ fn file(ctx: &Context) -> PathBuf {
 /// account index alone and not the whole directory. The status line writes usage readings
 /// after a message in any open session, and those say nothing about who is signed in: a
 /// front end follows them with `readings::changed_at`, and takes only the numbers.
+/// Milliseconds rather than seconds, as there: a switch made in the second of the last write
+/// a front end saw would otherwise go unseen.
 pub fn changed_at(ctx: &Context) -> i64 {
     std::fs::metadata(file(ctx))
         .and_then(|m| m.modified())
         .ok()
         .and_then(|at| at.duration_since(std::time::UNIX_EPOCH).ok())
         .map_or(0, |since| {
-            i64::try_from(since.as_secs()).unwrap_or(i64::MAX)
+            i64::try_from(since.as_millis()).unwrap_or(i64::MAX)
         })
 }
 
@@ -525,8 +679,13 @@ pub fn load(ctx: &Context) -> Result<State> {
 /// Only `adopt` reads it this way. Everything else goes through [`load`], which refuses a
 /// file from elsewhere: a parked login is a refresh token, and two machines taking turns
 /// presenting one ends the login for both.
+///
+/// A build that may do nothing here reads nothing either ([`crate::release`]), so an app on
+/// a Windows build of a release before Windows is released is refused at its first read.
 pub(crate) fn load_any_machine(ctx: &Context) -> Result<(State, bool)> {
+    crate::release::check()?;
     let path = file(ctx);
+    home::check_absolute(ctx)?;
     home::check_location(&home::dir(ctx))?;
     let raw = match std::fs::read_to_string(&path) {
         Ok(s) => s,
@@ -554,18 +713,11 @@ pub(crate) fn load_any_machine(ctx: &Context) -> Result<(State, bool)> {
     })?;
     let here = state.machine == machine_id();
     let mut state = state;
-    // Which account is in use is a fact about one slot. Read from another, the record says
-    // nothing, and Pitboard asks the tool who is signed in anyway. Per tool, so a changed
+    // Whose login a tool has stored is a fact about one slot. Per tool, so a changed
     // `CLAUDE_CONFIG_DIR` says nothing about Codex's record, nor `CODEX_HOME` about Claude
     // Code's.
     for &tool in ProviderId::ALL {
-        let slot = crate::provider::of(tool).slot(ctx);
-        if state
-            .slot_for(tool)
-            .is_some_and(|recorded| recorded != slot)
-        {
-            state.set_active(tool, None);
-        }
+        state.in_slot(tool, crate::provider::of(tool).slot(ctx));
     }
     Ok((state, here))
 }
@@ -587,16 +739,25 @@ fn unknown_tool(document: &Value) -> Option<String> {
 /// routes, so on one machine an older Pitboard will meet a file a newer one wrote. Reading
 /// forwards is what this is for; reading backwards is not possible, and says so.
 fn migrate(document: &mut serde_json::Value, path: &std::path::Path) -> Result<()> {
-    // Each future bump adds an arm that rewrites the document and falls through to the
-    // next, so a file two versions behind is brought all the way forward in one read.
+    // Each bump adds a step after the ones before it, so a file two versions behind is
+    // brought all the way forward in one read.
     let found = document
         .get("schema")
         .and_then(serde_json::Value::as_u64)
         .unwrap_or_default() as u32;
     match found {
         SCHEMA => Ok(()),
-        3 => {
-            three_to_four(document);
+        3..SCHEMA => {
+            if found == 3 {
+                three_to_four(document);
+            }
+            if found <= 4 {
+                four_to_five(document);
+            }
+            if found <= 5 {
+                five_to_six(document);
+            }
+            six_to_seven(document);
             Ok(())
         }
         // Nothing released wrote 1 or 2: the schema reached 3 before the first release.
@@ -637,14 +798,78 @@ fn three_to_four(document: &mut serde_json::Value) {
             _ => serde_json::json!({}),
         };
     }
+    document["schema"] = serde_json::json!(4);
+}
+
+/// Schema 4 filed every account under its tool's account id, and Anthropic's is the person:
+/// one person in two organisations was one account. Schema 5 gives each account an id of
+/// its own, and an account already enrolled keeps the one everything is filed under, so
+/// no park, reading or window has to move.
+fn four_to_five(document: &mut serde_json::Value) {
+    if let Some(accounts) = document.get_mut("accounts").and_then(Value::as_array_mut) {
+        for account in accounts {
+            if let Some(fields) = account.as_object_mut()
+                && let Some(id) = fields.get("account_uuid").cloned()
+            {
+                fields.insert("id".into(), id);
+            }
+        }
+    }
+    document["schema"] = serde_json::json!(5);
+}
+
+/// Schema 5 recorded the account Pitboard last switched to, by label, which a sign-in
+/// outside Pitboard left naming an account whose login was gone. Schema 6 records whose login
+/// each tool has stored, as its service said. A record brought forward is that account's,
+/// with no login and `known_at` 0: nothing established which login the store held. A label
+/// naming no account names nobody.
+fn five_to_six(document: &mut serde_json::Value) {
+    let accounts: Vec<Account> = document
+        .get("accounts")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|account| serde_json::from_value(account.clone()).ok())
+        .collect();
+    let in_use: serde_json::Map<String, Value> = document
+        .get("active")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+        .filter_map(|(code, label)| {
+            let key = Key::new(ProviderId::parse(code)?, label.as_str()?);
+            let account = accounts.iter().find(|a| a.is(&key))?;
+            let unconfirmed = InUse {
+                owner: Some(account.owner()),
+                login: String::new(),
+                known_at: 0,
+                named: None,
+            };
+            let record = serde_json::to_value(unconfirmed).expect("a record is serialisable");
+            Some((code.clone(), record))
+        })
+        .collect();
+    if let Some(fields) = document.as_object_mut() {
+        fields.remove("active");
+        fields.insert("in_use".into(), Value::Object(in_use));
+    }
+    document["schema"] = serde_json::json!(6);
+}
+
+/// Schema 7 adds `renewing`, which a schema 6 file reads as empty. It is a bump so that an
+/// earlier Pitboard refuses the file: one would drop `renewing` at its next save, leaving the
+/// copy of the renewed login named by nothing, so the next renewal of that login, by this
+/// version or by 0.10.0's `stow`, would send the spent refresh token again.
+fn six_to_seven(document: &mut serde_json::Value) {
     document["schema"] = serde_json::json!(SCHEMA);
 }
 
-pub(crate) fn save(ctx: &Context, state: &State) -> Result<()> {
+pub(crate) fn save(ctx: &Context, permit: Permit, state: &State) -> Result<()> {
+    home::check_absolute(ctx)?;
     home::check_location(&home::dir(ctx))?;
     let mut state = state.clone();
     for &tool in ProviderId::ALL {
-        state.set_slot(tool, crate::provider::of(tool).slot(ctx));
+        state.in_slot(tool, crate::provider::of(tool).slot(ctx));
     }
     let state = &state;
     let path = file(ctx);
@@ -652,18 +877,23 @@ pub(crate) fn save(ctx: &Context, state: &State) -> Result<()> {
         path: path.clone(),
         source,
     };
-    home::ensure(ctx).map_err(write)?;
+    home::ensure(ctx, permit).map_err(write)?;
     let body = serde_json::to_string_pretty(state).expect("State is always serialisable");
-    atomic::write(&path, body.as_bytes(), atomic::Perms::Secret).map_err(write)
+    atomic::write(permit, &path, body.as_bytes(), atomic::Perms::Secret).map_err(write)
 }
 
 #[cfg(test)]
 mod tests {
     /// CLAUDE_CONFIG_DIR picks which keychain item is the live one, and one state file
-    /// serves every slot on a machine. A record of what was switched to in one slot says
-    /// nothing about another, so it is not carried over.
+    /// serves every slot on a machine. A record of whose login one slot holds says nothing
+    /// about another, so it is not carried over, and says nothing about Codex's at all. It is
+    /// kept for when its slot is read again, whatever another slot records meanwhile.
     #[test]
-    fn what_was_active_in_another_slot_is_not_claimed_here() {
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
+    fn whose_login_another_slot_holds_is_not_claimed_here() {
         let home = std::env::temp_dir().join(format!("pitboard-slots-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&home);
         let here = Context::new(home.clone()).with_pitboard_home(home.clone());
@@ -672,28 +902,44 @@ mod tests {
             .with_claude_config_dir("/somewhere/else".into());
 
         let mut state = State::default();
-        state.accounts.push(Account {
-            last_used_at: None,
-            label: "work".into(),
-            account_uuid: "acc".into(),
-            email: "a@b.c".into(),
-            detail: Detail::Claude {
-                organization_uuid: "org".into(),
-                oauth_account: serde_json::json!({}),
-            },
-            parked: None,
-        });
-        state.set_active(ProviderId::Claude, Some("work".into()));
-        save(&here, &state).expect("saved");
+        state.accounts.push(account("work", None));
+        state.accounts.push(codex_account("personal"));
+        let found = InUse::of(&state.accounts[0], "f", 100);
+        state.identified(ProviderId::Claude, found.clone(), 100);
+        let codex = InUse::of(&state.accounts[1], "f", 100);
+        state.identified(ProviderId::Codex, codex.clone(), 100);
+        save(&here, Permit::for_a_test(), &state).expect("saved");
 
         assert_eq!(
-            load(&here).unwrap().active_for(ProviderId::Claude),
-            Some("work")
+            load(&here).unwrap().in_use(ProviderId::Claude),
+            Some(&found)
+        );
+        let moved = load(&elsewhere).unwrap();
+        assert_eq!(
+            moved.in_use(ProviderId::Claude),
+            None,
+            "another slot's record of whose login is stored is not this slot's"
         );
         assert_eq!(
-            load(&elsewhere).unwrap().active_for(ProviderId::Claude),
-            None,
-            "another slot's record of what is in use is not this slot's"
+            moved.in_use(ProviderId::Codex),
+            Some(&codex),
+            "Codex's slot did not move"
+        );
+
+        let mut moved = moved;
+        let there = InUse::of(&moved.accounts[0], "g", 200);
+        moved.identified(ProviderId::Claude, there.clone(), 200);
+        save(&elsewhere, Permit::for_a_test(), &moved).expect("saved");
+        assert_eq!(
+            load(&here).unwrap().in_use(ProviderId::Claude),
+            Some(&found),
+            "this slot's record is kept while another slot records its own"
+        );
+        save(&here, Permit::for_a_test(), &load(&here).unwrap()).expect("saved");
+        assert_eq!(
+            load(&elsewhere).unwrap().in_use(ProviderId::Claude),
+            Some(&there),
+            "and so is the other's"
         );
         let _ = std::fs::remove_dir_all(&home);
     }
@@ -702,6 +948,10 @@ mod tests {
     /// `CLAUDE_CONFIG_DIR` picks Claude Code's keychain item. A record made under one home
     /// says nothing about another, and says nothing about Claude Code's at all.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn another_codex_home_is_another_codex_slot() {
         let home = std::env::temp_dir().join(format!(
             "pitboard-codex-slots-{}-{:?}",
@@ -711,20 +961,29 @@ mod tests {
         let _ = std::fs::remove_dir_all(&home);
         let here = Context::new(home.clone()).with_pitboard_home(home.clone());
         let mut state = State::default();
-        state.set_active(ProviderId::Claude, Some("work".into()));
-        state.set_active(ProviderId::Codex, Some("work".into()));
-        save(&here, &state).expect("saved");
+        state.accounts.push(account("work", None));
+        state.accounts.push(codex_account("work"));
+        for (which, at) in [(ProviderId::Claude, 0), (ProviderId::Codex, 1)] {
+            let found = InUse::of(&state.accounts[at], "f", 100);
+            state.identified(which, found, 100);
+        }
+        save(&here, Permit::for_a_test(), &state).expect("saved");
 
+        let label_in_use = |state: &State, which| {
+            state
+                .account_in_use(which)
+                .map(|account| account.label.clone())
+        };
         let moved = here.clone().with_codex_home("/somewhere/else".into());
         let loaded = load(&moved).unwrap();
-        assert_eq!(loaded.active_for(ProviderId::Codex), None);
+        assert_eq!(loaded.in_use(ProviderId::Codex), None);
         assert_eq!(
-            loaded.active_for(ProviderId::Claude),
+            label_in_use(&loaded, ProviderId::Claude).as_deref(),
             Some("work"),
             "Claude Code's slot did not move"
         );
         assert_eq!(
-            load(&here).unwrap().active_for(ProviderId::Codex),
+            label_in_use(&load(&here).unwrap(), ProviderId::Codex).as_deref(),
             Some("work")
         );
         let _ = std::fs::remove_dir_all(&home);
@@ -758,14 +1017,19 @@ mod tests {
         migrate(&mut document, std::path::Path::new("/tmp/state.json")).expect("still current");
         let state: State = serde_json::from_value(document).expect("still parses");
         assert_eq!(state.get(&claude("work")).unwrap().email, "a@b.c");
-        assert_eq!(state.active_for(ProviderId::Claude), Some("work"));
+        assert_eq!(state.get(&claude("work")).unwrap().id, "acc-1");
+        assert_eq!(
+            state.account_in_use(ProviderId::Claude).map(Account::key),
+            Some(claude("work"))
+        );
     }
 
     /// Migrating a file that is already current must change nothing.
     ///
-    /// `three_to_four` rewrites `active` and `slot` in place, and a version check that
-    /// slipped would wrap an already-wrapped map into `{"claude": {"claude": "work"}}` and
-    /// lose which account is in use, silently, on every load after that.
+    /// `three_to_four` rewrites `active` and `slot` in place and `five_to_six` drops
+    /// `active`, and a version check that slipped would wrap an already-wrapped map into
+    /// `{"claude": {"claude": "work"}}`, or find no `active` to bring forward, and lose whose
+    /// login is stored, silently, on every load after that.
     #[test]
     fn migrating_a_current_file_is_a_no_op() {
         let mut once = serde_json::json!({
@@ -779,29 +1043,296 @@ mod tests {
             "slot": "Claude Code-credentials",
             "discarded": []
         });
-        migrate(&mut once, std::path::Path::new("/tmp/state.json")).expect("3 to 4");
+        migrate(&mut once, std::path::Path::new("/tmp/state.json")).expect("3 to 7");
         let mut twice = once.clone();
-        migrate(&mut twice, std::path::Path::new("/tmp/state.json")).expect("4 is current");
+        migrate(&mut twice, std::path::Path::new("/tmp/state.json")).expect("7 is current");
         assert_eq!(once, twice, "a second migration must change nothing");
-        assert_eq!(once["active"], serde_json::json!({"claude": "work"}));
+        assert!(once.get("active").is_none());
+        assert_eq!(
+            once["in_use"]["claude"]["owner"]["account_uuid"],
+            serde_json::json!("acc-1")
+        );
         assert_eq!(
             once["slot"],
             serde_json::json!({"claude": "Claude Code-credentials"})
         );
         assert_eq!(once["accounts"][0]["provider"], "claude");
+        assert_eq!(once["accounts"][0]["id"], "acc-1");
+        assert_eq!(once["schema"], SCHEMA);
     }
 
     /// Schema 3 had no `active` at all when nothing had been switched to, and a migration
     /// that turned that into a one-entry map naming nothing would claim a switch happened.
     #[test]
-    fn a_file_that_never_switched_migrates_to_no_active_account() {
+    fn a_file_that_never_switched_migrates_to_no_account_in_use() {
         let mut document = serde_json::json!({
             "schema": 3, "machine": machine_id(), "accounts": [], "discarded": []
         });
-        migrate(&mut document, std::path::Path::new("/tmp/state.json")).expect("3 to 4");
+        migrate(&mut document, std::path::Path::new("/tmp/state.json")).expect("3 to 7");
         let state: State = serde_json::from_value(document).expect("parses");
-        assert_eq!(state.active_for(ProviderId::Claude), None);
-        assert!(state.active.is_empty() && state.slot.is_empty());
+        assert!(state.in_use.is_empty() && state.slot.is_empty());
+    }
+
+    /// A file as 0.9.0 writes it names the account last switched to. It comes forward as
+    /// that account's record with nothing established about the login, so nothing reads it
+    /// as what the service said until the service is asked.
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
+    fn a_schema_5_file_comes_forward_with_the_account_in_use_unconfirmed() {
+        let home = std::env::temp_dir().join(format!(
+            "pitboard-schema-5-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        let ctx = Context::new(home.clone()).with_pitboard_home(home.clone());
+        std::fs::write(
+            home.join("state.json"),
+            serde_json::json!({
+                "schema": 5,
+                "machine": machine_id(),
+                "accounts": [{
+                    "label": "work",
+                    "id": "acc-1_org-1",
+                    "account_uuid": "acc-1",
+                    "email": "a@b.c",
+                    "parked": null,
+                    "last_used_at": 1_789_935_000,
+                    "provider": "claude",
+                    "organization_uuid": "org-1",
+                    "oauth_account": {"accountUuid": "acc-1", "organizationUuid": "org-1"}
+                }],
+                "active": {"claude": "work", "codex": "gone"},
+                "slot": {},
+                "discarded": [],
+                "foreign": []
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let state = load(&ctx).expect("brought forward");
+        assert_eq!(
+            state.in_use(ProviderId::Claude),
+            Some(&InUse {
+                owner: Some(Owner {
+                    account_uuid: "acc-1".into(),
+                    email: "a@b.c".into(),
+                    organization_uuid: "org-1".into(),
+                }),
+                login: String::new(),
+                known_at: 0,
+                named: None,
+            })
+        );
+        assert_eq!(
+            state.in_use(ProviderId::Codex),
+            None,
+            "a label naming no account names nobody"
+        );
+
+        save(&ctx, Permit::for_a_test(), &state).expect("saved");
+        let written: Value =
+            serde_json::from_str(&std::fs::read_to_string(home.join("state.json")).unwrap())
+                .unwrap();
+        assert_eq!(written["schema"], SCHEMA);
+        assert!(written.get("active").is_none(), "{written}");
+        assert_eq!(written["in_use"]["claude"]["known_at"], 0);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// A file as 0.10.0 writes it is read as it is, and written back at schema 7 with nothing
+    /// else changed, which 0.10.0 refuses.
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
+    fn a_schema_6_file_is_written_back_at_schema_7_and_otherwise_as_it_was() {
+        let home = std::env::temp_dir().join(format!(
+            "pitboard-schema-6-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        let ctx = Context::new(home.clone()).with_pitboard_home(home.clone());
+        let mut state = State::default();
+        state.accounts.push(account("work", Some(park("parked"))));
+        let found = InUse::of(&state.accounts[0], "f", 100);
+        state.identified(ProviderId::Claude, found, 100);
+        state.discarded.push("gone".into());
+        save(&ctx, Permit::for_a_test(), &state).expect("saved");
+        let path = home.join("state.json");
+        let read = |path: &PathBuf| -> Value {
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+        };
+        let mut written = read(&path);
+        written["schema"] = 6.into();
+        std::fs::write(&path, written.to_string()).unwrap();
+
+        let state = load(&ctx).expect("a schema 6 file is read");
+        save(&ctx, Permit::for_a_test(), &state).expect("saved");
+
+        written["schema"] = 7.into();
+        assert_eq!(read(&path), written);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// 0.11.0 kept a Codex plan beside the workspace, as its token says it.
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
+    fn a_codex_plan_0_11_0_recorded_is_the_accounts_plan() {
+        let home = std::env::temp_dir().join(format!(
+            "pitboard-plan-0-11-0-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        let ctx = Context::new(home.clone()).with_pitboard_home(home.clone());
+        let mut state = State::default();
+        state.accounts.push(codex_account("work"));
+        save(&ctx, Permit::for_a_test(), &state).expect("saved");
+        let path = home.join("state.json");
+        let read = |path: &PathBuf| -> Value {
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+        };
+        let mut written = read(&path);
+        assert_eq!(written["schema"], 7);
+        written["accounts"][0]["plan"] = "pro".into();
+        std::fs::write(&path, written.to_string()).unwrap();
+
+        let state = load(&ctx).expect("read");
+        assert_eq!(state.accounts[0].plan.as_deref(), Some("pro"));
+        save(&ctx, Permit::for_a_test(), &state).expect("saved");
+
+        assert_eq!(read(&path), written);
+        assert_eq!(read(&path)["accounts"][0]["label"], "work");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// A file as 0.8.0 writes it. Each account keeps the id its parks, readings and windows
+    /// are already filed under.
+    #[test]
+    fn the_format_0_8_0_writes_keeps_every_account_where_it_is_filed() {
+        let mut document = serde_json::json!({
+            "schema": 4,
+            "machine": machine_id(),
+            "accounts": [
+                {
+                    "label": "work",
+                    "account_uuid": "acc-1",
+                    "email": "a@b.c",
+                    "parked": {
+                        "service": "pitboard-park-acc-1-1789935600123",
+                        "parked_at": 1_789_935_600,
+                        "refresh_fingerprint": "abcd",
+                        "access_expires_at": 1_789_999_999,
+                        "refresh_expires_at": 1_792_000_000
+                    },
+                    "last_used_at": 1_789_935_000,
+                    "provider": "claude",
+                    "organization_uuid": "org-1",
+                    "oauth_account": {
+                        "accountUuid": "acc-1",
+                        "emailAddress": "a@b.c",
+                        "organizationUuid": "org-1"
+                    }
+                },
+                {
+                    "label": "work",
+                    "account_uuid": "team_user-1",
+                    "email": "a@b.c",
+                    "parked": null,
+                    "last_used_at": null,
+                    "provider": "codex",
+                    "workspace_id": "team",
+                    "plan": "team"
+                }
+            ],
+            "active": {"claude": "work", "codex": "work"},
+            "slot": {"claude": "Claude Code-credentials", "codex": "/home/a/.codex"},
+            "discarded": [],
+            "foreign": []
+        });
+        migrate(&mut document, std::path::Path::new("/tmp/state.json")).expect("4 to 6");
+        let state: State = serde_json::from_value(document).expect("parses");
+
+        let work = state.get(&claude("work")).unwrap();
+        assert_eq!(
+            (work.id.as_str(), work.account_uuid.as_str()),
+            ("acc-1", "acc-1")
+        );
+        let codex = state.get(&Key::new(ProviderId::Codex, "work")).unwrap();
+        assert_eq!(codex.id, "team_user-1");
+        assert_eq!(
+            state.owner_of_park("acc-1").map(Account::key),
+            Some(work.key())
+        );
+        let signed_in = Owner {
+            account_uuid: "acc-1".into(),
+            email: "a@b.c".into(),
+            organization_uuid: "org-1".into(),
+        };
+        assert_eq!(
+            state.id_of(ProviderId::Claude, &signed_in),
+            "acc-1",
+            "the login it was enrolled with is still found by its organisation"
+        );
+    }
+
+    /// Anthropic's account uuid is the person. Their logins to two organisations are two
+    /// accounts, and a third organisation's is neither.
+    #[test]
+    fn one_person_in_two_organisations_is_two_accounts() {
+        let in_org = |label: &str, id: &str, org: &str| Account {
+            last_used_at: None,
+            replaced_at: None,
+            plan: None,
+            label: label.into(),
+            id: id.into(),
+            account_uuid: "acc".into(),
+            email: "a@b.c".into(),
+            detail: Detail::Claude {
+                organization_uuid: org.into(),
+                oauth_account: serde_json::json!({}),
+            },
+            parked: None,
+        };
+        let mut state = State::default();
+        state.upsert(in_org("work", "acc", "org-a"));
+        state.upsert(in_org("team", "acc_org-b", "org-b"));
+        let signed_in = |org: &str| Owner {
+            account_uuid: "acc".into(),
+            email: "a@b.c".into(),
+            organization_uuid: org.into(),
+        };
+        let label_of = |org: &str| {
+            state
+                .account_of(ProviderId::Claude, &signed_in(org))
+                .map(|a| a.label.as_str())
+        };
+
+        assert_eq!(label_of("org-a"), Some("work"));
+        assert_eq!(label_of("org-b"), Some("team"));
+        assert_eq!(label_of("org-c"), None);
+        assert_eq!(
+            state.id_of(ProviderId::Claude, &signed_in("org-c")),
+            "acc_org-c"
+        );
+        assert!(
+            state
+                .account_of(ProviderId::Codex, &signed_in("org-a"))
+                .is_none()
+        );
     }
 
     /// `Detail` is flattened and tagged, which is the whole reason the migration has
@@ -811,10 +1342,13 @@ mod tests {
     fn a_providers_own_fields_sit_beside_the_shared_ones() {
         let account = Account {
             label: "work".into(),
+            id: "acc".into(),
             account_uuid: "acc".into(),
             email: "a@b.c".into(),
             parked: None,
             last_used_at: None,
+            replaced_at: None,
+            plan: None,
             detail: Detail::Claude {
                 organization_uuid: "org".into(),
                 oauth_account: serde_json::json!({"emailAddress": "a@b.c"}),
@@ -831,37 +1365,6 @@ mod tests {
         let back: Account = serde_json::from_value(written).expect("reads back");
         assert_eq!(back.provider(), ProviderId::Claude);
         assert_eq!(back.claude().unwrap().organization_uuid, "org");
-    }
-
-    /// Two tools are two programs reading two stores. A `CLAUDE_CONFIG_DIR` that changed
-    /// says nothing about which Codex account is signed in, and clearing both would tell
-    /// somebody their other switch never happened.
-    #[test]
-    fn a_changed_slot_clears_only_that_providers_record() {
-        let mut state = State::default();
-        state.set_active(ProviderId::Claude, Some("work".into()));
-        state.set_slot(ProviderId::Claude, "some-other-slot".into());
-        state
-            .active
-            .insert("pretend-other-provider".into(), "personal".into());
-
-        // What `load_any_machine` does when the slot it reads is not the one recorded.
-        if state
-            .slot_for(ProviderId::Claude)
-            .is_some_and(|recorded| recorded != "Claude Code-credentials")
-        {
-            state.set_active(ProviderId::Claude, None);
-        }
-
-        assert_eq!(state.active_for(ProviderId::Claude), None);
-        assert_eq!(
-            state
-                .active
-                .get("pretend-other-provider")
-                .map(String::as_str),
-            Some("personal"),
-            "another provider's record is not this provider's to clear"
-        );
     }
 
     /// A file naming a tool this build does not know came from a newer Pitboard. Called
@@ -885,7 +1388,7 @@ mod tests {
                     "label": "work", "account_uuid": "u", "email": "a@b.c",
                     "parked": null, "provider": "somethingnew"
                 }],
-                "active": {}, "slot": {}, "discarded": []
+                "in_use": {}, "slot": {}, "discarded": []
             })
             .to_string(),
         )
@@ -897,9 +1400,41 @@ mod tests {
         let _ = std::fs::remove_dir_all(&home);
     }
 
+    /// Two writes of the index within one second are two changes to a front end that follows
+    /// it: a switch typed in a terminal in the second of the last write it saw went unseen
+    /// until it next looked for another reason.
+    #[test]
+    fn two_writes_within_one_second_are_two_changes() {
+        let home = std::env::temp_dir().join(format!(
+            "pitboard-changed-at-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        let ctx = Context::new(home.clone()).with_pitboard_home(home.clone());
+        std::fs::write(home.join("state.json"), "{}").unwrap();
+        let second = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_760_000_000);
+        let written_at = |millis| {
+            std::fs::File::options()
+                .write(true)
+                .open(home.join("state.json"))
+                .and_then(|index| {
+                    index.set_modified(second + std::time::Duration::from_millis(millis))
+                })
+                .expect("the index's time set");
+            changed_at(&ctx)
+        };
+        assert_ne!(written_at(100), written_at(600));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
     /// The other direction cannot work, and the message has to say which half to upgrade.
     #[test]
-    fn a_file_from_a_newer_pitboard_says_so() {
+    fn a_file_from_a_newer_pitboard_is_refused() {
+        let mut current =
+            serde_json::json!({"schema": SCHEMA, "machine": machine_id(), "accounts": []});
+        migrate(&mut current, std::path::Path::new("/tmp/state.json")).expect("this one's own");
         let mut document = serde_json::json!({"schema": SCHEMA + 1});
         let err = migrate(&mut document, std::path::Path::new("/tmp/state.json")).unwrap_err();
         assert_eq!(err.code(), "state_from_newer_version");
@@ -945,7 +1480,10 @@ mod tests {
     fn account(label: &str, parked: Option<Park>) -> Account {
         Account {
             last_used_at: None,
+            replaced_at: None,
+            plan: None,
             label: label.into(),
+            id: format!("{label}-uuid"),
             account_uuid: format!("{label}-uuid"),
             email: format!("{label}@example.com"),
             detail: Detail::Claude {
@@ -986,12 +1524,28 @@ mod tests {
         assert_eq!(s.discarded, ["something-else", "current"]);
     }
 
+    /// A park let go of, installed or replaced, is no longer written down as a copy of a
+    /// file's login, and the list is left out of the file while it is empty.
     #[test]
-    fn relabelling_keeps_the_account_its_park_and_whether_it_is_active() {
+    fn a_park_let_go_of_is_no_longer_a_copy_of_a_files_login() {
+        let mut s = State::default();
+        s.upsert(account("work", Some(park("copy"))));
+        assert!(!serde_json::to_string(&s).unwrap().contains("from_file"));
+        s.copying_from_file("copy");
+        s.copying_from_file("copy");
+        assert_eq!(s.from_file, ["copy"]);
+        assert!(s.is_from_file("copy"));
+
+        s.park(&claude("work"), park("renewed"));
+        assert!(s.from_file.is_empty());
+        assert!(!s.file_gone(), "nothing was written down by then");
+    }
+
+    #[test]
+    fn relabelling_keeps_the_account_and_its_park() {
         let mut s = State::default();
         s.upsert(account("wrong", Some(park("p"))));
         s.upsert(account("other", None));
-        s.set_active(ProviderId::Claude, Some("wrong".into()));
 
         assert_eq!(
             s.relabel(&claude("wrong"), "right").unwrap().email,
@@ -1001,8 +1555,26 @@ mod tests {
         let renamed = s.get(&claude("right")).unwrap();
         assert_eq!(renamed.account_uuid, "wrong-uuid");
         assert_eq!(renamed.parked.as_ref().unwrap().service, "p");
-        assert_eq!(s.active_for(ProviderId::Claude), Some("right"));
         assert!(s.discarded.is_empty(), "nothing is deleted by a rename");
+    }
+
+    /// The record names whose login is stored, not a label, so a rename has nothing in it
+    /// to change.
+    #[test]
+    fn renaming_an_account_leaves_the_record_alone() {
+        let mut s = State::default();
+        s.upsert(account("wrong", None));
+        let found = InUse::of(s.get(&claude("wrong")).unwrap(), "f", 100);
+        s.identified(ProviderId::Claude, found.clone(), 100);
+
+        s.relabel(&claude("wrong"), "right").unwrap();
+
+        assert_eq!(s.in_use(ProviderId::Claude), Some(&found));
+        assert_eq!(
+            s.account_in_use(ProviderId::Claude)
+                .map(|a| a.label.as_str()),
+            Some("right")
+        );
     }
 
     #[test]
@@ -1010,7 +1582,6 @@ mod tests {
         let mut s = State::default();
         s.upsert(account("a", None));
         s.upsert(account("b", None));
-        s.set_active(ProviderId::Claude, Some("a".into()));
         assert!(matches!(
             s.relabel(&claude("a"), "b"),
             Err(Error::LabelTaken { .. })
@@ -1020,11 +1591,142 @@ mod tests {
             Err(Error::AccountUnknown { .. })
         ));
         assert_eq!(
-            s.active_for(ProviderId::Claude),
-            Some("a"),
+            s.accounts
+                .iter()
+                .map(|a| a.label.as_str())
+                .collect::<Vec<_>>(),
+            ["a", "b"],
             "a refused rename changes nothing"
         );
         assert!(s.relabel(&claude("a"), "a").is_ok());
+    }
+
+    /// Anthropic naming another account's login, where the account in use had nothing
+    /// parked, means a sign-in outside Pitboard wrote over that account's only login.
+    #[test]
+    fn an_answer_naming_another_account_marks_the_account_whose_only_login_it_replaced() {
+        let mut s = State::default();
+        s.upsert(account("work", None));
+        s.upsert(account("personal", None));
+        s.upsert(account("spare", Some(park("p"))));
+        let said = |s: &State, label: &str, login: &str, at: i64| {
+            InUse::of(s.get(&claude(label)).unwrap(), login, at)
+        };
+        let work = said(&s, "work", "work-login", 100);
+        s.identified(ProviderId::Claude, work, 100);
+
+        let personal = said(&s, "personal", "personal-login", 200);
+        let identified = s.identified(ProviderId::Claude, personal.clone(), 200);
+        assert!(identified.changed);
+        assert_eq!(
+            identified.replaced,
+            Some(Replaced {
+                key: claude("work")
+            })
+        );
+        assert_eq!(s.get(&claude("work")).unwrap().replaced_at, Some(200));
+        let now = s.get(&claude("personal")).unwrap();
+        assert_eq!((now.last_used_at, now.replaced_at), (Some(200), None));
+        assert_eq!(s.in_use(ProviderId::Claude), Some(&personal));
+
+        // The same account on another login: a renewal, or a sign-in to it again.
+        let renewed = InUse {
+            login: "personal-renewed".into(),
+            known_at: 300,
+            ..personal
+        };
+        let identified = s.identified(ProviderId::Claude, renewed.clone(), 300);
+        assert!(identified.changed);
+        assert_eq!(identified.replaced, None);
+        assert_eq!(
+            s.get(&claude("personal")).unwrap().last_used_at,
+            Some(200),
+            "still the account it was"
+        );
+
+        let again = InUse {
+            known_at: 400,
+            ..renewed
+        };
+        assert!(!s.identified(ProviderId::Claude, again, 400).changed);
+        assert_eq!(
+            s.in_use(ProviderId::Claude).map(|r| r.known_at),
+            Some(300),
+            "known since it was first said"
+        );
+
+        // An account that holds a parked login lost nothing when its login in use went.
+        let spare = said(&s, "spare", "spare-login", 500);
+        s.identified(ProviderId::Claude, spare, 500);
+        let back = said(&s, "work", "work-login-2", 600);
+        let identified = s.identified(ProviderId::Claude, back, 600);
+        assert_eq!(identified.replaced, None);
+        assert_eq!(s.get(&claude("spare")).unwrap().replaced_at, None);
+        assert_eq!(
+            s.get(&claude("work")).unwrap().replaced_at,
+            None,
+            "in use again"
+        );
+    }
+
+    /// An account signed in under two `CLAUDE_CONFIG_DIR`s keeps its login in the other when
+    /// a sign-in to another account replaces it in this one, so it lost nothing. Once no
+    /// slot's record names it, the login replaced was its only one.
+    #[test]
+    fn a_login_another_slot_still_holds_is_not_the_only_one() {
+        let mut s = State::default();
+        s.upsert(account("work", None));
+        s.upsert(account("personal", None));
+        let said = |s: &State, label: &str, login: &str, at: i64| {
+            InUse::of(s.get(&claude(label)).unwrap(), login, at)
+        };
+        let other = |s: &mut State, record: InUse| {
+            s.other_slots
+                .entry(ProviderId::Claude.code().into())
+                .or_default()
+                .insert("Claude Code-credentials-other".into(), record);
+        };
+        let work_there = said(&s, "work", "work-there", 50);
+        other(&mut s, work_there);
+        let work = said(&s, "work", "work-login", 100);
+        s.identified(ProviderId::Claude, work, 100);
+
+        let personal = said(&s, "personal", "personal-login", 200);
+        let identified = s.identified(ProviderId::Claude, personal, 200);
+
+        assert_eq!(identified.replaced, None);
+        assert_eq!(s.get(&claude("work")).unwrap().replaced_at, None);
+
+        let work = said(&s, "work", "work-login-2", 300);
+        s.identified(ProviderId::Claude, work, 300);
+        let personal_there = said(&s, "personal", "personal-there", 350);
+        other(&mut s, personal_there);
+        let personal = said(&s, "personal", "personal-login", 400);
+        let identified = s.identified(ProviderId::Claude, personal, 400);
+
+        assert_eq!(
+            identified.replaced,
+            Some(Replaced {
+                key: claude("work")
+            })
+        );
+        assert_eq!(s.get(&claude("work")).unwrap().replaced_at, Some(400));
+    }
+
+    #[test]
+    fn parking_a_replaced_account_clears_it() {
+        let mut s = State::default();
+        s.upsert(account("work", None));
+        s.upsert(account("personal", None));
+        for (label, at) in [("work", 100), ("personal", 200)] {
+            let found = InUse::of(s.get(&claude(label)).unwrap(), label, at);
+            s.identified(ProviderId::Claude, found, at);
+        }
+        assert_eq!(s.get(&claude("work")).unwrap().replaced_at, Some(200));
+
+        s.park(&claude("work"), park("p"));
+
+        assert_eq!(s.get(&claude("work")).unwrap().replaced_at, None);
     }
 
     #[test]
@@ -1082,7 +1784,7 @@ mod tests {
     #[test]
     fn a_state_file_from_before_foreign_parks_were_recorded_still_loads() {
         let written = serde_json::json!({
-            "schema": SCHEMA,
+            "schema": 4,
             "machine": machine_id(),
             "accounts": [{
                 "label": "work", "account_uuid": "acc-1", "email": "a@b.c",
@@ -1140,13 +1842,13 @@ mod tests {
     fn codex_account(label: &str) -> Account {
         Account {
             last_used_at: None,
+            replaced_at: None,
+            plan: None,
             label: label.into(),
+            id: format!("codex-{label}-uuid"),
             account_uuid: format!("codex-{label}-uuid"),
             email: format!("{label}@openai.example"),
-            detail: Detail::Codex {
-                workspace_id: None,
-                plan: None,
-            },
+            detail: Detail::Codex { workspace_id: None },
             parked: None,
         }
     }
@@ -1203,18 +1905,36 @@ mod tests {
         );
     }
 
-    /// Forgetting the account a tool last switched to must not leave that tool's record
-    /// naming it: a later account enrolled under the same label would read as in use.
+    /// Forgetting an account leaves the login its tool has stored where it was, and the
+    /// record says whose it is by owner, so another account given the same label is not in
+    /// use, and the same account enrolled again is.
     #[test]
-    fn removing_the_account_in_use_clears_that_tools_record_only() {
+    fn removing_the_account_in_use_leaves_whose_login_is_stored() {
         let mut s = State::default();
         s.upsert(account("work", None));
         s.upsert(codex_account("work"));
-        s.set_active(ProviderId::Claude, Some("work".into()));
-        s.set_active(ProviderId::Codex, Some("work".into()));
-        s.remove(&Key::new(ProviderId::Codex, "work"));
-        assert_eq!(s.active_for(ProviderId::Codex), None);
-        assert_eq!(s.active_for(ProviderId::Claude), Some("work"));
+        let codex = Key::new(ProviderId::Codex, "work");
+        let found = InUse::of(s.get(&codex).unwrap(), "f", 100);
+        s.identified(ProviderId::Codex, found.clone(), 100);
+
+        let forgotten = s.remove(&codex).expect("enrolled");
+        assert_eq!(s.in_use(ProviderId::Codex), Some(&found));
+        assert!(s.account_in_use(ProviderId::Codex).is_none());
+
+        s.upsert(Account {
+            id: "codex-other-uuid".into(),
+            account_uuid: "codex-other-uuid".into(),
+            ..codex_account("work")
+        });
+        assert!(
+            s.account_in_use(ProviderId::Codex).is_none(),
+            "a label is not who is in use"
+        );
+        s.upsert(forgotten);
+        assert_eq!(
+            s.account_in_use(ProviderId::Codex).map(Account::key),
+            Some(codex)
+        );
     }
 
     /// A bare name for an account whose label another tool shares would be refused as
@@ -1228,91 +1948,6 @@ mod tests {
         assert_eq!(s.typed(&claude("work")), "claude/work");
         assert_eq!(s.typed(&Key::new(ProviderId::Codex, "work")), "codex/work");
         assert_eq!(s.typed(&claude("personal")), "personal");
-    }
-
-    fn desktop_account(label: &str, uuid: &str) -> Account {
-        Account {
-            last_used_at: None,
-            label: label.into(),
-            account_uuid: uuid.into(),
-            email: format!("{label}@example.com"),
-            detail: Detail::Desktop {
-                organization_uuid: None,
-                session_fingerprint: "fp".into(),
-                session_expires_at: None,
-            },
-            parked: None,
-        }
-    }
-
-    /// A Claude Desktop account has no email, so a rename onto its label names it as
-    /// another account, never as an empty pair of quotes.
-    #[test]
-    fn a_label_taken_by_an_account_with_no_email_names_another_account() {
-        let mut s = State::default();
-        s.upsert(Account {
-            email: String::new(),
-            ..desktop_account("home", "uuid-home")
-        });
-        s.upsert(Account {
-            email: String::new(),
-            ..desktop_account("work", "uuid-work")
-        });
-        let refused = s
-            .relabel(&Key::new(ProviderId::Desktop, "work"), "home")
-            .expect_err("taken");
-        assert!(
-            matches!(&refused, Error::LabelTaken { email, .. } if email == "another account"),
-            "{refused:?}"
-        );
-        assert!(!refused.to_string().contains("to ."), "{refused}");
-    }
-
-    /// Claude Code and Claude Desktop sign in to the same Anthropic account, so one person
-    /// enrolled in both has two accounts with one uuid. A park in the keychain is Claude
-    /// Code's, and must never be filed under the Desktop account just because it came
-    /// first in the list.
-    #[test]
-    fn a_park_is_owned_within_its_own_tool() {
-        let mut s = State::default();
-        s.upsert(desktop_account("work", "shared-uuid"));
-        s.upsert(Account {
-            account_uuid: "shared-uuid".into(),
-            ..account("work", Some(park("claude-park")))
-        });
-        assert_eq!(s.accounts.len(), 2);
-
-        let claude = s
-            .owner_of_park(ProviderId::Claude, "shared-uuid")
-            .expect("Claude Code's account");
-        assert_eq!(claude.provider(), ProviderId::Claude);
-        let vault = s
-            .vault_owner_of_park("shared-uuid")
-            .expect("the account a vault park belongs to");
-        assert_eq!(vault.provider(), ProviderId::Claude);
-        assert_eq!(
-            s.owner_of_park(ProviderId::Desktop, "shared-uuid")
-                .map(Account::provider),
-            Some(ProviderId::Desktop)
-        );
-        assert!(s.owner_of_park(ProviderId::Codex, "shared-uuid").is_none());
-    }
-
-    /// Readings, budgets and history are filed by a key. One Anthropic account enrolled in
-    /// Claude Code and in Claude Desktop is measured two different ways, so the two must
-    /// not share a key, while every key an existing install already wrote stays the same.
-    #[test]
-    fn usage_keys_do_not_collide() {
-        let code = Account {
-            account_uuid: "shared-uuid".into(),
-            ..account("work", None)
-        };
-        let desktop = desktop_account("work", "shared-uuid");
-        let codex = codex_account("work");
-        assert_eq!(code.usage_key(), "shared-uuid");
-        assert_eq!(codex.usage_key(), codex.account_uuid);
-        assert_eq!(desktop.usage_key(), "desktop:shared-uuid");
-        assert_ne!(code.usage_key(), desktop.usage_key());
     }
 
     #[test]

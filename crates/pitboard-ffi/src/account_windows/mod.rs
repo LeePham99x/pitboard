@@ -4,9 +4,9 @@
 //! asks it, WebKit on macOS and WebView2 on Windows, on its main thread: each answers at once
 //! from what it is given, and only `download_destination` looks at the file system.
 //!
-//! What follows the app's reads is still each app's own: which windows close and which stores
-//! go after a read, the records of stores and last pages, the links waiting for a window, and
-//! the account picker.
+//! What follows the app's reads is the model's, in `model/windows.rs`: which windows close
+//! and which stores go after a read, the records of stores and last pages, which `records.rs`
+//! reads and writes, the links waiting for a window, the account picker and the downloads.
 //!
 //! What differs by system is a `match` on `host::OS`, as the core's facts about the system
 //! are, so a system added there does not compile until each is said for it. Each such fact
@@ -17,12 +17,11 @@ mod downloads;
 mod notes;
 mod pages;
 mod policy;
+pub(crate) mod records;
 mod stores;
 
-pub use accounts::{
-    SiteMenu, WindowAccount, forget_message, site_menus, window_accounts, window_of_store,
-    windows_of,
-};
+pub use accounts::{SiteMenu, WindowAccount, site_menus, window_accounts, window_of_store};
+pub(crate) use accounts::{forget_message_on, windows_of_account};
 pub use downloads::{download_destination, download_host, download_question};
 pub use notes::{WindowNoteKind, opening_note, remove_data_alert, window_note};
 pub use pages::{
@@ -46,11 +45,13 @@ pub struct AlertText {
 }
 
 /// How a sentence names the machine Pitboard runs on, which keeps what a window keeps.
-fn this_machine(os: Os) -> &'static str {
+pub(crate) fn this_machine(os: Os) -> &'static str {
     match os {
         Os::MacOs => "this Mac",
         // No app runs on Linux.
         Os::Linux => "this computer",
+        // As Windows 11 names the machine in its own Settings and File Explorer.
+        Os::Windows => "this PC",
     }
 }
 
@@ -58,9 +59,12 @@ fn this_machine(os: Os) -> &'static str {
 mod tests {
     use super::*;
 
+    /// Each system's machine is called what the system calls it: a Mac, and a PC on
+    /// Windows, as the owner decided.
     #[test]
-    fn a_mac_is_called_one() {
+    fn a_machine_is_called_what_its_system_calls_it() {
         assert_eq!(this_machine(Os::MacOs), "this Mac");
         assert_eq!(this_machine(Os::Linux), "this computer");
+        assert_eq!(this_machine(Os::Windows), "this PC");
     }
 }

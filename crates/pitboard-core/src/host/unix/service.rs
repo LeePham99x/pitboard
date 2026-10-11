@@ -2,18 +2,20 @@
 //! start or stop it the way a person would type it. launchd and systemd both work this way.
 
 use crate::error::{Error, Result};
+use crate::service::Permit;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-/// Whoever answers for the service manager.
+/// Whoever answers for the service manager. Every request changes what it runs, so each
+/// takes the [`Permit`] only the one gate every change passes makes.
 pub(crate) trait Control: Send + Sync + std::fmt::Debug {
     /// Run `program` with `args`.
-    fn run(&self, program: &str, args: &[&str]) -> Result<()>;
+    fn run(&self, permit: Permit, program: &str, args: &[&str]) -> Result<()>;
 
     /// Run `program` with `args` to start a job, which is the one request whose refusal
     /// changes what a scheduler leaves behind.
-    fn start(&self, program: &str, args: &[&str]) -> Result<()> {
-        self.run(program, args)
+    fn start(&self, permit: Permit, program: &str, args: &[&str]) -> Result<()> {
+        self.run(permit, program, args)
     }
 }
 
@@ -22,15 +24,17 @@ pub(crate) trait Control: Send + Sync + std::fmt::Debug {
 pub(crate) struct System;
 
 impl Control for System {
-    /// Never from a test. A test's home is a scratch directory, but the manager it would ask
-    /// is the person's own: launchd finds a job by the label inside its file, so booting out
-    /// a scratch copy stops their real schedule, and `systemctl --user` reaches the one
+    /// Never from a build for tests: a unit test, the `pitboard` the integration tests run,
+    /// or an app built with the fixtures. A test's home is a scratch directory, but the
+    /// manager it would ask is the person's own: launchd finds a job by the label inside its
+    /// file, so booting out a scratch copy stops their real schedule and bootstrapping it
+    /// has their launchd run the test's build daily, and `systemctl --user` reaches the one
     /// session there is. A test gives its context a `MemoryHost`, whose scheduler asks
     /// [`Pretend`], and this refuses the rest.
-    fn run(&self, program: &str, args: &[&str]) -> Result<()> {
-        if cfg!(test) {
+    fn run(&self, _: Permit, program: &str, args: &[&str]) -> Result<()> {
+        if cfg!(any(test, feature = "test-support")) {
             return Err(Error::ScheduleRefused {
-                detail: format!("a test asked {program} itself"),
+                detail: format!("a build for tests asked {program} itself"),
             });
         }
         let out = std::process::Command::new(program)
@@ -66,11 +70,11 @@ pub(crate) struct Pretend {
 
 #[cfg(any(test, feature = "test-support"))]
 impl Control for Pretend {
-    fn run(&self, _program: &str, _args: &[&str]) -> Result<()> {
+    fn run(&self, _: Permit, _program: &str, _args: &[&str]) -> Result<()> {
         Ok(())
     }
 
-    fn start(&self, program: &str, _args: &[&str]) -> Result<()> {
+    fn start(&self, _: Permit, program: &str, _args: &[&str]) -> Result<()> {
         if self
             .refuse_start
             .swap(false, std::sync::atomic::Ordering::SeqCst)
@@ -83,15 +87,20 @@ impl Control for Pretend {
     }
 }
 
-/// Write one of the job's files, keeping the mode one that is there already has.
-pub(crate) fn write(path: &Path, body: &str) -> Result<()> {
+/// Write one of the job's files, private to the person whatever was there: a job is given
+/// the proxy variables of the Pitboard that installed it, and a proxy's address can hold a
+/// user name and password. A file already there kept its own mode until then, while a new
+/// one was private already, since [`crate::atomic::write`] creates each file private.
+pub(crate) fn write(permit: Permit, path: &Path, body: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|source| Error::HomeUnwritable {
-            path: parent.to_path_buf(),
-            source,
+        crate::host::fs::create_dir_all(permit, parent).map_err(|source| {
+            Error::HomeUnwritable {
+                path: parent.to_path_buf(),
+                source,
+            }
         })?;
     }
-    crate::atomic::write(path, body.as_bytes(), crate::atomic::Perms::MatchExisting).map_err(
+    crate::atomic::write(permit, path, body.as_bytes(), crate::atomic::Perms::Secret).map_err(
         |source| Error::HomeUnwritable {
             path: path.to_path_buf(),
             source,
@@ -101,16 +110,16 @@ pub(crate) fn write(path: &Path, body: &str) -> Result<()> {
 
 /// Put a file back the way it was before this run wrote it: its old contents, or not there.
 /// Best effort, because it runs on the way out of a failure that is already being reported.
-pub(crate) fn restore(path: &Path, before: Option<&str>) {
+pub(crate) fn restore(permit: Permit, path: &Path, before: Option<&str>) {
     let _ = match before {
-        Some(body) => write(path, body),
-        None => remove(path),
+        Some(body) => write(permit, path, body),
+        None => remove(permit, path),
     };
 }
 
 /// Take one of the job's files away. One that is not there is already gone.
-pub(crate) fn remove(path: &Path) -> Result<()> {
-    match std::fs::remove_file(path) {
+pub(crate) fn remove(permit: Permit, path: &Path) -> Result<()> {
+    match crate::host::fs::remove_file(permit, path) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(source) => Err(Error::HomeUnwritable {

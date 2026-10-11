@@ -1,10 +1,11 @@
 use anstream::{ColorChoice, eprintln, print, println};
 use anstyle::{AnsiColor, Style};
 use clap::{CommandFactory, Parser, Subcommand};
+use pitboard_core::autoswitch::Threshold;
 use pitboard_core::context::Context;
 use pitboard_core::doctor;
 use pitboard_core::error::Error;
-use pitboard_core::provider::{Adoption, ProviderId};
+use pitboard_core::provider::Adoption;
 use pitboard_core::service::{Changing, Done, Failed, Pitboard, Warning};
 use pitboard_core::switch::{Enrolled, Outcome, Renewal};
 use serde_json::{Value, json};
@@ -12,9 +13,11 @@ use std::io::{IsTerminal, Read, Write};
 use std::process::ExitCode;
 use ui::{BOLD, DIM, WARN, paint};
 
+mod json;
 mod manpage;
 mod render;
 mod ui;
+mod watch;
 
 /// Bumped only when a field changes shape. Adding a field or an error code is not a
 /// breaking change for a consumer; renaming or removing one is.
@@ -23,8 +26,7 @@ const CONTRACT: u32 = 1;
 const ERROR: Style = AnsiColor::Red.on_default().bold();
 const WARNING: Style = AnsiColor::Yellow.on_default().bold();
 
-/// Park and restore your own logins of Claude Code, Codex and Claude Desktop, and see what
-/// each one has left.
+/// Park and restore your own logins of Claude Code and Codex, and see what each one has left.
 #[derive(Parser)]
 #[command(name = "pitboard", version)]
 struct Cli {
@@ -51,8 +53,7 @@ enum Command {
     /// Add an account: the one signed in now, or with --sign-in, another one
     Enroll {
         /// A short name for this account, such as `personal` or `work`. `codex/work` names a
-        /// Codex account and `desktop/work` a Claude Desktop one; a bare name means Claude
-        /// Code
+        /// Codex account; a bare name means Claude Code
         #[arg(value_parser = label_to_enroll)]
         label: String,
         /// Sign in through the tool's own sign-in, without signing out of the account in
@@ -63,20 +64,20 @@ enum Command {
     },
     /// Switch a tool to an enrolled account
     Use {
-        /// The label the account was enrolled under, such as `work` or `codex/work`; with
-        /// --signed-out, the tool, such as `desktop`
+        /// The label the account was enrolled under, such as `work` or `codex/work`
         label: String,
-        /// Park the account in use and leave the tool signed out, so the next account to
-        /// sign in to it can be enrolled. For Claude Desktop, which has no sign-in of its
-        /// own for Pitboard to open
-        #[arg(long)]
-        signed_out: bool,
     },
     /// Drop an account and its parked login
     Forget {
         /// The label to drop
         label: String,
-        /// Do not ask first
+        /// Do not ask first; needed without a terminal or with `--json`
+        #[arg(short = 'y', long)]
+        yes: bool,
+    },
+    /// Put away the login Claude Code left in a file behind the keychain, then delete the file
+    Stow {
+        /// Do not ask first; needed without a terminal or with `--json`
         #[arg(short = 'y', long)]
         yes: bool,
     },
@@ -87,7 +88,16 @@ enum Command {
     /// Take over a Pitboard directory another computer wrote, keeping the accounts
     Adopt,
     /// Renew every parked login that is due, and nothing else
-    Renew,
+    Renew {
+        // The marker the daily renewal schedule's job runs this with on Linux, where what
+        // systemd passes a job is not to be relied on. Hidden from help and the man page,
+        // since a person has no reason to type it, but clap_complete writes hidden
+        // arguments into every shell's completions, so the line below is what they show,
+        // as written: it has no Markdown for that reason.
+        /// Renew as the daily renewal schedule does: ~/.pitboard, whatever PITBOARD_HOME says
+        #[arg(long, hide = true)]
+        scheduled: bool,
+    },
     /// Keep parked logins alive without running anything yourself
     Schedule {
         #[command(subcommand)]
@@ -102,7 +112,7 @@ enum Command {
     /// Delete every parked login this Pitboard wrote, the daily renewal schedule and
     /// Pitboard's own files
     Uninstall {
-        /// Do not ask first
+        /// Do not ask first; needed without a terminal or with `--json`
         #[arg(short = 'y', long)]
         yes: bool,
     },
@@ -114,20 +124,80 @@ enum Command {
         #[arg(value_parser = new_label)]
         to: String,
     },
-    /// Claude Desktop's own settings
-    Desktop {
-        #[command(subcommand)]
-        what: DesktopCommand,
-    },
     /// Check that what Pitboard relies on still holds on this machine
     Doctor,
     /// One line for Claude Code's status bar; reads its session JSON on stdin
     Statusline,
+    /// Switch Claude Code to another of your accounts before the one in use runs out, for as
+    /// long as this runs
+    Watch {
+        /// Switch once a limit of the account in use reaches this share, from 50 to 99
+        #[arg(
+            long,
+            value_name = "PERCENT",
+            default_value_t = Threshold::DEFAULT.percent(),
+            value_parser = clap::value_parser!(u8)
+                .range(i64::from(Threshold::LOWEST)..=i64::from(Threshold::HIGHEST)),
+        )]
+        at: u8,
+        /// Decide once from the usage Pitboard last measured, asking no service for usage,
+        /// and stop
+        #[arg(long)]
+        once: bool,
+    },
     /// Print a shell completion script
     Completions { shell: clap_complete::Shell },
     /// Print the man page
     #[command(hide = true)]
     Manpage,
+}
+
+impl Command {
+    /// The name the command's envelope gives, as each command's own report names it.
+    fn name(&self) -> &'static str {
+        match self {
+            Command::Status { .. } => "status",
+            Command::Enroll { .. } => "enroll",
+            Command::Use { .. } => "use",
+            Command::Forget { .. } => "forget",
+            Command::Stow { .. } => "stow",
+            Command::Abandon => "abandon",
+            Command::Repair => "repair",
+            Command::Adopt => "adopt",
+            Command::Renew { .. } => "renew",
+            Command::Schedule { .. } => "schedule",
+            Command::Log { .. } => "log",
+            Command::Uninstall { .. } => "uninstall",
+            Command::Rename { .. } => "rename",
+            Command::Doctor => "doctor",
+            Command::Statusline => "statusline",
+            Command::Watch { .. } => "watch",
+            Command::Completions { .. } | Command::Manpage => "generate",
+        }
+    }
+
+    /// Whether the command asks first whether this build may do anything here: a Windows
+    /// build of a release before Pitboard for Windows is released may not
+    /// ([`pitboard_core::release`]). Every command does but the two that print a generated
+    /// file; `--version` and `--help` are answered before a command is read.
+    fn asks_whether_this_build_may_run(&self) -> bool {
+        !matches!(self, Command::Completions { .. } | Command::Manpage)
+    }
+
+    /// Whether the command is refused here where a home the environment names is not a
+    /// full path. Every one reads or writes under the homes but the two that print a
+    /// generated file; `doctor` says so as a check of its own and checks nothing else; and
+    /// `renew` is refused by the gate it asks, of the homes it renews in, since a run of the
+    /// schedule renews `~/.pitboard` whatever `PITBOARD_HOME` says, empty or relative too.
+    fn refuses_a_home_that_is_not_a_full_path(&self) -> bool {
+        !matches!(
+            self,
+            Command::Completions { .. }
+                | Command::Manpage
+                | Command::Doctor
+                | Command::Renew { .. }
+        )
+    }
 }
 
 /// A label is typed on the command line from then on, so it cannot be empty or hold spaces.
@@ -229,7 +299,7 @@ fn emit(report: Report, as_json: bool) -> ExitCode {
             "warnings": report.warnings,
             "error": error,
         });
-        println!("{envelope}");
+        println!("{}", json::ascii(&envelope));
     } else {
         match &report.result {
             Ok(_) => print!("{}", report.human),
@@ -345,14 +415,16 @@ fn statusline(pitboard: &Pitboard) -> Report {
 }
 
 fn enroll_signing_in(pitboard: &Pitboard, label: &str) -> Report {
+    // Refused before the sign-in is announced, as root or under sudo, where none opens.
+    if let Err(refused) = pitboard.permit() {
+        return Report::failed(Some("enroll"), refused);
+    }
     // The account this would sign in to again, of the tool the label is for: another
     // tool's account of the same name is somebody else to sign in as.
     let existing = pitboard.account_to_enroll(label);
     let who = existing
         .as_ref()
-        .map(|a| a.email.clone())
-        .filter(|email| !email.is_empty())
-        .unwrap_or_else(|| "the account to add".to_string());
+        .map_or_else(|| "the account to add".to_string(), |a| a.email.clone());
     let tool = existing.as_ref().map_or_else(
         || {
             pitboard_core::label::choose(label)
@@ -361,27 +433,13 @@ fn enroll_signing_in(pitboard: &Pitboard, label: &str) -> Report {
         },
         pitboard_core::state::Account::provider,
     );
-    // Claude Desktop has no sign-in Pitboard can open, and the core says so; saying it
-    // was being opened first would be a line the next one contradicts.
-    if tool != ProviderId::Desktop {
-        eprintln!(
-            "Opening {}'s sign-in. Sign in as {who}; the account in use now stays signed in.",
-            tool.name()
-        );
-    }
+    eprintln!(
+        "Opening {}'s sign-in. Sign in as {who}; the account in use now stays signed in.",
+        tool.name()
+    );
     match pitboard.sign_in(label) {
         Ok(login) => enrolled(pitboard, label, pitboard.enroll_signed_in(label, login)),
         Err(failed) => Report::refused("enroll", failed),
-    }
-}
-
-/// ` (email)` after an account's name, or nothing for an account with no email, as a
-/// Claude Desktop account has: an empty pair of brackets says nothing.
-fn bracketed(email: &str) -> String {
-    if email.is_empty() {
-        String::new()
-    } else {
-        format!(" ({email})")
     }
 }
 
@@ -402,50 +460,34 @@ fn enrolled(pitboard: &Pitboard, label: &str, outcome: Changing<Enrolled>) -> Re
     let another = pitboard_core::state::Key::new(provider, "<label>").typed();
     changed("enroll", outcome, |enrolled| {
         let (kind, email, human) = match enrolled {
-            // Claude Desktop adds its next account by being signed out, not by a sign-in
-            // of Pitboard's, so there is no `--sign-in` to offer.
-            Enrolled::Current { email } if provider == ProviderId::Desktop => {
-                let human = format!(
-                    "Enrolled {} for {}, the account signed in now.\n",
-                    paint(BOLD, bare(label)),
-                    provider.name()
-                );
-                ("current", email, human)
-            }
             Enrolled::Current { email } => {
                 let human = format!(
-                    "Enrolled {name}{}, the account signed in now.\n\
+                    "Enrolled {name} ({email}), the account signed in now.\n\
                      Add another without signing out of it: pitboard enroll {another} \
-                     --sign-in\n",
-                    bracketed(&email)
+                     --sign-in\n"
                 );
                 ("current", email, human)
             }
             Enrolled::SignedIn { email } => {
                 let human = format!(
-                    "Enrolled {name}{}. Switch to it with: pitboard use {to_use}\n",
-                    bracketed(&email)
+                    "Enrolled {name} ({email}). Switch to it with: pitboard use {to_use}\n"
                 );
                 ("signed_in", email, human)
             }
             Enrolled::Renewed { email } => {
-                let human = format!(
-                    "Renewed {name}{}: its parked login is a fresh one.\n",
-                    bracketed(&email)
-                );
+                let human = format!("Renewed {name} ({email}): its parked login is a fresh one.\n");
                 ("renewed", email, human)
             }
             Enrolled::InUse { email, again } => {
                 let human = if again {
                     format!(
-                        "Signed in to {name}{} again. Its new login is the one in use now.\n",
-                        bracketed(&email)
+                        "Signed in to {name} ({email}) again. Its new login is the one in use \
+                         now.\n"
                     )
                 } else {
                     format!(
-                        "Enrolled {name}{}, the account signed in now. Its new login is the one \
-                         in use.\n",
-                        bracketed(&email)
+                        "Enrolled {name} ({email}), the account signed in now. Its new login is \
+                         the one in use.\n"
                     )
                 };
                 ("in_use", email, human)
@@ -463,19 +505,82 @@ fn enrolled(pitboard: &Pitboard, label: &str, outcome: Changing<Enrolled>) -> Re
     })
 }
 
-/// What the switch says of when sessions already running follow it: the tool's own answer,
-/// not a constant. A number of seconds is only ever shown for a tool that really does
-/// follow on its own within them, and a tool that needs restarting has no number at all
-/// rather than a zero that reads as "at once".
-fn adoption_said(provider: ProviderId, adoption: Adoption) -> (Option<u32>, String, Value) {
+fn use_account(pitboard: &Pitboard, label: &str) -> Report {
+    changed("use", pitboard.switch_to(label), |outcome| match outcome {
+        Outcome::AlreadyActive {
+            label,
+            config_updated,
+        } => {
+            let named = if config_updated {
+                format!(
+                    " Claude Code's config named another account, and now names {}.",
+                    paint(BOLD, &label)
+                )
+            } else {
+                String::new()
+            };
+            (
+                json!({ "to": label, "changed": false, "config_updated": config_updated }),
+                format!("{} is already signed in.{named}\n", paint(BOLD, &label)),
+            )
+        }
+        Outcome::Switched {
+            provider,
+            from,
+            to,
+            parked,
+            adoption,
+        } => {
+            let (seconds, follows, adoption_json) = followed(provider, &adoption);
+            (
+                json!({
+                    "from": from,
+                    "to": to,
+                    "provider": provider,
+                    "changed": true,
+                    "parked_at": parked.parked_at,
+                    "adoption_ceiling_seconds": seconds,
+                    "adoption": adoption_json,
+                }),
+                format!(
+                    "Switched to {}; {} is parked.\n{follows}",
+                    paint(BOLD, &to),
+                    paint(BOLD, &from),
+                ),
+            )
+        }
+    })
+}
+
+/// What becomes of sessions already running after a switch: within how many seconds they
+/// follow, where they do, said as a sentence and for `--json`.
+///
+/// The tool's own answer, not a constant. A number of seconds is only ever shown for a tool
+/// that really does follow on its own within them, and one whose sessions follow at their
+/// login's next renewal, or that needs restarting, has no number at all rather than a zero
+/// that reads as "at once".
+fn followed(
+    provider: pitboard_core::provider::ProviderId,
+    adoption: &Adoption,
+) -> (Option<u32>, String, Value) {
     match adoption {
         Adoption::PollingWithin(seconds) => (
-            Some(seconds),
+            Some(*seconds),
             format!(
                 "{} sessions already running follow within {seconds} seconds.\n",
                 provider.name()
             ),
             json!({ "follows": "polling", "within_seconds": seconds }),
+        ),
+        Adoption::AtRenewal { file } => (
+            None,
+            format!(
+                "{} sessions already running {}: {} is there. `pitboard doctor` says more.\n",
+                provider.name(),
+                pitboard_core::words::kept_until_renewed(),
+                file.display()
+            ),
+            json!({ "follows": "renewal", "path": file }),
         ),
         Adoption::RestartRequired { program, .. } => (
             None,
@@ -485,157 +590,70 @@ fn adoption_said(provider: ProviderId, adoption: Adoption) -> (Option<u32>, Stri
             ),
             json!({ "follows": "restart", "program": program }),
         ),
-        // An app that reads its login only when it starts was quit before the switch, so
-        // there is nothing left running to restart.
-        Adoption::NextLaunch { program } => (
-            None,
-            format!("Open {program} to use it.\n"),
-            json!({ "follows": "next_launch", "program": program }),
-        ),
     }
-}
-
-/// A label as somebody reads it, without the tool it was typed with: `personal` for
-/// `desktop/personal`. Only for a sentence that names the tool itself.
-fn bare(typed: &str) -> &str {
-    match typed.split_once(pitboard_core::label::SEPARATOR) {
-        Some((tool, label)) if ProviderId::parse(tool).is_some() => label,
-        _ => typed,
-    }
-}
-
-fn use_account(pitboard: &Pitboard, label: &str) -> Report {
-    switched(pitboard.switch_to(label))
-}
-
-/// `pitboard use desktop --signed-out`: the label is the tool to sign out.
-fn use_signed_out(pitboard: &Pitboard, tool: &str) -> Report {
-    match ProviderId::parse(tool) {
-        Some(which) => switched(pitboard.switch_to_signed_out(which)),
-        None => Report::failed(
-            Some("use"),
-            Error::ProviderUnknown {
-                typed: tool.to_string(),
-                known: ProviderId::ALL
-                    .iter()
-                    .map(|p| p.code().to_string())
-                    .collect(),
-            },
-        ),
-    }
-}
-
-fn switched(outcome: Changing<Outcome>) -> Report {
-    changed("use", outcome, |outcome| match outcome {
-        Outcome::AlreadyActive { label } => (
-            json!({ "to": label, "changed": false }),
-            format!("{} is already signed in.\n", paint(BOLD, &label)),
-        ),
-        // A sign-out that found nobody signed in: said as one, with nothing parked.
-        Outcome::AlreadySignedOut { provider } => (
-            json!({
-                "to": null,
-                "signed_out": true,
-                "provider": provider,
-                "changed": false,
-            }),
-            format!("{} is already signed out.\n", provider.name()),
-        ),
-        Outcome::Switched {
-            provider,
-            from,
-            to,
-            parked,
-            adoption,
-        } => {
-            let (seconds, follows, adoption_json) = adoption_said(provider, adoption);
-            (
-                json!({
-                    "from": from,
-                    "to": to,
-                    "provider": provider,
-                    "changed": true,
-                    "parked_at": parked.parked_at,
-                    "adoption_ceiling_seconds": seconds,
-                    "adoption": adoption_json,
-                }),
-                if provider == ProviderId::Desktop {
-                    // One app, so the sentence names it, and the labels without it.
-                    format!(
-                        "Switched {} to {} (was {}).\n{follows}",
-                        provider.name(),
-                        paint(BOLD, bare(&to)),
-                        paint(BOLD, bare(&from)),
-                    )
-                } else {
-                    format!(
-                        "Switched to {}; {} is parked.\n{follows}",
-                        paint(BOLD, &to),
-                        paint(BOLD, &from),
-                    )
-                },
-            )
-        }
-        // Nothing was signed in, so nothing was parked.
-        Outcome::Installed {
-            provider,
-            to,
-            adoption,
-        } => {
-            let (seconds, follows, adoption_json) = adoption_said(provider, adoption);
-            (
-                json!({
-                    "from": null,
-                    "to": to,
-                    "provider": provider,
-                    "changed": true,
-                    "adoption_ceiling_seconds": seconds,
-                    "adoption": adoption_json,
-                }),
-                format!("Switched to {}.\n{follows}", paint(BOLD, &to)),
-            )
-        }
-        // Only an app whose login is a folder is signed out this way, and the next
-        // account is whoever signs in to it next, so the way on is the app's own sign-in.
-        Outcome::SignedOut {
-            provider,
-            from,
-            parked,
-            adoption,
-        } => {
-            let (seconds, _, adoption_json) = adoption_said(provider, adoption);
-            let next = pitboard_core::state::Key::new(provider, "<label>").typed();
-            (
-                json!({
-                    "from": from,
-                    "to": null,
-                    "signed_out": true,
-                    "provider": provider,
-                    "changed": true,
-                    "parked_at": parked.parked_at,
-                    "adoption_ceiling_seconds": seconds,
-                    "adoption": adoption_json,
-                }),
-                format!(
-                    "Parked {}. {} is signed out.\n\
-                     Open {program}, sign in to the other account, quit {program}, then run\n  \
-                     pitboard enroll {next}\n",
-                    paint(BOLD, bare(&from)),
-                    provider.name(),
-                    program = provider.program(),
-                ),
-            )
-        }
-    })
 }
 
 fn forget(pitboard: &Pitboard, label: &str) -> Report {
     changed("forget", pitboard.forget(label), |email| {
         (
             json!({ "label": label, "email": email }),
-            format!("Forgot {}{}.\n", paint(BOLD, label), bracketed(&email)),
+            format!("Forgot {} ({email}).\n", paint(BOLD, label)),
         )
     })
+}
+
+/// What `pitboard stow` finds, asks and does: the login left in the file behind Claude Code's
+/// store and what putting it away would do with it, then, once `confirm` says yes, putting it
+/// away while the file still holds what was found. A login of an account nobody enrolled is
+/// refused as the look found it, saying whose it is, and nothing is asked or changed. `None`
+/// where the answer was no; where nobody could be asked, `confirm`'s refusal.
+fn stow(pitboard: &Pitboard, confirm: impl FnOnce(&str) -> Result<bool, Error>) -> Option<Report> {
+    let left = match pitboard.left_login() {
+        Err(error) => return Some(Report::failed(Some("stow"), error)),
+        Ok(None) => {
+            return Some(Report::done(
+                "stow",
+                json!({ "stowed": false }),
+                format!("{}\n", pitboard_core::words::nothing_left()),
+            ));
+        }
+        Ok(Some(left)) => left,
+    };
+    if let Some(refused) = left.refusal() {
+        return Some(Report::failed(Some("stow"), refused));
+    }
+    match confirm(&left_question(&left)) {
+        Ok(true) => {}
+        Ok(false) => return None,
+        Err(refused) => return Some(Report::failed(Some("stow"), refused)),
+    }
+    Some(changed("stow", pitboard.stow(&left.seen), |stowed| {
+        (
+            json!({
+                "stowed": true,
+                "path": stowed.path,
+                "login": stowed.kept.code(),
+                "account": stowed.kept.account(),
+                "dropped": stowed.dropped,
+            }),
+            stowed_lines(&stowed),
+        )
+    }))
+}
+
+/// The question `pitboard stow` asks before it puts the file away: what it holds, what goes
+/// with it, and what becomes of Claude Code's sessions.
+fn left_question(left: &pitboard_core::switch::Left) -> String {
+    let lines = pitboard_core::words::left_lines(left);
+    format!("{}\nPut it away? [y/N] ", lines.join("\n"))
+}
+
+/// What `pitboard stow` says it did, a line each.
+fn stowed_lines(stowed: &pitboard_core::switch::Stowed) -> String {
+    pitboard_core::words::stowed_lines(stowed)
+        .into_iter()
+        .map(|line| format!("{line}\n"))
+        .collect()
 }
 
 fn abandon(pitboard: &Pitboard) -> Report {
@@ -676,145 +694,39 @@ enum ScheduleCommand {
 }
 
 fn renew(pitboard: &Pitboard) -> Report {
-    let outcomes = pitboard.renew();
+    let outcomes = match pitboard.renew() {
+        Ok(outcomes) => outcomes,
+        Err(error) => return Report::failed(Some("renew"), error),
+    };
     let renewed = outcomes
         .iter()
         .filter(|(_, r)| matches!(r, Renewal::Renewed))
         .count();
-    // A login Pitboard cannot renew is said on a line of its own with when it lapses,
-    // because the only way to keep it is to sign in to it again before then.
-    let lapsing: Vec<String> = outcomes
-        .iter()
-        .filter_map(|(key, outcome)| match outcome {
-            Renewal::NotRenewable { expires_at, .. } => Some(format!(
-                "{}: not renewable; {}\n",
-                key.typed(),
-                match expires_at {
-                    Some(at) => format!(
-                        "its sign-in lapses {}",
-                        pitboard_core::time::local(*at, "%F")
-                    ),
-                    None => "when its sign-in lapses is not known".to_string(),
-                }
-            )),
-            _ => None,
-        })
-        .collect();
-    let due = outcomes.len() - lapsing.len();
-    let mut human = if due == 0 && !lapsing.is_empty() {
-        String::new()
-    } else {
-        format!("{}\n", pitboard_core::words::renewal_note(due, renewed))
-    };
-    human.push_str(&lapsing.concat());
+    let human = format!(
+        "{}\n",
+        pitboard_core::words::renewal_note(outcomes.len(), renewed)
+    );
     Report::done(
         "renew",
         json!({
-            "accounts": outcomes.iter().map(|(key, outcome)| {
-                let mut said = json!({
-                    "label": key.typed(),
-                    "provider": key.provider,
-                    "outcome": outcome.code(),
-                });
-                if let Renewal::NotRenewable { expires_at, .. } = outcome {
-                    said["expires_at"] = json!(expires_at);
-                }
-                said
-            }).collect::<Vec<_>>(),
+            "accounts": outcomes.iter().map(|(key, outcome)| json!({
+                "label": key.typed(),
+                "provider": key.provider,
+                "outcome": outcome.code(),
+            })).collect::<Vec<_>>(),
             "renewed": renewed,
         }),
         human,
     )
 }
 
-#[derive(Subcommand)]
-enum DesktopCommand {
-    /// Ask claude.ai how much each Claude Desktop account has left, which needs Claude's
-    /// key. Off until you turn it on; switching accounts never needs it
-    LiveUsage {
-        #[command(subcommand)]
-        what: LiveUsageCommand,
-    },
-}
-
-#[derive(Subcommand, Debug, Clone, Copy, PartialEq, Eq)]
-enum LiveUsageCommand {
-    /// Read Claude's key once, which macOS asks your login password for, and ask claude.ai
-    /// from then on
-    Enable,
-    /// Stop asking claude.ai, and forget the key
-    Disable,
-    /// Say whether it is on, and whether macOS lets Pitboard read the key
-    Status,
-}
-
-/// What `enable` is about to do, said before macOS asks, because macOS's own question does
-/// not say why Pitboard wants the key or what "Always Allow" lets through.
-const LIVE_USAGE_EXPLAINED: &str = "\
-Pitboard will read Claude's encryption key once to ask claude.ai how much each
-Claude Desktop account has left. macOS will ask for your login password:
-choose \"Always Allow\" so it does not ask again.
-Always Allow lets any program that runs /usr/bin/security read this key.
-Switching accounts never needs it. Turn it off with `pitboard desktop live-usage disable`.
-";
-
-fn live_usage(pitboard: &Pitboard, what: LiveUsageCommand, as_json: bool) -> Report {
-    use pitboard_core::status::Approval;
-    let turned = match what {
-        LiveUsageCommand::Status => Ok(pitboard.live_usage()),
-        LiveUsageCommand::Enable => {
-            // Said only to somebody at a terminal, who is the one macOS is about to ask. A
-            // script gets the envelope and nothing in front of it.
-            if !as_json && std::io::stderr().is_terminal() {
-                eprint!("{LIVE_USAGE_EXPLAINED}");
-            }
-            pitboard.enable_live_usage()
-        }
-        LiveUsageCommand::Disable => pitboard.disable_live_usage(),
-    };
-    let state = match turned {
-        Ok(state) => state,
-        Err(error) => return Report::failed(Some("desktop"), error),
-    };
-    let human = match (what, state.enabled, state.approval) {
-        (LiveUsageCommand::Enable, true, Approval::Granted) => "Live usage is on.\n".to_string(),
-        (LiveUsageCommand::Disable, false, _) => "Live usage is off. Claude Desktop's usage is \
-            read from its own history, and Pitboard has forgotten Claude's key.\n"
-            .to_string(),
-        (_, false, _) => "Live usage is off: Claude Desktop's usage is read from its own \
-            history. Turn it on with `pitboard desktop live-usage enable`.\n"
-            .to_string(),
-        (_, true, Approval::Granted) => format!(
-            "Live usage is on: Claude Desktop's usage is asked of claude.ai{}.\n",
-            state.last_ok_at.map_or_else(String::new, |at| format!(
-                ", last answered {}",
-                pitboard_core::time::moment(at, unix_now())
-            ))
-        ),
-        (_, true, _) => format!(
-            "Live usage is paused: macOS has not let Pitboard read Claude's key{}. Run \
-             `pitboard desktop live-usage enable` to ask again.\n",
-            state
-                .reason
-                .as_deref()
-                .map_or_else(String::new, |reason| format!(" ({reason})"))
-        ),
-    };
-    Report::done(
-        "desktop",
-        json!({ "live_usage": render::status::live_usage_json(&state) }),
-        human,
-    )
-}
-
-fn unix_now() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
-}
-
 fn schedule(pitboard: &Pitboard, what: &ScheduleCommand) -> Report {
     use pitboard_core::schedule::Installed;
+    // From any home but the default one, the schedule is not this home's, and installing
+    // it is refused until PITBOARD_HOME is unset.
+    let renews_this_home = pitboard.schedule_renews_this_home();
+    let renews_only = "The renewal schedule renews only the parked logins in ~/.pitboard, not \
+                       those in the directory PITBOARD_HOME names.";
     let say = |installed: &Installed| match installed {
         Installed::Yes {
             path,
@@ -826,17 +738,30 @@ fn schedule(pitboard: &Pitboard, what: &ScheduleCommand) -> Report {
                 "every_seconds": every_seconds,
             }),
             format!(
-                "Parked logins are renewed every {} by this computer's own scheduler.\n{}\n",
+                "Parked logins are renewed every {} by this computer's own scheduler.\n{}\n{}",
                 pitboard_core::words::span(i64::from(*every_seconds)),
-                path.display()
+                path.display(),
+                if renews_this_home {
+                    String::new()
+                } else {
+                    format!("{renews_only}\n")
+                }
             ),
         ),
         Installed::No => (
             json!({"installed": false}),
-            "Nothing is keeping parked logins alive here. They are renewed when you run \
-             `pitboard`, and otherwise not.\nRun `pitboard schedule install` to change \
-             that.\n"
-                .to_string(),
+            format!(
+                "Nothing is keeping parked logins alive here. They are renewed when you run \
+                 `pitboard`, and otherwise not.\n{}\n",
+                if renews_this_home {
+                    "Run `pitboard schedule install` to change that.".to_string()
+                } else {
+                    format!(
+                        "{renews_only} To turn it on for ~/.pitboard, unset PITBOARD_HOME, \
+                         then run `pitboard schedule install`."
+                    )
+                }
+            ),
         ),
         Installed::Unsupported => (
             json!({"installed": false, "supported": false}),
@@ -1022,7 +947,7 @@ fn uninstall(pitboard: &Pitboard) -> Report {
         }
         if removed.pending > 0 {
             human.push_str(&format!(
-                "{} could not be deleted, so ~/.pitboard was kept; run `pitboard \
+                "{} could not be deleted yet, so ~/.pitboard was kept; run `pitboard \
                  uninstall` again.\n",
                 removed.pending
             ));
@@ -1030,13 +955,6 @@ fn uninstall(pitboard: &Pitboard) -> Report {
             human.push_str(
                 "~/.pitboard is gone. Remove Pitboard itself the way you installed it.\n",
             );
-        }
-        for dir in &removed.kept {
-            human.push_str(&format!(
-                "Kept {}: it holds Claude Desktop data Pitboard never deletes. Look through \
-                 it, then remove it yourself.\n",
-                dir.display()
-            ));
         }
         (
             json!({
@@ -1056,13 +974,58 @@ fn rename(pitboard: &Pitboard, from: &str, to: &str) -> Report {
         (
             json!({ "from": from, "to": to, "email": email }),
             format!(
-                "Renamed {} to {}{}.\n",
+                "Renamed {} to {} ({email}).\n",
                 paint(BOLD, from),
-                paint(BOLD, to),
-                bracketed(&email)
+                paint(BOLD, to)
             ),
         )
     })
+}
+
+/// What a command that deletes something does before it acts.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Confirm {
+    /// `--yes`, or a run that may change nothing, as root or under sudo, whose answer would
+    /// only be refused.
+    Go,
+    /// Standard input and standard error are a terminal, and the output is for a person.
+    Ask,
+    /// Nobody to ask: a pipe, a script, a tool, or `--json`, which is no `--yes`.
+    Refuse,
+}
+
+impl Confirm {
+    fn of(pitboard: &Pitboard, yes: bool, json: bool, terminal: bool) -> Confirm {
+        if yes || pitboard.permit().is_err() {
+            Confirm::Go
+        } else if terminal && !json {
+            Confirm::Ask
+        } else {
+            Confirm::Refuse
+        }
+    }
+
+    /// Whether `command` goes ahead: `false` where the person said no.
+    fn ask(self, command: &'static str, question: &str) -> Result<bool, Error> {
+        match self {
+            Confirm::Go => Ok(true),
+            Confirm::Ask => Ok(agreed(question)),
+            Confirm::Refuse => Err(Error::ConfirmationNeeded { command }),
+        }
+    }
+}
+
+fn terminal() -> bool {
+    std::io::stdin().is_terminal() && std::io::stderr().is_terminal()
+}
+
+/// Asks `question` on standard error: yes only for `y`, `Y` or `yes`.
+fn agreed(question: &str) -> bool {
+    eprint!("{question}");
+    let _ = std::io::stderr().flush();
+    let mut answer = String::new();
+    let _ = std::io::stdin().read_line(&mut answer);
+    matches!(answer.trim(), "y" | "Y" | "yes")
 }
 
 /// A usage error keeps clap's own rendering, unless the caller asked for JSON, which is
@@ -1085,14 +1048,47 @@ fn main() -> ExitCode {
         Ok(cli) => cli,
         Err(exit) => return exit,
     };
-    let pitboard = Pitboard::new(Context::from_env());
-    let report = match cli.command.unwrap_or(Command::Status {
+    let command = cli.command.unwrap_or(Command::Status {
         offline: false,
         fresh: false,
-    }) {
+    });
+    // A build that may do nothing here says so before it reads anything, its environment
+    // included. The core refuses it too, at the gate every change passes and wherever it
+    // reads Pitboard's accounts.
+    if command.asks_whether_this_build_may_run()
+        && let Err(refused) = pitboard_core::release::check()
+    {
+        return emit(Report::failed(Some(command.name()), refused), cli.json);
+    }
+    let ctx = Context::from_env();
+    // The schedule's job on Linux says so by the marker, rather than by what systemd passes.
+    let ctx = match command {
+        Command::Renew { scheduled: true } => ctx.started_by_the_schedule(),
+        _ => ctx,
+    };
+    let pitboard = Pitboard::new(ctx);
+    // A home that is empty or relative is refused before a command reads or writes under
+    // it, rather than taken to be under the folder this was run from. The core refuses it
+    // too, wherever it reads Pitboard's accounts or is asked to change anything; this also
+    // covers `log`, `schedule status` and the status line. `renew` is left to the core,
+    // which asks of the homes a run of the schedule renews in.
+    if command.refuses_a_home_that_is_not_a_full_path()
+        && let Err(refused) = pitboard.check_homes()
+    {
+        return emit(Report::failed(Some(command.name()), refused), cli.json);
+    }
+    let report = match command {
         Command::Status { offline, fresh } => status(&pitboard, offline, fresh),
         Command::Doctor => doctor(&pitboard),
         Command::Statusline => statusline(&pitboard),
+        Command::Watch { at, once } => {
+            // The parser takes only a share there can be.
+            let threshold = Threshold::new(at).unwrap_or_default();
+            if !once {
+                return watch::run(&pitboard, threshold, cli.json);
+            }
+            watch::once(&pitboard, threshold)
+        }
         Command::Enroll {
             label,
             sign_in: true,
@@ -1100,64 +1096,51 @@ fn main() -> ExitCode {
         Command::Enroll { label, .. } => {
             enrolled(&pitboard, &label, pitboard.enroll_current(&label))
         }
-        Command::Use {
-            label,
-            signed_out: true,
-        } => use_signed_out(&pitboard, &label),
-        Command::Use { label, .. } => use_account(&pitboard, &label),
+        Command::Use { label } => use_account(&pitboard, &label),
         Command::Forget { label, yes } => {
+            let confirm = match Confirm::of(&pitboard, yes, cli.json, terminal()) {
+                // A label that names no account gets its own error. The core resolves the label
+                // again, unlocked, so this relies on nobody enrolling it in between.
+                Confirm::Refuse if pitboard.account(&label).is_none() => Confirm::Go,
+                confirm => confirm,
+            };
             // The way back is a browser sign-in for that account, which is the cost
-            // Pitboard exists to spare people. Asked only where there is someone to ask:
-            // a pipe, a script and --json go straight through.
-            if !yes
-                && !cli.json
-                && std::io::stdin().is_terminal()
-                && std::io::stderr().is_terminal()
-            {
-                eprint!(
-                    "Forget {} and delete its parked login? \
-                     Adding it again needs a browser sign-in. [y/N] ",
-                    label
-                );
-                let _ = std::io::stderr().flush();
-                let mut answer = String::new();
-                let _ = std::io::stdin().read_line(&mut answer);
-                if !matches!(answer.trim(), "y" | "Y" | "yes") {
-                    return ExitCode::SUCCESS;
-                }
+            // Pitboard exists to spare people.
+            let question = format!(
+                "Forget {label} and delete its parked login? Adding it again needs a browser \
+                 sign-in. [y/N] "
+            );
+            match confirm.ask("forget", &question) {
+                Ok(true) => forget(&pitboard, &label),
+                Ok(false) => return ExitCode::SUCCESS,
+                Err(refused) => Report::failed(Some("forget"), refused),
             }
-            forget(&pitboard, &label)
+        }
+        Command::Stow { yes } => {
+            // A session signing in with the file is signed out once it is gone.
+            let confirm = Confirm::of(&pitboard, yes, cli.json, terminal());
+            match stow(&pitboard, |question| confirm.ask("stow", question)) {
+                Some(report) => report,
+                None => return ExitCode::SUCCESS,
+            }
         }
         Command::Abandon => abandon(&pitboard),
         Command::Repair => repair(&pitboard),
         Command::Adopt => adopt(&pitboard),
-        Command::Renew => renew(&pitboard),
+        Command::Renew { .. } => renew(&pitboard),
         Command::Schedule { ref what } => schedule(&pitboard, what),
         Command::Log { lines } => log(&pitboard, lines),
         Command::Uninstall { yes } => {
-            if !yes
-                && !cli.json
-                && std::io::stdin().is_terminal()
-                && std::io::stderr().is_terminal()
-            {
-                eprint!(
-                    "Delete every parked login this Pitboard wrote, the daily renewal \
-                     schedule and ~/.pitboard? The account you are signed in to stays signed \
-                     in; the others need a browser sign-in again. [y/N] "
-                );
-                let _ = std::io::stderr().flush();
-                let mut answer = String::new();
-                let _ = std::io::stdin().read_line(&mut answer);
-                if !matches!(answer.trim(), "y" | "Y" | "yes") {
-                    return ExitCode::SUCCESS;
-                }
+            let question = "Delete every parked login this Pitboard wrote, the daily renewal \
+                            schedule and ~/.pitboard? The account you are signed in to stays \
+                            signed in; the others need a browser sign-in again. [y/N] ";
+            match Confirm::of(&pitboard, yes, cli.json, terminal()).ask("uninstall", question) {
+                Ok(true) => uninstall(&pitboard),
+                Ok(false) => return ExitCode::SUCCESS,
+                Err(refused) => Report::failed(Some("uninstall"), refused),
             }
-            uninstall(&pitboard)
         }
         Command::Rename { from, to } => rename(&pitboard, &from, &to),
-        Command::Desktop {
-            what: DesktopCommand::LiveUsage { what },
-        } => live_usage(&pitboard, what, cli.json),
         // These write a file for a shell or for man, not a report, so there is no envelope
         // to put them in. Asking for one is a command line that cannot be satisfied.
         Command::Completions { .. } | Command::Manpage if cli.json => Report {
@@ -1217,6 +1200,183 @@ mod tests {
         );
     }
 
+    /// A switch made while `.credentials.json` sits behind the keychain says when running
+    /// sessions take it, and why, with no number of seconds: when a session's login is next
+    /// renewed is the session's.
+    #[test]
+    fn a_switch_sessions_take_at_renewal_says_so_with_no_seconds() {
+        let file = std::path::PathBuf::from("/Users/x/.claude/.credentials.json");
+        let (seconds, follows, adoption) = followed(
+            pitboard_core::provider::ProviderId::Claude,
+            &Adoption::AtRenewal { file },
+        );
+        assert_eq!(seconds, None);
+        assert_eq!(
+            follows,
+            "Claude Code sessions already running keep the account they are on until their \
+             login is next renewed, or until they are started again: \
+             /Users/x/.claude/.credentials.json is there. `pitboard doctor` says more.\n"
+        );
+        assert_eq!(
+            adoption,
+            json!({"follows": "renewal", "path": "/Users/x/.claude/.credentials.json"})
+        );
+    }
+
+    /// A login of an account nobody enrolled is refused as the look found it: nothing is
+    /// asked, and putting it away is not tried, so the file stays and the activity log has no
+    /// line of it. On a machine in memory, whose Anthropic answers from a script.
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    )]
+    fn stow_refuses_a_login_of_an_account_not_enrolled_as_the_look_found_it() {
+        use pitboard_core::api::Owner;
+        use pitboard_core::testing::{FixedClock, MemoryHost, ScriptedApi, live_service};
+        use std::sync::Arc;
+        const NOW: i64 = 1_760_000_000;
+        let home = std::env::temp_dir().join(format!(
+            "pitboard-cli-stow-not-enrolled-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&home);
+        let (mem, api) = (MemoryHost::new(), ScriptedApi::new());
+        let ctx = Context::new(home.clone())
+            .with_pitboard_home(home.join(".pitboard"))
+            .with_memory_stores(Arc::clone(&mem))
+            .with_scripted_api(Arc::clone(&api))
+            .with_clock(Arc::new(FixedClock::at(NOW)));
+        let service = live_service(&ctx);
+        let login = |who: &str| {
+            api.owned_by(
+                &format!("access-{who}"),
+                Owner {
+                    account_uuid: who.into(),
+                    email: format!("{who}@example.com"),
+                    organization_uuid: format!("org-{who}"),
+                },
+            );
+            json!({"claudeAiOauth": {
+                "accessToken": format!("access-{who}"),
+                "refreshToken": format!("refresh-{who}"),
+                "expiresAt": (NOW + 3600) * 1000,
+            }})
+            .to_string()
+        };
+        mem.live().plant(&service, &login("here"));
+        let file = mem.file_at(home.join(".claude").join(".credentials.json"));
+        let left = login("stranger");
+        file.plant(&service, &left);
+        let pitboard = Pitboard::new(ctx);
+
+        let report = stow(&pitboard, |_| panic!("nothing is asked")).expect("a refusal");
+
+        let logged = pitboard.log(10);
+        let _ = std::fs::remove_dir_all(&home);
+        assert!(
+            matches!(&report.result, Err(error) if error.code() == "left_login_not_enrolled"),
+            "{:?}",
+            report.result
+        );
+        assert_eq!(file.peek(&service), Some(left));
+        assert!(logged.is_empty(), "{logged:?}");
+    }
+
+    /// `pitboard stow` asks before it deletes the file: what it holds and what putting it away
+    /// does with that, the keys that go with it, and what becomes of Claude Code's sessions.
+    /// Once it has, it says the same of what it did.
+    #[test]
+    fn stow_asks_saying_what_the_file_holds_and_says_what_it_did() {
+        use pitboard_core::switch::{Foreseen, Kept, Left, Stowed};
+        let path = std::path::PathBuf::from("/Users/x/.claude/.credentials.json");
+        let parked = Kept::ParkedNow {
+            label: "work".into(),
+        };
+        let question = left_question(&Left {
+            path: path.clone(),
+            seen: "0123456789abcdef".into(),
+            login: Foreseen::Kept(parked.clone()),
+            dropped: vec!["mcpOAuth".into()],
+        });
+        assert_eq!(
+            question,
+            "/Users/x/.claude/.credentials.json holds `work`'s login, and Pitboard holds no \
+             parked login of `work` to keep in its place. Putting it away parks this one for \
+             `work`, then deletes the file.\n\
+             It also holds 1 other key, `mcpOAuth`, which goes with the file: Pitboard does not \
+             move it, and Claude Code's document in the keychain keeps its own.\n\
+             Once the file is gone, Claude Code sessions already running follow a switch within \
+             33 seconds again, and one that signed in with its login, such as one over SSH, is \
+             signed out.\n\
+             Put it away? [y/N] "
+        );
+        let said = stowed_lines(&Stowed {
+            path,
+            kept: Kept::NoLogin,
+            dropped: vec!["mcpOAuth".into(), "coworkRemoteDevice".into()],
+        });
+        assert_eq!(
+            said,
+            "Deleted /Users/x/.claude/.credentials.json, which held no Claude Code login.\n\
+             It also held 2 other keys, `mcpOAuth` and `coworkRemoteDevice`, which went with the \
+             file: Pitboard does not move them, and Claude Code's document in the keychain keeps \
+             its own.\n\
+             Once the file is gone, Claude Code sessions already running follow a switch within \
+             33 seconds again.\n"
+        );
+        assert!(matches!(
+            Cli::try_parse_from(["pitboard", "stow", "-y"])
+                .expect("parsed")
+                .command,
+            Some(Command::Stow { yes: true })
+        ));
+    }
+
+    /// A command that deletes something asks at a terminal, for a person. With nobody to ask,
+    /// `--json` included, it needs `--yes`. As root or under sudo it goes on to that refusal.
+    #[test]
+    fn a_command_that_deletes_asks_at_a_terminal_and_otherwise_needs_yes() {
+        use pitboard_core::host::Elevation;
+        use pitboard_core::testing::MemoryHost;
+        let mem = MemoryHost::new();
+        let home = std::env::temp_dir().join("pitboard-cli-confirm");
+        // Windows has no default Pitboard home yet, and the gate refuses the empty one.
+        let pitboard = Pitboard::new(
+            Context::new(home.clone())
+                .with_pitboard_home(home.join(".pitboard"))
+                .with_memory_stores(std::sync::Arc::clone(&mem)),
+        );
+        for (yes, json, terminal, confirm) in [
+            (false, false, true, Confirm::Ask),
+            (false, true, true, Confirm::Refuse),
+            (false, false, false, Confirm::Refuse),
+            (false, true, false, Confirm::Refuse),
+            (true, false, true, Confirm::Go),
+            (true, true, false, Confirm::Go),
+        ] {
+            assert_eq!(
+                Confirm::of(&pitboard, yes, json, terminal),
+                confirm,
+                "yes {yes}, json {json}, terminal {terminal}"
+            );
+        }
+        let refused = Confirm::Refuse.ask("stow", "?").expect_err("refused");
+        assert_eq!(
+            (refused.code(), refused.exit_code()),
+            ("confirmation_needed", 2)
+        );
+        assert_eq!(
+            refused.to_string(),
+            "`pitboard stow` asks before it deletes anything, and can ask only in a terminal \
+             without `--json`. Nothing was changed. Run it in a terminal, or add `--yes`."
+        );
+
+        mem.runs_with(Elevation::Elevated { why: "under sudo" });
+        assert_eq!(Confirm::of(&pitboard, false, true, false), Confirm::Go);
+    }
+
     #[test]
     fn a_new_label_is_one_word() {
         assert!(Cli::try_parse_from(["pitboard", "rename", "a", "personal"]).is_ok());
@@ -1232,51 +1392,169 @@ mod tests {
         }
     }
 
-    /// Claude Desktop has no sign-in of its own to open, so a second account is added by
-    /// signing the app out and enrolling whoever signs in next.
+    /// What the schedule's job runs, as the core writes it into the systemd unit, is a
+    /// command line this one takes, and the marker in it is said only where it is given.
+    /// It is hidden: a person has no reason to type it.
     #[test]
-    fn claude_desktop_is_signed_out_and_enrolled_from_the_command_line() {
-        let cli = Cli::try_parse_from(["pitboard", "use", "desktop", "--signed-out"]).unwrap();
-        assert!(
-            matches!(
-                cli.command,
-                Some(Command::Use { ref label, signed_out: true }) if label == "desktop"
-            ),
-            "the tool is what is signed out"
-        );
-        let cli = Cli::try_parse_from(["pitboard", "use", "desktop/work"]).unwrap();
+    fn the_schedules_marker_is_a_run_of_renew_this_command_line_takes() {
+        let scheduled = std::iter::once("pitboard").chain(pitboard_core::schedule::SCHEDULED_RUN);
         assert!(matches!(
-            cli.command,
-            Some(Command::Use {
-                signed_out: false,
-                ..
-            })
+            Cli::try_parse_from(scheduled).expect("parsed").command,
+            Some(Command::Renew { scheduled: true })
         ));
-        let cli = Cli::try_parse_from(["pitboard", "enroll", "desktop/work"]).unwrap();
         assert!(matches!(
-            cli.command,
-            Some(Command::Enroll { ref label, sign_in: false }) if label == "desktop/work"
+            Cli::try_parse_from(["pitboard", "renew"])
+                .expect("parsed")
+                .command,
+            Some(Command::Renew { scheduled: false })
         ));
+        let help = Cli::command()
+            .find_subcommand_mut("renew")
+            .expect("renew")
+            .render_long_help()
+            .to_string();
+        assert!(!help.contains("--scheduled"), "{help}");
     }
 
+    /// The shells' completions offer `--scheduled`, as they offer the hidden `manpage`:
+    /// clap_complete writes hidden arguments and commands into every shell's file. Where a
+    /// shell shows a description, it is the marker's help, which says what such a run
+    /// renews, since that is all a person who picks it gets, in plain text, since a shell
+    /// shows Markdown as written.
     #[test]
-    fn live_usage_is_turned_on_off_and_read_by_name() {
-        for (typed, expected) in [
-            ("enable", LiveUsageCommand::Enable),
-            ("disable", LiveUsageCommand::Disable),
-            ("status", LiveUsageCommand::Status),
+    fn the_completions_offer_the_schedules_marker_and_say_what_it_renews() {
+        use clap_complete::Shell;
+        let said = "Renew as the daily renewal schedule does";
+        for (shell, offered, described) in [
+            (Shell::Bash, "--scheduled", false),
+            (Shell::Zsh, "'--scheduled[", true),
+            (Shell::Fish, "-l scheduled", true),
         ] {
-            let cli = Cli::try_parse_from(["pitboard", "desktop", "live-usage", typed]).unwrap();
-            match cli.command {
-                Some(Command::Desktop {
-                    what: DesktopCommand::LiveUsage { what },
-                }) => assert_eq!(what, expected, "{typed}"),
-                _ => panic!("{typed} parsed as something else"),
-            }
+            let mut out = Vec::new();
+            clap_complete::generate(shell, &mut Cli::command(), "pitboard", &mut out);
+            let file = String::from_utf8(out).expect("text");
+            let line = file
+                .lines()
+                .find(|line| line.contains(offered))
+                .unwrap_or_else(|| panic!("{shell}: {file}"));
+            assert_eq!(line.contains(said), described, "{shell}: {line}");
+            assert!(
+                !line.contains('`'),
+                "{shell} shows Markdown as written: {line}"
+            );
+            assert!(
+                file.contains("manpage"),
+                "{shell}: as the hidden command is"
+            );
+            assert!(!file.contains("systemd"), "{shell}: {file}");
         }
-        // Turning it on is a choice, so it is never what a bare command does.
-        assert!(Cli::try_parse_from(["pitboard", "desktop", "live-usage"]).is_err());
-        assert!(Cli::try_parse_from(["pitboard", "desktop"]).is_err());
+    }
+
+    /// `schedule status` run while `PITBOARD_HOME` names another directory says that the
+    /// schedule renews only the parked logins in `~/.pitboard`. With nothing installed it
+    /// says to unset `PITBOARD_HOME` before `pitboard schedule install`, which is refused
+    /// until then, rather than to run it as it is. From the default home it says what it
+    /// said. On a machine in memory, whose scheduler asks nobody.
+    #[test]
+    #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
+    fn schedule_status_from_another_home_says_what_the_schedule_renews() {
+        use pitboard_core::testing::MemoryHost;
+        let home = std::env::temp_dir().join(format!(
+            "pitboard-cli-schedule-status-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&home);
+        let program = home.join("bin/pitboard");
+        std::fs::create_dir_all(program.parent().expect("its folder")).expect("made");
+        std::fs::write(&program, "").expect("a command line");
+        let ctx = Context::new(home.clone())
+            .with_schedule_program(program)
+            .with_memory_stores(MemoryHost::new());
+        let default = Pitboard::new(ctx.clone());
+        let elsewhere = Pitboard::new(ctx.with_pitboard_home(home.join("elsewhere")));
+        let said = |pitboard: &Pitboard| schedule(pitboard, &ScheduleCommand::Status).human;
+        let renews_only = "renews only the parked logins in ~/.pitboard, not those in the \
+                           directory PITBOARD_HOME names";
+
+        let here = said(&default);
+        assert!(
+            here.ends_with("Run `pitboard schedule install` to change that.\n"),
+            "{here}"
+        );
+        assert!(!here.contains(renews_only), "{here}");
+        let there = said(&elsewhere);
+        assert!(there.starts_with("Nothing is keeping"), "{there}");
+        assert!(
+            !there.contains("Run `pitboard schedule install`"),
+            "{there}"
+        );
+        assert!(there.contains(renews_only), "{there}");
+        assert!(
+            there.ends_with("unset PITBOARD_HOME, then run `pitboard schedule install`.\n"),
+            "{there}"
+        );
+
+        default
+            .schedule_install()
+            .expect("installed from the default home");
+        let here = said(&default);
+        assert!(
+            here.starts_with("Parked logins are renewed every"),
+            "{here}"
+        );
+        assert!(!here.contains(renews_only), "{here}");
+        let there = said(&elsewhere);
+        assert!(
+            there.starts_with("Parked logins are renewed every"),
+            "{there}"
+        );
+        assert!(there.contains(renews_only), "{there}");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// A build that may do nothing here, a Windows build of a release before Windows is
+    /// released, answers only what prints a generated file, `completions` and `manpage`,
+    /// besides `--version` and `--help`, which clap answers before a command is read. Every
+    /// other command asks the release gate first, reading included.
+    #[test]
+    fn every_command_but_a_generated_file_asks_whether_this_build_may_run() {
+        let asks = |args: &[&str]| {
+            let cli = Cli::try_parse_from(std::iter::once("pitboard").chain(args.iter().copied()))
+                .unwrap_or_else(|e| panic!("{args:?}: {e}"));
+            cli.command
+                .unwrap_or(Command::Status {
+                    offline: false,
+                    fresh: false,
+                })
+                .asks_whether_this_build_may_run()
+        };
+        for args in [
+            &[][..],
+            &["status", "--offline"],
+            &["enroll", "work"],
+            &["enroll", "codex/work", "--sign-in"],
+            &["use", "work"],
+            &["forget", "work", "-y"],
+            &["stow", "-y"],
+            &["abandon"],
+            &["repair"],
+            &["adopt"],
+            &["renew"],
+            &["renew", "--scheduled"],
+            &["schedule", "install"],
+            &["schedule", "status"],
+            &["schedule", "uninstall"],
+            &["log"],
+            &["uninstall", "-y"],
+            &["rename", "work", "job"],
+            &["doctor"],
+            &["statusline"],
+        ] {
+            assert!(asks(args), "{args:?}");
+        }
+        assert!(!asks(&["completions", "bash"]));
+        assert!(!asks(&["manpage"]));
     }
 
     #[test]
@@ -1300,6 +1578,7 @@ mod tests {
             "pitboard enroll",
             "pitboard use",
             "pitboard forget",
+            "pitboard stow",
             "pitboard abandon",
             "pitboard repair",
             "pitboard adopt",
@@ -1313,23 +1592,13 @@ mod tests {
             "pitboard doctor",
             "pitboard statusline",
             "pitboard completions",
-            // roff writes a hyphen escaped.
-            r"pitboard desktop live\-usage enable",
-            r"pitboard desktop live\-usage disable",
-            r"pitboard desktop live\-usage status",
         ] {
             assert!(
                 page.contains(&format!("\\fB{typed}\\fR")),
                 "{typed} missing:\n{page}"
             );
         }
-        for option in [
-            r"\-\-offline",
-            r"\-\-sign\-in",
-            r"\-\-signed\-out",
-            r"\-y",
-            r"\-\-lines",
-        ] {
+        for option in [r"\-\-offline", r"\-\-sign\-in", r"\-y", r"\-\-lines"] {
             assert!(page.contains(option), "{option} missing:\n{page}");
         }
         assert!(page.contains("[possible values: bash"), "{page}");
@@ -1339,6 +1608,10 @@ mod tests {
             "the hidden command is shown"
         );
         assert!(!page.contains("pitboard help"), "clap's own help is shown");
+        assert!(
+            !page.contains("scheduled"),
+            "the schedule's marker is shown"
+        );
         assert!(
             page.contains(".SH SYNOPSIS") && page.contains(".SH VERSION"),
             "{page}"

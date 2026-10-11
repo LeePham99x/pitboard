@@ -4,6 +4,14 @@ use crate::address;
 use crate::site::{ALL, Conjunction, Site};
 use std::fmt;
 
+/// `text` without the white space around it, as the macOS app took it away from what was
+/// typed or shared with Foundation's `whitespacesAndNewlines`: Unicode's White_Space, and
+/// U+200B ZERO WIDTH SPACE, which was a space until Unicode 4.0.1. Measured on macOS 27 over
+/// every scalar.
+pub fn trimmed(text: &str) -> &str {
+    text.trim_matches(|c: char| c.is_whitespace() || c == '\u{200b}')
+}
+
 /// A link one of the sites opens: the site, and the address its window loads.
 ///
 /// Made only by checking a link from outside the app, so holding one means the check passed.
@@ -44,10 +52,7 @@ impl SiteLink {
     /// The link is read as Foundation's `URLComponents` reads it, which is how the macOS app
     /// read it before this rule was Rust: see the `address` module.
     pub fn parse(text: &str) -> Result<SiteLink, LinkRefusal> {
-        // Foundation's `whitespacesAndNewlines`: Unicode's White_Space, and U+200B ZERO
-        // WIDTH SPACE, which was a space until Unicode 4.0.1. Measured on macOS 27 over every
-        // scalar.
-        let trimmed = text.trim_matches(|c: char| c.is_whitespace() || c == '\u{200b}');
+        let trimmed = trimmed(text);
         if trimmed.chars().count() > Self::LONGEST {
             return Err(LinkRefusal::TooLong);
         }
@@ -120,27 +125,11 @@ impl SiteLink {
 /// Empty segments are skipped, so `//magic-link`, which a server merging slashes would route to
 /// sign-in, is refused as well.
 fn refusal_of_path(path: &str, site: &'static Site) -> Option<LinkRefusal> {
-    let path = path.to_lowercase();
-    let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-    let mut resolved: Vec<&str> = Vec::new();
-    for &segment in &segments {
-        match segment {
-            "." => {}
-            ".." => {
-                resolved.pop();
-            }
-            _ => resolved.push(segment),
-        }
-    }
-    let signs_in = site.sign_in_paths.iter().any(|prefix| {
-        resolved.len() >= prefix.len() && resolved.iter().zip(prefix.iter()).all(|(a, b)| a == b)
-    });
-    if signs_in {
+    if site.signs_in(path) {
         return Some(LinkRefusal::SignInLink(site));
     }
-    segments
-        .iter()
-        .any(|&segment| segment == "." || segment == "..")
+    path.split('/')
+        .any(|segment| segment == "." || segment == "..")
         .then_some(LinkRefusal::NoLink)
 }
 

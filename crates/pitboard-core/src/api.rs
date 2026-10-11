@@ -9,15 +9,16 @@
 pub mod scripted;
 
 use crate::context::Context;
+use crate::service::Permit;
 use crate::usage::{self, Snapshot};
 use serde_json::Value;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use ureq::Agent;
 use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
 
-const BASE: &str = "https://api.anthropic.com";
-const AUTH_BASE: &str = "https://platform.claude.com";
+pub(crate) const BASE: &str = "https://api.anthropic.com";
+pub(crate) const AUTH_BASE: &str = "https://platform.claude.com";
 
 /// Claude Code's own OAuth client, which every login it stores was issued to.
 const CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
@@ -39,7 +40,7 @@ fn auth_base(ctx: &Context) -> String {
 
 /// Judged on the parsed host, never on a prefix: `http://127.0.0.1:@elsewhere/` begins like
 /// loopback and is not. A name is refused too, since the hosts file decides where it points.
-pub(crate) fn is_loopback(url: &str) -> bool {
+fn is_loopback(url: &str) -> bool {
     let Ok(uri) = url.parse::<ureq::http::Uri>() else {
         return false;
     };
@@ -56,11 +57,28 @@ const TIMEOUT: Duration = Duration::from_secs(5);
 /// Who a token belongs to, as the server sees it. Unlike a refresh-token fingerprint, this
 /// does not change when Claude Code rotates the token, and unlike Claude Code's config, it
 /// cannot lag behind the credential.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Owner {
     pub account_uuid: String,
     pub email: String,
     pub organization_uuid: String,
+}
+
+impl Owner {
+    /// Whether `other` is this login: the same account in the same organisation.
+    pub fn same_login(&self, other: &Owner) -> bool {
+        self.account_uuid == other.account_uuid && self.organization_uuid == other.organization_uuid
+    }
+}
+
+impl From<crate::provider::Identity> for Owner {
+    fn from(found: crate::provider::Identity) -> Owner {
+        Owner {
+            account_uuid: found.account_id,
+            email: found.email,
+            organization_uuid: found.group.unwrap_or_default(),
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -76,10 +94,6 @@ pub enum ApiError {
     Network(String),
     #[error("Anthropic answered {status}")]
     Unexpected { status: u16 },
-    /// Something in front of the service stopped the request before it was read, such as
-    /// claude.ai's bot check: nothing is known about the login, and it may pass later.
-    #[error("{by} stopped the request ({status})")]
-    Blocked { status: u16, by: &'static str },
     #[error("Anthropic's answer was not understood: {0}")]
     Malformed(String),
     /// The refresh token was refused for good: revoked, or already used elsewhere.
@@ -118,9 +132,12 @@ pub struct Renewed {
 pub(crate) trait Api: Send + Sync + std::fmt::Debug {
     fn owner(&self, ctx: &Context, access_token: &str) -> Result<Owner, ApiError>;
     fn usage(&self, ctx: &Context, access_token: &str) -> Result<Snapshot, ApiError>;
+    /// The token exchange, which spends `refresh_token` as it answers, so it takes the
+    /// [`Permit`] only the one gate every change passes makes.
     fn renew(
         &self,
         ctx: &Context,
+        permit: Permit,
         refresh_token: &str,
         scopes: &[String],
         client_id: Option<&str>,
@@ -143,11 +160,12 @@ impl Api for Anthropic {
     fn renew(
         &self,
         ctx: &Context,
+        permit: Permit,
         refresh_token: &str,
         scopes: &[String],
         client_id: Option<&str>,
     ) -> Result<Renewed, ApiError> {
-        ask_renew(ctx, refresh_token, scopes, client_id)
+        ask_renew(ctx, permit, refresh_token, scopes, client_id)
     }
 }
 
@@ -162,36 +180,91 @@ pub fn usage(ctx: &Context, access_token: &str) -> Result<Snapshot, ApiError> {
 
 pub fn renew(
     ctx: &Context,
+    permit: Permit,
     refresh_token: &str,
     scopes: &[String],
     client_id: Option<&str>,
 ) -> Result<Renewed, ApiError> {
-    ctx.api().renew(ctx, refresh_token, scopes, client_id)
+    ctx.api()
+        .renew(ctx, permit, refresh_token, scopes, client_id)
 }
 
-pub(crate) fn agent() -> &'static Agent {
-    static AGENT: OnceLock<Agent> = OnceLock::new();
-    AGENT.get_or_init(|| {
-        // rustls's documented way to choose a crypto provider. Returns Err only when one is
-        // already installed, which is exactly the state wanted.
-        let _ = rustls::crypto::ring::default_provider().install_default();
-        Agent::config_builder()
-            .tls_config(
-                TlsConfig::builder()
-                    .provider(TlsProvider::Rustls)
-                    .root_certs(RootCerts::PlatformVerifier)
-                    .build(),
-            )
-            .timeout_global(Some(TIMEOUT))
-            .http_status_as_error(false)
-            .user_agent(concat!("pitboard/", env!("CARGO_PKG_VERSION")))
-            .build()
-            .new_agent()
-    })
+/// The agent a context's requests go out on, made the first time one of them needs it and
+/// shared by every copy of the context, so they share its connections too.
+#[derive(Clone, Default)]
+pub(crate) struct Agents(Arc<OnceLock<Agent>>);
+
+/// Whether it has been made, and nothing of how: ureq's own form shows the first letter of a
+/// proxy's user name.
+impl std::fmt::Debug for Agents {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Agents")
+            .field("made", &self.0.get().is_some())
+            .finish()
+    }
+}
+
+/// The agent `ctx`'s requests go out on: through the HTTP proxy its environment names, and
+/// through no other ([`crate::proxy`]). ureq finds one of its own in this process's
+/// environment as the configuration is made; giving it the context's, or none, replaces that
+/// before the agent exists, so what ureq found never reaches a request. Where the environment
+/// names a SOCKS proxy, which Pitboard does not use yet, ureq is given none, and the agent
+/// refuses each request that proxy would have carried before anything is sent
+/// ([`crate::proxy::Refusal`]).
+pub(crate) fn agent(ctx: &Context) -> &Agent {
+    ctx.agent
+        .0
+        .get_or_init(|| made(ctx, ureq::unversioned::resolver::DefaultResolver::default()))
+}
+
+/// [`agent`]'s agent, looking hosts up with `resolver`, which is ureq's own but in a test,
+/// and connecting through ureq's own default chain of connectors.
+///
+/// A SOCKS proxy's refusal is the agent's middleware, not a check made by each function that
+/// sends a request: every request on the agent passes it, whichever code sends it, and
+/// `clippy.toml` refuses every other way to make an agent, so no request can go out directly
+/// past the proxy the person named. ureq follows a redirect inside the request the
+/// middleware handed on, so with a SOCKS proxy named the agent follows none: one from a host
+/// `NO_PROXY` names could take the request to a host it does not name, directly.
+///
+/// ureq 3.4.2 also lets a single request change the agent's configuration, with
+/// `RequestBuilder::config`, `Agent::configure_request`, `WithAgent::configure`, or
+/// `RequestExt::middleware_config` inside a middleware. A request given its own
+/// `max_redirects` follows that redirect after all, and one given its own proxy goes another
+/// way, so `clippy.toml` refuses each of those too: every request goes out with the
+/// configuration made here.
+#[allow(
+    clippy::disallowed_methods,
+    reason = "the one agent configuration Pitboard makes, which is given the context's proxy, \
+              and the one agent, given the resolver a test can replace"
+)]
+pub(crate) fn made(ctx: &Context, resolver: impl ureq::unversioned::resolver::Resolver) -> Agent {
+    // rustls's documented way to choose a crypto provider. Returns Err only when one is
+    // already installed, which is exactly the state wanted.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let mut config = Agent::config_builder()
+        .proxy(ctx.proxy.for_ureq())
+        .tls_config(
+            TlsConfig::builder()
+                .provider(TlsProvider::Rustls)
+                .root_certs(RootCerts::PlatformVerifier)
+                .build(),
+        )
+        .timeout_global(Some(TIMEOUT))
+        .http_status_as_error(false)
+        .user_agent(concat!("pitboard/", env!("CARGO_PKG_VERSION")));
+    if let Some(refusal) = ctx.proxy.refusal() {
+        config = config.middleware(refusal).max_redirects(0);
+    }
+    Agent::with_parts(
+        config.build(),
+        ureq::unversioned::transport::DefaultConnector::default(),
+        resolver,
+    )
 }
 
 fn get(ctx: &Context, path: &str, access_token: &str) -> Result<Value, ApiError> {
-    let mut response = agent()
+    let mut response = agent(ctx)
         .get(format!("{}{path}", base(ctx)))
         .header("Authorization", format!("Bearer {access_token}"))
         .header("anthropic-beta", "oauth-2025-04-20")
@@ -234,6 +307,7 @@ pub(crate) fn retry_after(headers: &ureq::http::HeaderMap) -> Option<i64> {
 /// as that client. Renewing it as the first-party one would be a different login.
 fn ask_renew(
     ctx: &Context,
+    _: Permit,
     refresh_token: &str,
     scopes: &[String],
     client_id: Option<&str>,
@@ -244,7 +318,7 @@ fn ask_renew(
         "client_id": client_id.unwrap_or(CLIENT_ID),
         "scope": scopes.join(" "),
     });
-    let mut response = agent()
+    let mut response = agent(ctx)
         .post(format!("{}/v1/oauth/token", auth_base(ctx)))
         .header("Content-Type", "application/json")
         .send(body.to_string())

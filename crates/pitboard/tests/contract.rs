@@ -8,11 +8,22 @@ use common::{Env, two_accounts};
 use serde_json::Value;
 
 fn json(env: &Env, args: &[&str]) -> (Value, i32) {
+    let (_, value, code) = json_as_printed(env, args);
+    (value, code)
+}
+
+/// The envelope as printed, and as parsed. Every byte of it is ASCII, whatever it carries.
+fn json_as_printed(env: &Env, args: &[&str]) -> (String, Value, i32) {
     let mut with_json = args.to_vec();
     with_json.push("--json");
     let (out, err, code) = env.run(&with_json);
+    assert!(
+        out.is_ascii(),
+        "`pitboard {}` printed a byte outside ASCII: {out}",
+        with_json.join(" ")
+    );
     let value = serde_json::from_str(&out).unwrap_or_else(|e| panic!("{e}: {out}{err}"));
-    (value, code)
+    (out, value, code)
 }
 
 /// Every envelope, with the exit code it came with.
@@ -24,21 +35,96 @@ macro_rules! contract {
             ".envelope.data.accounts[].parked.access_expires_at" => "[time]",
             ".envelope.data.accounts[].parked.refresh_expires_at" => "[time]",
             ".envelope.data.parked_at" => "[time]",
+            ".envelope.data.limit.resets_at" => "[time]",
+            ".envelope.data.as_of" => "[time]",
             // Hashed from the config directory, so it is this machine's; `slot` has its
             // own tests.
             ".envelope.data.slot.service" => "[slot]",
+            // In the test's own scratch home.
+            ".envelope.data.path" => "[path]",
         });
     };
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn status() {
     let env = two_accounts("contract-status");
     let (value, code) = json(&env, &["status"]);
     contract!("status", value, code);
 }
 
+/// A label is the person's own word, in whatever script they write it, and the envelope
+/// still prints as ASCII alone: each character outside it as a `\u` escape, and one above
+/// U+FFFF as its UTF-16 surrogate pair. A program that decodes the bytes as something other
+/// than UTF-8 then parses the same values. Pitboard printed them as raw UTF-8.
 #[test]
+#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
+fn a_label_outside_ascii_is_printed_as_escapes() {
+    let mut env = Env::new("contract-ascii");
+    let (a, o, b, p) = (env.uuid('a'), env.uuid('o'), env.uuid('b'), env.uuid('p'));
+    env.sign_in(&a, "a@example.com", &o, "refresh-a");
+    let (_, err, code) = env.run(&["enroll", "Đạt"]);
+    assert_eq!(code, 0, "enroll Đạt: {err}");
+    let (_, err, code) = env.enroll_by_signing_in("🏁", &b, "b@example.com", &p, "refresh-b");
+    assert_eq!(code, 0, "enroll 🏁: {err}");
+
+    let (printed, value, code) = json_as_printed(&env, &["status"]);
+    for escaped in [
+        r#""label":"\u0110\u1ea1t""#,
+        r#""qualified":"claude/\u0110\u1ea1t""#,
+        r#""label":"\ud83c\udfc1""#,
+        r#""qualified":"claude/\ud83c\udfc1""#,
+    ] {
+        assert!(printed.contains(escaped), "{escaped} in {printed}");
+    }
+    let labels: Vec<&str> = value["data"]["accounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|a| a["label"].as_str())
+        .collect();
+    assert_eq!(labels, ["Đạt", "🏁"], "parsed back as enrolled");
+    contract!("status_outside_ascii", value, code);
+
+    let (printed, value, code) = json_as_printed(&env, &["doctor"]);
+    assert_eq!(code, 0, "{value}");
+    for escaped in [
+        r#""name":"account \u0110\u1ea1t""#,
+        r#""name":"account \ud83c\udfc1""#,
+    ] {
+        assert!(printed.contains(escaped), "{escaped} in {printed}");
+    }
+    let accounts: Vec<&Value> = value["data"]["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|c| {
+            c["name"]
+                .as_str()
+                .is_some_and(|n| n.starts_with("account "))
+        })
+        .collect();
+    let names: Vec<&str> = accounts.iter().filter_map(|c| c["name"].as_str()).collect();
+    assert_eq!(
+        names,
+        ["account Đạt", "account 🏁"],
+        "parsed back as enrolled"
+    );
+    // Which other checks run depends on the platform, as `doctor` below says, so only the
+    // accounts' are pinned. How long a parked login is good for counts down as the test runs.
+    insta::assert_json_snapshot!("doctor_outside_ascii", serde_json::json!({ "exit": code, "accounts": accounts }), {
+        ".accounts[1].detail" => "[parked, good for]",
+    });
+
+    // An error's message is in the envelope too, and names what was typed.
+    let (printed, value, code) = json_as_printed(&env, &["use", "Đạt2"]);
+    assert!(printed.contains(r"`\u0110\u1ea1t2`"), "{printed}");
+    contract!("use_unknown_outside_ascii", value, code);
+}
+
+#[test]
+#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn use_switches() {
     let env = two_accounts("contract-use");
     let (value, code) = json(&env, &["use", "beta"]);
@@ -52,6 +138,7 @@ fn use_switches() {
 /// The cause is the field a program reads to decide whether to try again. Without it every
 /// failure that was not a 401 arrived as `identity_unverifiable` and a sentence of prose.
 #[test]
+#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn a_failure_says_what_went_wrong_underneath() {
     let mut env = two_accounts("contract-cause");
     env.profile_trouble(503);
@@ -62,6 +149,7 @@ fn a_failure_says_what_went_wrong_underneath() {
 /// The keychain belongs to the whole machine, so what `repair` finds depends on what else
 /// is on it. The envelope's shape is the contract; the lists are not snapshotted.
 #[test]
+#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn repair() {
     let env = two_accounts("contract-repair");
     let (value, code) = json(&env, &["repair"]);
@@ -83,6 +171,7 @@ fn repair() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn enroll() {
     let mut env = Env::new("contract-enroll");
     let (a, o, b, p) = (env.uuid('a'), env.uuid('o'), env.uuid('b'), env.uuid('p'));
@@ -115,9 +204,10 @@ fn enroll() {
 
 /// The last thing a person runs, and the one whose shape matters to whatever wrapper runs
 /// it: how many parked logins went, how many did not, and whether the home is gone.
-/// The reading that asks nobody anything: what was last measured, and who Claude Code's
-/// config says is signed in. Its envelope is a contract like any other.
+/// The reading that asks nobody anything: what was last measured, and whose login each tool
+/// has stored, as its service last said. Its envelope is a contract like any other.
 #[test]
+#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn status_offline() {
     let env = two_accounts("contract-offline");
     env.run(&["status"]); // one live read, so there is something remembered to show
@@ -126,6 +216,7 @@ fn status_offline() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn uninstall() {
     let env = two_accounts("contract-uninstall");
     let (value, code) = json(&env, &["uninstall", "--yes"]);
@@ -133,17 +224,31 @@ fn uninstall() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn forget_and_rename() {
     let env = two_accounts("contract-forget");
     let (value, code) = json(&env, &["rename", "beta", "work"]);
     contract!("rename", value, code);
-    let (value, code) = json(&env, &["forget", "work"]);
+    let (value, code) = json(&env, &["forget", "work", "--yes"]);
     contract!("forget", value, code);
-    let (value, code) = json(&env, &["forget", "alpha"]);
+    let (value, code) = json(&env, &["forget", "alpha", "--yes"]);
     contract!("forget_signed_in", value, code);
 }
 
+/// With nobody to ask and no `--yes`, a command that deletes something refuses before it
+/// changes anything.
 #[test]
+#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
+fn unconfirmed() {
+    let env = two_accounts("contract-unconfirmed");
+    let (value, code) = json(&env, &["forget", "beta"]);
+    contract!("forget_unconfirmed", value, code);
+    let (value, code) = json(&env, &["uninstall"]);
+    contract!("uninstall_unconfirmed", value, code);
+}
+
+#[test]
+#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn statusline() {
     let env = two_accounts("contract-statusline");
     let (value, code) = json(&env, &["statusline"]);
@@ -151,6 +256,10 @@ fn statusline() {
 }
 
 #[test]
+#[cfg_attr(
+    windows,
+    ignore = "W24: how pitboard.exe names itself in a usage error"
+)]
 fn usage_error() {
     let env = Env::new("contract-usage");
     let (value, code) = json(&env, &["use"]);
@@ -167,6 +276,7 @@ fn usage_error() {
 /// their refresh token, and the snapshot could not catch it because it redacted the whole
 /// array.
 #[test]
+#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn doctor() {
     let env = two_accounts("contract-doctor");
     env.install_fake_codex("0.154.0");
@@ -224,6 +334,7 @@ fn doctor() {
 /// for, a Codex account's name is given the way it is typed, and Claude Code's rows are
 /// what they were with two fields added.
 #[test]
+#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn status_with_codex() {
     let mut env = two_accounts("contract-codex");
     let work = env.uuid('w');
@@ -249,6 +360,7 @@ fn status_with_codex() {
 /// A Codex login is in the report too, and is kept out of what is pasted as carefully as
 /// Claude Code's.
 #[test]
+#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn doctor_with_codex() {
     let mut env = two_accounts("contract-doctor-codex");
     env.install_fake_codex("0.154.0");
@@ -315,6 +427,7 @@ fn doctor_with_codex() {
 /// `doctor` says it is a choice rather than a broken login, so a script reading its exit
 /// code is not told to stop switching accounts.
 #[test]
+#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn codex_signed_in_with_an_api_key() {
     let mut env = two_accounts("contract-codex-api-key");
     env.install_fake_codex("0.154.0");
@@ -358,129 +471,42 @@ fn codex_signed_in_with_an_api_key() {
     assert_eq!(login["level"], "warn", "{login}");
 }
 
-/// A machine with two Claude Desktop accounts, one signed in and one parked, and the app's
-/// own record of usage: every row says which tool it is for, usage read from that record
-/// is verified, and the `desktop` block says live usage is off.
-#[cfg(target_os = "macos")]
+/// What `watch` decides, once, from what Pitboard measured: a switch it made by itself, and
+/// nothing to do.
 #[test]
-fn status_with_desktop() {
-    let env = Env::new("contract-desktop-status");
-    let (home, _) = common::desktop::home_signed_in_work_parked(&env);
-    common::desktop::write_history(&env, &home);
-    let (value, code) = json(&env, &["status"]);
-    contract!("status_with_desktop", value, code);
+#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
+fn watch() {
+    let env = two_accounts("contract-watch");
+    env.an_hour_on();
+    env.measured(&[("alpha", 96.0, 20.0), ("beta", 10.0, 30.0)]);
+    let (value, code) = json(&env, &["watch", "--once"]);
+    contract!("watch_switched", value, code);
+    let (value, code) = json(&env, &["watch", "--once"]);
+    contract!("watch_idle", value, code);
 }
 
-/// Nothing renews a Claude Desktop sign-in, so each account is `not_renewable`, with when
-/// its sign-in lapses.
-#[cfg(target_os = "macos")]
+/// Nothing behind the store Claude Code keeps its login in is nothing to put away, and is
+/// not asked about: so on Linux, where the file is that store, always.
 #[test]
-fn renew_with_desktop() {
-    let env = Env::new("contract-desktop-renew");
-    common::desktop::home_signed_in_work_parked(&env);
-    let (value, code) = json(&env, &["renew"]);
-    contract!("renew_with_desktop", value, code);
+#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
+fn stow_with_nothing_left() {
+    let env = two_accounts("contract-stow-nothing");
+    let (value, code) = json(&env, &["stow"]);
+    contract!("stow_nothing_left", value, code);
 }
 
-/// A switch of Claude Desktop while the app holds its data folder is refused before
-/// anything moves. The app is stood in for by its lock in the test's own folder, naming
-/// a stand-in process, so the envelope is the same whether or not Claude is open here.
+/// The login Claude Code has stored, left in `.credentials.json` behind the keychain too, goes
+/// with the file. Only macOS keeps a file behind a keychain.
+#[test]
 #[cfg(target_os = "macos")]
-#[test]
-fn use_desktop_app_still_open() {
-    let env = Env::new("contract-desktop-app-open");
-    common::desktop::home_signed_in_work_parked(&env);
-    let _held = common::desktop::hold_with_a_stand_in(&env);
-    let support = common::desktop::support(&env);
-    let parks = env.root.join("pitboard/desktop/parks");
-    let before = (
-        common::desktop::inodes_under(&support),
-        common::desktop::inodes_under(&parks),
-        std::fs::read(env.root.join("pitboard/state.json")).unwrap(),
-    );
-    let (value, code) = json(&env, &["use", "desktop/work"]);
-    contract!("use_desktop_app_still_open", value, code);
-    let after = (
-        common::desktop::inodes_under(&support),
-        common::desktop::inodes_under(&parks),
-        std::fs::read(env.root.join("pitboard/state.json")).unwrap(),
-    );
-    assert!(before == after, "nothing moved and nothing was written");
-}
-
-/// Signing out a Claude Desktop nobody is signed in to changes nothing, and says it is
-/// signed out already rather than naming an account.
-#[cfg(target_os = "macos")]
-#[test]
-fn use_signed_out_already() {
-    let env = Env::new("contract-signed-out-already");
-    let support = common::desktop::support(&env);
-    common::guard_not_live_dir(&support);
-    std::fs::create_dir_all(&support).unwrap();
-    let (value, code) = json(&env, &["use", "desktop", "--signed-out"]);
-    contract!("use_signed_out_already", value, code);
-    let (out, _, code) = env.run(&["use", "desktop", "--signed-out"]);
-    assert_eq!(code, 0);
-    assert_eq!(out, "Claude Desktop is already signed out.\n");
-}
-
-/// Only Claude Desktop is signed out: asked of another tool it is a usage error, and asked
-/// of a tool Pitboard does not know it says which it does.
-#[test]
-fn use_signed_out_refused() {
-    let env = Env::new("contract-signed-out");
-    let (value, code) = json(&env, &["use", "codex", "--signed-out"]);
-    contract!("use_signed_out_other_tool", value, code);
-    let (value, code) = json(&env, &["use", "nothing", "--signed-out"]);
-    contract!("use_signed_out_unknown_tool", value, code);
-}
-
-/// Claude Desktop's part of the report: the environment block, whose paths are this
-/// machine's, and every `desktop_` check, each with the five fields and no account's uuid
-/// or email.
-#[cfg(target_os = "macos")]
-#[test]
-fn doctor_with_desktop() {
-    let env = Env::new("contract-desktop-doctor");
-    let (home, work) = common::desktop::home_signed_in_work_parked(&env);
-    // Whether doctor passes as a whole is this machine's: whether Claude Code is installed
-    // here decides whether its checks run at all. Claude Desktop's own are the test's.
-    let (value, _) = json(&env, &["doctor"]);
-    let printed = value.to_string();
-    for secret in [
-        home.as_str(),
-        work.as_str(),
-        "home@example.com",
-        "work@example.com",
-    ] {
-        assert!(!printed.contains(secret), "the report carries {secret}");
-    }
-    let desktop: Vec<&Value> = value["data"]["checks"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter(|c| {
-            c["code"]
-                .as_str()
-                .is_some_and(|c| c.starts_with("desktop_"))
-        })
-        .collect();
-    for check in &desktop {
-        assert_eq!(check["level"], "ok", "{check}");
-    }
-    let codes: Vec<&str> = desktop.iter().filter_map(|c| c["code"].as_str()).collect();
-    for expected in [
-        "desktop_version",
-        "desktop_cookies",
-        "desktop_parked_login",
-        "desktop_running",
-        "desktop_live_usage",
-    ] {
-        assert!(codes.contains(&expected), "{expected} in {codes:?}");
-    }
-    // Whether the person's own Claude is open is this machine's too.
-    insta::assert_json_snapshot!("doctor_with_desktop", value["data"]["environment"]["desktop"], {
-        ".support_dir" => "[path]",
-        ".running" => "[running]",
-    });
+fn stow() {
+    let env = two_accounts("contract-stow");
+    let left = env.root.join(".credentials.json");
+    common::os::write_private(&left, &common::credential("refresh-a").to_string());
+    let (value, code) = json(&env, &["stow"]);
+    assert!(left.exists(), "the file is kept");
+    contract!("stow_unconfirmed", value, code);
+    let (value, code) = json(&env, &["stow", "--yes"]);
+    assert!(!left.exists(), "the file is gone");
+    contract!("stow", value, code);
 }

@@ -1,58 +1,40 @@
 ---
 title: "What Pitboard will not do"
-description: "Pitboard does not switch on its own, pool requests or sync logins, and a switch and an account's window have limits."
+description: "What Pitboard leaves alone, what a switch costs you, and which tools and sign-ins it does not support."
 ---
 
-Pitboard switches two tools, Claude Code and OpenAI's Codex CLI, between accounts you own, and leaves some things alone on purpose.
+Pitboard is for one person with several accounts of their own in Claude Code or OpenAI's Codex CLI.
 
 ## Rules
 
-These are rules, not gaps:
-
-- Pitboard never switches by itself. When an account runs out, the app offers a switch.
-- It does not pool a tool's requests across accounts, or proxy them by pointing Claude Code's `ANTHROPIC_BASE_URL` at itself.
-- It does not fail over to another account when one runs out or is rate limited.
-- It does not renew the login in use. The tool refreshes that login itself, and two programs renewing one login end it for both.
-- It does not copy parked logins, the logins it holds for accounts not in use, to another machine.
-- It never reads, copies or changes what an [account's window](/guides/account-windows) keeps, and never makes a claude.ai or chatgpt.com sign-in from a tool's login.
-
-Two machines renewing one login also end it, so each machine signs in to each account itself.
-
-If `~/.pitboard` came from another computer, see [The Pitboard directory came from another computer](/troubleshooting/recovery#the-pitboard-directory-came-from-another-computer).
+- Pitboard switches by itself only while [automatic switching](/guides/automatic-switching) is on in the app or `pitboard watch` is running.
+- It switches only Claude Code by itself. [What a switch costs you](#what-a-switch-costs-you) says why.
+- Pitboard never sees a tool's requests, so it never proxies or pools them.
+- It decides an automatic switch from usage it has already read, never from a refused or rate-limited request. [Keep the numbers fresh](/guides/automatic-switching#keep-the-numbers-fresh) says how old that usage can be.
+- Pitboard renews Claude Code's login in use only where it must identify it and its access token has expired. [How Pitboard knows whose login it is](/concepts/switching#how-pitboard-knows-whose-login-it-is) says how.
+- [`pitboard stow`](/reference/recovery-commands#stow) can renew an expired login in a login file behind the keychain.
+- Both renew as Claude Code does, under the lock a session takes to renew, so no session spends the same refresh token. Pitboard never renews Codex's login in use.
+- Pitboard never copies a parked login to another machine. Once one machine renews it, the other machine's copy is spent.
+- Each machine signs in to each account itself. [The Pitboard directory came from another computer](/troubleshooting/recovery#the-pitboard-directory-came-from-another-computer) covers a copied `~/.pitboard`.
 
 ## What a switch costs you
 
-These costs come from Claude Code, Codex and their services:
+Open Claude Code sessions keep the account they leave for up to about 33 seconds. Everything that runs Codex, the ChatGPT app included, keeps its account until it starts again. [Open sessions](/concepts/switching#open-sessions) explains both.
 
-- Claude Code's Remote Control stops for a conversation started under the account you switched away from.
-- Claude Code's prompt cache belongs to one account, so the first message after a switch rebuilds it. Pitboard's author measured that at about the cost of resuming a session after an idle hour. Waiting for a five-hour limit to reset usually leaves a session idle that long anyway.
-- Usage for an account not in use counts its work on other machines too.
-- A running `codex` keeps its account until you restart it. See [What happens to open sessions](/guides/switch#what-happens-to-open-sessions).
+An automatic switch would miss the `codex` session it was meant to keep going, so Pitboard never switches Codex by itself. [What happens to open sessions](/guides/switch#what-happens-to-open-sessions) lists what to restart.
 
 ## Is this allowed
 
-Pitboard moves only logins you already hold, between its own store and the place each tool reads them from. It does not share an account between people, pool requests or touch an account you do not own.
+Pitboard moves only logins you already hold, between its own store and the place each tool reads them. It has no way to share an account between people.
 
-Whether several subscriptions suit your work depends on Anthropic's or OpenAI's terms.
-
-An account's window is the site's own page, which you sign in to by hand. WebKit keeps that sign-in in the app's website data. For what Anthropic's terms say about that, see [Anthropic's terms](/security#anthropics-terms).
-
-## What an account's window cannot do
-
-An account's window shows claude.ai or chatgpt.com in WebKit. Google, macOS and Pitboard's own rules set these limits:
-
-- Google's sign-in does not work. Google does not allow its sign-in pages inside apps, so the window stops them. Connecting Gmail, Google Drive or Google Calendar fails the same way, and so does claude.ai's Google single sign-on.
-- Passkeys do not work. macOS gives passkeys to a web page only in an app it lets act as a browser, and Pitboard is not one.
-- The camera and the microphone are always refused, so a site's voice mode does not work. Web notifications do not work either.
-- Pitboard cannot see which account a window is signed in to, because it never reads what the window keeps. The window's title names the account the window belongs to, not the one signed in.
-- A window never follows a switch. Each window belongs to one account and stays signed in as that account, whichever account a tool is using.
-
-To sign in without Google or a passkey, see [Sign in](/guides/account-windows#sign-in).
+Anthropic's and OpenAI's terms decide whether you may use several subscriptions this way. [Anthropic terms](/security#anthropic-terms) quotes what Anthropic says about third-party apps and logins.
 
 ## Tools and sign-ins Pitboard does not support
 
-- Gemini CLI. Since 18 June 2026, Google no longer offers Gemini CLI's **Login with Google** to individual, Google AI Pro and Google AI Ultra accounts. See [Gemini Code Assist consumer accounts](https://developers.google.com/gemini-code-assist/docs/deprecations/code-assist-individuals).
-- Codex signed in with an API key, or keeping its login in the keychain or in memory. See [Before you enrol a Codex account](/guides/codex#before-you-enrol-a-codex-account).
-- Windows. Claude Code keeps its login differently there.
-- Claude Code with `CLAUDE_CODE_CUSTOM_OAUTH_URL` set. It then keeps its login under another name, so Pitboard refuses to act on Claude Code or run `repair`, `abandon` or `uninstall`. Codex accounts still switch.
-- Claude Code set to use an API key, `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_AUTH_TOKEN`, a cloud provider or `apiKeyHelper`. Its sessions ignore the login Pitboard moves, so a switch changes nothing they see. Pitboard warns when it finds one. See [Environment variables](/reference/files#environment-variables).
+- Gemini CLI. Since 18 June 2026, Google no longer offers Gemini CLI's **Login with Google** to individual, Google AI Pro and Google AI Ultra accounts. Google says so in [Gemini Code Assist consumer accounts](https://developers.google.com/gemini-code-assist/docs/deprecations/code-assist-individuals).
+- Codex signed in with an API key rather than ChatGPT.
+- Codex keeping its login anywhere but `auth.json`, its file store. [Before you enrol a Codex account](/guides/codex#before-you-enrol-a-codex-account) shows how to check.
+- Google sign-in and passkeys in an account's window. [Sign in](/guides/account-windows#sign-in) gives the ways that work.
+- Windows. A Windows build answers only `--version`, `--help`, `completions` and `manpage`, and refuses the rest with [`windows_not_released`](/reference/errors#windows).
+- Claude Code with `CLAUDE_CODE_CUSTOM_OAUTH_URL` set. Its login then sits under a name Pitboard does not read. [Custom OAuth endpoint](/reference/files#custom-oauth-endpoint) lists what Pitboard refuses.
+- Claude Code set to use `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `apiKeyHelper` or a third-party provider. Its sessions ignore the login Pitboard switches. [Variables that override the login](/reference/files#variables-that-override-the-login) lists them all.

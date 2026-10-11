@@ -5,6 +5,7 @@
 use super::{journal, purge, try_exclusive};
 use crate::context::Context;
 use crate::error::{Error, Result};
+use crate::service::Permit;
 use crate::state::{Key, Park, State};
 use crate::{park, state};
 use serde_json::Value;
@@ -31,12 +32,6 @@ pub enum Renewal {
     /// Anthropic could not be reached or asked to slow down; tried again next time.
     Deferred,
     Failed(Error),
-    /// The parked login cannot be renewed by anybody but the app that wrote it, so it is
-    /// kept as it is until its session runs out at `expires_at`, in epoch seconds.
-    NotRenewable {
-        label: String,
-        expires_at: Option<i64>,
-    },
 }
 
 impl Renewal {
@@ -46,7 +41,6 @@ impl Renewal {
             Renewal::Refused => "parked_login_refused",
             Renewal::Deferred => "renewal_deferred",
             Renewal::Failed(e) => e.code(),
-            Renewal::NotRenewable { .. } => "not_renewable",
         }
     }
 }
@@ -84,13 +78,13 @@ impl Due {
 /// Renew every parked login whose access token has expired or is about to. Nothing is done
 /// while another Pitboard run holds the lock or a switch waits to be finished: a renewal
 /// replaces the refresh token, and nothing may install the old copy meanwhile.
-pub fn renew_parked(ctx: &Context) -> Vec<(Key, Renewal)> {
-    renew_due(ctx, Due::ToBeAsked)
+pub fn renew_parked(ctx: &Context, permit: Permit) -> Vec<(Key, Renewal)> {
+    renew_due(ctx, permit, Due::ToBeAsked)
 }
 
 /// The same, for whichever reason.
-pub fn renew_due(ctx: &Context, due: Due) -> Vec<(Key, Renewal)> {
-    let Some(_exclusive) = try_exclusive(ctx) else {
+pub fn renew_due(ctx: &Context, permit: Permit, due: Due) -> Vec<(Key, Renewal)> {
+    let Some(_exclusive) = try_exclusive(ctx, permit) else {
         return Vec::new();
     };
     if journal::pending(ctx) {
@@ -104,9 +98,6 @@ pub fn renew_due(ctx: &Context, due: Due) -> Vec<(Key, Renewal)> {
         state
             .accounts
             .iter()
-            // A folder login is renewed by nobody but its own app: there is no credential
-            // in its park to present, and reading it as one would report it missing.
-            .filter(|a| crate::provider::of(a.provider()).tree().is_none())
             .filter_map(|a| {
                 let held = a.parked.as_ref()?;
                 due.covers(held, now).then(|| (a.key(), held.clone()))
@@ -119,7 +110,7 @@ pub fn renew_due(ctx: &Context, due: Due) -> Vec<(Key, Renewal)> {
     // as the next change would drop it. Looked for only when something is due, because
     // finding one reads each tool's login.
     if !to_renew.is_empty() {
-        let _ = super::drop_live_twins(ctx, &mut state);
+        let _ = super::drop_live_twins(ctx, permit, &mut state);
         to_renew = covered(&state);
     }
     // Each renewal is a round trip that can take as long as the request timeout, so they
@@ -133,7 +124,7 @@ pub fn renew_due(ctx: &Context, due: Due) -> Vec<(Key, Renewal)> {
                 let handle = scope.spawn({
                     let key = key.clone();
                     let held = held.clone();
-                    move || ask(ctx, &key, &held)
+                    move || ask(ctx, permit, &key, &held)
                 });
                 (key, held, handle)
             })
@@ -156,11 +147,11 @@ pub fn renew_due(ctx: &Context, due: Due) -> Vec<(Key, Renewal)> {
         .into_iter()
         .map(|(key, held, answer)| {
             let outcome =
-                apply(ctx, &mut state, &key, &held, answer).unwrap_or_else(Renewal::Failed);
+                apply(ctx, permit, &mut state, &key, &held, answer).unwrap_or_else(Renewal::Failed);
             (key, outcome)
         })
         .collect();
-    purge(ctx, &mut state);
+    purge(ctx, permit, &mut state);
     outcomes
 }
 
@@ -175,7 +166,7 @@ struct Asked {
 
 /// The part of a renewal that talks to Anthropic. Touches no shared state, so several run
 /// at once.
-fn ask(ctx: &Context, key: &Key, held: &Park) -> Result<Asked> {
+fn ask(ctx: &Context, permit: Permit, key: &Key, held: &Park) -> Result<Asked> {
     let document = park::load(ctx, key, held)?;
     // The service spends the old refresh token as it answers, so an answer that could not
     // be written back would lose the login. Where it could not be, the service is not
@@ -184,7 +175,7 @@ fn ask(ctx: &Context, key: &Key, held: &Park) -> Result<Asked> {
     park::price(ctx, key.provider, &key.typed(), &held.service, &document)?;
     let tool = crate::provider::of(key.provider);
     let credential = crate::provider::Credential::new(key.provider, document);
-    match tool.renew(ctx, &credential) {
+    match tool.renew(ctx, permit, &credential) {
         Ok(fresh) => Ok(Asked {
             renewed: Some(fresh.raw),
             refused: false,
@@ -214,18 +205,18 @@ fn ask(ctx: &Context, key: &Key, held: &Park) -> Result<Asked> {
 /// reached or asked for less traffic, which is a reason to stop and not a reason to act.
 pub(super) fn renew_one(
     ctx: &Context,
+    permit: Permit,
     state: &mut State,
     key: &Key,
     held: &Park,
 ) -> Result<Option<Park>> {
-    match apply(ctx, state, key, held, ask(ctx, key, held))? {
+    match apply(ctx, permit, state, key, held, ask(ctx, permit, key, held))? {
         Renewal::Renewed => Ok(state.get(key).and_then(|a| a.parked.clone())),
         Renewal::Refused => Err(Error::ParkedLoginRefused {
             tool: key.provider,
             label: state.typed(key),
         }),
-        // A login nobody can renew is used as it is, the way one not renewed this time is.
-        Renewal::Deferred | Renewal::NotRenewable { .. } => Ok(None),
+        Renewal::Deferred => Ok(None),
         Renewal::Failed(e) => Err(e),
     }
 }
@@ -233,6 +224,7 @@ pub(super) fn renew_one(
 /// The part that writes: one at a time, in the order the accounts are listed.
 fn apply(
     ctx: &Context,
+    permit: Permit,
     state: &mut State,
     key: &Key,
     held: &Park,
@@ -243,7 +235,7 @@ fn apply(
         // Refused, not spent: nothing was taken from it. One `repair` gave back is left for
         // the Pitboard that wrote it, which will be refused the same way.
         state.release(&held.service);
-        state::save(ctx, state)?;
+        state::save(ctx, permit, state)?;
         return Ok(Renewal::Refused);
     }
     let Some(next) = asked.renewed else {
@@ -257,18 +249,15 @@ fn apply(
     // that is the account's only working login now.
     if state.is_foreign(&held.service) {
         state.used_here(&held.service);
-        let _ = state::save(ctx, state);
+        let _ = state::save(ctx, permit, state);
     }
 
     // The old refresh token may already be spent, so the answer is written at once, and a
     // second time under another name if the first write fails.
-    let uuid = state
-        .get(key)
-        .map(|a| a.account_uuid.clone())
-        .unwrap_or_default();
+    let id = state.get(key).map(|a| a.id.clone()).unwrap_or_default();
     let store = || {
-        park::reserve(ctx, &uuid)
-            .and_then(|service| park::store_at(ctx, key.provider, &service, &next))
+        park::reserve(ctx, permit, &id)
+            .and_then(|service| park::store_at(ctx, permit, key.provider, &service, &next))
     };
     let parked = match store().or_else(|_| store()) {
         Ok(parked) => parked,
@@ -277,7 +266,7 @@ fn apply(
             // is dead whatever happens next. Dropping it now means status stops offering a
             // login that cannot work and says to sign in again instead.
             state.discard(&held.service);
-            let _ = state::save(ctx, state);
+            let _ = state::save(ctx, permit, state);
             return Err(Error::RenewalFailed {
                 label: state.typed(key),
                 // The service answered; it is this machine that could not keep the answer.
@@ -295,7 +284,7 @@ fn apply(
     // list of names it wrote, so the next command gives it back to the account in place of
     // the spent one. Deleting it here, as this once did, threw away the only login the
     // account had left: the service had already spent the one the record still names.
-    state::save(ctx, state)?;
+    state::save(ctx, permit, state)?;
     Ok(Renewal::Renewed)
 }
 
@@ -310,44 +299,6 @@ mod tests {
     use crate::time::FixedClock;
     use serde_json::json;
     use std::sync::Arc;
-
-    /// A login only its own app can renew is reported under its own code, never as renewed
-    /// and never as refused.
-    #[test]
-    fn a_login_nobody_can_renew_says_so() {
-        let kept = Renewal::NotRenewable {
-            label: "desktop/work".into(),
-            expires_at: Some(1_790_000_000),
-        };
-        assert_eq!(kept.code(), "not_renewable");
-    }
-
-    /// A Claude Desktop park is a folder only the app can renew. However close its session
-    /// is to lapsing, renewing never reads it as a credential, never asks anybody, and
-    /// leaves it whole where it is.
-    #[test]
-    fn a_desktop_park_is_never_renewed() {
-        use crate::switch::harness::{Whole, desktop_machine};
-        let m = desktop_machine("renew-desktop");
-        let mut state = state::load(&m.ctx).expect("the state parses");
-        let soon = crate::switch::harness::NOW + 86_400;
-        let account = state
-            .accounts
-            .iter_mut()
-            .find(|a| a.label == "there")
-            .expect("there is enrolled");
-        let park = account.parked.as_mut().expect("there is parked");
-        park.access_expires_at = Some(soon);
-        park.refresh_expires_at = Some(soon);
-        state::save(&m.ctx, &state).expect("saved");
-
-        for due in [Due::ToStayAlive, Due::ToBeAsked] {
-            let outcomes = renew_due(&m.ctx, due);
-            assert!(outcomes.is_empty(), "{due:?}: {outcomes:?}");
-        }
-        assert_eq!(m.whole("there"), Whole::Parked);
-        assert_eq!(m.whole("here"), Whole::Live);
-    }
 
     const NOW: i64 = 1_760_000_000;
 
@@ -399,9 +350,15 @@ mod tests {
 
     /// One account holding one park, written the way a switch would have written it.
     fn with_park(m: &Machine, label: &str, refresh: &str, access_expires_at: i64) -> Park {
-        let service = park::reserve(&m.ctx, "acc").expect("a free name");
+        park_in(&m.ctx, label, refresh, access_expires_at)
+    }
+
+    /// The same, in the Pitboard directory `ctx` names.
+    fn park_in(ctx: &Context, label: &str, refresh: &str, access_expires_at: i64) -> Park {
+        let service = park::reserve(ctx, Permit::for_a_test(), "acc").expect("a free name");
         let park = park::store_at(
-            &m.ctx,
+            ctx,
+            Permit::for_a_test(),
             crate::provider::ProviderId::Claude,
             &service,
             &oauth(refresh, access_expires_at),
@@ -410,7 +367,10 @@ mod tests {
         let mut state = State::default();
         state.accounts.push(Account {
             last_used_at: None,
+            replaced_at: None,
+            plan: None,
             label: label.into(),
+            id: "acc".into(),
             account_uuid: "acc".into(),
             email: "me@example.com".into(),
             detail: state::Detail::Claude {
@@ -419,7 +379,7 @@ mod tests {
             },
             parked: Some(park.clone()),
         });
-        state::save(&m.ctx, &state).expect("saved");
+        state::save(ctx, Permit::for_a_test(), &state).expect("saved");
         park
     }
 
@@ -446,6 +406,10 @@ mod tests {
     /// when the login expires. A machine whose clock is wrong must not get an expiry to
     /// match, or every status renews the park again and rotates the refresh chain on a loop.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn a_renewed_expiry_is_measured_from_anthropics_clock_not_this_machines() {
         let m = machine("anchored");
         with_park(&m, "work", "old", NOW - 1);
@@ -463,7 +427,7 @@ mod tests {
             },
         );
 
-        renew_parked(&m.ctx);
+        renew_parked(&m.ctx, Permit::for_a_test());
 
         let park = state::load(&m.ctx)
             .expect("state")
@@ -483,12 +447,16 @@ mod tests {
     /// An answer with no `Date` leaves the local clock as all there is, which is what it
     /// always was.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn an_answer_with_no_clock_of_its_own_falls_back_to_this_machines() {
         let m = machine("unanchored");
         with_park(&m, "work", "old", NOW - 1);
         m.api.renews("old", fresh("new"));
 
-        renew_parked(&m.ctx);
+        renew_parked(&m.ctx, Permit::for_a_test());
 
         let park = state::load(&m.ctx)
             .expect("state")
@@ -503,23 +471,31 @@ mod tests {
     /// The budget question, asked of the code rather than of a stopwatch: a park whose
     /// access token is still good is not a reason to talk to Anthropic at all.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn a_park_that_is_not_due_is_not_asked_about() {
         let m = machine("not-due");
         with_park(&m, "work", "r", NOW + 3600);
 
-        let outcomes = renew_parked(&m.ctx);
+        let outcomes = renew_parked(&m.ctx, Permit::for_a_test());
 
         assert!(outcomes.is_empty());
         assert_eq!(m.api.calls(), 0, "nothing was due, so nothing was asked");
     }
 
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn a_due_park_is_renewed_and_the_spent_copy_is_dropped() {
         let m = machine("renewed");
         let before = with_park(&m, "work", "old", NOW - 1);
         m.api.renews("old", fresh("new"));
 
-        let outcomes = renew_parked(&m.ctx);
+        let outcomes = renew_parked(&m.ctx, Permit::for_a_test());
 
         assert_eq!(outcome(&outcomes, "work"), "renewed");
         assert_eq!(m.api.asked(), vec![Question::Renew("old".into())]);
@@ -541,12 +517,16 @@ mod tests {
     /// The answer that ends a park. The account keeps its label and its email, so the way
     /// back is one sign-in rather than an enrolment.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn a_login_anthropic_no_longer_accepts_is_dropped() {
         let m = machine("refused");
         with_park(&m, "work", "old", NOW - 1);
         m.api.renew_trouble("old", Trouble::InvalidGrant);
 
-        let outcomes = renew_parked(&m.ctx);
+        let outcomes = renew_parked(&m.ctx, Permit::for_a_test());
 
         assert_eq!(outcome(&outcomes, "work"), "parked_login_refused");
         let state = state::load(&m.ctx).expect("state");
@@ -563,13 +543,17 @@ mod tests {
     /// Being unreachable, or being asked to slow down, must change nothing at all: the park
     /// that is still there is the one thing standing between the user and a browser.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn a_renewal_that_could_not_happen_leaves_the_park_alone() {
         for trouble in [Trouble::Offline, Trouble::RateLimited] {
             let m = machine(&format!("deferred-{trouble:?}"));
             let before = with_park(&m, "work", "old", NOW - 1);
             m.api.renew_trouble("old", trouble);
 
-            let outcomes = renew_parked(&m.ctx);
+            let outcomes = renew_parked(&m.ctx, Permit::for_a_test());
 
             assert_eq!(outcome(&outcomes, "work"), "renewal_deferred");
             let state = state::load(&m.ctx).expect("state");
@@ -590,6 +574,10 @@ mod tests {
     /// not asked: the park stays as it was, and the reason is said. It used to be asked,
     /// and the login was lost.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn a_park_that_could_not_be_written_back_is_not_renewed() {
         let mut m = machine("no-argv");
         m.ctx = m.ctx.clone().with_argv_fallback(false);
@@ -597,7 +585,7 @@ mod tests {
         m.mem.vault().takes_on_stdin(16);
         m.api.renews("old", fresh("new"));
 
-        let outcomes = renew_parked(&m.ctx);
+        let outcomes = renew_parked(&m.ctx, Permit::for_a_test());
 
         assert_eq!(outcome(&outcomes, "work"), "credential_too_large");
         assert_eq!(
@@ -618,15 +606,149 @@ mod tests {
 
     /// The same login with the argument line allowed is renewed as usual.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn a_park_past_the_ceiling_is_renewed_where_the_argument_line_is_allowed() {
         let m = machine("argv");
         with_park(&m, "work", "old", NOW - 1);
         m.mem.vault().takes_on_stdin(16);
         m.api.renews("old", fresh("new"));
 
-        let outcomes = renew_parked(&m.ctx);
+        let outcomes = renew_parked(&m.ctx, Permit::for_a_test());
 
         assert_eq!(outcome(&outcomes, "work"), "renewed");
+    }
+
+    /// The schedule belongs to the default home, and `launchctl setenv` or a systemd user
+    /// environment can still give its job a `PITBOARD_HOME`. A run the schedule started
+    /// renews the default home's parked logins and no other's, and a run by hand renews the
+    /// ones in the home `PITBOARD_HOME` names. It renewed that home on every run, and on
+    /// Linux nothing told a run of the schedule apart. Told both ways it is told: by the
+    /// job the scheduler says started this process, which a test says here as launchd's
+    /// `XPC_SERVICE_NAME` or systemd's unit would name it, and by the marker the systemd
+    /// unit runs Pitboard with.
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W25: Task Scheduler, which names the task it starts, and Pitboard's default \
+                  home on Windows (W14)"
+    )]
+    fn a_run_the_schedule_started_renews_the_default_home_whatever_pitboard_home_says() {
+        use crate::host::{OS, Os};
+        use crate::service::Pitboard;
+        let job = match OS {
+            Os::MacOs => "com.datlechin.pitboard.renew",
+            Os::Linux => "pitboard-renew.service",
+            Os::Windows => panic!("W25 names the task Task Scheduler starts for the schedule"),
+        };
+        type Told = fn(Context, &str) -> Context;
+        let ways: [(&str, Told); 2] = [
+            ("as the scheduler says", |ctx, job| {
+                ctx.with_scheduled_job(job.into())
+            }),
+            ("by the marker", |ctx, _| ctx.started_by_the_schedule()),
+        ];
+        for (way, scheduled) in ways {
+            let m = machine(&format!("scheduled-{}", way.len()));
+            let default = m.ctx.clone().with_pitboard_home(m.home.join(".pitboard"));
+            let elsewhere = m.ctx.clone().with_pitboard_home(m.home.join("elsewhere"));
+            park_in(&default, "work", "default-old", NOW - 1);
+            park_in(&elsewhere, "other", "elsewhere-old", NOW - 1);
+            m.api.renews("default-old", fresh("default-new"));
+            m.api.renews("elsewhere-old", fresh("elsewhere-new"));
+            let renewed = |outcomes: Vec<(Key, Renewal)>| -> Vec<(String, String)> {
+                outcomes
+                    .into_iter()
+                    .map(|(key, outcome)| (key.label, outcome.code().to_string()))
+                    .collect()
+            };
+
+            let run = Pitboard::new(scheduled(elsewhere.clone(), job))
+                .renew()
+                .expect("a run");
+            assert_eq!(renewed(run), [("work".into(), "renewed".into())], "{way}");
+            assert_eq!(
+                m.api.asked(),
+                [Question::Renew("default-old".into())],
+                "{way}"
+            );
+            assert_eq!(
+                crate::audit::read(&default, 10)
+                    .iter()
+                    .map(|e| (e.verb.as_str(), e.outcome.as_str()))
+                    .collect::<Vec<_>>(),
+                [("renew", "renewed")],
+                "{way}: recorded in the home it renewed"
+            );
+
+            let by_hand = Pitboard::new(elsewhere).renew().expect("a run");
+            assert_eq!(
+                renewed(by_hand),
+                [("other".into(), "renewed".into())],
+                "{way}"
+            );
+        }
+    }
+
+    /// A run of the schedule takes no notice of a `PITBOARD_HOME` that is empty or relative
+    /// either, which every other run refuses: it renews the default home, and the gate it
+    /// asks is asked of that home. By hand, the same `PITBOARD_HOME` is refused with
+    /// `home_not_absolute`, having asked nobody.
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
+    fn a_run_the_schedule_started_renews_the_default_home_where_pitboard_home_is_not_full() {
+        use crate::service::Pitboard;
+        for named in ["", "relative"] {
+            let m = machine(&format!("scheduled-not-full-{}", named.len()));
+            let default = m.ctx.clone().with_pitboard_home(m.home.join(".pitboard"));
+            park_in(&default, "work", "default-old", NOW - 1);
+            m.api.renews("default-old", fresh("default-new"));
+            let given = m.ctx.clone().with_pitboard_home(named.into());
+
+            let by_hand = Pitboard::new(given.clone()).renew();
+            assert!(
+                matches!(by_hand, Err(Error::HomeNotAbsolute { .. })),
+                "{named:?}: {by_hand:?}"
+            );
+            assert_eq!(m.api.asked(), [], "{named:?}");
+
+            let run = Pitboard::new(given.started_by_the_schedule())
+                .renew()
+                .expect("a run");
+            assert_eq!(
+                run.iter()
+                    .map(|(key, outcome)| (key.label.as_str(), outcome.code()))
+                    .collect::<Vec<_>>(),
+                [("work", "renewed")],
+                "{named:?}"
+            );
+        }
+    }
+
+    /// A build for tests that runs as the schedule with this account's own home is stopped
+    /// before it reads anything, since it would renew the real Pitboard directory: a test
+    /// gives a run of the schedule a home of its own. Nothing here reads or writes the home;
+    /// the context is all that is made.
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W25: the task Task Scheduler starts for the schedule"
+    )]
+    #[should_panic(expected = "with this account's own home")]
+    fn a_run_the_schedule_started_in_a_build_for_tests_never_renews_the_real_home() {
+        let own = {
+            let _real = crate::host::user::testing::reaching_the_real_home();
+            crate::host::user::home().expect("this account has a home")
+        };
+        let ctx = Context::new(own)
+            .with_memory_stores(MemoryHost::new())
+            .started_by_the_schedule();
+        let _ = crate::schedule::for_its_run(&ctx);
     }
 
     /// The failure this module's comments describe and no test could reach: Anthropic has
@@ -634,6 +756,10 @@ mod tests {
     /// copy Pitboard holds is dead either way, so it is dropped rather than left to be
     /// offered as a login that cannot work.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn a_renewal_whose_answer_cannot_be_stored_drops_the_spent_park() {
         let m = machine("write-lost");
         let before = with_park(&m, "work", "old", NOW - 1);
@@ -642,7 +768,7 @@ mod tests {
             .vault()
             .fault_all(Fault::FailWrite("the keychain refused".into()));
 
-        let outcomes = renew_parked(&m.ctx);
+        let outcomes = renew_parked(&m.ctx, Permit::for_a_test());
 
         assert_eq!(outcome(&outcomes, "work"), "renewal_failed");
         let state = state::load(&m.ctx).expect("state");

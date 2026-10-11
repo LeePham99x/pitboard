@@ -8,11 +8,16 @@
 //! the tool's own installers put it, and hands the shell's `PATH` to every sign-in. The rest
 //! of its environment is read as the command line reads its own, by the same code.
 //!
-//! An app also says which `pitboard` a terminal would run, and whether it is the app's own.
+//! An app also says which `pitboard` a terminal would run, and whether it is the app's own,
+//! and keeps files of its own in Pitboard's directory, beside the core's, written as the core
+//! writes its own.
 
 use crate::context::{Context, Environment};
+use crate::error::{Error, Result};
 use crate::host::{self, LoginPath, OS};
 use crate::provider::ProviderId;
+use crate::service::Permit;
+use crate::{atomic, home};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
@@ -32,6 +37,10 @@ pub struct AppContext {
     /// The login shell had not answered in time. What was found stands, and asking again a
     /// while later may find more.
     pub late: bool,
+    /// Where each way of installing Pitboard puts `pitboard`, as `command_line_places` gives
+    /// them for this app's home: under it, and where the system's package managers put
+    /// programs. Looked in after the login shell's `PATH` for the one a terminal would run.
+    pub command_line_places: Vec<PathBuf>,
 }
 
 impl AppContext {
@@ -49,7 +58,7 @@ impl AppContext {
     /// Each tool's program is the one its variable names outright, or else the first found
     /// on the login shell's `PATH`, where a version manager or an npm prefix puts it, and
     /// then where the tool's own installers put it, which is all there is when the shell
-    /// could not be asked. Claude Desktop is found where its bundle is, and never on a path.
+    /// could not be asked.
     pub(crate) fn read(
         env: &Environment,
         app: Option<&Path>,
@@ -75,15 +84,6 @@ impl AppContext {
             .unwrap_or_default();
         let mut found = Vec::new();
         for &tool in ProviderId::ALL {
-            // An app counts only where its bundle has its program, named outright or not:
-            // a bundle that is not there is not an installed app, and a system that runs no
-            // such app has none to look for.
-            if !tool.on_path() {
-                if context.desktop_program().is_some_and(&runnable) {
-                    found.push(tool);
-                }
-                continue;
-            }
             if env
                 .path(tool.program_variable())
                 .is_some_and(|named| !named.is_empty())
@@ -111,11 +111,13 @@ impl AppContext {
             context.search_path = Some(path.into());
         }
         context.schedule_program = app.and_then(|app| OS.app_command_line(app));
+        let command_line_places = command_line_places(&context.home);
         AppContext {
             context,
             found,
             search_path,
             late,
+            command_line_places,
         }
     }
 }
@@ -190,10 +192,82 @@ pub fn find_command_line(
     }
 }
 
+/// A file an app keeps of its own in Pitboard's directory: what it remembers between launches
+/// that is the app's and no command's. The core reads none of them for itself, and nothing in
+/// one is secret, but each is written private to its owner, as everything there is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum AppFile {
+    /// The app's own preferences, such as which tools somebody keeps one account of.
+    Preferences,
+    /// What the app has told a person about, once for each reset of a limit, so a run-out
+    /// told before the app was quit is not told again after it is opened.
+    Told,
+}
+
+impl AppFile {
+    /// Its name in Pitboard's directory.
+    pub fn name(self) -> &'static str {
+        match self {
+            AppFile::Preferences => "app.json",
+            AppFile::Told => "told.json",
+        }
+    }
+}
+
+/// What the app keeps in `file`, or `None` where it keeps nothing there. A file that is there
+/// and cannot be read, because it is not this user's to read, a disk failed, another program
+/// holds it or it is not text, is an error and not nothing: an app that took it as nothing
+/// would write what it has over what it never read.
+pub fn read_app_file(ctx: &Context, file: AppFile) -> std::io::Result<Option<String>> {
+    read_file(&home::dir(ctx).join(file.name()))
+}
+
+/// What an app keeps in the file at `path`, wherever that is, or `None` where nothing is
+/// there, by the rule of `read_app_file`: a file that is there and cannot be read is an
+/// error, not nothing.
+pub fn read_file(path: &Path) -> std::io::Result<Option<String>> {
+    match std::fs::read_to_string(path) {
+        Ok(text) => Ok(Some(text)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+/// Keeps `body` in the file at `path`, outside Pitboard's directory, as the core writes its
+/// own: the directories it needs made private first where they are not there yet, and the
+/// file written whole or not at all, private to its owner. For what an app keeps of its own
+/// that is the app's whichever Pitboard directory it serves, such as the account windows'
+/// records, which belong with the app's web stores.
+///
+/// It takes the [`Permit`] only the one gate every change passes makes, which an app asks for
+/// with [`crate::service::Pitboard::permit`], so an app writes nothing of its own either where
+/// it runs as root or under sudo.
+pub fn write_file(permit: Permit, path: &Path, body: &str) -> std::io::Result<()> {
+    if let Some(dir) = path.parent() {
+        host::fs::create_private_dir(permit, dir)?;
+    }
+    atomic::write(permit, path, body.as_bytes(), atomic::Perms::Secret)
+}
+
+/// Keeps `body` in `file`, as the core writes its own: Pitboard's directory made private
+/// first where it is not there yet, and the file written whole or not at all, private to its
+/// owner.
+pub fn write_app_file(ctx: &Context, permit: Permit, file: AppFile, body: &str) -> Result<()> {
+    let path = home::dir(ctx).join(file.name());
+    let unwritable = |source| Error::HomeUnwritable {
+        path: path.clone(),
+        source,
+    };
+    home::ensure(ctx, permit).map_err(unwritable)?;
+    atomic::write(permit, &path, body.as_bytes(), atomic::Perms::Secret).map_err(unwritable)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::host::Os;
+    use crate::host::fs::testing;
     use std::cell::RefCell;
 
     fn env(pairs: &[(&str, &str)]) -> Environment {
@@ -208,6 +282,10 @@ mod tests {
     /// shell's `PATH`, where a version manager or an npm prefix puts it, then where its
     /// installer does.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W17: where an app finds programs on Windows, whose PATH no login shell builds"
+    )]
     fn a_program_is_found_by_its_variable_then_the_login_shell_then_its_installer() {
         let home = env(&[("HOME", "/Users/x")]);
         let here: Vec<PathBuf> = [
@@ -232,6 +310,11 @@ mod tests {
             Path::new("/Users/x/.volta/bin/claude")
         );
         assert_eq!(shell.found, [ProviderId::Claude, ProviderId::Codex]);
+        assert_eq!(
+            shell.command_line_places,
+            command_line_places(Path::new("/Users/x")),
+            "a terminal's installs are looked for under the app's own home"
+        );
         let looked = "/usr/bin:/Users/x/.volta/bin:/Users/x/.nvm/versions/node/v22.1.0/bin";
         assert_eq!(
             shell.search_path.as_deref(),
@@ -298,56 +381,12 @@ mod tests {
         assert_eq!(late.search_path, None);
     }
 
-    /// Claude Desktop is found in its bundle, where the context says it is, and never on a
-    /// search path: on a volume that ignores case, `Claude` there would be Claude Code.
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn claude_desktop_is_found_in_its_bundle_and_never_on_a_path() {
-        let home = env(&[("HOME", "/Users/x")]);
-        let installed =
-            |path: &Path| path == Path::new("/Applications/Claude.app/Contents/MacOS/Claude");
-        let app = AppContext::read(&home, None, said("/usr/bin"), installed);
-        assert_eq!(app.found, [ProviderId::Desktop]);
-
-        let on_path = |path: &Path| path.ends_with("Claude") || path.ends_with("claude");
-        let looked = AppContext::read(&home, None, said("/Users/x/bin"), |path: &Path| {
-            path.starts_with("/Users/x/bin") && on_path(path)
-        });
-        assert_eq!(
-            looked.found,
-            [ProviderId::Claude],
-            "a `Claude` on the path is not the app"
-        );
-        assert_eq!(
-            looked.context.program_for(ProviderId::Desktop),
-            Path::new("/Applications/Claude.app/Contents/MacOS/Claude")
-        );
-
-        let moved_env = env(&[
-            ("HOME", "/Users/x"),
-            ("PITBOARD_CLAUDE_DESKTOP_APP", "/scratch/Claude.app"),
-        ]);
-        let absent = AppContext::read(&moved_env, None, said("/usr/bin"), |_| false);
-        assert!(
-            absent.found.is_empty(),
-            "a bundle named outright counts only where its program is"
-        );
-        let moved = AppContext::read(&moved_env, None, said("/usr/bin"), |path: &Path| {
-            path == Path::new("/scratch/Claude.app/Contents/MacOS/Claude")
-        });
-        assert_eq!(moved.found, [ProviderId::Desktop]);
-        assert_eq!(
-            moved.context.program_for(ProviderId::Desktop),
-            Path::new("/scratch/Claude.app/Contents/MacOS/Claude")
-        );
-    }
-
     /// The installers' places come after the login shell's `PATH`, in the order each tool
     /// says, and every tool's own installer goes first.
     #[test]
     fn each_tool_is_looked_for_where_its_installers_put_it() {
         let home = Path::new("/Users/x");
-        for &tool in ProviderId::ALL.iter().filter(|tool| tool.on_path()) {
+        for &tool in ProviderId::ALL {
             let places = tool.install_places(home);
             assert_eq!(places.first(), Some(&home.join(".local/bin")), "{tool}");
             let after: Vec<&Path> = places[1..].iter().map(PathBuf::as_path).collect();
@@ -361,6 +400,8 @@ mod tests {
                 "Homebrew on Apple silicon and on Intel"
             ),
             Os::Linux => assert!(OS.package_bins().is_empty()),
+            // Until W17 reads where winget, Scoop and npm put programs.
+            Os::Windows => assert!(OS.package_bins().is_empty()),
         }
     }
 
@@ -424,6 +465,10 @@ mod tests {
     /// A relative entry on the login shell's `PATH` names a directory relative to wherever
     /// the shell was, which is not where this app is, so it is not looked in.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W17: where an app finds programs on Windows, whose PATH no login shell builds"
+    )]
     fn a_relative_entry_is_not_looked_in() {
         let looked = RefCell::new(Vec::new());
         let _ = AppContext::read(
@@ -445,6 +490,10 @@ mod tests {
     /// Pitboard may, and a program started from there would have it asked on its behalf.
     /// Linux guards none.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W17: where an app finds programs on Windows, whose PATH no login shell builds"
+    )]
     fn a_guarded_folder_on_the_path_is_not_looked_in() {
         let entries = [
             "/Users/x/Documents/bin",
@@ -468,7 +517,9 @@ mod tests {
         let looked = looked.into_inner();
         let kept: &[&str] = match OS {
             Os::MacOs => &["/Users/x/Documentsbin", "/usr/bin"],
-            Os::Linux => &entries,
+            // Neither passes over a folder: Linux asks nothing, and which folders Windows
+            // asks about, if any, W17 reads.
+            Os::Linux | Os::Windows => &entries,
         };
         let places = ProviderId::Claude.install_places(Path::new("/Users/x"));
         let claude: Vec<PathBuf> = kept
@@ -478,13 +529,8 @@ mod tests {
             .map(|dir| dir.join("claude"))
             .collect();
         assert_eq!(looked[..claude.len()], claude[..], "{looked:?}");
-        // Claude Desktop is looked for only in its own bundle, never on the path.
-        let on_path: Vec<&PathBuf> = looked
-            .iter()
-            .filter(|path| !path.starts_with("/Applications/Claude.app"))
-            .collect();
         assert_eq!(
-            on_path.len(),
+            looked.len(),
             2 * claude.len(),
             "the same places for each tool: {looked:?}"
         );
@@ -509,7 +555,8 @@ mod tests {
         };
         let inside = |app: &str| match OS {
             Os::MacOs => Some(PathBuf::from(format!("{app}/Contents/Helpers/pitboard"))),
-            Os::Linux => None,
+            // No app runs on Linux, and the Windows app does not say where its own is yet.
+            Os::Linux | Os::Windows => None,
         };
         for app in [
             "/Applications/Pitboard.app",
@@ -558,7 +605,7 @@ mod tests {
             std::fs::create_dir_all(at.parent().expect("its directory")).expect("a directory");
             std::fs::write(at, "#!/bin/sh\n").expect("a program");
             if runnable {
-                crate::host::fs::testing::make_runnable(at);
+                testing::make_runnable(at).expect("runnable");
             }
         }
     }
@@ -573,6 +620,7 @@ mod tests {
     /// own, the way Homebrew makes one, is the app's own however many links it takes to get
     /// there. A directory, a file nobody can run and a link to nothing are not a `pitboard`.
     #[test]
+    #[cfg_attr(windows, ignore = "W17: finding programs on Windows")]
     fn the_first_pitboard_found_says_whose_it_is() {
         let scratch = Scratch::new();
         let empty = scratch.dir("empty");
@@ -581,19 +629,19 @@ mod tests {
         let plain = scratch.dir("plain");
         scratch.program(&plain.join("pitboard"), false);
         let dangling = scratch.dir("dangling");
-        crate::host::fs::testing::link(
-            &scratch.0.join("gone/pitboard"),
-            &dangling.join("pitboard"),
-        );
+        testing::link(&scratch.0.join("gone/pitboard"), &dangling.join("pitboard"))
+            .expect("a link to nothing");
         let brew = scratch.dir("brew/bin");
-        crate::host::fs::testing::link(
+        testing::link(
             Path::new("../../Fake.app/Contents/Helpers/pitboard"),
             &brew.join("pitboard"),
-        );
+        )
+        .expect("a link as Homebrew makes one");
         let cargo = scratch.dir("cargo/bin");
         scratch.program(&cargo.join("pitboard"), true);
         let helpers = scratch.0.join("helpers");
-        crate::host::fs::testing::link(scratch.helper().parent().expect("Helpers"), &helpers);
+        testing::link_dir(scratch.helper().parent().expect("Helpers"), &helpers)
+            .expect("a link to a directory");
 
         let own = scratch.helper();
         let find = |dirs: &[&PathBuf], helper: Option<&Path>| {
@@ -655,5 +703,108 @@ mod tests {
         let after: Vec<&Path> = places[2..].iter().map(PathBuf::as_path).collect();
         let expected: Vec<&Path> = OS.package_bins().iter().map(Path::new).collect();
         assert_eq!(after, expected);
+    }
+
+    /// An app's file is kept in Pitboard's directory, which is made private where it is not
+    /// there yet, and the file private to its owner, whole: read back as it was written, and
+    /// in its place what was written last. Nothing kept reads as nothing.
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
+    fn an_apps_file_is_kept_private_in_pitboards_directory() {
+        let root = std::env::temp_dir().join(format!("pitboard-app-file-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let ctx = Context::new(root.clone()).with_pitboard_home(root.join(".pitboard"));
+        let read = |file| read_app_file(&ctx, file).expect("read");
+        assert_eq!(read(AppFile::Told), None);
+
+        write_app_file(
+            &ctx,
+            Permit::for_a_test(),
+            AppFile::Told,
+            r#"{"claude/work/session/":7200}"#,
+        )
+        .expect("kept");
+        write_app_file(&ctx, Permit::for_a_test(), AppFile::Preferences, "{}").expect("kept");
+        assert_eq!(
+            read(AppFile::Told).as_deref(),
+            Some(r#"{"claude/work/session/":7200}"#)
+        );
+        write_app_file(&ctx, Permit::for_a_test(), AppFile::Told, "{}").expect("kept again");
+        assert_eq!(read(AppFile::Told).as_deref(), Some("{}"));
+        assert_eq!(read(AppFile::Preferences).as_deref(), Some("{}"));
+        for kept in [
+            root.join(".pitboard"),
+            root.join(".pitboard").join("told.json"),
+            root.join(".pitboard").join("app.json"),
+        ] {
+            assert!(
+                testing::is_private(&kept).expect("there"),
+                "{}",
+                kept.display()
+            );
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A file that is there and cannot be read is an error, not nothing kept: here a
+    /// directory where the file goes, which no user can read as a file, and a file that is
+    /// not text. An app that took either as nothing would write over what it never read.
+    #[test]
+    fn an_apps_file_that_cannot_be_read_is_not_nothing() {
+        let root =
+            std::env::temp_dir().join(format!("pitboard-app-unreadable-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let dir = root.join(".pitboard");
+        let ctx = Context::new(root.clone()).with_pitboard_home(dir.clone());
+        std::fs::create_dir_all(dir.join(AppFile::Preferences.name())).expect("a directory");
+        std::fs::write(dir.join(AppFile::Told.name()), [0xff, 0xfe, 0x00]).expect("a file");
+        assert!(read_app_file(&ctx, AppFile::Preferences).is_err());
+        assert!(read_app_file(&ctx, AppFile::Told).is_err());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A file an app keeps outside Pitboard's directory is kept as one inside it: its
+    /// directories made private where they are not there, the file private and whole, and
+    /// nothing kept read as nothing, while a file that cannot be read is an error.
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
+    fn a_file_kept_elsewhere_is_kept_as_pitboards_own() {
+        let root =
+            std::env::temp_dir().join(format!("pitboard-app-elsewhere-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let file = root
+            .join("Application Support")
+            .join("app")
+            .join("windows.json");
+        assert_eq!(read_file(&file).expect("read"), None);
+        write_file(Permit::for_a_test(), &file, "{}").expect("kept");
+        write_file(Permit::for_a_test(), &file, r#"{"stores":{}}"#).expect("kept again");
+        assert_eq!(
+            read_file(&file).expect("read").as_deref(),
+            Some(r#"{"stores":{}}"#)
+        );
+        for kept in [file.parent().expect("its directory"), file.as_path()] {
+            assert!(
+                testing::is_private(kept).expect("there"),
+                "{}",
+                kept.display()
+            );
+        }
+        std::fs::write(&file, [0xff, 0xfe, 0x00]).expect("a file that is not text");
+        assert!(read_file(&file).is_err());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Each file has a name of its own, apart from the core's.
+    #[test]
+    fn each_apps_file_has_a_name_of_its_own() {
+        assert_eq!(AppFile::Preferences.name(), "app.json");
+        assert_eq!(AppFile::Told.name(), "told.json");
     }
 }

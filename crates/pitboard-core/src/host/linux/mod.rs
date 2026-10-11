@@ -8,16 +8,14 @@ mod systemd;
 
 pub(crate) use super::unix::{fs, proc, user};
 
+use super::administered::Administered;
 use super::unix::service;
-use super::{Bundle, Host, LoginPath, Os, Process, Scheduler};
+use super::{Elevation, Floor, Host, LoginPath, Os, Process, Scheduler};
 use crate::context::{Context, Environment};
-use crate::provider::desktop::safe_storage::{ItemStamp, KeyRead, KeyReadError, SafeStorage};
-use crate::provider::desktop::types::CookieTable;
 use crate::store::vault::FileVault;
 use crate::store::{PlainFile, RawStore};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
-use zeroize::Zeroizing;
 
 pub(super) const OS: Os = Os::Linux;
 
@@ -57,37 +55,21 @@ impl Host for Linux {
         procfs::processes(program)
     }
 
-    fn processes_within(&self, bundle: Bundle<'_>, excluded: &[&str]) -> Option<Vec<Process>> {
-        procfs::processes_within(bundle, excluded)
-    }
-
-    fn pid_alive(&self, pid: u32) -> bool {
-        proc::may_be_running(pid)
-    }
-
-    fn program_of(&self, pid: u32) -> Option<PathBuf> {
-        procfs::program_of(pid)
-    }
-
-    fn device_of(&self, path: &Path) -> std::io::Result<u64> {
-        fs::device(path)
-    }
-
-    /// Claude Desktop does not run on Linux, and there is no jar to read.
-    fn cookie_table(&self, _path: &Path) -> std::io::Result<CookieTable> {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            "Claude Desktop's cookies are read on macOS only",
-        ))
-    }
-
-    /// No app runs on Linux.
-    fn bundle_version(&self, _app: &Path) -> Option<String> {
-        None
-    }
-
     fn scheduler(&self) -> Option<&dyn Scheduler> {
         Some(&self.scheduler)
+    }
+
+    fn elevation(&self, ctx: &Context) -> Elevation {
+        user::elevation(ctx.sudo())
+    }
+
+    fn floor(&self) -> Floor {
+        Floor::Met
+    }
+
+    /// Linux has no managed preferences: an administrator sets things in files.
+    fn managed_preference(&self, _domain: &str, _key: &str) -> Administered {
+        Administered::Unset
     }
 }
 
@@ -95,24 +77,6 @@ pub(super) fn host() -> Arc<dyn Host> {
     Arc::new(Linux {
         scheduler: systemd::Systemd::new(service::system()),
     })
-}
-
-/// Claude Desktop does not run on Linux, so there is no key to read.
-#[derive(Debug)]
-struct NoSafeStorage;
-
-impl SafeStorage for NoSafeStorage {
-    fn stamp(&self, _ctx: &Context) -> Result<ItemStamp, KeyReadError> {
-        Err(KeyReadError::Missing)
-    }
-
-    fn password(&self, _ctx: &Context, _how: KeyRead) -> Result<Zeroizing<Vec<u8>>, KeyReadError> {
-        Err(KeyReadError::Missing)
-    }
-}
-
-pub(super) fn safe_storage() -> Arc<dyn SafeStorage> {
-    Arc::new(NoSafeStorage)
 }
 
 /// The path this Pitboard was started by, where that leads to the program running.
@@ -152,10 +116,10 @@ fn started_as(
 #[cfg(any(test, feature = "test-support"))]
 pub(super) fn pretend_scheduler(
     refuse_start: Arc<std::sync::atomic::AtomicBool>,
-) -> Box<dyn Scheduler> {
-    Box::new(systemd::Systemd::new(Arc::new(service::Pretend {
-        refuse_start,
-    })))
+) -> Option<Box<dyn Scheduler>> {
+    Some(Box::new(systemd::Systemd::new(Arc::new(
+        service::Pretend { refuse_start },
+    ))))
 }
 
 #[cfg(test)]
@@ -177,14 +141,14 @@ mod tests {
         let runnable = |path: &std::path::Path| {
             std::fs::create_dir_all(path.parent().unwrap()).expect("its directory");
             std::fs::write(path, "").expect("a program");
-            fs::testing::make_runnable(path);
+            fs::testing::make_runnable(path).expect("runnable");
         };
         let running = home.join("Caskroom/pitboard/0.4.0/pitboard");
         runnable(&running);
         let bin = home.join("bin");
         std::fs::create_dir_all(&bin).expect("a bin");
         let link = bin.join("pitboard");
-        std::os::unix::fs::symlink(&running, &link).expect("a link");
+        fs::testing::link(&running, &link).expect("a link");
         let another = home.join("elsewhere/pitboard");
         runnable(&another);
 

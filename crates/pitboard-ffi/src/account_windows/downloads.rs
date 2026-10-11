@@ -52,13 +52,22 @@ fn numbered(os: Os, name: &str, base: &str, extension: Option<&str>, nth: u64) -
     }
     match os {
         // As Finder numbers one: `report 2.pdf`, then `report 3.pdf`. No app runs on Linux,
-        // and it numbers as the Mac does. Windows, once it is a system here, numbers one
-        // `report (1).pdf`, as the owner decided; which of its programs names a copy so is
-        // to be measured when that arm is written.
+        // and it numbers as the Mac does.
         Os::MacOs | Os::Linux => match extension {
             Some(extension) => format!("{base} {nth}.{extension}"),
             None => format!("{base} {nth}"),
         },
+        // As Explorer numbers one, as the owner decided: `report (1).pdf`, then
+        // `report (2).pdf`. The name is split as everywhere else here; how WebView2 and
+        // Explorer split a name with two extensions, such as `archive.tar.gz`, is the
+        // Windows app's to measure.
+        Os::Windows => {
+            let copy = nth - 1;
+            match extension {
+                Some(extension) => format!("{base} ({copy}).{extension}"),
+                None => format!("{base} ({copy})"),
+            }
+        }
     }
 }
 
@@ -66,6 +75,8 @@ fn numbered(os: Os, name: &str, base: &str, extension: Option<&str>, nth: u64) -
 /// names that are canonically equivalent in Unicode for one, measured on APFS on macOS 27.0,
 /// so they are compared decomposed. No app runs on Linux, which compares them as the Mac
 /// does; where its file system takes them for two, a name is numbered that need not be.
+/// Windows takes names in any case for one, and does not normalise them, so two forms of one
+/// name are two files there ([`pitboard_core::host::same_path_in_any_case`]).
 fn same_file(os: Os, one: &Path, other: &Path) -> bool {
     match os {
         Os::MacOs | Os::Linux => {
@@ -73,6 +84,7 @@ fn same_file(os: Os, one: &Path, other: &Path) -> bool {
                 |path: &Path| PathBuf::from(path.to_string_lossy().nfd().collect::<String>());
             decomposed(one) == decomposed(other)
         }
+        Os::Windows => pitboard_core::host::same_path_in_any_case(one, other),
     }
 }
 
@@ -138,7 +150,7 @@ mod tests {
     use std::collections::HashSet;
 
     fn on_a_mac(suggested: &str, taken: &[&str]) -> String {
-        let taken: HashSet<&str> = taken.iter().copied().collect();
+        let taken: HashSet<String> = taken.iter().map(|name| downloads(name)).collect();
         destination(Os::MacOs, Path::new("/Downloads"), suggested, |candidate| {
             taken.contains(candidate.to_str().expect("UTF-8"))
         })
@@ -146,20 +158,24 @@ mod tests {
         .into_owned()
     }
 
+    fn downloads(name: &str) -> String {
+        Path::new("/Downloads")
+            .join(name)
+            .to_string_lossy()
+            .into_owned()
+    }
+
     /// A download never overwrites a file, and two downloads never get one name. From
     /// AccountWindowsTests.swift.
     #[test]
     fn a_download_is_numbered_past_names_taken() {
         assert_eq!(
-            on_a_mac(
-                "report.pdf",
-                &["/Downloads/report.pdf", "/Downloads/report 2.pdf"]
-            ),
-            "/Downloads/report 3.pdf"
+            on_a_mac("report.pdf", &["report.pdf", "report 2.pdf"]),
+            downloads("report 3.pdf")
         );
-        assert_eq!(on_a_mac("notes", &[]), "/Downloads/notes");
-        assert_eq!(on_a_mac("", &[]), "/Downloads/Download");
-        assert_eq!(on_a_mac("a/b.txt", &[]), "/Downloads/b.txt");
+        assert_eq!(on_a_mac("notes", &[]), downloads("notes"));
+        assert_eq!(on_a_mac("", &[]), downloads("Download"));
+        assert_eq!(on_a_mac("a/b.txt", &[]), downloads("b.txt"));
     }
 
     /// Each name as the Swift `DownloadCenter.destination` named it, free and with its own
@@ -196,14 +212,10 @@ mod tests {
             ("~/x.txt", "x.txt", "x 2.txt"),
             ("a\\b.txt", "a\\b.txt", "a\\b 2.txt"),
         ] {
+            assert_eq!(on_a_mac(suggested, &[]), downloads(free), "{suggested:?}");
             assert_eq!(
-                on_a_mac(suggested, &[]),
-                format!("/Downloads/{free}"),
-                "{suggested:?}"
-            );
-            assert_eq!(
-                on_a_mac(suggested, &[&format!("/Downloads/{free}")]),
-                format!("/Downloads/{second}"),
+                on_a_mac(suggested, &[free]),
+                downloads(second),
                 "{suggested:?}"
             );
         }
@@ -216,6 +228,50 @@ mod tests {
             candidate == Path::new("/d/report.pdf")
         });
         assert_eq!(name, Path::new("/d/report 2.pdf"));
+    }
+
+    /// Windows numbers a copy as Explorer does, as the owner decided: in brackets, from one,
+    /// so the second `report.pdf` is `report (1).pdf`.
+    #[test]
+    fn windows_numbers_a_copy_in_brackets_from_one() {
+        let on_windows = |suggested: &str, taken: &[&str]| {
+            destination(Os::Windows, Path::new("/d"), suggested, |candidate| {
+                taken
+                    .iter()
+                    .any(|name| Path::new("/d").join(name) == candidate)
+            })
+        };
+        assert_eq!(on_windows("report.pdf", &[]), Path::new("/d/report.pdf"));
+        assert_eq!(
+            on_windows("report.pdf", &["report.pdf"]),
+            Path::new("/d/report (1).pdf")
+        );
+        assert_eq!(
+            on_windows("report.pdf", &["report.pdf", "report (1).pdf"]),
+            Path::new("/d/report (2).pdf")
+        );
+        assert_eq!(on_windows("notes", &["notes"]), Path::new("/d/notes (1)"));
+        assert_eq!(on_windows("", &["Download"]), Path::new("/d/Download (1)"));
+    }
+
+    /// Windows takes names in any case for one file, so `Report.PDF` and `report.pdf` are one,
+    /// and a name in two Unicode forms for two, since it compares a name without normalising
+    /// it.
+    #[test]
+    fn windows_takes_names_in_any_case_for_one_and_in_two_forms_for_two() {
+        let same =
+            |one: &str, other: &str| same_file(Os::Windows, Path::new(one), Path::new(other));
+        assert!(same("/d/Report.PDF", "/d/report.pdf"));
+        assert!(same("/D//REPORT.pdf", "/d/report.pdf"));
+        assert!(!same(
+            "/d/B\u{e1}o c\u{e1}o.pdf",
+            "/d/Ba\u{301}o ca\u{301}o.pdf"
+        ));
+        assert!(!same("/d/report.pdf", "/d/report (1).pdf"));
+        let name = destination(Os::Windows, Path::new("/d"), "report.pdf", |candidate| {
+            same_file(Os::Windows, Path::new("/d/Report.PDF"), candidate)
+        });
+        assert_eq!(name, Path::new("/d/report (1).pdf"));
     }
 
     /// The export looks at the folder as well as the names reserved for downloads running.
@@ -262,18 +318,26 @@ mod tests {
         let decomposed = "Ba\u{301}o ca\u{301}o.pdf";
         let first = choose(precomposed, &[]);
         assert_eq!(first, at(precomposed));
+        // On Windows the other Unicode form is another name, so it is free (`same_file`).
+        let copy = |name: &str, of: &str| match OS {
+            Os::MacOs | Os::Linux => at(name),
+            Os::Windows => at(of),
+        };
         assert_eq!(
             choose(precomposed, &[&at(decomposed)]),
-            at("B\u{e1}o c\u{e1}o 2.pdf"),
+            copy("B\u{e1}o c\u{e1}o 2.pdf", precomposed),
             "reserved as Foundation gives its path"
         );
         assert_eq!(
             choose(precomposed, &[&first]),
-            at("B\u{e1}o c\u{e1}o 2.pdf")
+            match OS {
+                Os::MacOs | Os::Linux => at("B\u{e1}o c\u{e1}o 2.pdf"),
+                Os::Windows => at("B\u{e1}o c\u{e1}o (1).pdf"),
+            }
         );
         assert_eq!(
             choose(decomposed, &[&first]),
-            at("Ba\u{301}o ca\u{301}o 2.pdf")
+            copy("Ba\u{301}o ca\u{301}o 2.pdf", decomposed)
         );
         assert!(!folder.exists());
     }

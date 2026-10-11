@@ -13,9 +13,8 @@ guide; this file is what an agent needs before it touches anything.
 - Never run `claude`, `codex login`, `codex logout` or `claude auth login` against a real
   home: they replace or revoke the login stored there.
 - Never run a `pitboard` built from a branch, or the built app, against your real home.
-  Point `HOME`, `CODEX_HOME`, `CLAUDE_CONFIG_DIR` and `PITBOARD_CLAUDE_DESKTOP_DIR` at a
-  fresh directory first, and build before you set them, since Cargo and rustup read `HOME`
-  too.
+  Point `HOME`, `CODEX_HOME` and `CLAUDE_CONFIG_DIR` at a fresh directory first, and build
+  before you set them, since Cargo and rustup read `HOME` too.
 - Never write to `~/.claude`, `~/.claude.json`, `~/.codex` or `~/.pitboard` from a test
   or a script.
 - Never print a token. `pitboard doctor --json` hides them; raw files do not.
@@ -36,12 +35,34 @@ guide; this file is what an agent needs before it touches anything.
   the real home. Unregister it with `pluginkit -r` on each `PitboardShare.appex`, then
   `lsregister -u` on each `Pitboard.app`; [The app](CONTRIBUTING.md#the-app) has the
   commands.
-- Never move, write or delete anything in `~/Library/Application Support/Claude`, and never
-  write the `Claude Safe Storage` keychain item. Tests point `PITBOARD_CLAUDE_DESKTOP_DIR`
-  at a scratch directory and call `common::guard_not_live_dir` before the first write.
-- Never read `Claude Safe Storage` from a test or a script; tests stand in a scripted key
-  in its place.
-- Never start, quit or sign out of the Claude app from a test.
+
+### On Windows
+
+Pitboard for Windows is being built. [Windows](CONTRIBUTING.md#windows) says how to build
+and test it there.
+
+- Never write to, overwrite or delete a Credential Manager item that holds a real login:
+  `Claude Code-credentials` and every `Claude Code-credentials-<hash>`, each piece of them
+  included, Codex's `cli|*` and `secrets|*` targets, and anything under
+  `Codex MCP Credentials`. Never use `cmdkey /delete`, `vaultcmd` or PowerShell's credential
+  modules on those names. Tests write only `pitboard-citest-*` items or the slot hashed from
+  their own folder, `common::guard_not_live` refuses the rest by pattern, and CI lists those
+  names after each Windows run and fails on any left.
+- Never read, copy, rewrite or delete `%USERPROFILE%\.claude`, `%USERPROFILE%\.claude.json`,
+  `%USERPROFILE%\.codex`, `%ProgramData%\OpenAI\Codex`, `C:\Program Files\ClaudeCode`, or
+  the `%LOCALAPPDATA%\Pitboard` of an account that holds real logins.
+- Never run a `pitboard.exe` built from a branch on a Windows account that holds real
+  logins, and never put one on a `PATH`, in `%LOCALAPPDATA%\Programs`, in WinGet's Links or
+  behind a Scoop shim. A test or a script points `USERPROFILE`, `HOME`, `APPDATA`,
+  `LOCALAPPDATA`, an existing `CODEX_HOME`, `CLAUDE_CONFIG_DIR` and `PITBOARD_HOME` at fresh
+  folders, after building, since Cargo and rustup find their own homes through
+  `USERPROFILE`.
+- Never weaken or get around the release gate in a build anybody installs: no release,
+  script or package passes `--cfg pitboard_unreleased_windows`, `test-support` or
+  `fixture`. A Windows build of a 0.x release answers only `--version`, `--help`,
+  `completions` and `manpage`, and changes nothing.
+- Tests never touch Task Scheduler, the registry, the user `PATH` or DPAPI keys, and never
+  run elevated on a machine that holds logins.
 
 ## Check a change
 
@@ -52,10 +73,11 @@ cargo test --locked -- --skip writing_preserves_attributes
 cargo deny check
 ```
 
-For the app, build the core's bindings once, then run its unit tests:
+For the app, build the core's bindings once, with the fixtures its debug build, its UI tests
+and one of its unit tests launch into, then run its unit tests:
 
 ```sh
-./apps/macos/scripts/build-xcframework.sh
+./apps/macos/scripts/build-xcframework.sh --fixture
 swift test --package-path apps/macos
 ```
 

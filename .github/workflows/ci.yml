@@ -34,6 +34,8 @@ jobs:
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: cargo clippy --all-targets --locked
+      # The fixtures, which only a build with the feature compiles.
+      - run: cargo clippy -p pitboard-ffi --all-targets --locked --features fixture
 
   test:
     strategy:
@@ -47,10 +49,242 @@ jobs:
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: cargo test --locked -- --skip writing_preserves_attributes
+      # The fixtures, each a world on the real core, which only a build with the feature has.
+      - run: cargo test --locked -p pitboard-ffi --features fixture
       # Asserts a read-latency threshold that concurrent `security` calls can breach, so it
       # runs alone. It exists only on macOS.
       - if: runner.os == 'macOS'
         run: cargo test --locked -p pitboard --test keychain_write_is_harmless writing_preserves_attributes
+
+  # Windows, where the core compiles and refuses whatever is not built yet. Each image is
+  # named, never windows-latest, so a new image is a change made on purpose.
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            triple: x86_64-pc-windows-msvc
+            machine: AMD64
+          - os: windows-11-arm
+            triple: aarch64-pc-windows-msvc
+            machine: ARM64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    env:
+      # RUSTFLAGS replaces every target's own rustflags, so the static C runtime a Windows
+      # release is built with is named here. The cfg opens the build to Windows before Windows
+      # is released, for the lints and the tests (pitboard-core's release.rs); the gate is
+      # checked below on a build without it.
+      RUSTFLAGS: -D warnings -C target-feature=+crt-static --cfg pitboard_unreleased_windows
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # ring compiles its C with clang on ARM64 Windows, and nothing else, so the image's clang
+      # is said first.
+      - if: runner.arch == 'ARM64'
+        run: clang --version
+      - run: rustup toolchain install
+      # Every build below is for the machine Rust says it runs on, so that must be this leg's:
+      # an x64 Rust that an ARM64 image ran under emulation would build, check and test x64.
+      - name: Rust builds for this leg's machine
+        env:
+          TRIPLE: ${{ matrix.triple }}
+        run: |
+          host=$(rustc -vV | sed -n 's/^host: //p')
+          echo "Rust's host is $host"
+          test "$host" = "$TRIPLE"
+      # What the image is, for the record of each image's facts: its Windows build, Rust,
+      # LLVM and Visual Studio. Said, never relied on.
+      - name: This image
+        shell: pwsh
+        run: |
+          cmd /c ver
+          rustc -vV
+          Get-Command clang, llvm-readobj -ErrorAction SilentlyContinue | Select-Object Name, Source
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (Test-Path $vswhere) {
+            & $vswhere -latest -products * -property catalog_productDisplayVersion
+            & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.ARM64 -property installationPath
+          }
+          exit 0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      # What a release builds: no test-support and no cfg, so the release gate is closed. In a
+      # folder of its own, so the lints and tests below keep theirs.
+      - env:
+          RUSTFLAGS: -D warnings -C target-feature=+crt-static
+          CARGO_TARGET_DIR: target/gated
+        run: cargo build --locked -p pitboard
+      # That build is a program for this leg's machine, answers --version, holds its C runtime,
+      # and refuses every command with windows_not_released, leaving every folder it is
+      # pointed at empty. Its folders are set in this step alone, since Cargo and rustup find
+      # their own homes through USERPROFILE.
+      - name: A Windows build of a 0.x release changes nothing
+        shell: pwsh
+        env:
+          MACHINE: ${{ matrix.machine }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = (Resolve-Path 'target\gated\debug\pitboard.exe').Path
+          $readobj = Get-Command llvm-readobj -ErrorAction SilentlyContinue
+          $readobj = if ($readobj) { $readobj.Source } else { "$env:ProgramFiles\LLVM\bin\llvm-readobj.exe" }
+          $headers = & $readobj --file-headers $exe | Out-String
+          if ($headers -notmatch "Machine: IMAGE_FILE_MACHINE_$env:MACHINE\b") {
+            Write-Output $headers
+            throw "pitboard.exe is not a program for $env:MACHINE"
+          }
+          & $exe --version
+          if ($LASTEXITCODE -ne 0) { throw '--version did not answer' }
+          $imports = & $readobj --coff-imports $exe | Out-String
+          if ($imports -match '(?i)vcruntime|api-ms-win-crt') {
+            Write-Output $imports
+            throw 'pitboard.exe takes its C runtime from a DLL: it was built without +crt-static'
+          }
+          $root = Join-Path $env:RUNNER_TEMP 'release-gate'
+          $folders = 'USERPROFILE', 'HOME', 'APPDATA', 'LOCALAPPDATA', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'PITBOARD_HOME'
+          foreach ($folder in $folders) {
+            $path = Join-Path $root $folder
+            New-Item -ItemType Directory -Force -Path $path | Out-Null
+            Set-Item -Path "env:$folder" -Value $path
+          }
+          $commands = @(
+            @('status', '--json'),
+            @('use', 'x', '--json'),
+            @('renew', '--json'),
+            @('schedule', 'install', '--json')
+          )
+          foreach ($command in $commands) {
+            $printed = & $exe @command | Out-String
+            $exit = $LASTEXITCODE
+            $code = ($printed | ConvertFrom-Json).error.code
+            if ($exit -ne 1 -or $code -ne 'windows_not_released') {
+              throw "pitboard $($command -join ' ') exited $exit with $code`: $printed"
+            }
+          }
+          foreach ($folder in $folders) {
+            $left = @(Get-ChildItem -Force -Path (Join-Path $root $folder))
+            if ($left.Count -ne 0) { throw "$folder holds $($left.Name -join ', ')" }
+          }
+          # The runner ends a PowerShell step with the last program's exit code, which here is
+          # a refusal's.
+          exit 0
+      # Built first: every test step below lists Credential Manager with it for the leak check.
+      - run: cargo build --locked -p pitboard-probe
+      # Tests from here run as a fresh standard user: the job's user is elevated in every program.
+      # windows_refuses as it runs against a build that is not opened: every one of its
+      # changes and reads refuses with windows_not_released, and every folder stays empty.
+      - name: windows_refuses, not opened, as a standard user
+        shell: pwsh
+        env:
+          RUSTFLAGS: -D warnings -C target-feature=+crt-static
+          CARGO_TARGET_DIR: target/gated
+        run: >
+          ./.github/scripts/test-as-standard-user.ps1 -Cargo '--locked -p pitboard --test windows_refuses'
+          -Probe target/debug/pitboard-probe.exe
+      - run: cargo clippy --workspace --all-targets --locked
+      - run: cargo clippy -p pitboard-ffi --all-targets --locked --features fixture
+      # No filter and no --skip: a test that waits for a later pull request says so in its attribute.
+      - name: The workspace's tests, as a standard user
+        shell: pwsh
+        run: >
+          ./.github/scripts/test-as-standard-user.ps1 -Cargo '--locked --workspace'
+          -Probe target/debug/pitboard-probe.exe
+      - name: pitboard-ffi with its fixtures, as a standard user
+        shell: pwsh
+        run: >
+          ./.github/scripts/test-as-standard-user.ps1 -Cargo '--locked -p pitboard-ffi --features fixture'
+          -Probe target/debug/pitboard-probe.exe
+      # Runs the opened pitboard.exe the workspace's tests built.
+      - name: An opened build refuses a change as the elevated job user
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = (Resolve-Path 'target\debug\pitboard.exe').Path
+          $root = Join-Path $env:RUNNER_TEMP 'elevated-refusal'
+          $folders = 'USERPROFILE', 'HOME', 'APPDATA', 'LOCALAPPDATA', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'PITBOARD_HOME'
+          foreach ($folder in $folders) {
+            $path = Join-Path $root $folder
+            New-Item -ItemType Directory -Force -Path $path | Out-Null
+            Set-Item -Path "env:$folder" -Value $path
+          }
+          foreach ($command in @(@('use', 'x', '--json'), @('renew', '--json'))) {
+            $printed = & $exe @command | Out-String
+            $exit = $LASTEXITCODE
+            $refusal = ($printed | ConvertFrom-Json).error
+            if ($exit -ne 1 -or $refusal.code -ne 'elevated') {
+              throw "pitboard $($command -join ' ') exited $exit with $($refusal.code)`: $printed"
+            }
+            if ($refusal.message -notmatch 'as every program this Windows account starts does') {
+              throw "the job user's token is not split, so the refusal names every program: $($refusal.message)"
+            }
+            Write-Output "pitboard $($command -join ' '): $($refusal.message)"
+          }
+          foreach ($folder in $folders) {
+            $left = @(Get-ChildItem -Force -Path (Join-Path $root $folder))
+            if ($left.Count -ne 0) { throw "$folder holds $($left.Name -join ', ')" }
+          }
+          exit 0
+      # What the owner's VM session runs: the probe's four programs and the gated
+      # pitboard.exe a 0.x release is built as, which refuses everything. The VM fetches
+      # nothing itself, so the owner copies these in. Uploaded before the runner facts, so a
+      # runner-facts failure still leaves them.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: vm-session-${{ matrix.triple }}
+          path: |
+            target/debug/pitboard-probe.exe
+            target/debug/pitboard-probe-detached.exe
+            target/debug/pitboard-probe-detached-asmv1.exe
+            target/debug/pitboard-probe-sparse.exe
+            target/gated/debug/pitboard.exe
+          if-no-files-found: error
+          retention-days: 30
+      # The runner facts W12, W13, W16 and W17 are decided from, as the job's user on this
+      # disposable runner: the probe's safe blocks, the machine's policies, an exFAT and a
+      # FAT32 VHD made with diskpart, and a throwaway standard user started with
+      # Start-Process -Credential, with Developer Mode and then the symbolic-link right given
+      # for one run each. The script says what it changes and undoes it, and fails the step
+      # when a probe report is missing or cannot be parsed.
+      - name: Runner facts
+        shell: pwsh
+        env:
+          TRIPLE: ${{ matrix.triple }}
+        run: >
+          ./.github/scripts/runner-facts.ps1 -Probe target/debug/pitboard-probe.exe
+          -Triple $env:TRIPLE -Out (Join-Path $env:RUNNER_TEMP 'runner-facts.json')
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: runner-facts-${{ matrix.triple }}
+          path: ${{ runner.temp }}/runner-facts.json
+          if-no-files-found: warn
+
+  # The floor the manifests promise, on Windows. ring compiles C against the target's own
+  # headers, so a Windows check needs a Windows C toolchain: the MSVC this image has, never
+  # a cross-check from Linux.
+  windows-msrv:
+    runs-on: windows-2025
+    timeout-minutes: 60
+    env:
+      RUSTFLAGS: -D warnings -C target-feature=+crt-static --cfg pitboard_unreleased_windows
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: |
+          floor=$(sed -n '/^\[workspace.package\]/,/^\[/s/^rust-version = "\(.*\)"/\1/p' Cargo.toml)
+          rustup toolchain install "$floor" --profile minimal
+          echo "FLOOR=$floor" >> "$GITHUB_ENV"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - run: cargo "+$FLOOR" check --workspace --all-targets --locked
+      - run: cargo "+$FLOOR" check -p pitboard-ffi --all-targets --locked --features fixture
 
   apple:
     runs-on: macos-latest
@@ -83,6 +317,12 @@ jobs:
           "$helper" --version
           for arch in arm64 x86_64; do lipo "$helper" -verify_arch "$arch"; done
           codesign --verify --strict --deep apps/macos/build/Pitboard.app
+      # The core again, with its fixtures: the worlds the debug build and the UI tests
+      # launch into, and the one the package's tests start a model in, are Rust's, and only
+      # a library built so has them. Their bindings are the same either way. Only after the
+      # release is built and checked above, since this empties apps/macos/build, and
+      # build-app.sh never passes it.
+      - run: ./apps/macos/scripts/build-xcframework.sh --fixture
       - run: swift test --package-path apps/macos
       # The app driven the way a person drives it: the debug build, started by each test in
       # a fixture rather than on this runner's own accounts. A UI test needs Automation Mode,
@@ -138,6 +378,30 @@ jobs:
             --config crates/pitboard-ffi/uniffi.toml --no-format
           test -s apps/windows/Pitboard.Core/Generated/pitboard_ffi.cs
       # global.json, which pins the SDK and the test platform, is read from where dotnet runs.
+      # The test of a fixture's model is skipped here, against a library with no fixtures.
+      - working-directory: apps/windows
+        run: >
+          dotnet test --solution Pitboard.slnx
+          -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/release/libpitboard_ffi.so"
+      # The same library with its fixtures, which a debug build of either app launches into.
+      # Its bindings must be the very ones generated without them, which is what lets one
+      # set serve both, and the library without them must hold none of a fixture's text.
+      - run: |
+          if LC_ALL=C grep -a -q -e 'A Pitboard fixture page' -e 'dana@work.example' \
+            target/release/libpitboard_ffi.so; then
+            echo "a library built without the fixture feature holds a fixture" >&2
+            exit 1
+          fi
+          cargo build --locked --release -p pitboard-ffi --features fixture
+          mkdir -p "$RUNNER_TEMP/fixture-bindings"
+          cargo run --locked --release -p uniffi-bindgen-csharp -- \
+            --library target/release/libpitboard_ffi.a \
+            --out-dir "$RUNNER_TEMP/fixture-bindings" \
+            --config crates/pitboard-ffi/uniffi.toml --no-format
+          cmp apps/windows/Pitboard.Core/Generated/pitboard_ffi.cs \
+            "$RUNNER_TEMP/fixture-bindings/pitboard_ffi.cs"
+      # Here the fixture's model is started, and tells a listener written in C# of its
+      # accounts from a thread of its own.
       - working-directory: apps/windows
         run: >
           dotnet test --solution Pitboard.slnx
@@ -155,6 +419,8 @@ jobs:
           echo "FLOOR=$floor" >> "$GITHUB_ENV"
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: cargo "+$FLOOR" check --workspace --all-targets --locked
+      # The fixtures, which only a build with the feature compiles.
+      - run: cargo "+$FLOOR" check -p pitboard-ffi --all-targets --locked --features fixture
 
   semver:
     # What a published version promises, checked against the published version. It reports
@@ -167,7 +433,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2.87.20
+      - uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
         with:
           tool: cargo-semver-checks
       - run: cargo semver-checks --package pitboard-core

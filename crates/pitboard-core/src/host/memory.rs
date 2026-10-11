@@ -5,26 +5,25 @@
 //! no test ever ran Claude Code's own slot hashing on the sign-in path: the double answered
 //! the question the code was supposed to answer.
 
-use super::bundle::{self, Bundle, Listed};
-use super::{Host, Process, Scheduler};
+use super::{Administered, Elevation, Floor, Host, Process, Scheduler};
 use crate::context::Context;
-use crate::provider::desktop::types::CookieTable;
-use crate::store::memory::MemoryStore;
+use crate::service::Permit;
+use crate::store::memory::{Fault, MemoryStore};
 use crate::store::{Backend, Cost, Error, RawStore};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-/// The vault as one context opens it. A real keychain takes `PITBOARD_NO_ARGV` from the
-/// context it is opened with, so above its ceiling it writes on the argument line or
-/// refuses; this one does the same.
-struct Vault {
+/// The vault or the keychain as one context opens it. A real keychain takes
+/// `PITBOARD_NO_ARGV` from the context it is opened with, so above its ceiling it writes on
+/// the argument line or refuses; this one does the same.
+struct Opened {
     store: Arc<MemoryStore>,
     argument_line: bool,
 }
 
-impl RawStore for Vault {
+impl RawStore for Opened {
     fn kind(&self) -> Backend {
         RawStore::kind(&self.store)
     }
@@ -37,7 +36,7 @@ impl RawStore for Vault {
         RawStore::read(&self.store, service)
     }
 
-    fn write(&self, service: &str, contents: &str) -> Result<(), Error> {
+    fn write(&self, permit: Permit, service: &str, contents: &str) -> Result<(), Error> {
         if let Some(cost) = self.cost(service, contents)
             && cost.refused()
         {
@@ -46,11 +45,11 @@ impl RawStore for Vault {
                 cost.needs, cost.limit
             )));
         }
-        RawStore::write(&self.store, service, contents)
+        RawStore::write(&self.store, permit, service, contents)
     }
 
-    fn delete(&self, service: &str) -> Result<(), Error> {
-        RawStore::delete(&self.store, service)
+    fn delete(&self, permit: Permit, service: &str) -> Result<(), Error> {
+        RawStore::delete(&self.store, permit, service)
     }
 
     fn list(&self) -> Result<Option<Vec<String>>, Error> {
@@ -73,28 +72,27 @@ pub struct MemoryHost {
     vault: Arc<MemoryStore>,
     files: Mutex<HashMap<PathBuf, Arc<MemoryStore>>>,
     running: Mutex<HashMap<String, Vec<Process>>>,
-    /// What runs from inside a bundle, as `ps` would list it, every one started by launchd.
-    within: Mutex<Vec<Process>>,
-    /// Whether the process list cannot be read.
-    list_fails: AtomicBool,
-    /// Cookie jars, by the file they were planted on: its inode where it exists, so a jar
-    /// moved by rename is still the same jar, and its path where it does not.
-    cookies: Mutex<HashMap<JarKey, CookieTable>>,
-    /// How every jar's read fails, where a test says it does.
-    jar_fault: Mutex<Option<std::io::ErrorKind>>,
-    /// Devices a test says paths are on, where they are not on the real one.
-    devices: Mutex<HashMap<PathBuf, u64>>,
-    /// The version each app bundle a test put somewhere says it is.
-    versions: Mutex<HashMap<PathBuf, String>>,
+    /// Whether the process list cannot be read here, which is not the same as nothing
+    /// running.
+    listless: AtomicBool,
     /// Whether every home parks in `vault`, the way every home on macOS parks in the login
     /// keychain. So by default, because that is where the rules about another Pitboard's
     /// parks are needed.
     shared_vault: AtomicBool,
-    scheduler: Box<dyn Scheduler>,
+    /// This system's scheduler, writing in the test's own home, where Pitboard writes for one
+    /// on this system: none on Windows until W25.
+    scheduler: Option<Box<dyn Scheduler>>,
     /// Whether the scheduler refuses the next schedule it is asked to start.
     refuse_start: Arc<AtomicBool>,
     /// Whether this machine has no scheduler at all.
     unscheduled: AtomicBool,
+    /// Whether this process runs as the person, as this machine says it does.
+    elevation: Mutex<Elevation>,
+    floor: Mutex<Floor>,
+    /// The files only an administrator writes, by path, as a test said. Unset otherwise.
+    administered: Mutex<HashMap<PathBuf, Administered>>,
+    /// The managed preferences a profile forces, by domain and key, as a test said.
+    forced: Mutex<HashMap<(String, String), Administered>>,
 }
 
 impl Default for MemoryHost {
@@ -106,16 +104,15 @@ impl Default for MemoryHost {
             vault: MemoryStore::of(Backend::Keychain),
             files: Mutex::new(HashMap::new()),
             running: Mutex::new(HashMap::new()),
-            within: Mutex::new(Vec::new()),
-            list_fails: AtomicBool::new(false),
-            cookies: Mutex::new(HashMap::new()),
-            jar_fault: Mutex::new(None),
-            devices: Mutex::new(HashMap::new()),
-            versions: Mutex::new(HashMap::new()),
+            listless: AtomicBool::new(false),
             shared_vault: AtomicBool::new(true),
             scheduler: super::os::pretend_scheduler(Arc::clone(&refuse_start)),
             refuse_start,
             unscheduled: AtomicBool::new(false),
+            elevation: Mutex::new(Elevation::Normal),
+            floor: Mutex::new(Floor::Met),
+            administered: Mutex::new(HashMap::new()),
+            forced: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -146,6 +143,19 @@ impl MemoryHost {
         )
     }
 
+    /// Locks the keychain from now on, as a screen lock does on macOS, where Claude Code's
+    /// login and Pitboard's vault are items in the one login keychain.
+    pub fn lock_keychain(&self) {
+        self.keychain.fault_all(Fault::Locked);
+        self.vault.fault_all(Fault::Locked);
+    }
+
+    /// Unlocks what [`MemoryHost::lock_keychain`] locked.
+    pub fn unlock_keychain(&self) {
+        self.keychain.heal_all();
+        self.vault.heal_all();
+    }
+
     /// From now on the vault belongs to one home alone, the way Pitboard's vault of files
     /// does off macOS.
     pub fn vault_of_its_own(&self) {
@@ -173,68 +183,10 @@ impl MemoryHost {
             .insert(program.to_string(), processes);
     }
 
-    /// Say that a process is running from `path`, inside whatever bundle that is in, and
-    /// answer its pid. The first is 100, apart from the pids [`MemoryHost::runs_at`] gives.
-    pub fn runs_within(&self, path: &str) -> u32 {
-        let mut within = self
-            .within
-            .lock()
-            .expect("a poisoned test host is a failed test");
-        let pid = 100 + u32::try_from(within.len()).expect("a test runs few processes");
-        within.push(Process {
-            pid,
-            path: PathBuf::from(path),
-        });
-        pid
-    }
-
-    /// Everything [`MemoryHost::runs_within`] said was running has quit.
-    pub fn quits_within(&self) {
-        self.within
-            .lock()
-            .expect("a poisoned test host is a failed test")
-            .clear();
-    }
-
-    /// From now on every cookie jar there is fails to read this way, as a jar the app is
-    /// writing, or one `sqlite3` gave up waiting on, does.
-    pub fn jar_fails(&self, kind: std::io::ErrorKind) {
-        *self
-            .jar_fault
-            .lock()
-            .expect("a poisoned test host is a failed test") = Some(kind);
-    }
-
-    /// From now on the process list cannot be read.
-    pub fn process_list_fails(&self) {
-        self.list_fails.store(true, Ordering::SeqCst);
-    }
-
-    /// Say that the cookie database at `path` holds `table`. Planted on the file's inode
-    /// where it exists, so the jar travels with it when it is moved.
-    // `CookieTable` is the crate's own, so a test outside the crate cannot plant one.
-    #[allow(dead_code)]
-    pub(crate) fn plant_cookies(&self, path: &Path, table: CookieTable) {
-        self.cookies
-            .lock()
-            .expect("a poisoned test host is a failed test")
-            .insert(jar_key(path), table);
-    }
-
-    /// Say that `path` is on device `dev`.
-    pub fn device(&self, path: &Path, dev: u64) {
-        self.devices
-            .lock()
-            .expect("a poisoned test host is a failed test")
-            .insert(path.to_path_buf(), dev);
-    }
-
-    /// Say that the app bundle at `app` is version `version`.
-    pub fn bundle(&self, app: &Path, version: &str) {
-        self.versions
-            .lock()
-            .expect("a poisoned test host is a failed test")
-            .insert(app.to_path_buf(), version.to_string());
+    /// From now on the process list cannot be read here, as when the system refuses to say
+    /// what is running: nobody can tell whether anything runs a program, or what.
+    pub fn without_a_process_list(&self) {
+        self.listless.store(true, Ordering::SeqCst);
     }
 
     /// The next time a schedule is to be started, the system will not start it.
@@ -246,11 +198,61 @@ impl MemoryHost {
     pub fn without_a_scheduler(&self) {
         self.unscheduled.store(true, Ordering::SeqCst);
     }
+
+    /// From now on this machine says this process runs with `elevation`: as root, under
+    /// sudo, or with rights it cannot tell, on whatever system the tests run on. It runs as
+    /// the person until a test says otherwise.
+    pub fn runs_with(&self, elevation: Elevation) {
+        *self
+            .elevation
+            .lock()
+            .expect("a poisoned test host is a failed test") = elevation;
+    }
+
+    pub fn runs_on(&self, floor: Floor) {
+        *self
+            .floor
+            .lock()
+            .expect("a poisoned test host is a failed test") = floor;
+    }
+
+    /// Say an administrator wrote `contents` to the file at `path`, outside every home, such
+    /// as Codex's `/etc/codex/requirements.toml`. Nothing is written anywhere.
+    pub fn administers(&self, path: impl Into<PathBuf>, contents: &str) {
+        self.administer(path.into(), Administered::Set(contents.into()));
+    }
+
+    /// Say the file at `path` an administrator writes is there and cannot be read, `why`.
+    pub fn administers_unreadably(&self, path: impl Into<PathBuf>, why: &str) {
+        self.administer(path.into(), Administered::Unreadable(why.into()));
+    }
+
+    fn administer(&self, path: PathBuf, holds: Administered) {
+        self.administered
+            .lock()
+            .expect("a poisoned test host is a failed test")
+            .insert(path, holds);
+    }
+
+    /// Say an administrator's configuration profile forces `key` of `domain` to `value`, a
+    /// managed preference, on whatever system the tests run on.
+    pub fn forces(&self, domain: &str, key: &str, value: &str) {
+        self.forced
+            .lock()
+            .expect("a poisoned test host is a failed test")
+            .insert(
+                (domain.to_string(), key.to_string()),
+                Administered::Set(value.into()),
+            );
+    }
 }
 
 impl Host for MemoryHost {
-    fn foreign_secrets(&self, _ctx: &Context, _account: &str) -> Option<Box<dyn RawStore>> {
-        Some(Box::new(Arc::clone(&self.keychain)))
+    fn foreign_secrets(&self, ctx: &Context, _account: &str) -> Option<Box<dyn RawStore>> {
+        Some(Box::new(Opened {
+            store: Arc::clone(&self.keychain),
+            argument_line: ctx.argv_fallback(),
+        }))
     }
 
     fn file(&self, path: PathBuf) -> Box<dyn RawStore> {
@@ -258,7 +260,7 @@ impl Host for MemoryHost {
     }
 
     fn vault(&self, ctx: &Context) -> Box<dyn RawStore> {
-        Box::new(Vault {
+        Box::new(Opened {
             store: Arc::clone(&self.vault),
             argument_line: ctx.argv_fallback(),
         })
@@ -268,8 +270,12 @@ impl Host for MemoryHost {
         self.shared_vault.load(Ordering::SeqCst)
     }
 
-    /// What a test said is running, and nothing on the machine running the tests.
+    /// What a test said is running, and nothing on the machine running the tests. `None`
+    /// once a test has said the list cannot be read.
     fn processes(&self, program: &str) -> Option<Vec<Process>> {
+        if self.listless.load(Ordering::SeqCst) {
+            return None;
+        }
         Some(
             self.running
                 .lock()
@@ -280,111 +286,44 @@ impl Host for MemoryHost {
         )
     }
 
-    /// What a test said runs inside a bundle, by the rule the real list is read by, every
-    /// process started by launchd.
-    fn processes_within(&self, bundle: Bundle<'_>, excluded: &[&str]) -> Option<Vec<Process>> {
-        if self.list_fails.load(Ordering::SeqCst) {
-            return None;
-        }
-        let listed: Vec<Listed> = self
-            .within
+    fn scheduler(&self) -> Option<&dyn Scheduler> {
+        self.scheduler
+            .as_deref()
+            .filter(|_| !self.unscheduled.load(Ordering::SeqCst))
+    }
+
+    /// What a test said, and nothing about the process running the tests.
+    fn elevation(&self, _ctx: &Context) -> Elevation {
+        *self
+            .elevation
             .lock()
             .expect("a poisoned test host is a failed test")
-            .iter()
-            .map(|p| Listed {
-                pid: p.pid,
-                ppid: 1,
-                path: p.path.clone(),
-            })
-            .collect();
-        Some(bundle::within(&listed, bundle, excluded))
     }
 
-    /// Whether a test said the process runs, and nothing about the machine's own.
-    fn pid_alive(&self, pid: u32) -> bool {
-        self.program_of(pid).is_some()
-    }
-
-    /// What a test said process `pid` runs, and nothing about the machine's own.
-    fn program_of(&self, pid: u32) -> Option<PathBuf> {
-        let running = self
-            .running
+    fn floor(&self) -> Floor {
+        *self
+            .floor
             .lock()
             .expect("a poisoned test host is a failed test")
-            .values()
-            .flatten()
-            .find(|p| p.pid == pid)
-            .map(|p| p.path.clone());
-        running.or_else(|| {
-            self.within
-                .lock()
-                .expect("a poisoned test host is a failed test")
-                .iter()
-                .find(|p| p.pid == pid)
-                .map(|p| p.path.clone())
-        })
     }
 
-    /// Where a test said, or the real device.
-    fn device_of(&self, path: &Path) -> std::io::Result<u64> {
-        if let Some(dev) = self
-            .devices
+    /// What a test said an administrator wrote, and nothing on the machine running the tests.
+    fn administered_file(&self, path: &Path) -> Administered {
+        self.administered
             .lock()
             .expect("a poisoned test host is a failed test")
             .get(path)
-        {
-            return Ok(*dev);
-        }
-        super::fs::device(path)
+            .cloned()
+            .unwrap_or(Administered::Unset)
     }
 
-    /// The jar a test planted on the file. A file that is not there is not found, as
-    /// `sqlite3` would find it; one there with nothing planted cannot be read.
-    fn cookie_table(&self, path: &Path) -> std::io::Result<CookieTable> {
-        std::fs::symlink_metadata(path)?;
-        if let Some(kind) = *self
-            .jar_fault
+    /// What a test said a profile forces, on whatever system the tests run on.
+    fn managed_preference(&self, domain: &str, key: &str) -> Administered {
+        self.forced
             .lock()
             .expect("a poisoned test host is a failed test")
-        {
-            return Err(std::io::Error::new(kind, "a jar a test made fail"));
-        }
-        let cookies = self
-            .cookies
-            .lock()
-            .expect("a poisoned test host is a failed test");
-        cookies
-            .get(&jar_key(path))
-            .or_else(|| cookies.get(&JarKey::Path(path.to_path_buf())))
+            .get(&(domain.to_string(), key.to_string()))
             .cloned()
-            .ok_or_else(|| std::io::Error::other("nothing planted in this jar"))
-    }
-
-    /// The version a test said the bundle is. No bundle is read here.
-    fn bundle_version(&self, app: &Path) -> Option<String> {
-        self.versions
-            .lock()
-            .expect("a poisoned test host is a failed test")
-            .get(app)
-            .cloned()
-    }
-
-    fn scheduler(&self) -> Option<&dyn Scheduler> {
-        (!self.unscheduled.load(Ordering::SeqCst)).then_some(self.scheduler.as_ref())
-    }
-}
-
-/// Which jar a cookie database is: its inode where the file exists.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-enum JarKey {
-    Inode(u64, u64),
-    Path(PathBuf),
-}
-
-fn jar_key(path: &Path) -> JarKey {
-    use std::os::unix::fs::MetadataExt;
-    match std::fs::metadata(path) {
-        Ok(found) => JarKey::Inode(found.dev(), found.ino()),
-        Err(_) => JarKey::Path(path.to_path_buf()),
+            .unwrap_or(Administered::Unset)
     }
 }

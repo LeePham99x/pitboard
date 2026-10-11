@@ -7,6 +7,9 @@ use crate::provider::claude::slot;
 use serde_json::Value;
 use std::path::PathBuf;
 
+/// `CLAUDE_CONFIG_DIR ?? ~/.claude`, as Claude Code 2.1.289 reads it: set, even empty, it
+/// is the directory, so an empty one is the empty path, which is refused before anything
+/// is read under it ([`crate::home::check_absolute`]).
 pub fn config_dir(ctx: &Context) -> PathBuf {
     ctx.claude_config_dir
         .as_ref()
@@ -15,16 +18,17 @@ pub fn config_dir(ctx: &Context) -> PathBuf {
 }
 
 /// A legacy `<config dir>/.config.json` wins when present; otherwise
-/// `<$CLAUDE_CONFIG_DIR or $HOME>/.claude.json`. The differing base is Claude Code's.
+/// `<$CLAUDE_CONFIG_DIR || $HOME>/.claude.json`, where an empty `CLAUDE_CONFIG_DIR` is the
+/// home. The differing base, and the differing reading of empty, are Claude Code's.
 pub fn config_file(ctx: &Context) -> PathBuf {
     let legacy = config_dir(ctx).join(".config.json");
     if legacy.is_file() {
         return legacy;
     }
     ctx.claude_config_dir
-        .as_ref()
-        .map(PathBuf::from)
-        .unwrap_or_else(|| ctx.home.clone())
+        .as_deref()
+        .filter(|dir| !dir.is_empty())
+        .map_or_else(|| ctx.home.clone(), PathBuf::from)
         .join(".claude.json")
 }
 
@@ -97,6 +101,20 @@ pub fn storage_dir(ctx: &Context) -> String {
     )
 }
 
+/// What the lock a token refresh of the login takes first guards, as [`crate::lock::acquire`]
+/// takes it: `.oauth_refresh` in the storage directory, locked as `.oauth_refresh.lock`
+/// (the register's `refresh_lock`).
+pub fn refresh_lock(ctx: &Context) -> PathBuf {
+    PathBuf::from(storage_dir(ctx)).join(".oauth_refresh")
+}
+
+/// What the legacy lock a token refresh takes second guards: the storage directory itself,
+/// its links resolved where it is there, locked beside it.
+pub fn legacy_refresh_lock(ctx: &Context) -> PathBuf {
+    let dir = PathBuf::from(storage_dir(ctx));
+    std::fs::canonicalize(&dir).unwrap_or(dir)
+}
+
 fn storage_dir_from(secure: Option<&str>, home: &std::path::Path, config_dir: &str) -> String {
     use unicode_normalization::UnicodeNormalization;
     match secure {
@@ -107,7 +125,9 @@ fn storage_dir_from(secure: Option<&str>, home: &std::path::Path, config_dir: &s
 }
 
 /// Whether this process reads the unsuffixed slot. An empty
-/// `CLAUDE_SECURESTORAGE_CONFIG_DIR` pins it even when `CLAUDE_CONFIG_DIR` is set.
+/// `CLAUDE_SECURESTORAGE_CONFIG_DIR` pins it even when `CLAUDE_CONFIG_DIR` is set, and
+/// without one, an empty `CLAUDE_CONFIG_DIR` names it, since Claude Code tests
+/// `!CLAUDE_CONFIG_DIR`.
 pub fn is_default_slot(ctx: &Context) -> bool {
     is_default_slot_from(
         ctx.secure_storage_dir.as_deref(),
@@ -118,7 +138,7 @@ pub fn is_default_slot(ctx: &Context) -> bool {
 fn is_default_slot_from(secure: Option<&str>, config_dir: Option<&str>) -> bool {
     match secure {
         Some(v) => v.is_empty(),
-        None => config_dir.is_none(),
+        None => config_dir.is_none_or(str::is_empty),
     }
 }
 
@@ -146,8 +166,9 @@ pub fn load_config(ctx: &Context) -> Result<Value> {
     serde_json::from_str(&raw).map_err(|source| Error::ClaudeConfigNotJson { path, source })
 }
 
-/// Who Claude Code's config says is signed in. A cache, refreshed about once a day, so it
-/// can disagree with the credential; ask `api::owner` when it matters.
+/// The account Claude Code's config names, which can be another than the login stored's: a
+/// Claude Code process started or signed in on another login can write its own there (the
+/// register's `config_identity_is_the_last_writers`). Only Anthropic says whose a login is.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Identity {
     pub email: String,
@@ -180,6 +201,7 @@ mod tests {
     /// A bare name is looked up the way a shell looks it up, so Pitboard and the person's
     /// own shell disagree about whether Claude Code is installed only if PATH differs.
     #[test]
+    #[cfg_attr(windows, ignore = "W17: finding programs on Windows")]
     fn a_program_is_found_on_path_and_a_missing_one_is_not() {
         let ctx = Context::new(std::path::PathBuf::from("/home/x"));
         let found = program(&ctx.clone().with_claude_program("ls".into()))
@@ -206,12 +228,33 @@ mod tests {
         assert!(!is_default_slot_from(None, Some("/cfg")));
         assert!(is_default_slot_from(Some(""), Some("/cfg")));
         assert!(!is_default_slot_from(Some("/elsewhere"), None));
+        assert!(
+            is_default_slot_from(None, Some("")),
+            "Claude Code tests !CLAUDE_CONFIG_DIR"
+        );
+    }
+
+    /// Claude Code 2.1.289 reads `CLAUDE_CONFIG_DIR` two ways: `??` for its config dir, so
+    /// an empty one is the empty path, and `||` for its config file's base, so an empty one
+    /// is the home. Both are read here as it reads them, though a context holding an empty
+    /// one is refused before either is used.
+    #[test]
+    fn an_empty_config_dir_is_read_as_claude_code_reads_it() {
+        let ctx = Context::new(std::path::PathBuf::from("/nowhere/home"))
+            .with_claude_config_dir(String::new());
+        assert_eq!(config_dir(&ctx), std::path::PathBuf::new());
+        assert_eq!(
+            config_file(&ctx),
+            std::path::Path::new("/nowhere/home/.claude.json")
+        );
+        assert!(is_default_slot(&ctx));
     }
 
     /// Claude Code: `if (n !== undefined) return (n || join(homedir(), ".claude"))`. The
     /// empty string would make every credential and lock path relative to the working
     /// directory.
     #[test]
+    #[cfg_attr(windows, ignore = "W22: Claude Code's storage folder on Windows")]
     fn an_empty_storage_dir_means_the_default_directory_not_the_current_one() {
         let home = std::path::Path::new("/home/x");
         assert_eq!(storage_dir_from(Some(""), home, "/cfg"), "/home/x/.claude");

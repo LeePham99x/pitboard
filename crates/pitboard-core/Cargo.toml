@@ -26,12 +26,25 @@ unicode-normalization.workspace = true
 machine-uid.workspace = true
 ureq.workspace = true
 rustls.workspace = true
-ring.workspace = true
-aes.workspace = true
-zeroize.workspace = true
+toml.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation.workspace = true
+core-foundation-sys.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = [
+    "Wdk_System_SystemServices",
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Com",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+    "Win32_UI_Shell",
+] }
 
 [lints]
 workspace = true

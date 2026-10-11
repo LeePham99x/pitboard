@@ -9,10 +9,11 @@ members = [
     "crates/uniffi-bindgen-swift",
     "crates/uniffi-bindgen-csharp",
     "crates/pitboard-conformance",
+    "crates/pitboard-probe",
 ]
 
 [workspace.package]
-version = "0.7.0"
+version = "0.11.0"
 edition = "2024"
 rust-version = "1.91"
 license = "Apache-2.0"
@@ -20,7 +21,7 @@ repository = "https://github.com/datlechin/pitboard"
 homepage = "https://usepitboard.com"
 
 [workspace.dependencies]
-pitboard-core = { path = "crates/pitboard-core", version = "=0.7.0" }
+pitboard-core = { path = "crates/pitboard-core", version = "=0.11.0" }
 pitboard-sites = { path = "crates/pitboard-sites" }
 anstream = "1"
 anstyle = "1"
@@ -41,28 +42,42 @@ serde_json = { version = "1", features = ["preserve_order"] }
 sha1 = { version = "0.11", default-features = false }
 sha2 = "0.11"
 thiserror = "2"
+# Codex's configuration, read as Codex 0.160.0 reads it. The parser alone: Pitboard never
+# writes TOML, so neither the writer nor the order a table was written in is wanted.
+toml = { version = "0.9.12", default-features = false, features = ["std", "parse", "serde"] }
+# macOS's forced managed preferences, which Codex reads the same way, through the bindings
+# Codex itself uses.
+core-foundation = "0.10.1"
+core-foundation-sys = "0.8.7"
 unicode-normalization = "0.1"
+# Characters as a person counts them, as Swift counts a String's, for the menu bar's cut of a
+# long label.
+unicode-segmentation = "1.13"
 # Columns are counted in what a terminal shows, not in characters: a CJK label is two
 # columns wide per character and would push everything after it out of line.
 unicode-width = "0.2"
-# The generator must be this exact version too: bindings check method checksums at load time.
+windows-sys = "0.61"
+# Both generators must match this exact version, since bindings check method checksums at load
+# time. The Swift one is built from it. The C# one, uniffi-bindgen-cs, is released for one
+# UniFFI version at a time (v0.11.0+v0.31.0 reads 0.31), so this moves only with a release of
+# it for the new version; Dependabot leaves it alone.
 uniffi = "=0.31.2"
 # TLS: rustls for the protocol, the operating system for deciding which certificates to
 # trust. No bundled root store, so a corporate or system trust setting is honoured.
+# No socks-proxy: its connector in 3.4.2 waits past the time limit and looks the proxy up
+# before NO_PROXY, so Pitboard refuses SOCKS proxies (pitboard-core's proxy::Refusal).
 ureq = { version = "3", default-features = false, features = ["rustls-no-provider", "platform-verifier"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 # IDNA, for a host that is not plain ASCII. pitboard-sites splits a link itself, as
 # Foundation does, since the WHATWG standard url follows reads some links otherwise.
 url = "2.5"
-# Claude Desktop's cookies, decrypted only for live usage a person turned on. ring is
-# already here for TLS and gives PBKDF2; AES-128 itself is the RustCrypto block cipher,
-# with CBC written out beside it. zeroize wipes the key and the session once read.
-ring = { version = "0.17", default-features = false }
-aes = { version = "0.8", features = ["zeroize"] }
-zeroize = "1"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
+# `--cfg pitboard_unreleased_windows`, set in RUSTFLAGS, opens a Windows build before Windows
+# is released: CI's Windows jobs and a person working on Pitboard there set it. Never a
+# feature, which crates.io would offer to anybody (pitboard-core's release.rs says why).
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(pitboard_unreleased_windows)"] }
 
 [workspace.lints.clippy]
 undocumented_unsafe_blocks = "warn"

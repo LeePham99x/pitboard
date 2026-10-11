@@ -1,7 +1,6 @@
 # Pitboard
 
-Switch between your own Claude Code, Codex and Claude Desktop logins, and see how much each
-one has left.
+Switch between your own Claude Code and Codex logins, and see how much each one has left.
 
 [![CI](https://github.com/datlechin/pitboard/actions/workflows/ci.yml/badge.svg)](https://github.com/datlechin/pitboard/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/pitboard.svg)](https://crates.io/crates/pitboard)
@@ -18,26 +17,18 @@ each account you are not using, called a parked login. A switch puts the chosen 
 parked login where the tool reads it.
 
 Only the account changes: your history, sessions, settings and projects stay where they are.
-A Claude Code session that is already open picks up a switch within about 33 seconds. A
-running `codex` keeps the old account until you restart it.
+A Claude Code session that is already open picks up a switch within about 33 seconds, or,
+while `~/.claude/.credentials.json` sits behind the keychain on macOS, when its login is next
+renewed. A running `codex` keeps the old account until you restart it.
 
 The menu bar app also gives each account its own
 [window on claude.ai or chatgpt.com](https://docs.usepitboard.com/guides/account-windows),
 signed in separately. It opens a page from your browser's Share menu as the account you
 choose.
 
-On macOS, Pitboard also switches Claude Desktop, Anthropic's app. Its login is a set of
-files in Claude's data folder, so a switch moves those files into a park while Claude is
-closed, and leaves the rest of the folder alone. The menu bar app quits Claude for a switch
-and opens it again. Pitboard is not affiliated with Anthropic, and Claude Desktop does not
-document any of this. Pitboard's facts about it were read from a named version of the app
-and measured on it, and the four not yet measured, such as whether a session's expiry moves
-while it is used, are marked as such.
-
 Pitboard sends a login only to the service that issued it: Anthropic for Claude Code, OpenAI
-for Codex, and claude.ai for Claude Desktop's live usage, which is off until you turn it on.
-It has no server of its own and no telemetry, and parked logins stay on your computer. For
-every request, including the app's update check on GitHub, see
+for Codex. It has no server of its own and no telemetry, and parked logins stay on your
+computer. For every request, including the app's update check on GitHub, see
 [What leaves your machine](https://docs.usepitboard.com/security#what-leaves-your-machine).
 
 Pitboard is pre-release. macOS is tested. On Linux, Pitboard builds and its tests pass, but
@@ -82,40 +73,22 @@ pitboard                        # what each account has left
 pitboard use work               # switch Claude Code to work
 ```
 
-Before the switch, `pitboard` shows each account and what it has left. Once Pitboard has
-read an account a few times, a last line under it says how long the account lasts:
+Before the switch, `pitboard` shows each account and what it has left. Each limit says how
+its use compares with an even pace, and the account in use says which limit runs out first:
 
 ```text
-● personal  me@example.com  signed in
-    5h    ██████░░░░   59%  resets in 1h 10m
-    week  ███████░░░   73%  resets in 5d 18h
-          about 48m left at this rate
+● personal  me@example.com  Max 20x  signed in
+    5h    ██████░│░░   59%  resets in 1h 10m  18% under pace
+    week  █│█████░░░   73%  resets in 5d 18h  55% over pace
+          weekly limit runs out in 11h 05m at this pace
 
-○ work      me@company.com  ready · good for 26d 4h
-    5h    █░░░░░░░░░   12%  resets in 3h 02m
-    week  ████░░░░░░   40%  resets in 2d 4h
-          resets in 3h 02m
+○ work      me@company.com  Team 5x  ready · good for 26d 4h
+    5h    █░░│░░░░░░   12%  resets in 3h 02m  27% under pace
+    week  ████░░│░░░   40%  resets in 2d 4h   29% under pace
 ```
 
 For Codex, put `codex/` before each label: `pitboard enroll codex/personal`,
 `pitboard enroll codex/work --sign-in`, `pitboard use codex/work`.
-
-For Claude Desktop, quit Claude first, then put `desktop/` before each label. To add a
-second account, park the first and leave Claude signed out, sign in to the other account in
-Claude, quit it, and enrol that one:
-
-```sh
-pitboard enroll desktop/personal  # the account Claude Desktop is signed in to
-pitboard use desktop --signed-out # park it, and leave Claude signed out
-pitboard enroll desktop/work      # after you sign in to work in Claude and quit it
-pitboard use desktop/personal     # switch Claude Desktop back to personal
-```
-
-Never use Log out in Claude Desktop to switch or to add an account. It ends that session at
-claude.ai, and Pitboard cannot bring it back; `pitboard use desktop --signed-out` parks the
-login instead.
-[Use Pitboard with Claude Desktop](https://docs.usepitboard.com/guides/claude-desktop) has
-each step, and what a parked Claude Desktop login cannot do.
 
 Do not add an account with Claude Code's `/login` or with `codex login`. Both replace the
 login in use without Pitboard parking it, so the account that was in use needs a browser
@@ -132,7 +105,6 @@ includes these pages:
 
 - [Quickstart](https://docs.usepitboard.com/quickstart)
 - [Use Pitboard with Codex](https://docs.usepitboard.com/guides/codex)
-- [Use Pitboard with Claude Desktop](https://docs.usepitboard.com/guides/claude-desktop)
 - [Show usage in Claude Code's status line](https://docs.usepitboard.com/guides/status-line)
 - [Commands](https://docs.usepitboard.com/reference/commands)
 - [JSON output](https://docs.usepitboard.com/reference/json-output)

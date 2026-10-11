@@ -1,17 +1,16 @@
-//! What each Claude Code session passed its status line at its last run, and which account
-//! Claude Code's config named then.
+//! What each Claude Code session passed its status line at its last run.
 //!
-//! A session's numbers do not say whose they are. Claude Code passes the limits of its last
-//! response every time the status line runs, and a session left idle passes the same ones
-//! for as long as it stays open, whichever account the config has named since. A change is
-//! what says something: numbers that moved between two runs of one session came with a
+//! Claude Code passes the limits of a session's last response every time the status line
+//! runs, and a session left idle passes the same ones for as long as it stays open. A change
+//! is what says something: numbers that moved between two runs of one session came with a
 //! response it got in between. So the status line keeps what each session passed last time,
-//! and the account named then, to compare its next run with.
+//! to compare its next run with.
 //!
-//! Nothing here is secret: session and account identifiers, shares and times. A session not
-//! seen for a week is dropped.
+//! Nothing here is secret: session identifiers, shares and times. A session not seen for a
+//! week is dropped.
 
 use crate::context::Context;
+use crate::service::Permit;
 use crate::{atomic, home};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -35,8 +34,6 @@ pub(crate) struct Limit {
 /// What one run of a session's status line was given.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Run {
-    /// The account Claude Code's config named, if it named one.
-    pub account: Option<String>,
     /// Each limit the session passed, by the name Claude Code gives it.
     pub limits: BTreeMap<String, Limit>,
 }
@@ -60,6 +57,13 @@ fn load(ctx: &Context) -> HashMap<String, Seen> {
         .unwrap_or_default()
 }
 
+/// Session `id`'s last run as recorded, or `None` when this session has not been seen
+/// before, for a status line that may record nothing: what [`exchange`] would return, with
+/// nothing written.
+pub(crate) fn last(ctx: &Context, id: &str) -> Option<Run> {
+    load(ctx).remove(id).map(|seen| seen.run)
+}
+
 /// Records `run` as session `id`'s latest and returns its run before this one, or `None`
 /// when this session has not been seen before.
 ///
@@ -67,7 +71,7 @@ fn load(ctx: &Context) -> HashMap<String, Seen> {
 /// once the lock is held, so two sessions running at once cannot each write back the
 /// other's older copy. A run that cannot be written is still compared, with nothing before
 /// it.
-pub(crate) fn exchange(ctx: &Context, id: &str, run: &Run) -> Option<Run> {
+pub(crate) fn exchange(ctx: &Context, permit: Permit, id: &str, run: &Run) -> Option<Run> {
     let now = ctx.now();
     if let Some(seen) = load(ctx).remove(id)
         && seen.run == *run
@@ -75,7 +79,7 @@ pub(crate) fn exchange(ctx: &Context, id: &str, run: &Run) -> Option<Run> {
     {
         return Some(seen.run);
     }
-    let _held = crate::readings::exclusive(ctx)?;
+    let _held = crate::readings::exclusive(ctx, permit)?;
     let mut all = load(ctx);
     let before = all.remove(id).map(|seen| seen.run);
     all.retain(|_, seen| now - seen.seen_at < FORGET_AFTER);
@@ -87,7 +91,7 @@ pub(crate) fn exchange(ctx: &Context, id: &str, run: &Run) -> Option<Run> {
         },
     );
     if let Ok(body) = serde_json::to_string(&all) {
-        let _ = atomic::write(&path(ctx), body.as_bytes(), atomic::Perms::Secret);
+        let _ = atomic::write(permit, &path(ctx), body.as_bytes(), atomic::Perms::Secret);
     }
     before
 }
@@ -115,7 +119,7 @@ mod tests {
         ));
         let _ = std::fs::remove_dir_all(&root);
         let ctx = Context::new(root.clone()).with_pitboard_home(root.clone());
-        home::ensure(&ctx).expect("a home");
+        home::ensure(&ctx, Permit::for_a_test()).expect("a home");
         (ctx, Scratch(root))
     }
 
@@ -124,9 +128,8 @@ mod tests {
             .with_clock(Arc::new(FixedClock::at(now)) as Arc<dyn Clock>)
     }
 
-    fn run(account: &str, used_percentage: f64) -> Run {
+    fn run(used_percentage: f64) -> Run {
         Run {
-            account: Some(account.into()),
             limits: BTreeMap::from([(
                 "five_hour".to_string(),
                 Limit {
@@ -138,35 +141,76 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn a_session_gets_back_what_it_passed_the_run_before() {
         let (ctx, _scratch) = machine("exchange");
         let ctx = at(&ctx, NOW);
-        assert_eq!(exchange(&ctx, "pane", &run("work", 20.0)), None);
         assert_eq!(
-            exchange(&ctx, "pane", &run("work", 22.0)),
-            Some(run("work", 20.0))
+            exchange(&ctx, Permit::for_a_test(), "pane", &run(20.0)),
+            None
         );
         assert_eq!(
-            exchange(&ctx, "other", &run("personal", 5.0)),
+            exchange(&ctx, Permit::for_a_test(), "pane", &run(22.0)),
+            Some(run(20.0))
+        );
+        assert_eq!(
+            exchange(&ctx, Permit::for_a_test(), "other", &run(5.0)),
             None,
             "each session its own"
         );
         assert_eq!(
-            exchange(&ctx, "pane", &run("work", 22.0)),
-            Some(run("work", 22.0))
+            exchange(&ctx, Permit::for_a_test(), "pane", &run(22.0)),
+            Some(run(22.0))
+        );
+    }
+
+    /// Pitboard 0.9.0 kept the account Claude Code's config named beside each session's
+    /// limits. A session it kept is still compared with, the account left out.
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
+    fn a_session_an_earlier_pitboard_kept_is_still_compared_with() {
+        let (ctx, _scratch) = machine("earlier");
+        std::fs::write(
+            path(&ctx),
+            serde_json::json!({"pane": {
+                "account": "work-uuid",
+                "limits": {"five_hour": {"used_percentage": 20.0, "resets_at": NOW + 3_600}},
+                "seen_at": NOW,
+            }})
+            .to_string(),
+        )
+        .unwrap();
+        assert_eq!(
+            exchange(&at(&ctx, NOW), Permit::for_a_test(), "pane", &run(22.0)),
+            Some(run(20.0))
         );
     }
 
     /// A status line can run every second in every open session, and what it passes is
     /// mostly what it passed the time before.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn a_run_that_changes_nothing_leaves_the_file_alone() {
         let (ctx, _scratch) = machine("unchanged");
-        exchange(&at(&ctx, NOW), "pane", &run("work", 20.0));
+        exchange(&at(&ctx, NOW), Permit::for_a_test(), "pane", &run(20.0));
         let written = std::fs::read_to_string(path(&ctx)).unwrap();
         std::fs::write(path(&ctx), format!("{written} ")).unwrap();
 
-        exchange(&at(&ctx, NOW + 3_600), "pane", &run("work", 20.0));
+        exchange(
+            &at(&ctx, NOW + 3_600),
+            Permit::for_a_test(),
+            "pane",
+            &run(20.0),
+        );
         assert_eq!(
             std::fs::read_to_string(path(&ctx)).unwrap(),
             format!("{written} ")
@@ -176,12 +220,21 @@ mod tests {
     /// A session still open is seen again once a day, and one nobody has run for a week goes
     /// when anything is next written.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn a_session_not_seen_for_a_week_is_dropped() {
         let (ctx, _scratch) = machine("pruned");
-        exchange(&at(&ctx, NOW), "gone", &run("work", 20.0));
-        exchange(&at(&ctx, NOW), "open", &run("work", 30.0));
+        exchange(&at(&ctx, NOW), Permit::for_a_test(), "gone", &run(20.0));
+        exchange(&at(&ctx, NOW), Permit::for_a_test(), "open", &run(30.0));
         for day in 1..=7 {
-            exchange(&at(&ctx, NOW + day * 86_400), "open", &run("work", 30.0));
+            exchange(
+                &at(&ctx, NOW + day * 86_400),
+                Permit::for_a_test(),
+                "open",
+                &run(30.0),
+            );
         }
         let kept: Vec<String> = load(&ctx).into_keys().collect();
         assert_eq!(kept, ["open"]);

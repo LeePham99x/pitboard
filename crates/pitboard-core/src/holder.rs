@@ -12,7 +12,7 @@
 //! with one that is anywhere, so every process is one kind and none is guessed to be an app.
 
 use crate::context::Context;
-use crate::host::Process;
+use crate::host::{OS, Process};
 use std::path::Path;
 
 /// One kind of process that holds a tool's login.
@@ -58,16 +58,54 @@ pub enum Location {
 pub enum Remedy {
     /// Quit it and start it again.
     Restart,
-    /// Quit the app the way Command-Q does, and open it again. Closing its windows is not
-    /// enough. The menu bar app can do both for the person; the command line only says so.
+    /// Quit the app the way its system quits an app, and open it again. Closing its windows
+    /// is not enough. The menu bar app can do both for the person; the command line only
+    /// says so.
     ReopenApp {
-        bundle_id: &'static str,
+        /// The app, as its own system names it.
+        app: AppId,
+        /// The app as a person knows it: "ChatGPT".
         name: &'static str,
     },
     /// Run this command.
     Run(&'static str),
     /// Do this, somewhere Pitboard cannot reach.
     Do(&'static str),
+}
+
+/// An app, by the id its own system knows it by, which is what Pitboard asks that system to
+/// quit it and open it again with.
+///
+/// Which system's id is part of the id, rather than chosen by the system Pitboard runs on.
+/// An app is told apart by where its program runs from, and that place is its own system's:
+/// a program inside a Mac app's bundle runs only on a Mac. So an app found running is always
+/// named by the id of the system it was found on, and a test whose machine runs a Mac app's
+/// program has that Mac app, on whatever system the test runs.
+///
+/// Another system's kind of id is another variant, so a match outside this crate keeps an
+/// arm for the ones to come, and [`AppId::as_str`] is what an app is handed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum AppId {
+    /// A Mac app's bundle identifier, such as `com.openai.codex`.
+    MacBundle(&'static str),
+}
+
+impl AppId {
+    /// The id as its system writes it, which is what an app hands its system.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AppId::MacBundle(id) => id,
+        }
+    }
+
+    /// What makes the app `name` let go of a login, as a clause, said its own system's way.
+    /// On a Mac that is Command-Q: an app stays open after its last window closes.
+    fn reopen(self, name: &str) -> String {
+        match self {
+            AppId::MacBundle(_) => format!("quit {name} with Command-Q and open it again"),
+        }
+    }
 }
 
 /// The processes of one kind of holder that are running.
@@ -80,15 +118,24 @@ pub struct Holding {
 
 impl Location {
     /// Whether a program at `path` runs from here. Only the directories it is in are
-    /// looked at, never the program's own name.
+    /// looked at, never the program's own name. A directory's name is compared the way this
+    /// system compares paths ([`crate::host::Os::same_path`]), and a prefix as that many of
+    /// its first characters.
     fn holds(self, path: &Path) -> bool {
         let mut directories = path.ancestors().skip(1).filter_map(Path::file_name);
         match self {
             Location::Anywhere => true,
-            Location::Within(name) => directories.any(|dir| dir == name),
-            Location::WithinPrefixed(prefix) => {
-                directories.any(|dir| dir.to_string_lossy().starts_with(prefix))
+            Location::Within(name) => {
+                directories.any(|dir| OS.same_path(Path::new(dir), Path::new(name)))
             }
+            Location::WithinPrefixed(prefix) => directories.any(|dir| {
+                let head: String = dir
+                    .to_string_lossy()
+                    .chars()
+                    .take(prefix.chars().count())
+                    .collect();
+                OS.same_path(Path::new(&head), Path::new(prefix))
+            }),
         }
     }
 }
@@ -122,70 +169,6 @@ pub(crate) fn find(ctx: &Context, program: &str, holders: &[Holder]) -> Option<V
     ctx.host()
         .processes(program)
         .map(|processes| classify(&processes, holders))
-}
-
-/// What is running from inside a tree login's bundle, by kind. `None` where the process
-/// list could not be read, which a caller about to move the login counts as running.
-pub(crate) fn find_within(
-    ctx: &Context,
-    tree: &dyn crate::provider::TreeLogin,
-) -> Option<Vec<Holding>> {
-    ctx.host()
-        .processes_within(tree.bundle(ctx), tree.excluded())
-        .map(|processes| classify(&processes, tree.holders()))
-}
-
-/// The live process a tree login's lock in `root` names, if it has one and that process is
-/// running the app's program. A lock Pitboard cannot read is an error, never "nobody". No
-/// lock is `None`, which says nothing: Claude Desktop 2.19675.0 keeps no `SingletonLock`
-/// (experiment E14), so for it the process list is the only sign the app is open.
-///
-/// An app that crashed leaves its lock behind, and the system can give its pid to anything
-/// after, so a process running another program does not hold the lock. One whose program
-/// cannot be told is counted, since it may.
-pub(crate) fn lock_holder(
-    ctx: &Context,
-    tree: &dyn crate::provider::TreeLogin,
-    root: &Path,
-) -> std::io::Result<Option<u32>> {
-    let Some(lock) = tree.singleton_lock() else {
-        return Ok(None);
-    };
-    let Some(pid) = singleton_pid(&root.join(lock))?.filter(|&pid| ctx.host().pid_alive(pid))
-    else {
-        return Ok(None);
-    };
-    let bundle = tree.bundle(ctx);
-    let reused = match (bundle.program(), ctx.host().program_of(pid)) {
-        (Some(program), Some(path)) => path.file_name().is_none_or(|name| name != program),
-        _ => false,
-    };
-    Ok((!reused).then_some(pid))
-}
-
-/// The process Chromium's `SingletonLock` at `path` names: a link whose target is
-/// `<hostname>-<pid>`. `None` where there is no lock. Something there that names no
-/// process is an error, never "nobody", since a lock Pitboard cannot read may still be
-/// held.
-fn singleton_pid(path: &Path) -> std::io::Result<Option<u32>> {
-    let target = match std::fs::read_link(path) {
-        Ok(target) => target,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(e),
-    };
-    // A hostname can have dashes in it, and a pid cannot.
-    target
-        .to_str()
-        .and_then(|target| target.rsplit_once('-'))
-        .and_then(|(_, pid)| pid.parse::<u32>().ok())
-        .filter(|&pid| pid != 0)
-        .map(Some)
-        .ok_or_else(|| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("{} names no process", path.display()),
-            )
-        })
 }
 
 impl Holding {
@@ -223,9 +206,7 @@ impl Holding {
                 };
                 format!("quit {what} and start {them} again")
             }
-            Remedy::ReopenApp { name, .. } => {
-                format!("quit {name} with Command-Q and open it again")
-            }
+            Remedy::ReopenApp { app, name } => app.reopen(name),
             Remedy::Run(command) => format!("run `{command}`"),
             Remedy::Do(instruction) => instruction.to_string(),
         }
@@ -234,12 +215,12 @@ impl Holding {
 
 /// Everything running, as one noun phrase: "2 `codex` sessions and the ChatGPT app".
 pub fn described(holding: &[Holding]) -> String {
-    listed(holding.iter().map(Holding::phrase).collect())
+    crate::words::listed(holding.iter().map(Holding::phrase).collect())
 }
 
 /// The same, with the pids of each: "2 `codex` sessions (pid 41, 42)".
 pub fn described_with_pids(holding: &[Holding]) -> String {
-    listed(
+    crate::words::listed(
         holding
             .iter()
             .map(|h| format!("{} (pid {})", h.phrase(), some_of(&h.pids)))
@@ -268,18 +249,6 @@ pub fn remedies(holding: &[Holding], purpose: &str) -> String {
                 .collect::<Vec<_>>()
                 .join("; ")
         ),
-    }
-}
-
-/// "a", "a and b", "a, b and c".
-fn listed(mut items: Vec<String>) -> String {
-    match items.len() {
-        0 => String::new(),
-        1 => items.remove(0),
-        _ => {
-            let last = items.pop().unwrap_or_default();
-            format!("{} and {last}", items.join(", "))
-        }
     }
 }
 
@@ -312,7 +281,7 @@ mod tests {
         noun: Noun::One("the App"),
         location: Location::Within("App.app"),
         remedy: Remedy::ReopenApp {
-            bundle_id: "com.example.app",
+            app: AppId::MacBundle("com.example.app"),
             name: "App",
         },
     };
@@ -347,127 +316,6 @@ mod tests {
             .collect()
     }
 
-    /// A test or an app that moved both Claude's bundle and its data folder is asked about
-    /// its own bundle only, whatever it is called: the person's own Claude holds nothing of
-    /// a folder elsewhere. Moving only one of them leaves the real folder or the real app in
-    /// play, so every bundle called `Claude.app` still counts.
-    #[test]
-    fn a_dead_singleton_lock_does_not_count() {
-        let host = crate::host::current();
-        let dir = std::env::temp_dir().join(format!(
-            "pitboard-singleton-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let lock = dir.join("SingletonLock");
-        assert_eq!(singleton_pid(&lock).unwrap(), None, "no lock, nobody");
-
-        let mut gone = std::process::Command::new("true").spawn().unwrap();
-        let dead = gone.id();
-        gone.wait().unwrap();
-        std::os::unix::fs::symlink(format!("my-mac.local-{dead}"), &lock).unwrap();
-        assert_eq!(singleton_pid(&lock).unwrap(), Some(dead));
-        assert!(!host.pid_alive(dead));
-
-        std::fs::remove_file(&lock).unwrap();
-        std::os::unix::fs::symlink(format!("my-mac-2-{}", std::process::id()), &lock).unwrap();
-        assert_eq!(singleton_pid(&lock).unwrap(), Some(std::process::id()));
-        assert!(host.pid_alive(std::process::id()));
-
-        // Something there that names no process is not read as nobody.
-        for target in ["nonsense", "host-", "host-12x"] {
-            std::fs::remove_file(&lock).unwrap();
-            std::os::unix::fs::symlink(target, &lock).unwrap();
-            assert!(singleton_pid(&lock).is_err(), "{target}");
-        }
-        std::fs::remove_file(&lock).unwrap();
-        std::fs::write(&lock, b"").unwrap();
-        assert!(singleton_pid(&lock).is_err());
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn a_moved_bundle_and_folder_are_held_only_by_that_bundle() {
-        use crate::host::memory::MemoryHost;
-        use crate::provider::desktop::DESKTOP;
-        let mem = MemoryHost::new();
-        let real = mem.runs_within("/Applications/Claude.app/Contents/MacOS/Claude");
-        let base = Context::new(PathBuf::from("/nowhere")).with_memory_stores(mem.clone());
-        for ctx in [
-            base.clone(),
-            base.clone().with_desktop_app("/scratch/Claude.app".into()),
-            base.clone()
-                .with_desktop_dir("/scratch/claude-desktop".into()),
-        ] {
-            let found = find_within(&ctx, &DESKTOP).expect("readable");
-            assert_eq!(kinds(&found), [("claude_desktop_app", vec![real])]);
-        }
-
-        let moved = base
-            .with_desktop_dir("/scratch/claude-desktop".into())
-            .with_desktop_app("/scratch/Test Claude.app".into());
-        assert_eq!(find_within(&moved, &DESKTOP), Some(Vec::new()));
-        let own = mem.runs_within("/scratch/Test Claude.app/Contents/MacOS/Claude");
-        mem.runs_within("/scratch/Test Claude.app/Contents/Helpers/chrome-native-host");
-        let found = find_within(&moved, &DESKTOP).expect("readable");
-        assert_eq!(kinds(&found), [("claude_desktop_app", vec![own])]);
-    }
-
-    /// A tree login is held by whatever runs inside its bundle, and by a live process its
-    /// lock names, and by nothing else.
-    #[test]
-    fn a_tree_login_is_held_by_its_bundle_and_its_lock() {
-        use crate::host::memory::MemoryHost;
-        use crate::provider::desktop::DESKTOP;
-        let mem = MemoryHost::new();
-        let ctx = Context::new(PathBuf::from("/nowhere")).with_memory_stores(mem.clone());
-        assert_eq!(find_within(&ctx, &DESKTOP), Some(Vec::new()));
-
-        let app = mem.runs_within("/Applications/Claude.app/Contents/MacOS/Claude");
-        mem.runs_within("/Applications/Claude.app/Contents/Helpers/chrome-native-host");
-        mem.runs_within("/usr/local/bin/claude");
-        let found = find_within(&ctx, &DESKTOP).expect("readable");
-        assert_eq!(kinds(&found), [("claude_desktop_app", vec![app])]);
-
-        mem.process_list_fails();
-        assert_eq!(find_within(&ctx, &DESKTOP), None);
-
-        let dir = std::env::temp_dir().join(format!(
-            "pitboard-lock-holder-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        assert_eq!(lock_holder(&ctx, &DESKTOP, &dir).unwrap(), None);
-        std::os::unix::fs::symlink(format!("mac-{app}"), dir.join("SingletonLock")).unwrap();
-        assert_eq!(lock_holder(&ctx, &DESKTOP, &dir).unwrap(), Some(app));
-        std::fs::remove_file(dir.join("SingletonLock")).unwrap();
-        std::os::unix::fs::symlink("mac-4000000", dir.join("SingletonLock")).unwrap();
-        assert_eq!(lock_holder(&ctx, &DESKTOP, &dir).unwrap(), None);
-
-        // A Claude that crashed leaves its lock, and its pid can be given to anything after.
-        // Only a process running Claude's own program holds the lock.
-        mem.runs_at("zsh", &["/bin/zsh"]);
-        std::fs::remove_file(dir.join("SingletonLock")).unwrap();
-        std::os::unix::fs::symlink("mac-1", dir.join("SingletonLock")).unwrap();
-        assert_eq!(
-            lock_holder(&ctx, &DESKTOP, &dir).unwrap(),
-            None,
-            "pid reused"
-        );
-        // A Claude whose bundle is not where Pitboard looks still holds it.
-        mem.runs_at("zsh", &[]);
-        mem.runs_at(
-            "Claude",
-            &["/Volumes/Apps/Claude Beta.app/Contents/MacOS/Claude"],
-        );
-        assert_eq!(lock_holder(&ctx, &DESKTOP, &dir).unwrap(), Some(1));
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
     #[test]
     fn each_process_is_the_first_kind_whose_place_holds_it() {
         let holding = classify(
@@ -499,6 +347,53 @@ mod tests {
         let holding = classify(&[at(1, "/usr/bin/App.app")], HOLDERS);
         assert_eq!(kinds(&holding), [("session", vec![1])]);
         assert!(!Location::WithinPrefixed("vendor.tool-").holds(Path::new("vendor.tool-9")));
+    }
+
+    /// A folder is the place a kind names only as this system compares paths: exactly, on
+    /// macOS and Linux, so a folder of the same name in another case is somewhere else, and
+    /// in any case on Windows, where it is the same folder.
+    #[test]
+    fn a_place_is_named_as_this_system_compares_paths() {
+        let holding = classify(
+            &[
+                at(1, "/Applications/app.app/x/tool"),
+                at(2, "/e/Vendor.Tool-1/bin/tool"),
+            ],
+            HOLDERS,
+        );
+        match OS {
+            crate::host::Os::MacOs | crate::host::Os::Linux => {
+                assert_eq!(kinds(&holding), [("session", vec![1, 2])]);
+            }
+            crate::host::Os::Windows => {
+                assert_eq!(kinds(&holding), [("app", vec![1]), ("extension", vec![2])]);
+            }
+        }
+        assert!(Location::WithinPrefixed("vendor.tool-").holds(Path::new("/e/vendor.tool-1/t")));
+        assert!(
+            !Location::WithinPrefixed("vendor.tool-").holds(Path::new("/e/vendor.tool/t")),
+            "a name shorter than the prefix does not start with it"
+        );
+    }
+
+    /// A Mac app is named by its bundle id and quit with Command-Q, since closing its last
+    /// window leaves it running: the id is its own system's, whichever system finds it.
+    #[test]
+    fn an_app_is_named_and_quit_its_own_system_s_way() {
+        let mac = AppId::MacBundle("com.example.app");
+        assert_eq!(mac.as_str(), "com.example.app");
+        assert_eq!(
+            mac.reopen("App"),
+            "quit App with Command-Q and open it again"
+        );
+        let app = classify(&[at(1, "/Applications/App.app/x/tool")], HOLDERS);
+        assert_eq!(
+            app.first().map(|h| h.holder.remedy),
+            Some(Remedy::ReopenApp {
+                app: mac,
+                name: "App"
+            })
+        );
     }
 
     #[test]

@@ -2,8 +2,10 @@ import AppKit
 import PitboardKit
 import SwiftUI
 
-/// What only an app delegate can do for Pitboard: the Dock icon's menu, a click on the Dock
-/// icon with no window open, and asking before quitting stops a download.
+/// What only an app delegate can do for Pitboard: start the model once the app has
+/// launched and stop it as the app quits, tell it when the Mac wakes and when somebody opens
+/// a menu, the Dock icon's menu, a click on the Dock icon with no window open, and asking
+/// before quitting stops a download.
 ///
 /// It owns the app's models, since AppKit asks it these at any time and it has to answer
 /// from the same models the scenes show. Links from the Share extension are not its: the
@@ -12,14 +14,57 @@ import SwiftUI
 public final class AppDelegate: NSObject, NSApplicationDelegate {
     public let model: AppModel
     public let windows: AccountWindows
+    public let openAtLogin: OpenAtLogin
+    public let commandLineLink: CommandLineLink
+    /// Which of the model's requests for the main window the menu bar item and the window
+    /// have answered.
+    let windowRequests = WindowRequests()
+    /// Where the app keeps its view preferences, which views read through `@AppStorage`.
+    public let defaults: UserDefaults
+    private let quitting: @MainActor () -> Void
+    private var watching: [NSObjectProtocol] = []
 
     override public init() {
         let dependencies = Dependencies.forLaunch()
-        model = AppModel(dependencies: dependencies)
+        model = dependencies.model
+        defaults = dependencies.defaults
         windows = AccountWindows(
-            model: model, environment: dependencies.web, presence: .live(),
-            scheme: dependencies.linkScheme)
+            model: model, environment: dependencies.web, presence: .live())
+        openAtLogin = OpenAtLogin(dependencies.loginItem)
+        commandLineLink = CommandLineLink(dependencies.commandLineTool, model: model)
+        quitting = dependencies.quitting
         super.init()
+    }
+
+    /// Starts what the model runs by itself, and tells it what only the app hears of: the Mac
+    /// waking, after which numbers read before it slept say nothing about now, and a menu of
+    /// this app opening. The menu bar item's menu is the glance the whole app exists for, and
+    /// SwiftUI says nothing when it opens; AppKit says it of every menu, so a top-level one is
+    /// taken to be it.
+    public func applicationDidFinishLaunching(_ notification: Notification) {
+        let model = model
+        watching = [
+            NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+            ) { _ in
+                MainActor.assumeIsolated { model.send(.woke) }
+            },
+            NotificationCenter.default.addObserver(
+                forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main
+            ) { note in
+                let topLevel = (note.object as? NSMenu)?.supermenu == nil
+                MainActor.assumeIsolated {
+                    if topLevel { model.send(.glanced) }
+                }
+            },
+        ]
+        model.send(.start)
+    }
+
+    /// Stops the model, a sign-in under way with it, before the app goes.
+    public func applicationWillTerminate(_ notification: Notification) {
+        model.shutdown()
+        quitting()
     }
 
     /// The Dock icon's menu, while Pitboard has one: each account's window, as the File menu
@@ -63,7 +108,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openMainWindow() {
-        model.showWindow()
+        model.send(.showWindow(pane: nil))
     }
 
     /// Opening Pitboard again from Finder, Spotlight or Launchpad with no window open shows
@@ -72,23 +117,23 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     public func applicationShouldHandleReopen(
         _ sender: NSApplication, hasVisibleWindows flag: Bool
     ) -> Bool {
-        if !flag, !sender.windows.contains(where: \.isMiniaturized) { model.showWindow() }
+        if !flag, !sender.windows.contains(where: \.isMiniaturized) {
+            model.send(.showWindow(pane: nil))
+        }
         return true
     }
 
-    /// Quitting stops every download still running, so it asks first, as Safari does.
+    /// Quitting stops every download still running, so it asks first, as Safari does, in the
+    /// model's words: of a download started a moment before Quit too, which no snapshot may
+    /// list yet.
     public func applicationShouldTerminate(_ sender: NSApplication)
         -> NSApplication.TerminateReply
     {
-        let running = windows.downloads.running.count
-        guard running > 0 else { return .terminateNow }
+        guard let question = windows.downloads.quitQuestion else { return .terminateNow }
         let alert = NSAlert()
-        alert.messageText =
-            running == 1
-            ? "A download is in progress. Quit anyway?"
-            : "\(running) downloads are in progress. Quit anyway?"
-        alert.informativeText = "Quitting Pitboard stops them, and they will not resume."
-        alert.addButton(withTitle: "Quit")
+        alert.messageText = question.title
+        alert.informativeText = question.message
+        alert.addButton(withTitle: question.confirm)
         alert.addButton(withTitle: "Cancel")
         // Quit is often chosen from the menu bar item's menu, which leaves the app behind
         // whatever is in front, and an alert from it would come up behind as well.

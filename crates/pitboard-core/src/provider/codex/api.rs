@@ -6,6 +6,7 @@
 use crate::api::{agent, retry_after, server_time, test_base};
 use crate::context::Context;
 use crate::provider::{ProviderError, ProviderId};
+use crate::service::Permit;
 use crate::usage::{Snapshot, Source, Window};
 use serde_json::Value;
 
@@ -13,8 +14,8 @@ use serde_json::Value;
 /// client can only be renewed as it.
 pub(crate) const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 
-const TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
-const USAGE_BASE: &str = "https://chatgpt.com/backend-api";
+pub(crate) const TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
+pub(crate) const USAGE_BASE: &str = "https://chatgpt.com/backend-api";
 
 fn token_url(ctx: &Context) -> String {
     test_base(ctx).map_or_else(
@@ -77,7 +78,14 @@ pub(crate) trait OpenAi: Send + Sync + std::fmt::Debug {
         now: i64,
     ) -> Result<Snapshot, ProviderError>;
 
-    fn renew(&self, ctx: &Context, refresh_token: &str) -> Result<Fresh, ProviderError>;
+    /// The token exchange, which spends `refresh_token` as it answers, so it takes the
+    /// [`Permit`] only the one gate every change passes makes.
+    fn renew(
+        &self,
+        ctx: &Context,
+        permit: Permit,
+        refresh_token: &str,
+    ) -> Result<Fresh, ProviderError>;
 }
 
 /// OpenAI, over the network. What every real context uses.
@@ -95,14 +103,23 @@ impl OpenAi for Network {
         ask_usage(ctx, access_token, account_id, now)
     }
 
-    fn renew(&self, ctx: &Context, refresh_token: &str) -> Result<Fresh, ProviderError> {
-        ask_renew(ctx, refresh_token)
+    fn renew(
+        &self,
+        ctx: &Context,
+        permit: Permit,
+        refresh_token: &str,
+    ) -> Result<Fresh, ProviderError> {
+        ask_renew(ctx, permit, refresh_token)
     }
 }
 
 /// Ask OpenAI through this context.
-pub(crate) fn renew(ctx: &Context, refresh_token: &str) -> Result<Fresh, ProviderError> {
-    ctx.openai().renew(ctx, refresh_token)
+pub(crate) fn renew(
+    ctx: &Context,
+    permit: Permit,
+    refresh_token: &str,
+) -> Result<Fresh, ProviderError> {
+    ctx.openai().renew(ctx, permit, refresh_token)
 }
 
 pub(crate) fn usage(
@@ -114,13 +131,13 @@ pub(crate) fn usage(
     ctx.openai().usage(ctx, access_token, account_id, now)
 }
 
-fn ask_renew(ctx: &Context, refresh_token: &str) -> Result<Fresh, ProviderError> {
+fn ask_renew(ctx: &Context, _: Permit, refresh_token: &str) -> Result<Fresh, ProviderError> {
     let body = serde_json::json!({
         "client_id": CLIENT_ID,
         "grant_type": "refresh_token",
         "refresh_token": refresh_token,
     });
-    let mut response = agent()
+    let mut response = agent(ctx)
         .post(token_url(ctx))
         .header("Content-Type", "application/json")
         .send(body.to_string())
@@ -199,7 +216,7 @@ fn ask_usage(
     account_id: &str,
     now: i64,
 ) -> Result<Snapshot, ProviderError> {
-    let mut response = agent()
+    let mut response = agent(ctx)
         .get(usage_url(ctx))
         .header("Authorization", format!("Bearer {access_token}"))
         .header("ChatGPT-Account-ID", account_id)
@@ -212,7 +229,7 @@ fn ask_usage(
                 .read_to_string()
                 .map_err(|e| network(e.to_string()))?;
             let body: Value = serde_json::from_str(&text).map_err(|e| malformed(e.to_string()))?;
-            Ok(snapshot(&body, account_id, now))
+            Ok(snapshot(&body, now))
         }
         401 | 403 => Err(ProviderError::Unauthorized),
         429 => Err(ProviderError::RateLimited {
@@ -232,7 +249,10 @@ fn ask_usage(
 ///
 /// A window that will not normalise is dropped rather than drawn, the same rule the Claude
 /// Code side has always used: a number nobody can explain is worse than no number.
-fn snapshot(body: &Value, account_id: &str, now: i64) -> Snapshot {
+///
+/// Either window can be null (`codex_usage_endpoint`), and nothing measured says whether a
+/// null one is not running or was left out, so an answer is not taken to list every limit.
+fn snapshot(body: &Value, now: i64) -> Snapshot {
     let limits = &body["rate_limit"];
     let windows = ["primary_window", "secondary_window"]
         .into_iter()
@@ -241,9 +261,9 @@ fn snapshot(body: &Value, account_id: &str, now: i64) -> Snapshot {
     Snapshot {
         windows,
         observed_at: Some(now),
-        account_uuid: Some(account_id.to_string()),
+        answered_at: Some(now),
+        lists_every_limit: false,
         source: Source::Live,
-        verified: true,
     }
 }
 
@@ -392,7 +412,7 @@ mod tests {
 
     #[test]
     fn the_answer_this_endpoint_really_sends_becomes_a_window() {
-        let snapshot = snapshot(&measured(), "acc-1", 1_790_000_000);
+        let snapshot = snapshot(&measured(), 1_790_000_000);
         assert_eq!(
             snapshot.windows.len(),
             1,
@@ -402,8 +422,9 @@ mod tests {
         assert_eq!(window.kind, "seven_day");
         assert!((window.percent - 45.0).abs() < f64::EPSILON);
         assert_eq!(window.resets_at, Some(1_790_628_078));
-        assert_eq!(snapshot.account_uuid.as_deref(), Some("acc-1"));
         assert_eq!(snapshot.source, Source::Live);
+        assert_eq!(snapshot.answered_at, Some(1_790_000_000));
+        assert!(!snapshot.lists_every_limit);
     }
 
     #[test]
@@ -414,7 +435,7 @@ mod tests {
             "limit_window_seconds": 18_000,
             "reset_at": 1_790_100_000i64
         });
-        let snapshot = snapshot(&body, "acc-1", 0);
+        let snapshot = snapshot(&body, 0);
         assert_eq!(
             snapshot
                 .windows
@@ -435,7 +456,7 @@ mod tests {
                 "secondary_window": {"used_percent": -1.0, "limit_window_seconds": 604_800},
             }
         });
-        assert!(snapshot(&body, "acc-1", 0).windows.is_empty());
+        assert!(snapshot(&body, 0).windows.is_empty());
     }
 
     /// An answer with no rate limit block at all reads as no windows rather than panicking.
@@ -445,7 +466,7 @@ mod tests {
             serde_json::json!({}),
             serde_json::json!({"rate_limit": null}),
         ] {
-            assert!(snapshot(&body, "acc-1", 0).windows.is_empty(), "{body}");
+            assert!(snapshot(&body, 0).windows.is_empty(), "{body}");
         }
     }
 }

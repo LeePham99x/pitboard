@@ -15,6 +15,7 @@ use super::harness::{
 };
 use super::*;
 use crate::api::scripted::Trouble;
+use crate::service::Permit;
 use serde_json::json;
 
 type Make = fn(&str) -> Machine;
@@ -26,7 +27,6 @@ fn id(m: &Machine, who: &str) -> String {
     match m.which {
         ProviderId::Claude => who.to_string(),
         ProviderId::Codex => codex_id(who),
-        ProviderId::Desktop => unreachable!("no machine keeps Claude Desktop in a vault"),
     }
 }
 
@@ -34,8 +34,7 @@ fn id(m: &Machine, who: &str) -> String {
 fn enrolled(m: &Machine, who: &str, parked: Option<Park>) -> Account {
     match m.which {
         ProviderId::Claude => account(who, who, parked),
-        ProviderId::Codex => codex_account(who, &codex_id(who), parked),
-        ProviderId::Desktop => unreachable!("no machine keeps Claude Desktop in a vault"),
+        ProviderId::Codex => codex_account(who, who, parked),
     }
 }
 
@@ -53,14 +52,13 @@ fn login(m: &Machine, who: &str, refresh: &str) -> Value {
                 crate::usage::Snapshot {
                     windows: Vec::new(),
                     observed_at: Some(NOW),
-                    account_uuid: None,
+                    answered_at: Some(NOW),
+                    lists_every_limit: false,
                     source: crate::usage::Source::Live,
-                    verified: true,
                 },
             );
             codex_login(who, refresh)
         }
-        ProviderId::Desktop => unreachable!("no machine keeps Claude Desktop in a vault"),
     }
 }
 
@@ -74,7 +72,6 @@ fn lapsed(m: &Machine, who: &str, refresh: &str) -> Value {
                 &json!({"exp": NOW - 60, "for": refresh})
             ));
         }
-        ProviderId::Desktop => unreachable!("no machine keeps Claude Desktop in a vault"),
     }
     document
 }
@@ -84,7 +81,7 @@ fn lapsed(m: &Machine, who: &str, refresh: &str) -> Value {
 fn enrol_away(m: &Machine) {
     let mut state = state::load(&m.ctx).expect("state");
     state.upsert(enrolled(m, "away", None));
-    state::save(&m.ctx, &state).expect("saved");
+    state::save(&m.ctx, Permit::for_a_test(), &state).expect("saved");
 }
 
 /// Another Pitboard on the same machine, with a home of its own and the same keychain,
@@ -94,16 +91,22 @@ fn parked_elsewhere(m: &Machine, who: &str, document: &Value) -> (Context, Park)
         .ctx
         .clone()
         .with_pitboard_home(m.ctx_home().join(".pitboard-elsewhere"));
-    let service = park::reserve(&other, &id(m, who)).expect("a free name");
-    let parked = park::store_at(&other, m.which, &service, document).expect("parked");
+    let service = park::reserve(&other, Permit::for_a_test(), &id(m, who)).expect("a free name");
+    let parked =
+        park::store_at(&other, Permit::for_a_test(), m.which, &service, document).expect("parked");
     let mut theirs = State::default();
     theirs.accounts.push(enrolled(m, who, Some(parked.clone())));
-    state::save(&other, &theirs).expect("saved");
+    state::save(&other, Permit::for_a_test(), &theirs).expect("saved");
     (other, parked)
 }
 
 fn repair_here(m: &Machine) -> Reclaimed {
-    repair(settle(&m.ctx, None).expect("nothing to recover").0).expect("repaired")
+    repair(
+        settle(&m.ctx, Permit::for_a_test(), None)
+            .expect("nothing to recover")
+            .0,
+    )
+    .expect("repaired")
 }
 
 /// The whole of what went wrong. Another Pitboard has `here` parked; this one has `here`
@@ -111,6 +114,10 @@ fn repair_here(m: &Machine) -> Reclaimed {
 /// the next switch away parks the live login in its place. That park was never used here,
 /// so it is still where the other Pitboard left it, and still loads there.
 #[test]
+#[cfg_attr(
+    windows,
+    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+)]
 fn a_park_repair_gave_back_outlives_a_switch_away_from_its_account() {
     for make in MACHINES {
         let m = make("foreign-replaced");
@@ -125,7 +132,9 @@ fn a_park_repair_gave_back_outlives_a_switch_away_from_its_account() {
         let state = state::load(&m.ctx).expect("state");
         assert_eq!(state.foreign, vec![recorded.service.clone()]);
 
-        let settled = settle(&m.ctx, None).expect("nothing to recover").0;
+        let settled = settle(&m.ctx, Permit::for_a_test(), None)
+            .expect("nothing to recover")
+            .0;
         switch(settled, &m.key("there")).expect("switched");
 
         let state = state::load(&m.ctx).expect("state");
@@ -147,6 +156,7 @@ fn a_park_repair_gave_back_outlives_a_switch_away_from_its_account() {
 
 /// Dropping the account that holds one does not delete it either.
 #[test]
+#[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
 fn forgetting_its_account_leaves_a_park_repair_gave_back() {
     for make in MACHINES {
         let m = make("foreign-forgotten");
@@ -154,7 +164,9 @@ fn forgetting_its_account_leaves_a_park_repair_gave_back() {
         let (_, recorded) = parked_elsewhere(&m, "away", &login(&m, "away", "away-elsewhere"));
         assert_eq!(repair_here(&m).given_back.len(), 1);
 
-        let settled = settle(&m.ctx, Some(m.which)).expect("nothing to recover").0;
+        let settled = settle(&m.ctx, Permit::for_a_test(), Some(m.which))
+            .expect("nothing to recover")
+            .0;
         forget(settled, &m.key("away")).expect("forgotten");
 
         let state = state::load(&m.ctx).expect("state");
@@ -171,6 +183,7 @@ fn forgetting_its_account_leaves_a_park_repair_gave_back() {
 /// Uninstalling deletes what this Pitboard wrote and leaves the rest, and says how many it
 /// left, because somebody told their logins were removed would otherwise not look for them.
 #[test]
+#[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
 fn uninstalling_leaves_a_park_repair_gave_back_and_says_so() {
     for make in MACHINES {
         let m = make("foreign-uninstalled");
@@ -178,8 +191,12 @@ fn uninstalling_leaves_a_park_repair_gave_back_and_says_so() {
         let (_, recorded) = parked_elsewhere(&m, "away", &login(&m, "away", "away-elsewhere"));
         assert_eq!(repair_here(&m).given_back.len(), 1);
 
-        let removed =
-            uninstall(settle(&m.ctx, None).expect("nothing to recover").0).expect("uninstalled");
+        let removed = uninstall(
+            settle(&m.ctx, Permit::for_a_test(), None)
+                .expect("nothing to recover")
+                .0,
+        )
+        .expect("uninstalled");
 
         assert_eq!(removed.parks, 1, "`there`'s, which this Pitboard wrote");
         assert_eq!(removed.left, 1);
@@ -201,6 +218,10 @@ fn uninstalling_leaves_a_park_repair_gave_back_and_says_so() {
 /// signed in must not stay beside it, and for Claude Code the park is the live login from
 /// now on, so it goes the way every installed park goes.
 #[test]
+#[cfg_attr(
+    windows,
+    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+)]
 fn a_park_repair_gave_back_is_deleted_once_a_switch_installs_it() {
     for make in MACHINES {
         let m = make("foreign-installed");
@@ -209,7 +230,9 @@ fn a_park_repair_gave_back_is_deleted_once_a_switch_installs_it() {
         let (_, recorded) = parked_elsewhere(&m, "away", &theirs);
         assert_eq!(repair_here(&m).given_back.len(), 1);
 
-        let settled = settle(&m.ctx, None).expect("nothing to recover").0;
+        let settled = settle(&m.ctx, Permit::for_a_test(), None)
+            .expect("nothing to recover")
+            .0;
         switch(settled, &m.key("away")).expect("switched");
 
         let tool = provider::of(m.which);
@@ -230,6 +253,7 @@ fn a_park_repair_gave_back_is_deleted_once_a_switch_installs_it() {
 /// A renewal spends the refresh token it presents, so the copy it renewed is used up
 /// whoever wrote it, and what it writes is this Pitboard's own.
 #[test]
+#[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
 fn a_park_repair_gave_back_is_deleted_once_a_renewal_spends_it() {
     for make in MACHINES {
         let m = make("foreign-renewed");
@@ -238,7 +262,7 @@ fn a_park_repair_gave_back_is_deleted_once_a_renewal_spends_it() {
         renews(&m, "away-elsewhere", "away-renewed");
         assert_eq!(repair_here(&m).given_back.len(), 1);
 
-        let renewed = renew_due(&m.ctx, Due::ToBeAsked);
+        let renewed = renew_due(&m.ctx, Permit::for_a_test(), Due::ToBeAsked);
 
         assert_eq!(renewed.len(), 1);
         assert_eq!(renewed[0].1.code(), "renewed", "{:?}", m.which);
@@ -259,6 +283,7 @@ fn a_park_repair_gave_back_is_deleted_once_a_renewal_spends_it() {
 /// was saved as used before the answer was written, so giving the fresh one back deletes it
 /// rather than letting it go for a Pitboard that would present a spent token.
 #[test]
+#[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
 fn a_park_repair_gave_back_is_deleted_once_a_killed_renewal_spends_it() {
     for make in MACHINES {
         let m = make("foreign-renewal-killed");
@@ -267,9 +292,12 @@ fn a_park_repair_gave_back_is_deleted_once_a_killed_renewal_spends_it() {
         renews(&m, "away-elsewhere", "away-renewed");
         assert_eq!(repair_here(&m).given_back.len(), 1);
 
-        let died = crate::fault::killing("renew.park_stored", || renew_due(&m.ctx, Due::ToBeAsked));
+        let died = crate::fault::killing("renew.park_stored", || {
+            renew_due(&m.ctx, Permit::for_a_test(), Due::ToBeAsked)
+        });
         assert_eq!(died.unwrap_err(), "renew.park_stored", "{:?}", m.which);
-        settle(&m.ctx, None).expect("the next change gives the fresh copy back");
+        settle(&m.ctx, Permit::for_a_test(), None)
+            .expect("the next change gives the fresh copy back");
 
         let state = state::load(&m.ctx).expect("state");
         assert_eq!(
@@ -294,6 +322,7 @@ fn a_park_repair_gave_back_is_deleted_once_a_killed_renewal_spends_it() {
 /// Refused is not spent: presenting it took nothing from it. The Pitboard that wrote it is
 /// refused the same way and drops it itself.
 #[test]
+#[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
 fn a_park_repair_gave_back_that_the_service_refuses_is_let_go_and_left() {
     for make in MACHINES {
         let m = make("foreign-refused");
@@ -304,11 +333,10 @@ fn a_park_repair_gave_back_that_the_service_refuses_is_let_go_and_left() {
             ProviderId::Codex => m
                 .api
                 .codex_renew_trouble("away-elsewhere", Trouble::InvalidGrant),
-            ProviderId::Desktop => unreachable!("no machine keeps Claude Desktop in a vault"),
         };
         assert_eq!(repair_here(&m).given_back.len(), 1);
 
-        let renewed = renew_due(&m.ctx, Due::ToBeAsked);
+        let renewed = renew_due(&m.ctx, Permit::for_a_test(), Due::ToBeAsked);
 
         assert_eq!(renewed[0].1.code(), "parked_login_refused");
         let state = state::load(&m.ctx).expect("state");
@@ -326,13 +354,27 @@ fn a_park_repair_gave_back_that_the_service_refuses_is_let_go_and_left() {
 /// down, written to, and killed before anything recorded it, it is given back like the
 /// other Pitboard's, and the same switch away deletes it as it always did.
 #[test]
+#[cfg_attr(
+    windows,
+    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+)]
 fn a_park_this_pitboard_wrote_down_and_lost_is_still_deleted_when_replaced() {
     for make in MACHINES {
         let m = make("ours-replaced");
-        let service = park::reserve(&m.ctx, &id(&m, "here")).expect("a free name");
-        park::store_at(&m.ctx, m.which, &service, &login(&m, "here", "here-lost")).expect("parked");
+        let service =
+            park::reserve(&m.ctx, Permit::for_a_test(), &id(&m, "here")).expect("a free name");
+        park::store_at(
+            &m.ctx,
+            Permit::for_a_test(),
+            m.which,
+            &service,
+            &login(&m, "here", "here-lost"),
+        )
+        .expect("parked");
 
-        let settled = settle(&m.ctx, None).expect("the sweep gives it back").0;
+        let settled = settle(&m.ctx, Permit::for_a_test(), None)
+            .expect("the sweep gives it back")
+            .0;
         let state = state::load(&m.ctx).expect("state");
         assert_eq!(
             state
@@ -357,7 +399,7 @@ fn a_park_this_pitboard_wrote_down_and_lost_is_still_deleted_when_replaced() {
 /// restored from a backup leaves it. Only its account names it.
 fn lost(m: &Machine, who: &str, document: &Value) -> Park {
     let service = park::service_name(&id(m, who), (NOW - 60) * 1000);
-    park::store_at(&m.ctx, m.which, &service, document).expect("parked")
+    park::store_at(&m.ctx, Permit::for_a_test(), m.which, &service, document).expect("parked")
 }
 
 /// Off macOS the vault is a directory inside Pitboard's own, which no other Pitboard parks
@@ -365,6 +407,10 @@ fn lost(m: &Machine, who: &str, document: &Value) -> Park {
 /// down, so it is deleted like any other once it is let go, and `uninstall` leaves nothing
 /// behind and does not say it did.
 #[test]
+#[cfg_attr(
+    windows,
+    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+)]
 fn a_park_found_in_a_vault_of_this_homes_own_is_this_pitboards() {
     for make in MACHINES {
         let m = make("found-replaced");
@@ -373,7 +419,9 @@ fn a_park_found_in_a_vault_of_this_homes_own_is_this_pitboards() {
         assert_eq!(repair_here(&m).given_back.len(), 1);
         assert!(state::load(&m.ctx).expect("state").foreign.is_empty());
 
-        let settled = settle(&m.ctx, None).expect("nothing to recover").0;
+        let settled = settle(&m.ctx, Permit::for_a_test(), None)
+            .expect("nothing to recover")
+            .0;
         switch(settled, &m.key("there")).expect("switched");
         assert!(
             m.mem.vault().peek(&found.service).is_none(),
@@ -388,8 +436,12 @@ fn a_park_found_in_a_vault_of_this_homes_own_is_this_pitboards() {
         lost(&m, "away", &login(&m, "away", "away-lost"));
         assert_eq!(repair_here(&m).given_back.len(), 1);
 
-        let removed =
-            uninstall(settle(&m.ctx, None).expect("nothing to recover").0).expect("uninstalled");
+        let removed = uninstall(
+            settle(&m.ctx, Permit::for_a_test(), None)
+                .expect("nothing to recover")
+                .0,
+        )
+        .expect("uninstalled");
         assert_eq!(
             removed.parks, 2,
             "{:?}: `there`'s and the one found",

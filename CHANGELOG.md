@@ -6,81 +6,472 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
-Pitboard switches Claude Desktop, Anthropic's app for macOS, between your own accounts, and
-the menu bar app quits Claude around a switch and opens it again.
-
 ### Added
 
-- `pitboard enroll desktop/<label>` enrols the account Claude Desktop is signed in to, and
-  `pitboard use desktop/<label>` switches it. Claude Desktop keeps its login in its data
-  folder, so a switch moves the cookie jar, the storage folders that belong to the account
-  and three keys of `config.json` into a park under `~/.pitboard/desktop/parks`, by rename
-  and never by copy, and leaves its caches and settings where they are. Experiments on 4
-  October 2026 found those three, with the files, enough to move each of two accounts
-  whole. Nothing moves while
-  Claude is open: quit it with Command-Q first, and the command line never quits it for you.
-  Switching never reads your keychain.
-  [Use Pitboard with Claude Desktop](https://docs.usepitboard.com/guides/claude-desktop)
-  has the steps.
-- The menu bar app lists Claude Desktop accounts when it finds `Claude.app`, with the date
-  each parked one lapses and where its usage came from. A switch while Claude is open quits
-  Claude the way Command-Q does, switches and opens it again in front for you, without
-  asking first: a question asked in the window, behind Claude, left the menu saying
-  "Switching…". **Add Account** walks through adding a Claude Desktop account in three
-  steps, quitting and opening Claude around each change, and **Put personal Back** undoes it
-  halfway. **Settings** > **General** has **Show live usage**, which explains the keychain
-  prompt before anything is read. When macOS stops letting Pitboard read Claude's key, the
-  app says live usage is paused, once in a notification and in a notice with **Allow Again**.
-- A Claude Desktop switch counts Claude as open when it runs from a copy of `Claude.app`
-  under another name, and is not held up by a `SingletonLock` whose process now runs another
-  program. If Claude is opened while a switch moves its files, the switch stops with
-  `app_opened_midway`; any switch that stops partway warns with `switch_unfinished`, and the
-  app then leaves Claude closed so the next change can finish it. If Pitboard cannot list
-  what is running, it stops with `app_state_unknown`. Account keys Claude wrote to
-  `config.json` while signed out are set aside in `~/.pitboard/desktop/strays`, not
-  overwritten, all in one folder per switch, and enrolling an account again drops its
-  lapsed park, as does switching to the account already in use. A session Pitboard has not
-  seen, under an account it knows, is that account's: Claude renews a session in place,
-  as it did a minute after a switch on 5 October 2026, and its code replaces the account
-  that Log out leaves behind at the next sign-in. A session Pitboard knows as another
-  account's stops with `desktop_identity_unconfirmed` until you enrol that label again.
-- `pitboard use desktop --signed-out` parks the account in use and leaves Claude Desktop
-  signed out, so you can sign in to another account in Claude and enrol it without signing
-  the first one out. Never use Log out in Claude to switch: it ends that session at
-  claude.ai, and Pitboard cannot bring it back (measured on 4 October 2026).
-- `pitboard status` lists Claude Desktop accounts under their own heading, with usage read
-  from Claude's own history, which matched claude.ai's own count when measured, and says
-  when each parked login lapses. With nothing enrolled and Claude Desktop installed, it says
-  how to enrol a Claude Desktop account as well as a Claude Code one. Messages about a
-  Claude Desktop account, which has no email, print no empty brackets.
-- `pitboard desktop live-usage enable` asks claude.ai how much each Claude Desktop account
-  has left, which needs Claude's key from the keychain. claude.ai does not document the
-  request; it and how Pitboard decrypts the session were checked against claude.ai on 4
-  October 2026. It is off until you turn it on, macOS asks for your login password once,
-  and switching never needs it. After **Always Allow**, refreshes need nobody at the Mac.
-  A keychain question nobody answers can stay on screen after Pitboard stops waiting, and
-  its message says to close it with **Deny**. A refresh that stopped waiting does not ask
-  again, but each `enable` that runs out of time, and the app and a command reading at
-  once, can each leave one. Deny and a
-  wrong password are reported alike, since macOS answers both the same way. `disable` turns it
-  off and forgets the key, and `status` says whether it is on. An answer from the keychain
-  Pitboard does not expect pauses it until you allow it again, instead of asking on every
-  refresh.
-- `pitboard renew` lists each parked Claude Desktop login as not renewable, with the date
-  its sign-in lapses, and switches and `status` warn with `park_expires_soon` a week before.
-  A Claude Desktop session lasts about four weeks and Pitboard cannot renew it.
-- `pitboard doctor` has a Claude Desktop section: the app's version against the one
-  Pitboard's facts were read from, the cookie jar's format, the parks and their volume,
-  interrupted switches, what is running and whether live usage is on. It never reads the
-  keychain.
-- The `--json` output gains `desktop` as a tool, `signed_out` on `use`, `next_launch` as an
-  adoption, `not_renewable` with `expires_at` on `renew`, a `desktop` object on `status`,
-  `environment.desktop` on `doctor`, the `desktop` command, and the error, warning and stale
-  codes Claude Desktop needs. [Errors and warnings](https://docs.usepitboard.com/reference/errors)
-  lists them.
+- Each account shows the plan its login says it is on, such as `Max 20x`, `Team 5x` or
+  `Pro` for Claude Code and `Plus` or `Pro` for Codex. The window shows it as a tag beside
+  the account's name, the menu after the name, as in **work · Team 5x**, and VoiceOver
+  says it after the name. `pitboard` shows it in a dim column after the address, there
+  only when some account has a plan. `pitboard --json` gives it as `plan`, `null` where no
+  login Pitboard read for the account said one. Pitboard records the plan on the account
+  when it enrols it and each time a read sees its login, so a read that asks nothing, such
+  as `pitboard status --offline`, shows it too. A read sends nothing more anywhere to learn
+  it: Claude Code's login keeps `subscriptionType` and `rateLimitTier`, and Codex's ID
+  token keeps `chatgpt_plan_type`.
+
+## [0.11.0] - 2026-10-10
 
 ### Changed
 
+- `pitboard forget`, `pitboard stow` and `pitboard uninstall` delete nothing without
+  `--yes` where they cannot ask: through a pipe, from a script or a tool, or with `--json`,
+  which no longer stands for `--yes`. Each refuses with the error `confirmation_needed`,
+  exit status 2, before it changes anything. Breaking for a script that runs any of them:
+  pass `--yes`. Until this, each went ahead without asking, and `pitboard stow < /dev/null`,
+  run as a look, deleted a login file behind the keychain. At a terminal each still asks.
+  `stow` with nothing to put away or a login of an account not enrolled, and `forget` of a
+  label that names no account, answer as before, and so does each as root or under sudo.
+- The account index is schema 7. It lists a renewal of Claude Code's login that Pitboard has
+  not saved where Claude Code keeps it yet. An earlier Pitboard cannot read it once this one
+  has, and says to update, so update the command line and the app together.
+- Where Pitboard renews Claude Code's login to identify it and Anthropic no longer accepts
+  it, or it has no refresh token, `session_expired` says to run `claude` and sign in, with
+  the cause `login_refused`. Everywhere else it still says to run `claude` once, with
+  `token_expired`. A read that finds the login in use refused for good marks that account
+  `login_refused`, with ``Claude Code's login is no longer accepted; run `claude` and sign
+  in again``.
+
+### Fixed
+
+- Pitboard renews Claude Code's stored login where it must tell whose that login is and
+  its access token has expired, as Claude Code renews it, under its refresh lock. Claude
+  Code renews it only while a session uses it, so with every session signed in with
+  `~/.claude/.credentials.json` behind the keychain, nothing did: a switch and `pitboard
+  stow` stopped at `session_expired`, and the automatic switch said `not_identified` at
+  every look. A login a session renewed meanwhile is used, with nothing sent. A read renews
+  it only while no other Pitboard command runs, asking for usage never renews it, and
+  `pitboard stow`'s question takes it from the account Pitboard last recorded. Codex's
+  login is never renewed this way.
+- A renewal of Claude Code's login, by `pitboard stow` or to identify it, keeps a copy of
+  Anthropic's answer in Pitboard's store, `pitboard-park-renewing-<time>`, until the answer
+  is saved where Claude Code keeps it. Killed in between, or with the file's write failing,
+  `stow` left a spent refresh token in the file and lost the renewed login. The next
+  change, or the next read that must renew the login, saves the copy. Until then no change
+  renews, parks, replaces or puts away that login, each saying why the copy cannot be saved
+  yet, and `pitboard uninstall` keeps `~/.pitboard`. Where `pitboard stow` renewed the login
+  stored and could not save it yet, its error ends by saying it keeps the renewed login. The
+  copy is named in Pitboard's index before the refresh token is sent, so a keychain locked
+  by then stops the renewal with nothing sent. On macOS, where the keychain cannot ask for
+  its password, as over SSH, one that locks while Anthropic answers takes neither the copy
+  nor the renewed login. A change then says the login's refresh token is spent and to run
+  `claude` and sign in, and a read marks the account in use `login_refused`.
+
+## [0.10.0] - 2026-10-10
+
+### Added
+
+- `pitboard stow`, and **Put Away** on the app's notice **A login file is left behind the
+  keychain**, put away the Claude Code login left in `~/.claude/.credentials.json` behind
+  the keychain on macOS, so sessions already running follow a switch within 33 seconds
+  again. Each says whose the login is and asks first, asking Anthropic with the login's own
+  access token where Pitboard does not know it by its fingerprint. It parks the login for
+  its account where Pitboard holds no parked login it can switch to, keeps the parked one
+  where it does, and drops a second sign-in of the account in use or a login Anthropic no
+  longer accepts; only then does it delete the file. A file with no login in it, `{}` or not
+  JSON at all, is deleted. A login of an account not enrolled is refused, named by its email
+  and organisation, and nothing is deleted. A login whose access token has expired is
+  renewed first and written back to the file, over the login the file holds by then where
+  that is still the one renewed. A session writing its credentials just then stops it before
+  the refresh token is sent. Throughout, it holds the lock Claude Code takes before it
+  renews a login, so no session renews the file's login meanwhile. The file's other keys,
+  such as `mcpOAuth`, go with it, and are named. A session that signed in with the file, as
+  one over SSH does, is signed out. `--yes` skips the question, `--json` gives `stowed`,
+  `path`, `login`, `account` and `dropped`, and the activity log records it as `stow`. The
+  errors `left_login_changed`, `stored_login_changed`, `left_login_not_enrolled` and
+  `left_login_unidentified` say what stopped it, and every error it stops with says whether
+  it renewed or parked the login first, or renewed it and could not write it back.
+  `pitboard doctor`'s `fallback login` check and the `fallback_login` warning name it, and
+  the app offers **Put Away**, but for a file Pitboard cannot read, which doctor still says
+  to delete with `rm`.
+- The warnings `in_use_unconfirmed` and `config_names_another`. A read that could not ask
+  Anthropic warns with `in_use_unconfirmed` where Claude Code's config has named another
+  account since Anthropic last named the login stored, as a sign-in leaves it, and, until it
+  first asks Anthropic after the update, where the config names another account than the
+  one Pitboard last switched to, which it takes as in use until then. Every read warns with
+  `config_names_another` where the config names another account than the one whose login
+  is stored, which `/status` in Claude Code then shows. `pitboard doctor` has an
+  `in use` check that names the account in use, as Anthropic said and when, and warns of
+  either. The app asks Anthropic once whenever a read between its own says
+  `in_use_unconfirmed`.
+- `config_updated` in `pitboard use --json` for an account already in use, and the
+  `pitboard log` outcome of the same name, where `use` wrote that account into Claude Code's
+  config. The app's notice **Claude Code's config names another account** has a button,
+  **Update Claude Code's Config**, that does it and moves no login. Where a switch has put
+  another account in use since the notice was drawn, it writes nothing and says so, with
+  the error `account_not_in_use`.
+- The `pitboard log` verb `auto-stay`, which the app's **Activity** pane names **Automatic
+  switch not made**: the automatic switch did not switch, and why. `not_identified`, with
+  the account last known in use: Pitboard could not tell whose login Claude Code has
+  stored, so it decided nothing. `no_room`, `already_switched`, `attempts_spent`,
+  `settling` and `auth_overridden`, with the account in use: a limit reached the share and
+  Pitboard did not switch away from it, recorded once for each limit and its reset.
+- `pitboard watch --json` events `waiting`, with `from`, `limit` and `until`, the time it
+  tries again after a try that came to nothing, and the fields `account`, `limit`, `as_of`
+  and `held_until` of `idle`: the account it watches, its fullest limit, when that was read
+  and until when Anthropic holds Pitboard off asking again. `no_room` gains `unread`, the
+  accounts it could switch to that Anthropic has given no reading of yet, and `skipped` the
+  reasons `already_switched`, `attempts_spent` and `settling`, the last with `until`.
+
+### Changed
+
+- The account index is schema 6. It records whose login Claude Code and Codex each have
+  stored, as Anthropic or the login itself last said, with which login that was, in place
+  of the account Pitboard last switched to. An earlier Pitboard cannot read it once this
+  one has, and says to update, so update the command line and the app together. A status
+  line still running an earlier `pitboard` shows `unenrolled` until that one is updated.
+  It also rewrites Pitboard's usage readings without what tells an answer from Anthropic
+  apart, so between Pitboard's own reads the automatic switch says `no_reading` and does
+  not switch.
+- While `~/.claude/.credentials.json` is behind the keychain on macOS, a switch, by hand or
+  by itself, says that Claude Code sessions already running keep the account they are on
+  until their login is next renewed or they are started again, and names the file, in place
+  of 33 seconds. The automatic switch still switches: sessions started after it take the
+  account at once. `pitboard use --json` gives `"adoption": {"follows": "renewal", "path":
+  ...}` with `adoption_ceiling_seconds` `null`, and the app counts nothing down. Read in
+  Claude Code 2.1.294, not measured: a running session keeps its login while the file is
+  there, whatever it holds. So every `pitboard status` without `--offline` and every read
+  of the app warns with `fallback_login` while the file is there, as every change did, and
+  so does a file with no login in it or one Pitboard cannot read, which pin sessions too.
+  `pitboard doctor`'s `fallback login` check says the same, and the app's notice is titled
+  **A login file is left behind the keychain**. The app's setting promises 33 seconds only
+  while no read has found the file.
+- An answer from Anthropic replaces a Claude Code account's reading whole: a limit the
+  answer does not give is gone at once, whatever its reset, so numbers filed under the wrong
+  account go at that account's next answer. They stayed until their own reset, days for a
+  weekly limit. An answer with a limit Pitboard cannot read, or without Anthropic's list of
+  limits, takes no running limit away. A Claude Code session's numbers only move a limit
+  Anthropic already gave for that account, within its window or in the next one once it has
+  reset, and never add a limit. An account Pitboard has not asked Anthropic about yet gets
+  no reading from a session, and the status line shows the session's own numbers for it,
+  where it showed none until they moved.
+- The app no longer offers an account whose reading may leave a limit out where it leaves
+  out one the account in use has, by the automatic switch's rule. It offered one whenever
+  the limit left out was not the one that ran out. OpenAI's answer can leave a window out,
+  so a Codex account whose answer had one window empty is not offered from an account that
+  has both. For a Claude Code account whose reading is from before this version, this lasts
+  until Pitboard next asks Anthropic about that account. [Which account it switches
+  to](https://docs.usepitboard.com/guides/automatic-switching#which-account-it-switches-to)
+  says which readings may leave a limit out, and the one limit they may still leave out.
+- A read and a switch ask Anthropic whose Claude Code's stored login is only once that login
+  has changed since Anthropic last named it, by its refresh token's fingerprint. So a switch
+  away from the login Anthropic last named no longer stops at `session_expired` where only
+  that login's access token has lapsed. A read records whose login each tool has stored
+  where it found that changed, with a record for each `CLAUDE_CONFIG_DIR` and `CODEX_HOME`
+  it reads under. It no longer asks the usage of a login Anthropic could not name that time,
+  which it asked under the account Claude Code's config named, so the numbers of a login a
+  sign-in replaced could be filed under the account it replaced.
+- The status line files a session's numbers under the account whose windows they are, in
+  Anthropic's last answer for each account, also while the session is still on the account
+  before a switch or a `/login`. It filed them under the account Claude Code's config named,
+  and took nothing for 33 seconds after a switch, though a session can take longer to follow
+  one. Numbers in windows no account holds are shown as the session's own and filed nowhere.
+  The label is then `work?` for the account whose login Anthropic last named as stored, `?`
+  where the session cannot be on that one, and `unenrolled` where that login is of an
+  account not enrolled. A session that passed nothing shows the account in use, marked
+  while Claude Code's config has named another since Pitboard last asked Anthropic, or
+  until Pitboard has first asked. A session that passes its five-hour limit alone files
+  nothing after each five-hour reset until Pitboard has asked Anthropic again.
+- `pitboard watch --json` prints the event `not_watching` where Pitboard cannot decide
+  whether to switch at all, with a `reason`: `switch_interrupted` and
+  `custom_oauth_endpoint`, which were reasons of `skipped`, and `nothing_signed_in`,
+  `not_enrolled` with the `email` of the account, `not_identified` with a `detail` and the
+  time it asks again, `until`, and `no_reading` with the `account` in use. Breaking for a
+  script that reads the first two from `skipped`. `pitboard watch` says each once, as
+  `Pitboard is not switching Claude Code:` and the reason, and so does the app, in a
+  notification titled **Pitboard is not switching Claude Code**. An `auto-switch` line in
+  `pitboard log` whose error came before Pitboard chose an account names no account.
+- The app asks whether to switch Claude Code by itself every 30 seconds, as `pitboard
+  watch` decides, and after every read and every change of numbers, so an account put in
+  use stops settling, and a try held back after one that came to nothing is made, with
+  nobody writing anything. It asked only after a read or numbers that showed a limit at the
+  share. Under **Switch when a limit reaches**, a line says which account it watches, how
+  much of its fullest limit is used and when that was read, or why it is not switching and
+  when it acts again. After a switch fails, the app tries again a minute later, then twice
+  as long after each failure in a row, up to 15 minutes, as Pitboard waits after failed
+  tries at a limit. It tried again at its next read of usage, so a failure that lasted was
+  tried, and recorded in `pitboard log`, every 5 minutes.
+- `pitboard watch` names the account it watches, how much of its fullest limit is used and
+  when that was read, whenever its last line said something else: once it has read the
+  accounts, after a switch, and after a reason, a wait or an error. With `--json` that is
+  the event `idle`, which only `--once` printed, and `--once` prints the line in place of
+  `Nothing to switch now.` Each warning a decision found, such as `fallback_login` and
+  `auth_overridden`, is printed once until the next switch, with that decision's line, even
+  one printed before. It printed only those of a decision that failed. After an error it
+  makes no decision under Pitboard's lock for a minute, then twice as long after each error
+  in a row, up to 15 minutes, as the app does. It decided again every 30 seconds, and each
+  error was another line in `pitboard log`.
+- In `pitboard-core`, `state::State::in_use` records whose login each tool has stored, in
+  place of `State::active`, and `State::active_for`, `set_active`, `slot_for`, `set_slot`
+  and `used` are gone. `autoswitch::Skip`'s `SwitchInterrupted` and `CustomOauth` are
+  `Blind::SwitchInterrupted` and `Blind::CustomOauth`, `Auto::Idle` is `Auto::Watching`,
+  `Auto::NoRoom` is `Auto::Skipped` with `Skip::NoRoom`, `words::not_switching` takes the
+  share, and `autoswitch::Skip` is `#[non_exhaustive]`. `usage::Source::ClaudeCodeCache`,
+  `usage::from_config_cache`, `usage::Snapshot::account_uuid`, `status::gather` and
+  `error::Error::SwitchOvertaken` are gone. `state::changed_at` and
+  `service::Pitboard::changed_at` are in epoch milliseconds. `provider::Adoption` is no
+  longer `Copy` and has the variant `AtRenewal`, `service::Warning::FallbackLogin` has the
+  field `held`, a `provider::Held`, and `doctor::FallbackLogin::fingerprint` is `Ok(None)`
+  where the file holds no login and an error where it cannot be read.
+  `switch::Outcome::AlreadyActive` has the field `config_updated`, `statusline::StatusLine`
+  the field `sure`, and `api::Owner` is `Serialize` and `Deserialize`. New are
+  `autoswitch::Blind` and `autoswitch::Look`, the variants `autoswitch::Auto::NotWatching`,
+  `Auto::Watching` and `Auto::Waiting`, `autoswitch::Skip`'s `NoRoom`, `AlreadyLeft`,
+  `GaveUp` and `Settling`, `autoswitch::DECIDE_EVERY_SECONDS` and `autoswitch::retry_after`,
+  `autoswitch::Auto::told_apart` and `Skip::told_apart`, `service::Pitboard::auto_look`,
+  `update_config`, `left_login` and `stow`, `State::account_in_use`, `identified`,
+  `other_slots` and `from_file`, `state::Account::replaced_at` and `owner`, the module
+  `in_use`, `usage::Snapshot::answered_at` and `lists_every_limit`, `usage::Room`,
+  `usage::room`, `usage::roomiest` and `usage::whole`, `status::Stale::LoginReplaced`,
+  `service::Warning`'s `LoginReplaced`, `InUseUnconfirmed` and `ConfigNamesAnother`,
+  `service::Stored`, `provider::Held`, `doctor::Facts::in_use`, `switch::update_config`,
+  `switch::stow` with `Left`, `Stowed`, `Kept` and `Foreseen`, `error::Partway`, the errors
+  `AccountNotInUse`, `LeftLoginChanged`, `StoredLoginChanged`, `LeftLoginNotEnrolled`,
+  `LeftLoginUnidentified` and `StowStopped`, and `words::not_watching`, `watching`,
+  `kept_until_renewed`, `left_lines`, `nothing_left` and `stowed_lines`. These change the
+  crate's public API.
+
+### Removed
+
+- `"source": "claude_code_cache"` in `pitboard status --json`, and `pitboard doctor`'s
+  `usage_cache` check. Breaking for a script that reads either.
+- The error code `switch_overtaken`, which was never printed.
+
+### Fixed
+
+- A sign-in outside Pitboard that replaces the only login of the account in use is said on
+  every read until that account is signed in to again or forgotten. `pitboard status`
+  shows `login replaced outside Pitboard` beside it, `--json` gives it the `stale` code
+  `login_replaced` and the read the warning `login_replaced`, the app posts it once for each
+  account, and `pitboard log` records it as `in-use`, with the account then in use. It read
+  as `nothing parked`, and nothing said what had happened.
+- An account on a plan with fewer limits, such as a Team seat with no weekly limit for all
+  models, is a place for the automatic switch to go and for the app to offer. A limit an
+  account does not have counted as spent, so a seat was never chosen once a personal
+  account's weekly limit reached the share, nor an account without a model's weekly limit
+  once that one did. Anthropic's answer lists every limit an account has. A Claude Code
+  reading that may leave one out still leaves the automatic switch no room where it leaves
+  out a limit of the account in use, as before: an answer without Anthropic's list of
+  limits, one Pitboard could not read in full, and an account's reading from before this
+  version, until Pitboard next asks Anthropic about that account. The app offers by the
+  automatic switch's rule. It never offers an account that shows 100% of any limit, and of
+  two with as much left it offers the one least full in its other limits. An account
+  without the limit that ran out is offered with **seat has no such limit.**
+- An account just switched to no longer shows the previous account's usage from Claude
+  Code's usage cache, and the automatic switch no longer acts on that cache. Claude Code
+  2.1.294 stamps the cache with the account its config names, while the numbers in it are
+  those of the login its session holds, which can still be the one switched away from.
+  Pitboard no longer reads it: between its own answers from Anthropic, an account shows the
+  last reading Pitboard or a status line recorded.
+- The automatic switch switches at the share as shown: a limit the menu shows at 95% counts
+  as 95%, on the account in use and on an account it could go to. It compared the unrounded
+  share, so a limit at 94.5% showed 95% and was not switched from. `pitboard status`,
+  `pitboard watch` and the status line round a half up, as the app does, and a limit changes
+  colour at 70% and at 90% as its figure shows them.
+- `pitboard status --offline`, the app between its reads, the automatic switch, `pitboard
+  doctor` and `pitboard forget` take the account in use from what Anthropic last said of
+  the login Claude Code has stored, and the login of an account nobody enrolled has its row
+  offline too. They took it from Claude Code's config, which a Claude Code process started
+  or signed in on another login can rewrite with its own account, as read in Claude Code
+  2.1.294. On one machine it named another account than the login stored for three hours,
+  and the automatic switch watched that account rather than the one at its limit. `forget`
+  asks whose the login is as a switch does, and where nobody can say, it keeps the account
+  last in use and any account with nothing parked.
+- `pitboard use` with the account already in use writes that account into Claude Code's
+  config where the config names another account, as a switch to it does, so `/status` in
+  Claude Code names the account in use. It changed nothing, and only the next switch put
+  the config right. The `config_names_another` and `config_write_failed` warnings and
+  `pitboard doctor` name the command.
+- The automatic switch asks whose login Claude Code has stored under its lock, as a switch
+  does, and decides from the answer: where a switch may be due, where Claude Code's config
+  has named another account since Anthropic last named that login, and until Pitboard has
+  first asked. It knows the login by its fingerprint where Anthropic named it before. So
+  after a sign-in outside Pitboard it watches the account signed in to, and spends no
+  attempt on the account it replaced. It decides and switches from that one answer, under
+  one lock. Where whose the login is cannot be told, as with Anthropic out of reach, it
+  decides nothing, says so, and asks again after a minute, then twice as long after each
+  such failure in a row, up to 15 minutes, until a read records whose it is. It was tried
+  as a switch, and said as one that failed. A keychain one front end cannot read, as over
+  SSH, fails that front end's tries alone, and the app still switches.
+- The automatic switch judges every limit of the account in use at the share. One it already
+  switched away from, or tried three times, before it resets no longer hides another, such
+  as the five-hour limit of an account put back in use after its weekly limit was left. Each
+  reason it does not switch away from a limit at the share is said once for that limit and
+  its reset, by `pitboard watch` and in the app's notification **Claude Code was not
+  switched**, and recorded once in `pitboard log`: no account with room, naming any that
+  Anthropic has given no reading of yet, the limit already switched away from, three failed
+  tries, the account put in use less than 5 minutes ago, and Claude Code signed in another
+  way. Only the last was said by the app, and `pitboard watch` said no room and the last;
+  none was recorded. A try that came to nothing holds back every limit left to try until its
+  wait is over, which `pitboard watch` says of the limit it tries then, and an account a
+  switch was refused over is passed over for every limit of the account in use until the
+  limit it was refused for resets. It judges only a reading Anthropic gave, of the account
+  in use and of each it could switch to: one an earlier Pitboard wrote is not acted on, and
+  `no_reading` says so, until Pitboard next asks Anthropic about that account.
+- A login too large to write without the argument line, where `PITBOARD_NO_ARGV` forbids
+  it, counts as one of the automatic switch's three attempts at a limit. It passed the
+  account to go to over, then every other in turn, until no account read as having room.
+- The app and `pitboard watch` see a change to Pitboard's accounts made in the same second
+  as the last one they saw, such as a `pitboard use` typed in a terminal. Pitboard told when
+  its account index was written in whole seconds, so the app showed such a switch only at
+  its next read, up to 5 minutes later, and `pitboard watch` named it up to 30 seconds late.
+- A switch of Claude Code, by hand or by itself, holds the lock a Claude Code session takes
+  before it renews its login, from before it last reads the login it switches away from
+  until the switch is recorded. A session that renewed that login at the same moment used up
+  the refresh token Pitboard had just parked, then saved its renewed login nowhere, since
+  another login was stored by then. The account switched from was left with a parked login
+  Anthropic refuses. Read in Claude Code 2.1.294, not measured against a running session.
+  Where a session is renewing its login just then, the switch waits for it, and fails with
+  `switch_in_progress` after about 7.5 seconds, as it does while Claude Code writes its
+  login.
+- The app and `pitboard watch` no longer say a switch was interrupted while another
+  `pitboard` is in the middle of one, such as a `pitboard use` typed in a terminal. Every
+  switch keeps a record until it is done, and they read that record as left by a switch
+  that had stopped. They now wait for the switch and decide from what it leaves, and say
+  `switch_interrupted` only where no `pitboard` is making the switch.
+
+## [0.9.0] - 2026-10-08
+
+### Added
+
+- `pitboard doctor` warns with `fallback login` on macOS when `~/.claude/.credentials.json`
+  holds a Claude Code login besides the one in the keychain, and each change to a Claude
+  Code account warns with `fallback_login`, which the app shows as **Another login is left
+  in a file**. A `/login` run where the keychain is locked, as over SSH, leaves that file,
+  and Claude Code 2.1.294 keeps it through every later keychain write. A session that
+  cannot read the keychain signs in with it, so it stayed on another account than the one
+  Pitboard showed, whatever Pitboard switched to. See [Claude Code over SSH uses another
+  account](https://docs.usepitboard.com/troubleshooting#claude-code-over-ssh-uses-another-account).
+- Each limit says how its use compares with an even pace: what using it evenly from the
+  start of its window to its reset would have used by now. `pitboard status` marks that
+  place in the limit's bar, red where the limit is used faster and green where slower, and
+  says `27% over pace`, `13% under pace` or `on pace` after its reset. The app's window
+  marks it on the bar the same way, with the same words beside it, and the bar's help says
+  what an even pace would have used. The status line puts a red `▲` or a green `▼` after the
+  account in use's shares. In `--json`, each limit has a `pace` object. Within 5 points of
+  even counts as on pace, and nothing is said in the first 3% of a window. See
+  [Pace](https://docs.usepitboard.com/concepts/usage#pace).
+
+### Changed
+
+- A keychain that is locked where it cannot ask for its password stops a command with the
+  error `credential_store_locked`, in place of `credential_store_unreadable`. The message is
+  the same.
+- How long the account in use lasts comes from its limits' paces. `weekly limit runs out in
+  11h 05m at this pace` names the limit that runs out first at the rate since its window
+  began, and nothing is said while every limit lasts until it resets. It was a rate taken
+  across 14 days of readings, through every reset in them: on one machine it gave a weekly
+  limit at 99% a day and nine hours when it had about one, and said nothing of a week used
+  five times faster than even. The app says it in its window and beside the limit in its
+  menu, as **weekly 73% (runs out in 11h 05m)**. An account not in use no longer says how
+  long it lasts. In `--json`, `lasts` keeps its fields and is worked out this way, and for
+  an account not in use it is the first reset.
+- `pitboard status --json` gives each account `organization_uuid`, the Claude organisation
+  its login belongs to. `account_uuid` stays the Anthropic account UUID.
+- The account index is schema 5. An earlier Pitboard cannot read it once this one has, so
+  update the command line and the app together. Accounts already enrolled keep their parked
+  logins, readings and claude.ai windows.
+
+### Removed
+
+- Pitboard no longer keeps `readings/` in its directory, the readings the old estimate came
+  from. The next time it reads usage it deletes the files it wrote there, and the folder
+  where nothing else is in it.
+
+### Fixed
+
+- `pitboard doctor` and the app's **This Mac** pane say a locked keychain once, as a failed
+  `credential` check, with what Claude Code sessions do until it is unlocked. Each parked
+  login behind it warns `not read: the keychain is locked`. Before, every one failed and
+  said to sign in to its account again, which nothing needed.
+- While the login in use cannot be read, the account Pitboard last switched to, which has
+  nothing parked because its login was put in use, says `login could not be read` in
+  `pitboard status` and the stale code `login_unreadable`, and the app no longer marks it
+  **Needs signing in again**. After a `/login` where the keychain was locked, Claude Code's
+  config named another account, and this one was told to sign in again although its login
+  was still in the keychain.
+- One person's Claude accounts in two organisations, such as a claude.ai plan and a Team
+  plan, are two accounts, each with its own label and limits. Pitboard told them apart by
+  the Anthropic account alone, so the second was refused as already enrolled, a switch to it
+  said the first was in use, and both showed one account's usage. Claude Code 2.1.294 tells
+  logins apart by account and organisation together.
+
+## [0.8.0] - 2026-10-08
+
+### Added
+
+- Pitboard can switch Claude Code by itself before the account in use runs out, so an agent
+  working in a running `claude` session can go on under another of your accounts. Once any
+  limit of the account in use reaches a share you choose, 95% by default, Pitboard
+  switches to the enrolled account with the most room in that limit, among those that have
+  used less than the share of every limit. With no such account, nothing moves. It
+  switches before the limit, not at it, because sessions already running follow a switch
+  within about 33 seconds. It is off until you turn it on. It never switches Codex, whose
+  running sessions keep their account until restarted, and never switches back by itself.
+  Each switch is the one `pitboard use` makes, and `pitboard log` records it as
+  `auto-switch`. What was tried for each limit is kept in `autoswitch.json` in Pitboard's
+  directory. See [Switch before an account runs
+  out](https://docs.usepitboard.com/guides/automatic-switching).
+- `pitboard watch` switches Claude Code that way for as long as it runs in a terminal,
+  whatever the app's setting says. Control-C stops it. Nothing installs it, and it starts
+  nothing that outlives it. `--at` sets the share, from 50 to 99. It reads every account
+  every 5 minutes, as the app does, and decides again within 2 seconds of a status line
+  recording usage. It prints a line, starting with the local time, for each switch, and
+  once for each thing that stops one. `--once` decides once from the numbers Pitboard last
+  read and exits. With `--json`, each event is an envelope on a line of its own, whose
+  `data.event` is `watching`, `switched`, `no_room`, `skipped` or `idle`.
+- The app's **Settings** > **General** has a **Before an account runs out** section, with
+  **Switch Claude Code automatically**, off by default, and the share it switches at, from
+  50% to 99%. The app keeps both in `app.json`, as `auto_switch` and `auto_switch_at`, and
+  switches only while it is open. After a switch it posts a notification such as
+  **Switched Claude Code to personal**, and the window shows the switch as one made by
+  hand. When something stops a switch, or a switch it tries fails, it says why in a
+  notification, once until it next switches. The **Activity** pane names such a switch
+  **Automatic switch**.
+- `pitboard doctor` has a `network` check, which the app's **This Mac** pane shows too. It
+  says whether Pitboard's requests go out directly or through a proxy, names the proxy and
+  the variable it came from, such as
+  `through http://***:***@proxy.example.com:3128, from HTTPS_PROXY`, and lists the hosts
+  Pitboard calls that `NO_PROXY` exempts. Neither report shows the user name or password
+  in a proxy's address, and `--json` shows a digest in place of its host and port, as it
+  does an organisation's name, unless the proxy is on loopback. It warns when the proxy is
+  a SOCKS one, which Pitboard does not go through, in the words a request then fails with,
+  unless `NO_PROXY` exempts every host Pitboard calls. It also warns when a variable holds
+  no proxy address Pitboard can read, which Pitboard passes over.
+- The daily renewal schedule goes through the proxy of the Pitboard that installs it.
+  `pitboard schedule install`, and turning on **Renew parked logins daily** in the app,
+  write `ALL_PROXY`, `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`, in whichever case each is
+  set, into the LaunchAgent's `EnvironmentVariables` or the systemd service's
+  `Environment=` lines, as they write `PITBOARD_NO_ARGV`. launchd and systemd start the
+  schedule without your shell's environment, so its requests went out directly, unless
+  they gave every job a proxy. Install it again after your proxy changes. On macOS,
+  `pitboard schedule install` refuses a variable holding a character a LaunchAgent cannot
+  hold, such as the control character U+0001, and names it. `pitboard doctor` has a
+  `schedule_proxy` check, which warns when the schedule's proxy differs from the one the
+  run sees, with each user name and password as `***`. Where the run's proxy is a SOCKS
+  one that fails its requests, it says to change that variable before installing the
+  schedule again, which would give the schedule that proxy too. In the app's **This Mac**
+  pane the same line is not a warning: the app runs with the variables macOS gives it, not
+  your shell's, and it says that the app's switch would give the schedule the app's.
+
+### Changed
+
+- A Windows build of Pitboard, from crates.io or from source, now compiles, for x64 and
+  ARM64 with Microsoft's toolchain. It says `Pitboard for Windows is not released yet. This
+  build changes nothing.`, with the code `windows_not_released` in `--json`, and reads and
+  changes nothing: only `--version`, `--help`, `completions` and `manpage` answer. Until now
+  it stopped compiling with the first of those sentences. On Windows,
+  `cargo binstall pitboard` finds no release to download and stops, rather than build this
+  one from source. macOS and Linux are unchanged.
 - The product is called Pitboard, with a capital P, everywhere it names itself: the app
   (its menus, About, Login Items and the Share menu entry, **Pitboard** and **Pitboard
   Debug**), the command line's messages and help, and the docs. The command is still
@@ -128,15 +519,274 @@ the menu bar app quits Claude around a switch and opens it again.
   - A host written partly in full-width letters and partly in escapes, such as
     `ｃ%EF%BD%8Caude.ai`, is claude.ai, as the WHATWG URL standard maps it. Pitboard said
     it was another site.
-- A state file that names a Claude Desktop account stops an older Pitboard with
-  `state_names_unknown_tool`, which says to update it. The file stays at schema 4.
-- An interrupted Claude Desktop switch has its own record,
-  `~/.pitboard/desktop/journal.json`, finished only while Claude is closed. It never blocks a
-  Claude Code or Codex command, and `pitboard abandon` gives it up after any interrupted
-  Claude Code or Codex switch.
+- The app keeps its own preferences, the tools you said **Not Now** to a second account for
+  and whether it has opened its window on a first launch, in `app.json` in Pitboard's
+  directory, so they follow `PITBOARD_HOME` as your accounts do. It kept one set in its
+  macOS preferences for every Pitboard directory, so a **Not Now** said with one
+  `PITBOARD_HOME` held with another. The first time it opens a directory with no `app.json`,
+  it takes what its macOS preferences held, once.
+- A notification that an account in use has run out is posted once for each reset of that
+  limit, however often the app is quit and opened again meanwhile: what was posted is kept
+  in `told.json` in Pitboard's directory. The app posted it again after every relaunch. The
+  window still says it after a relaunch, as before.
+- What the app says that depends only on the time, such as **used up until 14:05** in the
+  menu, is worked out once a minute, so a menu opened between two minutes can say it for up
+  to a minute after that time, as its bars already could. It was worked out as the menu
+  opened.
+- The **Activity** list names a switch **Switch**, from either front end. It named one
+  **Use**, after `pitboard use`, the command the log records a switch by.
+- The settings learn whether this copy of the app can turn on daily renewal, or link its
+  command line, when they read the schedule or look for the command line, which they do
+  each time they are shown. They asked the file system again each time they drew, so a copy
+  moved meanwhile showed the new answer at once.
+- The app keeps the account windows' records, the data folders it made for each Pitboard
+  directory and the page each window was last on, in `windows.json` in
+  `~/Library/Application Support/com.usepitboard.Pitboard`, private to you. It kept them in
+  its macOS preferences, as `webStores` and `windowPages`. The first time it opens without
+  `windows.json`, it takes what those held, once, and removes them once the file is there.
+  Where `windows.json` is there and the app cannot read it, or cannot read records in it, as
+  after a hand edit, the app deletes no window's data and never writes over the file. Each
+  window then opens at its site's home with the sign-in note at each launch, and keeps its
+  data.
+- Building Pitboard on Windows, as `cargo install pitboard` does there, stops with
+  `Pitboard for Windows is not released yet.` It said that Pitboard runs on macOS and
+  Linux, and that another system needs a host of its own. Pitboard still does not build on
+  Windows.
+- Pitboard's facts about Claude Code and Codex say, for each of macOS, Linux and Windows,
+  whether they were read there and from which build. Read from the Windows builds, x64 and
+  ARM64, seven of Claude Code's 17 facts hold on 2.1.289, and nine of Codex's 16 on
+  0.160.0. Three of Claude Code's are not read on Windows: two are about the keychain, and
+  the Windows build's Credential Manager store calls the `Bun.secrets` the third rules out.
+  Seven of each tool's facts wait on the Windows work. Where Claude Code finds its config
+  file was read again, from 2.1.289 on every system. The conformance check reads both
+  tools' Windows builds, and Codex's macOS build as well as its Linux one. What Pitboard
+  does is unchanged.
+- In `pitboard-core`, `assumptions::Platform` gains `Windows`, and `Platform::ALL`, which
+  meant macOS and Linux, is gone. `assumptions::read_on` returns a `Vec<Platform>` in place
+  of a `&'static [Platform]`, and `assumptions::verified_against` takes the system as well
+  as the tool. `assumptions::OnSystem`, `PerSystem`, `per_system`, `on`, `verified_on` and
+  `pending` are new. These change the crate's public API.
+- The JSON that `--json` prints is ASCII alone, on every system. Each character outside
+  ASCII, in a label or an email address for example, is written as a `\u` escape: the label
+  `Đạt` is written `\u0110\u1ea1t`, and a character beyond U+FFFF as its UTF-16 surrogate
+  pair. A JSON parser reads the same values as before. Pitboard wrote such characters as
+  UTF-8, which a program that decodes the output in another code page read as other
+  characters. This reaches every output that carries such a character, whatever your labels
+  are: each `pitboard doctor --json` detail joins its parts with ` · `, and
+  `pitboard statusline --json`'s `line` does too, so both now carry `\u00b7`. What Pitboard
+  prints without `--json`, and the JSON files Pitboard keeps, are unchanged.
+- On macOS and Linux, Pitboard refuses every command that changes something when it runs
+  as root or with `sudo`, with the error code `elevated`:
+  `Pitboard changes nothing when it runs as root or with sudo. Run it as yourself.` That
+  includes a container or a WSL distribution whose only user is root. Pitboard tells
+  `sudo` by `SUDO_UID` being set, as it is under `sudo -u` another user too, and in a
+  shell, tmux or editor server started with `sudo -iu` and your own name, which passes
+  `SUDO_UID` to everything it starts; `env -u SUDO_UID` runs a command without it. Pitboard
+  changed things as root before: a file it made then was root's, and a keychain item might
+  have been, where your own runs might not read or replace it. A refused command writes
+  nothing, not even its line in `pitboard log`. `pitboard schedule uninstall` and
+  `pitboard uninstall` are refused too, so a schedule or a Pitboard directory made as root
+  is removed by hand, as
+  [Pitboard changes nothing as root](https://docs.usepitboard.com/troubleshooting#pitboard-changes-nothing-as-root)
+  says.
+  - `pitboard status` still answers, with what `pitboard status --offline` shows and the
+    warning `read_only`, which says why. It renews no parked login, asks Anthropic and
+    OpenAI nothing and writes nothing. The status line still answers too, and writes
+    nothing.
+  - `pitboard doctor` fails its `elevated` check, first, with how Pitboard runs.
+  - `pitboard renew --json` reports a refused run as the error `elevated`, where it gave
+    an empty list, and **Renew Now** in the app says why, where it said
+    `No parked login was due.`
+  - `forget` and `uninstall` ask no question whose answer would be refused, and
+    `enroll --sign-in` does not say it is opening a sign-in.
+- In `pitboard-core`, `service::Pitboard::renew` returns a `Result`, and
+  `service::Permit` and `Pitboard::permit` are new. Everything outside `service` that
+  writes, removes, changes a store of logins or the scheduler, starts a tool's sign-in or
+  renews a parked login takes a `Permit`, which only `Pitboard::permit` makes: among them
+  `app::write_file`, `audit::record`, `schedule::install`, `status::gather`,
+  `switch::settle` and `statusline::read`, which takes an `Option<Permit>` and writes
+  nothing without one. `host::Elevation` is new. These change the crate's public API.
+- `pitboard schedule install`, and turning on **Renew parked logins daily** in the app's
+  settings, refuse while `PITBOARD_HOME` names a directory other than `~/.pitboard`, with
+  the error code `schedule_not_default_home`, and install nothing. The schedule renews the
+  parked logins in `~/.pitboard` alone, so it would leave those in that directory to run
+  out. Both installed it all the same, and it renewed `~/.pitboard`. To turn on daily
+  renewal, unset `PITBOARD_HOME`. To renew the parked logins in another directory, run
+  `pitboard renew` with `PITBOARD_HOME` set. `pitboard schedule uninstall`, and turning
+  the switch off in the app, still remove the schedule whatever `PITBOARD_HOME` says.
+  Pitboard compares the two as paths, so a `PITBOARD_HOME` that is a link to
+  `~/.pitboard` is refused too. While `PITBOARD_HOME` names another directory,
+  `pitboard schedule status` adds that the schedule renews only the parked logins in
+  `~/.pitboard`, and with nothing installed it says to unset `PITBOARD_HOME` before
+  `pitboard schedule install`. It said to run `pitboard schedule install`, which is
+  refused there.
+- Pitboard refuses every SOCKS proxy: `socks4://`, `socks4a://`, `socks5://`, `socks5h://`
+  and `socks://`, which is `socks5://`. Pitboard takes its proxy from the first of
+  `ALL_PROXY`, `HTTPS_PROXY` and `HTTP_PROXY`, each read before its lower-case spelling,
+  that holds an address it can read. While that variable names a SOCKS proxy, each request
+  to Anthropic or OpenAI fails before anything is sent, with the cause `unreachable` and
+  the reason `Pitboard does not use SOCKS proxies yet, and ALL_PROXY names one`, naming
+  that variable. Requests with a `socks4://`, `socks5://` or `socks://` proxy no longer go
+  out directly, around the proxy you set. Requests with a `socks4a://` or `socks5h://` one
+  failed with `Connection refused`, and fail with that reason instead. A host `NO_PROXY`
+  names is still reached directly, without the proxy's own name being looked up, and a
+  redirect from it is not followed while a SOCKS proxy is named. Pitboard does not go
+  through SOCKS proxies because ureq 3.4.2, the library it sends requests with, waits past
+  the request's 5 seconds on one that never answers, and looks the proxy up before it asks
+  `NO_PROXY`.
+- Pitboard writes the daily renewal schedule's files, the LaunchAgent and the systemd
+  service and timer, so that only you can read them, mode 600, whatever mode a file
+  already there had. They can hold a proxy's user name and password. A file Pitboard wrote
+  where none was there was already 600, and one already there kept its own mode, such as
+  644.
+- In `pitboard-core`, `service::Pitboard::check_homes` and
+  `service::Pitboard::schedule_renews_this_home`, the errors `Error::HomeNotAbsolute` and
+  `Error::ScheduleNotDefaultHome`, `Context::started_by_the_schedule` and
+  `schedule::SCHEDULED_RUN` are new, and `Context::with_claude_config_dir` keeps an empty
+  value, which it dropped as unset.
+- Pitboard's own Codex sign-ins, the ones `pitboard enroll codex/<label> --sign-in` and the
+  app's **Add Account** and **Sign In Again** run, start Codex as
+  `codex -c cli_auth_credentials_store="file" login`, so Codex keeps the new login in
+  `auth.json` in the private folder Pitboard reads it back from. `/etc/codex/config.toml`,
+  or a trusted project's `.codex/config.toml`, could have sent it to the keychain instead.
+  Only `/etc/codex/managed_config.toml`, a managed preference or a requirement is over the
+  `-c`. Where one of them chooses a store other than the file, Pitboard refuses the sign-in
+  before it starts, as the first entry under Fixed says; where one chooses the file, the
+  sign-in goes ahead.
+- `pitboard doctor`'s `Codex login store` line, and the app's **This Mac** pane, say which
+  setting chose Codex's store, such as `file (Codex's default)` or
+  ``keyring (pinned to `keyring` by /etc/codex/requirements.toml)``. Where the store is the
+  file, `doctor` adds that Pitboard does not read a project's own `.codex/config.toml`. It
+  said `file`, or, whichever file chose another store,
+  `keyring (cli_auth_credentials_store in config.toml)`. `pitboard doctor --json` gives
+  `unknown` as Codex's `backend` where nobody can tell, as the second entry under Fixed
+  says.
+- In `pitboard-core`, `doctor::CodexFacts` has two more fields, `backend_setting` and
+  `backend_remedy`. This changes the crate's public API.
+- In `pitboard-core`, `holder::Remedy::ReopenApp` names its app by `app`, a
+  `holder::AppId`, in place of `bundle_id`. `AppId::MacBundle` holds a Mac app's bundle id,
+  and `AppId::as_str` gives the id as its system writes it. `holder::AppId`,
+  `service::Warning::SessionsUnknown` and `service::Warning::SessionsUnknownAfterSignIn` are
+  new. These change the crate's public API.
+- Pitboard reads `ALL_PROXY`, `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`, and their
+  lower-case spellings, from the environment it was started with, by the rules ureq 3.4.2
+  reads them with, and gives ureq the proxy. ureq read them itself, from the process, so
+  each request goes through the same HTTP or HTTPS proxy as before. In `pitboard-core`, a
+  context made with `Context::new` names no proxy, where its requests went through the one
+  the process's environment named; a context read from an environment, as the command
+  line's and the app's are, goes through the one that environment names. `doctor::Facts`
+  has the fields `network` and `in_the_app`, `doctor::ScheduleFact` has the fields
+  `network` and `network_differs`, and `doctor::NetworkFact` and `doctor::ProxyFact` are
+  new. These change the crate's public API.
+- In `pitboard-core`, the `autoswitch` module, `service::Pitboard::auto_switch`,
+  `words::share_of_limit` and `words::not_switching` are new, and `error::Error` has the
+  variant `SwitchOvertaken`. These change the crate's public API.
 
 ### Fixed
 
+- When the account in use runs out of a limit, the app's notification and window offer to
+  switch only to an account with room in every limit it reports, counting a limit whose
+  reset time has passed as reset. They offered the account with the most room in the limit
+  that ran out, even one that had run out of another limit. An account with five-hour room
+  and its weekly limit spent stopped at once when switched to.
+- Where Pitboard cannot read the list of running processes, a Codex switch warns, with the
+  code `sessions_unknown`, that Pitboard could not tell whether Codex sessions started
+  before it are still running, and says not to sign out in one: that revokes the login
+  Pitboard has just parked. It said nothing, as when nothing runs Codex. In the app, the
+  switch's notice says it.
+- Where Pitboard cannot read the list of running processes, a sign-in that puts a new login
+  of a Codex account in use warns with `sessions_unknown` too, and says to quit and start
+  again any Codex session still on the old login. Otherwise one of them can put the old
+  login back when it refreshes. It said nothing. In the app, the notice that the account
+  has a new login says it, and says it once where the last switch already could not tell.
+- On macOS and Linux, Pitboard reads which store Codex keeps its login in from every layer
+  Codex 0.160.0 reads outside a project, in Codex's order: its default, the file store;
+  `/etc/codex/config.toml`; `config.toml` in Codex's home; `/etc/codex/managed_config.toml`;
+  and on macOS the managed preference `config_toml_base64` of `com.openai.codex`, which a
+  configuration profile forces. `/etc/codex/requirements.toml`, and on macOS the managed
+  preference `requirements_toml_base64`, pin the store over all of them. Pitboard read only
+  `config.toml` in Codex's home, so on a machine where another of them put Codex's login in
+  the keychain or in memory, it looked for the login in an `auth.json` Codex does not keep:
+  it said nothing was signed in to Codex, and a sign-in it ran left its login where Pitboard
+  could not read it back. A Codex switch, enrolment or sign-in on such a machine is refused
+  with `live_store_unsupported`, as one already was where Codex's own `config.toml` named
+  such a store, and the message names the setting and what would choose the file store: the line
+  `cli_auth_credentials_store = "file"` in your own `config.toml`, or, where a requirement,
+  `managed_config.toml` or a managed preference chose it, that only an administrator can
+  change it.
+- Where one of those layers is there and Codex cannot read it, because it cannot be read,
+  is not TOML or names a store Codex does not have, Pitboard refuses with
+  `live_store_unsupported` and says which, and `pitboard doctor` says it cannot tell where
+  the login is: Codex 0.160.0 does not start then. Pitboard took such a store to be the
+  file. `cli_auth_credentials_store = "nonsense"` in your own `config.toml` was read as the
+  file store, and is refused the same way.
+- Where one of those layers has a `profile = "<name>"` line, Pitboard reads it as choosing
+  the profile that a `[profiles.<name>]` table in any of them defines, as an older Codex,
+  such as 0.99.0, does. A profile's table does not change the store, since neither Codex
+  0.99.0 nor 0.160.0 reads `cli_auth_credentials_store` there, so the store is still the
+  one the layers choose. A line that names a profile no table defines is refused with
+  `live_store_unsupported`, as 0.99.0 refuses it; Pitboard ignored the line. Codex 0.160.0
+  does not start with such a line at all, whatever it names: it chooses a profile only
+  with `--profile`.
+- On macOS and Linux, Pitboard no longer refuses a Codex account where your own
+  `config.toml` sets `cli_auth_credentials_store` to `keyring`, `auto` or `ephemeral` and
+  `/etc/codex/managed_config.toml`, `/etc/codex/requirements.toml` or, on macOS, a managed
+  preference sets it to `file`. Codex 0.160.0 takes their setting over yours and keeps its
+  login in `auth.json`, so Pitboard parks and switches it there. Pitboard read only your
+  own `config.toml`, and refused such an account with `live_store_unsupported`.
+- An account's window no longer opens again on a sign-in page of its site, such as
+  chatgpt.com's `/api/auth`, which would repeat a sign-in that has ended: it opens on the
+  page it showed before, or at the site's home. A window closed, or Pitboard quit, while it
+  was on such a page opened there again.
+- After Claude Code refuses a code you paste, the sign-in sheet says **Claude Code didn’t
+  take that code. Copy the whole code your browser shows, and paste it again.** and offers
+  the code field again, and the same sign-in takes the next code. The sheet asked for a code
+  once, so a refused one left a sign-in that only **Cancel** could end.
+- In the app, **Sign In** pressed right after **Cancel** no longer says another
+  `pitboard enroll --sign-in` is already waiting: the new sign-in starts once the one
+  cancelled has stopped. 0.7.0 stopped the cancelled sign-in in the background and started
+  the new one at once, which could find the old one still holding the lock that allows one
+  sign-in at a time.
+- After you add, name, rename or forget an account, give up on an interrupted switch or
+  press **Renew Now**, the app shows what it reads of your accounts right after. When its
+  look for changes made in a terminal found the account index just as the app had written
+  it, the app took its own change for one made elsewhere and threw that read away: in an
+  open window, an account just added showed no numbers, and nothing said when the accounts
+  were read, until you opened the menu or went back to **Accounts**, either of which reads
+  at once, or the read the app makes every five minutes came. 0.7.0 did the same. A look
+  that found a rename before the rename had finished also put away what that account's
+  last switch said, and could notify you again that the account had run out.
+- A sign-in that fails after its sheet has closed is said in the window. It was said
+  nowhere.
+- A name the **Name** or **Rename** sheet could not save, once the sheet had closed or
+  another had taken its place, is said in the window. It was said nowhere.
+- Quitting Pitboard stops a sign-in under way, and the tool's own sign-in with it, before the
+  app goes. Pitboard left a `claude` or `codex` that was signing in running after it quit.
+- Two warnings with the same words are two notices in the window. They shared one id, which
+  a SwiftUI list does not allow, so what the window drew of them was not defined.
+- **This Mac** lists the check of each account's parked login as a row of its own. Every
+  Claude Code account's check shared one id, and so did every Codex account's, which a
+  SwiftUI list does not allow, so what the pane drew of them was not defined.
+- **This Mac** says it is checking until the last check asked for is in. With two under
+  way, after you left **This Mac** and came back while a check ran, it showed **Checked
+  at** once the first was in, beside checks still to come.
+- After an interrupted switch Pitboard cannot finish, the app shows **An interrupted switch
+  is waiting**, with its **Give Up** button, each time it reads your accounts, and
+  `pitboard status` warns with `recovery_undetermined` in the words a change stops with.
+  Neither said so before. The app looks for it in what a read says, and no read said it, so
+  the notice never appeared and a switch failed with nothing offered but **OK**. Reading
+  finishes and changes nothing. `pitboard status --offline` and `pitboard doctor` give the
+  same message unless only Anthropic can tell whose login Claude Code is using. The app
+  puts the notice away once the switch is given up on or finished in a terminal.
+- `pitboard abandon`, and the app's **Give Up**, give up on an interrupted Codex switch
+  while `CLAUDE_CODE_CUSTOM_OAUTH_URL` is set, as a change to a Codex account goes ahead
+  with it set. Both refused, so a Codex switch nothing could finish could not be given up
+  on either.
+- `pitboard doctor`, and the app's checks, no longer warn that a parked login "could not be
+  read this time" after a switch, a sign-in that enrolled an account, or a renewal of a
+  parked login. Pitboard writes a park's name down before it writes the login, and the name
+  stayed on that list until the next change, so doctor counted a login it had already
+  recorded.
 - `pitboard doctor`'s advice about a login others on the machine can read is one
   sentence again, without a run of spaces in the middle of it.
 - The note under the sign-in sheet's **Code** field says what Claude Code does: it takes
@@ -149,6 +799,45 @@ the menu bar app quits Claude around a switch and opens it again.
 - With `HOME` unset, the command line used the folder it was run from as your home: it kept
   its files in a `.pitboard` there, and looked for Claude Code's and Codex's beside it. It
   now uses your account's home directory, as the app does.
+- With `HOME` or `PITBOARD_HOME` empty, or with it, `CLAUDE_CONFIG_DIR`,
+  `CLAUDE_SECURESTORAGE_CONFIG_DIR` or `CODEX_HOME` set to a path that does not start at
+  the root, such as `pitboard`, Pitboard refuses every command but `completions`,
+  `manpage` and `doctor` with the error code `home_not_absolute`, which names the variable:
+  `HOME is empty, so the folder it names would depend on where each program runs. Set it
+  to a full path, or unset it; Pitboard reads and changes nothing until then.` Pitboard
+  took such a path to be under the folder it was run from: an empty `HOME` or
+  `PITBOARD_HOME` kept its files there, and an empty `HOME` had
+  `pitboard schedule install` write the schedule's file there. Claude Code and Codex take a
+  relative one from the folder each of them runs in, so the login Pitboard read and
+  switched was the one under the folder Pitboard ran in. `pitboard doctor` fails a `homes`
+  check instead, and checks nothing else; the app's **This Mac** pane shows the same. The
+  app reads nothing under such a home either. It shows the error where it shows your
+  accounts, finds no tool and no `pitboard`, and leaves its own files there unread and
+  unwritten.
+- A run of the daily renewal schedule renews the parked logins in `~/.pitboard` whatever
+  `PITBOARD_HOME` says, empty or relative included, which other commands refuse as above.
+  The schedule renews `~/.pitboard` alone, and its job is written without
+  `PITBOARD_HOME`, but a `PITBOARD_HOME` set with `launchctl setenv` on macOS, or in
+  systemd's user environment on Linux, through `systemctl --user set-environment` or
+  `environment.d`, reached the job. The job then renewed that directory's parked logins
+  and left those in `~/.pitboard` to run out. On macOS Pitboard tells a run of the
+  schedule by the job's name, which launchd gives it in `XPC_SERVICE_NAME`. On Linux it
+  does not rely on what systemd passes a job, which systemd itself calls best effort, so
+  the timer's service runs `pitboard renew --scheduled`. A timer installed by an earlier
+  Pitboard runs `pitboard renew`, which renews the directory `PITBOARD_HOME` names as
+  before, until you run `pitboard schedule install` again, which rewrites it. If you go
+  back to an earlier Pitboard on Linux, run its `pitboard schedule install` as well: an
+  earlier Pitboard does not take `--scheduled`, so until then the timer fails every day.
+- With `CLAUDE_CONFIG_DIR` set but empty, Pitboard refuses as above, with
+  `home_not_absolute`: `CLAUDE_CONFIG_DIR is empty, so the folder it names would depend on
+  where each program runs.` Claude Code reads an empty one as unset for `~/.claude.json`
+  and for which keychain item holds its login, but as the folder it runs in for its
+  config directory, so its settings, the lock around its login and, on Linux, the login in
+  `.credentials.json` are in whatever folder each session started in. Pitboard read an
+  empty one as unset, so it took that lock, and on Linux switched that login, in
+  `~/.claude`, where no Claude Code started with it looks. On macOS such a switch did move
+  the login, which is in the default keychain item, and took only the lock in the wrong
+  folder; it is refused all the same. To keep switching, unset `CLAUDE_CONFIG_DIR`.
 - The command line takes a `claude` or `codex` to be the tool's program only when it is a
   regular file you may run, as the system judges it when it starts one, and otherwise looks
   further on `PATH`. It took a file only others may run, and then failed to start it.
@@ -176,6 +865,19 @@ the menu bar app quits Claude around a switch and opens it again.
 
 ### Security
 
+- Pitboard refuses more folders that sync to other machines as its directory, with
+  `state_on_synced_drive`: any folder inside `~/Library/CloudStorage`, where macOS keeps
+  the folders of cloud storage apps such as Box and Google Drive, or inside
+  `~/Library/Mobile Documents`, where iCloud Drive keeps each app's folder; and any folder
+  named `Dropbox`, `Dropbox (<team>)`, `Google Drive`, `GoogleDrive-<account>`,
+  `OneDrive`, `OneDrive - <organisation>`, `OneDrive-<kind>`, `com~apple~CloudDocs` or
+  `Sync`. A name counts in any case, so `~/dropbox` is refused as `~/Dropbox` was, and
+  wherever it is in the path, your home's own folders included: with a home of
+  `/home/sync` or `/home/dropbox`, `~/.pitboard` is refused though nothing syncs it, and
+  `PITBOARD_HOME` can name a folder outside it. On Linux the parked logins are files in
+  that directory, which such a folder would copy to every machine it syncs to. Every
+  folder Pitboard refused before is still refused, `SyncAdmin` and `OneDriveTools` among
+  them, though they sync nothing.
 - Pitboard refuses a site's sign-in link from outside however its path is written. It took
   `claude.ai/magic-link/%FF` and `chatgpt.com/api/auth/%C3`, whose paths hold a byte that is
   not text, and `claude.ai/magic-link/%CC%81`, whose path has a combining mark after a
@@ -1211,7 +1913,11 @@ First release.
 - Schema 3: one parked login per account, with when it expires. Earlier files are refused
   rather than migrated; nothing was ever released that wrote them.
 
-[Unreleased]: https://github.com/datlechin/pitboard/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/datlechin/pitboard/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/datlechin/pitboard/compare/v0.10.0...v0.11.0
+[0.10.0]: https://github.com/datlechin/pitboard/compare/v0.9.0...v0.10.0
+[0.9.0]: https://github.com/datlechin/pitboard/compare/v0.8.0...v0.9.0
+[0.8.0]: https://github.com/datlechin/pitboard/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/datlechin/pitboard/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/datlechin/pitboard/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/datlechin/pitboard/compare/v0.5.1...v0.5.2

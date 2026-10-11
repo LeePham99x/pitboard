@@ -7,6 +7,7 @@
 
 use crate::context::Context;
 use crate::error::{Error, Result};
+use crate::service::Permit;
 use crate::{atomic, home};
 use serde_json::{Map, Value};
 use std::path::{Path, PathBuf};
@@ -52,7 +53,9 @@ fn belongs_to(value: &Value, outgoing: &[&str]) -> bool {
 }
 
 /// Replace the recorded identity and drop what was derived from the previous one. Leaving
-/// out `profileFetchedAt` makes Claude Code refetch its profile rather than trust ours.
+/// out `profileFetchedAt` has the next Claude Code process to start fetch the profile of the
+/// login it starts with and write that account here, rather than trust a copy Pitboard wrote
+/// (the register's `config_identity_is_the_last_writers`).
 ///
 /// Returns the keys it dropped. Pitboard is editing the file that holds a person's whole
 /// Claude Code life and deciding what to remove from it by a shape rule, so what it
@@ -87,15 +90,15 @@ fn backups_dir(ctx: &Context) -> PathBuf {
 
 /// Claude Code keeps a backup ring of its own, but churns through it in minutes, so it
 /// cannot be relied on to still hold a pre-switch copy.
-pub fn backup(ctx: &Context, path: &Path) -> Result<PathBuf> {
+pub fn backup(ctx: &Context, permit: Permit, path: &Path) -> Result<PathBuf> {
     let fail = |source| Error::ConfigBackupFailed {
         path: path.to_path_buf(),
         source,
     };
     let dir = backups_dir(ctx);
-    crate::host::fs::create_private_dir(&dir).map_err(fail)?;
+    crate::host::fs::create_private_dir(permit, &dir).map_err(fail)?;
     let target = dir.join(format!("claude.json.{}", ctx.now()));
-    std::fs::copy(path, &target).map_err(fail)?;
+    crate::host::fs::copy(permit, path, &target).map_err(fail)?;
 
     let mut existing: Vec<PathBuf> = std::fs::read_dir(&dir)
         .map_err(fail)?
@@ -108,15 +111,15 @@ pub fn backup(ctx: &Context, path: &Path) -> Result<PathBuf> {
         .collect();
     existing.sort();
     for old in existing.iter().rev().skip(BACKUPS_KEPT) {
-        let _ = std::fs::remove_file(old);
+        let _ = crate::host::fs::remove_file(permit, old);
     }
     Ok(target)
 }
 
 /// Claude Code's file, not ours, so it keeps the permissions its owner gave it.
-fn write(path: &Path, config: &Value) -> Result<()> {
+fn write(permit: Permit, path: &Path, config: &Value) -> Result<()> {
     let body = serde_json::to_string(config).expect("a loaded config is always serialisable");
-    atomic::write(path, body.as_bytes(), atomic::Perms::MatchExisting).map_err(|e| {
+    atomic::write(permit, path, body.as_bytes(), atomic::Perms::MatchExisting).map_err(|e| {
         Error::ConfigWriteFailed {
             path: path.to_path_buf(),
             detail: e.to_string(),
@@ -142,6 +145,7 @@ const ATTEMPTS: usize = 4;
 /// not close it, and nothing here claims otherwise.
 pub fn update(
     ctx: &Context,
+    permit: Permit,
     path: &Path,
     change: impl Fn(&mut Value) -> Vec<String>,
 ) -> Result<Vec<String>> {
@@ -183,11 +187,11 @@ pub fn update(
             }
             continue;
         }
-        write(path, &config)?;
+        write(permit, path, &config)?;
         // What was removed from a person's own file, written down rather than inferred
         // later from a backup.
         if !dropped.is_empty() {
-            crate::audit::record(ctx, "config", &dropped.join(" "), "dropped");
+            crate::audit::record(ctx, permit, "config", &dropped.join(" "), "dropped");
         }
         return Ok(dropped);
     }
@@ -219,7 +223,8 @@ mod tests {
         let ctx = Context::new(root.clone())
             .with_pitboard_home(root.join(".pitboard"))
             .with_clock(Arc::new(FixedClock::at(1_760_000_000)) as Arc<dyn Clock>);
-        home::ensure(&ctx).expect("a Pitboard home, which is where the record goes");
+        home::ensure(&ctx, Permit::for_a_test())
+            .expect("a Pitboard home, which is where the record goes");
         let path = root.join(".claude.json");
         std::fs::write(&path, serde_json::json!({"numStartups": 1}).to_string()).expect("a config");
         (ctx, path, Scratch(root))
@@ -230,11 +235,12 @@ mod tests {
     /// Claude Code wrote between Pitboard reading the file and renaming a new one over it
     /// was silently gone.
     #[test]
+    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn a_write_that_would_lose_what_claude_code_just_wrote_does_not_happen() {
         let (ctx, path, _s) = scratch("lost-update");
         let interfering = std::cell::Cell::new(0);
 
-        let outcome = update(&ctx, &path, |config| {
+        let outcome = update(&ctx, Permit::for_a_test(), &path, |config| {
             // Claude Code writes the file while Pitboard is deciding what to change.
             interfering.set(interfering.get() + 1);
             std::fs::write(
@@ -261,6 +267,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn a_quiet_file_is_written_once_and_what_was_dropped_is_recorded() {
         let (ctx, path, _s) = scratch("quiet");
         std::fs::write(
@@ -274,7 +284,7 @@ mod tests {
         )
         .expect("a config");
 
-        let dropped = update(&ctx, &path, |config| {
+        let dropped = update(&ctx, Permit::for_a_test(), &path, |config| {
             splice_identity(
                 config,
                 &serde_json::json!({"accountUuid": NEW_ACCOUNT}),

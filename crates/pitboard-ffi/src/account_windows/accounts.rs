@@ -3,7 +3,7 @@
 
 use super::{stores, this_machine};
 use crate::{Account, Site};
-use pitboard_core::host::{OS, Os};
+use pitboard_core::host::Os;
 use pitboard_sites::Conjunction;
 
 /// An enrolled account that has a window on a site: what the menus, the account picker and
@@ -49,7 +49,7 @@ pub enum SiteMenu {
 pub(crate) fn windows(accounts: &[Account]) -> Vec<WindowAccount> {
     let placed: Vec<(&pitboard_sites::Site, &Account, &str)> = accounts
         .iter()
-        .filter(|account| !account.unplaced && !account.account_uuid.is_empty())
+        .filter(|account| !account.unplaced && !account.account_id.is_empty())
         .filter_map(|account| Some((account, account.label.as_deref()?)))
         .flat_map(|(account, label)| {
             pitboard_sites::Site::of_provider(&account.provider)
@@ -66,7 +66,7 @@ pub(crate) fn windows(accounts: &[Account]) -> Vec<WindowAccount> {
                 site: site.into(),
                 label: label.to_owned(),
                 email: account.email.clone(),
-                store: stores::derive(site.store_name, &account.account_uuid),
+                store: stores::derive(site.store_name, &account.account_id),
                 in_use: account.signed_in,
                 title: if shared {
                     format!("{label} ({})", site.name())
@@ -78,9 +78,10 @@ pub(crate) fn windows(accounts: &[Account]) -> Vec<WindowAccount> {
         .collect()
 }
 
-/// The windows `account` has, one for each site of its tool. The site is checked as well as
-/// the store: two tools' accounts can share an account id.
-fn windows_of_account(account: &Account, accounts: &[Account]) -> Vec<WindowAccount> {
+/// The windows `account` has among those of `accounts`, one for each site of its tool: what
+/// its row's own menu offers to open, which the snapshot carries as `AccountItem::windows`.
+/// The site is checked as well as the store: two tools' accounts can share an account id.
+pub(crate) fn windows_of_account(account: &Account, accounts: &[Account]) -> Vec<WindowAccount> {
     windows(accounts)
         .into_iter()
         .filter(|window| {
@@ -88,7 +89,7 @@ fn windows_of_account(account: &Account, accounts: &[Account]) -> Vec<WindowAcco
                 site.host == window.site.host
                     && stores::same(
                         &window.store,
-                        &stores::derive(site.store_name, &account.account_uuid),
+                        &stores::derive(site.store_name, &account.account_id),
                     )
             })
         })
@@ -113,13 +114,6 @@ pub fn window_of_store(accounts: Vec<Account>, store: String) -> Option<WindowAc
     windows(&accounts)
         .into_iter()
         .find(|window| stores::same(&window.store, &store))
-}
-
-/// The windows `account` has among those of `accounts`, one for each site of its tool: what
-/// its row offers to open.
-#[uniffi::export]
-pub fn windows_of(account: Account, accounts: Vec<Account>) -> Vec<WindowAccount> {
-    windows_of_account(&account, &accounts)
 }
 
 /// One menu entry per site that has an account with a window, in the sites' order.
@@ -153,14 +147,11 @@ pub fn site_menus(accounts: Vec<Account>) -> Vec<SiteMenu> {
         .collect()
 }
 
-/// What the alert asking to forget `account` says, among `accounts`. Forgetting an account
-/// that has a window deletes what that window keeps too, and a person deciding should know.
-#[uniffi::export]
-pub fn forget_message(account: Account, accounts: Vec<Account>) -> String {
-    forget_message_on(OS, &account, &accounts)
-}
-
-fn forget_message_on(os: Os, account: &Account, accounts: &[Account]) -> String {
+/// What the alert asking to forget `account` says, among `accounts`, on `os`: the question
+/// an account's Forget… asks first, which the snapshot carries as `AccountItem::forget`.
+/// Forgetting an account that has a window deletes what that window keeps too, and a person
+/// deciding should know.
+pub(crate) fn forget_message_on(os: Os, account: &Account, accounts: &[Account]) -> String {
     let windows = windows_of_account(account, accounts);
     if windows.is_empty() {
         return "Pitboard deletes the login it parked for this account. Using it again needs a \
@@ -193,15 +184,14 @@ pub(crate) mod tests {
             qualified: label.map(|label| format!("{provider}/{label}")),
             unplaced: false,
             email: format!("{}@example.com", label.unwrap_or(uuid)),
-            account_uuid: uuid.into(),
+            account_id: uuid.into(),
             signed_in: false,
             switchable: label.is_some(),
             parked: None,
             usage: None,
             stale: None,
             stale_explanation: None,
-            lasts_seconds: None,
-            lasts_burning: false,
+            plan: None,
         }
     }
 
@@ -214,7 +204,7 @@ pub(crate) mod tests {
             qualified: None,
             unplaced: true,
             email: String::new(),
-            account_uuid: String::new(),
+            account_id: String::new(),
             switchable: false,
             ..account(None, provider, "")
         }
@@ -343,13 +333,13 @@ pub(crate) mod tests {
                 account(Some("main"), "codex", "same"),
             ]
         };
-        let claude = windows_of(account(Some("work"), "claude", "same"), all());
+        let claude = windows_of_account(&account(Some("work"), "claude", "same"), &all());
         assert_eq!(claude.len(), 1);
         assert_eq!(claude[0].site.host, "claude.ai");
-        let codex = windows_of(account(Some("main"), "codex", "same"), all());
+        let codex = windows_of_account(&account(Some("main"), "codex", "same"), &all());
         assert_eq!(codex.len(), 1);
         assert_eq!(codex[0].site.host, "chatgpt.com");
-        assert!(windows_of(unplaced("codex"), all()).is_empty());
+        assert!(windows_of_account(&unplaced("codex"), &all()).is_empty());
     }
 
     /// Forgetting an account that has a window deletes what that window keeps too, and a
@@ -369,15 +359,17 @@ pub(crate) mod tests {
              claude.ai window keeps on this computer, its sign-in included. Using it again \
              needs a sign-in in your browser."
         );
+        assert_eq!(
+            forget_message_on(Os::Windows, &work(), &[work()]),
+            "Pitboard deletes the login it parked for this account, and everything its \
+             claude.ai window keeps on this PC, its sign-in included. Using it again needs a \
+             sign-in in your browser."
+        );
         let api = || unplaced("codex");
         let said = "Pitboard deletes the login it parked for this account. Using it again needs \
                     a sign-in in your browser.";
-        for os in [Os::MacOs, Os::Linux] {
+        for os in [Os::MacOs, Os::Linux, Os::Windows] {
             assert_eq!(forget_message_on(os, &api(), &[api()]), said);
         }
-        assert_eq!(
-            forget_message(work(), vec![work()]),
-            forget_message_on(OS, &work(), &[work()])
-        );
     }
 }

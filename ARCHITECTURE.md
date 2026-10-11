@@ -7,14 +7,14 @@ changes or a tool build moves a fact, not with each commit.
 
 ## Bird's eye view
 
-Pitboard switches Claude Code, Codex or Claude Desktop between a person's own accounts on
-one machine. It also shows how much of each account's limits is left. A switch parks the
-login in use and puts another account's parked login in its place.
+Pitboard switches Claude Code or Codex between a person's own accounts on one machine. It
+also shows how much of each account's limits is left. A switch parks the login in use and
+puts another account's parked login in its place. A person asks for each switch, unless
+they asked Pitboard to switch Claude Code by itself before the account in use runs out:
+the app with its setting on, or `pitboard watch` running in a terminal.
 
-One crate, `pitboard-core`, does this for every tool. It reads and writes each tool's login,
-keeps Pitboard's index of accounts, and asks each tool's service for usage. Claude Code's and
-Codex's logins are credentials, a keychain item or a file. Claude Desktop's is a list of
-items in its data folder, moved by rename.
+One crate, `pitboard-core`, does this for both tools. It reads and writes each tool's login,
+keeps Pitboard's index of accounts, and asks each tool's service for usage.
 
 Two front ends use the core: the command line, `pitboard`, on macOS and Linux, and the menu
 bar app on macOS 14 or later. The app calls the core through UniFFI bindings. The command
@@ -27,81 +27,291 @@ accounts from the core, and nothing else. [Account windows](#account-windows) de
 them.
 
 Pitboard has no server of its own. The core sends requests only to Anthropic, for Claude
-Code, to OpenAI, for Codex, and to claude.ai, for Claude Desktop's live usage once somebody
-turns it on. An account's window loads its site, and whatever the site's pages load, as a
-browser would.
+Code, and to OpenAI, for Codex. An account's window loads its site, and whatever the site's
+pages load, as a browser would.
 
 ## Code map
 
 - `crates/pitboard-core`: the engine. Parking, switching, recovery, the stores and usage.
   The front ends reach it through `service::Pitboard`, built with a `context::Context`.
-  - `provider/`: one module per tool, `claude`, `codex` and `desktop`, each implementing
-    the `Provider` trait in `provider/mod.rs`. The trait covers where the tool keeps its
-    login, whose it is, how to renew it, what it has left and what its sign-in prints,
-    which `provider::sign_in_view` reads for both apps. Each module's `assumptions.rs` is
-    that tool's register of facts. `provider/codex/holders.rs` names where a running
-    `codex` can be, and what makes each take a switch. `provider/printed.rs` reads what a
-    tool printed as a terminal does: the text it shows, and where each hyperlink goes.
-  - `provider/desktop/`: Claude Desktop. Its login is a `TreeLogin`, not a credential, so
-    every credential operation of `Provider` is an error there. `paths.rs` names the items
-    a switch moves, `config.rs` the three account keys of `config.json`, `cookies.rs` says
-    whose session the cookie jar holds without decrypting it, and `identity.rs` says whose
-    a data folder is. `holders.rs` is what holds the folder while Claude runs.
-    `history.rs` reads the app's own usage history. `safe_storage.rs`, `crypto.rs`,
-    `web.rs` and `live_usage.rs` are live usage, the only code that reads Claude's key.
+  - `provider/`: one module per tool, `claude` and `codex`, each implementing the
+    `Provider` trait in `provider/mod.rs`. The trait covers where the tool keeps its login,
+    whose it is, how to renew it, what it has left and what its sign-in prints, which
+    `provider::sign_in_view` reads for both apps, and when a session already running takes
+    a switch made now (`Adoption`), which for Claude Code turns on whether a file sits behind
+    the keychain (`behind`). Each module's `assumptions.rs` is
+    that tool's register of facts, with a table saying what each fact is on macOS, Linux
+    and Windows. `provider/codex/holders.rs` names where a running
+    `codex` can be, and what makes each take a switch. `provider/codex/layers.rs` reads
+    which store Codex keeps its login in from every layer of configuration Codex reads
+    outside a project, in Codex's order, for a switch and for a sign-in.
+    `provider/printed.rs` reads what a tool printed as a terminal does: the text it shows,
+    and where each hyperlink goes.
   - `holder.rs`: what keeps a tool's login in memory while it runs, told apart by where
     its program runs from. A switch's warning, `doctor` and the app's offer to quit an app
     all read it, so they cannot disagree.
   - `host/`: the machine, behind one seam. The `Host` trait is what a test replaces: the
-    system's store of secrets, files, the vault, this user's processes and the scheduler,
-    reached through `Context` and faked by `host/memory.rs`. `fs`, `proc` and `user` are
+    system's store of secrets, files, the vault, this user's processes, the scheduler,
+    whether this process runs as the person (`elevation`), whether the system is one
+    Pitboard changes things on by its version (`floor`, `host::Floor`), and what an
+    administrator set for a program outside every home (`administered_file`, and
+    `managed_preference`, which `macos/preferences.rs` reads), reached through `Context`
+    and faked by `host/memory.rs`, which plays every answer. The real hosts read nothing an
+    administrator set in a build for tests (`host/administered.rs`). `fs`, `proc` and `user` are
     plain functions for what the system does whoever asks: private files and directories,
-    whether a process is alive, the login name, and the `PATH` the person's login shell
-    builds, which `unix/shell.rs` asks for. `program.rs` finds a program the way the
+    every other change to the disk, whether a process is alive, the login name, whether
+    this process runs as root, and the `PATH` the person's login shell builds, which
+    `unix/shell.rs` asks for. `fs` creates each private file itself and hands it back open
+    (`create_private`, `open_private_append` and `open_private_lock`), so how a file is made
+    private is the face's alone. `fs::testing`, in a build for tests, is how a test or a
+    fixture sets a file's access or makes a link; other crates reach it as
+    `pitboard_core::testing::fs`. `program.rs` finds a program the way the
     system's launcher does. `mod.rs` chooses the system, once: `macos/` (the keychain
     through `security`, `ps`, launchd) or `linux/` (`/proc`, systemd), each with what
-    `unix/` holds for both. A fact that differs by system is a `match` on `host::OS`, such
-    as the folders macOS asks about before an app may look in them.
-  - `host/` also reads what Claude Desktop needs of the machine. `bundle.rs` tells which
-    processes run from inside an app bundle, by one rule for every system's process list.
-    On macOS the host reads the cookie jar with `/usr/bin/sqlite3` in `macos/sqlite.rs`, a
-    bundle's version with `plutil`, and `Claude Safe Storage` in `macos/safe_storage.rs`,
-    through `security`.
-    Linux has no Claude Desktop, so there each of these finds nothing.
+    `unix/` holds for both, or `windows/`, the face that refuses whatever of Windows is not
+    built yet: no store of secrets, a vault of `store::Backend::Unknown` whose every call
+    cannot be read, no process list, no scheduler, no home of the account's own, no file
+    made and no program found. What it does read is this process's token, through
+    windows-sys (`windows/user.rs`), which `token.rs` makes an `Elevation` of, and the build
+    `RtlGetVersion` gives, which `host::windows_floor` holds against 26100, the build of
+    Windows 11 24H2 and Windows Server 2025. `token.rs` is compiled on every system, so how a
+    token reads is tested everywhere, and `words.rs` says each system's refusal from a
+    `host::Os`. A fact that differs by system is a `match` on `host::OS`, such as the
+    folders macOS asks about before an app may look in them, or `default_pitboard_home`,
+    where Pitboard keeps its files for a home when `PITBOARD_HOME` names nowhere else.
+    `same_path_in_any_case` is how Windows compares paths, for the core and the apps alike.
+  - `release.rs`: whether this build may do anything on its system. A Windows build of a
+    0.x release may not, unless it was compiled with `--cfg pitboard_unreleased_windows`,
+    which CI's Windows jobs set and no release does; macOS and Linux always may.
+  - `home.rs`: Pitboard's own directory, and what every home must be before anything is
+    read or written under it: a full path (`check_absolute`), and, for Pitboard's own, not
+    in a folder that syncs (`check_location`). That is told by the text it always refused,
+    such as `Sync`, anywhere in the path as written, so nothing it refused is let through,
+    and by the names sync clients give their folders, one folder at a time and in any
+    case, and macOS's `Library/CloudStorage` and `Library/Mobile Documents`.
   - `store/`: reading and writing logins, whichever store holds them: the chain rules, a
     file, the vault of files and the stores in memory the tests use. On macOS, parked
-    logins are keychain items. On Linux, they are files in the vault. `store/tree.rs`
-    moves a tree login's items, only by `rename` on one volume, checked by inode, and
-    deletes nothing but a park.
-  - `switch/`: every change to Pitboard's index (switching, enrolling, adopting, renaming,
-    forgetting, renewing, repairing, abandoning and uninstalling), and the journal that
-    finishes an interrupted switch. `switch/tree.rs` is a Claude Desktop switch, enrolment
-    and sign-out, and `switch/tree_journal.rs` its own record,
-    `~/.pitboard/desktop/journal.json`, which finishes or undoes an interrupted one.
-  - `state.rs`: `state.json`, the index of accounts and where each one's login is parked.
-  - `lock.rs`: the lock Claude Code takes around credential writes, taken the same way.
+    logins are keychain items. On Linux, they are files in the vault.
+  - `switch/`: every change to Pitboard's index (switching, by hand or by itself in
+    `auto.rs`, enrolling, adopting, renaming, forgetting, renewing, repairing, abandoning,
+    uninstalling, and putting away a login Claude Code left in a file behind the keychain in
+    `stow.rs`), and the journal that finishes an interrupted switch. `identify.rs`
+    says whose login each tool has stored: the record's owner where the login's refresh
+    token has the fingerprint the record was made for, which asks nobody, and the tool's
+    service otherwise (`whose`). A login whose access token has expired is never asked
+    about with it, and one the service refuses is not asked about again (`told`): a change
+    renews it first, and so does a read, where it takes `state.lock` without waiting and no
+    switch waits to be finished (`told_by_a_read`); usage alone renews nothing, and a Codex
+    login names its account by itself. `refresh.rs` is the one renewal of a login of Claude
+    Code's where Claude Code keeps it, which that and `pitboard stow` both use, with
+    `Refreshing`, Claude Code's refresh lock held, and `finish`, which saves a renewal a
+    stopped run left in the vault, and `finished`, the same for one tool, which stops what
+    acts on its login while a copy cannot be saved. A store with no login is recorded as
+    holding none only where the tool's own record names nobody either; where it names
+    somebody, the login is somewhere Pitboard does not look, and nothing is recorded. A
+    change records what it finds under the lock it holds (`now`, or `look` then `record`
+    where enrolling the account found names it first, or `look` then `keep` where the
+    automatic switch has its own to do when it cannot be told); a read records it afterwards
+    (`record_read`), only where it changed, only where it takes the lock without waiting,
+    never while a switch waits to be finished, and only where the tool's own record names
+    what it named and the store holds the login it asked about, both read again under the
+    lock. Each writes an `in-use` line in the activity log for what changed outside
+    Pitboard. With `test-support`, a context may hold a `SignInScript`, which plays a tool's
+    own sign-in in place of its program, for a test or a fixture that may start none;
+    everything around it is the core's own.
+  - `state.rs`: `state.json`, the index of accounts and where each one's login is parked,
+    and `renewing`, the renewals of a tool's own login whose answer is not saved yet, at
+    most one per slot.
+  - `in_use.rs`: whose login each tool has stored, as its service last said, with the
+    fingerprint of that login and the account the tool's own record named then. It is
+    `state.json`'s `in_use`, written through `State::identified` by a switch, first for the
+    login it finds in the store and then for the one it installs, by enrolling the account
+    signed in, by a sign-in put in use, by finishing an interrupted switch, and by a read
+    that finds it changed. `known` is what every reader that does not read the store takes
+    as the account in use: `status --offline`, the automatic switch's look, `doctor`'s
+    accounts. It is the record, in doubt where there is none, where it came forward from
+    schema 5, or where Claude Code's config names another account than when the record was
+    checked against the store; for Codex, the login's own claims, and the record where the
+    login cannot be read. `Provider::own_record` reads the config for that doubt and for
+    the words that say it, never for whose a login is.
+  - `autoswitch.rs`: switching Claude Code by itself, for a front end somebody asked to: the
+    app with its setting on, or `pitboard watch`. `Threshold` is the share a limit switches
+    at, 50 to 99, 95 unless chosen. `decide` is the rule, from the readings Anthropic gave
+    that Pitboard already holds, `NoReading` where it gave none of the account in use. Every
+    limit of that account at the share is judged, the furthest past it first: one already
+    switched away from, or tried `ATTEMPTS` times, before it resets leaves the next to be
+    judged, and where none is left it says why of the furthest at once. Where one is left,
+    the account put in use within `SETTLING_SECONDS` holds it back, and so does an attempt
+    at any limit that came to nothing, until its wait is over (`Waiting`); either is said of
+    the first limit left, the one tried next. For the first limit left, it picks a switchable account with room under it in every limit it has, by
+    `usage::room`, which the app's advice asks at 100. A limit a reading that lists every
+    limit leaves out is one the account does not have. Any other reading leaves no room
+    unless it gives every limit of the account in use, except a model's limit other than the
+    one at the share where it gives the five-hour and weekly limits. `usage::roomiest` picks
+    the account with the most room in that limit, then the least full in its others. Below
+    the share it is `Below`, with the fullest limit still running. A limit at the share not
+    switched away from is a `Hold` with its `Skip`: no room, naming the accounts it could go
+    to that Anthropic gave no reading of, the limit already left, the attempts spent, the
+    account settling, or Claude Code signed in another way. `judge` turns a decision into
+    what a front end is told: `Auto::Watching` carries the account, its fullest limit, when
+    that was read and until when its budget holds Anthropic's next answer off
+    (`budget::held_until`). Each limit a decision gives carries the reset the ledger first
+    kept its window under, where it keeps one, which a later answer may give a second apart,
+    so a front end that tells one window from the next by it says once what was recorded
+    once. `Ledger` is `autoswitch.json`, what was tried and said for each limit of each
+    account until a minute after that limit resets, as late as another answer may give that
+    reset (`usage::may_still_run`), or, with no reset, for a week after anything was last
+    kept of it, as it is read and as it is written: the attempts, how many in a row failed
+    for a reason waiting may mend, when the last began, whether one switched, the accounts
+    passed over, and each `Skip` code said, with when; and `asked`, where whose login Claude
+    Code has stored could not be told, when it was last asked, how many times in a row and
+    why. A record of whose it is made since `asked`, by a read or a switch, ends that row.
+    It is written only under `state.lock`. `look` judges from files alone, with the account
+    in use from `in_use::known`: what stands (`Look::Stands`), or `Look::Act` where a switch
+    may be due, that account is in doubt, or a `Hold` was not said yet in that limit's
+    window. `Blind` is why nothing can be judged at all: a switch waiting to be finished, a
+    custom OAuth endpoint, no login stored, a login of an account nobody enrolled, one
+    nobody could tell whose it is, which `asked` paces as attempts are paced, or no reading
+    Anthropic gave of the account in use. `asked` holds only what every front end would meet
+    alike: a store this process cannot read, such as a keychain locked over SSH, is returned
+    as its error, for its front end to pace by `retry_after`, the wait attempts and `asked`
+    take. A front end decides with nothing written every `DECIDE_EVERY_SECONDS`, 30.
+    `Auto::told_apart` is what every front end that says each outcome once tells one from
+    another by: a `Skip` by the account, the limit, the reset the ledger kept it under and
+    its code (`Skip::told_apart`), a `Blind` by its code and the email, the cause or the
+    account it names, never by when it asks again (`Blind::told_apart`), and a wait by the
+    account and when it ends. Nothing tells a switch apart, nor watching.
+    `switch/auto.rs` tells whose login is stored under the lock, as a switch does, records
+    it, decides once from that, and switches from that same login through
+    `switch::switch_from`, or records the `Hold` once. An attempt that failed is judged
+    again with it counted, and where that leaves no limit to try, its `Hold` is recorded
+    with the failure. `service::Pitboard::auto_look` is the look and `auto_switch` joins
+    the two. The audit log records a switch, or the error that stopped one, as
+    `auto-switch`, of `claude` where no account was chosen yet; and as
+    `auto-stay`, a login nobody could tell whose it is, of the account last known in use,
+    once per wait, and each `Hold`, of the account in use, once per limit, reset and code.
+  - `lock.rs`: the locks Claude Code takes around writes and renewals of its login, each
+    taken the same way and kept with Claude Code's own numbers (`Timing`).
   - `context.rs`: what the core takes from its environment, read from a map of variables
     by the same code for every front end, apart from the `PATH` that `host/linux` reads to
     find the program daily renewal runs.
   - `app.rs`: what an app finds for itself that a command typed at a prompt is given: each
     tool's program, on the login shell's `PATH` and then where the tool's installers put
-    it, and the `pitboard` a terminal would run.
-  - `api.rs`: the requests to Anthropic. The requests to OpenAI are in
-    `provider/codex/api.rs`.
+    it, and the `pitboard` a terminal would run, there and then where each way of installing
+    Pitboard puts it, under the app's home and where the system's package managers put
+    programs. And the files an app keeps of its own in Pitboard's directory, `told.json` and
+    `app.json`, written as the core writes its own and read by nothing of the core.
+  - `api.rs`: the requests to Anthropic, and the agent each context's requests go out on,
+    `api::agent`. The requests to OpenAI are in `provider/codex/api.rs`.
+  - `proxy.rs`: the proxy those requests go through, read from the context's environment by
+    the rules ureq 3.4.2 reads a process's with, the refusal of each request a SOCKS proxy
+    would have carried (`proxy::Refusal`), what `doctor`'s `network` check says of it, and
+    the variables a renewal schedule installed from that context is given. See
+    [ureq's proxies](#ureqs-proxies).
+  - `pace.rs`: how a limit's use compared with an even use across its window when it was
+    read: the part of the window gone by then, how far the share used was from it, which
+    side of a 5-point margin it was on, and for a limit over pace when it runs out at the
+    window's own rate since it began, counted down to the moment it is told. A pace is its
+    reading's: set against a later moment, the same share drifted towards under pace while
+    nobody read the limit again. `first_to_run_out`, `lasts` and `until_reset` say it of an
+    account, and an account not in use lasts until its first reset. Every surface asks it,
+    so `status`, `--json`, the status line and the app say the same thing. It replaced a
+    rate taken across fourteen days of readings in `readings/`, through every reset in
+    them; `home::remove_retired` deletes the files that kept, and the folder where nothing
+    else is in it.
+  - `usage.rs` and `readings.rs`: an account's usage, and `usage.json`, the one reading of
+    each account that every front end records into and shows. The service's answer about an
+    account founds its reading and replaces what it gives (`usage::answered`), and a share a
+    session moved after the answer was taken stands. Anthropic's answer lists every limit an
+    account has, so where `usage::from_usage_object` read every row of its `limits`, the
+    answer says so (`Snapshot::lists_every_limit`) and a limit it does not give is gone at
+    once. Any other answer leaves a window it does not give standing, in its place, until
+    its reset: one with a row that did not normalise, one in the older named shape, and
+    every one of OpenAI's, which gives two windows, either of them null, with nothing
+    measured to say what a null one is. A Claude Code session's numbers only move a limit
+    an answer gave (`usage::moved`): a higher share in the same window, or the next window
+    once the last has reset. They never add a limit or found a reading, since they do not
+    say whose they are. A reading's `answered_at` is when its service last answered, absent
+    from one an older Pitboard wrote.
   - `status.rs`, `doctor.rs`, `statusline.rs` and `schedule.rs` serve the commands of the
-    same names. `schedule.rs` decides what daily renewal runs and whose it is; the host's
-    scheduler writes it.
+    same names. A row's numbers in `status.rs` are its service's answer folded into the
+    reading every front end records in `usage.json`, or that reading alone where no answer
+    came, and never a tool's own cache (see [Claude Code](#claude-code)). A read asks first
+    (`ask`), and makes its rows (`report`) once whose each login is has been recorded, so an
+    account whose only login a sign-in outside Pitboard replaced reads `login_replaced` from
+    that read on. The usage of a login nobody could name is not asked, and the account the
+    record names stands in for it. Offline rows (`gather_offline`) take the account in use
+    from `in_use::known`, an account nobody enrolled included, which gets its row as it does
+    online. `Pitboard::standing` says what stands on every read: `login_replaced`,
+    `in_use_unconfirmed` where Claude Code's config has moved since the record was checked
+    and the read could not ask, and `config_names_another` where it names another account
+    than the one in use. `statusline.rs` files what a Claude Code session passed under the
+    account its windows prove: the one account whose reading, as Anthropic last answered
+    for it, holds a window the session passed and does not rule the session out. A reading
+    rules it out with another running window of a limit passed, or by listing every limit
+    its account has and not one passed. It files only what moved since the session's last
+    run, which `sessions.rs` keeps. Numbers that prove no account are shown as the session's
+    and filed nowhere, under the account in use from `in_use::known` marked `?`, or under
+    none where that account's reading rules the session out. A session that passed none
+    shows the account in use, marked while the record is in doubt. Where the record names no
+    enrolled account, both show `unenrolled`, or `?` while the record is in doubt.
+    `schedule.rs` decides what daily renewal runs and whose it is, and refuses a program in
+    the temporary copy macOS runs an app from, by `in_a_temporary_copy`, which an app asks
+    of the command line inside it too; the host's scheduler writes it.
   - `words.rs`: the sentences and column words Pitboard says in more than one place, each
-    a function of typed values: spans of time, a limit's names, when it resets, how long an
-    account lasts, a parked login's life, a renewal run and doctor's summary. It also holds
-    `usage_level`, the steps at which a limit's colour changes. A thing said both in a
-    column and in a sentence has a function for each form. The command line calls these
-    functions directly, and the macOS app calls the ones it shows through `pitboard-ffi`.
-    Clock times are not in it.
+    a function of typed values: spans of time, a limit's names, when it resets, its pace and
+    when it runs out, a parked login's life, a renewal run, doctor's summary, and what is
+    left in a file behind the keychain and what putting it away does and did (`left_lines`,
+    `stowed_lines`, `nothing_left`), which `pitboard stow` and the app's sheet both say. It
+    also holds `usage_level`, the steps at which a limit's colour changes. A thing said both
+    in a column and in a sentence has a function for each form. The command line calls these
+    functions directly, and so does `pitboard-ffi`'s `present/` as it makes the snapshot,
+    which carries what an app shows of them. The bindings export none of them. Clock times
+    are not in it.
 - `crates/pitboard`: the command line. Arguments, rendering for people, the man page, and
   the `--json` contract, pinned by the snapshots in `crates/pitboard/tests/snapshots`.
+  `json.rs` is the one writer of that JSON, for every command and every error. Its example
+  `stand-in` is the program every test starts in place of a tool. Its code is
+  `pitboard-core`'s `stand_in.rs`, compiled with test-support, and it plays the script
+  written beside each copy of it. Nothing installs or ships it. `watch.rs` is
+  `pitboard watch`, a loop in the foreground until Ctrl-C: it reads every account every
+  300 seconds, as the app does, looks every 2 seconds at when the index and the readings
+  were last written, and decides again whenever either changed and at least every 30
+  seconds. It says every switch, and each thing that stopped one once until the next
+  switch, told apart as the core tells it (`Auto::told_apart`): a reason not to switch away
+  from a limit once for that limit and its reset, a reason it cannot judge once for what it
+  names, and a wait once for when it ends. An error is said once for its code. It says the
+  account it watches, `idle` with its fullest limit, when that was read and until when
+  Anthropic holds Pitboard off asking again, whenever its last line said something else.
+  Each warning a decision found is said once until the next switch, even one that went away
+  and came back, with that decision's line, which is said again to carry it where it was
+  said before. A refusal is paced as the app paces one: no decision under the lock until
+  `autoswitch::retry_after` of the refusals in a row has passed, only the look meanwhile,
+  and any outcome ends the row, as the look standing on what the core recorded with an
+  attempt that failed, its own wait or why it tries no more, does. It ends on a refusal
+  watching cannot mend: running elevated, a Windows build or Pitboard's own files unusable.
 - `crates/pitboard-ffi`: the core as UniFFI bindings, for the apps: a static library for
-  the macOS app, a dynamic one for the Windows app.
+  the macOS app, a dynamic one for the Windows app. An app reaches the core through the
+  model alone.
+  - `lib.rs` declares what the bindings export beside the model and the account windows'
+    rules: the records a snapshot carries of what the core answered, such as `Status`,
+    `Account` and `Abandoned`, and three free functions, which the macOS app calls, none as
+    it draws: `app_command_line`, for the command line inside its bundle, as it starts and
+    as it links that one; `can_run`, whether that one runs, as it links it; and
+    `pitboard_directory`, for where `app.json` is and the key the account windows' records
+    are kept under, as it starts. The snapshot carries what an app shows of the tools, a
+    sign-in, the command line a terminal runs, a limit and its pace, a parked login, a
+    renewal run and doctor's checks, made by `present/` and the model's lanes, so no free
+    function says it again. The helpers `present/` makes it with here, `tools`,
+    `usage_level`, `renewal_note` and `doctor_summary`, are the crate's own.
+  - `launch.rs` is the core the model's lanes call, `AppCore`, which nothing exports. It is
+    made from the `AppLaunch` the app was started with, read as `AppContext::discover`
+    reads it, the first time a lane needs it, and made once more a while after a login
+    shell too slow to answer. Every read a lane makes with it asks first, as the command line
+    asks before every command, whether this build may do anything on its system and whether
+    every home is a full path, and answers that refusal, or nothing where it has no way to
+    say one. Beside it are what it answers that only the model reads, such as what a switch,
+    an enrolment or a renewal came to, doctor's checks, and `PitboardError`.
   - `sites.rs` gives both apps `pitboard-sites`' sites and links as records of their own,
     and says a site's sign-in steps as a window on this system can follow them: a window on
     a Mac cannot use a passkey.
@@ -112,7 +322,87 @@ browser would.
     dialogs say who asks (`pages.rs`), and what a download is called (`downloads.rs`). What
     differs by system there, such as how a copy of a file is numbered, which names are one
     file, or an alert's "on this Mac", is a `match` on `host::OS`, as what a window cannot
-    sign in with is in `sites.rs`.
+    sign in with is in `sites.rs`. Each takes the system as an argument, so every system's
+    answer is tested on every system: Windows says "this PC", numbers a copy
+    `report (1).pdf`, takes names in any case and in no other form for one file, and
+    promises no passkey. `records.rs` reads and writes the windows' records, the
+    stores each Pitboard directory made and the page each window was last on, which the
+    model keeps in `windows.json`.
+  - `model/` is the app model the macOS app shows and the Windows app is to show. An app
+    makes a `PitboardModel`, sends it an `Intent` for each thing asked of it, and its
+    `ModelListener` is told of each numbered `Snapshot`; its `AppControl` quits and opens
+    other apps, and its `Notifications` posts what has run out and a login replaced outside
+    Pitboard. `state.rs` holds what the model knows and decides what follows each message,
+    `advice.rs` which account to offer once the one in use has run out, `preferences.rs`
+    what the app's own preferences are, `machine.rs` what the model knows of this machine
+    rather than its accounts, and `windows.rs` the account windows' bookkeeping; `lanes.rs`
+    runs what it decides, on a lane of reads, which reads the schedule, doctor's checks and
+    the log too and asks the core's look whether to switch Claude Code by itself, a lane of
+    changes, one at a time, which also repairs and changes the schedule and renews, a lane
+    that lists processes and asks the app's `AppControl` about other apps, a lane that asks
+    what is installed and looks for the `pitboard` a terminal runs, a thread of its own for
+    each sign-in, a lane that types a code back to one or stops it, a lane that reads and
+    writes what the model keeps, in Pitboard's directory and the windows' records in the
+    app's own, and one that posts through the app's `Notifications`, and tells the listener
+    on a thread of its own; `mod.rs` holds the exported types and the actor thread that owns
+    the state. So far the model reads the accounts, looks every two seconds for a change
+    made elsewhere, asks which tools are installed, switches, quits the app holding a tool's
+    login when the person lets it, gives up on a stuck switch, keeps what each tool's last
+    switch said, runs each tool's own sign-in, enrols the login signed in now, renames and
+    forgets, writes the account in use into Claude Code's config, puts away a login left in
+    a file behind the keychain from a sheet that looks first, keeps the sheet over the
+    main window, says which account to switch to once the one in use has run out, notified
+    once for each reset, switches Claude Code by itself with its setting on, asking the
+    core's look after every read and every 30 seconds and saying under the setting what it
+    came to, keeps the app's own preferences, and keeps the daily renewal schedule, renews
+    now, makes doctor's checks, reads the activity log and finds the `pitboard` a terminal
+    runs. It keeps the account windows' books too: which store is whose and each window's
+    last page, which windows close and which stores go after a read, the link waiting for an
+    account, with the wait before it can be opened, and the downloads. Its tests are files
+    of their own there: `reading.rs`, `switching.rs`, `automatic.rs`, `signing.rs`,
+    `changing.rs`, `stowing.rs`, `advising.rs`, `keeping.rs`, `maintaining.rs`,
+    `presenting.rs`, `windowing.rs` and `cadence.rs` drive the state by hand, `lanes.rs`
+    has the lanes' own, and `threaded.rs` drives the model through its threads over the
+    real core.
+  - `present/` makes each `Snapshot` from the model's state: `present` takes the state and
+    the moment, and builds every sentence and row the menu bar, the menu and the window
+    show, so a view decides nothing. `accounts.rs` is the menu bar's words and the
+    accounts' sections and rows, with their limits and what each one's own menu offers,
+    `notices.rs` the notices, their order and what the menu says of them, `setup.rs` the
+    footing, the step it asks for and what stands in for an empty list, `sheets.rs` the
+    sheets with their default buttons' words, the quit question and a failure's alert, with
+    `name_to_save`, the rule a sheet's default button and the model both save by,
+    `machine.rs` what the settings and the window's other panes show of this machine, daily
+    renewal, Renew Now, doctor's checks, the activity log and the command line,
+    `windows.rs` the account windows, what a window says until it can show its page, what
+    the **Open Link** window says, and the question asked before quitting stops the
+    downloads an app has under way, and `words.rs` the sentences both apps say and the
+    command line does not, each a function of typed values. What the command line says too
+    is `pitboard_core::words`', called from there, such as a renewal's note and doctor's
+    summary. A clock time, and a change's date
+    and time, are the person's to read, so they are asked of the app's `LocalTime`.
+    A button the snapshot offers comes with its words beside the intent it sends, and with
+    whether it can be pressed now where it can be held back, so a view never words an
+    intent or decides whether to offer one: a row's action, what an account's own menu
+    offers (`AccountItem`'s `offers`, `windows` and `forget`), a pane's Try Again, a
+    window's Clear and a sheet's default button. A control each app always has, such as its
+    toolbar's "Add Account…" or "Quit Pitboard", held back where the snapshot says what it
+    waits for is under way, and what is about the app's own system or done by the app alone,
+    such as Copy Email Address, stay the app's.
+  - `fixture/` holds the fixtures, the worlds a debug build of either app and its UI tests
+    launch into by name, as the macOS app's debug build and UI tests do. Only the `fixture`
+    feature compiles them, and it enables `pitboard-core`'s `test-support`. `worlds.rs`
+    makes each of the ten on the real core: a home in the fixture's own folder in the
+    temporary directory, `MemoryHost` and `ScriptedApi`, and every account put there by the
+    core as a person would have, signed in, enrolled, parked and switched on a clock set to
+    when it happened. `tools.rs` plays each tool's sign-in through the core's
+    `SignInScript`, with the person at the browser; `apps.rs` is the fixture's other apps,
+    where ChatGPT runs Codex's login and quits when asked, and its notifications, which post
+    nothing; `pages.rs` the stand-in pages an account window loads on `pitboard-fixture://`,
+    from the site table. `mod.rs` holds what every build exports of them, the same in each:
+    `PitboardModel::fixture`, `PitboardModel::fixture_in`, `fixture_names` and
+    `fixture_page`, which without the feature refuse, naming it, or name none. `tests.rs` is the macOS app's former
+    `FixtureTests.swift` ported, and what each UI test reads in its world.
 - `crates/pitboard-sites`: the sites an account's window opens, and what a link from outside
   may be. A leaf, with no I/O and nothing of the core, whose one dependency is `url`, for
   IDNA alone.
@@ -130,7 +420,7 @@ browser would.
     was measured.
   - `web.rs` reads a page's address, for an account window's rules, as Foundation's `URL`
     does: its scheme, and the host, port and user it names, with the host a request goes
-    to.
+    to, and its path, which a fixture's stand-in page says.
 - `crates/pitboard-share-ffi`: `pitboard-sites` as UniFFI bindings for the macOS Share
   extension alone, a static library with one function, `share_link`. It checks a shared
   page and writes the Pitboard link that hands it to the app, or says why not in the
@@ -142,17 +432,53 @@ browser would.
   Every type the core's bindings export is declared in `pitboard-ffi`, because the C#
   generator cannot use a type from another crate. `pitboard-share-ffi`, which only Swift
   reads, declares its own.
-- `crates/pitboard-conformance`: checks a tool's register against a build of that tool.
+- `crates/pitboard-conformance`: checks a tool's register against a build of that tool, for
+  macOS, Linux or Windows.
+- `crates/pitboard-probe`: the Windows measurement probe. It is `publish = false`, never
+  built by `release.yml`, and has a Windows-only measuring half (`win/`) beside a
+  cross-platform half (the command line, the report shape, the write guard, the Credential
+  Manager and process-image allowlists, the redactor, the logon and elevation naming, the
+  PE reader), so that half is unit tested on every system. One subcommand per measurement
+  the VM sessions and the runner facts need; `.github/scripts/runner-facts.ps1` runs the
+  safe ones on both Windows CI legs. Every writing subcommand refuses unless the account
+  carries a throwaway marker, and refuses a scratch path that is relative or keeps a `..`,
+  or that reaches a real login folder or file, in any spelling Windows opens or by the
+  identity of a folder on the way; every file it is named carries the `pitboard-probe-`
+  prefix. `credman-names` asks Credential Manager only for the live login families' and
+  `pitboard-*` prefixes and never reads a blob out. Reports name principals by their
+  relation to the token rather than by SID, print paths with the profile folder and the
+  account name replaced, and never hold two keys that differ only in case, which
+  PowerShell's `ConvertFrom-Json` refuses. `helpers/` holds the Bun and Node scripts, and
+  `sparse/` the sparse-package manifests, script and steps, that the owner runs in the VM.
 - `apps/`: the native apps, one directory for each system.
 - `apps/windows/`: the Windows app. `Pitboard.Core` is the core's C# bindings as an
   assembly of their own, generated into `Generated/` and not committed, and
   `Pitboard.Core.Tests` calls the core through them.
-- `apps/macos/`: the menu bar app. The Swift package holds it as libraries its tests load
-  without starting it. `PitboardKit` calls the bindings off the main thread,
-  `PitboardShareBindings` is `pitboard-share-ffi`'s, for the Share extension,
-  `PitboardLinkTarget` is where a Pitboard link goes, which the app and the extension both
-  link, and `PitboardApp` is everything the app does. The account windows are mapped under
-  [Account windows](#account-windows).
+- `apps/macos/`: the menu bar app, which shows what `pitboard-ffi`'s model says and sends it
+  what was asked. The Swift package holds it as libraries its tests load without starting
+  it. `PitboardKit` is the bindings and `AppModel.swift`: `AppModel`, which holds the
+  `PitboardModel` and its newest snapshot on the main actor, a property for each part, and
+  sends it each `Intent`, and `ModelListening`, the listener that hands it each snapshot on
+  the main queue. `PitboardShareBindings` is `pitboard-share-ffi`'s, for the Share
+  extension, `PitboardLinkTarget` is where a Pitboard link goes, which the app and the
+  extension both link, and `PitboardApp` is the views and what only macOS does. The account
+  windows are mapped under [Account windows](#account-windows).
+  - `PitboardApp/App/Dependencies.swift` makes the model a launch runs on: over this Mac,
+    from the app's environment and bundle, or in a debug build started with
+    `PITBOARD_FIXTURE` a fixture's (`Fixture/Fixture.swift`), with the native stand-ins a
+    fixture needs, and where the model keeps the account windows' records.
+    `AppDelegate.swift` starts it once the app has launched, tells it of a wake and of a
+    menu opening, and stops it as the app quits. `EarlierStore.swift` hands the model what
+    UserDefaults held before `app.json` and `windows.json`, once.
+  - `PitboardApp/System/MacPlatform.swift` is what the model asks of macOS:
+    `MacAppControl` (`NSRunningApplication` and `NSWorkspace`), `MacNotifications`
+    (Notification Center, the category with its Switch button, and permission asked at the
+    first post) and `MacLocalTime` (the person's locale, calendar and 12 or 24 hours).
+    `LoginItem.swift` is opening at login (`SMAppService`) and `CommandLineTool.swift`
+    linking the command line with an administrator's password, which stay the app's own.
+  - `PitboardApp/MenuBar`, `Window`, `Sheets`, `Settings` and `Design` are the views. They
+    show the snapshot's parts and send its intents, and decide only what is the platform's:
+    symbols, tints, layout and which pane the window shows.
   - `project.yml` is the app itself, the spec XcodeGen generates `Pitboard.xcodeproj`
     from. Its `Pitboard` target in `App` starts `PitboardApp` and adds Sparkle, and
     `PitboardUITests` in `UITests` drives it. `PitboardShare`, from `ShareExtension`, is the
@@ -162,9 +488,11 @@ browser would.
     `App/Main.swift` then replaces the process with the command line inside the app.
   - `scripts/build-xcframework.sh` builds the core, as `PitboardFFI.xcframework`, and
     `pitboard-share-ffi`, as `PitboardShareFFI.xcframework`, each with its Swift bindings,
-    for both Mac architectures. `scripts/build-app.sh` generates the project and builds
-    `Pitboard.app` with `xcodebuild`, with the command line inside at
-    `Contents/Helpers/pitboard`.
+    for both Mac architectures; `--fixture` builds the core with its fixtures.
+    `scripts/build-app.sh` generates the project and builds `Pitboard.app` with
+    `xcodebuild`, with the command line inside at `Contents/Helpers/pitboard`. It never
+    passes `--fixture`, and fails where the core's library or the app holds a fixture
+    world's text.
 - `packaging/`: the files a release writes into the tap `datlechin/homebrew-tap`. They are
   the casks `pitboard.rb` for the command line and `pitboard-app.rb` for the app,
   `tap_migrations.json`, and the tap's README.
@@ -173,7 +501,8 @@ browser would.
 - `.github/`:
   - `workflows/ci.yml` checks every push to `main` and every pull request, and
     `workflows/release.yml` turns a `v` tag into a release.
-  - `workflows/conformance.yml` checks each tool's newest build against its register.
+  - `workflows/conformance.yml` checks each tool's newest builds, one for each system,
+    against its register.
   - `workflows/sparkle.yml` opens an issue when Sparkle has a release newer than the one
     `apps/macos/project.yml` pins, because Dependabot cannot read that pin.
   - `actions/xcodegen` puts the pinned XcodeGen on `PATH` for every job that builds the
@@ -205,88 +534,676 @@ browser would.
   except `HOME` and `USER`, and the core's unit tests make their context with
   `Context::for_unit_test`, which withholds all of them, so a variable exported where
   `cargo test` runs, such as `PITBOARD_CLAUDE`, never reaches a test.
+- The proxy variables are among them, listed in `proxy.rs` in the order ureq tries them.
+  Every request goes out on the agent its context makes, `api::agent`, which is given the
+  proxy the context read, or none. ureq still reads this process's environment as each
+  agent's configuration is made, and that reading is replaced before the agent exists.
+  `clippy.toml` refuses `Proxy::try_from_env`, every way ureq offers to make an agent or a
+  configuration (`Agent::new_with_defaults`, `new_with_config`, `with_parts` and
+  `config_builder`, `RequestExt::with_default_agent` and the request functions), and the
+  type `Config` wherever it is named, which covers `Config::default` and
+  `Config::builder`. `api::made`, which makes `api::agent`'s agent, alone allows
+  `config_builder` and `with_parts`, and says why. Proxies come from environment variables
+  only, as the owner chose: a system proxy that no variable names is not followed.
+- No request goes out past a proxy the person named. ureq is given an HTTP or HTTPS proxy
+  and never a SOCKS one. Where a SOCKS proxy is named, the agent's middleware,
+  `proxy::Refusal`, fails each request `NO_PROXY` does not exempt before anything is sent or
+  looked up, and the agent follows no redirect, since ureq follows one inside the request
+  the middleware handed on. ureq lets a single request change the agent's configuration
+  (`RequestBuilder::config`, `Agent::configure_request`, `WithAgent::configure` and
+  `RequestExt::middleware_config`). Measured, a request given its own `max_redirects`
+  followed such a redirect directly, so `clippy.toml` refuses each of those, and every
+  request goes out with the agent's configuration.
+- No unit test reaches a real home. `Context::for_unit_test` names one folder for every
+  home, the person's, Pitboard's, Claude Code's config directory and Codex's: a folder of
+  that test's own under the temporary directory, which nothing makes. In any build for
+  tests the passwd database is never asked for a home (`host::user::home`): a unit test
+  that asks panics, unless it is a test of that lookup and says so, and any other build
+  for tests, the command line the integration tests run and an app built with the
+  fixtures among them, is told there is none, which is refused as below.
+- Every home Pitboard reads or writes under is a full path: `HOME`, Pitboard's own
+  directory, `CLAUDE_CONFIG_DIR` and `CLAUDE_SECURESTORAGE_CONFIG_DIR` where they name a
+  folder, and `CODEX_HOME` where it is set. One that is empty or relative is refused with
+  `home_not_absolute`, naming the variable, by `home::check_absolute`, which the gate every
+  change passes asks, and every read of the accounts. `doctor` fails its `homes` check
+  over it and checks nothing else. The command line asks it before every command but
+  `completions`, `manpage`, `doctor` and `renew`, which the gate refuses, so `log`,
+  `schedule status` and the status line refuse it too. Nothing is resolved against the
+  folder Pitboard runs in.
 - Which system Pitboard runs on is decided in `host/mod.rs` and nowhere else. Anything
   that differs by system is either the host's to answer or a `match` on `host::OS`, so a
-  system added to `host::Os` does not compile until it is said for every one.
+  system added to `host::Os` does not compile until it is said for every one. No such
+  `match` has a `_` arm. Where a fact of Windows is not read yet, its arm refuses through
+  an answer its callers already have, never one that would let Pitboard act: each tool's
+  live chain on Windows is one store whose every call cannot be read (`store::Unbuilt`),
+  never Claude Code's file alone, and the Windows face answers as `host/windows` says.
+- With nobody to ask, the command line deletes nothing it was not told to. `forget`,
+  `stow` and `uninstall` ask at a terminal, for a person. Through a pipe, from a script or
+  with `--json`, each refuses with `confirmation_needed`, exit 2, before it changes
+  anything, unless given `--yes` (`Confirm` in `pitboard/src/main.rs`). On 10 October 2026
+  `pitboard stow < /dev/null`, run as a look, deleted the login file behind the keychain.
+  The app asks in its own dialogs and does not go through `Confirm`.
+- A Windows build of a release before Pitboard for Windows is released does nothing
+  (`release.rs`). The gate every change passes asks first, so no file is written, no store
+  of logins changed and no token renewed even by a caller that forgot to ask; every read
+  of the account list asks too; the app's core asks before every read the model makes
+  (`launch.rs`), so an app reads none of Pitboard's files and no login; and the command
+  line asks before every command but `completions` and `manpage`. Only
+  `x86_64-pc-windows-msvc` and `aarch64-pc-windows-msvc` compile (`lib.rs`). The switch
+  that opens a Windows build early is a `cfg` set in `RUSTFLAGS`, never a Cargo feature,
+  since crates.io offers a published crate's features to anybody.
+- Outside a host's own face, a test or a fixture sets a file's mode, makes a file runnable
+  or makes a link only through that face's `fs::testing` (`pitboard_core::testing::fs`),
+  never through `std::os::unix`. A link to a directory is asked for as one, `link_dir`, apart
+  from a link to a file or to nothing, `link`. So a system whose files have no mode, or that
+  links a directory otherwise than a file, says how in its own face and nowhere else. The
+  integration tests' harness says what differs by system in
+  `crates/pitboard/tests/common/os.rs`, one `match` on `host::OS` for each fact: where
+  Claude Code keeps the login it uses (on Windows the harness assumes `.credentials.json`,
+  as on Linux, pending W22: Claude Code's register has `no_keyring_off_macos` unread on
+  Windows, and which store its Windows build chooses, `windows_backend_choice`, is not read
+  yet, so no test that plants a Claude Code login runs there before W22), where Pitboard
+  parks one (sealed to the person on Windows, which only the core's vault writes, so the
+  harness parks through it), which variables a command is passed on, which folders
+  of a person's account it is given as scratch ones of its own, what its `PATH` holds after
+  the test's programs, what a program's file is called, and how npm lays out a package's
+  program. The whole suite runs on Windows, and a test that cannot pass there until a later
+  pull request says which with `#[cfg_attr(windows, ignore = "W<n>: …")]`, the one way a
+  test is put off there.
+- No test addresses a name a real login may be kept under. `guard_not_live` refuses by
+  pattern, never by a hash computed for a real home, the families
+  `pitboard_core::provider::names` tells apart, which the measurement probe's leak check
+  reads too: every Claude Code slot, bare or under an account and in each of its pieces,
+  but the one hashed from the test's own folder; Codex's `cli|` and `secrets|` targets; and
+  anything under `Codex MCP Credentials`.
+- No test uses a folder that is, holds or lies in a real login place: the account's own
+  `.claude`, `.claude.json`, `.codex` and Pitboard folder, from the home and the Pitboard
+  folder the system names for the account whatever the environment says (the passwd
+  database, or `FOLDERID_Profile` and `FOLDERID_LocalAppData`), and those the environment
+  the tests were started in names. A folder is compared with each in any case, through
+  every link the file system resolves. CI's Windows legs check after each run, with the
+  probe and as the user the tests ran as, that no item of those families or
+  `pitboard-citest-*` is in its Credential Manager, that Task Scheduler's `\Pitboard\` is
+  empty, and that no real login folder appeared.
+- Every program the command line's tests and `pitboard-ffi`'s tests start in place of a
+  tool, or put where one is looked for, is one compiled program, the `pitboard` crate's
+  example `stand-in`, playing the script written beside its copy
+  (`pitboard_core::testing::stand_in`): never a shell script, so it is the same on every
+  system. That covers `claude` and `codex` signing in, holding their output open, refusing
+  a code and recording how they were started, npm's interpreter, a `systemctl`, and every
+  program that is there to be found and never run, a fixture's tools in `pitboard-ffi`'s
+  own tests among them. The stand-in makes each copy itself, so no test thread ever holds a
+  program open for writing. A test finds it beside its own `deps` and refuses, naming
+  `cargo build -p pitboard --example stand-in`, where it is not built, since only `cargo
+  test` with no target named, or `cargo test -p pitboard`, builds examples; it is never
+  built on demand, so a test binary run outside Cargo finds it too. Not it: the core's own
+  tests, which cannot reach another crate's example, start no program a test wrote but the
+  login shell's, in `host/unix/shell.rs`, whose `/bin/sh` is what they test, and the files
+  they put where a lookup looks are never run; and a fixture an app's debug build launches
+  into, which no stand-in comes with, writes its never-run programs as scripts.
+- A read never settles an interrupted switch. Every change settles one first, under
+  Pitboard's lock. Where that change would stop at it as `recovery_undetermined`,
+  `status`, `status_offline` and `doctor` say so in its words, from the same reads and the
+  same decision (`read` and `decide` in `switch/journal.rs`, through `switch::stuck`), and
+  that check takes no lock and writes nothing. `status_offline` and `doctor` send no
+  request, so they say it only where the record and the logins tell it without one: a
+  Codex login names its own account, and a Claude Code login renewed since the switch
+  stopped is one only Anthropic can name. While a switch is waiting, telling reads the
+  tool's login and the copy the switch parked, which on macOS are keychain items; with no
+  record there, the check is one look at whether the file is there.
+- Pitboard changes nothing where it runs as root or under sudo, or elevated on Windows, or
+  where the host cannot say whether it does: a file it wrote would be root's or the
+  administrators', and a keychain item might be, where the person's own runs might not read
+  or replace it. On Windows `TokenElevation` decides, `TokenElevationType` says which words
+  (Run as administrator, or an account whose every program runs elevated, which no terminal
+  of it changes), a token of LocalSystem, LocalService or NetworkService is elevated
+  whatever it says, and a token not read in full is unknown, which refuses. Nor does it
+  change anything on a Windows older than 11 24H2, build 26100, which Windows Server 2025
+  shares, read as `RtlGetVersion` gives the build and never from the product name; that
+  refusal is `system_too_old`, said before how the process runs, since no way of running
+  Pitboard changes the system. One gate, `service::gate`, asks the host's `floor` and
+  `elevation` and hands out a `service::Permit`, a value only it makes,
+  and everything that changes anything takes one as an argument: `atomic::write`, every
+  function in `host::fs` that makes, moves or removes a file or a directory,
+  `RawStore::write` and `delete` (the keychain among the stores), `Scheduler::put` and
+  `remove` and the service manager they ask, a tool's sign-in started, and the token
+  exchange, `Provider::renew` down to the request. So a change that skips the gate does
+  not compile, and nothing rotates a refresh token it could not then write down. Every
+  change asks the gate before it reads, locks or records anything, so a refused one leaves
+  even the audit log as it was. Where the gate refuses, `status` answers what
+  `status_offline` answers, with a `read_only` warning, the status line writes neither
+  sessions nor readings, `doctor` fails its `system_too_old` or `elevated` check, first and
+  in the gate's order, and an app writes no file of its own, since `app::write_file` takes a
+  permit too. What each says, on each system, is written once, in `words::elevated` and
+  `words::too_old`.
+- A run of the daily renewal schedule renews the default home, whatever `PITBOARD_HOME`
+  says, since the schedule is that home's alone: `Pitboard::renew` renews in the context
+  `schedule::for_its_run` gives it. Such a run is told apart by what the scheduler says,
+  launchd's job label in `XPC_SERVICE_NAME`, or, since what systemd passes a job is best
+  effort and not to be relied on, by the marker the unit's `ExecStart` carries,
+  `renew --scheduled` (`schedule::SCHEDULED_RUN`), which the command line passes on through
+  `Context::started_by_the_schedule`. The command line leaves `renew` to the gate, which
+  asks of the homes the run renews in, so an empty or relative `PITBOARD_HOME` stops no run
+  of the schedule. In a build for tests, such a run whose home is the account's own panics
+  before it reads anything. For the same reason `schedule::install` refuses, with
+  `schedule_not_default_home`, wherever `schedule::serves` is false, that is while
+  `PITBOARD_HOME` names another directory. `uninstall` is not refused, so a schedule can be
+  taken away from any home, and `repair` does nothing there, as before, without an error.
+- The schedule's job is started with the system's environment, not the person's shell, so
+  `schedule::install` gives it, through `Scheduler::put`, `PITBOARD_NO_ARGV` where the
+  installing context refuses the argument line, and every proxy variable that context
+  sets, under the name it was set by, even empty (`proxy::Proxies::variables`): the
+  LaunchAgent's `EnvironmentVariables`, the systemd service's `Environment=` lines. A
+  reinstall takes the current ones; `repair` keeps the proxy variables the installed file
+  gives (`Scheduler::environment`). A proxy's address can hold a password, so
+  `host::unix::service::write` writes every file of the job with `atomic::Perms::Secret`,
+  mode 600 whatever was there, where it kept a file's own mode before. `doctor` reads the
+  installed variables as a context's are read and warns, `schedule_proxy`, where they
+  would send a request another way than this run's (`Proxies::same_way`). In the app,
+  whose environment is the system's as the job's is, the same line is `ok` and says how
+  each way of installing the schedule chooses its proxy: the app's switch would take a
+  terminal's proxy away.
 - No test starts the person's own login shell. A test names a shell of its own in `SHELL`,
   one that is not there, or hands in what a shell said.
 - A test never reaches the system's own scheduler. A test context schedules through
   `MemoryHost`, which writes the files in the test's home and asks no service manager, and
-  the real hosts refuse to ask launchd or systemd from a unit test at all.
-- `pitboard-ffi` exports records, enums, two error types, free functions and two objects,
-  `SignIn` and `Pitboard`. A call to an object is synchronous and may block on the keychain,
-  a lock, the network or the person's login shell, and `PitboardKit` makes each off the main
-  thread; making a `Pitboard` blocks on none of them, since it reads its environment on
-  first use. The free functions block on nothing, and the app makes them where it likes:
-  `tools`, `sign_in_view`, the rule `same_reset` from `usage.rs`, and `usage_level` and the
-  sentences and column words of `words.rs` the apps show, which read only what they are
-  given; `sites`, `sites_for`, `site_names`, `site_link`, `read_pitboard_link`,
-  `pitboard_link` and `link_refusal_reason`, which are `pitboard-sites`' and read only what
-  they are given too; the account windows' rules, such as `store_id`, `window_accounts`,
-  `decide_navigation` and `window_note`, which read only what they are given as well, so a
-  web view's delegate asks them as it is asked; `download_destination`, which asks the file
-  system whether each name it tries is taken; `command_line_places` and `app_command_line`,
-  which only join paths; `can_run`, which asks the file system about one path; and
-  `home_directory` and `pitboard_directory`, which read the environment they are given and,
-  without `HOME`, this account's passwd entry. `find_command_line` looks along a search
-  path, so the app makes it off the main thread.
+  the real hosts refuse to ask launchd or systemd from any build for tests: a unit test,
+  the command line the integration tests run, or an app built with the fixtures.
+- `pitboard-ffi` exports records, enums, three error types, free functions, one object,
+  `PitboardModel`, and four traits an app implements, `ModelListener`, `AppControl`,
+  `Notifications` and `LocalTime`. Nothing it exports is async. The core it runs on is
+  `launch.rs`'s `AppCore`, which it does not export: a call to that is synchronous and may
+  block on the keychain, a lock, the network or the person's login shell, so only the
+  model's lanes make one. Making it blocks on none of them, since it reads its environment
+  on first use. `PitboardModel` blocks on none of them anywhere: making one starts its threads,
+  `send` only posts an intent, `snapshot` only copies the last snapshot, `shutdown` waits
+  only for the actor to take what is already in its mailbox and for each sign-in under way
+  to stop, and the core, a tool's sign-in and the app's `AppControl`, `Notifications` and
+  `LocalTime` are called on the model's own threads. The free functions block on nothing,
+  and an app may make them where it likes: `name_to_save` and `downloads_quit_question`,
+  which read only what they are given; `sites`, `sites_for`, `site_names`, `site_link`,
+  `read_pitboard_link`, `pitboard_link` and `link_refusal_reason`, which are
+  `pitboard-sites`' and read only what they are given too; the account windows' rules, such
+  as `store_id`, `window_accounts`, `decide_navigation` and `window_note`, which read only
+  what they are given as well, so a web view's delegate asks them as it is asked;
+  `download_destination`, which asks the file system whether each name it tries is taken;
+  `app_command_line`, which only joins paths; `can_run`, which asks the file system about
+  one path; `pitboard_directory`, which reads the environment it is given and, without
+  `HOME`, this account's passwd entry; and `fixture_names` and `fixture_page`, which read
+  only what they are given. `PitboardModel::fixture` and `PitboardModel::fixture_in` make
+  the fixture's world in its folder before they answer, files in a temporary directory and
+  nothing slower.
+- What a snapshot says is made by `present`, which reads the state and the moment and asks
+  nothing of anyone but the app's `LocalTime`, for each clock time and whether a moment is
+  on another day than now, and for each date and time of the activity log. Where that cannot
+  say, a clock time is said in UTC and named so, from the moments alone, and a change's time
+  as the log keeps it, as `pitboard log` prints it, so the machine's own time zone is read by
+  the app's `LocalTime` and nothing else. The actor makes it before it takes the lock
+  `snapshot` takes, so a `LocalTime` may call the model back. Text that depends on the time
+  alone is made again on the minute tick, once started, and a countdown is the app's own,
+  from `PanelNotice::until`.
+- A run-out is notified once for each reset of its limit, by the core's rule for one reset,
+  across launches: what was notified is kept in `told.json` in Pitboard's directory, read
+  as the model starts. Nothing is advised on until it is in, and what was read meanwhile is
+  advised on then, so a read that lands first never notifies again what an earlier launch
+  did; what stands in for a read that failed, the last numbers measured, is not, as the
+  Swift model's fallback was not. A record that is there and cannot be read is nothing
+  told, and is written whole over it the next time something is told, so at worst a run-out
+  is notified once more. The window's advice is worked out as the Swift model worked it
+  out, from what this launch has told, so it still says a run-out notified before a
+  relaunch.
+- The app's own preferences, the tools somebody said "Not Now" to a second account for,
+  whether the app has ever shown anybody anything, and whether it switches Claude Code by
+  itself and at what share, are the model's, kept in `app.json` in
+  Pitboard's directory, so they follow `PITBOARD_HOME`. Where that file is there it wins;
+  where it is not, the model takes what the app's earlier store held, handed over in
+  `AppLaunch::earlier_preferences`, and keeps it at once, so that store is read once. The
+  model writes them only once they are read, from the file or, where there is none, from
+  that store, and never in their place: a file that is there and cannot be read, because it
+  is not this user's, a disk failed, another program holds it or it is not text, is left as
+  it is for as long as the app is open, a "Not Now" said meanwhile holding until it quits,
+  and is not taken for a first launch. Text that does not read as preferences is taken as
+  no file, and what that store held is written over it. Until they are read no tool is
+  nudged toward a second account, so a read that lands first never shows the step to
+  somebody who declined it. No foreign trait reaches the app's own store for them.
+- The app model's state belongs to its actor thread alone, and `State::apply` does no I/O:
+  it calls neither the core nor the app, reads no clock and waits on nothing. It says what
+  to run as jobs, which run on the model's lanes and answer as messages. A call the Swift
+  model awaited is a job, except that a read's two stamps and the read are one job, and a
+  look's two stamps are one, so no look lands between a read's stamps and the read. A read
+  that started before a change, one the poll noticed or one this app made, counted in
+  `changes_seen` when the read's job is made and compared when it lands, is dropped, and a
+  read records when the index and the readings were written as they stood before it.
+- A switch is claimed inside `State::apply`, as its intent is taken and before its first
+  job is queued, and stays claimed until the read after it has landed, so one switch runs
+  at a time and the poll leaves the account index alone meanwhile. The switch runs on the
+  lane of changes, and what holds the login and quitting an app on the lane of processes,
+  so a read answers while either waits. An app is quit only when the person says so, the
+  way a person quits it and never by force, and is given 30 seconds, asked every 200
+  milliseconds whether it still runs; one that has not quit by then stops the switch before
+  anything changes. An `AppControl` that throws says the app still runs, so nothing is
+  switched under an app nobody saw go. Pitboard opens again only the copy it quit, as soon
+  as the switch is over, whether or not it worked. `Intent::QuitAndSwitch` names the
+  account of the question it answers, as `AppModel.quitAndSwitch` took the question, so an
+  app may close the question with `Intent::KeepAppOpen` before or after it sends the answer:
+  a question closed unanswered is kept until another switch is asked for, and an answer is
+  taken once.
+- With its setting on, the app asks the core's look whether to switch Claude Code by itself
+  after every read, after numbers or a change the poll found, as the setting is turned on or
+  its share changed, and every 30 seconds after the last look ended, the core's
+  `DECIDE_EVERY_SECONDS`, as `pitboard watch` decides. A launch looks first once its first
+  read has landed and the preferences are read, or 30 seconds after the preferences where
+  that read is slower: before it, the readings may be an older Pitboard's, which the look
+  cannot judge, and a reason posted then would be gone seconds later. The look runs on the
+  lane of reads and claims nothing. Only where it says a decision under the core's lock must
+  say is a switch asked for, claimed the same way as one somebody asks for, with `switching`
+  naming the tool rather than an account, since the core chooses which; and not while
+  another switch, the question before one or another change of the app's own is under way.
+  It runs on the lane of changes, behind any switch asked for, and asks nobody about
+  quitting an app, since Claude Code follows a switch by itself. A refusal is the app's to
+  pace, as it is `pitboard watch`'s, since the core records none it raised before deciding:
+  the next is asked for no sooner than the core waits after as many failed attempts in a
+  row, 60 seconds doubling to 15 minutes (`autoswitch::retry_after`), and any outcome, of a
+  look or of a decision, ends the row. A switch it made is taken as one asked for is, with
+  the read after it, and said in a notification with no button; a reason it did not switch
+  away from a limit, once for that limit and its reset, whether the decision gave it or a
+  look stood on one recorded since, a reason it cannot judge, by what it names, each told
+  apart as the core tells it (`Skip::told_apart`, `Blind::told_apart`), and a refusal, are
+  said once each until it next switches, and never in an alert, since nobody asked. What
+  the look or the decision came to last is said under the setting while it is on. Turned
+  off, it says nothing there, and a look or a decision answered since asks for nothing,
+  says nothing and holds nothing back, except a switch, which was made and is said. The
+  setting is kept in `app.json` with the other preferences, and taken only once they are
+  read.
+- The notice that Claude Code's config names another account offers to write the account
+  in use there: `Intent::UpdateConfig`, a change of the app's own like a rename and not a
+  switch, so the row never reads as switching and nothing said about a switch or the
+  account in use goes. The core refuses it, writing nothing, where another account is in
+  use by then, so a button drawn before a switch landed never switches back. What it warned
+  of is said beside the read after it, as a sign-in's is.
+- The notice that a login is left in a file behind the keychain offers to put it away:
+  `Sheet::Stow`, which looks first, on the lane of reads (`Job::LookLeft`), and says whose
+  the login is once that is known, in the words `pitboard stow` asks with, offering **Put
+  Away** only for a login it can put away. `Intent::Stow` puts away the file as that look
+  found it, on the lane of changes, a change of the app's own like a rename: what goes wrong
+  is said in the sheet, which looks again, since what it found is out of date by then, and
+  once it is done the sheet closes, what it did is said until it is dismissed, and the
+  accounts are read again.
+- A login replaced outside Pitboard, which every read says until it is put right
+  (`login_replaced`), is posted once for each account while the reads that ask say it, and
+  again only once one has stopped saying it and a later one says it, or after the app is
+  opened again. What was posted is kept by the account the warning is about (`Warning`'s
+  `account`), since its words name whose login is stored now, which every switch changes,
+  and not across launches.
+- A read that asks nobody, after another front end changed the index or a session recorded
+  numbers, that says Claude Code's config has named another account since Anthropic last
+  named the login stored (`in_use_unconfirmed`) starts one read that asks, which settles
+  whose the login is. Once for each thing it says, so a config that stays as it is costs no
+  more reads.
+- Every other change this app makes to the account index holds it as a switch does, and the
+  poll leaves the index alone meanwhile: naming the login signed in now, a sign-in's
+  enrolment, a rename, forgetting, writing the account in use into Claude Code's config,
+  giving up on an interrupted switch and renewing parked logins. Each holds the index inside
+  `State::apply` from the moment its intent is taken, a sign-in's from the moment its thread
+  is told to enrol, until the read after it is over, landed, dropped or failed, or until the
+  change itself has failed, so a change made elsewhere is noticed by the next look once none
+  is under way. A look can find the index as such a change wrote it and land after the
+  change has answered, before the read the change asked for: taken for a change made
+  elsewhere, it dropped that read as one that started before a change, and a look that
+  landed while a rename was made put away what the account's last switch said
+  ([A look and the app's own changes](#a-look-and-the-apps-own-changes)).
+- What a tool's last switch said is kept apart from the read's warnings, one per tool, until
+  that tool no longer has the account it switched to signed in or the person puts it away:
+  a Codex switch's warning that open sessions still use the account it parked, and must not
+  sign out, outlives every read and every write that leaves that account signed in. A
+  sign-in that puts a new login in use for the account in use is kept there too, beside
+  what that tool's last switch said, since sessions already running keep the old login.
+- One sign-in runs at a time, told apart by an id, on a thread of its own that starts the
+  tool's own sign-in, hands on what the tool says and, once the tool has stopped saying
+  anything, enrols what it signed in to only if it is still the sign-in under way. So a
+  cancel comes before the tool has started, and stops it as it starts; while it waits on a
+  browser, and stops it then; or once it is being enrolled, too late to stop, and the
+  accounts are read. A code is typed back, and a tool stopped, on a lane of their own, never
+  on the sign-in's own thread, which waits on the browser, and only while the tool has
+  started and is still saying something. A code is typed only where the tool asks for one,
+  once, and again once Claude Code has refused it: it reads another in the same sign-in, as
+  its register's `sign_in_takes_another_code` holds. Once the model has gone, every sign-in
+  still under way is stopped, so no thread waits on a browser for ever. `shutdown` returns
+  once that has happened, each tool stopped and waited for, since an app's process ends once
+  it returns and a tool the app started does not end with it; a sign-in still starting,
+  which stops its tool as it starts, or enrolling what it signed in to, is waited for too,
+  for no longer than ten seconds in all.
+- A sign-in asked for after a cancel waits for the one cancelled: its thread is asked for
+  only once that one has let go of the core's one sign-in at a time. The stop, which runs on
+  the lane of sign-in calls, says so where it stopped the tool, once it has waited for it.
+  Otherwise the cancelled sign-in's thread says so in its last answer, once its tool has
+  failed to start, finished, or been stopped and waited for, or what it was doing has come
+  to nothing. That answer also waits for the tool's output to close, which a program the
+  tool started can hold open for as long as it runs, so the stop does not leave it to the
+  thread. Meanwhile the new sign-in is shown as one whose tool has not started. Asked for at
+  once, it started on a thread of its own before the stop and was refused as one already
+  waiting. The core lets go of that lock by name as a sign-in is dropped, so
+  `WatchedSignIn::cancel` returns once it is free, whatever processes other threads are
+  starting ([One sign-in at a time](#one-sign-in-at-a-time)).
+- A sign-in under way keeps the sheet it was started from: putting up another while it runs
+  would leave the tool running with nothing on screen to finish or stop it. What goes wrong
+  is said in that sheet, or in the window where the sheet has gone, and the sheet closes once
+  the sign-in has finished.
+- One change to the daily renewal schedule runs at a time, claimed inside `State::apply` as
+  its intent is taken, and the settings' switch shows what it asked for until the schedule
+  has been read back after it; a second press meanwhile does nothing. Turning renewal on is
+  refused before the scheduler is asked, and nothing is read, where the command line inside
+  this copy of the app is not one a schedule would keep reaching: none inside it, one in the
+  temporary copy macOS runs an app from, by the core's own rule in `schedule.rs`, or one
+  nobody may run. Turning it off never is. Whether that command line lasts is read from its
+  file on the lanes, with the schedule, a change to it, the repair and the command line
+  found, never as a snapshot is made. A schedule an older app wrote is repaired once a
+  launch, as the model starts, and read again only where it was. Renew Now runs one renewal
+  at a time, and is over once the read after it, asking every service, is. Doctor's checks
+  and the activity log are read each time their pane is shown, the checks counted while they
+  run, as reads are. Opening at login and linking the command line onto the `PATH` with an
+  administrator's password are each app's own, and once an app has linked it, it sends
+  `Intent::LookForCommandLine` for the model to look for the command line again.
+- `AppControl` names an app by one string, the id the core's holder detection gives it,
+  which on macOS is its bundle id, in `provider/codex/holders.rs`. What names an app on
+  Windows, and so what the core's holder detection gives there, is a question still open
+  for the owner; the trait takes one string so that a Windows id fits it unchanged.
+- One thread tells a `ModelListener`, so snapshots arrive in revision order, and a snapshot
+  is told only where it differs from the last, and of several waiting only the newest. So a
+  test waits for what a snapshot says once something is over, never to be told one in
+  between, such as one saying a read is under way, which can go untold. Nor is `snapshot`
+  enough to see one in between: the actor hands an intent's jobs to their lanes before it
+  publishes, so a lane can have started, even asked a service, while `snapshot` still gives
+  the one from before. A test that must tell a read's end from its start holds the read, as
+  the threaded tests hold one with the lock usage readings are written under. The model
+  never holds a lock while it calls out, so a listener may call `snapshot`, `send` and
+  `shutdown`. Dropping a `PitboardModel` waits on no thread, since .NET can free it from its
+  finalizer thread ([The C# bindings](#the-c-bindings)); `shutdown` waits for the actor and
+  the sign-ins under way, neither of which waits on the listener.
+- No test makes the app model over the machine's own environment. Its Rust tests run the
+  real core over a context of their own, with `MemoryHost` and `ScriptedApi` and a home in a
+  scratch directory, and so does a fixture. The C# tests make one only as `ModelTests.cs`
+  does: every home a fresh folder, and never started or sent an intent, so it reads nothing,
+  or a fixture's, which reads no machine and may be started. The Swift tests make one only
+  as a fixture's, in `PitboardKitTests`, started from Swift; every other Swift test hands
+  `AppModel` snapshots from a stand-in for `PitboardModelProtocol`, which keeps what it is
+  sent. So the launch, a listener, an `AppControl`, `Notifications`, a `LocalTime`, a first
+  snapshot and `Intent::Start` cross the bindings in a test, and the library calls a
+  listener written in C# or Swift, from a thread of its own, against a library built with
+  the `fixture` feature. Every `AppControl` a test hands the model is a stand-in that records
+  what it was asked, never one that reaches a real app, and its `Notifications` keeps what
+  it is given and posts nothing. A test that signs in runs the compiled stand-in as
+  `claude`, in its scratch home, and plants the login it would have stored in
+  `MemoryHost`'s keychain, or plays the tool's sign-in through the core's `SignInScript`,
+  as a fixture does, which starts no program: never a real `claude` or `codex`. A test that
+  schedules renewal does it through `MemoryHost`'s pretend scheduler, which writes its job
+  into the scratch home and asks no service manager, and a test that looks for the
+  `pitboard` a terminal runs finds one in its scratch home before it would reach any place
+  of this machine's.
+- A fixture is the real core and the real model over a machine of its own, never a core
+  written again: what it plays is only what is outside the core, a tool's sign-in, the
+  person at the browser, the other apps and the services. Nothing it does reaches this
+  machine's homes, keychain, scheduler or network: its home, its tools' programs, which
+  are never run, and the command line inside its stand-in app are files in its own folder
+  in the temporary directory, its stores, process list and scheduler are `MemoryHost`'s,
+  and Anthropic and OpenAI are `ScriptedApi`. Its preferences and what it has told are in
+  its own Pitboard directory, and its account windows' records in its own folder, made
+  again at each launch. Only a library built with the `fixture` feature has one, the
+  bindings are the same either way, and nothing that ships is built with it. Only a debug
+  build of the macOS app reads `PITBOARD_FIXTURE`, and one linked against a library without
+  the feature stops at launch with the core's sentence, which names the flag. What the app
+  adds to a fixture is native and in the fixture's folder or in memory: a login item that
+  registers nothing, the command line linked in the folder's `bin` with no password, and
+  the account windows' stand-in pages, which it serves from `fixture_page` on
+  `pitboard-fixture://`. It finds that folder as Rust's `std::env::temp_dir` does, from
+  `TMPDIR`, which Foundation's temporary directory does not read
+  ([The fixtures](#the-fixtures)).
 - The app has no rule of its own for what the core decides: its home, Pitboard's directory,
   whether a path is a program, the sites and which links from outside it opens are asked of
-  the core. The account windows key their records by Pitboard's directory standardised as
-  Foundation standardises a file URL, as they did before the core said where it is, in
-  `WebEnvironment.recordKey` alone.
+  the core, and everything the menu bar, the menu, the window and the settings show, and
+  what each button sends, is the model's, an account's own menu with it: what it offers,
+  in what words, and what it holds back. Whether the copy of the app runs from a temporary
+  place is the core's rule too, `schedule::in_a_temporary_copy`, which the model asks
+  before it offers to link the command line. The account windows' records are kept
+  under Pitboard's directory standardised as Foundation standardises a file URL, as the
+  app kept them before the core said where it is: the app works that key out in
+  `WebEnvironment.recordKey` alone and hands it to the model as `WindowsLaunch::key`.
+- The macOS app's `AppModel` shows only a snapshot newer than the one it shows, so one that
+  arrives late never puts back what a newer one replaced, and assigns each part only where
+  it differs. `ModelListening` hands each snapshot to the main queue, which runs them in the
+  order the model told them, and holds the `AppModel` weakly: the model holds the listener,
+  and the `AppModel` holds the model. A view sends an intent and returns; nothing it does
+  waits on the model. A sheet, the quit question and a failure's alert are the model's,
+  shown from the snapshot and closed by an intent: `CloseSheet`, `KeepAppOpen` and
+  `DismissFailure`. The window opens once for each `WindowRequest.serial`, on its pane where
+  it names one: `WindowRequests` answers each serial once, seen as the menu bar item first
+  appears or as the serial moves, so the first launch's request opens the window however
+  early it comes, and one answered already is not answered again when the window opens some
+  other way. The app stops the model as it quits, and `shutdown` returns once every sign-in
+  under way has stopped.
+- The macOS app hands the model what it kept in UserDefaults before `app.json`,
+  `secondAccountDeclined`, `hasBeenSeen` and `hideSecondAccountNudge`, in
+  `AppLaunch::earlier_preferences`, while `app.json` is not in the Pitboard directory the
+  launch serves, and takes the keys out of UserDefaults once it is there: as it launches,
+  or as it quits once the model has stopped. So a launch that stopped before the file was
+  written hands them over again. What the old keys mean is the model's. It hands over the
+  account windows' records, `webStores` and `windowPages`, the same way, in
+  `WindowsLaunch::earlier`, and takes them out once `windows.json` is in the app's own
+  folder.
 - On macOS, only `/usr/bin/security` reads or writes Claude Code's keychain item and
   Pitboard's parked items. No keychain item is touched through the Security framework. The
   reason is under [macOS](#macos) in Measured facts.
 - Pitboard takes Claude Code's write lock, the same way Claude Code takes it, before writing
-  Claude Code's login. It writes the login where it already lives.
+  Claude Code's login. It writes the login where it already lives. A switch takes Claude
+  Code's refresh lock before that, as a renewal does (the register's `refresh_lock`), and
+  holds it from before it reads the outgoing login for the last time until it has recorded
+  the login installed: a session renewing meanwhile waits for it, so the copy parked for the
+  account switched from is never one a session spent, with its renewal lost at a save that
+  found another login stored. A renewal already under way holds that lock, and a switch
+  waits for it as it waits for the write lock, then stops with `switch_in_progress`. Locks
+  are always taken in one order: `state.lock`, then Claude Code's refresh lock and its
+  legacy one, then its write lock.
 - Codex takes no lock on `auth.json`, so a switch reads the file again before replacing
   it. Every switch reads the live login back rather than trusting its own write.
 - Pitboard never answers a failed keychain write by writing Claude Code's plaintext file.
   That demotion is Claude Code's to make.
+- While Claude Code's `.credentials.json` sits behind the keychain, with a login in it,
+  none, or what Pitboard cannot read, a session already running keeps its account after a
+  switch until its login is next renewed. Pitboard tells the file by a look at it, as the
+  session does, not by reading it. A switch, by hand or by itself, says so in place of a
+  number of seconds (`Adoption::AtRenewal`), and every read that reads the keychain and
+  every change warns while the file is there (`fallback_login`). The automatic switch still
+  switches: new sessions take the account switched to at once, and running ones at their
+  next renewal. A read and a switch never touch the file.
+- Only `pitboard stow`, and the app's **Put Away** after its sheet, write or delete
+  `.credentials.json` while the keychain holds the login in use, and only once somebody has
+  confirmed what the file holds. It looks first, taking no lock and writing nothing:
+  `stow::find` reads the file, tells whose its login is by its refresh token's fingerprint
+  where that is the login stored, a park's that reads back, or the record's, and otherwise
+  asks Anthropic with the login's own access token, never with one that has expired; where
+  that names an enrolled account, it tells whose the login stored is as a read does. Whether
+  the file holds a login at all is `claude::live::holds_a_login`, a `claudeAiOauth` with a
+  token in it, which every `fallback_login` warning and doctor tell it by too: a file that
+  is not a JSON object, or holds no token, signs nobody in and is deleted as holding none,
+  and a login with no refresh token whose access token has expired is dead. What the look
+  found is shown with `Left::seen`, a fingerprint of the file's bytes, and `stow` goes ahead
+  only while the file still holds those bytes, read again under `state.lock`, again under
+  Claude Code's refresh lock (the register's `refresh_lock`), and again as the file goes.
+  The refresh lock is held from that reading until the file is gone, taken as Claude Code
+  takes it, `.oauth_refresh.lock` and then the legacy `<storage dir>.lock` with its 60
+  second staleness: a session renewing a login takes it before it sends the refresh token,
+  and saves the answer only where the stored login still holds the token it sent, so a
+  renewal under way while the file went would spend the token Pitboard counted on and save
+  nowhere. Claude Code's write lock, which excludes sign-ins but not that renewal, is taken
+  after it, as Claude Code takes them, around the renewed login's write and the file's
+  deletion only, so no network round trip holds up Claude Code's writes; a `/logout` that
+  gave up waiting writes with no lock, so the file is read again under it. Additive before
+  destructive: the file goes only once its login is parked for its account, or is shown to
+  be kept already (the very login stored, or a park's that reads back), a second sign-in of
+  the account in use, whose own login the keychain holds, or another login of an account
+  holding a park it can be switched to, or dead, with Anthropic refusing its refresh token.
+  A park that copies the file's login is written down as one, in `state.json`'s `from_file`,
+  before the copy is written and until the file has gone. A run that stopped between parking
+  the login and deleting the file leaves it in both, and a session that signs in with the
+  file can renew it there, which spends the copy, and nothing local can tell that it did. So
+  such a copy is never kept in place of what the file holds by then, which is parked in its
+  place; any other park that reads back and has not expired is kept, whichever login is the
+  newer. Where the file goes because of the login stored, the very login stored or a second
+  sign-in, that login is read again as the file goes, and one a sign-in replaced meanwhile
+  keeps the file (`stored_login_changed`). A login whose access token has expired is renewed
+  as Pitboard renews the login stored to identify it (`switch::refresh`), read from the file
+  itself, not through the keychain in front of it, and written back there before anything
+  else. Where whose login is stored decides the outcome and that login has lapsed, the look
+  takes it from the record, renewing nothing, and `stow` renews it as a change does. A
+  login of an account nobody enrolled is refused, named by its email and organisation,
+  without asking whose the login stored is, and nothing is deleted; the command line
+  refuses it from the look, asking and trying nothing. Its other keys, such as
+  `mcpOAuth`, are not Pitboard's to move: they go with the file, by name. Every error it
+  stops with says how far it went (`Error::StowStopped`, with the code, cause and exit
+  status of what stopped it): nothing changed, the login stored renewed to tell whose it is
+  and kept for the next change to save, the file's login renewed and written back, renewed
+  and kept for the next change to write back, renewed and lost, which leaves it spent, or
+  parked, which stays. Where telling whose login is stored loses that login's renewal, the
+  error is the renewal's own (`Error::RenewalLost`): nothing of the file's has moved by
+  then. A run that stops anywhere leaves the login in the file, in a park, or in both, or,
+  between Anthropic answering a renewal and the answer reaching the file, in the vault copy
+  the next change writes there. A renewed login is lost where a sign-in or a `/logout`
+  replaced the file's login meanwhile, and where neither the vault nor the file takes it, as
+  the renewal of the login stored says below. A copy waiting for Claude Code's slot is saved
+  before `stow` reads the file, and where it cannot be yet, `stow` stops with nothing
+  changed. A session that signed in with the file, as one over SSH does, is signed out once
+  it is gone. The activity log records it as `stow`. On Linux the file is the store, nothing
+  is behind it, and there is nothing to put away.
 - A Codex login is moved, never copied (`ParkSemantics::MoveOnly`). The parked login is
   read back before the incoming login is written. Codex's own sign-in and sign-out revoke
   the stored refresh token, so two usable copies of one login must never be at rest.
-- No login moves until Pitboard knows whose it is. A Claude Code login's account is asked of
-  Anthropic; a Codex login's is read from its ID token; a Claude Desktop login's is read
-  from its files. A session Pitboard has not seen, under an account id it knows, moves only
-  once the person has enrolled it again, as does a session it knows as one account's under
-  another id: E4 measured sign-ins that started with no account id, not one that replaces
-  the id Log out leaves behind.
-- A Claude Desktop login is a fixed list of files and folders in Claude's data directory,
-  and the three keys of its `config.json` that Pitboard moves with the account. Pitboard moves that list with
-  `rename` and nothing else: never a copy, never the whole directory (`TreeLogin::items`).
-- Nothing in Claude's data directory moves while anything runs from `Claude.app`, or from
-  a bundle under another name whose main program or helper is Claude's, and the check is
-  made again before every single move. A process list Pitboard cannot read counts as
-  Claude running. A `SingletonLock` counts only while its pid still runs Claude's program;
-  2.19675.0 keeps none (E14), so the process scan is the check that counts.
-- A Claude Desktop park is a directory under `~/.pitboard/desktop/parks`, mode 0700, on
-  the same volume as Claude's data directory. A move that would cross volumes is refused,
-  because it would be a copy.
-- Pitboard never deletes what it found in Claude's data directory. What Claude made while
-  signed out goes to `~/.pitboard/desktop/strays`. Only `forget` and `uninstall` delete a
-  Claude Desktop park, and only inside the parks directory.
-- Whose a Claude Desktop login is, is read from files: `lastKnownAccountUuid` and a hash of
-  the encrypted `sessionKey`. Switching, enrolling, identifying and verifying never read
-  the keychain.
-- Pitboard reads `Claude Safe Storage` only through `/usr/bin/security`, only after the
-  person turned live usage on, and never writes it. Only turning live usage on may show a
-  keychain prompt. Every other read gives up within 10 seconds rather than wait on one.
-- A Claude Desktop park cannot be renewed. Pitboard says when it lapses rather than
-  pretend to keep it alive.
-- An interrupted Claude Desktop switch has its own record, `~/.pitboard/desktop/journal.json`,
-  so it never blocks a Claude Code or Codex command. It is finished only while Claude is
-  closed.
-- Pitboard never renews the login in use. That is the tool's own job, and a second renewer
-  would break it.
+- No login moves until Pitboard knows whose it is: asked of its service, which for a Codex
+  login is its ID token, or known by its refresh token's fingerprint from an earlier answer
+  about that very login. A login with no refresh token has no fingerprint and is always
+  asked about.
+- Who is in use is one record per tool, `state.json`'s `in_use`, written under `state.lock`
+  only where a service has just answered for that login or a fingerprint ties it to an
+  earlier answer. Every reader that does not read the store takes it from there, and
+  `forget` asks as a switch does. Otherwise Claude Code's config is a sign that something
+  signed in, and the words of a warning, never whose a login is: a Claude Code process
+  started or signed in on another login can rewrite it with its own account.
+  Of Pitboard, only a switch writes it, and `use` of the account already in use where it
+  names another; the app's button for that is `use` refused where another account is in
+  use by then. Each records `named` once the write lands, and keeps what the config named
+  when the store was read where it fails, so every read says the config names another
+  account. A read never writes it: a process starting on another login writes its own
+  account back. A read records nothing for a tool whose config names another account than
+  when the read began, so it never files what it saw over what a change wrote since.
+- The login in use is its tool's to renew. Pitboard renews Claude Code's only where it must
+  tell whose it is and its access token has lapsed, which a session signed in with a file
+  behind the keychain leaves it: every session pinned to the file, nobody renews the
+  keychain's. It renews it as Claude Code does (`switch::refresh`, the register's
+  `refresh_lock`), so a session renews after it, never beside it: under Claude Code's refresh
+  lock, holding `state.lock` first, it reads the login again and tells one renewed meanwhile
+  as it is, sending nothing; otherwise Claude Code's write lock is taken once and the login
+  read again before the refresh token is sent, so a writer in the way stops it with nothing
+  sent. The name of a copy of the answer is then written down in `state.json`'s `renewing`,
+  which the vault has to answer for, so a vault that cannot be read stops it with nothing
+  sent. Once Anthropic has answered, the copy is written into the vault under that name, the
+  write lock is asked for again for 30 seconds, twice its staleness, and the answer is then
+  saved without it, as Claude Code writes on once its own lock is lost. It is saved as Claude
+  Code saves a renewal: read from the store that keeps it, and written over the login there
+  only while that still has the refresh token sent, other keys as they are by then. The copy
+  goes once it is saved or the store holds another login by then, and a name with no copy
+  written under it goes too. A run killed in between, or a save that fails, leaves it, one per
+  slot, and settling saves it (`refresh::finish`). While it cannot be saved, the store still
+  holds the spent refresh token, so no change renews, parks, replaces, puts away or deletes
+  that slot's login: `refresh::finished`, which `identify::look`, `stow` and a read that must
+  renew call before anything else, stops each with why, and a Codex change goes on.
+  `uninstall` keeps the home while a copy waits. A copy whose write fails landed nothing, as
+  a save counts it, and is let go of; one written and not read back may hold the answer, and
+  is kept. One window is left, as in Claude Code's own renewal: on macOS the vault is the
+  keychain Claude Code's login is in. Where macOS cannot ask for its password, as over SSH,
+  a keychain that locks during the exchange, one round trip, takes neither the copy nor the
+  answer. The renewal is then lost. A change says the refresh token stored is spent and to
+  sign in (`Error::RenewalLost`, with the code of what stopped the save), and a read marks
+  the account in use `login_refused`, as Anthropic refuses that token from then on. A save
+  made without the write lock is said as `lock_compromised`. A login Anthropic refuses for
+  good, or one with no refresh token, is `session_expired` with the cause `login_refused`,
+  with nothing written; a 401 where nothing renewed stays `session_expired` with
+  `token_expired`, telling the person to run the tool once. Usage alone never renews it, nor
+  a look that takes no lock, such as the automatic switch's or `stow::find`, and Codex's
+  never.
 - Nothing outside `pitboard-core` writes Pitboard's index. Every change goes through
   `switch`, which records what it is about to do first and finishes an interrupted change
   before starting another.
+- An answer from Anthropic that Pitboard read whole replaces a Claude Code account's
+  reading, and a session only moves that reading, within the limits the answer gave. So
+  numbers filed under the wrong account go at that account's next answer.
+- Pitboard files usage only under the account it is proven to be of: an answer for that
+  account's own login, or a session's numbers whose windows that account's answered reading
+  holds, where no other account's reading does. That reading holds no other running window
+  of a limit the session passed, and where it lists every limit of its account, it lists
+  each one passed. Never under the account Claude Code's config names, nor by the time
+  since a switch: a session goes on with the login it holds for as long as it takes to
+  follow one. Windows are told apart by their resets, to the minute. So a session in a
+  window its account's reading does not hold yet can be filed under another account whose
+  window resets within a minute of it, for as long as both windows run: each answer for
+  that account puts its reading right only until the session's next response. A weekly
+  window passed with it tells the two apart where that account's reading holds another
+  running weekly window for all models, or lists every limit and none such. A session that
+  passes the five-hour limit alone tells nothing apart.
+- Pitboard switches by itself only for a front end somebody asked to: the app with its
+  setting on, or `pitboard watch` running. It never switches Codex by itself, since a
+  running `codex` never follows a switch. The status line and the daily renewal schedule
+  never switch, and an automatic switch never quits an app.
+- An automatic switch is decided once, under `state.lock`, from one telling of whose login
+  Claude Code has stored, and made from that same login, so nothing comes between the
+  decision and the switch. `autoswitch::look` comes first, from files alone: it takes no
+  lock, sends no request, reads no keychain and records nothing, so a look that finds
+  nothing to do costs nobody anything. It goes on to the lock only where a switch may be
+  due, the record of whose login is stored is in doubt, a reason not to switch was not
+  recorded yet, or another run is in the middle of a switch. A switch's record,
+  `journal.json`, is of one interrupted (`switch_interrupted`) only while no run holds
+  `state.lock`. So where the record is there, the look asks whether the lock is held, and
+  still waits for nobody (`switch::unfinished`): it opens the lock's file to read, never
+  making it, asks for the lock shared without waiting, and lets go at once. Held, the
+  switch is that run's, and the decision waits for the lock and judges what that run
+  leaves. Under the lock, `switch/auto.rs` tells whose it is as a switch does, by its
+  fingerprint or by asking Anthropic, records it, and decides from that and the files as
+  they are then. So the app, `pitboard watch` and a person's own `pitboard use` never make
+  two switches from one reading, and a sign-in outside Pitboard is judged as the account it
+  signed in. Where whose login is stored cannot be told, nothing is judged from the record,
+  which may be another account's: that is recorded once, and asked again a minute later,
+  then twice as long after each such failure in a row, up to 15 minutes. A record of whose
+  it is made since, by a read or a switch, ends both the wait and the row. Only what every
+  front end would meet alike is waited on so: a store one process cannot read, such as a
+  keychain locked over SSH, is that front end's refusal, and holds back no other. The
+  attempt is written to `autoswitch.json` once the switch is decided and before anything
+  moves, so a switch killed midway still counts against that limit's attempts. One that
+  failed for a reason trying again may mend, Anthropic out of reach or Claude Code writing
+  its login, is taken back out of them, so an outage never uses them up. The next try waits
+  as long, for every limit of the account, since what failed was the moment. One refused
+  over the account switched to passes that account over for every limit of the account in
+  use until the limit it was refused for resets; any other refusal counts, a login too
+  large to write among them, which is about the machine and not the account.
+- The automatic switch judges only a reading Anthropic gave for the account's own login, of
+  the account in use and of each it could go to, and judges every limit at the share: one
+  already switched away from, or tried three times, before it resets never hides another.
+  Where none is left to try, that is said at once, never as a wait or the account settling,
+  and recorded with the attempt that failed and left none, so a front end that waits after
+  that failure finds it standing. A wait or the account settling is said of the limit tried
+  next. Each reason it does not switch away from a limit at the share is said and recorded
+  once for the account, the limit, its reset and the reason: under the lock, in
+  `autoswitch.json` and as `auto-stay`. The look after that stands on the record and takes
+  no lock. A front end is told the reset the reason was recorded under, and says it once
+  for the same four. What is recorded of a window is kept until a minute past its reset, as
+  late as an answer may give it, so an answer a second later neither forgets a limit
+  already left nor says a reason again. What tells one reason, or one wait, from another
+  is the core's one rule, `Auto::told_apart`, and every front end says by it, building no
+  key of its own, so the app and `pitboard watch` never tell them apart differently.
 - Additive writes become durable before destructive ones. A run that dies midway leaves a
   spare copy of a login, never a missing one.
 - The `--json` contract changes only on purpose. A change to a snapshot is a change to the
   contract.
+- The JSON that `--json` prints is ASCII alone, on every system. Each character outside
+  ASCII is a `\u` escape, and one beyond U+FFFF its UTF-16 surrogate pair, so a program
+  that decodes the output in a code page other than UTF-8 parses the same values.
 - The state file is read forwards only.
 
 ## Boundaries
@@ -299,8 +1216,8 @@ browser would.
   Renaming or removing one is. While Pitboard is at 0.x, a breaking change gets a new minor
   version, as in 0.3.0, and after 1.0 a new major version.
 - Pitboard and each tool meet at the tool's register. What Pitboard relies on about a tool
-  is written there, and the conformance run checks it against the tool's newest build twice
-  a week.
+  is written there, with the systems each fact was read on, and the conformance run checks
+  it against the tool's newest builds twice a week.
 - Pitboard and each service meet at a few requests. The list, with what each request
   carries, is in
   [What leaves your machine](https://docs.usepitboard.com/security#what-leaves-your-machine).
@@ -314,49 +1231,68 @@ browser would.
 
 ## The state file
 
-`~/.pitboard/state.json` is Pitboard's index: which accounts it knows, and where each one's
-login is parked. It carries a `schema` number.
+`~/.pitboard/state.json` is Pitboard's index: which accounts it knows, where each one's login
+is parked, and whose login each tool has stored. It carries a `schema` number.
 
 The app and the command line inside it update together. A command line installed another
 way updates by its own route. So on one machine, an older Pitboard can meet a file a newer
 one wrote.
 
-Reading forwards is `state::migrate`. Each schema bump adds an arm that rewrites the
-document and falls through to the next. A file two versions behind comes forward in one
-read.
+Reading forwards is `state::migrate`. Each schema bump adds a step after the ones before
+it, so a file two versions behind comes forward in one read.
 
 Reading backwards is not possible. The older Pitboard refuses the file and says to update
 it. A bump needs a test that loads a file the previous version wrote.
 
-Schema 4 records each account's tool, and which account is signed in for each tool. A
-schema 3 file is brought forward on its first read, with no keychain item or vault file
-touched.
+Schema 4 records each account's tool, and for each tool the account Pitboard last switched
+to. A schema 3 file is brought forward on its first read, with no keychain item or vault
+file touched.
+
+Schema 5 gives each account an `id`, set at enrolment and never changed. Its parked logins,
+readings, usage history, budget and windows are filed under it. A login is matched to its
+account by its tool's identity, which for Claude Code is the account and the organisation
+together (`Account::owned_by`), so one person's two organisations are two accounts. An
+account brought forward from schema 4 keeps its account uuid as its `id`, and nothing filed
+under it moves.
+
+Schema 6 records whose login each tool has stored, as its service last said (`in_use`), in
+place of the account Pitboard last switched to (`active`). A tool's record holds the owner the
+service named, the fingerprint of the login it named it for, when, and the account the tool's
+own record named then. A switch first records the login it finds in the store, then the one
+it installs with what the tool's own record named, then, once it has written the incoming
+account there, that it names that one. Enrolling the account signed in, a sign-in put in use
+and finishing an interrupted switch record theirs, and a read records what it finds where
+that changed. Each goes through `State::identified`. Where the owner changes and the account
+before it has nothing parked and no other slot's record names it, that account's only login
+is gone, and the account says when (`replaced_at`) until it holds a parked login or is in
+use again: its row reads `login_replaced`, and every read warns with `login_replaced`.
+Adopting a directory from another computer clears it, with the records, since both were of
+that computer's stores.
+
+Each `CLAUDE_CONFIG_DIR` or `CODEX_HOME` names a store of its own, its credential slot, so a
+tool has a record for each slot it was read under. `in_use` holds the one of the slot `slot`
+names; the others wait in `other_slots`, by slot, and `load` puts the slot it reads in place
+of the one `slot` names. A read records what it finds, so two front ends under two slots
+take turns writing the file, and a record either dropped would leave the next read under the
+other nothing to tell a sign-in outside Pitboard by. An account another slot's record names
+still has a login stored there, so a sign-in that replaces its login in one slot leaves it
+that one, and nothing says it was replaced.
+
+A schema 5 file comes forward with each tool's `active` label as that account's record, with
+no login and `known_at` 0: nothing established which login the store held. A label naming no
+account names nobody. Schema 6 is a bump rather than a field beside `active`, so an older
+app or `pitboard watch` running beside a newer one refuses the file and says to update, and
+does not go on deciding who is in use from Claude Code's config.
+
+Schema 7 adds `renewing`, the renewals of a tool's own login not saved where the tool keeps
+it yet, which a schema 6 file reads as none. The field alone would not do: 0.10.0 reads a
+file with it and drops it at its next save, leaving the copy of the renewed login named by
+nothing, so the next renewal of that login, by this version or by 0.10.0's `stow`, sends the
+spent refresh token again. So it is a bump, and 0.10.0 refuses the file and says to update.
 
 A file naming a tool this build does not know is reported as written by a newer Pitboard,
 not as corrupt. The advice for a corrupt file is to delete it, and following that here would
 orphan every parked login.
-
-Claude Desktop added no schema bump. Its accounts are schema 4 entries whose tool is
-`desktop` and whose detail is `Detail::Desktop`: the organisation's uuid when known, the
-session fingerprint (the SHA-256, in hex, of the `sessionKey` cookie's ciphertext) and when
-that session lapses. Its usage is kept under `desktop:<account uuid>`. A Pitboard older than
-this support reads such a file as naming an unknown tool, `state_names_unknown_tool`.
-
-What a Claude Desktop switch needs beyond the index is in `~/.pitboard/desktop/`, a
-directory of mode 0700 whose files are 0600:
-
-- `parks/pitboard-tree-<uuid>-<millis>/`: one parked login, its items, `config-keys.json`
-  with the three account keys, and `manifest.json` naming the account, the fingerprint and
-  the items.
-- `journal.json`: present only while a Claude Desktop switch is unfinished. It names items
-  and inodes, never values.
-- `strays/<millis>/`: what Claude made while signed out, set aside and never deleted by
-  Pitboard. One directory per switch or recovery, keeping each item's place; an item that
-  would land on another gets a directory of its own.
-- `awaiting.json`: the account parked by `pitboard use desktop --signed-out`, until the next
-  enrolment.
-- `live-usage.json`: whether live usage is on, and whether macOS let Pitboard read Claude's
-  key. It never holds the key.
 
 ## Tool registers
 
@@ -365,12 +1301,30 @@ keeps its facts in a register, `crates/pitboard-core/src/provider/<tool>/assumpt
 dated with the build they were read from.
 
 A fact names literals a build must contain (`probe`), or literals whose arrival would
-disprove it (`absent`). Beside the facts, the register names those that only one system's
-build can be read for (`read_on`). A fact about behaviour, such as the 30 second cache,
-names no literals. `pitboard-conformance`
-tells a macOS build from a Linux one by its header, and reports which facts can still be
-read from it, which have moved, which name nothing to look for, and which it skipped as
-read from the other system's builds.
+disprove it (`absent`). A fact about behaviour, such as the 30 second cache, names no
+literals.
+
+A tool's builds for different systems carry different code, so beside its facts each
+register keeps a table, `PER_SYSTEM`. It has one line for each fact, and the line says what
+the fact is on macOS, on Linux and on Windows (`assumptions::OnSystem`):
+
+- `Read(build)`: read from that system's build of that version. A fact's own
+  `verified_against` is the build its macOS and Linux readings name, and
+  `assumptions::verified_on` gives the build for any one system.
+- `NotRead(reason)`: not read there, and why. Claude Code's Linux and Windows builds have no
+  keychain backend, so its keychain facts are read from its macOS build alone.
+- `Pending { by, reads }`: to be read there by a later pull request of the Windows work,
+  `W2` to `W27`, which says what that pull request reads. `assumptions::pending` lists
+  these, and the Windows work is not done while the list has anything in it.
+
+Where a tool does something else on Windows, the Windows behaviour is a fact of its own,
+such as `credman_target` beside the keychain's `credential_service_name`. It is never a
+second reading under the first fact's name.
+
+`pitboard-conformance` tells a build's system by its header: ELF for Linux, Mach-O for
+macOS, and PE for Windows, for x64 and ARM64 only. It refuses any other file. It reports
+which facts can still be read from the build, which have moved, which name nothing to look
+for, which it skipped and why, and which wait on the Windows work.
 
 The check is shallow on purpose. A literal being present does not prove the behaviour around
 it is unchanged. A literal disappearing, or a ruled-out one appearing, does prove something
@@ -384,19 +1338,46 @@ read again from the macOS and Linux builds of 2.1.278, 2.1.281 and 2.1.284: ever
 holds on 2.1.281 and 2.1.284, and on 2.1.278 the three that describe the 2.1.281 change are
 reported moved, as they should be.
 
-`.github/workflows/conformance.yml` checks the newest build of each tool against its
-register on Mondays and Thursdays, or a version given by hand: Claude Code's macOS and
-Linux builds, and Codex's Linux build. Its most recent run says
-which facts can still be read from the build it checked, and which have moved.
+On 6 October 2026 both registers were read for Windows, from bytes on a Mac, and no
+Windows build was run:
 
-Adding a tool takes three things: a register read out of a named build, a module under
-`provider/` implementing `Provider`, and a conformance job. Claude Desktop is the
-exception to the last: its literals live in `app.asar`, not in a binary the checker reads,
-so every entry has an empty probe and no conformance job runs. Its four entries not yet
-measured are dated `UNVERIFIED` and name the experiment that will settle each one, as
-[Claude Desktop under Measured facts](#claude-desktop) lists. `ProviderId`,
-`ProviderId::ALL` and the matches in `provider::of` and `assumptions::of` name every tool.
-The compiler and the tests then point at what an added tool has to fill in.
+- Claude Code 2.1.289's `win32-x64` and `win32-arm64` builds. Both are built from commit
+  736d26e, as that version's macOS and Linux builds are. Seven of its 17 facts hold there:
+  the write lock, the unlocked logout, the account's keys, the config file, the OAuth client
+  and both sign-in facts. The two keychain facts are not read on Windows, and nor is
+  `no_keyring_off_macos`, because the Windows build's Credential Manager store calls the
+  `Bun.secrets` it rules out. The other seven wait on the Windows work.
+- Codex 0.160.0's `win32-x64` and `win32-arm64` builds, with its source at tag
+  `rust-v0.160.0`. Nine of its 16 facts hold there: the login's shape, the two facts on
+  whose it is, its renewal and how a spent one is refused, the usage request, the revoke on
+  Codex's own sign-out, a running Codex keeping its login, and the sign-in's address. The
+  other seven wait on the Windows work.
+- The same run read the macOS and Linux builds of both versions, and every fact read there
+  still holds. Claude Code 2.1.110 and Codex 0.99.0 still go red.
+
+On 8 and 9 October 2026 Claude Code 2.1.294 was read again: its macOS build on the 8th and
+the 9th, and its `linux-x64`, `win32-x64` and `win32-arm64` builds on the 9th, as bytes on a
+Mac, and none was run. All four are built from commit 8f033c6. For each fact read from them,
+the code it names was compared with the macOS build's token by token, minified names apart,
+and is the same in all four: `usage_cache_stamp_is_the_configs`,
+`status_reads_the_config_usage_the_token`, `config_identity_is_the_last_writers`,
+`status_line_input_names_no_account` and `fallback_file_pins_session_login`, read in the
+macOS build on the 8th, and `refresh_lock`, read in all four on the 9th. The fallback file's
+fact is read on macOS alone: on Linux the file is Claude Code's only store, and on Windows
+it is too unless Credential Manager is turned on, which W22 reads. The checker finds every
+fact each build was read for.
+
+`.github/workflows/conformance.yml` checks the newest builds of each tool against its
+register on Mondays and Thursdays, or a version given by hand. It reads four builds of each
+tool, `linux-x64`, `darwin-arm64`, `win32-x64` and `win32-arm64`, all on Linux. Its most
+recent run says which facts can still be read from each build it checked, and which have
+moved.
+
+Adding a tool takes three things: a register read out of a named build, with its table, a
+module under `provider/` implementing `Provider`, and a conformance job. `ProviderId`,
+`ProviderId::ALL` and the matches in `provider::of`, `assumptions::of` and
+`assumptions::per_system` name every tool. The compiler and the tests then point at what an
+added tool has to fill in.
 
 How to run the checker and add a fact is in
 [Tool registers in CONTRIBUTING.md](CONTRIBUTING.md#tool-registers).
@@ -409,19 +1390,22 @@ WebKit, with a store of website data that belongs to that account alone. A page 
 a browser's Share menu reaches the app as a Pitboard link, and the person chooses which
 account's window opens it.
 
-The windows read the accounts from the app's last read. No window is ever given a Claude
-Code or Codex login. The facts this rests on are under
-[WebKit and SwiftUI](#webkit-and-swiftui) and
+The windows read the accounts from the model's last read, and their bookkeeping is the
+model's, so the Windows app's WebView2 code gets the same decisions: which store is whose,
+what each window opens at, which windows close and which stores go after a read, the link
+waiting for an account and the downloads. Each app's web code says what happened and does
+what the model says. No window is ever given a Claude Code or Codex login. The facts this
+rests on are under [WebKit and SwiftUI](#webkit-and-swiftui) and
 [claude.ai and chatgpt.com](#claudeai-and-chatgptcom).
 
 ### Where the code is
 
 - `crates/pitboard-sites`: what a site is, and what a link from outside may be, in the
   [code map](#code-map). The app reaches it through `pitboard-ffi`'s `Site` and `SiteLink`
-  records: its windows and menus ask `sites`, `sites_for` and `site_names`, and
-  `LinkInbox.swift` reads each Pitboard link with `read_pitboard_link` and says a refusal
-  with `link_refusal_reason`. Only the tests make a link with `site_link`. The Share
-  extension reaches it through `pitboard-share-ffi`.
+  records: its windows and menus ask `sites`, `sites_for` and `site_names`, and the model
+  reads each Pitboard link with `pitboard-sites`' `read_pitboard_link` and says a refusal
+  in its words. Only the tests make a link with `site_link`. The Share extension reaches it
+  through `pitboard-share-ffi`.
 - `apps/macos/Sources/PitboardLinkTarget`: where a Pitboard link goes, which the app and the
   Share extension both link. `LinkTarget.swift` names the Info.plist key `PitboardURLScheme`
   that gives each build its scheme, and finds the app an extension is inside.
@@ -432,7 +1416,16 @@ Code or Codex login. The facts this rests on are under
   removes what it keeps; what a page may use and close; whose words a dialog says; what a
   download is called and where it comes from; what becomes of a page whose content stops;
   and how big a sign-in window opens. The Swift below turns what WebKit says into what
-  these read, and does what they decide.
+  these read, and does what they decide. `records.rs` is the windows' records.
+- `crates/pitboard-ffi/src/model/windows.rs`: the windows' bookkeeping, in the model's
+  state. It records a window's store before the window opens and says the page it opens
+  at, puts away what a read no longer lists, asks the app to delete each store that goes
+  and hears how it went, holds the link waiting for an account with the wait before Open
+  answers, and follows each download from its start to its end. `present/windows.rs`
+  says it in each snapshot, as `AccountWindowsShown`, with what a window says until it can
+  show its page and each window's button that clears its downloads, and
+  `downloads_quit_question` words the question before quitting for as many downloads as an
+  app has under way. `model/windowing.rs` tests it.
 - `apps/macos/Sources/PitboardApp/AccountWindows`: the windows.
   - `WindowAccount.swift` gives a window's store as the `UUID` WebKit names a store by and
     the scene keeps a window's value as.
@@ -451,28 +1444,35 @@ Code or Codex login. The facts this rests on are under
   - `WebViewHost.swift` places a page's web view in SwiftUI, with the system find bar above
     it. `AccountWindowView.swift` is the window, and `AccountWindowCommands.swift` its scene
     and its items in the **File**, **Edit**, **View** and **Go** menus.
-  - `AccountWindows.swift` owns the feature: the open sessions, links waiting for a window
-    still opening, windows asked for from the Dock, each window's last page, the store
-    janitor and the downloads. `AppModel.afterRead` tells it of each read that succeeded.
-  - `StoreJanitor.swift` records, makes, wipes and deletes stores. `WebEnvironment.swift` is
-    the world a launch's windows run in: the sites and WebKit's stores, or a fixture's
-    stand-ins.
-  - `LinkInbox.swift` holds the link the Share extension handed over, and
-    `AccountPicker.swift` is the **Open Link** window that asks which account opens it.
-- `apps/macos/Sources/PitboardApp/System/WebsiteData.swift`: WebKit's persistent stores, behind
-  the `WebsiteDataStores` protocol. Beside them, two records kept in the app's preferences
-  under each Pitboard directory's path: `StoreRecord`, the stores the directory made, under
-  `webStores`, and `PageRecord`, the page each account's window was last on, under
-  `windowPages`, by store.
+  - `AccountWindows.swift` owns the feature as WebKit has it: the open sessions, windows
+    asked for from the Dock, the store janitor and the downloads. It tells the model what a
+    window did: that it opened or closed, the page it is on, and a link handed over. It
+    makes a window's session as the model first lists the window in
+    `AccountWindowsShown.open`, loading each page the model numbers for it once, and
+    `AppModel.accountWindowsChanged` tells it of each change to the windows' part, which it
+    follows: a session the model says closes stops, its view closing the window, and each
+    store asked for is handed to the janitor.
+  - `StoreJanitor.swift` makes, wipes and deletes stores: each ask the model makes once,
+    tried again after each of its pauses while WebKit still holds the store, and told back
+    as deleted or held. `WebEnvironment.swift` is the world a launch's windows run in: the
+    sites and WebKit's stores, or a fixture's stand-ins, and where the model keeps their
+    records.
+  - `AccountPicker.swift` is the **Open Link** window, which shows what the model says of
+    the link waiting and sends it the account chosen.
+- `apps/macos/Sources/PitboardApp/System/WebsiteData.swift`: WebKit's persistent stores,
+  behind the `WebsiteDataStores` protocol.
 - `apps/macos/Sources/PitboardApp/App`: `AppDelegate.swift` owns the app's models and answers
   what only a delegate can: the Dock icon's menu, a click on the Dock icon, and quitting
-  while a download runs. `AppPresence.swift` gives the app a Dock icon and its menus while
-  any of its windows is open. `RefreshCommand.swift` is **View** > **Refresh**, whose
-  title and action the window in front gives. `PitboardScenes.swift` adds the account
-  windows' scene and the **Open Link** window, the one scene that takes a Pitboard link.
+  while a download runs, asked in the model's words of every download `DownloadCenter` has
+  under way, one started a moment before Quit included. `AppPresence.swift` gives the app a
+  Dock icon and its menus while any of its windows is open. `RefreshCommand.swift` is
+  **View** > **Refresh**, whose title and action the window in front gives.
+  `PitboardScenes.swift` adds the account windows' scene and the **Open Link** window, the
+  one scene that takes a Pitboard link.
 - `apps/macos/Sources/PitboardApp/Fixture/FixtureWeb.swift`: a fixture's stand-in pages for each
   site and sign-in host, on `pitboard-fixture://`, with stores in memory and links to
-  anywhere else recorded and opened nowhere.
+  anywhere else recorded and opened nowhere. The pages are `pitboard-ffi`'s `fixture_page`,
+  made from the site table, so the Windows app can serve the same ones.
 - `apps/macos/ShareExtension`: the `PitboardShare` target. It checks the shared page with
   `share_link`, which writes the Pitboard link too, then opens that link with the app it is
   inside, not whichever copy Launch Services would pick. The flow of an app extension stays
@@ -481,8 +1481,9 @@ Code or Codex login. The facts this rests on are under
 
 ### What must stay true
 
-- One store per account, derived from the account. A window's store is a version 5 UUID of
-  `<store name>:<account id>` in a fixed namespace, which `store_id` writes in lower case.
+- One store per account, derived from the account's `id`, which never changes. A window's
+  store is a version 5 UUID of `<store name>:<account id>` in a fixed namespace, which
+  `store_id` writes in lower case.
   It is also the window's value, so there is one window per account, and a rename keeps its
   sign-in. The namespace and the store names, `claude` and `codex`, never change: a change
   would leave every window without its data, and the next sweep would delete that data.
@@ -490,14 +1491,46 @@ Code or Codex login. The facts this rests on are under
   a time, as Swift's `lowercased()` lowered it for every store released, where
   `str::to_lowercase` lowers a sigma that ends a word otherwise. A store id an app hands
   back is compared without regard to case, since Foundation writes a UUID in upper case.
-- A store is recorded before WebKit makes it, in the app's preferences, under the path of
-  the Pitboard directory the app reads. A store WebKit made and nobody recorded would never
-  be deleted.
+- A store is recorded before WebKit makes it, in `windows.json`, under the key of the
+  Pitboard directory the app reads: the model lists a window in
+  `AccountWindowsShown.open` only once the write recording its store has answered. A store
+  WebKit made and nobody recorded would never be deleted. A write that fails opens the
+  window all the same, and the next write writes this directory's records whole.
+- The records are the app's, as its web stores are, so `windows.json` is in a folder of the
+  app's own that the app names in `WindowsLaunch::directory`: on macOS its folder in
+  Application Support, named by its bundle id, under the person's own Library whatever
+  `HOME` says, and in a fixture the fixture's own folder. Each Pitboard directory's records
+  are kept apart in it, and each write reads the file again and changes only this one's.
+  Where the file is there it wins; where it is not, the model takes what the app's earlier
+  store held, `webStores` and `windowPages` on macOS, and writes it at once. A file that is
+  there and cannot be read, or whose text does not read as records, as a later version, a
+  hand edit or damage may leave it, is never written over, and nothing is deleted by it:
+  its windows' stores are held for the launch, so each window opens at its site's home
+  with the sign-in note. Taken as no file, the first write would leave this directory's
+  records alone in it, and a store another directory's account still uses would be
+  deleted. A store id is compared without regard to case wherever it comes from, since
+  Foundation wrote every one the macOS app recorded in upper case: compared as written,
+  every one would be taken for an orphan and deleted with its sign-in. One that is not
+  written as a UUID is dropped as the records are read, as `StoreRecord` dropped it, since
+  no app can make or delete a store by it.
 - A store is deleted only when this Pitboard directory recorded it, and a read that
   succeeded no longer derives it from any enrolled account. Every read that succeeds lists
   every enrolled account, from `state.json`, so that is a forgotten account, forgotten in
   the app or with `pitboard forget`. Nothing is deleted before the first read that
-  succeeds, or after one that failed.
+  succeeds, or after one that failed, or by what stands in for one, the last numbers
+  measured. What the poll reads once the account index changes says who is enrolled too,
+  whether or not reads that ask a service fail meanwhile and whether or not anything was
+  shown before it: it is the index every read lists the accounts from. Each such read is
+  acted on, and one that says what the last said changes nothing. The Swift model told its
+  windows of fewer: not of a read saying, its numbers apart, what was shown, to the second,
+  and not of the poll's read before anything was shown. Nothing is deleted before the
+  records are read either: a read that lands first is acted on once they are in.
+- The model claims each store it puts away before it asks anything, so a read meanwhile
+  leaves it, then asks the app through `AccountWindowsShown.deleting`, one numbered ask at
+  a time, and holds it recorded until the app answers `StoreDeleted`, when it goes from the
+  records, or `StoreHeld`, when the next read asks again with a new number. An app deletes
+  each ask once, however many snapshots list it, and a window of a store being deleted
+  waits until the app has answered.
 - A store that another Pitboard directory recorded too is never deleted while that
   directory exists. The same account enrolled in both derives the same store, so deleting
   it would sign the other directory's window out. Forgetting the account in one removes
@@ -524,8 +1557,10 @@ Code or Codex login. The facts this rests on are under
   of its opener's, so it shares the account's store and keeps `window.opener`. Its page
   loads only the site and its sign-in hosts, and goes blank only when the page itself asks,
   never its opener. It saves nothing and opens no window.
-- Only a site's own pages are kept as a window's last page. **Remove Website Data** takes
-  it away, and so does a read that succeeded and no longer lists the account.
+- Only a site's own pages are kept as a window's last page, and never one of its sign-in
+  paths, which would sign the window in again with what it carried: one recorded before
+  opens the window at the site's home. **Remove Website Data** takes it away, and so does a
+  read that succeeded and no longer lists the account.
 - Hands off the session. Pitboard makes a store, wipes one when asked and deletes one when
   its account is forgotten. It never reads, copies or changes what a site keeps there,
   adds no script or message handler to a page and sets no user agent of its own. No web
@@ -550,6 +1585,23 @@ Code or Codex login. The facts this rests on are under
 - `pitboard-sites` stays a leaf: no I/O, nothing of the core and no UniFFI, and `url` for
   IDNA alone. Each binding crate declares its own types over it, since the C# generator
   cannot use another crate's.
+
+### On Windows
+
+Nothing of the Windows app's account windows is written yet. Its WebView2 code would get
+the same decisions from the model, and one thing differs from WebKit in how a store goes,
+read in Microsoft's documentation of `CoreWebView2Profile.Delete` for WebView2 1.0.4191.47
+on 6 October 2026: deleting a profile marks it for deletion, closes the web views using it
+and raises its `Deleted` event, and its folder is deleted only as the browser process
+exits, or at a later start where something still held its files. Making a profile of the
+same name before then fails with `HRESULT_FROM_WIN32(ERROR_DELETE_PENDING)`. So the
+Windows app cannot answer `StoreDeleted` when it asks for a deletion, as the macOS app does
+once `remove(forIdentifier:)` returns: it answers `StoreHeld` while the folder is still
+there, which keeps the store recorded and has the next read ask again, and `StoreDeleted`
+once the folder has gone. A window of an account enrolled again meanwhile would fail to
+make its profile, which the model's rule of a window waiting while its store is deleted
+covers only while the ask is open, so the Windows app has to keep such a window from
+making its profile until the folder has gone.
 
 ## Measured facts
 
@@ -582,6 +1634,156 @@ a scratch item.
 - Reads after a `dump-keychain` take the usual 0.016 seconds, so listing has none of the
   access-list cost of an in-process read. Each service name is on a line of the form
   `"svce"<blob>="<name>"`.
+- A lock taken with `flock` outlives the file it was taken on while another thread is
+  starting a process, here as on Linux: [One sign-in at a time](#one-sign-in-at-a-time).
+
+### Windows
+
+Measured on GitHub's runners only, by `pitboard-probe` and `.github/scripts/runner-facts.ps1`
+in CI run 37673429917 on 8 October 2026: windows-2025 (Windows Server 2025 Datacenter, 24H2,
+build 26100, UBR 33438) and windows-11-arm (build 26200, UBR 9457, 25H2). The VM session's
+block A1, every other kind of token, and A2, the build against `winver`, are not measured
+yet. Until they are, the Windows face reads a token as Microsoft documents it, and these are
+the only tokens it has been seen to read.
+
+- The job's user has a token whose `TokenElevationType` is the default one, a token that is
+  not split, and that is elevated, at high integrity, on both images. Files it makes are
+  owned by Administrators. So every program the job starts is elevated, and Pitboard reads
+  it as `token::IN_EVERY_PROGRAM`.
+- A Safer normal-user token computed from the job's token, with `SaferComputeTokenFromLevel`
+  at `SAFER_LEVELID_NORMALUSER`, is elevated still, at high integrity, and so is a program
+  started with it. It cannot stand in for a person on the runners.
+- A local standard user made in the job, and started with `Start-Process -Credential
+  -LoadUserProfile`, its output sent to files, runs an unsigned program on both images,
+  exiting 0, never 0xC0000142. Its token is the default type, not elevated, at medium
+  integrity, so Pitboard reads it as the person. Started without `-Environment`, the
+  program gets the job user's variables; in the earlier run 37660991344 that left the
+  user's local app data naming the job user's folder, which it cannot open, and
+  `SHGetKnownFolderPath` failed. Given its own profile's `USERPROFILE`, `HOMEDRIVE`,
+  `HOMEPATH`, `APPDATA`, `LOCALAPPDATA`, `TEMP`, `TMP` and `USERNAME`, every known folder
+  reads as its own. It can read and run what the job built in the workspace. This is how CI
+  runs every Windows test, through `.github/scripts/test-as-standard-user.ps1`.
+- Developer Mode is on on both images, and that user makes file and directory symbolic
+  links as it is. It makes them with the symbolic-link right granted too, but Developer
+  Mode was still on for that run, so the right alone is not measured; the script grants it
+  only where Developer Mode is off, as Microsoft documents the right.
+- `RtlGetVersion` gives 10.0.26100 and 10.0.26200, the builds the registry's `CurrentBuild`
+  gives. The registry's `ProductName` says `Windows 10 Enterprise` on windows-11-arm, so
+  Pitboard never reads which Windows this is from it.
+- Defender's real-time protection is off on windows-2025 and on, with behaviour monitoring
+  and tamper protection, on windows-11-arm. winget is on windows-2025 alone, and Scoop on
+  neither.
+- As the job's user, in an interactive logon, `credman-names` lists the prefixes of every
+  live login family and `pitboard-*` without an error, and finds no item, on both images.
+  As the fresh standard user, after each Windows test run, it does the same and finds
+  nothing, on both images (run 37762408901). Neither image holds Codex's
+  `%ProgramData%\OpenAI\Codex`, Claude Code's `C:\Program Files\ClaudeCode` or its
+  policy keys.
+
+### One sign-in at a time
+
+The core's one sign-in at a time is a lock on `signin.lock`, taken with `File::try_lock`,
+which is `flock`.
+
+- Measured on macOS 27.0 on 5 October 2026, with Rust 1.98.1: a lock taken with
+  `File::try_lock` can stay held after its `File` is dropped, though std opens every file so
+  that a program started after does not keep it. A process another thread is starting holds
+  a copy of the descriptor until it runs its program, or ends. Dropped and taken again at
+  once, in 3000 rounds each, the lock was still held 437 to 1042 times, for up to 5.5 ms,
+  while another thread started processes the way std forks and execs, which it does for a
+  program named bare with `PATH` set; 8 to 15 times, for up to 77 µs, where std uses
+  `posix_spawn`; and never with no process started. Through the core's own sign-in, one
+  started right after a cancel in the same home was refused as one already waiting 64 times
+  in 100 while another thread started a program it could not find, and never in 100 while
+  one started `/usr/bin/true` or none started anything.
+- Measured on 6 October 2026, with Rust 1.98.1, on macOS 27.0 and on Debian 13 with glibc
+  2.41 in Docker, both on arm64, by a program of the measurement's own, run three times on
+  each: a lock taken on a file, let go of, and at once taken again on the file opened again,
+  in 20,000 rounds 200 µs apart, while one other thread started one process after another
+  and waited for each. Let go of by closing the file, the lock was still held:
+  - with nothing started, never;
+  - while the other thread named its program bare with `PATH` set, which std forks and execs
+    for: found nowhere, 10 to 13 times on macOS, for up to 781 µs, and 71 to 97 times on
+    Linux, for up to 231 µs; found, 4 to 6 times, for up to 731 µs, and 44 to 55, for up to
+    269 µs;
+  - while it named its program by its path, which std starts with `posix_spawn`: found, 7 to
+    13 times on macOS, for up to 61 µs, and 54 to 60 on Linux, for up to 141 µs; where
+    nothing is, 166 to 200 times, for up to 151 µs, and 151 to 171, for up to 109 µs,
+    starting more since each fails at once.
+
+  Let go of with `File::unlock` before the file was closed, it was never held, however the
+  other thread started its processes, in any run on either system. Named by its path, a
+  process holds the copy for less time on macOS and for about as long on Linux, but holds
+  it: starting a program by the path it was found at does not close the window, and letting
+  go of the lock by name does. So a `SignIn` lets go of its lock with `File::unlock` as it
+  is dropped, after clearing its directory, and `WatchedSignIn::cancel` returns once it is
+  free. The core already starts every tool it found by the path it found it at. It names a
+  tool bare, with `PATH` set, only where it found none, in `provider::command`, and
+  `ready_to_sign_in` refuses such a sign-in before it gets there, so that runs only for a
+  program taken away between the two. It is left as it is.
+- Cancel and then Sign In at once, through the app's model over the real core, measured on
+  6 October 2026 on the same two systems with `pitboard-ffi`'s tests. Before the model
+  waited for the sign-in cancelled and the lock was let go of by name,
+  `a_sign_in_asked_for_at_once_after_a_cancel_starts_once_that_one_has_stopped`, with a
+  stand-in for `claude`, failed in 13 of 50 runs alone and in 30 of 40 runs of the whole
+  suite on macOS. On Linux it failed in 4 of 100 runs of the whole suite, and in 36 of 200
+  with four suites running at once, where the fixture's
+  `accounts_are_added_through_each_tools_sign_in` failed 5 times in all as CI met it (run
+  37437790666) and `a_sign_in_asked_for_at_once_after_a_cancel_asks_for_the_code` 11. Each
+  time the second sign-in was refused as `sign_in_in_progress`. After, none of them failed
+  that way: in 50 runs alone and 140 of the whole suite on macOS, and in 100 of the whole
+  suite and 200 with four at once on Linux. In 2 of the 140 on macOS the fixture's test
+  failed otherwise, in its Codex sign-in, which cancels nothing: a look for changes that
+  answered after the sign-in had finished took its enrolment for a change made elsewhere,
+  so the read after the sign-in was dropped, and nothing said when the accounts were read.
+- A program a tool started can hold the tool's output open once the tool has been stopped
+  and waited for. Read on 6 October 2026: `bin/codex.js` of @openai/codex 0.149.1, the
+  `codex` npm installs, starts the native `codex` with `stdio: "inherit"` and hands on only
+  `SIGINT`, `SIGTERM` and `SIGHUP`, so killing it leaves `codex login` running with its
+  output. Measured the same day on the same two systems with
+  `a_sign_in_after_a_cancel_waits_for_no_output_the_tool_stopped_left_open`, whose stand-in
+  for `claude` starts a shell that holds its output open until the test lets it go, then
+  Cancel and Sign In. While the model waited for the cancelled sign-in's thread, the second
+  sign-in asked for its code only once that output had closed: let go after 3 s, in 3.03 to
+  3.07 s on macOS and 3.02 to 3.07 s on Linux; after 6 s, in 6.05 to 6.06 s on macOS; never
+  let go, not within 20 s on either. Taking the stop's own word that it had stopped the
+  tool, it asked in 6.8 to 9.7 ms on macOS and 1.4 to 1.9 ms on Linux, 20 runs each, with
+  that output still open.
+
+### A look and the app's own changes
+
+Measured on 6 October 2026 on macOS 27.0 (arm64), with Rust 1.98.1 and `pitboard-ffi`'s
+tests, and read in the macOS app's Swift at 0.7.0 (277539b).
+
+- A look reads when the account index was last written on the lane of reads, while a change
+  the app makes writes it on the lane of changes, or a sign-in's enrolment on that sign-in's
+  own thread, and their answers reach the model in the order they are sent. A look that read
+  the index after a change wrote it, and whose answer came after the change's, was compared
+  once the change had taken the ticket of the read it asked for: it counted a change made
+  elsewhere, and that read was dropped. The fixture's
+  `accounts_are_added_through_each_tools_sign_in`, which signs a Codex account in and
+  cancels nothing, met it in 2 of 140 runs of the whole suite, with nothing said of when the
+  accounts were read.
+- With looks back to back, each asked for as the last one answered, a rename, a forget,
+  naming the login in use and a sign-in met it in none of 10 runs: the core writes its log
+  of changes after the index and before the change answers, so the first look to read the
+  change's write answered first. Held behind a read on the lane of reads instead, which
+  waits for the lock usage readings are written under while the test holds it, a look reads
+  the index after the change and answers after it every time. Against the model before it
+  held the index for every change of its own,
+  `a_rename_is_read_after_it_whatever_the_poll_finds_meanwhile`,
+  `naming_the_login_in_use_is_read_after_it_whatever_the_poll_finds_meanwhile` and
+  `a_sign_in_is_read_after_it_enrols_whatever_the_poll_finds_meanwhile` failed in 10 of 10
+  runs, each with nothing read after the change; after, in none of 50.
+- The Swift model at 0.7.0 had the same race. PitboardService.swift asked `changedAt` on its
+  queue of reads, and enrolled, renamed, forgot, renewed and gave up on an interrupted switch
+  on its queue of changes. AppModel.swift's `enrol`, `rename`, `forget`,
+  `abandonStuckSwitch` and a sign-in's `watch` counted the change in `changesSeen` and then
+  read, the read keeping the count it started with, and `noticeOtherChanges` counted any move
+  of the index's time as a change made elsewhere unless `switching` was set. So a look whose
+  `changedAt` came back after the change's write, and whose comparison ran once the read had
+  taken its count, dropped the read and left `updatedAt` nil; one whose read of what is known
+  landed before a rename's own code ran put away what the switch to that account had said.
 
 ### Claude Code
 
@@ -593,7 +1795,18 @@ runtime Claude Code ships in. The one real change, in 2.1.281, is how a locked k
 treated, and only the macOS build shows it. The run reads both builds since.
 
 - A running session serves its login from a 30 second cache, so it picks up a switch within
-  about 33 seconds.
+  about 33 seconds, where no `.credentials.json` sits behind the keychain.
+- Read on 8 October 2026 from the macOS build of 2.1.294, and on 9 October from its Linux
+  and Windows builds, whose code here is the same, and not measured against a running
+  session: before each request a session looks at `.credentials.json`, by its modification
+  time alone. Where it is not there, or the look fails, the session reads the keychain
+  through its 30 second cache. Where it is there, whatever it holds, `{}` included, and
+  whether or not it can be read, the session keeps the login it holds while that login is
+  usable. It reads again when the file's modification time changes, after a 401, at its own
+  sign-in, and 5 minutes before its login expires, when it takes the store's login where it
+  differs. So while the file sits behind the keychain, a session already running keeps its
+  account after a switch until its login is next renewed or it is started again. On Linux
+  the file is the store, and a switch's write changes its modification time.
 - Every write of the login takes proper-lockfile's directory lock at
   `<storage dir>/.storage-write`: stale after 15000 ms, ten retries, 100 ms to 1000 ms of
   backoff. `lock.rs` carries the same numbers.
@@ -601,6 +1814,16 @@ treated, and only the macOS build shows it. The run reads both builds since.
   and abandons the write when that read fails. A stale account cannot be written back. From
   2.1.281, a locked keychain counts as a failed read here once the process has seen its
   item; before, it read as empty.
+- A renewal of the login takes another lock first, proper-lockfile's directory lock at
+  `<storage dir>/.oauth_refresh.lock`, stale after 60000 ms and touched every 5000 ms, then
+  the legacy `<storage dir, links resolved>.lock` the same way, going without the second
+  where it cannot be made. Under them it reads the login again and sends the refresh token,
+  and takes the write lock only to save the answer, where the login stored still holds the
+  token it sent; otherwise it saves nothing. So the write lock does not keep a renewal from
+  spending a refresh token, and the refresh lock does. A holder is taken over before the
+  lock is stale only where its owner record, `.oauth_refresh.lock.owner`, proves it gone,
+  and Pitboard writes none. Read on 9 October 2026 in the macOS, Linux and Windows builds of
+  2.1.294, whose code here is the same.
 - Claude Code treats its own lock going missing as a warning and keeps writing. Pitboard
   cannot expect the other side to stop.
 - A write can be marked as already locked without the lock being taken. `/logout` does this
@@ -618,7 +1841,7 @@ treated, and only the macOS build shows it. The run reads both builds since.
   output is the login; exit 0 with nothing, 44, or output that is not JSON is absent. Exit
   36, a locked keychain, is absent to an ordinary read, a failed read to a write once the
   process has seen its item (from 2.1.281), and a failed read outright only when a caller
-  asks. Pitboard reads 36 as unreadable on purpose, the strict end of that.
+  asks. Pitboard reads 36 as a locked keychain, never as empty, the strict end of that.
   `security show-keychain-info` exiting 36 only adds an unlock hint.
 - On macOS the live chain is the keychain, with the plaintext file `.credentials.json`
   behind it. The successor backend, behind the `tengu_hover_rest` flag, replaces only the
@@ -627,6 +1850,19 @@ treated, and only the macOS build shows it. The run reads both builds since.
 - Claude Code demotes to the plaintext file when a keychain write fails for good, and
   deletes the keychain item when it does. A locked keychain after the item was seen is not
   failing for good, from 2.1.281.
+- Read in 2.1.294, and the same from 2.1.291: the keychain item is deleted on a demotion only
+  when the keychain read non-empty before the write. A locked keychain reads empty to a
+  session that has not seen the item, so a sign-in there, such as `/login` over SSH, writes
+  `.credentials.json` and leaves the keychain's login in place. Measured on 8 October 2026.
+- A keychain write that lands deletes `.credentials.json` only when the keychain held
+  nothing before it. Once both hold a login, the file's outlives every token refresh, every
+  sign-in from a desktop session and every switch, and a session that cannot read the
+  keychain signs in with it. `doctor` names it as `fallback_login`, and every read that
+  reads the keychain and every change warns while it is there, each naming `pitboard stow`,
+  the one thing of Pitboard's that deletes it.
+- While the keychain is locked, a session keeps serving the login it last read, cached again
+  every 30 seconds, and follows no switch. One that has read none reads the keychain as
+  empty and signs in with the file, or is signed out.
 - The supervisor daemon records itself in `<config dir>/daemon.lock`, with its pid and the
   Claude Code version that started it. It leaves the file behind when it stops.
 - Claude Code's storage backends are `keychain`, `plaintext` and `windows-credman`, the
@@ -646,9 +1882,17 @@ treated, and only the macOS build shows it. The run reads both builds since.
   document. On one real account, measured on 22 September 2026, the slice was 524 bytes
   against 506 for the OAuth block alone. An account holding a device token has not been
   measured.
-- Claude Code's config file can be a day behind the login it describes, so Pitboard asks
-  Anthropic whose a login is. This was written down on 21 September 2026, with no build
-  named.
+- Claude Code's config can name another account than the login stored. Read from 2.1.294 in
+  its macOS build on 8 October 2026 and in its Linux x64, Windows x64 and Windows arm64
+  builds on 9 October, the same code in all four: a sign-in writes `oauthAccount`, and so
+  does a process start where `profileFetchedAt` is missing, over 24 hours old or missing a
+  profile field, from that process's own login. Every start signed in to claude.ai also
+  writes the email and organisation Anthropic's bootstrap gives its login, where that names
+  the config's account or none, so a process on another organisation of the same person
+  moves it too. A token refresh writes none of them. On 8 October one machine's config named
+  another account than the keychain's login for three hours. So Pitboard asks Anthropic
+  whose a login is, records the answer (`in_use`), and takes a change of the config since as
+  a sign that something signed in (the register's `config_identity_is_the_last_writers`).
 - On 22 September 2026, the machine measured sat within 0.75 seconds of the `Date` header
   of api.anthropic.com across eight requests. `Date` has a granularity of one second.
 - That spread is inside the noise, so Pitboard keeps no estimate of clock skew. A renewal's
@@ -663,6 +1907,16 @@ treated, and only the macOS build shows it. The run reads both builds since.
   address again as its text. The sign-in runs with the app's whole environment, so
   `provider/printed.rs` reads what it printed as a terminal does, and the address offered
   is where the hyperlink goes.
+- Read from 2.1.289 on 5 October 2026, in the Windows arm64 build's sources and the macOS
+  and Linux builds, where the conformance run finds each literal, and finds none in 2.1.110:
+  `claude auth login` reads every line typed back while it waits. One that is not
+  `<code>#<state>` with both halves, once trimmed and split at `#`, it refuses with `Invalid
+  code. Please make sure the full code was copied.` on stderr, and goes on reading in the
+  same process, with no new prompt. The first with both halves it takes, whatever its state
+  half says. After that it still refuses a line without both halves, and ignores one with
+  them; a code the token exchange refuses ends the sign-in with `Login failed: ` and exit
+  status 1. So the model offers the code field again once Claude Code has refused one, to
+  the same sign-in, and starts nothing again.
 - Read on 5 October 2026 from the macOS builds of 2.1.283 and 2.1.289 and the Linux build of
   2.1.289: the native installer puts its launcher at `~/.local/bin/claude`, and says so
   when that directory is not on `PATH`. A global npm install puts `claude` in npm's global
@@ -673,6 +1927,106 @@ treated, and only the macOS build shows it. The run reads both builds since.
   Homebrew cask's by a path through a Homebrew `Caskroom`. So an app with no shell's `PATH`
   looks in `~/.local/bin`, `/opt/homebrew/bin` and `/usr/local/bin`, after the login
   shell's.
+- Read on 6 October 2026 from the macOS, Linux and Windows builds of 2.1.289, whose code
+  here is the same: the config dir is `CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude")`,
+  normalised to NFC, and the config file's base is `CLAUDE_CONFIG_DIR || homedir()`. So an
+  empty `CLAUDE_CONFIG_DIR` leaves `.claude.json` in the home folder, but makes the config
+  dir the empty path. A legacy `.config.json` is then looked for in the working directory,
+  and so is `.credentials.json`, which is kept in the config dir unless
+  `CLAUDE_SECURESTORAGE_CONFIG_DIR` is set. With that unset, the credential slot's name
+  tests `!CLAUDE_CONFIG_DIR`, so an empty value names the default slot. Pitboard read an
+  empty value as unset for all of them, which was right for the file and the slot, and not
+  for the directory: it took Claude Code's lock and, on Linux, switched its login in
+  `~/.claude`, where no Claude Code started with it looks. No one folder holds that login,
+  so Pitboard refuses an empty `CLAUDE_CONFIG_DIR` as a home that is not a full path, and
+  reads the file and the slot as Claude Code does. The win32-x64 build's JavaScript refuses
+  a relative config dir itself in one of its features: "the configuration home
+  (CLAUDE_CONFIG_DIR) is not an absolute path".
+- Read on 8 October 2026 from the macOS build of 2.1.294, and on 9 October from its Linux
+  and Windows builds, whose code here is the same: Claude Code fills `cachedUsageUtilization`
+  in its config with the answer to a usage request made with the login its session holds,
+  and stamps it with the `accountUuid` the config names. Nothing compares the two. A session
+  that has not yet taken a switch writes the numbers of the account switched away from under
+  the account switched to. Of five caches captured on one machine on 8 October, four held
+  the numbers of another login than the account they named, one with no switch near it. So
+  Pitboard takes no usage from the cache. Taken as the reading of the account in use, it
+  showed the previous account's numbers after a switch, and the automatic switch acted on
+  them.
+- Read on the same days from the same four builds, whose code here is the same: `/status`
+  prints the email and organisation of the config's `oauthAccount`, and a running session
+  reads the config again within about a second of a change. `/usage` shows the numbers of
+  the session's last response, or, where it has none, the config's usage cache where its
+  stamp is the config's account and it is under an hour old. It then answers from that
+  cache where the cache is under 60 seconds old and newer than the session's last response,
+  and otherwise asks with the login the session holds. So a session that has not taken a
+  switch names the account switched to in `/status`, while `/usage` and every request go on
+  with the login it holds. What a switch says of running sessions names no account for that
+  reason.
+- Read on the same days from the same four builds, whose code here is the same: the JSON a
+  session passes its status line holds `rate_limits.five_hour` and `seven_day`, each a share
+  used and a reset, taken whole from one response's headers and only for windows whose
+  reset is ahead. It names no account, organisation or email. Only the process's own
+  sign-in or sign-out, the end of a remote attach after one, or a response while it holds no
+  claude.ai login empties it. So a session passes the numbers of the login it holds,
+  whatever the config names, and the status line tells whose they are by their windows (the
+  register's `status_line_input_names_no_account`). The two windows of one run are of one
+  response, so a five-hour window no answer has given yet is taken on the word of the weekly
+  window passed with it.
+
+Not measured. Switching by itself rests on the session cache's 33 seconds, measured on
+2.1.278, and, while a file sits behind the keychain, on a reading of 2.1.294 that no running
+session has been measured against. These were not measured, and the register cannot hold
+them, since every fact in it is read from a build:
+
+- Whether a request a session has under way at the moment of a switch finishes, on either
+  account.
+- What Claude Code does when an account reaches a limit: whether a session stops, waits or
+  tries again, and whether it would take a switch made after that. Pitboard switches at a
+  share under 100% so that a session following within the 33 seconds need not meet it,
+  and the docs say neither is known.
+- A busy session renewing its login while an automatic switch is under way, against a
+  running build. The refresh lock a switch holds (`refresh_lock`) keeps a renewal from
+  starting while the outgoing login is parked, and the read again under the write lock
+  (`write_lock`) finds one that finished before it, as for any switch.
+  `a_session_renewing_the_outgoing_login_during_a_switch_waits_for_it` in `switch/mod.rs`
+  plays the first on the stores in memory, with a session that takes the refresh lock as
+  2.1.294 does. `a_login_claude_code_renews_partway_through_is_not_written_over` in
+  `switch/auto.rs` plays a login that changed under the switch all the same: the switch
+  stops with `signed_in_account_changed`, nothing is written over the renewed login, the
+  account it would have switched to keeps its parked login, and the next attempt, a minute
+  on, switches.
+
+### Anthropic's usage answer
+
+Read on 8 October 2026, on one machine. Claude Code 2.1.294 keeps the `utilization` object
+of its last `GET /api/oauth/usage` in `~/.claude.json`, and five backups of that file held
+one each. Four, each a Team seat's, hold `limits` `session` and one model's `weekly_scoped`,
+and no `weekly_all`. The fifth, an answer from 16:13:36, was noted with `session` alone and
+not read again to say whether that was all it held. Pitboard's own reading of a personal Max
+account that day, taken from Anthropic's answers, holds `session`, `weekly_all` and
+`weekly_scoped`. So an answer lists every limit its account has, and one it leaves out is
+one the account does not have. Anthropic documents none of this, and it was seen on one
+machine on one day.
+
+- `usage::answered` rests on it: an answer whose every row of `limits` was read replaces the
+  reading whole (`Snapshot::lists_every_limit`).
+- `usage::room` rests on it: a limit such a reading leaves out counts as one with none used,
+  so a Team seat is a place to go once a personal account's weekly limit for all models
+  reaches the share, or runs out for the app's advice.
+- The status line rests on it: a session that passes a limit such a reading leaves out is
+  not on that account. What 0.9.0's status line kept in `~/.pitboard/sessions.json` on
+  that machine the same day agrees: the last runs of ten sessions in two Team seats'
+  five-hour windows passed that window alone, and those of four sessions of personal
+  accounts each passed a weekly window. Were a seat's session to pass one, nothing it
+  passed would be filed under the seat.
+- Other readings say nothing of a limit they leave out: one in the older named shape, one
+  with a row that did not normalise, one an older Pitboard wrote, and every one of
+  OpenAI's. Such a reading leaves no room unless it gives every limit of the account in
+  use. It may leave out a model's limit other than the one at the share where it gives the
+  five-hour and weekly limits: the older named shape names no model's, and plans limit
+  models apart.
+- Whether a plan with no limit for a model offers that model at all is not known. Pitboard
+  counts it as room.
 
 ### Codex
 
@@ -682,6 +2036,39 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
 - The login is `$CODEX_HOME/auth.json`, by default `~/.codex/auth.json`, at mode 0600.
 - `file` is the packaged default store on every platform, and the only one Pitboard
   supports. `keyring`, `auto` and `ephemeral` are the others.
+- Read from 0.160.0's config loader on 7 October 2026 (`codex_store_layers` and
+  `codex_managed_preferences`): the store is what the highest layer that sets
+  `cli_auth_credentials_store` says, lowest first: the packaged default,
+  `/etc/codex/config.toml`, an enterprise's cloud config, `$CODEX_HOME/config.toml`, a
+  profile's file, a trusted project's `.codex/config.toml`, `-c`, then
+  `/etc/codex/managed_config.toml` and, on macOS, the managed preference
+  `config_toml_base64` of `com.openai.codex` that a configuration profile forces.
+  `/etc/codex/requirements.toml`, and on macOS `requirements_toml_base64`, pin it over all
+  of them. A layer that is there and that Codex cannot read stops Codex from starting, and
+  so does a `profile = "<name>"` line in any layer, which 0.160.0 calls a legacy way to
+  choose a profile. 0.99.0 has no such refusal and chooses a profile with the line. A
+  profile's table holds no store either build reads, as read at each one's tag: neither
+  one's `ConfigProfile` has `cli_auth_credentials_store`, each takes the store from the
+  merged top level alone, 0.160.0 does not apply a profile's `[features]`, and none of
+  0.99.0's features is about the store.
+  - `provider/codex/layers.rs` reads every layer but three, in that order: the cloud
+    config, which `codex login` does not load and whose requirements may not set the store,
+    though its configuration may, and which a session of the TUI loads, with what that does
+    to a running session's store not read; a profile's, which only a run given `--profile`
+    reads and `codex login` refuses; and a project's, a fact about one folder, which
+    `doctor` says it does not read.
+  - A `profile` line chooses the profile a `[profiles.<name>]` table in any layer
+    defines, as 0.99.0 reads it, by the owner's answer of 7 October 2026. Its table holds
+    no store, so the store is still the layers'. A line naming a profile no table defines
+    is a store nobody can tell, `Backend::Unknown`, which 0.99.0 refuses as not found and
+    0.160.0 refuses as it refuses every such line. The words say which Codex does what.
+  - A layer it cannot read is a store nobody can tell, `Backend::Unknown`, refused like a
+    store Pitboard does not handle. A store a requirement pins is refused naming that file,
+    since no line in the person's own config changes it.
+  - `[features] secret_auth_storage` is read from the same layers, and is off by default
+    on macOS and Linux (`cfg!(windows)` in 0.160.0). A requirement may name that table
+    `[feature_requirements]` too, as `ConfigRequirementsToml` does; a configuration
+    layer's table of that name sets nothing.
 - `keyring` and `auto` keep the login in a keychain item, `Codex Auth`, that Codex makes
   through the Security framework. With either of those, the `secret_auth_storage` feature
   keeps it in `secrets/codex_auth.age` instead, under a keychain key.
@@ -735,7 +2122,13 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
   sign-in, the one `enroll --sign-in` runs, sets it to a directory that exists, and runs
   `codex login` from inside it.
 - The sign-in starts inside that directory because Codex also reads `.codex/config.toml`
-  from a trusted project it starts in. That file could name a keychain store.
+  from a trusted project it starts in. That file could name a keychain store, and so could
+  `/etc/codex/config.toml`, which a private home does not move. So the sign-in is
+  `codex -c cli_auth_credentials_store="file" login`: read from 0.160.0
+  (`codex_login_takes_a_store_override`), a `-c` before `login` is the session-flags
+  layer, over the home's, the system's and a project's config. Only
+  `/etc/codex/managed_config.toml`, the managed preference and a requirement are over it,
+  and they choose the live store too, which a sign-in refuses first.
 - `codex login` revokes the login stored in its home before signing in. It opens the
   browser itself and reads nothing from standard input.
 - Read from 0.160.0 on 5 October 2026: `codex login` prints to stderr its loopback address,
@@ -747,6 +2140,82 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
   Mac had left that link, read on 5 October 2026. Its macOS and Linux binaries name
   `npm install -g @openai/codex` and `brew upgrade --cask codex` as the other ways it is
   kept up to date. 0.154.0 names those too, but not the standalone package layout.
+
+### ureq's proxies
+
+Read in ureq 3.4.2's `src/proxy.rs`, `src/config.rs`, `src/run.rs`, `src/middleware.rs` and
+`src/unversioned/transport/`, and the socks crate 0.3.4's `src/lib.rs`, `src/v4.rs` and
+`src/v5.rs`, on 7 October 2026, and measured on macOS 27.0 the same day.
+`proxy.rs` reads the variables by these rules, and its tests check each row of their table
+against ureq's own `Proxy::try_from_env` in a process given that row's variables.
+
+- `Proxy::try_from_env` tries `ALL_PROXY`, `all_proxy`, `HTTPS_PROXY`, `https_proxy`,
+  `HTTP_PROXY` and `http_proxy`, in that order, and takes the first whose value parses as a
+  proxy's address. It does not look at the request's scheme, so `HTTP_PROXY` applies to an
+  https request, and `ALL_PROXY` wins over `HTTPS_PROXY`. An empty value, or one that does
+  not parse, is passed over. An address with no scheme is `http://`.
+- `NoProxy::try_from_env` takes the first of `NO_PROXY` and `no_proxy` that is set, even
+  empty, splits it at commas without trimming, and matches each entry against the request's
+  host without regard to ASCII case: `*` matches every host, an entry starting with `*` or
+  `.` matches the end of the host, one ending with `*` or `.` its start, and any other only
+  the same host.
+- `Config::default()`, where every agent's configuration starts, calls
+  `Proxy::try_from_env`. `ConfigBuilder::proxy` replaces what it found; nothing else turns
+  the read off. The `win-system-proxy` feature, which Pitboard does not turn on, adds the
+  registry's proxy on Windows.
+- The scheme is read without regard to case. `http` and `https` name a proxy ureq asks with
+  `CONNECT`; `socks4`, `socks4a`, `socks5`, `socks5h`, and `socks`, which is `socks5`, a
+  SOCKS one. Without the `socks-proxy` feature, a SOCKS proxy ureq read from the environment
+  is gone around, straight to the host, with a logged warning, and one it is given panics
+  on the first request, whether or not `NO_PROXY` names the host: both in
+  `DefaultConnector`'s `WarnOnNoSocksConnector`.
+- The feature, which brings the socks crate 0.3.4 and byteorder 1.5.0, puts its
+  `SocksConnector` first in the default chain of connectors
+  (`src/unversioned/transport/mod.rs`). That connector has two faults:
+  - Its handshake has no time limit. `try_connect_single` runs the socks crate on a thread
+    inside `thread::scope` and waits with `recv_timeout`, but the scope joins the thread
+    before it returns, and the socks crate's `TcpStream::connect` and `read_exact` set no
+    timeout. Measured with the feature on and a 5-second limit, against a loopback listener
+    that takes each connection and never answers: a request through `socks4://`,
+    `socks4a://`, `socks5://`, `socks5h://` or `socks://` was still waiting after 15
+    seconds, where one through an `http://` proxy failed with `timeout: global` at 5.
+  - It looks the proxy's own host up before it asks whether `NO_PROXY` exempts the
+    request's host (`socks.rs`, lines 50 to 63), where the `CONNECT` connector asks first
+    (`connect.rs`, lines 48 to 64). Measured with the feature on, a resolver that cannot
+    find the proxy's name and `NO_PROXY` naming the host: every request to that host failed
+    with `host not found`.
+- The owner decided on 7 October 2026 to have both fixed in ureq rather than keep a SOCKS
+  client of Pitboard's own, and that Pitboard refuses every SOCKS proxy until a ureq release
+  has the fix: a handshake that gives up at the request's time limit, and `NO_PROXY` asked
+  before the proxy's name is looked up. Then the feature can be turned on.
+- Until then ureq is given no SOCKS proxy, and the agent's middleware, `proxy::Refusal`,
+  takes each request first. A request to a host `NO_PROXY` names goes on, directly; any
+  other fails with "Pitboard does not use SOCKS proxies yet, and ALL_PROXY names one", as
+  `Error::Io`, before anything is sent or looked up. A middleware that returns without
+  calling `next` sends nothing. ureq runs the middleware once for each request and follows
+  redirects inside `run`, after it, so the agent is given `max_redirects(0)` while a SOCKS
+  proxy is named: measured without it, a redirect from an exempt loopback host to a host
+  `NO_PROXY` does not name went out directly and waited there for its answer.
+- `run.rs` looks a request's host up here only where there is no proxy, `NO_PROXY` exempts
+  the host, or the proxy's `resolve_target` is set, which `socks4`, `socks5` and `socks`
+  set and `socks4a`, `socks5h`, `http` and `https` do not. With the feature, ureq's
+  connector hands a proxy with `resolve_target` the first address the lookup gave, trying
+  the next only where the proxy refused the TCP connection, and one without it the host's
+  name and port. The socks crate fails an IPv6 address behind SOCKS4 with "SOCKS4 does not
+  support IPv6" before it sends the proxy anything, so `localhost`, which this Mac looks up
+  as `::1` before `127.0.0.1`, failed each request behind `socks4://`. It gives SOCKS4 an
+  empty user id, whatever the address holds, and SOCKS5 the address's user name and
+  password, offering no sign-in as well (`5, 2, 2, 0`).
+- Measured against a loopback server with `ALL_PROXY` set and ureq, without the feature,
+  reading it: `socks4://`, `socks5://` and `socks://` went around the proxy and the request
+  was answered; `socks4a://` and `socks5h://` left the request with no address to connect
+  to, and it failed with `Connection refused`, unless `NO_PROXY` named the host. That is
+  what 0.7.0 did. With the refusal, each of the five fails before anything reaches the
+  proxy or the host, in the core's tests (`proxy.rs`) and in `pitboard enroll`
+  (`tests/proxy.rs`), and an exempt host is reached with nothing but its own address
+  looked up.
+- `Proxy::username` and `Proxy::password` are the address's own text, split at the last
+  `:` before the `@`, and ureq sends them to an HTTP proxy as `Proxy-Authorization: Basic`.
 
 ### WebKit and SwiftUI
 
@@ -850,6 +2319,26 @@ one, measure it again.
   the real home. The core reads `HOME` and `PITBOARD_HOME`, so the record of stores is kept
   per Pitboard directory.
 
+### What the Swift app said
+
+Measured on macOS 27.0 with Swift 6.4 on 5 October 2026, so that `pitboard-ffi`'s
+`present` says what the Swift app said.
+
+- VoiceOver heard a limit's reset as a span Foundation's `Duration.UnitsFormatStyle` said:
+  days, hours and minutes, wide, at most two units, in `en_US_POSIX`, of at least a minute.
+  Asked for 100 spans, it rounds the span to whole minutes, a half to the even one, to see
+  which units it has, and says the two largest that are not nought, so 1 day and 1 minute
+  is "1 day, 1 minute". The last unit it says is the rest of the span in that unit, rounded
+  the same way, and a rest that rounds up to a whole one of the unit before it is carried:
+  1 day 23 hours 30 minutes is "2 days, 0 hours". It writes no thousands separator: 11,574
+  days is "11574 days, 2 hours". `words::spoken_span` is tested against every one.
+- The menu bar cut a label past 12 `Character`s to 11 and an ellipsis, and Swift counts
+  extended grapheme clusters. Over 22 labels, accents written as combining marks, flags,
+  emoji joined by zero-width joiners, keycaps, tag sequences, Hangul written in jamo, Thai,
+  Arabic's prepended number sign, a carriage return before a line feed and Devanagari
+  conjuncts, joined and not, `unicode-segmentation` 1.13.3's extended graphemes counted and
+  cut each as Swift did.
+
 ### Foundation's URLs
 
 Measured on macOS 27.0 on 5 October 2026, by giving the Swift `SiteLink` and `Handoff` of
@@ -908,6 +2397,12 @@ app.
   `port` is `0` for `:0`, and nil for `claude.ai:`; `user` is empty, not nil, for
   `https://@claude.ai/`. `WebAddress` reads two things otherwise: it keeps a port no `Int`
   holds, and names no host in `//claude.ai/x`, where `URL` reads `claude.ai` on no scheme.
+- `URL.path` is the path percent-decoded, then without the slashes it ends in, but for the
+  one a path of nothing else keeps: `/c/shared/` is `/c/shared`, `/a%20b/%2F` is `/a b`, `//`
+  is `/`, and no path at all is empty. A path whose bytes are not UTF-8 is empty, and
+  neither the query nor the fragment is part of it. Measured with Swift 6.4 on macOS 27.0
+  on 6 October 2026, on eleven addresses on `pitboard-fixture://`, which
+  `WebAddress::path` reads the same.
 - `NSString` splits a file name into a base and an extension at its last `.`, and finds no
   extension where it would be empty or hold a space, or where the base would be empty, `.`
   or `..`: `....a` has the extension `a`, `...a` none. `lastPathComponent` drops the
@@ -947,136 +2442,175 @@ That needs a person, in a debug build with a scratch home.
   source and bug trackers, and no browser was run. Which other browsers list the extension
   is not known.
 
-### Claude Desktop
+### The C# bindings
 
-Read from Claude Desktop 2.19675.0 on one Mac on 3 October 2026, read only: the bundle, the
-data folder's listing and sizes, the cookie database read without decrypting anything, the
-process list, the keychain item's attributes, and the exit code of one read of the key from
-a shell with no screen. The register is
-`provider/desktop/assumptions.rs`. No literal of the app can be probed for, so no
-conformance job reads it.
+Read in the C# that uniffi-bindgen-cs v0.11.0+v0.31.0 generated from `pitboard-ffi`, and
+measured by `apps/windows/Pitboard.Core.Tests` against the debug library, on 5 October 2026.
+Nothing here ran on Windows.
 
-- The app is `/Applications/Claude.app`, version 2.19675.0 in both `CFBundleShortVersionString`
-  and `CFBundleVersion`, bundle id `com.anthropic.claudefordesktop`, signed by team
-  `Q6L2SF6YDW`. Its Info.plist carries `ElectronAsarIntegrity`, and its code is in
-  `app.asar` and `app.asar.unpacked`.
-- The main process is `Contents/MacOS/Claude`. Its helpers run from inside the bundle with
-  `--user-data-dir=~/Library/Application Support/Claude`. `Contents/Helpers/chrome-native-host`
-  runs apart from the app.
-- The data folder, `~/Library/Application Support/Claude`, held 1.3 GB. The account's part
-  of it is about 6 MB: `Cookies` (32 KB), `config.json` (10 KB), `Local Storage` (2.3 MB,
-  origins `https://claude.ai` and `https://a.claude.ai`), `IndexedDB` (3.2 MB) and
-  `Session Storage` (108 KB), with `WebStorage` (44 KB) and `File System` (40 KB), which
-  move with it (E2).
-- The rest is the machine's: `Cache` (685 MB), `Code Cache` (222 MB), `claude-code/`
-  (431 MB), the GPU caches, `Shared Dictionary`, `Partitions`, `Local State` with no
-  `os_crypt` key, `Preferences` and `claude_desktop_config.json`.
-- Some of the folder is already kept per account by the app itself:
-  `claude-code-sessions/<account>/<organisation>`, `local-agent-mode-sessions/`,
-  `spaces-present/`, `ant-device-registry.json` and `cowork-enabled-cli-ops.json`. Three
-  accounts had signed in on that Mac.
-- No `Claude-3p` folder and no saved application state were there. The app's preferences
-  plist held only AppKit keys. `Caches`, `HTTPStorages` and `Logs` hold more of the app's
-  files outside the data folder.
-- `Cookies` is SQLite in `journal_mode=delete`, with `meta.version` 24 and
-  `last_compatible` 24. It held 20 cookies, all for claude.ai, each with an empty `value`
-  and an `encrypted_value` starting `v10`.
-- `sessionKey` and `sessionKeyV3` were 179 bytes each and expired on 30 October 2026, about
-  four weeks out. Their ciphertexts had the same SHA-256. `sessionKeyLC`, `sessionKeyV3LC`,
-  `routingHint`, `lastActiveOrg`, `__Host-ant_trusted_device` and `anthropic-device-id`
-  were there too.
-- While the app ran, `Cookies-journal` was 0 bytes with the same mtime as `Cookies`, and
-  there was no `Cookies-wal`.
-- `config.json` holds `oauth:tokenCache` and `oauth:tokenCacheV2`, base64 of values
-  starting `v10`, and `lastKnownAccountUuid`, a 36-character uuid equal to the
-  `ownerAccountId` in `cowork-enabled-cli-ops.json`.
-- The keychain item `Claude Safe Storage` is a generic password with account `Claude Key`
-  in the login keychain, its `cdat` equal to its `mdat`. Its attributes were read without
-  its password.
-- `security find-generic-password -w` on that item, run from a background shell of a
-  Claude Code session with no screen, exited 36. It was not run over ssh.
-- `plan-usage-history.json` is `{version: 2, samples: [{t, org, u: {fh, sd}}]}`. It held 87
-  samples for one organisation.
-- The home folder and the data folder were on one volume (`stat -f %d`).
+- An exported object's class frees its Rust object from a finalizer: `~PitboardModel()`
+  calls `Destroy()`. So .NET's finalizer thread can be the one that drops a
+  `PitboardModel`, and its `Drop` waits on nothing.
+- The first call loads the library, and before it answers, the bindings compare the
+  checksum of every export, the model's constructor and methods and
+  `ModelListener.changed` among them, and hand the library each foreign trait's table of
+  calls.
+- A trait an app implements is an interface of the trait's own name, `ModelListener`,
+  `AppControl`, `Notifications` and `LocalTime`. Its error is an exception named for it,
+  `PlatformException`, whose variant the app throws. An `Option<String>` it gives back is a
+  `string?`.
+- A record holds a list as an array, and a C# record compares arrays by reference, so two
+  snapshots read alike are not equal. `ModelTests.ASnapshotCarriesWhatWasRead` measures it.
+  Two records C# makes with an empty collection expression, `[]`, for each list do compare
+  equal: the compiler gives them one empty array, so an app's own test of that kind proves
+  nothing about lists. `ModelTests.ASnapshotSaysWhatIsKnownOfTheMachine` measures it, and
+  measured it with the .NET SDK 10.0.401 on 6 October 2026.
+- A call's checksum is taken over what UniFFI records of it: its module, object and name,
+  its arguments, the types it takes, gives and throws, and its doc comment. A record type is
+  recorded by its module and name alone, so no checksum covers a record's fields. Read in
+  `uniffi_macros` 0.31.2, `fnsig.rs` and `record.rs`.
 
-Measured on 4 October 2026 on Claude Desktop 2.19675.0, `Cookies` meta version 24, with two
-real claude.ai accounts and the data folder backed up first (31,674 entries). Only
-fingerprints (12-character SHA-256 prefixes), inodes, exit codes and times were recorded.
-Each experiment dates its register entry with the version:
+### The Swift bindings
 
-- Log out in the app revokes the session at claude.ai (E1). A byte copy of the listed items
-  and config keys, taken before Log out and put back after, was refused: within 5 seconds of
-  launch the app deleted `sessionKey`, emptied `oauth:tokenCacheV2` and showed its sign-in
-  screen. After Log out `lastKnownAccountUuid` still names the account that left, the
-  `sessionKey` row is gone, and `oauth:tokenCacheV2` holds the same 28-character empty value
-  as `oauth:tokenCache` (E1b). A switch from that state set 7 leftover items aside and put
-  the other account back.
-- The item list moves an account whole (E2): after a switch each way, the name,
-  conversations, Code tab, Cowork and connectors were the right account's, with nothing of
-  the other. One account had no `File System`, so an item on the list may be absent.
-- The `sessionKey` ciphertext keeps its fingerprint across quitting and opening the app, for
-  both accounts (E3). Only the analytics cookie `_dd_s_v2` changed.
-- `lastKnownAccountUuid` is written while the app runs, 35 and 15 seconds after launch on two
-  sign-ins, before `sessionKey` reaches the jar at 63 and 31 seconds (E4). The jar is flushed
-  about every 30 seconds. Both sign-ins started with no uuid in `config.json`, so whether a
-  sign-in replaces the uuid that Log out leaves behind (E1b) was read from the bundle
-  instead, on 5 October 2026 (below).
-- A cookie is AES-128-CBC with a key from PBKDF2-SHA1 of the item's password, salt
-  `saltysalt`, 1003 rounds, 16 bytes, an IV of sixteen 0x20 bytes, and from meta version 24
-  a 32-byte SHA-256 of the host before the value (E5). A `sessionKey` decrypted this way was
-  accepted by claude.ai. The item's account is `Claude Key`.
-- At quit the app writes `Cookies`, `config.json`, `Local Storage`, `Session Storage`,
-  `WebStorage` and `Preferences`, each with the mtime of the second the main process exited
-  (E8).
-- `oauth:tokenCache` and `oauth:tokenCacheV2` are keyed
-  `acct:<lastKnownAccountUuid>|...:<org>:https://api.anthropic.com:<scopes>` and hold
-  `token`, `refreshToken`, `expiresAt`, `subscriptionType` and `rateLimitTier` (E9): 1668
-  and 1732 characters for one account, 28 and 1500 for the other. These and
-  `lastKnownAccountUuid` are the three keys a switch moves, and with the items on the list
-  they were enough to move each of two accounts whole (E2). Nobody went through the file's
-  other keys one by one to show none of them follows the account.
-- `GET claude.ai/api/organizations/<lastActiveOrg>/usage` with the `sessionKey` cookie
-  answers 200 with `five_hour` and `seven_day`, each with `utilization` and `resets_at`
-  (E10). The history's `fh` and `sd` matched it: 0% and 1% against 0% and 1% for one
-  account, 30% and 5% against 30% and 5% for the other, so history readings are verified.
-- Nothing ran from the bundle 0, 2, 5 and 30 seconds after a quit but `chrome-native-host`
-  (E12), and no crashpad handler or helper was left when the main process exited (E18).
-- The app keeps no `SingletonLock`, in its data folder or in `$TMPDIR`, while it runs; its
-  main process holds the `LOCK` files of its leveldb stores instead (E14). The lock check
-  finds nothing, and the process scan is the only sign the app is open.
-- claude.ai answered a request with the user agent `pitboard/<version>` with 200 and no bot
-  check (E15). `GET claude.ai/api/account` answers `email_address`, `uuid`, `full_name`,
-  `display_name` and `memberships` (E17); Pitboard does not ask it yet, so a Claude Desktop
-  account shows no email.
-- Always Allow left the key's `cdat` and `mdat` at 20260727084307Z (U-K1). Before it, a
-  background shell's read exited 36; after it, the same shell read the key without a
-  question (U-K1b), so refreshes need nobody at the Mac. Reads over ssh or from a launchd
-  job were not tried.
-- `security` exits 128 on Deny, and 128 too when a wrong password is typed and Allow chosen;
-  51 was never seen (U-K2). Killing it with SIGTERM (exit 143) leaves the question on screen
-  (U-K3), so a read that times out can leave a dialog behind. A refresh that timed out does
-  not ask again for the same stamp, but that gate is per process: every `enable` asks, and
-  two processes refreshing at once can each leave one. Reading the item's attributes
-  without `-w` never prompted, many times from a background shell (U-K5).
+Measured with `build-xcframework.sh` and `swift test --package-path apps/macos`, with the
+Swift UniFFI 0.31.2 generates and the Swift 6.4 of Xcode 27.1, on 5 October 2026.
 
-Read on 5 October 2026, from the same build:
+- A method of a trait an app implements may not have a name on the generator's list of
+  Swift keywords, which has `open` though Swift takes `open` as a method's name, as
+  `PitboardApp`'s own `AppControl.open` was. The generator puts such a name in backticks, and
+  writes the C header's table of calls through the same filter, so the header has
+  `` UniffiCallbackInterfaceAppControlMethod2 _Nonnull `open`; ``, which clang refuses
+  ("expected member name or ';' after declaration specifiers"), and the bindings do not
+  build. Read in `uniffi_bindgen` 0.31.2: the list in `bindings/swift/gen_swift/mod.rs`, and
+  `BridgingHeaderTemplate.h` naming each field through `var_name`. `AppControl`'s method that
+  opens an app again is `reopen` for that reason.
+- A type the bindings export that `PitboardApp` also declares is the app's own inside
+  `PitboardApp`, and ambiguous in a module that imports both, as the app's tests do: with
+  the bindings' `AppControl` beside the app's protocol of that name, `swift test` stopped at
+  "'AppControl' is ambiguous for type lookup in this context" in `Fixtures.swift`. The app
+  has implemented the bindings' trait, as `MacAppControl`, since it runs on the model, and
+  declares no `AppControl` of its own.
+- A type the bindings export is declared in the same Swift package as the app, so making
+  one conform to a protocol, as `Sheet` to `Identifiable` for a sheet's binding, takes no
+  `@retroactive`: Swift 6.4 refuses it there, "'retroactive' attribute does not apply;
+  'Sheet' is declared in the same package". Measured on 6 October 2026.
+- `MainActor.assumeIsolated` traps off the main thread, so `ModelListening`'s hop is
+  tested by where it runs: with the snapshot queued on a global queue in place of the main
+  one, the test of the listener's order stopped with signal 5 rather than failing an
+  expectation. Measured on 6 October 2026.
 
-- The app replaces an account's `sessionKey` without signing it out. A session Pitboard had
-  just put back met `session_stale_relogin` a second after launch, and 66 seconds later a
-  new `sessionKey` was created under the same `lastKnownAccountUuid`, with no
-  `Login-state transition` in `main.log`.
-- A sign-in replaces a `lastKnownAccountUuid` that Log out left behind. `app.asar` writes
-  the key whenever the account the page reports differs from the one read at launch, the
-  same write E4 timed where none was named. So a session Pitboard has not seen under a uuid
-  it knows is that account's; a session Pitboard knows as another account's still stops
-  with `desktop_identity_unconfirmed`.
+### What the macOS app's glue rests on
 
-Not measured yet, and dated `UNVERIFIED` in the register:
+Measured on macOS 27.0 with Swift 6.4 of Xcode 27.1, on 6 October 2026.
 
-- Whether the session's expiry slides forward with use (E11, E13). Both sessions read on 4
-  October 2026 expire on 1 November 2026, so the read that settles it comes after that.
-- Whether reads with Always Allow slow the app down (U-K6; U-K1 read only the stamp), and
-  whether an update of the app keeps the item (U-K4).
+- Foundation's temporary directory does not read `TMPDIR`: with `TMPDIR=/private/tmp/xyz/`
+  and with it unset, `NSTemporaryDirectory()` and `FileManager.default.temporaryDirectory`
+  both gave the user's own `/var/folders/…/T/`. Rust's `std::env::temp_dir` reads `TMPDIR`
+  first, and only then asks the system for that directory (Rust 1.98.1's
+  `library/std/src/sys/paths/unix.rs`). So the app finds a fixture's folder by `TMPDIR`
+  where it is set, as the core makes it, and by Foundation where it is not.
+- `@Observable` does not tell an observer of an assignment of a value equal to the one held:
+  over `withObservationTracking`, setting an equal `Equatable` struct, an equal `Int` or the
+  same object again told nothing, and setting another struct told. So `AppModel`'s
+  comparison before each assignment changes nothing that Observation does not already skip,
+  and a test of what is drawn again passed with the comparison taken away. The comparison is
+  kept so the rule does not rest on how the macro expands, and `apply` returns the parts it
+  assigned, which its test reads: with the comparison taken away, that test fails.
+- `Date.FormatStyle` with `time: .shortened` follows the locale's hour cycle, which macOS
+  keeps in the locale: 14:05 in UTC is `2:05 PM` for `en_US`, with U+202F NARROW NO-BREAK
+  SPACE before `PM`, `14:05` for `en_GB` and for `en_US@hours=h23`, and `2:05 pm` for
+  `en_GB@hours=h12`. `MacLocalTime` formats with the person's own locale, and its test with
+  `en_US` and `en_US@hours=h23`.
 
-Not in the register, because Pitboard checks it rather than assumes it: whether the data
-folder and `~/.pitboard` share a volume on other Macs (E7). Every switch checks it.
+### The model's timers
+
+Read on 5 October 2026 in Rust 1.98.1's standard library and in the macOS SDK of Xcode 27.1,
+with Swift 6.4.
+
+- `std::time::Instant` reads `CLOCK_UPTIME_RAW` on Apple's systems, which macOS's
+  `clock_gettime(3)` says does not increment while the system is asleep. The model's timers
+  run on it, so on macOS they count only the time the machine is awake.
+- The Swift model's loops slept with `Task.sleep(for:)`, whose clock is `.continuous` unless
+  it is given another, and `ContinuousClock` does not stop while the system is asleep. After
+  a long sleep its five-minute read came as the machine woke, where the model's comes up to
+  five minutes of waking time later. An app sends `Intent::Woke` as the machine wakes, which
+  reads at once: the macOS app sends it on `NSWorkspace.didWakeNotification`, where the
+  Swift model read.
+- The 30 seconds an app is given to quit run on `Instant` too, where the Swift model's ran
+  on `ContinuousClock`: a machine put to sleep while an app is asked to quit gives it its
+  30 seconds of waking time, where the Swift gave it none once the machine woke.
+- The look whether to switch Claude Code by itself every 30 seconds, and the wait after a
+  refused switch, run on `Instant` too, so they count waking time. After a sleep the read
+  that `Intent::Woke` asks for is followed by a look at once where it lands, and one that
+  fails, as before the network is back, leaves the next look to its timer. A refusal's
+  wait goes on where it stopped.
+- On Linux the standard library reads `CLOCK_MONOTONIC`, and on Windows
+  `QueryPerformanceCounter`. How either counts a sleep was not read.
+
+### The fixtures
+
+Measured on 6 October 2026 on macOS 27.0, with `pitboard-ffi` built for
+`aarch64-apple-darwin`, in release and in debug, with and without the `fixture` feature.
+
+- The bindings are the same with the feature and without it: the Swift that
+  `uniffi-bindgen-swift` generated from each release static library, `PitboardBindings.swift`,
+  `PitboardFFI.h` and `module.modulemap`, and the C# that uniffi-bindgen-cs v0.11.0+v0.31.0
+  generated, `pitboard_ffi.cs`, had the same SHA-256 each, and the C# generated from each
+  debug library did too. The feature changes what the fixture's four exports do, never
+  their names, arguments, types or doc comments, which are all a checksum covers
+  ([The C# bindings](#the-c-bindings)). So one set of bindings links against either library.
+- A library built without the feature holds none of a fixture's text: `grep -a -c` for a
+  line of a stand-in page and an account of the worlds found it on no line of the release
+  `libpitboard_ffi.a` or `libpitboard_ffi.dylib`, and on 2 lines of each built with it, one
+  for each, and on 4 of the universal library `build-xcframework.sh --fixture` builds.
+  The CI job for C# checks the Linux library the same way, and `build-app.sh` the macOS
+  library and app.
+- `fixture_page` gives, byte for byte, what the macOS app's `FixturePages.page(for:)` gives,
+  for nine addresses on `pitboard-fixture://`: each site's home and a path of each, two of
+  chatgpt.com's sign-in hosts, the artifact's frame, a host of no site, and chatgpt.com in
+  capitals with an escape and a slash at its end. Measured by running the Swift's code,
+  copied whole, with Swift 6.4 over the same site table.
+- `ModelTests.AFixturesModelStartsAndTellsAListenerOfItsAccounts` starts a fixture's model
+  from C#, against the debug library built with the feature, and its listener, written in
+  C#, is told the accounts read on a thread that is neither the test's nor one of .NET's
+  thread pool, with the .NET SDK 10.0.401. Against the library built without, the test is
+  skipped and says why.
+- The real core answers some things in the fixtures otherwise than the Swift `FixtureCore`
+  did, which the UI tests were written against and read since the macOS app launches into
+  the Rust worlds, each held by a test in `crates/pitboard-ffi/src/fixture/tests.rs`:
+  - A read whose service cannot be reached answers, each account's numbers the last
+    measured and saying "Anthropic could not be reached"; `status` fails only where the
+    account index cannot be read, and the read of what is known fails with it. The Swift
+    fixture failed readFailure's read, `unreachable`, and listed its accounts from what was
+    known. So readFailure's account index is one nobody may read, mode `000`, given it once
+    the world's history is made, and both its reads fail, `state_unreadable`: "could not
+    read Pitboard's account list at …: Permission denied (os error 13)", on macOS 27.0 as an
+    ordinary user. The menu's item and the window's notice say "Couldn’t read usage" with
+    those words, and the window, with nothing known to list, says "Couldn’t Read Accounts"
+    with Try Again, where the Swift fixture listed claude/work under the notice. A service
+    out of reach is held in oneTool instead, made so in its test.
+  - The fixture's Claude Code refuses a line typed back without both halves of
+    `<code>#<state>`, with its own `Invalid code.` line, and reads another, as the register's
+    `sign_in_takes_another_code` holds of 2.1.289; the Swift fixture took any line. So a UI
+    test types a code with its `#`, such as `fixture-code#state`, and one typed without
+    meets the sheet saying the code was refused, with the field offered again.
+  - A switch is logged as `use`, after the command, where the Swift fixture logged `switch`.
+  - Claude Code's sessions follow a switch within 33 seconds, `ADOPTION_CEILING_SECONDS`,
+    where the Swift fixture said 45.
+  - Doctor's checks are the core's: none is called "Keychain", and none warns of a schedule
+    that is not there, which was the Swift fixture's one thing worth looking at. oneTool's
+    one thing is the world's own instead: personal's parked login lapses in two days, so
+    that Renew Now renews it, where the Swift fixture's lasted eleven. Renew Now finds a
+    parked login due that the read before it left alone only while its refresh token lapses
+    within three days, and that is when doctor warns of it, since both ask
+    `doctor::renewal_due`. So oneTool says "One thing is worth looking at." as before, of
+    personal's parked login rather than of daily renewal. stuck has doctor's "interrupted
+    switch" worth looking at besides, so it says "2 things are worth looking at.".
+  - A read lists the account in use first, and the read of what is known lists only
+    enrolled accounts, so a login nobody has named is listed once the first read has asked
+    its service whose it is.
+- stuck shows the notice offering Give Up… as the app starts, as the Swift fixture did, now
+  from the core's own read: a read says an interrupted switch is waiting wherever the next
+  change would be refused over it, as a warning with the refusal's code,
+  `recovery_undetermined`, and its words. The read of what is known says nothing of it
+  there, since only Anthropic could say whose Claude Code's login is.

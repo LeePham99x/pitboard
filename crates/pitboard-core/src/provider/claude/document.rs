@@ -127,6 +127,27 @@ pub(crate) fn renewed(document: &Value, fresh: &api::Renewed, now_millis: i64) -
     next
 }
 
+/// `subscriptionType` and the multiple `rateLimitTier` ends in: "Max 20x", "Pro".
+pub(crate) fn plan(document: &Value) -> Option<String> {
+    let oauth = oauth_in(document);
+    let named = Some(oauth.get("subscriptionType")?.as_str()?.trim())
+        .filter(|kind| !kind.is_empty())
+        .map(crate::holder::capitalised)?;
+    let multiple = oauth
+        .get("rateLimitTier")
+        .and_then(Value::as_str)
+        .and_then(|tier| tier.rsplit('_').next())
+        .filter(|last| {
+            last.len() > 1
+                && last.ends_with('x')
+                && last[..last.len() - 1].bytes().all(|b| b.is_ascii_digit())
+        });
+    Some(match multiple {
+        Some(multiple) => format!("{named} {multiple}"),
+        None => named,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -222,6 +243,54 @@ mod tests {
         for key in ACCOUNT_SCOPED {
             assert!(after.get(key).is_none(), "{key} was left behind");
         }
+    }
+
+    #[test]
+    fn the_plan_is_named_with_the_multiple_its_tier_ends_with() {
+        let slice = |kind: Value, tier: Value| {
+            json!({"claudeAiOauth": {
+                "accessToken": "a",
+                "subscriptionType": kind,
+                "rateLimitTier": tier,
+            }})
+        };
+        assert_eq!(
+            plan(&slice(json!("max"), json!("default_claude_max_20x"))).as_deref(),
+            Some("Max 20x")
+        );
+        assert_eq!(
+            plan(&slice(json!("team"), json!("default_claude_max_5x"))).as_deref(),
+            Some("Team 5x")
+        );
+        assert_eq!(
+            plan(&slice(json!("pro"), json!("default_claude_ai"))).as_deref(),
+            Some("Pro"),
+            "a tier that names no multiple adds nothing"
+        );
+        assert_eq!(
+            plan(&slice(json!("pro"), Value::Null)).as_deref(),
+            Some("Pro")
+        );
+        assert_eq!(
+            plan(&slice(Value::Null, json!("default_claude_max_20x"))),
+            None
+        );
+        assert_eq!(plan(&slice(json!(""), Value::Null)), None);
+        assert_eq!(plan(&json!({"claudeAiOauth": {"accessToken": "a"}})), None);
+    }
+
+    #[test]
+    fn a_park_of_the_oauth_block_alone_still_says_its_plan() {
+        let block = json!({
+            "accessToken": "a",
+            "subscriptionType": "max",
+            "rateLimitTier": "default_claude_max_20x",
+        });
+        assert_eq!(plan(&block).as_deref(), Some("Max 20x"));
+        assert_eq!(
+            plan(&json!({"claudeAiOauth": block, "organizationUuid": "o"})).as_deref(),
+            Some("Max 20x")
+        );
     }
 
     #[test]

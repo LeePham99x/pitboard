@@ -5,11 +5,13 @@
 
 use super::{api, paths};
 use crate::context::Context;
+use crate::host::Os;
 use crate::provider::{
-    Adoption, Credential, Expiry, Identity, Isolation, LiveStore, ParkSemantics, Provider,
+    Adoption, Behind, Credential, Expiry, Identity, Isolation, LiveStore, ParkSemantics, Provider,
     ProviderError, ProviderId, SignInView, jwt,
 };
-use crate::store::{self, Live};
+use crate::service::Permit;
+use crate::store::{self, Backend, Live, Unbuilt};
 use crate::usage::Snapshot;
 use serde_json::Value;
 
@@ -27,8 +29,19 @@ pub(crate) struct Codex;
 /// of the person, from `status` as much as from a switch. Pressing Always Allow would
 /// change Codex's own item. The honest answer is to say Pitboard does not handle that
 /// store, rather than to prompt on every refresh of a menu bar.
+///
+/// On Windows it is one store that refuses every call, until W21 reads which store Codex
+/// keeps its login in there, from layers of its own and with `secret_auth_storage` on by
+/// default (the register's pending `codex_store_layers` and `codex_login_location`), and
+/// switches it where that is the file.
 fn chain(ctx: &Context) -> Live {
-    Live::of(vec![ctx.host().file(paths::auth_file(ctx))])
+    match crate::host::OS {
+        Os::MacOs | Os::Linux => Live::of(vec![ctx.host().file(paths::auth_file(ctx))]),
+        Os::Windows => Live::of(vec![Box::new(Unbuilt::new(
+            Backend::Unknown,
+            "Pitboard does not switch Codex on Windows yet",
+        ))]),
+    }
 }
 
 impl Provider for Codex {
@@ -36,32 +49,44 @@ impl Provider for Codex {
         ProviderId::Codex
     }
 
+    /// The file, where every layer Codex reads picks it ([`paths::store`]). Any other store
+    /// is refused with the setting that chose it and what would choose the file instead: the
+    /// line for the person's own `config.toml`, or that only an administrator can, where a
+    /// requirement or a managed layer chose it. A store nobody can tell is refused too.
     fn live(&self, ctx: &Context) -> Result<LiveStore, ProviderError> {
-        let unsupported = |reason: &str| {
+        let unsupported = |reason: String| {
             Err(ProviderError::Unsupported {
                 provider: ProviderId::Codex,
-                reason: reason.to_string(),
+                reason,
             })
         };
-        match paths::backend(ctx) {
+        let store = paths::store(ctx);
+        match store.backend {
             paths::Backend::File => Ok(LiveStore {
                 chain: chain(ctx),
                 // One file, so there is only one name in it.
                 service: paths::AUTH_FILE.to_string(),
             }),
-            paths::Backend::Ephemeral => unsupported(
-                "this machine's Codex keeps its login in memory only \
-                 (cli_auth_credentials_store = \"ephemeral\"), so there is nothing at rest \
-                 to park or switch",
-            ),
+            paths::Backend::Ephemeral => unsupported(format!(
+                "this machine's Codex keeps its login in memory only ({}), so there is \
+                 nothing at rest to park or switch. {}",
+                store.setting(),
+                store.to_use_the_file()
+            )),
             paths::Backend::Keyring | paths::Backend::Either | paths::Backend::Secrets => {
-                unsupported(
-                    "this machine's Codex keeps its login in the keychain \
-                     (cli_auth_credentials_store in config.toml). Pitboard handles Codex's \
-                     default store, the auth.json file, and does not read an item Codex \
-                     created for itself, because every read would ask you for permission",
-                )
+                unsupported(format!(
+                    "this machine's Codex keeps its login in the keychain ({}). Pitboard \
+                     handles Codex's file store, auth.json, and does not read an item Codex \
+                     created for itself, because every read would ask you for permission. {}",
+                    store.setting(),
+                    store.to_use_the_file()
+                ))
             }
+            paths::Backend::Unknown => unsupported(format!(
+                "Pitboard cannot tell where this machine's Codex keeps its login: {}. {}",
+                store.why_unknown().unwrap_or_default(),
+                store.while_unknown().unwrap_or_default()
+            )),
         }
     }
 
@@ -88,9 +113,8 @@ impl Provider for Codex {
         // pair names one login's quota, so the pair is the identity.
         //
         // Joined with `_`, which appears in neither half and is safe everywhere an account
-        // id goes: a park's name, which on Linux is a file name the vault checks, and the
-        // name of its usage history. A `:` there made every real Codex park unwritable on
-        // Linux and every Codex history unrecorded.
+        // id goes, such as a park's name, which on Linux is a file name the vault checks. A
+        // `:` there made every real Codex park unwritable on Linux.
         let person = jwt::claim(&claims, &[OPENAI, "chatgpt_user_id"])
             .or_else(|| jwt::claim(&claims, &[OPENAI, "user_id"]));
         Ok(Identity {
@@ -103,6 +127,11 @@ impl Provider for Codex {
                 .to_string(),
             group: Some(chatgpt.to_string()),
         })
+    }
+
+    /// The ID token names the account, read with no network call.
+    fn identifies_by_itself(&self) -> bool {
+        true
     }
 
     fn usage(&self, ctx: &Context, credential: &Credential) -> Result<Snapshot, ProviderError> {
@@ -126,14 +155,19 @@ impl Provider for Codex {
     /// Codex matches on the field being present at all: without it, a login it would
     /// otherwise accept reads as "Token data is not available". It is an RFC 3339 string,
     /// not a number of milliseconds.
-    fn renew(&self, ctx: &Context, credential: &Credential) -> Result<Credential, ProviderError> {
+    fn renew(
+        &self,
+        ctx: &Context,
+        permit: Permit,
+        credential: &Credential,
+    ) -> Result<Credential, ProviderError> {
         let refresh = credential.raw["tokens"]["refresh_token"]
             .as_str()
             .ok_or_else(|| ProviderError::ShapeUnexpected {
                 provider: ProviderId::Codex,
                 detail: "it has no tokens.refresh_token".into(),
             })?;
-        let fresh = api::renew(ctx, refresh)?;
+        let fresh = api::renew(ctx, permit, refresh)?;
         let mut next = credential.raw.clone();
         let tokens =
             next["tokens"]
@@ -178,17 +212,21 @@ impl Provider for Codex {
         None
     }
 
-    /// The login is its own record: its ID token names the account, and Codex keeps no
-    /// other file saying who is signed in.
-    fn recorded_identity(&self, ctx: &Context) -> Option<Identity> {
-        let live = self.read_live(ctx).ok()??;
-        self.identify(ctx, &live).ok()
+    /// Nor does a running `codex` take one to renew its login.
+    fn refresh_lock(&self, _ctx: &Context) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
+        None
+    }
+
+    /// Codex keeps no record apart from its login, whose ID token names the account.
+    fn own_record(&self, _ctx: &Context) -> Option<Identity> {
+        None
     }
 
     /// Nothing to correct: Codex caches no identity apart from the login itself.
     fn after_switch(
         &self,
         _ctx: &Context,
+        _: Permit,
         _incoming: &crate::state::Account,
         _outgoing: &Identity,
     ) -> Result<(), crate::error::Error> {
@@ -199,7 +237,8 @@ impl Provider for Codex {
         crate::provider::program_of(ctx, ProviderId::Codex)
     }
 
-    /// `codex login` with `CODEX_HOME` pointed at the private directory.
+    /// `codex -c cli_auth_credentials_store="file" login` with `CODEX_HOME` pointed at the
+    /// private directory.
     ///
     /// Read from 0.154.0. It revokes whatever login is stored in the home it is given
     /// before it signs in, which in an empty directory is nothing; run against the real
@@ -207,12 +246,26 @@ impl Provider for Codex {
     /// never empty. It opens the browser itself, prints the address to stderr for when it
     /// cannot, listens for the callback on a loopback port, and reads nothing from stdin.
     ///
-    /// Started from inside the directory, because Codex also reads `.codex/config.toml`
-    /// from a trusted project it is started in, and a project that set a keyring store
-    /// would send the new login somewhere this could not read back.
-    fn sign_in(&self, ctx: &Context, dir: &std::path::Path) -> std::process::Command {
-        let mut command = crate::provider::command(ctx, ProviderId::Codex);
-        command.arg("login").env("CODEX_HOME", dir).current_dir(dir);
+    /// The `-c` names the file store, read from 0.160.0 (`codex_login_takes_a_store_override`
+    /// in the register): given before `login`, where Codex's own command line takes it, it is
+    /// over the private home's config, which holds none, over `/etc/codex/config.toml` and over
+    /// a trusted project's `.codex/config.toml`. Without it, either could send the new login to
+    /// the keychain, where this could not read it back. Only a requirement or a managed layer
+    /// is over it, and one that chooses another store chooses the live store too, which
+    /// [`Codex::live`] refuses before a sign-in starts.
+    ///
+    /// Started from inside the directory too, so no project's config is read at all.
+    fn sign_in(
+        &self,
+        ctx: &Context,
+        permit: Permit,
+        dir: &std::path::Path,
+    ) -> std::process::Command {
+        let mut command = crate::provider::command(ctx, permit, ProviderId::Codex);
+        command
+            .args(["-c", super::layers::FILE_STORE, "login"])
+            .env("CODEX_HOME", dir)
+            .current_dir(dir);
         command
     }
 
@@ -228,7 +281,7 @@ impl Provider for Codex {
     }
 
     /// Everything a sign-in writes goes inside its home, so the directory is all there is.
-    fn discard_signin(&self, _ctx: &Context, _dir: &std::path::Path) {}
+    fn discard_signin(&self, _ctx: &Context, _: Permit, _dir: &std::path::Path) {}
 
     /// Read from 0.160.0. `codex login` prints to stderr where its loopback server listens,
     /// `http://localhost:<port>`, and then, bare on a line of its own, the `https` address
@@ -241,11 +294,21 @@ impl Provider for Codex {
         }
     }
 
+    /// It reads nothing typed back, so it refuses nothing, whatever it prints.
+    fn refused_code(&self, _since: &str) -> bool {
+        false
+    }
+
     /// Nothing measured yet. Codex reads an API key from its own login document, which moves
     /// with the account, and whether an environment key takes precedence over a ChatGPT
     /// login in 0.154.0 has not been read closely enough to warn about.
     fn overridden_by(&self, _ctx: &Context) -> Vec<String> {
         Vec::new()
+    }
+
+    /// Codex keeps its login in one store, with nothing behind it.
+    fn behind(&self, _ctx: &Context) -> Option<Behind> {
+        None
     }
 
     /// Nothing follows on its own.
@@ -256,7 +319,7 @@ impl Provider for Codex {
     /// again, and what starts it again depends on where it runs, which is [`holders`].
     ///
     /// [`holders`]: super::holders::HOLDERS
-    fn adoption(&self) -> Adoption {
+    fn adoption(&self, _behind: Option<&Behind>) -> Adoption {
         Adoption::RestartRequired {
             program: "codex",
             holders: super::holders::HOLDERS,
@@ -274,15 +337,30 @@ impl Provider for Codex {
 
     /// `CODEX_HOME` moves the file, and the keyring account is derived from that same home,
     /// so a scratch directory isolates both backends.
+    ///
+    /// What is asked is the store the sign-in itself ends up with ([`paths::sign_in_store`]):
+    /// its `-c` names the file over every setting of the person's own, so only an
+    /// administrator's can keep its login in memory, where it would leave nothing to enrol.
     fn private_signin_isolation(&self, ctx: &Context) -> Isolation {
-        match paths::backend(ctx) {
+        let store = paths::sign_in_store(ctx);
+        match store.backend {
             paths::Backend::Ephemeral => Isolation::NotIsolated {
-                reason: "this machine's Codex keeps its login in memory only, so a sign-in \
-                         here would leave nothing to enrol."
-                    .into(),
+                reason: format!(
+                    "this machine's Codex keeps its login in memory only ({}), so a sign-in \
+                     here would leave nothing to enrol.",
+                    store.setting()
+                ),
             },
             _ => Isolation::Isolated,
         }
+    }
+
+    /// `chatgpt_plan_type` out of the ID token: `pro` is "Pro".
+    fn plan(&self, document: &Value) -> Option<String> {
+        let claims = jwt::claims(document["tokens"]["id_token"].as_str()?)?;
+        Some(jwt::claim(&claims, &[OPENAI, "chatgpt_plan_type"])?.trim())
+            .filter(|kind| !kind.is_empty())
+            .map(crate::holder::capitalised)
     }
 
     /// One account per file, so an account's share is the whole of it.
@@ -406,6 +484,12 @@ mod tests {
         assert_eq!(found.email, "a@b.c");
     }
 
+    #[test]
+    fn the_plan_is_read_out_of_the_id_token() {
+        assert_eq!(Codex.plan(&login()).as_deref(), Some("Pro"));
+        assert_eq!(Codex.plan(&serde_json::json!({"tokens": {}})), None);
+    }
+
     /// One account per file, so nothing is filtered and nothing Pitboard does not recognise
     /// is dropped on the way through.
     #[test]
@@ -492,15 +576,20 @@ mod tests {
 
     /// The sign-in runs Codex's own login against the private directory, from inside it,
     /// and never against the real home: `codex login` revokes whatever it finds stored in
-    /// the home it is given before it signs in.
+    /// the home it is given before it signs in. It names the file store before `login`, where
+    /// Codex's own command line takes a `-c`, so no setting of `/etc/codex` or of a project
+    /// sends the new login where it cannot be read back.
     #[test]
     fn a_sign_in_is_codex_login_in_the_private_directory() {
         let dir = std::path::Path::new("/tmp/pitboard-signin-scratch");
         let ctx = Context::new(std::path::PathBuf::from("/nowhere"))
             .with_codex_program(std::path::PathBuf::from("/opt/codex/bin/codex"));
-        let command = Codex.sign_in(&ctx, dir);
+        let command = Codex.sign_in(&ctx, Permit::for_a_test(), dir);
         assert_eq!(command.get_program(), "/opt/codex/bin/codex");
-        assert_eq!(command.get_args().collect::<Vec<_>>(), ["login"]);
+        assert_eq!(
+            command.get_args().collect::<Vec<_>>(),
+            ["-c", "cli_auth_credentials_store=\"file\"", "login"]
+        );
         assert_eq!(command.get_current_dir(), Some(dir));
         let home = command
             .get_envs()
@@ -512,6 +601,7 @@ mod tests {
     /// What a sign-in left is read from the private directory's own `auth.json`, whatever
     /// `CODEX_HOME` this process has.
     #[test]
+    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_sign_in_is_read_back_from_the_private_directory() {
         let dir = std::env::temp_dir().join(format!(
             "pitboard-codex-readback-{}-{:?}",
@@ -533,6 +623,7 @@ mod tests {
     /// A keychain store is refused with a reason rather than read: every read of an item
     /// Codex made for itself would put a permission prompt in front of the person.
     #[test]
+    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_keychain_store_is_refused_with_a_reason_and_never_read() {
         let dir = std::env::temp_dir().join(format!(
             "pitboard-codex-keyring-{}-{:?}",
@@ -549,7 +640,146 @@ mod tests {
             .with_codex_home(dir.to_string_lossy().into_owned());
         let refused = Codex.live(&ctx).err().expect("refused");
         assert!(matches!(refused, ProviderError::Unsupported { .. }));
-        assert!(refused.to_string().contains("keychain"), "{refused}");
+        let config = dir.join("config.toml");
+        assert_eq!(
+            refused.to_string(),
+            format!(
+                "this machine's Codex keeps its login in the keychain \
+                 (`cli_auth_credentials_store = \"keyring\"` in {config}). Pitboard handles \
+                 Codex's file store, auth.json, and does not read an item Codex created for \
+                 itself, because every read would ask you for permission. To use the file \
+                 store, set `cli_auth_credentials_store = \"file\"` in {config}, then sign in \
+                 again with `codex login`",
+                config = config.display()
+            )
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A store pinned by `/etc/codex/requirements.toml` is refused naming that file, since no
+    /// line in the person's own config can change it, and so is a sign-in under it. One that
+    /// cannot be read is refused rather than taken for the file.
+    #[test]
+    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
+    fn a_store_an_administrator_set_is_refused_naming_where() {
+        let host = crate::host::memory::MemoryHost::new();
+        let ctx = Context::for_unit_test().with_memory_stores(host.clone());
+        assert!(Codex.live(&ctx).is_ok(), "nothing set is the file");
+        host.administers(
+            "/etc/codex/requirements.toml",
+            "cli_auth_credentials_store = \"ephemeral\"\n",
+        );
+        let refused = Codex.live(&ctx).err().expect("refused").to_string();
+        assert_eq!(
+            refused,
+            "this machine's Codex keeps its login in memory only (pinned to `ephemeral` by \
+             /etc/codex/requirements.toml), so there is nothing at rest to park or switch. No \
+             line in your own config.toml can change it: /etc/codex/requirements.toml pins \
+             it, and only an administrator can change that"
+        );
+        assert!(matches!(
+            Codex.private_signin_isolation(&ctx),
+            Isolation::NotIsolated { reason } if reason.contains("/etc/codex/requirements.toml")
+        ));
+
+        host.administers("/etc/codex/requirements.toml", "[[");
+        let refused = Codex.live(&ctx).err().expect("refused").to_string();
+        assert_eq!(
+            refused,
+            "Pitboard cannot tell where this machine's Codex keeps its login: \
+             /etc/codex/requirements.toml is not TOML Codex can read, at line 1. Codex \
+             0.160.0 does not start until that is put right"
+        );
+    }
+
+    /// A `profile = "<name>"` line chooses its profile, whose table holds no store Codex
+    /// reads, so where the layers choose the file the live login is the file's, where it was
+    /// refused for the line. A line naming a profile no table defines is refused, saying
+    /// what each Codex does with it.
+    #[test]
+    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
+    fn a_profile_line_is_read_as_choosing_its_profile() {
+        let host = crate::host::memory::MemoryHost::new();
+        let ctx = Context::for_unit_test().with_memory_stores(host.clone());
+        host.administers(
+            "/etc/codex/config.toml",
+            "profile = \"work\"\n[profiles.work]\ncli_auth_credentials_store = \"keyring\"\n",
+        );
+        assert!(
+            Codex.live(&ctx).is_ok(),
+            "a chosen profile, its store not read"
+        );
+
+        host.administers("/etc/codex/config.toml", "profile = \"work\"\n");
+        let refused = Codex.live(&ctx).err().expect("refused").to_string();
+        assert_eq!(
+            refused,
+            "Pitboard cannot tell where this machine's Codex keeps its login: \
+             /etc/codex/config.toml sets `profile = \"work\"`, a profile no `[profiles.work]` \
+             table defines. Codex 0.160.0 does not start with that line, and an older Codex, \
+             such as 0.99.0, which chooses a profile with it, refuses one no table defines: \
+             \"config profile `work` not found\""
+        );
+    }
+
+    /// Where `/etc/codex/managed_config.toml` or `/etc/codex/requirements.toml` chooses the
+    /// file over a keychain or memory store in the person's own `config.toml`, Codex keeps
+    /// its login in `auth.json`, so the account is switched there rather than refused, as it
+    /// was while Pitboard read the person's `config.toml` alone.
+    #[test]
+    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
+    fn a_file_store_an_administrator_set_is_over_the_persons_own() {
+        let dir = std::env::temp_dir().join(format!(
+            "pitboard-codex-over-own-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::create_dir_all(&dir).expect("a scratch home");
+        let ctx_for = |host: &std::sync::Arc<crate::host::memory::MemoryHost>| {
+            Context::for_unit_test()
+                .with_codex_home(dir.to_string_lossy().into_owned())
+                .with_memory_stores(host.clone())
+        };
+        for own in ["keyring", "auto", "ephemeral"] {
+            std::fs::write(
+                dir.join("config.toml"),
+                format!("cli_auth_credentials_store = \"{own}\"\n"),
+            )
+            .expect("a config");
+            for over in [
+                "/etc/codex/managed_config.toml",
+                "/etc/codex/requirements.toml",
+            ] {
+                let host = crate::host::memory::MemoryHost::new();
+                let ctx = ctx_for(&host);
+                assert!(Codex.live(&ctx).is_err(), "{own} alone is refused");
+                host.administers(over, "cli_auth_credentials_store = \"file\"\n");
+                let live = Codex.live(&ctx).expect("the file, which Pitboard switches");
+                assert_eq!(live.service, paths::AUTH_FILE, "{own} under {over}");
+                assert_eq!(Codex.private_signin_isolation(&ctx), Isolation::Isolated);
+            }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A store of the person's own does not reach a sign-in, whose `-c` names the file over
+    /// it, so the sign-in is isolated where the live login is refused.
+    #[test]
+    fn a_store_of_the_persons_own_does_not_reach_a_sign_in() {
+        let dir = std::env::temp_dir().join(format!(
+            "pitboard-codex-own-ephemeral-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::create_dir_all(&dir).expect("a scratch home");
+        std::fs::write(
+            dir.join("config.toml"),
+            "cli_auth_credentials_store = \"ephemeral\"\n",
+        )
+        .expect("a config");
+        let ctx = Context::for_unit_test().with_codex_home(dir.to_string_lossy().into_owned());
+        assert!(Codex.live(&ctx).is_err());
+        assert_eq!(Codex.private_signin_isolation(&ctx), Isolation::Isolated);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -558,7 +788,7 @@ mod tests {
     #[test]
     fn nothing_follows_a_codex_switch_and_a_park_is_never_a_copy() {
         assert!(matches!(
-            Codex.adoption(),
+            Codex.adoption(None),
             Adoption::RestartRequired {
                 program: "codex",
                 ..
@@ -595,6 +825,7 @@ mod tests {
                 .read_sign_in(&format!("{SAID}Paste code here if prompted > "))
                 .wants_code
         );
+        assert!(!Codex.refused_code("Invalid code. Please make sure the full code was copied.\n"));
     }
 
     /// The loopback line the conformance run looks for is one this passes over, so a build

@@ -1,16 +1,18 @@
 //! What Pitboard says in more than one place, each written once as a function of typed
 //! values: its sentences, the words of its columns, and the level a limit's usage is at,
 //! where the command line's colours and the app's tints change. The command line calls
-//! these functions directly. The macOS app calls the ones it shows through `pitboard-ffi`,
-//! which exports a free function of the same name for each, so where both say a thing they
-//! say it in the same words. A thing said both in a column and in a sentence, such as a
-//! limit's name or a parked login's life, has a function for each form.
+//! these functions directly, and `pitboard-ffi`'s model calls them as it makes what an app
+//! shows, so where both say a thing they say it in the same words. The bindings export none
+//! of them: an app shows what the snapshot says. A thing said both in a column and in a
+//! sentence, such as a limit's name or a parked login's life, has a function for each form.
 //!
 //! All of it is English. Clock times are not here: the command line writes them with
 //! `time::moment`, and the app in the format its Mac is set to.
 
 use crate::doctor::{Level, renewal_due};
-use crate::history::Runway;
+use crate::host::{Os, WINDOWS_FLOOR, token};
+use crate::pace::{Pace, Standing};
+use crate::usage::whole;
 
 const MINUTE: i64 = 60;
 const HOUR: i64 = 60 * MINUTE;
@@ -82,6 +84,286 @@ pub fn limit_name(kind: &str, length_seconds: Option<i64>) -> String {
     }
 }
 
+/// How much of a limit an account has used, in a sentence about an automatic switch:
+/// "96% of its 5-hour limit", or "97% of its weekly Opus limit" for one limit of a model.
+pub fn share_of_limit(limit: &crate::usage::Window) -> String {
+    let name = scoped_limit_name(&limit.kind, limit.length_seconds, limit.scope.as_deref());
+    format!("{}% of its {name} limit", whole(limit.percent))
+}
+
+/// What the automatic switch watches where it has nothing to do: "Watching work: 62% of its
+/// 5-hour limit, as of 16:40." `used` is [`share_of_limit`] of its fullest limit, and the
+/// clock times come as each front end writes them: `as_of`, when that was read, and
+/// `held_until`, until when Anthropic holds Pitboard off asking about the account.
+pub fn watching(
+    account: &str,
+    used: Option<&str>,
+    as_of: Option<&str>,
+    held_until: Option<&str>,
+) -> String {
+    let mut said = format!("Watching {account}");
+    if let Some(used) = used {
+        said.push_str(&format!(": {used}"));
+    }
+    if let Some(as_of) = as_of {
+        said.push_str(&format!(", as of {as_of}"));
+    }
+    said.push('.');
+    if let Some(until) = held_until {
+        said.push_str(&format!(
+            " Anthropic holds Pitboard off asking again until {until}."
+        ));
+    }
+    said
+}
+
+/// Why Pitboard does not switch Claude Code away from a limit at `threshold`, as a clause
+/// that says what to do about it where anything can be done. It names no command, and no
+/// time, which each front end says in its own way: the app says it too.
+pub fn not_switching(
+    why: &crate::autoswitch::Skip,
+    threshold: crate::autoswitch::Threshold,
+) -> String {
+    use crate::autoswitch::{ATTEMPTS, SETTLING_SECONDS, Skip};
+    match why {
+        Skip::NoRoom { unread } => {
+            let room = format!(
+                "no other Claude Code account has room below {}% in every limit",
+                threshold.percent()
+            );
+            if unread.is_empty() {
+                room
+            } else {
+                format!(
+                    "{room}, and there is no reading of {} from Anthropic yet",
+                    listed(unread.clone())
+                )
+            }
+        }
+        Skip::AlreadyLeft => {
+            "this limit was switched away from once already, and is not again before it resets"
+                .into()
+        }
+        Skip::GaveUp => format!(
+            "{ATTEMPTS} attempts to switch away from this limit failed, and none is made again \
+             before it resets"
+        ),
+        Skip::Settling { .. } => format!(
+            "the account was put in use less than {} minutes ago",
+            SETTLING_SECONDS / 60
+        ),
+        Skip::Overridden(names) => format!(
+            "Claude Code signs in another way, set by {}, so a switch would change nothing its \
+             sessions use",
+            names.join(", ")
+        ),
+    }
+}
+
+/// Why Pitboard cannot judge whether to switch Claude Code by itself, as a clause that says
+/// what to do about it where anything can be done. It names no command, and no time, which
+/// each front end says in its own way.
+pub fn not_watching(why: &crate::autoswitch::Blind) -> String {
+    use crate::autoswitch::Blind;
+    match why {
+        Blind::SwitchInterrupted => {
+            "a switch was interrupted, and the next change you make finishes it".into()
+        }
+        Blind::CustomOauth => "Claude Code uses a custom OAuth endpoint, and Pitboard does not \
+                               act on Claude Code then"
+            .into(),
+        Blind::NothingSignedIn => "Claude Code has no login stored".into(),
+        Blind::NotEnrolled { email } => {
+            format!("Claude Code has {email}'s login stored, and that account is not enrolled")
+        }
+        Blind::Unidentified { detail, .. } => {
+            format!("whose login Claude Code has stored could not be told ({detail})")
+        }
+        Blind::NoReading { account } => {
+            format!("there is no reading of {account} from Anthropic yet")
+        }
+    }
+}
+
+/// What sessions already running do after a switch while a file sits behind the store they
+/// read, as the register's `fallback_file_pins_session_login` reads Claude Code 2.1.294. The
+/// rest of the sentence, and its subject, are each place's own.
+pub fn kept_until_renewed() -> &'static str {
+    "keep the account they are on until their login is next renewed, or until they are \
+     started again"
+}
+
+/// What is said where nothing is left behind the store Claude Code keeps its login in, as
+/// `pitboard stow` and the app's sheet say it. On Linux the file is that store.
+pub fn nothing_left() -> &'static str {
+    "Nothing is left behind the store Claude Code keeps its login in, so there is nothing to \
+     put away."
+}
+
+/// What `pitboard stow` and the app's sheet say of the file behind Claude Code's store before
+/// it is put away, a paragraph each: what it holds and what putting it away would do with
+/// that, the keys that would go with it, and what becomes of Claude Code's sessions once it is
+/// gone. Of a login of an account nobody enrolled, whose it is and what to do first.
+pub fn left_lines(left: &crate::switch::Left) -> Vec<String> {
+    use crate::switch::{Foreseen, Kept};
+    if let Foreseen::NotEnrolled(_) = left.login {
+        return vec![left_login(left)];
+    }
+    let held_a_login = left.login != Foreseen::Kept(Kept::NoLogin);
+    std::iter::once(left_login(left))
+        .chain(dropped_keys(&left.dropped, false))
+        .chain(std::iter::once(once_stowed(held_a_login)))
+        .collect()
+}
+
+/// What they say once it is put away, a paragraph each.
+pub fn stowed_lines(stowed: &crate::switch::Stowed) -> Vec<String> {
+    let held_a_login = stowed.kept != crate::switch::Kept::NoLogin;
+    std::iter::once(stowed_login(stowed))
+        .chain(dropped_keys(&stowed.dropped, true))
+        .chain(std::iter::once(once_stowed(held_a_login)))
+        .collect()
+}
+
+/// What the file holds, and what putting it away would do with the login in it.
+fn left_login(left: &crate::switch::Left) -> String {
+    use crate::switch::{Foreseen, Kept};
+    let path = left.path.display();
+    match &left.login {
+        Foreseen::Kept(Kept::NoLogin) => {
+            format!("{path} holds no Claude Code login. Putting it away deletes it.")
+        }
+        Foreseen::Kept(Kept::Refused) => format!(
+            "{path} holds a Claude Code login Anthropic no longer accepts. Putting it away \
+             deletes it."
+        ),
+        Foreseen::Kept(Kept::Stored { label }) => format!(
+            "{path} holds the login Claude Code has stored{}. Putting it away deletes the file, \
+             and that login stays where it is.",
+            of_account(label.as_deref())
+        ),
+        Foreseen::Kept(Kept::AlreadyParked { label }) => format!(
+            "{path} holds the login Pitboard keeps parked for `{label}`. Putting it away deletes \
+             the file, and the parked login stays."
+        ),
+        Foreseen::Kept(Kept::SecondSignIn { label }) => format!(
+            "{path} holds another login of `{label}`, the account in use, whose own login Claude \
+             Code has stored. Putting it away drops this second sign-in with the file."
+        ),
+        Foreseen::Kept(Kept::ParkedNow { label }) => format!(
+            "{path} holds `{label}`'s login, and Pitboard holds no parked login of `{label}` to \
+             keep in its place. Putting it away parks this one for `{label}`, then deletes the \
+             file."
+        ),
+        Foreseen::Kept(Kept::ParkKept { label }) => format!(
+            "{path} holds another login of `{label}`, which keeps the login Pitboard has parked \
+             for it. Putting it away deletes the file."
+        ),
+        Foreseen::NotEnrolled(owner) => format!(
+            "{path} holds {}'s login{}, an account not enrolled here, so Pitboard cannot put it \
+             away. Enrol that account first, with `pitboard enroll <label> --sign-in`, or with \
+             `pitboard enroll <label>` while Claude Code is signed in to it.",
+            owner.email,
+            in_organisation(&owner.organization_uuid)
+        ),
+        Foreseen::Untold => format!(
+            "{path} holds a Claude Code login whose access token has expired. Putting it away \
+             renews it and writes it back to the file first, then asks Anthropic whose it is, \
+             and goes on only for an account enrolled here."
+        ),
+    }
+}
+
+/// What putting the file away did with the login it held.
+fn stowed_login(stowed: &crate::switch::Stowed) -> String {
+    use crate::switch::Kept;
+    let path = stowed.path.display();
+    match &stowed.kept {
+        Kept::NoLogin => format!("Deleted {path}, which held no Claude Code login."),
+        Kept::Refused => format!(
+            "Deleted {path}: Anthropic no longer accepts the login it held, so that login was \
+             no longer valid."
+        ),
+        Kept::Stored { label } => format!(
+            "Deleted {path}, which held the login Claude Code has stored{}. That login stays \
+             where it is.",
+            of_account(label.as_deref())
+        ),
+        Kept::AlreadyParked { label } => {
+            format!("Deleted {path}, which held the login Pitboard keeps parked for `{label}`.")
+        }
+        Kept::SecondSignIn { label } => format!(
+            "Deleted {path}, which held a second sign-in of `{label}`, the account in use. That \
+             login was dropped; the one Claude Code has stored stays."
+        ),
+        Kept::ParkedNow { label } => {
+            format!("Parked the login {path} held for `{label}`, then deleted the file.")
+        }
+        Kept::ParkKept { label } => format!(
+            "Deleted {path}, which held another login of `{label}`. `{label}` keeps the login \
+             Pitboard had parked for it."
+        ),
+    }
+}
+
+/// The other keys the file holds, which go with it unmoved, by name and how many: `None`
+/// where it holds none. `gone` once the file has gone.
+fn dropped_keys(keys: &[String], gone: bool) -> Option<String> {
+    let one = match keys.len() {
+        0 => return None,
+        n => n == 1,
+    };
+    let names = listed(keys.iter().map(|key| format!("`{key}`")).collect());
+    let (holds, goes) = match (gone, one) {
+        (false, true) => ("holds", "goes"),
+        (false, false) => ("holds", "go"),
+        (true, _) => ("held", "went"),
+    };
+    let (count, them) = if one {
+        ("1 other key".to_string(), "it")
+    } else {
+        (format!("{} other keys", keys.len()), "them")
+    };
+    Some(format!(
+        "It also {holds} {count}, {names}, which {goes} with the file: Pitboard does not move \
+         {them}, and Claude Code's document in the keychain keeps its own."
+    ))
+}
+
+/// What becomes of Claude Code's sessions once the file is gone: each takes the login stored
+/// again, and one that signed in with a login in the file, as one over SSH does, is signed
+/// out.
+fn once_stowed(held_a_login: bool) -> String {
+    let follow = format!(
+        "Once the file is gone, Claude Code sessions already running follow a switch within \
+         {} seconds again",
+        crate::switch::ADOPTION_CEILING_SECONDS
+    );
+    if held_a_login {
+        format!(
+            "{follow}, and one that signed in with its login, such as one over SSH, is signed \
+             out."
+        )
+    } else {
+        format!("{follow}.")
+    }
+}
+
+/// `label`'s, after a login that is an enrolled account's, where it is one.
+fn of_account(label: Option<&str>) -> String {
+    label.map_or_else(String::new, |label| format!(", `{label}`'s"))
+}
+
+/// The organisation a Claude Code login is of, as a sentence names it after its email: none
+/// for an account outside one, which Anthropic reports as an empty id.
+pub(crate) fn in_organisation(organization: &str) -> String {
+    if organization.is_empty() {
+        String::new()
+    } else {
+        format!(", in organisation {organization}")
+    }
+}
+
 /// How much of a limit is used, in three steps. The command line's colours and the app's
 /// tints change where these do, and the words always say the number itself, because not
 /// everybody sees a colour.
@@ -96,14 +378,13 @@ pub enum UsageLevel {
 }
 
 /// The step a limit is at, from the share of it used: `percent` as a reading gives it, which
-/// passes 100 when a service reports more used than the limit.
+/// passes 100 when a service reports more used than the limit. Taken as its figure is
+/// drawn, so a limit drawn at 90% is in the colour of 90%.
 pub fn usage_level(percent: f64) -> UsageLevel {
-    if percent >= 90.0 {
-        UsageLevel::Out
-    } else if percent >= 70.0 {
-        UsageLevel::Low
-    } else {
-        UsageLevel::Plenty
+    match whole(percent) {
+        90.. => UsageLevel::Out,
+        70.. => UsageLevel::Low,
+        _ => UsageLevel::Plenty,
     }
 }
 
@@ -118,19 +399,40 @@ pub fn resets(at: i64, now: i64) -> String {
     }
 }
 
-/// How long an account lasts, which is the question the whole tool exists for: "about 1h
-/// 30m left at this rate" while a limit fills, or "resets in 1h 30m" when its reset comes
-/// first. The difference is between "switch soon" and "whole again soon". Under a minute it
-/// is said in words, "about to run out" or "resets any moment", which read more plainly in
-/// a sentence than "<1m". Nothing until there is enough to go on.
-pub fn runway(runway: Runway) -> Option<String> {
-    Some(match runway {
-        Runway::Burning(seconds) if seconds < MINUTE => "about to run out".into(),
-        Runway::Burning(seconds) => format!("about {} left at this rate", span(seconds)),
-        Runway::Resting(seconds) if seconds < MINUTE => "resets any moment".into(),
-        Runway::Resting(seconds) => format!("resets in {}", span(seconds)),
-        Runway::Unknown => return None,
-    })
+/// How far a limit is from an even pace, beside its bar: "27% over pace", "13% under
+/// pace", "on pace". Over and under rather than ahead and behind, since ahead reads as good
+/// news and is the warning.
+pub fn pace_column(pace: &Pace) -> String {
+    let points = whole(pace.delta.abs());
+    match pace.standing {
+        Standing::Over { .. } => format!("{points}% over pace"),
+        Standing::Under => format!("{points}% under pace"),
+        Standing::Even => "on pace".into(),
+    }
+}
+
+/// A limit's name in a sentence with its model, where it is scoped to one: "weekly",
+/// "weekly Fable", "5-hour".
+pub fn scoped_limit_name(kind: &str, length_seconds: Option<i64>, scope: Option<&str>) -> String {
+    let name = limit_name(kind, length_seconds);
+    match scope {
+        Some(scope) => format!("{name} {scope}"),
+        None => name,
+    }
+}
+
+/// The limit of an account that runs out first at its pace, named as a sentence names it:
+/// "weekly limit runs out in 19h 05m at this pace". Under a minute it is "about to run
+/// out", which reads more plainly than "<1m".
+pub fn runs_out(limit: &str, in_seconds: i64) -> String {
+    if in_seconds < MINUTE {
+        format!("{limit} limit is about to run out")
+    } else {
+        format!(
+            "{limit} limit runs out in {} at this pace",
+            span(in_seconds)
+        )
+    }
 }
 
 /// How long a parked login stays usable, in the sentence form: a note under an account not
@@ -176,6 +478,20 @@ pub fn renewal_note(due: usize, renewed: usize) -> String {
     }
 }
 
+/// A login as a message names it: by its email, and as another organisation's, or for
+/// Codex another workspace's, where the account it is told apart from has that email too.
+pub fn login(tool: crate::provider::ProviderId, email: &str, shares_email: bool) -> String {
+    use crate::provider::ProviderId;
+    if !shares_email {
+        return email.to_owned();
+    }
+    let group = match tool {
+        ProviderId::Claude => "organisation",
+        ProviderId::Codex => "workspace",
+    };
+    format!("{email} in another {group}")
+}
+
 /// The line under doctor's checks, or over them in the app. Checks that only warn are
 /// counted as worth looking at. One that fails outweighs every warning: the line then
 /// counts what is broken and says not to switch accounts, since a check fails only when
@@ -197,9 +513,245 @@ pub fn doctor_summary(levels: impl IntoIterator<Item = Level>) -> String {
     }
 }
 
+pub(crate) struct ChangesNothing {
+    pub(crate) refusal: String,
+    // No full stop: a read's warning goes on from it with ", so it changes nothing".
+    pub(crate) because: String,
+    pub(crate) way_out: &'static str,
+    pub(crate) to_ask_again: &'static str,
+}
+
+// On macOS and Linux root and sudo share one refusal, since the way out is the same.
+pub(crate) fn elevated(os: Os, why: Option<&'static str>) -> ChangesNothing {
+    let because = |cannot_tell: &str| match why {
+        Some(why) => format!("Pitboard runs {why}"),
+        None => format!("Pitboard cannot tell whether it runs {cannot_tell}"),
+    };
+    match os {
+        Os::MacOs | Os::Linux => ChangesNothing {
+            refusal: match why {
+                Some(_) => "Pitboard changes nothing when it runs as root or with sudo. Run it as \
+                            yourself."
+                    .into(),
+                None => "Pitboard changes nothing when it cannot tell whether it runs as root or \
+                         with sudo. Run it as yourself."
+                    .into(),
+            },
+            because: because("as root or with sudo"),
+            way_out: "Run it as yourself.",
+            to_ask_again: "Run it as yourself to ask again.",
+        },
+        Os::Windows => {
+            let (way_out, to_ask_again) = match why {
+                Some(token::IN_EVERY_PROGRAM) => (
+                    "That is so with User Account Control off and in the built-in Administrator \
+                     account: run it from a standard account, or turn User Account Control on.",
+                    "Run it from a standard account, or with User Account Control on, to ask \
+                     again.",
+                ),
+                _ => (
+                    "Run it from a terminal that is not elevated (not Run as administrator).",
+                    "Run it from a terminal that is not elevated to ask again.",
+                ),
+            };
+            ChangesNothing {
+                refusal: match why {
+                    Some(why) => format!("Pitboard changes nothing when it runs {why}. {way_out}"),
+                    None => format!(
+                        "Pitboard changes nothing when it cannot tell whether it runs elevated. \
+                         {way_out}"
+                    ),
+                },
+                because: because("elevated"),
+                way_out,
+                to_ask_again,
+            }
+        }
+    }
+}
+
+pub(crate) fn too_old(build: Option<u32>) -> ChangesNothing {
+    let way_out = "It changes things on Windows 11 24H2 and later, and on Windows Server 2025: \
+                   update Windows to use it here.";
+    let to_ask_again = "Update Windows to ask again.";
+    match build {
+        Some(build) => ChangesNothing {
+            refusal: format!("Pitboard changes nothing on Windows build {build}. {way_out}"),
+            because: format!(
+                "Pitboard runs on Windows build {build}, older than Windows 11 24H2 (build \
+                 {WINDOWS_FLOOR})"
+            ),
+            way_out,
+            to_ask_again,
+        },
+        None => ChangesNothing {
+            refusal: format!(
+                "Pitboard changes nothing when it cannot tell which build of Windows it runs \
+                 on. {way_out}"
+            ),
+            because: "Pitboard cannot tell which build of Windows it runs on".into(),
+            way_out,
+            to_ask_again,
+        },
+    }
+}
+
+/// Things one after another, as a sentence lists them: "a", "a and b", "a, b and c".
+pub(crate) fn listed(mut items: Vec<String>) -> String {
+    match items.len() {
+        0 => String::new(),
+        1 => items.remove(0),
+        _ => {
+            let last = items.pop().unwrap_or_default();
+            format!("{} and {last}", items.join(", "))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Why Pitboard did not switch by itself is said in the app as well as in a terminal,
+    /// so it names no command: the app gives up on an interrupted switch with a button.
+    #[test]
+    fn why_it_did_not_switch_names_no_command() {
+        use crate::autoswitch::{Blind, Skip, Threshold};
+        for why in [
+            Skip::NoRoom {
+                unread: vec!["spare".into()],
+            },
+            Skip::AlreadyLeft,
+            Skip::GaveUp,
+            Skip::Settling { until: 0 },
+            Skip::Overridden(vec!["apiKeyHelper".into()]),
+        ] {
+            let said = not_switching(&why, Threshold::DEFAULT);
+            assert!(!said.contains("pitboard "), "{why:?}");
+        }
+        for why in [
+            Blind::SwitchInterrupted,
+            Blind::CustomOauth,
+            Blind::NothingSignedIn,
+            Blind::NotEnrolled {
+                email: "me@example.com".into(),
+            },
+            Blind::Unidentified {
+                detail: "could not reach Anthropic: no route to host".into(),
+                until: 0,
+            },
+            Blind::NoReading {
+                account: "work".into(),
+            },
+        ] {
+            assert!(!not_watching(&why).contains("pitboard "), "{why:?}");
+        }
+    }
+
+    #[test]
+    fn root_and_sudo_are_told_to_run_it_as_themselves() {
+        for os in [Os::MacOs, Os::Linux] {
+            for why in ["as root", "with sudo"] {
+                let said = elevated(os, Some(why));
+                assert_eq!(
+                    said.refusal,
+                    "Pitboard changes nothing when it runs as root or with sudo. Run it as \
+                     yourself."
+                );
+                assert_eq!(said.because, format!("Pitboard runs {why}"));
+                assert_eq!(said.way_out, "Run it as yourself.");
+                assert_eq!(said.to_ask_again, "Run it as yourself to ask again.");
+            }
+            let unknown = elevated(os, None);
+            assert_eq!(
+                unknown.refusal,
+                "Pitboard changes nothing when it cannot tell whether it runs as root or with \
+                 sudo. Run it as yourself."
+            );
+            assert_eq!(
+                unknown.because,
+                "Pitboard cannot tell whether it runs as root or with sudo"
+            );
+        }
+    }
+
+    #[test]
+    fn an_elevated_windows_run_is_told_which_terminal_to_use() {
+        let terminal = "Run it from a terminal that is not elevated (not Run as administrator).";
+        for (why, refusal) in [
+            (
+                Some(token::AS_ADMINISTRATOR),
+                "Pitboard changes nothing when it runs as administrator.",
+            ),
+            (
+                Some(token::AS_A_SERVICE_ACCOUNT),
+                "Pitboard changes nothing when it runs as a service account.",
+            ),
+            (
+                None,
+                "Pitboard changes nothing when it cannot tell whether it runs elevated.",
+            ),
+        ] {
+            let said = elevated(Os::Windows, why);
+            assert_eq!(said.refusal, format!("{refusal} {terminal}"), "{why:?}");
+            assert_eq!(said.way_out, terminal, "{why:?}");
+            assert_eq!(
+                said.to_ask_again,
+                "Run it from a terminal that is not elevated to ask again."
+            );
+        }
+        assert_eq!(
+            elevated(Os::Windows, Some(token::AS_ADMINISTRATOR)).because,
+            "Pitboard runs as administrator"
+        );
+        assert_eq!(
+            elevated(Os::Windows, None).because,
+            "Pitboard cannot tell whether it runs elevated"
+        );
+
+        let always = elevated(Os::Windows, Some(token::IN_EVERY_PROGRAM));
+        assert_eq!(
+            always.refusal,
+            "Pitboard changes nothing when it runs elevated, as every program this Windows \
+             account starts does. That is so with User Account Control off and in the \
+             built-in Administrator account: run it from a standard account, or turn User \
+             Account Control on."
+        );
+        assert_eq!(
+            always.because,
+            "Pitboard runs elevated, as every program this Windows account starts does"
+        );
+        assert_eq!(
+            always.to_ask_again,
+            "Run it from a standard account, or with User Account Control on, to ask again."
+        );
+    }
+
+    #[test]
+    fn an_old_windows_is_told_which_it_needs() {
+        let old = too_old(Some(22631));
+        assert_eq!(
+            old.refusal,
+            "Pitboard changes nothing on Windows build 22631. It changes things on Windows 11 \
+             24H2 and later, and on Windows Server 2025: update Windows to use it here."
+        );
+        assert_eq!(
+            old.because,
+            "Pitboard runs on Windows build 22631, older than Windows 11 24H2 (build 26100)"
+        );
+        assert_eq!(old.to_ask_again, "Update Windows to ask again.");
+        let unknown = too_old(None);
+        assert_eq!(
+            unknown.refusal,
+            "Pitboard changes nothing when it cannot tell which build of Windows it runs on. \
+             It changes things on Windows 11 24H2 and later, and on Windows Server 2025: update \
+             Windows to use it here."
+        );
+        assert_eq!(
+            unknown.because,
+            "Pitboard cannot tell which build of Windows it runs on"
+        );
+    }
 
     #[test]
     fn spans_read_at_a_glance() {
@@ -251,15 +803,15 @@ mod tests {
         );
     }
 
-    /// A limit turns amber at 70% and red at 90%, and stays red past 100%. The steps are
-    /// where its colour changes, so each side of each is checked.
+    /// A limit changes colour at 70% and at 90% as its figure says them, and stays red past
+    /// 100%. The steps are where its colour changes, so each side of each is checked.
     #[test]
     fn a_limits_level_changes_at_seventy_and_at_ninety() {
         assert_eq!(usage_level(0.0), UsageLevel::Plenty);
-        assert_eq!(usage_level(69.9), UsageLevel::Plenty);
-        assert_eq!(usage_level(70.0), UsageLevel::Low);
-        assert_eq!(usage_level(89.9), UsageLevel::Low);
-        assert_eq!(usage_level(90.0), UsageLevel::Out);
+        assert_eq!(usage_level(69.4), UsageLevel::Plenty);
+        assert_eq!(usage_level(69.5), UsageLevel::Low);
+        assert_eq!(usage_level(89.4), UsageLevel::Low);
+        assert_eq!(usage_level(89.5), UsageLevel::Out);
         assert_eq!(usage_level(100.0), UsageLevel::Out);
         assert_eq!(usage_level(130.0), UsageLevel::Out);
     }
@@ -284,54 +836,58 @@ mod tests {
         assert_eq!(resets(2 * 86_400 + 4 * 3600 + 59 * 60), "resets in 2d 4h");
     }
 
-    /// The difference between a limit filling and a limit resetting is the difference
-    /// between "switch now" and "stay where you are", and both are a number of seconds.
+    /// A limit in a sentence about an automatic switch has the figure it is drawn with.
     #[test]
-    fn a_runway_reads_as_burning_or_as_resting() {
-        assert_eq!(
-            runway(Runway::Burning(5400)).as_deref(),
-            Some("about 1h 30m left at this rate")
-        );
-        assert_eq!(
-            runway(Runway::Resting(5400)).as_deref(),
-            Some("resets in 1h 30m")
-        );
-        assert_eq!(
-            runway(Runway::Resting(3 * 86_400 + 7200)).as_deref(),
-            Some("resets in 3d 2h")
-        );
-        assert_eq!(runway(Runway::Unknown), None, "nothing to go on yet");
+    fn a_share_of_a_limit_is_said_as_it_is_drawn() {
+        let limit = |percent: f64| crate::usage::Window {
+            kind: "session".into(),
+            scope: None,
+            percent,
+            resets_at: None,
+            is_active: true,
+            severity: None,
+            length_seconds: Some(5 * HOUR),
+        };
+        assert_eq!(share_of_limit(&limit(94.5)), "95% of its 5-hour limit");
+        assert_eq!(share_of_limit(&limit(96.4)), "96% of its 5-hour limit");
     }
 
-    /// Under a minute a span would say "<1m", and a sentence says it more plainly: the limit
-    /// is about to run out, or its reset is any moment now. From a minute it is a span again.
+    /// A pace beside its bar is how far from even it is, said so that over reads as the
+    /// warning it is: "ahead" reads as good news.
     #[test]
-    fn under_a_minute_a_runway_is_said_in_words() {
+    fn a_pace_is_said_as_over_under_or_on() {
+        let pace = |delta: f64, standing| crate::pace::Pace {
+            expected: 40.0,
+            delta,
+            standing,
+        };
+        use crate::pace::Standing;
         assert_eq!(
-            runway(Runway::Burning(30)).as_deref(),
-            Some("about to run out")
+            pace_column(&pace(27.4, Standing::Over { runs_out_in: 9_000 })),
+            "27% over pace"
+        );
+        assert_eq!(pace_column(&pace(-12.6, Standing::Under)), "13% under pace");
+        assert_eq!(pace_column(&pace(3.0, Standing::Even)), "on pace");
+        assert_eq!(pace_column(&pace(-4.0, Standing::Even)), "on pace");
+    }
+
+    /// The limit that runs out first is named in the sentence, with its model where it has
+    /// one, and under a minute the sentence says it is about to.
+    #[test]
+    fn a_limit_running_out_is_named_with_when() {
+        assert_eq!(
+            runs_out("weekly", 19 * 3600 + 5 * 60),
+            "weekly limit runs out in 19h 05m at this pace"
         );
         assert_eq!(
-            runway(Runway::Burning(0)).as_deref(),
-            Some("about to run out")
+            runs_out(
+                &scoped_limit_name("weekly_scoped", Some(WEEK), Some("Fable")),
+                2 * DAY
+            ),
+            "weekly Fable limit runs out in 2d 0h at this pace"
         );
-        assert_eq!(
-            runway(Runway::Burning(-10)).as_deref(),
-            Some("about to run out")
-        );
-        assert_eq!(
-            runway(Runway::Resting(1)).as_deref(),
-            Some("resets any moment")
-        );
-        assert_eq!(
-            runway(Runway::Resting(59)).as_deref(),
-            Some("resets any moment")
-        );
-        assert_eq!(
-            runway(Runway::Burning(60)).as_deref(),
-            Some("about 1m left at this rate")
-        );
-        assert_eq!(runway(Runway::Resting(60)).as_deref(), Some("resets in 1m"));
+        assert_eq!(runs_out("5-hour", 30), "5-hour limit is about to run out");
+        assert_eq!(runs_out("5-hour", 0), "5-hour limit is about to run out");
     }
 
     /// When a parked login stops working decides whether a switch to it will. The sentence

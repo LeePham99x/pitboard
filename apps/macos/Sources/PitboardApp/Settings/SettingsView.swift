@@ -6,6 +6,8 @@ import SwiftUI
 /// Command-comma.
 struct SettingsView: View {
     let model: AppModel
+    let openAtLogin: OpenAtLogin
+    let commandLineLink: CommandLineLink
     let presence: AppPresence
     let updates: any Updates
 
@@ -19,10 +21,10 @@ struct SettingsView: View {
 
     var body: some View {
         TabView(selection: $tab) {
-            GeneralSettings(model: model, machine: model.machine)
+            GeneralSettings(model: model, openAtLogin: openAtLogin)
                 .tabItem { Label("General", systemImage: Symbol.general) }
                 .tag(Tab.general)
-            CommandLineSettings(machine: model.machine)
+            CommandLineSettings(model: model, link: commandLineLink)
                 .tabItem { Label("Command Line", systemImage: Symbol.terminal) }
                 .tag(Tab.commandLine)
             UpdatesSettings(updates: updates)
@@ -40,28 +42,33 @@ struct SettingsView: View {
 
 private struct GeneralSettings: View {
     let model: AppModel
-    let machine: MachineModel
+    let openAtLogin: OpenAtLogin
     @AppStorage(DefaultsKey.menuBarShows) private var shows = MenuBarShows.nameAndUsage
 
     var body: some View {
+        let schedule = model.machine.schedule
+        let renewal = model.machine.renewal
+        let auto = model.machine.autoSwitch
         Form {
             Section {
                 Toggle(
                     "Open Pitboard at login",
                     isOn: Binding(
-                        get: { machine.openAtLogin != .disabled },
-                        set: { machine.setOpenAtLogin($0) })
+                        get: { openAtLogin.state != .disabled },
+                        set: { openAtLogin.set($0) })
                 )
                 .accessibilityIdentifier("settings.openAtLogin")
-                if machine.openAtLogin == .requiresApproval {
+                if openAtLogin.state == .requiresApproval {
                     LabeledContent {
-                        Button("Open Login Items Settings…") { machine.openLoginItemSettings() }
+                        Button("Open Login Items Settings…") {
+                            openAtLogin.openSystemSettings()
+                        }
                     } label: {
                         Text("macOS is waiting for you to allow Pitboard in Login Items.")
                             .explanatory()
                     }
                 }
-                if let failed = machine.loginItemFailed {
+                if let failed = openAtLogin.failed {
                     Text(failed).explanatory()
                 }
                 Picker("Menu bar shows", selection: $shows) {
@@ -72,21 +79,51 @@ private struct GeneralSettings: View {
             }
 
             Section {
+                // Off unless somebody turns it on, and held back until the app's preferences
+                // are read, where a change would be lost under what they say.
+                Toggle(
+                    "Switch Claude Code automatically",
+                    isOn: Binding(
+                        get: { auto.on },
+                        set: { model.send(.setAutoSwitch(on: $0, at: auto.at)) })
+                )
+                .accessibilityIdentifier("settings.autoSwitch")
+                .disabled(!auto.enabled)
+                Stepper(
+                    auto.atLabel,
+                    value: Binding(
+                        get: { Int(auto.at) },
+                        set: { model.send(.setAutoSwitch(on: auto.on, at: UInt8($0))) }),
+                    in: Int(auto.lowest)...Int(auto.highest)
+                )
+                .accessibilityIdentifier("settings.autoSwitchAt")
+                .disabled(!auto.enabled || !auto.on)
+                if let standing = auto.standing {
+                    Text(standing)
+                        .explanatory()
+                        .accessibilityIdentifier("settings.autoSwitchStanding")
+                }
+            } header: {
+                Text("Before an account runs out")
+            } footer: {
+                Text(auto.note).footnote()
+            }
+
+            Section {
+                // Shows what was asked for while the scheduler answers, and cannot be pressed
+                // meanwhile; only turning it on is held back where this copy cannot, so a
+                // schedule that cannot work can still be taken away.
                 Toggle(
                     "Renew parked logins daily",
                     isOn: Binding(
-                        get: { machine.scheduling ?? machine.renewsDaily },
-                        set: { wanted in Task { await machine.setSchedule(on: wanted) } })
+                        get: { schedule.on }, set: { model.send(.setSchedule(on: $0)) })
                 )
                 .accessibilityIdentifier("settings.renewDaily")
-                // Only turning it on, so a schedule that cannot work can still be taken away.
-                .disabled(
-                    machine.scheduling != nil
-                        || (!machine.renewsDaily && machine.cannotSchedule != nil))
-                if case .installed(let path, let every) = machine.schedule {
-                    LabeledContent(
-                        "Runs",
-                        value: every == 86_400 ? "Every day" : "Every \(every / 3600) hours")
+                .disabled(!schedule.enabled)
+                if let runs = schedule.runs {
+                    LabeledContent("Runs", value: runs)
+                }
+                if let path = schedule.scheduledIn {
                     LabeledContent("Scheduled in") {
                         Text(path)
                             .foregroundStyle(.secondary)
@@ -94,22 +131,18 @@ private struct GeneralSettings: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
-                } else if case .unsupported = machine.schedule {
-                    Text("This Mac has no scheduler Pitboard knows how to write to.")
-                        .explanatory()
-                } else if let why = machine.cannotSchedule {
-                    Text(why).explanatory()
                 }
-                if let failed = machine.scheduleFailed {
+                if let note = schedule.note {
+                    Text(note).explanatory()
+                }
+                if let failed = schedule.failed {
                     Text(failed).explanatory()
                 }
                 LabeledContent {
-                    Button("Renew Now") { Task { await machine.renewNow() } }
-                        .disabled(machine.renewing)
+                    Button("Renew Now") { model.send(.renewNow) }
+                        .disabled(renewal.renewing)
                 } label: {
-                    Text(
-                        machine.renewals.map { renewalNote(renewals: $0) }
-                            ?? "Renew every parked login that is due.")
+                    Text(renewal.note)
                 }
             } header: {
                 Text("While you’re away")
@@ -123,69 +156,19 @@ private struct GeneralSettings: View {
                 )
                 .footnote()
             }
-
-            if model.desktopShown {
-                DesktopSettings(model: model)
-            }
         }
         .formStyle(.grouped)
         .task {
-            machine.readLoginItem()
-            await machine.readSchedule()
+            openAtLogin.read()
+            // A terminal can change the schedule while the app runs.
+            model.send(.readSchedule)
             // Approving Pitboard in Login Items happens in System Settings, and coming back
             // from there makes the app active again without showing this tab anew.
             for await _ in NotificationCenter.default.notifications(
                 named: NSApplication.didBecomeActiveNotification)
             {
-                machine.readLoginItem()
+                openAtLogin.read()
             }
-        }
-    }
-}
-
-/// Where Claude Desktop's numbers come from. Turning live usage on only shows the sheet that
-/// explains the keychain's prompt; its Continue is what turns it on.
-private struct DesktopSettings: View {
-    let model: AppModel
-
-    private var state: LiveUsageState {
-        model.liveUsage
-            ?? LiveUsageState(enabled: false, approval: "unknown", reason: nil, lastOkAt: nil)
-    }
-
-    var body: some View {
-        Section {
-            Toggle(
-                "Show live usage",
-                isOn: Binding(
-                    get: { state.enabled },
-                    set: { wanted in
-                        if wanted {
-                            model.liveUsageAsked()
-                        } else {
-                            Task { model.present(await model.liveUsageDisable()) }
-                        }
-                    })
-            )
-            .accessibilityIdentifier("settings.liveUsage")
-            if state.enabled, state.approval == "needs_approval" {
-                LabeledContent {
-                    Button("Allow Again…") { model.liveUsageAsked() }
-                } label: {
-                    Text(liveUsageLine(state)).explanatory()
-                }
-            } else {
-                Text(liveUsageLine(state)).explanatory()
-            }
-        } header: {
-            Text("Claude Desktop")
-        } footer: {
-            Text(
-                "Live usage asks claude.ai how much each Claude Desktop account has left, "
-                    + "which takes reading a key Claude keeps in your login keychain. "
-                    + "Switching accounts never reads it."
-            )
-            .footnote()
         }
     }
 }
@@ -194,54 +177,43 @@ private struct DesktopSettings: View {
 /// none. Only then: a `pitboard` found is one somebody installed, and a link in front of it
 /// would change what their terminal runs without saying so.
 private struct CommandLineSettings: View {
-    let machine: MachineModel
+    let model: AppModel
+    let link: CommandLineLink
 
     var body: some View {
+        let shown = model.machine.commandLine
         Form {
             Section {
-                switch machine.commandLine {
-                case .bundled(let path), .another(let path):
-                    LabeledContent("In your terminal") {
-                        Text(path).foregroundStyle(.secondary).textSelection(.enabled)
-                    }
-                case .nowhere:
-                    LabeledContent("In your terminal", value: "Not installed")
-                case nil:
-                    LabeledContent("In your terminal") {
+                LabeledContent("In your terminal") {
+                    if let found = shown.inTerminal {
+                        Text(found).foregroundStyle(.secondary).textSelection(.enabled)
+                    } else {
                         ProgressView().controlSize(.small)
                     }
                 }
-                if case .nowhere = machine.commandLine {
-                    if machine.commandLineTool.linkable {
-                        LabeledContent {
-                            Button("Install Command Line Tool…") {
-                                Task { await machine.installCommandLine() }
-                            }
-                            .disabled(machine.linking)
-                        } label: {
-                            Text(
-                                "Links \(machine.commandLineTool.link) to the one inside this "
-                                    + "app. macOS asks for an administrator’s password."
-                            )
-                            .explanatory()
+                if shown.offersLink {
+                    LabeledContent {
+                        Button("Install Command Line Tool…") {
+                            Task { await link.install() }
                         }
-                    } else if machine.commandLineTool.translocated {
+                        .disabled(link.linking)
+                    } label: {
                         Text(
-                            "Move Pitboard to your Applications folder first. Until then macOS "
-                                + "runs it from a temporary copy, and a link to that would break."
+                            "Links \(link.target) to the one inside this app. macOS asks for "
+                                + "an administrator’s password."
                         )
                         .explanatory()
                     }
+                } else if let cannot = shown.cannotLink {
+                    Text(cannot).explanatory()
                 }
-                if let failed = machine.linkFailed {
+                if let failed = link.failed {
                     Text(failed).explanatory()
                 }
             } footer: {
                 VStack(alignment: .leading, spacing: Design.rowSpacing) {
-                    switch machine.commandLine {
-                    case .bundled: Text(updateNote(bundled: true)).footnote()
-                    case .another: Text(updateNote(bundled: false)).footnote()
-                    default: EmptyView()
+                    if let note = shown.updateNote {
+                        Text(note).footnote()
                     }
                     // One literal, so its code spans are drawn as code.
                     Text(
@@ -256,7 +228,7 @@ private struct CommandLineSettings: View {
             }
         }
         .formStyle(.grouped)
-        .task { await machine.findCommandLine() }
+        .task { model.send(.lookForCommandLine) }
     }
 }
 

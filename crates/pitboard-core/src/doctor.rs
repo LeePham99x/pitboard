@@ -16,8 +16,9 @@ use crate::provider::claude::live as claude_live;
 use crate::provider::claude::paths as claude;
 use crate::provider::claude::slot;
 use crate::provider::codex::paths as codex;
+use crate::service::Stored;
 use crate::state::{Park, State};
-use crate::{home, park, store, switch, time, usage, words};
+use crate::{home, park, store, switch, time, words};
 use serde_json::{Value, json};
 use std::path::PathBuf;
 
@@ -77,24 +78,74 @@ pub struct Facts {
     /// Every reason a session here would authenticate as something other than the stored
     /// login, read from settings files as well as from this process's environment.
     pub auth_overrides: Vec<crate::settings::Override>,
+    /// What of those settings Pitboard does not read here, where it does not read them all:
+    /// Claude Code's managed settings on Windows, until W17.
+    pub auth_unread: Option<&'static str>,
     /// Accounts Pitboard is not asking Anthropic about yet, and for how long: (uuid, seconds).
     pub asking_held: Vec<(String, i64)>,
     pub state: Result<State, Error>,
+    /// Whose login Claude Code has stored, as Anthropic last said, where the account list
+    /// can be read.
+    pub in_use: Option<crate::in_use::Known>,
     /// Each enrolled account's parked login, read back from the vault.
     pub parks: Vec<ParkFact>,
     pub interrupted: bool,
+    /// The refusal the next change would make over the interrupted switch, where that
+    /// change could not finish it and that can be told without asking anybody.
+    pub stuck: Option<String>,
     /// What is read about Codex here, for the section that is about it.
     pub codex: CodexFacts,
-    /// What is read about Claude Desktop here, where it is installed or has accounts or
-    /// parks. `None` on a machine that has never had it, which then reads as it always did.
-    pub desktop: Option<DesktopFacts>,
     /// Whether Claude Code is on this machine at all: installed, run once, signed in, or
     /// holding enrolled accounts. A machine that uses only Codex is not told Claude Code is
     /// broken.
     pub claude_present: bool,
     /// The daily renewal schedule, where this home has one installed.
     pub schedule: Option<ScheduleFact>,
+    /// How Pitboard's requests leave this machine, as its environment says.
+    pub network: NetworkFact,
+    /// Whether this is the app's doctor, whose environment is the one the system started the
+    /// app with, not a shell's: the schedule's runs are started the same way, and given a
+    /// shell's proxy only where it was installed from one.
+    pub in_the_app: bool,
+    /// Whether this process runs as the person themselves, as the host says, which is what
+    /// the gate every change passes asks.
+    pub elevation: crate::host::Elevation,
+    /// Claude Code's fallback file, where it is behind the keychain holding the login in use.
+    pub fallback_login: Option<FallbackLogin>,
+    pub floor: crate::host::Floor,
     pub now: i64,
+}
+
+/// How Pitboard's requests leave this machine: directly, or through the HTTP proxy its
+/// environment names, read as ureq 3.4.2 reads one from a process's environment. A SOCKS
+/// proxy, which Pitboard does not use yet, fails each request it would have carried.
+pub struct NetworkFact {
+    /// The proxy the environment names, where it names one Pitboard can read.
+    pub proxy: Option<ProxyFact>,
+    /// The variables before it set to something that is not a proxy's address, which
+    /// Pitboard passes over, in the order it reads them.
+    pub passed_over: Vec<&'static str>,
+}
+
+/// The proxy the environment names.
+pub struct ProxyFact {
+    /// The variable that names it.
+    pub variable: &'static str,
+    /// Its scheme, host and port, with `***` for a user name or a password it holds.
+    pub address: String,
+    /// Its host and port, `proxy.example.com:3128`, as `address` shows them: the part of it
+    /// that can name the company whose network it is.
+    pub server: String,
+    /// Whether its host is loopback, this machine itself, which names nothing beyond it.
+    pub on_loopback: bool,
+    /// Whether it is a SOCKS proxy, which Pitboard does not use yet: a request to a host it
+    /// does not exempt fails before anything is sent, and one to a host it exempts goes out
+    /// directly.
+    pub socks: bool,
+    /// `NO_PROXY` or `no_proxy`, whichever is read, where either is set.
+    pub exempting: Option<&'static str>,
+    /// The hosts Pitboard calls that it exempts, which Pitboard reaches directly.
+    pub exempt: Vec<String>,
 }
 
 /// The daily renewal schedule as it is installed, read from the file Pitboard wrote and
@@ -106,51 +157,12 @@ pub struct ScheduleFact {
     pub program: Option<PathBuf>,
     /// Whether that Pitboard is still there to be run.
     pub program_found: bool,
-}
-
-/// What is read about Claude Desktop on this machine.
-///
-/// Read off disk alone: the app's bundle, its data folder's cookie database, and
-/// Pitboard's own parks, strays and journal. Never the keychain, and never even the stamp
-/// on Claude's key, so a doctor run asks nobody anything.
-pub struct DesktopFacts {
-    /// Whether the app's bundle is where the context says.
-    pub installed: bool,
-    /// Its version, as its bundle says.
-    pub version: Option<String>,
-    /// Where it keeps its data.
-    pub support_dir: Option<PathBuf>,
-    /// Whether that and Pitboard's parks are on one volume, where a move is a rename.
-    /// `None` where either is not there to be asked.
-    pub same_volume: Option<bool>,
-    /// The cookie database's `meta.version`, where there is one that could be read.
-    pub cookies_meta_version: Option<u32>,
-    /// Whether the two copies of the session cookie disagree.
-    pub twins_differ: bool,
-    /// Whether only this user can reach the parks directory. `None` where there is none.
-    pub parks_dir_private: Option<bool>,
-    /// How many parks are in it.
-    pub parks: usize,
-    /// The parks no account's record names, by directory name.
-    pub orphan_parks: Vec<String>,
-    /// What switches set aside rather than deleted.
-    pub strays: Strays,
-    /// Whether a switch of the app's folder did not finish.
-    pub recovery_pending: bool,
-    /// What is running from inside the app's bundle. `None` where that could not be asked.
-    pub running: Option<Vec<crate::holder::Holding>>,
-    /// Whether live usage is on, and whether macOS lets Pitboard read Claude's key, as last
-    /// recorded. Read from Pitboard's own file, never from the keychain.
-    pub live_usage: crate::status::LiveUsage,
-    /// The register's entries for Claude Desktop that have not been measured yet.
-    pub unverified_facts: Vec<&'static str>,
-}
-
-/// What is in Claude Desktop's strays directory.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Strays {
-    pub count: usize,
-    pub bytes: u64,
+    /// How its runs send requests, as the proxy variables its file gives them say: those of
+    /// the Pitboard that installed it, read as this run's are ([`Facts::network`]).
+    pub network: NetworkFact,
+    /// Whether its runs send requests another way than this run does: through another proxy
+    /// or none, with another user name or password, or with other hosts exempt.
+    pub network_differs: bool,
 }
 
 /// What is read about Codex CLI on this machine.
@@ -168,8 +180,17 @@ pub struct CodexFacts {
     /// Where Codex is configured to keep its login, in Codex's own words:
     /// `cli_auth_credentials_store`'s `file`, `keyring`, `auto` or `ephemeral`, or `secrets`
     /// for a keychain store with `[features] secret_auth_storage`, which Codex has no one
-    /// word for.
+    /// word for. `unknown` where a layer Codex reads it from is there and cannot be read as
+    /// Codex reads it, which stops Codex from starting.
     pub backend: &'static str,
+    /// The setting that chose it, in words that follow it in brackets: `Codex's default`,
+    /// `` `cli_auth_credentials_store = "keyring"` in /etc/codex/config.toml ``, or `pinned to
+    /// `keyring` by /etc/codex/requirements.toml`. For `unknown`, what cannot be read.
+    pub backend_setting: String,
+    /// What would choose the file store instead, as a sentence with no full stop: the line to
+    /// set and where, or who can. For `unknown`, what Codex does until what cannot be read is
+    /// put right, as sentences with no last full stop. Empty for the file.
+    pub backend_remedy: String,
     /// Where the default store keeps it.
     pub auth_file: PathBuf,
     /// Who can reach that file, where there is such a file.
@@ -218,12 +239,31 @@ pub struct ParkFact {
     /// The name a command on this machine takes for it: qualified where another tool has an
     /// account of the same name, since a bare one would then be ambiguous.
     pub name: String,
+    /// Whether its login is the one its tool has stored, as far as files say.
     pub active: bool,
-    /// When this account was last switched to, where that is recorded.
+    /// When this account last came to be in use, where that is recorded.
     pub last_used_at: Option<i64>,
     pub park: Option<Park>,
     /// Why it cannot be read back, if it cannot.
-    pub unreadable: Option<String>,
+    pub unreadable: Option<Unreadable>,
+}
+
+/// Why a parked login could not be read back.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Unreadable {
+    /// It is behind a keychain that is locked here, which says nothing about the login.
+    Locked,
+    /// Missing, damaged, or refused by the store, in words.
+    Broken(String),
+}
+
+/// Claude Code's plaintext fallback file, there while the keychain holds the login in use.
+pub struct FallbackLogin {
+    pub path: PathBuf,
+    /// A handle on the refresh token of the login it holds, never the token: `None` where
+    /// it holds no login, empty where that login has no refresh token, and why where what
+    /// it holds cannot be read.
+    pub fingerprint: Result<Option<String>, store::Error>,
 }
 
 impl ParkFact {
@@ -234,16 +274,16 @@ impl ParkFact {
 }
 
 fn park_facts(ctx: &Context, state: &State) -> Vec<ParkFact> {
-    // Who each tool's own record says is signed in, asked once per tool and only of a tool
-    // that has accounts here. Offline for every tool: Claude Code's config, a Codex login's
-    // own claims. Deciding it from Claude Code's config alone read a signed-in Codex
-    // account as one with nothing parked to switch to.
-    let recorded: std::collections::BTreeMap<ProviderId, Option<String>> = ProviderId::ALL
+    // Whose login each tool has stored, as its service last said, asked once per tool and
+    // only of a tool that has accounts here, and from files alone: Pitboard's record, and a
+    // Codex login's own claims. Never Claude Code's config, which a Claude Code process
+    // started or signed in on another login can rewrite with its own account.
+    let in_use: std::collections::BTreeMap<ProviderId, Option<crate::api::Owner>> = ProviderId::ALL
         .iter()
         .filter(|&&which| state.accounts.iter().any(|a| a.provider() == which))
         .map(|&which| {
-            let found = crate::provider::of(which).recorded_identity(ctx);
-            (which, found.map(|id| id.account_id))
+            let known = crate::in_use::known(ctx, state, which);
+            (which, known.owner().cloned())
         })
         .collect();
     state
@@ -254,25 +294,19 @@ fn park_facts(ctx: &Context, state: &State) -> Vec<ParkFact> {
             label: a.label.clone(),
             name: state.typed(&a.key()),
             last_used_at: a.last_used_at,
-            // What the account's own tool says, when it says anything. Pitboard's own
-            // record of its last switch says nothing about a sign-in made elsewhere.
-            active: match recorded.get(&a.provider()).and_then(Option::as_deref) {
-                Some(uuid) => a.account_uuid == uuid,
-                None => state.active_for(a.provider()) == Some(a.label.as_str()),
-            },
+            active: in_use
+                .get(&a.provider())
+                .and_then(Option::as_ref)
+                .is_some_and(|owner| a.owned_by(owner)),
             park: a.parked.clone(),
             unreadable: a.parked.as_ref().and_then(|p| {
-                // A folder login's park is a directory, never a keychain item: looking it up
-                // in the vault would always find it missing.
-                let read = if crate::provider::of(a.provider()).tree().is_some() {
-                    switch::check_tree_park(ctx, &a.label, a, p).map(|_| ())
-                } else {
-                    park::load(ctx, &a.key(), p).map(|_| ())
-                };
-                read.err().map(|e| match e {
-                    Error::ParkedCredentialMissing { .. } => "missing from the vault".into(),
-                    Error::ParkedCredentialCorrupt { detail, .. } => detail,
-                    other => other.to_string(),
+                park::load(ctx, &a.key(), p).err().map(|e| match e {
+                    Error::Store(store::Error::Locked) => Unreadable::Locked,
+                    Error::ParkedCredentialMissing { .. } => {
+                        Unreadable::Broken("missing from the vault".into())
+                    }
+                    Error::ParkedCredentialCorrupt { detail, .. } => Unreadable::Broken(detail),
+                    other => Unreadable::Broken(other.to_string()),
                 })
             }),
         })
@@ -315,16 +349,27 @@ pub fn gather(ctx: &Context) -> Facts {
         machine_id_known: crate::state::machine_id() != "unknown",
         hover_rest_env: ctx.hover_rest,
         daemon: daemon::read(ctx),
-        pending_parks: crate::pending::outstanding(ctx),
+        pending_parks: crate::pending::outstanding(ctx, state.as_ref().ok()),
         claude_version: claude::installed_version(ctx),
         auth_overrides: crate::settings::overrides(ctx),
+        auth_unread: crate::settings::unread(),
         asking_held: crate::budget::holds(ctx),
+        in_use: state
+            .as_ref()
+            .ok()
+            .map(|s| crate::in_use::known(ctx, s, ProviderId::Claude)),
         parks: state
             .as_ref()
             .map(|s| park_facts(ctx, s))
             .unwrap_or_default(),
         codex: codex_facts(ctx, state.as_ref().ok()),
-        desktop: desktop_facts(ctx, state.as_ref().ok()),
+        // Read as the next change reads it, without the one question it may put to a
+        // service: `doctor` sends no request.
+        stuck: state
+            .as_ref()
+            .ok()
+            .and_then(|s| switch::stuck(ctx, s, switch::Asking::Nobody))
+            .map(|refusal| refusal.to_string()),
         claude_present: claude::config_file(ctx).exists()
             || claude::program(ctx).is_some()
             || store::read_raw(&claude_live::chain(ctx), &service)
@@ -338,120 +383,46 @@ pub fn gather(ctx: &Context) -> Facts {
         interrupted: switch::interrupted(ctx),
         service,
         schedule: schedule_fact(ctx),
+        network: network_fact(&ctx.proxy),
+        in_the_app: ctx.caller == "app",
+        elevation: ctx.host().elevation(ctx),
+        fallback_login: fallback_login(ctx),
+        floor: ctx.host().floor(),
         now: ctx.now(),
     }
 }
 
-/// Claude Desktop's section, where the app is installed, an account is enrolled, or
-/// Pitboard has parked or set aside anything of it.
-fn desktop_facts(ctx: &Context, state: Option<&State>) -> Option<DesktopFacts> {
-    use crate::provider::desktop::{assumptions, cookies, live_usage, paths};
-    let tree = crate::provider::of(ProviderId::Desktop).tree()?;
-    let installed = ctx.desktop_installed();
-    let enrolled: Vec<&crate::state::Account> = state
-        .map(|s| {
-            s.accounts
-                .iter()
-                .filter(|a| a.provider() == ProviderId::Desktop)
-                .collect()
-        })
-        .unwrap_or_default();
-    let parks_dir = paths::parks_dir(ctx);
-    let recovery_pending = switch::tree_interrupted(ctx).is_some();
-    if !installed && enrolled.is_empty() && !recovery_pending && !paths::desktop_home(ctx).exists()
-    {
-        return None;
-    }
-
-    let support_dir = tree.root(ctx);
-    let table = support_dir
-        .as_ref()
-        .and_then(|root| ctx.host().cookie_table(&paths::cookies_db(root)).ok());
-    // Where the parks are, or where Pitboard would make them.
-    let parks_home = [parks_dir.clone(), paths::desktop_home(ctx), home::dir(ctx)]
-        .into_iter()
-        .find(|dir| dir.is_dir());
-    let same_volume = match (support_dir.as_ref().filter(|d| d.is_dir()), parks_home) {
-        (Some(support), Some(parks)) => {
-            let host = ctx.host();
-            match (host.device_of(support), host.device_of(&parks)) {
-                (Ok(a), Ok(b)) => Some(a == b),
-                _ => None,
-            }
-        }
-        _ => None,
-    };
-    let parks_dir_private = std::fs::symlink_metadata(&parks_dir).ok().map(|found| {
-        use std::os::unix::fs::MetadataExt;
-        !found.file_type().is_symlink() && found.is_dir() && found.mode() & 0o077 == 0
-    });
-    let park_names: Vec<String> = std::fs::read_dir(&parks_dir)
-        .map(|entries| {
-            entries
-                .flatten()
-                .filter_map(|entry| entry.file_name().into_string().ok())
-                .filter(|name| name.starts_with(paths::PARK_PREFIX))
-                .collect()
-        })
-        .unwrap_or_default();
-    // Only where the record could be read: a park cannot be called nobody's on the word of
-    // a record that says nothing.
-    let mut orphan_parks: Vec<String> = match state {
-        Some(state) => park_names
-            .iter()
-            .filter(|name| {
-                !enrolled
-                    .iter()
-                    .any(|a| a.parked.as_ref().is_some_and(|p| &p.service == *name))
-                    && !state.discarded.iter().any(|d| d == *name)
-            })
-            .cloned()
-            .collect(),
-        None => Vec::new(),
-    };
-    orphan_parks.sort();
-    let strays = {
-        let mut strays = Strays { count: 0, bytes: 0 };
-        count_files(&paths::strays_dir(ctx), &mut strays);
-        strays
-    };
-    Some(DesktopFacts {
-        installed,
-        version: installed.then(|| paths::installed_version(ctx)).flatten(),
-        support_dir,
-        same_volume,
-        cookies_meta_version: table.as_ref().map(|t| t.meta_version),
-        twins_differ: table.as_ref().is_some_and(cookies::twins_differ),
-        parks_dir_private,
-        parks: park_names.len(),
-        orphan_parks,
-        strays,
-        recovery_pending,
-        running: crate::holder::find_within(ctx, tree),
-        live_usage: live_usage::load(ctx),
-        unverified_facts: assumptions::ASSUMPTIONS
-            .iter()
-            .filter(|a| a.verified_against == crate::assumptions::UNVERIFIED)
-            .map(|a| a.name)
-            .collect(),
+/// Claude Code's fallback file, where it is behind the keychain, and the login it holds.
+/// Where whether it is there cannot be told, nothing is said of it: a keychain that cannot
+/// be read is the `credential_store` check's to say, and a file that cannot even be looked
+/// at is one Claude Code's own look takes for not there.
+fn fallback_login(ctx: &Context) -> Option<FallbackLogin> {
+    let held = claude_live::behind(ctx)?;
+    Some(FallbackLogin {
+        path: claude_live::credential_file(ctx),
+        fingerprint: held.map(|held| {
+            claude_live::login_in(&held)
+                .map(|document| crate::provider::claude::document::fingerprint_of(&document))
+        }),
     })
 }
 
-/// Every regular file under `dir` and what it takes up, without following a link.
-fn count_files(dir: &std::path::Path, found: &mut Strays) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let Ok(meta) = std::fs::symlink_metadata(entry.path()) else {
-            continue;
-        };
-        if meta.is_dir() {
-            count_files(&entry.path(), found);
-        } else {
-            found.count += 1;
-            found.bytes += meta.len();
-        }
+/// How the context's requests leave this machine, as its environment says.
+fn network_fact(proxies: &crate::proxy::Proxies) -> NetworkFact {
+    NetworkFact {
+        proxy: proxies
+            .variable()
+            .zip(proxies.address())
+            .map(|(variable, address)| ProxyFact {
+                variable,
+                address,
+                server: proxies.server().unwrap_or_default(),
+                on_loopback: proxies.on_loopback(),
+                socks: proxies.socks(),
+                exempting: proxies.exempting(),
+                exempt: proxies.exempt_hosts(),
+            }),
+        passed_over: proxies.passed_over().to_vec(),
     }
 }
 
@@ -464,10 +435,13 @@ fn schedule_fact(ctx: &Context) -> Option<ScheduleFact> {
         return None;
     };
     let program = crate::schedule::installed_program(ctx);
+    let proxies = crate::schedule::installed_proxies(ctx).unwrap_or_default();
     Some(ScheduleFact {
         program_found: program.as_deref().is_some_and(std::path::Path::is_file),
         program,
         path,
+        network: network_fact(&proxies),
+        network_differs: !proxies.same_way(&ctx.proxy),
     })
 }
 
@@ -530,7 +504,8 @@ fn loose_logins(ctx: &Context) -> Vec<(String, Access)> {
 /// What is read about Codex here: its home, its configuration, the file it keeps its login
 /// in by default, what is installed and what is running.
 fn codex_facts(ctx: &Context, state: Option<&State>) -> CodexFacts {
-    let backend = codex::backend(ctx);
+    let store = codex::store(ctx);
+    let backend = store.backend;
     let auth_file = codex::auth_file(ctx);
     let home = codex::home(ctx);
     // The program Pitboard would run, as the context names it and where the context looks:
@@ -546,6 +521,15 @@ fn codex_facts(ctx: &Context, state: Option<&State>) -> CodexFacts {
                 .count()
         }),
         backend: backend_name(backend),
+        backend_setting: match backend {
+            codex::Backend::Unknown => store.why_unknown().unwrap_or_default(),
+            _ => store.setting(),
+        },
+        backend_remedy: match backend {
+            codex::Backend::File => String::new(),
+            codex::Backend::Unknown => store.while_unknown().unwrap_or_default(),
+            _ => store.to_use_the_file(),
+        },
         auth_access: crate::host::fs::access(&auth_file),
         // Read only from the default store. A keychain item Codex created for itself
         // trusts the `codex` binary alone, and reading it would put a permission prompt in
@@ -578,8 +562,15 @@ fn backend_name(backend: codex::Backend) -> &'static str {
         // is in the keychain. Codex has no one word for it, so it gets the name of the
         // directory it keeps the file in.
         codex::Backend::Secrets => "secrets",
+        // Not Codex's word: nobody can tell, Codex included.
+        codex::Backend::Unknown => "unknown",
     }
 }
+
+/// What the file store's line adds: the one layer Pitboard leaves unread, and what it does.
+const PROJECTS_NOT_READ: &str = "Pitboard does not read a project's own \
+    `.codex/config.toml`, which applies only inside that project: in a trusted project that \
+    sets `cli_auth_credentials_store`, Codex keeps its login somewhere else.";
 
 /// Whose login Codex's file holds, from the login's own ID token and with no network call.
 fn codex_login(ctx: &Context) -> Result<Option<CodexLogin>, CodexLoginTrouble> {
@@ -648,13 +639,50 @@ fn codex_package_version(path: &std::path::Path) -> Option<String> {
 /// Every `codex` running as this user, by kind, asked the way a switch asks so the two
 /// cannot disagree.
 fn running_codex(ctx: &Context) -> Option<Vec<crate::holder::Holding>> {
-    match crate::provider::of(ProviderId::Codex).adoption() {
+    match crate::provider::of(ProviderId::Codex).adoption(None) {
         crate::provider::Adoption::RestartRequired { program, holders } => {
             crate::holder::find(ctx, program, holders)
         }
         crate::provider::Adoption::PollingWithin(_)
-        | crate::provider::Adoption::NextLaunch { .. } => Some(Vec::new()),
+        | crate::provider::Adoption::AtRenewal { .. } => Some(Vec::new()),
     }
+}
+
+/// The check that fails where this process runs as root or under sudo, or elevated on
+/// Windows, or nobody could tell whether it does, since then Pitboard changes nothing: `None`
+/// where it runs as the person themselves.
+fn elevated(os: Os, elevation: crate::host::Elevation) -> Option<Check> {
+    let said = match elevation {
+        crate::host::Elevation::Normal => return None,
+        crate::host::Elevation::Elevated { why } => crate::words::elevated(os, Some(why)),
+        crate::host::Elevation::Unknown => crate::words::elevated(os, None),
+    };
+    Some(fail(
+        "elevated",
+        "runs as",
+        said.because,
+        format!(
+            "Pitboard changes nothing this way: it reads, and renews and writes nothing. {}",
+            said.way_out
+        ),
+    ))
+}
+
+fn too_old(floor: crate::host::Floor) -> Option<Check> {
+    let said = match floor {
+        crate::host::Floor::Met => return None,
+        crate::host::Floor::Below { build } => crate::words::too_old(Some(build)),
+        crate::host::Floor::Unknown => crate::words::too_old(None),
+    };
+    Some(fail(
+        "system_too_old",
+        "runs on",
+        said.because,
+        format!(
+            "Pitboard changes nothing here: it reads, and renews and writes nothing. {}",
+            said.way_out
+        ),
+    ))
 }
 
 fn ok(code: &'static str, name: impl Into<String>, detail: impl Into<String>) -> Check {
@@ -695,13 +723,24 @@ fn fail(
     }
 }
 
+/// The end of a sentence of advice that says what to run, from `: ` to its full stop, where
+/// Pitboard can say a command, and the full stop alone where it cannot
+/// ([`Os::make_private_command`]).
+fn running(command: Option<String>) -> String {
+    command.map_or_else(|| ".".into(), |command| format!(": `{command}`."))
+}
+
 pub fn evaluate(facts: &Facts) -> Vec<Check> {
     let mut checks = Vec::new();
     // Claude Code's own checks, where there is a Claude Code, or where there is no other
     // tool either: a new machine is told what to do first, as it always was. A machine
     // that uses only Codex is not told to run a program it does not use.
     let codex_here = facts.codex.present || facts.codex.enrolled > 0;
-    let claude_here = facts.claude_present || !(codex_here || facts.desktop.is_some());
+    let claude_here = facts.claude_present || !codex_here;
+
+    // First, in the order the gate asks them: they are why every change here is refused.
+    checks.extend(too_old(facts.floor));
+    checks.extend(elevated(facts.os, facts.elevation));
 
     if let Some(tool) = facts.os.secrets_tool() {
         checks.push(match &facts.security_tool {
@@ -746,6 +785,7 @@ pub fn evaluate(facts: &Facts) -> Vec<Check> {
             "It writes this after its first successful call. Run `claude` once.",
         ),
     });
+    checks.extend(judge_in_use(facts));
 
     checks.push(ok(
         "slot",
@@ -818,8 +858,26 @@ pub fn evaluate(facts: &Facts) -> Vec<Check> {
                     "Claude Code fell back to a file, which means a keychain write failed at some point.",
                 ),
                 Os::Linux => ok("credential_store", "credential store", detail),
+                // Claude Code has no keychain on Windows: the file is where it keeps the
+                // login unless it uses Credential Manager, which W22 tells apart. Until then
+                // its chain there is a store Pitboard does not read, never the file, so this
+                // is not reached; and the file alone says nothing of which login is in use
+                // while Credential Manager may hold another.
+                Os::Windows => warn(
+                    "credential_store",
+                    "credential store",
+                    detail,
+                    "Claude Code may keep its login in Credential Manager instead, which \
+                     Pitboard does not read yet.",
+                ),
             }
         }
+        Ok(store::Backend::Unknown) => fail(
+            "credential_store",
+            "credential store",
+            "a store Pitboard does not read yet",
+            "Treat this as unknown, never as empty.",
+        ),
         // The one wrong diagnosis in this file. If Claude Code's config names somebody as
         // signed in, "nothing is signed in" is not an observation, it is Pitboard looking
         // in the wrong place, and it is the failure that would follow Claude Code moving
@@ -854,41 +912,7 @@ pub fn evaluate(facts: &Facts) -> Vec<Check> {
     });
 
     checks.push(judge_credential(facts));
-
-    checks.push(
-        match (
-            facts
-                .config
-                .as_ref()
-                .ok()
-                .and_then(usage::from_config_cache),
-            &facts.identity,
-        ) {
-            (Some(s), Some(id)) if s.account_uuid.as_deref() == Some(id.account_uuid.as_str()) => {
-                ok(
-                    "usage_cache",
-                    "usage cache",
-                    format!("{} windows, measured for this account", s.windows.len()),
-                )
-            }
-            (Some(_), Some(_)) => warn(
-                "usage_cache",
-                "usage cache",
-                "cached for a different account",
-                "Its numbers are ignored rather than shown, which is why status may look empty.",
-            ),
-            (Some(s), None) => ok(
-                "usage_cache",
-                "usage cache",
-                format!("{} windows", s.windows.len()),
-            ),
-            (None, _) => ok(
-                "usage_cache",
-                "usage cache",
-                "absent; Claude Code writes it after a call that reports usage",
-            ),
-        },
-    );
+    checks.extend(judge_fallback_login(facts));
 
     checks.push(match &facts.home_access {
         None => ok(
@@ -899,17 +923,20 @@ pub fn evaluate(facts: &Facts) -> Vec<Check> {
         Some(access) if !access.shared => {
             ok("home", "Pitboard home", facts.home.display().to_string())
         }
-        Some(access) => warn(
-            "home",
-            "Pitboard home",
-            format!("{} is {}", facts.home.display(), access.described),
-            format!(
-                "Park names contain account identifiers, so only you should read it: `{}`.",
-                facts
-                    .os
-                    .make_private_command(Kind::Directory, &[&facts.home.display().to_string()])
-            ),
-        ),
+        Some(access) => {
+            warn(
+                "home",
+                "Pitboard home",
+                format!("{} is {}", facts.home.display(), access.described),
+                format!(
+                    "Park names contain account identifiers, so only you should read it{}",
+                    running(facts.os.make_private_command(
+                        Kind::Directory,
+                        &[&facts.home.display().to_string()]
+                    ))
+                ),
+            )
+        }
     });
 
     checks.push(if facts.readable_by_others.is_empty() {
@@ -931,14 +958,16 @@ pub fn evaluate(facts: &Facts) -> Vec<Check> {
             format!(
                 "These hold usable OAuth tokens in plain text, which is how Claude Code \
                  stores them where there is no keychain. Anyone else on this machine can \
-                 read them: `{}`.",
-                facts.os.make_private_command(
-                    Kind::Any,
-                    &facts
-                        .readable_by_others
-                        .iter()
-                        .map(|(path, _)| path.as_str())
-                        .collect::<Vec<_>>()
+                 read them{}",
+                running(
+                    facts.os.make_private_command(
+                        Kind::Any,
+                        &facts
+                            .readable_by_others
+                            .iter()
+                            .map(|(path, _)| path.as_str())
+                            .collect::<Vec<_>>()
+                    )
                 ),
             ),
         )
@@ -971,16 +1000,20 @@ pub fn evaluate(facts: &Facts) -> Vec<Check> {
     });
     // Claude Code's accounts here; every other tool's go in its own section, so a program
     // reading codes can tell them apart and Claude Code's column is Claude Code's alone.
-    let parks_of = |which: ProviderId| -> Vec<&ParkFact> {
-        facts.parks.iter().filter(|p| p.provider == which).collect()
-    };
-    let (claude_parks, codex_parks, desktop_parks) = (
-        parks_of(ProviderId::Claude),
-        parks_of(ProviderId::Codex),
-        parks_of(ProviderId::Desktop),
-    );
+    let (claude_parks, codex_parks): (Vec<&ParkFact>, Vec<&ParkFact>) = facts
+        .parks
+        .iter()
+        .partition(|p| p.provider == ProviderId::Claude);
     checks.extend(claude_parks.iter().map(|p| judge_park(p, facts.now)));
-    if facts.interrupted {
+    if let Some(refusal) = &facts.stuck {
+        checks.push(warn(
+            "interrupted_switch",
+            "interrupted switch",
+            refusal.clone(),
+            "If it still cannot be finished, `pitboard abandon` gives up on the switch and \
+             keeps every login.",
+        ));
+    } else if facts.interrupted {
         checks.push(warn(
             "interrupted_switch",
             "interrupted switch",
@@ -1013,9 +1046,11 @@ pub fn evaluate(facts: &Facts) -> Vec<Check> {
     checks.push(judge_daemon(facts));
     checks.push(judge_pending(facts));
     checks.extend(judge_schedule(facts));
+    checks.extend(judge_schedule_proxy(facts));
     checks.push(judge_claude_version(facts));
     checks.push(judge_auth(facts));
     checks.push(judge_asking(facts));
+    checks.push(judge_network(&facts.network));
     checks.extend(
         claude_parks
             .iter()
@@ -1025,10 +1060,6 @@ pub fn evaluate(facts: &Facts) -> Vec<Check> {
     // reads exactly as it did before Pitboard knew Codex existed.
     if codex_here || !codex_parks.is_empty() {
         checks.extend(judge_codex(facts.os, &facts.codex, &codex_parks, facts.now));
-    }
-    // After Codex's, and only where there is a Claude Desktop to say something about.
-    if let Some(desktop) = &facts.desktop {
-        checks.extend(judge_desktop(desktop, &desktop_parks, facts.now));
     }
     if !claude_here {
         checks.retain(|check| !CLAUDE_CODES_OWN.contains(&check.code));
@@ -1041,11 +1072,12 @@ pub fn evaluate(facts: &Facts) -> Vec<Check> {
 const CLAUDE_CODES_OWN: &[&str] = &[
     "config_file",
     "identity",
+    "in_use",
     "slot",
     "credential_size",
     "credential_store",
     "credential",
-    "usage_cache",
+    "fallback_login",
     "storage_v5",
     "daemon",
     "claude_version",
@@ -1055,16 +1087,10 @@ const CLAUDE_CODES_OWN: &[&str] = &[
 /// The code an account's check goes under: Claude Code's as it always was, and every other
 /// tool's in that tool's own namespace, so `codex_` is enough to find everything about
 /// Codex.
-fn account_code(
-    provider: ProviderId,
-    claude: &'static str,
-    codex: &'static str,
-    desktop: &'static str,
-) -> &'static str {
+fn account_code(provider: ProviderId, claude: &'static str, codex: &'static str) -> &'static str {
     match provider {
         ProviderId::Claude => claude,
         ProviderId::Codex => codex,
-        ProviderId::Desktop => desktop,
     }
 }
 
@@ -1089,12 +1115,7 @@ fn judge_dormant(park: &ParkFact, now: i64) -> Option<Check> {
         return None;
     }
     Some(warn(
-        account_code(
-            park.provider,
-            "dormant_account",
-            "codex_dormant_account",
-            "desktop_dormant_account",
-        ),
+        account_code(park.provider, "dormant_account", "codex_dormant_account"),
         format!("account {}", park.typed()),
         format!(
             "not switched to for {}; Pitboard has kept its login alive that whole time",
@@ -1106,6 +1127,104 @@ fn judge_dormant(park: &ParkFact, now: i64) -> Option<Check> {
              it, `pitboard forget {}` deletes the login and the record.",
             park.typed()
         ),
+    ))
+}
+
+/// Whose login Claude Code has stored, as Anthropic last said, which every reader that does
+/// not ask takes as the account in use, and whether something may have signed in since.
+/// Doctor asks nobody, so a login renewed since, which Claude Code does every few hours, is
+/// said and is no warning; Claude Code's config naming another account is, since only a
+/// read that asks can say whether another login came with it. Nothing is said where nothing
+/// is recorded and no Claude Code account is enrolled.
+fn judge_in_use(facts: &Facts) -> Option<Check> {
+    let (code, name) = ("in_use", "in use");
+    let known = facts.in_use.as_ref()?;
+    let state = facts.state.as_ref().ok()?;
+    let enrolled = facts.parks.iter().any(|p| p.provider == ProviderId::Claude);
+    if known.last.is_none() && !enrolled {
+        return None;
+    }
+    let ask = "Run `pitboard status`, which asks Anthropic whose login Claude Code has stored.";
+    let Some(last) = &known.last else {
+        return Some(warn(
+            code,
+            name,
+            "Anthropic has not been asked whose login Claude Code has stored",
+            ask,
+        ));
+    };
+    let account = Stored::of(state, ProviderId::Claude, last.owner.as_ref());
+    let in_use = account.said("no account");
+    let config =
+        Stored::of(state, ProviderId::Claude, known.own_record.as_ref()).said("no account");
+    let when = time::moment(last.known_at, facts.now);
+    let then = match &last.owner {
+        Some(_) => format!("Anthropic named {in_use} {when}"),
+        None => format!("Pitboard found no login stored {when}"),
+    };
+    match known.doubt {
+        Some(crate::in_use::Doubt::NeverEstablished) => {
+            return Some(warn(
+                code,
+                name,
+                format!(
+                    "Anthropic has not been asked whose login Claude Code has stored since \
+                     Pitboard was updated; {in_use} is the account it last switched to"
+                ),
+                ask,
+            ));
+        }
+        Some(crate::in_use::Doubt::NamedMoved) => {
+            return Some(warn(
+                code,
+                name,
+                format!(
+                    "Claude Code's config has named {config} since {then}, so another login \
+                     may be stored"
+                ),
+                ask,
+            ));
+        }
+        Some(crate::in_use::Doubt::LoginUnreadable) | None => {}
+    }
+    if known.named_another(ProviderId::Claude).is_some() {
+        return Some(warn(
+            code,
+            name,
+            format!("{in_use}, as Anthropic said {when}, and Claude Code's config names {config}"),
+            format!(
+                "`/status` in Claude Code shows {config}. {}",
+                account.how_to_name()
+            ),
+        ));
+    }
+    // The login stored now by its fingerprint, empty for a login with no refresh token:
+    // `Some(None)` where none is stored, and `None` where the store cannot be read.
+    let stored = match &facts.credential {
+        Ok(Some(document)) if document.get("claudeAiOauth").is_some() => Some(Some(
+            crate::provider::of(ProviderId::Claude).fingerprint(document),
+        )),
+        Ok(_) => Some(None),
+        Err(_) => None,
+    };
+    let renewed = "the next `pitboard status` asks whose it is";
+    Some(ok(
+        code,
+        name,
+        match (&last.owner, stored) {
+            (Some(_), Some(Some(now))) if now.is_empty() || now != last.login => format!(
+                "{in_use}, as Anthropic said {when} of a login renewed or replaced since; \
+                 {renewed}"
+            ),
+            (Some(_), Some(None)) => {
+                format!("{in_use}, as Anthropic said {when}; no login is stored since")
+            }
+            (Some(_), _) => format!("{in_use}, as Anthropic said {when}"),
+            (None, Some(Some(_))) => {
+                format!("no login stored, as Pitboard found {when}; one is since, and {renewed}")
+            }
+            (None, _) => format!("no login stored, as Pitboard found {when}"),
+        },
     ))
 }
 
@@ -1161,6 +1280,33 @@ fn judge_credential(facts: &Facts) -> Check {
             "nothing stored",
             "Nothing is signed in for this slot.",
         ),
+        // Read in 2.1.294 (the register's `locked_keychain_keeps_last_login`): a session
+        // keeps serving the login it last read while the keychain is locked, and one that
+        // read none reads the keychain as empty and falls through to the file.
+        Err(store::Error::Locked) => fail(
+            "credential",
+            "credential",
+            "the keychain is locked, and cannot ask to be unlocked from here",
+            format!(
+                "Unlock it with `security unlock-keychain`, or run Pitboard from a desktop \
+                 session. Until then a Claude Code session here keeps the login it last read \
+                 and follows no switch{}",
+                match facts
+                    .fallback_login
+                    .as_ref()
+                    .map(|left| (left.path.display(), &left.fingerprint))
+                {
+                    Some((path, Ok(Some(_)))) => {
+                        format!(", and one started here signs in with the login in {path}.")
+                    }
+                    Some((path, Err(_))) => format!(
+                        ", and whether one started here signs in with what {path} holds cannot \
+                         be told, since Pitboard could not read it."
+                    ),
+                    Some((_, Ok(None))) | None => ", and one started here is signed out.".into(),
+                }
+            ),
+        ),
         Err(e) => fail(
             "credential",
             "credential",
@@ -1168,6 +1314,62 @@ fn judge_credential(facts: &Facts) -> Check {
             "Do not write to the store while this is failing.",
         ),
     }
+}
+
+/// The fallback file behind the keychain, with a login in it, none, or what cannot be read.
+///
+/// Read in 2.1.294: a sign-in where the keychain is locked writes its login to the file and
+/// leaves the keychain's in place (`locked_sign_in_writes_fallback`), and a keychain write
+/// deletes the file only where the keychain held nothing before
+/// (`fallback_outlives_keychain_writes`). So the file stays through every switch, and a
+/// session that cannot read the keychain signs in with a login in it whatever Pitboard
+/// switched to. A session already running watches the file by a look at it, whatever it
+/// holds and whether or not it can be read, and while it is there takes a switch only at
+/// its login's next renewal (`fallback_file_pins_session_login`).
+fn judge_fallback_login(facts: &Facts) -> Option<Check> {
+    let left = facts.fallback_login.as_ref()?;
+    let path = left.path.display();
+    let running = format!(
+        "While it is there, Claude Code sessions already running at a switch {}.",
+        words::kept_until_renewed()
+    );
+    let (detail, advice) = match &left.fingerprint {
+        Ok(Some(fingerprint)) => (
+            format!(
+                "{path}  ·  refresh {}",
+                if fingerprint.is_empty() {
+                    "none"
+                } else {
+                    fingerprint.as_str()
+                }
+            ),
+            format!(
+                "Claude Code signs in with this wherever it cannot read the keychain, such as \
+                 in a session started over SSH, and no switch reaches it. A sign-in made where \
+                 the keychain could not be read leaves one, as `/login` over SSH does. \
+                 {running} `pitboard stow` keeps this login for its account, where Pitboard \
+                 holds no other it can switch to, then deletes the file, which leaves one login \
+                 for every session."
+            ),
+        ),
+        Ok(None) => (
+            format!("{path}  ·  no login in it"),
+            format!(
+                "It holds no Claude Code login. {running} `pitboard stow` deletes it, which \
+                 lets them follow a switch."
+            ),
+        ),
+        Err(e) => (
+            format!("{path}  ·  not read: {e}"),
+            format!(
+                "Pitboard could not read it, so whether it holds a login, which a session that \
+                 cannot read the keychain signs in with, cannot be told, and `pitboard stow` \
+                 cannot put it away. {running} Deleting it lets them follow a switch, and takes \
+                 whatever it holds with it: `rm {path}`."
+            ),
+        ),
+    };
+    Some(warn("fallback_login", "fallback login", detail, advice))
 }
 
 /// A parked login this close to expiring is worth renewing now.
@@ -1184,12 +1386,7 @@ pub fn renewal_due(refresh_expires_at: i64, now: i64) -> bool {
 }
 
 fn judge_park(fact: &ParkFact, now: i64) -> Check {
-    let code = account_code(
-        fact.provider,
-        "parked_login",
-        "codex_parked_login",
-        "desktop_parked_login",
-    );
+    let code = account_code(fact.provider, "parked_login", "codex_parked_login");
     let name = format!("account {}", fact.typed());
     let renew = format!("Run `pitboard enroll {} --sign-in`.", fact.typed());
     let Some(park) = &fact.park else {
@@ -1199,13 +1396,24 @@ fn judge_park(fact: &ParkFact, now: i64) -> Check {
             warn(code, name, "nothing parked to switch to", renew)
         };
     };
-    if let Some(why) = &fact.unreadable {
-        return fail(
-            code,
-            name,
-            format!("its parked login is unusable: {why}"),
-            renew,
-        );
+    match &fact.unreadable {
+        Some(Unreadable::Locked) => {
+            return warn(
+                code,
+                name,
+                "not read: the keychain is locked",
+                "Unlock it, then run `pitboard doctor` again.",
+            );
+        }
+        Some(Unreadable::Broken(why)) => {
+            return fail(
+                code,
+                name,
+                format!("its parked login is unusable: {why}"),
+                renew,
+            );
+        }
+        None => {}
     }
     let Some(at) = park.refresh_expires_at else {
         return ok(code, name, "parked");
@@ -1284,12 +1492,12 @@ fn judge_asking(facts: &Facts) -> Check {
     // Which services Pitboard asks, named by the tools that have accounts here, and which
     // of them are being held back: a hold is a service's answer, so blaming the wrong one
     // sends somebody to look at a service that is answering normally.
-    let tool_of = |uuid: &str| {
+    let tool_of = |id: &str| {
         facts
             .state
             .as_ref()
             .ok()
-            .and_then(|s| s.vault_owner_of_park(uuid))
+            .and_then(|s| s.owner_of_park(id))
             .map(crate::state::Account::provider)
     };
     let services = |tools: &mut Vec<ProviderId>| {
@@ -1347,6 +1555,107 @@ fn judge_asking(facts: &Facts) -> Check {
     }
 }
 
+/// How Pitboard's requests leave this machine: directly, or through the HTTP proxy the
+/// environment names, and from which variable, with the hosts Pitboard calls that the
+/// variable exempting hosts sends around it. It warns where Pitboard passes over a variable
+/// that holds no proxy's address, since its requests then go where the person may have meant
+/// them not to.
+///
+/// A SOCKS proxy, which Pitboard does not use yet, is named in the words a request fails
+/// with, then the proxy, and warns, since each request to a host Pitboard calls that the
+/// variable exempting hosts does not name fails. With every one of them exempt, nothing
+/// fails, and it does not warn for that.
+fn judge_network(network: &NetworkFact) -> Check {
+    const NAME: &str = "network";
+    let (passed, set_right) = match network.passed_over.as_slice() {
+        [] => (None, ""),
+        [one] => (
+            Some(format!(
+                "{one} holds no proxy's address Pitboard can read, so it is passed over"
+            )),
+            "Set it to a proxy's address, such as http://proxy.example.com:8080, or unset it.",
+        ),
+        many => (
+            Some(format!(
+                "{} hold no proxy's address Pitboard can read, so they are passed over",
+                words::listed(many.iter().map(|n| (*n).to_string()).collect())
+            )),
+            "Set each to a proxy's address, such as http://proxy.example.com:8080, or unset them.",
+        ),
+    };
+    let Some(proxy) = &network.proxy else {
+        return match passed {
+            None => ok("network", NAME, "direct: no variable names a proxy"),
+            Some(passed) => warn("network", NAME, format!("direct: {passed}"), set_right),
+        };
+    };
+    let fails = requests_fail(proxy);
+    let mut detail = if !proxy.socks {
+        format!("through {}, from {}", proxy.address, proxy.variable)
+    } else {
+        format!(
+            "{}: {}, {}",
+            if fails { "requests fail" } else { "direct" },
+            crate::proxy::refused(proxy.variable),
+            proxy.address
+        )
+    };
+    for clause in exempting(proxy).iter().chain(&passed) {
+        detail.push_str(&format!("; {clause}"));
+    }
+    if fails {
+        let (each, them) = if network.passed_over.is_empty() {
+            (proxy.variable.to_string(), "it")
+        } else {
+            let mut names: Vec<String> = network
+                .passed_over
+                .iter()
+                .map(|name| (*name).to_string())
+                .collect();
+            names.push(proxy.variable.to_string());
+            (format!("each of {}", words::listed(names)), "them")
+        };
+        return warn(
+            "network",
+            NAME,
+            detail,
+            format!(
+                "Pitboard goes through HTTP and HTTPS proxies only. For its requests to go \
+                 out, set {each} to an HTTP proxy's address, such as \
+                 http://proxy.example.com:8080, or unset {them}."
+            ),
+        );
+    }
+    match passed {
+        None => ok("network", NAME, detail),
+        Some(_) => warn("network", NAME, detail, set_right),
+    }
+}
+
+/// Whether each request through `proxy` to a host Pitboard calls that the variable exempting
+/// hosts does not name fails: whether it is a SOCKS proxy, which Pitboard does not use yet,
+/// and any host Pitboard calls is not exempt from it.
+fn requests_fail(proxy: &ProxyFact) -> bool {
+    proxy.socks && proxy.exempt.len() < crate::proxy::called().len()
+}
+
+/// What the variable exempting hosts does with the hosts Pitboard calls, where one is set:
+/// "NO_PROXY exempts api.anthropic.com, which Pitboard reaches directly".
+fn exempting(proxy: &ProxyFact) -> Option<String> {
+    proxy.exempting.map(|exempting| {
+        if proxy.exempt.is_empty() {
+            format!("{exempting} exempts none of the hosts Pitboard calls")
+        } else if proxy.exempt.len() == crate::proxy::called().len() {
+            format!("{exempting} exempts every host Pitboard calls, which it reaches directly")
+        } else {
+            format!(
+                "{exempting} exempts {}, which Pitboard reaches directly",
+                words::listed(proxy.exempt.clone())
+            )
+        }
+    })
+}
+
 /// Whether moving the stored login would change anything a session sees.
 ///
 /// Claude Code resolves this from layered settings, so a managed policy or a line in a
@@ -1354,12 +1663,25 @@ fn judge_asking(facts: &Facts) -> Check {
 /// files rather than from this process's environment, because an app launched from Finder
 /// has no environment to read and is the surface most likely to be used on a machine that
 /// needs the answer.
+///
+/// Where Pitboard does not read every layer, it says which it did not read beside that
+/// answer, since a layer it did not read could still set something else. Where a file sits
+/// behind the keychain, a session already running takes the stored login only when it next
+/// reads it, at its login's renewal, which the `fallback_login` check says.
 fn judge_auth(facts: &Facts) -> Check {
     if facts.auth_overrides.is_empty() {
+        let read = if facts.fallback_login.is_some() {
+            "the stored login, which is what Pitboard moves, once a session reads it again"
+        } else {
+            "the stored login, which is what Pitboard moves"
+        };
         return ok(
             "auth_source",
             "what a session authenticates with",
-            "the stored login, which is what Pitboard moves",
+            match facts.auth_unread {
+                None => read.to_string(),
+                Some(unread) => format!("{read}, as far as it reads: {unread}"),
+            },
         );
     }
     let named: Vec<String> = facts
@@ -1464,7 +1786,104 @@ fn judge_schedule(facts: &Facts) -> Option<Check> {
     })
 }
 
-/// How to write the schedule again. There is an app only on macOS.
+/// The system starts the schedule's runs with its own environment, not the person's shell,
+/// so they are given the proxy variables of the Pitboard that installed it. Where those send
+/// requests another way than this run does, through another proxy or none, with another user
+/// name or password, or with other hosts exempt, that is said, credentials as `***`. Nothing
+/// is said where they go the same way, or where there is no schedule.
+///
+/// From a terminal it is a warning: the terminal's proxy is the one the person works with,
+/// and installing the schedule again from there gives it that proxy. Where that proxy is a
+/// SOCKS one whose requests fail, the advice is to change the variable naming it first, so
+/// the schedule is not given a proxy that fails its requests too. In the app it is no
+/// warning.
+/// The app is started with the system's environment as the schedule's runs are, which on
+/// macOS names no proxy unless `launchctl setenv` set one, so a schedule installed from a terminal with
+/// a proxy differs from it for good, and the app's switch, the one way it installs the
+/// schedule, would give the schedule the app's proxy variables and take the terminal's away.
+/// There the line says what each goes through, and how each way of installing it chooses.
+fn judge_schedule_proxy(facts: &Facts) -> Option<Check> {
+    let schedule = facts.schedule.as_ref()?;
+    if !schedule.network_differs {
+        return None;
+    }
+    let here = if facts.in_the_app {
+        "the app"
+    } else {
+        "this run"
+    };
+    let installed = match &schedule.network.proxy {
+        None => "the schedule was installed with no proxy".to_string(),
+        Some(proxy) => format!("the schedule was installed with {}", proxy_named(proxy)),
+    };
+    // A SOCKS proxy is not gone through, so it is said to be given, and the network check
+    // says what becomes of the requests.
+    let this_run = match &facts.network.proxy {
+        None => format!("{here} goes directly"),
+        Some(proxy) if proxy.socks => format!("{here} is given {}", proxy_named(proxy)),
+        Some(proxy) => format!("{here} goes through {}", proxy_named(proxy)),
+    };
+    let detail = match (&schedule.network.proxy, &facts.network.proxy) {
+        // Everything shown is the same, so what differs is what is never shown.
+        (Some(its), Some(mine)) if proxy_named(its) == proxy_named(mine) => format!(
+            "the schedule was installed with {here}'s proxy, {}, but with another user name \
+             or password",
+            proxy_named(its)
+        ),
+        _ => format!("{installed}; {this_run}"),
+    };
+    if facts.in_the_app {
+        return Some(Check {
+            code: "schedule_proxy",
+            name: "renewal schedule's proxy".into(),
+            level: Level::Ok,
+            detail,
+            advice: "The app runs with the environment the system started it with, not a \
+                     terminal's. Turning daily renewal off and on in Settings gives the \
+                     schedule the app's proxy variables; `pitboard schedule install` in a \
+                     terminal gives it that terminal's."
+                .into(),
+        });
+    }
+    // Installed again from here, the schedule would be given a SOCKS proxy that fails its
+    // requests, so the variable is to be changed first.
+    let advice = match &facts.network.proxy {
+        Some(proxy) if requests_fail(proxy) => format!(
+            "The schedule's runs are given the proxy variables it was installed with. \
+             Installed again from here, they would be given this run's SOCKS proxy, which \
+             Pitboard does not use yet, and their requests would fail. Set {} to an HTTP \
+             proxy's address, or unset it, then install it again with `pitboard schedule \
+             install`, which takes the proxy variables set where it runs.",
+            proxy.variable
+        ),
+        _ => "The schedule's runs are given the proxy variables it was installed with. To give \
+              them this run's, install it again from here with `pitboard schedule install`, \
+              which takes the proxy variables set where it runs."
+            .to_string(),
+    };
+    Some(warn(
+        "schedule_proxy",
+        "renewal schedule's proxy",
+        detail,
+        advice,
+    ))
+}
+
+/// A proxy as the schedule's line names it: its address, the variable it came from, and the
+/// hosts Pitboard calls that go around it, where any do.
+fn proxy_named(proxy: &ProxyFact) -> String {
+    let named = format!("{}, from {}", proxy.address, proxy.variable);
+    match proxy.exempting {
+        Some(exempting) if !proxy.exempt.is_empty() => format!(
+            "{named}, {exempting} exempting {}",
+            words::listed(proxy.exempt.clone())
+        ),
+        _ => named,
+    }
+}
+
+/// How to write the schedule again. There is an app only on macOS until the Windows app
+/// ships.
 fn again(os: Os) -> &'static str {
     if has_app(os) {
         "Turn daily renewal off and on again: in the app's Settings, or with \
@@ -1475,11 +1894,12 @@ fn again(os: Os) -> &'static str {
     }
 }
 
-/// Whether Pitboard has an app for `os`, with a Settings window of its own.
+/// Whether Pitboard has an app for `os`, with a Settings window of its own. The Windows app
+/// is still to be written, and says so here once it has its Settings.
 fn has_app(os: Os) -> bool {
     match os {
         Os::MacOs => true,
-        Os::Linux => false,
+        Os::Linux | Os::Windows => false,
     }
 }
 
@@ -1536,19 +1956,32 @@ fn judge_codex(os: Os, facts: &CodexFacts, parks: &[&ParkFact], now: i64) -> Vec
         }
     };
     let file = facts.backend == "file";
-    let config = facts.home.join("config.toml");
+    let setting = &facts.backend_setting;
     let described = match facts.backend {
-        "ephemeral" => "in memory only (cli_auth_credentials_store = \"ephemeral\")".to_string(),
-        "secrets" => "secrets (cli_auth_credentials_store with secret_auth_storage in \
-                      config.toml)"
-            .to_string(),
-        other => format!("{other} (cli_auth_credentials_store in config.toml)"),
+        "ephemeral" => format!("in memory only ({setting})"),
+        "unknown" => format!("cannot tell: {setting}"),
+        other => format!("{other} ({setting})"),
     };
     checks.push(match facts.backend {
-        "file" => ok(
+        "file" => Check {
+            advice: PROJECTS_NOT_READ.into(),
+            ..ok(
+                "codex_backend",
+                "Codex login store",
+                format!("file ({setting})  ·  {}", facts.auth_file.display()),
+            )
+        },
+        // Not a choice: Codex 0.160.0 does not start, or Pitboard does not read where the
+        // store is chosen on this system yet.
+        "unknown" => broken(
             "codex_backend",
             "Codex login store",
-            format!("file  ·  {}", facts.auth_file.display()),
+            described,
+            format!(
+                "{}. Pitboard parks and switches no Codex login while it cannot tell where \
+                 Codex keeps it.",
+                facts.backend_remedy
+            ),
         ),
         // A choice, and one that leaves nothing Pitboard can park or switch.
         other if enrolled => fail(
@@ -1558,16 +1991,15 @@ fn judge_codex(os: Os, facts: &CodexFacts, parks: &[&ParkFact], now: i64) -> Vec
             match other {
                 "ephemeral" => format!(
                     "Codex keeps nothing at rest, so there is no login Pitboard can park or \
-                     switch. Remove the setting from {} to use Codex's default file store.",
-                    config.display()
+                     switch. {}.",
+                    facts.backend_remedy
                 ),
                 _ => format!(
-                    "Pitboard reads only Codex's default file store, auth.json, and will not \
-                     touch the keychain item Codex created for itself, because every read of \
-                     it would ask you for permission, so no enrolled Codex account can be \
-                     switched to. Remove the setting from {} to use the file store, then sign \
-                     in with `codex login`.",
-                    config.display()
+                    "Pitboard reads only Codex's file store, auth.json, and will not touch the \
+                     keychain item Codex created for itself, because every read of it would \
+                     ask you for permission, so no enrolled Codex account can be switched to. \
+                     {}.",
+                    facts.backend_remedy
                 ),
             },
         ),
@@ -1604,8 +2036,11 @@ fn judge_codex(os: Os, facts: &CodexFacts, parks: &[&ParkFact], now: i64) -> Vec
                 format!("{} is {}", facts.auth_file.display(), access.described),
                 format!(
                     "It holds a usable login in plain text, and Codex sets 0600 only when it \
-                     creates the file, never on a later write: `{}`.",
-                    os.make_private_command(Kind::File, &[&facts.auth_file.display().to_string()])
+                     creates the file, never on a later write{}",
+                    running(os.make_private_command(
+                        Kind::File,
+                        &[&facts.auth_file.display().to_string()]
+                    ))
                 ),
             ),
             Some(access) => ok(
@@ -1712,225 +2147,6 @@ fn judge_codex_version(facts: &CodexFacts) -> Check {
     )
 }
 
-/// A parked Claude Desktop login this close to expiring is worth signing in to again. Its
-/// session lives about four weeks and nothing renews it, so a week is the warning.
-const DESKTOP_EXPIRES_SOON: i64 = 7 * 86_400;
-
-/// Claude Desktop's section: the app, its data folder, Pitboard's parks of it and live
-/// usage. Codes are `desktop_...`, so a program finds everything about it by prefix.
-fn judge_desktop(facts: &DesktopFacts, parks: &[&ParkFact], now: i64) -> Vec<Check> {
-    use crate::provider::desktop::{assumptions, cookies};
-    let mut checks = Vec::new();
-    let verified = assumptions::VERIFIED_AGAINST;
-    checks.push(match facts.version.as_deref() {
-        Some(installed) if installed != verified => warn(
-            "desktop_version_unverified",
-            "Claude Desktop build",
-            format!("{installed} installed; Pitboard's facts were read from {verified}"),
-            "Switching still checks each item before it moves anything. If a switch refuses, \
-             `pitboard doctor` and the register say which fact changed.",
-        ),
-        Some(installed) => ok(
-            "desktop_version",
-            "Claude Desktop build",
-            format!("{installed}, which is what Pitboard's facts were read from"),
-        ),
-        None if facts.installed => ok(
-            "desktop_version",
-            "Claude Desktop build",
-            format!("installed, and its version could not be read; Pitboard's facts were read from {verified}"),
-        ),
-        None => ok(
-            "desktop_version",
-            "Claude Desktop build",
-            format!("not found here; Pitboard's facts were read from {verified}"),
-        ),
-    });
-    match facts.cookies_meta_version {
-        Some(found) if found != cookies::EXPECTED_META => checks.push(fail(
-            "desktop_format_unknown",
-            "Claude Desktop cookies",
-            format!(
-                "the cookie database is version {found}; Pitboard reads version {}",
-                cookies::EXPECTED_META
-            ),
-            "Pitboard will not switch Claude Desktop accounts until it understands this \
-             format. Nothing has been moved.",
-        )),
-        Some(found) => checks.push(ok(
-            "desktop_cookies",
-            "Claude Desktop cookies",
-            format!("version {found}"),
-        )),
-        None => {}
-    }
-    if facts.same_volume == Some(false) {
-        checks.push(fail(
-            "desktop_different_volume",
-            "Claude Desktop volume",
-            "Claude's data folder and Pitboard's parks are on different volumes",
-            "A switch moves the folder's items by renaming them, which works only on one \
-             volume. Keep Pitboard's home on the same disk as your home folder.",
-        ));
-    }
-    if facts.parks_dir_private == Some(false) {
-        checks.push(fail(
-            "desktop_parks_not_private",
-            "Claude Desktop parks",
-            "the directory holding parked logins can be reached by others",
-            "It holds signed-in sessions. Pitboard will not park anything there until only \
-             you can reach it: `chmod 700` it.",
-        ));
-    }
-    if !facts.orphan_parks.is_empty() {
-        checks.push(warn(
-            "desktop_orphan_park",
-            "Claude Desktop parks",
-            format!(
-                "{} not named by any account: {}",
-                match facts.orphan_parks.len() {
-                    1 => "1 park is".to_string(),
-                    n => format!("{n} parks are"),
-                },
-                facts.orphan_parks.join(", ")
-            ),
-            "Left by a switch that did not finish, or by an account forgotten while it could \
-             not be deleted. Pitboard never deletes one it cannot place; look inside before \
-             removing it.",
-        ));
-    }
-    checks.extend(parks.iter().map(|p| judge_desktop_park(p, now)));
-    if facts.strays.count > 0 {
-        checks.push(ok(
-            "desktop_strays_kept",
-            "Claude Desktop strays",
-            format!(
-                "{} set aside, {} bytes",
-                match facts.strays.count {
-                    1 => "1 file".to_string(),
-                    n => format!("{n} files"),
-                },
-                facts.strays.bytes
-            ),
-        ));
-    }
-    if facts.recovery_pending {
-        checks.push(warn(
-            "desktop_recovery_pending",
-            "interrupted Claude Desktop switch",
-            "a switch of Claude Desktop did not finish",
-            "Keep Claude closed and run any `pitboard` command that changes Claude Desktop to \
-             finish it; `pitboard abandon` keeps every item where it is.",
-        ));
-    }
-    checks.push({
-        let (detail, advice) = match facts.running.as_deref() {
-            None => ("could not tell".to_string(), String::new()),
-            Some([]) => ("not running".to_string(), String::new()),
-            Some(holding) => (
-                crate::holder::described_with_pids(holding),
-                "Quit Claude (Command-Q) before a switch; nothing is moved while it runs."
-                    .to_string(),
-            ),
-        };
-        Check {
-            advice,
-            ..ok("desktop_running", "running Claude Desktop", detail)
-        }
-    });
-    let live = &facts.live_usage;
-    checks.push(
-        if live.enabled && live.approval == crate::status::Approval::NeedsApproval {
-            warn(
-                "desktop_live_usage_needs_approval",
-                "Claude Desktop live usage",
-                match &live.reason {
-                    Some(reason) => {
-                        format!("on, and macOS has not let it read Claude's key ({reason})")
-                    }
-                    None => "on, and macOS has not let it read Claude's key".to_string(),
-                },
-                "Run `pitboard desktop live-usage enable` again and choose \"Always Allow\", or \
-                 turn it off with `pitboard desktop live-usage disable`.",
-            )
-        } else if live.enabled {
-            ok("desktop_live_usage", "Claude Desktop live usage", "on")
-        } else {
-            ok(
-                "desktop_live_usage",
-                "Claude Desktop live usage",
-                "off; usage comes from Claude's own history",
-            )
-        },
-    );
-    if facts.twins_differ {
-        checks.push(ok(
-            "desktop_session_twins_differ",
-            "Claude Desktop session",
-            "the two copies of the session cookie differ; Pitboard goes by `sessionKey`",
-        ));
-    }
-    checks
-}
-
-/// A parked Claude Desktop account. Its session is never renewed, so how long it has left
-/// is said, and the way back is signing in again in the app.
-fn judge_desktop_park(fact: &ParkFact, now: i64) -> Check {
-    let name = format!("account {}", fact.typed());
-    let again = format!(
-        "Run `pitboard use desktop --signed-out`, sign in to this account in Claude, quit \
-         Claude, then run `pitboard enroll {}`.",
-        fact.typed()
-    );
-    let Some(park) = &fact.park else {
-        return if fact.active {
-            ok(
-                "desktop_parked_login",
-                name,
-                "signed in; parked when you switch away",
-            )
-        } else {
-            warn(
-                "desktop_parked_login",
-                name,
-                "nothing parked to switch to",
-                again,
-            )
-        };
-    };
-    if let Some(why) = &fact.unreadable {
-        return fail(
-            "desktop_parked_login",
-            name,
-            format!("its parked login is unusable: {why}"),
-            again,
-        );
-    }
-    match park.refresh_expires_at {
-        Some(at) if at <= now => warn(
-            "desktop_park_expired",
-            name,
-            format!("its parked sign-in lapsed {}", time::moment(at, now)),
-            again,
-        ),
-        Some(at) if at - now < DESKTOP_EXPIRES_SOON => warn(
-            "desktop_park_expires_soon",
-            name,
-            format!("its parked sign-in lapses in {}", words::span(at - now)),
-            format!(
-                "Switch to it with `pitboard use {}` before then, or sign in again: {again}",
-                fact.typed()
-            ),
-        ),
-        Some(at) => ok(
-            "desktop_parked_login",
-            name,
-            format!("parked, good for {}", words::span(at - now)),
-        ),
-        None => ok("desktop_parked_login", name, "parked"),
-    }
-}
-
 /// The checks, and where Claude Code's files were found, for a program to read rather than
 /// parse out of the checks' wording.
 pub struct Diagnosis {
@@ -1942,8 +2158,16 @@ pub struct Diagnosis {
 }
 
 pub fn run(ctx: &Context) -> Diagnosis {
+    if let Err(crate::error::Error::HomeNotAbsolute { variable, path }) =
+        crate::home::check_absolute(ctx)
+    {
+        return unplaced(ctx, variable, &path);
+    }
     let facts = gather(ctx);
-    let mut environment = json!({
+    Diagnosis {
+        redaction: redaction_for(ctx, &facts),
+        checks: evaluate(&facts),
+        environment: json!({
             "config_file": facts.config_path,
             "storage_dir": facts.storage_dir,
             "credential_service": facts.service,
@@ -1960,42 +2184,40 @@ pub fn run(ctx: &Context) -> Diagnosis {
                     .then_some(facts.codex.auth_access.is_some()),
                 "version": facts.codex.version,
             },
-    });
-    // Claude Desktop's, only where it is here, so a machine without it reads as it did.
-    if let Some(desktop) = &facts.desktop {
-        environment["desktop"] = desktop_environment(desktop);
-    }
-    Diagnosis {
-        redaction: redaction_for(ctx, &facts),
-        checks: evaluate(&facts),
-        environment,
+        }),
     }
 }
 
-/// Claude Desktop's part of the environment, for a program to read.
-fn desktop_environment(facts: &DesktopFacts) -> Value {
-    let verified = crate::provider::desktop::assumptions::VERIFIED_AGAINST;
-    json!({
-        "installed": facts.installed,
-        "version": facts.version,
-        "verified_against": verified,
-        "version_matches": facts.version.as_deref().map(|v| v == verified),
-        "support_dir": facts.support_dir,
-        "same_volume": facts.same_volume,
-        "cookies_meta_version": facts.cookies_meta_version,
-        "parks_dir_private": facts.parks_dir_private,
-        "parks": facts.parks,
-        "orphan_parks": facts.orphan_parks,
-        "strays": {"count": facts.strays.count, "bytes": facts.strays.bytes},
-        "recovery_pending": facts.recovery_pending,
-        "running": facts.running.as_ref().map(|holding| !holding.is_empty()),
-        "live_usage": {
-            "enabled": facts.live_usage.enabled,
-            "approval": facts.live_usage.approval,
-            "reason": facts.live_usage.reason,
-        },
-        "unverified_facts": facts.unverified_facts,
-    })
+/// What doctor says where a home the environment names is empty or relative
+/// ([`crate::home::check_absolute`]): how this process runs, where that fails, and the
+/// `homes` check, failed, and nothing else. Every other check reads files under one of the
+/// homes, and a relative one would have it read whatever is under the folder doctor was run
+/// from.
+fn unplaced(ctx: &Context, variable: &str, path: &std::path::Path) -> Diagnosis {
+    let holds = if path.as_os_str().is_empty() {
+        "empty".to_string()
+    } else {
+        format!("`{}`, which is not a full path", path.display())
+    };
+    let homes = fail(
+        "homes",
+        "homes",
+        format!("{variable} is {holds}"),
+        "Set it to a full path, or unset it. Pitboard checks nothing else until then: \
+         everything it reads is under these folders.",
+    );
+    Diagnosis {
+        checks: too_old(ctx.host().floor())
+            .into_iter()
+            .chain(elevated(crate::host::OS, ctx.host().elevation(ctx)))
+            .chain(std::iter::once(homes))
+            .collect(),
+        environment: json!({}),
+        redaction: crate::redact::Sheet::new(
+            format!("{}:{}", crate::state::machine_id(), ctx.now_millis()),
+            ctx.home().to_string_lossy(),
+        ),
+    }
 }
 
 /// Everything in a diagnosis that names a person or an account.
@@ -2017,6 +2239,18 @@ fn redaction_for(ctx: &Context, facts: &Facts) -> crate::redact::Sheet {
         if let Some(name) = &id.organization_name {
             sheet = sheet.hide(name.clone(), "org");
         }
+    }
+    // Whose login is stored, as Anthropic last named it, and whom Claude Code's config names,
+    // which need not be accounts anybody enrolled.
+    let named = facts
+        .in_use
+        .iter()
+        .flat_map(|known| known.owner().into_iter().chain(&known.own_record));
+    for owner in named {
+        sheet = sheet
+            .hide(owner.email.clone(), "email")
+            .hide(owner.account_uuid.clone(), "account")
+            .hide(owner.organization_uuid.clone(), "org");
     }
     if let Ok(state) = &facts.state {
         for account in &state.accounts {
@@ -2055,6 +2289,14 @@ fn redaction_for(ctx: &Context, facts: &Facts) -> crate::redact::Sheet {
     {
         sheet = sheet.hide(fingerprint, "login");
     }
+    if let Some(fingerprint) = facts
+        .fallback_login
+        .as_ref()
+        .and_then(|left| left.fingerprint.as_ref().ok().cloned().flatten())
+        .filter(|fingerprint| !fingerprint.is_empty())
+    {
+        sheet = sheet.hide(fingerprint, "login");
+    }
     for park in &facts.parks {
         if let Some(held) = &park.park {
             sheet = sheet
@@ -2062,10 +2304,17 @@ fn redaction_for(ctx: &Context, facts: &Facts) -> crate::redact::Sheet {
                 .hide(held.service.clone(), "park");
         }
     }
-    // A Claude Desktop park's name carries the account's id, named by a record or not.
-    if let Some(desktop) = &facts.desktop {
-        for name in &desktop.orphan_parks {
-            sheet = sheet.hide(name.clone(), "park");
+    // A proxy's host can name the company whose network it is, as an organisation's name
+    // does. Its port goes with it, so that a host that is also a word, such as `proxy`, is
+    // hidden where it is the host and nowhere else. One on loopback names nothing. The one
+    // the schedule was installed with is hidden the same way.
+    let schedules = facts
+        .schedule
+        .as_ref()
+        .and_then(|s| s.network.proxy.as_ref());
+    for proxy in facts.network.proxy.iter().chain(schedules) {
+        if !proxy.on_loopback {
+            sheet = sheet.hide(proxy.server.clone(), "proxy");
         }
     }
     sheet
@@ -2079,12 +2328,22 @@ pub fn healthy(checks: &[Check]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::service::Permit;
+    use std::sync::Arc;
 
     /// What a mode looks like as access, the way a Unix system describes one.
     fn mode(mode: u32) -> Access {
         Access {
             shared: mode & 0o077 != 0,
             described: format!("mode {mode:o}"),
+        }
+    }
+
+    /// A network whose requests go out directly, as no variable names a proxy.
+    fn direct() -> NetworkFact {
+        NetworkFact {
+            proxy: None,
+            passed_over: Vec::new(),
         }
     }
 
@@ -2127,15 +2386,44 @@ mod tests {
             pending_parks: Vec::new(),
             claude_version: Some(crate::provider::claude::assumptions::VERIFIED_AGAINST.into()),
             auth_overrides: Vec::new(),
+            auth_unread: None,
             asking_held: Vec::new(),
             state: Ok(State::default()),
+            in_use: Some(in_use_as_named()),
             parks: Vec::new(),
             interrupted: false,
+            stuck: None,
             codex: no_codex(),
-            desktop: None,
             claude_present: true,
             schedule: None,
+            network: direct(),
+            in_the_app: false,
+            elevation: crate::host::Elevation::Normal,
+            fallback_login: None,
+            floor: crate::host::Floor::Met,
             now: NOW,
+        }
+    }
+
+    /// What [`facts`] holds of whose login Claude Code has stored: the login in its
+    /// keychain, `acc`'s in `org`, as Anthropic named it a minute ago, with the config naming
+    /// it too.
+    fn in_use_as_named() -> crate::in_use::Known {
+        let owner = crate::api::Owner {
+            account_uuid: "acc".into(),
+            email: "a@b.c".into(),
+            organization_uuid: "org".into(),
+        };
+        let stored = json!({"claudeAiOauth": {"refreshToken": "r"}});
+        crate::in_use::Known {
+            last: Some(crate::in_use::InUse {
+                owner: Some(owner.clone()),
+                login: crate::provider::of(ProviderId::Claude).fingerprint(&stored),
+                known_at: NOW - 60,
+                named: Some(crate::state::new_id(ProviderId::Claude, &owner)),
+            }),
+            doubt: None,
+            own_record: Some(owner),
         }
     }
 
@@ -2146,6 +2434,8 @@ mod tests {
             present: false,
             enrolled: 0,
             backend: "file",
+            backend_setting: "Codex's default".into(),
+            backend_remedy: String::new(),
             auth_file: PathBuf::from("/home/x/.codex/auth.json"),
             auth_access: None,
             login: Ok(None),
@@ -2153,6 +2443,43 @@ mod tests {
             version: None,
             running: Some(Vec::new()),
         }
+    }
+
+    /// Where Pitboard does not read every layer of Claude Code's settings, as it does not
+    /// read the managed ones on Windows yet, the check says which beside its answer, and
+    /// still passes: nothing it read says anything else.
+    #[test]
+    fn the_auth_check_says_what_it_did_not_read() {
+        let mut facts = facts();
+        assert_eq!(
+            judge_auth(&facts).detail,
+            "the stored login, which is what Pitboard moves"
+        );
+        facts.auth_unread = Some("Claude Code's managed settings are not read on Windows yet");
+        let check = judge_auth(&facts);
+        assert_eq!(check.level, Level::Ok);
+        assert_eq!(
+            check.detail,
+            "the stored login, which is what Pitboard moves, as far as it reads: Claude Code's \
+             managed settings are not read on Windows yet"
+        );
+    }
+
+    /// Advice to make something private ends with the command that does, where Pitboard can
+    /// say one, and with the sentence alone where it cannot, as on Windows until it reads who
+    /// may read a file.
+    #[test]
+    fn advice_names_a_command_only_where_there_is_one() {
+        assert_eq!(
+            running(Os::MacOs.make_private_command(Kind::File, &["/a"])),
+            ": `chmod 600 /a`."
+        );
+        assert_eq!(
+            running(Os::Linux.make_private_command(Kind::Directory, &["/a", "/b"])),
+            ": `chmod 700 /a /b`."
+        );
+        assert_eq!(Os::Windows.make_private_command(Kind::Any, &["/a"]), None);
+        assert_eq!(running(None), ".");
     }
 
     /// Codex's section for a machine with no Codex accounts parked.
@@ -2226,6 +2553,7 @@ mod tests {
     /// looked at a file's mode. A gatherer that returns an empty list whatever the disk
     /// says would pass every one of those tests.
     #[test]
+    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn a_world_readable_park_is_found_on_the_disk() {
         use crate::host::fs::testing;
 
@@ -2245,7 +2573,7 @@ mod tests {
 
         let ctx = Context::new(root.clone()).with_pitboard_home(root.join(".pitboard"));
         let vault = store::vault_dir(&ctx);
-        crate::host::fs::create_private_dir(&vault).expect("a vault");
+        crate::host::fs::create_private_dir(Permit::for_a_test(), &vault).expect("a vault");
         assert!(
             loose_logins(&ctx).is_empty(),
             "a private vault is not loose"
@@ -2253,13 +2581,13 @@ mod tests {
 
         let park = vault.join("pitboard-park-x.json");
         std::fs::write(&park, "{}").expect("a park");
-        testing::open_to_others(&park);
+        testing::open_to_others(&park).expect("opened to others");
         let found = loose_logins(&ctx);
         assert_eq!(found.len(), 1, "{found:?}");
         assert_eq!(Some(&found[0].1), crate::host::fs::access(&park).as_ref());
         assert!(found[0].0.ends_with("pitboard-park-x.json"), "{found:?}");
 
-        testing::make_private(&park);
+        testing::make_private(&park).expect("made private");
         assert!(loose_logins(&ctx).is_empty(), "a private park is not loose");
     }
 
@@ -2268,6 +2596,10 @@ mod tests {
     /// mode bit. A backup restore, a `cp -r`, an rsync or a careless umask changes one
     /// quietly, and nothing else in Pitboard would ever mention it.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W15: who else can read a login on Windows, and the command that makes one private"
+    )]
     fn a_login_anyone_on_this_machine_can_read_is_a_failure() {
         let mut f = facts();
         assert_eq!(check(&evaluate(&f), "private_on_disk").level, Level::Ok);
@@ -2308,6 +2640,266 @@ mod tests {
         let checks = evaluate(&f);
         assert_eq!(check(&checks, "credential").level, Level::Fail);
         assert_eq!(check(&checks, "credential_store").level, Level::Fail);
+    }
+
+    /// A keychain locked where it cannot ask to be unlocked, as over SSH, is one thing to
+    /// fix, said once with what fixes it and what Claude Code does meanwhile. Every parked
+    /// login behind it used to fail as well, each advised to sign in again for nothing.
+    #[test]
+    fn a_locked_keychain_is_one_failure_and_sends_nobody_to_sign_in_again() {
+        let mut f = facts();
+        f.credential = Err(store::Error::Locked);
+        let mut behind = parked("work", Some(NOW + 20 * 86_400));
+        behind.unreadable = Some(Unreadable::Locked);
+        f.parks = vec![behind];
+
+        let checks = evaluate(&f);
+        let credential = check(&checks, "credential");
+        assert_eq!(credential.level, Level::Fail);
+        assert_eq!(
+            credential.detail,
+            "the keychain is locked, and cannot ask to be unlocked from here"
+        );
+        assert!(
+            credential.advice.contains("`security unlock-keychain`")
+                && credential.advice.contains("keeps the login it last read"),
+            "{}",
+            credential.advice
+        );
+        let park = named(&checks, "account work");
+        assert_eq!(park.level, Level::Warn, "{}", park.detail);
+        assert_eq!(park.detail, "not read: the keychain is locked");
+        assert!(!park.advice.contains("--sign-in"), "{}", park.advice);
+        assert_eq!(
+            checks.iter().filter(|c| c.level == Level::Fail).count(),
+            1,
+            "one cause, one failure"
+        );
+
+        // Where a login is left in the fallback file, a session started here signs in
+        // with it, and the advice says so.
+        f.fallback_login = Some(FallbackLogin {
+            path: f.credential_file.clone(),
+            fingerprint: Ok(Some("0123456789abcdef".into())),
+        });
+        let advice = check(&evaluate(&f), "credential").advice.clone();
+        assert!(
+            advice.contains("signs in with the login in /home/x/.claude/.credentials.json"),
+            "{advice}"
+        );
+    }
+
+    /// A login left in `.credentials.json` behind the one in the keychain is what a Claude
+    /// Code that cannot read the keychain signs in with, and no switch reaches it.
+    #[test]
+    fn a_login_left_behind_the_keychain_is_said_with_what_reads_it() {
+        let mut f = facts();
+        assert!(evaluate(&f).iter().all(|c| c.code != "fallback_login"));
+
+        f.fallback_login = Some(FallbackLogin {
+            path: f.credential_file.clone(),
+            fingerprint: Ok(Some("0123456789abcdef".into())),
+        });
+        let checks = evaluate(&f);
+        let said = check(&checks, "fallback_login");
+        assert_eq!(said.level, Level::Warn);
+        assert_eq!(said.name, "fallback login");
+        assert_eq!(
+            said.detail,
+            "/home/x/.claude/.credentials.json  ·  refresh 0123456789abcdef"
+        );
+        assert!(
+            said.advice.contains("over SSH")
+                && said.advice.contains(
+                    "While it is there, Claude Code sessions already running at a switch keep \
+                     the account they are on until their login is next renewed"
+                )
+                && said.advice.ends_with(
+                    "`pitboard stow` keeps this login for its account, where Pitboard holds no \
+                     other it can switch to, then deletes the file, which leaves one login for \
+                     every session."
+                ),
+            "{}",
+            said.advice
+        );
+        assert!(!said.advice.contains("rm "), "{}", said.advice);
+        assert!(healthy(&checks), "nothing Pitboard does is stopped by it");
+    }
+
+    /// A running session watches the file by its being there, so one with no login in it
+    /// holds sessions to their account after a switch all the same. It is said, with what
+    /// lets them follow, and the login check's advice does not send a session to it.
+    #[test]
+    fn a_file_behind_the_keychain_with_no_login_in_it_is_said_with_what_it_holds_back() {
+        let mut f = facts();
+        f.fallback_login = Some(FallbackLogin {
+            path: f.credential_file.clone(),
+            fingerprint: Ok(None),
+        });
+        let checks = evaluate(&f);
+        let said = check(&checks, "fallback_login");
+        assert_eq!(said.level, Level::Warn);
+        assert_eq!(
+            said.detail,
+            "/home/x/.claude/.credentials.json  ·  no login in it"
+        );
+        assert_eq!(
+            said.advice,
+            "It holds no Claude Code login. While it is there, Claude Code sessions already \
+             running at a switch keep the account they are on until their login is next \
+             renewed, or until they are started again. `pitboard stow` deletes it, which lets \
+             them follow a switch."
+        );
+        assert!(
+            check(&checks, "auth_source")
+                .detail
+                .ends_with(", once a session reads it again"),
+            "{}",
+            check(&checks, "auth_source").detail
+        );
+
+        f.credential = Err(store::Error::Locked);
+        let advice = check(&evaluate(&f), "credential").advice.clone();
+        assert!(
+            advice.ends_with("one started here is signed out."),
+            "{advice}"
+        );
+    }
+
+    /// A running session looks at the file and never reads it to decide, so one Pitboard
+    /// cannot read holds sessions to their account after a switch all the same. It is said
+    /// with why, without guessing whether a login is in it, and so is the login check's
+    /// advice for a session that cannot read the keychain.
+    #[test]
+    fn a_file_behind_the_keychain_that_cannot_be_read_is_said_with_why() {
+        let mut f = facts();
+        f.fallback_login = Some(FallbackLogin {
+            path: f.credential_file.clone(),
+            fingerprint: Err(store::Error::Unreadable(
+                "cannot read /home/x/.claude/.credentials.json: Permission denied".into(),
+            )),
+        });
+        let checks = evaluate(&f);
+        let said = check(&checks, "fallback_login");
+        assert_eq!(said.level, Level::Warn);
+        assert_eq!(
+            said.detail,
+            "/home/x/.claude/.credentials.json  ·  not read: the credential store could not be \
+             read: cannot read /home/x/.claude/.credentials.json: Permission denied"
+        );
+        assert_eq!(
+            said.advice,
+            "Pitboard could not read it, so whether it holds a login, which a session that \
+             cannot read the keychain signs in with, cannot be told, and `pitboard stow` cannot \
+             put it away. While it is there, Claude Code sessions already running at a switch \
+             keep the account they are on until their login is next renewed, or until they are \
+             started again. Deleting it lets them follow a switch, and takes whatever it holds \
+             with it: `rm /home/x/.claude/.credentials.json`."
+        );
+        assert!(healthy(&checks), "nothing Pitboard does is stopped by it");
+
+        f.credential = Err(store::Error::Locked);
+        let advice = check(&evaluate(&f), "credential").advice.clone();
+        assert!(
+            advice.ends_with(
+                "whether one started here signs in with what /home/x/.claude/.credentials.json \
+                 holds cannot be told, since Pitboard could not read it."
+            ),
+            "{advice}"
+        );
+    }
+
+    /// What the checks above are given, read off the stores: the file while the keychain
+    /// holds the login in use, with the login in it, none, or why it cannot be read, and
+    /// nothing where the file is the store in use.
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    )]
+    fn a_login_left_behind_the_keychain_is_found_in_its_file() {
+        use crate::host::memory::MemoryHost;
+        use crate::store::memory::Fault;
+
+        let host = MemoryHost::new();
+        let ctx = Context::for_unit_test().with_memory_stores(Arc::clone(&host));
+        let service = claude::live_service(&ctx);
+        let file = host.file_at(claude_live::credential_file(&ctx));
+        let login = |token: &str| json!({"claudeAiOauth": {"refreshToken": token}}).to_string();
+
+        host.live().plant(&service, &login("in use"));
+        assert!(fallback_login(&ctx).is_none());
+
+        file.plant(&service, &login("left"));
+        let found = fallback_login(&ctx).expect("a login behind the keychain's");
+        assert_eq!(found.path, claude_live::credential_file(&ctx));
+        assert_eq!(
+            found.fingerprint.expect("readable"),
+            Some(store::fingerprint("left"))
+        );
+
+        file.plant(&service, &json!({"mcpOAuth": {}}).to_string());
+        let found = fallback_login(&ctx).expect("what `/logout` leaves is still there");
+        assert_eq!(
+            found.fingerprint.expect("readable"),
+            None,
+            "and holds no login"
+        );
+
+        file.plant(&service, &login("left"));
+        file.fault(
+            &service,
+            Fault::UnreadableContents("permission denied".into()),
+        );
+        let found = fallback_login(&ctx).expect("what cannot be read is still there");
+        assert!(
+            matches!(found.fingerprint, Err(store::Error::Unreadable(_))),
+            "and what it holds is not guessed"
+        );
+        file.heal(&service);
+
+        host.live().delete_everything();
+        assert!(
+            fallback_login(&ctx).is_none(),
+            "the file is the login in use when the keychain holds none"
+        );
+    }
+
+    /// Read from the vault, a park behind a locked keychain is locked, not broken: nothing
+    /// is known of it but that.
+    #[test]
+    fn a_park_behind_a_locked_keychain_is_read_as_locked() {
+        use crate::host::memory::MemoryHost;
+        use crate::store::memory::Fault;
+
+        let host = MemoryHost::new();
+        let ctx = Context::for_unit_test().with_memory_stores(Arc::clone(&host));
+        let state = State {
+            accounts: vec![crate::state::Account {
+                label: "work".into(),
+                id: "work-uuid".into(),
+                account_uuid: "work-uuid".into(),
+                email: "work@example.com".into(),
+                parked: parked("work", Some(NOW + 20 * 86_400)).park,
+                last_used_at: None,
+                replaced_at: None,
+                plan: None,
+                detail: crate::state::Detail::Claude {
+                    organization_uuid: "org".into(),
+                    oauth_account: json!({}),
+                },
+            }],
+            ..State::default()
+        };
+        assert_eq!(
+            park_facts(&ctx, &state)[0].unreadable,
+            Some(Unreadable::Broken("missing from the vault".into()))
+        );
+        host.vault().fault_all(Fault::Locked);
+        assert_eq!(
+            park_facts(&ctx, &state)[0].unreadable,
+            Some(Unreadable::Locked)
+        );
     }
 
     #[test]
@@ -2362,6 +2954,40 @@ mod tests {
         f.backend = Ok(store::Backend::File);
         let checks = evaluate(&f);
         assert_eq!(check(&checks, "storage_v5").level, Level::Ok);
+    }
+
+    /// Claude Code's file is the whole answer only where it has no other store: on Linux. On
+    /// macOS it is a fallback after a keychain write failed, and on Windows Credential
+    /// Manager may hold the login in use instead, which Pitboard does not read yet.
+    #[test]
+    fn a_file_store_is_the_whole_answer_only_on_linux() {
+        let mut f = facts();
+        f.backend = Ok(store::Backend::File);
+        for (os, level, advice) in [
+            (Os::Linux, Level::Ok, ""),
+            (
+                Os::MacOs,
+                Level::Warn,
+                "Claude Code fell back to a file, which means a keychain write failed at some \
+                 point.",
+            ),
+            (
+                Os::Windows,
+                Level::Warn,
+                "Claude Code may keep its login in Credential Manager instead, which Pitboard \
+                 does not read yet.",
+            ),
+        ] {
+            f.os = os;
+            let checks = evaluate(&f);
+            let store = check(&checks, "credential_store");
+            assert_eq!(
+                (store.level, store.advice.as_str()),
+                (level, advice),
+                "{os:?}"
+            );
+            assert!(store.detail.starts_with("plaintext file"), "{os:?}");
+        }
     }
 
     /// The failure that would follow Claude Code moving where it keeps a login: not an
@@ -2548,6 +3174,8 @@ mod tests {
             path: PathBuf::from("/home/x/Library/LaunchAgents/com.datlechin.pitboard.renew.plist"),
             program: Some(PathBuf::from("/opt/homebrew/bin/pitboard")),
             program_found: true,
+            network: direct(),
+            network_differs: false,
         });
         let checks = evaluate(&f);
         let found = check(&checks, "schedule");
@@ -2567,6 +3195,8 @@ mod tests {
                 "/Applications/Pitboard.app/Contents/MacOS/Pitboard",
             )),
             program_found: true,
+            network: direct(),
+            network_differs: false,
         });
         let checks = evaluate(&f);
         let the_app = check(&checks, "schedule");
@@ -2613,6 +3243,7 @@ mod tests {
     /// What the check above is given, read off a real disk: a schedule written the way
     /// `pitboard schedule install` writes it, whose Pitboard is then taken away.
     #[test]
+    #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn a_schedule_whose_pitboard_is_gone_is_found_on_the_disk() {
         let root = std::env::temp_dir().join(format!(
             "pitboard-doctor-schedule-{}-{:?}",
@@ -2637,7 +3268,7 @@ mod tests {
 
         std::fs::create_dir_all(root.join("bin")).expect("a bin");
         std::fs::write(&program, "").expect("a Pitboard");
-        crate::schedule::install(&ctx).expect("installed");
+        crate::schedule::install(&ctx, Permit::for_a_test()).expect("installed");
         let fact = schedule_fact(&ctx).expect("installed");
         assert_eq!(fact.program.as_deref(), Some(program.as_path()));
         assert!(fact.program_found);
@@ -2648,6 +3279,237 @@ mod tests {
         assert!(
             schedule_fact(&ctx.with_pitboard_home(root.join("elsewhere"))).is_none(),
             "a Pitboard pointed at another home has no schedule"
+        );
+    }
+
+    /// A schedule that runs a Pitboard still there, installed with `network`.
+    fn scheduled(network: NetworkFact, network_differs: bool) -> ScheduleFact {
+        ScheduleFact {
+            path: PathBuf::from("/home/x/.config/systemd/user/pitboard-renew.timer"),
+            program: Some(PathBuf::from("/usr/local/bin/pitboard")),
+            program_found: true,
+            network,
+            network_differs,
+        }
+    }
+
+    /// A network whose requests go through `proxy`.
+    fn by(proxy: ProxyFact) -> NetworkFact {
+        NetworkFact {
+            proxy: Some(proxy),
+            passed_over: Vec::new(),
+        }
+    }
+
+    /// The schedule's runs are given the proxy variables of the Pitboard that installed it.
+    /// Where those send requests another way than this run's, doctor says so, with what each
+    /// goes through and the user name and password as `***`, and says how to give the
+    /// schedule this run's. Where they go the same way, nothing is said.
+    #[test]
+    fn a_schedule_whose_proxy_differs_from_this_runs_is_said() {
+        let mut f = facts();
+        f.schedule = Some(scheduled(direct(), false));
+        assert!(
+            evaluate(&f).iter().all(|c| c.code != "schedule_proxy"),
+            "nothing is said where they go the same way"
+        );
+
+        f.schedule = Some(scheduled(by(through(None, &[])), true));
+        let checks = evaluate(&f);
+        let line = check(&checks, "schedule_proxy");
+        assert_eq!(
+            (line.level, line.name.as_str(), line.detail.as_str()),
+            (
+                Level::Warn,
+                "renewal schedule's proxy",
+                "the schedule was installed with http://***:***@proxy.example.com:3128, from \
+                 HTTPS_PROXY; this run goes directly"
+            )
+        );
+        assert!(
+            line.advice.contains("`pitboard schedule install`"),
+            "{}",
+            line.advice
+        );
+
+        let on_loopback = || ProxyFact {
+            variable: "ALL_PROXY",
+            address: "http://127.0.0.1:3128".into(),
+            server: "127.0.0.1:3128".into(),
+            on_loopback: true,
+            ..through(Some("NO_PROXY"), &["chatgpt.com"])
+        };
+        f.network = by(on_loopback());
+        f.schedule = Some(scheduled(direct(), true));
+        assert_eq!(
+            check(&evaluate(&f), "schedule_proxy").detail,
+            "the schedule was installed with no proxy; this run goes through \
+             http://127.0.0.1:3128, from ALL_PROXY, NO_PROXY exempting chatgpt.com"
+        );
+
+        // A SOCKS proxy, which Pitboard does not use yet, is given, not gone through. Installing
+        // the schedule again from here would give it that proxy, and its requests would fail
+        // too, so the advice is to change the variable first.
+        let socks = || ProxyFact {
+            address: "socks5h://127.0.0.1:1080".into(),
+            server: "127.0.0.1:1080".into(),
+            socks: true,
+            ..on_loopback()
+        };
+        f.network = by(socks());
+        let checks = evaluate(&f);
+        let line = check(&checks, "schedule_proxy");
+        assert_eq!(
+            (line.detail.as_str(), line.advice.as_str()),
+            (
+                "the schedule was installed with no proxy; this run is given \
+                 socks5h://127.0.0.1:1080, from ALL_PROXY, NO_PROXY exempting chatgpt.com",
+                "The schedule's runs are given the proxy variables it was installed with. \
+                 Installed again from here, they would be given this run's SOCKS proxy, which \
+                 Pitboard does not use yet, and their requests would fail. Set ALL_PROXY to an \
+                 HTTP proxy's address, or unset it, then install it again with `pitboard \
+                 schedule install`, which takes the proxy variables set where it runs."
+            )
+        );
+        // With every host Pitboard calls exempt from it, nothing fails, and installing the
+        // schedule again from here is the advice as for any other proxy.
+        f.network = by(ProxyFact {
+            exempt: [
+                "api.anthropic.com",
+                "platform.claude.com",
+                "auth.openai.com",
+                "chatgpt.com",
+            ]
+            .map(String::from)
+            .to_vec(),
+            ..socks()
+        });
+        let checks = evaluate(&f);
+        let advice = &check(&checks, "schedule_proxy").advice;
+        assert!(
+            advice.starts_with(
+                "The schedule's runs are given the proxy variables it was installed with. To \
+                 give them this run's, install it again from here"
+            ),
+            "{advice}"
+        );
+
+        f.network = by(through(None, &[]));
+        f.schedule = Some(scheduled(by(through(None, &[])), true));
+        assert_eq!(
+            check(&evaluate(&f), "schedule_proxy").detail,
+            "the schedule was installed with this run's proxy, \
+             http://***:***@proxy.example.com:3128, from HTTPS_PROXY, but with another user \
+             name or password"
+        );
+    }
+
+    /// In the app, whose environment is the system's and names no proxy a shell set, a
+    /// schedule installed from a terminal with a proxy differs from it for good, and the
+    /// app's switch would take that proxy away. So the line is no warning there: it says what
+    /// each goes through, and how each way of installing the schedule chooses its proxy.
+    #[test]
+    fn in_the_app_a_schedules_other_proxy_is_said_without_a_warning() {
+        let mut f = facts();
+        f.in_the_app = true;
+        f.schedule = Some(scheduled(direct(), false));
+        assert!(evaluate(&f).iter().all(|c| c.code != "schedule_proxy"));
+
+        f.schedule = Some(scheduled(by(through(None, &[])), true));
+        let checks = evaluate(&f);
+        let line = check(&checks, "schedule_proxy");
+        assert_eq!(
+            (line.level, line.name.as_str(), line.detail.as_str()),
+            (
+                Level::Ok,
+                "renewal schedule's proxy",
+                "the schedule was installed with http://***:***@proxy.example.com:3128, from \
+                 HTTPS_PROXY; the app goes directly"
+            )
+        );
+        for said in ["Settings", "`pitboard schedule install` in a terminal"] {
+            assert!(line.advice.contains(said), "{said}: {}", line.advice);
+        }
+
+        f.network = by(through(None, &[]));
+        assert_eq!(
+            check(&evaluate(&f), "schedule_proxy").detail,
+            "the schedule was installed with the app's proxy, \
+             http://***:***@proxy.example.com:3128, from HTTPS_PROXY, but with another user \
+             name or password"
+        );
+    }
+
+    /// What the line above is given, read off a real disk: a schedule `pitboard schedule
+    /// install` wrote with a proxy, against runs with the same proxy, the same one with
+    /// another password, and none. The report a person pastes hides the proxy's host, as it
+    /// does this run's.
+    #[test]
+    #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
+    fn the_schedules_proxy_is_read_from_what_install_wrote() {
+        let root = std::env::temp_dir().join(format!(
+            "pitboard-doctor-schedule-proxy-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        struct Scratch(std::path::PathBuf);
+        impl Drop for Scratch {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let _guard = Scratch(root.clone());
+        let program = root.join("bin/pitboard");
+        std::fs::create_dir_all(root.join("bin")).expect("a bin");
+        std::fs::write(&program, "").expect("a Pitboard");
+        let machine = crate::host::memory::MemoryHost::new();
+        let home = root.to_string_lossy().into_owned();
+        let run = |proxy: Option<&str>| {
+            let env: crate::context::Environment = [("HOME", home.as_str())]
+                .into_iter()
+                .chain(proxy.map(|address| ("HTTPS_PROXY", address)))
+                .collect();
+            Context::for_command_line(&env)
+                .with_memory_stores(std::sync::Arc::clone(&machine))
+                .with_schedule_program(program.clone())
+        };
+        let gathered = |ctx: &Context| {
+            let mut f = facts();
+            f.schedule = schedule_fact(ctx);
+            f.network = network_fact(&ctx.proxy);
+            f
+        };
+        let installer = run(Some("http://alice:s3cret@proxy.example.com:3128"));
+        crate::schedule::install(&installer, Permit::for_a_test()).expect("installed");
+
+        let same = gathered(&installer);
+        assert!(!same.schedule.as_ref().expect("installed").network_differs);
+        assert!(evaluate(&same).iter().all(|c| c.code != "schedule_proxy"));
+
+        let changed = gathered(&run(Some("http://alice:changed@proxy.example.com:3128")));
+        let detail = check(&evaluate(&changed), "schedule_proxy").detail.clone();
+        assert!(
+            detail.ends_with("but with another user name or password"),
+            "{detail}"
+        );
+        for secret in ["alice", "s3cret", "changed"] {
+            assert!(!detail.contains(secret), "{secret}: {detail}");
+        }
+
+        let direct = run(None);
+        let f = gathered(&direct);
+        let detail = check(&evaluate(&f), "schedule_proxy").detail.clone();
+        assert_eq!(
+            detail,
+            "the schedule was installed with http://***:***@proxy.example.com:3128, from \
+             HTTPS_PROXY; this run goes directly"
+        );
+        let hidden = redaction_for(&direct, &f).over(&detail);
+        assert!(
+            hidden.starts_with("the schedule was installed with http://***:***@<proxy ")
+                && !hidden.contains("proxy.example.com"),
+            "{hidden}"
         );
     }
 
@@ -2673,6 +3535,278 @@ mod tests {
         f.readable_by_others = vec![("/home/a/.claude/.credentials.json".into(), mode(0o644))];
         for c in evaluate(&f) {
             assert!(!c.advice.contains("  "), "{}: {:?}", c.code, c.advice);
+        }
+    }
+
+    /// A proxy `HTTPS_PROXY` names, exempting the hosts Pitboard calls that `exempt` lists.
+    fn through(exempting: Option<&'static str>, exempt: &[&str]) -> ProxyFact {
+        ProxyFact {
+            variable: "HTTPS_PROXY",
+            address: "http://***:***@proxy.example.com:3128".into(),
+            server: "proxy.example.com:3128".into(),
+            on_loopback: false,
+            socks: false,
+            exempting,
+            exempt: exempt.iter().map(|host| (*host).to_string()).collect(),
+        }
+    }
+
+    /// The network check, for a network that is `proxy`, passing over `passed_over`.
+    fn network(proxy: Option<ProxyFact>, passed_over: &[&'static str]) -> Check {
+        let mut f = facts();
+        f.network = NetworkFact {
+            proxy,
+            passed_over: passed_over.to_vec(),
+        };
+        let checks = evaluate(&f);
+        let found = check(&checks, "network");
+        Check {
+            code: found.code,
+            name: found.name.clone(),
+            level: found.level,
+            detail: found.detail.clone(),
+            advice: found.advice.clone(),
+        }
+    }
+
+    /// doctor says how Pitboard's requests leave this machine: directly, or through which
+    /// proxy and from which variable, and which of the hosts Pitboard calls go around it. It
+    /// had no such check, while ureq read the variables itself, so nobody could tell.
+    #[test]
+    fn the_network_check_names_the_proxy_and_the_variable_it_came_from() {
+        let direct = network(None, &[]);
+        assert_eq!(
+            (direct.level, direct.name.as_str(), direct.detail.as_str()),
+            (Level::Ok, "network", "direct: no variable names a proxy")
+        );
+        for (exempting, exempt, said) in [
+            (None, &[][..], ""),
+            (
+                Some("NO_PROXY"),
+                &[],
+                "; NO_PROXY exempts none of the hosts Pitboard calls",
+            ),
+            (
+                Some("no_proxy"),
+                &["api.anthropic.com"],
+                "; no_proxy exempts api.anthropic.com, which Pitboard reaches directly",
+            ),
+            (
+                Some("NO_PROXY"),
+                &["api.anthropic.com", "platform.claude.com"],
+                "; NO_PROXY exempts api.anthropic.com and platform.claude.com, which Pitboard \
+                 reaches directly",
+            ),
+            (
+                Some("NO_PROXY"),
+                &[
+                    "api.anthropic.com",
+                    "platform.claude.com",
+                    "auth.openai.com",
+                    "chatgpt.com",
+                ],
+                "; NO_PROXY exempts every host Pitboard calls, which it reaches directly",
+            ),
+        ] {
+            let check = network(Some(through(exempting, exempt)), &[]);
+            assert_eq!(check.level, Level::Ok, "{said}");
+            assert_eq!(
+                check.detail,
+                format!("through http://***:***@proxy.example.com:3128, from HTTPS_PROXY{said}")
+            );
+            assert!(check.advice.is_empty(), "{}", check.advice);
+        }
+    }
+
+    /// The network check of a context read from `pairs`, and nothing else of the environment
+    /// but a home.
+    fn network_read_from(pairs: &[(&'static str, &str)]) -> Check {
+        let env: crate::context::Environment = pairs
+            .iter()
+            .copied()
+            .chain([("HOME", "/nowhere")])
+            .collect();
+        let fact = network_fact(&Context::for_command_line(&env).proxy);
+        network(fact.proxy, &fact.passed_over)
+    }
+
+    /// A SOCKS proxy, which Pitboard does not use yet, is a warning. The check says so in the
+    /// words a request fails with, naming the variable that named the proxy, then the proxy,
+    /// and says what to set. A host the variable exempting hosts names still goes out
+    /// directly; with every host Pitboard calls exempt, nothing fails, and it is no warning.
+    ///
+    /// It named a SOCKS proxy as one Pitboard went through, like any other, while Pitboard
+    /// spoke SOCKS itself.
+    #[test]
+    fn a_socks_proxy_is_a_warning_naming_its_variable() {
+        let socks = network_read_from(&[("all_proxy", "socks5://127.0.0.1:7890")]);
+        assert_eq!(
+            (socks.level, socks.detail.as_str(), socks.advice.as_str()),
+            (
+                Level::Warn,
+                "requests fail: Pitboard does not use SOCKS proxies yet, and all_proxy names \
+                 one, socks5://127.0.0.1:7890",
+                "Pitboard goes through HTTP and HTTPS proxies only. For its requests to go \
+                 out, set all_proxy to an HTTP proxy's address, such as \
+                 http://proxy.example.com:8080, or unset it."
+            )
+        );
+
+        let some = network_read_from(&[
+            ("ALL_PROXY", "socks5h://alice:s3cret@p.example"),
+            ("NO_PROXY", "chatgpt.com"),
+        ]);
+        assert_eq!(
+            (some.level, some.detail.as_str()),
+            (
+                Level::Warn,
+                "requests fail: Pitboard does not use SOCKS proxies yet, and ALL_PROXY names \
+                 one, socks5h://***:***@p.example:1080; NO_PROXY exempts chatgpt.com, which \
+                 Pitboard reaches directly"
+            )
+        );
+
+        let passed = network_read_from(&[
+            ("ALL_PROXY", "not a proxy"),
+            ("HTTPS_PROXY", "socks://p.example"),
+        ]);
+        assert_eq!(
+            (passed.level, passed.detail.as_str(), passed.advice.as_str()),
+            (
+                Level::Warn,
+                "requests fail: Pitboard does not use SOCKS proxies yet, and HTTPS_PROXY \
+                 names one, socks5://p.example:1080; ALL_PROXY holds no proxy's address \
+                 Pitboard can read, so it is passed over",
+                "Pitboard goes through HTTP and HTTPS proxies only. For its requests to go \
+                 out, set each of ALL_PROXY and HTTPS_PROXY to an HTTP proxy's address, such \
+                 as http://proxy.example.com:8080, or unset them."
+            )
+        );
+
+        let every = network_read_from(&[("HTTPS_PROXY", "socks4://10.0.0.1"), ("no_proxy", "*")]);
+        assert_eq!(
+            (every.level, every.detail.as_str(), every.advice.as_str()),
+            (
+                Level::Ok,
+                "direct: Pitboard does not use SOCKS proxies yet, and HTTPS_PROXY names one, \
+                 socks4://10.0.0.1:1080; no_proxy exempts every host Pitboard calls, which it \
+                 reaches directly",
+                ""
+            )
+        );
+    }
+
+    /// Where Pitboard passes over a variable that holds no proxy's address, the check warns
+    /// and says what to set.
+    #[test]
+    fn a_variable_pitboard_cannot_read_is_a_warning() {
+        let passed = network(None, &["HTTPS_PROXY"]);
+        assert_eq!(passed.level, Level::Warn);
+        assert_eq!(
+            passed.detail,
+            "direct: HTTPS_PROXY holds no proxy's address Pitboard can read, so it is passed \
+             over"
+        );
+        assert_eq!(
+            passed.advice,
+            "Set it to a proxy's address, such as http://proxy.example.com:8080, or unset it."
+        );
+        let both = ProxyFact {
+            variable: "HTTP_PROXY",
+            address: "http://proxy.example.com:8080".into(),
+            ..through(None, &[])
+        };
+        let passed = network(Some(both), &["ALL_PROXY", "HTTPS_PROXY"]);
+        assert_eq!(passed.level, Level::Warn);
+        assert_eq!(
+            passed.detail,
+            "through http://proxy.example.com:8080, from HTTP_PROXY; ALL_PROXY and HTTPS_PROXY \
+             hold no proxy's address Pitboard can read, so they are passed over"
+        );
+        assert_eq!(
+            passed.advice,
+            "Set each to a proxy's address, such as http://proxy.example.com:8080, or unset \
+             them."
+        );
+    }
+
+    /// The report a person pastes shows a digest in place of the proxy's host and port,
+    /// which can name the company whose network it is, as it does an organisation's name.
+    /// A proxy on loopback names nothing beyond this machine, and is shown. The report a
+    /// person reads on their own machine hides neither.
+    #[test]
+    fn a_proxys_host_is_redacted_from_a_report_unless_it_is_on_loopback() {
+        let ctx = Context::new(PathBuf::from("/home/x"));
+        let mut f = facts();
+        f.network.proxy = Some(through(None, &[]));
+        let detail = check(&evaluate(&f), "network").detail.clone();
+        let hidden = redaction_for(&ctx, &f).over(&detail);
+        assert!(detail.contains("proxy.example.com:3128"), "{detail}");
+        assert!(!hidden.contains("proxy.example.com"), "{hidden}");
+        assert!(!hidden.contains("3128"), "{hidden}");
+        assert!(
+            hidden.starts_with("through http://***:***@<proxy ")
+                && hidden.contains("from HTTPS_PROXY"),
+            "{hidden}"
+        );
+
+        f.network.proxy = Some(ProxyFact {
+            address: "http://127.0.0.1:7890".into(),
+            server: "127.0.0.1:7890".into(),
+            on_loopback: true,
+            ..through(None, &[])
+        });
+        let detail = check(&evaluate(&f), "network").detail.clone();
+        assert_eq!(redaction_for(&ctx, &f).over(&detail), detail);
+    }
+
+    /// What doctor is given is read from the context, as the agent's proxy is, with the
+    /// user name and password in the address hidden, and the hosts exempt judged by ureq.
+    #[test]
+    fn the_network_is_read_from_the_context() {
+        let env: crate::context::Environment = [
+            ("HOME", "/nowhere"),
+            ("HTTPS_PROXY", "http://alice:s3cret@proxy.example.com:3128"),
+            ("NO_PROXY", ".anthropic.com,localhost"),
+        ]
+        .into_iter()
+        .collect();
+        let fact = network_fact(&Context::for_command_line(&env).proxy);
+        let proxy = fact.proxy.expect("a proxy");
+        assert_eq!(proxy.variable, "HTTPS_PROXY");
+        assert_eq!(proxy.address, "http://***:***@proxy.example.com:3128");
+        assert_eq!(proxy.server, "proxy.example.com:3128");
+        assert!(!proxy.on_loopback && !proxy.socks);
+        assert_eq!(proxy.exempting, Some("NO_PROXY"));
+        assert_eq!(proxy.exempt, ["api.anthropic.com"]);
+        assert!(fact.passed_over.is_empty());
+
+        let unit = network_fact(&Context::for_unit_test().proxy);
+        assert!(unit.proxy.is_none() && unit.passed_over.is_empty());
+
+        for (address, shown, on_loopback) in [
+            ("socks5://localhost:7890", "socks5://localhost:7890", true),
+            ("socks4://127.0.0.1", "socks4://127.0.0.1:1080", true),
+            ("socks5h://[::1]:1080", "socks5h://[::1]:1080", true),
+            ("socks4a://10.0.0.1", "socks4a://10.0.0.1:1080", false),
+            ("socks://p.example", "socks5://p.example:1080", false),
+            (
+                "https://Proxy.Example.com",
+                "https://Proxy.Example.com:443",
+                false,
+            ),
+        ] {
+            let env: crate::context::Environment = [("HOME", "/nowhere"), ("ALL_PROXY", address)]
+                .into_iter()
+                .collect();
+            let proxy = network_fact(&Context::for_command_line(&env).proxy)
+                .proxy
+                .expect("a proxy");
+            assert_eq!(
+                (proxy.address.as_str(), proxy.on_loopback, proxy.socks),
+                (shown, on_loopback, shown.starts_with("socks")),
+                "{address}"
+            );
         }
     }
 
@@ -2702,7 +3836,7 @@ mod tests {
     fn every_parked_login_is_judged_and_a_way_back_is_offered() {
         let mut f = facts();
         let mut unusable = parked("broken", Some(NOW + 30 * 86_400));
-        unusable.unreadable = Some("missing from the vault".into());
+        unusable.unreadable = Some(Unreadable::Broken("missing from the vault".into()));
         f.parks = vec![
             parked("fine", Some(NOW + 20 * 86_400)),
             parked("soon", Some(NOW + 86_400)),
@@ -2788,6 +3922,36 @@ mod tests {
         assert!(healthy(&checks), "neither stops Pitboard working");
     }
 
+    /// A switch the next change cannot finish is said in the words that change would be
+    /// refused with, with the way out, and not as one the next change finishes, which is
+    /// what the check said of every interrupted switch.
+    #[test]
+    fn a_switch_the_next_change_cannot_finish_says_why_and_the_way_out() {
+        let mut f = facts();
+        f.interrupted = true;
+        f.stuck = Some("an earlier switch from `work` to `personal` was interrupted".into());
+        let checks = evaluate(&f);
+        let said = check(&checks, "interrupted_switch");
+        assert_eq!(said.level, Level::Warn);
+        assert_eq!(
+            said.detail,
+            "an earlier switch from `work` to `personal` was interrupted"
+        );
+        assert!(
+            said.advice.contains("`pitboard abandon`"),
+            "{}",
+            said.advice
+        );
+        assert_eq!(
+            checks
+                .iter()
+                .filter(|c| c.code == "interrupted_switch")
+                .count(),
+            1,
+            "said once"
+        );
+    }
+
     /// The advice has to be something a person can type and have it act on the right
     /// account. `pitboard enroll work --sign-in` about a Codex account would enroll a
     /// Claude Code one.
@@ -2834,10 +3998,13 @@ mod tests {
             && c.advice.contains("`pitboard forget claude/work`")));
     }
 
-    /// Whether an account is the one signed in is its own tool's question. Asked of Claude
-    /// Code's config for every account, a signed-in Codex account read as one with nothing
-    /// parked to switch to, and the advice was to sign in again.
+    /// Whether an account is the one signed in is its own tool's question: Claude Code's from
+    /// what Anthropic last said of its login, which the config naming another does not move,
+    /// and Codex's from its login's own claims. Asked of Claude Code's config for every
+    /// account, a signed-in Codex account read as one with nothing parked to switch to, and
+    /// the advice was to sign in again.
     #[test]
+    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn an_account_is_active_by_its_own_tools_record() {
         use crate::host::memory::MemoryHost;
 
@@ -2862,8 +4029,8 @@ mod tests {
         std::fs::write(
             root.join(".claude.json"),
             json!({"oauthAccount": {
-                "accountUuid": "alpha-uuid",
-                "emailAddress": "a@example.com",
+                "accountUuid": "beta-uuid",
+                "emailAddress": "b@example.com",
                 "organizationUuid": "org",
             }})
             .to_string(),
@@ -2873,29 +4040,33 @@ mod tests {
         let account =
             |label: &str, uuid: &str, detail: crate::state::Detail| crate::state::Account {
                 label: label.into(),
+                id: uuid.into(),
                 account_uuid: uuid.into(),
                 email: format!("{label}@example.com"),
                 parked: None,
                 last_used_at: None,
+                replaced_at: None,
+                plan: None,
                 detail,
             };
         let claude = || crate::state::Detail::Claude {
             organization_uuid: "org".into(),
             oauth_account: json!({}),
         };
-        let codex = || crate::state::Detail::Codex {
-            workspace_id: None,
-            plan: None,
-        };
+        let codex = || crate::state::Detail::Codex { workspace_id: None };
         let mut state = State {
             accounts: vec![
                 account("alpha", "alpha-uuid", claude()),
+                account("beta", "beta-uuid", claude()),
                 account("work", "work-acc", codex()),
                 account("home", "home-acc", codex()),
             ],
             ..State::default()
         };
-        state.set_active(ProviderId::Codex, Some("home".into()));
+        let alpha = crate::in_use::InUse::of(&state.accounts[0], "alpha-refresh", NOW);
+        state.identified(ProviderId::Claude, alpha, NOW);
+        let home = crate::in_use::InUse::of(&state.accounts[3], "home-refresh", NOW);
+        state.identified(ProviderId::Codex, home, NOW);
         let active = |facts: &[ParkFact]| -> Vec<String> {
             facts
                 .iter()
@@ -2904,13 +4075,23 @@ mod tests {
                 .collect()
         };
 
-        // Nothing signed in to Codex: Pitboard's own record of its last switch stands in.
-        assert_eq!(active(&park_facts(&ctx, &state)), ["alpha", "codex/home"]);
+        // Nothing signed in to Codex: nobody, whatever Pitboard last recorded.
+        assert_eq!(active(&park_facts(&ctx, &state)), ["alpha"]);
 
-        // Codex's login names `work`, whatever Pitboard last recorded.
+        // A Codex login that cannot be read: Pitboard's record of whose it was stands in.
         let live = crate::provider::of(ProviderId::Codex)
             .live(&ctx)
             .expect("Codex keeps its login in a file here");
+        store::write_raw(
+            &live.chain,
+            Permit::for_a_test(),
+            &live.service,
+            "{\"auth_mo",
+        )
+        .expect("half a login");
+        assert_eq!(active(&park_facts(&ctx, &state)), ["alpha", "codex/home"]);
+
+        // Codex's login names `work`, whatever Pitboard last recorded.
         let login = json!({
             "auth_mode": "chatgpt",
             "tokens": {
@@ -2923,8 +4104,128 @@ mod tests {
                 "account_id": "work-acc",
             },
         });
-        store::write_raw(&live.chain, &live.service, &login.to_string()).expect("a login");
+        store::write_raw(
+            &live.chain,
+            Permit::for_a_test(),
+            &live.service,
+            &login.to_string(),
+        )
+        .expect("a login");
         assert_eq!(active(&park_facts(&ctx, &state)), ["alpha", "codex/work"]);
+    }
+
+    /// The accounts `facts` has in use, by the name a command takes.
+    fn in_use(facts: &Facts) -> Vec<String> {
+        facts
+            .parks
+            .iter()
+            .filter(|p| p.active)
+            .map(ParkFact::typed)
+            .collect()
+    }
+
+    /// The account in use is the one Anthropic last named for the login stored, known by
+    /// that login's fingerprint, and doctor says when it was named. Claude Code's config
+    /// naming another, once a read has found the login is still the one named, is said, and
+    /// moves nothing.
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    )]
+    fn the_account_in_use_is_the_one_anthropic_named() {
+        use crate::switch::harness::{NOW, config_names, machine};
+        let m = machine("doctor-in-use");
+        let at = time::moment(NOW, NOW);
+
+        let facts = gather(&m.ctx);
+        let checks = evaluate(&facts);
+        let said = check(&checks, "in_use");
+        assert_eq!(said.level, Level::Ok);
+        assert_eq!(said.detail, format!("`here`, as Anthropic said {at}"));
+        assert_eq!(in_use(&facts), ["here"]);
+
+        config_names(&m, "there");
+        crate::service::Pitboard::new(m.ctx.clone())
+            .status(false)
+            .expect("a read");
+        let facts = gather(&m.ctx);
+        let checks = evaluate(&facts);
+        let said = check(&checks, "in_use");
+        assert_eq!(said.level, Level::Warn);
+        assert_eq!(
+            said.detail,
+            format!("`here`, as Anthropic said {at}, and Claude Code's config names `there`")
+        );
+        assert_eq!(
+            said.advice,
+            "`/status` in Claude Code shows `there`. `pitboard use here` writes `here` into the \
+             config."
+        );
+        assert_eq!(in_use(&facts), ["here"]);
+    }
+
+    /// Claude Code renews its login by itself, and a renewed login has another fingerprint.
+    /// That is what happens every few hours, so it is no warning: the next read asks whose it
+    /// is. Doctor asks nobody.
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    )]
+    fn a_renewed_login_is_not_a_warning() {
+        use crate::switch::harness::{NOW, document, machine};
+        let m = machine("doctor-renewed");
+        m.sign_in(&document("here-renewed"));
+
+        let checks = evaluate(&gather(&m.ctx));
+        let said = check(&checks, "in_use");
+
+        assert_eq!(said.level, Level::Ok);
+        assert_eq!(
+            said.detail,
+            format!(
+                "`here`, as Anthropic said {} of a login renewed or replaced since; the next \
+                 `pitboard status` asks whose it is",
+                time::moment(NOW, NOW)
+            )
+        );
+        assert_eq!(m.api.calls(), 0);
+    }
+
+    /// Claude Code's config has named another account since Anthropic last named the login
+    /// stored, as a sign-in leaves it and another Claude Code process starting on another
+    /// login can. Something may have signed in, and only Anthropic can say whose the login is
+    /// now.
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    )]
+    fn a_config_that_moved_since_is_a_warning() {
+        use crate::switch::harness::{NOW, config_names, machine};
+        let m = machine("doctor-config-moved");
+        config_names(&m, "there");
+
+        let facts = gather(&m.ctx);
+        let checks = evaluate(&facts);
+        let said = check(&checks, "in_use");
+
+        assert_eq!(said.level, Level::Warn);
+        assert_eq!(
+            said.detail,
+            format!(
+                "Claude Code's config has named `there` since Anthropic named `here` {}, so \
+                 another login may be stored",
+                time::moment(NOW, NOW)
+            )
+        );
+        assert_eq!(
+            said.advice,
+            "Run `pitboard status`, which asks Anthropic whose login Claude Code has stored."
+        );
+        assert_eq!(in_use(&facts), ["here"]);
+        assert_eq!(m.api.calls(), 0);
     }
 
     /// A machine that has never run Codex reads exactly as it did before Pitboard knew
@@ -2995,6 +4296,13 @@ mod tests {
             let codex = CodexFacts {
                 backend,
                 enrolled,
+                backend_setting: format!(
+                    "`cli_auth_credentials_store = \"{backend}\"` in /home/x/.codex/config.toml"
+                ),
+                backend_remedy: "To use the file store, set `cli_auth_credentials_store = \
+                                 \"file\"` in /home/x/.codex/config.toml, then sign in again \
+                                 with `codex login`"
+                    .into(),
                 ..with_codex()
             };
             codex_checks(&codex)
@@ -3006,8 +4314,15 @@ mod tests {
             assert_eq!(found.level, Level::Fail, "{store}");
             assert!(found.detail.contains(store), "{}", found.detail);
             assert!(
-                found.advice.contains("config.toml"),
-                "says which setting to remove: {}",
+                found.detail.contains("/home/x/.codex/config.toml"),
+                "says which file set it: {}",
+                found.detail
+            );
+            assert!(
+                found.advice.contains(
+                    "set `cli_auth_credentials_store = \"file\"` in /home/x/.codex/config.toml"
+                ),
+                "says the line and where it goes: {}",
                 found.advice
             );
             assert!(!healthy(&checks), "{store}");
@@ -3032,6 +4347,106 @@ mod tests {
             let advice = &check(&found, "codex_backend").advice;
             assert!(advice.contains("will not touch"), "{advice}");
         }
+    }
+
+    /// The file store's line says which setting chose it, and that a project's own config is
+    /// not read, since in a trusted project that sets the store Codex keeps its login
+    /// somewhere else.
+    #[test]
+    fn the_file_store_says_what_chose_it_and_what_is_not_read() {
+        let checks = codex_checks(&with_codex());
+        let found = check(&checks, "codex_backend");
+        assert_eq!(found.level, Level::Ok);
+        assert_eq!(
+            found.detail,
+            "file (Codex's default)  ·  /home/x/.codex/auth.json"
+        );
+        assert!(
+            found
+                .advice
+                .contains("does not read a project's own `.codex/config.toml`"),
+            "{}",
+            found.advice
+        );
+    }
+
+    /// A store nobody can tell stops Codex itself, so it is broken rather than a choice: a
+    /// failure where Codex accounts are enrolled, and a warning where none are.
+    #[test]
+    fn a_codex_store_nobody_can_tell_is_broken() {
+        let unknown = |enrolled| CodexFacts {
+            backend: "unknown",
+            backend_setting: "/etc/codex/config.toml is not TOML Codex can read, at line 3".into(),
+            backend_remedy: "Codex 0.160.0 does not start until that is put right".into(),
+            enrolled,
+            ..with_codex()
+        };
+        for (enrolled, level) in [(1, Level::Fail), (0, Level::Warn)] {
+            let checks = codex_checks(&unknown(enrolled));
+            let found = check(&checks, "codex_backend");
+            assert_eq!(found.level, level);
+            assert_eq!(
+                found.detail,
+                "cannot tell: /etc/codex/config.toml is not TOML Codex can read, at line 3"
+            );
+            assert_eq!(
+                found.advice,
+                "Codex 0.160.0 does not start until that is put right. Pitboard parks and \
+                 switches no Codex login while it cannot tell where Codex keeps it."
+            );
+            assert!(checks.iter().all(|c| c.code != "codex_login"));
+        }
+    }
+
+    /// What `/etc/codex` and the person's own config say is gathered as Codex reads it, and a
+    /// store a requirement pins is said to be one no line of the person's own changes.
+    #[test]
+    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
+    fn a_store_an_administrator_pinned_is_gathered_and_said() {
+        let host = crate::host::memory::MemoryHost::new();
+        let ctx = Context::for_unit_test().with_memory_stores(host.clone());
+        host.administers(
+            "/etc/codex/requirements.toml",
+            "cli_auth_credentials_store = \"keyring\"\n",
+        );
+        let codex = CodexFacts {
+            enrolled: 1,
+            ..codex_facts(&ctx, None)
+        };
+        assert_eq!(codex.backend, "keyring");
+        assert_eq!(
+            codex.backend_setting,
+            "pinned to `keyring` by /etc/codex/requirements.toml"
+        );
+        let checks = codex_checks(&codex);
+        let found = check(&checks, "codex_backend");
+        assert_eq!(found.level, Level::Fail);
+        assert_eq!(
+            found.detail,
+            "keyring (pinned to `keyring` by /etc/codex/requirements.toml)"
+        );
+        assert!(
+            found.advice.ends_with(
+                "No line in your own config.toml can change it: \
+                 /etc/codex/requirements.toml pins it, and only an administrator can change \
+                 that."
+            ),
+            "{}",
+            found.advice
+        );
+
+        host.administers("/etc/codex/requirements.toml", "x = \n");
+        let unknown = codex_facts(&ctx, None);
+        assert_eq!(unknown.backend, "unknown");
+        assert_eq!(
+            unknown.backend_setting,
+            "/etc/codex/requirements.toml is not TOML Codex can read, at line 1"
+        );
+        assert_eq!(
+            unknown.backend_remedy,
+            "Codex 0.160.0 does not start until that is put right"
+        );
+        assert!(matches!(unknown.login, Ok(None)), "nothing is read");
     }
 
     /// Signed in with an API key is somebody's choice, and nothing about it is broken or
@@ -3155,8 +4570,9 @@ mod tests {
     /// nothing. Only the two directories above the program are looked at, names first, so a
     /// standalone install is named without opening any file inside it.
     #[test]
+    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn a_version_is_read_out_of_each_way_codex_is_installed() {
-        use crate::host::fs::testing::link as symlink;
+        use crate::host::fs::testing;
 
         let root = std::env::temp_dir().join(format!(
             "pitboard-doctor-codex-version-{}-{:?}",
@@ -3188,7 +4604,7 @@ mod tests {
         .unwrap();
         let link = root.join("bin/codex");
         std::fs::create_dir_all(link.parent().unwrap()).unwrap();
-        symlink(&standalone, &link);
+        testing::link(&standalone, &link).expect("a link");
         assert_eq!(codex_version(&link).as_deref(), Some("0.154.0"));
 
         let cask = place("Caskroom/codex/0.153.2/codex-aarch64-apple-darwin");
@@ -3213,6 +4629,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W15: who else can read a login on Windows, and the command that makes one private"
+    )]
     fn a_codex_login_anybody_can_read_or_nobody_can_parse_is_said() {
         let mut codex = with_codex();
         codex.auth_access = Some(mode(0o644));
@@ -3307,7 +4727,9 @@ mod tests {
 
     /// doctor asks what runs Codex the way a switch does, through the same host, so the two
     /// never disagree about what is still on the account a switch left. They used to count
-    /// with two different scans, and only the switch's could be stood in for.
+    /// with two different scans, and only the switch's could be stood in for. Nor do they
+    /// disagree where the process list cannot be read: doctor says it could not tell, and a
+    /// switch that nobody can say.
     #[test]
     fn doctor_and_a_switch_see_the_same_codex_running() {
         use crate::host::memory::MemoryHost;
@@ -3320,18 +4742,36 @@ mod tests {
                  MacOS/codex",
             ],
         );
-        let ctx = Context::new(std::env::temp_dir()).with_memory_stores(host);
+        let ctx =
+            Context::new(std::env::temp_dir()).with_memory_stores(std::sync::Arc::clone(&host));
         let seen = running_codex(&ctx).expect("readable");
         assert_eq!(
             seen.iter().map(|h| h.holder.kind).collect::<Vec<_>>(),
             ["chatgpt_app", "session"]
         );
-        assert_eq!(Some(seen), switch::still_holding(&ctx, ProviderId::Codex));
+        assert_eq!(
+            switch::StillHolding::These(seen),
+            switch::still_holding(&ctx, ProviderId::Codex)
+        );
+
+        host.runs_at("codex", &[]);
+        assert_eq!(running_codex(&ctx), Some(Vec::new()));
+        assert_eq!(
+            switch::still_holding(&ctx, ProviderId::Codex),
+            switch::StillHolding::Nothing
+        );
+
+        host.without_a_process_list();
+        assert_eq!(running_codex(&ctx), None);
+        assert_eq!(
+            switch::still_holding(&ctx, ProviderId::Codex),
+            switch::StillHolding::Unknown
+        );
     }
 
     #[test]
     fn every_codex_failure_and_warning_tells_the_user_something() {
-        for backend in ["file", "keyring", "auto", "ephemeral"] {
+        for backend in ["file", "keyring", "auto", "ephemeral", "secrets", "unknown"] {
             let codex = CodexFacts {
                 backend,
                 enrolled: 1,
@@ -3366,6 +4806,7 @@ mod tests {
     /// What the section is judged on, read off a real disk: a scratch Codex home with a
     /// login in it, in the file Codex keeps it in.
     #[test]
+    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn codex_facts_are_read_off_the_disk() {
         use crate::host::fs::testing;
 
@@ -3403,9 +4844,9 @@ mod tests {
         std::fs::create_dir_all(installed.parent().unwrap()).unwrap();
         std::fs::write(&installed, "").unwrap();
         // A program is what can be run, as the installer leaves it.
-        testing::make_runnable(&installed);
+        testing::make_runnable(&installed).expect("runnable");
         std::fs::create_dir_all(program.parent().unwrap()).unwrap();
-        testing::link(&installed, &program);
+        testing::link(&installed, &program).expect("a link");
         let found = codex_facts(&ctx, None);
         assert_eq!(found.program.as_deref(), Some(program.as_path()));
         assert_eq!(found.version.as_deref(), Some("0.154.0"));
@@ -3429,7 +4870,7 @@ mod tests {
             .to_string(),
         )
         .expect("a login");
-        testing::open_to_others(&auth);
+        testing::open_to_others(&auth).expect("opened to others");
         let found = codex_facts(&ctx, None);
         assert!(found.present);
         assert!(found.auth_access.expect("there").shared);
@@ -3494,7 +4935,25 @@ mod tests {
             "cli_auth_credentials_store = \"auto\"\n[features]\nsecret_auth_storage = true\n",
         )
         .expect("a config");
-        assert_eq!(codex_facts(&ctx, None).backend, "secrets");
+        let secrets = codex_facts(&ctx, None);
+        assert_eq!(secrets.backend, "secrets");
+        let config = home.join("config.toml");
+        assert_eq!(
+            secrets.backend_setting,
+            format!(
+                "`cli_auth_credentials_store = \"auto\"` in {config}, with \
+                 `secret_auth_storage` in {config}",
+                config = config.display()
+            )
+        );
+        assert_eq!(
+            secrets.backend_remedy,
+            format!(
+                "To use the file store, set `cli_auth_credentials_store = \"file\"` in \
+                 {}, then sign in again with `codex login`",
+                config.display()
+            )
+        );
     }
 
     #[test]
@@ -3529,6 +4988,75 @@ mod tests {
         assert!(checks.iter().any(|c| c.code.starts_with("codex_")));
     }
 
+    #[test]
+    fn windows_is_told_how_it_runs_and_which_build_it_needs() {
+        let mut facts = facts();
+        facts.os = Os::Windows;
+        let refusing = |facts: &Facts| -> Vec<(&'static str, String, String)> {
+            evaluate(facts)
+                .into_iter()
+                .filter(|c| ["elevated", "system_too_old"].contains(&c.code))
+                .map(|c| (c.code, c.detail, c.advice))
+                .collect()
+        };
+        assert!(refusing(&facts).is_empty());
+
+        facts.elevation = crate::host::Elevation::Elevated {
+            why: crate::host::token::AS_ADMINISTRATOR,
+        };
+        assert_eq!(
+            refusing(&facts),
+            [(
+                "elevated",
+                "Pitboard runs as administrator".to_string(),
+                "Pitboard changes nothing this way: it reads, and renews and writes nothing. Run \
+                 it from a terminal that is not elevated (not Run as administrator)."
+                    .to_string()
+            )]
+        );
+
+        facts.elevation = crate::host::Elevation::Elevated {
+            why: crate::host::token::IN_EVERY_PROGRAM,
+        };
+        facts.floor = crate::host::Floor::Below { build: 22631 };
+        assert_eq!(
+            refusing(&facts),
+            [
+                (
+                    "system_too_old",
+                    "Pitboard runs on Windows build 22631, older than Windows 11 24H2 (build \
+                     26100)"
+                        .to_string(),
+                    "Pitboard changes nothing here: it reads, and renews and writes nothing. It \
+                     changes things on Windows 11 24H2 and later, and on Windows Server 2025: \
+                     update Windows to use it here."
+                        .to_string()
+                ),
+                (
+                    "elevated",
+                    "Pitboard runs elevated, as every program this Windows account starts does"
+                        .to_string(),
+                    "Pitboard changes nothing this way: it reads, and renews and writes nothing. \
+                     That is so with User Account Control off and in the built-in Administrator \
+                     account: run it from a standard account, or turn User Account Control on."
+                        .to_string()
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_home_that_is_not_a_full_path_still_hears_why_nothing_changes() {
+        use crate::context::Environment;
+        let env: Environment = [("HOME", "")].into_iter().collect();
+        let host = crate::host::memory::MemoryHost::new();
+        host.runs_on(crate::host::Floor::Below { build: 22631 });
+        host.runs_with(crate::host::Elevation::Unknown);
+        let ctx = Context::for_command_line(&env).with_memory_stores(host);
+        let codes: Vec<&str> = run(&ctx).checks.iter().map(|c| c.code).collect();
+        assert_eq!(codes, ["system_too_old", "elevated", "homes"]);
+    }
+
     /// With neither tool present, a new machine is told what to do first, as it always was.
     #[test]
     fn a_machine_with_neither_tool_still_hears_about_claude_code() {
@@ -3536,6 +5064,39 @@ mod tests {
         facts.claude_present = false;
         let checks = evaluate(&facts);
         assert!(checks.iter().any(|c| c.code == "config_file"));
+    }
+
+    /// Where a home the environment names is not a full path, doctor says so and checks
+    /// nothing else, since every other check reads under one of the homes. It read Claude
+    /// Code's and Pitboard's files under whatever folder it was run from.
+    #[test]
+    #[cfg_attr(windows, ignore = "W14: Pitboard's own folder on Windows")]
+    fn doctor_checks_nothing_under_a_home_that_is_not_a_full_path() {
+        use crate::context::Environment;
+        for (pairs, said) in [
+            (&[("HOME", "")][..], "HOME is empty"),
+            (
+                &[("HOME", "/Users/x"), ("CODEX_HOME", "codex")],
+                "CODEX_HOME is `codex`, which is not a full path",
+            ),
+        ] {
+            let env: Environment = pairs.iter().copied().collect();
+            let ctx = Context::for_command_line(&env)
+                .with_memory_stores(crate::host::memory::MemoryHost::new());
+            let diagnosis = run(&ctx);
+            let checks: Vec<(&str, Level, &str)> = diagnosis
+                .checks
+                .iter()
+                .map(|c| (c.code, c.level, c.detail.as_str()))
+                .collect();
+            assert_eq!(checks, [("homes", Level::Fail, said)], "{pairs:?}");
+            assert!(
+                diagnosis.checks[0]
+                    .advice
+                    .starts_with("Set it to a full path")
+            );
+            assert_eq!(diagnosis.environment, json!({}));
+        }
     }
 
     /// What `/logout` leaves is nobody signed in, not a login whose shape moved.
@@ -3546,340 +5107,5 @@ mod tests {
         let check = judge_credential(&facts);
         assert!(matches!(check.level, Level::Warn), "{}", check.detail);
         assert!(check.detail.contains("signed out"), "{}", check.detail);
-    }
-
-    /// Claude Desktop's section, as a machine with the app, one account signed in and one
-    /// parked, and nothing wrong, would gather it.
-    fn desktop() -> DesktopFacts {
-        DesktopFacts {
-            installed: true,
-            version: Some(crate::provider::desktop::assumptions::VERIFIED_AGAINST.into()),
-            support_dir: Some(PathBuf::from("/home/x/Library/Application Support/Claude")),
-            same_volume: Some(true),
-            cookies_meta_version: Some(24),
-            twins_differ: false,
-            parks_dir_private: Some(true),
-            parks: 1,
-            orphan_parks: Vec::new(),
-            strays: Strays { count: 0, bytes: 0 },
-            recovery_pending: false,
-            running: Some(Vec::new()),
-            live_usage: crate::status::LiveUsage::default(),
-            unverified_facts: vec!["desktop_signout_revokes"],
-        }
-    }
-
-    fn desktop_park(expires_at: Option<i64>) -> ParkFact {
-        ParkFact {
-            provider: ProviderId::Desktop,
-            label: "work".into(),
-            name: "desktop/work".into(),
-            active: false,
-            last_used_at: Some(NOW - 90 * 86_400),
-            park: Some(Park {
-                service: "pitboard-tree-work-1".into(),
-                refresh_fingerprint: "f".into(),
-                refresh_expires_at: expires_at,
-                access_expires_at: None,
-                parked_at: NOW - 1,
-            }),
-            unreadable: None,
-        }
-    }
-
-    fn with_desktop(desktop: DesktopFacts) -> Vec<Check> {
-        let mut facts = facts();
-        facts.desktop = Some(desktop);
-        evaluate(&facts)
-    }
-
-    fn level_of(checks: &[Check], code: &str) -> Option<Level> {
-        checks.iter().find(|c| c.code == code).map(|c| c.level)
-    }
-
-    /// A machine without Claude Desktop reads exactly as it did before Pitboard knew it.
-    #[test]
-    fn a_machine_without_claude_desktop_hears_nothing_of_it() {
-        let checks = evaluate(&facts());
-        assert!(checks.iter().all(|c| !c.code.starts_with("desktop_")));
-    }
-
-    /// Everything as the register says it should be is said, and nothing is warned about.
-    #[test]
-    fn a_healthy_claude_desktop_has_nothing_to_look_at() {
-        let checks = with_desktop(desktop());
-        let own: Vec<&Check> = checks
-            .iter()
-            .filter(|c| c.code.starts_with("desktop_"))
-            .collect();
-        assert!(!own.is_empty());
-        for check in own {
-            assert_eq!(check.level, Level::Ok, "{}: {}", check.code, check.detail);
-        }
-    }
-
-    /// Each thing that can be wrong with Claude Desktop has its own code, at the level the
-    /// design gives it: a broken assumption fails, advice warns, a plain fact is said.
-    #[test]
-    fn each_claude_desktop_problem_has_its_own_code() {
-        let cases: Vec<(&str, Level, DesktopFacts)> = vec![
-            (
-                "desktop_version_unverified",
-                Level::Warn,
-                DesktopFacts {
-                    version: Some("9.9.9".into()),
-                    ..desktop()
-                },
-            ),
-            (
-                "desktop_format_unknown",
-                Level::Fail,
-                DesktopFacts {
-                    cookies_meta_version: Some(25),
-                    ..desktop()
-                },
-            ),
-            (
-                "desktop_different_volume",
-                Level::Fail,
-                DesktopFacts {
-                    same_volume: Some(false),
-                    ..desktop()
-                },
-            ),
-            (
-                "desktop_parks_not_private",
-                Level::Fail,
-                DesktopFacts {
-                    parks_dir_private: Some(false),
-                    ..desktop()
-                },
-            ),
-            (
-                "desktop_orphan_park",
-                Level::Warn,
-                DesktopFacts {
-                    orphan_parks: vec!["pitboard-tree-ghost-1".into()],
-                    ..desktop()
-                },
-            ),
-            (
-                "desktop_strays_kept",
-                Level::Ok,
-                DesktopFacts {
-                    strays: Strays {
-                        count: 2,
-                        bytes: 10,
-                    },
-                    ..desktop()
-                },
-            ),
-            (
-                "desktop_recovery_pending",
-                Level::Warn,
-                DesktopFacts {
-                    recovery_pending: true,
-                    ..desktop()
-                },
-            ),
-            (
-                "desktop_live_usage_needs_approval",
-                Level::Warn,
-                DesktopFacts {
-                    live_usage: crate::status::LiveUsage {
-                        enabled: true,
-                        approval: crate::status::Approval::NeedsApproval,
-                        reason: Some("item_changed".into()),
-                        ..crate::status::LiveUsage::default()
-                    },
-                    ..desktop()
-                },
-            ),
-            (
-                "desktop_session_twins_differ",
-                Level::Ok,
-                DesktopFacts {
-                    twins_differ: true,
-                    ..desktop()
-                },
-            ),
-        ];
-        for (code, level, facts) in cases {
-            let checks = with_desktop(facts);
-            assert_eq!(level_of(&checks, code), Some(level), "{code}");
-        }
-    }
-
-    /// A parked Claude Desktop login is not renewed, so its expiry is said under its own
-    /// codes, and the advice is never `--sign-in`, which Claude Desktop does not take.
-    #[test]
-    fn a_claude_desktop_park_running_out_is_said_and_never_renewed() {
-        let judged = |expires_at| {
-            let mut facts = facts();
-            facts.desktop = Some(desktop());
-            facts.parks = vec![desktop_park(expires_at)];
-            evaluate(&facts)
-        };
-        let soon = judged(Some(NOW + 2 * 86_400));
-        assert_eq!(
-            level_of(&soon, "desktop_park_expires_soon"),
-            Some(Level::Warn)
-        );
-        let gone = judged(Some(NOW - 60));
-        assert_eq!(level_of(&gone, "desktop_park_expired"), Some(Level::Warn));
-        for checks in [&soon, &gone] {
-            for check in checks.iter().filter(|c| c.code.starts_with("desktop_park")) {
-                assert!(!check.advice.contains("--sign-in"), "{}", check.advice);
-            }
-            // Nobody renews it, so it is never said to have been kept alive.
-            assert!(checks.iter().all(|c| !c.code.contains("dormant")));
-            assert!(checks.iter().all(|c| !c.code.starts_with("codex_")));
-        }
-        let fine = judged(Some(NOW + 20 * 86_400));
-        assert!(
-            fine.iter()
-                .filter(|c| c.code.starts_with("desktop_"))
-                .all(|c| c.level == Level::Ok)
-        );
-    }
-
-    /// A machine that uses only Claude Desktop is not told Claude Code is broken.
-    #[test]
-    fn a_machine_with_only_claude_desktop_is_not_judged_on_claude_code() {
-        let mut facts = facts();
-        facts.claude_present = false;
-        facts.desktop = Some(desktop());
-        let checks = evaluate(&facts);
-        for own in CLAUDE_CODES_OWN {
-            assert!(checks.iter().all(|c| c.code != *own), "{own}");
-        }
-    }
-
-    /// A Mac with Claude Desktop on it: the app's bundle where the context says, its data
-    /// folder, and Pitboard's parks.
-    fn desktop_doctor(name: &str) -> crate::switch::harness::DesktopMachine {
-        let mut m = crate::switch::harness::desktop_machine(name);
-        let app = m.support().with_file_name("Claude.app");
-        std::fs::create_dir_all(app.join("Contents")).expect("a bundle");
-        // The bundle is there on disk; what version it says is the host's to read.
-        std::fs::write(app.join("Contents/Info.plist"), b"").expect("an Info.plist");
-        m.mem.bundle(
-            &app,
-            crate::provider::desktop::assumptions::VERIFIED_AGAINST,
-        );
-        m.ctx = m
-            .ctx
-            .clone()
-            .with_desktop_app(app.to_string_lossy().into_owned())
-            .with_scripted_safe_storage(crate::api::scripted::ScriptedSafeStorage::forbidding());
-        m
-    }
-
-    /// A Claude Desktop park is a folder, so it is checked as one and never looked up in
-    /// the keychain, where it would always be missing.
-    #[test]
-    fn a_claude_desktop_park_is_read_as_a_folder() {
-        let m = desktop_doctor("park-folder");
-        let facts = gather(&m.ctx);
-        let there = facts
-            .parks
-            .iter()
-            .find(|p| p.provider == ProviderId::Desktop && p.label == "there")
-            .expect("there's park");
-        assert_eq!(there.unreadable, None);
-        assert!(there.park.is_some());
-    }
-
-    /// What doctor reads of Claude Desktop, read off disk without asking the keychain for
-    /// anything.
-    #[test]
-    fn the_claude_desktop_environment_is_read_without_the_keychain() {
-        let m = desktop_doctor("environment");
-        let facts = gather(&m.ctx);
-        let desktop = facts.desktop.as_ref().expect("a Claude Desktop section");
-        assert!(desktop.installed);
-        assert_eq!(
-            desktop.version.as_deref(),
-            Some(crate::provider::desktop::assumptions::VERIFIED_AGAINST)
-        );
-        assert_eq!(desktop.support_dir.as_deref(), Some(m.support().as_path()));
-        assert_eq!(desktop.cookies_meta_version, Some(24));
-        assert_eq!(desktop.same_volume, Some(true));
-        assert_eq!(desktop.parks_dir_private, Some(true));
-        assert_eq!(desktop.parks, 1);
-        assert!(desktop.orphan_parks.is_empty());
-        assert!(!desktop.recovery_pending);
-        assert_eq!(desktop.running.as_deref().map(<[_]>::len), Some(0));
-        assert!(!desktop.live_usage.enabled);
-        assert!(
-            desktop
-                .unverified_facts
-                .iter()
-                .all(|name| !crate::assumptions::verified(ProviderId::Desktop, name))
-        );
-
-        // A park nobody's record names.
-        let ghost =
-            crate::provider::desktop::paths::parks_dir(&m.ctx).join("pitboard-tree-ghost-1");
-        crate::store::tree::ensure_private_dir(&ghost).expect("a ghost park");
-        let facts = gather(&m.ctx);
-        let desktop = facts.desktop.as_ref().expect("a Claude Desktop section");
-        assert_eq!(desktop.parks, 2);
-        assert_eq!(
-            desktop.orphan_parks,
-            vec!["pitboard-tree-ghost-1".to_string()]
-        );
-
-        let diagnosis = run(&m.ctx);
-        let env = &diagnosis.environment["desktop"];
-        for key in [
-            "installed",
-            "version",
-            "verified_against",
-            "version_matches",
-            "support_dir",
-            "same_volume",
-            "cookies_meta_version",
-            "parks_dir_private",
-            "parks",
-            "orphan_parks",
-            "strays",
-            "recovery_pending",
-            "running",
-            "live_usage",
-            "unverified_facts",
-        ] {
-            assert!(env.get(key).is_some(), "environment.desktop.{key}");
-        }
-        assert_eq!(env["strays"], json!({"count": 0, "bytes": 0}));
-        assert_eq!(
-            env["live_usage"],
-            json!({"enabled": false, "approval": "unknown", "reason": null})
-        );
-        // A park's name carries an account's id, so it never leaves the machine.
-        let redacted = diagnosis.redaction.over_json(&diagnosis.environment);
-        assert!(!redacted.to_string().contains("pitboard-tree-ghost-1"));
-    }
-
-    /// Without the app, an account or a park, there is no Claude Desktop section at all.
-    #[test]
-    fn a_machine_without_the_app_gathers_no_claude_desktop_section() {
-        let root = std::env::temp_dir().join(format!(
-            "pitboard-doctor-no-desktop-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).expect("a scratch home");
-        let ctx = Context::new(root.clone())
-            .with_pitboard_home(root.join(".pitboard"))
-            .with_desktop_dir(root.join("Claude").to_string_lossy().into_owned())
-            .with_desktop_app(root.join("Claude.app").to_string_lossy().into_owned())
-            .with_memory_stores(crate::host::memory::MemoryHost::new())
-            .with_scripted_safe_storage(crate::api::scripted::ScriptedSafeStorage::forbidding());
-        let facts = gather(&ctx);
-        assert!(facts.desktop.is_none());
-        assert!(run(&ctx).environment.get("desktop").is_none());
-        let _ = std::fs::remove_dir_all(&root);
     }
 }

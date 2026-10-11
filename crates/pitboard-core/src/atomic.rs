@@ -1,10 +1,11 @@
 //! The one durable write, for every file that must survive an interrupted run: a private
 //! temporary, its contents synced, renamed over the file, and the rename made durable as the
 //! system allows. The directory must already exist: who may reach it is the caller's to
-//! choose.
+//! choose. It takes the [`Permit`] only the one gate every change passes makes.
 
 use crate::host::fs;
-use std::fs::{File, OpenOptions};
+use crate::service::Permit;
+use std::fs::File;
 use std::io::{self, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -17,14 +18,14 @@ pub enum Perms {
     MatchExisting,
 }
 
-pub fn write(path: &Path, contents: &[u8], perms: Perms) -> io::Result<()> {
+pub fn write(permit: Permit, path: &Path, contents: &[u8], perms: Perms) -> io::Result<()> {
     let dir = path
         .parent()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no parent"))?;
     let name = path
         .file_name()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no file name"))?;
-    sweep(dir);
+    sweep(permit, dir);
     let temp = dir.join(format!(
         ".{}.{}.{}.pitboard",
         name.to_string_lossy(),
@@ -35,17 +36,17 @@ pub fn write(path: &Path, contents: &[u8], perms: Perms) -> io::Result<()> {
     let result = (|| -> io::Result<()> {
         // Created private and given the existing access afterwards: too closed for a moment
         // is safe, too open is not.
-        let mut file = create_fresh(&temp)?;
+        let mut file = create_fresh(permit, &temp)?;
         file.write_all(contents)?;
         file.sync_all()?;
         if let Perms::MatchExisting = perms {
-            fs::copy_access(path, &temp)?;
+            fs::copy_access(permit, path, &temp)?;
         }
-        std::fs::rename(&temp, path)
+        fs::rename(permit, &temp, path)
     })();
 
     if result.is_err() {
-        let _ = std::fs::remove_file(&temp);
+        let _ = fs::remove_file(permit, &temp);
         return result;
     }
     fs::sync_dir(dir);
@@ -74,11 +75,11 @@ fn temp_owner(file_name: &str) -> Option<u32> {
 
 /// A new private file at `temp`. This process never reuses a name, so a file already there
 /// was left by an earlier process that had the same pid, as happens in containers.
-fn create_fresh(temp: &Path) -> io::Result<File> {
-    let create = || fs::private(OpenOptions::new().write(true).create_new(true)).open(temp);
+fn create_fresh(permit: Permit, temp: &Path) -> io::Result<File> {
+    let create = || fs::create_private(permit, temp);
     match create() {
         Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
-            remove_stale(temp)?;
+            remove_stale(permit, temp)?;
             create()
         }
         other => other,
@@ -87,9 +88,9 @@ fn create_fresh(temp: &Path) -> io::Result<File> {
 
 /// Only a regular file: `symlink_metadata` does not follow a link, so a planted link is
 /// never removed in place of a file.
-fn remove_stale(path: &Path) -> io::Result<()> {
+fn remove_stale(permit: Permit, path: &Path) -> io::Result<()> {
     if std::fs::symlink_metadata(path)?.file_type().is_file() {
-        std::fs::remove_file(path)
+        fs::remove_file(permit, path)
     } else {
         Err(io::Error::new(
             io::ErrorKind::AlreadyExists,
@@ -100,7 +101,7 @@ fn remove_stale(path: &Path) -> io::Result<()> {
 
 /// Remove temporaries a killed run left in `dir`: each can hold a whole credential. Only a
 /// dead process's are touched; this process's may be mid-write on another thread.
-fn sweep(dir: &Path) {
+fn sweep(permit: Permit, dir: &Path) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
@@ -110,7 +111,7 @@ fn sweep(dir: &Path) {
             continue;
         };
         if pid != me && !crate::host::proc::may_be_running(pid) {
-            let _ = remove_stale(&entry.path());
+            let _ = remove_stale(permit, &entry.path());
         }
     }
 }
@@ -134,33 +135,45 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn a_secret_is_private_however_the_umask_is_set() {
         let dir = scratch("secret");
         let path = dir.join("state.json");
-        write(&path, b"{}", Perms::Secret).unwrap();
+        write(Permit::for_a_test(), &path, b"{}", Perms::Secret).unwrap();
         assert!(private(&path));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn replacing_leaves_no_temp_file_behind() {
         let dir = scratch("replace");
         let path = dir.join("f.json");
-        write(&path, b"one", Perms::Secret).unwrap();
-        write(&path, b"two", Perms::Secret).unwrap();
+        write(Permit::for_a_test(), &path, b"one", Perms::Secret).unwrap();
+        write(Permit::for_a_test(), &path, b"two", Perms::Secret).unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"two");
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn match_existing_keeps_a_file_as_open_as_it_already_was() {
         let dir = scratch("match");
         let path = dir.join("claude.json");
         std::fs::write(&path, b"old").unwrap();
-        testing::open_to_others(&path);
+        testing::open_to_others(&path).expect("opened to others");
         let before = fs::access(&path);
-        write(&path, b"new", Perms::MatchExisting).unwrap();
+        write(Permit::for_a_test(), &path, b"new", Perms::MatchExisting).unwrap();
         assert_eq!(
             fs::access(&path),
             before,
@@ -170,13 +183,17 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn match_existing_keeps_a_file_as_closed_as_it_already_was() {
         let dir = scratch("tighter");
         let path = dir.join("claude.json");
         std::fs::write(&path, b"old").unwrap();
-        testing::read_only_for_owner(&path);
+        testing::read_only_for_owner(&path).expect("read only");
         let before = fs::access(&path);
-        write(&path, b"new", Perms::MatchExisting).unwrap();
+        write(Permit::for_a_test(), &path, b"new", Perms::MatchExisting).unwrap();
         assert_eq!(
             fs::access(&path),
             before,
@@ -186,10 +203,14 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn match_existing_defaults_to_private_when_nothing_is_there() {
         let dir = scratch("fresh");
         let path = dir.join("new.json");
-        write(&path, b"{}", Perms::MatchExisting).unwrap();
+        write(Permit::for_a_test(), &path, b"{}", Perms::MatchExisting).unwrap();
         assert!(private(&path));
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -222,6 +243,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(windows, ignore = "W18: seeing which processes run on Windows")]
     fn temporaries_left_by_runs_that_are_gone_are_removed() {
         let dir = scratch("orphans");
         let exited = {
@@ -244,7 +266,13 @@ mod tests {
             std::fs::write(leftover, b"token").unwrap();
         }
 
-        write(&dir.join("state.json"), b"{}", Perms::Secret).unwrap();
+        write(
+            Permit::for_a_test(),
+            &dir.join("state.json"),
+            b"{}",
+            Perms::Secret,
+        )
+        .unwrap();
 
         assert!(!orphan.exists(), "a dead run's copy must not linger");
         assert!(!old_orphan.exists(), "nor one in 0.1's shape");
@@ -264,18 +292,22 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn a_name_left_by_an_earlier_process_with_the_same_pid_is_reclaimed() {
         let dir = scratch("reused-pid");
         let temp = dir.join(".state.json.1.0.pitboard");
         std::fs::write(&temp, b"stale token").unwrap();
-        let mut file = create_fresh(&temp).unwrap();
+        let mut file = create_fresh(Permit::for_a_test(), &temp).unwrap();
         file.write_all(b"new").unwrap();
         assert_eq!(std::fs::read(&temp).unwrap(), b"new");
 
         let link = dir.join(".usage.json.1.0.pitboard");
-        testing::link(&dir.join("elsewhere"), &link);
+        testing::link(&dir.join("elsewhere"), &link).expect("a planted link");
         assert!(
-            create_fresh(&link).is_err(),
+            create_fresh(Permit::for_a_test(), &link).is_err(),
             "a planted link is never removed"
         );
         std::fs::remove_dir_all(&dir).unwrap();
@@ -284,6 +316,10 @@ mod tests {
     /// A library shares one process between callers: a status refresh writing usage.json
     /// must never disturb a switch writing state.json beside it.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn writers_in_one_process_never_disturb_each_other() {
         let dir = scratch("threads");
         let writers: Vec<_> = (0..8)
@@ -297,6 +333,7 @@ mod tests {
                             "usage.json"
                         };
                         write(
+                            Permit::for_a_test(),
                             &dir.join(file),
                             format!("{n}-{round}").as_bytes(),
                             Perms::Secret,
@@ -318,15 +355,19 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn a_symlinked_destination_does_not_lend_its_permissions() {
         let dir = scratch("symlink");
         let target = dir.join("elsewhere");
         std::fs::write(&target, b"x").unwrap();
-        testing::open_to_others(&target);
+        testing::open_to_others(&target).expect("opened to others");
         let path = dir.join("link.json");
-        testing::link(&target, &path);
+        testing::link(&target, &path).expect("a link");
 
-        write(&path, b"{}", Perms::MatchExisting).unwrap();
+        write(Permit::for_a_test(), &path, b"{}", Perms::MatchExisting).unwrap();
         assert!(
             private(&path),
             "a link's own access says nothing about its target, and must never be borrowed"

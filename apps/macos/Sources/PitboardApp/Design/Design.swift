@@ -37,7 +37,27 @@ extension UsageLevel {
     }
 }
 
-extension Notice.Severity {
+/// Which side of an even pace a limit is on, as the mark on its bar is tinted: red over,
+/// green under. The words beside the bar say it too, in the core's own words, so the colour
+/// only repeats them. Over is the one worth reading at a glance, so it is the one whose
+/// words are tinted; under and even are said in the secondary style every other figure is.
+extension PaceStanding {
+    var tint: Color {
+        switch self {
+        case .over: .red
+        case .under: .green
+        case .even: .secondary
+        }
+    }
+
+    var wordsStyle: AnyShapeStyle {
+        self == .over ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary)
+    }
+}
+
+/// How pressing a notice is, as a shape and a colour. VoiceOver is told it in the model's
+/// word for it, `PanelNotice.spokenSeverity`.
+extension Severity {
     var symbol: String {
         switch self {
         case .info: "info.circle.fill"
@@ -53,20 +73,11 @@ extension Notice.Severity {
         case .error: .red
         }
     }
-
-    /// What is said instead of naming a shape or a colour.
-    var spoken: String {
-        switch self {
-        case .info: "Note"
-        case .warning: "Warning"
-        case .error: "Problem"
-        }
-    }
 }
 
 /// How a check's standing is shown. The shapes differ as well as the colours, and VoiceOver
-/// is told the standing in words: a check that reads "state: fine" without saying whether it
-/// passed is the same as not running it.
+/// is told the standing in the model's words, `CheckLine.spokenLevel`: a check that reads
+/// "state: fine" without saying whether it passed is the same as not running it.
 extension Level {
     var symbol: String {
         switch self {
@@ -81,14 +92,6 @@ extension Level {
         case .ok: .green
         case .warn: .orange
         case .fail: .red
-        }
-    }
-
-    var spoken: String {
-        switch self {
-        case .ok: "Passed"
-        case .warn: "Worth looking at"
-        case .fail: "Failed"
         }
     }
 }

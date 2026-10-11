@@ -21,6 +21,7 @@
 //! Nothing here is secret. It is names, times and counts.
 
 use crate::context::Context;
+use crate::service::Permit;
 use crate::usage::Snapshot;
 use crate::{atomic, home};
 use serde::{Deserialize, Serialize};
@@ -136,9 +137,9 @@ fn load(ctx: &Context) -> Ledger {
         .unwrap_or_default()
 }
 
-fn save(ctx: &Context, ledger: &Ledger) {
+fn save(ctx: &Context, permit: Permit, ledger: &Ledger) {
     if let Ok(body) = serde_json::to_string(ledger) {
-        let _ = atomic::write(&path(ctx), body.as_bytes(), atomic::Perms::Secret);
+        let _ = atomic::write(permit, &path(ctx), body.as_bytes(), atomic::Perms::Secret);
     }
 }
 
@@ -166,12 +167,12 @@ pub enum Held {
 /// same refusal.
 pub fn may_ask(
     ctx: &Context,
-    usage_key: &str,
+    id: &str,
     last_reading: Option<&Snapshot>,
     forced: bool,
 ) -> Option<Held> {
     let ledger = load(ctx);
-    let entry = ledger.get(usage_key)?;
+    let entry = ledger.get(id)?;
     let record = &entry.record;
     let now = ctx.now();
     if record.held_until > now {
@@ -198,14 +199,14 @@ pub enum Outcome {
 /// entry and write the whole thing back, so the last writer would erase what the others
 /// learned. Which is exactly what happened: two accounts asked together, one budgeted and
 /// one not, forever.
-pub fn record(ctx: &Context, outcomes: &[(String, Outcome)]) {
+pub fn record(ctx: &Context, permit: Permit, outcomes: &[(String, Outcome)]) {
     if outcomes.is_empty() {
         return;
     }
     let now = ctx.now();
     let mut ledger = load(ctx);
-    for (usage_key, outcome) in outcomes {
-        let entry = ledger.entry(usage_key.clone()).or_default();
+    for (id, outcome) in outcomes {
+        let entry = ledger.entry(id.clone()).or_default();
         let record = &mut entry.record;
         match outcome {
             Outcome::Answered => {
@@ -230,7 +231,7 @@ pub fn record(ctx: &Context, outcomes: &[(String, Outcome)]) {
             }
         }
     }
-    save(ctx, &ledger);
+    save(ctx, permit, &ledger);
 }
 
 /// `retry_after` is what Anthropic said to wait, where it said anything, and is believed
@@ -254,6 +255,16 @@ fn doubling(first: i64, most: i64, before: u32) -> i64 {
     shifted.clamp(first, most)
 }
 
+/// When the account filed under `id` may be asked about again, where a refusal holds it off
+/// past now, in epoch seconds.
+pub(crate) fn held_until(ctx: &Context, id: &str) -> Option<i64> {
+    let now = ctx.now();
+    load(ctx)
+        .get(id)
+        .map(|entry| entry.record.held_until)
+        .filter(|until| *until > now)
+}
+
 /// Every account currently being held off, for `doctor` to report.
 pub fn holds(ctx: &Context) -> Vec<(String, i64)> {
     let now = ctx.now();
@@ -266,12 +277,11 @@ pub fn holds(ctx: &Context) -> Vec<(String, i64)> {
     held
 }
 
-/// Drop what is known about an account nobody is enrolled as any more, by its
-/// `Account::usage_key`.
-pub fn forget(ctx: &Context, usage_key: &str) {
+/// Drop what is known about an account nobody is enrolled as any more.
+pub fn forget(ctx: &Context, permit: Permit, id: &str) {
     let mut ledger = load(ctx);
-    if ledger.remove(usage_key).is_some() {
-        save(ctx, &ledger);
+    if ledger.remove(id).is_some() {
+        save(ctx, permit, &ledger);
     }
 }
 
@@ -302,14 +312,15 @@ mod tests {
         let ctx = Context::new(root.clone())
             .with_pitboard_home(root.clone())
             .with_clock(Arc::clone(&clock) as Arc<dyn Clock>);
-        home::ensure(&ctx).expect("a home");
+        home::ensure(&ctx, Permit::for_a_test()).expect("a home");
         (ctx, clock, Scratch(root))
     }
 
     fn reading(kinds: &[&str]) -> Snapshot {
         Snapshot {
             observed_at: Some(NOW),
-            account_uuid: None,
+            answered_at: Some(NOW),
+            lists_every_limit: true,
             source: Source::Live,
             windows: kinds
                 .iter()
@@ -323,7 +334,6 @@ mod tests {
                     length_seconds: None,
                 })
                 .collect(),
-            verified: true,
         }
     }
 
@@ -368,16 +378,25 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn an_account_nobody_has_asked_about_is_asked_about() {
         let (ctx, _clock, _s) = machine("first");
         assert_eq!(may_ask(&ctx, "acc", None, false), None);
     }
 
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn asking_again_inside_the_floor_serves_what_is_already_known() {
         let (ctx, clock, _s) = machine("floor");
         let five_hour = reading(&["five_hour"]);
-        record(&ctx, &[("acc".into(), Outcome::Answered)]);
+        record(
+            &ctx,
+            Permit::for_a_test(),
+            &[("acc".into(), Outcome::Answered)],
+        );
 
         assert_eq!(
             may_ask(&ctx, "acc", Some(&five_hour), false),
@@ -393,9 +412,14 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn asking_for_it_goes_past_the_floor() {
         let (ctx, _clock, _s) = machine("forced");
-        record(&ctx, &[("acc".into(), Outcome::Answered)]);
+        record(
+            &ctx,
+            Permit::for_a_test(),
+            &[("acc".into(), Outcome::Answered)],
+        );
         assert_eq!(
             may_ask(&ctx, "acc", Some(&reading(&["five_hour"])), true),
             None
@@ -405,9 +429,17 @@ mod tests {
     /// `status --fresh` and the app's Refresh do not ask through a wait the service asked
     /// for, as the 0.3.0 changelog and doctor's advice say. They asked through it before.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn asking_for_it_keeps_a_wait_the_service_asked_for() {
         let (ctx, clock, _s) = machine("forced-rate-limited");
-        record(&ctx, &[("acc".into(), Outcome::RateLimited(Some(300)))]);
+        record(
+            &ctx,
+            Permit::for_a_test(),
+            &[("acc".into(), Outcome::RateLimited(Some(300)))],
+        );
         assert_eq!(may_ask(&ctx, "acc", None, true), Some(Held::RateLimited));
         clock.advance(301);
         assert_eq!(may_ask(&ctx, "acc", None, true), None);
@@ -416,9 +448,17 @@ mod tests {
     /// A wait Pitboard chose after failing to reach the service is its own guess, and
     /// somebody asking is how it learns the network is back.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn asking_for_it_tries_an_unreachable_service_again() {
         let (ctx, _clock, _s) = machine("forced-unreachable");
-        record(&ctx, &[("acc".into(), Outcome::Unreachable)]);
+        record(
+            &ctx,
+            Permit::for_a_test(),
+            &[("acc".into(), Outcome::Unreachable)],
+        );
         assert_eq!(may_ask(&ctx, "acc", None, false), Some(Held::Unreachable));
         assert_eq!(may_ask(&ctx, "acc", None, true), None);
     }
@@ -427,15 +467,24 @@ mod tests {
     /// has a long way back to its last answer: one that could not be reached was said
     /// to be rate limited.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn an_unreachable_service_is_not_called_rate_limiting() {
         let (ctx, _clock, _s) = machine("never-answered");
-        record(&ctx, &[("acc".into(), Outcome::Unreachable)]);
+        record(
+            &ctx,
+            Permit::for_a_test(),
+            &[("acc".into(), Outcome::Unreachable)],
+        );
         assert_eq!(may_ask(&ctx, "acc", None, false), Some(Held::Unreachable));
     }
 
     /// A record an older Pitboard wrote has no reason, and is told by its length as it
     /// was then: longer than any unreachable wait means asked for.
     #[test]
+    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn a_wait_an_older_pitboard_recorded_is_told_by_its_length() {
         let (ctx, _clock, _s) = machine("older");
         let written = format!(
@@ -452,9 +501,17 @@ mod tests {
 
     /// What Anthropic said to wait is believed over anything Pitboard would pick.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn a_retry_after_is_taken_at_its_word() {
         let (ctx, clock, _s) = machine("retry-after");
-        record(&ctx, &[("acc".into(), Outcome::RateLimited(Some(300)))]);
+        record(
+            &ctx,
+            Permit::for_a_test(),
+            &[("acc".into(), Outcome::RateLimited(Some(300)))],
+        );
 
         assert!(may_ask(&ctx, "acc", None, false).is_some());
         clock.advance(299);
@@ -464,11 +521,19 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn refusals_in_a_row_wait_longer_each_time_up_to_a_cap() {
         let (ctx, clock, _s) = machine("doubling");
         let waits: Vec<i64> = (0..8)
             .map(|_| {
-                record(&ctx, &[("acc".into(), Outcome::RateLimited(None))]);
+                record(
+                    &ctx,
+                    Permit::for_a_test(),
+                    &[("acc".into(), Outcome::RateLimited(None))],
+                );
                 let held = holds(&ctx);
                 clock.advance(held.first().map_or(0, |(_, left)| *left));
                 held.first().map_or(0, |(_, left)| *left)
@@ -484,21 +549,38 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn an_answer_clears_a_wait_and_starts_the_floor_again() {
         let (ctx, _clock, _s) = machine("cleared");
-        record(&ctx, &[("acc".into(), Outcome::RateLimited(Some(3600)))]);
+        record(
+            &ctx,
+            Permit::for_a_test(),
+            &[("acc".into(), Outcome::RateLimited(Some(3600)))],
+        );
         assert!(!holds(&ctx).is_empty());
 
-        record(&ctx, &[("acc".into(), Outcome::Answered)]);
+        record(
+            &ctx,
+            Permit::for_a_test(),
+            &[("acc".into(), Outcome::Answered)],
+        );
         assert!(holds(&ctx).is_empty());
         assert_eq!(may_ask(&ctx, "acc", None, false), Some(Held::Fresh));
     }
 
     #[test]
+    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn what_is_known_about_an_account_goes_when_the_account_does() {
         let (ctx, _clock, _s) = machine("forget");
-        record(&ctx, &[("acc".into(), Outcome::RateLimited(Some(3600)))]);
-        forget(&ctx, "acc");
+        record(
+            &ctx,
+            Permit::for_a_test(),
+            &[("acc".into(), Outcome::RateLimited(Some(3600)))],
+        );
+        forget(&ctx, Permit::for_a_test(), "acc");
         assert!(holds(&ctx).is_empty());
         assert_eq!(may_ask(&ctx, "acc", None, false), None);
     }

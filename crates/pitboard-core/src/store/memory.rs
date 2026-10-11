@@ -10,6 +10,7 @@
 //! does exactly what it is told.
 
 use super::{Backend, Error, RawStore};
+use crate::service::Permit;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -24,6 +25,12 @@ pub enum Fault {
     /// Every read says it could not tell. Never the same answer as "nothing is there":
     /// reading a locked keychain as empty is what would tell someone to sign in again.
     Unreadable(String),
+    /// It is there to a look, and every read of what it holds fails, as for a file that is
+    /// not text or that this user may not read.
+    UnreadableContents(String),
+    /// Every read says the keychain is locked, as one does where it cannot ask to be
+    /// unlocked.
+    Locked,
     /// The item is gone from this call onwards, as if something else had deleted it.
     Vanish,
     /// Reads work until the first write is attempted; the write fails, and every read after
@@ -197,6 +204,21 @@ impl MemoryStore {
             .expect("a poisoned test store is a failed test")
             .clone()
     }
+
+    /// What a look at this service finds, reading what it holds where `contents` is asked
+    /// for, and only whether it is there otherwise.
+    fn look(&self, service: &str, contents: bool) -> Result<Option<String>, Error> {
+        if self.has_locked(service) {
+            return Err(Error::Locked);
+        }
+        match self.fault_for(service) {
+            Some(Fault::Unreadable(why)) => Err(Error::Unreadable(why)),
+            Some(Fault::UnreadableContents(why)) if contents => Err(Error::Unreadable(why)),
+            Some(Fault::Locked) => Err(Error::Locked),
+            Some(Fault::Vanish) => Ok(None),
+            _ => Ok(self.peek(service)),
+        }
+    }
 }
 
 impl RawStore for Arc<MemoryStore> {
@@ -205,27 +227,21 @@ impl RawStore for Arc<MemoryStore> {
     }
 
     fn contains(&self, service: &str) -> Result<bool, Error> {
-        Ok(self.read(service)?.is_some())
+        Ok(self.look(service, false)?.is_some())
     }
 
     fn read(&self, service: &str) -> Result<Option<String>, Error> {
-        if self.has_locked(service) {
-            return Err(Error::Unreadable("the keychain is locked".into()));
-        }
-        match self.fault_for(service) {
-            Some(Fault::Unreadable(why)) => Err(Error::Unreadable(why)),
-            Some(Fault::Vanish) => Ok(None),
-            _ => Ok(self.peek(service)),
-        }
+        self.look(service, true)
     }
 
-    fn write(&self, service: &str, contents: &str) -> Result<(), Error> {
+    fn write(&self, _: Permit, service: &str, contents: &str) -> Result<(), Error> {
         if self.has_locked(service) {
             return Err(Error::Write("the keychain is locked".into()));
         }
         match self.fault_for(service) {
             Some(Fault::FailWrite(why)) => return Err(Error::Write(why)),
             Some(Fault::Unreadable(why)) => return Err(Error::Unreadable(why)),
+            Some(Fault::Locked) => return Err(Error::Write("the keychain is locked".into())),
             Some(Fault::LocksOnWrite) => {
                 self.lock_now(service);
                 return Err(Error::Write("the keychain is locked".into()));
@@ -233,7 +249,7 @@ impl RawStore for Arc<MemoryStore> {
             Some(Fault::LocksAfterWrite) => {
                 self.plant(service, contents);
                 self.lock_now(service);
-                return Err(Error::Unreadable("the keychain is locked".into()));
+                return Err(Error::Locked);
             }
             Some(Fault::CorruptWrite(instead)) => self.plant(service, &instead),
             Some(Fault::DeletedAfterWrite) => {
@@ -257,7 +273,7 @@ impl RawStore for Arc<MemoryStore> {
         }
     }
 
-    fn delete(&self, service: &str) -> Result<(), Error> {
+    fn delete(&self, _: Permit, service: &str) -> Result<(), Error> {
         self.items
             .lock()
             .expect("a poisoned test store is a failed test")
@@ -299,7 +315,10 @@ mod tests {
     fn a_write_that_does_not_read_back_is_reported_rather_than_believed() {
         let s = store();
         s.fault("svc", Fault::CorruptWrite("something else".into()));
-        assert!(matches!(s.write("svc", "after"), Err(Error::NotDurable(_))));
+        assert!(matches!(
+            s.write(Permit::for_a_test(), "svc", "after"),
+            Err(Error::NotDurable(_))
+        ));
         assert_eq!(s.peek("svc").as_deref(), Some("something else"));
     }
 
@@ -308,7 +327,10 @@ mod tests {
         let s = store();
         s.plant("svc", "before");
         s.fault("svc", Fault::FailWrite("told to".into()));
-        assert!(matches!(s.write("svc", "after"), Err(Error::Write(_))));
+        assert!(matches!(
+            s.write(Permit::for_a_test(), "svc", "after"),
+            Err(Error::Write(_))
+        ));
         assert_eq!(s.peek("svc").as_deref(), Some("before"));
     }
 
@@ -319,6 +341,15 @@ mod tests {
         s.fault("svc", Fault::Unreadable("the keychain is locked".into()));
         assert!(matches!(s.read("svc"), Err(Error::Unreadable(_))));
         assert!(matches!(s.contains("svc"), Err(Error::Unreadable(_))));
+    }
+
+    #[test]
+    fn what_cannot_be_read_can_still_be_there() {
+        let s = store();
+        s.plant("svc", "before");
+        s.fault("svc", Fault::UnreadableContents("not text".into()));
+        assert!(matches!(s.read("svc"), Err(Error::Unreadable(_))));
+        assert!(s.contains("svc").expect("a look answers"));
     }
 
     #[test]
@@ -342,9 +373,12 @@ mod tests {
             s.read("svc").expect("still readable"),
             Some("before".into())
         );
-        assert!(matches!(s.write("svc", "after"), Err(Error::Write(_))));
+        assert!(matches!(
+            s.write(Permit::for_a_test(), "svc", "after"),
+            Err(Error::Write(_))
+        ));
         assert!(
-            matches!(s.read("svc"), Err(Error::Unreadable(_))),
+            matches!(s.read("svc"), Err(Error::Locked)),
             "once it is locked it cannot answer at all"
         );
         assert_eq!(

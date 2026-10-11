@@ -11,7 +11,7 @@ use common::{Env, two_accounts};
 
 /// A switch from alpha to beta that died after parking alpha and before installing beta.
 fn interrupted_switch(env: &Env) -> String {
-    let orphan = format!("pitboard-park-{}-1789900000000", env.uuid('a'));
+    let orphan = format!("pitboard-park-{}-1789900000000", env.account_id("alpha"));
     env.write_park(
         &orphan,
         &serde_json::json!({"accessToken": "access-refresh-a", "refreshToken": "refresh-a"})
@@ -20,9 +20,9 @@ fn interrupted_switch(env: &Env) -> String {
     let journal = serde_json::json!({
         "started_at": 1_789_900_000,
         "from_label": "alpha",
-        "from_uuid": env.uuid('a'),
+        "from_uuid": env.account_id("alpha"),
         "to_label": "beta",
-        "to_uuid": env.uuid('b'),
+        "to_uuid": env.account_id("beta"),
         "park_service": orphan,
         "incoming_service": env.parked_service("beta").unwrap(),
     });
@@ -33,6 +33,7 @@ fn interrupted_switch(env: &Env) -> String {
 /// alpha is still signed in, so the orphan is a second copy of a login Claude Code keeps
 /// rotating: it must go, not be kept as alpha's way back.
 #[test]
+#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn a_park_of_a_login_still_signed_in_is_dropped_on_the_next_run() {
     let env = two_accounts("orphan");
     let orphan = interrupted_switch(&env);
@@ -51,6 +52,7 @@ fn a_park_of_a_login_still_signed_in_is_dropped_on_the_next_run() {
 
 /// Killed after the install: beta is live, and the orphan is now alpha's only copy.
 #[test]
+#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn a_park_the_state_never_recorded_is_kept_once_its_switch_landed() {
     let mut env = two_accounts("landed");
     let orphan = interrupted_switch(&env);
@@ -83,6 +85,7 @@ fn a_park_the_state_never_recorded_is_kept_once_its_switch_landed() {
 /// Recovery that cannot tell what happened must change nothing and keep its record, so a
 /// later run with a working session can finish the job.
 #[test]
+#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn an_undeterminable_outcome_keeps_the_record_and_changes_nothing() {
     let mut env = two_accounts("undetermined");
     let orphan = interrupted_switch(&env);
@@ -98,19 +101,108 @@ fn an_undeterminable_outcome_keeps_the_record_and_changes_nothing() {
         "the only record of the interrupted switch must survive"
     );
     assert_eq!(env.state(), before, "nothing may change on a guess");
-    env.delete_park(&orphan);
+    assert!(env.is_parked(&orphan));
+}
+
+/// A switch nothing can finish is said on every read, in the words a change refused over it
+/// uses, so the app can offer to give up on it as it opens rather than after a switch fails.
+/// The read only says so: the record, the account list and every copy stay as they were.
+#[test]
+#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
+fn status_says_an_interrupted_switch_it_cannot_finish_is_waiting() {
+    let mut env = two_accounts("status-stuck");
+    let orphan = interrupted_switch(&env);
+    env.expire("access-refresh-a");
+    let journal = env.root.join("pitboard/journal.json");
+    let (before, recorded) = (env.state(), std::fs::read(&journal).unwrap());
+
+    let (out, err, code) = env.run(&["status", "--json"]);
+    let envelope: serde_json::Value = serde_json::from_str(&out).expect(&err);
+
+    assert_eq!(code, 0, "a read is not refused over it: {out}");
+    let warned: Vec<&serde_json::Value> = envelope["warnings"]
+        .as_array()
+        .expect("a list of warnings")
+        .iter()
+        .filter(|w| w["code"] == "recovery_undetermined")
+        .collect();
+    assert_eq!(warned.len(), 1, "{out}");
+    assert_eq!(
+        std::fs::read(&journal).unwrap(),
+        recorded,
+        "the record is kept"
+    );
+    assert_eq!(env.state(), before, "a read changes nothing");
+    assert!(env.is_parked(&orphan), "and deletes nothing");
+
+    // The record has no fingerprints, so only Anthropic can say whose the login is, and the
+    // read that asks nobody does not say what it cannot know.
+    let (out, err, code) = env.run(&["status", "--offline", "--json"]);
+    assert_eq!(code, 0, "{err}");
+    let known: serde_json::Value = serde_json::from_str(&out).expect(&err);
+    assert_eq!(known["warnings"], serde_json::json!([]), "{out}");
+
+    let (_, err, code) = env.run(&["status"]);
+    assert_eq!(code, 0, "{err}");
+    assert!(
+        err.contains("warning: an earlier switch from `alpha` to `beta` was interrupted"),
+        "{err}"
+    );
+
+    let (out, err, _) = env.run(&["use", "beta", "--json"]);
+    let refused: serde_json::Value = serde_json::from_str(&out).expect(&err);
+    assert_eq!(refused["error"]["code"], "recovery_undetermined", "{out}");
+    assert_eq!(
+        warned[0]["message"], refused["error"]["message"],
+        "the read says what the change that stops at it says"
+    );
+}
+
+/// The read that asks nobody says it too, wherever it can tell without asking: here Claude
+/// Code has signed out since, so nothing says which side of the switch won, and that needs
+/// no answer from Anthropic. Where only Anthropic could say whose the login is, as in the
+/// test before this one, it says nothing it cannot know.
+#[test]
+#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
+fn status_offline_says_an_interrupted_switch_it_can_tell_is_waiting() {
+    let env = two_accounts("offline-stuck");
+    let orphan = interrupted_switch(&env);
+    env.sign_out();
+    let journal = env.root.join("pitboard/journal.json");
+    let (before, recorded) = (env.state(), std::fs::read(&journal).unwrap());
+
+    let (out, err, code) = env.run(&["status", "--offline", "--json"]);
+    let envelope: serde_json::Value = serde_json::from_str(&out).expect(&err);
+
+    assert_eq!(code, 0, "a read is not refused over it: {out}");
+    let warned: Vec<&serde_json::Value> = envelope["warnings"]
+        .as_array()
+        .expect("a list of warnings")
+        .iter()
+        .filter(|w| w["code"] == "recovery_undetermined")
+        .collect();
+    assert_eq!(warned.len(), 1, "{out}");
+    assert_eq!(std::fs::read(&journal).unwrap(), recorded);
+    assert_eq!(env.state(), before);
+    assert!(env.is_parked(&orphan));
+
+    let (out, err, _) = env.run(&["use", "beta", "--json"]);
+    let refused: serde_json::Value = serde_json::from_str(&out).expect(&err);
+    assert_eq!(refused["error"]["code"], "recovery_undetermined", "{out}");
+    assert_eq!(warned[0]["message"], refused["error"]["message"]);
 }
 
 /// `use beta` killed after installing beta's login and before recording it: the state still
 /// says alpha. Forgetting beta must first learn that beta is the one signed in.
 #[test]
+#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn forgetting_waits_for_an_interrupted_switch_to_be_settled() {
     let mut env = two_accounts("forget-pending");
     let orphan = interrupted_switch(&env);
     let (b, p) = (env.uuid('b'), env.uuid('p'));
     env.sign_in(&b, "b@example.com", &p, "refresh-b");
 
-    let (out, err, code) = env.run(&["forget", "beta", "--json"]);
+    let (out, err, code) = env.run(&["forget", "beta", "--yes", "--json"]);
     let envelope: serde_json::Value = serde_json::from_str(&out).expect(&err);
 
     assert_eq!(code, 1, "{out}");
@@ -119,7 +211,7 @@ fn forgetting_waits_for_an_interrupted_switch_to_be_settled() {
         envelope["warnings"][0]["code"], "interrupted_switch_finished",
         "what recovery found belongs in the envelope, even when the command then fails"
     );
-    assert_eq!(env.state()["active"]["claude"], "beta");
+    assert_eq!(env.in_use("claude").as_deref(), Some("beta"));
     assert!(!env.root.join("pitboard/journal.json").exists());
     env.delete_park(&orphan);
 }
@@ -127,6 +219,7 @@ fn forgetting_waits_for_an_interrupted_switch_to_be_settled() {
 /// A name nobody enrolled is still refused, but the interrupted switch is settled too, the
 /// way every change settles one, and the envelope carries both.
 #[test]
+#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn a_mistyped_name_still_settles_an_interrupted_switch() {
     let env = two_accounts("refused-name");
     let orphan = interrupted_switch(&env);
@@ -142,10 +235,11 @@ fn a_mistyped_name_still_settles_an_interrupted_switch() {
     );
     assert!(!env.root.join("pitboard/journal.json").exists());
     assert!(!env.is_parked(&orphan), "the stale copy is deleted");
-    assert_eq!(env.state()["active"]["claude"], "alpha");
+    assert_eq!(env.in_use("claude").as_deref(), Some("alpha"));
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn a_damaged_record_is_refused_rather_than_guessed_at() {
     let env = two_accounts("damaged");
     std::fs::write(
@@ -168,6 +262,7 @@ fn a_damaged_record_is_refused_rather_than_guessed_at() {
 /// every command that changes anything stops at that. Giving up is the way out, and it must
 /// delete nothing: which copy is live is exactly what is unknown.
 #[test]
+#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn giving_up_on_an_unfinishable_switch_keeps_every_login() {
     let mut env = two_accounts("abandon");
     let orphan = interrupted_switch(&env);

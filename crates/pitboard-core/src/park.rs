@@ -4,14 +4,15 @@
 use crate::context::Context;
 use crate::error::{Error, Result};
 use crate::provider::ProviderId;
+use crate::service::Permit;
 use crate::state::{Key, Park, State};
 use crate::store;
 use serde_json::Value;
 
 const PREFIX: &str = "pitboard-park-";
 
-pub fn service_name(account_uuid: &str, at_millis: i64) -> String {
-    format!("{PREFIX}{account_uuid}-{at_millis}")
+pub fn service_name(id: &str, at_millis: i64) -> String {
+    format!("{PREFIX}{id}-{at_millis}")
 }
 
 /// A name Pitboard made, rather than one Claude Code did. Nothing deletes an item without
@@ -20,26 +21,33 @@ pub fn is_park_name(service: &str) -> bool {
     parts_of(service).is_some()
 }
 
-/// The account and the moment a name carries. An account uuid contains dashes, so the
+/// The account id and the moment a name carries. An account id contains dashes, so the
 /// moment is taken from the end.
 pub fn parts_of(service: &str) -> Option<(String, i64)> {
     let rest = service.strip_prefix(PREFIX)?;
-    let (uuid, millis) = rest.rsplit_once('-')?;
+    let (id, millis) = rest.rsplit_once('-')?;
     let at_millis: i64 = millis.parse().ok()?;
-    (!uuid.is_empty()).then(|| (uuid.to_string(), at_millis))
+    (!id.is_empty()).then(|| (id.to_string(), at_millis))
 }
 
 /// Claim a free name before writing to it, so the caller can record it first and recovery
 /// can find a park left by a run that died. Reusing a name would destroy the park there.
-pub fn reserve(ctx: &Context, account_uuid: &str) -> Result<String> {
+pub fn reserve(ctx: &Context, permit: Permit, id: &str) -> Result<String> {
+    let service = free_name(ctx, id)?;
+    // Written down before anything is written into it, so a run killed between the two
+    // leaves a name the next command can resolve rather than a login nothing on the machine
+    // can see.
+    crate::pending::reserve(ctx, permit, &service)?;
+    Ok(service)
+}
+
+/// A name for `id` that nothing in the vault holds yet, for a caller that writes it down
+/// itself before it writes into it.
+pub(crate) fn free_name(ctx: &Context, id: &str) -> Result<String> {
     let start = ctx.now_millis();
     for offset in 0..1_000 {
-        let candidate = service_name(account_uuid, start + offset);
+        let candidate = service_name(id, start + offset);
         if store::vault_read(ctx, &candidate)?.is_none() {
-            // Written down before anything is written into it, so a run killed between the
-            // two leaves a name the next command can resolve rather than a login nothing
-            // on the machine can see.
-            crate::pending::reserve(ctx, &candidate)?;
             return Ok(candidate);
         }
     }
@@ -81,9 +89,33 @@ pub fn price(
         }))
 }
 
+/// A new park of `document`, a login of the account filed under `id`, which `label` names:
+/// what it costs is asked first, then a free name is reserved and written. The caller
+/// records it, and deletes it where that fails. What parking it warns of comes with it.
+pub fn keep(
+    ctx: &Context,
+    permit: Permit,
+    provider: ProviderId,
+    label: &str,
+    id: &str,
+    document: &Value,
+) -> Result<(Park, Option<crate::service::Warning>)> {
+    let parking = price(
+        ctx,
+        provider,
+        label,
+        &service_name(id, ctx.now_millis()),
+        document,
+    )?;
+    let service = reserve(ctx, permit, id)?;
+    let park = store_at(ctx, permit, provider, &service, document)?;
+    Ok((park, parking))
+}
+
 /// Write a login into a reserved name and prove it reads back.
 pub fn store_at(
     ctx: &Context,
+    permit: Permit,
     provider: ProviderId,
     service: &str,
     document: &Value,
@@ -96,7 +128,7 @@ pub fn store_at(
         });
     }
     let body = serde_json::to_string(document).expect("a credential slice is always serialisable");
-    store::vault_write(ctx, service, &body)?;
+    store::vault_write(ctx, permit, service, &body)?;
     Ok(park)
 }
 
@@ -178,12 +210,7 @@ pub fn live_twins(ctx: &Context, state: &State) -> Vec<String> {
             .filter(|a| a.provider() == provider)
             .filter_map(|a| a.parked.as_ref())
             .collect();
-        // A tree login's park is the account's own items, moved and never copied, so it is
-        // never a twin of anything; and its fingerprint is a cookie's, which a keychain
-        // login's could only match by chance.
-        if held.is_empty()
-            || crate::provider::of(provider).tree().is_some()
-            || (provider == ProviderId::Claude && crate::settings::custom_oauth(ctx))
+        if held.is_empty() || (provider == ProviderId::Claude && crate::settings::custom_oauth(ctx))
         {
             continue;
         }
@@ -201,18 +228,10 @@ pub fn live_twins(ctx: &Context, state: &State) -> Vec<String> {
 
 /// Delete every discarded item, keeping listed only those that resisted. Returns how many
 /// remain.
-///
-/// A tree login's park is a directory, deleted from the parks directory and nowhere else;
-/// every other name is an item in the vault. The prefixes tell them apart, so neither kind
-/// of delete is ever handed the other's name.
-pub fn purge(ctx: &Context, state: &mut State) -> usize {
-    state.discarded.retain(|service| {
-        if service.starts_with(crate::provider::desktop::paths::PARK_PREFIX) {
-            crate::store::tree::delete_park(ctx, service).is_err()
-        } else {
-            store::vault_delete(ctx, service).is_err()
-        }
-    });
+pub fn purge(ctx: &Context, permit: Permit, state: &mut State) -> usize {
+    state
+        .discarded
+        .retain(|service| store::vault_delete(ctx, permit, service).is_err());
     state.discarded.len()
 }
 
@@ -268,10 +287,21 @@ mod tests {
     /// a seam this needed a real keychain, so it only ran on one platform and only against
     /// whatever the machine happened to hold.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn a_parked_login_reads_back_through_its_fingerprint() {
         let (ctx, mem, _scratch) = machine();
-        let name = reserve(&ctx, "acc").expect("a free name");
-        let park = store_at(&ctx, ProviderId::Claude, &name, &oauth("r")).expect("stored");
+        let name = reserve(&ctx, Permit::for_a_test(), "acc").expect("a free name");
+        let park = store_at(
+            &ctx,
+            Permit::for_a_test(),
+            ProviderId::Claude,
+            &name,
+            &oauth("r"),
+        )
+        .expect("stored");
 
         assert_eq!(mem.vault().services(), vec![name.clone()]);
         assert_eq!(load(&ctx, &work(), &park).expect("loads"), oauth("r"));
@@ -281,10 +311,21 @@ mod tests {
     /// the account needs signing in to again; a park that cannot be read says nothing about
     /// whether it is there, and telling someone to sign in again would be wrong.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn a_park_that_vanished_and_one_that_cannot_be_read_are_different_answers() {
         let (ctx, mem, _scratch) = machine();
-        let name = reserve(&ctx, "acc").expect("a free name");
-        let park = store_at(&ctx, ProviderId::Claude, &name, &oauth("r")).expect("stored");
+        let name = reserve(&ctx, Permit::for_a_test(), "acc").expect("a free name");
+        let park = store_at(
+            &ctx,
+            Permit::for_a_test(),
+            ProviderId::Claude,
+            &name,
+            &oauth("r"),
+        )
+        .expect("stored");
 
         mem.vault().fault(&name, Fault::Vanish);
         assert!(matches!(
@@ -306,23 +347,32 @@ mod tests {
     /// Two parks of one account in the same millisecond must not share a name: reusing one
     /// would destroy the login already there.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn a_reserved_name_steps_past_one_that_is_taken() {
         let (ctx, mem, _scratch) = machine();
-        let first = reserve(&ctx, "acc").expect("a free name");
+        let first = reserve(&ctx, Permit::for_a_test(), "acc").expect("a free name");
         mem.vault().plant(&first, "{}");
-        let second = reserve(&ctx, "acc").expect("another free name");
+        let second = reserve(&ctx, Permit::for_a_test(), "acc").expect("another free name");
         assert_ne!(first, second, "the clock has not moved, so the name must");
     }
 
     /// A login with nothing to restore is refused before it is written, so the vault never
     /// holds a park that could not be used.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn a_login_with_no_refresh_token_is_never_parked() {
         let (ctx, mem, _scratch) = machine();
-        let name = reserve(&ctx, "acc").expect("a free name");
+        let name = reserve(&ctx, Permit::for_a_test(), "acc").expect("a free name");
         assert!(matches!(
             store_at(
                 &ctx,
+                Permit::for_a_test(),
                 ProviderId::Claude,
                 &name,
                 &json!({"accessToken": "a"})
@@ -372,46 +422,11 @@ mod tests {
     fn a_credential_with_no_refresh_token_is_refused_rather_than_parked() {
         let refused = store_at(
             &Context::for_unit_test(),
+            Permit::for_a_test(),
             ProviderId::Claude,
             "pitboard-park-test-no-refresh",
             &serde_json::json!({"accessToken": "a"}),
         );
         assert!(refused.is_err());
-    }
-
-    /// A Claude Desktop park is never a twin of a keychain login, even one of the same
-    /// account whose fingerprint it happens to carry: it is a folder moved out of the app,
-    /// never a copy, and dropping it as a twin would delete an account's only session.
-    #[test]
-    fn a_desktop_park_is_never_a_keychain_twin() {
-        let (ctx, mem, _scratch) = machine();
-        let live = json!({"claudeAiOauth": oauth("shared")});
-        mem.live().plant(
-            &crate::provider::claude::paths::live_service(&ctx),
-            &live.to_string(),
-        );
-        let fingerprint = crate::provider::of(ProviderId::Claude).fingerprint(&live);
-        assert!(!fingerprint.is_empty());
-
-        let mut state = State::default();
-        state.accounts.push(crate::state::Account {
-            last_used_at: None,
-            label: "desk".into(),
-            account_uuid: "acc".into(),
-            email: String::new(),
-            parked: Some(crate::state::Park {
-                service: "pitboard-tree-acc-1760000000000".into(),
-                parked_at: 1_760_000_000,
-                refresh_fingerprint: fingerprint,
-                access_expires_at: None,
-                refresh_expires_at: None,
-            }),
-            detail: crate::state::Detail::Desktop {
-                organization_uuid: None,
-                session_fingerprint: "f".into(),
-                session_expires_at: None,
-            },
-        });
-        assert_eq!(live_twins(&ctx, &state), Vec::<String>::new());
     }
 }

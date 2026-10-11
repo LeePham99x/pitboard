@@ -22,6 +22,7 @@
 use super::{exclusive, purge};
 use crate::context::Context;
 use crate::error::Result;
+use crate::service::Permit;
 use crate::{audit, state};
 
 /// What taking over found.
@@ -36,8 +37,8 @@ pub struct Adopted {
 
 /// Take over this Pitboard directory. `None` when it was already this machine's, which is
 /// the ordinary case and not an error: running it when there is nothing to do says so.
-pub fn adopt(ctx: &Context) -> Result<Option<Adopted>> {
-    let _exclusive = exclusive(ctx)?;
+pub fn adopt(ctx: &Context, permit: Permit) -> Result<Option<Adopted>> {
+    let _exclusive = exclusive(ctx, permit)?;
     let (mut state, here) = state::load_any_machine(ctx)?;
     if here {
         return Ok(None);
@@ -59,13 +60,17 @@ pub fn adopt(ctx: &Context) -> Result<Option<Adopted>> {
     for service in &parks {
         state.release(service);
     }
-    state.active.clear();
-    state.slot.clear();
+    // Whose login each tool had stored, and which logins sign-ins replaced there, were facts
+    // about the other computer's stores.
+    for account in &mut state.accounts {
+        account.replaced_at = None;
+    }
+    state.forget_in_use();
     state.machine = state::machine_id();
-    state::save(ctx, &state)?;
-    purge(ctx, &mut state);
+    state::save(ctx, permit, &state)?;
+    purge(ctx, permit, &mut state);
 
-    audit::record(ctx, "adopt", "", "ok");
+    audit::record(ctx, permit, "adopt", "", "ok");
     Ok(Some(Adopted {
         accounts,
         logins_dropped,
@@ -76,6 +81,7 @@ pub fn adopt(ctx: &Context) -> Result<Option<Adopted>> {
 mod tests {
     use super::*;
     use crate::host::memory::MemoryHost;
+    use crate::in_use::InUse;
     use crate::provider::ProviderId;
     use crate::state::{Account, State};
     use crate::time::{Clock, FixedClock};
@@ -103,7 +109,7 @@ mod tests {
             .with_pitboard_home(root.clone())
             .with_memory_stores(Arc::clone(&mem))
             .with_clock(Arc::new(FixedClock::at(NOW)) as Arc<dyn Clock>);
-        crate::home::ensure(&ctx).expect("a home");
+        crate::home::ensure(&ctx, Permit::for_a_test()).expect("a home");
         (ctx, mem, Scratch(root))
     }
 
@@ -126,7 +132,10 @@ mod tests {
         };
         state.accounts.push(Account {
             last_used_at: None,
+            replaced_at: None,
+            plan: None,
             label: "work".into(),
+            id: "acc".into(),
             account_uuid: "acc".into(),
             email: "me@example.com".into(),
             detail: state::Detail::Claude {
@@ -140,13 +149,18 @@ mod tests {
                 &oauth(),
             )),
         });
-        state.set_active(ProviderId::Claude, Some("work".into()));
+        let found = InUse::of(&state.accounts[0], "r", NOW);
+        state.identified(ProviderId::Claude, found, NOW);
         let raw = serde_json::to_string(&state).expect("serialisable");
         std::fs::write(crate::home::dir(ctx).join("state.json"), raw).expect("written");
         service.to_string()
     }
 
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn a_home_from_another_machine_keeps_its_accounts_and_loses_its_logins() {
         let (ctx, mem, _scratch) = machine("takeover");
         let service = from_elsewhere(&ctx, &mem);
@@ -159,7 +173,7 @@ mod tests {
             "every other command still refuses it"
         );
 
-        let adopted = adopt(&ctx)
+        let adopted = adopt(&ctx, Permit::for_a_test())
             .expect("adopting")
             .expect("there was work to do");
         assert_eq!(adopted.accounts, vec!["work".to_string()]);
@@ -183,18 +197,62 @@ mod tests {
             "and the copy that came with it is deleted rather than left to be presented"
         );
         assert!(
-            state.active.is_empty(),
-            "who was signed in was true elsewhere"
+            state.in_use.is_empty(),
+            "whose login was stored was true elsewhere"
+        );
+    }
+
+    /// A sign-in outside Pitboard replaced a login in the other computer's store. Here no
+    /// account has a login yet, and each has the same way back, so none is said to have had
+    /// its login replaced.
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
+    fn a_login_replaced_on_another_machine_is_not_said_here() {
+        let (ctx, mem, _scratch) = machine("takeover-replaced");
+        from_elsewhere(&ctx, &mem);
+        let path = crate::home::dir(&ctx).join("state.json");
+        let mut written: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).expect("written")).expect("JSON");
+        let mut replaced = written["accounts"][0].clone();
+        replaced["label"] = json!("personal");
+        replaced["id"] = json!("acc-personal");
+        replaced["parked"] = serde_json::Value::Null;
+        replaced["replaced_at"] = json!(NOW - 60);
+        written["accounts"]
+            .as_array_mut()
+            .expect("accounts")
+            .push(replaced);
+        std::fs::write(&path, written.to_string()).expect("written");
+
+        adopt(&ctx, Permit::for_a_test())
+            .expect("adopting")
+            .expect("there was work to do");
+
+        let state = state::load(&ctx).expect("now it is this machine's");
+        assert!(
+            state.accounts.iter().all(|a| a.replaced_at.is_none()),
+            "{:?}",
+            state.accounts
         );
     }
 
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn adopting_a_home_that_is_already_this_machines_does_nothing() {
         let (ctx, _mem, _scratch) = machine("nothing-to-do");
         let mut state = State::default();
         state.accounts.push(Account {
             last_used_at: None,
+            replaced_at: None,
+            plan: None,
             label: "work".into(),
+            id: "acc".into(),
             account_uuid: "acc".into(),
             email: "me@example.com".into(),
             detail: state::Detail::Claude {
@@ -203,9 +261,9 @@ mod tests {
             },
             parked: None,
         });
-        state::save(&ctx, &state).expect("saved");
+        state::save(&ctx, Permit::for_a_test(), &state).expect("saved");
 
-        assert_eq!(adopt(&ctx).expect("adopting"), None);
+        assert_eq!(adopt(&ctx, Permit::for_a_test()).expect("adopting"), None);
         assert_eq!(
             state::load(&ctx).expect("still readable").accounts.len(),
             1,
@@ -214,8 +272,9 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn adopting_an_empty_home_is_not_an_error() {
         let (ctx, _mem, _scratch) = machine("empty");
-        assert_eq!(adopt(&ctx).expect("adopting"), None);
+        assert_eq!(adopt(&ctx, Permit::for_a_test()).expect("adopting"), None);
     }
 }
