@@ -18,6 +18,16 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   as `pitboard status --offline`, shows it too. A read sends nothing more anywhere to learn
   it: Claude Code's login keeps `subscriptionType` and `rateLimitTier`, and Codex's ID
   token keeps `chatgpt_plan_type`.
+- An install script puts the command line on macOS and Linux without Homebrew or Rust:
+  `curl -fsSL https://usepitboard.com/install.sh | sh`. It downloads the release's tarball
+  for the machine, checks it against the SHA-256 written into the script when the release
+  was made, and installs `pitboard` in `~/.local/bin`, with its man page and completions
+  under `~/.local/share`. `PITBOARD_INSTALL_DIR` names another folder, and the `share`
+  folder beside it takes the rest. It edits no shell profile: when the folder is not on
+  `PATH`, it prints the command that puts it there. Run it again to update. It refuses to
+  run as root or under sudo, where Pitboard changes nothing. Each release carries its own
+  copy, attested like its other files, at
+  `https://github.com/datlechin/pitboard/releases/download/v<version>/install.sh`.
 
 ## [0.11.0] - 2026-10-10
 
