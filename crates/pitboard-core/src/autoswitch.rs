@@ -322,15 +322,10 @@ impl Blind {
     }
 }
 
-/// What a look at the files alone came to.
-#[derive(Debug)]
-pub enum Look {
-    /// This stands, and nothing is to be done under the lock.
-    Stands(Box<Auto>),
-    /// A switch may be due, or whose login Claude Code has stored is in doubt: only a
-    /// decision under the lock can say ([`crate::service::Pitboard::auto_switch`]).
-    Act,
-}
+/// What a look at the files alone came to: `Act` where a switch may be due, or whose login
+/// Claude Code has stored is in doubt, which only a decision under the lock can say
+/// ([`crate::service::Pitboard::auto_switch`]).
+pub type Look = crate::duty::Look<Auto>;
 
 /// The fuller of two limits first, then the one resetting sooner.
 fn fuller(a: &Window, b: &Window, now: i64) -> Ordering {

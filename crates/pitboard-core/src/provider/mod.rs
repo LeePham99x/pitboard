@@ -519,6 +519,20 @@ pub(crate) trait Provider: Send + Sync + std::fmt::Debug {
     /// caller's to remove.
     fn discard_signin(&self, ctx: &Context, permit: Permit, dir: &std::path::Path);
 
+    /// The tool's own headless run that starts the five-hour period of the account `login` is
+    /// of, in the private `home` a warm-up runs in, given that login's access token alone.
+    /// It sends a request on the account's plan, so it is made only with the [`Permit`].
+    fn warm_up(
+        &self,
+        ctx: &Context,
+        permit: Permit,
+        home: &std::path::Path,
+        login: &Value,
+    ) -> Result<crate::warm::run::Headless, ProviderError>;
+
+    /// What a warm-up's run came to, from what it printed.
+    fn warm_verdict(&self, ran: &crate::warm::run::Ran) -> crate::warm::run::Verdict;
+
     /// What the tool's own sign-in has printed so far, `said`, comes to: the address it gave
     /// for a browser that did not open by itself, and whether it waits for a code typed
     /// back. Everything said so far, because a tool's output arrives in pieces that need

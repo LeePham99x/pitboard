@@ -10,3 +10,12 @@
 
 pub mod cadence;
 pub(crate) mod ledger;
+
+/// What a duty's look at the files alone came to.
+#[derive(Debug)]
+pub enum Look<T> {
+    /// This stands, and nothing is to be done under the lock.
+    Stands(Box<T>),
+    /// Something may be due: only a decision under the lock can say.
+    Act,
+}

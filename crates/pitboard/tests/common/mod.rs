@@ -450,6 +450,36 @@ impl Env {
         self.usage.assert();
     }
 
+    /// Make Anthropic answer what every Claude Code account has left with its limits listed:
+    /// its five-hour period running until `five_hour_resets_in` seconds from now, or not
+    /// running where that is `None`, at 0%, and its weekly limit at 40% for a day more.
+    pub fn claude_usage(&mut self, five_hour_resets_in: Option<i64>) {
+        let at = |seconds: i64| {
+            let when =
+                std::time::SystemTime::now() + std::time::Duration::from_secs(seconds as u64);
+            let epoch = when
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("after 1970")
+                .as_secs() as i64;
+            pitboard_core::time::local(epoch, "%Y-%m-%dT%H:%M:%S%:z")
+        };
+        self.usage.remove();
+        self.usage = self
+            .server
+            .mock("GET", "/api/oauth/usage")
+            .with_status(200)
+            .with_body(
+                serde_json::json!({
+                    "limits": [
+                        {"kind": "session", "percent": 0, "resets_at": five_hour_resets_in.map(at)},
+                        {"kind": "weekly_all", "percent": 40, "resets_at": at(86_400)},
+                    ],
+                })
+                .to_string(),
+            )
+            .create();
+    }
+
     // std's `Command` folds case on Windows: given `PATH` then `Path`, a child had one, `Path`.
     pub fn command(&self, args: &[&str]) -> Command {
         let mut c = Command::new(env!("CARGO_BIN_EXE_pitboard"));

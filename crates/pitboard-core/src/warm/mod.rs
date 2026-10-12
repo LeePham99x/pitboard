@@ -3,7 +3,7 @@
 //!
 //! A five-hour period starts with an account's first request after the last one reset, and
 //! resets five hours after the start of the ten minutes that request fell in (the register's
-//! `claude_request_starts_the_five_hour_period`). An account nobody uses for a while after a
+//! `request_starts_the_five_hour_period`). An account nobody uses for a while after a
 //! reset starts its next period only when somebody does, and that period resets that much
 //! later. Where somebody asks for it, Pitboard starts the period at once instead, through
 //! Claude Code itself: one short request with the account's own login, made by the tool's
@@ -12,7 +12,7 @@
 //! Asked for, account by account, and only within a span of each day somebody chose, 06:00
 //! to 22:00 unless they chose otherwise, so periods run back to back through the hours
 //! somebody works and none is started for a night nobody uses. The weekly limit is a fixed
-//! cycle that runs whether or not anything is sent (`claude_weekly_period_is_a_fixed_cycle`),
+//! cycle that runs whether or not anything is sent (`weekly_period_is_a_fixed_cycle`),
 //! so there is nothing to start there. Claude Code only: when a Codex period starts has not
 //! been measured.
 //!
@@ -20,6 +20,7 @@
 //! every front end alike.
 
 pub(crate) mod decide;
+pub mod run;
 
 pub use decide::{Hold, Standing};
 
@@ -151,6 +152,63 @@ fn local_minute(now: i64, zone: &TimeZone) -> Option<u16> {
     u16::try_from(i32::from(zoned.hour()) * 60 + i32::from(zoned.minute())).ok()
 }
 
+/// Why a warm-up that ran, or was about to, started no period.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Failure {
+    /// A limit of the account is used up, and Anthropic refused the request.
+    LimitReached,
+    /// Anthropic refused the login's access token.
+    LoginRefused,
+    /// The request was answered, and Anthropic's next reading still has no period running.
+    NotStarted,
+    /// Anthropic could not be reached, or was overloaded.
+    Unreachable,
+    /// The tool's run did not finish in time.
+    TimedOut,
+    /// The tool's run failed, for this reason in its own words.
+    Failed(String),
+}
+
+impl Failure {
+    /// A stable code, for `--json` and for telling one apart from another.
+    pub fn code(&self) -> &'static str {
+        match self {
+            Failure::LimitReached => "warm_up_limit_reached",
+            Failure::LoginRefused => "warm_up_login_refused",
+            Failure::NotStarted => "warm_up_not_started",
+            Failure::Unreachable => "warm_up_unreachable",
+            Failure::TimedOut => "warm_up_timed_out",
+            Failure::Failed(_) => "warm_up_failed",
+        }
+    }
+
+    /// What it was, as a clause.
+    pub fn said(&self) -> String {
+        match self {
+            Failure::LimitReached => {
+                "a limit of it is used up, and Anthropic refused the request".into()
+            }
+            Failure::LoginRefused => "Anthropic refused its login; sign in to it again".into(),
+            Failure::NotStarted => {
+                "the request was answered, and Anthropic still has no period running".into()
+            }
+            Failure::Unreachable => "Anthropic could not be reached".into(),
+            Failure::TimedOut => "Claude Code did not finish in time".into(),
+            Failure::Failed(said) => format!("Claude Code failed ({said})"),
+        }
+    }
+
+    /// Whether waiting may mend it, so it is not counted against the day's attempts: a
+    /// service out of reach, a run cut short, or a limit used up until it resets.
+    pub(crate) fn mended_by_waiting(&self) -> bool {
+        matches!(
+            self,
+            Failure::LimitReached | Failure::Unreachable | Failure::TimedOut
+        )
+    }
+}
+
 /// Which accounts Pitboard warms up, by account id, and within which span of each day.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Setting {
@@ -184,12 +242,89 @@ impl Setting {
     }
 }
 
+/// Why no account is warmed up on this machine for now, whatever each one's period says.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Halt {
+    /// A switch was interrupted, and the change that finishes it is somebody's to make.
+    SwitchInterrupted,
+    /// Claude Code keeps its login under another name, which Pitboard does not act on.
+    CustomOauth,
+    /// Claude Code's managed settings make every run of it sign in another way, set by these,
+    /// so a warm-up would send a request on that rather than on an account's login.
+    Overridden(Vec<String>),
+    /// Claude Code is not installed where Pitboard looks.
+    ProgramMissing,
+}
+
+impl Halt {
+    /// A stable code, for `--json` and for telling one apart from another.
+    pub fn code(&self) -> &'static str {
+        match self {
+            Halt::SwitchInterrupted => "switch_interrupted",
+            Halt::CustomOauth => "custom_oauth_endpoint",
+            Halt::Overridden(_) => "auth_overridden",
+            Halt::ProgramMissing => "claude_not_found",
+        }
+    }
+
+    /// What it is, as a clause.
+    pub fn said(&self) -> String {
+        match self {
+            Halt::SwitchInterrupted => {
+                "a switch was interrupted, and the next change you make finishes it".into()
+            }
+            Halt::CustomOauth => {
+                "Claude Code uses a custom OAuth endpoint, and Pitboard does not act on Claude \
+                 Code then"
+                    .into()
+            }
+            Halt::Overridden(names) => format!(
+                "Claude Code's managed settings make it sign in another way, set by {}",
+                names.join(", ")
+            ),
+            Halt::ProgramMissing => "Claude Code is not installed where Pitboard looks".into(),
+        }
+    }
+}
+
+/// Why nothing is warmed up here now, where something says so, asked in the order a change
+/// would refuse over it.
+fn halted(ctx: &Context) -> Option<Halt> {
+    if crate::switch::unfinished(ctx) == Some(crate::switch::Unfinished::Interrupted) {
+        return Some(Halt::SwitchInterrupted);
+    }
+    if crate::settings::custom_oauth(ctx) {
+        return Some(Halt::CustomOauth);
+    }
+    let overridden = overridden(ctx);
+    if !overridden.is_empty() {
+        return Some(Halt::Overridden(overridden));
+    }
+    crate::provider::of(ProviderId::Claude)
+        .program(ctx)
+        .is_none()
+        .then_some(Halt::ProgramMissing)
+}
+
+/// What would make a warm-up's run sign in with something other than the access token it is
+/// handed: the managed settings every run of Claude Code here reads, or anything in its own
+/// config directory. Not this process's environment, which the run is never given.
+pub(crate) fn overridden(ctx: &Context) -> Vec<String> {
+    let config = run::home(ctx, ProviderId::Claude).join("config");
+    crate::settings::overrides_of_a_run_in(&config)
+        .iter()
+        .map(ToString::to_string)
+        .collect()
+}
+
 /// Each Claude Code account, whether Pitboard warms it up and where it stands, and the span,
-/// for a front end to show.
+/// for a front end to show, with why nothing is warmed up here where something says so.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Overview {
     pub range: Range,
     pub accounts: Vec<Choice>,
+    pub halted: Option<Halt>,
 }
 
 /// One Claude Code account, as it is typed, whether Pitboard warms it up, and where it stands
@@ -221,14 +356,19 @@ impl Overview {
     }
 }
 
+/// The Claude Code account whose login Claude Code has stored, as Pitboard last knew it.
+pub(crate) fn in_use(ctx: &Context, state: &State) -> Option<crate::state::Key> {
+    crate::in_use::known(ctx, state, ProviderId::Claude)
+        .owner()
+        .and_then(|owner| state.account_of(ProviderId::Claude, owner))
+        .map(crate::state::Account::key)
+}
+
 /// What `setting` says of each Claude Code account `state` has, in the order they were
 /// enrolled, and where each one turned on stands, from Pitboard's files alone.
 pub(crate) fn overview(ctx: &Context, state: &State, setting: &Setting) -> Overview {
     let now = ctx.now();
-    let in_use = crate::in_use::known(ctx, state, ProviderId::Claude)
-        .owner()
-        .and_then(|owner| state.account_of(ProviderId::Claude, owner))
-        .map(crate::state::Account::key);
+    let in_use = in_use(ctx, state);
     let standings = decide::standings(
         state,
         setting,
@@ -240,6 +380,7 @@ pub(crate) fn overview(ctx: &Context, state: &State, setting: &Setting) -> Overv
     );
     Overview {
         range: setting.range,
+        halted: setting.any().then(|| halted(ctx)).flatten(),
         accounts: state
             .accounts
             .iter()
@@ -254,6 +395,24 @@ pub(crate) fn overview(ctx: &Context, state: &State, setting: &Setting) -> Overv
             })
             .collect(),
     }
+}
+
+/// What a warm-up would come to now, from Pitboard's files alone: no lock, no keychain and no
+/// network, so a look that finds nothing due costs nobody anything. `Act` where an account
+/// turned on is due, which only the decision under the lock says for certain.
+pub(crate) fn look(ctx: &Context, state: &State) -> Result<crate::duty::Look<Overview>> {
+    let setting = load(ctx)?;
+    let overview = overview(ctx, state, &setting);
+    let due = overview.halted.is_none()
+        && overview
+            .accounts
+            .iter()
+            .any(|choice| choice.standing == Some(Standing::Due));
+    Ok(if due {
+        crate::duty::Look::Act
+    } else {
+        crate::duty::Look::Stands(Box::new(overview))
+    })
 }
 
 /// The format of `warm.json` this Pitboard writes.

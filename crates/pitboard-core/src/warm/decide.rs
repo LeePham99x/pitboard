@@ -18,7 +18,7 @@ use std::path::PathBuf;
 const PERIOD: i64 = 5 * 3_600;
 
 /// A period starts at the start of the ten minutes its first request fell in, as measured
-/// (the register's `claude_request_starts_the_five_hour_period`).
+/// (the register's `request_starts_the_five_hour_period`).
 const START_STEP: i64 = 600;
 
 /// Where an account stands as far as warming it up goes.
@@ -181,7 +181,6 @@ impl Ledger {
     }
 
     /// What is kept of the account with `id` today, begun afresh where nothing is.
-    #[cfg(test)]
     pub(crate) fn of(&mut self, id: &str, now: i64, zone: &TimeZone) -> &mut Warmed {
         let today = date(now, zone);
         let warmed = self.accounts.entry(id.to_owned()).or_default();

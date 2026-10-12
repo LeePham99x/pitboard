@@ -1233,6 +1233,62 @@ impl Pitboard {
         Ok(crate::warm::overview(&self.ctx, &state, &setting))
     }
 
+    /// Warms up the account `typed` names now, whatever the span of the day and the attempts
+    /// already made today, where its five-hour period is not running and nothing holds it back:
+    /// one short request through Claude Code's own headless mode, with that account's access
+    /// token. Recorded in the activity log as `warm-up` of the account.
+    pub fn warm_now(&self, typed: &str) -> Changing<switch::warm::WarmUp> {
+        let permit = self.permitted()?;
+        let key = self.named(permit, "warm-up", typed)?;
+        let settled = self.settled_to_warm(permit, "warm-up", &key.typed())?;
+        self.warming(settled, switch::warm::Target::Account(key))
+    }
+
+    /// Warms up the first account turned on that is due, as [`crate::warm`] says, for a front
+    /// end somebody asked to: the app, or `pitboard watch`. [`Pitboard::warm_look`] says
+    /// whether one may be, waiting on no lock.
+    pub fn warm_up(&self) -> Changing<switch::warm::WarmUp> {
+        let permit = self.permitted()?;
+        let settled = self.settled_to_warm(permit, "warm-up", "")?;
+        self.warming(settled, switch::warm::Target::Due)
+    }
+
+    /// What warming up would come to now, from files alone: what stands, with where each
+    /// account turned on stands, or that only [`Pitboard::warm_up`] can say. Waits on no lock,
+    /// reads no keychain and asks nobody, so a front end may look as often as it likes.
+    pub fn warm_look(&self) -> Result<crate::duty::Look<crate::warm::Overview>> {
+        let state = state::load(&self.ctx)?;
+        crate::warm::look(&self.ctx, &state)
+    }
+
+    /// Settled for a warm-up, with an interrupted switch settling finished. Without what a
+    /// change of Claude Code's login warns of: a warm-up's run is given nothing of this
+    /// process's environment and no file behind the keychain, and what would make it sign in
+    /// another way stops it outright.
+    fn settled_to_warm(
+        &self,
+        permit: Permit,
+        verb: &str,
+        subject: &str,
+    ) -> std::result::Result<(Settled, Vec<Warning>), Failed> {
+        let (settled, recovered) = self.settled(permit, verb, subject, Some(ProviderId::Claude))?;
+        Ok((settled, recovered.into_iter().collect()))
+    }
+
+    fn warming(
+        &self,
+        (settled, mut warnings): (Settled, Vec<Warning>),
+        target: switch::warm::Target,
+    ) -> Changing<switch::warm::WarmUp> {
+        match switch::warm::warm_up(settled, target) {
+            Ok(value) => Ok(Done { value, warnings }),
+            Err(mut error) => {
+                warnings.extend(error.take_warnings());
+                Err(Failed { error, warnings })
+            }
+        }
+    }
+
     /// Warms up the account `typed` names, or stops, recorded in the activity log as
     /// `warm-on` or `warm-off` of that account. Only a Claude Code account is warmed up
     /// (`warm_up_unsupported`); any may be turned off. Whether that changed anything.
@@ -1240,7 +1296,9 @@ impl Pitboard {
         let verb = if on { "warm-on" } else { "warm-off" };
         let permit = self.permitted()?;
         let key = self.named(permit, verb, typed)?;
-        self.changing(permit, verb, &key.typed(), Some(key.provider), |settled| {
+        let subject = key.typed();
+        let settled = self.settled_to_warm(permit, verb, &subject)?;
+        self.change(permit, verb, &subject, settled, |settled| {
             switch::warm::turn(settled, &key, on).map(|changed| (changed, Vec::new()))
         })
     }
@@ -1254,13 +1312,10 @@ impl Pitboard {
             crate::warm::clock(range.from()),
             crate::warm::clock(range.to())
         );
-        self.changing(
-            permit,
-            "warm-range",
-            &subject,
-            Some(ProviderId::Claude),
-            |settled| switch::warm::range(settled, range).map(|range| (range, Vec::new())),
-        )
+        let settled = self.settled_to_warm(permit, "warm-range", &subject)?;
+        self.change(permit, "warm-range", &subject, settled, |settled| {
+            switch::warm::range(settled, range).map(|range| (range, Vec::new()))
+        })
     }
 
     /// The login left in the file behind Claude Code's store, and what putting it away would

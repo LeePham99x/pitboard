@@ -251,6 +251,29 @@ pub enum Error {
     )]
     WarmUpUnsupported { tool: ProviderId, label: String },
 
+    #[error("`{label}` was not warmed up: {}.", .why.said())]
+    WarmUpFailed {
+        label: String,
+        why: crate::warm::Failure,
+    },
+
+    #[error("`{label}` is not warmed up now: it {why}.")]
+    WarmUpNotDue {
+        label: String,
+        why: String,
+        code: &'static str,
+    },
+
+    #[error(
+        "Claude Code's managed settings make it sign in another way, set by {}, so a warm-up \
+         would send a request on that and not on the account's login.",
+        .names.join(", ")
+    )]
+    WarmUpOverridden { names: Vec<String> },
+
+    #[error("another Pitboard is warming up an account. Try again in a minute.")]
+    WarmUpInProgress,
+
     #[error(
         "{path} has an account for `{tool}`, a tool this Pitboard does not know, so it was \
          written by a newer one. Update this Pitboard the way you installed it. The app, and \
@@ -787,6 +810,10 @@ impl Error {
             WarmSettingUnreadable { .. } => "warm_setting_unreadable",
             WarmSettingCorrupt { .. } => "warm_setting_corrupt",
             WarmUpUnsupported { .. } => "warm_up_unsupported",
+            WarmUpFailed { why, .. } => why.code(),
+            WarmUpNotDue { code, .. } => code,
+            WarmUpOverridden { .. } => "warm_up_auth_overridden",
+            WarmUpInProgress => "warm_up_in_progress",
             StateNamesUnknownTool { .. } => "state_names_unknown_tool",
             StateWrongMachine { .. } => "state_wrong_machine",
             StateWriteFailed { .. } => "state_write_failed",

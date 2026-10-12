@@ -5,12 +5,19 @@ use crate::ui::{BOLD, DIM, columns, pad, paint};
 use crate::{Report, changed};
 use clap::Subcommand;
 use pitboard_core::service::Pitboard;
+use pitboard_core::switch::warm::WarmUp;
 use pitboard_core::warm::{self, Hold, Overview, Range, Standing};
 use pitboard_core::words;
 use serde_json::{Value, json};
 
 #[derive(Subcommand)]
 pub enum WarmCommand {
+    /// Start an account's five-hour period now, whatever the span, through one short request
+    /// Claude Code makes with that account's login
+    Now {
+        /// The label the account was enrolled under, such as `work`
+        label: String,
+    },
     /// Warm up an account from now on, within the span `range` sets
     On {
         /// The label the account was enrolled under, such as `work`
@@ -35,6 +42,7 @@ pub enum WarmCommand {
 pub fn run(pitboard: &Pitboard, what: Option<&WarmCommand>) -> Report {
     match what {
         None => overview(pitboard),
+        Some(WarmCommand::Now { label }) => now(pitboard, label),
         Some(WarmCommand::On { label }) => turn(pitboard, label, true),
         Some(WarmCommand::Off { label }) => turn(pitboard, label, false),
         Some(WarmCommand::Range { from, to }) => match Range::parse(from, to) {
@@ -138,6 +146,41 @@ fn epoch() -> i64 {
         .map_or(0, |since| {
             i64::try_from(since.as_secs()).unwrap_or(i64::MAX)
         })
+}
+
+fn now(pitboard: &Pitboard, label: &str) -> Report {
+    changed("warm", pitboard.warm_now(label), |warmed| {
+        let moment = |at| pitboard_core::time::moment(at, epoch());
+        match warmed {
+            WarmUp::Started { account, until } => (
+                json!({ "label": account, "outcome": "started", "until": until }),
+                match until {
+                    Some(until) => format!(
+                        "Warmed up {}: its 5-hour period runs until {}.\n",
+                        paint(BOLD, &account),
+                        moment(until)
+                    ),
+                    None => format!(
+                        "Warmed up {}. Anthropic has not said yet when its 5-hour period \
+                         resets.\n",
+                        paint(BOLD, &account)
+                    ),
+                },
+            ),
+            WarmUp::Running { account, until } => (
+                json!({ "label": account, "outcome": "running", "until": until }),
+                format!(
+                    "{}'s 5-hour period runs already, until {}.\n",
+                    paint(BOLD, &account),
+                    moment(until)
+                ),
+            ),
+            WarmUp::Nothing => (
+                json!({ "label": label, "outcome": "nothing" }),
+                "Nothing was warmed up.\n".to_owned(),
+            ),
+        }
+    })
 }
 
 fn turn(pitboard: &Pitboard, label: &str, on: bool) -> Report {

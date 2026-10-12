@@ -242,6 +242,11 @@ pub struct Context {
     /// nothing here at all.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) sign_in_script: Option<Arc<dyn crate::switch::SignInScript>>,
+    /// Who plays a warm-up's run in place of the tool's program, where a test or a fixture
+    /// says. `None` in every real context, and in any build without `test-support` there is
+    /// nothing here at all.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) warm_script: Option<Arc<dyn crate::warm::run::WarmScript>>,
 }
 
 impl Context {
@@ -312,6 +317,8 @@ impl Context {
             openai: Arc::new(OpenAiNetwork),
             #[cfg(any(test, feature = "test-support"))]
             sign_in_script: None,
+            #[cfg(any(test, feature = "test-support"))]
+            warm_script: None,
         }
     }
 
@@ -559,6 +566,8 @@ impl Context {
             openai: Arc::new(OpenAiNetwork),
             #[cfg(any(test, feature = "test-support"))]
             sign_in_script: None,
+            #[cfg(any(test, feature = "test-support"))]
+            warm_script: None,
         }
     }
 
@@ -606,6 +615,21 @@ impl Context {
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn sign_in_script(&self) -> Option<&Arc<dyn crate::switch::SignInScript>> {
         self.sign_in_script.as_ref()
+    }
+
+    /// Play each warm-up's run with `script` rather than start the tool's program. A test or a
+    /// fixture that may start no program does this, and nothing else does.
+    #[cfg(any(test, feature = "test-support"))]
+    #[doc(hidden)]
+    pub fn with_warm_script(mut self, script: Arc<dyn crate::warm::run::WarmScript>) -> Context {
+        self.warm_script = Some(script);
+        self
+    }
+
+    /// Who plays a warm-up's run, where somebody said.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn warm_script(&self) -> Option<&Arc<dyn crate::warm::run::WarmScript>> {
+        self.warm_script.as_ref()
     }
 
     /// Whether this context reaches no machine but `memory` and no service but `api`. A
