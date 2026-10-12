@@ -648,7 +648,7 @@ pub(crate) fn too_old(build: Option<u32>) -> ChangesNothing {
 }
 
 /// Things one after another, as a sentence lists them: "a", "a and b", "a, b and c".
-pub(crate) fn listed(mut items: Vec<String>) -> String {
+pub fn listed(mut items: Vec<String>) -> String {
     match items.len() {
         0 => String::new(),
         1 => items.remove(0),

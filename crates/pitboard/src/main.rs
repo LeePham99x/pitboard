@@ -129,8 +129,8 @@ enum Command {
     Doctor,
     /// One line for Claude Code's status bar; reads its session JSON on stdin
     Statusline,
-    /// Switch Claude Code to another of your accounts before the one in use runs out, for as
-    /// long as this runs
+    /// Switch Claude Code to another of your accounts before the one in use runs out, and warm
+    /// up the accounts `pitboard warm on` turned on, for as long as this runs
     Watch {
         /// Switch once a limit of the account in use reaches this share, from 50 to 99
         #[arg(
@@ -141,8 +141,8 @@ enum Command {
                 .range(i64::from(Threshold::LOWEST)..=i64::from(Threshold::HIGHEST)),
         )]
         at: u8,
-        /// Decide once from the usage Pitboard last measured, asking no service for usage,
-        /// and stop
+        /// Decide once whether to switch, from the usage Pitboard last measured, asking no
+        /// service for usage, and stop. Warms nothing up
         #[arg(long)]
         once: bool,
     },

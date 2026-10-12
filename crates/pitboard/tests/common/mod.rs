@@ -450,6 +450,40 @@ impl Env {
         self.usage.assert();
     }
 
+    /// A stand-in for `claude` that records how it was started, at the first path, and what
+    /// it was handed on descriptor 3 and standard input, at the second, then answers as print
+    /// mode does when a request is answered.
+    pub fn install_fake_claude_print(&self) -> (PathBuf, PathBuf) {
+        let bin = self.root.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let started = self.root.join("claude-started.json");
+        let handed = self.root.join("claude-handed.json");
+        put_stand_in(
+            &bin.join(os::program("claude")),
+            &Script::Plays {
+                args: None,
+                steps: vec![
+                    Step::Records {
+                        at: started.clone(),
+                        variables: vec![
+                            "CLAUDE_CONFIG_DIR".into(),
+                            "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR".into(),
+                            "ANTHROPIC_API_KEY".into(),
+                            "PITBOARD_HOME".into(),
+                        ],
+                    },
+                    Step::ReadsDescriptor { at: handed.clone() },
+                    Step::Says(
+                        r#"{"type":"result","subtype":"success","is_error":false,"result":"OK","api_error_status":null}"#
+                            .into(),
+                    ),
+                    Step::Exits(0),
+                ],
+            },
+        );
+        (started, handed)
+    }
+
     /// Make Anthropic answer what every Claude Code account has left with its limits listed:
     /// its five-hour period running until `five_hour_resets_in` seconds from now, or not
     /// running where that is `None`, at 0%, and its weekly limit at 40% for a day more.

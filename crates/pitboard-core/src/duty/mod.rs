@@ -3,10 +3,10 @@
 //!
 //! Each thing it does is a duty: a rule that judges from what Pitboard already knows, a look
 //! at its files that waits on nobody, and an act under the lock every change takes. The
-//! automatic switch ([`crate::autoswitch`]) is one. What every duty shares is here: how often
-//! a front end decides, how long something that came to nothing waits before it is tried
-//! again, and how what was tried is kept between runs. What each duty decides, and what it
-//! does, is its own.
+//! automatic switch ([`crate::autoswitch`]) and the warm-up ([`crate::warm`]) are two. What
+//! every duty shares is here: how often a front end decides, how long something that came to
+//! nothing waits before it is tried again, how what was tried is kept between runs, and one
+//! look over both. What each duty decides, and what it does, is its own.
 
 pub mod cadence;
 pub(crate) mod ledger;
@@ -18,4 +18,19 @@ pub enum Look<T> {
     Stands(Box<T>),
     /// Something may be due: only a decision under the lock can say.
     Act,
+}
+
+/// What a front end asks Pitboard to do by itself: switch Claude Code at this share, and warm
+/// up the accounts turned on for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Duties {
+    pub switch: Option<crate::autoswitch::Threshold>,
+    pub warm: bool,
+}
+
+/// What each duty asked for would come to now, from files alone.
+#[derive(Debug)]
+pub struct Looked {
+    pub switch: Option<crate::error::Result<Look<crate::autoswitch::Auto>>>,
+    pub warm: Option<crate::error::Result<Look<crate::warm::Overview>>>,
 }

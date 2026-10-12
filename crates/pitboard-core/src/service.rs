@@ -1249,8 +1249,29 @@ impl Pitboard {
     /// whether one may be, waiting on no lock.
     pub fn warm_up(&self) -> Changing<switch::warm::WarmUp> {
         let permit = self.permitted()?;
+        let looked = self.warm_look().map_err(|error| Failed {
+            error,
+            warnings: Vec::new(),
+        })?;
+        if let crate::duty::Look::Stands(overview) = looked {
+            return Ok(Done {
+                value: switch::warm::WarmUp::Stands(overview),
+                warnings: Vec::new(),
+            });
+        }
         let settled = self.settled_to_warm(permit, "warm-up", "")?;
         self.warming(settled, switch::warm::Target::Due)
+    }
+
+    /// What each duty a front end does by itself would come to now, from files alone, as
+    /// [`Pitboard::auto_look`] and [`Pitboard::warm_look`] say of each: one look for a front
+    /// end that does both, each duty's answer its own, so a file one cannot read stops only
+    /// that one.
+    pub fn look(&self, duties: &crate::duty::Duties) -> crate::duty::Looked {
+        crate::duty::Looked {
+            switch: duties.switch.map(|threshold| self.auto_look(threshold)),
+            warm: duties.warm.then(|| self.warm_look()),
+        }
     }
 
     /// What warming up would come to now, from files alone: what stands, with where each

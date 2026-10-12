@@ -3,40 +3,7 @@
 
 mod common;
 
-use common::{Env, os, put_stand_in, two_accounts};
-use pitboard_core::stand_in::{Script, Step};
-
-const ANSWERED: &str = r#"{"type":"result","subtype":"success","is_error":false,"result":"OK","api_error_status":null}"#;
-
-/// A stand-in for `claude` that records how it was started and what it was handed, then
-/// answers as print mode does.
-fn install_fake_claude_print(env: &Env) -> (std::path::PathBuf, std::path::PathBuf) {
-    let bin = env.root.join("bin");
-    std::fs::create_dir_all(&bin).unwrap();
-    let started = env.root.join("claude-started.json");
-    let handed = env.root.join("claude-handed.json");
-    put_stand_in(
-        &bin.join(os::program("claude")),
-        &Script::Plays {
-            args: None,
-            steps: vec![
-                Step::Records {
-                    at: started.clone(),
-                    variables: vec![
-                        "CLAUDE_CONFIG_DIR".into(),
-                        "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR".into(),
-                        "ANTHROPIC_API_KEY".into(),
-                        "PITBOARD_HOME".into(),
-                    ],
-                },
-                Step::ReadsDescriptor { at: handed.clone() },
-                Step::Says(ANSWERED.into()),
-                Step::Exits(0),
-            ],
-        },
-    );
-    (started, handed)
-}
+use common::two_accounts;
 
 fn json(text: &str) -> serde_json::Value {
     serde_json::from_str(text).unwrap_or_else(|e| panic!("{e}: {text}"))
@@ -49,7 +16,7 @@ fn json(text: &str) -> serde_json::Value {
 #[cfg_attr(windows, ignore = "a warm-up runs on macOS and Linux")]
 fn warming_up_now_runs_claude_code_with_the_access_token_on_descriptor_three() {
     let mut env = two_accounts("warm-now");
-    let (started, handed) = install_fake_claude_print(&env);
+    let (started, handed) = env.install_fake_claude_print();
     env.claude_usage(None);
     let (_, err, code) = env.run(&["status"]);
     assert_eq!(code, 0, "status: {err}");
@@ -119,7 +86,7 @@ fn warming_up_now_runs_claude_code_with_the_access_token_on_descriptor_three() {
 #[cfg_attr(windows, ignore = "a warm-up runs on macOS and Linux")]
 fn warming_up_now_an_account_whose_period_runs_starts_nothing() {
     let mut env = two_accounts("warm-running");
-    let (started, _) = install_fake_claude_print(&env);
+    let (started, _) = env.install_fake_claude_print();
     env.claude_usage(Some(3600));
     let (_, err, code) = env.run(&["status"]);
     assert_eq!(code, 0, "status: {err}");

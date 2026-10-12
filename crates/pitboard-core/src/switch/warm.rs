@@ -36,6 +36,8 @@ pub enum WarmUp {
     Running { account: String, until: i64 },
     /// No account turned on was due by the time the lock was held.
     Nothing,
+    /// Nothing is due, as a look at the files alone says, with where each account stands.
+    Stands(Box<warm::Overview>),
 }
 
 /// Which account a warm-up is of.

@@ -1,9 +1,10 @@
-//! `pitboard watch`: switching Claude Code by itself for as long as somebody leaves it
-//! running in a terminal, as the app does with its setting on.
+//! `pitboard watch`: switching Claude Code by itself, and warming up the accounts turned on
+//! for it, for as long as somebody leaves it running in a terminal, as the app does.
 //!
 //! A program in the foreground, which stops with its terminal or with Ctrl-C. Nothing
 //! installs it and it starts nothing that outlives it: running it is the opt-in. What it
-//! decides, and what it never does, is [`pitboard_core::autoswitch`]'s.
+//! decides, and what it never does, is [`pitboard_core::autoswitch`]'s and
+//! [`pitboard_core::warm`]'s.
 //!
 //! It asks the services about every account as often as the app does, and looks at what the
 //! status lines and the other front ends record as often as the app looks, so it costs
@@ -15,10 +16,12 @@ use pitboard_core::duty::cadence::{DECIDE_EVERY_SECONDS, Refusals};
 use pitboard_core::error::{self, Error};
 use pitboard_core::provider::ProviderId;
 use pitboard_core::service::{Changing, Done, Failed, Pitboard};
+use pitboard_core::switch::warm::WarmUp;
 use pitboard_core::usage::Window;
+use pitboard_core::warm::{Overview, Standing};
 use pitboard_core::words;
 use serde_json::{Value, json};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::process::ExitCode;
 use std::time::Duration;
 
@@ -44,20 +47,24 @@ pub fn run(pitboard: &Pitboard, threshold: Threshold, as_json: bool) -> ExitCode
     if let Err(refused) = pitboard.permit() {
         return emit(Report::failed(Some("watch"), refused), as_json);
     }
+    let warming = pitboard.warm_overview().ok();
     emit(
         Report::done(
             "watch",
-            json!({ "event": "watching", "threshold": threshold.percent() }),
+            watching_json(threshold, warming.as_ref()),
             format!(
                 "Watching Claude Code. Pitboard switches to another of your accounts once a \
-                 limit of the one in use reaches {}%. Stop with Ctrl-C.\n",
-                threshold.percent()
+                 limit of the one in use reaches {}%{}. Stop with Ctrl-C.\n",
+                threshold.percent(),
+                warming.as_ref().map(warms).unwrap_or_default()
             ),
         ),
         as_json,
     );
     let mut told = Told::default();
     let mut refusals = Refusals::default();
+    let mut warm_told = WarmTold::default();
+    let mut warm_refusals = Refusals::default();
     let (mut read_at, mut decided_at, mut seen) = (None::<i64>, 0, None);
     loop {
         let now = epoch();
@@ -89,6 +96,24 @@ pub fn run(pitboard: &Pitboard, threshold: Threshold, as_json: bool) -> ExitCode
                 }
                 if let Some(report) = told.untold(outcome, say) {
                     emit(report, as_json);
+                }
+            }
+            if !warm_refusals.waits(instant(now)) {
+                match pitboard.warm_up() {
+                    Err(failed) if ends_watching(&failed.error) => {
+                        return emit(Report::refused("watch", failed), as_json);
+                    }
+                    outcome => {
+                        match &outcome {
+                            Ok(_) => warm_refusals.ended(),
+                            Err(_) => {
+                                warm_refusals.refused(instant(now));
+                            }
+                        }
+                        for report in warm_told.untold(outcome) {
+                            emit(report, as_json);
+                        }
+                    }
                 }
             }
         }
@@ -175,6 +200,159 @@ impl Told {
         }
         self.watching = watching;
         Some(report)
+    }
+}
+
+/// The `watching` event's data: the share it switches at, and the accounts it warms up with
+/// the span of the day, where any is turned on.
+fn watching_json(threshold: Threshold, warming: Option<&Overview>) -> Value {
+    let mut data = json!({ "event": "watching", "threshold": threshold.percent() });
+    if let Some(overview) = warming.filter(|overview| overview.accounts.iter().any(|c| c.on)) {
+        data["warm"] = json!({
+            "range": {
+                "from": pitboard_core::warm::clock(overview.range.from()),
+                "to": pitboard_core::warm::clock(overview.range.to()),
+            },
+            "accounts": overview
+                .accounts
+                .iter()
+                .filter(|choice| choice.on)
+                .map(|choice| choice.account.clone())
+                .collect::<Vec<_>>(),
+        });
+    }
+    data
+}
+
+/// What it warms up, as the start line's last clause says it: ", and warms up work and
+/// personal from 06:00 to 22:00", or nothing where no account is turned on.
+fn warms(overview: &Overview) -> String {
+    let on: Vec<String> = overview
+        .accounts
+        .iter()
+        .filter(|choice| choice.on)
+        .map(|choice| ui::paint(ui::BOLD, &choice.account))
+        .collect();
+    if on.is_empty() {
+        return String::new();
+    }
+    format!(
+        ", and warms up {} from {}",
+        words::listed(on),
+        overview.range
+    )
+}
+
+/// What `watch` has said of warming up: each reason it held an account back or could not warm
+/// it up, by account, said once until that account warms up, and why nothing is warmed up here,
+/// said once until it stops being so.
+#[derive(Default)]
+struct WarmTold {
+    by_account: HashMap<String, HashSet<String>>,
+    halted: Option<String>,
+    errors: HashSet<String>,
+}
+
+impl WarmTold {
+    /// What of `outcome` has not been said, as the reports `watch` prints of it.
+    fn untold(&mut self, outcome: Changing<WarmUp>) -> Vec<Report> {
+        let moment = |at| pitboard_core::time::moment(at, epoch());
+        let done = match outcome {
+            Ok(done) => done,
+            Err(failed) => {
+                let key = match &failed.error {
+                    Error::WarmUpFailed { label, .. } | Error::WarmUpNotDue { label, .. } => {
+                        format!("{label}/{}", failed.error.code())
+                    }
+                    error => error.code().to_owned(),
+                };
+                return if self.errors.insert(key) {
+                    vec![Report::refused("watch", failed)]
+                } else {
+                    Vec::new()
+                };
+            }
+        };
+        match done.value {
+            WarmUp::Started { account, until } => {
+                self.by_account.remove(&account);
+                self.errors
+                    .retain(|key| !key.starts_with(&format!("{account}/")));
+                let line = match until {
+                    Some(until) => format!(
+                        "Warmed up {}: its 5-hour period runs until {}.",
+                        ui::paint(ui::BOLD, &account),
+                        moment(until)
+                    ),
+                    None => format!("Warmed up {}.", ui::paint(ui::BOLD, &account)),
+                };
+                vec![Report::done(
+                    "watch",
+                    json!({ "event": "warmed_up", "account": account, "until": until }),
+                    stamp(format!("{line}\n")),
+                )]
+            }
+            WarmUp::Running { .. } | WarmUp::Nothing => Vec::new(),
+            WarmUp::Stands(overview) => self.stands(&overview, &moment),
+        }
+    }
+
+    /// Why nothing is warmed up here, and why each account turned on is held back, where
+    /// not said yet.
+    fn stands(&mut self, overview: &Overview, moment: &dyn Fn(i64) -> String) -> Vec<Report> {
+        let mut reports = Vec::new();
+        match &overview.halted {
+            Some(halt) => {
+                if self.halted.as_deref() != Some(halt.code()) {
+                    self.halted = Some(halt.code().to_owned());
+                    reports.push(Report::done(
+                        "watch",
+                        json!({ "event": "warm_up_halted", "reason": halt.code() }),
+                        stamp(format!(
+                            "Pitboard is not warming up accounts: {}.\n",
+                            halt.said()
+                        )),
+                    ));
+                }
+                return reports;
+            }
+            None => self.halted = None,
+        }
+        for choice in &overview.accounts {
+            let Some(Standing::Held(hold)) = &choice.standing else {
+                continue;
+            };
+            let until = match hold {
+                pitboard_core::warm::Hold::LimitUsedUp { limit } => limit.resets_at,
+                pitboard_core::warm::Hold::GaveUp { until } => Some(*until),
+                _ => None,
+            };
+            let key = format!("held/{}/{}", hold.code(), until.unwrap_or_default());
+            if !self
+                .by_account
+                .entry(choice.account.clone())
+                .or_default()
+                .insert(key)
+            {
+                continue;
+            }
+            let standing = Standing::Held(hold.clone());
+            reports.push(Report::done(
+                "watch",
+                json!({
+                    "event": "warm_up_held",
+                    "account": choice.account,
+                    "reason": hold.code(),
+                    "until": until,
+                }),
+                stamp(format!(
+                    "Pitboard is not warming up {} for now: {}.\n",
+                    ui::paint(ui::BOLD, &choice.account),
+                    words::warm_standing(&standing, moment)
+                )),
+            ));
+        }
+        reports
     }
 }
 
@@ -842,5 +1020,86 @@ mod tests {
         assert!(told.says(blind(Blind::NotEnrolled {
             email: "you@example.com".into()
         })));
+    }
+
+    mod warming {
+        use super::*;
+        use pitboard_core::warm::{Choice, Halt, Hold, Range};
+
+        fn overview(halted: Option<Halt>, held: Option<Hold>) -> Overview {
+            Overview {
+                range: Range::DEFAULT,
+                halted,
+                accounts: vec![Choice {
+                    account: "work".into(),
+                    on: true,
+                    standing: held.map(Standing::Held),
+                }],
+            }
+        }
+
+        fn stands(overview: Overview) -> Changing<WarmUp> {
+            Ok(Done {
+                value: WarmUp::Stands(Box::new(overview)),
+                warnings: Vec::new(),
+            })
+        }
+
+        fn events(reports: &[Report]) -> Vec<String> {
+            reports
+                .iter()
+                .map(|report| report.result.as_ref().expect("an event")["event"].to_string())
+                .collect()
+        }
+
+        /// Why an account is held back is said once until it warms up; why nothing is warmed
+        /// up here once until it stops being so.
+        #[test]
+        fn each_reason_is_said_once_until_it_ends() {
+            let mut told = WarmTold::default();
+            let held = || stands(overview(None, Some(Hold::NoReading)));
+            assert_eq!(events(&told.untold(held())), ["\"warm_up_held\""]);
+            assert!(told.untold(held()).is_empty());
+
+            let halted = || stands(overview(Some(Halt::ProgramMissing), None));
+            assert_eq!(events(&told.untold(halted())), ["\"warm_up_halted\""]);
+            assert!(told.untold(halted()).is_empty());
+            told.untold(stands(overview(None, None)));
+            assert_eq!(
+                events(&told.untold(halted())),
+                ["\"warm_up_halted\""],
+                "said again once it came back"
+            );
+
+            let warmed = Ok(Done {
+                value: WarmUp::Started {
+                    account: "work".into(),
+                    until: Some(1_760_000_000),
+                },
+                warnings: Vec::new(),
+            });
+            assert_eq!(events(&told.untold(warmed)), ["\"warmed_up\""]);
+            assert_eq!(
+                events(&told.untold(held())),
+                ["\"warm_up_held\""],
+                "said again after it warmed up"
+            );
+        }
+
+        #[test]
+        fn a_failure_of_one_account_is_said_once_until_it_warms_up() {
+            let mut told = WarmTold::default();
+            let failed = || {
+                Err(Failed {
+                    error: Error::WarmUpFailed {
+                        label: "work".into(),
+                        why: pitboard_core::warm::Failure::NotStarted,
+                    },
+                    warnings: Vec::new(),
+                })
+            };
+            assert_eq!(told.untold(failed()).len(), 1);
+            assert!(told.untold(failed()).is_empty());
+        }
     }
 }

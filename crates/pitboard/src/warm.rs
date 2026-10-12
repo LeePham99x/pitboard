@@ -175,7 +175,7 @@ fn now(pitboard: &Pitboard, label: &str) -> Report {
                     moment(until)
                 ),
             ),
-            WarmUp::Nothing => (
+            WarmUp::Nothing | WarmUp::Stands(_) => (
                 json!({ "label": label, "outcome": "nothing" }),
                 "Nothing was warmed up.\n".to_owned(),
             ),
