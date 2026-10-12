@@ -3340,52 +3340,57 @@ fn escape_never_leaves_an_add_with_its_account_parked() {
 
 #[test]
 fn the_sheet_says_claude_is_quitting_and_its_account_is_read() {
-    let mut model = at_noon();
-    let mut machine = desktop_machine(true);
-    machine.answer = Ok(warned(
-        vec![
-            desktop_account("work", true),
-            desktop_account("home", false),
-        ],
-        vec![desktop_warning("in_use_unconfirmed", "in doubt")],
-    ));
-    model.refresh(&mut machine);
-    model.send(present_sheet(add(Some("desktop"))));
-    model.run(&mut machine);
-    model.send(travel());
-    model.run(&mut machine);
-    assert_eq!(
-        model.on_a_mac().sheet_text.expect("the form").progress,
-        None,
-        "nothing yet while asked"
-    );
-    let question = model.shown().quit_question.expect("asked");
-    model.send(Intent::QuitAndSwitch {
-        qualified: question.qualified,
-    });
-    assert_eq!(
-        model
-            .on_a_mac()
-            .sheet_text
-            .expect("the form")
-            .progress
-            .as_deref(),
-        Some("Quitting Claude…")
-    );
-    let quit = model.next();
-    let answer = machine.answer(quit);
-    model.give(answer);
-    assert_eq!(
-        model
-            .on_a_mac()
-            .sheet_text
-            .expect("the form")
-            .progress
-            .as_deref(),
-        Some("Reading Claude’s account…")
-    );
-    model.run(&mut machine);
-    assert_eq!(model.shown().sheet, None, "closed once recorded");
+    // `None` is what each Add Account in the app opens, on Claude Code here.
+    for opened_on in [Some("desktop"), None] {
+        let mut model = at_noon();
+        let mut machine = desktop_machine(true);
+        machine.answer = Ok(warned(
+            vec![
+                desktop_account("work", true),
+                desktop_account("home", false),
+            ],
+            vec![desktop_warning("in_use_unconfirmed", "in doubt")],
+        ));
+        model.refresh(&mut machine);
+        model.send(present_sheet(add(opened_on)));
+        model.run(&mut machine);
+        model.send(travel());
+        model.run(&mut machine);
+        assert_eq!(
+            model.on_a_mac().sheet_text.expect("the form").progress,
+            None,
+            "nothing yet while asked"
+        );
+        let question = model.shown().quit_question.expect("asked");
+        model.send(Intent::QuitAndSwitch {
+            qualified: question.qualified,
+        });
+        assert_eq!(
+            model
+                .on_a_mac()
+                .sheet_text
+                .expect("the form")
+                .progress
+                .as_deref(),
+            Some("Quitting Claude…"),
+            "opened on {opened_on:?}"
+        );
+        let quit = model.next();
+        let answer = machine.answer(quit);
+        model.give(answer);
+        assert_eq!(
+            model
+                .on_a_mac()
+                .sheet_text
+                .expect("the form")
+                .progress
+                .as_deref(),
+            Some("Reading Claude’s account…"),
+            "opened on {opened_on:?}"
+        );
+        model.run(&mut machine);
+        assert_eq!(model.shown().sheet, None, "closed once recorded");
+    }
 }
 
 #[test]

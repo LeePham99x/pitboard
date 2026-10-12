@@ -40,33 +40,7 @@ struct MainWindow: View {
         ) { sheet in
             AccountSheetView(model: model, sheet: sheet)
         }
-        .alert(
-            model.failureAlert?.title ?? "",
-            isPresented: Binding(
-                get: { model.failureAlert != nil },
-                set: { if !$0 { model.send(.dismissFailure) } }),
-            presenting: model.failureAlert
-        ) { _ in
-            Button("OK") {}
-        } message: { alert in
-            Text(alert.message)
-        }
-        // Closing the question, however it closes, keeps the app open; the button that
-        // answers it names the switch it answers, so it switches whichever arrives first.
-        .alert(
-            quitAsked?.question.title ?? "",
-            isPresented: Binding(
-                get: { quitAsked != nil },
-                set: { if !$0 { model.send(.keepAppOpen) } }),
-            presenting: quitAsked
-        ) { asked in
-            Button(asked.question.confirm) {
-                model.send(.quitAndSwitch(qualified: asked.qualified))
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: { asked in
-            Text(asked.question.message)
-        }
+        .windowAlerts(model, shown: model.sheet == nil)
         // A request for the window can want a pane: a sheet is about accounts, and so is a
         // notice. Asked for when the window opens as well, since a window opened by the
         // request is not there to see it change; once for each request.
@@ -80,20 +54,6 @@ struct MainWindow: View {
     private var selection: Binding<WindowPane?> {
         Binding(get: { pane }, set: { if let chosen = $0 { pane = chosen } })
     }
-
-    /// The question about quitting an app, with the switch its answer names.
-    private var quitAsked: QuitAsked? {
-        guard let question = model.quitConfirmation, let asked = model.quitQuestion else {
-            return nil
-        }
-        return QuitAsked(question: question, qualified: asked.qualified)
-    }
-}
-
-/// What the quit question asks, and the account to switch to once it is answered.
-private struct QuitAsked: Equatable {
-    let question: Question
-    let qualified: String
 }
 
 /// A sheet the model keeps over the window, told apart from another so that one replacing

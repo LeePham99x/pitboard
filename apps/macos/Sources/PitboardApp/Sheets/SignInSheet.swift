@@ -1,15 +1,6 @@
 import PitboardKit
 import SwiftUI
 
-/// Adds an account, or signs in again to one whose parked login can no longer be used,
-/// through the tool's own sign-in, which the model runs.
-///
-/// Both tools open the browser themselves and finish through their own callback, so the
-/// sheet shows what the tool is doing and offers the address it printed in case the browser
-/// did not open. The code field appears only for a tool that reads one, only once it asks,
-/// and again once Claude Code has refused the code typed back. The sheet stays over the
-/// window while the browser is in front, which a menu could not: it closed the moment the
-/// browser came forward.
 struct SignInSheet: View {
     let model: AppModel
     let sheet: Sheet
@@ -61,9 +52,11 @@ struct SignInSheet: View {
     @ViewBuilder private var form: some View {
         let text = model.sheetText
         let tools = text?.tools ?? []
+        let chosen = tools.first { $0.code == provider }
+        let busy = text?.saving ?? false
         SheetLayout(
             title: text?.title ?? "",
-            message: tools.first { $0.code == provider }?.message ?? text?.message ?? ""
+            message: chosen?.message ?? text?.message ?? ""
         ) {
             Section {
                 if !tools.isEmpty {
@@ -82,6 +75,10 @@ struct SignInSheet: View {
                         .focused($nameFocused)
                         .onSubmit(start)
                 }
+                if let working = text?.progress {
+                    ProgressView(working)
+                        .controlSize(.small)
+                }
             } footer: {
                 if let missing = text?.notOffered {
                     // Said rather than left out without a word, which read as Pitboard not
@@ -95,17 +92,20 @@ struct SignInSheet: View {
         } buttons: {
             Button("Cancel", role: .cancel) { dismiss() }
                 .keyboardShortcut(.cancelAction)
-            Button(text?.confirm ?? "", action: start)
+                .disabled(busy)
+            Button(chosen?.confirm ?? text?.confirm ?? "", action: start)
                 .keyboardShortcut(.defaultAction)
                 .disabled(
-                    nameToSave(sheet: sheet, typed: name) == nil || model.signingIn != nil)
+                    nameToSave(sheet: sheet, typed: name) == nil || model.signingIn != nil
+                        || busy)
         }
         .onAppear { nameFocused = text?.account == nil }
+        .interactiveDismissDisabled(busy)
     }
 
     private func start() {
         guard let name = nameToSave(sheet: sheet, typed: name), model.signingIn == nil,
-            shown == nil
+            shown == nil, model.sheetText?.saving != true
         else { return }
         model.send(.signIn(provider: provider, name: name))
     }
@@ -118,7 +118,7 @@ struct SignInSheet: View {
                 LabeledContent {
                     ProgressView().controlSize(.small)
                 } label: {
-                    Text("Waiting for your browser")
+                    Text(text.waiting)
                 }
                 if let url = signingIn.url.flatMap(URL.init(string:)) {
                     LabeledContent("Browser didn’t open?") {
@@ -145,18 +145,24 @@ struct SignInSheet: View {
                 }
             }
         } buttons: {
-            Button("Cancel", role: .cancel) {
-                model.send(.cancelSignIn)
+            Button(text.cancel.title, role: text.escapeCancels ? .cancel : nil) {
+                model.send(text.cancel.intent)
                 shown = nil
                 dismiss()
             }
-            .keyboardShortcut(.cancelAction)
+            .keyboardShortcut(text.escapeCancels ? .cancelAction : nil)
+            .disabled(!text.cancel.enabled)
+            if let undo = text.undo {
+                Button(undo.title) { model.send(undo.intent) }
+                    .disabled(!undo.enabled)
+            }
             if signingIn.wantsCode {
                 Button("Submit Code", action: send)
                     .keyboardShortcut(.defaultAction)
                     .disabled(code.isEmpty)
             }
         }
+        .interactiveDismissDisabled(!text.escapeCancels)
     }
 
     /// The model takes the code without the white space around it, and types it back only

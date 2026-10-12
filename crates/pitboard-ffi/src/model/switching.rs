@@ -914,7 +914,7 @@ fn keeping_the_app_open_switches_nothing() {
     assert!(machine.apps.asked().is_empty());
 }
 
-/// MainWindow.swift's alert closes the question from its binding and switches from its
+/// WindowAlerts.swift's alert closes the question from its binding and switches from its
 /// button on a task of its own, which AppModel.swift's quitAndSwitch says runs once the alert
 /// has closed it, and so takes the question it answers rather than reading it. The answer
 /// names its question here for the same reason: an app whose alert says it closed before or

@@ -38,6 +38,11 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - The conformance check reads Claude Desktop's facts out of Claude's `app.asar` with
   `--provider desktop`. No job runs it: a person runs it by hand on an installed copy. On
   2.7032.0 every fact that names a literal holds.
+- The app adds, switches and signs in again to Claude Desktop accounts on macOS. It asks
+  before it quits Claude, over the Add Account dialog too, and opens Claude again only once
+  its data folder is whole: in front for you to sign in, behind after a switch. An add left
+  halfway shows a notice with **Finish Adding** and **Put work Back**, after a relaunch too.
+  Settings say that Pitboard never renews a parked Claude Desktop login.
 
 ### Changed
 

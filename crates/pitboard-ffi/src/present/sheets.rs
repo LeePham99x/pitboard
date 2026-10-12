@@ -217,9 +217,10 @@ fn sheet_tool(seen: &Seen, sheet: &Sheet, tool: &Tool) -> SheetTool {
 }
 
 // What the sheet says under its fields while it records the account an app shows.
-fn progress(seen: &Seen, tool: &str) -> Option<String> {
+fn progress(seen: &Seen) -> Option<String> {
+    let (tool, step) = seen.state.recording()?;
     let app = seen.program_of(tool);
-    Some(match seen.state.recording()? {
+    Some(match step {
         Recording::Quitting => format!("Quitting {app}…"),
         Recording::Reading => format!("Reading {app}’s account…"),
     })
@@ -233,7 +234,7 @@ pub(crate) fn sheet_text(seen: &Seen) -> Option<SheetText> {
     let addable = seen.addable();
     let tool = starts_on(sheet, &addable);
     let saving = state.saving.contains(sheet);
-    let progress = progress(seen, &tool);
+    let progress = progress(seen);
     let text = match sheet {
         Sheet::Add { .. } => {
             let (message, confirm) = if in_its_app(&tool) {

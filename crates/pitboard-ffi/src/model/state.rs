@@ -757,7 +757,7 @@ struct Enrolling<'a> {
 }
 
 /// The quit question last asked. A question closed unanswered is kept, unasked, because an
-/// app can close it before it sends the answer that closed it: MainWindow.swift's alert
+/// app can close it before it sends the answer that closed it: WindowAlerts.swift's alert
 /// closes it from its binding and answers from its button on a task of its own, which
 /// AppModel.swift's quitAndSwitch says runs once the alert has closed it.
 #[derive(Debug)]
@@ -889,8 +889,8 @@ pub(crate) struct State {
     reopen_after_switch: Option<(String, String)>,
     // (park, account) of a switch that goes on once that park of its tool has started
     switch_after_park: Option<(u64, String)>,
-    // the sheet recording the account an app shows, and what it waits for
-    recording: Option<(Option<Sheet>, Recording)>,
+    // (sheet, tool, step) of the sheet recording the account the tool's app shows
+    recording: Option<(Option<Sheet>, String, Recording)>,
     // by provider, until a change of the tool lands: what the next add of its account opens on
     refused_by: BTreeMap<String, String>,
     // the moves of an app's login given up on, in the app's words, until somebody has read them
@@ -1137,12 +1137,12 @@ impl State {
         self.signing_in.as_ref()
     }
 
-    // What the sheet up waits for while it records the account an app shows.
-    pub(crate) fn recording(&self) -> Option<Recording> {
+    // The tool whose app's account the sheet up records, and what it waits for.
+    pub(crate) fn recording(&self) -> Option<(&str, Recording)> {
         self.recording
             .as_ref()
-            .filter(|(from, _)| from.is_some() && *from == self.sheet)
-            .map(|(_, step)| *step)
+            .filter(|(from, ..)| from.is_some() && *from == self.sheet)
+            .map(|(_, tool, step)| (tool.as_str(), *step))
     }
 
     // What an add of `provider`'s account does, by the first rule that holds.
@@ -1626,7 +1626,7 @@ impl State {
                 name,
                 from,
             } => {
-                self.recording = Some((from.clone(), Recording::Reading));
+                self.recording = Some((from.clone(), provider.clone(), Recording::Reading));
                 let enrol = Job::Enrol {
                     provider,
                     name,
@@ -2987,9 +2987,9 @@ impl State {
                 signing.quitting = true;
                 self.signing_in = Some(signing);
             }
-            After::Enrol { from, .. } => {
+            After::Enrol { provider, from, .. } => {
                 self.hold(from.as_ref());
-                self.recording = Some((from.clone(), Recording::Quitting));
+                self.recording = Some((from.clone(), provider.clone(), Recording::Quitting));
             }
         }
         jobs.push(Job::Quit { question, then });
@@ -3262,7 +3262,7 @@ impl State {
         if self
             .recording
             .as_ref()
-            .is_some_and(|(recording, _)| recording.as_ref() == from)
+            .is_some_and(|(recording, ..)| recording.as_ref() == from)
         {
             self.recording = None;
         }

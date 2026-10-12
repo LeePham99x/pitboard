@@ -2776,6 +2776,12 @@ Measured on macOS 27.0 with Swift 6.4 of Xcode 27.1, on 6 October 2026.
   SPACE before `PM`, `14:05` for `en_GB` and for `en_US@hours=h23`, and `2:05 pm` for
   `en_GB@hours=h12`. `MacLocalTime` formats with the person's own locale, and its test with
   `en_US` and `en_US@hours=h23`.
+- `NSWindow.h` in the macOS 27.0 SDK says a window that has a sheet queues another until the
+  first is dismissed, so an alert attached to the window waits while a sheet is up. One
+  attached to the sheet's own view is a sheet of the sheet's window and shows over it:
+  `testAddingAClaudeDesktopAccountAsksToQuitClaudeOverTheSheet` holds it. So the window's
+  failure alert and quit question are attached through `WindowAlerts` to whichever is in
+  front. Read on 12 October 2026.
 
 ### The model's timers
 
