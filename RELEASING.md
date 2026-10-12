@@ -59,6 +59,10 @@ anything public in `pitboard-core` is a new minor version, as Cargo reads one: 0
   `state::Account` have the new field `plan`, and `state::Detail::Codex` no longer has
   one. The account index stays schema 7: 0.11.0 reads a Codex account's plan where it was
   and drops a Claude Code account's at its next save.
+- The first release after 0.12.0 is 0.13.0. In `pitboard-core`, `autoswitch::retry_after`,
+  `RETRY_SECONDS`, `RETRY_MOST_SECONDS`, `ATTEMPTS` and `DECIDE_EVERY_SECONDS` moved to
+  `duty::cadence`, which the warm-up shares, and `autoswitch::Look` is now
+  `duty::Look<Auto>`.
 - The first release that carries `install.sh` needs [the redirect](#the-redirect) in place
   before its tag.
 

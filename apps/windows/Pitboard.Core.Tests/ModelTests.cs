@@ -898,7 +898,7 @@ public sealed class ModelTests
         string[] ordered =
         [
             "twoTools", "oneTool", "empty", "firstLaunch", "noClaudeCode", "unnamed", "onlyOne",
-            "readFailure", "stuck", "chatGPTOpen",
+            "readFailure", "stuck", "chatGPTOpen", "warmUp",
         ];
         CollectionAssert.AreEqual(ordered, names);
         var unknown = Assert.ThrowsExactly<FixtureException.Unknown>(
