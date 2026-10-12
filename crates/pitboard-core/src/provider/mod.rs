@@ -282,7 +282,9 @@ pub enum Adoption {
     /// A session already running keeps the login it holds until that login is next renewed,
     /// or until it is started again, because `file` sits behind the store the switch wrote.
     /// Never rendered as a countdown: when a session's login is renewed is the session's.
-    AtRenewal { file: std::path::PathBuf },
+    AtRenewal {
+        file: std::path::PathBuf,
+    },
     /// Nothing follows until the program is started again. Never rendered as a countdown.
     ///
     /// `holders` names every kind of process that runs `program`, most particular first and
@@ -291,6 +293,10 @@ pub enum Adoption {
     RestartRequired {
         program: &'static str,
         holders: &'static [crate::holder::Holder],
+    },
+    // The app was closed for the change, and holds the login from when it is next opened.
+    NextOpen {
+        app: &'static str,
     },
 }
 

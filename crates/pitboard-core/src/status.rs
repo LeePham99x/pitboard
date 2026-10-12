@@ -279,6 +279,35 @@ pub struct Report {
     /// without ever saying which slot it was speaking for, so on a machine with a second
     /// config directory it was silently answering about one of them.
     pub slot: Slot,
+    // Each sign-in inside an app that is waited for, with an account parked for it.
+    pub awaiting: Vec<SignInAwaited>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SignInAwaited {
+    pub provider: ProviderId,
+    pub label: Key,
+    pub put_back: Key,
+    pub since: i64,
+    // a Sign In Again of `label`, not an add
+    pub again: bool,
+}
+
+fn awaiting(state: &State) -> Vec<SignInAwaited> {
+    state
+        .awaiting
+        .iter()
+        .filter_map(|(code, awaited)| {
+            let provider = ProviderId::parse(code)?;
+            Some(SignInAwaited {
+                provider,
+                label: Key::new(provider, awaited.label.clone()),
+                put_back: state.by_id(provider, &awaited.put_back)?.key(),
+                since: awaited.since,
+                again: awaited.account.is_some(),
+            })
+        })
+        .collect()
 }
 
 /// A credential slot, named.
@@ -421,6 +450,7 @@ pub fn gather_offline(ctx: &Context, state: &State) -> Report {
     Report {
         now: ctx.now(),
         slot: slot_of(ctx),
+        awaiting: awaiting(state),
         rows: assemble(
             state,
             &facts,
@@ -886,6 +916,7 @@ pub(crate) fn report(
     Report {
         slot: slot_of(ctx),
         now,
+        awaiting: awaiting(state),
         rows,
         // The default tool's answer. Every tool's is in the rows, which is where a
         // machine with more than one signed in has to be read from: there is no single

@@ -539,7 +539,7 @@ fn starting(said: &str, starts: bool) -> String {
         .unwrap_or_default()
 }
 
-pub(crate) fn nothing_signed_in(tool: crate::provider::ProviderId) -> String {
+pub(crate) fn nothing_signed_in(tool: crate::provider::ProviderId, label: Option<&str>) -> String {
     use crate::provider::ProviderId;
     match tool {
         ProviderId::Claude | ProviderId::Codex => format!(
@@ -547,10 +547,151 @@ pub(crate) fn nothing_signed_in(tool: crate::provider::ProviderId) -> String {
             tool.name(),
             sign_in_yourself(tool, true)
         ),
-        ProviderId::Desktop => "Claude is not signed in. Open Claude, sign in, quit it with \
-                                Command-Q, then run this again."
-            .into(),
+        ProviderId::Desktop => format!(
+            "Claude is not signed in. Run `pitboard enroll {} --sign-in`, then sign in inside \
+             Claude and quit it: Pitboard waits for that, and sets aside any account name \
+             Claude kept first.",
+            label.unwrap_or("desktop/<label>")
+        ),
     }
+}
+
+// What a sign-in inside Claude says while Pitboard waits. Labels are as typed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WaitLine<'a> {
+    Parked { label: &'a str },
+    Add { label: &'a str },
+    Again { label: &'a str },
+    NoLogOut,
+    Waiting { put_back: Option<&'a str> },
+    Open,
+    QuitSignedOut,
+    QuitUnfinished,
+}
+
+// One line, ending in a newline.
+pub(crate) fn awaited(line: WaitLine<'_>) -> String {
+    let said = match line {
+        WaitLine::Parked { label } => format!(
+            "Parked `{label}`. Claude is signed out, and nothing was signed out at claude.ai."
+        ),
+        WaitLine::Add { label } => format!(
+            "Open Claude and sign in to the account to add as `{label}`. When Claude shows \
+             your chats, quit it with Command-Q."
+        ),
+        WaitLine::Again { label } => format!(
+            "Open Claude and sign in to `{label}` again. When Claude shows your chats, quit it \
+             with Command-Q."
+        ),
+        WaitLine::NoLogOut => "Do not choose Log out in Claude: it ends the login Claude holds \
+                              at claude.ai, and Pitboard cannot bring it back."
+            .into(),
+        WaitLine::Waiting {
+            put_back: Some(label),
+        } => format!(
+            "Waiting for Claude to quit. Control-C stops waiting and keeps `{label}` parked; \
+             `pitboard use {label}` puts it back."
+        ),
+        WaitLine::Waiting { put_back: None } => {
+            "Waiting for Claude to quit. Control-C stops waiting.".into()
+        }
+        WaitLine::Open => "Claude is open.".into(),
+        WaitLine::QuitSignedOut => "Claude quit with nobody signed in. Still waiting.".into(),
+        WaitLine::QuitUnfinished => "Claude quit before it finished signing in. Open it, wait \
+                                    until it shows your chats, then quit it. Still waiting."
+            .into(),
+    };
+    format!("{said}\n")
+}
+
+// `label`, `put_back` as typed.
+pub(crate) fn sign_in_awaited(label: &str, put_back: &str, again: bool) -> String {
+    let whom = if again {
+        format!("`{label}` again")
+    } else {
+        "another account".to_string()
+    };
+    format!(
+        "Claude is signed out so you can sign in to {whom}, and `{put_back}` is parked. Sign in \
+         inside Claude, quit it, then run `pitboard enroll {label}`. To go back, run `pitboard \
+         use {put_back}`."
+    )
+}
+
+pub(crate) fn move_waiting(label: &str) -> String {
+    format!(
+        "A move of `{label}`'s login was interrupted. Keep Claude closed: the next change to a \
+         Claude Desktop account settles it first."
+    )
+}
+
+pub(crate) fn move_settled(
+    label: &str,
+    half: crate::state::Half,
+    ended: crate::switch::Ended,
+) -> String {
+    use crate::state::Half;
+    use crate::switch::Ended;
+    let came_to = match (half, ended) {
+        (Half::Leave, Ended::Undone) => format!("Pitboard undid it, and `{label}` is in use"),
+        (Half::Leave, Ended::Finished) => {
+            "Pitboard finished parking it, and Claude is signed out".to_string()
+        }
+        (Half::Arrive, Ended::Undone) => {
+            format!("Pitboard took it back out, `{label}` is parked and Claude is signed out")
+        }
+        (Half::Arrive, Ended::Finished) => {
+            "it had in fact finished, and Pitboard has recorded that".to_string()
+        }
+    };
+    format!("an earlier move of `{label}`'s login was interrupted; {came_to}")
+}
+
+pub(crate) fn item_gone(label: &str, item: &str) -> String {
+    format!(
+        "`{item}` of `{label}`'s login was in neither place after the move, so Pitboard went on \
+         without it. Claude makes it again."
+    )
+}
+
+pub(crate) fn given_up(given_up: &crate::switch::GivenUp) -> String {
+    let label = crate::state::Key::new(given_up.tool, &given_up.label).typed();
+    let enroll = crate::state::Key::new(given_up.tool, "<label>").typed();
+    let mut said = format!(
+        "Pitboard gave up the move of `{label}`'s login and kept every folder: {} parked, {} \
+         set aside.",
+        given_up.parked, given_up.set_aside
+    );
+    if let Some(slot) = &given_up.slot {
+        said.push_str(&format!(
+            " The move was in {slot}, which this run did not read."
+        ));
+    }
+    let way_on = format!(
+        "`pitboard enroll {enroll}` for the account Claude shows, or `pitboard use {enroll}` \
+         where Claude is signed out."
+    );
+    if given_up.left.is_empty() {
+        said.push_str(&format!(" Run {way_on}"));
+    } else {
+        let left = listed(
+            given_up
+                .left
+                .iter()
+                .map(|item| format!("`{item}`"))
+                .collect(),
+        );
+        let stay = if given_up.left.len() == 1 {
+            "stays"
+        } else {
+            "stay"
+        };
+        said.push_str(&format!(
+            " {left} {stay} in Claude's folder. Open Claude once and quit it with Command-Q, \
+             then run {way_on}"
+        ));
+    }
+    said
 }
 
 // Whose a login is, to start a sentence: its email, where its service gave one.

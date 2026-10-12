@@ -19,6 +19,11 @@
 /// that hung something on it, that runs here first.
 #[cfg(test)]
 pub(crate) fn point(name: &'static str) {
+    TRAIL.with(|trail| {
+        if let Some(reached) = trail.borrow_mut().as_mut() {
+            reached.push(name);
+        }
+    });
     COUNTED.with(|counted| {
         if let Some((at, reached)) = counted.borrow_mut().as_mut()
             && at == name
@@ -37,8 +42,16 @@ pub(crate) fn point(name: &'static str) {
         run();
     }
     ARMED.with(|armed| {
-        if armed.borrow().as_deref() == Some(name) {
-            *armed.borrow_mut() = None;
+        let mut armed = armed.borrow_mut();
+        let Some((at, left)) = armed.as_mut() else {
+            return;
+        };
+        if at != name {
+            return;
+        }
+        *left -= 1;
+        if *left == 0 {
+            *armed = None;
             panic!("{KILLED}{name}");
         }
     });
@@ -72,9 +85,140 @@ pub(crate) fn counting<T>(name: &'static str, change: impl FnOnce() -> T) -> (T,
     (outcome, reached.map_or(0, |(_, reached)| reached))
 }
 
+// Every point `change` reached, in order, with what it returned.
+#[cfg(test)]
+pub(crate) fn trail<T>(change: impl FnOnce() -> T) -> (T, Vec<&'static str>) {
+    TRAIL.with(|trail| *trail.borrow_mut() = Some(Vec::new()));
+    let outcome = change();
+    let reached = TRAIL.with(|trail| trail.borrow_mut().take());
+    (outcome, reached.unwrap_or_default())
+}
+
 #[cfg(not(test))]
 #[inline(always)]
 pub(crate) fn point(_name: &'static str) {}
+
+// Whether a test asked the step `name` to fail: an error the code handles, where a point
+// is a kill it does not.
+#[cfg(test)]
+pub(crate) fn fails(name: &'static str) -> bool {
+    FAILING.with(|failing| {
+        let mut failing = failing.borrow_mut();
+        let Some(asked) = failing
+            .as_mut()
+            .filter(|asked| asked.name == name && asked.at.is_none())
+        else {
+            return false;
+        };
+        asked.reached += 1;
+        let fails = asked.nth.is_none_or(|nth| nth == asked.reached);
+        asked.failed += usize::from(fails);
+        fails
+    })
+}
+
+#[cfg(not(test))]
+#[inline(always)]
+pub(crate) fn fails(_name: &'static str) -> bool {
+    false
+}
+
+// `fails` for the one place `at` a step looks at.
+#[cfg(test)]
+fn fails_at(name: &str, at: &str) -> bool {
+    FAILING.with(|failing| {
+        let mut failing = failing.borrow_mut();
+        let Some(asked) = failing
+            .as_mut()
+            .filter(|asked| asked.name == name && asked.at.as_deref() == Some(at))
+        else {
+            return false;
+        };
+        asked.failed += 1;
+        true
+    })
+}
+
+// The path a volume is compared by: one on another volume where a test put `path` there. Both
+// sides of a comparison go through it, so a test refusal holds only for the path it named.
+#[cfg(test)]
+pub(crate) fn volume_of(path: &std::path::Path) -> &std::path::Path {
+    if fails_at("another_volume", &path.to_string_lossy()) {
+        std::path::Path::new("/dev")
+    } else {
+        path
+    }
+}
+
+#[cfg(not(test))]
+#[inline(always)]
+pub(crate) fn volume_of(path: &std::path::Path) -> &std::path::Path {
+    path
+}
+
+#[cfg(test)]
+struct Failing {
+    name: String,
+    // the one place that fails, where only one does
+    at: Option<String>,
+    // the one time it fails, counted from 1, where only one does
+    nth: Option<usize>,
+    reached: usize,
+    failed: usize,
+}
+
+// `change`, with every step `name` failing, and how many did.
+#[cfg(test)]
+fn failing_as<T>(asked: Failing, change: impl FnOnce() -> T) -> (T, usize) {
+    FAILING.with(|failing| *failing.borrow_mut() = Some(asked));
+    let outcome = change();
+    let failed = FAILING.with(|failing| failing.borrow_mut().take());
+    (outcome, failed.map_or(0, |asked| asked.failed))
+}
+
+#[cfg(test)]
+pub(crate) fn failing<T>(name: &'static str, change: impl FnOnce() -> T) -> T {
+    failing_counted(name, change).0
+}
+
+// `failing`, with how many steps failed.
+#[cfg(test)]
+pub(crate) fn failing_counted<T>(name: &'static str, change: impl FnOnce() -> T) -> (T, usize) {
+    let asked = Failing {
+        name: name.to_string(),
+        at: None,
+        nth: None,
+        reached: 0,
+        failed: 0,
+    };
+    failing_as(asked, change)
+}
+
+// `failing`, the `nth` time the change reaches the step alone.
+#[cfg(test)]
+pub(crate) fn failing_nth<T>(name: &'static str, nth: usize, change: impl FnOnce() -> T) -> T {
+    let asked = Failing {
+        name: name.to_string(),
+        at: None,
+        nth: Some(nth),
+        reached: 0,
+        failed: 0,
+    };
+    failing_as(asked, change).0
+}
+
+// `failing`, at the one place `at`.
+#[cfg(test)]
+pub(crate) fn failing_at<T>(name: &'static str, at: &str, change: impl FnOnce() -> T) -> T {
+    let asked = Failing {
+        name: name.to_string(),
+        at: Some(at.to_string()),
+        nth: None,
+        reached: 0,
+        failed: 0,
+    };
+    failing_as(asked, change).0
+}
 
 #[cfg(test)]
 const KILLED: &str = "pitboard fault: killed at ";
@@ -84,11 +228,35 @@ type Elsewhere = Box<dyn FnOnce()>;
 
 #[cfg(test)]
 thread_local! {
-    static ARMED: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+    static ARMED: std::cell::RefCell<Option<(String, usize)>> =
+        const { std::cell::RefCell::new(None) };
     static MEANWHILE: std::cell::RefCell<Option<(String, Elsewhere)>> =
         const { std::cell::RefCell::new(None) };
     static COUNTED: std::cell::RefCell<Option<(String, usize)>> =
         const { std::cell::RefCell::new(None) };
+    static FAILING: std::cell::RefCell<Option<Failing>> = const { std::cell::RefCell::new(None) };
+    static TRAIL: std::cell::RefCell<Option<Vec<&'static str>>> =
+        const { std::cell::RefCell::new(None) };
+    static KILLING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+// One hook for the whole test run, set once: the hook is the process's, and tests run in
+// parallel. It drops a kill inside `killing_nth` on this thread and passes on every other panic.
+#[cfg(test)]
+fn quiet_kills() {
+    static SET: std::sync::Once = std::sync::Once::new();
+    SET.call_once(|| {
+        let before = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            let killed = info
+                .payload()
+                .downcast_ref::<String>()
+                .is_some_and(|said| said.starts_with(KILLED));
+            if !(killed && KILLING.with(std::cell::Cell::get)) {
+                before(info);
+            }
+        }));
+    });
 }
 
 /// Run `change`, killing it at `name` if it gets there. `Ok` is what the change returned,
@@ -100,11 +268,21 @@ thread_local! {
 /// reclaim. That is the gentler of the two, and the lock protocol has its own tests.
 #[cfg(test)]
 pub(crate) fn killing<T>(name: &'static str, change: impl FnOnce() -> T) -> Result<T, String> {
-    ARMED.with(|armed| *armed.borrow_mut() = Some(name.to_string()));
-    let quiet = std::panic::take_hook();
-    std::panic::set_hook(Box::new(|_| {}));
+    killing_nth(name, 1, change)
+}
+
+// `killing`, at the `nth` time the change reaches `name`: a point reached once per item.
+#[cfg(test)]
+pub(crate) fn killing_nth<T>(
+    name: &'static str,
+    nth: usize,
+    change: impl FnOnce() -> T,
+) -> Result<T, String> {
+    ARMED.with(|armed| *armed.borrow_mut() = Some((name.to_string(), nth)));
+    quiet_kills();
+    let was = KILLING.with(|killing| killing.replace(true));
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(change));
-    std::panic::set_hook(quiet);
+    KILLING.with(|killing| killing.set(was));
     ARMED.with(|armed| *armed.borrow_mut() = None);
     outcome.map_err(|panic| {
         let said = panic

@@ -19,6 +19,17 @@ pub enum Perms {
 }
 
 pub fn write(permit: Permit, path: &Path, contents: &[u8], perms: Perms) -> io::Result<()> {
+    write_at(permit, path, contents, perms, "atomic.temp_written")
+}
+
+// `write`, with a fault point named `at` between the temporary and its rename.
+pub(crate) fn write_at(
+    permit: Permit,
+    path: &Path,
+    contents: &[u8],
+    perms: Perms,
+    at: &'static str,
+) -> io::Result<()> {
     let dir = path
         .parent()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no parent"))?;
@@ -42,6 +53,7 @@ pub fn write(permit: Permit, path: &Path, contents: &[u8], perms: Perms) -> io::
         if let Perms::MatchExisting = perms {
             fs::copy_access(permit, path, &temp)?;
         }
+        crate::fault::point(at);
         fs::rename(permit, &temp, path)
     })();
 

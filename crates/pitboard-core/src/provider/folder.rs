@@ -67,6 +67,28 @@ impl AppSettings {
             .and_then(|(_, value)| serde_json::from_str::<String>(value.get()).ok())
             .filter(|name| !name.is_empty())
     }
+
+    // The store with the account's keys taken out and `keys` put in, as the app writes it:
+    // every other key in order, its value byte for byte, one tab before each.
+    pub(crate) fn with(&self, app: &dyn Folder, keys: &Keys) -> Vec<u8> {
+        let stays = self
+            .body
+            .iter()
+            .filter(|(key, _)| !app.keys().contains(&key.as_str()))
+            .map(|(key, value)| (key.as_str(), value.as_ref()));
+        let put_in = app
+            .keys()
+            .iter()
+            .filter_map(|key| keys.get(key).map(|value| (*key, value)));
+        let pairs: Vec<String> = stays
+            .chain(put_in)
+            .map(|(key, value)| format!("\t{}: {}", serde_json::Value::from(key), value.get()))
+            .collect();
+        if pairs.is_empty() {
+            return b"{}".to_vec();
+        }
+        format!("{{\n{}\n}}", pairs.join(",\n")).into_bytes()
+    }
 }
 
 impl std::fmt::Debug for AppSettings {
@@ -86,8 +108,28 @@ impl std::fmt::Debug for AppSettings {
 pub(crate) struct Keys(pub(crate) BTreeMap<String, Box<RawValue>>);
 
 impl Keys {
+    pub(crate) fn none() -> Keys {
+        Keys(BTreeMap::new())
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     pub(crate) fn get(&self, key: &str) -> Option<&RawValue> {
         self.0.get(key).map(AsRef::as_ref)
+    }
+
+    // What `keys.json` holds: each value byte for byte.
+    pub(crate) fn to_json(&self) -> Vec<u8> {
+        let pairs: Vec<String> = self
+            .0
+            .iter()
+            .map(|(key, value)| {
+                format!("{}: {}", serde_json::Value::from(key.as_str()), value.get())
+            })
+            .collect();
+        format!("{{{}}}", pairs.join(", ")).into_bytes()
     }
 
     // SHA-256, hex, of each value as it is held: what a manifest records.
@@ -159,6 +201,14 @@ pub(crate) trait Folder: Send + Sync + std::fmt::Debug {
     fn naming_key(&self) -> &'static str;
     fn classify(&self, name: &OsStr) -> Class;
     fn settings(&self, root: &Path) -> Result<AppSettings, Unread>;
+    // `read` is the settings as just read: a file changed since is refused, not written over.
+    fn write_settings(
+        &self,
+        permit: crate::service::Permit,
+        root: &Path,
+        read: &AppSettings,
+        keys: &Keys,
+    ) -> Result<(), Unread>;
     fn session(&self, ctx: &Context, jar: &Path) -> Result<Option<SignedIn>, Unread>;
     // whether a token cache's value is the one a signed-out app leaves
     fn emptied(&self, key: &str, value: &RawValue) -> bool;

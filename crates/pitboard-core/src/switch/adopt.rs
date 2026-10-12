@@ -22,7 +22,7 @@ use super::{exclusive, purge};
 use crate::context::Context;
 use crate::error::Result;
 use crate::service::Permit;
-use crate::state::{ParkKind, SetAside};
+use crate::state::{Aside, ParkKind, SetAside};
 use crate::{audit, state, store};
 
 /// What taking over found.
@@ -76,6 +76,31 @@ pub fn adopt(ctx: &Context, permit: Permit) -> Result<Option<Adopted>> {
     for (key, park) in elsewhere {
         state.set_aside(&key, park, SetAside::AnotherMachine, ctx.now());
     }
+    // A move or a sign-in that waited was about the other computer's Claude: every folder it
+    // names that no account holds is kept aside.
+    for (code, moving) in std::mem::take(&mut state.moving) {
+        let Some(tool) = crate::provider::ProviderId::parse(&code) else {
+            continue;
+        };
+        for name in std::iter::once(&moving.park).chain(moving.asides.keys()) {
+            let held = state
+                .accounts
+                .iter()
+                .any(|a| a.parked.as_ref().is_some_and(|park| park.service == *name));
+            if held || !store::folder::at(ctx, name).is_dir() {
+                continue;
+            }
+            state.keep_aside(Aside {
+                name: name.clone(),
+                tool,
+                at: ctx.now(),
+                why: SetAside::AnotherMachine,
+                account: (*name == moving.park).then(|| moving.id.clone()),
+                login: None,
+            });
+        }
+    }
+    state.awaiting.clear();
     // Listed rather than deleted outright, so a delete that fails is retried. On a machine
     // that did not receive the keychain there is nothing there to delete, and deleting what
     // is not there succeeds. Released rather than discarded, because one `repair` gave back
@@ -254,6 +279,136 @@ mod tests {
             "{:?}",
             mem.trail()
         );
+    }
+
+    // A move or a sign-in waited for on the other Mac: each folder it names is kept aside, once.
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Claude Desktop is macOS only: Windows makes and removes no folder"
+    )]
+    fn adopting_keeps_aside_every_folder_a_move_from_another_mac_names() {
+        let folder = |ctx: &Context, name: &str| {
+            let at = store::folder::at(ctx, name);
+            std::fs::create_dir_all(at.join("items")).unwrap();
+            std::fs::write(at.join("items/Cookies"), b"a jar").unwrap();
+            let manifest = json!({
+                "v": 1, "tool": "desktop", "account": null, "named": null, "login": null,
+                "parked_at": NOW, "machine": "a hash from another computer", "items": [],
+                "keys": {}
+            });
+            std::fs::write(at.join("manifest.json"), manifest.to_string()).unwrap();
+            at
+        };
+        let work = |parked: Option<state::Park>| Account {
+            last_used_at: None,
+            replaced_at: None,
+            plan: None,
+            label: "work".into(),
+            id: "desktop_work".into(),
+            account_uuid: "work".into(),
+            email: String::new(),
+            detail: state::Detail::Desktop {},
+            parked,
+        };
+        let moving = |half: state::Half, park: &str, asides: &[(&str, SetAside)]| state::Moving {
+            half,
+            started_at: NOW,
+            id: "desktop_work".into(),
+            label: "work".into(),
+            park: park.into(),
+            login: "login-work".into(),
+            items: vec!["Cookies".into()],
+            keys: std::collections::BTreeMap::new(),
+            asides: asides
+                .iter()
+                .map(|(n, why)| ((*n).to_string(), *why))
+                .collect(),
+            slot: String::new(),
+            awaited: None,
+        };
+        let adopted = |ctx: &Context, state: &State| {
+            let path = crate::home::dir(ctx).join("state.json");
+            std::fs::write(&path, serde_json::to_string(state).unwrap()).unwrap();
+            adopt(ctx, Permit::for_a_test()).expect("adopting");
+            state::load(ctx).expect("now it is this machine's")
+        };
+
+        // A leave: its park and the aside it made, never one it only named.
+        let (ctx, mem, _scratch) = machine("moves");
+        from_elsewhere(&ctx, &mem);
+        let path = crate::home::dir(&ctx).join("state.json");
+        let mut state: State =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        state.accounts.push(work(None));
+        let (park, made) = ("pitboard-park-desktop_work-2", "pitboard-aside-9");
+        let (park_at, made_at) = (folder(&ctx, park), folder(&ctx, made));
+        state.moving.insert(
+            "desktop".into(),
+            moving(
+                state::Half::Leave,
+                park,
+                &[
+                    (made, SetAside::GivenUp),
+                    ("pitboard-aside-10", SetAside::InTheWay),
+                ],
+            ),
+        );
+        state.awaiting.insert(
+            "desktop".into(),
+            state::Awaited {
+                since: NOW,
+                label: "travel".into(),
+                account: None,
+                put_back: "desktop_work".into(),
+            },
+        );
+        let state = adopted(&ctx, &state);
+        assert!(state.moving.is_empty() && state.awaiting.is_empty());
+        let kept: Vec<(&str, SetAside, Option<&str>)> = state
+            .aside
+            .iter()
+            .map(|aside| (aside.name.as_str(), aside.why, aside.account.as_deref()))
+            .collect();
+        assert_eq!(
+            kept,
+            [
+                (park, SetAside::AnotherMachine, Some("desktop_work")),
+                (made, SetAside::AnotherMachine, None),
+            ]
+        );
+        assert!(park_at.join("items/Cookies").exists() && made_at.join("items/Cookies").exists());
+
+        // An arrive of a park the account holds from the other Mac: set aside once.
+        let (ctx, mem, _scratch) = machine("moves-held");
+        from_elsewhere(&ctx, &mem);
+        let mut state: State = serde_json::from_str(
+            &std::fs::read_to_string(crate::home::dir(&ctx).join("state.json")).unwrap(),
+        )
+        .unwrap();
+        let held = "pitboard-park-desktop_work-1";
+        folder(&ctx, held);
+        state.accounts.push(work(Some(state::Park {
+            service: held.into(),
+            kind: ParkKind::Folder,
+            parked_at: NOW,
+            login: "login-work".into(),
+            access_expires_at: None,
+            refresh_expires_at: None,
+            session_expires_at: None,
+        })));
+        state
+            .moving
+            .insert("desktop".into(), moving(state::Half::Arrive, held, &[]));
+        let state = adopted(&ctx, &state);
+        let named: Vec<&str> = state
+            .aside
+            .iter()
+            .map(|aside| aside.name.as_str())
+            .collect();
+        assert_eq!(named, [held]);
+        assert_eq!(state.aside[0].account.as_deref(), Some("desktop_work"));
+        assert!(state.moving.is_empty());
     }
 
     #[test]

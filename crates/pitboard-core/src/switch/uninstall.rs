@@ -3,7 +3,8 @@
 use super::{Result, Settled, purge};
 use crate::context::Context;
 use crate::error::Error;
-use crate::service::Permit;
+use crate::provider::{self, LoginKind, ProviderId};
+use crate::service::{Permit, Warning};
 use crate::state::Account;
 use crate::{home, schedule, state};
 
@@ -27,6 +28,8 @@ pub struct Removed {
     pub home_removed: bool,
     /// Whether the daily renewal schedule was taken away. `false` where there was none.
     pub schedule_removed: bool,
+    // A move of an app's login that waited, as it was settled first.
+    pub warnings: Vec<Warning>,
 }
 
 /// Takes away the daily renewal schedule, deletes every parked login this Pitboard wrote,
@@ -50,6 +53,23 @@ pub fn uninstall(settled: Settled) -> Result<Removed> {
         ctx,
         permit,
     } = settled;
+    // An app's folder is read only where a login of it is parked or a move of one waits, and
+    // held until every park is deleted. Refused before anything is taken away.
+    let mut warnings = Vec::new();
+    let mut _closed = Vec::new();
+    for &tool in ProviderId::ALL {
+        match provider::of(tool) {
+            LoginKind::Document(_) => {}
+            LoginKind::Folder(app) => {
+                if let Some((closed, said)) =
+                    super::folder::before_uninstall(&ctx, permit, &mut state, app)?
+                {
+                    _closed.push(closed);
+                    warnings.extend(said);
+                }
+            }
+        }
+    }
     let schedule_removed = remove_schedule(&ctx, permit)?;
     let held = state.accounts.iter().filter_map(|a| a.parked.as_ref());
     let left = held
@@ -88,6 +108,7 @@ pub fn uninstall(settled: Settled) -> Result<Removed> {
         set_aside: asides.len() - asides_left,
         home_removed,
         schedule_removed,
+        warnings,
     })
 }
 

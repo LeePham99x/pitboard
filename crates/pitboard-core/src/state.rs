@@ -70,6 +70,51 @@ pub struct Aside {
     pub login: Option<String>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Half {
+    Leave,
+    Arrive,
+}
+
+// One half of a folder login's move, written before its first rename and removed by the save
+// that records what the half came to.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct Moving {
+    pub half: Half,
+    pub started_at: i64,
+    // the account whose login moves
+    pub id: String,
+    pub label: String,
+    // the folder under `parks` it moves to (leave) or from (arrive)
+    pub park: String,
+    pub login: String,
+    // the items the source held when the record was written
+    pub items: Vec<String>,
+    // SHA-256, hex, of each account key's value as the source held it
+    pub keys: BTreeMap<String, String>,
+    // each folder this move reserved for what it set aside, and why, saved before it is made
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub asides: BTreeMap<String, SetAside>,
+    pub slot: String,
+    // the sign-in this leave is for, copied into `awaiting` by its commit
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub awaited: Option<Awaited>,
+}
+
+// A sign-in inside the app is waited for, with an account parked for it.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct Awaited {
+    pub since: i64,
+    // the name asked
+    pub label: String,
+    // the id that label has already: a Sign In Again
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
+    // the id of the account parked for it
+    pub put_back: String,
+}
+
 /// A login held for an account while another is signed in. There is at most one per
 /// account: once installed it is Claude Code's again, and Claude Code rotates it from then
 /// on, so a copy kept back would only ever present a token it has moved past.
@@ -337,8 +382,14 @@ pub struct State {
     /// each written down before the refresh token is sent. At most one per slot.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub renewing: Vec<Renewing>,
+    // by tool code
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub moving: BTreeMap<String, Moving>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub aside: Vec<Aside>,
+    // by tool code
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub awaiting: BTreeMap<String, Awaited>,
 }
 
 impl Default for State {
@@ -354,7 +405,9 @@ impl Default for State {
             foreign: Vec::new(),
             from_file: Vec::new(),
             renewing: Vec::new(),
+            moving: BTreeMap::new(),
             aside: Vec::new(),
+            awaiting: BTreeMap::new(),
         }
     }
 }
@@ -482,7 +535,8 @@ impl State {
         )
     }
 
-    // A vault item's name or a folder's: held, waiting to be deleted, renewing or set aside.
+    // A vault item's name or a folder's: held, waiting to be deleted, renewing, moving or set
+    // aside.
     pub fn names(&self, service: &str) -> bool {
         self.accounts
             .iter()
@@ -494,6 +548,22 @@ impl State {
                 .iter()
                 .any(|renewing| renewing.service == service)
             || self.aside.iter().any(|aside| aside.name == service)
+            || self.moves(service)
+    }
+
+    // Whether a move under way holds the folder `name`, as its park or as one it set aside.
+    pub fn moves(&self, name: &str) -> bool {
+        self.moving
+            .values()
+            .any(|moving| moving.park == name || moving.asides.contains_key(name))
+    }
+
+    pub fn moving(&self, which: ProviderId) -> Option<&Moving> {
+        self.moving.get(which.code())
+    }
+
+    pub fn awaiting(&self, which: ProviderId) -> Option<&Awaited> {
+        self.awaiting.get(which.code())
     }
 
     /// The account under this key.
@@ -578,6 +648,15 @@ impl State {
             account,
             login: Some(park.login),
         });
+    }
+
+    // A folder a move leaves that no account holds as its park any more. `aside.login` is
+    // the session its jar holds, so none where the jar went back into the app's folder.
+    pub(crate) fn keep_aside(&mut self, aside: Aside) {
+        self.let_go(&aside.name);
+        if !self.aside.iter().any(|kept| kept.name == aside.name) {
+            self.aside.push(aside);
+        }
     }
 
     // An aside given back as a park, or deleted.
@@ -732,6 +811,11 @@ impl State {
             self.drop_aside(&name);
             self.forget_folder(&name);
         }
+        self.awaiting
+            .retain(|_, awaited| awaited.put_back != account.id);
+        for awaited in self.awaiting.values_mut() {
+            awaited.account.take_if(|id| *id == account.id);
+        }
         Some(account)
     }
 
@@ -742,9 +826,12 @@ impl State {
         }
     }
 
-    // The one way a folder that holds a login is listed to be deleted.
+    // The one way a folder that holds a login is listed to be deleted. Never one a move holds.
     fn forget_folder(&mut self, name: &str) {
         self.let_go(name);
+        if self.moves(name) {
+            return;
+        }
         self.discarded.retain(|listed| listed.service != name);
         self.discarded.push(Dropped {
             service: name.to_string(),
@@ -765,12 +852,15 @@ pub fn new_id(provider: ProviderId, owner: &Owner) -> String {
     }
 }
 
+// What `machine_id` answers where the platform's id could not be read.
+pub(crate) const UNKNOWN_MACHINE: &str = "unknown";
+
 /// Hashed, so the raw platform identifier never lands in a file Pitboard writes.
 pub fn machine_id() -> String {
     use sha2::{Digest, Sha256};
     match machine_uid::get() {
         Ok(raw) => hex::encode(Sha256::digest(raw.as_bytes())),
-        Err(_) => String::from("unknown"),
+        Err(_) => String::from(UNKNOWN_MACHINE),
     }
 }
 
@@ -1424,6 +1514,66 @@ mod tests {
             refresh_expires_at: None,
             session_expires_at: None,
         }
+    }
+
+    #[test]
+    fn a_move_and_a_sign_in_waited_for_name_their_folders_and_follow_a_forgotten_account() {
+        let mut s = State::default();
+        s.accounts.push(account("work", None));
+        s.accounts
+            .push(account("home", Some(folder_park("park-home", "f1", 100))));
+        let (work, home) = (
+            Key::new(ProviderId::Claude, "work"),
+            Key::new(ProviderId::Claude, "home"),
+        );
+        let awaited = Awaited {
+            since: 5,
+            label: "travel".into(),
+            account: Some("home-uuid".into()),
+            put_back: "work-uuid".into(),
+        };
+        s.moving.insert(
+            "desktop".into(),
+            Moving {
+                half: Half::Arrive,
+                started_at: 5,
+                id: "home-uuid".into(),
+                label: "home".into(),
+                park: "park-home".into(),
+                login: "f1".into(),
+                items: vec!["Cookies".into()],
+                keys: BTreeMap::new(),
+                asides: BTreeMap::from([("aside-1".to_string(), SetAside::InTheWay)]),
+                slot: "/data".into(),
+                awaited: None,
+            },
+        );
+        s.awaiting.insert("desktop".into(), awaited.clone());
+        assert!(s.names("park-home") && s.names("aside-1") && !s.names("aside-2"));
+        assert!(s.moves("aside-1") && s.moving(ProviderId::Desktop).is_some());
+
+        let written = serde_json::to_value(&s).unwrap();
+        assert_eq!(written["moving"]["desktop"]["half"], "arrive");
+        assert_eq!(
+            written["moving"]["desktop"]["asides"]["aside-1"],
+            "in_the_way"
+        );
+        assert_eq!(written["awaiting"]["desktop"]["put_back"], "work-uuid");
+        let read: State = serde_json::from_value(written).unwrap();
+        assert_eq!(read.moving, s.moving);
+        assert_eq!(read.awaiting, s.awaiting);
+        let plain = serde_json::to_value(State::default()).unwrap();
+        assert!(plain.get("moving").is_none() && plain.get("awaiting").is_none());
+
+        // A folder a move holds is never listed to be deleted, forgotten or not.
+        s.remove(&home);
+        assert!(discarded(&s).is_empty(), "{:?}", s.discarded);
+        assert_eq!(
+            s.awaiting["desktop"].account, None,
+            "a Sign In Again of a forgotten account reads as an add"
+        );
+        s.remove(&work);
+        assert!(s.awaiting.is_empty(), "nothing is left to put back");
     }
 
     #[test]

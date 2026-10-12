@@ -21,10 +21,16 @@ pub(crate) enum Holds {
 }
 
 pub(crate) enum Verdict {
-    // rows 3, 5, 10
-    Nobody,
-    // rows 13, 16
-    Account { key: Key, session: SignedIn },
+    // rows 3, 5, 10. `leftovers`: the app left a signed-out jar, which an arrive sets aside
+    Nobody {
+        leftovers: bool,
+    },
+    // rows 13, 16. `as_named`: a session Pitboard had not seen, taken as the app names it
+    Account {
+        key: Key,
+        session: SignedIn,
+        as_named: bool,
+    },
     Unsure(Unsure),
 }
 
@@ -64,7 +70,7 @@ pub(crate) fn look(ctx: &Context, state: &State, app: &'static dyn Folder) -> Re
     let root = app.root(ctx).map_err(|e| shape(app.id(), e))?;
     // Row 3, nobody, as row 5: the caller that refuses it looks first.
     if !there(app.id(), &root)? {
-        return Ok(Verdict::Nobody);
+        return Ok(Verdict::Nobody { leftovers: false });
     }
     if let Some(unfit) = app.refuses(&root) {
         return Err(Error::LoginFolderUnknown {
@@ -143,7 +149,8 @@ pub(crate) fn holds(ctx: &Context, app: &dyn Folder, root: &Path) -> Result<Hold
 // Pure: no clock, no disk.
 pub(crate) fn verdict(state: &State, tool: ProviderId, holds: Holds) -> Verdict {
     let (session, named, emptied) = match holds {
-        Holds::Empty | Holds::SignedOut => return Verdict::Nobody,
+        Holds::Empty => return Verdict::Nobody { leftovers: false },
+        Holds::SignedOut => return Verdict::Nobody { leftovers: true },
         Holds::SignedIn {
             session,
             named,
@@ -169,6 +176,7 @@ pub(crate) fn verdict(state: &State, tool: ProviderId, holds: Holds) -> Verdict 
             Named::Enrolled(key) if key == recorded => Verdict::Account {
                 key: key.clone(),
                 session,
+                as_named: false,
             },
             _ => Verdict::Unsure(Unsure::RecordedUnderAnother {
                 recorded: recorded.clone(),
@@ -196,7 +204,11 @@ pub(crate) fn verdict(state: &State, tool: ProviderId, holds: Holds) -> Verdict 
             if parked {
                 Verdict::Unsure(Unsure::AlsoParked { key, session })
             } else {
-                Verdict::Account { key, session }
+                Verdict::Account {
+                    key,
+                    session,
+                    as_named: true,
+                }
             }
         }
         named => Verdict::Unsure(Unsure::Unseen { named, session }),
@@ -285,8 +297,8 @@ mod tests {
             Named::NotEnrolled { uuid } => format!("nobody enrolled ({uuid})"),
         };
         match verdict {
-            Verdict::Nobody => "nobody".into(),
-            Verdict::Account { key, session } => {
+            Verdict::Nobody { .. } => "nobody".into(),
+            Verdict::Account { key, session, .. } => {
                 format!("{} with {}", key.label, session.login)
             }
             Verdict::Unsure(Unsure::Unfinished) => "unfinished".into(),

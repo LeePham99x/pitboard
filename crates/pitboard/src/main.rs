@@ -1,11 +1,11 @@
-use anstream::{ColorChoice, eprintln, print, println};
+use anstream::{ColorChoice, eprint, eprintln, print, println};
 use anstyle::{AnsiColor, Style};
 use clap::{CommandFactory, Parser, Subcommand};
 use pitboard_core::autoswitch::Threshold;
 use pitboard_core::context::Context;
 use pitboard_core::doctor;
 use pitboard_core::error::Error;
-use pitboard_core::provider::Adoption;
+use pitboard_core::provider::{Adoption, SignsIn};
 use pitboard_core::service::{Changing, Done, Failed, Pitboard, Warning};
 use pitboard_core::switch::{Enrolled, Outcome, Renewal};
 use serde_json::{Value, json};
@@ -433,11 +433,27 @@ fn enroll_signing_in(pitboard: &Pitboard, label: &str) -> Report {
         },
         pitboard_core::state::Account::provider,
     );
-    eprintln!(
-        "Opening {}'s sign-in. Sign in as {who}; the account in use now stays signed in.",
-        tool.name()
-    );
-    match pitboard.sign_in(label) {
+    let signed_in = match tool.signs_in() {
+        SignsIn::ByItsProgram => {
+            eprintln!(
+                "Opening {}'s sign-in. Sign in as {who}; the account in use now stays signed in.",
+                tool.name()
+            );
+            pitboard.sign_in(label)
+        }
+        // Each line as the wait says it, until the app has quit signed in.
+        SignsIn::InItsApp => pitboard.sign_in_watched(label).and_then(|watched| {
+            let said = watched.said();
+            while let Some(line) = said.next() {
+                eprint!("{line}");
+            }
+            watched.finish().map_err(|error| Failed {
+                error,
+                warnings: Vec::new(),
+            })
+        }),
+    };
+    match signed_in {
         Ok(login) => enrolled(pitboard, label, pitboard.enroll_signed_in(label, login)),
         Err(failed) => Report::refused("enroll", failed),
     }
@@ -549,6 +565,29 @@ fn use_account(pitboard: &Pitboard, label: &str) -> Report {
                 ),
             )
         }
+        Outcome::Installed {
+            provider,
+            to,
+            adoption,
+        } => {
+            let (seconds, follows, adoption_json) = followed(provider, &adoption);
+            (
+                json!({
+                    "from": null,
+                    "to": to,
+                    "provider": provider,
+                    "changed": true,
+                    "parked_at": null,
+                    "adoption_ceiling_seconds": seconds,
+                    "adoption": adoption_json,
+                }),
+                format!(
+                    "Switched {} to {}.\n{follows}",
+                    provider.name(),
+                    paint(BOLD, &to)
+                ),
+            )
+        }
     })
 }
 
@@ -589,6 +628,11 @@ fn followed(
                  It will not pick the switch up on its own.\n"
             ),
             json!({ "follows": "restart", "program": program }),
+        ),
+        Adoption::NextOpen { app } => (
+            None,
+            format!("{app} opens signed in to it.\n"),
+            json!({ "follows": "open", "app": app }),
         ),
     }
 }
@@ -657,29 +701,48 @@ fn stowed_lines(stowed: &pitboard_core::switch::Stowed) -> String {
 }
 
 fn abandon(pitboard: &Pitboard) -> Report {
-    match pitboard.abandon_recovery() {
-        Err(error) => Report::failed(Some("abandon"), error),
-        Ok(None) => Report::done(
-            "abandon",
-            json!({ "abandoned": false }),
-            "There is no interrupted switch to give up on.\n".into(),
-        ),
-        Ok(Some(a)) => Report::done(
-            "abandon",
+    let gave_up = match pitboard.abandon_recovery() {
+        Ok(gave_up) => gave_up,
+        Err(error) => return Report::failed(Some("abandon"), error),
+    };
+    let mut human = String::new();
+    let mut data = json!({ "abandoned": gave_up.switch.is_some() });
+    if let Some(a) = &gave_up.switch {
+        data["from"] = json!(a.from);
+        data["to"] = json!(a.to);
+        data["logins_kept"] = json!(a.kept);
+        human.push_str(&format!(
+            "Gave up on the interrupted switch from {} to {}. {} login(s) kept; \
+             nothing was deleted. Run `pitboard` to see who is signed in.\n",
+            paint(BOLD, &a.from),
+            paint(BOLD, &a.to),
+            a.kept
+        ));
+    }
+    for given_up in &gave_up.moves {
+        human.push_str(&format!("{given_up}\n"));
+    }
+    if gave_up.switch.is_none() && gave_up.moves.is_empty() && gave_up.warnings.is_empty() {
+        human.push_str("There is no interrupted switch to give up on.\n");
+    }
+    data["moves_given_up"] = gave_up
+        .moves
+        .iter()
+        .map(|given_up| {
             json!({
-                "abandoned": true,
-                "from": a.from,
-                "to": a.to,
-                "logins_kept": a.kept,
-            }),
-            format!(
-                "Gave up on the interrupted switch from {} to {}. {} login(s) kept; \
-                 nothing was deleted. Run `pitboard` to see who is signed in.\n",
-                paint(BOLD, &a.from),
-                paint(BOLD, &a.to),
-                a.kept
-            ),
-        ),
+                "provider": given_up.tool,
+                "label": pitboard_core::state::Key::new(given_up.tool, given_up.label.clone())
+                    .typed(),
+                "parked": given_up.parked,
+                "set_aside": given_up.set_aside,
+                "left": given_up.left,
+                "slot": given_up.slot,
+            })
+        })
+        .collect();
+    Report {
+        warnings: warnings(&gave_up.warnings),
+        ..Report::done("abandon", data, human)
     }
 }
 

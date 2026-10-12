@@ -321,8 +321,12 @@ pub enum Error {
         source: serde_json::Error,
     },
 
-    #[error("{}", crate::words::nothing_signed_in(*tool))]
-    LiveCredentialAbsent { tool: ProviderId },
+    #[error("{}", crate::words::nothing_signed_in(*tool, label.as_deref()))]
+    LiveCredentialAbsent {
+        tool: ProviderId,
+        // the label typed, where a sentence names the command to run for it
+        label: Option<String>,
+    },
 
     #[error(
         "Claude Code's config says {email} is signed in, but Pitboard cannot find that \
@@ -371,13 +375,15 @@ pub enum Error {
     #[error("{}", not_enrolled(*tool, who))]
     LiveAccountNotEnrolled { tool: ProviderId, who: String },
 
-    #[error("{}", already_enrolled(*tool, email, label, asked))]
+    #[error("{}", already_enrolled(*tool, email, label, asked, *waited))]
     AlreadyEnrolled {
         tool: ProviderId,
         email: String,
         label: String,
         // the label typed
         asked: String,
+        // a sign-in inside the app was waited for under `asked`
+        waited: bool,
     },
 
     #[error("`{label}` already refers to {who}. Choose a different label.")]
@@ -738,6 +744,76 @@ pub enum Error {
     )]
     LoginFolderBusy { app: &'static str },
 
+    #[error(
+        "Pitboard parks a Claude Desktop login by renaming it into {}, which is on another \
+         volume than {}, and it never copies one. Keep Pitboard's folder on the volume your \
+         home is on. Nothing has changed.",
+        parks.display(),
+        root.display()
+    )]
+    DifferentVolume { parks: PathBuf, root: PathBuf },
+
+    #[error("{}", parks_not_private(path, *why))]
+    ParksNotPrivate {
+        path: PathBuf,
+        why: crate::host::Private,
+    },
+
+    #[error(
+        "Pitboard could not read this Mac's identity, which it writes beside every parked \
+         Claude Desktop login so it never puts back one parked on another Mac. Nothing has \
+         changed."
+    )]
+    MachineUnknown,
+
+    #[error("{}", opened_midway(app, label.as_deref()))]
+    AppOpenedMidway {
+        app: &'static str,
+        // the account whose login was moving; None from the start of a sign-in
+        label: Option<String>,
+    },
+
+    #[error(
+        "Pitboard could not park `{label}`'s login ({detail}) and undid what it had done. \
+         `{label}` is in use, and nothing was lost. Run this again."
+    )]
+    MoveUndone { label: String, detail: String },
+
+    #[error(
+        "Pitboard stopped while moving `{label}`'s login ({detail}). Keep Claude closed and \
+         run this again: Pitboard settles the move first."
+    )]
+    MoveStopped { label: String, detail: String },
+
+    #[error("{}", left_signed_out(from.as_deref(), to, detail))]
+    SwitchLeftSignedOut {
+        from: Option<String>,
+        to: String,
+        detail: String,
+    },
+
+    #[error(
+        "Giving up would leave parts of `{label}` beside another login in Claude's folder: \
+         {}. Nothing has changed. Open Claude, check which account it shows, quit it with \
+         Command-Q, then run `pitboard enroll desktop/<label>` under that account's name: \
+         Pitboard sets the parts of `{label}` aside first.",
+        places.join(", ")
+    )]
+    MoveMixed { label: String, places: Vec<String> },
+
+    #[error(
+        "No Claude Desktop account is in use, and `{label}` is parked, so uninstalling would \
+         delete every Claude Desktop login Pitboard holds. Run `pitboard use {label}`, then \
+         uninstall, or `pitboard forget` each Claude Desktop account first."
+    )]
+    UninstallWouldStrand { label: String },
+
+    #[error(
+        "Another Pitboard command finished, put back or removed the sign-in this one waited \
+         for, so it enrolled nothing. Run `pitboard` to see who is signed in."
+    )]
+    SignInSettledElsewhere { label: String },
+
     /// This process runs as root or under sudo, or elevated on Windows, or the system could
     /// not say whether it does, so Pitboard changes nothing: the one gate every change passes
     /// refused it. `why` is how it runs, as the host said it, and `None` where the host could
@@ -858,6 +934,16 @@ impl Error {
             SignInUnfinished { .. } => "sign_in_unfinished",
             LoginInDoubt { .. } => "login_in_doubt",
             LoginFolderBusy { .. } => "login_folder_busy",
+            DifferentVolume { .. } => "different_volume",
+            ParksNotPrivate { .. } => "parks_not_private",
+            MachineUnknown => "machine_unknown",
+            AppOpenedMidway { .. } => "app_opened_midway",
+            MoveUndone { .. } => "move_undone",
+            MoveStopped { .. } => "move_stopped",
+            SwitchLeftSignedOut { .. } => "switch_left_signed_out",
+            MoveMixed { .. } => "move_mixed",
+            UninstallWouldStrand { .. } => "uninstall_would_strand",
+            SignInSettledElsewhere { .. } => "sign_in_settled_elsewhere",
             Elevated { .. } => "elevated",
             SystemTooOld { .. } => "system_too_old",
             WindowsNotReleased => "windows_not_released",
@@ -916,7 +1002,11 @@ impl Error {
             | CustomOauthEndpoint
             | RecoveryRecordCorrupt { .. }
             | LoginFolderUnknown { .. }
-            | LoginInDoubt { .. } => 3,
+            | LoginInDoubt { .. }
+            | DifferentVolume { .. }
+            | ParksNotPrivate { .. }
+            | MachineUnknown
+            | MoveMixed { .. } => 3,
             Usage(_) | ConfirmationNeeded { .. } => 2,
             Store(e) => e.exit_code(),
             StowStopped { error, .. } | RenewalLost { error, .. } => error.exit_code(),
@@ -1136,16 +1226,75 @@ fn not_enrolled(tool: ProviderId, who: &str) -> String {
     }
 }
 
-fn already_enrolled(tool: ProviderId, email: &str, label: &str, asked: &str) -> String {
+fn already_enrolled(
+    tool: ProviderId,
+    email: &str,
+    label: &str,
+    asked: &str,
+    waited: bool,
+) -> String {
     match tool {
         ProviderId::Claude | ProviderId::Codex => format!(
             "{email} is already enrolled as `{label}`. To add a different account, run \
              `pitboard enroll {} --sign-in`.",
             Key::new(tool, "<label>").typed()
         ),
+        ProviderId::Desktop if waited => format!(
+            "Claude is signed in to `{label}`. Run `pitboard enroll {label}` to record that \
+             login, then add another with `pitboard enroll {asked} --sign-in`."
+        ),
         ProviderId::Desktop => format!(
             "Claude is signed in to `{label}`, which is enrolled already. To add `{asked}`, run \
              `pitboard enroll {asked} --sign-in`."
+        ),
+    }
+}
+
+fn parks_not_private(path: &std::path::Path, why: crate::host::Private) -> String {
+    use crate::host::Private;
+    let path = path.display();
+    let own = "Point `PITBOARD_HOME` at a folder of your own on this volume, then run this again.";
+    let said = match why {
+        Private::Shared => {
+            format!("{path} can be reached by others. Run `chmod 700 {path}`, then run this again.")
+        }
+        Private::Link => {
+            format!("{path} is a link, so Pitboard parks no Claude Desktop login there. {own}")
+        }
+        Private::NotOwn => {
+            format!("{path} is not yours, so Pitboard parks no Claude Desktop login there. {own}")
+        }
+        Private::NotADirectory | Private::Missing | Private::Yes => format!(
+            "{path} is not a folder, so Pitboard parks no Claude Desktop login there. {own}"
+        ),
+    };
+    format!("{said} Nothing has changed.")
+}
+
+fn opened_midway(app: &str, label: Option<&str>) -> String {
+    match label {
+        Some(label) => format!(
+            "{app} was opened while Pitboard moved `{label}`'s login, so Pitboard stopped. \
+             Nothing is lost. Quit {app} with Command-Q, then run this again: Pitboard settles \
+             the move first."
+        ),
+        None => format!(
+            "{app} was opened while Pitboard set aside the account name {app} kept, so \
+             Pitboard stopped. Nothing is lost. Quit {app} with Command-Q, then run this again."
+        ),
+    }
+}
+
+fn left_signed_out(from: Option<&str>, to: &str, detail: &str) -> String {
+    match from {
+        Some(from) => format!(
+            "`{from}` is parked, and `{to}` could not be put in use ({detail}). Claude is \
+             signed out and both logins are parked. Run `pitboard use {to}` again, or `pitboard \
+             use {from}` to go back."
+        ),
+        None => format!(
+            "`{to}` could not be put in use ({detail}). Claude is signed out and `{to}` is \
+             still parked. Run `pitboard use {to}` again."
         ),
     }
 }
@@ -1207,7 +1356,7 @@ mod tests {
                 warnings: Vec::new(),
             };
             vec![
-                Error::LiveCredentialAbsent { tool }.to_string(),
+                Error::LiveCredentialAbsent { tool, label: None }.to_string(),
                 moved(|tool, from, to, detail| Error::RecoveryUndetermined {
                     tool,
                     from,
@@ -1259,6 +1408,7 @@ mod tests {
                     email: "a@b.c".into(),
                     label: "l".into(),
                     asked: "other".into(),
+                    waited: false,
                 }
                 .to_string(),
             ]
@@ -1355,13 +1505,156 @@ mod tests {
             assert!(!sentence.contains("Run `Claude`"), "{sentence}");
             assert!(!sentence.contains("run `Claude`"), "{sentence}");
         }
-        assert_eq!(
+        let absent = |label: Option<&str>| {
             Error::LiveCredentialAbsent {
-                tool: ProviderId::Desktop
+                tool: ProviderId::Desktop,
+                label: label.map(str::to_string),
             }
-            .to_string(),
-            "Claude is not signed in. Open Claude, sign in, quit it with Command-Q, then run \
-             this again."
+            .to_string()
+        };
+        assert_eq!(
+            absent(Some("desktop/travel")),
+            "Claude is not signed in. Run `pitboard enroll desktop/travel --sign-in`, then sign \
+             in inside Claude and quit it: Pitboard waits for that, and sets aside any account \
+             name Claude kept first."
+        );
+        assert!(absent(None).contains("`pitboard enroll desktop/<label> --sign-in`"));
+    }
+
+    #[test]
+    fn a_moves_refusals_say_their_code_their_exit_and_what_to_do() {
+        let said = |error: Error| (error.code(), error.exit_code(), error.to_string());
+        let label = || "desktop/work".to_string();
+        assert_eq!(
+            said(Error::MachineUnknown),
+            (
+                "machine_unknown",
+                3,
+                "Pitboard could not read this Mac's identity, which it writes beside every \
+                 parked Claude Desktop login so it never puts back one parked on another Mac. \
+                 Nothing has changed."
+                    .into()
+            )
+        );
+        assert_eq!(
+            said(Error::AppOpenedMidway {
+                app: "Claude",
+                label: Some(label())
+            }),
+            (
+                "app_opened_midway",
+                1,
+                "Claude was opened while Pitboard moved `desktop/work`'s login, so Pitboard \
+                 stopped. Nothing is lost. Quit Claude with Command-Q, then run this again: \
+                 Pitboard settles the move first."
+                    .into()
+            )
+        );
+        assert!(
+            said(Error::AppOpenedMidway {
+                app: "Claude",
+                label: None
+            })
+            .2
+            .contains("set aside the account name Claude kept")
+        );
+        assert_eq!(
+            said(Error::SwitchLeftSignedOut {
+                from: Some(label()),
+                to: "desktop/home".into(),
+                detail: "d".into()
+            }),
+            (
+                "switch_left_signed_out",
+                1,
+                "`desktop/work` is parked, and `desktop/home` could not be put in use (d). \
+                 Claude is signed out and both logins are parked. Run `pitboard use \
+                 desktop/home` again, or `pitboard use desktop/work` to go back."
+                    .into()
+            )
+        );
+        assert!(
+            said(Error::SwitchLeftSignedOut {
+                from: None,
+                to: "desktop/home".into(),
+                detail: "d".into()
+            })
+            .2
+            .ends_with("`desktop/home` is still parked. Run `pitboard use desktop/home` again.")
+        );
+        let parks = PathBuf::from("/p/parks");
+        for (why, words) in [
+            (crate::host::Private::Shared, "Run `chmod 700 /p/parks`"),
+            (crate::host::Private::Link, "/p/parks is a link"),
+            (crate::host::Private::NotOwn, "/p/parks is not yours"),
+        ] {
+            let (code, exit, sentence) = said(Error::ParksNotPrivate {
+                path: parks.clone(),
+                why,
+            });
+            assert_eq!((code, exit), ("parks_not_private", 3));
+            assert!(sentence.contains(words), "{sentence}");
+            assert!(sentence.ends_with("Nothing has changed."), "{sentence}");
+        }
+        for (error, code, exit) in [
+            (
+                Error::DifferentVolume {
+                    parks: parks.clone(),
+                    root: PathBuf::from("/data"),
+                },
+                "different_volume",
+                3,
+            ),
+            (
+                Error::MoveUndone {
+                    label: label(),
+                    detail: "d".into(),
+                },
+                "move_undone",
+                1,
+            ),
+            (
+                Error::MoveStopped {
+                    label: label(),
+                    detail: "d".into(),
+                },
+                "move_stopped",
+                1,
+            ),
+            (
+                Error::MoveMixed {
+                    label: label(),
+                    places: vec!["`a` in Claude's folder".into()],
+                },
+                "move_mixed",
+                3,
+            ),
+            (
+                Error::UninstallWouldStrand { label: label() },
+                "uninstall_would_strand",
+                1,
+            ),
+            (
+                Error::SignInSettledElsewhere { label: label() },
+                "sign_in_settled_elsewhere",
+                1,
+            ),
+        ] {
+            assert_eq!((error.code(), error.exit_code()), (code, exit), "{error}");
+            assert!(!error.to_string().contains('\u{2014}'), "{error}");
+        }
+        let waited = Error::AlreadyEnrolled {
+            tool: ProviderId::Desktop,
+            email: String::new(),
+            label: "desktop/home".into(),
+            asked: "desktop/travel".into(),
+            waited: true,
+        };
+        assert_eq!(
+            waited.to_string(),
+            "Claude is signed in to `desktop/home`. Run `pitboard enroll desktop/home` to \
+             record that login, then add another with `pitboard enroll desktop/travel \
+             --sign-in`."
         );
     }
 
@@ -1370,6 +1663,7 @@ mod tests {
         let samples = [
             Error::LiveCredentialAbsent {
                 tool: ProviderId::Claude,
+                label: None,
             },
             Error::ParkSlotExhausted,
             Error::SignedInAccountChanged,
@@ -1485,10 +1779,12 @@ mod tests {
         let actionable = [
             Error::LiveCredentialAbsent {
                 tool: ProviderId::Claude,
+                label: None,
             }
             .to_string(),
             Error::LiveCredentialAbsent {
                 tool: ProviderId::Codex,
+                label: None,
             }
             .to_string(),
             Error::AccountUnknown {
@@ -1536,6 +1832,7 @@ mod tests {
     fn a_message_names_the_tool_it_is_about() {
         let codex = Error::LiveCredentialAbsent {
             tool: ProviderId::Codex,
+            label: None,
         }
         .to_string();
         assert!(
@@ -1631,6 +1928,7 @@ mod tests {
             email: "a@b.c".into(),
             label: "codex/work".into(),
             asked: "codex/other".into(),
+            waited: false,
         }
         .to_string();
         assert!(

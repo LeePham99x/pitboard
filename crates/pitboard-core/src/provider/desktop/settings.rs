@@ -47,6 +47,35 @@ pub(super) fn read(root: &Path, naming_key: &str) -> Result<AppSettings, Unread>
     })
 }
 
+// Only `config.json` is written, whole and by a rename. The sidecar stays: it no longer names
+// the file, so the app drops it at its next start.
+pub(super) fn write(
+    permit: crate::service::Permit,
+    root: &Path,
+    read: &AppSettings,
+    body: &[u8],
+) -> Result<(), Unread> {
+    let path = root.join(FILE);
+    let on_disk = match std::fs::read(&path) {
+        Ok(bytes) => Some(digest(&bytes)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(Unread::Unreadable(format!("`{FILE}`: {e}"))),
+    };
+    if on_disk != read.file {
+        return Err(Unread::Unreadable(format!(
+            "`{FILE}` changed while Pitboard read it"
+        )));
+    }
+    crate::atomic::write_at(
+        permit,
+        &path,
+        body,
+        crate::atomic::Perms::MatchExisting,
+        "settings.temp_written",
+    )
+    .map_err(|e| Unread::Unreadable(format!("`{FILE}` could not be written: {e}")))
+}
+
 // The name becomes the account's id and part of its park's folder name: one word, no path.
 fn account_id(name: &str) -> bool {
     (1..=64).contains(&name.len()) && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
@@ -206,6 +235,109 @@ mod tests {
             Err(Unread::Unknown { what, then }) => (what, then),
             other => panic!("{other:?}"),
         }
+    }
+
+    fn desktop_keys(json: &str) -> crate::provider::folder::Keys {
+        crate::provider::folder::Keys::from_json(json.as_bytes()).unwrap()
+    }
+
+    fn put(root: &Path, keys: &crate::provider::folder::Keys) -> Result<(), Unread> {
+        use crate::provider::folder::Folder;
+        let app = super::super::Desktop;
+        app.write_settings(
+            crate::service::Permit::for_a_test(),
+            root,
+            &read_again(root),
+            keys,
+        )
+    }
+
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Claude Desktop is macOS only: Windows refuses the write's file calls"
+    )]
+    fn a_splice_touches_only_three_keys() {
+        use crate::provider::folder::Keys;
+        let s = scratch("splice");
+        let file = s.0.join(FILE);
+        std::fs::write(&file, LIVE).unwrap();
+        crate::host::fs::testing::open_to_others(&file).unwrap();
+
+        put(&s.0, &Keys::none()).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "{\n\t\"locale\": \"en-US\",\n\t\"userThemeMode\": \"dark\"\n}",
+            "the three keys out, every other key in order, its value byte for byte"
+        );
+        assert!(
+            !crate::host::fs::testing::is_private(&file).unwrap(),
+            "the file keeps the mode it had"
+        );
+
+        let keys = desktop_keys(
+            r#"{"lastKnownAccountUuid": "22222222-2222-2222-2222-222222222222", "oauth:tokenCache":   "djEw"}"#,
+        );
+        put(&s.0, &keys).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "{\n\t\"locale\": \"en-US\",\n\t\"userThemeMode\": \"dark\",\n\t\"oauth:tokenCache\": \"djEw\",\n\t\"lastKnownAccountUuid\": \"22222222-2222-2222-2222-222222222222\"\n}",
+            "put in after the rest, in the order the register names them"
+        );
+
+        // A file changed since it was read is refused, not written over.
+        let stale = read_again(&s.0);
+        std::fs::write(&file, "{\"locale\": \"fr-FR\"}").unwrap();
+        use crate::provider::folder::Folder;
+        let refused = super::super::Desktop.write_settings(
+            crate::service::Permit::for_a_test(),
+            &s.0,
+            &stale,
+            &Keys::none(),
+        );
+        assert!(matches!(refused, Err(Unread::Unreadable(_))), "{refused:?}");
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "{\"locale\": \"fr-FR\"}"
+        );
+
+        // No file yet: one is written.
+        std::fs::remove_file(&file).unwrap();
+        put(&s.0, &keys).unwrap();
+        assert!(std::fs::read_to_string(&file).unwrap().contains("djEw"));
+    }
+
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Claude Desktop is macOS only: Windows refuses the write's file calls"
+    )]
+    fn a_settings_write_deletes_nothing_of_claudes() {
+        use crate::provider::folder::Keys;
+        let s = scratch("sidecar-stays");
+        std::fs::write(s.0.join(FILE), LIVE).unwrap();
+        let pending = "{\n\t\"locale\": \"de-DE\",\n\t\"oauth:tokenCache\": \"djEwAAAA\"\n}";
+        let left = sidecar(pending, &digest(LIVE.as_bytes()));
+        std::fs::write(s.0.join(SIDECAR), &left).unwrap();
+        assert_eq!(read_again(&s.0).sidecar, Sidecar::Valid);
+
+        put(&s.0, &Keys::none()).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(s.0.join(FILE)).unwrap(),
+            "{\n\t\"locale\": \"de-DE\"\n}",
+            "the write Claude left is the settings Pitboard writes"
+        );
+        assert_eq!(std::fs::read_to_string(s.0.join(SIDECAR)).unwrap(), left);
+        assert_eq!(
+            read_again(&s.0).sidecar,
+            Sidecar::Stale,
+            "which Claude drops"
+        );
+        let names: Vec<_> = std::fs::read_dir(&s.0)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(names.len(), 2, "no temporary is left: {names:?}");
     }
 
     #[test]

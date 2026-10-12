@@ -1,12 +1,3 @@
-//! Moving the signed-in identity from one enrolled account to another.
-//!
-//! Two rules set the order of every step. Which account the outgoing login belongs to is
-//! asked of Anthropic, or known by its refresh token's fingerprint from an earlier answer
-//! about that login, never read from Claude Code's config, which can lag the login by a day:
-//! a login filed under the wrong account takes both accounts with it. And additive writes
-//! become durable before destructive ones, so a run that dies midway leaves a spare copy,
-//! never a missing one.
-
 use crate::provider;
 use crate::provider::{LoginKind, Provider, ProviderId};
 mod adopt;
@@ -39,10 +30,12 @@ pub use adopt::{Adopted, adopt};
 pub(crate) use auto::automatically;
 #[cfg(feature = "test-support")]
 pub(crate) use enroll::planted;
-pub use enroll::{Enrolled, Said, SignIn, WatchedSignIn, enroll};
+pub use enroll::{Enrolled, Said, SignIn, Steps, WatchedSignIn, enroll};
 #[cfg(any(test, feature = "test-support"))]
 pub use enroll::{ScriptedSignIn, SignInScript};
-pub(crate) use enroll::{sign_in, sign_in_watched_as};
+pub(crate) use enroll::{one_at_a_time, sign_in, sign_in_watched_as};
+pub use folder::awaited::WaitStep;
+pub use folder::{Ended, GivenUp, MoveSettled};
 pub use forget::forget;
 pub use journal::{Abandoned, Recovered, pending as interrupted};
 pub(crate) use journal::{Asking, interrupted_tool};
@@ -85,6 +78,12 @@ pub enum Outcome {
         /// behind the keychain.
         adoption: provider::Adoption,
     },
+    // Put in use where the tool held nobody's login, so no account was parked for it.
+    Installed {
+        provider: ProviderId,
+        to: String,
+        adoption: provider::Adoption,
+    },
     /// Not a failure: the state the caller asked for already holds.
     AlreadyActive {
         label: String,
@@ -104,18 +103,42 @@ pub struct Settled {
     permit: Permit,
 }
 
-/// Throws away a record of an interrupted switch that cannot be finished, keeping every
-/// copy it names. Takes Pitboard's own lock but never Claude Code's: it installs nothing.
-///
-/// Under a custom Claude Code endpoint it gives up on another tool's switch, as a change to
-/// that tool settles one there, and refuses a Claude Code switch, which is settled nowhere.
-/// It refused every switch there, so a Codex switch that read as stuck could be neither
-/// finished nor given up on.
-pub fn abandon(ctx: &Context, permit: Permit) -> Result<Option<Abandoned>> {
-    refuse_custom_oauth(ctx, journal::interrupted_tool(ctx))?;
+// What giving up came to, of both kinds of change.
+#[derive(Debug, Default)]
+pub struct GaveUp {
+    pub switch: Option<Abandoned>,
+    pub moves: Vec<GivenUp>,
+    // a move that could be settled is settled, not given up, and said here
+    pub warnings: Vec<Warning>,
+}
+
+// Gives up an interrupted switch, and each move that cannot be settled, keeping every copy
+// they name. Under a custom Claude Code endpoint only a Claude Code switch is refused.
+pub fn abandon(ctx: &Context, permit: Permit) -> Result<GaveUp> {
+    // With no switch waiting the endpoint is not asked: it never stops an app's give-up.
+    if let Some(tool) = journal::interrupted_tool(ctx) {
+        refuse_custom_oauth(ctx, Some(tool))?;
+    }
     let _exclusive = exclusive(ctx, permit)?;
     let mut state = state::load(ctx)?;
-    journal::abandon(ctx, permit, &mut state)
+    // An app seen open refuses before a switch is given up, so its "nothing has changed" holds.
+    let mut apps = Vec::new();
+    for &tool in ProviderId::ALL {
+        if let LoginKind::Folder(app) = provider::of(tool) {
+            apps.push((app, folder::before_abandon(ctx, &state, app)?));
+        }
+    }
+    let mut gave_up = GaveUp {
+        switch: journal::abandon(ctx, permit, &mut state)?,
+        ..GaveUp::default()
+    };
+    // A move that can be settled is settled and said: only one that cannot is given up.
+    for (app, closed) in apps {
+        let (given_up, said) = folder::abandon(ctx, permit, &mut state, app, closed)?;
+        gave_up.moves.extend(given_up);
+        gave_up.warnings.extend(said);
+    }
+    Ok(gave_up)
 }
 
 /// Under a custom OAuth endpoint Claude Code's live login is in "Claude Code-custom-oauth-
@@ -191,17 +214,27 @@ pub(crate) fn stuck(ctx: &Context, state: &State, asking: Asking) -> Option<Erro
 /// state does not name. `settle` already does this from Pitboard's own list of names on
 /// every change; this is the thorough version, for a machine whose list was lost with its
 /// state file, or written by a version that kept no list.
-pub fn repair(settled: Settled) -> Result<pending::Reclaimed> {
+pub fn repair(settled: Settled) -> Result<(pending::Reclaimed, Vec<Warning>)> {
     let Settled {
         _exclusive,
         mut state,
         ctx,
         permit,
     } = settled;
+    // Nothing of an app is read but where a move of its login waits.
+    let mut warnings = Vec::new();
+    for &tool in ProviderId::ALL {
+        match provider::of(tool) {
+            LoginKind::Document(_) => {}
+            LoginKind::Folder(app) => {
+                warnings.extend(folder::settle_for_repair(&ctx, permit, &mut state, app));
+            }
+        }
+    }
     let mut reclaimed = pending::reclaim(&ctx, permit, &mut state)?;
     give_back_asides(&ctx, permit, &mut state, &mut reclaimed)?;
     purge(&ctx, permit, &mut state);
-    Ok(reclaimed)
+    Ok((reclaimed, warnings))
 }
 
 // A folder set aside goes back to its account where its manifest, keys and jar agree.
@@ -353,7 +386,10 @@ fn unidentified(which: ProviderId, error: provider::ProviderError) -> Error {
 pub(super) fn nothing_signed_in(ctx: &Context, tool: &'static dyn Provider) -> Error {
     match tool.own_record(ctx) {
         Some(found) => Error::LiveCredentialElsewhere { email: found.email },
-        None => Error::LiveCredentialAbsent { tool: tool.id() },
+        None => Error::LiveCredentialAbsent {
+            tool: tool.id(),
+            label: None,
+        },
     }
 }
 
@@ -411,7 +447,10 @@ pub fn switch(settled: Settled, key: &Key) -> Result<(Outcome, Vec<Warning>)> {
     // then confirmed under the lock. Recorded at once, so the record names the account a
     // switch moves out of when it records the one it moves to, whatever it named before.
     let identify::Live::Login(outgoing) = identify::now(&ctx, permit, &mut state, tool)? else {
-        return Err(Error::LiveCredentialAbsent { tool: key.provider });
+        return Err(Error::LiveCredentialAbsent {
+            tool: key.provider,
+            label: None,
+        });
     };
     if target.owned_by(&outgoing.owner) {
         let lost = outgoing.lock_warning(key.provider);
@@ -950,17 +989,13 @@ pub(crate) fn still_holding(ctx: &Context, which: ProviderId) -> StillHolding {
             };
         }
     };
-    match tool.adoption(None) {
-        provider::Adoption::RestartRequired { program, holders } => {
-            match holder::find(ctx, program, holders) {
-                None => StillHolding::Unknown,
-                Some(holding) if holding.is_empty() => StillHolding::Nothing,
-                Some(holding) => StillHolding::These(holding),
-            }
-        }
-        provider::Adoption::PollingWithin(_) | provider::Adoption::AtRenewal { .. } => {
-            StillHolding::Nothing
-        }
+    let provider::Adoption::RestartRequired { program, holders } = tool.adoption(None) else {
+        return StillHolding::Nothing;
+    };
+    match holder::find(ctx, program, holders) {
+        None => StillHolding::Unknown,
+        Some(holding) if holding.is_empty() => StillHolding::Nothing,
+        Some(holding) => StillHolding::These(holding),
     }
 }
 

@@ -2131,6 +2131,7 @@ impl State {
                 restart: None,
                 said: None,
                 warnings: Vec::new(),
+                opens: None,
             });
         said.said = Some(signed_in_now(&signing.name, again));
         let switch_said = |code: &str| said.warnings.iter().any(|warning| warning.code == code);
@@ -2487,7 +2488,10 @@ impl State {
                 // tool's stays: it is as true as it was, and it is never told again. Nothing
                 // moved where the account was already in use, and advice about it stands
                 // until a read no longer bears it out.
-                if matches!(done.outcome, Switch::Switched { .. }) {
+                if matches!(
+                    done.outcome,
+                    Switch::Switched { .. } | Switch::Installed { .. }
+                ) {
                     let provider = split(qualified).0;
                     self.advice.retain(|advice| advice.provider != provider);
                 }
@@ -2519,35 +2523,19 @@ impl State {
     /// Keeps what a switch that worked said, in place of what its own tool's last switch
     /// said and beside what every other tool's did.
     fn said(&mut self, qualified: &str, done: Switched, now: Now) {
-        match done.outcome {
+        // With no account before it where the tool held nobody's login.
+        let (provider, from, to, adoption) = match done.outcome {
             Switch::Switched {
                 provider,
                 from,
                 to,
                 adoption,
-            } => {
-                let (follows_at, restart) = match adoption {
-                    Adoption::Follows { within_seconds } => {
-                        (Some(now.epoch() + i64::from(within_seconds)), None)
-                    }
-                    Adoption::Renewal { .. } => (None, None),
-                    Adoption::Restart { program } => (
-                        None,
-                        Some(RestartNeeded {
-                            program,
-                            from: split(&from).1.to_owned(),
-                        }),
-                    ),
-                };
-                self.remember(LastSwitch {
-                    provider,
-                    to,
-                    follows_at,
-                    restart,
-                    said: None,
-                    warnings: done.warnings,
-                });
-            }
+            } => (provider, Some(from), to, adoption),
+            Switch::Installed {
+                provider,
+                to,
+                adoption,
+            } => (provider, None, to, adoption),
             Switch::AlreadyActive { label } => {
                 // Nothing moved, so what this tool's last switch said still stands, and
                 // anything this one warned about is said beside it.
@@ -2567,6 +2555,7 @@ impl State {
                         restart: None,
                         said: None,
                         warnings: Vec::new(),
+                        opens: None,
                     });
                 for warning in done.warnings {
                     if !said.warnings.contains(&warning) {
@@ -2574,8 +2563,32 @@ impl State {
                     }
                 }
                 self.remember(said);
+                return;
             }
-        }
+        };
+        let opens = matches!(adoption, Adoption::NextOpen { .. }).then(|| adoption.follows());
+        let (follows_at, restart) = match adoption {
+            Adoption::Follows { within_seconds } => {
+                (Some(now.epoch() + i64::from(within_seconds)), None)
+            }
+            Adoption::Renewal { .. } | Adoption::NextOpen { .. } => (None, None),
+            Adoption::Restart { program } => (
+                None,
+                from.map(|from| RestartNeeded {
+                    program,
+                    from: split(&from).1.to_owned(),
+                }),
+            ),
+        };
+        self.remember(LastSwitch {
+            provider,
+            to,
+            follows_at,
+            restart,
+            said: None,
+            warnings: done.warnings,
+            opens,
+        });
     }
 
     /// In place of what the same tool's last switch said, or after the others.

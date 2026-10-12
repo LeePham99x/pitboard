@@ -67,12 +67,20 @@ fn store_list(ctx: &Context, permit: Permit, names: &[(ParkKind, String)]) -> Re
 /// Write a name down before anything is written into it. A name here that never receives a
 /// login costs one line and is dropped by the next sweep.
 pub fn reserve(ctx: &Context, permit: Permit, service: &str) -> Result<()> {
+    write_down(ctx, permit, (ParkKind::Vault, service.to_string()))
+}
+
+// A folder under `parks`, written down before it is made.
+pub(crate) fn reserve_folder(ctx: &Context, permit: Permit, name: &str) -> Result<()> {
+    write_down(ctx, permit, (ParkKind::Folder, name.to_string()))
+}
+
+fn write_down(ctx: &Context, permit: Permit, line: (ParkKind, String)) -> Result<()> {
     home::ensure(ctx, permit).map_err(|source| Error::HomeUnwritable {
         path: home::dir(ctx),
         source,
     })?;
     let mut names = read(ctx);
-    let line = (ParkKind::Vault, service.to_string());
     if !names.contains(&line) {
         names.push(line);
     }

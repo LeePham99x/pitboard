@@ -259,6 +259,8 @@ pub struct Context {
     pub(crate) sign_in_script: Option<Arc<dyn crate::switch::SignInScript>>,
     #[cfg(any(test, feature = "test-support"))]
     scratch_claude: Option<ScratchClaude>,
+    #[cfg(any(test, feature = "test-support"))]
+    awaited_every: Option<std::time::Duration>,
     #[cfg(test)]
     unknown_machine: bool,
 }
@@ -336,6 +338,8 @@ impl Context {
             sign_in_script: None,
             #[cfg(any(test, feature = "test-support"))]
             scratch_claude: None,
+            #[cfg(any(test, feature = "test-support"))]
+            awaited_every: None,
             #[cfg(test)]
             unknown_machine: false,
         }
@@ -527,11 +531,27 @@ impl Context {
         self
     }
 
+    // How often a sign-in waited for asks the process list: a second, unless a test said.
+    pub(crate) fn awaited_every(&self) -> std::time::Duration {
+        #[cfg(any(test, feature = "test-support"))]
+        if let Some(every) = self.awaited_every {
+            return every;
+        }
+        std::time::Duration::from_secs(1)
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    #[doc(hidden)]
+    pub fn with_awaited_every(mut self, every: std::time::Duration) -> Context {
+        self.awaited_every = Some(every);
+        self
+    }
+
     // What every park's manifest names its Mac by; `unknown` where a unit test said so.
     pub(crate) fn this_machine(&self) -> String {
         #[cfg(test)]
         if self.unknown_machine {
-            return "unknown".into();
+            return crate::state::UNKNOWN_MACHINE.into();
         }
         crate::state::machine_id()
     }
@@ -623,6 +643,8 @@ impl Context {
             sign_in_script: None,
             #[cfg(any(test, feature = "test-support"))]
             scratch_claude: None,
+            #[cfg(any(test, feature = "test-support"))]
+            awaited_every: None,
             #[cfg(test)]
             unknown_machine: false,
         };

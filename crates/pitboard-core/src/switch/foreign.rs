@@ -113,6 +113,7 @@ fn repair_here(m: &Machine) -> Reclaimed {
             .0,
     )
     .expect("repaired")
+    .0
 }
 
 /// The whole of what went wrong. Another Pitboard has `here` parked; this one has `here`

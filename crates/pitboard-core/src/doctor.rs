@@ -17,7 +17,7 @@ use crate::provider::claude::slot;
 use crate::provider::codex::paths as codex;
 use crate::provider::{LoginKind, ProviderId};
 use crate::service::Stored;
-use crate::state::{Park, State};
+use crate::state::{Key, Park, State};
 use crate::{home, park, store, switch, time, words};
 use serde_json::{Value, json};
 use std::path::PathBuf;
@@ -335,6 +335,8 @@ pub struct DesktopFacts {
     signed_out: bool,
     parks_dir: PathBuf,
     private: Option<crate::host::Private>,
+    // whether `parks` is on the data folder's volume, where both could be asked
+    one_volume: Option<bool>,
     // each folder park's name, and whether it is a folder there
     parked_here: Vec<(String, bool)>,
     build: Option<String>,
@@ -366,6 +368,9 @@ fn desktop_facts(ctx: &Context, state: &State) -> Option<DesktopFacts> {
         signed_out: false,
         parks_dir: crate::store::folder::parks_dir(ctx),
         private: crate::host::fs::private_dir(&crate::store::folder::parks_dir(ctx)).ok(),
+        one_volume: root.as_ref().ok().and_then(|root| {
+            crate::host::fs::same_volume(root, &crate::store::folder::parks_dir(ctx)).ok()
+        }),
         parked_here: state
             .accounts
             .iter()
@@ -436,7 +441,7 @@ pub fn gather(ctx: &Context) -> Facts {
         home_access: crate::host::fs::access(&home),
         readable_by_others: loose_logins(ctx),
         home,
-        machine_id_known: crate::state::machine_id() != "unknown",
+        machine_id_known: crate::state::machine_id() != crate::state::UNKNOWN_MACHINE,
         hover_rest_env: ctx.hover_rest,
         daemon: daemon::read(ctx),
         pending_parks: crate::pending::outstanding(ctx, state.as_ref().ok()),
@@ -730,13 +735,12 @@ fn codex_package_version(path: &std::path::Path) -> Option<String> {
 /// Every `codex` running as this user, by kind, asked the way a switch asks so the two
 /// cannot disagree.
 fn running_codex(ctx: &Context) -> Option<Vec<crate::holder::Holding>> {
-    match crate::provider::codex().adoption(None) {
-        crate::provider::Adoption::RestartRequired { program, holders } => {
-            crate::holder::find(ctx, program, holders)
-        }
-        crate::provider::Adoption::PollingWithin(_)
-        | crate::provider::Adoption::AtRenewal { .. } => Some(Vec::new()),
-    }
+    let crate::provider::Adoption::RestartRequired { program, holders } =
+        crate::provider::codex().adoption(None)
+    else {
+        return Some(Vec::new());
+    };
+    crate::holder::find(ctx, program, holders)
 }
 
 /// The check that fails where this process runs as root or under sudo, or elevated on
@@ -2319,7 +2323,8 @@ fn judge_desktop(facts: &DesktopFacts, state: &State, parks: &[ParkFact], now: i
                     "desktop_data_folder",
                     folder,
                     format!("{shown} does not exist"),
-                    "Open Claude once, then quit it with Command-Q.",
+                    "Run `pitboard enroll desktop/<label> --sign-in`, then open Claude and sign \
+                     in: Pitboard waits for it to quit.",
                 ),
             });
         }
@@ -2378,12 +2383,56 @@ fn judge_desktop(facts: &DesktopFacts, state: &State, parks: &[ParkFact], now: i
     for fact in parks.iter().filter(|p| p.provider == ProviderId::Desktop) {
         checks.push(judge_desktop_park(facts, fact, now));
     }
+    let typed = |label: &str| state.typed(&Key::new(ProviderId::Desktop, label));
+    if let Some(moving) = state.moving(ProviderId::Desktop) {
+        checks.push(warn(
+            "desktop_move",
+            "interrupted Claude Desktop move",
+            format!(
+                "a move of `{}`'s login was interrupted {}",
+                typed(&moving.label),
+                time::moment(moving.started_at, now)
+            ),
+            "Keep Claude closed: the next change to a Claude Desktop account settles it first. \
+             If it cannot, `pitboard abandon` keeps every folder and moves on.",
+        ));
+    }
+    if let Some(awaited) = state.awaiting(ProviderId::Desktop)
+        && let Some(put_back) = state.by_id(ProviderId::Desktop, &awaited.put_back)
+    {
+        let put_back = state.typed(&put_back.key());
+        checks.push(warn(
+            "desktop_awaiting",
+            "awaited sign-in",
+            format!(
+                "Claude is signed out for a sign-in since {}, and `{put_back}` is parked",
+                time::moment(awaited.since, now)
+            ),
+            format!(
+                "Sign in inside Claude, quit it with Command-Q, then run `pitboard enroll {}`. \
+                 To go back, run `pitboard use {put_back}`.",
+                typed(&awaited.label)
+            ),
+        ));
+    }
     let parks_dir = facts.parks_dir.display();
     match facts.private {
         Some(crate::host::Private::Missing) | None => {}
         Some(found) => {
             let name = "parked Claude Desktop logins";
             checks.push(match found {
+                crate::host::Private::Yes if facts.one_volume == Some(false) => fail(
+                    "desktop_parks_folder",
+                    name,
+                    format!(
+                        "{parks_dir} is on another volume than {}",
+                        facts.root.as_ref().map_or_else(
+                            |_| "Claude's data".into(),
+                            |root| root.display().to_string()
+                        )
+                    ),
+                    "Keep Pitboard's folder on the volume your home is on.",
+                ),
                 crate::host::Private::Yes => ok(
                     "desktop_parks_folder",
                     name,
@@ -2844,6 +2893,7 @@ mod tests {
 
     fn desktop() -> DesktopFacts {
         DesktopFacts {
+            one_volume: Some(true),
             root: Ok(PathBuf::from(
                 "/Users/dana/Library/Application Support/Claude",
             )),
@@ -2893,6 +2943,55 @@ mod tests {
             .filter(|c| c.code == code)
             .map(|c| (c.level, c.detail.clone()))
             .collect()
+    }
+
+    #[test]
+    fn an_interrupted_move_and_a_parks_folder_on_another_volume_are_said() {
+        let mut state = State::default();
+        state.accounts.push(desktop_account("work", None));
+        state.moving.insert(
+            "desktop".into(),
+            crate::state::Moving {
+                half: crate::state::Half::Leave,
+                started_at: NOW - 300,
+                id: "desktop_work".into(),
+                label: "work".into(),
+                park: "pitboard-park-desktop_work-1".into(),
+                login: "f0".into(),
+                items: vec!["Cookies".into()],
+                keys: std::collections::BTreeMap::new(),
+                asides: std::collections::BTreeMap::new(),
+                slot: String::new(),
+                awaited: None,
+            },
+        );
+        let mut facts = desktop();
+        facts.one_volume = Some(false);
+        let checks = judge_desktop(&facts, &state, &[], NOW);
+        let moved = said(&checks, "desktop_move");
+        assert_eq!(moved.len(), 1, "{moved:?}");
+        assert_eq!(moved[0].0, Level::Warn);
+        assert!(
+            moved[0]
+                .1
+                .starts_with("a move of `desktop/work`'s login was interrupted"),
+            "{moved:?}"
+        );
+        assert_eq!(
+            said(&checks, "desktop_parks_folder"),
+            [(
+                Level::Fail,
+                "/Users/dana/.pitboard/parks is on another volume than /Users/dana/Library/\
+                 Application Support/Claude"
+                    .into()
+            )]
+        );
+
+        state.moving.clear();
+        facts.one_volume = Some(true);
+        let checks = judge_desktop(&facts, &state, &[], NOW);
+        assert!(said(&checks, "desktop_move").is_empty());
+        assert_eq!(said(&checks, "desktop_parks_folder")[0].0, Level::Ok);
     }
 
     #[test]

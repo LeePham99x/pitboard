@@ -143,7 +143,7 @@ impl Parks for FolderParks {
         };
         let machine = ctx.this_machine();
         if manifest.account.as_deref() != Some(id.as_str())
-            || machine == "unknown"
+            || machine == crate::state::UNKNOWN_MACHINE
             || manifest.machine != machine
         {
             return Orphan::Unnamed;
@@ -153,8 +153,8 @@ impl Parks for FolderParks {
             Ok(_) => return Orphan::Unnamed,
             Err(_) => return Orphan::Unreadable,
         }
-        let keys = match std::fs::read(store::folder::keys_file(ctx, name)) {
-            Ok(raw) => crate::provider::folder::Keys::from_json(&raw),
+        let keys = match store::folder::keys(ctx, name) {
+            Ok(keys) => keys,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Orphan::Unnamed,
             Err(_) => return Orphan::Unreadable,
         };
@@ -292,6 +292,41 @@ pub(crate) fn free_name(ctx: &Context, id: &str) -> Result<String> {
     for offset in 0..1_000 {
         let candidate = service_name(id, start + offset);
         if !parks(ParkKind::Vault).taken(ctx, &candidate)? {
+            return Ok(candidate);
+        }
+    }
+    Err(Error::ParkSlotExhausted)
+}
+
+// A folder for `id`'s login under `parks`, written down before it is made.
+pub(crate) fn reserve_folder(
+    ctx: &Context,
+    permit: Permit,
+    state: &State,
+    id: &str,
+) -> Result<String> {
+    free_folder(ctx, permit, state, |at_millis| service_name(id, at_millis))
+}
+
+// A folder under `parks` for what a move sets aside, written down before it is made.
+pub(crate) fn reserve_aside(ctx: &Context, permit: Permit, state: &State) -> Result<String> {
+    free_folder(ctx, permit, state, |at_millis| {
+        format!("{}{at_millis}", store::folder::ASIDE_PREFIX)
+    })
+}
+
+// Never a name `state` holds: a move names a folder before it makes it.
+fn free_folder(
+    ctx: &Context,
+    permit: Permit,
+    state: &State,
+    name: impl Fn(i64) -> String,
+) -> Result<String> {
+    let start = ctx.now_millis();
+    for offset in 0..1_000 {
+        let candidate = name(start + offset);
+        if !state.names(&candidate) && !parks(ParkKind::Folder).taken(ctx, &candidate)? {
+            crate::pending::reserve_folder(ctx, permit, &candidate)?;
             return Ok(candidate);
         }
     }

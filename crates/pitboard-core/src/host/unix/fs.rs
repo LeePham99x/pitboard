@@ -78,7 +78,84 @@ pub(crate) fn copy_access(_: Permit, existing: &Path, temp: &Path) -> io::Result
 /// Make a rename in `dir` durable. ext4 and xfs can lose a rename across a crash even when
 /// the file's contents were synced. Best effort: the contents are durable already.
 pub(crate) fn sync_dir(dir: &Path) {
-    let _ = File::open(dir).and_then(|d| d.sync_all());
+    let _ = flush_dir(dir);
+}
+
+pub(crate) fn flush_dir(dir: &Path) -> io::Result<()> {
+    File::open(dir)?.sync_all()
+}
+
+fn c_path(path: &Path) -> io::Result<std::ffi::CString> {
+    use std::os::unix::ffi::OsStrExt;
+    std::ffi::CString::new(path.as_os_str().as_bytes())
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))
+}
+
+fn not_replacing(renamed: libc::c_int) -> io::Result<()> {
+    if renamed == 0 {
+        return Ok(());
+    }
+    let refused = io::Error::last_os_error();
+    Err(match refused.raw_os_error() {
+        Some(libc::EEXIST) => io::Error::new(io::ErrorKind::AlreadyExists, refused),
+        // a volume that cannot refuse to replace is refused, never renamed over
+        Some(libc::ENOTSUP | libc::EINVAL | libc::ENOSYS) => {
+            io::Error::new(io::ErrorKind::Unsupported, refused)
+        }
+        _ => refused,
+    })
+}
+
+// The kernel's own never-replace rename: what is at `to`, a dangling link included, stays.
+#[cfg(target_vendor = "apple")]
+pub(crate) fn move_new(_: Permit, from: &Path, to: &Path) -> io::Result<()> {
+    let (from, to) = (c_path(from)?, c_path(to)?);
+    // SAFETY: both pointers are to NUL-terminated strings that outlive the call, which
+    // reads them and writes no memory of this process.
+    not_replacing(unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_EXCL) })
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn move_new(_: Permit, from: &Path, to: &Path) -> io::Result<()> {
+    let (from, to) = (c_path(from)?, c_path(to)?);
+    // SAFETY: both pointers are to NUL-terminated strings that outlive the call, which
+    // reads them and writes no memory of this process; `AT_FDCWD` names no descriptor.
+    let renamed = unsafe {
+        libc::syscall(
+            libc::SYS_renameat2,
+            libc::AT_FDCWD,
+            from.as_ptr(),
+            libc::AT_FDCWD,
+            to.as_ptr(),
+            libc::RENAME_NOREPLACE,
+        )
+    };
+    not_replacing(if renamed == 0 { 0 } else { -1 })
+}
+
+#[cfg(not(any(target_vendor = "apple", target_os = "linux")))]
+pub(crate) fn move_new(_: Permit, _from: &Path, _to: &Path) -> io::Result<()> {
+    Err(io::ErrorKind::Unsupported.into())
+}
+
+fn nearest(path: &Path) -> io::Result<std::fs::Metadata> {
+    let mut at = path;
+    loop {
+        match std::fs::metadata(at) {
+            Ok(found) => return Ok(found),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => match at.parent() {
+                Some(parent) => at = parent,
+                None => return Err(e),
+            },
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+// Each asked of its nearest ancestor that exists.
+pub(crate) fn same_volume(a: &Path, b: &Path) -> io::Result<bool> {
+    use std::os::unix::fs::MetadataExt;
+    Ok(nearest(a)?.dev() == nearest(b)?.dev())
 }
 
 /// Set the modification time of the directory at `path` to `at`.
@@ -256,6 +333,12 @@ pub mod testing {
     pub fn link_dir(target: &Path, at: &Path) -> io::Result<()> {
         std::os::unix::fs::symlink(target, at)
     }
+
+    // What a rename keeps and a copy does not: how a test tells a move from a copy.
+    pub fn inode(path: &Path) -> io::Result<u64> {
+        use std::os::unix::fs::MetadataExt;
+        Ok(std::fs::symlink_metadata(path)?.ino())
+    }
 }
 
 #[cfg(test)]
@@ -300,6 +383,99 @@ mod tests {
             assert_eq!(private_dir(Path::new("/")).unwrap(), Private::NotOwn);
         }
         std::fs::remove_file(&link).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_rename_never_lands_on_something_already_there() {
+        use std::os::unix::fs::MetadataExt;
+        let dir = scratch("move-new");
+        let permit = Permit::for_a_test();
+        create_private_dir(permit, &dir).unwrap();
+        let (from, to) = (dir.join("from"), dir.join("to"));
+        std::fs::write(&from, b"incoming").unwrap();
+        std::fs::write(&to, b"already there").unwrap();
+        let refused = move_new(permit, &from, &to).unwrap_err();
+        assert_eq!(refused.kind(), io::ErrorKind::AlreadyExists, "{refused}");
+        assert_eq!(std::fs::read(&to).unwrap(), b"already there");
+        assert_eq!(std::fs::read(&from).unwrap(), b"incoming");
+
+        std::fs::remove_file(&to).unwrap();
+        testing::link(&dir.join("nowhere"), &to).unwrap();
+        let refused = move_new(permit, &from, &to).unwrap_err();
+        assert_eq!(
+            refused.kind(),
+            io::ErrorKind::AlreadyExists,
+            "a dangling link"
+        );
+        assert!(std::fs::symlink_metadata(&to).unwrap().is_symlink());
+        assert!(!dir.join("nowhere").exists());
+        std::fs::remove_file(&to).unwrap();
+
+        let (dir_from, empty, full) = (dir.join("dir-from"), dir.join("empty"), dir.join("full"));
+        std::fs::create_dir(&dir_from).unwrap();
+        std::fs::create_dir(&empty).unwrap();
+        std::fs::create_dir(&full).unwrap();
+        std::fs::write(full.join("kept"), b"kept").unwrap();
+        for there in [&empty, &full] {
+            let refused = move_new(permit, &dir_from, there).unwrap_err();
+            assert_eq!(refused.kind(), io::ErrorKind::AlreadyExists, "{refused}");
+        }
+        assert!(dir_from.is_dir());
+        assert_eq!(std::fs::read(full.join("kept")).unwrap(), b"kept");
+
+        let inode = std::fs::metadata(&from).unwrap().ino();
+        move_new(permit, &from, &to).unwrap();
+        assert_eq!(
+            std::fs::metadata(&to).unwrap().ino(),
+            inode,
+            "a move keeps the inode"
+        );
+        assert!(!from.exists());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_volume_that_cannot_refuse_is_refused_not_renamed_over() {
+        for errno in [libc::ENOTSUP, libc::EINVAL, libc::ENOSYS] {
+            // SAFETY: the errno location is this thread's own.
+            unsafe { *errno_location() = errno };
+            assert_eq!(
+                not_replacing(-1).unwrap_err().kind(),
+                io::ErrorKind::Unsupported,
+                "{errno}"
+            );
+        }
+        // SAFETY: as above.
+        unsafe { *errno_location() = libc::EEXIST };
+        assert_eq!(
+            not_replacing(-1).unwrap_err().kind(),
+            io::ErrorKind::AlreadyExists
+        );
+        assert!(not_replacing(0).is_ok());
+    }
+
+    #[cfg(target_vendor = "apple")]
+    unsafe fn errno_location() -> *mut libc::c_int {
+        // SAFETY: __error only answers where this thread keeps its errno.
+        unsafe { libc::__error() }
+    }
+
+    #[cfg(not(target_vendor = "apple"))]
+    unsafe fn errno_location() -> *mut libc::c_int {
+        // SAFETY: __errno_location only answers where this thread keeps its errno.
+        unsafe { libc::__errno_location() }
+    }
+
+    #[test]
+    fn one_scratch_folder_is_one_volume_and_a_missing_path_asks_its_parent() {
+        let dir = scratch("volume");
+        create_private_dir(Permit::for_a_test(), &dir).unwrap();
+        assert!(same_volume(&dir, &dir.join("not/made/yet")).unwrap());
+        // devfs on macOS, devtmpfs on Linux: never the volume a scratch folder is on
+        assert!(!same_volume(&dir, Path::new("/dev")).unwrap());
+        assert!(flush_dir(&dir).is_ok());
+        assert!(flush_dir(&dir.join("missing")).is_err());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

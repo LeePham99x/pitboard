@@ -109,12 +109,41 @@ pub(crate) struct Change {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Adoption {
     /// On its own, within this many seconds.
-    Follows { within_seconds: u32 },
+    Follows {
+        within_seconds: u32,
+    },
     /// On its own, when its login is next renewed, because the file at `path` sits behind
     /// the store the switch wrote.
-    Renewal { path: String },
+    Renewal {
+        path: String,
+    },
     /// Never: `program` has to be quit and started again.
-    Restart { program: String },
+    Restart {
+        program: String,
+    },
+    // The app `name` was closed for the switch and holds the login from its next opening.
+    NextOpen {
+        name: String,
+    },
+}
+
+impl Adoption {
+    // What becomes of what is already running, as a sentence.
+    pub(crate) fn follows(&self) -> String {
+        match self {
+            Adoption::Follows { within_seconds } => {
+                format!("Sessions already running follow within {within_seconds} seconds.")
+            }
+            Adoption::Renewal { path } => format!(
+                "Sessions already running {}: {path} is there.",
+                pitboard_core::words::kept_until_renewed()
+            ),
+            Adoption::Restart { program } => {
+                format!("Restart any running `{program}` for this to take effect.")
+            }
+            Adoption::NextOpen { name } => format!("{name} opens signed in to it."),
+        }
+    }
 }
 
 /// What makes one kind of process take a switch.
@@ -173,6 +202,12 @@ pub(crate) enum Switch {
         /// Which tool's login moved.
         provider: String,
         from: String,
+        to: String,
+        adoption: Adoption,
+    },
+    // Put in use where the tool held nobody's login: no account was parked for it.
+    Installed {
+        provider: String,
         to: String,
         adoption: Adoption,
     },
@@ -379,6 +414,9 @@ fn adoption_of(adoption: pitboard_core::provider::Adoption) -> Adoption {
         pitboard_core::provider::Adoption::RestartRequired { program, .. } => Adoption::Restart {
             program: program.into(),
         },
+        pitboard_core::provider::Adoption::NextOpen { app } => {
+            Adoption::NextOpen { name: app.into() }
+        }
     }
 }
 
@@ -821,6 +859,15 @@ impl AppCore {
                         to,
                         adoption: adoption_of(adoption),
                     },
+                    switch::Outcome::Installed {
+                        provider,
+                        to,
+                        adoption,
+                    } => Switch::Installed {
+                        provider: provider.code().into(),
+                        to,
+                        adoption: adoption_of(adoption),
+                    },
                     switch::Outcome::AlreadyActive { label, .. } => Switch::AlreadyActive { label },
                 },
                 warnings,
@@ -946,11 +993,16 @@ impl AppCore {
     ///
     /// `None` when there was no interrupted switch.
     pub(crate) fn abandon_recovery(&self) -> Result<Option<Abandoned>, PitboardError> {
-        Ok(self.core().core.abandon_recovery()?.map(|a| Abandoned {
-            from: a.from,
-            to: a.to,
-            logins_kept: u32::try_from(a.kept).unwrap_or(u32::MAX),
-        }))
+        Ok(self
+            .core()
+            .core
+            .abandon_recovery()?
+            .switch
+            .map(|a| Abandoned {
+                from: a.from,
+                to: a.to,
+                logins_kept: u32::try_from(a.kept).unwrap_or(u32::MAX),
+            }))
     }
 
     /// What Pitboard has changed, newest last: nothing where nothing may be read here, as

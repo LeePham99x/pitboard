@@ -293,7 +293,13 @@ fn of_last_switch(seen: &Seen, last: &LastSwitch) -> PanelNotice {
     } else {
         Severity::Warning
     };
-    let mut lines: Vec<String> = last.said.iter().cloned().chain(restart).collect();
+    let mut lines: Vec<String> = last
+        .opens
+        .iter()
+        .chain(&last.said)
+        .cloned()
+        .chain(restart)
+        .collect();
     lines.extend(warned.iter().map(|warning| warning.message.clone()));
     let title = if last.said.is_some() {
         words::has_a_new_login(tool.as_deref(), label)
@@ -347,18 +353,7 @@ pub(crate) fn auto_switched_notice(
     adoption: &Adoption,
     at: i64,
 ) -> RunOutNotice {
-    let follows = match adoption {
-        Adoption::Follows { within_seconds } => {
-            format!("Sessions already running follow within {within_seconds} seconds.")
-        }
-        Adoption::Renewal { path } => format!(
-            "Sessions already running {}: {path} is there.",
-            said::kept_until_renewed()
-        ),
-        Adoption::Restart { program } => {
-            format!("Restart any running `{program}` for this to take effect.")
-        }
-    };
+    let follows = adoption.follows();
     RunOutNotice {
         id: format!("auto/{from}/{to}/{at}"),
         title: format!("Switched Claude Code to {to}"),

@@ -464,6 +464,9 @@ pub struct LastSwitch {
     pub said: Option<String>,
     /// What the switch warned about, every warning of it.
     pub warnings: Vec<Warning>,
+    // For a tool whose app holds the login from when it is next opened: that, as a sentence.
+    #[uniffi(default)]
+    pub opens: Option<String>,
 }
 
 /// Something a person asked for that did not happen, for the window to say: an alert's

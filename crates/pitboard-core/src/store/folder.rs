@@ -2,6 +2,7 @@
 
 use crate::context::Context;
 use crate::host::{Private, fs};
+use crate::provider::folder::Keys;
 use crate::service::Permit;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -11,7 +12,7 @@ use std::path::{Component, Path, PathBuf};
 const MANIFEST: &str = "manifest.json";
 const KEYS: &str = "keys.json";
 const ITEMS: &str = "items";
-const VERSION: u32 = 1;
+pub(crate) const VERSION: u32 = 1;
 pub(crate) const ASIDE_PREFIX: &str = "pitboard-aside-";
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -31,6 +32,9 @@ pub(crate) struct Manifest {
     pub items: Vec<String>,
     // SHA-256, hex, of each account key's value as the settings held it
     pub keys: BTreeMap<String, String>,
+    // the account's items a give-up left in the app's folder, which the next arrive sets aside
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub left_in_folder: Vec<String>,
 }
 
 pub(crate) fn parks_dir(ctx: &Context) -> PathBuf {
@@ -47,6 +51,109 @@ pub(crate) fn keys_file(ctx: &Context, name: &str) -> PathBuf {
 
 pub(crate) fn item(ctx: &Context, name: &str, item: &str) -> PathBuf {
     at(ctx, name).join(ITEMS).join(item)
+}
+
+// `parks`, made private where missing, on the volume `root` is on. Never changes a mode.
+pub(crate) fn ready(ctx: &Context, permit: Permit, root: &Path) -> crate::error::Result<()> {
+    use crate::error::Error;
+    let parks = parks_dir(ctx);
+    let unwritable = |source| Error::HomeUnwritable {
+        path: parks.clone(),
+        source,
+    };
+    if fs::private_dir(&parks).map_err(unwritable)? == Private::Missing {
+        fs::create_private_dir(permit, &parks).map_err(unwritable)?;
+    }
+    match fs::private_dir(&parks).map_err(unwritable)? {
+        Private::Yes => {}
+        why => {
+            return Err(Error::ParksNotPrivate {
+                path: parks.clone(),
+                why,
+            });
+        }
+    }
+    let volume = crate::fault::volume_of;
+    if !fs::same_volume(volume(root), volume(&parks)).map_err(unwritable)? {
+        return Err(Error::DifferentVolume {
+            parks,
+            root: root.to_path_buf(),
+        });
+    }
+    Ok(())
+}
+
+// A new folder under `parks`, with its `items/`, both private: refused where anything is there.
+pub(crate) fn make(ctx: &Context, permit: Permit, name: &str) -> io::Result<PathBuf> {
+    kept_name(name)?;
+    let folder = at(ctx, name);
+    if std::fs::symlink_metadata(&folder).is_ok() {
+        return Err(io::ErrorKind::AlreadyExists.into());
+    }
+    fs::create_private_dir(permit, &folder.join(ITEMS))?;
+    fs::sync_dir(&parks_dir(ctx));
+    Ok(folder)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Moved {
+    Synced,
+    // the rename was made and a flush after it failed: the move is taken as made
+    NotSynced,
+}
+
+// By rename alone, never over anything. `Err` only where the rename was not made.
+pub(crate) fn move_in(permit: Permit, from: &Path, to: &Path) -> io::Result<Moved> {
+    if crate::fault::fails("move_in") {
+        return Err(io::Error::other("a test failed this move"));
+    }
+    fs::move_new(permit, from, to)?;
+    let flushed = [from.parent(), to.parent()]
+        .into_iter()
+        .flatten()
+        .try_for_each(fs::flush_dir);
+    if flushed.is_err() || crate::fault::fails("move_in.flushed") {
+        return Ok(Moved::NotSynced);
+    }
+    Ok(Moved::Synced)
+}
+
+// The parents of `item` between the folder's `items/` and it, made private where missing.
+pub(crate) fn make_parents(ctx: &Context, permit: Permit, name: &str, of: &str) -> io::Result<()> {
+    match item(ctx, name, of).parent() {
+        Some(parent) => fs::create_private_dir(permit, parent),
+        None => Ok(()),
+    }
+}
+
+pub(crate) fn write_manifest(
+    ctx: &Context,
+    permit: Permit,
+    name: &str,
+    manifest: &Manifest,
+) -> io::Result<()> {
+    let body = serde_json::to_vec_pretty(manifest).map_err(io::Error::other)?;
+    crate::atomic::write(
+        permit,
+        &at(ctx, name).join(MANIFEST),
+        &body,
+        crate::atomic::Perms::Secret,
+    )
+}
+
+pub(crate) fn write_keys(ctx: &Context, permit: Permit, name: &str, keys: &[u8]) -> io::Result<()> {
+    crate::atomic::write(
+        permit,
+        &keys_file(ctx, name),
+        keys,
+        crate::atomic::Perms::Secret,
+    )
+}
+
+// The keys kept in the folder. A `keys.json` that is not there is `NotFound`; the inner
+// refusal is one that does not parse.
+pub(crate) fn keys(ctx: &Context, name: &str) -> io::Result<Result<Keys, String>> {
+    std::fs::read(keys_file(ctx, name)).map(|raw| Keys::from_json(&raw))
 }
 
 // None: no manifest. Refused: one that does not read, or that a newer Pitboard wrote.
@@ -214,6 +321,96 @@ mod tests {
     use super::*;
     use crate::host::fs::testing;
 
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Claude Desktop is macOS only: Windows refuses the folder's file calls"
+    )]
+    fn a_parks_folder_others_can_reach_is_refused_and_its_mode_kept() {
+        let (s, ctx) = scratch("ready");
+        let permit = Permit::for_a_test();
+        let root = s.0.join("data");
+        std::fs::create_dir_all(&root).unwrap();
+        ready(&ctx, permit, &root).expect("made where missing");
+        let parks = parks_dir(&ctx);
+        assert!(testing::is_private(&parks).unwrap());
+
+        testing::allow_changes(&parks).unwrap();
+        let refused = ready(&ctx, permit, &root).unwrap_err();
+        assert_eq!(refused.code(), "parks_not_private");
+        assert!(
+            !testing::is_private(&parks).unwrap(),
+            "its mode is not changed"
+        );
+        testing::make_private(&parks).unwrap();
+
+        std::fs::remove_dir(&parks).unwrap();
+        testing::link_dir(&root, &parks).unwrap();
+        let refused = ready(&ctx, permit, &root).unwrap_err();
+        assert!(refused.to_string().contains("is a link"), "{refused}");
+        std::fs::remove_file(&parks).unwrap();
+    }
+
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Claude Desktop is macOS only: Windows refuses the folder's file calls"
+    )]
+    fn a_park_on_another_volume_is_refused() {
+        let (s, ctx) = scratch("volume");
+        let root = s.0.join("data");
+        std::fs::create_dir_all(&root).unwrap();
+        ready(&ctx, Permit::for_a_test(), &root).expect("one scratch folder is one volume");
+        let parks = parks_dir(&ctx).to_string_lossy().into_owned();
+        let refused = crate::fault::failing_at("another_volume", &parks, || {
+            ready(&ctx, Permit::for_a_test(), &root)
+        })
+        .unwrap_err();
+        match refused {
+            crate::error::Error::DifferentVolume { parks, root: from } => {
+                assert_eq!((parks, from), (parks_dir(&ctx), root));
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Claude Desktop is macOS only: Windows refuses the folder's file calls"
+    )]
+    fn a_folder_is_made_once_and_a_move_never_lands_on_anything() {
+        let (s, ctx) = scratch("make");
+        let permit = Permit::for_a_test();
+        let folder = make(&ctx, permit, "pitboard-aside-1").expect("made");
+        assert!(testing::is_private(&folder).unwrap());
+        assert!(testing::is_private(&folder.join(ITEMS)).unwrap());
+        assert_eq!(
+            make(&ctx, permit, "pitboard-aside-1").unwrap_err().kind(),
+            io::ErrorKind::AlreadyExists
+        );
+        assert!(make(&ctx, permit, "not-a-park").is_err());
+
+        let from = s.0.join("Cookies");
+        std::fs::write(&from, b"jar").unwrap();
+        let to = item(&ctx, "pitboard-aside-1", "Cookies");
+        assert_eq!(move_in(permit, &from, &to).unwrap(), Moved::Synced);
+        std::fs::write(&from, b"another").unwrap();
+        assert_eq!(
+            move_in(permit, &from, &to).unwrap_err().kind(),
+            io::ErrorKind::AlreadyExists
+        );
+        assert_eq!(std::fs::read(&to).unwrap(), b"jar");
+        std::fs::remove_file(&to).unwrap();
+        let moved = crate::fault::failing("move_in.flushed", || move_in(permit, &from, &to));
+        assert_eq!(
+            moved.unwrap(),
+            Moved::NotSynced,
+            "the move is taken as made"
+        );
+        assert_eq!(std::fs::read(&to).unwrap(), b"another");
+    }
+
     struct Scratch(PathBuf);
 
     impl Drop for Scratch {
@@ -376,6 +573,7 @@ mod tests {
             machine: "m".into(),
             items: vec!["Cookies".into()],
             keys: BTreeMap::new(),
+            left_in_folder: Vec::new(),
         };
         std::fs::write(folder.join(MANIFEST), serde_json::to_vec(&written).unwrap()).unwrap();
         assert_eq!(manifest(&ctx, PARK), Ok(Some(written)));

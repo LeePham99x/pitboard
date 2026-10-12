@@ -332,18 +332,20 @@ impl Host for MemoryHost {
 
     // What `runs`, `runs_at` and `listed_from` said, each with a pid of its own.
     fn listing(&self) -> Result<Vec<Listed>, String> {
-        let call = self.listings.fetch_add(1, Ordering::SeqCst) + 1;
         if self.listless.load(Ordering::SeqCst) {
+            self.listings.fetch_add(1, Ordering::SeqCst);
             return Err("a test withheld the process list".into());
         }
-        let mut paths: Vec<PathBuf> = {
+        // Counted under the lock `runs_at` takes: a listing a test sees counted read what ran.
+        let (call, mut paths) = {
             let running = locked(&self.running);
             let mut programs: Vec<&String> = running.keys().collect();
             programs.sort();
-            programs
+            let paths: Vec<PathBuf> = programs
                 .into_iter()
                 .flat_map(|program| running[program].iter().map(|p| p.path.clone()))
-                .collect()
+                .collect();
+            (self.listings.fetch_add(1, Ordering::SeqCst) + 1, paths)
         };
         paths.extend(
             locked(&self.later)

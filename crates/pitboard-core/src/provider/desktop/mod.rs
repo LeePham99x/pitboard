@@ -8,8 +8,9 @@ mod settings;
 use crate::context::Context;
 use crate::holder::{AppId, Holder, Location, Noun, Remedy};
 use crate::host::Listed;
-use crate::provider::folder::{AppSettings, Class, Folder, SignedIn, Unfit, Unread};
+use crate::provider::folder::{AppSettings, Class, Folder, Keys, SignedIn, Unfit, Unread};
 use crate::provider::{ProviderError, ProviderId};
+use crate::service::Permit;
 use serde_json::value::RawValue;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -75,6 +76,16 @@ impl Folder for Desktop {
 
     fn settings(&self, root: &Path) -> Result<AppSettings, Unread> {
         settings::read(root, NAMING_KEY)
+    }
+
+    fn write_settings(
+        &self,
+        permit: Permit,
+        root: &Path,
+        read: &AppSettings,
+        keys: &Keys,
+    ) -> Result<(), Unread> {
+        settings::write(permit, root, read, &read.with(self, keys))
     }
 
     fn session(&self, ctx: &Context, jar: &Path) -> Result<Option<SignedIn>, Unread> {

@@ -90,7 +90,9 @@ pages load, as a browser would.
     Chromium cookie jar's rows, read only, through the system's SQLite (`macos/sqlite.rs`),
     and an app bundle's version (`macos/bundle.rs`). `fs::private_dir` says whether a folder
     is this user's own and closed to others, and `fs::lock_dir` takes a folder's advisory
-    lock without waiting.
+    lock without waiting. `fs::move_new` is the kernel's own rename that never replaces what
+    is there, the one way a Claude Desktop login moves, and `fs::same_volume` says whether
+    two paths can be renamed between.
   - `release.rs`: whether this build may do anything on its system. A Windows build of a
     0.x release may not, unless it was compiled with `--cfg pitboard_unreleased_windows`,
     which CI's Windows jobs set and no release does; macOS and Linux always may.
@@ -112,8 +114,12 @@ pages load, as a browser would.
     uninstalling, and putting away a login Claude Code left in a file behind the keychain in
     `stow.rs`), and the journal that finishes an interrupted switch. `switch/folder/` is
     every change to a tool whose login is its app's files: it asks the process list that the
-    app is closed, holds the data folder, reads whose session the folder holds
-    (`verdict.rs`), and enrols it. It names no tool: `provider::folder::Folder` is all it
+    app is closed, holds the data folder, settles a move an earlier run left
+    (`settle.rs`), reads whose session the folder holds (`verdict.rs`), and enrols it or
+    moves it. `moves.rs` is the two halves of a move, a leave into a folder under `parks` and
+    an arrive out of one, each recorded before its first rename. `awaited.rs` parks the
+    account in use for a sign-in inside the app and waits, on a thread of its own, for the
+    app to quit signed in. It names no tool: `provider::folder::Folder` is all it
     knows. `identify.rs`
     says whose login each tool has stored: the record's owner where the login's refresh
     token has the fingerprint the record was made for, which asks nobody, and the tool's
@@ -677,7 +683,9 @@ pages load, as a browser would.
   Codex login names its own account, and a Claude Code login renewed since the switch
   stopped is one only Anthropic can name. While a switch is waiting, telling reads the
   tool's login and the copy the switch parked, which on macOS are keychain items; with no
-  record there, the check is one look at whether the file is there.
+  record there, the check is one look at whether the file is there. A Claude Desktop move
+  waiting in `state.json`'s `moving` is said by every read as `move_waiting`, without
+  predicting what recovery will do: a read opens no jar.
 - Pitboard changes nothing where it runs as root or under sudo, or elevated on Windows, or
   where the host cannot say whether it does: a file it wrote would be root's or the
   administrators', and a keychain item might be, where the person's own runs might not read
@@ -1028,8 +1036,9 @@ pages load, as a browser would.
   account switched from is never one a session spent, with its renewal lost at a save that
   found another login stored. A renewal already under way holds that lock, and a switch
   waits for it as it waits for the write lock, then stops with `switch_in_progress`. Locks
-  are always taken in one order: `state.lock`, then Claude Code's refresh lock and its
-  legacy one, then its write lock.
+  are always taken in one order: `signin.lock` where a sign-in holds it, from its start to
+  its enrolment, then `state.lock`, then Claude Desktop's data folder lock or Claude Code's
+  refresh lock and its legacy one, then its write lock.
 - Codex takes no lock on `auth.json`, so a switch reads the file again before replacing
   it. Every switch reads the live login back rather than trusting its own write.
 - Pitboard never answers a failed keychain write by writing Claude Code's plaintext file.
@@ -1175,8 +1184,12 @@ pages load, as a browser would.
   a look that takes no lock, such as the automatic switch's or `stow::find`, and Codex's
   never.
 - Nothing outside `pitboard-core` writes Pitboard's index. Every change goes through
-  `switch`, which records what it is about to do first and finishes an interrupted change
-  before starting another.
+  `switch`, which records what it is about to do first. An interrupted switch of a Claude
+  Code or Codex login, in `journal.json`, is finished before another change starts. An
+  interrupted move of a Claude Desktop login, in `state.json`'s `moving`, is settled before a
+  change to Claude Desktop and before `repair` and `uninstall`, with Claude closed. A Claude
+  Code or Codex change, a renewal, a read and the automatic switch neither settle it nor
+  wait for it.
 - An answer from Anthropic that Pitboard read whole replaces a Claude Code account's
   reading, and a session only moves that reading, within the limits the answer gave. So
   numbers filed under the wrong account go at that account's next answer.
@@ -1242,8 +1255,12 @@ pages load, as a browser would.
   already left nor says a reason again. What tells one reason, or one wait, from another
   is the core's one rule, `Auto::told_apart`, and every front end says by it, building no
   key of its own, so the app and `pitboard watch` never tell them apart differently.
-- Additive writes become durable before destructive ones. A run that dies midway leaves a
-  spare copy of a login, never a missing one.
+- Additive writes become durable before destructive ones. A run that dies midway through a
+  Claude Code or Codex switch leaves a spare copy of a login, never a missing one. A Claude
+  Desktop login is never copied: a run that dies midway through moving one leaves each of
+  its items in one of two places `state.json` named before the first rename, Claude's data
+  folder or one folder under `parks`, and settling it takes items out of Claude's folder and
+  never puts one in.
 - The `--json` contract changes only on purpose. A change to a snapshot is a change to the
   contract.
 - The JSON that `--json` prints is ASCII alone, on every system. Each character outside
@@ -1272,6 +1289,14 @@ pages load, as a browser would.
   store, and Pitboard decides only where each navigation goes.
 - Pitboard and a browser meet at the Share extension, which hands the app the one link the
   browser shares, as a Pitboard link. Pitboard reads nothing a browser keeps.
+- Pitboard and Claude meet at Claude's data folder, while Claude is closed. Pitboard reads
+  `config.json`, `config.json.journal`, the names of the folder's first-level entries, and
+  from `Cookies` the name, expiry and stored value of claude.ai's session cookies, of which
+  it keeps an 8-byte fingerprint, and whether another host holds a cookie of those names. It
+  decrypts none of it, reads no keychain item for Claude Desktop, and asks claude.ai nothing.
+  It moves the eight items the register names by rename and its three settings keys by
+  rewriting `config.json`, holding an advisory lock on the folder meanwhile. It deletes
+  nothing of Claude's, `config.json.journal` included, and neither starts nor quits Claude.
 - The code and the release meet at a `v` tag, which `.github/workflows/release.yml` turns
   into a release. [RELEASING.md](RELEASING.md) has the procedure.
 
@@ -1353,6 +1378,14 @@ each folder under `parks` that no account holds as its park, with why it was set
 parked for and the fingerprint of the session it holds. `pitboard repair` gives one back to
 its account where its manifest, its keys and its jar agree. `forget` of that account and
 `uninstall` delete it, and nothing else does.
+
+`moving` holds, by tool, one half of a Claude Desktop login's move: a `leave` into a folder
+under `parks` or an `arrive` out of one. It is written before the half's first rename and
+removed by the save that records what the half came to, and it names the account, the
+folder, the session's fingerprint, the items and the digests of the keys that move, each
+folder the move reserved for what it sets aside, and the data folder. `awaiting` holds, by
+tool, a sign-in inside Claude that is waited for with an account parked for it: the name
+asked, the account that name has already, and the account `pitboard use` puts back.
 
 A file naming a tool this build does not know is reported as written by a newer Pitboard,
 not as corrupt. The advice for a corrupt file is to delete it, and following that here would
@@ -1438,8 +1471,11 @@ recent run says which facts can still be read from each build it checked, and wh
 moved.
 
 Adding a tool takes three things: a register read out of a named build, with its table, a
-module under `provider/` implementing `Provider`, and a conformance job. `ProviderId`,
-`ProviderId::ALL` and the matches in `provider::of`, `assumptions::of` and
+module under `provider/` implementing the boundary of the kind of login the tool keeps, and
+a conformance job. `Provider` is one JSON document in a store, with tokens its service
+renews. `Folder` is items of an app's data folder and keys of its settings file, moved whole
+while the app is closed. `provider::of` is the one place that says which kind a tool keeps.
+`ProviderId`, `ProviderId::ALL` and the matches in `provider::of`, `assumptions::of` and
 `assumptions::per_system` name every tool. The compiler and the tests then point at what an
 added tool has to fill in.
 

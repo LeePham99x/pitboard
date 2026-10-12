@@ -283,6 +283,9 @@ mod tests {
         unsupported(fs::create_dir(permit, &dir));
         unsupported(fs::private_dir(&dir).map(drop));
         unsupported(fs::lock_dir(&dir).map(drop));
+        unsupported(fs::move_new(permit, &dir, &dir.join("x")));
+        unsupported(fs::flush_dir(&dir));
+        unsupported(fs::same_volume(&dir, &dir).map(drop));
         unsupported(super::write_jar(&dir.join("Cookies"), &[]));
         assert!(!dir.exists(), "nothing was made");
         assert_eq!(fs::access(&std::env::temp_dir()), None);

@@ -27,6 +27,7 @@ pub fn forget(settled: Settled, key: &Key) -> Result<(String, Vec<Warning>)> {
     let mut lost = None;
     // An app's data folder stays held until the account is gone.
     let mut _closed = None;
+    let mut said = Vec::new();
     let asked = match provider::of(key.provider) {
         LoginKind::Document(tool) => match identify::now(&ctx, permit, &mut state, tool) {
             Ok(Live::Login(login)) => {
@@ -37,10 +38,11 @@ pub fn forget(settled: Settled, key: &Key) -> Result<(String, Vec<Warning>)> {
             Err(unknown) => Err(unknown),
         },
         LoginKind::Folder(app) => {
-            match super::folder::in_use_for_forget(&ctx, permit, &mut state, key, app) {
-                Ok((in_use, closed)) => {
-                    _closed = Some(closed);
-                    Ok(in_use)
+            match super::folder::in_use_for_forget(&ctx, permit, &mut state, key, app)? {
+                Ok(asked) => {
+                    _closed = Some(asked.closed);
+                    said = asked.warnings;
+                    Ok(asked.in_use)
                 }
                 Err(unknown) => Err(unknown),
             }
@@ -70,6 +72,7 @@ pub fn forget(settled: Settled, key: &Key) -> Result<(String, Vec<Warning>)> {
     Ok((
         account.email,
         lost.into_iter()
+            .chain(said)
             .chain((pending > 0).then_some(Warning::ParksPendingRemoval(pending)))
             .collect(),
     ))

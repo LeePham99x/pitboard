@@ -20,6 +20,11 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   token keeps `chatgpt_plan_type`.
 - Pitboard enrols a Claude Desktop account on macOS: `pitboard enroll desktop/<label>` with
   Claude closed.
+- Pitboard switches Claude Desktop accounts on macOS with `pitboard use desktop/<label>`,
+  while Claude is closed.
+- `pitboard enroll desktop/<label> --sign-in` parks the account in use, waits while you sign
+  in inside Claude, and enrols that account.
+- `pitboard abandon` also gives up an interrupted Claude Desktop move, keeping every folder.
 
 ### Changed
 

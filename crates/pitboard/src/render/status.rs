@@ -413,6 +413,7 @@ mod tests {
             },
             now: NOW,
             rows,
+            awaiting: Vec::new(),
             signed_in: Ok(Owner {
                 account_uuid: "work-uuid".into(),
                 email: "work@example.com".into(),
