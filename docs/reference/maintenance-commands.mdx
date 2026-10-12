@@ -136,6 +136,9 @@ The log is `~/.pitboard/audit.log`, and holds no email address. Past 256 KiB, Pi
 | `reclaim` | A parked login is given back to its account. | The label | `ok` |
 | `reclaim` | A parked login is discarded. | The parked login's name, which holds an account id | `discarded` |
 | `schedule` | Daily renewal is turned on or off, or the app repairs a schedule that ran the app itself. | `install`, `uninstall` or `repair` | `ok` |
+| `warm-up` | A warm-up runs, by itself or with `warm now` or **Warm Up Now**. | The label | `ok`, or a code from [Warm-up](/reference/errors#warm-up) |
+| `warm-on`, `warm-off` | An account is turned on or off for warm-ups. | The label | `ok` |
+| `warm-range` | The hours warm-ups are made in change. | The hours: `07:00-23:00` | `ok` |
 | `config` | Pitboard removes keys that name another account from Claude Code's config. | The names of the keys | `dropped` |
 
 ```sh

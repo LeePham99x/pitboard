@@ -10,10 +10,12 @@ Pitboard is for one person with several accounts of their own in Claude Code or 
 - Pitboard switches by itself only while [automatic switching](/guides/automatic-switching) is on in the app or `pitboard watch` is running.
 - It switches only Claude Code by itself. [What a switch costs you](#what-a-switch-costs-you) says why.
 - Pitboard never sees a tool's requests, so it never proxies or pools them.
+- Pitboard sends no model request of its own. A [warm-up](/guides/warm-up) is Claude Code's own request, made for an account you turned on while the app or `pitboard watch` runs, or for one you warm up now.
 - It decides an automatic switch from usage it has already read, never from a refused or rate-limited request. [Keep the numbers fresh](/guides/automatic-switching#keep-the-numbers-fresh) says how old that usage can be.
 - Pitboard renews Claude Code's login in use only where it must identify it and its access token has expired. [How Pitboard knows whose login it is](/concepts/switching#how-pitboard-knows-whose-login-it-is) says how.
+- A warm-up of the account in use renews its login where the access token would lapse during the warm-up.
 - [`pitboard stow`](/reference/recovery-commands#stow) can renew an expired login in a login file behind the keychain.
-- Both renew as Claude Code does, under the lock a session takes to renew, so no session spends the same refresh token. Pitboard never renews Codex's login in use.
+- Each renews as Claude Code does, under the lock a session takes to renew, so no session spends the same refresh token. Pitboard never renews Codex's login in use.
 - Pitboard never copies a parked login to another machine. Once one machine renews it, the other machine's copy is spent.
 - Each machine signs in to each account itself. [The Pitboard directory came from another computer](/troubleshooting/recovery#the-pitboard-directory-came-from-another-computer) covers a copied `~/.pitboard`.
 
