@@ -53,8 +53,8 @@ pub fn uninstall(settled: Settled) -> Result<Removed> {
         ctx,
         permit,
     } = settled;
-    // An app's folder is read only where a login of it is parked or a move of one waits, and
-    // held until every park is deleted. Refused before anything is taken away.
+    // An app's folder is read only where a login of it is parked or set aside or a move of one
+    // waits, and held until every park is deleted. Refused before anything is taken away.
     let mut warnings = Vec::new();
     let mut _closed = Vec::new();
     for &tool in ProviderId::ALL {
@@ -82,6 +82,7 @@ pub fn uninstall(settled: Settled) -> Result<Removed> {
         state.remove(&key);
     }
     state.forget_asides();
+    state.forget_discarded();
     state.forget_in_use();
     state::save(&ctx, permit, &state)?;
     let undeleted = purge(&ctx, permit, &mut state);

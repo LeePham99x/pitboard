@@ -234,7 +234,7 @@ fn resolve_folder(
     keep: &mut Vec<(ParkKind, String)>,
 ) {
     let taker = match &found {
-        Orphan::Login { id, .. } => takes(state, id),
+        Orphan::Login { id, .. } => takes(ctx, state, id),
         Orphan::Nothing | Orphan::Unreadable | Orphan::Unnamed => None,
     };
     match (found, taker) {
@@ -256,12 +256,27 @@ fn resolve_folder(
     }
 }
 
-// Enrolled, holding no park and not in use: an older login of the account in use stays aside.
-pub(crate) fn takes(state: &State, id: &str) -> Option<Key> {
+// Enrolled, holding no park that is there, and not in use: an older login of the account in use
+// stays aside.
+pub(crate) fn takes(ctx: &Context, state: &State, id: &str) -> Option<Key> {
     let account = state.owner_of_park(id)?;
     let tool = account.provider();
     let in_use = state.in_use(tool).and_then(|record| record.account(tool));
-    (account.parked.is_none() && in_use.as_deref() != Some(id)).then(|| account.key())
+    let holds = account
+        .parked
+        .as_ref()
+        .is_some_and(|held| !gone(ctx, state, held));
+    (!holds && in_use.as_deref() != Some(id)).then(|| account.key())
+}
+
+// A recorded folder park whose folder is not found, as a `state.json` restored from a backup names.
+fn gone(ctx: &Context, state: &State, park: &Park) -> bool {
+    park.kind == ParkKind::Folder
+        && !state.moves(&park.service)
+        && matches!(
+            park::parks(ParkKind::Folder).taken(ctx, &park.service),
+            Ok(false)
+        )
 }
 
 pub(crate) fn give_back(
@@ -273,6 +288,10 @@ pub(crate) fn give_back(
     out: &mut Reclaimed,
 ) {
     let name = park.service.clone();
+    let held = state.get(key).and_then(|account| account.parked.clone());
+    if let Some(held) = held.filter(|held| gone(ctx, state, held)) {
+        state.discard(&held.service, ParkKind::Folder);
+    }
     state.park(key, park);
     let label = key.typed();
     crate::audit::record(ctx, permit, "reclaim", &label, "ok");

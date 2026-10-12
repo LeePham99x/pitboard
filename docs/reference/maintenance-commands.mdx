@@ -173,7 +173,7 @@ Usage: pitboard uninstall [OPTIONS]
 
 The login each tool is using stays. The folders set aside in `~/.pitboard/parks` go with the directory.
 
-Where a Claude Desktop account is parked or a move waits, `uninstall` first reads Claude's data folder, as a change does. It refuses with `app_open` while Claude is open. It refuses with `uninstall_would_strand` where Claude is signed out, since deleting the parked logins would leave no Claude Desktop login.
+Where a Claude Desktop account is parked or a move waits, `uninstall` first reads Claude's data folder, as a change does. It does the same where a folder set aside holds a Claude Desktop login. It refuses with `app_open` while Claude is open. It refuses with `uninstall_would_strand` where Claude is signed out, since deleting the parked and set-aside logins would leave no Claude Desktop login.
 
 On macOS, it also leaves parked logins that `pitboard repair` gave back and this Pitboard did not write. The keychain is shared, so another Pitboard may own them.
 

@@ -141,7 +141,7 @@ On Linux, "keychain" in these lines means `~/.pitboard/vault/`, which no other P
 
 While `CLAUDE_CODE_CUSTOM_OAUTH_URL` is set, `repair` refuses with `custom_oauth_endpoint`, exit status 3.
 
-It also accounts for the folders in `~/.pitboard/parks`. It gives a folder back to the enrolled account whose id is in its name. It does so only where the folder's manifest, keys and cookie store agree, and the account holds no parked login. It sets aside the folders no account can take, and deletes none that holds an item.
+It also accounts for the folders in `~/.pitboard/parks`. It gives a folder back to the enrolled account whose id is in its name. It does so only where the folder's manifest, keys and cookie store agree, and the account holds no parked login. Where the folder of the parked login an account holds is gone, as after `state.json` is restored from a backup, that account holds none. It sets aside the folders no account can take, and deletes none that holds an item.
 
 | Output | When |
 | --- | --- |

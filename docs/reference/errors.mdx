@@ -143,7 +143,7 @@ An error that says the refresh token stored is spent keeps the code of what stop
 
 ## Claude Desktop
 
-These come from a change to a Claude Desktop account, and from `abandon`, `repair` and `uninstall` where one is parked or a move waits.
+These come from a change to a Claude Desktop account, and from `abandon`, `repair` and `uninstall` where one is parked or a move waits. Where a folder set aside holds a Claude Desktop login, `uninstall` gives them too.
 
 | Code | Exit | Meaning | What to do |
 | --- | --- | --- | --- |
@@ -163,6 +163,7 @@ These come from a change to a Claude Desktop account, and from `abandon`, `repai
 | `switch_left_signed_out` | 1 | Pitboard parked the account in use and could not put the other in use. Claude is signed out, and both logins are parked. | Run `pitboard use` with either account. |
 | `move_mixed` | 3 | Giving up a move would leave parts of one account beside another login in the data folder. Nothing changed. | Open Claude, check which account it shows and quit it. Then run `pitboard enroll desktop/<label>` with that account's label: Pitboard sets the other parts aside first. |
 | `uninstall_would_strand` | 1 | No Claude Desktop account is in use and one is parked, so `uninstall` would delete every Claude Desktop login Pitboard holds. | Run `pitboard use` with that account, then run `pitboard uninstall`. Or forget each Claude Desktop account first. |
+| `uninstall_would_strand` | 1 | No Claude Desktop account is in use or parked, and a folder set aside holds a Claude Desktop login, so `uninstall` would delete it. | Run `pitboard enroll desktop/<label> --sign-in`, then run `pitboard uninstall`. |
 | `sign_in_settled_elsewhere` | 1 | While `pitboard enroll --sign-in` waited, another Pitboard command finished, undid or removed that sign-in. Nothing was enrolled. | Run `pitboard` to see who is signed in. |
 
 Codes of other sections mean this for a Claude Desktop account:

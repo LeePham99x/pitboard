@@ -269,7 +269,7 @@ fn give_back_asides(
         let park::Orphan::Login { id, park, .. } = folders.orphan(ctx, state, &name) else {
             continue;
         };
-        let Some(key) = pending::takes(state, &id) else {
+        let Some(key) = pending::takes(ctx, state, &id) else {
             continue;
         };
         state.drop_aside(&name);

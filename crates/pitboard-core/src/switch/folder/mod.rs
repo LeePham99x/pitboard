@@ -615,8 +615,9 @@ pub(crate) fn settle_for_repair(
     }
 }
 
-// For `uninstall`, only where a move waits or an account holds a folder park: refused where
-// the app holds nobody, since every parked login would then be deleted with none in use.
+// For `uninstall`, only where a move waits, an account holds a folder park or a folder set
+// aside holds a login: refused where the app holds nobody, since every login Pitboard holds
+// would then be deleted with none in use.
 pub(crate) fn before_uninstall(
     ctx: &Context,
     permit: Permit,
@@ -634,18 +635,35 @@ pub(crate) fn before_uninstall(
             .max_by_key(|(_, park)| park.parked_at)
             .map(|(key, _)| key)
     };
-    if state.moving(tool).is_none() && parked(state).is_none() {
+    // One deleted by hand strands nothing; one that cannot be looked at still counts.
+    let set_aside = |state: &State| -> Vec<std::path::PathBuf> {
+        state
+            .aside
+            .iter()
+            .filter(|aside| aside.tool == tool && aside.login.is_some())
+            .filter(|aside| {
+                !matches!(
+                    crate::park::parks(ParkKind::Folder).taken(ctx, &aside.name),
+                    Ok(false)
+                )
+            })
+            .map(|aside| crate::store::folder::at(ctx, &aside.name))
+            .collect()
+    };
+    if state.moving(tool).is_none() && parked(state).is_none() && set_aside(state).is_empty() {
         return Ok(None);
     }
     let Begun { closed, warnings } = begin(ctx, permit, state, app)?;
     let ((), warnings) = saying(warnings, |_| match look(ctx, state, app)? {
         Verdict::Account { .. } => Ok(()),
-        Verdict::Nobody { .. } => match parked(state) {
-            Some(last) => Err(Error::UninstallWouldStrand {
-                label: state.typed(&last),
-            }),
-            None => Ok(()),
-        },
+        Verdict::Nobody { .. } => {
+            let label = parked(state).map(|last| state.typed(&last));
+            let set_aside = set_aside(state);
+            if label.is_none() && set_aside.is_empty() {
+                return Ok(());
+            }
+            Err(Error::UninstallWouldStrand { label, set_aside })
+        }
         Verdict::Unsure(unsure) => Err(refusal(state, tool, &unsure)),
     })?;
     Ok(Some((closed, warnings)))

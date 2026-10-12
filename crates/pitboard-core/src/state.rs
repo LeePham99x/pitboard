@@ -826,6 +826,19 @@ impl State {
         }
     }
 
+    // Every folder listed for deletion deleted whatever it still holds, as `uninstall` asks.
+    pub fn forget_discarded(&mut self) {
+        let folders: Vec<String> = self
+            .discarded
+            .iter()
+            .filter(|dropped| dropped.kind == ParkKind::Folder && !dropped.forgotten)
+            .map(|dropped| dropped.service.clone())
+            .collect();
+        for name in folders {
+            self.forget_folder(&name);
+        }
+    }
+
     // The one way a folder that holds a login is listed to be deleted. Never one a move holds.
     fn forget_folder(&mut self, name: &str) {
         self.let_go(name);

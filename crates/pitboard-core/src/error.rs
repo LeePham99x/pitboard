@@ -842,12 +842,12 @@ pub enum Error {
     #[error("{}", move_mixed(label, places))]
     MoveMixed { label: String, places: Vec<String> },
 
-    #[error(
-        "No Claude Desktop account is in use, and `{label}` is parked, so uninstalling would \
-         delete every Claude Desktop login Pitboard holds. Run `pitboard use {label}`, then \
-         uninstall, or `pitboard forget` each Claude Desktop account first."
-    )]
-    UninstallWouldStrand { label: String },
+    // the account parked last, if any, and each folder set aside that holds a login
+    #[error("{}", would_strand(label.as_deref(), set_aside))]
+    UninstallWouldStrand {
+        label: Option<String>,
+        set_aside: Vec<PathBuf>,
+    },
 
     #[error(
         "Another Pitboard command finished, put back or removed the sign-in this one waited \
@@ -1357,6 +1357,32 @@ fn opened_midway(app: &str, label: Option<&str>) -> String {
     }
 }
 
+fn would_strand(label: Option<&str>, set_aside: &[PathBuf]) -> String {
+    let every = "so uninstalling would delete every Claude Desktop login Pitboard holds.";
+    match label {
+        Some(label) => format!(
+            "No Claude Desktop account is in use, and `{label}` is parked, {every} Run `pitboard \
+             use {label}`, then uninstall, or `pitboard forget` each Claude Desktop account first."
+        ),
+        None => {
+            let held = match set_aside {
+                [_] => "holds a Claude Desktop login",
+                _ => "hold Claude Desktop logins",
+            };
+            let folders = set_aside
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect();
+            format!(
+                "No Claude Desktop account is in use, and {} {held} Pitboard set aside, {every} \
+                 Run `pitboard enroll desktop/<label> --sign-in` to sign in to an account you \
+                 keep, then uninstall.",
+                crate::words::listed(folders)
+            )
+        }
+    }
+}
+
 fn move_mixed(label: &str, places: &[String]) -> String {
     format!(
         "Giving up would leave parts of `{label}` beside another login in Claude's folder: {}. \
@@ -1711,7 +1737,18 @@ mod tests {
                 3,
             ),
             (
-                Error::UninstallWouldStrand { label: label() },
+                Error::UninstallWouldStrand {
+                    label: Some(label()),
+                    set_aside: Vec::new(),
+                },
+                "uninstall_would_strand",
+                1,
+            ),
+            (
+                Error::UninstallWouldStrand {
+                    label: None,
+                    set_aside: vec![PathBuf::from("/p/parks/pitboard-aside-1")],
+                },
                 "uninstall_would_strand",
                 1,
             ),

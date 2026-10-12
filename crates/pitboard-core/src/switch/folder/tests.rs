@@ -922,6 +922,98 @@ fn an_aside_set_aside_while_the_machine_could_not_be_read_is_given_back() {
     windows,
     ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
 )]
+fn repair_gives_an_account_its_park_back_where_the_one_recorded_is_gone() {
+    // A backup of `state.json` from while `home` was parked, restored once it was parked again.
+    let restored = |name: &str| {
+        let m = desktop_pair(name);
+        let file = crate::home::dir(&m.ctx).join("state.json");
+        let backup = std::fs::read(&file).expect("a backup");
+        let recorded = park_of(&m, "home").expect("parked").service;
+        use_(&m, "home").expect("`home` in use");
+        m.ctx.clock.pause(1);
+        use_(&m, "work").expect("`work` in use again");
+        recover(&m).expect("swept");
+        let again = park_of(&m, "home").expect("parked again").service;
+        assert_ne!(again, recorded);
+        assert!(!crate::store::folder::at(&m.ctx, &recorded).exists());
+        std::fs::write(&file, backup).expect("restored");
+        (m, recorded, again)
+    };
+    let given_back = |m: &Machine, recorded: &str, again: &str, why: &str| {
+        let state = state_of(m);
+        assert_eq!(
+            park_of(m, "home").map(|p| p.service).as_deref(),
+            Some(again),
+            "{why}"
+        );
+        assert!(!state.names(recorded), "{why}: the gone park is let go");
+        assert!(state.aside.is_empty(), "{why}: {:?}", state.aside);
+        use_(m, "home").unwrap_or_else(|e| panic!("{why}: use home: {e}"));
+        assert_eq!(whereabouts(m, &HOME), ["Claude"], "{why}");
+        rested(m, why);
+    };
+
+    let (m, recorded, again) = restored("repair-restored");
+    let (reclaimed, _) = repair(settled(&m)).expect("repaired");
+    assert!(reclaimed.set_aside.is_empty(), "{reclaimed:?}");
+    assert_eq!(
+        reclaimed.given_back,
+        [("desktop/home".to_string(), again.clone())]
+    );
+    given_back(&m, &recorded, &again, "found under `parks`");
+
+    // What an earlier `repair` left: the folder set aside under `home`.
+    let (m, recorded, again) = restored("repair-restored-aside");
+    let mut state = state_of(&m);
+    state.aside.push(crate::state::Aside {
+        name: again.clone(),
+        tool: ProviderId::Desktop,
+        at: NOW,
+        why: SetAside::Orphan,
+        account: Some(format!("desktop_{}", HOME.uuid)),
+        login: Some(HOME.login()),
+    });
+    state::save(&m.ctx, Permit::for_a_test(), &state).expect("saved");
+    repair(settled(&m)).expect("repaired");
+    given_back(&m, &recorded, &again, "set aside");
+}
+
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+)]
+fn repair_never_lets_go_of_a_park_a_move_holds() {
+    // An arrive of `home` waits with Claude open, its park deleted by hand, and another login
+    // of `home` is found under `parks`.
+    let m = desktop_pair("repair-move-holds");
+    killed(&m, "arrive.recorded", "home");
+    let held = park_of(&m, "home").expect("parked").service;
+    m.claude().opens();
+    std::fs::remove_dir_all(crate::store::folder::at(&m.ctx, &held)).expect("deleted by hand");
+    let found = crate::park::service_name(&format!("desktop_{}", HOME.uuid), (NOW + 60) * 1000);
+    park_by_hand(&m, None, &found, &HOME);
+
+    let (reclaimed, warnings) = repair(settled(&m)).expect("repaired");
+
+    assert!(
+        matches!(warnings.as_slice(), [Warning::MoveWaiting { .. }]),
+        "{warnings:?}"
+    );
+    assert!(reclaimed.given_back.is_empty(), "{reclaimed:?}");
+    assert_eq!(reclaimed.set_aside, [found.as_str()]);
+    let state = state_of(&m);
+    assert_eq!(park_of(&m, "home").map(|p| p.service), Some(held.clone()));
+    assert!(state.moves(&held));
+    assert!(!state.discarded.iter().any(|d| d.service == held));
+    assert!(state.aside.iter().any(|aside| aside.name == found));
+}
+
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+)]
 fn a_name_that_is_no_account_id_is_never_enrolled() {
     for (at, name, refusal, exit) in [
         (0, "", "sign_in_unfinished", 1),
@@ -3087,6 +3179,91 @@ fn uninstall_refuses_where_claude_is_signed_out_whatever_the_record_says() {
     assert_eq!(removed.parks, 1);
     assert!(removed.home_removed);
     assert_eq!(whereabouts(&m, &WORK), ["Claude"]);
+}
+
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+)]
+fn uninstall_refuses_where_a_login_is_only_set_aside_and_claude_is_signed_out() {
+    // `state.json` lost after a Log out in Claude: `repair` sets `home`'s park aside.
+    let m = desktop_pair("uninstall-only-aside");
+    let homes = park_of(&m, "home").expect("parked").service;
+    let claude = m.claude();
+    claude.opens();
+    claude.logs_out();
+    claude.quits();
+    recover(&m).expect("swept");
+    std::fs::remove_file(crate::home::dir(&m.ctx).join("state.json")).expect("lost");
+    let (reclaimed, _) = repair(settled(&m)).expect("repaired");
+    assert_eq!(reclaimed.set_aside, [homes.as_str()]);
+    recover(&m).expect("swept");
+    let before = snapshot(&m);
+
+    let refused = super::super::uninstall(
+        settle(&m.ctx, Permit::for_a_test(), None)
+            .expect("settled")
+            .0,
+    )
+    .err()
+    .expect("refused");
+
+    assert_eq!(refused.code(), "uninstall_would_strand");
+    let folder = crate::store::folder::at(&m.ctx, &homes);
+    assert!(
+        refused.to_string().contains(&folder.display().to_string()),
+        "{refused}"
+    );
+    unchanged(&m, &before, "only set aside");
+    assert_eq!(whereabouts(&m, &HOME), [homes.as_str()]);
+
+    // The folder deleted by hand: nothing is left to strand.
+    std::fs::remove_dir_all(&folder).expect("deleted by hand");
+    let removed = super::super::uninstall(
+        settle(&m.ctx, Permit::for_a_test(), None)
+            .expect("settled")
+            .0,
+    )
+    .unwrap_or_else(|e| panic!("uninstalled: {e}"));
+    assert!(removed.home_removed);
+    assert!(!crate::home::dir(&m.ctx).exists());
+}
+
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+)]
+fn uninstall_deletes_a_park_an_arrive_emptied_whatever_was_left_in_it() {
+    // Finder's own file, written while `home` was parked.
+    let m = desktop_pair("uninstall-stray-file");
+    let homes = park_of(&m, "home").expect("parked").service;
+    std::fs::write(
+        crate::store::folder::at(&m.ctx, &homes).join("items/.DS_Store"),
+        b"Finder",
+    )
+    .expect("a stray file");
+    use_(&m, "home").expect("`home` in use");
+    assert!(
+        state_of(&m)
+            .discarded
+            .iter()
+            .any(|dropped| dropped.service == homes && !dropped.forgotten),
+        "kept listed"
+    );
+
+    let removed = super::super::uninstall(
+        settle(&m.ctx, Permit::for_a_test(), None)
+            .expect("settled")
+            .0,
+    )
+    .expect("uninstalled");
+
+    assert_eq!(removed.pending, 0);
+    assert!(removed.home_removed);
+    assert!(!crate::home::dir(&m.ctx).exists());
+    assert_eq!(whereabouts(&m, &HOME), ["Claude"]);
 }
 
 #[test]
