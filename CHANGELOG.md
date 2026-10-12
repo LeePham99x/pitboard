@@ -22,6 +22,15 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   The weekly limit runs on a fixed cycle, so nothing starts it.
   [Warm up accounts](https://docs.usepitboard.com/guides/warm-up) has the rules.
 
+### Changed
+
+- The automatic switch, and the app's offer once an account runs out, take an account
+  without a weekly limit for all models first, such as a Team seat. What it leaves unused is
+  lost at each five-hour reset. Until this, a Max account fresh after its reset went ahead of
+  a Team seat with room, and spent its weekly limit.
+- In `pitboard-core`, `usage::roomiest` is `usage::preferred`, and `usage::Room` gains
+  `weekly`.
+
 ## [0.12.0] - 2026-10-12
 
 ### Added

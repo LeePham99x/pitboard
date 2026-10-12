@@ -50,15 +50,19 @@ Once a limit reaches the share, Pitboard looks for another enrolled Claude Code 
 - Has a reading from Anthropic.
 - Has used less than the share of every limit it has.
 
-An account without the limit at the share qualifies, such as a Team seat with no weekly limit for all models.
+Of those, Pitboard picks by these rules, in order:
 
-A reading may leave a limit out when Anthropic answers without its list of limits, or Pitboard cannot read the answer whole. Such a reading qualifies only with the five-hour and weekly limits, and with a model's weekly limit when that one is at the share.
+1. An account without a weekly limit for all models goes first, such as a Team seat. What it leaves unused is lost at each five-hour reset.
+2. Then the most room in the limit at the share. An account without that limit counts as having used none of it.
+3. On a tie, the account least full in its other limits.
 
-Pitboard takes the account with the most room in the limit at the share, counting a missing limit as unused. On a tie, it takes the one least full in its other limits. A limit past its reset time counts as reset.
+A limit past its reset time counts as reset.
+
+A reading may leave a limit out when Anthropic answers without its list of limits, or Pitboard cannot read the answer whole. Such a reading qualifies only with the five-hour and weekly limits, and with a model's weekly limit when that one is at the share. Pitboard counts it as having a weekly limit for all models.
 
 When several limits are at the share, Pitboard acts on the fullest one it has not already left or given up on.
 
-If none qualifies, nothing moves. Once the account runs out, the app offers a switch by this rule at 100%, as [When an account runs out](/guides/switch#when-an-account-runs-out) describes.
+If no account qualifies, nothing moves. Once the account runs out, the app offers a switch by the same rules at 100%, as [When an account runs out](/guides/switch#when-an-account-runs-out) describes.
 
 ## What it never does
 

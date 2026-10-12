@@ -458,7 +458,7 @@ pub(crate) fn decide(
                 && !passed_over.contains(&row.id.as_str())
         })
     };
-    let best = usage::roomiest(goes().filter_map(|row| {
+    let best = usage::preferred(goes().filter_map(|row| {
         let theirs = answered(row)?;
         let room = usage::room(
             &theirs.windows,
@@ -1301,6 +1301,84 @@ mod tests {
             to(&decided(&[work_at(96.0), less(), same])),
             Some("less"),
             "the first of two alike"
+        );
+    }
+
+    /// A Team seat loses what it leaves unused at each five-hour reset.
+    #[test]
+    fn an_account_without_a_weekly_limit_for_all_models_is_chosen_first() {
+        let seat = |label: &str, session: f64| {
+            row(
+                label,
+                false,
+                vec![
+                    window("session", session),
+                    scoped("weekly_scoped", "Fable", 0.0),
+                ],
+            )
+        };
+        let max = || {
+            row(
+                "max",
+                false,
+                vec![window("session", 0.0), window("weekly_all", 10.0)],
+            )
+        };
+        assert_eq!(
+            to(&decided(&[work_at(96.0), max(), seat("seat", 90.0)])),
+            Some("seat")
+        );
+        assert_eq!(
+            to(&decided(&[
+                work_at(96.0),
+                max(),
+                seat("seat", 90.0),
+                seat("fresher", 40.0)
+            ])),
+            Some("fresher"),
+            "the most room among them"
+        );
+    }
+
+    /// A reading with a row Pitboard could not read may have left a weekly limit for all
+    /// models out, so it is not taken for one without.
+    #[test]
+    fn a_reading_that_may_leave_the_weekly_limit_out_is_not_taken_for_one_without() {
+        let seat = |label: &str, signed_in: bool, session: f64| {
+            row(
+                label,
+                signed_in,
+                vec![
+                    window("session", session),
+                    scoped("weekly_scoped", "Fable", 0.0),
+                ],
+            )
+        };
+        let unread = || {
+            let mut unread = row("unread", false, Vec::new());
+            unread.usage = Some(usage::from_usage_object(
+                &serde_json::json!({"limits": [
+                    {"kind": "session", "percent": 10.0, "scope": null},
+                    {"kind": "weekly_scoped", "percent": 0.0,
+                     "scope": {"model": {"display_name": "Fable"}}},
+                    {"kind": "weekly_all", "percent": null, "scope": null},
+                ]}),
+                NOW,
+            ));
+            unread
+        };
+        assert_eq!(
+            to(&decided(&[seat("work", true, 96.0), unread()])),
+            Some("unread"),
+            "a place to go"
+        );
+        assert_eq!(
+            to(&decided(&[
+                seat("work", true, 96.0),
+                unread(),
+                seat("seat", false, 50.0)
+            ])),
+            Some("seat")
         );
     }
 
