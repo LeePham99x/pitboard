@@ -342,12 +342,16 @@ pub struct DesktopFacts {
     build: Option<String>,
 }
 
+fn claude_desktop() -> Option<&'static dyn crate::provider::folder::Folder> {
+    match crate::provider::of(ProviderId::Desktop) {
+        LoginKind::Folder(app) => Some(app),
+        LoginKind::Document(_) => None,
+    }
+}
+
 fn desktop_facts(ctx: &Context, state: &State) -> Option<DesktopFacts> {
     let tool = ProviderId::Desktop;
-    let app = match crate::provider::of(tool) {
-        LoginKind::Folder(app) => app,
-        LoginKind::Document(_) => return None,
-    };
+    let app = claude_desktop()?;
     let enrolled = state.accounts.iter().any(|a| a.provider() == tool);
     let recorded = enrolled || state.in_use(tool).is_some();
     if !recorded && !state.aside.iter().any(|aside| aside.tool == tool) {
@@ -382,9 +386,7 @@ fn desktop_facts(ctx: &Context, state: &State) -> Option<DesktopFacts> {
                 (park.service.clone(), folder)
             })
             .collect(),
-        build: ctx
-            .host()
-            .app_version(std::path::Path::new("/Applications/Claude.app")),
+        build: desktop_build(ctx),
     };
     // Nothing of Claude is read until one of its accounts is enrolled or recorded in use.
     if let (true, Ok(root)) = (recorded, &root) {
@@ -1203,6 +1205,18 @@ const CLAUDE_CODES_OWN: &[&str] = &[
     "claude_version",
     "auth",
 ];
+
+// The tool whose section a check is in; None for Claude Code's and Pitboard's own.
+pub fn section(code: &str) -> Option<ProviderId> {
+    ProviderId::ALL
+        .iter()
+        .copied()
+        .filter(|tool| *tool != crate::label::DEFAULT)
+        .find(|tool| {
+            code.strip_prefix(tool.code())
+                .is_some_and(|rest| rest.starts_with('_'))
+        })
+}
 
 /// The code an account's check goes under: Claude Code's as it always was, and every other
 /// tool's in that tool's own namespace, so `codex_` is enough to find everything about
@@ -2644,23 +2658,24 @@ fn judge_desktop_park(facts: &DesktopFacts, fact: &ParkFact, now: i64) -> Check 
             ),
         );
     }
-    match park.session_expires_at {
-        None => ok(code, name, "parked"),
-        Some(at) if at > now => ok(
+    let Some(at) = park.session_expires_at else {
+        return ok(code, name, "parked");
+    };
+    // The column `pitboard status` shows, after this check's own words.
+    let life = words::session_life_column(at, now);
+    if at > now {
+        ok(code, name, format!("parked, {life}"))
+    } else {
+        warn(
             code,
             name,
-            format!("parked, sign-in may lapse in {}", words::span(at - now)),
-        ),
-        Some(_) => warn(
-            code,
-            name,
-            "parked, sign-in may have lapsed",
+            format!("parked, {life}"),
             format!(
                 "If Claude asks you to sign in once you use it, run `pitboard enroll {} \
                  --sign-in`.",
                 fact.typed()
             ),
-        ),
+        )
     }
 }
 
@@ -2717,8 +2732,30 @@ pub fn run(ctx: &Context) -> Diagnosis {
                     .then_some(facts.codex.auth_access.is_some()),
                 "version": facts.codex.version,
             },
+            "desktop": desktop_environment(ctx, &facts),
         }),
     }
+}
+
+// On every machine, so its shape is one: whether the folder is a directory, never what it holds.
+fn desktop_environment(ctx: &Context, facts: &Facts) -> Value {
+    let (root, build) = match &facts.desktop {
+        Some(desktop) => (desktop.root.clone().ok(), desktop.build.clone()),
+        None => (
+            claude_desktop().and_then(|app| app.root(ctx).ok()),
+            desktop_build(ctx),
+        ),
+    };
+    json!({
+        "data_folder": root,
+        "present": root.as_ref().is_some_and(|root| root.is_dir()),
+        "build": build,
+    })
+}
+
+fn desktop_build(ctx: &Context) -> Option<String> {
+    ctx.host()
+        .app_version(std::path::Path::new("/Applications/Claude.app"))
 }
 
 /// What doctor says where a home the environment names is empty or relative
@@ -2934,6 +2971,39 @@ mod tests {
             access_expires_at: None,
             refresh_expires_at: None,
             session_expires_at,
+        }
+    }
+
+    #[test]
+    fn section_names_the_tool_whose_checks_these_are() {
+        for code in [
+            "claude_version",
+            "claude_daemon",
+            "credential",
+            "state",
+            "schedule_proxy",
+            "system_too_old",
+            "desktop",
+            "codexy",
+        ] {
+            assert_eq!(section(code), None, "{code}");
+        }
+        for code in ["codex_backend", "codex_login", "codex_parked_login"] {
+            assert_eq!(section(code), Some(ProviderId::Codex), "{code}");
+        }
+        let mut state = State::default();
+        state
+            .accounts
+            .push(desktop_account("work", Some(folder_park("p", None))));
+        let checks = judge_desktop(&desktop(), &state, &[], NOW);
+        assert!(!checks.is_empty());
+        for check in checks {
+            assert_eq!(
+                section(check.code),
+                Some(ProviderId::Desktop),
+                "{}",
+                check.code
+            );
         }
     }
 

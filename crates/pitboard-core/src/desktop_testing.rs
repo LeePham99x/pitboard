@@ -34,7 +34,8 @@ pub enum JarAs {
     StandIn,
 }
 
-// About four weeks from the tests' clocks, in Chromium's microseconds since 1601.
+// Four weeks after the core tests' clock, and long past for the command line's tests, which run
+// on the real one. In Chromium's microseconds since 1601.
 const EXPIRES_UTC: i64 = (1_762_500_000 + 11_644_473_600) * 1_000_000;
 // What Claude leaves in each token cache after a Log out (E1b).
 pub const EMPTIED: &str = "\"0123456789abcdefghijklmnopqr\"";
@@ -91,19 +92,7 @@ impl FakeClaude {
     // and writes a key of its own into its settings.
     pub fn opens(&self) {
         *self.mind.borrow_mut() = Mind::default();
-        let data = self.data();
-        std::fs::create_dir_all(&data).expect("a data folder");
-        for (store, file) in STORES {
-            if !data.join(store).exists() {
-                std::fs::create_dir_all(data.join(store)).expect("a store");
-                std::fs::write(data.join(store).join(file), "made by Claude").expect("a file");
-            }
-        }
-        let mut pairs = self.settings();
-        if !pairs.iter().any(|(key, _)| key == RUNNING) {
-            pairs.push((RUNNING.into(), "true".into()));
-            self.write_settings(&pairs);
-        }
+        opened(&self.data());
         self.lists();
     }
 
@@ -162,54 +151,8 @@ impl FakeClaude {
     // Writes the jar and `config.json` whole, then leaves its own key's removal in a valid
     // sidecar, as 2.7032.0 does. Unlisted (E8).
     pub fn quits(&self) {
-        let data = self.data();
-        let jar = data.join("Cookies");
         let mind = std::mem::take(&mut *self.mind.borrow_mut());
-        let held = match mind.session {
-            Some(session) => {
-                write_jar(
-                    &jar,
-                    self.jar,
-                    &session.map_or_else(Vec::new, |who| cookies(&who)),
-                );
-                std::fs::write(data.join("Cookies-journal"), b"").expect("a journal");
-                Some(session)
-            }
-            None if !jar.exists() => {
-                write_jar(&jar, self.jar, &[]);
-                std::fs::write(data.join("Cookies-journal"), b"").expect("a journal");
-                Some(None)
-            }
-            None => None,
-        };
-        let mut pairs = self.settings();
-        match held {
-            Some(Some(who)) => {
-                set(&mut pairs, "oauth:tokenCache", who.tokens());
-                set(&mut pairs, "oauth:tokenCacheV2", who.tokens());
-                if mind.reported {
-                    set(
-                        &mut pairs,
-                        "lastKnownAccountUuid",
-                        format!("\"{}\"", who.uuid),
-                    );
-                }
-            }
-            Some(None) => {
-                set(&mut pairs, "oauth:tokenCache", EMPTIED.into());
-                set(&mut pairs, "oauth:tokenCacheV2", EMPTIED.into());
-            }
-            None => {}
-        }
-        self.write_settings(&pairs);
-        let on_disk = std::fs::read(data.join(SETTINGS)).expect("settings");
-        pairs.retain(|(key, _)| key != RUNNING);
-        let body = body_of(&pairs);
-        std::fs::write(
-            data.join(SIDECAR),
-            format!("{} {} .\n{body}", sha(body.as_bytes()), sha(&on_disk)),
-        )
-        .expect("a sidecar");
+        quit(&self.data(), self.jar, &mind);
         self.crashes();
     }
 
@@ -228,42 +171,119 @@ impl FakeClaude {
         .expect("a sidecar");
     }
 
-    // The settings as Claude holds them: a valid sidecar's body, else the file's.
-    fn settings(&self) -> Vec<(String, String)> {
-        let data = self.data();
-        let on_disk = std::fs::read(data.join(SETTINGS)).ok();
-        let pending = std::fs::read_to_string(data.join(SIDECAR))
-            .ok()
-            .and_then(|written| {
-                let (header, body) = written.split_once('\n')?;
-                let fields: Vec<&str> = header.split(' ').collect();
-                let file = on_disk.as_deref().map_or_else(|| "-".to_string(), sha);
-                (fields[0] == sha(body.as_bytes()) && fields[1] == file).then(|| body.to_string())
-            });
-        let _ = std::fs::remove_file(data.join(SIDECAR));
-        let raw = pending
-            .or_else(|| on_disk.map(|bytes| String::from_utf8(bytes).expect("UTF-8")))
-            .unwrap_or_else(|| "{}".into());
-        let parsed: serde_json::Map<String, serde_json::Value> =
-            serde_json::from_str(&raw).expect("settings are JSON");
-        parsed
-            .into_iter()
-            .map(|(key, value)| (key, value.to_string()))
-            .collect()
-    }
-
-    fn write_settings(&self, pairs: &[(String, String)]) {
-        let path = self.data().join(SETTINGS);
-        let fresh = !path.exists();
-        std::fs::write(&path, body_of(pairs)).expect("settings");
-        if fresh {
-            let _ = crate::host::fs::testing::make_private(&path);
-        }
-    }
-
     // A whole signed-in data folder, as Claude leaves one when it quits.
     pub fn signed_in_as(&self, who: &Person) {
         plant(&self.data(), who, self.jar);
+    }
+}
+
+// The stores Claude makes when it opens, and a key of its own in its settings.
+fn opened(data: &Path) {
+    std::fs::create_dir_all(data).expect("a data folder");
+    for (store, file) in STORES {
+        if !data.join(store).exists() {
+            std::fs::create_dir_all(data.join(store)).expect("a store");
+            std::fs::write(data.join(store).join(file), "made by Claude").expect("a file");
+        }
+    }
+    let mut pairs = settings(data);
+    if !pairs.iter().any(|(key, _)| key == RUNNING) {
+        pairs.push((RUNNING.into(), "true".into()));
+        write_settings(data, &pairs);
+    }
+}
+
+fn quit(data: &Path, jar_as: JarAs, mind: &Mind) {
+    let jar = data.join("Cookies");
+    let held = match mind.session {
+        Some(session) => {
+            write_jar(
+                &jar,
+                jar_as,
+                &session.map_or_else(Vec::new, |who| cookies(&who)),
+            );
+            std::fs::write(data.join("Cookies-journal"), b"").expect("a journal");
+            Some(session)
+        }
+        None if !jar.exists() => {
+            write_jar(&jar, jar_as, &[]);
+            std::fs::write(data.join("Cookies-journal"), b"").expect("a journal");
+            Some(None)
+        }
+        None => None,
+    };
+    let mut pairs = settings(data);
+    match held {
+        Some(Some(who)) => {
+            set(&mut pairs, "oauth:tokenCache", who.tokens());
+            set(&mut pairs, "oauth:tokenCacheV2", who.tokens());
+            if mind.reported {
+                set(
+                    &mut pairs,
+                    "lastKnownAccountUuid",
+                    format!("\"{}\"", who.uuid),
+                );
+            }
+        }
+        Some(None) => {
+            set(&mut pairs, "oauth:tokenCache", EMPTIED.into());
+            set(&mut pairs, "oauth:tokenCacheV2", EMPTIED.into());
+        }
+        None => {}
+    }
+    write_settings(data, &pairs);
+    let on_disk = std::fs::read(data.join(SETTINGS)).expect("settings");
+    pairs.retain(|(key, _)| key != RUNNING);
+    let body = body_of(&pairs);
+    std::fs::write(
+        data.join(SIDECAR),
+        format!("{} {} .\n{body}", sha(body.as_bytes()), sha(&on_disk)),
+    )
+    .expect("a sidecar");
+}
+
+// What Claude writes over whatever `folder` holds as it quits signed in to `who`.
+pub fn sign_in_on_disk(folder: &Path, who: &Person, jar: JarAs) {
+    opened(folder);
+    quit(
+        folder,
+        jar,
+        &Mind {
+            session: Some(Some(*who)),
+            reported: true,
+        },
+    );
+}
+
+// The settings as Claude holds them: a valid sidecar's body, else the file's.
+fn settings(data: &Path) -> Vec<(String, String)> {
+    let on_disk = std::fs::read(data.join(SETTINGS)).ok();
+    let pending = std::fs::read_to_string(data.join(SIDECAR))
+        .ok()
+        .and_then(|written| {
+            let (header, body) = written.split_once('\n')?;
+            let fields: Vec<&str> = header.split(' ').collect();
+            let file = on_disk.as_deref().map_or_else(|| "-".to_string(), sha);
+            (fields[0] == sha(body.as_bytes()) && fields[1] == file).then(|| body.to_string())
+        });
+    let _ = std::fs::remove_file(data.join(SIDECAR));
+    let raw = pending
+        .or_else(|| on_disk.map(|bytes| String::from_utf8(bytes).expect("UTF-8")))
+        .unwrap_or_else(|| "{}".into());
+    let parsed: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_str(&raw).expect("settings are JSON");
+    parsed
+        .into_iter()
+        .map(|(key, value)| (key, value.to_string()))
+        .collect()
+}
+
+fn write_settings(data: &Path, pairs: &[(String, String)]) {
+    let path = data.join(SETTINGS);
+    let fresh = !path.exists();
+    std::fs::write(&path, body_of(pairs)).expect("settings");
+    if fresh {
+        let _ = crate::host::fs::testing::make_private(&path);
     }
 }
 

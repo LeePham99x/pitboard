@@ -25,10 +25,23 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - `pitboard enroll desktop/<label> --sign-in` parks the account in use, waits while you sign
   in inside Claude, and enrols that account.
 - `pitboard abandon` also gives up an interrupted Claude Desktop move, keeping every folder.
+- `pitboard status` says when Pitboard last read a Claude Desktop account in use, as
+  `signed in · read 2h 05m ago`, and when a parked one's sign-in may lapse, from the date
+  Claude's own session cookie carries. `pitboard status --json` gives them as `read_at` and
+  `parked.session_expires_at`, and an add left halfway as `awaiting`, each beside what was
+  there. `pitboard doctor` checks Claude's data folder, settings, layout and parked logins
+  under a heading of their own, and `doctor --json` adds `environment.desktop`. Pitboard opens
+  none of Claude's cookies and lists no process to say any of it.
+- `pitboard repair` and `pitboard adopt` say when they set aside a Claude Desktop folder,
+  and `pitboard uninstall` how many such folders it deleted. `--json` gives them as
+  `set_aside`, and as `set_aside_removed` for `uninstall`.
 
 ### Changed
 
 - `state.json` is schema 8. Pitboard 0.11.0 and earlier refuse it and say to update.
+- `pitboard uninstall` asks whether to delete, saying the other accounts need signing in
+  again, where it said a browser sign-in: a Claude Desktop account signs in again inside
+  Claude.
 
 ## [0.11.0] - 2026-10-10
 

@@ -26,7 +26,8 @@ const CONTRACT: u32 = 1;
 const ERROR: Style = AnsiColor::Red.on_default().bold();
 const WARNING: Style = AnsiColor::Yellow.on_default().bold();
 
-/// Park and restore your own logins of Claude Code and Codex, and see what each one has left.
+/// Park and restore your own logins of Claude Code, Codex and Claude Desktop, and see what each
+/// one has left.
 #[derive(Parser)]
 #[command(name = "pitboard", version)]
 struct Cli {
@@ -53,18 +54,21 @@ enum Command {
     /// Add an account: the one signed in now, or with --sign-in, another one
     Enroll {
         /// A short name for this account, such as `personal` or `work`. `codex/work` names a
-        /// Codex account; a bare name means Claude Code
+        /// Codex account, `desktop/work` a Claude Desktop one; a bare name means Claude Code
         #[arg(value_parser = label_to_enroll)]
         label: String,
         /// Sign in through the tool's own sign-in, without signing out of the account in
         /// use. For the account in use, this puts its new login in use; for another enrolled
-        /// label, it renews its parked login.
+        /// label, it renews its parked login. For a Claude Desktop account, Pitboard parks the
+        /// account in use, leaving Claude signed out, and waits while you sign in inside Claude
+        /// and quit it.
         #[arg(long)]
         sign_in: bool,
     },
     /// Switch a tool to an enrolled account
     Use {
-        /// The label the account was enrolled under, such as `work` or `codex/work`
+        /// The label the account was enrolled under, such as `work`, `codex/work` or
+        /// `desktop/work`
         label: String,
     },
     /// Drop an account and its parked login
@@ -475,39 +479,13 @@ fn enrolled(pitboard: &Pitboard, label: &str, outcome: Changing<Enrolled>) -> Re
     // Another account of the same tool, typed the way this one was.
     let another = pitboard_core::state::Key::new(provider, "<label>").typed();
     changed("enroll", outcome, |enrolled| {
-        let (kind, email, human) = match enrolled {
-            Enrolled::Current { email } => {
-                let human = format!(
-                    "Enrolled {name} ({email}), the account signed in now.\n\
-                     Add another without signing out of it: pitboard enroll {another} \
-                     --sign-in\n"
-                );
-                ("current", email, human)
-            }
-            Enrolled::SignedIn { email } => {
-                let human = format!(
-                    "Enrolled {name} ({email}). Switch to it with: pitboard use {to_use}\n"
-                );
-                ("signed_in", email, human)
-            }
-            Enrolled::Renewed { email } => {
-                let human = format!("Renewed {name} ({email}): its parked login is a fresh one.\n");
-                ("renewed", email, human)
-            }
-            Enrolled::InUse { email, again } => {
-                let human = if again {
-                    format!(
-                        "Signed in to {name} ({email}) again. Its new login is the one in use \
-                         now.\n"
-                    )
-                } else {
-                    format!(
-                        "Enrolled {name} ({email}), the account signed in now. Its new login is \
-                         the one in use.\n"
-                    )
-                };
-                ("in_use", email, human)
-            }
+        let human =
+            pitboard_core::words::enrolled_lines(provider, &enrolled, &name, &to_use, &another);
+        let (kind, email) = match enrolled {
+            Enrolled::Current { email } => ("current", email),
+            Enrolled::SignedIn { email } => ("signed_in", email),
+            Enrolled::Renewed { email } => ("renewed", email),
+            Enrolled::InUse { email, .. } => ("in_use", email),
         };
         (
             json!({
@@ -641,7 +619,10 @@ fn forget(pitboard: &Pitboard, label: &str) -> Report {
     changed("forget", pitboard.forget(label), |email| {
         (
             json!({ "label": label, "email": email }),
-            format!("Forgot {} ({email}).\n", paint(BOLD, label)),
+            format!(
+                "Forgot {}.\n",
+                pitboard_core::words::with_email(&paint(BOLD, label), &email)
+            ),
         )
     })
 }
@@ -878,19 +859,26 @@ fn adopt(pitboard: &Pitboard) -> Report {
             let ways_back: Vec<String> = a
                 .logins_dropped
                 .iter()
+                .chain(&a.set_aside)
                 .map(|label| format!("  pitboard enroll {label} --sign-in\n"))
                 .collect();
+            let set_aside = if a.set_aside.is_empty() {
+                String::new()
+            } else {
+                format!("{}\n", pitboard_core::words::adopted_folders(&a.set_aside))
+            };
             Report::done(
                 "adopt",
                 json!({
                     "adopted": true,
                     "accounts": a.accounts,
                     "logins_dropped": a.logins_dropped,
+                    "set_aside": a.set_aside,
                 }),
                 format!(
                     "Took over this directory: {} account(s) kept.\n\
                      {} parked login(s) dropped, because a login belongs to the computer \
-                     that signed in.\n{}",
+                     that signed in.\n{set_aside}{}",
                     a.accounts.len(),
                     a.logins_dropped.len(),
                     if ways_back.is_empty() {
@@ -938,6 +926,14 @@ fn repair(pitboard: &Pitboard) -> Report {
                     r.unreadable.len()
                 ));
             }
+            if !r.set_aside.is_empty() {
+                said.push_str(&format!(
+                    "Set aside {} folder(s) in {} that hold what no account here can take. \
+                     Nothing was deleted; `pitboard doctor` lists them.\n",
+                    r.set_aside.len(),
+                    pitboard.parks_folder().display()
+                ));
+            }
             said
         };
         (
@@ -949,6 +945,7 @@ fn repair(pitboard: &Pitboard) -> Report {
                 "deleted": r.deleted,
                 "strangers": r.strangers,
                 "unreadable": r.unreadable,
+                "set_aside": r.set_aside,
             }),
             human,
         )
@@ -998,6 +995,12 @@ fn uninstall(pitboard: &Pitboard) -> Report {
             "Removed {} parked login(s). The login each tool is signed in with is untouched.\n",
             removed.parks
         );
+        if removed.set_aside > 0 {
+            human.push_str(&format!(
+                "Deleted {} folder(s) set aside.\n",
+                removed.set_aside
+            ));
+        }
         if removed.schedule_removed {
             human.push_str("Turned off the daily renewal schedule.\n");
         }
@@ -1026,6 +1029,7 @@ fn uninstall(pitboard: &Pitboard) -> Report {
                 "parks_left": removed.left,
                 "home_removed": removed.home_removed,
                 "schedule_removed": removed.schedule_removed,
+                "set_aside_removed": removed.set_aside,
             }),
             human,
         )
@@ -1037,9 +1041,9 @@ fn rename(pitboard: &Pitboard, from: &str, to: &str) -> Report {
         (
             json!({ "from": from, "to": to, "email": email }),
             format!(
-                "Renamed {} to {} ({email}).\n",
+                "Renamed {} to {}.\n",
                 paint(BOLD, from),
-                paint(BOLD, to)
+                pitboard_core::words::with_email(&paint(BOLD, to), &email)
             ),
         )
     })
@@ -1167,11 +1171,11 @@ fn main() -> ExitCode {
                 Confirm::Refuse if pitboard.account(&label).is_none() => Confirm::Go,
                 confirm => confirm,
             };
-            // The way back is a browser sign-in for that account, which is the cost
-            // Pitboard exists to spare people.
-            let question = format!(
-                "Forget {label} and delete its parked login? Adding it again needs a browser \
-                 sign-in. [y/N] "
+            // The way back is a sign-in for that account, which is the cost Pitboard exists to
+            // spare people.
+            let question = pitboard_core::words::forget_question(
+                pitboard.account(&label).map(|a| a.provider()),
+                &label,
             );
             match confirm.ask("forget", &question) {
                 Ok(true) => forget(&pitboard, &label),
@@ -1195,8 +1199,8 @@ fn main() -> ExitCode {
         Command::Log { lines } => log(&pitboard, lines),
         Command::Uninstall { yes } => {
             let question = "Delete every parked login this Pitboard wrote, the daily renewal \
-                            schedule and ~/.pitboard? The account you are signed in to stays \
-                            signed in; the others need a browser sign-in again. [y/N] ";
+                            schedule and ~/.pitboard? Each tool stays signed in to the account \
+                            in use; the others need signing in again. [y/N] ";
             match Confirm::of(&pitboard, yes, cli.json, terminal()).ask("uninstall", question) {
                 Ok(true) => uninstall(&pitboard),
                 Ok(false) => return ExitCode::SUCCESS,
@@ -1618,6 +1622,39 @@ mod tests {
         }
         assert!(!asks(&["completions", "bash"]));
         assert!(!asks(&["manpage"]));
+    }
+
+    #[test]
+    fn the_sign_in_help_says_what_it_does_for_claude_desktop() {
+        let help = |command: Option<&str>| {
+            let mut cli = Cli::command();
+            let said = match command {
+                Some(name) => cli
+                    .find_subcommand_mut(name)
+                    .expect(name)
+                    .render_long_help(),
+                None => cli.render_long_help(),
+            };
+            said.to_string()
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        let enroll = help(Some("enroll"));
+        for said in [
+            "For a Claude Desktop account, Pitboard parks the account in use, leaving Claude \
+             signed out, and waits while you sign in inside Claude and quit it",
+            "`codex/work` names a Codex account, `desktop/work` a Claude Desktop one; a bare \
+             name means Claude Code",
+        ] {
+            assert!(enroll.contains(said), "{said}: {enroll}");
+        }
+        assert!(help(Some("use")).contains("`desktop/work`"));
+        assert!(
+            help(None).contains(
+                "Park and restore your own logins of Claude Code, Codex and Claude Desktop"
+            )
+        );
     }
 
     #[test]

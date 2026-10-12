@@ -1,42 +1,35 @@
 //! `pitboard doctor` for a person and for a program.
 
 use crate::ui::{self, BAD, BOLD, DIM, GOOD, WARN, pad, paint};
-use pitboard_core::doctor::{Check, Diagnosis, Level};
+use pitboard_core::doctor::{self, Check, Diagnosis, Level};
 use pitboard_core::words;
 use serde_json::{Value, json};
 
-/// Whether a check belongs to Codex's section.
-fn is_codex(check: &Check) -> bool {
-    check.code.starts_with("codex_")
-}
-
 pub fn human(checks: &[Check]) -> String {
-    // Each section lines up on its own, so what Codex's checks are called can never move a
-    // column of Claude Code's.
-    let width = |codex: bool| {
+    // Each section lines up on its own, so what one tool's checks are called can never move
+    // a column of another's.
+    let width_of = |section| {
         checks
             .iter()
-            .filter(|c| is_codex(c) == codex)
+            .filter(|c| doctor::section(c.code) == section)
             .map(|c| ui::columns(&c.name))
             .max()
             .unwrap_or(0)
     };
-    let (claude_width, codex_width) = (width(false), width(true));
     let mut out = String::new();
-    // Codex's checks come last and are coded `codex_`, so they get a heading of their own
-    // where they start. A machine with no Codex has none of them and reads as it always
-    // did.
-    let mut in_codex = false;
+    // Each other tool's checks come after Claude Code's, and get a heading where they start.
+    // A machine with none of them reads as it always did.
+    let mut section = None;
+    let mut width = width_of(None);
     for c in checks {
-        if !in_codex && is_codex(c) {
-            in_codex = true;
-            out.push_str(&format!("\n{}\n", paint(BOLD, "Codex")));
+        let of = doctor::section(c.code);
+        if of != section {
+            width = width_of(of);
+            if let Some(tool) = of {
+                out.push_str(&format!("\n{}\n", paint(BOLD, tool.name())));
+            }
+            section = of;
         }
-        let width = if is_codex(c) {
-            codex_width
-        } else {
-            claude_width
-        };
         let mark = match c.level {
             Level::Ok => paint(GOOD, "✓"),
             Level::Warn => paint(WARN, "!"),
@@ -164,6 +157,45 @@ mod tests {
             before.starts_with(&text[..text.find("\nCodex").unwrap()]),
             "what comes before it is what a machine without Codex shows: {text}"
         );
+    }
+
+    #[test]
+    fn claude_desktop_checks_get_a_heading_of_their_own() {
+        let plain = |checks: &[Check]| anstream::adapter::strip_str(&human(checks)).to_string();
+        let mut version = check(Level::Ok);
+        version.code = "claude_version";
+        version.name = "Claude Code".into();
+        let mut codex = check(Level::Ok);
+        codex.code = "codex_backend";
+        codex.name = "Codex login store".into();
+        let mut folder = check(Level::Ok);
+        folder.code = "desktop_data_folder";
+        folder.name = "Claude data folder".into();
+        let mut account = check(Level::Warn);
+        account.code = "desktop_parked_login";
+        account.name = "account desktop/a-rather-long-label".into();
+        let text = plain(&[check(Level::Ok), version, codex, folder, account]);
+        let lines: Vec<&str> = text.lines().collect();
+        let at = |line: &str| lines.iter().position(|l| *l == line).expect(&text);
+        let (codex_at, desktop_at) = (at("Codex"), at("Claude Desktop"));
+        assert!(
+            lines[..codex_at].iter().any(|l| l.contains("Claude Code")),
+            "claude_version is Claude Code's: {text}"
+        );
+        assert_eq!(lines[desktop_at - 1], "", "set apart from Codex's: {text}");
+        assert_eq!(lines[codex_at + 1], "✓ Codex login store  detail", "{text}");
+        let longest = "account desktop/a-rather-long-label";
+        assert_eq!(
+            lines[desktop_at + 1],
+            format!("✓ {}  detail", pad("Claude data folder", longest.len())),
+            "its own column: {text}"
+        );
+        assert_eq!(
+            lines[desktop_at + 2],
+            format!("! {longest}  detail"),
+            "{text}"
+        );
+        assert_eq!(text.matches("\nClaude Desktop\n").count(), 1, "{text}");
     }
 
     /// A Codex account's checks are Codex's: under its heading, and in its column, so a

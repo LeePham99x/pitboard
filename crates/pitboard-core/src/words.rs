@@ -714,6 +714,94 @@ pub fn session_life(session_expires_at: Option<i64>, now: i64) -> Option<String>
     })
 }
 
+// Nobody tells Pitboard a Claude Desktop account's email, so its name stands alone.
+pub fn with_email(name: &str, email: &str) -> String {
+    if email.is_empty() {
+        name.into()
+    } else {
+        format!("{name} ({email})")
+    }
+}
+
+// Hedged, as `session_life` is: the date is the cookie's, and claude.ai may end it sooner.
+pub fn session_life_column(session_expires_at: i64, now: i64) -> String {
+    match session_expires_at - now {
+        left if left <= 0 => "sign-in may have lapsed".into(),
+        left => format!("sign-in may lapse in {}", span(left)),
+    }
+}
+
+pub fn enrolled_lines(
+    tool: crate::provider::ProviderId,
+    enrolled: &crate::switch::Enrolled,
+    name: &str,
+    to_use: &str,
+    another: &str,
+) -> String {
+    use crate::provider::ProviderId;
+    use crate::switch::Enrolled;
+    let in_its_app = match (tool, enrolled) {
+        (ProviderId::Claude | ProviderId::Codex, _) => None,
+        (ProviderId::Desktop, Enrolled::Current { .. }) => Some(format!(
+            "Enrolled {name}, the account Claude is signed in to now. Check that Claude shows \
+             that account: Pitboard cannot ask claude.ai whose it is.\nAdd another: pitboard \
+             enroll {another} --sign-in\n"
+        )),
+        (ProviderId::Desktop, Enrolled::InUse { again: false, .. }) => Some(format!(
+            "Enrolled {name}, the account Claude is signed in to now.\n"
+        )),
+        (ProviderId::Desktop, Enrolled::InUse { again: true, .. }) => Some(format!(
+            "Signed in to {name} again. Claude is signed in to it now.\n"
+        )),
+        // `folder::enroll` makes neither.
+        (ProviderId::Desktop, Enrolled::SignedIn { .. } | Enrolled::Renewed { .. }) => None,
+    };
+    if let Some(said) = in_its_app {
+        return said;
+    }
+    match enrolled {
+        Enrolled::Current { email } => format!(
+            "Enrolled {}, the account signed in now.\nAdd another without signing out of it: \
+             pitboard enroll {another} --sign-in\n",
+            with_email(name, email)
+        ),
+        Enrolled::SignedIn { email } => format!(
+            "Enrolled {}. Switch to it with: pitboard use {to_use}\n",
+            with_email(name, email)
+        ),
+        Enrolled::Renewed { email } => format!(
+            "Renewed {}: its parked login is a fresh one.\n",
+            with_email(name, email)
+        ),
+        Enrolled::InUse { email, again: true } => format!(
+            "Signed in to {} again. Its new login is the one in use now.\n",
+            with_email(name, email)
+        ),
+        Enrolled::InUse {
+            email,
+            again: false,
+        } => format!(
+            "Enrolled {}, the account signed in now. Its new login is the one in use.\n",
+            with_email(name, email)
+        ),
+    }
+}
+
+// `tool` is None for a label that names no account.
+pub fn forget_question(tool: Option<crate::provider::ProviderId>, label: &str) -> String {
+    use crate::provider::ProviderId;
+    match tool {
+        None | Some(ProviderId::Claude | ProviderId::Codex) => format!(
+            "Forget {label} and delete its parked login? Adding it again needs a browser \
+             sign-in. [y/N] "
+        ),
+        Some(ProviderId::Desktop) => format!(
+            "Forget {label} and delete its parked login and the folders set aside for it? \
+             Adding it again needs a sign-in in Claude. [y/N] "
+        ),
+    }
+}
+
 // What `adopt` says of the Claude Desktop logins it set aside, each account as typed.
 pub fn adopted_folders(labels: &[String]) -> String {
     let named = listed(labels.iter().map(|label| format!("`{label}`")).collect());
@@ -880,6 +968,136 @@ mod tests {
             pointing_where_it_did(ProviderId::Desktop),
             "Run Pitboard as the account whose Claude that is"
         );
+    }
+
+    #[test]
+    fn a_name_with_no_email_has_no_brackets() {
+        assert_eq!(with_email("work", "a@example.com"), "work (a@example.com)");
+        assert_eq!(with_email("desktop/work", ""), "desktop/work");
+    }
+
+    #[test]
+    fn enrolled_lines_say_what_main_said_for_claude_code_and_codex() {
+        use crate::provider::ProviderId;
+        use crate::switch::Enrolled;
+        let email = || "a@example.com".to_string();
+        for tool in [ProviderId::Claude, ProviderId::Codex] {
+            let said = |enrolled: Enrolled| {
+                enrolled_lines(tool, &enrolled, "work", "codex/work", "codex/<label>")
+            };
+            assert_eq!(
+                said(Enrolled::Current { email: email() }),
+                "Enrolled work (a@example.com), the account signed in now.\n\
+                 Add another without signing out of it: pitboard enroll codex/<label> \
+                 --sign-in\n"
+            );
+            assert_eq!(
+                said(Enrolled::SignedIn { email: email() }),
+                "Enrolled work (a@example.com). Switch to it with: pitboard use codex/work\n"
+            );
+            assert_eq!(
+                said(Enrolled::Renewed { email: email() }),
+                "Renewed work (a@example.com): its parked login is a fresh one.\n"
+            );
+            assert_eq!(
+                said(Enrolled::InUse {
+                    email: email(),
+                    again: true
+                }),
+                "Signed in to work (a@example.com) again. Its new login is the one in use now.\n"
+            );
+            assert_eq!(
+                said(Enrolled::InUse {
+                    email: email(),
+                    again: false
+                }),
+                "Enrolled work (a@example.com), the account signed in now. Its new login is the \
+                 one in use.\n"
+            );
+        }
+    }
+
+    #[test]
+    fn enrolled_lines_for_claude_desktop_name_the_account_claude_is_signed_in_to() {
+        use crate::provider::ProviderId;
+        use crate::switch::Enrolled;
+        let said = |enrolled: Enrolled| {
+            enrolled_lines(
+                ProviderId::Desktop,
+                &enrolled,
+                "desktop/work",
+                "desktop/work",
+                "desktop/<label>",
+            )
+        };
+        assert_eq!(
+            said(Enrolled::Current {
+                email: String::new()
+            }),
+            "Enrolled desktop/work, the account Claude is signed in to now. Check that Claude \
+             shows that account: Pitboard cannot ask claude.ai whose it is.\n\
+             Add another: pitboard enroll desktop/<label> --sign-in\n"
+        );
+        assert_eq!(
+            said(Enrolled::InUse {
+                email: String::new(),
+                again: false
+            }),
+            "Enrolled desktop/work, the account Claude is signed in to now.\n"
+        );
+        assert_eq!(
+            said(Enrolled::InUse {
+                email: String::new(),
+                again: true
+            }),
+            "Signed in to desktop/work again. Claude is signed in to it now.\n"
+        );
+        assert_eq!(
+            said(Enrolled::SignedIn {
+                email: String::new()
+            }),
+            "Enrolled desktop/work. Switch to it with: pitboard use desktop/work\n"
+        );
+        assert!(
+            !said(Enrolled::Renewed {
+                email: String::new()
+            })
+            .contains("()")
+        );
+    }
+
+    #[test]
+    fn the_forget_question_says_a_claude_desktop_account_signs_in_again_in_claude() {
+        use crate::provider::ProviderId;
+        let main = "Forget work and delete its parked login? Adding it again needs a browser \
+                    sign-in. [y/N] ";
+        for tool in [None, Some(ProviderId::Claude), Some(ProviderId::Codex)] {
+            assert_eq!(forget_question(tool, "work"), main, "{tool:?}");
+        }
+        assert_eq!(
+            forget_question(Some(ProviderId::Desktop), "desktop/home"),
+            "Forget desktop/home and delete its parked login and the folders set aside for it? \
+             Adding it again needs a sign-in in Claude. [y/N] "
+        );
+    }
+
+    #[test]
+    fn a_session_life_is_hedged_and_never_says_expired() {
+        const NOW: i64 = 1_789_935_000;
+        let column = |left: i64| session_life_column(NOW + left, NOW);
+        assert_eq!(column(25 * DAY + 3 * HOUR), "sign-in may lapse in 25d 3h");
+        assert_eq!(column(2 * HOUR + 5 * MINUTE), "sign-in may lapse in 2h 05m");
+        assert_eq!(column(30), "sign-in may lapse in <1m");
+        assert_eq!(column(0), "sign-in may have lapsed");
+        assert_eq!(column(-DAY), "sign-in may have lapsed");
+        for left in [-DAY, 0, 30, DAY, 40 * DAY] {
+            let said = format!(
+                "{} {}",
+                column(left),
+                session_life(Some(NOW + left), NOW).unwrap_or_default()
+            );
+            assert!(!said.contains("expire"), "{said}");
+        }
     }
 
     /// Why Pitboard did not switch by itself is said in the app as well as in a terminal,

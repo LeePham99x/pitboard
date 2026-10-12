@@ -38,9 +38,14 @@ fn standing(row: &Row, now: i64) -> String {
         );
     }
     if row.signed_in {
-        return match row.label {
-            Some(_) => paint(GOOD, "signed in"),
-            None => format!(
+        return match (&row.label, row.read_at) {
+            (Some(_), Some(at)) => format!(
+                "{} {}",
+                paint(GOOD, "signed in"),
+                paint(DIM, format!("· read {} ago", words::span(now - at)))
+            ),
+            (Some(_), None) => paint(GOOD, "signed in"),
+            (None, _) => format!(
                 "{} {}",
                 paint(GOOD, "signed in"),
                 paint(
@@ -73,9 +78,32 @@ fn standing(row: &Row, now: i64) -> String {
                 paint(GOOD, "ready"),
                 paint(DIM, format!("· {}", words::parked_life_column(at, now)))
             ),
-            None => paint(GOOD, "ready"),
+            // A session cookie's date, which nothing renews: hedged, and never "expired".
+            None => match p.session_expires_at {
+                Some(at) if at > now => format!(
+                    "{} {}",
+                    paint(GOOD, "ready"),
+                    paint(DIM, format!("· {}", words::session_life_column(at, now)))
+                ),
+                Some(at) => paint(
+                    WARN,
+                    format!(
+                        "ready · {} · {sign_in_again}",
+                        words::session_life_column(at, now)
+                    ),
+                ),
+                None => paint(GOOD, "ready"),
+            },
         },
     }
+}
+
+// Said once, by the heading, where every row of the tool has no usage.
+fn said_once(rows: &[&Row]) -> Option<&'static str> {
+    rows.iter()
+        .all(|r| r.stale == Some(Stale::NoUsage))
+        .then(|| rows.first().and_then(|r| r.explanation()))
+        .flatten()
 }
 
 fn provenance(usage: &Snapshot, now: i64) -> Option<String> {
@@ -140,7 +168,8 @@ pub fn human(report: &Report) -> String {
         .max()
         .unwrap_or(0);
 
-    let mut blocks = Vec::new();
+    let mut blocks: Vec<String> = Vec::new();
+    let mut claude_ends = None;
     let mut heading: Option<ProviderId> = None;
     for row in &report.rows {
         let marker = if row.signed_in {
@@ -157,9 +186,24 @@ pub fn human(report: &Report) -> String {
         };
         // Rows come grouped by tool, so a heading goes wherever the tool changes.
         let mut block = String::new();
-        if tools > 1 && heading != Some(row.provider) {
+        let first = heading != Some(row.provider);
+        if first {
             heading = Some(row.provider);
-            block.push_str(&format!("{}\n", paint(BOLD, row.provider.name())));
+            let rows: Vec<&Row> = report
+                .rows
+                .iter()
+                .filter(|r| r.provider == row.provider)
+                .collect();
+            let fact = said_once(&rows);
+            let name = paint(BOLD, row.provider.name());
+            match (tools > 1, fact) {
+                (true, Some(fact)) => {
+                    block.push_str(&format!("{name}{}\n", paint(DIM, format!(" · {fact}"))));
+                }
+                (true, None) => block.push_str(&format!("{name}\n")),
+                (false, Some(fact)) => block.push_str(&format!("{}\n", paint(DIM, fact))),
+                (false, None) => {}
+            }
         }
         let plan = match plan_width {
             0 => String::new(),
@@ -173,6 +217,15 @@ pub fn human(report: &Report) -> String {
             paint(DIM, pad(&email(row), email_width)),
             standing(row, now)
         ));
+        // No usage line under a tool's rows where its usage is never read, and nothing to set
+        // them apart.
+        if !row.provider.reads_usage() {
+            match blocks.last_mut() {
+                Some(last) if !first => last.push_str(&block),
+                _ => blocks.push(block),
+            }
+            continue;
+        }
 
         let windows: Vec<&Window> = row.usage.iter().flat_map(|u| u.windows.iter()).collect();
         let read_at = row
@@ -244,6 +297,9 @@ pub fn human(report: &Report) -> String {
             }
         }
         blocks.push(block);
+        if row.provider == ProviderId::Claude {
+            claude_ends = Some(blocks.len());
+        }
     }
     // Said only when it is not the default, so the ordinary answer is unchanged. Where it
     // is not, "who is signed in" is a fact about this slot and not about the machine, and
@@ -253,15 +309,11 @@ pub fn human(report: &Report) -> String {
     // and says nothing under another tool's. Printed after everything, it read as though it
     // qualified the Codex accounts above it. With Claude Code alone, where its accounts end
     // is the end, which is where it always was.
-    let claude_ends = report
-        .rows
-        .iter()
-        .rposition(|r| r.provider == ProviderId::Claude);
     if !report.slot.default
-        && let Some(last) = claude_ends
+        && let Some(after) = claude_ends
     {
         blocks.insert(
-            last + 1,
+            after,
             format!(
                 "{}\n",
                 paint(
@@ -318,6 +370,7 @@ pub fn json(report: &Report) -> Value {
                 "parked_at": p.parked_at,
                 "access_expires_at": p.access_expires_at,
                 "refresh_expires_at": p.refresh_expires_at,
+                "session_expires_at": p.session_expires_at,
             })),
             // How long this account lasts, from its limits' paces: until one runs out at its
             // pace, or else until the first reset. Null where no limit says when it resets.
@@ -345,6 +398,14 @@ pub fn json(report: &Report) -> Value {
             "qualified": r.key().map(|k| k.qualified()),
             // What its login says or last said, "Max 20x" or "Plus", or null.
             "plan": r.plan,
+            "read_at": r.read_at,
+        })).collect::<Vec<_>>(),
+        "awaiting": report.awaiting.iter().map(|a| json!({
+            "provider": a.provider.code(),
+            "label": a.label.typed(),
+            "put_back": a.put_back.typed(),
+            "since": a.since,
+            "again": a.again,
         })).collect::<Vec<_>>(),
     })
 }
@@ -925,6 +986,284 @@ mod tests {
         assert_eq!(accounts[1]["qualified"], "codex/work");
         assert_eq!(accounts[2]["provider"], "codex");
         assert!(accounts[2]["qualified"].is_null(), "nothing enrolled it");
+    }
+
+    fn folder_park(session_expires_at: Option<i64>) -> Park {
+        Park {
+            service: "pitboard-park-desktop_x-1".into(),
+            parked_at: NOW - 86_400,
+            kind: pitboard_core::state::ParkKind::Folder,
+            login: "f".into(),
+            access_expires_at: None,
+            refresh_expires_at: None,
+            session_expires_at,
+        }
+    }
+
+    const LAPSES: i64 = NOW + 25 * 86_400 + 3 * HOUR;
+
+    fn desktop(label: &str, signed_in: bool) -> Row {
+        Row {
+            provider: ProviderId::Desktop,
+            email: String::new(),
+            organization_uuid: None,
+            parked: (!signed_in).then(|| folder_park(Some(LAPSES))),
+            usage: None,
+            stale: Some(Stale::NoUsage),
+            read_at: signed_in.then_some(NOW - 2 * HOUR - 5 * 60),
+            ..row(Some(label), signed_in)
+        }
+    }
+
+    fn line_of<'a>(text: &'a str, label: &str) -> &'a str {
+        text.lines()
+            .find(|l| l.split_whitespace().nth(1) == Some(label))
+            .unwrap_or_else(|| panic!("{label}: {text}"))
+    }
+
+    #[test]
+    fn a_claude_desktop_row_says_when_it_was_read_and_when_its_sign_in_may_lapse() {
+        let mut fresh = desktop("fresh", true);
+        fresh.read_at = Some(NOW - 30);
+        let mut lapsed = desktop("lapsed", false);
+        lapsed.parked = Some(folder_park(Some(NOW - 60)));
+        let mut undated = desktop("undated", false);
+        undated.parked = Some(folder_park(None));
+        let mut empty = desktop("empty", false);
+        empty.parked = None;
+        let mut replaced = desktop("replaced", false);
+        replaced.parked = None;
+        replaced.stale = Some(Stale::LoginReplaced);
+        let styled = human(&report(vec![
+            desktop("work", true),
+            fresh,
+            desktop("home", false),
+            lapsed,
+            undated,
+            empty,
+            replaced,
+        ]));
+        let text = plain(&styled);
+        for (label, says) in [
+            ("work", "signed in · read 2h 05m ago"),
+            ("fresh", "signed in · read <1m ago"),
+            ("home", "ready · sign-in may lapse in 25d 3h"),
+            (
+                "lapsed",
+                "ready · sign-in may have lapsed · pitboard enroll desktop/lapsed --sign-in",
+            ),
+            ("undated", "  ready"),
+            (
+                "empty",
+                "nothing parked · pitboard enroll desktop/empty --sign-in",
+            ),
+            (
+                "replaced",
+                "login replaced outside Pitboard · pitboard enroll desktop/replaced --sign-in",
+            ),
+        ] {
+            assert!(line_of(&text, label).ends_with(says), "{label}: {text}");
+        }
+        assert!(
+            styled.contains(&format!(
+                "{} {}",
+                paint(GOOD, "signed in"),
+                paint(DIM, "· read 2h 05m ago")
+            )),
+            "{styled:?}"
+        );
+        assert!(
+            styled.contains(&format!(
+                "{} {}",
+                paint(GOOD, "ready"),
+                paint(DIM, "· sign-in may lapse in 25d 3h")
+            )),
+            "{styled:?}"
+        );
+        assert!(
+            styled.contains(&paint(
+                WARN,
+                "ready · sign-in may have lapsed · pitboard enroll desktop/lapsed --sign-in"
+            )),
+            "{styled:?}"
+        );
+    }
+
+    #[test]
+    fn the_no_usage_fact_is_said_once_under_the_heading() {
+        let fact = "Pitboard reads no usage for Claude Desktop";
+        let styled = human(&report(vec![
+            row(Some("work"), true),
+            desktop("work", true),
+            desktop("home", false),
+        ]));
+        let text = plain(&styled);
+        let lines: Vec<&str> = text.lines().collect();
+        let heading = lines
+            .iter()
+            .position(|l| *l == format!("Claude Desktop · {fact}"))
+            .expect(&text);
+        assert!(lines[heading + 1].contains("signed in · read"), "{text}");
+        assert!(lines[heading + 2].contains("ready"), "{text}");
+        assert_eq!(
+            lines.len(),
+            heading + 3,
+            "no usage line under a row: {text}"
+        );
+        assert_eq!(text.matches(fact).count(), 1, "{text}");
+        assert!(
+            styled.contains(&format!(
+                "{}{}",
+                paint(BOLD, "Claude Desktop"),
+                paint(DIM, format!(" · {fact}"))
+            )),
+            "{styled:?}"
+        );
+
+        // Alone, there is no heading, and the fact comes first.
+        let alone = human(&report(vec![desktop("work", true), desktop("home", false)]));
+        assert!(
+            alone.starts_with(&format!("{}\n", paint(DIM, fact))),
+            "{alone:?}"
+        );
+        let text = plain(&alone);
+        assert_eq!(text.lines().count(), 3, "{text}");
+        assert!(!text.starts_with("Claude Desktop"), "{text}");
+
+        // A replaced login says so in its column and on stderr: the heading is bare, and no
+        // row of the tool gets a usage line.
+        let mut replaced = desktop("replaced", false);
+        replaced.parked = None;
+        replaced.stale = Some(Stale::LoginReplaced);
+        let text = plain(&human(&report(vec![
+            row(Some("work"), true),
+            desktop("work", true),
+            replaced,
+        ])));
+        let lines: Vec<&str> = text.lines().collect();
+        let heading = lines
+            .iter()
+            .position(|l| *l == "Claude Desktop")
+            .expect(&text);
+        assert!(lines[heading + 1].contains("signed in · read"), "{text}");
+        assert!(
+            lines[heading + 2].contains("login replaced outside Pitboard"),
+            "{text}"
+        );
+        assert_eq!(lines.len(), heading + 3, "{text}");
+        assert!(!text.contains("no usage known"), "{text}");
+        assert!(!text.contains(fact), "{text}");
+        assert!(!text.contains("its login was signed out"), "{text}");
+
+        // Nor where that is the tool's only row, alone or beside another tool's.
+        let only = |mut rows: Vec<Row>| {
+            let mut replaced = desktop("replaced", false);
+            replaced.parked = None;
+            replaced.stale = Some(Stale::LoginReplaced);
+            rows.push(replaced);
+            plain(&human(&report(rows)))
+        };
+        for text in [only(vec![]), only(vec![row(Some("work"), true)])] {
+            assert!(
+                line_of(&text, "replaced").ends_with(
+                    "login replaced outside Pitboard · pitboard enroll desktop/replaced --sign-in"
+                ),
+                "{text}"
+            );
+            assert!(text.ends_with("--sign-in\n"), "{text}");
+            assert!(!text.contains("no usage known"), "{text}");
+            assert!(!text.contains(fact), "{text}");
+            assert!(!text.contains("its login was signed out"), "{text}");
+        }
+    }
+
+    #[test]
+    fn status_json_adds_read_at_session_expires_at_and_awaiting_beside_what_was_there() {
+        use pitboard_core::status::SignInAwaited;
+        let mut read = report(vec![
+            row(Some("work"), true),
+            row(Some("spare"), false),
+            desktop("work", true),
+            desktop("home", false),
+        ]);
+        read.awaiting = vec![SignInAwaited {
+            provider: ProviderId::Desktop,
+            label: Key::new(ProviderId::Desktop, "travel"),
+            put_back: Key::new(ProviderId::Desktop, "work"),
+            since: NOW - 60,
+            again: false,
+        }];
+        let value = json(&read);
+        let keys = |v: &Value| -> Vec<String> {
+            v.as_object()
+                .unwrap_or_else(|| panic!("{v}"))
+                .keys()
+                .cloned()
+                .collect()
+        };
+        assert_eq!(
+            keys(&value),
+            [
+                "slot",
+                "signed_in",
+                "signed_in_error",
+                "accounts",
+                "awaiting"
+            ]
+        );
+        assert_eq!(
+            keys(&value["accounts"][0]),
+            [
+                "label",
+                "email",
+                "account_uuid",
+                "organization_uuid",
+                "signed_in",
+                "switchable",
+                "parked",
+                "lasts",
+                "usage",
+                "stale",
+                "provider",
+                "qualified",
+                "plan",
+                "read_at"
+            ]
+        );
+        assert_eq!(
+            keys(&value["accounts"][1]["parked"]),
+            [
+                "parked_at",
+                "access_expires_at",
+                "refresh_expires_at",
+                "session_expires_at"
+            ]
+        );
+        let (work, spare) = (&value["accounts"][0], &value["accounts"][1]);
+        assert!(work["read_at"].is_null());
+        assert!(spare["parked"]["session_expires_at"].is_null());
+        let (desktop_work, desktop_home) = (&value["accounts"][2], &value["accounts"][3]);
+        assert_eq!(desktop_work["read_at"], NOW - 2 * HOUR - 5 * 60);
+        assert_eq!(desktop_work["stale"], "no_usage");
+        assert_eq!(desktop_work["email"], "");
+        assert!(desktop_work["organization_uuid"].is_null());
+        assert!(desktop_home["read_at"].is_null());
+        assert_eq!(desktop_home["parked"]["session_expires_at"], LAPSES);
+        assert!(desktop_home["parked"]["refresh_expires_at"].is_null());
+        assert_eq!(
+            value["awaiting"],
+            json!([{
+                "provider": "desktop",
+                "label": "desktop/travel",
+                "put_back": "desktop/work",
+                "since": NOW - 60,
+                "again": false,
+            }])
+        );
+        assert_eq!(
+            json(&report(vec![row(Some("work"), true)]))["awaiting"],
+            json!([])
+        );
     }
 
     /// Every kind of row a Claude Code machine shows, for pinning what it reads as.

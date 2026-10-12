@@ -995,7 +995,7 @@ fn assemble(
             let which = account.provider();
             let signed_in = live_ids.get(&which).is_some_and(|live| live == id);
             let replaced = account.parked.is_none() && account.replaced_at.is_some();
-            let (usage, stale) = if asks_nobody(which) {
+            let (usage, stale) = if !which.reads_usage() {
                 let why = if replaced && !signed_in {
                     Stale::LoginReplaced
                 } else {

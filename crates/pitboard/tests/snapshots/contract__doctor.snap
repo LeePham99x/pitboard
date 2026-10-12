@@ -1,6 +1,6 @@
 ---
 source: tests/contract.rs
-expression: "serde_json::json!({ \"exit\": code, \"envelope\": value })"
+expression: "serde_json :: json! ({ \"exit\" : code, \"envelope\" : value })"
 ---
 {
   "exit": 0,
@@ -21,6 +21,11 @@ expression: "serde_json::json!({ \"exit\": code, \"envelope\": value })"
           "backend": "file",
           "login_present": false,
           "version": "0.154.0"
+        },
+        "desktop": {
+          "data_folder": "[path]",
+          "present": false,
+          "build": null
         }
       },
       "checks": "[checks]"

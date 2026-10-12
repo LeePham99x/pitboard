@@ -159,6 +159,14 @@ impl ProviderId {
         }
     }
 
+    // An app's login: no store of it is read and no service asked.
+    pub fn reads_usage(self) -> bool {
+        match of(self) {
+            LoginKind::Document(_) => true,
+            LoginKind::Folder(_) => false,
+        }
+    }
+
     pub fn supported_on(self, os: crate::host::Os) -> bool {
         use crate::host::Os;
         match (self, os) {
@@ -826,10 +834,12 @@ mod tests {
         assert_eq!(ProviderId::Desktop.program(), "Claude");
         assert!(ProviderId::Desktop.cli().is_none());
         assert_eq!(ProviderId::Desktop.signs_in(), SignsIn::InItsApp);
+        assert!(!ProviderId::Desktop.reads_usage());
         assert!(matches!(of(ProviderId::Desktop), LoginKind::Folder(_)));
         for tool in [ProviderId::Claude, ProviderId::Codex] {
             assert!(tool.cli().is_some(), "{tool}");
             assert_eq!(tool.signs_in(), SignsIn::ByItsProgram, "{tool}");
+            assert!(tool.reads_usage(), "{tool}");
         }
         assert_eq!(
             documents().map(|tool| tool.id()).collect::<Vec<_>>(),

@@ -640,7 +640,8 @@ pages load, as a browser would.
   pull request says which with `#[cfg_attr(windows, ignore = "W<n>: …")]`, the one way a
   test is put off there. A core test of Claude Desktop's folder calls, which Windows refuses
   because Pitboard supports the tool on macOS alone, says
-  `#[cfg_attr(windows, ignore = "Claude Desktop is macOS only: …")]`.
+  `#[cfg_attr(windows, ignore = "Claude Desktop is macOS only: …")]`. An integration test of
+  Claude Desktop returns at its start where `os::claude_desktop_runs_here()` is false.
 - No test addresses a name a real login may be kept under. `guard_not_live` refuses by
   pattern, never by a hash computed for a real home, the families
   `pitboard_core::provider::names` tells apart, which the measurement probe's leak check

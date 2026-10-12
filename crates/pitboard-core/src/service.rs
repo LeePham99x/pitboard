@@ -1406,6 +1406,11 @@ impl Pitboard {
         }
     }
 
+    // Where an app's parked logins and the folders set aside are kept, for a front end to name.
+    pub fn parks_folder(&self) -> std::path::PathBuf {
+        crate::store::folder::parks_dir(&self.ctx)
+    }
+
     /// When Pitboard's account index last changed, in epoch milliseconds, for a front end
     /// that wants to know whether another one has done something without asking Anthropic
     /// about it.
