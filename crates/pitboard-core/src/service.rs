@@ -207,6 +207,12 @@ pub enum Warning {
         tool: ProviderId,
         label: String,
     },
+    // `abandon` gave up a switch, then could not give up this move, for `why`.
+    MoveNotGivenUp {
+        tool: ProviderId,
+        label: String,
+        why: Error,
+    },
     // The app is signed out for a sign-in inside it, with `put_back` parked. Labels as typed.
     SignInAwaited {
         tool: ProviderId,
@@ -273,6 +279,7 @@ impl Warning {
                 switch::Ended::Finished => "interrupted_move_finished",
             },
             Warning::MoveWaiting { .. } => "move_waiting",
+            Warning::MoveNotGivenUp { .. } => "move_not_given_up",
             Warning::SignInAwaited { .. } => "sign_in_awaited",
             Warning::ItemGone { .. } => "login_item_gone",
             Warning::ReadOnly { .. } | Warning::ReadOnlyBelowTheFloor { .. } => "read_only",
@@ -296,6 +303,7 @@ impl Warning {
             | Warning::SetAside { tool, .. }
             | Warning::LooksSignedOut { tool, .. }
             | Warning::MoveWaiting { tool, .. }
+            | Warning::MoveNotGivenUp { tool, .. }
             | Warning::SignInAwaited { tool, .. }
             | Warning::ItemGone { tool, .. } => Some(*tool),
             Warning::MoveSettled(moved) => Some(moved.tool),
@@ -595,6 +603,9 @@ impl fmt::Display for Warning {
                 f.write_str(&crate::words::move_settled(&label, moved.half, moved.ended))
             }
             Warning::MoveWaiting { label, .. } => f.write_str(&crate::words::move_waiting(label)),
+            Warning::MoveNotGivenUp { label, why, .. } => {
+                f.write_str(&crate::words::move_not_given_up(label, why))
+            }
             Warning::SignInAwaited {
                 label,
                 put_back,

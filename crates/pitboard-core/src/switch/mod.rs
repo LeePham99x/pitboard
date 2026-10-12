@@ -109,7 +109,7 @@ pub struct Settled {
 pub struct GaveUp {
     pub switch: Option<Abandoned>,
     pub moves: Vec<GivenUp>,
-    // a move that could be settled is settled, not given up, and said here
+    // what settling said, and each move abandon could not give up after giving up a switch
     pub warnings: Vec<Warning>,
 }
 
@@ -122,22 +122,39 @@ pub fn abandon(ctx: &Context, permit: Permit) -> Result<GaveUp> {
     }
     let _exclusive = exclusive(ctx, permit)?;
     let mut state = state::load(ctx)?;
-    // An app seen open refuses before a switch is given up, so its "nothing has changed" holds.
-    let mut apps = Vec::new();
-    for &tool in ProviderId::ALL {
-        if let LoginKind::Folder(app) = provider::of(tool) {
-            apps.push((app, folder::before_abandon(ctx, &state, app)?));
-        }
-    }
+    // Whatever an app's state: no Claude Code or Codex change waits on an app's move.
     let mut gave_up = GaveUp {
         switch: journal::abandon(ctx, permit, &mut state)?,
         ..GaveUp::default()
     };
     // A move that can be settled is settled and said: only one that cannot is given up.
-    for (app, closed) in apps {
-        let (given_up, said) = folder::abandon(ctx, permit, &mut state, app, closed)?;
-        gave_up.moves.extend(given_up);
-        gave_up.warnings.extend(said);
+    for &tool in ProviderId::ALL {
+        let LoginKind::Folder(app) = provider::of(tool) else {
+            continue;
+        };
+        let Some(label) = state
+            .moving(tool)
+            .map(|moving| state.typed(&Key::new(tool, moving.label.clone())))
+        else {
+            continue;
+        };
+        let done =
+            gave_up.switch.is_some() || !gave_up.moves.is_empty() || !gave_up.warnings.is_empty();
+        match folder::abandon(ctx, permit, &mut state, app) {
+            Ok((given_up, said)) => {
+                gave_up.moves.extend(given_up);
+                gave_up.warnings.extend(said);
+            }
+            // Said beside what was done, whose "nothing has changed" would be false.
+            Err(why) if done => {
+                gave_up
+                    .warnings
+                    .push(Warning::MoveNotGivenUp { tool, label, why });
+                // A refusal can leave in memory what it never saved, and the next save would.
+                state = state::load(ctx)?;
+            }
+            Err(refused) => return Err(refused),
+        }
     }
     Ok(gave_up)
 }

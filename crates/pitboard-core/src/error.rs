@@ -721,6 +721,13 @@ pub enum Error {
     )]
     RenewalLost { tool: ProviderId, error: Box<Error> },
 
+    // A refusal after the change had done what `said` says. The service takes it apart.
+    #[error("{error}")]
+    SaidFirst {
+        said: Vec<crate::service::Warning>,
+        error: Box<Error>,
+    },
+
     /// Signing in to a second account works by pointing the tool's own login at a scratch
     /// directory. Where that does not isolate it from the live login, running one would
     /// write over the account somebody is using, so Pitboard will not.
@@ -832,13 +839,7 @@ pub enum Error {
         detail: String,
     },
 
-    #[error(
-        "Giving up would leave parts of `{label}` beside another login in Claude's folder: \
-         {}. Nothing has changed. Open Claude, check which account it shows, quit it with \
-         Command-Q, then run `pitboard enroll desktop/<label>` under that account's name: \
-         Pitboard sets the parts of `{label}` aside first.",
-        places.join(", ")
-    )]
+    #[error("{}", move_mixed(label, places))]
     MoveMixed { label: String, places: Vec<String> },
 
     #[error(
@@ -970,7 +971,9 @@ impl Error {
             StoredLoginChanged { .. } => "stored_login_changed",
             LeftLoginNotEnrolled { .. } => "left_login_not_enrolled",
             LeftLoginUnidentified { .. } => "left_login_unidentified",
-            StowStopped { error, .. } | RenewalLost { error, .. } => error.code(),
+            StowStopped { error, .. } | RenewalLost { error, .. } | SaidFirst { error, .. } => {
+                error.code()
+            }
             SignInNotIsolated { .. } => "sign_in_not_isolated",
             RenewalFailed { .. } => "renewal_failed",
             SignInInProgress => "sign_in_in_progress",
@@ -1012,7 +1015,9 @@ impl Error {
             RenewalFailed { cause, .. } => *cause,
             SessionExpired { refused: true, .. } => Some(Cause::LoginRefused),
             SessionExpired { .. } => Some(Cause::TokenExpired),
-            StowStopped { error, .. } | RenewalLost { error, .. } => error.cause(),
+            StowStopped { error, .. } | RenewalLost { error, .. } | SaidFirst { error, .. } => {
+                error.cause()
+            }
             _ => None,
         }
     }
@@ -1024,7 +1029,25 @@ impl Error {
             Error::SignInNotInstalled { warnings, .. } | Error::StowStopped { warnings, .. } => {
                 std::mem::take(warnings)
             }
+            // What is left is the refusal itself.
+            Error::SaidFirst { said, error } => {
+                let mut said = std::mem::take(said);
+                *self = std::mem::replace(error.as_mut(), Error::SignInIncomplete);
+                said.extend(self.take_warnings());
+                said
+            }
             _ => Vec::new(),
+        }
+    }
+
+    // This refusal, after a change that had done what `said` says.
+    pub(crate) fn after(self, said: Vec<crate::service::Warning>) -> Error {
+        if said.is_empty() {
+            return self;
+        }
+        Error::SaidFirst {
+            said,
+            error: Box::new(self),
         }
     }
 
@@ -1056,7 +1079,9 @@ impl Error {
             | MoveMixed { .. } => 3,
             Usage(_) | ConfirmationNeeded { .. } => 2,
             Store(e) => e.exit_code(),
-            StowStopped { error, .. } | RenewalLost { error, .. } => error.exit_code(),
+            StowStopped { error, .. } | RenewalLost { error, .. } | SaidFirst { error, .. } => {
+                error.exit_code()
+            }
             _ => 1,
         }
     }
@@ -1226,9 +1251,9 @@ fn app_open(app: &str, still: &[String]) -> String {
     }
     format!(
         "{app} has quit, and {} from it is still running, and Pitboard changes {app}'s login \
-         only while all of it is closed. Wait until it ends, or quit it in Activity Monitor, \
-         then run this again. Nothing has changed.",
-        crate::words::listed(still.to_vec())
+         only while all of it is closed. {} Nothing has changed.",
+        crate::words::listed(still.to_vec()),
+        crate::words::wait_for_still("run this again")
     )
 }
 
@@ -1330,6 +1355,15 @@ fn opened_midway(app: &str, label: Option<&str>) -> String {
              Pitboard stopped. Nothing is lost. Quit {app} with Command-Q, then run this again."
         ),
     }
+}
+
+fn move_mixed(label: &str, places: &[String]) -> String {
+    format!(
+        "Giving up would leave parts of `{label}` beside another login in Claude's folder: {}. \
+         Nothing has changed. {}",
+        places.join(", "),
+        crate::words::mixed_way_out(label)
+    )
 }
 
 fn left_signed_out(from: Option<&str>, to: &str, detail: &str) -> String {
@@ -1798,6 +1832,36 @@ mod tests {
                 .ends_with("try again. Pitboard changed nothing."),
             "{unidentified}"
         );
+    }
+
+    #[test]
+    fn a_refusal_after_what_was_said_is_given_back_as_itself() {
+        let refusal = || Error::AccountNotInUse {
+            tool: ProviderId::Desktop,
+            label: "desktop/work".into(),
+        };
+        let waiting = crate::service::Warning::MoveWaiting {
+            tool: ProviderId::Desktop,
+            label: "desktop/work".into(),
+        };
+        let mut carried = refusal().after(vec![waiting]);
+        assert_eq!(carried.code(), "account_not_in_use");
+        assert_eq!(carried.exit_code(), refusal().exit_code());
+        assert_eq!(carried.to_string(), refusal().to_string());
+        let said = carried.take_warnings();
+        assert_eq!(
+            said.iter()
+                .map(crate::service::Warning::code)
+                .collect::<Vec<_>>(),
+            ["move_waiting"]
+        );
+        assert!(
+            matches!(carried, Error::AccountNotInUse { .. }),
+            "{carried:?}"
+        );
+        assert!(carried.take_warnings().is_empty());
+        let alone = refusal().after(Vec::new());
+        assert!(matches!(alone, Error::AccountNotInUse { .. }), "{alone:?}");
     }
 
     #[test]

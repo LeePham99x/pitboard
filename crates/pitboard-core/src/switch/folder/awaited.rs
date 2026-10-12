@@ -5,7 +5,7 @@ use super::super::enroll::{Enrolled, SignIn, Steps, WatchedSignIn};
 use super::super::{Error, Result, Settled, enrolled, exclusive, shape};
 use super::moves::{self, Leaving, Step};
 use super::verdict::{Unsure, Verdict, look};
-use super::{Begun, Open, begin, midway, open, refusal, there};
+use super::{Begun, Open, begin, midway, open, refusal, saying, there};
 use crate::context::Context;
 use crate::error::Then;
 use crate::fault;
@@ -117,65 +117,68 @@ pub(crate) fn start(
     let again = state.get(key).map(|a| a.id.clone());
     let Begun {
         closed: _closed,
-        mut warnings,
+        warnings,
     } = begin(&ctx, permit, &mut state, app)?;
-    let root = app.root(&ctx).map_err(|e| shape(tool, e))?;
-    let mut parked = None;
-    let put_back = match look(&ctx, &state, app)? {
-        Verdict::Account {
-            key: holder,
-            session,
-            as_named,
-        } => {
-            moves::may_start(&ctx, permit, app, &root)?;
-            let awaited = Awaited {
-                since: ctx.now(),
-                label: key.label.clone(),
-                account: again.clone(),
-                put_back: enrolled(&state, &holder)?.id,
-            };
-            let leaving = Leaving {
-                key: &holder,
-                session: &session,
-                awaited: Some(awaited),
-            };
-            let (_, said) = moves::leave(&ctx, permit, &mut state, app, &root, leaving)?;
-            if as_named {
-                warnings.push(Warning::TakenAsNamed {
-                    tool,
-                    label: state.typed(&holder),
-                });
-            }
-            warnings.extend(said);
-            parked = Some(state.typed(&holder));
-            Some(holder)
-        }
-        Verdict::Nobody { .. } => {
-            if there(tool, &root)? {
-                warnings.extend(set_keys_aside(&ctx, permit, &mut state, app, &root)?);
-            }
-            // Only a record with an account parked for it stands: it becomes this sign-in's.
-            let standing = state.awaiting(tool).cloned();
-            match standing {
-                Some(standing) => {
-                    let held = state
-                        .by_id(tool, &standing.put_back)
-                        .map(crate::state::Account::key);
-                    let taken_up = Awaited {
-                        since: ctx.now(),
-                        label: key.label.clone(),
-                        account: again.clone(),
-                        put_back: standing.put_back,
-                    };
-                    state.awaiting.insert(tool.code().to_string(), taken_up);
-                    state::save(&ctx, permit, &state)?;
-                    held
+    let ((put_back, parked), warnings) = saying(warnings, |warnings| {
+        let root = app.root(&ctx).map_err(|e| shape(tool, e))?;
+        let mut parked = None;
+        let put_back = match look(&ctx, &state, app)? {
+            Verdict::Account {
+                key: holder,
+                session,
+                as_named,
+            } => {
+                moves::may_start(&ctx, permit, app, &root)?;
+                let awaited = Awaited {
+                    since: ctx.now(),
+                    label: key.label.clone(),
+                    account: again.clone(),
+                    put_back: enrolled(&state, &holder)?.id,
+                };
+                let leaving = Leaving {
+                    key: &holder,
+                    session: &session,
+                    awaited: Some(awaited),
+                };
+                let (_, said) = moves::leave(&ctx, permit, &mut state, app, &root, leaving)?;
+                if as_named {
+                    warnings.push(Warning::TakenAsNamed {
+                        tool,
+                        label: state.typed(&holder),
+                    });
                 }
-                None => None,
+                warnings.extend(said);
+                parked = Some(state.typed(&holder));
+                Some(holder)
             }
-        }
-        Verdict::Unsure(unsure) => return Err(refusal(&state, tool, &unsure)),
-    };
+            Verdict::Nobody { .. } => {
+                if there(tool, &root)? {
+                    warnings.extend(set_keys_aside(&ctx, permit, &mut state, app, &root)?);
+                }
+                // Only a record with an account parked for it stands: it becomes this sign-in's.
+                let standing = state.awaiting(tool).cloned();
+                match standing {
+                    Some(standing) => {
+                        let held = state
+                            .by_id(tool, &standing.put_back)
+                            .map(crate::state::Account::key);
+                        let taken_up = Awaited {
+                            since: ctx.now(),
+                            label: key.label.clone(),
+                            account: again.clone(),
+                            put_back: standing.put_back,
+                        };
+                        state.awaiting.insert(tool.code().to_string(), taken_up);
+                        state::save(&ctx, permit, &state)?;
+                        held
+                    }
+                    None => None,
+                }
+            }
+            Verdict::Unsure(unsure) => return Err(refusal(&state, tool, &unsure)),
+        };
+        Ok((put_back, parked))
+    })?;
     let typed_back = put_back.as_ref().map(|key| state.typed(key));
 
     let (say, said) = std::sync::mpsc::channel();

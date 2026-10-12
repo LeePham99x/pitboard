@@ -1269,7 +1269,12 @@ pages load, as a browser would.
   interrupted move of a Claude Desktop login, in `state.json`'s `moving`, is settled before a
   change to Claude Desktop and before `repair` and `uninstall`, with Claude closed. A Claude
   Code or Codex change, a renewal, a read and the automatic switch neither settle it nor
-  wait for it.
+  wait for it. `abandon` gives up an interrupted switch first, whatever Claude Desktop's
+  state, then settles or gives up each waiting move with Claude closed; a move it cannot
+  give up then is said beside the switch it gave up (`move_not_given_up`), not refused. A
+  Claude Desktop change that refuses carries what it had said before the refusal, a settled
+  move included, in its error (`Error::SaidFirst`), which the service reports beside the
+  refusal.
 - An answer from Anthropic that Pitboard read whole replaces a Claude Code account's
   reading, and a session only moves that reading, within the limits the answer gave. So
   numbers filed under the wrong account go at that account's next answer.

@@ -2911,7 +2911,11 @@ fn a_flush_that_fails_after_a_rename_is_a_move_made() {
 
 // Claude Code's `here` in use and `there` parked, with Claude Desktop's pair beside them.
 fn three_tools(name: &str) -> Machine {
-    let mut m = super::super::harness::machine(name);
+    beside_desktop(super::super::harness::machine(name))
+}
+
+// `m`'s own tool's `here` in use and `there` parked, with Claude Desktop's pair beside them.
+fn beside_desktop(mut m: Machine) -> Machine {
     m.ctx = m
         .ctx
         .clone()
@@ -2925,15 +2929,48 @@ fn three_tools(name: &str) -> Machine {
     m
 }
 
-// A Claude Code switch killed after its record, before anything moved.
-fn claude_code_interrupted(m: &Machine) {
-    let (settled, _) =
-        settle(&m.ctx, Permit::for_a_test(), Some(ProviderId::Claude)).expect("nothing waits");
+// A switch of `tool` to `there` killed after its record, before anything moved.
+fn interrupted(m: &Machine, tool: ProviderId) {
+    let (settled, _) = settle(&m.ctx, Permit::for_a_test(), Some(tool)).expect("nothing waits");
     let died = crate::fault::killing("switch.journal_written", || {
-        switch(settled, &Key::new(ProviderId::Claude, "there"))
+        switch(settled, &Key::new(tool, "there"))
     });
     assert_eq!(died.expect_err("killed"), "switch.journal_written");
     assert!(super::super::journal::pending(&m.ctx));
+}
+
+// Claude's data folder and Pitboard's parks, each entry with its bytes.
+type Claudes = (
+    Vec<(PathBuf, Option<Vec<u8>>)>,
+    Vec<(PathBuf, Option<Vec<u8>>)>,
+);
+
+fn claudes(m: &Machine) -> Claudes {
+    (
+        tree(&data(m)),
+        tree(&crate::store::folder::parks_dir(&m.ctx)),
+    )
+}
+
+// The switch given up and said, and the move still waiting, said with why.
+fn switch_given_up_beside(m: &Machine, gave: &super::super::GaveUp, why: &str) {
+    assert!(gave.switch.is_some(), "{gave:?}");
+    assert!(!super::super::journal::pending(&m.ctx));
+    assert!(gave.moves.is_empty(), "{gave:?}");
+    assert_eq!(
+        gave.warnings.iter().map(Warning::code).collect::<Vec<_>>(),
+        ["move_not_given_up"]
+    );
+    let said = gave.warnings[0].to_string();
+    assert!(
+        said.contains("`desktop/work`") && said.contains(why),
+        "{said}"
+    );
+    assert!(
+        !said.to_lowercase().contains("nothing has changed"),
+        "{said}"
+    );
+    assert!(state_of(m).moving(ProviderId::Desktop).is_some());
 }
 
 #[test]
@@ -2941,19 +2978,249 @@ fn claude_code_interrupted(m: &Machine) {
     windows,
     ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
 )]
-fn claude_open_refuses_abandon_before_a_claude_code_switch_is_given_up() {
+fn claude_open_never_stops_abandon_giving_up_a_claude_code_switch() {
     let m = three_tools("abandon-open");
     killed(&m, "leave.jar_out", "home");
-    claude_code_interrupted(&m);
+    interrupted(&m, ProviderId::Claude);
     m.claude().opens();
-    let before = snapshot(&m);
-    let refused = gave_up(&m).expect_err("refused");
-    assert_eq!(refused.code(), "app_open", "{refused}");
-    assert!(
-        super::super::journal::pending(&m.ctx),
-        "the Claude Code switch is not given up"
+    let folder = claudes(&m);
+    let gave = gave_up(&m).expect("the switch is given up");
+    switch_given_up_beside(&m, &gave, "Claude is open");
+    assert_eq!(
+        gave.warnings[0].to_string(),
+        "Pitboard did not give up the interrupted move of `desktop/work`'s login, because Claude \
+         is open. Quit Claude with Command-Q, then run `pitboard abandon` again."
     );
+    assert_eq!(claudes(&m), folder, "nothing of Claude's moved");
+    let before = snapshot(&m);
+    let refused = gave_up(&m).expect_err("the move alone, refused as before");
+    assert_eq!(refused.code(), "app_open");
     unchanged(&m, &before, "nothing changed");
+    m.claude().crashes();
+    let gave = gave_up(&m).expect("settled");
+    assert!(gave.switch.is_none() && gave.moves.is_empty());
+    assert_eq!(
+        gave.warnings.iter().map(Warning::code).collect::<Vec<_>>(),
+        ["interrupted_move_finished"]
+    );
+}
+
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+)]
+fn a_codex_switch_is_given_up_beside_a_move_that_cannot_be() {
+    let m = beside_desktop(super::super::harness::codex_machine("abandon-mixed"));
+    killed(&m, "leave.item_out", "home");
+    let claude = m.claude();
+    claude.opens();
+    claude.signs_in(&STRANGER);
+    claude.reports();
+    claude.quits();
+    interrupted(&m, ProviderId::Codex);
+    let folder = claudes(&m);
+    let gave = gave_up(&m).expect("the switch is given up");
+    switch_given_up_beside(&m, &gave, "beside another login in Claude's folder");
+    assert!(
+        gave.warnings[0]
+            .to_string()
+            .contains("`Local Storage` in Claude's folder"),
+        "{}",
+        gave.warnings[0]
+    );
+    assert_eq!(claudes(&m), folder, "nothing of Claude's moved");
+
+    let m = beside_desktop(super::super::harness::codex_machine("abandon-unreadable"));
+    killed(&m, "leave.jar_out", "home");
+    let park = state_of(&m)
+        .moving(ProviderId::Desktop)
+        .expect("recorded")
+        .park
+        .clone();
+    m.mem
+        .jar_unsettled(&crate::store::folder::item(&m.ctx, &park, "Cookies"));
+    interrupted(&m, ProviderId::Codex);
+    let folder = claudes(&m);
+    let gave = gave_up(&m).expect("the switch is given up");
+    switch_given_up_beside(&m, &gave, "(a test held the jar)");
+    assert_eq!(claudes(&m), folder, "nothing of Claude's moved");
+}
+
+// The change settles the move and refuses. Run again, it refuses alone and changes nothing,
+// so the first refusal changed nothing past the settle.
+fn settled_then_refused(
+    m: &Machine,
+    code: &str,
+    settled: &str,
+    change: impl Fn(&crate::service::Pitboard) -> crate::service::Failed,
+) {
+    let pitboard = crate::service::Pitboard::new(m.ctx.clone());
+    let failed = change(&pitboard);
+    assert_eq!(failed.error.code(), code, "{}", failed.error);
+    // The service gives the refusal back as itself, as every front end matches it.
+    assert!(
+        !matches!(failed.error, Error::SaidFirst { .. }),
+        "{:?}",
+        failed.error
+    );
+    assert!(
+        failed
+            .warnings
+            .iter()
+            .any(|warning| warning.code() == settled),
+        "{code}: {:?}",
+        failed.warnings
+    );
+    assert!(state_of(m).moving(ProviderId::Desktop).is_none(), "{code}");
+    let before = snapshot(m);
+    let again = change(&pitboard);
+    assert_eq!(again.error.code(), code, "{}", again.error);
+    assert!(
+        !again
+            .warnings
+            .iter()
+            .any(|warning| warning.code().starts_with("interrupted_move_")),
+        "{code}: {:?}",
+        again.warnings
+    );
+    unchanged(m, &before, code);
+}
+
+// Each change settles a move a killed leave left, then refuses, or forgets by the doubt rule.
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+)]
+fn a_refusal_after_a_settled_move_says_it_settled() {
+    let finished = "interrupted_move_finished";
+    let undone = "interrupted_move_undone";
+    let m = desktop_pair("settled-then-not-in-use");
+    killed(&m, "leave.jar_out", "home");
+    settled_then_refused(&m, "account_not_in_use", finished, |pitboard| {
+        pitboard.update_config("desktop/work").expect_err("refused")
+    });
+
+    let m = desktop_pair("settled-then-unknown");
+    killed(&m, "leave.jar_out", "home");
+    std::fs::create_dir(data(&m).join("Network")).expect("an entry not read");
+    settled_then_refused(&m, "login_folder_unknown", finished, |pitboard| {
+        pitboard.switch_to("desktop/home").expect_err("refused")
+    });
+
+    let m = desktop_pair("settled-then-stranded");
+    killed(&m, "leave.jar_out", "home");
+    settled_then_refused(&m, "uninstall_would_strand", finished, |pitboard| {
+        pitboard.uninstall().err().expect("refused")
+    });
+    assert!(crate::home::dir(&m.ctx).is_dir());
+    assert!(state_of(&m).get(&m.key("work")).is_some());
+    assert!(state_of(&m).get(&m.key("home")).is_some());
+
+    let m = desktop_pair("settled-then-no-sign-in");
+    killed(&m, "leave.jar_out", "home");
+    std::fs::create_dir(data(&m).join("File System")).expect("an item the move never listed");
+    settled_then_refused(&m, "login_folder_unknown", finished, |pitboard| {
+        pitboard
+            .sign_in_watched("desktop/travel")
+            .err()
+            .expect("refused")
+    });
+
+    let m = desktop_pair("settled-then-signed-out");
+    killed(&m, "leave.jar_out", "home");
+    settled_then_refused(&m, "live_credential_absent", finished, |pitboard| {
+        pitboard
+            .enroll_current("desktop/travel")
+            .expect_err("refused")
+    });
+
+    // Undone, so `work` is in use again.
+    let m = desktop_pair("settled-then-in-use");
+    killed(&m, "leave.keys_out", "home");
+    settled_then_refused(&m, "cannot_forget_active_account", undone, |pitboard| {
+        pitboard.forget("desktop/work").expect_err("refused")
+    });
+    assert!(state_of(&m).get(&m.key("work")).is_some());
+
+    // With nobody recorded in use, the undone login is a session not seen: the doubt rule
+    // refuses, since `work` holds no park.
+    let m = desktop_pair("settled-then-doubt-unparked");
+    killed(&m, "leave.keys_out", "home");
+    let mut state = state_of(&m);
+    state.in_use.remove(ProviderId::Desktop.code());
+    state::save(&m.ctx, Permit::for_a_test(), &state).expect("saved");
+    settled_then_refused(&m, "login_in_doubt", undone, |pitboard| {
+        pitboard.forget("desktop/work").expect_err("refused")
+    });
+    assert!(state_of(&m).get(&m.key("work")).is_some());
+
+    // Forgotten by the doubt rule: `File System` was not there when the leave started.
+    let m = desktop_pair("settled-then-doubt");
+    killed(&m, "leave.jar_out", "home");
+    std::fs::create_dir(data(&m).join("File System")).expect("an item the move never listed");
+    let pitboard = crate::service::Pitboard::new(m.ctx.clone());
+    let done = pitboard.forget("desktop/home").expect("forgotten");
+    assert!(
+        done.warnings
+            .iter()
+            .any(|warning| warning.code() == "interrupted_move_finished"),
+        "{:?}",
+        done.warnings
+    );
+    assert!(state_of(&m).get(&m.key("home")).is_none());
+}
+
+// The enrolment gives the move up and sets `home`'s older park aside, then cannot save: it
+// says only what giving up saved.
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+)]
+fn an_enrolment_that_cannot_save_says_nothing_it_did_not_save() {
+    let m = desktop_pair("enrol-unsaved");
+    killed(&m, "leave.keys_kept", "home");
+    names(&m, &HOME);
+    let file = crate::home::dir(&m.ctx).join("state.json");
+    let kept = crate::home::dir(&m.ctx).join("state.kept");
+    let failed = crate::fault::meanwhile(
+        "give_up.done",
+        {
+            let (file, kept) = (file.clone(), kept.clone());
+            move || {
+                std::fs::rename(&file, &kept).expect("moved");
+                std::fs::create_dir_all(file.join("in the way")).expect("a folder in its place");
+            }
+        },
+        || enrol(&m, "home"),
+    );
+    std::fs::remove_dir_all(&file).expect("taken out of the way");
+    std::fs::rename(&kept, &file).expect("put back");
+    let mut failed = failed.expect_err("refused");
+    assert_eq!(failed.code(), "state_write_failed", "{failed}");
+    let said = failed.take_warnings();
+    assert!(
+        !said.iter().any(|warning| matches!(
+            warning,
+            Warning::SetAside {
+                why: SetAside::Superseded,
+                ..
+            } | Warning::TakenAsNamed { .. }
+        )),
+        "{said:?}"
+    );
+    let state = state_of(&m);
+    assert!(state.moving(ProviderId::Desktop).is_none(), "given up");
+    assert!(
+        state
+            .aside
+            .iter()
+            .all(|aside| aside.why != SetAside::Superseded),
+        "{:?}",
+        state.aside
+    );
 }
 
 #[test]
@@ -2963,7 +3230,7 @@ fn claude_open_refuses_abandon_before_a_claude_code_switch_is_given_up() {
 )]
 fn a_sign_in_inside_claude_says_what_settling_found_first() {
     let m = three_tools("sign-in-settles");
-    claude_code_interrupted(&m);
+    interrupted(&m, ProviderId::Claude);
     let waiting = watched(&m, "travel").expect("waiting");
     let lines = said_until(&waiting.said(), "Waiting for Claude to quit");
     waiting.cancel();

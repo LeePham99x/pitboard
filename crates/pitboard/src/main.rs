@@ -313,19 +313,36 @@ fn emit(report: Report, as_json: bool) -> ExitCode {
         });
         println!("{}", json::ascii(&envelope));
     } else {
-        match &report.result {
-            Ok(_) => print!("{}", report.human),
-            Err(e) => eprintln!("{} {e}", paint(ERROR, "error:")),
-        }
-        for w in &report.warnings {
+        let warn = |w: &Value| {
             eprintln!(
                 "{} {}",
                 paint(WARNING, "warning:"),
                 w["message"].as_str().unwrap_or_default()
             );
+        };
+        let (first, rest) = said_first(&report);
+        first.into_iter().for_each(warn);
+        match &report.result {
+            Ok(_) => print!("{}", report.human),
+            Err(e) => eprintln!("{} {e}", paint(ERROR, "error:")),
         }
+        rest.into_iter().for_each(warn);
     }
     ExitCode::from(report.exit)
+}
+
+// A settled move is said before the refusal, whose "Nothing has changed" is about itself.
+fn said_first(report: &Report) -> (Vec<&Value>, Vec<&Value>) {
+    let settled = |w: &&Value| {
+        matches!(
+            w["code"].as_str(),
+            Some("interrupted_move_undone" | "interrupted_move_finished")
+        )
+    };
+    match report.result {
+        Ok(_) => (Vec::new(), report.warnings.iter().collect()),
+        Err(_) => report.warnings.iter().partition(settled),
+    }
 }
 
 fn warnings(list: &[Warning]) -> Vec<Value> {
@@ -1273,6 +1290,36 @@ mod tests {
             Cli::try_parse_from(["pitboard", "use", "work", "--json"])
                 .unwrap()
                 .json
+        );
+    }
+
+    #[test]
+    fn a_move_settled_before_a_refusal_is_said_ahead_of_it() {
+        let report = |result: Result<Value, Error>| Report {
+            command: Some("use"),
+            result,
+            warnings: ["set_aside", "interrupted_move_finished", "login_item_gone"]
+                .map(|code| json!({ "code": code, "message": code }))
+                .into(),
+            human: String::new(),
+            exit: 1,
+            failure: None,
+        };
+        let codes = |said: Vec<&Value>| {
+            said.iter()
+                .map(|w| w["code"].as_str().unwrap_or_default().to_string())
+                .collect::<Vec<_>>()
+        };
+        let refused = report(Err(Error::Usage("refused".into())));
+        let (first, rest) = said_first(&refused);
+        assert_eq!(codes(first), ["interrupted_move_finished"]);
+        assert_eq!(codes(rest), ["set_aside", "login_item_gone"]);
+        let done = report(Ok(Value::Null));
+        let (first, rest) = said_first(&done);
+        assert!(first.is_empty());
+        assert_eq!(
+            codes(rest),
+            ["set_aside", "interrupted_move_finished", "login_item_gone"]
         );
     }
 

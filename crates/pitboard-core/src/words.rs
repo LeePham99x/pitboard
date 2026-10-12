@@ -708,6 +708,80 @@ pub(crate) fn move_waiting(label: &str) -> String {
     )
 }
 
+// After `abandon` gave up a switch, so never that nothing has changed.
+pub(crate) fn move_not_given_up(label: &str, why: &crate::error::Error) -> String {
+    use crate::error::Error;
+    let again = "run `pitboard abandon` again";
+    let (because, then) = match why {
+        Error::AppOpen { app, still } if still.is_empty() => (
+            Some(format!("{app} is open")),
+            format!("Quit {app} with Command-Q, then {again}."),
+        ),
+        Error::AppOpen { app, still } => (
+            Some(format!(
+                "{} from {app} is still running",
+                listed(still.clone())
+            )),
+            wait_for_still(again),
+        ),
+        Error::AppStateUnknown { app, why } => (
+            Some(format!("it could not tell whether {app} is open ({why})")),
+            "Run `pitboard abandon` again.".into(),
+        ),
+        Error::LoginFolderBusy { app } => (
+            Some(format!("another Pitboard is changing {app}'s login")),
+            "Run `pitboard abandon` again once it has finished.".into(),
+        ),
+        Error::LoginFolderUnreadable { tool, detail } => (
+            Some(format!(
+                "it could not read {}'s cookie store ({detail})",
+                tool.program()
+            )),
+            format!(
+                "Open {program}, quit it with Command-Q, then {again}.",
+                program = tool.program()
+            ),
+        ),
+        Error::AppOpenedMidway { app, .. } => (
+            Some(format!("{app} was opened meanwhile")),
+            format!("Nothing is lost. Quit {app} with Command-Q, then {again}."),
+        ),
+        Error::MoveMixed { places, .. } => (
+            Some(format!(
+                "giving it up would leave parts of it beside another login in Claude's folder: \
+                 {}",
+                places.join(", ")
+            )),
+            mixed_way_out(label),
+        ),
+        other => (
+            None,
+            format!("It stopped at `{}`: {again} to see why.", other.code()),
+        ),
+    };
+    match because {
+        Some(because) => format!(
+            "Pitboard did not give up the interrupted move of `{label}`'s login, because \
+             {because}. {then}"
+        ),
+        None => {
+            format!("Pitboard did not give up the interrupted move of `{label}`'s login. {then}")
+        }
+    }
+}
+
+pub(crate) fn wait_for_still(then: &str) -> String {
+    format!("Wait until it ends, or quit it in Activity Monitor, then {then}.")
+}
+
+pub(crate) fn mixed_way_out(label: &str) -> String {
+    format!(
+        "Open Claude, check which account it shows, quit it with Command-Q, then run `pitboard \
+         enroll desktop/<label>` under that account's name: Pitboard sets the parts of \
+         `{label}` aside first."
+    )
+}
+
 pub(crate) fn move_settled(
     label: &str,
     half: crate::state::Half,
@@ -1563,5 +1637,58 @@ mod tests {
             doctor_summary([Level::Fail, Level::Warn, Level::Fail]),
             "2 broken: do not switch accounts until fixed."
         );
+    }
+
+    // Said once `abandon` has given up a switch, where "nothing has changed" is false.
+    #[test]
+    fn a_move_not_given_up_says_why_and_never_that_nothing_changed() {
+        use crate::error::Error;
+        use crate::provider::ProviderId;
+        let tool = ProviderId::Desktop;
+        let app = "Claude";
+        let said = |why| move_not_given_up("desktop/work", &why);
+        assert_eq!(
+            said(Error::AppOpen {
+                app,
+                still: Vec::new()
+            }),
+            "Pitboard did not give up the interrupted move of `desktop/work`'s login, because \
+             Claude is open. Quit Claude with Command-Q, then run `pitboard abandon` again."
+        );
+        assert_eq!(
+            said(Error::MachineUnknown),
+            "Pitboard did not give up the interrupted move of `desktop/work`'s login. It \
+             stopped at `machine_unknown`: run `pitboard abandon` again to see why."
+        );
+        for why in [
+            Error::AppOpen {
+                app,
+                still: vec!["ShipIt (pid 812)".into()],
+            },
+            Error::AppStateUnknown {
+                app,
+                why: "ps failed".into(),
+            },
+            Error::LoginFolderBusy { app },
+            Error::LoginFolderUnreadable {
+                tool,
+                detail: "a test held the jar".into(),
+            },
+            Error::AppOpenedMidway {
+                app,
+                label: Some("desktop/work".into()),
+            },
+            Error::MoveMixed {
+                label: "desktop/work".into(),
+                places: vec!["`Session Storage` in Claude's folder".into()],
+            },
+        ] {
+            let sentence = said(why);
+            assert!(sentence.contains(", because "), "{sentence}");
+            assert!(
+                !sentence.to_lowercase().contains("nothing has changed"),
+                "{sentence}"
+            );
+        }
     }
 }

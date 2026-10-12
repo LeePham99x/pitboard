@@ -101,7 +101,9 @@ fn run(m: &Machine, change: Change) -> Result<(), Error> {
 // sweep, since it leaves no record but its `pending` line.
 fn recovery(m: &Machine) -> Result<(), Error> {
     match update_config(settled(m), &m.key("work")) {
-        Ok(_) | Err(Error::AccountNotInUse { .. }) => Ok(()),
+        Ok(_) => Ok(()),
+        // By its code: where settling did anything, the refusal comes with what it said.
+        Err(refused) if refused.code() == "account_not_in_use" => Ok(()),
         Err(refused) => Err(refused),
     }
 }

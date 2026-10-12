@@ -245,135 +245,138 @@ fn enroll_as(
     } = settled;
     let tool = key.provider;
     let _closed = closed(&ctx, app)?;
-    let mut warnings = Vec::new();
     // A move that cannot be settled is given up only once this enrolment will go through.
-    let stopped = match settle::settle(&ctx, permit, &mut state, app) {
-        Ok(settled) => {
-            warnings.extend(settled);
-            false
-        }
-        Err(Error::RecoveryUndetermined { .. }) => true,
+    let (stopped, warnings) = match settle::settle(&ctx, permit, &mut state, app) {
+        Ok(settled) => (false, settled),
+        Err(Error::RecoveryUndetermined { .. }) => (true, Vec::new()),
         Err(other) => return Err(other),
     };
-    let (named, login, aside, taken_as_named) = match look(&ctx, &state, app)? {
-        Verdict::Nobody { .. } => {
-            return Err(Error::LiveCredentialAbsent {
+    saying(warnings, |warnings| {
+        let (named, login, aside, taken_as_named) = match look(&ctx, &state, app)? {
+            Verdict::Nobody { .. } => {
+                return Err(Error::LiveCredentialAbsent {
+                    tool,
+                    label: Some(state.typed(key)),
+                });
+            }
+            Verdict::Account {
+                key: holder,
+                session,
+                ..
+            } => (Named::Enrolled(holder), session.login, None, false),
+            Verdict::Unsure(Unsure::Unfinished) => return Err(Error::SignInUnfinished { tool }),
+            Verdict::Unsure(Unsure::RecordedUnderAnother { named, .. }) => {
+                let login = state
+                    .in_use(tool)
+                    .map(|record| record.login.clone())
+                    .unwrap_or_default();
+                (named, login, None, true)
+            }
+            Verdict::Unsure(Unsure::AlsoParked {
+                key: holder,
+                session,
+            }) => (Named::Enrolled(holder), session.login, None, false),
+            Verdict::Unsure(Unsure::Unseen { named, session }) => {
+                (named, session.login, None, false)
+            }
+            Verdict::Unsure(Unsure::HeldTwice {
+                named,
+                session,
+                also_in,
+            }) => (named, session.login, Some(also_in), false),
+        };
+        let owner = match &named {
+            Named::Enrolled(holder) => enrolled(&state, holder)?.owner(),
+            Named::NotEnrolled { uuid } => in_use::named_only(uuid.clone()),
+        };
+        claim(&state, key, &owner).map_err(|refused| match refused {
+            Error::AlreadyEnrolled {
                 tool,
-                label: Some(state.typed(key)),
+                email,
+                label,
+                asked,
+                ..
+            } => Error::AlreadyEnrolled {
+                tool,
+                email,
+                label,
+                asked,
+                waited,
+            },
+            other => other,
+        })?;
+        if stopped && let Some((_, said)) = settle::give_up(&ctx, permit, &mut state, app, true)? {
+            warnings.extend(said);
+        }
+        let now = ctx.now();
+        let again = state.get(key).is_some();
+        let parked = state.get(key).and_then(|a| a.parked.clone());
+        state.upsert(account(
+            tool,
+            state.id_of(tool, &owner),
+            &key.label,
+            &owner,
+            parked,
+            Some(now),
+            None,
+        ));
+        // Said once saved: a save that fails carries only what settling and giving up saved.
+        let mut filed = Vec::new();
+        if taken_as_named {
+            filed.push(Warning::TakenAsNamed {
+                tool,
+                label: state.typed(key),
             });
         }
-        Verdict::Account {
-            key: holder,
-            session,
-            ..
-        } => (Named::Enrolled(holder), session.login, None, false),
-        Verdict::Unsure(Unsure::Unfinished) => return Err(Error::SignInUnfinished { tool }),
-        Verdict::Unsure(Unsure::RecordedUnderAnother { named, .. }) => {
-            let login = state
-                .in_use(tool)
-                .map(|record| record.login.clone())
-                .unwrap_or_default();
-            (named, login, None, true)
-        }
-        Verdict::Unsure(Unsure::AlsoParked {
-            key: holder,
-            session,
-        }) => (Named::Enrolled(holder), session.login, None, false),
-        Verdict::Unsure(Unsure::Unseen { named, session }) => (named, session.login, None, false),
-        Verdict::Unsure(Unsure::HeldTwice {
-            named,
-            session,
-            also_in,
-        }) => (named, session.login, Some(also_in), false),
-    };
-    let owner = match &named {
-        Named::Enrolled(holder) => enrolled(&state, holder)?.owner(),
-        Named::NotEnrolled { uuid } => in_use::named_only(uuid.clone()),
-    };
-    claim(&state, key, &owner).map_err(|refused| match refused {
-        Error::AlreadyEnrolled {
-            tool,
-            email,
-            label,
-            asked,
-            ..
-        } => Error::AlreadyEnrolled {
-            tool,
-            email,
-            label,
-            asked,
-            waited,
-        },
-        other => other,
-    })?;
-    if stopped && let Some((_, said)) = settle::give_up(&ctx, permit, &mut state, app, true)? {
-        warnings.extend(said);
-    }
-    let now = ctx.now();
-    let again = state.get(key).is_some();
-    let parked = state.get(key).and_then(|a| a.parked.clone());
-    state.upsert(account(
-        tool,
-        state.id_of(tool, &owner),
-        &key.label,
-        &owner,
-        parked,
-        Some(now),
-        None,
-    ));
-    if taken_as_named {
-        warnings.push(Warning::TakenAsNamed {
-            tool,
-            label: state.typed(key),
-        });
-    }
-    let superseded = |state: &State| -> Vec<Key> {
-        state
-            .accounts
-            .iter()
-            .filter(|a| a.provider() == tool)
-            .filter(|a| {
-                a.parked.as_ref().is_some_and(|park| {
-                    Some(&park.service) == aside.as_ref() || (a.is(key) && park.login != login)
+        let superseded = |state: &State| -> Vec<Key> {
+            state
+                .accounts
+                .iter()
+                .filter(|a| a.provider() == tool)
+                .filter(|a| {
+                    a.parked.as_ref().is_some_and(|park| {
+                        Some(&park.service) == aside.as_ref() || (a.is(key) && park.login != login)
+                    })
                 })
-            })
-            .map(crate::state::Account::key)
-            .collect()
-    };
-    for holder in superseded(&state) {
-        let Some(park) = state.get(&holder).and_then(|a| a.parked.clone()) else {
-            continue;
+                .map(crate::state::Account::key)
+                .collect()
         };
-        let path = crate::store::folder::at(&ctx, &park.service);
-        state.set_aside(&holder, park, SetAside::Superseded, now);
-        warnings.push(Warning::SetAside {
-            tool,
-            path,
-            label: Some(state.typed(&holder)),
-            why: SetAside::Superseded,
-        });
-    }
-    let found = InUse {
-        named: Some(new_id(tool, &owner)),
-        owner: Some(owner),
-        login,
-        known_at: now,
-    };
-    let (_, noticed) = identify::record(&mut state, tool, found, now);
-    state.awaiting.remove(tool.code());
-    state::save(&ctx, permit, &state)?;
-    identify::write_down(&ctx, permit, &noticed);
-    let enrolled = if waited {
-        Enrolled::InUse {
-            email: String::new(),
-            again,
+        for holder in superseded(&state) {
+            let Some(park) = state.get(&holder).and_then(|a| a.parked.clone()) else {
+                continue;
+            };
+            let path = crate::store::folder::at(&ctx, &park.service);
+            state.set_aside(&holder, park, SetAside::Superseded, now);
+            filed.push(Warning::SetAside {
+                tool,
+                path,
+                label: Some(state.typed(&holder)),
+                why: SetAside::Superseded,
+            });
         }
-    } else {
-        Enrolled::Current {
-            email: String::new(),
-        }
-    };
-    Ok((enrolled, warnings))
+        let found = InUse {
+            named: Some(new_id(tool, &owner)),
+            owner: Some(owner),
+            login,
+            known_at: now,
+        };
+        let (_, noticed) = identify::record(&mut state, tool, found, now);
+        state.awaiting.remove(tool.code());
+        state::save(&ctx, permit, &state)?;
+        warnings.extend(filed);
+        identify::write_down(&ctx, permit, &noticed);
+        let enrolled = if waited {
+            Enrolled::InUse {
+                email: String::new(),
+                again,
+            }
+        } else {
+            Enrolled::Current {
+                email: String::new(),
+            }
+        };
+        Ok(enrolled)
+    })
 }
 
 // A leave of the account in use, committed, then an arrive of `key`'s. Between them the
@@ -393,87 +396,80 @@ pub(crate) fn switch(
     enrolled(&state, key)?;
     let Begun {
         closed: _closed,
-        mut warnings,
+        warnings,
     } = begin(&ctx, permit, &mut state, app)?;
-    let root = app.root(&ctx).map_err(|e| shape(tool, e))?;
-    if !there(tool, &root)? {
-        return Err(Error::LoginFolderUnknown {
-            tool,
-            what: "does not exist yet".into(),
-            then: Then::OpenAndQuit,
-        });
-    }
-    let adoption = Adoption::NextOpen {
-        app: app.app_name(),
-    };
-    match look(&ctx, &state, app)? {
-        Verdict::Account { key: holder, .. } if holder == *key => Ok((
-            Outcome::AlreadyActive {
+    saying(warnings, |warnings| {
+        let root = app.root(&ctx).map_err(|e| shape(tool, e))?;
+        if !there(tool, &root)? {
+            return Err(Error::LoginFolderUnknown {
+                tool,
+                what: "does not exist yet".into(),
+                then: Then::OpenAndQuit,
+            });
+        }
+        let adoption = Adoption::NextOpen {
+            app: app.app_name(),
+        };
+        match look(&ctx, &state, app)? {
+            Verdict::Account { key: holder, .. } if holder == *key => Ok(Outcome::AlreadyActive {
                 label: state.typed(key),
                 config_updated: false,
-            },
-            warnings,
-        )),
-        Verdict::Account {
-            key: holder,
-            session,
-            as_named,
-        } => {
-            moves::may_start(&ctx, permit, app, &root)?;
-            let checked = moves::check_park(&ctx, &state, app, key)?;
-            let from = state.typed(&holder);
-            let leaving = moves::Leaving {
-                key: &holder,
-                session: &session,
-                awaited: None,
-            };
-            let (parked, said) = moves::leave(&ctx, permit, &mut state, app, &root, leaving)?;
-            if as_named {
-                warnings.push(Warning::TakenAsNamed {
-                    tool,
-                    label: from.clone(),
-                });
-            }
-            warnings.extend(said);
-            warnings.extend(moves::arrive(
-                &ctx,
-                permit,
-                &mut state,
-                app,
-                &root,
-                key,
-                checked,
-                false,
-                Some(from.clone()),
-            )?);
-            Ok((
-                Outcome::Switched {
+            }),
+            Verdict::Account {
+                key: holder,
+                session,
+                as_named,
+            } => {
+                moves::may_start(&ctx, permit, app, &root)?;
+                let checked = moves::check_park(&ctx, &state, app, key)?;
+                let from = state.typed(&holder);
+                let leaving = moves::Leaving {
+                    key: &holder,
+                    session: &session,
+                    awaited: None,
+                };
+                let (parked, said) = moves::leave(&ctx, permit, &mut state, app, &root, leaving)?;
+                if as_named {
+                    warnings.push(Warning::TakenAsNamed {
+                        tool,
+                        label: from.clone(),
+                    });
+                }
+                warnings.extend(said);
+                warnings.extend(moves::arrive(
+                    &ctx,
+                    permit,
+                    &mut state,
+                    app,
+                    &root,
+                    key,
+                    checked,
+                    false,
+                    Some(from.clone()),
+                )?);
+                Ok(Outcome::Switched {
                     provider: tool,
                     from,
                     to: state.typed(key),
                     parked,
                     adoption,
-                },
-                warnings,
-            ))
-        }
-        Verdict::Nobody { leftovers } => {
-            moves::may_start(&ctx, permit, app, &root)?;
-            let checked = moves::check_park(&ctx, &state, app, key)?;
-            warnings.extend(moves::arrive(
-                &ctx, permit, &mut state, app, &root, key, checked, leftovers, None,
-            )?);
-            Ok((
-                Outcome::Installed {
+                })
+            }
+            Verdict::Nobody { leftovers } => {
+                moves::may_start(&ctx, permit, app, &root)?;
+                let checked = moves::check_park(&ctx, &state, app, key)?;
+                warnings.extend(moves::arrive(
+                    &ctx, permit, &mut state, app, &root, key, checked, leftovers, None,
+                )?);
+                Ok(Outcome::Installed {
                     provider: tool,
                     to: state.typed(key),
                     adoption,
-                },
-                warnings,
-            ))
+                })
+            }
+            Verdict::Unsure(unsure) => Err(refusal(&state, tool, &unsure)),
         }
-        Verdict::Unsure(unsure) => Err(refusal(&state, tool, &unsure)),
-    }
+    })
 }
 
 // For a button drawn while `key`'s account was in use: nothing to write while it still is.
@@ -493,98 +489,86 @@ pub(crate) fn confirm(
         closed: _closed,
         warnings,
     } = begin(&ctx, permit, &mut state, app)?;
-    match look(&ctx, &state, app)? {
-        Verdict::Account { key: holder, .. } if holder == *key => Ok((
-            Outcome::AlreadyActive {
-                label: state.typed(key),
-                config_updated: false,
-            },
-            warnings,
-        )),
+    saying(warnings, |_| match look(&ctx, &state, app)? {
+        Verdict::Account { key: holder, .. } if holder == *key => Ok(Outcome::AlreadyActive {
+            label: state.typed(key),
+            config_updated: false,
+        }),
         _ => Err(Error::AccountNotInUse {
             tool: key.provider,
             label: state.typed(key),
         }),
-    }
+    })
 }
 
-// What `forget` learns of the app's folder, which stays held until it has saved.
+// What `forget` learns of the app's folder, held until it has saved where it was seen closed.
 pub(crate) struct Asked {
-    pub in_use: bool,
-    pub closed: Closed,
+    // a refusal here is `forget`'s to take by its doubt rule
+    pub in_use: std::result::Result<bool, Error>,
+    pub closed: Option<Closed>,
     // a move an earlier run left, as it was settled first
     pub warnings: Vec<Warning>,
 }
 
-// Whether `key`'s account is the one in use. The inner refusal is `forget`'s to take by its
-// doubt rule; the outer one stops it, since that rule would forget the account whose login a
-// waiting move holds.
+// Whether `key`'s account is the one in use. A refusal returned stops `forget`, since its doubt
+// rule would forget the account whose login a waiting move holds.
 pub(crate) fn in_use_for_forget(
     ctx: &Context,
     permit: Permit,
     state: &mut State,
     key: &Key,
     app: &'static dyn Folder,
-) -> Result<std::result::Result<Asked, Error>> {
+) -> Result<Asked> {
     let waits = state.moving(app.id()).is_some();
     let Begun { closed, warnings } = match begin(ctx, permit, state, app) {
         Ok(begun) => begun,
         Err(stopped) if waits => return Err(stopped),
-        Err(doubt) => return Ok(Err(doubt)),
-    };
-    let verdict = match look(ctx, state, app) {
-        Ok(verdict) => verdict,
-        Err(doubt) => return Ok(Err(doubt)),
-    };
-    match verdict {
-        Verdict::Account { key: holder, .. } => Ok(Ok(Asked {
-            in_use: holder == *key,
-            closed,
-            warnings,
-        })),
-        Verdict::Nobody { .. } => {
-            let now = ctx.now();
-            let nobody = InUse {
-                owner: None,
-                login: String::new(),
-                known_at: now,
-                named: in_use::named(ctx, key.provider),
-            };
-            let (_, noticed) = identify::record(state, key.provider, nobody, now);
-            state::save(ctx, permit, state)?;
-            identify::write_down(ctx, permit, &noticed);
-            Ok(Ok(Asked {
-                in_use: false,
-                closed,
-                warnings,
-            }))
+        Err(doubt) => {
+            return Ok(Asked {
+                in_use: Err(doubt),
+                closed: None,
+                warnings: Vec::new(),
+            });
         }
-        Verdict::Unsure(unsure) => Ok(Err(refusal(state, key.provider, &unsure))),
-    }
+    };
+    let (in_use, warnings) = saying(warnings, |_| {
+        let verdict = match look(ctx, state, app) {
+            Ok(verdict) => verdict,
+            Err(doubt) => return Ok(Err(doubt)),
+        };
+        match verdict {
+            Verdict::Account { key: holder, .. } => Ok(Ok(holder == *key)),
+            Verdict::Nobody { .. } => {
+                let now = ctx.now();
+                let nobody = InUse {
+                    owner: None,
+                    login: String::new(),
+                    known_at: now,
+                    named: in_use::named(ctx, key.provider),
+                };
+                let (_, noticed) = identify::record(state, key.provider, nobody, now);
+                state::save(ctx, permit, state)?;
+                identify::write_down(ctx, permit, &noticed);
+                Ok(Ok(false))
+            }
+            Verdict::Unsure(unsure) => Ok(Err(refusal(state, key.provider, &unsure))),
+        }
+    })?;
+    Ok(Asked {
+        in_use,
+        closed: Some(closed),
+        warnings,
+    })
 }
 
-// The app closed and held where a move waits in the data folder this run reads, asked before
-// `abandon` writes anything.
-pub(crate) fn before_abandon(
-    ctx: &Context,
-    state: &State,
-    app: &'static dyn Folder,
-) -> Result<Option<Closed>> {
-    match state.moving(app.id()) {
-        Some(moving) if moving.slot == moves::slot(ctx, app) => closed(ctx, app).map(Some),
-        _ => Ok(None),
-    }
-}
-
-// For `abandon`: a move that settles is settled and said, one that cannot is given up, under
-// the hold `before_abandon` took. A move in a data folder this run does not read is given up
-// with none of that folder read.
+// For `abandon`: a move that settles is settled and said, one that cannot is given up, with
+// the app closed and held. A move in a data folder this run does not read is given up with
+// none of that folder read.
 pub(crate) fn abandon(
     ctx: &Context,
     permit: Permit,
     state: &mut State,
     app: &'static dyn Folder,
-    held: Option<Closed>,
 ) -> Result<(Option<GivenUp>, Vec<Warning>)> {
     let Some(moving) = state.moving(app.id()) else {
         return Ok((None, Vec::new()));
@@ -597,10 +581,7 @@ pub(crate) fn abandon(
     if moving.slot != moves::slot(ctx, app) {
         return settle::give_up(ctx, permit, state, app, false).map(split);
     }
-    let _closed = match held {
-        Some(held) => held,
-        None => closed(ctx, app)?,
-    };
+    let _closed = closed(ctx, app)?;
     match settle::settle(ctx, permit, state, app) {
         Ok(settled) => Ok((None, settled)),
         Err(Error::RecoveryUndetermined { .. }) => {
@@ -654,15 +635,27 @@ pub(crate) fn before_uninstall(
         return Ok(None);
     }
     let Begun { closed, warnings } = begin(ctx, permit, state, app)?;
-    match look(ctx, state, app)? {
-        Verdict::Account { .. } => Ok(Some((closed, warnings))),
+    let ((), warnings) = saying(warnings, |_| match look(ctx, state, app)? {
+        Verdict::Account { .. } => Ok(()),
         Verdict::Nobody { .. } => match parked(state) {
             Some(last) => Err(Error::UninstallWouldStrand {
                 label: state.typed(&last),
             }),
-            None => Ok(Some((closed, warnings))),
+            None => Ok(()),
         },
         Verdict::Unsure(unsure) => Err(refusal(state, tool, &unsure)),
+    })?;
+    Ok(Some((closed, warnings)))
+}
+
+// What `run` comes to, beside what the change said before and while it ran, refused or not.
+fn saying<T>(
+    mut said: Vec<Warning>,
+    run: impl FnOnce(&mut Vec<Warning>) -> Result<T>,
+) -> Result<(T, Vec<Warning>)> {
+    match run(&mut said) {
+        Ok(value) => Ok((value, said)),
+        Err(refused) => Err(refused.after(said)),
     }
 }
 

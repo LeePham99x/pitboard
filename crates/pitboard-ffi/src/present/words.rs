@@ -215,6 +215,7 @@ pub(crate) fn warning_heading(warning: &Warning) -> &'static str {
         "looks_signed_out" => "The account in use may be signed out",
         "set_aside" => "Pitboard set a folder aside",
         "move_waiting" => "An interrupted move is waiting",
+        "move_not_given_up" => "An interrupted move wasn’t given up",
         "interrupted_move_undone" => "An interrupted move was undone",
         "interrupted_move_finished" => "An interrupted move was finished",
         "login_item_gone" => "Part of a login was gone",
@@ -988,8 +989,64 @@ pub(crate) fn in_app_warning(warning: &CoreWarning) -> Option<String> {
             again,
             ..
         } => awaiting_lines(app, bare(label), bare(put_back), *again).join(" "),
+        CoreWarning::MoveNotGivenUp { label, why, .. } => not_given_up(tool, bare(label), why),
         _ => return None,
     })
+}
+
+// After Give Up gave up a switch, so never that nothing has changed.
+fn not_given_up(tool: ProviderId, label: &str, why: &Error) -> String {
+    let app = tool.program();
+    let settles = format!(
+        "use any {} account: Pitboard settles the move first.",
+        tool.name()
+    );
+    let (because, then) = match why {
+        Error::AppOpen { still, .. } if still.is_empty() => (
+            Some(format!("{app} is open")),
+            format!("Quit {app}, then {settles}"),
+        ),
+        Error::AppOpen { still, .. } => (
+            Some(format!("{} from {app} is still running", listed(still))),
+            format!("Wait until it ends, or quit it in Activity Monitor, then {settles}"),
+        ),
+        Error::AppStateUnknown { why, .. } => (
+            Some(format!("it couldn’t tell whether {app} is open ({why})")),
+            format!("To try again, {settles}"),
+        ),
+        Error::LoginFolderBusy { .. } => (
+            Some(format!("another Pitboard is changing {app}’s login")),
+            format!("Once it has finished, {settles}"),
+        ),
+        Error::LoginFolderUnreadable { detail, .. } => (
+            Some(format!("it couldn’t read {app}’s cookie store ({detail})")),
+            format!("Open {app}, quit it, then {settles}"),
+        ),
+        Error::AppOpenedMidway { .. } => (
+            Some(format!("{app} was opened meanwhile")),
+            format!("Nothing is lost. Quit {app}, then {settles}"),
+        ),
+        Error::MoveMixed { places, .. } => (
+            Some(format!(
+                "giving it up would leave parts of it beside another login in {app}’s folder: {}",
+                places.join(", ")
+            )),
+            format!(
+                "Open {app}, check which account it shows, quit it, then {}",
+                add_what_it_shows(app)
+            ),
+        ),
+        _ => (None, format!("Quit {app}, then {settles}")),
+    };
+    match because {
+        Some(because) => format!(
+            "Pitboard didn’t give up the interrupted move of {label}’s login, because {because}. \
+             {then}"
+        ),
+        None => {
+            format!("Pitboard couldn’t give up the interrupted move of {label}’s login. {then}")
+        }
+    }
 }
 
 pub(crate) fn in_app_given_up(given_up: &pitboard_core::switch::GivenUp) -> String {
@@ -1846,6 +1903,43 @@ mod tests {
     }
 
     #[test]
+    fn a_move_not_given_up_never_says_nothing_has_changed() {
+        let tool = ProviderId::Desktop;
+        let app = "Claude";
+        let said = |why| {
+            in_app_warning(&CoreWarning::MoveNotGivenUp {
+                tool,
+                label: "desktop/work".into(),
+                why,
+            })
+            .expect("the app's words")
+        };
+        assert_eq!(
+            said(Error::AppOpen {
+                app,
+                still: Vec::new()
+            }),
+            "Pitboard didn’t give up the interrupted move of work’s login, because Claude is \
+             open. Quit Claude, then use any Claude Desktop account: Pitboard settles the move \
+             first."
+        );
+        for why in [
+            Error::LoginFolderBusy { app },
+            Error::MoveMixed {
+                label: "desktop/work".into(),
+                places: vec!["`Session Storage` in Claude's folder".into()],
+            },
+            Error::MachineUnknown,
+        ] {
+            let sentence = said(why);
+            assert!(
+                !sentence.to_lowercase().contains("nothing has changed"),
+                "{sentence}"
+            );
+        }
+    }
+
+    #[test]
     fn no_claude_desktop_sentence_in_the_app_names_a_command() {
         use pitboard_core::error::Enrolled;
         use pitboard_core::state::Half;
@@ -2041,6 +2135,40 @@ mod tests {
                 put_back: typed("work"),
                 since: 0,
                 again,
+            });
+        }
+        for why in [
+            Error::AppOpen {
+                app,
+                still: Vec::new(),
+            },
+            Error::AppOpen {
+                app,
+                still: vec!["ShipIt (pid 812)".into()],
+            },
+            Error::AppStateUnknown {
+                app,
+                why: "ps failed".into(),
+            },
+            Error::LoginFolderBusy { app },
+            Error::LoginFolderUnreadable {
+                tool,
+                detail: "a test held the jar".into(),
+            },
+            Error::AppOpenedMidway {
+                app,
+                label: Some(typed("work")),
+            },
+            Error::MoveMixed {
+                label: typed("work"),
+                places: vec!["`Session Storage` in Claude's folder".into()],
+            },
+            Error::MachineUnknown,
+        ] {
+            warnings.push(CoreWarning::MoveNotGivenUp {
+                tool,
+                label: typed("work"),
+                why,
             });
         }
         for (half, ended) in [

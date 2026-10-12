@@ -1849,6 +1849,50 @@ fn a_move_the_give_up_settles_is_said_beside_the_read_after_it() {
 }
 
 #[test]
+fn a_move_the_give_up_left_waiting_is_still_offered_to_give_up() {
+    let mut model = Hand::new();
+    let mut machine = desktop_machine(false);
+    machine.answer = Ok(warned(
+        vec![
+            desktop_account("work", false),
+            desktop_account("home", false),
+        ],
+        vec![move_waiting()],
+    ));
+    machine.switched = Err(refusal("recovery_undetermined", "undetermined", Vec::new()));
+    model.refresh(&mut machine);
+    switch(&mut model, &mut machine, "desktop/home");
+    machine.abandoned = Ok(GaveUp {
+        switch: Some(Abandoned {
+            from: "personal".into(),
+            to: "work".into(),
+            logins_kept: 2,
+        }),
+        warnings: vec![desktop_warning(
+            "move_not_given_up",
+            "Claude is open, so Pitboard didn’t give up the interrupted move of work’s login.",
+        )],
+        ..GaveUp::default()
+    });
+    model.send(Intent::AbandonStuckSwitch);
+    model.run(&mut machine);
+    let shown = model.on_a_mac();
+    assert!(
+        shown
+            .notices
+            .iter()
+            .any(|notice| notice.id.starts_with("warning/move_not_given_up/")),
+        "{:?}",
+        shown.notices
+    );
+    assert_eq!(
+        notice_actions(&model, "warning/move_waiting/"),
+        ["Add the Account Claude Shows…", "Give Up…"],
+        "what refused the last change still stands"
+    );
+}
+
+#[test]
 fn a_claude_desktop_warning_starts_no_read_that_asks() {
     let mut model = Hand::new();
     let mut machine = desktop_machine(false);

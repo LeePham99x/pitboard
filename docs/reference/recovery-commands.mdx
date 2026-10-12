@@ -107,7 +107,9 @@ For Claude Desktop, `abandon` gives up an interrupted move that Pitboard cannot 
 Pitboard gave up the move of `desktop/work`'s login and kept every folder: 1 parked, 1 set aside. Run `pitboard enroll desktop/<label>` for the account Claude shows, or `pitboard use desktop/<label>` where Claude is signed out.
 ```
 
-Where items stay in the data folder, the line names them, as in `` `Session Storage` and `WebStorage` stay in Claude's folder ``, and asks you to open Claude once and quit it first. Where they would stay beside another login, `abandon` refuses with `move_mixed` and changes nothing.
+Where items stay in the data folder, the line names them, as in `` `Session Storage` and `WebStorage` stay in Claude's folder ``, and asks you to open Claude once and quit it first. Where they would stay beside another login, `abandon` cannot give up the move (`move_mixed`).
+
+A Claude Desktop move that `abandon` cannot give up, such as while Claude is open, still waits. `abandon` then refuses with the reason. Where it gave up a Claude Code or Codex switch first, it warns `move_not_given_up` with the reason instead.
 
 [An interrupted switch cannot be finished](/troubleshooting/recovery#an-interrupted-switch-cannot-be-finished) says when to run it.
 

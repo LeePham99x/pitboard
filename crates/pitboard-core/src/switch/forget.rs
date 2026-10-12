@@ -38,14 +38,10 @@ pub fn forget(settled: Settled, key: &Key) -> Result<(String, Vec<Warning>)> {
             Err(unknown) => Err(unknown),
         },
         LoginKind::Folder(app) => {
-            match super::folder::in_use_for_forget(&ctx, permit, &mut state, key, app)? {
-                Ok(asked) => {
-                    _closed = Some(asked.closed);
-                    said = asked.warnings;
-                    Ok(asked.in_use)
-                }
-                Err(unknown) => Err(unknown),
-            }
+            let asked = super::folder::in_use_for_forget(&ctx, permit, &mut state, key, app)?;
+            _closed = asked.closed;
+            said = asked.warnings;
+            asked.in_use
         }
     };
     let in_use = match asked {
@@ -55,13 +51,13 @@ pub fn forget(settled: Settled, key: &Key) -> Result<(String, Vec<Warning>)> {
                 .account_in_use(key.provider)
                 .is_some_and(|in_use| in_use.is(key));
             if recorded || account.parked.is_none() {
-                return Err(unknown);
+                return Err(unknown.after(said));
             }
             false
         }
     };
     if in_use {
-        return Err(Error::CannotForgetActiveAccount { label: key.typed() });
+        return Err(Error::CannotForgetActiveAccount { label: key.typed() }.after(said));
     }
     state.remove(key);
     state::save(&ctx, permit, &state)?;

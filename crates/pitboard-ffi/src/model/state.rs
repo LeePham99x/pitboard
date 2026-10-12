@@ -3750,6 +3750,7 @@ impl State {
             Ok(gave_up) => {
                 self.abandoned = gave_up.switch;
                 let settled = (gave_up.warnings.iter())
+                    .filter(|warning| warning.code != "move_not_given_up")
                     .any(|warning| warning.provider.as_deref().is_some_and(in_its_app));
                 // A move given up or settled is no longer what refused the last change.
                 if !gave_up.moves.is_empty() || settled {

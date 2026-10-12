@@ -28,6 +28,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - `pitboard enroll desktop/<label> --sign-in` parks the account in use, waits while you sign
   in inside Claude, and enrols that account.
 - `pitboard abandon` also gives up an interrupted Claude Desktop move, keeping every folder.
+  It gives up an interrupted Claude Code or Codex switch whatever Claude Desktop's state, and
+  says why a move it could not give up still waits.
 - `pitboard status` says when Pitboard last read a Claude Desktop account in use, as
   `signed in · read 2h 05m ago`, and when a parked one's sign-in may lapse, from the date
   Claude's own session cookie carries. `pitboard status --json` gives them as `read_at` and
