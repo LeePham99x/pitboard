@@ -636,7 +636,12 @@ mod tests {
             );
 
             let again = warmed(&m).expect("looked again").value;
-            assert_eq!(again, WarmUp::Nothing, "its period runs now");
+            assert!(
+                matches!(&again, WarmUp::Stands(overview) if overview.accounts.iter().any(|c| {
+                    c.account == "there" && matches!(c.standing, Some(Standing::Running { .. }))
+                })),
+                "its period runs now: {again:?}"
+            );
             assert_eq!(script.runs().len(), 1);
         }
 
@@ -747,7 +752,10 @@ mod tests {
                 .warm_range(Range::parse("20:00", "23:00").expect("a span"))
                 .expect("kept");
             assert!(matches!(pitboard.warm_look(), Ok(Look::Stands(_))));
-            assert_eq!(pitboard.warm_up().expect("looked").value, WarmUp::Nothing);
+            assert!(matches!(
+                pitboard.warm_up().expect("looked").value,
+                WarmUp::Stands(_)
+            ));
             assert!(script.runs().is_empty());
             pitboard
                 .warm_range(Range::parse("06:00", "22:00").expect("a span"))

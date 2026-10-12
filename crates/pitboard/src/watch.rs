@@ -346,7 +346,7 @@ impl WarmTold {
                     "until": until,
                 }),
                 stamp(format!(
-                    "Pitboard is not warming up {} for now: {}.\n",
+                    "{} {}, so Pitboard is not warming it up for now.\n",
                     ui::paint(ui::BOLD, &choice.account),
                     words::warm_standing(&standing, moment)
                 )),
@@ -1032,8 +1032,10 @@ mod tests {
                 halted,
                 accounts: vec![Choice {
                     account: "work".into(),
+                    qualified: "claude/work".into(),
                     on: true,
                     standing: held.map(Standing::Held),
+                    now: Standing::Due,
                 }],
             }
         }

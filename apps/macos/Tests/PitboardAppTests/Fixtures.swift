@@ -106,7 +106,10 @@ func snapshot(
                 cannotLink: nil),
             autoSwitch: AutoSwitchShown(
                 on: false, at: 95, lowest: 50, highest: 99, enabled: true,
-                atLabel: "Switch when a limit reaches 95%", note: "", standing: nil)),
+                atLabel: "Switch when a limit reaches 95%", note: "", standing: nil),
+            warm: WarmShown(
+                from: 360, to: 1320, rangeLabel: "06:00 to 22:00", accounts: [], standing: nil,
+                note: "", enabled: false)),
         accountWindows: windows ?? windowsShown(status?.accounts ?? []))
 }
 

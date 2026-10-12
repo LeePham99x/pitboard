@@ -52,8 +52,10 @@ use pitboard_core::autoswitch::Threshold;
 use pitboard_core::duty::cadence::{DECIDE_EVERY_SECONDS, Refusals};
 use pitboard_core::label::SEPARATOR;
 use pitboard_core::provider::{self, ProviderId};
+use pitboard_core::switch::warm::WarmUp;
 use pitboard_core::switch::{Foreseen, Left, Stowed};
 use pitboard_core::usage::same_reset;
+use pitboard_core::warm::Overview;
 use std::collections::{BTreeSet, HashMap};
 use std::time::Duration;
 
@@ -176,6 +178,15 @@ pub(crate) enum Job {
     /// core's lock can say, which decides whether, and to which, from whose login Claude Code
     /// has stored.
     AutoSwitch { at: u8 },
+    /// Warm up the first account turned on that is due, as the core decides, on a lane of its
+    /// own: the core looks at its files first, and a warm-up runs Claude Code for seconds.
+    WarmUp,
+    /// Warm up the account `qualified` names now, whatever the span of the day.
+    WarmNow { qualified: String },
+    /// Warm up the account `qualified` names from now on, or stop.
+    SetWarm { qualified: String, on: bool },
+    /// Warm up accounts from `from` to `to`, minutes of the day.
+    SetWarmRange { from: u16, to: u16 },
     /// Open the app at `location` again.
     Open { location: String },
     /// Give up on an interrupted switch, keeping every login it names.
@@ -311,10 +322,13 @@ pub(crate) enum Answer {
         /// When the account index was last written, in epoch milliseconds, before the read.
         changed_before: i64,
         read: Result<Status, PitboardError>,
+        /// Each Claude Code account's warm-up, as the core's files say after the read.
+        warm: Option<Overview>,
     },
     ReadOffline {
         why: Why,
         read: Result<Status, PitboardError>,
+        warm: Option<Overview>,
     },
     Looked {
         /// When the account index was last written, in epoch milliseconds.
@@ -346,6 +360,16 @@ pub(crate) enum Answer {
     /// What switching Claude Code by itself came to.
     AutoSwitched {
         done: Result<AutoSwitched, PitboardError>,
+    },
+    /// What a warm-up came to: one by itself, or of the account `asked` names, somebody asked
+    /// for now.
+    WarmedUp {
+        asked: Option<String>,
+        done: Result<WarmUp, PitboardError>,
+    },
+    /// A change to which accounts are warmed up, or when, with each one's warm-up after it.
+    WarmSet {
+        done: Result<Overview, PitboardError>,
     },
     /// The app was opened again, or could not be, which nothing here can mend.
     Opened,
@@ -504,6 +528,32 @@ pub(crate) enum Leftover {
     Unknown,
 }
 
+/// Warming up accounts, as the model knows and does it.
+#[derive(Debug, Default)]
+pub(crate) struct Warming {
+    /// Each Claude Code account, whether it is warmed up and where it stands, and the span of
+    /// the day, as the last read or warm-up found them.
+    pub(crate) overview: Option<Overview>,
+    /// A warm-up under way: of the account somebody asked for now, by its label with its
+    /// tool, or one by itself, `None`.
+    pub(crate) running: Option<Option<String>>,
+    /// Warm-ups by itself refused in a row, and the wait after them.
+    refusals: Refusals,
+    /// Each failure notified, by its code and words, until a warm-up starts a period.
+    told: BTreeSet<String>,
+    /// What the last warm-up that came to nothing said, until one starts a period.
+    pub(crate) failed: Option<String>,
+}
+
+impl Warming {
+    /// Whether any account is turned on for warm-ups.
+    pub(crate) fn any_on(&self) -> bool {
+        self.overview
+            .as_ref()
+            .is_some_and(|overview| overview.accounts.iter().any(|choice| choice.on))
+    }
+}
+
 /// What switching Claude Code by itself last came to, which the settings say under it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum AutoStanding {
@@ -601,6 +651,13 @@ const COULD_NOT_UPDATE_CONFIG: &str = "Couldn’t update Claude Code’s config"
 const COULD_NOT_TELL_WHOSE: &str = "Couldn’t tell whose login it is";
 
 const COULD_NOT_STOW: &str = "Couldn’t put the login away";
+
+const COULD_NOT_CHANGE_WARM: &str = "Couldn’t change which accounts are warmed up";
+
+/// "Couldn’t warm up work", for the account `qualified` names.
+fn could_not_warm(qualified: &str) -> String {
+    format!("Couldn’t warm up {}", split(qualified).1)
+}
 
 const COULD_NOT_NAME: &str = "Couldn’t name this account";
 
@@ -780,6 +837,12 @@ pub(crate) struct State {
     /// The core's look at whether to switch Claude Code by itself, `decide_every` after the
     /// last one ended, while switching by itself is on.
     decide: Timer,
+    /// Asking the core to warm up whichever account is due, `decide_every` after the last ask
+    /// ended, while an account is turned on for it.
+    warm_timer: Timer,
+    /// Warming up accounts: which are turned on and where each stands, what is under way and
+    /// what was said.
+    pub(crate) warm: Warming,
     /// The account a switch is running for, as its label with its tool: from the moment it
     /// is asked for, through asking what holds its tool's login, quitting an app and the
     /// switch itself, until the read after it lands.
@@ -938,6 +1001,8 @@ impl State {
             unconfirmed_asked: None,
             auto_standing: None,
             auto_refusals: Refusals::default(),
+            warm_timer: Timer::Off,
+            warm: Warming::default(),
             told: Told::new(),
             preferences: Preferences::default(),
             preferences_read: false,
@@ -976,14 +1041,20 @@ impl State {
 
     /// When the next timer is due, since the model started, if any is set.
     pub(crate) fn next_due(&self) -> Option<Duration> {
-        [self.look, self.timed_read, self.tick, self.decide]
-            .into_iter()
-            .filter_map(|timer| match timer {
-                Timer::Due(at) => Some(at),
-                Timer::Off | Timer::Running => None,
-            })
-            .chain(self.windows.next_due())
-            .min()
+        [
+            self.look,
+            self.timed_read,
+            self.tick,
+            self.decide,
+            self.warm_timer,
+        ]
+        .into_iter()
+        .filter_map(|timer| match timer {
+            Timer::Due(at) => Some(at),
+            Timer::Off | Timer::Running => None,
+        })
+        .chain(self.windows.next_due())
+        .min()
     }
 
     /// Whether a sign-in is under way.
@@ -1069,6 +1140,14 @@ impl State {
                 }
             }
             Intent::SetAutoSwitch { on, at } => self.auto_switch_set(on, at, jobs),
+            Intent::SetWarm { qualified, on } => jobs.push(Job::SetWarm { qualified, on }),
+            Intent::SetWarmRange { from, to } => jobs.push(Job::SetWarmRange { from, to }),
+            Intent::WarmNow { qualified } => {
+                if self.warm.running.is_none() {
+                    self.warm.running = Some(Some(qualified.clone()));
+                    jobs.push(Job::WarmNow { qualified });
+                }
+            }
             Intent::AbandonStuckSwitch => self.change(Job::Abandon, jobs),
             Intent::DismissAbandoned => self.abandoned = None,
             Intent::SignIn { provider, name } => self.sign_in(provider, &name, jobs),
@@ -1397,6 +1476,9 @@ impl State {
         if matches!(self.decide, Timer::Due(at) if at <= now.running) {
             self.look_to_switch(jobs);
         }
+        if matches!(self.warm_timer, Timer::Due(at) if at <= now.running) {
+            self.warm_tick(now, jobs);
+        }
     }
 
     /// A read, once what is installed is known. The first read asks which tools are
@@ -1712,6 +1794,110 @@ impl State {
         self.auto_standing = Some(AutoStanding::Came(outcome));
     }
 
+    /// What a read found of warming up, where it could be read: where it could not, what was
+    /// known stands.
+    fn warm_read(&mut self, warm: Option<Overview>) {
+        if let Some(warm) = warm {
+            self.warm.overview = Some(warm);
+        }
+    }
+
+    /// Asks the core to warm up whichever account turned on is due, where one is turned on,
+    /// none is under way and no refusal's wait runs. The core looks at its files first, so
+    /// asking costs nothing where none is due. Asked after every read, as its timer goes off
+    /// every `decide_every`, after a change to which accounts are warmed up, and once a
+    /// warm-up has started a period, for the next.
+    fn warm_tick(&mut self, now: Now, jobs: &mut Vec<Job>) {
+        if !self.started || !self.warm.any_on() {
+            self.warm_timer = Timer::Off;
+            return;
+        }
+        if self.warm.running.is_some() {
+            return;
+        }
+        if self.warm.refusals.waits(now.running) {
+            self.warm_later(now);
+            return;
+        }
+        self.warm.running = Some(None);
+        self.warm_timer = Timer::Running;
+        jobs.push(Job::WarmUp);
+    }
+
+    /// The next ask is due `decide_every` from now, or as a refusal's wait ends where that
+    /// comes first, while an account is turned on.
+    fn warm_later(&mut self, now: Now) {
+        self.warm_timer = if self.started && self.warm.any_on() {
+            Timer::Due(
+                self.warm
+                    .refusals
+                    .due(now.running, self.cadence.decide_every),
+            )
+        } else {
+            Timer::Off
+        };
+    }
+
+    /// What a warm-up came to. A period started is quiet: the reading the core took after it
+    /// shows on the account, and the next due account is asked for at once. One that came to
+    /// nothing is said once for its words in a notification, and under the setting until one
+    /// starts a period; one somebody asked for is said in the window, as anything they ask for
+    /// is. A refusal of one by itself waits as the core waits after as many attempts.
+    fn warmed_up(
+        &mut self,
+        asked: Option<String>,
+        done: Result<WarmUp, PitboardError>,
+        now: Now,
+        jobs: &mut Vec<Job>,
+    ) {
+        self.warm.running = None;
+        match done {
+            Ok(WarmUp::Started { .. }) => {
+                self.warm.refusals.ended();
+                self.warm.failed = None;
+                self.warm.told.clear();
+                self.warm_tick(now, jobs);
+            }
+            Ok(WarmUp::Stands(overview)) => {
+                self.warm.refusals.ended();
+                self.warm.overview = Some(*overview);
+                self.warm_later(now);
+            }
+            Ok(WarmUp::Running { .. } | WarmUp::Nothing) => {
+                self.warm.refusals.ended();
+                self.warm_later(now);
+            }
+            Err(error) => {
+                let PitboardError::Failed { code, message, .. } = &error;
+                self.warm.failed = Some(message.clone());
+                match asked {
+                    Some(qualified) => self.present(Refused::of(could_not_warm(&qualified), error)),
+                    None => {
+                        self.warm.refusals.refused(now.running);
+                        if self.warm.told.insert(format!("{code}/{message}")) {
+                            jobs.push(Job::Post {
+                                notice: crate::present::warm_failed_notice(code, message),
+                            });
+                        }
+                    }
+                }
+                self.warm_later(now);
+            }
+        }
+    }
+
+    /// A change to which accounts are warmed up, or when, is over: what the core says of each
+    /// one after it is shown, and the one now due is asked for.
+    fn warm_set(&mut self, done: Result<Overview, PitboardError>, now: Now, jobs: &mut Vec<Job>) {
+        match done {
+            Ok(overview) => {
+                self.warm.overview = Some(overview);
+                self.warm_tick(now, jobs);
+            }
+            Err(error) => self.present(Refused::of(COULD_NOT_CHANGE_WARM.into(), error)),
+        }
+    }
+
     fn read(&mut self, asked: Asked, now: Now, jobs: &mut Vec<Job>) {
         let older_than = i64::try_from(asked.older_than.as_millis()).unwrap_or(i64::MAX);
         let ticket = Ticket {
@@ -1791,8 +1977,18 @@ impl State {
                 readings_before,
                 changed_before,
                 read,
-            } => self.read_landed(ticket, readings_before, changed_before, read, now, jobs),
-            Answer::ReadOffline { why, read } => self.known(why, read.ok(), now, jobs),
+                warm,
+            } => {
+                self.warm_read(warm);
+                self.read_landed(ticket, readings_before, changed_before, read, now, jobs);
+                self.warm_tick(now, jobs);
+            }
+            Answer::ReadOffline { why, read, warm } => {
+                self.warm_read(warm);
+                self.known(why, read.ok(), now, jobs);
+            }
+            Answer::WarmedUp { asked, done } => self.warmed_up(asked, done, now, jobs),
+            Answer::WarmSet { done } => self.warm_set(done, now, jobs),
             Answer::Looked { changed, measured } => self.looked(changed, measured, now, jobs),
             Answer::Installed { tools } => {
                 self.installed = Some(tools);
@@ -1927,6 +2123,14 @@ impl State {
                 }
                 // Nothing is said of a look that came to nothing: the next is at its time.
                 Job::AutoLook { .. } => self.decide_later(now),
+                // Whether it warmed anything up is not known; the next ask finds out.
+                Job::WarmUp | Job::WarmNow { .. } => {
+                    self.warm.running = None;
+                    self.warm_later(now);
+                }
+                Job::SetWarm { .. } | Job::SetWarmRange { .. } => {
+                    self.present(Refused::lost(COULD_NOT_CHANGE_WARM.into()));
+                }
                 // Whether it switched is not known, and nothing is said of it: the accounts
                 // are read again to show who is in use, and the next look decides again.
                 Job::AutoSwitch { .. } => {

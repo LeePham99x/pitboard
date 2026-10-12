@@ -328,12 +328,16 @@ pub struct Overview {
 }
 
 /// One Claude Code account, as it is typed, whether Pitboard warms it up, and where it stands
-/// where it does.
+/// where it does. `now` is where it stands for a warm-up somebody asks for now, which the span
+/// of the day and today's attempts do not hold back: `Due` where one would start its period.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Choice {
     pub account: String,
+    /// Its label with its tool, `claude/work`, as a front end asks for it.
+    pub qualified: String,
     pub on: bool,
     pub standing: Option<Standing>,
+    pub now: Standing,
 }
 
 impl Overview {
@@ -368,16 +372,10 @@ pub(crate) fn in_use(ctx: &Context, state: &State) -> Option<crate::state::Key> 
 /// enrolled, and where each one turned on stands, from Pitboard's files alone.
 pub(crate) fn overview(ctx: &Context, state: &State, setting: &Setting) -> Overview {
     let now = ctx.now();
+    let zone = ctx.zone();
     let in_use = in_use(ctx, state);
-    let standings = decide::standings(
-        state,
-        setting,
-        in_use.as_ref(),
-        &crate::readings::load(ctx),
-        &decide::Ledger::load(ctx),
-        now,
-        &ctx.zone(),
-    );
+    let readings = crate::readings::load(ctx);
+    let ledger = decide::Ledger::load(ctx);
     Overview {
         range: setting.range,
         halted: setting.any().then(|| halted(ctx)).flatten(),
@@ -385,13 +383,26 @@ pub(crate) fn overview(ctx: &Context, state: &State, setting: &Setting) -> Overv
             .accounts
             .iter()
             .filter(|account| account.provider() == ProviderId::Claude)
-            .map(|account| Choice {
-                account: state.typed(&account.key()),
-                on: setting.is_on(&account.id),
-                standing: standings
-                    .iter()
-                    .find(|(on, _)| on.id == account.id)
-                    .map(|(_, standing)| standing.clone()),
+            .map(|account| {
+                let on = setting.is_on(&account.id);
+                let standing = |asked| {
+                    decide::decide(
+                        decide::Login::of(account, in_use.as_ref(), now),
+                        readings.get(&account.id),
+                        ledger.get(&account.id),
+                        setting.range,
+                        asked,
+                        now,
+                        &zone,
+                    )
+                };
+                Choice {
+                    account: state.typed(&account.key()),
+                    qualified: account.key().qualified(),
+                    on,
+                    standing: on.then(|| standing(decide::Asked::ByItself)),
+                    now: standing(decide::Asked::Now),
+                }
             })
             .collect(),
     }

@@ -60,6 +60,9 @@ pub(crate) enum Lane {
     Kept,
     /// Posting through the app's system's notifications.
     Notify,
+    /// Warming up accounts, which runs Claude Code for seconds, apart from every read and
+    /// change.
+    Warm,
 }
 
 impl Job {
@@ -87,7 +90,10 @@ impl Job {
             | Job::Stow { .. }
             | Job::RepairSchedule
             | Job::SetSchedule { .. }
+            | Job::SetWarm { .. }
+            | Job::SetWarmRange { .. }
             | Job::Renew => Lane::Changes,
+            Job::WarmUp | Job::WarmNow { .. } => Lane::Warm,
             Job::Holding { .. } | Job::Quit { .. } | Job::Open { .. } => Lane::Processes,
             // Where the login shell's `PATH` is asked, as the Swift service asked it for
             // `searchPath`, apart from every queue of its own.
@@ -113,6 +119,7 @@ pub(crate) struct Lanes {
     sign_in_calls: Sender<Job>,
     kept: Sender<Job>,
     notify: Sender<Job>,
+    warm: Sender<Job>,
     /// What a sign-in's own thread works with and answers to.
     worker: Arc<Worker>,
     answers: Sender<Msg>,
@@ -192,6 +199,7 @@ impl Lanes {
             }),
             kept: lane("pitboard-kept", &worker, answers, |_| {}),
             notify: lane("pitboard-notify", &worker, answers, |_| {}),
+            warm: lane("pitboard-warm", &worker, answers, |_| {}),
             worker,
             answers: answers.clone(),
         }
@@ -207,6 +215,7 @@ impl Lanes {
             Lane::SignInCalls => &self.sign_in_calls,
             Lane::Kept => &self.kept,
             Lane::Notify => &self.notify,
+            Lane::Warm => &self.warm,
             Lane::SignIn => return self.sign_in(job),
         };
         // A lane that has gone has nothing left to answer to.
@@ -519,16 +528,19 @@ impl Worker {
                 // them.
                 let readings_before = core.readings_changed_at();
                 let changed_before = core.changed_at();
+                let read = core.status(fresh);
                 Answer::Read {
                     ticket,
                     readings_before,
                     changed_before,
-                    read: core.status(fresh),
+                    read,
+                    warm: core.warm_overview().ok(),
                 }
             }
             Job::ReadOffline { why } => Answer::ReadOffline {
                 why,
                 read: core.status_offline(),
+                warm: core.warm_overview().ok(),
             },
             Job::Look => Answer::Looked {
                 changed: core.changed_at(),
@@ -563,6 +575,24 @@ impl Worker {
             },
             Job::AutoSwitch { at } => Answer::AutoSwitched {
                 done: core.auto_switch(at),
+            },
+            Job::WarmUp => Answer::WarmedUp {
+                asked: None,
+                done: core.warm_up(),
+            },
+            Job::WarmNow { qualified } => Answer::WarmedUp {
+                done: core.warm_now(qualified.clone()),
+                asked: Some(qualified),
+            },
+            Job::SetWarm { qualified, on } => Answer::WarmSet {
+                done: core
+                    .warm_turn(qualified, on)
+                    .and_then(|()| core.warm_overview()),
+            },
+            Job::SetWarmRange { from, to } => Answer::WarmSet {
+                done: core
+                    .warm_range(from, to)
+                    .and_then(|()| core.warm_overview()),
             },
             Job::Open { location } => {
                 // An app that cannot be opened again is the person's to open: nothing here

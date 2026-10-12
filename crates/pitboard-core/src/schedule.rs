@@ -11,7 +11,9 @@
 //! schedule is the shape most likely to be read as automation, so it is something a person
 //! turns on knowing what it is, and what it does is written where they can read it: it
 //! renews the owner's own parked logins and nothing else. It never switches, never asks for
-//! usage, and makes no request other than the token exchange.
+//! usage, never warms an account up, and makes no request other than the token exchange. A
+//! warm-up, which has Claude Code send a request, runs only where somebody leaves the app or
+//! `pitboard watch` running.
 //!
 //! What it installs is the system's own scheduler, never a homemade daemon: a LaunchAgent
 //! on macOS, which runs inside the login session so the keychain is unlocked, and a systemd

@@ -144,8 +144,17 @@ struct AccountsPane: View {
     /// last, where the model offers that.
     @ViewBuilder private func menu(for item: AccountItem) -> some View {
         ForEach(item.offers, id: \.title) { offer in
-            Button(offer.title) { perform(offer) }
+            if let checked = offer.checked {
+                // A check mark beside it, as a menu shows one setting that is on.
+                Toggle(
+                    offer.title,
+                    isOn: Binding(get: { checked }, set: { _ in perform(offer) })
+                )
                 .disabled(!offer.enabled)
+            } else {
+                Button(offer.title) { perform(offer) }
+                    .disabled(!offer.enabled)
+            }
         }
         if !item.windows.isEmpty {
             Divider()

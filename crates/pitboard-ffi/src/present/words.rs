@@ -388,6 +388,10 @@ pub(crate) fn change_verb(verb: &str) -> String {
         "uninstall" => "Uninstall".into(),
         "in-use" => "Login in use changed".into(),
         "stow" => "Put away a login left in a file".into(),
+        "warm-up" => "Warm-up".into(),
+        "warm-on" => "Warm-up turned on".into(),
+        "warm-off" => "Warm-up turned off".into(),
+        "warm-range" => "Warm-up hours changed".into(),
         _ => readable(verb),
     }
 }
@@ -397,6 +401,12 @@ pub(crate) fn change_outcome(outcome: &str) -> String {
     match outcome {
         "ok" => "Done".into(),
         "second_sign_in" => "Second sign-in".into(),
+        "warm_up_not_started" => "No period started".into(),
+        "warm_up_limit_reached" => "A limit is used up".into(),
+        "warm_up_login_refused" => "Login refused".into(),
+        "warm_up_unreachable" => "Anthropic out of reach".into(),
+        "warm_up_timed_out" => "Took too long".into(),
+        "warm_up_failed" => "Claude Code failed".into(),
         _ => readable(outcome),
     }
 }

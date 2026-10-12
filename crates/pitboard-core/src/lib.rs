@@ -112,6 +112,7 @@ pub mod testing {
     pub use crate::store::vault_read;
     pub use crate::switch::{ScriptedSignIn, SignInScript};
     pub use crate::time::{Clock, FixedClock};
+    pub use crate::warm::run::{Ran, Started, WarmScript};
 
     /// Every variable Pitboard reads from its environment, by name, which a test withholds
     /// from every command it runs unless it means to pass one on.

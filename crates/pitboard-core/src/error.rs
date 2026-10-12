@@ -257,7 +257,7 @@ pub enum Error {
         why: crate::warm::Failure,
     },
 
-    #[error("`{label}` is not warmed up now: it {why}.")]
+    #[error("`{label}` {why}, so it is not warmed up now.")]
     WarmUpNotDue {
         label: String,
         why: String,

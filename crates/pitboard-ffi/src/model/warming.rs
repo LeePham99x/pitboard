@@ -1,0 +1,293 @@
+//! Warming up accounts, where somebody turned it on for one: when the model asks the core to
+//! warm up whichever is due, what it says of what came of it, and what the settings, each
+//! row and each row's menu show of it. Driven through `State::apply` by hand; when an account
+//! is due, and what a warm-up runs, are the core's own and have their own tests.
+
+use super::state::Job;
+use super::testing::{Hand, Machine, Refusal, refusal, status};
+use super::{Intent, RunOutNotice};
+use crate::Account;
+use crate::present::testing::{LimitExt, account, window};
+use pitboard_core::switch::warm::WarmUp;
+use pitboard_core::warm::{Choice, Halt, Overview, Range, Standing};
+use std::time::Duration;
+
+/// Two hours after the moment the hand's clock starts at, 10:00 in UTC on the same day.
+const UNTIL: i64 = 1_800_007_200;
+
+/// `personal`, parked, its five-hour period not running.
+fn personal() -> Account {
+    account(Some("personal"))
+        .limits(vec![window("session", 0.0).resets(None)])
+        .build()
+}
+
+/// What the core's files say of warming up: `personal` turned on or off, where it stands.
+fn overview(on: bool, standing: Standing) -> Overview {
+    Overview {
+        range: Range::DEFAULT,
+        halted: None,
+        accounts: vec![Choice {
+            account: "personal".into(),
+            qualified: "claude/personal".into(),
+            on,
+            standing: on.then(|| standing.clone()),
+            now: standing,
+        }],
+    }
+}
+
+fn warm_up(job: &Job) -> bool {
+    matches!(job, Job::WarmUp)
+}
+
+/// The app started over `machine`, with its first read landed.
+fn started(machine: &mut Machine) -> Hand {
+    let mut model = Hand::new();
+    model.send(Intent::Start);
+    model.run(machine);
+    model
+}
+
+fn reading(warm: Overview) -> Machine {
+    let mut machine = Machine::reading(Ok(status(vec![personal()])));
+    machine.warm = Some(warm);
+    machine.warming = Ok(WarmUp::Stands(Box::new(overview(false, Standing::Due))));
+    machine
+}
+
+fn came_to_nothing() -> Refusal {
+    refusal(
+        "warm_up_not_started",
+        "`personal` was not warmed up: the request was answered, and Anthropic still has no \
+         period running.",
+        Vec::new(),
+    )
+}
+
+#[test]
+fn nothing_is_warmed_up_unless_an_account_is_turned_on() {
+    let mut machine = reading(overview(false, Standing::Due));
+    let model = started(&mut machine);
+    assert!(machine.warmed.is_empty(), "the core is not even asked");
+    let shown = model.shown().machine.warm;
+    assert!(shown.enabled);
+    assert_eq!(shown.range_label, "06:00 to 22:00");
+    assert_eq!(shown.accounts.len(), 1);
+    assert!(!shown.accounts[0].on);
+    assert_eq!(shown.standing, None);
+}
+
+/// An account turned on is asked for after every read, and every 30 seconds though nothing
+/// was written, as `pitboard watch` asks: a period resets with nobody writing anything.
+#[test]
+fn an_account_turned_on_is_asked_for_after_each_read_and_every_thirty_seconds() {
+    let mut machine = reading(overview(true, Standing::Due));
+    let mut model = started(&mut machine);
+    assert_eq!(machine.warmed, [None], "after the first read");
+    machine.warm = Some(overview(
+        true,
+        Standing::Running {
+            until: UNTIL,
+            next: Some(UNTIL),
+        },
+    ));
+    model.later(Duration::from_secs(29));
+    model.tick();
+    model.run(&mut machine);
+    assert_eq!(machine.warmed.len(), 1, "not before thirty seconds");
+    model.later(Duration::from_secs(1));
+    model.tick();
+    model.run(&mut machine);
+    assert_eq!(machine.warmed.len(), 2);
+    assert_eq!(
+        model.shown().machine.warm.standing.as_deref(),
+        Some("Next warm-up: personal at 10:00."),
+        "what the core said as it found nothing due"
+    );
+}
+
+/// One under way holds the next back, so a slow run is never asked for twice.
+#[test]
+fn one_warm_up_runs_at_a_time() {
+    let mut machine = reading(overview(true, Standing::Due));
+    let mut model = started(&mut machine);
+    let before = model.count(warm_up);
+    model.later(Duration::from_secs(30));
+    model.tick();
+    model.run_but(&mut machine, warm_up);
+    assert_eq!(model.count(warm_up), before + 1);
+    model.later(Duration::from_secs(30));
+    model.tick();
+    assert_eq!(
+        model.count(warm_up),
+        before + 1,
+        "the first is still under way"
+    );
+    assert!(
+        model
+            .send(Intent::WarmNow {
+                qualified: "claude/personal".into()
+            })
+            .is_empty(),
+        "nor is one asked for now"
+    );
+}
+
+/// One by itself that came to nothing is notified once in the core's words, said under the
+/// setting until one starts a period, and asked for again no sooner than the core waits
+/// after as many attempts.
+#[test]
+fn a_warm_up_by_itself_that_came_to_nothing_is_notified_once_and_waits() {
+    let mut machine = reading(overview(true, Standing::Due));
+    machine.warming = Err(came_to_nothing());
+    let mut model = started(&mut machine);
+    assert_eq!(machine.warmed.len(), 1);
+    assert_eq!(
+        machine.posted,
+        [RunOutNotice {
+            id: "warm-failed/warm_up_not_started".into(),
+            title: "Pitboard could not warm up an account".into(),
+            subtitle: None,
+            body: "`personal` was not warmed up: the request was answered, and Anthropic \
+                   still has no period running."
+                .into(),
+            switch_to: None,
+        }]
+    );
+    assert!(
+        model
+            .shown()
+            .machine
+            .warm
+            .standing
+            .is_some_and(|said| said.starts_with("The last warm-up came to nothing: ")),
+    );
+    model.later(Duration::from_secs(59));
+    model.tick();
+    model.run(&mut machine);
+    assert_eq!(machine.warmed.len(), 1, "it waits a minute");
+    model.later(Duration::from_secs(1));
+    model.tick();
+    model.run(&mut machine);
+    assert_eq!(machine.warmed.len(), 2);
+    assert_eq!(machine.posted.len(), 1, "said once");
+
+    machine.warming = Ok(WarmUp::Started {
+        account: "personal".into(),
+        until: Some(18_000),
+    });
+    model.later(Duration::from_secs(120));
+    model.tick();
+    model.run(&mut machine);
+    assert!(
+        !model
+            .shown()
+            .machine
+            .warm
+            .standing
+            .is_some_and(|said| said.starts_with("The last warm-up came to nothing")),
+        "a period started ends what was said"
+    );
+}
+
+/// Asked for now, it warms that account up, and what went wrong is said in the window, as
+/// anything somebody asks for is, and not notified.
+#[test]
+fn asked_for_now_what_went_wrong_is_said_in_the_window() {
+    let mut machine = reading(overview(false, Standing::Due));
+    machine.warming = Err(came_to_nothing());
+    let mut model = started(&mut machine);
+    model.send(Intent::WarmNow {
+        qualified: "claude/personal".into(),
+    });
+    model.run(&mut machine);
+    assert_eq!(machine.warmed, [Some("claude/personal".to_owned())]);
+    let failure = model.shown().failure.expect("said");
+    assert_eq!(failure.title, "Couldn’t warm up personal");
+    assert_eq!(failure.code.as_deref(), Some("warm_up_not_started"));
+    assert!(machine.posted.is_empty());
+}
+
+/// Turning an account on is the core's to keep, and an account due is warmed up at once.
+#[test]
+fn turning_an_account_on_warms_it_up_where_it_is_due() {
+    let mut machine = reading(overview(false, Standing::Due));
+    let mut model = started(&mut machine);
+    assert!(machine.warmed.is_empty());
+    model.send(Intent::SetWarm {
+        qualified: "claude/personal".into(),
+        on: true,
+    });
+    model.run(&mut machine);
+    assert_eq!(machine.warm_turned, [("claude/personal".to_owned(), true)]);
+    assert_eq!(machine.warmed, [None]);
+    model.send(Intent::SetWarmRange {
+        from: 420,
+        to: 1380,
+    });
+    model.run(&mut machine);
+    assert_eq!(machine.warm_ranges, [(420, 1380)]);
+    let shown = model.shown().machine.warm;
+    assert_eq!((shown.from, shown.to), (420, 1380));
+    assert_eq!(shown.range_label, "07:00 to 23:00");
+}
+
+/// Each row turned on says where its warm-up stands, and its menu offers both: Warm Up Now
+/// while its period is not running, and Warm Up Automatically, checked while it is on.
+#[test]
+fn a_row_says_where_its_warm_up_stands_and_its_menu_offers_it() {
+    let mut machine = reading(overview(
+        true,
+        Standing::Running {
+            until: UNTIL,
+            next: Some(UNTIL),
+        },
+    ));
+    machine.warming = Ok(WarmUp::Stands(Box::new(overview(
+        true,
+        Standing::Running {
+            until: UNTIL,
+            next: Some(UNTIL),
+        },
+    ))));
+    let model = started(&mut machine);
+    let shown = model.shown();
+    let item = shown
+        .sections
+        .iter()
+        .flat_map(|section| &section.accounts)
+        .find(|item| item.title == "personal")
+        .expect("personal");
+    assert_eq!(item.warm_note.as_deref(), Some("Warms up again at 10:00"));
+    let warm: Vec<(&str, bool, Option<bool>)> = item
+        .offers
+        .iter()
+        .filter(|offer| offer.title.starts_with("Warm"))
+        .map(|offer| (offer.title.as_str(), offer.enabled, offer.checked))
+        .collect();
+    assert_eq!(
+        warm,
+        [
+            ("Warm Up Now", false, None),
+            ("Warm Up Automatically", true, Some(true))
+        ],
+        "its period runs, so nothing to start now"
+    );
+}
+
+/// Where nothing can be warmed up here, the settings say why, and nothing is offered now.
+#[test]
+fn a_halt_is_said_under_the_setting() {
+    let mut halted = overview(true, Standing::Due);
+    halted.halted = Some(Halt::ProgramMissing);
+    let mut machine = reading(halted.clone());
+    machine.warming = Ok(WarmUp::Stands(Box::new(halted)));
+    let model = started(&mut machine);
+    assert_eq!(
+        model.shown().machine.warm.standing.as_deref(),
+        Some(
+            "Pitboard is not warming up accounts: Claude Code is not installed where Pitboard looks."
+        )
+    );
+}

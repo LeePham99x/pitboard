@@ -40,6 +40,25 @@ struct SettingsView: View {
     }
 }
 
+/// A time of day, as minutes from midnight, for a picker of hours and minutes, which sends
+/// what is picked to `set`. The end of a day, 24:00, shows as midnight, and midnight picked for
+/// an end is the end of the day.
+private func timeOfDay(
+    _ minutes: UInt16, end: Bool, set: @escaping (UInt16) -> Void
+) -> Binding<Date> {
+    Binding(
+        get: {
+            let minutes = Int(minutes) % (24 * 60)
+            return Calendar.current.date(
+                bySettingHour: minutes / 60, minute: minutes % 60, second: 0, of: .now) ?? .now
+        },
+        set: { date in
+            let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
+            let picked = (parts.hour ?? 0) * 60 + (parts.minute ?? 0)
+            set(UInt16(end && picked == 0 ? 24 * 60 : picked))
+        })
+}
+
 private struct GeneralSettings: View {
     let model: AppModel
     let openAtLogin: OpenAtLogin
@@ -49,6 +68,7 @@ private struct GeneralSettings: View {
         let schedule = model.machine.schedule
         let renewal = model.machine.renewal
         let auto = model.machine.autoSwitch
+        let warm = model.machine.warm
         Form {
             Section {
                 Toggle(
@@ -108,6 +128,51 @@ private struct GeneralSettings: View {
             } footer: {
                 Text(auto.note).footnote()
             }
+
+            Section {
+                DatePicker(
+                    "From",
+                    selection: timeOfDay(warm.from, end: false) {
+                        model.send(.setWarmRange(from: $0, to: warm.to))
+                    },
+                    displayedComponents: .hourAndMinute
+                )
+                .accessibilityIdentifier("settings.warmFrom")
+                DatePicker(
+                    "To",
+                    selection: timeOfDay(warm.to, end: true) {
+                        model.send(.setWarmRange(from: warm.from, to: $0))
+                    },
+                    displayedComponents: .hourAndMinute
+                )
+                .accessibilityIdentifier("settings.warmTo")
+                if warm.accounts.isEmpty {
+                    Text("No Claude Code account is enrolled yet.").explanatory()
+                }
+                ForEach(warm.accounts, id: \.qualified) { account in
+                    Toggle(
+                        isOn: Binding(
+                            get: { account.on },
+                            set: { model.send(.setWarm(qualified: account.qualified, on: $0)) })
+                    ) {
+                        Text(account.plan.map { "\(account.title) · \($0)" } ?? account.title)
+                        if let standing = account.standing {
+                            Text(standing)
+                        }
+                    }
+                    .accessibilityIdentifier("settings.warm.\(account.qualified)")
+                }
+                if let standing = warm.standing {
+                    Text(standing)
+                        .explanatory()
+                        .accessibilityIdentifier("settings.warmStanding")
+                }
+            } header: {
+                Text("Warm up limits")
+            } footer: {
+                Text(warm.note).footnote()
+            }
+            .disabled(!warm.enabled)
 
             Section {
                 // Shows what was asked for while the scheduler answers, and cannot be pressed
