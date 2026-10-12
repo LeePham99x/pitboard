@@ -400,6 +400,10 @@ mod tests {
     use crate::warm::{self, Range};
 
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn a_claude_code_account_is_turned_on_and_off_and_each_is_recorded() {
         let m = machine("warm-turn");
         let pitboard = Pitboard::new(m.ctx.clone());
@@ -435,6 +439,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn a_codex_account_is_not_warmed_up() {
         let m = machine("warm-codex");
         let mut state = state::load(&m.ctx).expect("state");
@@ -453,12 +461,16 @@ mod tests {
 
     #[test]
     fn nothing_is_warmed_up_on_windows_yet() {
-        let m = machine("warm-windows");
-        let halted = warm::halted(&m.ctx) == Some(warm::Halt::Unbuilt);
-        assert_eq!(halted, crate::host::OS == crate::host::Os::Windows);
+        let ctx = crate::context::Context::new(std::env::temp_dir().join("pitboard-warm-windows"));
+        let unbuilt = warm::halted(&ctx) == Some(warm::Halt::Unbuilt);
+        assert_eq!(unbuilt, crate::host::OS == crate::host::Os::Windows);
     }
 
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn the_span_is_kept_and_recorded() {
         let m = machine("warm-range");
         let pitboard = Pitboard::new(m.ctx.clone());
@@ -477,6 +489,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn a_forgotten_account_is_warmed_up_no_more() {
         let m = machine("warm-forget");
         let pitboard = Pitboard::new(m.ctx.clone());
@@ -486,6 +502,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
     fn a_setting_a_newer_pitboard_wrote_is_neither_read_nor_written_over() {
         let m = machine("warm-newer");
         let path = warm::path(&m.ctx);
