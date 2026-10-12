@@ -1225,6 +1225,44 @@ impl Pitboard {
         )
     }
 
+    /// Each Claude Code account, whether Pitboard warms it up, and within which span of each
+    /// day, from Pitboard's files alone: no lock, and nobody asked.
+    pub fn warm_overview(&self) -> Result<crate::warm::Overview> {
+        let state = state::load(&self.ctx)?;
+        let setting = crate::warm::load(&self.ctx)?;
+        Ok(crate::warm::overview(&self.ctx, &state, &setting))
+    }
+
+    /// Warms up the account `typed` names, or stops, recorded in the activity log as
+    /// `warm-on` or `warm-off` of that account. Only a Claude Code account is warmed up
+    /// (`warm_up_unsupported`); any may be turned off. Whether that changed anything.
+    pub fn warm_turn(&self, typed: &str, on: bool) -> Changing<bool> {
+        let verb = if on { "warm-on" } else { "warm-off" };
+        let permit = self.permitted()?;
+        let key = self.named(permit, verb, typed)?;
+        self.changing(permit, verb, &key.typed(), Some(key.provider), |settled| {
+            switch::warm::turn(settled, &key, on).map(|changed| (changed, Vec::new()))
+        })
+    }
+
+    /// Warms up within `range` of each day, recorded in the activity log as `warm-range` of
+    /// the span.
+    pub fn warm_range(&self, range: crate::warm::Range) -> Changing<crate::warm::Range> {
+        let permit = self.permitted()?;
+        let subject = format!(
+            "{}-{}",
+            crate::warm::clock(range.from()),
+            crate::warm::clock(range.to())
+        );
+        self.changing(
+            permit,
+            "warm-range",
+            &subject,
+            Some(ProviderId::Claude),
+            |settled| switch::warm::range(settled, range).map(|range| (range, Vec::new())),
+        )
+    }
+
     /// The login left in the file behind Claude Code's store, and what putting it away would
     /// do with it, for somebody to confirm: `None` where nothing is behind that store. What
     /// `pitboard stow` and the app's sheet ask first. Takes no lock and writes nothing, and
@@ -1387,6 +1425,8 @@ impl Audited for Outcome {
 impl Audited for switch::Reclaimed {}
 impl Audited for Enrolled {}
 impl Audited for String {}
+impl Audited for bool {}
+impl Audited for crate::warm::Range {}
 
 impl Audited for switch::Stowed {
     fn audit_code(&self) -> &'static str {

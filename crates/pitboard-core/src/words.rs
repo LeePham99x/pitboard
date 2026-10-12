@@ -186,6 +186,56 @@ pub fn not_watching(why: &crate::autoswitch::Blind) -> String {
     }
 }
 
+/// Where an account turned on for warm-ups stands, as a clause after its name: "warms up again
+/// at 22:50". Each moment is written as `moment` writes it, the command line's way or the
+/// app's.
+pub fn warm_standing(standing: &crate::warm::Standing, moment: &dyn Fn(i64) -> String) -> String {
+    use crate::warm::{Hold, Standing};
+    match standing {
+        Standing::Due => "warms up now".into(),
+        Standing::Running {
+            until,
+            next: Some(next),
+        } if next == until => format!("warms up again at {}", moment(*next)),
+        Standing::Running {
+            until,
+            next: Some(next),
+        } => format!(
+            "its 5-hour period runs until {}, and it warms up again at {}",
+            moment(*until),
+            moment(*next)
+        ),
+        Standing::Running { until, next: None } => {
+            format!("its 5-hour period runs until {}", moment(*until))
+        }
+        Standing::Resting { at } => format!("warms up at {}", moment(*at)),
+        Standing::Waiting { until } => format!(
+            "a warm-up came to nothing, and it tries again at {}",
+            moment(*until)
+        ),
+        Standing::Held(Hold::NoReading) => "waits for a reading from Anthropic".into(),
+        Standing::Held(Hold::NothingToStart) => "its plan has no 5-hour limit to start".into(),
+        Standing::Held(Hold::LimitUsedUp { limit }) => {
+            let name = scoped_limit_name(&limit.kind, limit.length_seconds, limit.scope.as_deref());
+            match limit.resets_at {
+                Some(at) => format!("its {name} limit is used up until {}", moment(at)),
+                None => format!("its {name} limit is used up"),
+            }
+        }
+        Standing::Held(Hold::GaveUp { until }) => format!(
+            "{} warm-ups came to nothing today, and it tries again at {}",
+            crate::duty::cadence::ATTEMPTS,
+            moment(*until)
+        ),
+        Standing::Held(Hold::LoginExpired) => {
+            "its parked login has expired, and needs signing in again".into()
+        }
+        Standing::Held(Hold::NothingParked) => {
+            "it is not in use and has no parked login to warm up with".into()
+        }
+    }
+}
+
 /// What sessions already running do after a switch while a file sits behind the store they
 /// read, as the register's `fallback_file_pins_session_login` reads Claude Code 2.1.294. The
 /// rest of the sentence, and its subject, are each place's own.

@@ -235,6 +235,23 @@ fn forget_and_rename() {
     contract!("forget_signed_in", value, code);
 }
 
+/// Turning an account on, setting the span, and the overview that shows both. An account
+/// with no reading from Anthropic yet waits for one; a span that starts and ends at once is
+/// a usage error.
+#[test]
+#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
+fn warm() {
+    let env = two_accounts("contract-warm");
+    let (value, code) = json(&env, &["warm", "on", "beta"]);
+    contract!("warm_on", value, code);
+    let (value, code) = json(&env, &["warm", "range", "07:30", "23:00"]);
+    contract!("warm_range", value, code);
+    let (value, code) = json(&env, &["warm"]);
+    contract!("warm", value, code);
+    let (value, code) = json(&env, &["warm", "range", "06:00", "06:00"]);
+    contract!("warm_range_empty", value, code);
+}
+
 /// With nobody to ask and no `--yes`, a command that deletes something refuses before it
 /// changes anything.
 #[test]

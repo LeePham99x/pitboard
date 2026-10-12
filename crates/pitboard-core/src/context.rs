@@ -255,6 +255,11 @@ impl Context {
         self.clock.now_millis()
     }
 
+    /// The time zone of this context's clock: the machine's, unless a test says otherwise.
+    pub(crate) fn zone(&self) -> jiff::tz::TimeZone {
+        self.clock.zone()
+    }
+
     /// The person's home directory, which is where a platform's own scheduler lives.
     pub(crate) fn home(&self) -> &std::path::Path {
         &self.home

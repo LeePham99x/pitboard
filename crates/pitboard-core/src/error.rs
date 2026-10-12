@@ -230,6 +230,27 @@ pub enum Error {
     )]
     StateVersionUnknown { path: PathBuf, found: u32 },
 
+    #[error("could not read which accounts Pitboard warms up, at {path}: {source}")]
+    WarmSettingUnreadable {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error(
+        "which accounts Pitboard warms up, at {path}, cannot be read ({detail}). Delete it, \
+         then turn warm-up on again for each account you want it for."
+    )]
+    WarmSettingCorrupt { path: PathBuf, detail: String },
+
+    #[error(
+        "`{label}` is a {} account, and Pitboard warms up Claude Code accounts only: when a {} \
+         period starts has not been measured.",
+        .tool.name(),
+        .tool.name()
+    )]
+    WarmUpUnsupported { tool: ProviderId, label: String },
+
     #[error(
         "{path} has an account for `{tool}`, a tool this Pitboard does not know, so it was \
          written by a newer one. Update this Pitboard the way you installed it. The app, and \
@@ -763,6 +784,9 @@ impl Error {
             StateCorrupt { .. } => "state_corrupt",
             StateFromNewerVersion { .. } => "state_from_newer_version",
             StateVersionUnknown { .. } => "state_version_unknown",
+            WarmSettingUnreadable { .. } => "warm_setting_unreadable",
+            WarmSettingCorrupt { .. } => "warm_setting_corrupt",
+            WarmUpUnsupported { .. } => "warm_up_unsupported",
             StateNamesUnknownTool { .. } => "state_names_unknown_tool",
             StateWrongMachine { .. } => "state_wrong_machine",
             StateWriteFailed { .. } => "state_write_failed",

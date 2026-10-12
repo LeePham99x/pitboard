@@ -17,6 +17,7 @@ mod json;
 mod manpage;
 mod render;
 mod ui;
+mod warm;
 mod watch;
 
 /// Bumped only when a field changes shape. Adding a field or an error code is not a
@@ -145,6 +146,12 @@ enum Command {
         #[arg(long)]
         once: bool,
     },
+    /// Start the five-hour period of the accounts you choose as soon as the last one resets,
+    /// while the app or `pitboard watch` runs
+    Warm {
+        #[command(subcommand)]
+        what: Option<warm::WarmCommand>,
+    },
     /// Print a shell completion script
     Completions { shell: clap_complete::Shell },
     /// Print the man page
@@ -172,6 +179,7 @@ impl Command {
             Command::Doctor => "doctor",
             Command::Statusline => "statusline",
             Command::Watch { .. } => "watch",
+            Command::Warm { .. } => "warm",
             Command::Completions { .. } | Command::Manpage => "generate",
         }
     }
@@ -1141,6 +1149,7 @@ fn main() -> ExitCode {
             }
         }
         Command::Rename { from, to } => rename(&pitboard, &from, &to),
+        Command::Warm { ref what } => warm::run(&pitboard, what.as_ref()),
         // These write a file for a shell or for man, not a report, so there is no envelope
         // to put them in. Asking for one is a command line that cannot be satisfied.
         Command::Completions { .. } | Command::Manpage if cli.json => Report {

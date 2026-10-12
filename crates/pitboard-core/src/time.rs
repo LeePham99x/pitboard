@@ -19,6 +19,11 @@ pub trait Clock: Send + Sync + std::fmt::Debug {
     /// Epoch milliseconds. Park names carry this, so two parks of one account in the same
     /// second do not collide.
     fn now_millis(&self) -> i64;
+
+    /// The time zone a person's hours are in: this machine's, unless a test says otherwise.
+    fn zone(&self) -> TimeZone {
+        TimeZone::system()
+    }
 }
 
 /// This machine's clock, which is what every real context uses.
@@ -40,17 +45,29 @@ impl Clock for SystemClock {
 #[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 #[derive(Debug)]
-pub struct FixedClock(std::sync::atomic::AtomicI64);
+pub struct FixedClock {
+    now: std::sync::atomic::AtomicI64,
+    zone: TimeZone,
+}
 
 #[cfg(any(test, feature = "test-support"))]
 impl FixedClock {
+    /// At `epoch_seconds`, in this machine's time zone.
     pub fn at(epoch_seconds: i64) -> FixedClock {
-        FixedClock(std::sync::atomic::AtomicI64::new(epoch_seconds))
+        FixedClock {
+            now: std::sync::atomic::AtomicI64::new(epoch_seconds),
+            zone: TimeZone::system(),
+        }
+    }
+
+    /// The same clock, in `zone`, so hours of the day mean the same on every machine.
+    pub fn in_zone(self, zone: TimeZone) -> FixedClock {
+        FixedClock { zone, ..self }
     }
 
     /// Move the clock forward, or back.
     pub fn advance(&self, seconds: i64) {
-        self.0
+        self.now
             .fetch_add(seconds, std::sync::atomic::Ordering::Relaxed);
     }
 }
@@ -58,11 +75,15 @@ impl FixedClock {
 #[cfg(any(test, feature = "test-support"))]
 impl Clock for FixedClock {
     fn now(&self) -> i64 {
-        self.0.load(std::sync::atomic::Ordering::Relaxed)
+        self.now.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     fn now_millis(&self) -> i64 {
         self.now() * 1000
+    }
+
+    fn zone(&self) -> TimeZone {
+        self.zone.clone()
     }
 }
 

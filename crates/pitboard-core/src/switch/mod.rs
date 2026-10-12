@@ -30,6 +30,7 @@ mod stow;
 #[cfg(test)]
 mod two_tools;
 mod uninstall;
+pub(crate) mod warm;
 
 pub use crate::pending::Reclaimed;
 pub use adopt::{Adopted, adopt};
