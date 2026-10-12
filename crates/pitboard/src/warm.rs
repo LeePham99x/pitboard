@@ -2,11 +2,12 @@
 //! never does, is [`pitboard_core::warm`]'s.
 
 use crate::ui::{BOLD, DIM, columns, pad, paint};
+use crate::watch::epoch;
 use crate::{Report, changed};
 use clap::Subcommand;
 use pitboard_core::service::Pitboard;
 use pitboard_core::switch::warm::WarmUp;
-use pitboard_core::warm::{self, Hold, Overview, Range, Standing};
+use pitboard_core::warm::{self, Halt, Overview, Range, Standing};
 use pitboard_core::words;
 use serde_json::{Value, json};
 
@@ -33,7 +34,8 @@ pub enum WarmCommand {
         /// When to start, such as 06:00
         #[arg(value_name = "FROM")]
         from: String,
-        /// When to stop, such as 22:00; 24:00 is midnight, and an earlier time runs past it
+        /// When to stop, such as 22:00; 00:00 and 24:00 are midnight, and a time before FROM runs
+        /// past it
         #[arg(value_name = "TO")]
         to: String,
     },
@@ -55,8 +57,30 @@ pub fn run(pitboard: &Pitboard, what: Option<&WarmCommand>) -> Report {
     }
 }
 
-fn range_json(range: Range) -> Value {
+pub(crate) fn range_json(range: Range) -> Value {
     json!({ "from": warm::clock(range.from()), "to": warm::clock(range.to()) })
+}
+
+/// That `account` was warmed up, and until when its period runs where that is known.
+pub(crate) fn warmed_line(account: &str, until: Option<i64>) -> String {
+    let account = paint(BOLD, account);
+    match until {
+        Some(until) => format!(
+            "Warmed up {account}: its 5-hour period runs until {}.",
+            pitboard_core::time::moment(until, epoch())
+        ),
+        None => format!(
+            "Warmed up {account}. Anthropic has not said yet when its 5-hour period resets."
+        ),
+    }
+}
+
+/// Why nothing is warmed up on this machine.
+pub(crate) fn halted_line(halt: &Halt) -> String {
+    format!(
+        "Pitboard is not warming up accounts: {}.",
+        words::not_warming(halt)
+    )
 }
 
 fn overview(pitboard: &Pitboard) -> Report {
@@ -66,6 +90,7 @@ fn overview(pitboard: &Pitboard) -> Report {
     };
     let data = json!({
         "range": range_json(overview.range),
+        "halted": overview.halted.as_ref().map(|halt| json!({ "reason": halt.code() })),
         "accounts": overview.accounts.iter().map(|choice| {
             let mut account = json!({ "label": choice.account, "on": choice.on });
             if let Some(standing) = &choice.standing {
@@ -94,12 +119,7 @@ fn standing_json(standing: &Standing) -> Value {
         Standing::Resting { at } => json!({ "state": "resting", "next_at": at }),
         Standing::Waiting { until } => json!({ "state": "waiting", "next_at": until }),
         Standing::Held(hold) => {
-            let until = match hold {
-                Hold::LimitUsedUp { limit } => limit.resets_at,
-                Hold::GaveUp { until } => Some(*until),
-                _ => None,
-            };
-            json!({ "state": "held", "reason": hold.code(), "until": until })
+            json!({ "state": "held", "reason": hold.code(), "until": hold.until() })
         }
     }
 }
@@ -129,23 +149,15 @@ fn said(overview: &Overview) -> String {
                 "  {name}  on   {}\n",
                 words::warm_standing(standing, &moment)
             )),
-            None if choice.on => text.push_str(&format!("  {name}  on\n")),
             None => text.push_str(&format!("  {name}  {}\n", paint(DIM, "off"))),
         }
     }
-    if !overview.accounts.iter().any(|choice| choice.on) {
+    if let Some(halt) = &overview.halted {
+        text.push_str(&format!("{}\n", halted_line(halt)));
+    } else if !overview.accounts.iter().any(|choice| choice.on) {
         text.push_str("Turn it on for an account with `pitboard warm on <account>`.\n");
     }
     text
-}
-
-/// Seconds since 1970, for writing each moment as a person reads it.
-fn epoch() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |since| {
-            i64::try_from(since.as_secs()).unwrap_or(i64::MAX)
-        })
 }
 
 fn now(pitboard: &Pitboard, label: &str) -> Report {
@@ -154,18 +166,7 @@ fn now(pitboard: &Pitboard, label: &str) -> Report {
         match warmed {
             WarmUp::Started { account, until } => (
                 json!({ "label": account, "outcome": "started", "until": until }),
-                match until {
-                    Some(until) => format!(
-                        "Warmed up {}: its 5-hour period runs until {}.\n",
-                        paint(BOLD, &account),
-                        moment(until)
-                    ),
-                    None => format!(
-                        "Warmed up {}. Anthropic has not said yet when its 5-hour period \
-                         resets.\n",
-                        paint(BOLD, &account)
-                    ),
-                },
+                format!("{}\n", warmed_line(&account, until)),
             ),
             WarmUp::Running { account, until } => (
                 json!({ "label": account, "outcome": "running", "until": until }),

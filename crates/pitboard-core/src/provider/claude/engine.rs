@@ -226,88 +226,6 @@ impl Provider for Claude {
         let _ = live::discard_signin(ctx, permit, dir);
     }
 
-    /// Measured on 12 October 2026 with 2.1.296 (the register's
-    /// `request_starts_the_five_hour_period`): print mode on the cheapest model, with
-    /// no tools, no MCP servers, no slash commands and no session kept, answering in JSON. The
-    /// access token goes on descriptor 3, which `CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR`
-    /// names, and is used with no refresh token and no expiry and stored nowhere
-    /// (`headless_token_descriptor`). Never on standard input: print
-    /// mode adds what it reads there to the prompt. `CLAUDE_CONFIG_DIR` is the private home's,
-    /// so its config, its keychain slot and what it fetches are its own.
-    fn warm_up(
-        &self,
-        ctx: &Context,
-        permit: Permit,
-        home: &std::path::Path,
-        login: &Value,
-    ) -> Result<crate::warm::run::Headless, ProviderError> {
-        let token = access_token(login).ok_or_else(|| ProviderError::ShapeUnexpected {
-            provider: ProviderId::Claude,
-            detail: "it has no claudeAiOauth.accessToken".into(),
-        })?;
-        let mut command = crate::warm::run::command(ctx, permit, ProviderId::Claude, home);
-        command
-            .args([
-                "-p",
-                "Reply with the single word OK.",
-                "--model",
-                "haiku",
-                "--tools",
-                "",
-                "--no-session-persistence",
-                "--strict-mcp-config",
-                "--disable-slash-commands",
-                "--output-format",
-                "json",
-            ])
-            .env("CLAUDE_CONFIG_DIR", home.join("config"))
-            .env("CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR", "3")
-            .env("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1")
-            .env("DISABLE_AUTOUPDATER", "1");
-        Ok(crate::warm::run::Headless {
-            command,
-            token: Some(token.to_owned()),
-        })
-    }
-
-    /// Print mode's JSON result, as 2.1.296 prints it (`headless_result`): `is_error`,
-    /// with `api_error_status` and `api_error` where the service refused the request, and
-    /// `result`, the answer or what went wrong in Claude Code's words.
-    fn warm_verdict(&self, ran: &crate::warm::run::Ran) -> crate::warm::run::Verdict {
-        use crate::warm::run::Verdict;
-        let Some(result) = ran
-            .stdout
-            .lines()
-            .rev()
-            .find_map(|line| serde_json::from_str::<Value>(line.trim()).ok())
-            .filter(Value::is_object)
-        else {
-            return Verdict::Failed(if ran.timed_out {
-                "Claude Code did not finish in time".into()
-            } else {
-                "Claude Code printed no result".into()
-            });
-        };
-        let failed = result.get("is_error").and_then(Value::as_bool) != Some(false);
-        if !failed && ran.exit == Some(0) {
-            return Verdict::Answered;
-        }
-        let said = result
-            .get("result")
-            .and_then(Value::as_str)
-            .unwrap_or("Claude Code failed")
-            .to_owned();
-        match (
-            result.get("api_error_status").and_then(Value::as_u64),
-            result.get("api_error").and_then(Value::as_str),
-        ) {
-            (Some(429), Some("usage_limit_reached")) => Verdict::LimitReached,
-            (Some(401 | 403), _) => Verdict::LoginRefused,
-            (Some(429 | 500..=599), _) => Verdict::Unreachable,
-            _ => Verdict::Failed(said),
-        }
-    }
-
     /// Read from 2.1.289. Before it opens the browser, `claude auth login` writes to stdout
     /// `Opening browser to sign in…`, then `If the browser didn't open, visit: ` and an
     /// address, then its prompt with no newline after it, and from then on it reads a
@@ -408,7 +326,7 @@ impl Provider for Claude {
     }
 }
 
-fn access_token(login: &Value) -> Option<&str> {
+pub(super) fn access_token(login: &Value) -> Option<&str> {
     document::oauth_in(login)
         .get("accessToken")
         .and_then(Value::as_str)

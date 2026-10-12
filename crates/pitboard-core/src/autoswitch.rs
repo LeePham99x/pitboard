@@ -959,6 +959,24 @@ mod tests {
         )
     }
 
+    /// A record written before the attempts moved into the shared ledger reads the same, and is
+    /// written back with the same keys.
+    #[test]
+    fn a_record_an_earlier_pitboard_wrote_reads_and_writes_the_same() {
+        let earlier = r#"{"limits":{"work/session":{"resets_at":1800000000,"attempts":2,"waits":1,"at":1799990000,"switched":false,"passed_over":["spare"],"said":{"no_room":1799990100}}}}"#;
+        let ledger: Ledger = serde_json::from_str(earlier).expect("reads");
+        let tried = ledger.limits.values().next().expect("a limit");
+        assert_eq!(
+            (tried.tries.attempts, tried.tries.waits, tried.tries.at),
+            (2, 1, 1_799_990_000)
+        );
+        assert!(tried.tries.said("no_room"));
+        assert_eq!(tried.passed_over, ["spare"]);
+        let written = serde_json::to_value(&ledger).expect("writes");
+        let earlier: serde_json::Value = serde_json::from_str(earlier).expect("JSON");
+        assert_eq!(written, earlier);
+    }
+
     #[test]
     fn a_limit_below_the_share_is_left_alone_and_one_at_it_switches() {
         assert_eq!(

@@ -24,6 +24,11 @@ pub trait Clock: Send + Sync + std::fmt::Debug {
     fn zone(&self) -> TimeZone {
         TimeZone::system()
     }
+
+    /// Waits `seconds`: this machine's clock sleeps, and a test's moves on at once.
+    fn pause(&self, seconds: u64) {
+        std::thread::sleep(std::time::Duration::from_secs(seconds));
+    }
 }
 
 /// This machine's clock, which is what every real context uses.
@@ -84,6 +89,10 @@ impl Clock for FixedClock {
 
     fn zone(&self) -> TimeZone {
         self.zone.clone()
+    }
+
+    fn pause(&self, seconds: u64) {
+        self.advance(i64::try_from(seconds).unwrap_or(i64::MAX));
     }
 }
 

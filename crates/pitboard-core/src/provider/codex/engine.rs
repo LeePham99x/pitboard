@@ -299,24 +299,6 @@ impl Provider for Codex {
         false
     }
 
-    /// Not measured: when a Codex period starts, and what one not running reads as.
-    fn warm_up(
-        &self,
-        _ctx: &Context,
-        _permit: Permit,
-        _home: &std::path::Path,
-        _login: &Value,
-    ) -> Result<crate::warm::run::Headless, ProviderError> {
-        Err(ProviderError::Unsupported {
-            provider: ProviderId::Codex,
-            reason: "when a Codex period starts has not been measured".into(),
-        })
-    }
-
-    fn warm_verdict(&self, ran: &crate::warm::run::Ran) -> crate::warm::run::Verdict {
-        crate::warm::run::Verdict::Failed(format!("Codex exited {:?}", ran.exit))
-    }
-
     /// Nothing measured yet. Codex reads an API key from its own login document, which moves
     /// with the account, and whether an environment key takes precedence over a ChatGPT
     /// login in 0.154.0 has not been read closely enough to warn about.

@@ -272,25 +272,28 @@ fn warm(seen: &Seen) -> WarmShown {
                 .collect()
         })
         .unwrap_or_default();
-    let standing = overview
-        .filter(|_| state.warm.any_on())
-        .and_then(|overview| {
-            if let Some(halt) = &overview.halted {
-                return Some(format!(
-                    "Pitboard is not warming up accounts: {}.",
-                    halt.said()
-                ));
-            }
-            if let Some(failed) = &state.warm.failed {
-                return Some(format!("The last warm-up came to nothing: {failed}"));
-            }
-            let (account, at) = overview.next(seen.now)?;
-            Some(if at <= seen.now {
-                format!("Warming up {account} now.")
-            } else {
-                format!("Next warm-up: {account} at {}.", seen.clock(at))
+    let unreadable = state.warm.unreadable.as_deref().map(words::capitalised);
+    let standing = unreadable.or_else(|| {
+        overview
+            .filter(|_| state.warm.any_on())
+            .and_then(|overview| {
+                if let Some(halt) = &overview.halted {
+                    return Some(format!(
+                        "Pitboard is not warming up accounts: {}.",
+                        pitboard_core::words::not_warming(halt)
+                    ));
+                }
+                if let Some(failed) = &state.warm.failed {
+                    return Some(format!("The last warm-up came to nothing: {failed}"));
+                }
+                let (account, at) = overview.next(seen.now)?;
+                Some(if at <= seen.now {
+                    format!("Warming up {account} now.")
+                } else {
+                    format!("Next warm-up: {account} at {}.", seen.clock(at))
+                })
             })
-        });
+    });
     WarmShown {
         from: range.from(),
         to: range.to(),

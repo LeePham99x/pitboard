@@ -98,22 +98,18 @@ pub fn run(pitboard: &Pitboard, threshold: Threshold, as_json: bool) -> ExitCode
                     emit(report, as_json);
                 }
             }
+            // Nothing a warm-up comes to ends watching: switching goes on, and the warm-up is
+            // tried again once its refusals have waited.
             if !warm_refusals.waits(instant(now)) {
-                match pitboard.warm_up() {
-                    Err(failed) if ends_watching(&failed.error) => {
-                        return emit(Report::refused("watch", failed), as_json);
+                let outcome = pitboard.warm_up();
+                match &outcome {
+                    Ok(_) => warm_refusals.ended(),
+                    Err(_) => {
+                        warm_refusals.refused(instant(now));
                     }
-                    outcome => {
-                        match &outcome {
-                            Ok(_) => warm_refusals.ended(),
-                            Err(_) => {
-                                warm_refusals.refused(instant(now));
-                            }
-                        }
-                        for report in warm_told.untold(outcome) {
-                            emit(report, as_json);
-                        }
-                    }
+                }
+                for report in warm_told.untold(outcome) {
+                    emit(report, as_json);
                 }
             }
         }
@@ -209,10 +205,7 @@ fn watching_json(threshold: Threshold, warming: Option<&Overview>) -> Value {
     let mut data = json!({ "event": "watching", "threshold": threshold.percent() });
     if let Some(overview) = warming.filter(|overview| overview.accounts.iter().any(|c| c.on)) {
         data["warm"] = json!({
-            "range": {
-                "from": pitboard_core::warm::clock(overview.range.from()),
-                "to": pitboard_core::warm::clock(overview.range.to()),
-            },
+            "range": crate::warm::range_json(overview.range),
             "accounts": overview
                 .accounts
                 .iter()
@@ -264,7 +257,8 @@ impl WarmTold {
                     Error::WarmUpFailed { label, .. } | Error::WarmUpNotDue { label, .. } => {
                         format!("{label}/{}", failed.error.code())
                     }
-                    error => error.code().to_owned(),
+                    // Its words name the account, where it is of one.
+                    error => format!("{}/{error}", error.code()),
                 };
                 return if self.errors.insert(key) {
                     vec![Report::refused("watch", failed)]
@@ -278,14 +272,7 @@ impl WarmTold {
                 self.by_account.remove(&account);
                 self.errors
                     .retain(|key| !key.starts_with(&format!("{account}/")));
-                let line = match until {
-                    Some(until) => format!(
-                        "Warmed up {}: its 5-hour period runs until {}.",
-                        ui::paint(ui::BOLD, &account),
-                        moment(until)
-                    ),
-                    None => format!("Warmed up {}.", ui::paint(ui::BOLD, &account)),
-                };
+                let line = crate::warm::warmed_line(&account, until);
                 vec![Report::done(
                     "watch",
                     json!({ "event": "warmed_up", "account": account, "until": until }),
@@ -308,10 +295,7 @@ impl WarmTold {
                     reports.push(Report::done(
                         "watch",
                         json!({ "event": "warm_up_halted", "reason": halt.code() }),
-                        stamp(format!(
-                            "Pitboard is not warming up accounts: {}.\n",
-                            halt.said()
-                        )),
+                        stamp(format!("{}\n", crate::warm::halted_line(halt))),
                     ));
                 }
                 return reports;
@@ -322,12 +306,8 @@ impl WarmTold {
             let Some(Standing::Held(hold)) = &choice.standing else {
                 continue;
             };
-            let until = match hold {
-                pitboard_core::warm::Hold::LimitUsedUp { limit } => limit.resets_at,
-                pitboard_core::warm::Hold::GaveUp { until } => Some(*until),
-                _ => None,
-            };
-            let key = format!("held/{}/{}", hold.code(), until.unwrap_or_default());
+            let until = hold.until();
+            let key = format!("held/{}", hold.told_apart());
             if !self
                 .by_account
                 .entry(choice.account.clone())
@@ -557,9 +537,9 @@ fn every() -> Duration {
     Duration::from_secs(DECIDE_EVERY_SECONDS.unsigned_abs())
 }
 
-/// Seconds since 1970, for when to read and decide next. Not what is decided from: the core
-/// reads its own clock.
-fn epoch() -> i64 {
+/// Seconds since 1970, for when to read and decide next, and for writing a moment as a person
+/// reads it. Not what is decided from: the core reads its own clock.
+pub(crate) fn epoch() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |since| {
@@ -1102,6 +1082,44 @@ mod tests {
             };
             assert_eq!(told.untold(failed()).len(), 1);
             assert!(told.untold(failed()).is_empty());
+        }
+
+        /// A limit used up is said once, though each answer may give its reset a second apart.
+        #[test]
+        fn a_limit_used_up_is_said_once_whatever_second_its_reset_is_given() {
+            let mut told = WarmTold::default();
+            let used_up = |resets_at| {
+                let limit = Window {
+                    kind: "weekly_all".into(),
+                    scope: None,
+                    percent: 100.0,
+                    resets_at: Some(resets_at),
+                    is_active: true,
+                    severity: None,
+                    length_seconds: None,
+                };
+                stands(overview(None, Some(Hold::LimitUsedUp { limit })))
+            };
+            assert_eq!(told.untold(used_up(1_760_000_000)).len(), 1);
+            assert!(told.untold(used_up(1_760_000_001)).is_empty());
+        }
+
+        /// Another error is said once for its words, which name the account it is of.
+        #[test]
+        fn another_error_is_said_once_for_each_account_it_names() {
+            let mut told = WarmTold::default();
+            let expired = |label: &str| {
+                Err(Failed {
+                    error: Error::ParkedLoginRefused {
+                        tool: ProviderId::Claude,
+                        label: label.into(),
+                    },
+                    warnings: Vec::new(),
+                })
+            };
+            assert_eq!(told.untold(expired("work")).len(), 1);
+            assert!(told.untold(expired("work")).is_empty());
+            assert_eq!(told.untold(expired("personal")).len(), 1);
         }
     }
 }

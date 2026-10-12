@@ -961,8 +961,9 @@ pub const ASSUMPTIONS: &[Assumption] = &[
     },
     Assumption {
         name: "used_up_limit_refuses_every_request",
-        fact: "while any limit of an account is used up, the service refuses a request, which \
-               spends nothing and starts no five-hour period",
+        fact: "while a limit of the account's own, not a model's, is used up, the service \
+               refuses a request, which spends nothing and starts no five-hour period. Not \
+               measured with only a model's limit used up",
         read_from: "measured on 12 October 2026 on a Max 20x account with its weekly limit \
                     used up: the request was refused with `usage_limit_reached`, 0 tokens, and \
                     the answer after it still had no five-hour period running",

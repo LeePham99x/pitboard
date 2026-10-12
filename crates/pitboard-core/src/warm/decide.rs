@@ -2,16 +2,16 @@
 //! last gave of it, whether a login of it is at hand, the span of the day, and what was tried
 //! today. Asks nobody and writes nothing.
 
-use super::{Range, Setting};
+use super::Range;
 use crate::duty::ledger::{self, Tries};
 use crate::home;
 use crate::service::Permit;
-use crate::state::{Account, Key, State};
+use crate::state::{Account, Key};
 use crate::usage::{self, Snapshot, Window};
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 /// A five-hour period, in seconds.
@@ -58,6 +58,35 @@ pub enum Hold {
 }
 
 impl Hold {
+    /// When it ends, where that is known: the limit's reset, or the start of tomorrow.
+    pub fn until(&self) -> Option<i64> {
+        match self {
+            Hold::LimitUsedUp { limit } => limit.resets_at,
+            Hold::GaveUp { until } => Some(*until),
+            Hold::NoReading | Hold::NothingToStart | Hold::LoginExpired | Hold::NothingParked => {
+                None
+            }
+        }
+    }
+
+    /// What tells this apart from another, for a front end that says each once: its code, and
+    /// the limit or the day it names. Not the limit's reset, which each answer can give a second
+    /// apart.
+    pub fn told_apart(&self) -> String {
+        match self {
+            Hold::LimitUsedUp { limit } => format!(
+                "{}/{}/{}",
+                self.code(),
+                limit.kind,
+                limit.scope.as_deref().unwrap_or_default()
+            ),
+            Hold::GaveUp { until } => format!("{}/{until}", self.code()),
+            Hold::NoReading | Hold::NothingToStart | Hold::LoginExpired | Hold::NothingParked => {
+                self.code().to_owned()
+            }
+        }
+    }
+
     /// A stable code, for `--json` and for telling one apart from another.
     pub fn code(&self) -> &'static str {
         match self {
@@ -77,8 +106,9 @@ pub(crate) enum Login {
     /// Claude Code's own, the account being in use.
     InUse,
     /// A parked login, and whether its refresh token still renews it.
-    Parked { restorable: bool },
-    /// None.
+    Parked {
+        restorable: bool,
+    },
     Nothing,
 }
 
@@ -276,7 +306,8 @@ pub(crate) fn decide(
                 until: tomorrow(now, zone),
             });
         }
-        if tries.attempts > 0 && now < tries.waits_until() {
+        // After any attempt, counted or one waiting may mend, the next waits its turn.
+        if now < tries.waits_until() {
             return Standing::Waiting {
                 until: tries.waits_until(),
             };
@@ -293,47 +324,16 @@ pub(crate) fn startable(reading: &Snapshot) -> Option<&Window> {
         .find(|window| usage::limit_name(&window.kind) == "session" && window.scope.is_none())
 }
 
-/// A limit used up as of `now`, where one is: the one that resets last, which is how long
-/// nothing could start a period.
+/// One of the account's own limits used up as of `now`, where one is: the one that resets
+/// last, which is how long nothing could start a period. A model's limit holds back only that
+/// model's requests, and a warm-up's is the smallest model's.
 fn used_up(reading: &Snapshot, now: i64) -> Option<Window> {
     reading
         .windows
         .iter()
-        .filter(|window| window.used(now) >= 100.0)
+        .filter(|window| window.scope.is_none() && window.used(now) >= 100.0)
         .max_by_key(|window| window.resets_at.unwrap_or(i64::MAX))
         .cloned()
-}
-
-/// Where each Claude Code account `setting` turns on stands, in the order they were enrolled,
-/// as Pitboard knows it at `now`.
-pub(crate) fn standings<'a>(
-    state: &'a State,
-    setting: &Setting,
-    in_use: Option<&Key>,
-    readings: &HashMap<String, Snapshot>,
-    ledger: &Ledger,
-    now: i64,
-    zone: &TimeZone,
-) -> Vec<(&'a Account, Standing)> {
-    state
-        .accounts
-        .iter()
-        .filter(|account| {
-            account.provider() == crate::provider::ProviderId::Claude && setting.is_on(&account.id)
-        })
-        .map(|account| {
-            let standing = decide(
-                Login::of(account, in_use, now),
-                readings.get(&account.id),
-                ledger.get(&account.id),
-                setting.range,
-                Asked::ByItself,
-                now,
-                zone,
-            );
-            (account, standing)
-        })
-        .collect()
 }
 
 #[cfg(test)]
@@ -539,6 +539,36 @@ mod tests {
             &zone(),
         );
         assert_eq!(now, Standing::Due, "asked for, it goes ahead");
+    }
+
+    /// A failure waiting may mend is not counted, but the next attempt still waits its turn,
+    /// longer after each in a row.
+    #[test]
+    fn a_failure_waiting_may_mend_waits_its_turn_too() {
+        let mut warmed = Warmed::default();
+        warmed.tries.attempt(NOW);
+        warmed.tries.waited();
+        assert_eq!(
+            by_itself(&idle(), Some(&warmed), NOW + 59),
+            Standing::Waiting { until: NOW + 60 }
+        );
+        warmed.tries.attempt(NOW + 60);
+        warmed.tries.waited();
+        assert_eq!(
+            by_itself(&idle(), Some(&warmed), NOW + 100),
+            Standing::Waiting { until: NOW + 180 }
+        );
+        assert_eq!(by_itself(&idle(), Some(&warmed), NOW + 180), Standing::Due);
+    }
+
+    /// A model's own limit used up holds back that model alone, and a warm-up runs on the
+    /// smallest.
+    #[test]
+    fn a_models_limit_used_up_holds_nothing_back() {
+        let mut fable = window("weekly_scoped", 100.0, Some(NOW + 40 * HOUR));
+        fable.scope = Some("Fable".into());
+        let reading = answered(vec![window("session", 0.0, None), fable], NOW - 60);
+        assert_eq!(by_itself(&reading, None, NOW), Standing::Due);
     }
 
     /// A warm-up the last reading did not see started a period at the start of the ten

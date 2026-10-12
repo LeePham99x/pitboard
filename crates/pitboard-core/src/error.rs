@@ -251,7 +251,7 @@ pub enum Error {
     )]
     WarmUpUnsupported { tool: ProviderId, label: String },
 
-    #[error("`{label}` was not warmed up: {}.", .why.said())]
+    #[error("`{label}` was not warmed up: {}.", crate::words::warm_failed(.why))]
     WarmUpFailed {
         label: String,
         why: crate::warm::Failure,
@@ -264,12 +264,8 @@ pub enum Error {
         code: &'static str,
     },
 
-    #[error(
-        "Claude Code's managed settings make it sign in another way, set by {}, so a warm-up \
-         would send a request on that and not on the account's login.",
-        .names.join(", ")
-    )]
-    WarmUpOverridden { names: Vec<String> },
+    #[error("Pitboard warms up no account now: {}.", crate::words::not_warming(.halt))]
+    WarmUpHalted { halt: crate::warm::Halt },
 
     #[error("another Pitboard is warming up an account. Try again in a minute.")]
     WarmUpInProgress,
@@ -812,7 +808,7 @@ impl Error {
             WarmUpUnsupported { .. } => "warm_up_unsupported",
             WarmUpFailed { why, .. } => why.code(),
             WarmUpNotDue { code, .. } => code,
-            WarmUpOverridden { .. } => "warm_up_auth_overridden",
+            WarmUpHalted { halt } => halt.code(),
             WarmUpInProgress => "warm_up_in_progress",
             StateNamesUnknownTool { .. } => "state_names_unknown_tool",
             StateWrongMachine { .. } => "state_wrong_machine",

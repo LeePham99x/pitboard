@@ -9,7 +9,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Added
 
 - Pitboard warms up the Claude Code accounts you turn it on for: as soon as an account's
-  five-hour period resets, Claude Code sends one short request with that account's login, so
+  five-hour period resets, Claude Code sends one short message with that account's login, so
   the next period starts at once and resets as early as it can. Turn it on in **Settings** >
   **General** > **Warm up limits**, with **Warm Up Automatically** in an account's shortcut
   menu, or with `pitboard warm on <account>`, between hours you set, 06:00 to 22:00 by

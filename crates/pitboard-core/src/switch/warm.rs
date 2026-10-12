@@ -13,13 +13,15 @@ use crate::audit;
 use crate::context::Context;
 use crate::duty::ledger::Tries;
 use crate::error::Error;
-use crate::provider::{self, ProviderId};
+use crate::provider::ProviderId;
+use crate::provider::claude;
 use crate::service::Permit;
+use crate::service::Warning;
 use crate::state::Key;
-use crate::warm::decide::{self, Asked, Ledger, Login, Standing};
-use crate::warm::run::{self, Verdict};
+use crate::warm::decide::{self, Ledger, Standing};
+use crate::warm::run;
 use crate::warm::{self, Failure, Range};
-use crate::{park, readings, status};
+use crate::{park, status};
 use serde_json::Value;
 
 /// How long ahead of its expiry an access token is renewed before it is handed on: well past
@@ -49,8 +51,9 @@ pub(crate) enum Target {
 }
 
 /// Warms up `target`, as [`crate::warm`] says when, and records what it came to in the
-/// activity log as `warm-up` of the account, with `ok` or why it started nothing.
-pub(crate) fn warm_up(settled: Settled, target: Target) -> Result<WarmUp> {
+/// activity log as `warm-up` of the account, with `ok` or why it started nothing. With what a
+/// change of Claude Code's login warns of where its login in use was renewed.
+pub(crate) fn warm_up(settled: Settled, target: Target) -> Result<(WarmUp, Vec<Warning>)> {
     let Settled {
         _exclusive,
         mut state,
@@ -61,27 +64,31 @@ pub(crate) fn warm_up(settled: Settled, target: Target) -> Result<WarmUp> {
     let now = ctx.now();
     let zone = ctx.zone();
     let setting = warm::load(ctx)?;
-    let mut ledger = Ledger::load(ctx);
-    let readings = readings::load(ctx);
-    let in_use = warm::in_use(ctx, &state);
-    let (key, asked) = match target {
-        Target::Account(key) => (key, Asked::Now),
+    let overview = warm::overview(ctx, &state, &setting);
+    let (key, standing) = match target {
+        Target::Account(key) => {
+            let standing = overview
+                .accounts
+                .iter()
+                .find(|choice| choice.qualified == key.qualified())
+                .map(|choice| choice.now.clone());
+            (key, standing)
+        }
         Target::Due => {
-            let due = decide::standings(
-                &state,
-                &setting,
-                in_use.as_ref(),
-                &readings,
-                &ledger,
-                now,
-                &zone,
-            )
-            .into_iter()
-            .find(|(_, standing)| *standing == Standing::Due)
-            .map(|(account, _)| account.key());
+            let due = overview
+                .accounts
+                .iter()
+                .find(|choice| choice.standing == Some(Standing::Due))
+                .and_then(|choice| {
+                    state
+                        .accounts
+                        .iter()
+                        .map(crate::state::Account::key)
+                        .find(|key| key.qualified() == choice.qualified)
+                });
             match due {
-                Some(key) => (key, Asked::ByItself),
-                None => return Ok(WarmUp::Nothing),
+                Some(key) => (key, Some(Standing::Due)),
+                None => return Ok((WarmUp::Nothing, Vec::new())),
             }
         }
     };
@@ -93,129 +100,153 @@ pub(crate) fn warm_up(settled: Settled, target: Target) -> Result<WarmUp> {
             label: label.clone(),
             enrolled: state.labels(key.provider),
         })?;
-    if key.provider != ProviderId::Claude {
+    let Some(standing) = standing.filter(|_| key.provider == ProviderId::Claude) else {
         return Err(Error::WarmUpUnsupported {
             tool: key.provider,
             label,
         });
+    };
+    if let Some(halt) = warm::halted(ctx) {
+        return Err(Error::WarmUpHalted { halt });
     }
-    let standing = decide::decide(
-        Login::of(&account, in_use.as_ref(), now),
-        readings.get(&account.id),
-        ledger.get(&account.id),
-        setting.range,
-        asked,
-        now,
-        &zone,
-    );
-    match (standing, asked) {
-        (Standing::Due, _) => {}
-        (Standing::Running { until, .. }, Asked::Now) => {
-            return Ok(WarmUp::Running {
+    match standing {
+        Standing::Due => {}
+        Standing::Running { until, .. } => {
+            let running = WarmUp::Running {
                 account: label,
                 until,
-            });
+            };
+            return Ok((running, Vec::new()));
         }
-        (other, Asked::Now) => return Err(not_due(label, &other, now)),
-        (_, Asked::ByItself) => return Ok(WarmUp::Nothing),
+        Standing::Held(hold) => return Err(not_due(label, &hold, now)),
+        Standing::Resting { .. } | Standing::Waiting { .. } => {
+            unreachable!("asked for now, nothing rests or waits")
+        }
     }
-    let tool = provider::of(ProviderId::Claude);
-    let overridden = warm::overridden(ctx);
-    if !overridden.is_empty() {
-        return Err(Error::WarmUpOverridden { names: overridden });
-    }
-    if tool.program(ctx).is_none() {
-        return Err(Error::ProgramNotFound {
-            tool: ProviderId::Claude,
-        });
-    }
-    let (login, signed_in) = match account.parked.clone() {
+    let run_lock = RunLock::claim(ctx, permit)?;
+    // Counted before the login is fetched, so an account whose login cannot be had is not the
+    // first one due at every look, ahead of the others.
+    let mut ledger = Ledger::load(ctx);
+    ledger.of(&account.id, now, &zone).tries.attempt(now);
+    ledger.save(ctx, permit)?;
+    let home = run::home(ctx, ProviderId::Claude);
+    let handed = hand_over(ctx, permit, &mut state, &key, &account, &home, now);
+    // The tool runs for seconds; nothing else waits on Pitboard's lock meanwhile.
+    drop(_exclusive);
+    let came = handed.and_then(|handed| {
+        let ran = run::run(ctx, handed.headless);
+        let started = ran
+            .map_err(|error| Failure::Failed(error.to_string()))
+            .and_then(|ran| {
+                if ran.timed_out {
+                    return Err(Failure::TimedOut);
+                }
+                claude::warm::verdict(&ran)
+            })
+            .and_then(|()| started(ctx, permit, &account.id, &handed.login, handed.signed_in));
+        if started == Err(Failure::LimitReached) {
+            // So what holds it back from now on is the reading's, which says until when.
+            let _ = status::ask_one(
+                ctx,
+                permit,
+                ProviderId::Claude,
+                &account.id,
+                &handed.login,
+                handed.signed_in,
+            );
+        }
+        started
+            .map(|until| (until, handed.warnings))
+            .map_err(|why| Error::WarmUpFailed {
+                label: label.clone(),
+                why,
+            })
+    });
+    run::clear(permit, &home);
+    drop(run_lock);
+    record(ctx, permit, &account.id, &label, now, &came)?;
+    came.map(|(until, warnings)| {
+        let started = WarmUp::Started {
+            account: label,
+            until,
+        };
+        (started, warnings)
+    })
+}
+
+/// What a warm-up's run is handed: its command, with the login it runs on, whether that is the
+/// login Claude Code has stored, and what renewing that login warned of.
+struct Handed {
+    headless: run::Headless,
+    login: Value,
+    signed_in: bool,
+    warnings: Vec<Warning>,
+}
+
+/// The run for `account`, given its access token alone, renewed first where it would lapse
+/// during the run: its parked login, or the one Claude Code has stored where it is in use.
+fn hand_over(
+    ctx: &Context,
+    permit: Permit,
+    state: &mut crate::state::State,
+    key: &Key,
+    account: &crate::state::Account,
+    home: &std::path::Path,
+    now: i64,
+) -> Result<Handed> {
+    let label = state.typed(key);
+    let (login, signed_in, warnings) = match account.parked.clone() {
         Some(mut held) => {
             if held
                 .access_expires_at
                 .is_some_and(|at| at <= now + AHEAD_SECONDS)
             {
-                held =
-                    renew::renew_one(ctx, permit, &mut state, &key, &held)?.ok_or_else(|| {
-                        Error::WarmUpFailed {
-                            label: label.clone(),
-                            why: Failure::Unreachable,
-                        }
-                    })?;
+                held = renew::renew_one(ctx, permit, state, key, &held)?.ok_or_else(|| {
+                    Error::WarmUpFailed {
+                        label: label.clone(),
+                        why: Failure::Unreachable,
+                    }
+                })?;
             }
-            (park::load(ctx, &key, &held)?, false)
+            (park::load(ctx, key, &held)?, false, Vec::new())
         }
         None => {
             let (live, found) =
-                identify::fresh(ctx, permit, &mut state, ProviderId::Claude, AHEAD_SECONDS)?;
-            identify::keep(ctx, permit, &mut state, ProviderId::Claude, found)?;
+                identify::fresh(ctx, permit, state, ProviderId::Claude, AHEAD_SECONDS)?;
+            identify::keep(ctx, permit, state, ProviderId::Claude, found)?;
             match live {
                 identify::Live::Login(login) if account.owned_by(&login.owner) => {
-                    (login.document, true)
+                    let warnings = login.lock_warning(ProviderId::Claude).into_iter().collect();
+                    (login.document, true, warnings)
                 }
-                _ => {
-                    return Err(not_due(
-                        label,
-                        &Standing::Held(warm::Hold::NothingParked),
-                        now,
-                    ));
-                }
+                _ => return Err(not_due(label, &warm::Hold::NothingParked, now)),
             }
         }
     };
-    let running = Running::claim(ctx, permit)?;
-    let home = run::home(ctx, ProviderId::Claude);
-    run::prepare(permit, &home).map_err(|source| Error::HomeUnwritable {
-        path: home.clone(),
+    run::prepare(permit, home).map_err(|source| Error::HomeUnwritable {
+        path: home.to_path_buf(),
         source,
     })?;
     let headless =
-        tool.warm_up(ctx, permit, &home, &login)
-            .map_err(|error| Error::WarmUpFailed {
-                label: label.clone(),
-                why: Failure::Failed(error.to_string()),
-            })?;
-    ledger.of(&account.id, now, &zone).tries.attempt(now);
-    ledger.save(ctx, permit)?;
-    // The tool runs for seconds; nothing else waits on Pitboard's lock meanwhile.
-    drop(_exclusive);
-
-    let came = match run::run(ctx, headless) {
-        Ok(ran) if ran.timed_out => Err(Failure::TimedOut),
-        Ok(ran) => match tool.warm_verdict(&ran) {
-            Verdict::Answered => started(ctx, permit, &account.id, &login, signed_in),
-            Verdict::LimitReached => {
-                // So what holds it back from now on is the reading's, which says until when.
-                let _ = status::ask_one(
-                    ctx,
-                    permit,
-                    ProviderId::Claude,
-                    &account.id,
-                    &login,
-                    signed_in,
-                );
-                Err(Failure::LimitReached)
-            }
-            Verdict::LoginRefused => Err(Failure::LoginRefused),
-            Verdict::Unreachable => Err(Failure::Unreachable),
-            Verdict::Failed(said) => Err(Failure::Failed(said)),
-        },
-        Err(error) => Err(Failure::Failed(error.to_string())),
-    };
-    drop(running);
-    record(ctx, permit, &account.id, &label, now, &came)?;
-    match came {
-        Ok(until) => Ok(WarmUp::Started {
-            account: label,
-            until,
-        }),
-        Err(why) => Err(Error::WarmUpFailed { label, why }),
-    }
+        claude::warm::headless(ctx, permit, home, &login).map_err(|error| Error::WarmUpFailed {
+            label,
+            why: Failure::Failed(error.to_string()),
+        })?;
+    Ok(Handed {
+        headless,
+        login,
+        signed_in,
+        warnings,
+    })
 }
 
+/// How long after an answered request a reading is asked for again where the first had no
+/// period running yet: the measured runs asked 20 seconds after theirs.
+const ASKED_AGAIN_AFTER: u64 = 20;
+
 /// Whether the run started the period: the reset of the account's five-hour limit, as a reading
-/// asked for after it says, where one could be asked for. A reading that still has no period
-/// running says it started nothing.
+/// asked for after it says, where one could be asked for. A reading with no period running is
+/// asked again once, as late as the measured runs asked, before it says the run started nothing.
 fn started(
     ctx: &Context,
     permit: Permit,
@@ -223,73 +254,98 @@ fn started(
     login: &Value,
     signed_in: bool,
 ) -> std::result::Result<Option<i64>, Failure> {
-    let Some(reading) = status::ask_one(ctx, permit, ProviderId::Claude, id, login, signed_in)
-    else {
-        return Ok(None);
-    };
-    decide::startable(&reading)
-        .and_then(|session| session.resets_at)
-        .filter(|&at| at > ctx.now())
-        .map(Some)
-        .ok_or(Failure::NotStarted)
+    for pause in [0, ASKED_AGAIN_AFTER] {
+        ctx.clock.pause(pause);
+        let Some(reading) = status::ask_one(ctx, permit, ProviderId::Claude, id, login, signed_in)
+        else {
+            return Ok(None);
+        };
+        let until = decide::startable(&reading)
+            .and_then(|session| session.resets_at)
+            .filter(|&at| at > ctx.now());
+        if until.is_some() {
+            return Ok(until);
+        }
+    }
+    Err(Failure::NotStarted)
 }
 
 /// What a warm-up of the account with `id`, begun at `began`, came to, kept under the lock
-/// again, and written in the activity log.
+/// again, and written in the activity log. The next attempt waits from when this one ended.
 fn record(
     ctx: &Context,
     permit: Permit,
     id: &str,
     label: &str,
     began: i64,
-    came: &std::result::Result<Option<i64>, Failure>,
+    came: &Result<(Option<i64>, Vec<Warning>)>,
 ) -> Result<()> {
     let _exclusive = super::exclusive(ctx, permit)?;
+    let now = ctx.now();
     let mut ledger = Ledger::load(ctx);
-    let warmed = ledger.of(id, ctx.now(), &ctx.zone());
+    let warmed = ledger.of(id, now, &ctx.zone());
     match came {
         Ok(_) => {
             warmed.tries = Tries::default();
             warmed.started = Some(began);
         }
-        Err(why) if why.mended_by_waiting() => warmed.tries.waited(),
-        Err(_) => {}
+        Err(error) => {
+            warmed.tries.at = now;
+            if mended_by_waiting(error) {
+                warmed.tries.waited();
+            }
+        }
     }
     let saved = ledger.save(ctx, permit);
-    let code = match came {
-        Ok(_) => "ok",
-        Err(why) => why.code(),
-    };
+    let code = came.as_ref().map_or_else(Error::code, |_| "ok");
     audit::record(ctx, permit, "warm-up", label, code);
     saved
 }
 
+/// Whether waiting may mend what a warm-up failed over, so it is not counted against the day's
+/// attempts: a run that may answer later, or a service out of reach while the login was had.
+fn mended_by_waiting(error: &Error) -> bool {
+    match error {
+        Error::WarmUpFailed { why, .. } => why.mended_by_waiting(),
+        other => other
+            .cause()
+            .is_some_and(crate::error::Cause::worth_retrying),
+    }
+}
+
 /// Why `label` is not warmed up when somebody asked for it now.
-fn not_due(label: String, standing: &Standing, now: i64) -> Error {
-    let code = match standing {
-        Standing::Held(hold) => hold.code(),
-        _ => "warm_up_not_due",
-    };
+fn not_due(label: String, hold: &warm::Hold, now: i64) -> Error {
     Error::WarmUpNotDue {
         label,
-        why: crate::words::warm_standing(standing, &|at| crate::time::moment(at, now)),
-        code,
+        why: crate::words::warm_standing(&Standing::Held(hold.clone()), &|at| {
+            crate::time::moment(at, now)
+        }),
+        code: hold.code(),
     }
 }
 
 /// One warm-up's run at a time on this machine, held for as long as it runs, by whichever
 /// front end started it: two runs would share the tool's private home.
-struct Running {
+struct RunLock {
     _lock: std::fs::File,
 }
 
-impl Running {
-    fn claim(ctx: &Context, permit: Permit) -> Result<Running> {
+impl RunLock {
+    fn claim(ctx: &Context, permit: Permit) -> Result<RunLock> {
         let path = crate::home::dir(ctx).join("warm.lock");
-        let file = crate::host::fs::open_private_lock(permit, &path)
-            .map_err(|source| Error::HomeUnwritable { path, source })?;
-        file.try_lock().map_err(|_| Error::WarmUpInProgress)?;
-        Ok(Running { _lock: file })
+        let file = crate::host::fs::open_private_lock(permit, &path).map_err(|source| {
+            Error::HomeUnwritable {
+                path: path.clone(),
+                source,
+            }
+        })?;
+        match file.try_lock() {
+            Ok(()) => Ok(RunLock { _lock: file }),
+            Err(std::fs::TryLockError::WouldBlock) => Err(Error::WarmUpInProgress),
+            Err(std::fs::TryLockError::Error(source)) => {
+                Err(Error::HomeUnwritable { path, source })
+            }
+        }
     }
 }
 
@@ -387,10 +443,19 @@ mod tests {
         let pitboard = Pitboard::new(m.ctx.clone());
         let refused = pitboard.warm_turn("codex/main", true).expect_err("refused");
         assert_eq!(refused.error.code(), "warm_up_unsupported");
+        let refused = pitboard.warm_now("codex/main").expect_err("refused");
+        assert_eq!(refused.error.code(), "warm_up_unsupported");
         assert!(!warm::path(&m.ctx).exists(), "nothing written");
         pitboard
             .warm_turn("codex/main", false)
             .expect("turning one off is always fine");
+    }
+
+    #[test]
+    fn nothing_is_warmed_up_on_windows_yet() {
+        let m = machine("warm-windows");
+        let halted = warm::halted(&m.ctx) == Some(warm::Halt::Unbuilt);
+        assert_eq!(halted, crate::host::OS == crate::host::Os::Windows);
     }
 
     #[test]
@@ -457,6 +522,7 @@ mod tests {
         use crate::usage::{Snapshot, Source, Window};
         use crate::warm::run::{Ran, Started, WarmScript};
         use crate::warm::{Range, Standing};
+        use jiff::tz::TimeZone;
         use std::sync::{Arc, Mutex};
 
         const HOUR: i64 = 3_600;
@@ -467,19 +533,14 @@ mod tests {
         /// was started as.
         #[derive(Debug)]
         struct Script {
-            exit: i32,
-            prints: &'static str,
+            ran: Ran,
             runs: Mutex<Vec<Started>>,
         }
 
         impl WarmScript for Script {
             fn run(&self, started: &Started) -> Ran {
                 self.runs.lock().expect("runs").push(started.clone());
-                Ran {
-                    exit: Some(self.exit),
-                    stdout: self.prints.to_owned(),
-                    timed_out: false,
-                }
+                self.ran.clone()
             }
         }
 
@@ -525,23 +586,35 @@ mod tests {
 
         /// [`machine`], with `there` turned on for warm-ups, at 08:53 UTC, a Claude Code program
         /// Pitboard finds, and its run played by a script that exits `exit` printing `prints`.
-        fn warming(name: &str, exit: i32, prints: &'static str) -> (Machine, Arc<Script>) {
+        fn warming(name: &str, exit: i32, prints: &str) -> (Machine, Arc<Script>) {
+            let ran = Ran {
+                exit: Some(exit),
+                stdout: prints.to_owned(),
+                timed_out: false,
+            };
+            warming_as(
+                name,
+                ran,
+                Arc::new(FixedClock::at(NOW).in_zone(TimeZone::UTC)),
+            )
+        }
+
+        /// [`warming`], with the run coming to `ran`, on `clock`.
+        fn warming_as(name: &str, ran: Ran, clock: Arc<dyn Clock>) -> (Machine, Arc<Script>) {
             let mut m = machine(name);
             let program = m.ctx_home().join("bin").join("claude");
             std::fs::create_dir_all(program.parent().expect("a folder")).expect("bin");
             std::fs::write(&program, "#!/bin/sh\nexit 99\n").expect("a program");
             crate::host::fs::testing::make_runnable(&program).expect("runnable");
             let script = Arc::new(Script {
-                exit,
-                prints,
+                ran,
                 runs: Mutex::new(Vec::new()),
             });
-            let clock = FixedClock::at(NOW).in_zone(jiff::tz::TimeZone::UTC);
             m.ctx = m
                 .ctx
                 .clone()
                 .with_claude_program(program)
-                .with_clock(Arc::new(clock) as Arc<dyn Clock>)
+                .with_clock(clock)
                 .with_warm_script(Arc::clone(&script) as Arc<dyn WarmScript>);
             Pitboard::new(m.ctx.clone())
                 .warm_turn("there", true)
@@ -554,6 +627,7 @@ mod tests {
         }
 
         #[test]
+        #[cfg_attr(windows, ignore = "a warm-up runs on macOS and Linux")]
         fn a_parked_account_due_is_warmed_up_with_its_access_token_alone() {
             let (m, script) = warming("warm-parked", 0, ANSWERED);
             idle(&m, "there", 20.0);
@@ -649,6 +723,7 @@ mod tests {
         /// under Claude Code's own locks where it would lapse during the run, and saved where
         /// Claude Code keeps it.
         #[test]
+        #[cfg_attr(windows, ignore = "a warm-up runs on macOS and Linux")]
         fn the_account_in_use_is_warmed_up_with_its_login_renewed_first_where_it_lapses() {
             let (m, script) = warming("warm-in-use", 0, ANSWERED);
             Pitboard::new(m.ctx.clone())
@@ -679,6 +754,7 @@ mod tests {
         }
 
         #[test]
+        #[cfg_attr(windows, ignore = "a warm-up runs on macOS and Linux")]
         fn a_limit_used_up_is_waited_on_and_not_counted() {
             let (m, _) = warming("warm-limit", 1, LIMIT_REACHED);
             idle(&m, "there", 20.0);
@@ -711,6 +787,7 @@ mod tests {
         }
 
         #[test]
+        #[cfg_attr(windows, ignore = "a warm-up runs on macOS and Linux")]
         fn a_request_answered_that_starts_nothing_counts_against_the_day() {
             let (m, _) = warming("warm-not-started", 0, ANSWERED);
             idle(&m, "there", 20.0);
@@ -722,6 +799,7 @@ mod tests {
         }
 
         #[test]
+        #[cfg_attr(windows, ignore = "a warm-up runs on macOS and Linux")]
         fn asked_for_now_a_running_period_is_said_and_a_held_one_refused() {
             let (m, script) = warming("warm-now", 0, ANSWERED);
             let pitboard = Pitboard::new(m.ctx.clone());
@@ -744,6 +822,7 @@ mod tests {
         }
 
         #[test]
+        #[cfg_attr(windows, ignore = "a warm-up runs on macOS and Linux")]
         fn nothing_is_warmed_up_outside_the_span() {
             let (m, script) = warming("warm-span", 0, ANSWERED);
             idle(&m, "there", 20.0);
@@ -761,6 +840,230 @@ mod tests {
                 .warm_range(Range::parse("06:00", "22:00").expect("a span"))
                 .expect("kept");
             assert!(matches!(pitboard.warm_look(), Ok(Look::Act)));
+        }
+
+        /// A test's clock that does `meanwhile` the first time Pitboard pauses on it.
+        struct Meanwhile {
+            clock: FixedClock,
+            meanwhile: Mutex<Option<Box<dyn FnOnce() + Send>>>,
+        }
+
+        impl std::fmt::Debug for Meanwhile {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.debug_struct("Meanwhile")
+                    .field("clock", &self.clock)
+                    .finish()
+            }
+        }
+
+        impl Clock for Meanwhile {
+            fn now(&self) -> i64 {
+                self.clock.now()
+            }
+
+            fn now_millis(&self) -> i64 {
+                self.clock.now_millis()
+            }
+
+            fn zone(&self) -> TimeZone {
+                self.clock.zone()
+            }
+
+            fn pause(&self, seconds: u64) {
+                if seconds > 0
+                    && let Some(meanwhile) = self.meanwhile.lock().expect("meanwhile").take()
+                {
+                    meanwhile();
+                }
+                self.clock.pause(seconds);
+            }
+        }
+
+        /// A reading taken at once after the run may not show the period yet, so it is asked
+        /// for again as late as the measured runs asked before the run counts as starting
+        /// nothing.
+        #[test]
+        #[cfg_attr(windows, ignore = "a warm-up runs on macOS and Linux")]
+        fn a_period_the_first_reading_after_the_run_misses_is_asked_about_again() {
+            let api = Arc::new(Mutex::new(None::<Arc<crate::api::scripted::ScriptedApi>>));
+            let later = Arc::clone(&api);
+            let clock = Meanwhile {
+                clock: FixedClock::at(NOW).in_zone(TimeZone::UTC),
+                meanwhile: Mutex::new(Some(Box::new(move || {
+                    if let Some(api) = later.lock().expect("api").as_ref() {
+                        api.using("access-there-refresh", reading(Some(NOW + 5 * HOUR), 20.0));
+                    }
+                }))),
+            };
+            let answered = Ran {
+                exit: Some(0),
+                stdout: ANSWERED.into(),
+                timed_out: false,
+            };
+            let (m, _) = warming_as("warm-asked-again", answered, Arc::new(clock));
+            *api.lock().expect("api") = Some(Arc::clone(&m.api));
+            idle(&m, "there", 20.0);
+            m.api.using("access-there-refresh", reading(None, 20.0));
+
+            let done = warmed(&m).expect("warmed up").value;
+            assert_eq!(
+                done,
+                WarmUp::Started {
+                    account: "there".into(),
+                    until: Some(NOW + 5 * HOUR)
+                }
+            );
+            assert_eq!(m.ctx.now(), NOW + 20, "asked again 20 seconds on");
+        }
+
+        #[test]
+        #[cfg_attr(windows, ignore = "a warm-up runs on macOS and Linux")]
+        fn a_run_past_its_ceiling_waits_its_turn_and_is_not_counted() {
+            let timed_out = Ran {
+                exit: None,
+                stdout: String::new(),
+                timed_out: true,
+            };
+            let clock = Arc::new(FixedClock::at(NOW).in_zone(TimeZone::UTC));
+            let (m, _) = warming_as("warm-timed-out", timed_out, clock);
+            idle(&m, "there", 20.0);
+            let refused = warmed(&m).expect_err("refused");
+            assert_eq!(refused.error.code(), "warm_up_timed_out");
+            let ledger = crate::warm::decide::Ledger::load(&m.ctx);
+            let tries = &ledger.get("there").expect("kept").tries;
+            assert_eq!((tries.attempts, tries.waits), (0, 1));
+            assert!(matches!(
+                Pitboard::new(m.ctx.clone()).warm_look(),
+                Ok(Look::Stands(_))
+            ));
+        }
+
+        #[test]
+        #[cfg_attr(windows, ignore = "a warm-up runs on macOS and Linux")]
+        fn a_refused_login_counts_against_the_day() {
+            let (m, _) = warming(
+                "warm-login-refused",
+                1,
+                r#"{"is_error":true,"api_error_status":401,"result":"Invalid bearer token"}"#,
+            );
+            idle(&m, "there", 20.0);
+            let refused = warmed(&m).expect_err("refused");
+            assert_eq!(refused.error.code(), "warm_up_login_refused");
+            let ledger = crate::warm::decide::Ledger::load(&m.ctx);
+            assert_eq!(ledger.get("there").expect("kept").tries.attempts, 1);
+            assert_eq!(
+                audit_lines(&m, "warm-up"),
+                [("there".to_owned(), "warm_up_login_refused".to_owned())]
+            );
+        }
+
+        /// A parked login that cannot be renewed for now, with Anthropic out of reach, waits
+        /// its turn like a run that could not reach it: counted for nothing, and nothing run.
+        #[test]
+        #[cfg_attr(windows, ignore = "a warm-up runs on macOS and Linux")]
+        fn a_park_that_cannot_be_renewed_for_now_waits_its_turn() {
+            let (m, script) = warming("warm-renew-offline", 0, ANSWERED);
+            idle(&m, "there", 20.0);
+            let mut state = crate::state::load(&m.ctx).expect("state");
+            let there = state
+                .accounts
+                .iter_mut()
+                .find(|account| account.id == "there")
+                .expect("there");
+            there.parked.as_mut().expect("parked").access_expires_at = Some(NOW);
+            crate::state::save(&m.ctx, Permit::for_a_test(), &state).expect("saved");
+            m.api
+                .renew_trouble("there-refresh", crate::api::scripted::Trouble::Offline);
+
+            let refused = warmed(&m).expect_err("refused");
+            assert!(script.runs().is_empty());
+            let ledger = crate::warm::decide::Ledger::load(&m.ctx);
+            let tries = &ledger.get("there").expect("kept").tries;
+            assert_eq!(
+                (tries.attempts, tries.waits),
+                (0, 1),
+                "{}",
+                refused.error.code()
+            );
+        }
+
+        /// One warm-up runs at a time: another front end's holds this one back, which counts
+        /// for nothing and runs nothing.
+        #[test]
+        #[cfg_attr(windows, ignore = "a warm-up runs on macOS and Linux")]
+        fn a_warm_up_running_elsewhere_holds_this_one_back_uncounted() {
+            let (m, script) = warming("warm-in-progress", 0, ANSWERED);
+            idle(&m, "there", 20.0);
+            let held = std::fs::File::create(crate::home::dir(&m.ctx).join("warm.lock"))
+                .expect("a lock file");
+            held.lock().expect("held");
+            let refused = warmed(&m).expect_err("refused");
+            assert_eq!(refused.error.code(), "warm_up_in_progress");
+            assert!(
+                crate::warm::decide::Ledger::load(&m.ctx)
+                    .get("there")
+                    .is_none()
+            );
+            assert!(script.runs().is_empty());
+        }
+
+        /// Where no reading can be had after the run, the period it started is taken on trust,
+        /// from when the run began.
+        #[test]
+        #[cfg_attr(windows, ignore = "a warm-up runs on macOS and Linux")]
+        fn with_no_reading_after_it_the_period_started_is_taken_on_trust() {
+            let (m, _) = warming("warm-no-reading", 0, ANSWERED);
+            idle(&m, "there", 20.0);
+            m.api.token_trouble(
+                "access-there-refresh",
+                crate::api::scripted::Trouble::Offline,
+            );
+            let done = warmed(&m).expect("warmed up").value;
+            assert_eq!(
+                done,
+                WarmUp::Started {
+                    account: "there".into(),
+                    until: None
+                }
+            );
+            let overview = Pitboard::new(m.ctx.clone())
+                .warm_overview()
+                .expect("an overview");
+            let there = overview
+                .accounts
+                .iter()
+                .find(|choice| choice.account == "there")
+                .expect("there");
+            assert!(
+                matches!(there.standing, Some(Standing::Running { .. })),
+                "{:?}",
+                there.standing
+            );
+            assert!(
+                !crate::home::dir(&m.ctx)
+                    .join("warm")
+                    .join("claude")
+                    .exists(),
+                "the run's home is gone"
+            );
+        }
+
+        /// With Claude Code not where Pitboard looks, nothing is warmed up, and the overview
+        /// says why.
+        #[test]
+        #[cfg_attr(windows, ignore = "a warm-up runs on macOS and Linux")]
+        fn nothing_is_warmed_up_without_claude_code() {
+            let mut m = machine("warm-no-program");
+            let absent = m.ctx_home().join("bin").join("claude");
+            m.ctx = m.ctx.clone().with_claude_program(absent);
+            let pitboard = Pitboard::new(m.ctx.clone());
+            pitboard.warm_turn("there", true).expect("turned on");
+            idle(&m, "there", 20.0);
+            let overview = pitboard.warm_overview().expect("an overview");
+            assert_eq!(overview.halted, Some(crate::warm::Halt::ProgramMissing));
+            assert!(matches!(pitboard.warm_look(), Ok(Look::Stands(_))));
+            let refused = pitboard.warm_now("there").expect_err("refused");
+            assert_eq!(refused.error.code(), "claude_not_found");
         }
     }
 }

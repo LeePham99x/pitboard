@@ -1263,17 +1263,6 @@ impl Pitboard {
         self.warming(settled, switch::warm::Target::Due)
     }
 
-    /// What each duty a front end does by itself would come to now, from files alone, as
-    /// [`Pitboard::auto_look`] and [`Pitboard::warm_look`] say of each: one look for a front
-    /// end that does both, each duty's answer its own, so a file one cannot read stops only
-    /// that one.
-    pub fn look(&self, duties: &crate::duty::Duties) -> crate::duty::Looked {
-        crate::duty::Looked {
-            switch: duties.switch.map(|threshold| self.auto_look(threshold)),
-            warm: duties.warm.then(|| self.warm_look()),
-        }
-    }
-
     /// What warming up would come to now, from files alone: what stands, with where each
     /// account turned on stands, or that only [`Pitboard::warm_up`] can say. Waits on no lock,
     /// reads no keychain and asks nobody, so a front end may look as often as it likes.
@@ -1302,7 +1291,10 @@ impl Pitboard {
         target: switch::warm::Target,
     ) -> Changing<switch::warm::WarmUp> {
         match switch::warm::warm_up(settled, target) {
-            Ok(value) => Ok(Done { value, warnings }),
+            Ok((value, more)) => {
+                warnings.extend(more);
+                Ok(Done { value, warnings })
+            }
             Err(mut error) => {
                 warnings.extend(error.take_warnings());
                 Err(Failed { error, warnings })

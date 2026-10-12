@@ -534,8 +534,10 @@ pub(super) struct Machine {
     /// The `pitboard` a terminal would run.
     pub command_line: FoundCommandLine,
     pub command_line_asks: usize,
-    /// What the core's files say of warming up accounts, as every read gives it.
+    /// What the core's files say of warming up accounts, as every read gives it, and why they
+    /// could not be read where `warm_refused` says.
     pub warm: Option<pitboard_core::warm::Overview>,
+    pub warm_refused: Option<Refusal>,
     /// What a warm-up gives, by itself or asked for now.
     pub warming: Result<pitboard_core::switch::warm::WarmUp, Refusal>,
     /// Every warm-up asked for, in order: `None` for one by itself, or the account asked
@@ -624,6 +626,7 @@ impl Machine {
             command_line: FoundCommandLine::Nowhere,
             command_line_asks: 0,
             warm: None,
+            warm_refused: None,
             warming: Ok(pitboard_core::switch::warm::WarmUp::Nothing),
             warmed: Vec::new(),
             warm_turned: Vec::new(),
@@ -662,6 +665,14 @@ impl Machine {
             .unwrap_or_default()
     }
 
+    /// What the core's files say of warming up, as a read gives it.
+    fn warm_overview(&self) -> Result<pitboard_core::warm::Overview, PitboardError> {
+        match &self.warm_refused {
+            Some(refused) => Err(refused.error()),
+            None => Ok(self.warm.clone().unwrap_or_else(no_warm)),
+        }
+    }
+
     /// What the core answers `job` with.
     pub(super) fn answer(&mut self, job: Job) -> Answer {
         match job {
@@ -673,13 +684,13 @@ impl Machine {
                     readings_before,
                     changed_before,
                     read: self.answer.clone().map_err(|refused| refused.error()),
-                    warm: self.warm.clone(),
+                    warm: self.warm_overview(),
                 }
             }
             Job::ReadOffline { why } => Answer::ReadOffline {
                 why,
                 read: self.offline.clone().map_err(|refused| refused.error()),
-                warm: self.warm.clone(),
+                warm: self.warm_overview(),
             },
             Job::WarmUp => {
                 self.warmed.push(None);
@@ -718,7 +729,7 @@ impl Machine {
                     }
                 }
                 Answer::WarmSet {
-                    done: Ok(self.warm.clone().unwrap_or_else(no_warm)),
+                    done: self.warm_overview(),
                 }
             }
             Job::SetWarmRange { from, to } => {

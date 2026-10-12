@@ -534,13 +534,13 @@ impl Worker {
                     readings_before,
                     changed_before,
                     read,
-                    warm: core.warm_overview().ok(),
+                    warm: core.warm_overview(),
                 }
             }
             Job::ReadOffline { why } => Answer::ReadOffline {
                 why,
                 read: core.status_offline(),
-                warm: core.warm_overview().ok(),
+                warm: core.warm_overview(),
             },
             Job::Look => Answer::Looked {
                 changed: core.changed_at(),

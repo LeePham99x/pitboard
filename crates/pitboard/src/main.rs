@@ -129,6 +129,12 @@ enum Command {
     Doctor,
     /// One line for Claude Code's status bar; reads its session JSON on stdin
     Statusline,
+    /// Start the five-hour period of the accounts you choose as soon as the last one resets,
+    /// while the app or `pitboard watch` runs
+    Warm {
+        #[command(subcommand)]
+        what: Option<warm::WarmCommand>,
+    },
     /// Switch Claude Code to another of your accounts before the one in use runs out, and warm
     /// up the accounts `pitboard warm on` turned on, for as long as this runs
     Watch {
@@ -145,12 +151,6 @@ enum Command {
         /// service for usage, and stop. Warms nothing up
         #[arg(long)]
         once: bool,
-    },
-    /// Start the five-hour period of the accounts you choose as soon as the last one resets,
-    /// while the app or `pitboard watch` runs
-    Warm {
-        #[command(subcommand)]
-        what: Option<warm::WarmCommand>,
     },
     /// Print a shell completion script
     Completions { shell: clap_complete::Shell },

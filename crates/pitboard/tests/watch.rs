@@ -305,6 +305,9 @@ fn watch_warms_up_an_account_turned_on_once_its_period_is_not_running() {
     assert_eq!(code, 0, "status: {err}");
     let (_, err, code) = env.run(&["warm", "on", "beta"]);
     assert_eq!(code, 0, "warm on: {err}");
+    // All day, so the hour this runs at does not matter.
+    let (_, err, code) = env.run(&["warm", "range", "00:00", "24:00"]);
+    assert_eq!(code, 0, "warm range: {err}");
     // The read `watch` makes as it starts is held off by the one just made; the reading after
     // the run is not.
     env.claude_usage(Some(5 * 3600));

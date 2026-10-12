@@ -323,12 +323,12 @@ pub(crate) enum Answer {
         changed_before: i64,
         read: Result<Status, PitboardError>,
         /// Each Claude Code account's warm-up, as the core's files say after the read.
-        warm: Option<Overview>,
+        warm: Result<Overview, PitboardError>,
     },
     ReadOffline {
         why: Why,
         read: Result<Status, PitboardError>,
-        warm: Option<Overview>,
+        warm: Result<Overview, PitboardError>,
     },
     Looked {
         /// When the account index was last written, in epoch milliseconds.
@@ -541,8 +541,11 @@ pub(crate) struct Warming {
     refusals: Refusals,
     /// Each failure notified, by its code and words, until a warm-up starts a period.
     told: BTreeSet<String>,
-    /// What the last warm-up that came to nothing said, until one starts a period.
+    /// What the last warm-up by itself that came to nothing said, until the core next says
+    /// where each account stands.
     pub(crate) failed: Option<String>,
+    /// Why the core could not say which accounts are warmed up, until it can.
+    pub(crate) unreadable: Option<String>,
 }
 
 impl Warming {
@@ -1794,11 +1797,15 @@ impl State {
         self.auto_standing = Some(AutoStanding::Came(outcome));
     }
 
-    /// What a read found of warming up, where it could be read: where it could not, what was
-    /// known stands.
-    fn warm_read(&mut self, warm: Option<Overview>) {
-        if let Some(warm) = warm {
-            self.warm.overview = Some(warm);
+    /// What a read found of warming up: where it could not be read, what was known stands,
+    /// with why.
+    fn warm_read(&mut self, warm: Result<Overview, PitboardError>) {
+        match warm {
+            Ok(warm) => {
+                self.warm.overview = Some(warm);
+                self.warm.unreadable = None;
+            }
+            Err(PitboardError::Failed { message, .. }) => self.warm.unreadable = Some(message),
         }
     }
 
@@ -1839,10 +1846,11 @@ impl State {
     }
 
     /// What a warm-up came to. A period started is quiet: the reading the core took after it
-    /// shows on the account, and the next due account is asked for at once. One that came to
-    /// nothing is said once for its words in a notification, and under the setting until one
-    /// starts a period; one somebody asked for is said in the window, as anything they ask for
-    /// is. A refusal of one by itself waits as the core waits after as many attempts.
+    /// shows on the account, and the next due account is asked for at once. One by itself that
+    /// came to nothing is said once for its words in a notification, and under the setting
+    /// until the core next says where each account stands; one somebody asked for is said in
+    /// the window, as anything they ask for is. A refusal of one by itself waits as the core
+    /// waits after as many attempts.
     fn warmed_up(
         &mut self,
         asked: Option<String>,
@@ -1860,19 +1868,21 @@ impl State {
             }
             Ok(WarmUp::Stands(overview)) => {
                 self.warm.refusals.ended();
+                self.warm.failed = None;
                 self.warm.overview = Some(*overview);
                 self.warm_later(now);
             }
             Ok(WarmUp::Running { .. } | WarmUp::Nothing) => {
                 self.warm.refusals.ended();
+                self.warm.failed = None;
                 self.warm_later(now);
             }
             Err(error) => {
                 let PitboardError::Failed { code, message, .. } = &error;
-                self.warm.failed = Some(message.clone());
                 match asked {
                     Some(qualified) => self.present(Refused::of(could_not_warm(&qualified), error)),
                     None => {
+                        self.warm.failed = Some(message.clone());
                         self.warm.refusals.refused(now.running);
                         if self.warm.told.insert(format!("{code}/{message}")) {
                             jobs.push(Job::Post {

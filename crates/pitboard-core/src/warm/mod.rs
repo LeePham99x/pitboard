@@ -26,6 +26,7 @@ pub use decide::{Hold, Standing};
 
 use crate::context::Context;
 use crate::error::{Error, Result};
+use crate::host::Os;
 use crate::provider::ProviderId;
 use crate::service::Permit;
 use crate::state::State;
@@ -36,7 +37,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-/// Minutes in a day.
 const DAY: u16 = 24 * 60;
 
 /// A span of every day, in this machine's time zone, within which Pitboard warms up the
@@ -54,10 +54,11 @@ impl Range {
         to: 22 * 60,
     };
 
-    /// `None` where the span is empty, or either end is not a time of day. `to` may be 24:00.
+    /// `None` where the span is empty, or either end is not a time of day. `to` may be 24:00,
+    /// and is where it is 00:00, as a clock shows the end of a day.
     pub fn new(from: u16, to: u16) -> Option<Range> {
-        (from < DAY && to <= DAY && from != to && !(from == 0 && to == 0))
-            .then_some(Range { from, to })
+        let to = if to == 0 { DAY } else { to };
+        (from < DAY && to <= DAY && from != to).then_some(Range { from, to })
     }
 
     /// From two times of day as a person writes them, `06:00` and `22:00`.
@@ -183,22 +184,6 @@ impl Failure {
         }
     }
 
-    /// What it was, as a clause.
-    pub fn said(&self) -> String {
-        match self {
-            Failure::LimitReached => {
-                "a limit of it is used up, and Anthropic refused the request".into()
-            }
-            Failure::LoginRefused => "Anthropic refused its login; sign in to it again".into(),
-            Failure::NotStarted => {
-                "the request was answered, and Anthropic still has no period running".into()
-            }
-            Failure::Unreachable => "Anthropic could not be reached".into(),
-            Failure::TimedOut => "Claude Code did not finish in time".into(),
-            Failure::Failed(said) => format!("Claude Code failed ({said})"),
-        }
-    }
-
     /// Whether waiting may mend it, so it is not counted against the day's attempts: a
     /// service out of reach, a run cut short, or a limit used up until it resets.
     pub(crate) fn mended_by_waiting(&self) -> bool {
@@ -227,11 +212,6 @@ impl Setting {
         !self.accounts.is_empty()
     }
 
-    /// The ids of the accounts it warms up.
-    pub fn accounts(&self) -> impl Iterator<Item = &str> {
-        self.accounts.iter().map(String::as_str)
-    }
-
     /// Warm up the account with `id`, or stop. Whether that changed anything.
     pub(crate) fn turn(&mut self, id: &str, on: bool) -> bool {
         if on {
@@ -246,6 +226,8 @@ impl Setting {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Halt {
+    /// Pitboard warms up nothing on this system yet.
+    Unbuilt,
     /// A switch was interrupted, and the change that finishes it is somebody's to make.
     SwitchInterrupted,
     /// Claude Code keeps its login under another name, which Pitboard does not act on.
@@ -261,36 +243,22 @@ impl Halt {
     /// A stable code, for `--json` and for telling one apart from another.
     pub fn code(&self) -> &'static str {
         match self {
+            Halt::Unbuilt => "warm_up_unbuilt",
             Halt::SwitchInterrupted => "switch_interrupted",
             Halt::CustomOauth => "custom_oauth_endpoint",
-            Halt::Overridden(_) => "auth_overridden",
+            Halt::Overridden(_) => "warm_up_auth_overridden",
             Halt::ProgramMissing => "claude_not_found",
-        }
-    }
-
-    /// What it is, as a clause.
-    pub fn said(&self) -> String {
-        match self {
-            Halt::SwitchInterrupted => {
-                "a switch was interrupted, and the next change you make finishes it".into()
-            }
-            Halt::CustomOauth => {
-                "Claude Code uses a custom OAuth endpoint, and Pitboard does not act on Claude \
-                 Code then"
-                    .into()
-            }
-            Halt::Overridden(names) => format!(
-                "Claude Code's managed settings make it sign in another way, set by {}",
-                names.join(", ")
-            ),
-            Halt::ProgramMissing => "Claude Code is not installed where Pitboard looks".into(),
         }
     }
 }
 
 /// Why nothing is warmed up here now, where something says so, asked in the order a change
 /// would refuse over it.
-fn halted(ctx: &Context) -> Option<Halt> {
+pub(crate) fn halted(ctx: &Context) -> Option<Halt> {
+    match crate::host::OS {
+        Os::Windows => return Some(Halt::Unbuilt),
+        Os::MacOs | Os::Linux => {}
+    }
     if crate::switch::unfinished(ctx) == Some(crate::switch::Unfinished::Interrupted) {
         return Some(Halt::SwitchInterrupted);
     }
@@ -538,6 +506,14 @@ mod tests {
             Ok((0, 1440))
         );
         assert!(Range::parse("22:00", "06:00").is_ok(), "past midnight");
+        assert_eq!(
+            Range::parse("00:00", "00:00"),
+            Range::parse("00:00", "24:00")
+        );
+        assert_eq!(
+            Range::parse("22:00", "00:00").map(|r| r.to_string()),
+            Ok("22:00 to 24:00".to_owned())
+        );
         for (from, to) in [
             ("06:00", "06:00"),
             ("24:00", "06:00"),
@@ -545,7 +521,6 @@ mod tests {
             ("06:60", "22:00"),
             ("06:00", "24:01"),
             ("noon", "22:00"),
-            ("00:00", "00:00"),
         ] {
             assert!(Range::parse(from, to).is_err(), "{from} to {to}");
         }

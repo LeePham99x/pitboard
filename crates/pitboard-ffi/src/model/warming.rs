@@ -3,7 +3,7 @@
 //! row and each row's menu show of it. Driven through `State::apply` by hand; when an account
 //! is due, and what a warm-up runs, are the core's own and have their own tests.
 
-use super::state::Job;
+use super::state::{Answer, Job};
 use super::testing::{Hand, Machine, Refusal, refusal, status};
 use super::{Intent, RunOutNotice};
 use crate::Account;
@@ -146,7 +146,9 @@ fn a_warm_up_by_itself_that_came_to_nothing_is_notified_once_and_waits() {
     assert_eq!(
         machine.posted,
         [RunOutNotice {
-            id: "warm-failed/warm_up_not_started".into(),
+            id: "warm-failed/warm_up_not_started/`personal` was not warmed up: the request was \
+                 answered, and Anthropic still has no period running."
+                .into(),
             title: "Pitboard could not warm up an account".into(),
             subtitle: None,
             body: "`personal` was not warmed up: the request was answered, and Anthropic \
@@ -203,10 +205,87 @@ fn asked_for_now_what_went_wrong_is_said_in_the_window() {
     });
     model.run(&mut machine);
     assert_eq!(machine.warmed, [Some("claude/personal".to_owned())]);
-    let failure = model.shown().failure.expect("said");
+    let shown = model.shown();
+    let failure = shown.failure.expect("said");
     assert_eq!(failure.title, "Couldn’t warm up personal");
     assert_eq!(failure.code.as_deref(), Some("warm_up_not_started"));
     assert!(machine.posted.is_empty());
+    assert_eq!(
+        shown.machine.warm.standing, None,
+        "nor said under the setting"
+    );
+}
+
+/// What one by itself came to nothing over is said under the setting only until the core next
+/// says where each account stands.
+#[test]
+fn a_failure_is_said_until_the_core_says_where_each_account_stands() {
+    let mut machine = reading(overview(true, Standing::Due));
+    machine.warming = Err(came_to_nothing());
+    let mut model = started(&mut machine);
+    assert!(
+        model
+            .shown()
+            .machine
+            .warm
+            .standing
+            .is_some_and(|said| said.starts_with("The last warm-up came to nothing: "))
+    );
+    let held = overview(true, Standing::Held(pitboard_core::warm::Hold::NoReading));
+    machine.warm = Some(held.clone());
+    machine.warming = Ok(WarmUp::Stands(Box::new(held)));
+    model.later(Duration::from_secs(60));
+    model.tick();
+    model.run(&mut machine);
+    assert_eq!(machine.warmed.len(), 2);
+    assert_eq!(model.shown().machine.warm.standing, None);
+}
+
+/// A warm-up whose answer never came is asked for again at the next tick, as though it had
+/// come to nothing said.
+#[test]
+fn a_warm_up_lost_on_the_way_is_asked_for_again() {
+    let mut machine = reading(overview(true, Standing::Due));
+    let mut model = started(&mut machine);
+    let before = model.count(warm_up);
+    model.later(Duration::from_secs(30));
+    model.tick();
+    model.run_but(&mut machine, warm_up);
+    assert_eq!(model.count(warm_up), before + 1);
+    model.give(Answer::Lost(Job::WarmUp));
+    model.later(Duration::from_secs(30));
+    model.tick();
+    assert_eq!(model.count(warm_up), before + 2);
+}
+
+/// Which accounts are warmed up, where the core cannot read it, is said under the setting,
+/// and a change to it is refused in the window.
+#[test]
+fn a_setting_that_cannot_be_read_is_said_and_a_change_to_it_refused() {
+    let mut machine = reading(overview(false, Standing::Due));
+    let message = "which accounts Pitboard warms up, at /home/warm.json, cannot be read \
+                   (expected value). Delete it, then turn warm-up on again for each account \
+                   you want it for.";
+    machine.warm_refused = Some(refusal("warm_setting_corrupt", message, Vec::new()));
+    let mut model = started(&mut machine);
+    assert_eq!(
+        model.shown().machine.warm.standing.as_deref(),
+        Some(
+            "Which accounts Pitboard warms up, at /home/warm.json, cannot be read (expected \
+             value). Delete it, then turn warm-up on again for each account you want it for."
+        )
+    );
+    model.send(Intent::SetWarm {
+        qualified: "claude/personal".into(),
+        on: true,
+    });
+    model.run(&mut machine);
+    let failure = model.shown().failure.expect("refused");
+    assert_eq!(
+        failure.title,
+        "Couldn’t change which accounts are warmed up"
+    );
+    assert_eq!(failure.code.as_deref(), Some("warm_setting_corrupt"));
 }
 
 /// Turning an account on is the core's to keep, and an account due is warmed up at once.

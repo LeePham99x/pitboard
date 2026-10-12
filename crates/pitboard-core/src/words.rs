@@ -161,18 +161,18 @@ pub fn not_switching(
     }
 }
 
+const INTERRUPTED: &str = "a switch was interrupted, and the next change you make finishes it";
+const CUSTOM_OAUTH: &str =
+    "Claude Code uses a custom OAuth endpoint, and Pitboard does not act on Claude Code then";
+
 /// Why Pitboard cannot judge whether to switch Claude Code by itself, as a clause that says
 /// what to do about it where anything can be done. It names no command, and no time, which
 /// each front end says in its own way.
 pub fn not_watching(why: &crate::autoswitch::Blind) -> String {
     use crate::autoswitch::Blind;
     match why {
-        Blind::SwitchInterrupted => {
-            "a switch was interrupted, and the next change you make finishes it".into()
-        }
-        Blind::CustomOauth => "Claude Code uses a custom OAuth endpoint, and Pitboard does not \
-                               act on Claude Code then"
-            .into(),
+        Blind::SwitchInterrupted => INTERRUPTED.into(),
+        Blind::CustomOauth => CUSTOM_OAUTH.into(),
         Blind::NothingSignedIn => "Claude Code has no login stored".into(),
         Blind::NotEnrolled { email } => {
             format!("Claude Code has {email}'s login stored, and that account is not enrolled")
@@ -183,6 +183,38 @@ pub fn not_watching(why: &crate::autoswitch::Blind) -> String {
         Blind::NoReading { account } => {
             format!("there is no reading of {account} from Anthropic yet")
         }
+    }
+}
+
+/// Why Pitboard warms up no account on this machine for now, as a clause.
+pub fn not_warming(why: &crate::warm::Halt) -> String {
+    use crate::warm::Halt;
+    match why {
+        Halt::Unbuilt => "Pitboard does not warm up accounts on this system yet".into(),
+        Halt::SwitchInterrupted => INTERRUPTED.into(),
+        Halt::CustomOauth => CUSTOM_OAUTH.into(),
+        Halt::Overridden(names) => format!(
+            "Claude Code's managed settings make it sign in another way, set by {}",
+            names.join(", ")
+        ),
+        Halt::ProgramMissing => "Claude Code is not installed where Pitboard looks".into(),
+    }
+}
+
+/// Why a warm-up started nothing, as a clause.
+pub fn warm_failed(why: &crate::warm::Failure) -> String {
+    use crate::warm::Failure;
+    match why {
+        Failure::LimitReached => {
+            "a limit of it is used up, and Anthropic refused the request".into()
+        }
+        Failure::LoginRefused => "Anthropic refused its login; sign in to it again".into(),
+        Failure::NotStarted => {
+            "the request was answered, and Anthropic still has no period running".into()
+        }
+        Failure::Unreachable => "Anthropic could not be reached".into(),
+        Failure::TimedOut => "Claude Code did not finish in time".into(),
+        Failure::Failed(said) => format!("Claude Code failed ({said})"),
     }
 }
 

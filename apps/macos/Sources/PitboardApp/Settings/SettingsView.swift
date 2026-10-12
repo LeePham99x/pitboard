@@ -41,10 +41,10 @@ struct SettingsView: View {
 }
 
 /// A time of day, as minutes from midnight, for a picker of hours and minutes, which sends
-/// what is picked to `set`. The end of a day, 24:00, shows as midnight, and midnight picked for
-/// an end is the end of the day.
+/// what is picked to `set`. The end of a day, 24:00, shows as midnight.
+@MainActor
 private func timeOfDay(
-    _ minutes: UInt16, end: Bool, set: @escaping (UInt16) -> Void
+    _ minutes: UInt16, set: @escaping @MainActor @Sendable (UInt16) -> Void
 ) -> Binding<Date> {
     Binding(
         get: {
@@ -55,7 +55,7 @@ private func timeOfDay(
         set: { date in
             let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
             let picked = (parts.hour ?? 0) * 60 + (parts.minute ?? 0)
-            set(UInt16(end && picked == 0 ? 24 * 60 : picked))
+            set(UInt16(picked))
         })
 }
 
@@ -132,7 +132,7 @@ private struct GeneralSettings: View {
             Section {
                 DatePicker(
                     "From",
-                    selection: timeOfDay(warm.from, end: false) {
+                    selection: timeOfDay(warm.from) {
                         model.send(.setWarmRange(from: $0, to: warm.to))
                     },
                     displayedComponents: .hourAndMinute
@@ -140,7 +140,7 @@ private struct GeneralSettings: View {
                 .accessibilityIdentifier("settings.warmFrom")
                 DatePicker(
                     "To",
-                    selection: timeOfDay(warm.to, end: true) {
+                    selection: timeOfDay(warm.to) {
                         model.send(.setWarmRange(from: warm.from, to: $0))
                     },
                     displayedComponents: .hourAndMinute

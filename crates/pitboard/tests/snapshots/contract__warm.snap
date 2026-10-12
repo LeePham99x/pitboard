@@ -13,6 +13,7 @@ expression: "serde_json :: json! ({ \"exit\" : code, \"envelope\" : value })"
         "from": "07:30",
         "to": "23:00"
       },
+      "halted": null,
       "accounts": [
         {
           "label": "alpha",
