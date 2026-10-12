@@ -48,7 +48,8 @@ use crate::{
     FoundCommandLine, OwnCommandLine, PitboardError, Renewed, Schedule, Status, Switch, Switched,
     Tool, Usage, Warning,
 };
-use pitboard_core::autoswitch::{self, Threshold};
+use pitboard_core::autoswitch::Threshold;
+use pitboard_core::duty::cadence::{DECIDE_EVERY_SECONDS, Refusals};
 use pitboard_core::label::SEPARATOR;
 use pitboard_core::provider::{self, ProviderId};
 use pitboard_core::switch::{Foreseen, Left, Stowed};
@@ -96,7 +97,7 @@ impl Cadence {
     pub(crate) const APP: Cadence = Cadence {
         look_every: Duration::from_secs(2),
         read_every: Duration::from_secs(300),
-        decide_every: Duration::from_secs(autoswitch::DECIDE_EVERY_SECONDS.unsigned_abs()),
+        decide_every: Duration::from_secs(DECIDE_EVERY_SECONDS.unsigned_abs()),
         stale_after: Duration::from_secs(60),
         quit_within: Duration::from_secs(30),
         quit_checked_every: Duration::from_millis(200),
@@ -863,12 +864,11 @@ pub(crate) struct State {
     /// What switching Claude Code by itself last came to, said under its setting while that
     /// is on.
     pub(crate) auto_standing: Option<AutoStanding>,
-    /// Since a switch by itself was last refused: until when, since the model started, the
-    /// next is not asked for, and how many were refused in a row. As long as the core waits
-    /// after attempts that failed in a row, since a refusal raised before the core could
-    /// record it is a line in the activity log each time. Any outcome, of a look or of a
-    /// decision, ends the row.
-    auto_wait: Option<(Duration, u32)>,
+    /// Switches by itself refused in a row, on the model's own clock, and the wait after
+    /// them: as long as the core waits after attempts that failed in a row, since a refusal
+    /// raised before the core could record it is a line in the activity log each time. Any
+    /// outcome, of a look or of a decision, ends the row.
+    auto_refusals: Refusals,
     /// The app's own preferences, kept in Pitboard's directory.
     pub(crate) preferences: Preferences,
     /// Whether the preferences have been read. Until they are, and for good where they
@@ -937,7 +937,7 @@ impl State {
             replaced_told: BTreeSet::new(),
             unconfirmed_asked: None,
             auto_standing: None,
-            auto_wait: None,
+            auto_refusals: Refusals::default(),
             told: Told::new(),
             preferences: Preferences::default(),
             preferences_read: false,
@@ -1532,7 +1532,7 @@ impl State {
         });
         if !on {
             self.auto_standing = None;
-            self.auto_wait = None;
+            self.auto_refusals.ended();
         }
         self.look_to_switch(jobs);
     }
@@ -1556,11 +1556,10 @@ impl State {
     /// that comes first, while switching by itself is on and the model runs by itself.
     fn decide_later(&mut self, now: Now) {
         self.decide = if self.started && self.preferences.auto_switch {
-            let next = now.running + self.cadence.decide_every;
-            Timer::Due(match self.auto_wait {
-                Some((until, _)) if until > now.running => next.min(until),
-                _ => next,
-            })
+            Timer::Due(
+                self.auto_refusals
+                    .due(now.running, self.cadence.decide_every),
+            )
         } else {
             Timer::Off
         };
@@ -1600,7 +1599,7 @@ impl State {
     fn auto_act(&mut self, now: Now, jobs: &mut Vec<Job>) {
         if self.switch_under_way().is_some()
             || self.changing > 0
-            || self.auto_wait.is_some_and(|(until, _)| now.running < until)
+            || self.auto_refusals.waits(now.running)
         {
             return;
         }
@@ -1640,7 +1639,7 @@ impl State {
                     ),
                 });
                 self.auto_told.clear();
-                self.auto_wait = None;
+                self.auto_refusals.ended();
                 let qualified = qualified_claude(&to);
                 let switched = Switched {
                     outcome: Switch::Switched {
@@ -1667,12 +1666,7 @@ impl State {
             }
             Err(PitboardError::Failed { code, message, .. }) => {
                 self.switching = None;
-                let refusals = self.auto_wait.map_or(0, |(_, refusals)| refusals) + 1;
-                let wait = autoswitch::retry_after(refusals);
-                self.auto_wait = Some((
-                    now.running + Duration::from_secs(wait.unsigned_abs()),
-                    refusals,
-                ));
+                let wait = self.auto_refusals.refused(now.running);
                 self.auto_standing = Some(AutoStanding::Stopped {
                     message: message.clone(),
                     until: Some(now.epoch() + wait),
@@ -1690,7 +1684,7 @@ impl State {
     /// refusals. Said under the setting, and a reason it did not switch away from a limit, or
     /// cannot judge at all, posted once for what tells it apart until the next switch.
     fn auto_stands(&mut self, outcome: AutoSwitched, jobs: &mut Vec<Job>) {
-        self.auto_wait = None;
+        self.auto_refusals.ended();
         let told = match &outcome {
             AutoSwitched::Skipped {
                 key,

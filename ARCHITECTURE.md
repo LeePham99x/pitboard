@@ -134,6 +134,13 @@ pages load, as a browser would.
     checked against the store; for Codex, the login's own claims, and the record where the
     login cannot be read. `Provider::own_record` reads the config for that doubt and for
     the words that say it, never for whose a login is.
+  - `duty/`: what every front end that acts by itself shares, whatever it does. `cadence.rs`
+    is how often it decides with nothing written (`DECIDE_EVERY_SECONDS`, 30), how long
+    something that came to nothing waits before it is tried again (`retry_after`, 60 seconds
+    doubling to 15 minutes), how many attempts are made at one thing (`ATTEMPTS`), and
+    `Refusals`, a front end's refusals in a row and their wait, on its own clock. `ledger.rs`
+    is `Tries`, the attempts and the reasons said about one thing, and how a duty's record
+    is read and written, only under `state.lock`. The automatic switch is one duty.
   - `autoswitch.rs`: switching Claude Code by itself, for a front end somebody asked to: the
     app with its setting on, or `pitboard watch`. `Threshold` is the share a limit switches
     at, 50 to 99, 95 unless chosen. `decide` is the rule, from the readings Anthropic gave
@@ -286,7 +293,7 @@ pages load, as a browser would.
   Each warning a decision found is said once until the next switch, even one that went away
   and came back, with that decision's line, which is said again to carry it where it was
   said before. A refusal is paced as the app paces one: no decision under the lock until
-  `autoswitch::retry_after` of the refusals in a row has passed, only the look meanwhile,
+  `duty::cadence::retry_after` of the refusals in a row has passed, only the look meanwhile,
   and any outcome ends the row, as the look standing on what the core recorded with an
   attempt that failed, its own wait or why it tries no more, does. It ends on a refusal
   watching cannot mend: running elevated, a Windows build or Pitboard's own files unusable.
@@ -806,7 +813,7 @@ pages load, as a browser would.
   quitting an app, since Claude Code follows a switch by itself. A refusal is the app's to
   pace, as it is `pitboard watch`'s, since the core records none it raised before deciding:
   the next is asked for no sooner than the core waits after as many failed attempts in a
-  row, 60 seconds doubling to 15 minutes (`autoswitch::retry_after`), and any outcome, of a
+  row, 60 seconds doubling to 15 minutes (`duty::cadence::retry_after`), and any outcome, of a
   look or of a decision, ends the row. A switch it made is taken as one asked for is, with
   the read after it, and said in a notification with no button; a reason it did not switch
   away from a limit, once for that limit and its reset, whether the decision gave it or a

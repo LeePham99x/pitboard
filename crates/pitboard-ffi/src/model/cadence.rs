@@ -137,7 +137,7 @@ fn the_core_is_asked_whether_to_switch_as_often_as_watch_decides() {
     assert_eq!(Cadence::APP.decide_every, Duration::from_secs(30));
     assert_eq!(
         Cadence::APP.decide_every.as_secs(),
-        pitboard_core::autoswitch::DECIDE_EVERY_SECONDS.unsigned_abs()
+        pitboard_core::duty::cadence::DECIDE_EVERY_SECONDS.unsigned_abs()
     );
 }
 

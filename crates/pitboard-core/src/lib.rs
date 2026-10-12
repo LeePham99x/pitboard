@@ -54,6 +54,7 @@ pub mod autoswitch;
 pub mod budget;
 pub mod context;
 pub mod doctor;
+pub mod duty;
 pub mod error;
 pub mod in_use;
 pub mod label;

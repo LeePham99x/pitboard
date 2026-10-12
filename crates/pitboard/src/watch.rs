@@ -10,7 +10,8 @@
 //! Anthropic no more than the app would.
 
 use crate::{Report, emit, followed, ui};
-use pitboard_core::autoswitch::{self, Auto, Blind, DECIDE_EVERY_SECONDS, Look, Skip, Threshold};
+use pitboard_core::autoswitch::{Auto, Blind, Look, Skip, Threshold};
+use pitboard_core::duty::cadence::{DECIDE_EVERY_SECONDS, Refusals};
 use pitboard_core::error::{self, Error};
 use pitboard_core::provider::ProviderId;
 use pitboard_core::service::{Changing, Done, Failed, Pitboard};
@@ -67,15 +68,21 @@ pub fn run(pitboard: &Pitboard, threshold: Threshold, as_json: bool) -> ExitCode
             read_at = Some(now);
         }
         let written = Some((pitboard.changed_at(), pitboard.readings_changed_at()));
-        if written != seen || now >= refusals.due(decided_at) || now < decided_at {
+        let due = refusals.due(instant(decided_at), every());
+        if written != seen || instant(now) >= due || now < decided_at {
             (seen, decided_at) = (written, now);
             let outcome = decided(
-                refusals.wait(now),
+                refusals.waits(instant(now)),
                 || pitboard.auto_look(threshold),
                 || pitboard.auto_switch(threshold),
             );
             if let Some(outcome) = outcome {
-                refusals.after(&outcome, now);
+                match &outcome {
+                    Ok(_) => refusals.ended(),
+                    Err(_) => {
+                        refusals.refused(instant(now));
+                    }
+                }
                 let say = |outcome| said(outcome, threshold, true);
                 if matches!(&outcome, Err(failed) if ends_watching(&failed.error)) {
                     return emit(say(outcome), as_json);
@@ -110,56 +117,6 @@ fn decided(
             error,
             warnings: Vec::new(),
         })),
-    }
-}
-
-/// Refusals of switching by itself in a row, and the wait after them, so the next decision
-/// under the lock is no sooner than the core waits after as many failed attempts in a row. A
-/// refusal the core raised before it could record anything would otherwise be asked again,
-/// and written in the audit log, at every decision. One it recorded, after an attempt, is
-/// followed by a look that stands on what the core recorded with it, its own wait or why it
-/// tries no more, which ends the row.
-#[derive(Default)]
-struct Refusals {
-    in_a_row: u32,
-    /// When the last was.
-    at: i64,
-    /// Until when the next decision under the lock waits.
-    until: i64,
-}
-
-impl Refusals {
-    /// Whether a decision under the lock waits at `now`. A clock gone back before the last
-    /// refusal waits on nothing.
-    fn wait(&self, now: i64) -> bool {
-        (self.at..self.until).contains(&now)
-    }
-
-    /// When to decide next after deciding at `at`: `DECIDE_EVERY_SECONDS` later, or as the
-    /// wait ends where that comes first.
-    fn due(&self, at: i64) -> i64 {
-        let every = at + DECIDE_EVERY_SECONDS;
-        if self.wait(at) {
-            every.min(self.until)
-        } else {
-            every
-        }
-    }
-
-    /// Counts what deciding at `at` came to: a refusal waits longer than the one before it,
-    /// and anything else ends the row.
-    fn after(&mut self, outcome: &Changing<Auto>, at: i64) {
-        *self = match outcome {
-            Ok(_) => Refusals::default(),
-            Err(_) => {
-                let in_a_row = self.in_a_row + 1;
-                Refusals {
-                    in_a_row,
-                    at,
-                    until: at + autoswitch::retry_after(in_a_row),
-                }
-            }
-        };
     }
 }
 
@@ -412,6 +369,16 @@ fn ends_watching(error: &Error) -> bool {
     )
 }
 
+/// `epoch` as the instant a front end's [`Refusals`] are measured on.
+fn instant(epoch: i64) -> Duration {
+    Duration::from_secs(epoch.unsigned_abs())
+}
+
+/// How often it decides though nothing was written, as the core says every front end does.
+fn every() -> Duration {
+    Duration::from_secs(DECIDE_EVERY_SECONDS.unsigned_abs())
+}
+
 /// Seconds since 1970, for when to read and decide next. Not what is decided from: the core
 /// reads its own clock.
 fn epoch() -> i64 {
@@ -425,7 +392,6 @@ fn epoch() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pitboard_core::autoswitch::RETRY_MOST_SECONDS;
     use pitboard_core::provider::{Adoption, Held};
     use pitboard_core::service::Warning;
 
@@ -787,72 +753,6 @@ mod tests {
         );
         assert!(
             matches!(made, Some(Ok(Done { value: Auto::Watching { account, .. }, .. })) if account == "personal")
-        );
-    }
-
-    /// After a refusal the next decision under the lock waits as long as the core waits after
-    /// as many failed attempts in a row. The look goes on meanwhile, and anything it or a
-    /// decision comes to ends the row, as the core's own wait after an attempt it recorded
-    /// does.
-    #[test]
-    fn a_refusal_is_tried_again_only_after_the_cores_wait() {
-        const AT: i64 = 1_760_000_000;
-        let refused = || {
-            Err(Failed {
-                error: Error::SignedInAccountChanged,
-                warnings: Vec::new(),
-            })
-        };
-        let mut refusals = Refusals::default();
-        assert!(!refusals.wait(AT));
-        assert_eq!(refusals.due(AT), AT + DECIDE_EVERY_SECONDS);
-
-        refusals.after(&refused(), AT);
-        assert!(refusals.wait(AT + 59));
-        assert!(!refusals.wait(AT + 60));
-        assert!(
-            !refusals.wait(AT - 1),
-            "a clock gone backwards waits on nothing"
-        );
-        assert_eq!(
-            refusals.due(AT),
-            AT + DECIDE_EVERY_SECONDS,
-            "it looks meanwhile"
-        );
-        assert_eq!(
-            refusals.due(AT + 45),
-            AT + 60,
-            "and decides as the wait ends"
-        );
-
-        refusals.after(&refused(), AT + 60);
-        assert!(refusals.wait(AT + 179));
-        assert!(!refusals.wait(AT + 180));
-        for _ in 0..8 {
-            refusals.after(&refused(), AT);
-        }
-        assert!(refusals.wait(AT + RETRY_MOST_SECONDS - 1));
-        assert!(
-            !refusals.wait(AT + RETRY_MOST_SECONDS),
-            "at most a quarter of an hour"
-        );
-
-        let recorded = Auto::Waiting {
-            from: "work".into(),
-            limit: limit(9_000),
-            until: AT + 260,
-        };
-        let looked = decided(
-            refusals.wait(AT + 200),
-            || Ok(Look::Stands(Box::new(recorded))),
-            || panic!("a decision under the lock while it waits"),
-        );
-        refusals.after(&looked.expect("what the look stands on"), AT + 200);
-        assert!(!refusals.wait(AT + 200));
-        refusals.after(&refused(), AT + 200);
-        assert!(
-            !refusals.wait(AT + 260),
-            "a row ended starts again at a minute"
         );
     }
 

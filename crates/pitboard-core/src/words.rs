@@ -124,7 +124,8 @@ pub fn not_switching(
     why: &crate::autoswitch::Skip,
     threshold: crate::autoswitch::Threshold,
 ) -> String {
-    use crate::autoswitch::{ATTEMPTS, SETTLING_SECONDS, Skip};
+    use crate::autoswitch::{SETTLING_SECONDS, Skip};
+    use crate::duty::cadence::ATTEMPTS;
     match why {
         Skip::NoRoom { unread } => {
             let room = format!(
