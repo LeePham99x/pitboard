@@ -3,7 +3,7 @@ title: "How switching works"
 description: "Every switch parks the login in use and puts a parked one in its place, whoever starts it."
 ---
 
-Claude Code and OpenAI's Codex CLI each read one stored login. Pitboard keeps every other account's login in its own store.
+Claude Code and OpenAI's Codex CLI each read one stored login. Pitboard keeps every other account's login in its own store. Claude Desktop keeps its login in files of its own: see [How Claude Desktop logins are moved](#how-claude-desktop-logins-are-moved).
 
 ## Parked logins
 
@@ -20,6 +20,8 @@ Pitboard moves no login until it identifies it: one filed under the wrong accoun
 For Codex, it reads the account from the login itself, with no request, as read in Codex 0.154.0.
 
 For Claude Code, it asks Anthropic, because the config can name another account. As read in Claude Code 2.1.294, a sign-in writes its account there. So does any process that starts while `profileFetchedAt` is missing or over 24 hours old. A switch removes that field, so a process started on another login, as over SSH, writes that login's account.
+
+For Claude Desktop, see [How Pitboard knows whose a Claude Desktop login is](#how-pitboard-knows-whose-a-claude-desktop-login-is).
 
 Pitboard records each answer with the login's fingerprint, and asks again only once that changes, as after a renewal or a sign-in. A switch and `pitboard forget` also ask once it has changed. Reads that send no request, such as `pitboard status --offline`, use the record.
 
@@ -41,9 +43,11 @@ Pitboard also records each parked login's fingerprint, and refuses one that no l
 
 ## What a switch does
 
+A Claude Code or Codex switch:
+
 1. Takes Pitboard's own lock, `state.lock`, so one change runs at a time. Finishes or undoes any [interrupted switch](#interrupted-switches).
 2. Identifies the login in use, renewing it first where its access token has expired.
-3. Checks the incoming parked login with Anthropic or OpenAI, and renews it if it has lapsed. Every switch needs the network.
+3. Checks the incoming parked login with Anthropic or OpenAI, and renews it if it has lapsed. It needs the network.
 4. For Claude Code, takes the lock a session takes to renew its login, then Claude Code's write lock. No session can then renew the login being parked. Codex takes no lock.
 5. Records the switch in `journal.json`, with fingerprints of both logins.
 6. Parks the outgoing login: Claude Code's OAuth block and account entries, not its MCP server logins, or Codex's whole `auth.json`.
@@ -88,7 +92,7 @@ So a switch moves the outgoing login into Pitboard's store, and reads it back th
 
 ## Interrupted switches
 
-A crash or Control-C can stop a switch partway, leaving `journal.json` behind.
+A crash or Control-C can stop a switch partway, leaving `journal.json` behind. An interrupted Claude Desktop move is settled another way, as [How Claude Desktop logins are moved](#how-claude-desktop-logins-are-moved) says.
 
 The next change finishes or undoes it first: `pitboard use`, `enroll`, `forget`, `rename`, `stow`, `repair`, `uninstall` or the same in the app. It compares the login in use with the journal's two fingerprints, with no request. `pitboard status`, `doctor`, `log` and `renew` leave it.
 
@@ -97,3 +101,27 @@ Pitboard does not switch by itself meanwhile: finishing it is your change to mak
 A login matching neither fingerprint, usually one the tool renewed since, must be identified first, for Claude Code by Anthropic. Until then, every change stops without changing anything.
 
 [Interrupted switches](/reference/errors#interrupted-switches) lists what Pitboard says meanwhile. [An interrupted switch cannot be finished](/troubleshooting/recovery#an-interrupted-switch-cannot-be-finished) says how to give up on it.
+
+## How Claude Desktop logins are moved
+
+Claude Desktop keeps a login in Claude's own files: claude.ai's session cookie in `Cookies`, the site's storage beside it, and three keys of `config.json`. [Claude Desktop files](/reference/files#claude-desktop-files) lists them.
+
+Pitboard renames `Cookies` and the site's storage into a folder of its own and back, and never copies a file. A rename cannot leave a file half written, so each is whole in one of two places: Claude's data folder, or one folder under `~/.pitboard/parks`. `state.json` names both places before the first rename. Pitboard moves the three keys by rewriting `config.json`, and keeps them in that folder while the account is parked.
+
+Pitboard moves them only while Claude is closed. It reads the list of processes before it starts, again before it records the move, and after its last write. Any program inside a `Claude.app`, or inside the data folder, counts as Claude open. [Claude Desktop files](/reference/files#claude-desktop-files) gives the one exception. While it moves them, Pitboard holds a lock on the data folder, so another Pitboard directory changes nothing there.
+
+A switch parks one account, which leaves Claude signed out, then puts the other in. Pitboard records each half as done before the next begins. Adding an account parks the account in use and stops there: you sign in inside Claude, and Pitboard enrols that account once Claude quits. Neither signs anything out at claude.ai.
+
+A move that stops partway stays recorded in `state.json`, and reads say `move_waiting`. The next change to a Claude Desktop account settles it first, with Claude closed. It never carries on with the second half of a switch: it takes items out of the data folder and never puts one in. Claude Code and Codex changes do not wait for it.
+
+## How Pitboard knows whose a Claude Desktop login is
+
+Pitboard asks claude.ai nothing and decrypts nothing, so no service tells it whose a Claude Desktop login is. It knows a login by an 8-byte fingerprint of its session cookie as stored. It records one when you enrol the account and when it puts the account in use. As measured in Claude 2.19675.0, that stored value stays the same across a quit and an open.
+
+Pitboard reads the cookie only during a change, with Claude closed. A read opens only Claude's settings, `config.json` and `config.json.journal`, and says who is in use as Pitboard last read it, with when.
+
+Claude can replace an account's session cookie while it stays signed in, as seen once in 2.19675.0 on 5 October 2026. So Pitboard takes a session cookie it has not seen as the account Claude names in one case: `config.json` names the account Pitboard last read in use, that account holds no parked login, and neither token cache is emptied. A switch then parks that login under that account and warns `login_taken_as_named`. Nothing is deleted on Claude's word.
+
+A session cookie Pitboard has not seen beside an emptied token cache is a sign-in Claude has not finished. Any other login Pitboard cannot tie to its own record stops each change, with nothing changed. [`login_in_doubt`](/reference/errors#claude-desktop) says what to do.
+
+Not known: how often Claude replaces its own login. Not known either: whether quitting Claude within seconds of a sign-in leaves the new login under the previous account's name.

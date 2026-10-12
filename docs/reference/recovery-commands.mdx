@@ -89,7 +89,7 @@ In the app, **Put Away** on the notice **A login file is left behind the keychai
 
 For OpenAI's Codex CLI, it also drops a parked login that copies the login in use. [Why Codex logins are moved, not copied](/concepts/switching#why-codex-logins-are-moved-not-copied) says why.
 
-While `CLAUDE_CODE_CUSTOM_OAUTH_URL` is set, `abandon` gives up only on a Codex switch. Otherwise it refuses with `custom_oauth_endpoint`, exit status 3.
+While `CLAUDE_CODE_CUSTOM_OAUTH_URL` is set and a Claude Code switch is interrupted, `abandon` refuses with `custom_oauth_endpoint`, exit status 3. It then gives up nothing, not even a Claude Desktop move. With no Claude Code switch interrupted, the variable does not stop it.
 
 ```sh
 pitboard abandon
@@ -100,6 +100,14 @@ Gave up on the interrupted switch from work to personal. 2 login(s) kept; nothin
 ```
 
 With no interrupted switch, it prints `There is no interrupted switch to give up on.` and changes nothing.
+
+For Claude Desktop, `abandon` gives up an interrupted move that Pitboard cannot settle, and keeps every folder. It settles a move first where it can, and warns `interrupted_move_undone` or `interrupted_move_finished` instead. It moves nothing in or out of Claude's data folder: items of the account left there stay, and a later change sets them aside.
+
+```text
+Pitboard gave up the move of `desktop/work`'s login and kept every folder: 1 parked, 1 set aside. Run `pitboard enroll desktop/<label>` for the account Claude shows, or `pitboard use desktop/<label>` where Claude is signed out.
+```
+
+Where items stay in the data folder, the line names them, as in `` `Session Storage` and `WebStorage` stay in Claude's folder ``, and asks you to open Claude once and quit it first. Where they would stay beside another login, `abandon` refuses with `move_mixed` and changes nothing.
 
 [An interrupted switch cannot be finished](/troubleshooting/recovery#an-interrupted-switch-cannot-be-finished) says when to run it.
 
@@ -131,6 +139,14 @@ On Linux, "keychain" in these lines means `~/.pitboard/vault/`, which no other P
 
 While `CLAUDE_CODE_CUSTOM_OAUTH_URL` is set, `repair` refuses with `custom_oauth_endpoint`, exit status 3.
 
+It also accounts for the folders in `~/.pitboard/parks`. It gives a folder back to the enrolled account whose id is in its name. It does so only where the folder's manifest, keys and cookie store agree, and the account holds no parked login. It sets aside the folders no account can take, and deletes none that holds an item.
+
+| Output | When |
+| --- | --- |
+| ``Set aside 1 folder(s) in /Users/you/.pitboard/parks that hold what no account here can take. Nothing was deleted; `pitboard doctor` lists them.`` | It set folders aside |
+
+With a Claude Desktop move waiting, `repair` settles it first, as a change does. While Claude is open, it repairs the rest and warns `move_waiting`. With no move waiting, it reads nothing of Claude.
+
 [Pitboard lost track of parked logins](/troubleshooting/recovery#pitboard-lost-track-of-parked-logins) says when to run it.
 
 ## `adopt`
@@ -138,6 +154,8 @@ While `CLAUDE_CODE_CUSTOM_OAUTH_URL` is set, `repair` refuses with `custom_oauth
 `pitboard adopt` takes over a Pitboard directory another computer wrote. Until you run it, commands that read the account list refuse that directory with `state_wrong_machine`.
 
 It keeps every account with its label, email and remembered usage. It drops every parked login without asking Anthropic or OpenAI whether it still works. Asking means renewing the login, and nobody has measured whether that ends the other computer's copy. [What Pitboard will not do](/concepts/limits#rules) says why a parked login never moves between computers.
+
+It sets each Claude Desktop parked login aside instead of dropping it. Claude cannot read one parked on another Mac, where its key differs. `pitboard forget` of the account deletes it.
 
 It leaves an interrupted switch for the next change to finish or undo.
 
@@ -151,6 +169,8 @@ Took over this directory: 2 account(s) kept.
 Sign in to each again:
   pitboard enroll personal --sign-in
 ```
+
+With Claude Desktop logins set aside, a line before `Sign in to each again:` names them, such as ``Pitboard set aside the parked Claude Desktop logins of `desktop/work` and `desktop/home`.`` Each gets its own `pitboard enroll desktop/<label> --sign-in` line.
 
 If the directory is already this computer's, `adopt` prints `This Pitboard directory was already written on this computer.` and changes nothing.
 

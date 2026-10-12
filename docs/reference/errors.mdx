@@ -17,14 +17,14 @@ The command line prints the message after `error:` or `warning:` on standard err
 | `account_unknown` | 1 | No account is enrolled under that label. The message lists the labels that are. | Check the label, or add the account with `pitboard enroll <label> --sign-in`. |
 | `label_taken` | 1 | The label belongs to another account of the same tool. | Choose another label. |
 | `already_enrolled` | 1 | The account is enrolled under the label the message names. | Use that label. |
-| `label_ambiguous` | 1 | A label with no tool, such as `work`, names an account of each tool. | Add the tool: `claude/work` or `codex/work`. |
-| `provider_unknown` | 1 | A label for `use`, `forget` or the first of `rename` starts with an unknown tool, such as `codx/work`. | Start it with `claude/` or `codex/`, or leave the tool out. |
+| `label_ambiguous` | 1 | A label with no tool, such as `work`, names accounts of more than one tool. | Add the tool: `claude/work`, `codex/work` or `desktop/work`. |
+| `provider_unknown` | 1 | A label for `use`, `forget` or the first of `rename` starts with an unknown tool, such as `codx/work`. | Start it with `claude/`, `codex/` or `desktop/`, or leave the tool out. |
 | `live_account_not_enrolled` | 1 | The account in use is not enrolled, so a switch cannot [park](/concepts/switching#parked-logins) its login. | Enrol it with `pitboard enroll <label>`, or `pitboard enroll codex/<label>` for Codex. |
 | `cannot_forget_active_account` | 1 | The account is in use. | Switch to another account, then forget it. |
 | `account_not_in_use` | 1 | You clicked **Update Claude Code's Config** for an account no longer in use. Pitboard wrote nothing. | Nothing. A switch writes the config itself. |
 | `usage` | 2 | The command line is wrong. | Check it with `--help`. |
 | `usage` | 2 | A label for `enroll`, or the second label for `rename`, breaks the [label rules](/reference/commands#labels). | Choose a label the rules allow. |
-| `usage` | 2 | The second label for `rename` names the other tool, as in `pitboard rename work codex/job`. | Keep the account's tool. To move it, enrol the account in the other tool. |
+| `usage` | 2 | The second label for `rename` names another tool, as in `pitboard rename work codex/job`. | Keep the account's tool. To move it, enrol the account in that tool. |
 
 ## Parked logins
 
@@ -141,6 +141,42 @@ An error that stops `pitboard stow` keeps its own code, cause and exit status. T
 
 An error that says the refresh token stored is spent keeps the code of what stopped Pitboard saving Claude Code's renewed login. Running the command again does not mend it: run `claude`, sign in, then try again.
 
+## Claude Desktop
+
+These come from a change to a Claude Desktop account, and from `abandon`, `repair` and `uninstall` where one is parked or a move waits.
+
+| Code | Exit | Meaning | What to do |
+| --- | --- | --- | --- |
+| `app_open` | 1 | Claude is open, or part of it still runs after it quit, such as `ShipIt`. Nothing changed. | Quit Claude with Command-Q, then try again. See [Claude is open](/troubleshooting#claude-is-open). |
+| `app_state_unknown` | 1 | Pitboard could not read the list of processes, so it cannot tell whether Claude is open. Nothing changed. | Try again. |
+| `login_folder_busy` | 1 | Another Pitboard directory is changing Claude's login. Nothing changed. | Try again once it has finished. |
+| `login_folder_unknown` | 3 | Claude's data folder is in a state Pitboard moves no login in. The message says which: an entry Pitboard has not read, a link, or a cookie store or settings it cannot read. | Follow the message. For an entry Pitboard has not read, see [The data folder holds an entry Pitboard has not read](/troubleshooting#the-data-folder-holds-an-entry-pitboard-has-not-read). |
+| `login_folder_unreadable` | 1 | Pitboard could not read Claude's cookie store. Nothing changed. | Open Claude, quit it with Command-Q, then try again. |
+| `sign_in_unfinished` | 1 | Claude has not finished signing in. Nothing changed. | Open Claude, wait until it shows your chats, quit it with Command-Q, then try again. |
+| `login_in_doubt` | 3 | Pitboard cannot tell whose login Claude holds: Claude names another account than the one Pitboard recorded, or an account was signed in to outside Pitboard. Nothing changed. | Open Claude, check which account it shows and quit it. Then run `pitboard enroll desktop/<label>` with that account's label. See [How Pitboard knows whose a Claude Desktop login is](/concepts/switching#how-pitboard-knows-whose-a-claude-desktop-login-is). |
+| `different_volume` | 3 | `~/.pitboard/parks` is on another volume than Claude's data folder. Pitboard never copies a Claude Desktop login. | Keep Pitboard's directory on the volume your home is on. |
+| `parks_not_private` | 3 | Others can reach `~/.pitboard/parks`, or it is a link or not yours. | Run the `chmod 700` the message names, or set `PITBOARD_HOME` to a folder of your own on this volume. |
+| `machine_unknown` | 3 | Pitboard could not read this Mac's identifier, which it writes beside every parked Claude Desktop login. Nothing changed. | [Report a problem](/troubleshooting#report-a-problem) with `pitboard doctor --json`. |
+| `app_opened_midway` | 1 | Claude was opened while Pitboard moved a login, so Pitboard stopped. Nothing is lost, and the move stays recorded. | Quit Claude with Command-Q, then try again. Pitboard settles the move first. |
+| `move_undone` | 1 | Pitboard could not park the login in use, and undid what it had done. That account stays in use. | Try again. |
+| `move_stopped` | 1 | Pitboard stopped partway through a move. The move stays recorded. | Keep Claude closed and try again. Pitboard settles the move first. |
+| `switch_left_signed_out` | 1 | Pitboard parked the account in use and could not put the other in use. Claude is signed out, and both logins are parked. | Run `pitboard use` with either account. |
+| `move_mixed` | 3 | Giving up a move would leave parts of one account beside another login in the data folder. Nothing changed. | Open Claude, check which account it shows and quit it. Then run `pitboard enroll desktop/<label>` with that account's label: Pitboard sets the other parts aside first. |
+| `uninstall_would_strand` | 1 | No Claude Desktop account is in use and one is parked, so `uninstall` would delete every Claude Desktop login Pitboard holds. | Run `pitboard use` with that account, then run `pitboard uninstall`. Or forget each Claude Desktop account first. |
+| `sign_in_settled_elsewhere` | 1 | While `pitboard enroll --sign-in` waited, another Pitboard command finished, undid or removed that sign-in. Nothing was enrolled. | Run `pitboard` to see who is signed in. |
+
+Codes of other sections mean this for a Claude Desktop account:
+
+| Code | Exit | Meaning | What to do |
+| --- | --- | --- | --- |
+| `live_store_unsupported` | 3 | Pitboard switches Claude Desktop on macOS only, where `HOME` is your account's own home. | Run Pitboard on macOS with `HOME` unset, or set to your account's home. |
+| `live_credential_absent` | 1 | Claude is signed out. | Run `pitboard enroll desktop/<label> --sign-in`, then sign in inside Claude and quit it. |
+| `live_account_not_enrolled` | 1 | Claude is signed in to an account Pitboard has not enrolled, so it cannot be parked. | Enrol it with `pitboard enroll desktop/<label>`. |
+| `already_enrolled` | 1 | Claude is signed in to an account enrolled under the label the message names. | Use that label. To add another account, run `pitboard enroll desktop/<label> --sign-in`. |
+| `parked_credential_corrupt` | 1 | The parked login is not the one Pitboard recorded, or it was parked on another Mac, where Claude's key differs. | Run `pitboard enroll desktop/<label> --sign-in`. |
+| `recovery_undetermined` | 1 | An earlier move was interrupted, and Pitboard cannot tell where it stopped. Nothing changed. | See [A Claude Desktop move was interrupted](/troubleshooting/recovery#a-claude-desktop-move-was-interrupted). |
+| `recovery_elsewhere` | 1 | An earlier move was interrupted in another user account's data folder. Nothing changed. | Run Pitboard as that user, or run [`pitboard abandon`](/reference/recovery-commands#abandon). |
+
 ## Renewal schedule
 
 | Code | Exit | Meaning | What to do |
@@ -222,5 +258,15 @@ A warning does not stop the command or change its exit status. In the Pitboard w
 | `login_replaced` | **A login was replaced outside Pitboard** | A sign-in outside Pitboard, such as `/login` in Claude Code, replaced the only login of the account the message names. | Run `pitboard enroll <label> --sign-in`, or forget the account. See [An account reads `login replaced outside Pitboard`](/troubleshooting#an-account-reads-login-replaced-outside-pitboard). |
 | `in_use_unconfirmed` | **The account in use is not confirmed** | Claude Code's config has named another account since Anthropic last identified the stored login, so another login may be stored. | Run `pitboard status` to ask Anthropic. The app asks by itself. See [Claude Code shows another account than Pitboard](/troubleshooting#claude-code-shows-another-account-than-pitboard). |
 | `config_names_another` | **Claude Code's config names another account** | Claude Code's config names another account than the stored login's, so `/status` shows an account that requests do not use. | Run `pitboard use` with the account in use, or click **Update Claude Code's Config** on the notice. |
+| `login_replaced` | **A login was replaced outside Pitboard** | Claude Desktop: the account in use was signed out in Claude, which ends its login at claude.ai, or a sign-in outside Pitboard replaced it. | Run `pitboard enroll desktop/<label> --sign-in`. |
+| `in_use_unconfirmed`, `config_names_another` | **The account in use is not confirmed**, or **Claude Code's config names another account** | Claude Desktop: Claude's settings have named another account, or nobody, since Pitboard last read Claude, so Claude may hold another login. | Open Claude, check which account it shows and quit it. Then run `pitboard enroll desktop/<label>` with that account's label. |
+| `login_taken_as_named` | **A login was taken as the account named for it** | Pitboard had not seen the login Claude held, and parked it as the account Claude's settings name. See [How Pitboard knows whose a Claude Desktop login is](/concepts/switching#how-pitboard-knows-whose-a-claude-desktop-login-is). | If Claude showed another account, switch back to the one the message names. Then check in Claude, quit it and enrol that login under its own label. |
+| `looks_signed_out` | **The account in use may be signed out** | Claude's settings look signed out since Pitboard last read the account in use. | Nothing. The next change to a Claude Desktop account checks. |
+| `set_aside` | **Pitboard set a folder aside** | Pitboard moved something into a folder in `~/.pitboard/parks` and deleted nothing. The message says which: what blocked a move, an account's earlier parked login, or the parts of a login a give-up left. | Nothing. `pitboard doctor` lists the folders. |
+| `move_waiting` | **An interrupted move is waiting** | A Claude Desktop move was interrupted, and its record waits. | Keep Claude closed. The next change to a Claude Desktop account settles it first. See [A Claude Desktop move was interrupted](/troubleshooting/recovery#a-claude-desktop-move-was-interrupted). |
+| `sign_in_awaited` | None: the notice **Adding a Claude Desktop account isn't finished** says it | Claude is signed out for a sign-in, and the account that was in use is parked. | Finish or undo it, as [Finish or undo an add](/guides/claude-desktop#finish-or-undo-an-add) says. |
+| `interrupted_move_undone` | **An interrupted move was undone** | An earlier Claude Desktop move was interrupted, and Pitboard undid it first. The message says where that left Claude. | Nothing. |
+| `interrupted_move_finished` | **An interrupted move was finished** | The same, and Pitboard finished it first. | Nothing. |
+| `login_item_gone` | **Part of a login was gone** | After a move, an item of a Claude Desktop login was in neither the data folder nor its parked login. Pitboard went on without it. The message names the item. | Nothing. |
 | Any other error code | **Pitboard has a warning** | A renewal or a config update failed with that error without stopping the command. | See that code's row. |
 | `read_only` | **Pitboard has a warning** | Pitboard runs as root or with `sudo`. A read shows the last numbers, and renews and writes nothing. | See [Root and sudo](#root-and-sudo). |

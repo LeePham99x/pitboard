@@ -49,14 +49,14 @@ Commands follow the order of `pitboard --help`.
 
 ## Labels
 
-A label names one account within its tool, so Claude Code and Codex can each have a `work`. Labels compare exactly: `Work` and `work` are two labels.
+A label names one account within its tool, so each tool can have a `work`. Labels compare exactly: `Work` and `work` are two labels.
 
 A label you choose, for `pitboard enroll` or as the second label of `pitboard rename`, follows these rules. Breaking one exits 2 with error code `usage`.
 
 | Rule | Refused |
 | --- | --- |
 | One word, with no spaces or control characters. `é` and `工` are allowed. | `two words`, `""` |
-| An optional tool prefix: `claude/` or `codex/`, in lower case | `codx/work`, `Codex/work` |
+| An optional tool prefix: `claude/`, `codex/` or `desktop/`, in lower case | `codx/work`, `Codex/work` |
 | A name after the prefix | `codex/` |
 | No `/` but the prefix's | `codex/a/b` |
 | `rename` keeps the account in its tool | `rename work codex/job`, where `work` is a Claude Code account |
@@ -66,17 +66,17 @@ What a bare label, one with no prefix, means depends on the command:
 | Where | A bare `work` means |
 | --- | --- |
 | `pitboard enroll` | The Claude Code account `work` |
-| `pitboard use`, `pitboard forget`, the first label of `pitboard rename` | Whichever tool has a `work`, refused if both do |
+| `pitboard use`, `pitboard forget`, the first label of `pitboard rename` | Whichever tool has a `work`, refused if more than one does |
 | The second label of `pitboard rename` | `work` in the account's own tool |
 
-Pitboard writes a label the way a command takes it: `work` for Claude Code, `codex/work` for Codex, and `claude/work` where both tools have a `work`.
+Pitboard writes a label the way a command takes it: `work` for Claude Code, `codex/work` for Codex, `desktop/work` for Claude Desktop, and `claude/work` where another tool has a `work` too.
 
 Against the enrolled accounts, a label fails with exit status 1:
 
 | Case | Code |
 | --- | --- |
 | No account has the label | `account_unknown` |
-| Both tools have the bare label | `label_ambiguous` |
+| More than one tool has the bare label | `label_ambiguous` |
 | The prefix is not a tool | `provider_unknown` |
 | `enroll` or `rename` chose a label another account of the tool holds | `label_taken` |
 
@@ -89,7 +89,7 @@ Against the enrolled accounts, a label fails with exit status 1:
 | With `--json`, all of these as one line of JSON; for `watch`, one line per event | Standard output |
 | `--help` and `--version`, as text even with `--json` | Standard output |
 | The question before deleting | Standard error |
-| The `Opening` line and the tool's own sign-in text from `pitboard enroll --sign-in` | Standard error |
+| The `Opening` line and the tool's own sign-in text from `pitboard enroll --sign-in`, and the lines it prints while it waits for Claude | Standard error |
 
 Pitboard colours output to a terminal, and none to a file or a pipe. JSON output never has colour.
 

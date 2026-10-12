@@ -17,7 +17,7 @@ In the app, choose **Open Pitboard** from Pitboard's menu. The **This Mac** pane
 
 Other pages cover:
 
-- An interrupted switch, lost parked logins or a directory from another computer: [Recover after a crash, a restore or a move](/troubleshooting/recovery).
+- An interrupted switch or Claude Desktop move, lost parked logins or a directory from another computer: [Recover after a crash, a restore or a move](/troubleshooting/recovery).
 - An account window: [Fix problems in account windows](/troubleshooting/account-windows).
 - Any other message: [Error and warning codes](/reference/errors).
 
@@ -34,9 +34,39 @@ Every read also warns with `login_replaced`, and the app posts **A login was rep
 
 A sign-in outside Pitboard, such as `/login` in Claude Code or `codex login`, wrote over the only login of the account in use. Pitboard held no copy, so that login is gone.
 
+For a Claude Desktop account, the warning can say instead that the account was signed out in Claude, which ends its login at claude.ai. Sign in to it again with `pitboard enroll desktop/work --sign-in`.
+
 [Sign in to the account again](/guides/sign-in-again), or [forget it](/guides/accounts#forget-an-account). Either stops the warning.
 
 To add an account without touching the login in use, click **Add Account** in the app or run `pitboard enroll personal --sign-in`.
+
+## Claude is open
+
+A Claude Desktop change stops with `app_open`, and changes nothing, while Claude is open:
+
+```text
+error: Claude is open, and Pitboard changes its login only while it is closed. Quit Claude with Command-Q, then run this again. Nothing has changed.
+```
+
+Quit Claude with Command-Q, then try again. Closing its window leaves it running.
+
+If the error says Claude has quit and names a part of it still running, such as `ShipIt (pid 812)`, wait until it ends. Or quit it in Activity Monitor. Then try again.
+
+## A parked Claude Desktop account opens signed out
+
+After a switch to a Claude Desktop account, Claude shows its sign-in page: the parked sign-in no longer works. `pitboard` may already have said `sign-in may have lapsed`.
+
+Quit Claude, then [sign in to the account again](/guides/claude-desktop#sign-in-again), so Pitboard records the new login.
+
+## The data folder holds an entry Pitboard has not read
+
+`pitboard doctor` warns on its `Claude data folder layout` line, and Pitboard starts no Claude Desktop move, refusing with `login_folder_unknown`:
+
+```text
+error: Claude's data folder holds `Network`, which this Pitboard has not read, so Pitboard moves no Claude Desktop login. Update Pitboard, or report it at https://github.com/datlechin/pitboard/issues if no release reads it yet. Nothing has changed.
+```
+
+A build of Claude made an entry Pitboard has no record of, so Pitboard cannot tell whether it belongs to the account. [Update Pitboard](/install#update-pitboard). If no release reads it yet, [report a problem](#report-a-problem) with the name. Claude Code and Codex switches go ahead.
 
 ## Claude Code shows another account than Pitboard
 

@@ -59,6 +59,13 @@ anything public in `pitboard-core` is a new minor version, as Cargo reads one: 0
   one. `state::State::discarded` holds `state::Dropped` entries, and `State::discard`
   takes a `state::ParkKind`. The account index is schema 8, which 0.11.0 refuses, so the
   release's notes say to update the command line and the app together.
+- The first release with Claude Desktop waits until ARCHITECTURE.md's hand measurements M1
+  to M10 are recorded. In `pitboard-core`, `switch::Outcome` has the variant `Installed` and
+  `provider::Adoption` the variant `NextOpen`, which break an exhaustive `match` on them.
+  `status::Row` has the new field `read_at`, `status::Report` `awaiting`, and `state::Park`
+  `kind` and `session_expires_at`. `service::Pitboard::abandon_recovery` returns a
+  `switch::GaveUp`. `provider::ProviderId` has the variant `Desktop`, and
+  `service::Warning`, `error::Error` and `status::Stale` have new variants.
 
 1. In CHANGELOG.md, add `## [<version>] - YYYY-MM-DD` directly under `## [Unreleased]`, so
    the entries there fall under the version. The guard looks for a line that starts

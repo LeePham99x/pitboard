@@ -18,7 +18,7 @@ Usage: pitboard status [OPTIONS]
 
 The two options cannot be given together.
 
-`status` first renews each parked login whose access token has expired or expires within 2 minutes. It then asks about every account at once: Anthropic for Claude Code accounts, OpenAI for Codex ones. Each request times out after 5 seconds. [How often Pitboard asks](/concepts/usage#how-often-pitboard-asks) says when an account is asked again, and what `--fresh` changes.
+`status` first renews each parked login whose access token has expired or expires within 2 minutes. It then asks about every account at once: Anthropic for Claude Code accounts, OpenAI for Codex ones. Each request times out after 5 seconds. For a Claude Desktop account it asks nothing, and reads Claude's settings alone. [How often Pitboard asks](/concepts/usage#how-often-pitboard-asks) says when an account is asked again, and what `--fresh` changes.
 
 `--offline` sends no request and writes nothing. It takes the account in use from Pitboard's record for Claude Code, and from the login itself for Codex. [How Pitboard knows whose login it is](/concepts/switching#how-pitboard-knows-whose-login-it-is) explains both.
 
@@ -30,9 +30,12 @@ The two options cannot be given together.
 | A renewal error, such as `renewal_failed` | Renewing a parked login failed for another reason. | No |
 | `recovery_undetermined` | An interrupted switch is waiting that the next change cannot finish. | Where Pitboard can tell without asking Anthropic |
 | `login_replaced` | A sign-in outside Pitboard replaced an account's only login. | Yes |
-| `in_use_unconfirmed` | Claude Code's config has named another account since Anthropic last identified the login stored. | Yes |
+| `in_use_unconfirmed` | Claude Code's config has named another account since Anthropic last identified the login stored, or Claude's settings another account since Pitboard last read Claude. | Yes |
 | `config_names_another` | Claude Code's config names another account than the one whose login is stored. | Yes |
 | `fallback_login` | On macOS, `~/.claude/.credentials.json` sits behind the keychain. | No |
+| `looks_signed_out` | Claude's settings look signed out since Pitboard last read the Claude Desktop account in use. | Yes |
+| `move_waiting` | A Claude Desktop move was interrupted, and its record waits. | Yes |
+| `sign_in_awaited` | Claude is signed out for a sign-in, and the account that was in use is parked. | Yes |
 | `read_only` | `status` runs as root or under `sudo`, and answers as `--offline` does. | No |
 
 [Warning codes](/reference/errors#warning-codes) gives each message and what to do.
@@ -54,6 +57,14 @@ pitboard status --offline
           measured 14:02, 3m ago · read without asking Anthropic
 ```
 
+A Claude Desktop account has no usage lines. The fact is said once, on the line before its rows, or after its tool's heading beside another tool's:
+
+```text
+Pitboard reads no usage for Claude Desktop
+● work    signed in · read 2h 05m ago
+○ home    ready · sign-in may lapse in 25d 3h
+```
+
 A Codex account's last line ends `read without asking OpenAI` instead. [Read the lines under each account](/guides/usage#read-the-lines-under-each-account) says what each line means, and [Status data](/reference/json-output#status-data) lists the `--json` fields.
 
 ## `enroll`
@@ -64,8 +75,8 @@ Usage: pitboard enroll [OPTIONS] <LABEL>
 
 | Argument or option | Description |
 | --- | --- |
-| `<LABEL>` | The account's label, such as `work`, or `codex/work` for a Codex account |
-| `--sign-in` | Sign in through the tool's own sign-in, without signing out of the account in use |
+| `<LABEL>` | The account's label, such as `work`, `codex/work` for a Codex account, or `desktop/work` for a Claude Desktop one |
+| `--sign-in` | Sign in through the tool's own sign-in, without signing out of the account in use. For Claude Desktop, park the account in use and wait for a sign-in inside Claude. |
 
 Without `--sign-in`, `enroll` records the account the tool is signed in to. It parks nothing: [Parked logins](/concepts/switching#parked-logins) says why.
 
@@ -78,6 +89,22 @@ With `--sign-in`, Pitboard runs the tool's own sign-in in `~/.pitboard/signin`. 
 
 Pitboard reads the new login from there, then deletes the directory and, on macOS, that keychain item. A lock on `~/.pitboard/signin.lock` keeps sign-ins to one at a time.
 
+For a Claude Desktop label, `--sign-in` runs no program. With Claude closed, Pitboard parks the account in use, which leaves Claude signed out, then waits while you open Claude, sign in and quit it. It then enrols the account Claude is signed in to. If Claude is signed out and its settings still name an account, Pitboard first sets that account's keys aside. `signin.lock` stays held for the whole wait.
+
+While it waits, it prints these lines on standard error:
+
+| Line | When |
+| --- | --- |
+| ``Parked `desktop/work`. Claude is signed out, and nothing was signed out at claude.ai.`` | Pitboard parked the account in use. |
+| ``Open Claude and sign in to the account to add as `desktop/travel`. When Claude shows your chats, quit it with Command-Q.`` | A label not enrolled. For an enrolled one: ``Open Claude and sign in to `desktop/home` again.`` and the same second sentence. |
+| `Do not choose Log out in Claude: it ends the login Claude holds at claude.ai, and Pitboard cannot bring it back.` | Always. |
+| ``Waiting for Claude to quit. Control-C stops waiting and keeps `desktop/work` parked; `pitboard use desktop/work` puts it back.`` | An account is parked for this sign-in. With none: `Waiting for Claude to quit. Control-C stops waiting.` |
+| `Claude is open.` | Claude opened. |
+| `Claude quit with nobody signed in. Still waiting.` | Claude quit signed out. |
+| `Claude quit before it finished signing in. Open it, wait until it shows your chats, then quit it. Still waiting.` | Claude quit before the sign-in finished. |
+
+After Control-C, Claude stays signed out. Where an account was parked for the sign-in, it stays parked and every read warns `sign_in_awaited`: `pitboard enroll` of the label finishes the sign-in, and `pitboard use` of the parked account undoes it.
+
 The `enrolled` field of `--json` output names the outcome.
 
 | `enrolled` | When | First line |
@@ -87,8 +114,11 @@ The `enrolled` field of `--json` output names the outcome.
 | `renewed` | An enrolled label not in use. Its parked login is replaced. | `Renewed work (me@company.com): its parked login is a fresh one.` |
 | `in_use` | The label of the account in use. The new login replaces the one in use. | `Signed in to personal (me@example.com) again. Its new login is the one in use now.` |
 | `in_use` | A label not enrolled before, signed in as the account in use | `Enrolled personal (me@example.com), the account signed in now. Its new login is the one in use.` |
+| `current` | Claude Desktop, without `--sign-in` | `Enrolled desktop/work, the account Claude is signed in to now. Check that Claude shows that account: Pitboard cannot ask claude.ai whose it is.` |
+| `in_use` | Claude Desktop, with `--sign-in`, a label not enrolled before | `Enrolled desktop/travel, the account Claude is signed in to now.` |
+| `in_use` | Claude Desktop, with `--sign-in`, an enrolled label | `Signed in to desktop/home again. Claude is signed in to it now.` |
 
-`current` adds a second line: `Add another without signing out of it: pitboard enroll <label> --sign-in`. For a Codex account, it has `codex/<label>`.
+`current` adds a second line: `Add another without signing out of it: pitboard enroll <label> --sign-in`. For a Codex account, it has `codex/<label>`. For Claude Desktop, it is `Add another: pitboard enroll desktop/<label> --sign-in`.
 
 If Pitboard cannot identify the login in use, it parks the new login instead of replacing that one. It warns `sign_in_parked_not_in_use` only when the label is the account Pitboard last recorded in use. [If Pitboard cannot identify the login in use](/guides/sign-in-again#if-pitboard-cannot-identify-the-login-in-use) says what to do.
 
@@ -105,6 +135,8 @@ If Pitboard cannot identify the login in use, it parks the new login instead of 
 | `live_credential_absent` | Without `--sign-in`, the tool is not signed in. |
 | `already_enrolled` | The account is enrolled under another label. |
 | `label_taken` | The label names another account. |
+
+For a Claude Desktop label, `enroll` also refuses with the codes in [Claude Desktop](/reference/errors#claude-desktop).
 
 To add a second Claude Code account:
 
@@ -132,7 +164,7 @@ Usage: pitboard use [OPTIONS] <LABEL>
 
 | Argument | Description |
 | --- | --- |
-| `<LABEL>` | The account's label, such as `work` or `codex/work` |
+| `<LABEL>` | The account's label, such as `work`, `codex/work` or `desktop/work` |
 
 `use` parks the login the label's tool has stored and puts the account's parked login in its place. Before anything moves, it refuses with:
 
@@ -146,7 +178,9 @@ Usage: pitboard use [OPTIONS] <LABEL>
 | `parked_login_belongs_elsewhere` | The parked login is another account's. |
 | `identity_unverifiable` | Anthropic or OpenAI could not be reached to check a login. |
 
-Before it switches, `use` has Anthropic or OpenAI identify the parked login. It renews that login first when its access token has expired. A switch needs the network for both tools. [Switching](/reference/errors#switching) lists what else can stop one.
+Before a Claude Code or Codex switch, `use` has Anthropic or OpenAI identify the parked login. It renews that login first when its access token has expired. A Claude Code or Codex switch always needs the network. [Switching](/reference/errors#switching) lists what else can stop one.
+
+A Claude Desktop switch asks no service. It needs Claude closed, and refuses with the codes in [Claude Desktop](/reference/errors#claude-desktop).
 
 For the account in use, `use` moves no login and prints `work is already signed in.` Where Claude Code's config names another account, `use` writes `work` there and adds `Claude Code's config named another account, and now names work.` The `--json` field `config_updated` is then `true`.
 
@@ -157,6 +191,9 @@ After a switch, `use` prints `Switched to work; personal is parked.` and a secon
 | Claude Code | `Claude Code sessions already running follow within 33 seconds.` |
 | Claude Code on macOS, with a login file behind the keychain | ``Claude Code sessions already running keep the account they are on until their login is next renewed, or until they are started again: /Users/you/.claude/.credentials.json is there. `pitboard doctor` says more.`` |
 | Codex | ``Restart any running `codex` for this to take effect. It will not pick the switch up on its own.`` |
+| Claude Desktop | `Claude opens signed in to it.` |
+
+Into a Claude that is signed out, with every Claude Desktop account parked, the first line is `Switched Claude Desktop to desktop/work.` instead.
 
 [Open sessions](/concepts/switching#open-sessions) explains both Claude Code lines.
 
@@ -167,6 +204,8 @@ After a Codex switch, `use` can also warn:
 | `sessions_still_running` | Something started before the switch still runs Codex. |
 | `sessions_unknown` | Pitboard could not read the list of processes. |
 | `written_on_the_command_line` | On macOS, Pitboard passed the parked login to `security` as an argument. See [Large logins on macOS](/security#large-logins-on-macos). |
+
+A Claude Desktop switch can warn `login_taken_as_named`, `set_aside` or `login_item_gone`, as [Warning codes](/reference/errors#warning-codes) says.
 
 ```sh
 pitboard use codex/work
@@ -188,7 +227,7 @@ Usage: pitboard forget [OPTIONS] <LABEL>
 | `<LABEL>` | The label to drop |
 | `-y, --yes` | Do not ask first; needed without a terminal or with `--json` |
 
-`forget` drops the account from Pitboard's list and deletes its parked login and its last usage reading. Pitboard does not revoke the login it deletes: see [What Pitboard does not protect against](/security#what-pitboard-does-not-protect-against).
+`forget` drops the account from Pitboard's list and deletes its parked login and its last usage reading. For Claude Desktop, it also deletes the folders set aside for the account. Pitboard does not revoke the login it deletes: see [What Pitboard does not protect against](/security#what-pitboard-does-not-protect-against).
 
 The app deletes the account's window data, sign-in included, at its next read of the accounts. [Where account windows keep their data](/security#where-account-windows-keep-their-data) has the rules.
 
@@ -197,11 +236,20 @@ The app deletes the account's window data, sign-in included, at its next read of
 | `cannot_forget_active_account` | The account is in use. |
 | `identity_unverifiable` | Pitboard cannot identify the login in use, and the account is the one last in use or has no parked login. |
 | `confirmation_needed` | It cannot ask, as in a script or with `--json`, and `--yes` is not given. Exit status 2. |
+| `app_open` | Claude Desktop: Claude is open, and a move waits or the account is the one last in use or has no parked login. |
+| `recovery_undetermined` | Claude Desktop: a move waits that Pitboard cannot settle. |
+| Another code of [Claude Desktop](/reference/errors#claude-desktop), such as `login_folder_unknown` or `login_in_doubt` | Claude Desktop: Pitboard cannot identify the login Claude holds, and the account is the one last in use or has no parked login. |
 
 At a terminal, without `--yes` or `--json`, `forget` asks on standard error:
 
 ```text
 Forget old and delete its parked login? Adding it again needs a browser sign-in. [y/N]
+```
+
+For a Claude Desktop account:
+
+```text
+Forget desktop/home and delete its parked login and the folders set aside for it? Adding it again needs a sign-in in Claude. [y/N]
 ```
 
 Anywhere else it needs `--yes`, and refuses with `confirmation_needed` without it. A label that names no account fails with its own error instead. The account in use needs `--yes` too, and then fails with `cannot_forget_active_account`. [Questions before deleting](/reference/commands#questions-before-deleting) says when it asks and what each answer does.
@@ -232,7 +280,7 @@ A rename stays inside the account's tool: `pitboard rename codex/work job` gives
 | Code | When | Exit status |
 | --- | --- | --- |
 | `label_taken` | Another account of the same tool has the label `<TO>`. | 1 |
-| `usage` | `<TO>` names the other tool, as in `pitboard rename work codex/work`. | 2 |
+| `usage` | `<TO>` names another tool, as in `pitboard rename work codex/work`. | 2 |
 
 ```sh
 pitboard rename wrong right

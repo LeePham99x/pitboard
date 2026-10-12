@@ -2,9 +2,10 @@
 
 Pitboard handles the OAuth refresh tokens of Claude Code and Codex, which grant full access
 to a paid account. A Codex parked login is Codex's whole `auth.json`, which can also hold an
-OpenAI API key. The menu bar app also gives each account a window on claude.ai or
-chatgpt.com, where WebKit keeps that site's sign-in. Its Share extension hands it a page
-from your browser.
+OpenAI API key. On macOS, Pitboard also moves Claude Desktop's login, Claude's own files with
+its claude.ai session cookie among them, into `~/.pitboard/parks` and back. The menu bar app
+also gives each Claude Code and Codex account a window on claude.ai or chatgpt.com, where
+WebKit keeps that site's sign-in. Its Share extension hands it a page from your browser.
 
 To report a vulnerability, follow [Report a vulnerability](#report-a-vulnerability), not a
 public issue. For where parked logins are kept and what leaves your machine, see
@@ -79,6 +80,10 @@ A report is in scope when Pitboard fails at one of these.
 - Pitboard reads `auth.json` back after a Codex switch, because Codex takes no lock on it.
   A `codex` refreshing its token during a switch writes its old account's tokens under the
   incoming account's id. Pitboard refuses a login whose tokens and account id disagree.
+- Pitboard never copies a Claude Desktop login. It renames Claude's files into
+  `~/.pitboard/parks` and back, and moves three keys of Claude's `config.json` with them,
+  only while Claude is closed. `state.json` names both places before the first rename, and
+  Pitboard deletes nothing of Claude's.
 - A parked login stays on one machine, because a refresh token presented from a second
   machine can end the login on both. Pitboard refuses a state directory in a cloud-synced
   folder, or a state file written on another machine. `pitboard adopt` takes over such a
@@ -144,6 +149,8 @@ A report is in scope when Pitboard fails at one of these.
 - A page a site opens in your browser. Anything you connect there goes to the account your
   browser is signed in to, which may not be the window's account. The window says so when
   the site opened the page without a click.
+- Another process running as you that can read Claude's keychain item,
+  `Claude Safe Storage`. It can read a parked Claude Desktop login as it can Claude's own.
 - Another user with administrator access to your computer.
 - A compromised Claude Code, Codex or dependency of Pitboard. CI checks every Rust
   dependency for known advisories, licences and sources. A weekly job checks Sparkle, the

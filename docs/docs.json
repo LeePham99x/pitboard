@@ -2,7 +2,7 @@
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
   "name": "Pitboard",
-  "description": "Switch between your own Claude Code and Codex logins, and see how much each one has left.",
+  "description": "Switch between your own logins of Claude Code, Codex and, on macOS, Claude Desktop, and see what each Claude Code and Codex account has left.",
   "colors": {
     "primary": "#166534",
     "light": "#4DD170",
@@ -42,6 +42,7 @@
           "guides/automatic-switching",
           "guides/status-line",
           "guides/codex",
+          "guides/claude-desktop",
           "guides/renewal",
           "guides/sign-in-again",
           "guides/account-windows"

@@ -26,6 +26,19 @@ If the error says `this run reads it from somewhere else` (`recovery_elsewhere`)
 
 If the error says the record of the switch `is damaged` (`recovery_record_corrupt`), check that `pitboard` shows the account you expect as `signed in`. Then delete the file the error names, usually `~/.pitboard/journal.json`.
 
+## A Claude Desktop move was interrupted
+
+A crash, a power cut or Claude opened midway can stop a Claude Desktop move. Every read then warns `move_waiting`, and the app shows **An interrupted move is waiting**.
+
+Keep Claude closed, then make any change to a Claude Desktop account, such as `pitboard use desktop/work`. Pitboard settles the move first, and a warning says how.
+
+If Pitboard cannot tell where the move stopped, the change stops with `recovery_undetermined`. Open Claude to see whether it is signed in, and to which account, then quit it:
+
+- Signed in: enrol the account Claude shows with `pitboard enroll desktop/<label>`.
+- Signed out: [give up the move](/guides/claude-desktop#give-up-an-interrupted-move), then switch to an account.
+
+If the error says Claude kept its data in another folder (`recovery_elsewhere`), the move ran as another macOS user. Run Pitboard as that user, or give up the move.
+
 ## Pitboard lost track of parked logins
 
 After `~/.pitboard` is restored from a backup or loses files, `pitboard` can show `nothing parked` for an account whose [parked login](/concepts/switching#parked-logins) still exists.
@@ -41,6 +54,8 @@ Gave personal back a parked login that nothing named.
 ```
 
 [`repair`](/reference/recovery-commands#repair) lists its other results.
+
+If `state.json` itself is lost, enrol each Claude Desktop account again: the one Claude is signed in to with `pitboard enroll desktop/<label>`, each other with `pitboard enroll desktop/<label> --sign-in`. `pitboard repair` sets their parked logins aside, and enrols nothing.
 
 On macOS, every Pitboard directory shares the keychain, so a login `repair` gives back may be another directory's. `pitboard forget` and `pitboard uninstall` leave such a login in the keychain until you switch to its account or Pitboard renews it.
 

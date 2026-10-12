@@ -1,9 +1,9 @@
 ---
 title: "Switch accounts"
-description: "Switch Claude Code or Codex to another enrolled account from the menu bar, the Pitboard window or the command line."
+description: "Switch a tool to another enrolled account from the menu bar, the Pitboard window or the command line."
 ---
 
-A switch puts another account's [parked login](/concepts/switching#parked-logins) in use for Claude Code or OpenAI's Codex CLI, and parks the login the tool had.
+A switch puts another account's [parked login](/concepts/switching#parked-logins) in use for Claude Code, OpenAI's Codex CLI or Claude Desktop, and parks the login the tool had.
 
 ## Switch to another account
 
@@ -14,7 +14,7 @@ A switch puts another account's [parked login](/concepts/switching#parked-logins
     In the Pitboard window, click **Use** in the account's row, double-click the row, or select it and press Return.
   </Tab>
   <Tab title="Command line">
-    Run `pitboard use` with the account's label, such as `work` or `codex/work`.
+    Run `pitboard use` with the account's label, such as `work`, `codex/work` or `desktop/work`.
 
     ```sh
     pitboard use work
@@ -36,6 +36,8 @@ Pitboard moves nothing until these hold:
 - The tool is signed in to an enrolled account.
 - The account you switch to has a parked login.
 - Anthropic or OpenAI confirms over the network that the parked login works and is that account's.
+
+For Claude Desktop, Pitboard asks no service, and needs Claude closed instead: see [Switch accounts](/guides/claude-desktop#switch-accounts).
 
 An expired or refused parked login needs a sign-in: see [Sign in to an account again](/guides/sign-in-again). [Error and warning codes](/reference/errors) lists every code.
 
@@ -71,6 +73,10 @@ After a Codex switch, Pitboard lists which of these still run. If it cannot read
 While the ChatGPT app is open, a Codex switch in the app asks first. **Quit ChatGPT and Switch** quits it, switches, then opens it again. **Cancel** switches nothing.
 
 If the ChatGPT app has not quit within 30 seconds, nothing changes. The command line never quits an app.
+
+### Switch while Claude is open
+
+While Claude is open, a Claude Desktop switch in the app asks first. **Quit Claude and Switch** quits Claude, switches, then opens Claude again behind the Pitboard window, signed in to the account. **Cancel** switches nothing. On the command line, quit Claude with Command-Q first, as [Switch accounts](/guides/claude-desktop#switch-accounts) shows.
 
 ## When an account runs out
 
