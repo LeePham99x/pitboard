@@ -140,7 +140,34 @@ pages load, as a browser would.
     doubling to 15 minutes), how many attempts are made at one thing (`ATTEMPTS`), and
     `Refusals`, a front end's refusals in a row and their wait, on its own clock. `ledger.rs`
     is `Tries`, the attempts and the reasons said about one thing, and how a duty's record
-    is read and written, only under `state.lock`. The automatic switch is one duty.
+    is read and written, only under `state.lock`. `mod.rs` holds `Look`, what a duty's look
+    at its files came to, and `Duties` and `Looked`, which `Pitboard::look` answers for a
+    front end that does both duties. The automatic switch and the warm-up are its duties.
+  - `warm/`: warming up an account, starting its five-hour period as soon as the last one
+    resets, for the Claude Code accounts somebody turned it on for. `mod.rs` holds the
+    setting, `warm.json`: the accounts turned on, by id, and `Range`, the span of each day,
+    in minutes of the clock's time zone (`Clock::zone`), which may run past midnight. It also
+    holds `Overview`, each Claude Code account with where it stands, both by itself and for a
+    warm-up asked for now (`Choice::now`), and `Halt`, why nothing is warmed up on this
+    machine: a switch interrupted, a custom OAuth endpoint, managed settings that sign every
+    run of Claude Code in another way, or no program. `decide.rs` is the rule, from the
+    reading Anthropic gave, which login of the account is at hand (`Login`), the span and
+    `warmed.json`, today's attempts (`Ledger`, by the clock's day): a period running, or one a
+    warm-up the reading came before started, is `Running`; any limit used up holds it back,
+    since Anthropic refuses every request then; and three attempts that waiting does not mend
+    hold it back until the next day. Only the unscoped `session` limit is started: the weekly
+    limit is a fixed cycle. `run.rs` runs the tool's own headless mode in `warm/<tool>/`, made
+    afresh for each run, with an environment built from nothing but `PATH`, the person's name
+    and the proxy, the access token on descriptor 3 through a pipe `dup2`ed in `pre_exec`, for
+    at most 120 seconds, its process group stopped past that. `WarmScript` plays a run in a
+    test or a fixture. `Provider::warm_up` builds the command and `Provider::warm_verdict`
+    reads what it printed; Codex refuses both until when its period starts is measured.
+  - `switch/warm.rs`: changes to `warm.json`, and the warm-up itself. Under `state.lock`, it
+    decides again, takes the access token, of a park renewed where it lapses within 5 minutes
+    (`renew_one`) or of Claude Code's login in use renewed under its locks (`identify::fresh`),
+    takes `warm.lock` and records the attempt; it lets `state.lock` go while the tool runs;
+    then asks the account's usage once (`status::ask_one`), which says whether a period
+    started, and records that and the `warm-up` line under the lock again.
   - `autoswitch.rs`: switching Claude Code by itself, for a front end somebody asked to: the
     app with its setting on, or `pitboard watch`. `Threshold` is the share a limit switches
     at, 50 to 99, 95 unless chosen. `decide` is the rule, from the readings Anthropic gave
@@ -297,6 +324,10 @@ pages load, as a browser would.
   and any outcome ends the row, as the look standing on what the core recorded with an
   attempt that failed, its own wait or why it tries no more, does. It ends on a refusal
   watching cannot mend: running elevated, a Windows build or Pitboard's own files unusable.
+  At each decision it also asks the core to warm up whichever account turned on is due
+  (`Pitboard::warm_up`, which looks at the files first), with a refusal row of its own, and
+  says each warm-up, each reason an account is held back once until it warms up, and why
+  nothing is warmed up here once until that ends. `warm.rs` is `pitboard warm`.
 - `crates/pitboard-ffi`: the core as UniFFI bindings, for the apps: a static library for
   the macOS app, a dynamic one for the Windows app. An app reaches the core through the
   model alone.
@@ -361,7 +392,9 @@ pages load, as a browser would.
     main window, says which account to switch to once the one in use has run out, notified
     once for each reset, switches Claude Code by itself with its setting on, asking the
     core's look after every read and every 30 seconds and saying under the setting what it
-    came to, keeps the app's own preferences, and keeps the daily renewal schedule, renews
+    came to, warms up the accounts turned on on a lane of its own, asking after every read
+    and every 30 seconds, with every read's `Overview` of them and a notification once for
+    the words of a warm-up by itself that came to nothing, keeps the app's own preferences, and keeps the daily renewal schedule, renews
     now, makes doctor's checks, reads the activity log and finds the `pitboard` a terminal
     runs. It keeps the account windows' books too: which store is whose and each window's
     last page, which windows close and which stores go after a read, the link waiting for an
@@ -2037,6 +2070,25 @@ machine on one day.
   models apart.
 - Whether a plan with no limit for a model offers that model at all is not known. Pitboard
   counts it as room.
+
+Measured on 12 October 2026 with Claude Code 2.1.296, on a Team 5x and a Max 20x account, by
+asking the usage endpoint before and 20 seconds after one `claude -p` request on Haiku made
+with each account's access token on a descriptor, from a private home. The register holds
+each as a fact of its own (`request_starts_the_five_hour_period`,
+`weekly_period_is_a_fixed_cycle`, `used_up_limit_refuses_every_request`).
+
+- A five-hour period not running reads as the `session` row at 0% with `resets_at` null,
+  and `five_hour` with `resets_at` null, in an answer that lists every limit. `warm::decide`
+  reads a period with no reset, or a passed one, as not running.
+- One request starts it, on the plan rather than the monthly API credit
+  (`fallback_credit: null`), at the start of the ten minutes it fell in: a request at 17:52
+  gave a reset at 22:50, one at 18:02 a reset at 23:00. Two samples, so the ten minutes are
+  a reading, not a guarantee. A warm-up up to nine minutes after a reset loses nothing.
+- The weekly limit, and a model's beside it, runs on a fixed cycle: two minutes after one
+  reset, with no request between, the answer already gave the next week's reset at 0%. So
+  only the five-hour period is warmed up.
+- While a limit is used up, a request is refused with `usage_limit_reached`, spends nothing
+  and starts no period. So `warm::decide` warms up no account with a limit used up.
 
 ### Codex
 
