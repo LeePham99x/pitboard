@@ -124,7 +124,8 @@ pub fn not_switching(
     why: &crate::autoswitch::Skip,
     threshold: crate::autoswitch::Threshold,
 ) -> String {
-    use crate::autoswitch::{ATTEMPTS, SETTLING_SECONDS, Skip};
+    use crate::autoswitch::{SETTLING_SECONDS, Skip};
+    use crate::duty::cadence::ATTEMPTS;
     match why {
         Skip::NoRoom { unread } => {
             let room = format!(
@@ -160,18 +161,18 @@ pub fn not_switching(
     }
 }
 
+const INTERRUPTED: &str = "a switch was interrupted, and the next change you make finishes it";
+const CUSTOM_OAUTH: &str =
+    "Claude Code uses a custom OAuth endpoint, and Pitboard does not act on Claude Code then";
+
 /// Why Pitboard cannot judge whether to switch Claude Code by itself, as a clause that says
 /// what to do about it where anything can be done. It names no command, and no time, which
 /// each front end says in its own way.
 pub fn not_watching(why: &crate::autoswitch::Blind) -> String {
     use crate::autoswitch::Blind;
     match why {
-        Blind::SwitchInterrupted => {
-            "a switch was interrupted, and the next change you make finishes it".into()
-        }
-        Blind::CustomOauth => "Claude Code uses a custom OAuth endpoint, and Pitboard does not \
-                               act on Claude Code then"
-            .into(),
+        Blind::SwitchInterrupted => INTERRUPTED.into(),
+        Blind::CustomOauth => CUSTOM_OAUTH.into(),
         Blind::NothingSignedIn => "Claude Code has no login stored".into(),
         Blind::NotEnrolled { email } => {
             format!("Claude Code has {email}'s login stored, and that account is not enrolled")
@@ -181,6 +182,88 @@ pub fn not_watching(why: &crate::autoswitch::Blind) -> String {
         }
         Blind::NoReading { account } => {
             format!("there is no reading of {account} from Anthropic yet")
+        }
+    }
+}
+
+/// Why Pitboard warms up no account on this machine for now, as a clause.
+pub fn not_warming(why: &crate::warm::Halt) -> String {
+    use crate::warm::Halt;
+    match why {
+        Halt::Unbuilt => "Pitboard does not warm up accounts on this system yet".into(),
+        Halt::SwitchInterrupted => INTERRUPTED.into(),
+        Halt::CustomOauth => CUSTOM_OAUTH.into(),
+        Halt::Overridden(names) => format!(
+            "Claude Code's managed settings make it sign in another way, set by {}",
+            names.join(", ")
+        ),
+        Halt::ProgramMissing => "Claude Code is not installed where Pitboard looks".into(),
+    }
+}
+
+/// Why a warm-up started nothing, as a clause.
+pub fn warm_failed(why: &crate::warm::Failure) -> String {
+    use crate::warm::Failure;
+    match why {
+        Failure::LimitReached => {
+            "a limit of it is used up, and Anthropic refused the request".into()
+        }
+        Failure::LoginRefused => "Anthropic refused its login; sign in to it again".into(),
+        Failure::NotStarted => {
+            "the request was answered, and Anthropic still has no period running".into()
+        }
+        Failure::Unreachable => "Anthropic could not be reached".into(),
+        Failure::TimedOut => "Claude Code did not finish in time".into(),
+        Failure::Failed(said) => format!("Claude Code failed ({said})"),
+    }
+}
+
+/// Where an account turned on for warm-ups stands, as what follows its name: "work warms up
+/// again at 22:50", "work has its weekly limit used up until Oct 15 03:00". Each moment is
+/// written as `moment` writes it, the command line's way or the app's.
+pub fn warm_standing(standing: &crate::warm::Standing, moment: &dyn Fn(i64) -> String) -> String {
+    use crate::warm::{Hold, Standing};
+    match standing {
+        Standing::Due => "warms up now".into(),
+        Standing::Running {
+            until,
+            next: Some(next),
+        } if next == until => format!("warms up again at {}", moment(*next)),
+        Standing::Running {
+            until,
+            next: Some(next),
+        } => format!(
+            "has its 5-hour period running until {}, and warms up again at {}",
+            moment(*until),
+            moment(*next)
+        ),
+        Standing::Running { until, next: None } => {
+            format!("has its 5-hour period running until {}", moment(*until))
+        }
+        Standing::Resting { at } => format!("warms up at {}", moment(*at)),
+        Standing::Waiting { until } => format!(
+            "tries again at {}, after a warm-up came to nothing",
+            moment(*until)
+        ),
+        Standing::Held(Hold::NoReading) => "waits for a reading from Anthropic".into(),
+        Standing::Held(Hold::NothingToStart) => "has no 5-hour limit to start".into(),
+        Standing::Held(Hold::LimitUsedUp { limit }) => {
+            let name = scoped_limit_name(&limit.kind, limit.length_seconds, limit.scope.as_deref());
+            match limit.resets_at {
+                Some(at) => format!("has its {name} limit used up until {}", moment(at)),
+                None => format!("has its {name} limit used up"),
+            }
+        }
+        Standing::Held(Hold::GaveUp { until }) => format!(
+            "tries again at {}, after {} warm-ups came to nothing today",
+            moment(*until),
+            crate::duty::cadence::ATTEMPTS
+        ),
+        Standing::Held(Hold::LoginExpired) => {
+            "needs signing in again: its parked login has expired".into()
+        }
+        Standing::Held(Hold::NothingParked) => {
+            "has no login to warm up with: it is not in use, and nothing is parked".into()
         }
     }
 }
@@ -917,7 +1000,7 @@ pub(crate) fn too_old(build: Option<u32>) -> ChangesNothing {
 }
 
 /// Things one after another, as a sentence lists them: "a", "a and b", "a, b and c".
-pub(crate) fn listed(mut items: Vec<String>) -> String {
+pub fn listed(mut items: Vec<String>) -> String {
     match items.len() {
         0 => String::new(),
         1 => items.remove(0),

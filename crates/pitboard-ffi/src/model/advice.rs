@@ -53,9 +53,9 @@ fn windows_of(measured: &Usage) -> Vec<usage::Window> {
     measured.windows.iter().map(window).collect()
 }
 
-/// The account of the same tool that can be switched to at `now` with the most room for a
-/// switch away from `ran` of `current`, by the rule the automatic switch keeps, and what it
-/// has left of that kind of limit: none when none has room.
+/// The account of the same tool that can be switched to at `now` for a switch away from
+/// `ran` of `current`, by the rule the automatic switch keeps, and what it has left of that
+/// kind of limit: none when none has room.
 fn spare(
     ran: &Limit,
     current: &Account,
@@ -64,7 +64,7 @@ fn spare(
 ) -> Option<(String, Option<i64>, String)> {
     let ran = window(ran);
     let in_use = current.usage.as_ref().map(windows_of).unwrap_or_default();
-    let (spare, room) = usage::roomiest(
+    let (spare, room) = usage::preferred(
         mine.iter()
             .filter(|account| account.switchable && account.qualified.is_some())
             .filter_map(|account| {
@@ -308,6 +308,33 @@ mod tests {
                 .first()
                 .map(|advice| advice.instead.as_str()),
             Some("idle")
+        );
+    }
+
+    /// As the automatic switch chooses: an account without a weekly limit for all models
+    /// first, whatever another has left.
+    #[test]
+    fn an_account_without_a_weekly_limit_for_all_models_is_offered_first() {
+        let read = status(vec![
+            account(Some("work"))
+                .signed_in()
+                .limits(vec![window("session", 100.0), window("weekly_all", 30.0)])
+                .build(),
+            account(Some("max"))
+                .limits(vec![window("session", 0.0), window("weekly_all", 10.0)])
+                .build(),
+            account(Some("seat"))
+                .limits(vec![
+                    window("session", 80.0),
+                    window("weekly_scoped", 0.0).scope("Fable"),
+                ])
+                .build(),
+        ]);
+        assert_eq!(
+            about(&read, &Told::new())
+                .first()
+                .map(|advice| (advice.instead.as_str(), advice.left)),
+            Some(("seat", Some(20)))
         );
     }
 

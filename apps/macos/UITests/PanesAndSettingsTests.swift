@@ -95,6 +95,33 @@ final class PanesAndSettingsTests: XCTestCase {
         XCTAssertTrue(standing.waitForNonExistence(timeout: 5))
     }
 
+    /// An account turned on for warm-ups whose five-hour period was not running is warmed
+    /// up as the app starts: its row says when it warms up again, the settings show it on
+    /// with the hours, and another account turned on there is on in its own menu too.
+    @MainActor
+    func testWarmingUpAccounts() {
+        let app = XCUIApplication.launched(.warmUp)
+        app.openWindow()
+        let warmed = app.text("BEGINSWITH", "Warms up again at ")
+        XCTAssertTrue(warmed.waitForExistence(timeout: 30), "personal is warmed up")
+
+        app.openSettings()
+        let personal = app.control("settings.warm.claude/personal")
+        let work = app.control("settings.warm.claude/work")
+        XCTAssertTrue(personal.waitForExistence(timeout: 5))
+        XCTAssertTrue(personal.wait(for: \.isEnabled, toEqual: true, timeout: 5))
+        XCTAssertEqual(personal.value as? Int, 1)
+        XCTAssertEqual(work.value as? Int, 0)
+        XCTAssertTrue(app.control("settings.warmFrom").exists)
+        XCTAssertTrue(app.control("settings.warmStanding").waitForExistence(timeout: 5))
+
+        // The model answers once the core has kept it, so the switch is waited for.
+        work.click()
+        let on = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == 1"), object: work)
+        XCTAssertEqual(XCTWaiter.wait(for: [on], timeout: 5), .completed)
+    }
+
     /// What names the share a limit is switched at, as `words`: a text beside the stepper,
     /// or the stepper itself where macOS reads its label as the stepper's.
     @MainActor

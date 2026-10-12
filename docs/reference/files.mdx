@@ -20,6 +20,10 @@ Pitboard creates each directory at mode 0700 and each file at 0600. A directory 
 | `pending` | Names of parked logins and folders in `parks/` about to be written, one per line, which the next change resolves. Absent when empty. | Anything that parks a login |
 | `autoswitch.json` | What the automatic switch tried and said at each limit, until a minute after it resets, or 7 days with no reset known. When it last failed to identify Claude Code's login. | The automatic switch |
 | `signin.lock` | The lock that allows one sign-in at a time | A sign-in |
+| `warm.json` | The accounts turned on for warm-ups, by id, and the hours they are made in | `pitboard warm on`, `off` and `range`, and the app's **Warm up limits** |
+| `warmed.json` | The warm-ups of each account tried today, and when one last started its period | A warm-up |
+| `warm.lock` | The lock that allows one warm-up at a time | A warm-up |
+| `warm/` | Where Claude Code runs a warm-up, in `warm/claude/`, with a home and config of its own made for the run and removed after it. | A warm-up |
 | `signin/` | Where a tool signs in, apart from the login in use. Removed when the sign-in ends, or by the next one. | A sign-in |
 | `vault/` | Linux: the parked logins, one file each | Anything that parks or renews a login |
 | `parks/` | Claude Desktop's parked logins and the folders set aside, one folder each, as [Claude Desktop files](/reference/files#claude-desktop-files) lists | A change to a Claude Desktop account, `repair` and `adopt` |

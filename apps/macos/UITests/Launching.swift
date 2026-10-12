@@ -16,6 +16,7 @@ enum Fixture: String {
     case chatGPTOpen
     case claudeDesktop
     case claudeDesktopOpen
+    case warmUp
 }
 
 @MainActor

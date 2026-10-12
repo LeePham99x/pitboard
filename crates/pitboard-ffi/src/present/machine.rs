@@ -30,6 +30,43 @@ pub struct MachineShown {
     pub command_line: CommandLineShown,
     /// Switching Claude Code by itself, as the settings show it.
     pub auto_switch: AutoSwitchShown,
+    /// Warming up accounts, as the settings show it.
+    pub warm: WarmShown,
+}
+
+/// Warming up accounts, as the settings show it: the span of each day, each Claude Code
+/// account with whether it is warmed up, what comes next, and what is said under them.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct WarmShown {
+    /// The span, in minutes of the day, which `Intent::SetWarmRange` takes back: `to` up to
+    /// 24 hours, and a `from` later than it runs past midnight.
+    pub from: u16,
+    pub to: u16,
+    /// The span in words: "06:00 to 22:00".
+    pub range_label: String,
+    /// Each Claude Code account enrolled under a name, in the order they were enrolled.
+    pub accounts: Vec<WarmAccountShown>,
+    /// What comes next, once anything is turned on: the next warm-up, or why none is made.
+    pub standing: Option<String>,
+    /// What is said under them: what a warm-up does and what it never does.
+    pub note: String,
+    /// Whether anything here can be changed: once the core has said what it is.
+    pub enabled: bool,
+}
+
+/// One Claude Code account, as the settings' warm-up lists it.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct WarmAccountShown {
+    /// Its label with its tool, which `Intent::SetWarm` takes back.
+    pub qualified: String,
+    /// Its name.
+    pub title: String,
+    /// The plan its login says it is on, where one does.
+    pub plan: Option<String>,
+    /// Whether it is warmed up.
+    pub on: bool,
+    /// Where its warm-up stands, while it is turned on: "Warms up again at 22:50".
+    pub standing: Option<String>,
 }
 
 /// Switching Claude Code by itself before the account in use runs out, as the settings show
@@ -206,6 +243,72 @@ pub(crate) fn machine(seen: &Seen) -> MachineShown {
         activity: activity(seen),
         command_line: command_line(seen),
         auto_switch: auto_switch(seen),
+        warm: warm(seen),
+    }
+}
+
+/// Warming up accounts, from what the core last said of it.
+fn warm(seen: &Seen) -> WarmShown {
+    let state = seen.state;
+    let overview = state.warm.overview.as_ref();
+    let range = overview.map_or(pitboard_core::warm::Range::DEFAULT, |o| o.range);
+    let clock = |at| seen.clock(at);
+    let accounts: Vec<WarmAccountShown> = overview
+        .map(|overview| {
+            overview
+                .accounts
+                .iter()
+                .map(|choice| WarmAccountShown {
+                    qualified: choice.qualified.clone(),
+                    title: choice.account.clone(),
+                    plan: seen
+                        .accounts()
+                        .iter()
+                        .find(|account| account.qualified.as_deref() == Some(&choice.qualified))
+                        .and_then(|account| account.plan.clone()),
+                    on: choice.on,
+                    standing: choice.standing.as_ref().map(|standing| {
+                        words::capitalised(&pitboard_core::words::warm_standing(standing, &clock))
+                    }),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let unreadable = state.warm.unreadable.as_deref().map(words::capitalised);
+    let standing = unreadable.or_else(|| {
+        overview
+            .filter(|_| state.warm.any_on())
+            .and_then(|overview| {
+                if let Some(halt) = &overview.halted {
+                    return Some(format!(
+                        "Pitboard is not warming up accounts: {}.",
+                        pitboard_core::words::not_warming(halt)
+                    ));
+                }
+                if let Some(failed) = &state.warm.failed {
+                    return Some(format!("The last warm-up came to nothing: {failed}"));
+                }
+                let (account, at) = overview.next(seen.now)?;
+                Some(if at <= seen.now {
+                    format!("Warming up {account} now.")
+                } else {
+                    format!("Next warm-up: {account} at {}.", seen.clock(at))
+                })
+            })
+    });
+    WarmShown {
+        from: range.from(),
+        to: range.to(),
+        range_label: range.to_string(),
+        accounts,
+        standing,
+        note: "Pitboard starts the five-hour period of each account turned on as soon as the \
+               last one resets, within these hours, while the app is open, so it resets as \
+               early as it can. Claude Code sends one short request with that account's own \
+               login. Pitboard warms up Claude Code accounts only, and none with a limit used \
+               up."
+        .into(),
+        enabled: overview.is_some(),
     }
 }
 

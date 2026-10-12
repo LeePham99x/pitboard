@@ -188,6 +188,24 @@ Codes of other sections mean this for a Claude Desktop account:
 | `schedule_program_temporary` | 1 | The app only: it runs from a temporary copy macOS made, which is gone once the app quits. | Move Pitboard to your Applications folder, open it from there and turn on daily renewal again. |
 | `schedule_program_unnamed` | 1 | The app only: this copy has no command line inside it for the schedule to run. | Install the app as [Install Pitboard](/install) describes, then open that copy. |
 
+## Warm-up
+
+| Code | Exit | Meaning | What to do |
+| --- | --- | --- | --- |
+| `warm_up_unsupported` | 1 | `pitboard warm on` named a Codex account. Pitboard warms up Claude Code accounts only. | Turn it on for a Claude Code account. |
+| `warm_up_not_started` | 1 | Claude Code's request was answered, and Anthropic still has no five-hour period running. | Pitboard counts it against the day's three tries. Check the account's limits with `pitboard status`. |
+| `warm_up_limit_reached` | 1 | A limit of the account is used up, and Anthropic refused the request. | Wait for that limit to reset. |
+| `warm_up_login_refused` | 1 | Anthropic refused the login's access token. | [Sign in to the account again](/guides/sign-in-again). |
+| `warm_up_unreachable` | 1 | Anthropic could not be reached, or was overloaded. | Pitboard tries again after 1 minute, doubling up to 15 minutes. |
+| `warm_up_timed_out` | 1 | Claude Code did not finish within 2 minutes, and Pitboard stopped it. | As for `warm_up_unreachable`. |
+| `warm_up_failed` | 1 | Claude Code failed for another reason, which the message gives in its words. | Check that `claude` runs in a terminal. |
+| `warm_up_auth_overridden` | 1 | Claude Code's managed settings make it sign in another way, so a request would not be on the account's login. | Ask whoever manages this computer. |
+| `warm_up_in_progress` | 1 | Another Pitboard is warming up an account. | Try again in a minute. |
+| `warm_setting_unreadable` | 1 | Pitboard could not read `warm.json`. | Make it readable to you again. |
+| `warm_setting_corrupt` | 1 | `warm.json` is not in a shape Pitboard reads. | Delete it, then turn warm-up on again for each account. |
+
+`pitboard warm now` refuses an account with nothing to start with the code of the reason: `limit_used_up`, `no_reading`, `nothing_to_start`, `parked_login_expired` or `nothing_parked`, as [When it holds back](/guides/warm-up#when-it-holds-back) describes.
+
 ## Root and sudo
 
 | Code | Exit | Meaning | What to do |

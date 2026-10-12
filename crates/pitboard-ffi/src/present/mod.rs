@@ -40,7 +40,7 @@ pub(crate) mod testing;
 
 pub use machine::{
     ActivityLine, ActivityShown, AutoSwitchShown, CheckLine, ChecksShown, CommandLineShown,
-    EmptyList, MachineShown, RenewalShown, ScheduleShown,
+    EmptyList, MachineShown, RenewalShown, ScheduleShown, WarmAccountShown, WarmShown,
 };
 pub use sheets::name_to_save;
 pub use windows::{
@@ -52,7 +52,7 @@ pub use windows::{
 pub(crate) use accounts::in_order;
 pub(crate) use notices::{
     auto_not_watching_notice, auto_refused_notice, auto_skipped_notice, auto_switched_notice,
-    run_out_notice, standing_notice,
+    run_out_notice, standing_notice, warm_failed_notice,
 };
 
 use crate::account_windows::{AlertText, WindowAccount};
@@ -135,6 +135,8 @@ pub struct AccountItem {
     pub pace: Option<String>,
     /// How long its parked login stays usable, for an account not in use.
     pub parked_note: Option<String>,
+    /// Where its warm-up stands, for an account turned on for one: "Warms up again at 22:50".
+    pub warm_note: Option<String>,
     /// What a menu item's help says of it: why it cannot be used, or why its numbers are old.
     pub help: Option<String>,
     /// Each of its limits, in the order its service gave them.
@@ -175,6 +177,9 @@ pub struct ItemOffer {
     pub enabled: bool,
     /// The question asked first, where there is one.
     pub confirm: Option<Question>,
+    /// Whether it shows a check mark, for an item that turns something on and off; `None`
+    /// for one that does something once.
+    pub checked: Option<bool>,
 }
 
 /// One of an account's windows, as its own menu offers to open it. Opening a window is the

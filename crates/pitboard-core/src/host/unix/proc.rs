@@ -1,9 +1,125 @@
 //! Processes, the POSIX way.
 
+use crate::host::Ran;
 use std::ffi::CString;
-use std::io;
+use std::io::{self, Read, Write};
+use std::os::fd::AsRawFd;
 use std::os::unix::ffi::OsStrExt;
+use std::os::unix::process::CommandExt;
 use std::path::Path;
+use std::process::{Child, Command, Stdio};
+use std::time::{Duration, Instant};
+
+/// How long a run past its ceiling is given to end once asked, before it is made to.
+const GRACE: Duration = Duration::from_secs(2);
+
+/// How long what a run printed is waited for once it ended. Anything still holding its output
+/// open then is not of its process group, and is not waited on.
+const DRAINED: Duration = Duration::from_secs(5);
+
+/// Runs `command` in a process group of its own for at most `ceiling`, with `handed` to read on
+/// descriptor 3 and nothing on standard input. Past the ceiling, the group is asked to end and
+/// then made to; once the run ended, whatever it left in its group is ended too, so nothing it
+/// started outlives it or keeps its output open.
+pub(crate) fn run_within(
+    mut command: Command,
+    handed: Option<&[u8]>,
+    ceiling: Duration,
+) -> io::Result<Ran> {
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .process_group(0);
+    let reader = match handed {
+        Some(bytes) => {
+            let (reader, mut writer) = io::pipe()?;
+            writer.write_all(bytes)?;
+            drop(writer);
+            Some(reader)
+        }
+        None => None,
+    };
+    if let Some(reader) = &reader {
+        let fd = reader.as_raw_fd();
+        // SAFETY: the closure runs in the child between fork and exec, where only
+        // async-signal-safe calls are allowed; `dup2` and `fcntl` are, and it touches no memory
+        // the parent shares. The pipe's own descriptor is closed on exec; descriptor 3 is not.
+        unsafe {
+            command.pre_exec(move || {
+                let handed = if fd == 3 {
+                    libc::fcntl(3, libc::F_SETFD, 0)
+                } else {
+                    libc::dup2(fd, 3)
+                };
+                if handed == -1 {
+                    return Err(io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+    }
+    let mut child = command.spawn()?;
+    drop(reader);
+    let stdout = child.stdout.take();
+    let (said, printed) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut text = String::new();
+        if let Some(stdout) = stdout {
+            let _ = stdout.take(1 << 20).read_to_string(&mut text);
+        }
+        let _ = said.send(text);
+    });
+    let began = Instant::now();
+    let mut timed_out = false;
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break Some(status);
+        }
+        if began.elapsed() >= ceiling {
+            timed_out = true;
+            signal(&child, libc::SIGTERM);
+            break ended_within(&mut child, GRACE);
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    signal(&child, libc::SIGKILL);
+    let status = match status {
+        Some(status) => Some(status),
+        None => child.wait().ok(),
+    };
+    Ok(Ran {
+        exit: status
+            .and_then(|status| status.code())
+            .filter(|_| !timed_out),
+        stdout: printed.recv_timeout(DRAINED).unwrap_or_default(),
+        timed_out,
+    })
+}
+
+/// How `child` ended, where it did within `grace`.
+fn ended_within(child: &mut Child, grace: Duration) -> Option<std::process::ExitStatus> {
+    let began = Instant::now();
+    while began.elapsed() < grace {
+        if let Some(status) = child.try_wait().ok().flatten() {
+            return Some(status);
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    None
+}
+
+/// Sends `sig` to the process group `child` leads.
+fn signal(child: &Child, sig: libc::c_int) {
+    let Ok(group) = libc::pid_t::try_from(child.id()) else {
+        return;
+    };
+    // SAFETY: `killpg` takes plain integers and touches no memory; the group is the one the
+    // run was started in, of which `child` is the leader.
+    unsafe {
+        libc::killpg(group, sig);
+    }
+}
 
 /// Whether process `pid` may still be running. A pid that cannot be probed is taken as
 /// running: the callers only ever leave alone what a live process may still be using.
@@ -90,5 +206,64 @@ mod tests {
             );
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn shell(script: &str) -> Command {
+        let mut command = Command::new("/bin/sh");
+        command.args(["-c", script]);
+        command
+    }
+
+    /// What is handed arrives on descriptor 3 and nowhere else: not on standard input, which
+    /// Claude Code's print mode adds to its prompt, nor in an argument or a variable.
+    #[test]
+    fn what_is_handed_arrives_on_descriptor_three_alone() {
+        let ran = run_within(
+            shell(r#"printf '%s|' "$(cat <&3)" "$(cat)" "$*""#),
+            Some(b"the-token"),
+            Duration::from_secs(10),
+        )
+        .expect("ran");
+        assert_eq!(ran.exit, Some(0));
+        assert_eq!(ran.stdout, "the-token|||");
+        assert!(!ran.timed_out);
+    }
+
+    #[test]
+    fn with_nothing_handed_descriptor_three_is_closed() {
+        let ran = run_within(
+            shell("cat <&3 2>/dev/null; echo $?"),
+            None,
+            Duration::from_secs(10),
+        )
+        .expect("ran");
+        assert_ne!(ran.stdout.trim(), "0");
+    }
+
+    #[test]
+    fn a_run_past_the_ceiling_is_stopped_with_its_children() {
+        let marker =
+            std::env::temp_dir().join(format!("pitboard-run-within-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let script = format!("(sleep 3; touch {}) & sleep 30", marker.display());
+        let began = Instant::now();
+        let ran = run_within(shell(&script), None, Duration::from_secs(1)).expect("ran");
+        assert!(ran.timed_out);
+        assert_eq!(ran.exit, None);
+        assert!(began.elapsed() < Duration::from_secs(10));
+        std::thread::sleep(Duration::from_secs(4));
+        assert!(!marker.exists(), "the child it started was stopped too");
+    }
+
+    /// A run that ended, leaving a child behind with its output open, is not waited on until
+    /// that child ends.
+    #[test]
+    fn what_a_run_left_behind_holding_its_output_is_stopped() {
+        let began = Instant::now();
+        let ran =
+            run_within(shell("sleep 30 & echo done"), None, Duration::from_secs(60)).expect("ran");
+        assert_eq!(ran.exit, Some(0));
+        assert_eq!(ran.stdout, "done\n");
+        assert!(began.elapsed() < Duration::from_secs(8));
     }
 }

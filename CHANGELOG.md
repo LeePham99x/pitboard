@@ -8,16 +8,19 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
-- Each account shows the plan its login says it is on, such as `Max 20x`, `Team 5x` or
-  `Pro` for Claude Code and `Plus` or `Pro` for Codex. The window shows it as a tag beside
-  the account's name, the menu after the name, as in **work · Team 5x**, and VoiceOver
-  says it after the name. `pitboard` shows it in a dim column after the address, there
-  only when some account has a plan. `pitboard --json` gives it as `plan`, `null` where no
-  login Pitboard read for the account said one. Pitboard records the plan on the account
-  when it enrols it and each time a read sees its login, so a read that asks nothing, such
-  as `pitboard status --offline`, shows it too. A read sends nothing more anywhere to learn
-  it: Claude Code's login keeps `subscriptionType` and `rateLimitTier`, and Codex's ID
-  token keeps `chatgpt_plan_type`.
+- Pitboard warms up the Claude Code accounts you turn it on for: as soon as an account's
+  five-hour period resets, Claude Code sends one short message with that account's login, so
+  the next period starts at once and resets as early as it can. Turn it on in **Settings** >
+  **General** > **Warm up limits**, with **Warm Up Automatically** in an account's shortcut
+  menu, or with `pitboard warm on <account>`, between hours you set, 06:00 to 22:00 by
+  default (`pitboard warm range`). The app warms up accounts while it is open, and
+  `pitboard watch` while it runs; **Warm Up Now** and `pitboard warm now <account>` start one
+  at once. Pitboard sends no model request of its own: it runs `claude -p` on Haiku with no
+  tools, in a folder of its own, and hands it the account's access token on a pipe, never a
+  refresh token. Measured with Claude Code 2.1.296 on 12 October 2026, the request starts the
+  period at the start of its ten minutes, counts on the plan and costs about 3,100 tokens.
+  The weekly limit runs on a fixed cycle, so nothing starts it.
+  [Warm up accounts](https://docs.usepitboard.com/guides/warm-up) has the rules.
 - Pitboard enrols a Claude Desktop account on macOS: `pitboard enroll desktop/<label>` with
   Claude closed.
 - Pitboard switches Claude Desktop accounts on macOS with `pitboard use desktop/<label>`,
@@ -46,12 +49,43 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
-- `state.json` is schema 8. Pitboard 0.11.0 and earlier refuse it and say to update.
+- The automatic switch, and the app's offer once an account runs out, take an account
+  without a weekly limit for all models first, such as a Team seat. What it leaves unused is
+  lost at each five-hour reset. Until this, a Max account fresh after its reset went ahead of
+  a Team seat with room, and spent its weekly limit.
+- In `pitboard-core`, `usage::roomiest` is `usage::preferred`, and `usage::Room` gains
+  `weekly`.
+- `state.json` is schema 8. Pitboard 0.12.0 and earlier refuse it and say to update.
 - `pitboard uninstall` asks whether to delete, saying the other accounts need signing in
   again, where it said a browser sign-in: a Claude Desktop account signs in again inside
   Claude.
 - A switch that quits the ChatGPT app waits, inside its 30 seconds, for the `codex` running
   inside ChatGPT to go too before it switches.
+
+## [0.12.0] - 2026-10-12
+
+### Added
+
+- Each account shows the plan its login says it is on, such as `Max 20x`, `Team 5x` or
+  `Pro` for Claude Code and `Plus` or `Pro` for Codex. The window shows it as a tag beside
+  the account's name, the menu after the name, as in **work · Team 5x**, and VoiceOver
+  says it after the name. `pitboard` shows it in a dim column after the address, there
+  only when some account has a plan. `pitboard --json` gives it as `plan`, `null` where no
+  login Pitboard read for the account said one. Pitboard records the plan on the account
+  when it enrols it and each time a read sees its login, so a read that asks nothing, such
+  as `pitboard status --offline`, shows it too. A read sends nothing more anywhere to learn
+  it: Claude Code's login keeps `subscriptionType` and `rateLimitTier`, and Codex's ID
+  token keeps `chatgpt_plan_type`.
+- An install script puts the command line on macOS and Linux without Homebrew or Rust:
+  `curl -fsSL https://usepitboard.com/install.sh | sh`. It downloads the release's tarball
+  for the machine, checks it against the SHA-256 written into the script when the release
+  was made, and installs `pitboard` in `~/.local/bin`, with its man page and completions
+  under `~/.local/share`. `PITBOARD_INSTALL_DIR` names another folder, and the `share`
+  folder beside it takes the rest. It edits no shell profile: when the folder is not on
+  `PATH`, it prints the command that puts it there. Run it again to update. It refuses to
+  run as root or under sudo, where Pitboard changes nothing. Each release carries its own
+  copy, attested like its other files, at
+  `https://github.com/datlechin/pitboard/releases/download/v<version>/install.sh`.
 
 ## [0.11.0] - 2026-10-10
 
@@ -1947,7 +1981,8 @@ First release.
 - Schema 3: one parked login per account, with when it expires. Earlier files are refused
   rather than migrated; nothing was ever released that wrote them.
 
-[Unreleased]: https://github.com/datlechin/pitboard/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/datlechin/pitboard/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/datlechin/pitboard/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/datlechin/pitboard/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/datlechin/pitboard/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/datlechin/pitboard/compare/v0.8.0...v0.9.0

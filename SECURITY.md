@@ -93,12 +93,15 @@ A report is in scope when Pitboard fails at one of these.
   requests for tests, and only to a loopback IP address, because the server that answers
   decides which account a login is filed under.
 - You can check that a download is unchanged. Every release attests each file it
-  publishes: its tarballs, the app, their bills of materials, `SHA256SUMS` and, for a full
-  release, the update feed, `appcast.xml`.
+  publishes: its tarballs, the app, their bills of materials, the install script,
+  `SHA256SUMS` and, for a full release, the update feed, `appcast.xml`.
   `gh attestation verify <file> --repo datlechin/pitboard` checks a file against the
   workflow and commit that made it. The macOS files are signed with a Developer ID and
   notarised. Homebrew builds nothing and refuses a file changed on the release page later,
-  because the tap's checksums come from the release run.
+  because the tap's checksums come from the release run. The install script refuses a
+  tarball that differs from the checksum the release run wrote into it. Nothing checks the
+  script itself when it is piped to `sh`: its attestation is the check, as
+  [Verify a download](https://docs.usepitboard.com/install/verify) describes.
 - An installed app takes an update signed with the key it carries. A copy signed with a
   Developer ID also takes one whose app is signed by the same Developer ID team. A copy
   signed ad hoc learns another key only from a release signed with its key, and otherwise

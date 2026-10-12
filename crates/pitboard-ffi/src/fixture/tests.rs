@@ -140,7 +140,7 @@ fn each_fixture_starts_where_its_tests_expect() {
                 "codex/main, in use",
                 "codex/spare",
             ],
-            World::OneTool | World::Stuck => vec![work, "claude/personal"],
+            World::OneTool | World::Stuck | World::WarmUp => vec![work, "claude/personal"],
             World::OnlyOne => vec![work],
             World::Unnamed => vec!["dana@work.example, in use"],
             World::Empty | World::FirstLaunch | World::NoClaudeCode => Vec::new(),
@@ -233,8 +233,48 @@ fn the_ui_tests_name_every_fixture_as_the_app_does() {
             "chatGPTOpen",
             "claudeDesktop",
             "claudeDesktopOpen",
+            "warmUp",
         ]
     );
+}
+
+/// An account turned on for warm-ups whose five-hour period is not running is warmed up as
+/// the app starts, through the core's own warm-up with the run played: its row then says when
+/// it warms up again, and the activity log has the warm-up.
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+)]
+fn an_account_turned_on_is_warmed_up_as_the_app_starts() {
+    let launched = made(World::WarmUp);
+    let (model, told) = started(&launched);
+    let personal = |shown: &Snapshot| {
+        shown
+            .sections
+            .iter()
+            .flat_map(|section| &section.accounts)
+            .find(|item| item.title == "personal")
+            .and_then(|item| item.warm_note.clone())
+    };
+    let shown = told.until("personal warmed up", |shown| {
+        personal(shown).is_some_and(|note| note.starts_with("Warms up again at "))
+    });
+    let warm = &shown.machine.warm;
+    assert_eq!(warm.range_label, "00:00 to 24:00");
+    assert!(
+        warm.accounts
+            .iter()
+            .any(|account| account.title == "personal" && account.on)
+    );
+    let log = launched.core.log(20);
+    assert!(
+        log.iter().any(|change| change.verb == "warm-up"
+            && change.subject == "personal"
+            && change.outcome == "ok"),
+        "{log:?}"
+    );
+    model.shutdown();
 }
 
 // Changing accounts.
@@ -1965,10 +2005,25 @@ fn accounts_are_renamed_and_forgotten_as_the_window_offers() {
     assert_eq!(
         menus,
         [
-            ("work".into(), titles(&["Sign In Again…", "Rename…"])),
+            (
+                "work".into(),
+                titles(&[
+                    "Sign In Again…",
+                    "Rename…",
+                    "Warm Up Now",
+                    "Warm Up Automatically"
+                ])
+            ),
             (
                 "personal".into(),
-                titles(&["Use personal", "Sign In Again…", "Rename…", "Forget…"])
+                titles(&[
+                    "Use personal",
+                    "Sign In Again…",
+                    "Rename…",
+                    "Warm Up Now",
+                    "Warm Up Automatically",
+                    "Forget…"
+                ])
             ),
         ]
     );

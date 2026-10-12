@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.check.outputs.version }}
+      base: ${{ steps.check.outputs.base }}
       prerelease: ${{ steps.check.outputs.prerelease }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -41,8 +42,11 @@ jobs:
             echo "CHANGELOG.md has no section for $version" >&2
             exit 1
           fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          {
+            echo "version=$version"
+            echo "base=$base"
+            echo "prerelease=$prerelease"
+          } >> "$GITHUB_OUTPUT"
 
   build:
     needs: guard
@@ -312,6 +316,16 @@ jobs:
       - name: Checksums
         working-directory: ${{ runner.temp }}/dist
         run: sha256sum -- *.tar.gz *.zip > SHA256SUMS
+      # install.sh carries the tarballs' checksums, so it is filled before its own line goes in.
+      - name: Install script
+        working-directory: ${{ runner.temp }}/dist
+        env:
+          VERSION: ${{ needs.guard.outputs.version }}
+        run: |
+          sh "$GITHUB_WORKSPACE/.github/scripts/fill-template.sh" \
+            "$GITHUB_WORKSPACE/packaging/install.sh" install.sh "$VERSION" SHA256SUMS
+          sh -n install.sh
+          sha256sum -- install.sh >> SHA256SUMS
       # The tap is written from this file, handed to the tap job inside this run, so the
       # checksums Homebrew checks are the ones taken here of the files this job publishes.
       # Read back from the release instead, they would be whatever the release held by then,
@@ -401,6 +415,7 @@ jobs:
             ${{ runner.temp }}/dist/*.zip
             ${{ runner.temp }}/dist/*.cdx.json
             ${{ runner.temp }}/dist/SHA256SUMS
+            ${{ runner.temp }}/dist/install.sh
       # The feed decides what every installed copy runs next, which makes it the most worth
       # attesting of anything here. A pre-release publishes none, so it is its own step.
       - if: needs.guard.outputs.prerelease == 'false'
@@ -417,16 +432,24 @@ jobs:
             inside && /^## \[/ { exit }
             inside { print }
           ' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+      # An immutable release takes files only while a draft; softprops drafts only full releases.
       - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           body_path: ${{ runner.temp }}/notes.md
           prerelease: ${{ needs.guard.outputs.prerelease == 'true' }}
+          draft: ${{ needs.guard.outputs.prerelease == 'true' }}
           files: |
             ${{ runner.temp }}/dist/*.tar.gz
             ${{ runner.temp }}/dist/*.zip
             ${{ runner.temp }}/dist/*.cdx.json
             ${{ runner.temp }}/dist/appcast.xml
             ${{ runner.temp }}/dist/SHA256SUMS
+            ${{ runner.temp }}/dist/install.sh
+      - if: needs.guard.outputs.prerelease == 'true'
+        name: Publish the pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
 
   # What an installed copy will actually fetch, fetched. A release whose feed is missing,
   # stale, marked pre-release or signed with the wrong key is only visible from outside.
@@ -487,7 +510,7 @@ jobs:
           attested "$RUNNER_TEMP/SHA256SUMS"
           attested "$RUNNER_TEMP/update.zip"
 
-  # `brew install datlechin/tap/pitboard` is the first line of the README, so the tap is
+  # `brew install datlechin/tap/pitboard` is in the README's install section, so the tap is
   # part of a release rather than something done to it afterwards. It used to be a workflow
   # in the tap repository, waking every six hours and taking the checksum of whatever it
   # downloaded; between those two a release could be finished and green for most of a day
@@ -525,25 +548,6 @@ jobs:
             exit 1
           fi
 
-          # One line for each file the casks download. A file the release has no line for
-          # is a cask nobody can install, so it stops the job before the tap is touched.
-          sums=$RUNNER_TEMP/sums/SHA256SUMS
-          checksum() {
-            local line
-            line=$(awk -v f="$1" '$2 == f { n++; sum = $1 } END { if (n == 1) print sum }' "$sums")
-            if ! printf '%s\n' "$line" | grep -qxE '[0-9a-f]{64}'; then
-              echo "SHA256SUMS does not have exactly one line for $1:" >&2
-              cat "$sums" >&2
-              return 1
-            fi
-            printf '%s' "$line"
-          }
-          arm=$(checksum "pitboard-$GITHUB_REF_NAME-aarch64-apple-darwin.tar.gz")
-          intel=$(checksum "pitboard-$GITHUB_REF_NAME-x86_64-apple-darwin.tar.gz")
-          arm_linux=$(checksum "pitboard-$GITHUB_REF_NAME-aarch64-unknown-linux-musl.tar.gz")
-          intel_linux=$(checksum "pitboard-$GITHUB_REF_NAME-x86_64-unknown-linux-musl.tar.gz")
-          app=$(checksum "Pitboard-$GITHUB_REF_NAME-macos.zip")
-
           # A header rather than a URL, so the token is not written into a git remote. Its
           # base64 is a different string from the secret, so it is masked by hand or the
           # log would carry it unredacted.
@@ -553,42 +557,13 @@ jobs:
           git -c "http.extraheader=$auth" clone --depth 1 \
             "https://github.com/${GITHUB_REPOSITORY_OWNER}/homebrew-tap.git" "$tap"
 
-          # Each placeholder is replaced and then looked for, and a file with any left is
-          # refused. A replacement that matched nothing would leave the previous release's
-          # value in place, or a placeholder Homebrew cannot read, and a template and this
-          # job that disagree have to stop here rather than in somebody's brew install.
-          fill() { # template, destination, then placeholder=value for each placeholder
-            local template=$1 out=$2 pair name value
-            shift 2
-            cp "$template" "$out"
-            for pair in "$@"; do
-              name=${pair%%=*}
-              value=${pair#*=}
-              if ! grep -qF "$name" "$out"; then
-                echo "$template has no $name" >&2
-                return 1
-              fi
-              sed -i "s|$name|$value|g" "$out"
-              if grep -qF "$name" "$out" || ! grep -qF "\"$value\"" "$out"; then
-                echo "$name was not replaced in $template" >&2
-                return 1
-              fi
-            done
-            if grep -nE '@[A-Z0-9_]+@' "$out"; then
-              echo "$template has a placeholder this job does not fill" >&2
-              return 1
-            fi
-          }
+          # fill-template.sh refuses a missing checksum or a placeholder left, before the push.
+          sums=$RUNNER_TEMP/sums/SHA256SUMS
           mkdir -p "$tap/Casks"
-          fill packaging/pitboard.rb "$tap/Casks/pitboard.rb" \
-            "@VERSION@=$VERSION" \
-            "@SHA256_AARCH64_APPLE_DARWIN@=$arm" \
-            "@SHA256_X86_64_APPLE_DARWIN@=$intel" \
-            "@SHA256_AARCH64_UNKNOWN_LINUX_MUSL@=$arm_linux" \
-            "@SHA256_X86_64_UNKNOWN_LINUX_MUSL@=$intel_linux"
-          fill packaging/pitboard-app.rb "$tap/Casks/pitboard-app.rb" \
-            "@VERSION@=$VERSION" \
-            "@SHA256_APP@=$app"
+          for cask in pitboard pitboard-app; do
+            sh .github/scripts/fill-template.sh "packaging/$cask.rb" "$tap/Casks/$cask.rb" \
+              "$VERSION" "$sums"
+          done
           # The formula built from source and is gone. The migration points whoever still
           # has it at the cask of the same name.
           cp packaging/tap_migrations.json "$tap/tap_migrations.json"
@@ -735,3 +710,128 @@ jobs:
             echo "the installed app's share extension is not sandboxed" >&2
             exit 1
           fi
+
+  # The install script run the way its readers run it, on each target and on Alpine.
+  install-script:
+    needs: [guard, publish]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, macos-15-intel, ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      attestations: read
+    env:
+      VERSION: ${{ needs.guard.outputs.version }}
+      # The command line and its man page say Cargo.toml's version: the tag's, less any suffix.
+      BASE: ${{ needs.guard.outputs.base }}
+      SCRIPT: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/install.sh
+    steps:
+      - name: Install from this release
+        run: |
+          set -euo pipefail
+          curl -fsSL "$SCRIPT" | sh
+
+      - name: What it installed
+        run: |
+          set -euo pipefail
+          pitboard=$HOME/.local/bin/pitboard
+          share=$HOME/.local/share
+          "$pitboard" --version
+          "$pitboard" --version | grep -qw "$BASE"
+          # doctor exits 3 where Claude Code has never run, which is every clean runner.
+          exit=0
+          "$pitboard" doctor || exit=$?
+          case $exit in
+            0 | 3) ;;
+            *)
+              echo "pitboard doctor exited $exit" >&2
+              exit 1
+              ;;
+          esac
+          for file in bash-completion/completions/pitboard zsh/site-functions/_pitboard \
+            fish/vendor_completions.d/pitboard.fish; do
+            if [ ! -s "$share/$file" ]; then
+              echo "the install script left nothing at $share/$file" >&2
+              exit 1
+            fi
+          done
+          if ! grep -qF "\"pitboard $BASE\"" "$share/man/man1/pitboard.1"; then
+            echo "the man page is not the one for $BASE" >&2
+            exit 1
+          fi
+
+      - name: Run it again
+        run: |
+          set -euo pipefail
+          ln "$HOME/.local/bin/pitboard" "$HOME/.local/pitboard.before"
+          curl -fsSL "$SCRIPT" | sh
+          if [ "$HOME/.local/bin/pitboard" -ef "$HOME/.local/pitboard.before" ]; then
+            echo "the second run wrote into the old copy rather than renaming a new one over it" >&2
+            exit 1
+          fi
+          left=$(find "$HOME/.local/bin" -name '.pitboard.*')
+          if [ -n "$left" ]; then
+            echo "the second run left $left behind" >&2
+            exit 1
+          fi
+          "$HOME/.local/bin/pitboard" --version | grep -qw "$BASE"
+
+      # Alpine downloads with BusyBox wget and runs the script with BusyBox ash, as a user.
+      - if: matrix.os == 'ubuntu-latest'
+        name: On Alpine
+        run: |
+          docker run --rm -e SCRIPT -e BASE alpine sh -euc '
+            adduser -D reader
+            su reader -c "wget -qO- \"\$SCRIPT\" | sh"
+            version=$(su reader -c "\"\$HOME/.local/bin/pitboard\" --version")
+            echo "$version"
+            [ "$version" = "pitboard $BASE" ]
+          '
+
+      - if: needs.guard.outputs.prerelease == 'false'
+        name: Install the way the README says to
+        run: |
+          set -euo pipefail
+          # The redirect leads to whichever release GitHub names latest, so this waits for it.
+          served=
+          for attempt in $(seq 1 12); do
+            served=$(curl -fsSL https://usepitboard.com/install.sh |
+              sed -n 's/^VERSION="\(.*\)"$/\1/p') || served=
+            [ "$served" = "$VERSION" ] && break
+            echo "usepitboard.com serves ${served:-no script}, waiting for $VERSION (attempt $attempt)"
+            sleep 10
+          done
+          if [ "$served" != "$VERSION" ]; then
+            echo "this release published $VERSION and usepitboard.com serves ${served:-no script}" >&2
+            echo "RELEASING.md sets out the redirect usepitboard.com/install.sh needs" >&2
+            exit 1
+          fi
+          # Any script with the right VERSION line passes the wait, and plain curl follows http.
+          curl --proto '=https' --tlsv1.2 -fsSL -o "$RUNNER_TEMP/served.sh" \
+            https://usepitboard.com/install.sh
+          curl --proto '=https' --tlsv1.2 -fsSL -o "$RUNNER_TEMP/release.sh" "$SCRIPT"
+          if ! cmp -s "$RUNNER_TEMP/served.sh" "$RUNNER_TEMP/release.sh"; then
+            echo "usepitboard.com/install.sh is not this release's script over HTTPS alone" >&2
+            echo "RELEASING.md sets out the redirect usepitboard.com/install.sh needs" >&2
+            exit 1
+          fi
+          rm "$HOME/.local/bin/pitboard"
+          curl -fsSL https://usepitboard.com/install.sh | sh
+          "$HOME/.local/bin/pitboard" --version | grep -qw "$BASE"
+
+      # Sigstore takes a moment to serve an attestation that was written seconds ago.
+      - name: The install script's attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors \
+            -o "$RUNNER_TEMP/install.sh" "$SCRIPT"
+          for attempt in 1 2 3 4 5; do
+            gh attestation verify "$RUNNER_TEMP/install.sh" --repo "$GITHUB_REPOSITORY" && exit 0
+            echo "no attestation for install.sh yet (attempt $attempt)"
+            sleep 15
+          done
+          exit 1

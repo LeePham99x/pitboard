@@ -176,7 +176,7 @@ private struct ScratchDirectory {
         let launched = [
             "twoTools", "oneTool", "empty", "firstLaunch", "noClaudeCode", "unnamed",
             "onlyOne", "readFailure", "stuck", "chatGPTOpen", "claudeDesktop",
-            "claudeDesktopOpen",
+            "claudeDesktopOpen", "warmUp",
         ]
         if !fixtureNames().isEmpty {
             #expect(fixtureNames() == launched)

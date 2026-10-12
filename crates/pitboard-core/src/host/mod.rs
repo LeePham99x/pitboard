@@ -362,6 +362,15 @@ pub enum JarError {
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use os::write_jar;
 
+/// What a program run with a ceiling ([`proc::run_within`]) came to: its exit status, `None`
+/// where a signal or the ceiling ended it, and what it printed on standard output.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Ran {
+    pub exit: Option<i32>,
+    pub stdout: String,
+    pub timed_out: bool,
+}
+
 /// The machine Pitboard is standing on, as one value rather than a set of `cfg` branches
 /// spread through the crate. A host answers where another program's secrets may be, where
 /// Pitboard's own parked logins go, what this user is running and how daily renewal is

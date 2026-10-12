@@ -27,7 +27,7 @@ use crate::service::Warning;
 /// the share is recorded as `auto-stay` too, of the account in use, once for that limit and
 /// its reset. The attempt is recorded once the switch is decided and before anything moves,
 /// so however the switch ends, killed included, it counts against the limit's attempts, and
-/// the front ends never try one limit more often than [`crate::autoswitch::ATTEMPTS`] times
+/// the front ends never try one limit more often than [`crate::duty::cadence::ATTEMPTS`] times
 /// between them. Where an attempt that failed leaves no limit to try, why is recorded with
 /// the failure, as a decision records it, so the look a front end makes while it waits after
 /// the failure stands on that. A switch, and anything that stopped one, is recorded as
@@ -224,9 +224,8 @@ mod tests {
     };
     use super::super::*;
     use crate::api::scripted::Trouble;
-    use crate::autoswitch::{
-        ATTEMPTS, Auto, Blind, Decision, Ledger, Look, RETRY_SECONDS, Skip, Threshold, decide,
-    };
+    use crate::autoswitch::{Auto, Blind, Decision, Ledger, Look, Skip, Threshold, decide};
+    use crate::duty::cadence::{ATTEMPTS, RETRY_SECONDS};
     use crate::service::{Permit, Pitboard};
     use crate::store::memory::Fault;
     use crate::time::{Clock, FixedClock};

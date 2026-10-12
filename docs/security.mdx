@@ -47,7 +47,7 @@ For Claude Desktop, Pitboard renames Claude's files, its claude.ai session cooki
 
 ## What leaves your machine
 
-Pitboard has no server of its own and makes only these requests:
+Pitboard has no server of its own and makes only these requests itself:
 
 | Request | Carries | Used for |
 | --- | --- | --- |
@@ -57,13 +57,18 @@ Pitboard has no server of its own and makes only these requests:
 | `chatgpt.com/backend-api/wham/usage` | An access token and the ChatGPT account id | A Codex account's usage, and checking a login before a switch to it |
 | `auth.openai.com/oauth/token` | A refresh token and Codex's client id | Renewing a Codex parked login |
 | claude.ai, chatgpt.com, their sign-in pages and what their pages load | What the site keeps in that window | An account window, through WebKit |
-| `github.com/datlechin/pitboard/releases` | Nothing of yours | The app's update check and downloads: see [Updates](/reference/settings#updates) |
+| `github.com/datlechin/pitboard/releases` | Nothing of yours | The app's update check and downloads: see [Updates](/reference/settings#updates). The install script and the tarball it downloads |
+| `usepitboard.com/install.sh` | Nothing of yours | The line in [Install with the script](/install#install-with-the-script): a redirect, kept at Cloudflare, to the script on GitHub |
+
+A [warm-up](/guides/warm-up) is Claude Code's run, not Pitboard's: `claude -p` sends one message on its smallest model to Anthropic, and fetches what Claude Code fetches as it starts, such as the account's profile and policy limits. Pitboard starts it from a folder in the Pitboard directory, with `PATH`, your user name and any proxy variables from its own environment and nothing else, and hands it the account's access token on a pipe. It never hands Claude Code a refresh token, so the run cannot renew or spend a login. Claude Code keeps that token in no store (read in Claude Code 2.1.296).
 
 The command line never checks for updates.
 
+GitHub redirects each release download to `release-assets.githubusercontent.com`, as measured on 12 October 2026.
+
 Pitboard sends no request for a Claude Desktop account.
 
-Pitboard renews a login a tool may be using in two cases. [`pitboard stow`](/reference/recovery-commands#stow) renews one it puts away with an expired access token. A change or a read renews Claude Code's login in use where it must [identify it](/concepts/switching#how-pitboard-knows-whose-login-it-is) and its access token has expired. Both hold [Claude Code's renewal locks](/reference/files#claude-code-files) meanwhile.
+Pitboard renews a login a tool may be using in three cases. [`pitboard stow`](/reference/recovery-commands#stow) renews one it puts away with an expired access token. A change or a read renews Claude Code's login in use where it must [identify it](/concepts/switching#how-pitboard-knows-whose-login-it-is) and its access token has expired. A warm-up of the account in use renews its login where the access token would lapse within 5 minutes. All three hold [Claude Code's renewal locks](/reference/files#claude-code-files) meanwhile.
 
 Pitboard's own requests verify TLS against your system's trust store and time out after 5 seconds.
 
@@ -100,6 +105,7 @@ Opened from Finder or at login, the app lacks your shell's `PITBOARD_NO_ARGV`. A
 - An account window stops Google's sign-in, which in your browser would sign in the browser.
 - WebKit quarantines every download from an account window: see [Downloads](/reference/account-windows#downloads).
 - Every release is attested: see [Verify a download](/install/verify).
+- The install script installs only a tarball that matches the checksum its release wrote into it.
 - The app installs an update signed with its update key.
 - A copy signed with a Developer ID also installs one signed by the same team.
 - The release workflow refuses to change the update key without a declared rotation.
@@ -111,6 +117,7 @@ Opened from Finder or at login, the app lacks your shell's `PITBOARD_NO_ARGV`. A
 - Another user with administrator access to your computer.
 - Anyone who can already read your files.
 - A compromised Claude Code, Codex or library Pitboard uses.
+- A changed install script, which `sh` runs unchecked when it is piped in. Only its attestation shows where it came from: see [Check the install script](/install/verify#check-the-install-script).
 - Signing out in anything that ran Codex before a switch, which revokes the login Pitboard parked: see [What happens to open sessions](/guides/switch#what-happens-to-open-sessions).
 - An account you no longer use, whose parked login Pitboard keeps renewing: see [Accounts you no longer use](/guides/renewal#accounts-you-no-longer-use).
 - A deleted parked login, which stays valid until it expires. Pitboard revokes no login.

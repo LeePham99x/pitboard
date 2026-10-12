@@ -326,7 +326,7 @@ impl Provider for Claude {
     }
 }
 
-fn access_token(login: &Value) -> Option<&str> {
+pub(super) fn access_token(login: &Value) -> Option<&str> {
     document::oauth_in(login)
         .get("accessToken")
         .and_then(Value::as_str)

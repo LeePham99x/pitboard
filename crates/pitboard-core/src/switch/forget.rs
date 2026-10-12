@@ -68,6 +68,7 @@ pub fn forget(settled: Settled, key: &Key) -> Result<(String, Vec<Warning>)> {
     crate::fault::point("forget.recorded");
     crate::readings::forget(&ctx, permit, &account.id);
     crate::budget::forget(&ctx, permit, &account.id);
+    crate::warm::forget(&ctx, permit, &account.id);
     let pending = purge(&ctx, permit, &mut state);
     Ok((
         account.email,

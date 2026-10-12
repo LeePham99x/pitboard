@@ -67,6 +67,8 @@ mod testing;
 #[cfg(test)]
 mod threaded;
 #[cfg(test)]
+mod warming;
+#[cfg(test)]
 mod windowing;
 
 use crate::account_windows::AlertText;
@@ -327,6 +329,18 @@ pub enum Intent {
     /// as `MachineShown::auto_switch` says by `enabled`. Turned on, or at another share, the
     /// core looks at once whether to switch.
     SetAutoSwitch { on: bool, at: u8 },
+    /// Warm up the account `qualified` names from now on, or stop: its own menu's **Warm Up
+    /// Automatically**, or its row under the settings' warm-up. Kept by the core in Pitboard's
+    /// directory, which the command line reads too. Turned on, an account due is warmed up at
+    /// once.
+    SetWarm { qualified: String, on: bool },
+    /// Warm up accounts only from `from` to `to`, in minutes of the day, `to` up to 24 hours;
+    /// a `from` later than `to` runs past midnight.
+    SetWarmRange { from: u16, to: u16 },
+    /// Warm up the account `qualified` names now, whatever the span of the day: its own menu's
+    /// **Warm Up Now**. One warm-up at a time: asked for while one is under way, it does
+    /// nothing. What goes wrong is said in the window.
+    WarmNow { qualified: String },
     /// Renew every parked login that is due, now, then read the accounts again once, asking
     /// every service, to show what it renewed. Never switches, and asks for no usage beyond
     /// that read. Asked for while a renewal is under way, it does nothing.

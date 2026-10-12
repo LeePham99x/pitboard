@@ -65,7 +65,8 @@ pages load, as a browser would.
     and faked by `host/memory.rs`, which plays every answer. The real hosts read nothing an
     administrator set in a build for tests (`host/administered.rs`). `fs`, `proc` and `user` are
     plain functions for what the system does whoever asks: private files and directories,
-    every other change to the disk, whether a process is alive, the login name, whether
+    every other change to the disk, whether a process is alive, a program run with a ceiling
+    (`proc::run_within`), the login name, whether
     this process runs as root, and the `PATH` the person's login shell builds, which
     `unix/shell.rs` asks for. `fs` creates each private file itself and hands it back open
     (`create_private`, `open_private_append` and `open_private_lock`), so how a file is made
@@ -159,6 +160,46 @@ pages load, as a browser would.
     checked against the store; for Codex, the login's own claims, and the record where the
     login cannot be read. `Provider::own_record` reads the config for that doubt and for
     the words that say it, never for whose a login is.
+  - `duty/`: what every front end that acts by itself shares, whatever it does. `cadence.rs`
+    is how often it decides with nothing written (`DECIDE_EVERY_SECONDS`, 30), how long
+    something that came to nothing waits before it is tried again (`retry_after`, 60 seconds
+    doubling to 15 minutes), how many attempts are made at one thing (`ATTEMPTS`), and
+    `Refusals`, a front end's refusals in a row and their wait, on its own clock. `ledger.rs`
+    is `Tries`, the attempts and the reasons said about one thing, and how a duty's record
+    is read and written, only under `state.lock`. `mod.rs` holds `Look`, what a duty's look
+    at its files came to. The automatic switch and the warm-up are its duties.
+  - `warm/`: warming up an account, starting its five-hour period as soon as the last one
+    resets, for the Claude Code accounts somebody turned it on for. `mod.rs` holds the
+    setting, `warm.json`: the accounts turned on, by id, and `Range`, the span of each day,
+    in minutes of the clock's time zone (`Clock::zone`), which may run past midnight. It also
+    holds `Overview`, each Claude Code account with where it stands, both by itself and for a
+    warm-up asked for now (`Choice::now`), and `Halt`, why nothing is warmed up on this
+    machine: Windows, which it is not built for yet, a switch interrupted, a custom OAuth
+    endpoint, managed settings that sign every run of Claude Code in another way, or no
+    program. `decide.rs` is the rule, from the
+    reading Anthropic gave, which login of the account is at hand (`Login`), the span and
+    `warmed.json`, today's attempts (`Ledger`, by the clock's day): a period running, or one a
+    warm-up the reading came before started, is `Running`; a limit of the account's own used
+    up holds it back, since Anthropic refuses every request then; after any attempt the next
+    waits its turn (`retry_after`); and three attempts that waiting does not mend hold it back
+    until the next day. Only the unscoped `session` limit is started: the weekly
+    limit is a fixed cycle. `run.rs` runs the tool's own headless mode in `warm/<tool>/`, made
+    afresh for each run and removed after it, with an environment built from nothing but
+    `PATH`, the person's name and the proxy, through `host::proc::run_within`: the access
+    token on descriptor 3 through a pipe `dup2`ed in `pre_exec`, for at most 120 seconds, its
+    process group stopped past that, and whatever it left in the group stopped after it.
+    `WarmScript` plays a run in a test or a fixture. `provider/claude/warm.rs` builds Claude
+    Code's command and reads what it printed as a `Failure` or none. Codex has neither until
+    when its period starts is measured.
+  - `switch/warm.rs`: changes to `warm.json`, and the warm-up itself. Under `state.lock`, it
+    decides again from the `Overview`, refuses where a `Halt` holds, takes `warm.lock` and
+    records the attempt, so an account whose login cannot be had waits its turn behind the
+    others; then takes the access token, of a park renewed where it lapses within 5 minutes
+    (`renew_one`) or of Claude Code's login in use renewed under its locks
+    (`identify::fresh`). It lets `state.lock` go while the tool runs, then asks the account's
+    usage (`status::ask_one`), again 20 seconds on where the first answer has no period
+    running, which says whether a period started. It records that under the lock again, the
+    next attempt waiting from then, and writes the `warm-up` line.
   - `autoswitch.rs`: switching Claude Code by itself, for a front end somebody asked to: the
     app with its setting on, or `pitboard watch`. `Threshold` is the share a limit switches
     at, 50 to 99, 95 unless chosen. `decide` is the rule, from the readings Anthropic gave
@@ -172,8 +213,11 @@ pages load, as a browser would.
     `usage::room`, which the app's advice asks at 100. A limit a reading that lists every
     limit leaves out is one the account does not have. Any other reading leaves no room
     unless it gives every limit of the account in use, except a model's limit other than the
-    one at the share where it gives the five-hour and weekly limits. `usage::roomiest` picks
-    the account with the most room in that limit, then the least full in its others. Below
+    one at the share where it gives the five-hour and weekly limits. `usage::preferred` puts
+    an account without a weekly limit for all models first, since what it leaves unused in
+    five hours is lost at the reset, and counts a reading that may leave limits out as one
+    with it. Among those alike it takes the most room in that limit, then the least full in
+    its others. Below
     the share it is `Below`, with the fullest limit still running. A limit at the share not
     switched away from is a `Hold` with its `Skip`: no room, naming the accounts it could go
     to that Anthropic gave no reading of, the limit already left, the attempts spent, the
@@ -313,10 +357,15 @@ pages load, as a browser would.
   Each warning a decision found is said once until the next switch, even one that went away
   and came back, with that decision's line, which is said again to carry it where it was
   said before. A refusal is paced as the app paces one: no decision under the lock until
-  `autoswitch::retry_after` of the refusals in a row has passed, only the look meanwhile,
+  `duty::cadence::retry_after` of the refusals in a row has passed, only the look meanwhile,
   and any outcome ends the row, as the look standing on what the core recorded with an
   attempt that failed, its own wait or why it tries no more, does. It ends on a refusal
   watching cannot mend: running elevated, a Windows build or Pitboard's own files unusable.
+  At each decision it also asks the core to warm up whichever account turned on is due
+  (`Pitboard::warm_up`, which looks at the files first), with a refusal row of its own, and
+  says each warm-up, each reason an account is held back once until it warms up, and why
+  nothing is warmed up here once until that ends. No warm-up error ends it. `warm.rs` is
+  `pitboard warm`.
 - `crates/pitboard-ffi`: the core as UniFFI bindings, for the apps: a static library for
   the macOS app, a dynamic one for the Windows app. An app reaches the core through the
   model alone.
@@ -383,16 +432,19 @@ pages load, as a browser would.
     main window, says which account to switch to once the one in use has run out, notified
     once for each reset, switches Claude Code by itself with its setting on, asking the
     core's look after every read and every 30 seconds and saying under the setting what it
-    came to, keeps the app's own preferences, and keeps the daily renewal schedule, renews
+    came to, warms up the accounts turned on on a lane of its own, asking after every read
+    and every 30 seconds, with every read's `Overview` of them, or why it cannot be read, and
+    a notification once for the words of a warm-up by itself that came to nothing, keeps the
+    app's own preferences, and keeps the daily renewal schedule, renews
     now, makes doctor's checks, reads the activity log and finds the `pitboard` a terminal
     runs. It keeps the account windows' books too: which store is whose and each window's
     last page, which windows close and which stores go after a read, the link waiting for an
     account, with the wait before it can be opened, and the downloads. Its tests are files
     of their own there: `reading.rs`, `switching.rs`, `automatic.rs`, `signing.rs`,
     `changing.rs`, `stowing.rs`, `advising.rs`, `keeping.rs`, `maintaining.rs`,
-    `presenting.rs`, `windowing.rs` and `cadence.rs` drive the state by hand, `lanes.rs`
-    has the lanes' own, and `threaded.rs` drives the model through its threads over the
-    real core.
+    `presenting.rs`, `windowing.rs`, `warming.rs` and `cadence.rs` drive the state by
+    hand, `lanes.rs` has the lanes' own, and `threaded.rs` drives the model through its
+    threads over the real core.
   - `present/` makes each `Snapshot` from the model's state: `present` takes the state and
     the moment, and builds every sentence and row the menu bar, the menu and the window
     show, so a view decides nothing. `accounts.rs` is the menu bar's words and the
@@ -524,9 +576,10 @@ pages load, as a browser would.
     `xcodebuild`, with the command line inside at `Contents/Helpers/pitboard`. It never
     passes `--fixture`, and fails where the core's library or the app holds a fixture
     world's text.
-- `packaging/`: the files a release writes into the tap `datlechin/homebrew-tap`. They are
-  the casks `pitboard.rb` for the command line and `pitboard-app.rb` for the app,
-  `tap_migrations.json`, and the tap's README.
+- `packaging/`: the templates a release fills and publishes, and the tap's other files.
+  The casks `pitboard.rb` for the command line and `pitboard-app.rb` for the app go into the
+  tap `datlechin/homebrew-tap`, with `tap_migrations.json` and the tap's README.
+  `install.sh`, the install script, goes on the release.
 - `docs/`: the Mintlify source of docs.usepitboard.com.
 - `website/`: reserved for the usepitboard.com site, to be built with Astro; empty.
 - `.github/`:
@@ -542,6 +595,8 @@ pages load, as a browser would.
   - `actions/apple-keychain` imports the Developer ID certificate for every job that signs.
   - `scripts/` holds the EdDSA key and signature helpers, and the scripts that add Sparkle,
     the command line and the Share extension's library to the app's bill of materials.
+    `fill-template.sh` writes a release's version and checksums into a `packaging/`
+    template, and `test-install.py` tests it and the install script.
   - `dependabot.yml` asks for weekly updates of Cargo dependencies and GitHub Actions.
 
 ## Invariants
@@ -859,7 +914,7 @@ pages load, as a browser would.
   quitting an app, since Claude Code follows a switch by itself. A refusal is the app's to
   pace, as it is `pitboard watch`'s, since the core records none it raised before deciding:
   the next is asked for no sooner than the core waits after as many failed attempts in a
-  row, 60 seconds doubling to 15 minutes (`autoswitch::retry_after`), and any outcome, of a
+  row, 60 seconds doubling to 15 minutes (`duty::cadence::retry_after`), and any outcome, of a
   look or of a decision, ends the row. A switch it made is taken as one asked for is, with
   the read after it, and said in a notification with no button; a reason it did not switch
   away from a limit, once for that limit and its reset, whether the decision gave it or a
@@ -2159,6 +2214,27 @@ machine on one day.
   models apart.
 - Whether a plan with no limit for a model offers that model at all is not known. Pitboard
   counts it as room.
+
+Measured on 12 October 2026 with Claude Code 2.1.296, on a Team 5x and a Max 20x account, by
+asking the usage endpoint before and 20 seconds after one `claude -p` request on Haiku made
+with each account's access token on a descriptor, from a private home. The register holds
+each as a fact of its own (`request_starts_the_five_hour_period`,
+`weekly_period_is_a_fixed_cycle`, `used_up_limit_refuses_every_request`).
+
+- A five-hour period not running reads as the `session` row at 0% with `resets_at` null,
+  and `five_hour` with `resets_at` null, in an answer that lists every limit. `warm::decide`
+  reads a period with no reset, or a passed one, as not running.
+- One request starts it, on the plan rather than the monthly API credit
+  (`fallback_credit: null`), at the start of the ten minutes it fell in: a request at 17:52
+  gave a reset at 22:50, one at 18:02 a reset at 23:00. Two samples, so the ten minutes are
+  a reading, not a guarantee. A warm-up up to nine minutes after a reset loses nothing.
+- The weekly limit, and a model's beside it, runs on a fixed cycle: two minutes after one
+  reset, with no request between, the answer already gave the next week's reset at 0%. So
+  only the five-hour period is warmed up.
+- While a limit of the account's own is used up, a request is refused with
+  `usage_limit_reached`, spends nothing and starts no period. So `warm::decide` warms up no
+  account with one used up. A model's limit used up alone was not measured, and holds
+  nothing back.
 
 ### Codex
 

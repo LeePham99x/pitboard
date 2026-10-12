@@ -32,18 +32,21 @@
 //!   put it back in use meant to;
 //! - switch away from an account within [`SETTLING_SECONDS`] of its being put in use, by
 //!   anyone;
-//! - try more than [`ATTEMPTS`] times for one limit before it resets, counting only the
+//! - try more than [`ATTEMPTS`](crate::duty::cadence::ATTEMPTS) times for one limit before it resets, counting only the
 //!   attempts that failed for a reason trying again will not mend. One that might, such as
-//!   Anthropic out of reach, is tried again later each time, up to [`RETRY_MOST_SECONDS`].
+//!   Anthropic out of reach, is tried again later each time, up to
+//!   [`crate::duty::cadence::RETRY_MOST_SECONDS`].
 
 use crate::api::Owner;
 use crate::context::Context;
+use crate::duty::cadence::retry_after;
+use crate::duty::ledger::{self, Tries};
 use crate::provider::ProviderId;
 use crate::service::Permit;
 use crate::state::{Account, Key, State};
 use crate::status::Row;
 use crate::usage::{self, Snapshot, Window, same_reset};
-use crate::{atomic, budget, home, in_use};
+use crate::{budget, home, in_use};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -102,32 +105,6 @@ impl Default for Threshold {
 /// on an account fuller than its last reading said is then corrected, and two switches are
 /// never made from one look at the numbers.
 pub const SETTLING_SECONDS: i64 = 300;
-
-/// How long after an attempt that came to nothing Pitboard tries again: long enough for a
-/// service that could not be reached, or a lock Claude Code held, to have come back. Twice
-/// as long after each attempt in a row that failed for a reason trying again may mend.
-pub const RETRY_SECONDS: i64 = 60;
-
-/// The longest it waits between attempts, however long the outage: as long as a usage check
-/// waits on a service that cannot be reached at most (`budget`).
-pub const RETRY_MOST_SECONDS: i64 = 900;
-
-/// Attempts at switching away from one limit of one account before it resets, of those that
-/// failed for a reason trying again will not mend: a switch refused this often for such a
-/// reason is not going to be made.
-pub const ATTEMPTS: u32 = 3;
-
-/// How often a front end that switches by itself decides though nothing was written: an
-/// account put in use stops settling, and the wait after a failed attempt ends, with nobody
-/// writing anything.
-pub const DECIDE_EVERY_SECONDS: i64 = 30;
-
-/// How long to wait after `waits` failures in a row for a reason trying again may mend: of
-/// attempts, of asking whose login Claude Code has stored, or of a front end's refusals that
-/// came before anything here could record them.
-pub fn retry_after(waits: u32) -> i64 {
-    (RETRY_SECONDS << waits.saturating_sub(1).min(4)).min(RETRY_MOST_SECONDS)
-}
 
 /// What Pitboard switches by itself, as it decided from what it knows.
 #[derive(Debug, Clone, PartialEq)]
@@ -257,7 +234,7 @@ pub enum Skip {
     /// Pitboard switched away from this limit once already before it resets, and the account
     /// was put back in use since.
     AlreadyLeft,
-    /// [`ATTEMPTS`] attempts at switching away from this limit came to nothing for a reason
+    /// [`ATTEMPTS`](crate::duty::cadence::ATTEMPTS) attempts at switching away from this limit came to nothing for a reason
     /// trying again will not mend, and none is made again before it resets.
     GaveUp,
     /// The account was put in use less than [`SETTLING_SECONDS`] ago, and is not switched
@@ -345,15 +322,10 @@ impl Blind {
     }
 }
 
-/// What a look at the files alone came to.
-#[derive(Debug)]
-pub enum Look {
-    /// This stands, and nothing is to be done under the lock.
-    Stands(Box<Auto>),
-    /// A switch may be due, or whose login Claude Code has stored is in doubt: only a
-    /// decision under the lock can say ([`crate::service::Pitboard::auto_switch`]).
-    Act,
-}
+/// What a look at the files alone came to: `Act` where a switch may be due, or whose login
+/// Claude Code has stored is in doubt, which only a decision under the lock can say
+/// ([`crate::service::Pitboard::auto_switch`]).
+pub type Look = crate::duty::Look<Auto>;
 
 /// The fuller of two limits first, then the one resetting sooner.
 fn fuller(a: &Window, b: &Window, now: i64) -> Ordering {
@@ -433,9 +405,10 @@ pub(crate) fn decide(
             why,
         })
     };
-    let open = reached.iter().copied().find(|&limit| {
-        tried(limit).is_none_or(|tried| !tried.switched && tried.attempts < ATTEMPTS)
-    });
+    let open = reached
+        .iter()
+        .copied()
+        .find(|&limit| tried(limit).is_none_or(|tried| !tried.switched && !tried.tries.spent()));
     let Some(limit) = open else {
         let left = tried(furthest).is_some_and(|tried| tried.switched);
         return hold(
@@ -462,7 +435,7 @@ pub(crate) fn decide(
     let waiting = reached
         .iter()
         .filter_map(|&window| tried(window).filter(|tried| !tried.switched))
-        .map(|tried| tried.at + retry_after(tried.waits))
+        .map(|tried| tried.tries.waits_until())
         .max()
         .filter(|&until| now < until);
     if let Some(until) = waiting {
@@ -485,7 +458,7 @@ pub(crate) fn decide(
                 && !passed_over.contains(&row.id.as_str())
         })
     };
-    let best = usage::roomiest(goes().filter_map(|row| {
+    let best = usage::preferred(goes().filter_map(|row| {
         let theirs = answered(row)?;
         let room = usage::room(
             &theirs.windows,
@@ -518,11 +491,9 @@ pub(crate) fn decide(
 }
 
 /// What Pitboard has tried and said for each limit of each account that reached the share,
-/// kept in Pitboard's directory between runs and shared by every front end that switches by
-/// itself, with the last time whose login Claude Code has stored could not be told. Written
-/// only under the lock every change takes, so two of them never act on one limit twice, nor
-/// record one reason twice, nor ask twice in one wait. Nothing here is secret: account ids,
-/// names of limits, times, counts, codes and why a login could not be told whose it is.
+/// kept as [`crate::duty::ledger`] keeps what every duty tried, with the last time whose login
+/// Claude Code has stored could not be told. Nothing here is secret: account ids, names of
+/// limits, times, counts, codes and why a login could not be told whose it is.
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct Ledger {
@@ -543,20 +514,15 @@ struct Asked {
     detail: String,
 }
 
-/// One limit of one account, in the window that reset at `resets_at`.
+/// One limit of one account, in the window that reset at `resets_at`: the switches away from
+/// it begun in this window, and the reasons Pitboard did not switch away from it that were
+/// said and recorded, by [`Skip::code`].
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 struct Tried {
     /// When the limit resets, in epoch seconds, or 0 where that is not known.
     resets_at: i64,
-    /// Switches away from it begun in this window, but for those that failed for a reason
-    /// trying again may mend.
-    attempts: u32,
-    /// Attempts in a row that failed for a reason trying again may mend, which each make the
-    /// wait before the next longer.
-    #[serde(default)]
-    waits: u32,
-    /// When the last began.
-    at: i64,
+    #[serde(flatten)]
+    tries: Tries,
     /// Whether one of them switched.
     #[serde(default)]
     switched: bool,
@@ -564,24 +530,15 @@ struct Tried {
     /// login that no longer works, so the next attempt goes elsewhere.
     #[serde(default)]
     passed_over: Vec<String>,
-    /// The reasons Pitboard did not switch away from it that were said and recorded, by
-    /// [`Skip::code`], with when each was.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    said: BTreeMap<String, i64>,
 }
 
 impl Tried {
-    /// When anything was last kept of it.
-    fn last(&self) -> i64 {
-        self.said.values().copied().fold(self.at, i64::max)
-    }
-
     /// Whether it is still kept at `now`: while a reading of its window may still run, since a
     /// later answer can give that window's reset up to a minute after the one it was kept
     /// under; or, where no reset is known, for a week after anything was last kept of it.
     fn kept(&self, now: i64) -> bool {
         usage::may_still_run(self.resets_at, now)
-            || (self.resets_at == 0 && now - self.last() < 7 * 86_400)
+            || (self.resets_at == 0 && now - self.tries.last() < 7 * 86_400)
     }
 
     /// `limit` with the reset this window of it was first kept under.
@@ -609,14 +566,9 @@ fn entry(id: &str, limit: &Window) -> String {
 
 impl Ledger {
     /// What is kept, without the windows that have reset since it was written, as the next
-    /// write would leave them out. Nothing kept, and a record that cannot be read, are nothing
-    /// tried: the record is written whole the next time anything is tried, and at worst one
-    /// limit is tried once more.
+    /// write would leave them out.
     pub(crate) fn load(ctx: &Context) -> Ledger {
-        let mut ledger: Ledger = std::fs::read_to_string(path(ctx))
-            .ok()
-            .and_then(|raw| serde_json::from_str(&raw).ok())
-            .unwrap_or_default();
+        let mut ledger: Ledger = ledger::load(&path(ctx));
         let now = ctx.now();
         ledger.limits.retain(|_, tried| tried.kept(now));
         ledger
@@ -626,16 +578,7 @@ impl Ledger {
     pub(crate) fn save(&mut self, ctx: &Context, permit: Permit) -> crate::error::Result<()> {
         let now = ctx.now();
         self.limits.retain(|_, tried| tried.kept(now));
-        let body = serde_json::to_vec(self).map_err(|e| crate::error::Error::StateWriteFailed {
-            path: path(ctx),
-            source: std::io::Error::other(e),
-        })?;
-        atomic::write(permit, &path(ctx), &body, atomic::Perms::Secret).map_err(|source| {
-            crate::error::Error::StateWriteFailed {
-                path: path(ctx),
-                source,
-            }
-        })
+        ledger::save(permit, &path(ctx), self)
     }
 
     /// What was tried for this window of `limit`, where anything was.
@@ -661,17 +604,13 @@ impl Ledger {
 
     /// A switch for `plan` begins at `now`.
     pub(crate) fn attempt(&mut self, plan: &Plan, now: i64) {
-        let tried = self.trying(&plan.from_id, &plan.limit);
-        tried.attempts += 1;
-        tried.at = now;
+        self.trying(&plan.from_id, &plan.limit).tries.attempt(now);
     }
 
     /// The switch for `plan` failed for a reason trying again may mend: not one of the
     /// attempts, and the next waits longer.
     pub(crate) fn waited(&mut self, plan: &Plan) {
-        let tried = self.trying(&plan.from_id, &plan.limit);
-        tried.attempts = tried.attempts.saturating_sub(1);
-        tried.waits = tried.waits.saturating_add(1);
+        self.trying(&plan.from_id, &plan.limit).tries.waited();
     }
 
     /// The switch for `plan` was made.
@@ -683,7 +622,7 @@ impl Ledger {
     /// the next goes to another.
     pub(crate) fn pass_over(&mut self, plan: &Plan, to_id: &str) {
         let tried = self.trying(&plan.from_id, &plan.limit);
-        tried.waits = 0;
+        tried.tries.waits = 0;
         if !tried.passed_over.iter().any(|id| id == to_id) {
             tried.passed_over.push(to_id.to_owned());
         }
@@ -693,19 +632,15 @@ impl Ledger {
     /// of it already.
     pub(crate) fn said(&self, hold: &Hold) -> bool {
         self.tried(&hold.from_id, &hold.limit)
-            .is_some_and(|tried| tried.said.contains_key(hold.why.code()))
+            .is_some_and(|tried| tried.tries.said(hold.why.code()))
     }
 
     /// Why Pitboard does not switch away from `hold`'s limit is said at `now`. Whether it was
     /// not said in this window of it before, and so is to be recorded.
     pub(crate) fn say(&mut self, hold: &Hold, now: i64) -> bool {
-        let said = &mut self.trying(&hold.from_id, &hold.limit).said;
-        let code = hold.why.code();
-        if said.contains_key(code) {
-            return false;
-        }
-        said.insert(code.to_owned(), now);
-        true
+        self.trying(&hold.from_id, &hold.limit)
+            .tries
+            .say(hold.why.code(), now)
     }
 
     /// The times in a row whose login Claude Code has stored was not told, unless a record of
@@ -877,6 +812,7 @@ pub(crate) fn judge(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::duty::cadence::{ATTEMPTS, RETRY_SECONDS};
     use crate::state::Park;
     use crate::switch::harness::{NOW, account, window};
     use crate::usage::Source;
@@ -1024,6 +960,24 @@ mod tests {
             true,
             vec![window("session", 96.0), window("weekly_all", 98.0)],
         )
+    }
+
+    /// A record written before the attempts moved into the shared ledger reads the same, and is
+    /// written back with the same keys.
+    #[test]
+    fn a_record_an_earlier_pitboard_wrote_reads_and_writes_the_same() {
+        let earlier = r#"{"limits":{"work/session":{"resets_at":1800000000,"attempts":2,"waits":1,"at":1799990000,"switched":false,"passed_over":["spare"],"said":{"no_room":1799990100}}}}"#;
+        let ledger: Ledger = serde_json::from_str(earlier).expect("reads");
+        let tried = ledger.limits.values().next().expect("a limit");
+        assert_eq!(
+            (tried.tries.attempts, tried.tries.waits, tried.tries.at),
+            (2, 1, 1_799_990_000)
+        );
+        assert!(tried.tries.said("no_room"));
+        assert_eq!(tried.passed_over, ["spare"]);
+        let written = serde_json::to_value(&ledger).expect("writes");
+        let earlier: serde_json::Value = serde_json::from_str(earlier).expect("JSON");
+        assert_eq!(written, earlier);
     }
 
     #[test]
@@ -1350,6 +1304,84 @@ mod tests {
             to(&decided(&[work_at(96.0), less(), same])),
             Some("less"),
             "the first of two alike"
+        );
+    }
+
+    /// A Team seat loses what it leaves unused at each five-hour reset.
+    #[test]
+    fn an_account_without_a_weekly_limit_for_all_models_is_chosen_first() {
+        let seat = |label: &str, session: f64| {
+            row(
+                label,
+                false,
+                vec![
+                    window("session", session),
+                    scoped("weekly_scoped", "Fable", 0.0),
+                ],
+            )
+        };
+        let max = || {
+            row(
+                "max",
+                false,
+                vec![window("session", 0.0), window("weekly_all", 10.0)],
+            )
+        };
+        assert_eq!(
+            to(&decided(&[work_at(96.0), max(), seat("seat", 90.0)])),
+            Some("seat")
+        );
+        assert_eq!(
+            to(&decided(&[
+                work_at(96.0),
+                max(),
+                seat("seat", 90.0),
+                seat("fresher", 40.0)
+            ])),
+            Some("fresher"),
+            "the most room among them"
+        );
+    }
+
+    /// A reading with a row Pitboard could not read may have left a weekly limit for all
+    /// models out, so it is not taken for one without.
+    #[test]
+    fn a_reading_that_may_leave_the_weekly_limit_out_is_not_taken_for_one_without() {
+        let seat = |label: &str, signed_in: bool, session: f64| {
+            row(
+                label,
+                signed_in,
+                vec![
+                    window("session", session),
+                    scoped("weekly_scoped", "Fable", 0.0),
+                ],
+            )
+        };
+        let unread = || {
+            let mut unread = row("unread", false, Vec::new());
+            unread.usage = Some(usage::from_usage_object(
+                &serde_json::json!({"limits": [
+                    {"kind": "session", "percent": 10.0, "scope": null},
+                    {"kind": "weekly_scoped", "percent": 0.0,
+                     "scope": {"model": {"display_name": "Fable"}}},
+                    {"kind": "weekly_all", "percent": null, "scope": null},
+                ]}),
+                NOW,
+            ));
+            unread
+        };
+        assert_eq!(
+            to(&decided(&[seat("work", true, 96.0), unread()])),
+            Some("unread"),
+            "a place to go"
+        );
+        assert_eq!(
+            to(&decided(&[
+                seat("work", true, 96.0),
+                unread(),
+                seat("seat", false, 50.0)
+            ])),
+            Some("seat")
         );
     }
 

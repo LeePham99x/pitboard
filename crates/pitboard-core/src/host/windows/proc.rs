@@ -13,3 +13,16 @@ pub(crate) fn may_be_running(_pid: u32) -> bool {
 pub(crate) fn can_run(_path: &Path) -> bool {
     false
 }
+
+/// Runs no program: a warm-up, the only run with a ceiling, stops on Windows before it
+/// starts one.
+pub(crate) fn run_within(
+    _command: std::process::Command,
+    _handed: Option<&[u8]>,
+    _ceiling: std::time::Duration,
+) -> std::io::Result<crate::host::Ran> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "no program is run with a ceiling on Windows yet",
+    ))
+}

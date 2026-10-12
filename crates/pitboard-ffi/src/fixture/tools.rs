@@ -20,7 +20,9 @@
 
 use super::worlds::{Machine, Person};
 use pitboard_core::provider::ProviderId;
-use pitboard_core::testing::{ScriptedSignIn, SignInScript, service_for_dir};
+use pitboard_core::testing::{
+    Ran, ScriptedSignIn, SignInScript, Started, WarmScript, service_for_dir,
+};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
@@ -48,6 +50,40 @@ pub(crate) const CODEX_ADDRESS: &str =
 /// the register's `sign_in_takes_another_code` holds it whole.
 pub(crate) const CLAUDE_REFUSES: &str =
     "Invalid code. Please make sure the full code was copied.\n";
+
+/// Claude Code's headless run of a warm-up on a fixture's machine, played through
+/// pitboard-core's seam for a run that starts no program. It answers as print mode does when
+/// a request is answered, as the register's `headless_result` has 2.1.296 print it, and the
+/// five-hour period of the account whose access token it was handed starts, as Anthropic's
+/// next answer says.
+pub(crate) struct Warmer {
+    machine: Arc<Machine>,
+}
+
+impl Warmer {
+    pub(crate) fn new(machine: Arc<Machine>) -> Warmer {
+        Warmer { machine }
+    }
+}
+
+impl std::fmt::Debug for Warmer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Warmer")
+    }
+}
+
+impl WarmScript for Warmer {
+    fn run(&self, started: &Started) -> Ran {
+        if let Some(access) = &started.token {
+            self.machine.started_period(access);
+        }
+        Ran {
+            exit: Some(0),
+            stdout: r#"{"type":"result","subtype":"success","is_error":false,"result":"OK","api_error_status":null}"#.into(),
+            timed_out: false,
+        }
+    }
+}
 
 /// The browser and each tool's sign-in on a fixture's machine.
 pub(crate) struct Browser {

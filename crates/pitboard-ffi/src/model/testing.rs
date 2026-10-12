@@ -580,6 +580,27 @@ pub(super) struct Machine {
     /// The `pitboard` a terminal would run.
     pub command_line: FoundCommandLine,
     pub command_line_asks: usize,
+    /// What the core's files say of warming up accounts, as every read gives it, and why they
+    /// could not be read where `warm_refused` says.
+    pub warm: Option<pitboard_core::warm::Overview>,
+    pub warm_refused: Option<Refusal>,
+    /// What a warm-up gives, by itself or asked for now.
+    pub warming: Result<pitboard_core::switch::warm::WarmUp, Refusal>,
+    /// Every warm-up asked for, in order: `None` for one by itself, or the account asked
+    /// for now.
+    pub warmed: Vec<Option<String>>,
+    /// Every change to which accounts are warmed up, in order, and the span.
+    pub warm_turned: Vec<(String, bool)>,
+    pub warm_ranges: Vec<(u16, u16)>,
+}
+
+/// What the core says of warming up where nothing has been set: the default span, nobody.
+pub(super) fn no_warm() -> pitboard_core::warm::Overview {
+    pitboard_core::warm::Overview {
+        range: pitboard_core::warm::Range::DEFAULT,
+        accounts: Vec::new(),
+        halted: None,
+    }
 }
 
 impl Machine {
@@ -654,6 +675,12 @@ impl Machine {
             log_limits: Vec::new(),
             command_line: FoundCommandLine::Nowhere,
             command_line_asks: 0,
+            warm: None,
+            warm_refused: None,
+            warming: Ok(pitboard_core::switch::warm::WarmUp::Nothing),
+            warmed: Vec::new(),
+            warm_turned: Vec::new(),
+            warm_ranges: Vec::new(),
         }
     }
 
@@ -688,6 +715,14 @@ impl Machine {
             .unwrap_or_default()
     }
 
+    /// What the core's files say of warming up, as a read gives it.
+    fn warm_overview(&self) -> Result<pitboard_core::warm::Overview, PitboardError> {
+        match &self.warm_refused {
+            Some(refused) => Err(refused.error()),
+            None => Ok(self.warm.clone().unwrap_or_else(no_warm)),
+        }
+    }
+
     /// What the core answers `job` with.
     pub(super) fn answer(&mut self, job: Job) -> Answer {
         match job {
@@ -699,12 +734,63 @@ impl Machine {
                     readings_before,
                     changed_before,
                     read: self.answer.clone().map_err(|refused| refused.error()),
+                    warm: self.warm_overview(),
                 }
             }
             Job::ReadOffline { why } => Answer::ReadOffline {
                 why,
                 read: self.offline.clone().map_err(|refused| refused.error()),
+                warm: self.warm_overview(),
             },
+            Job::WarmUp => {
+                self.warmed.push(None);
+                let mut done = self.warming.clone().map_err(|refused| refused.error());
+                // As the core's: where nothing is due it says what its files say.
+                if let Ok(pitboard_core::switch::warm::WarmUp::Stands(standing)) = &mut done
+                    && let Some(warm) = &self.warm
+                {
+                    **standing = warm.clone();
+                }
+                // As the core's: once a period has started, nothing is due until it resets.
+                if matches!(
+                    done,
+                    Ok(pitboard_core::switch::warm::WarmUp::Started { .. })
+                ) {
+                    self.warming = Ok(pitboard_core::switch::warm::WarmUp::Stands(Box::new(
+                        self.warm.clone().unwrap_or_else(no_warm),
+                    )));
+                }
+                Answer::WarmedUp { asked: None, done }
+            }
+            Job::WarmNow { qualified } => {
+                self.warmed.push(Some(qualified.clone()));
+                Answer::WarmedUp {
+                    asked: Some(qualified),
+                    done: self.warming.clone().map_err(|refused| refused.error()),
+                }
+            }
+            Job::SetWarm { qualified, on } => {
+                self.warm_turned.push((qualified.clone(), on));
+                if let Some(overview) = &mut self.warm {
+                    for choice in &mut overview.accounts {
+                        if choice.qualified == qualified {
+                            choice.on = on;
+                        }
+                    }
+                }
+                Answer::WarmSet {
+                    done: self.warm_overview(),
+                }
+            }
+            Job::SetWarmRange { from, to } => {
+                self.warm_ranges.push((from, to));
+                let mut overview = self.warm.clone().unwrap_or_else(no_warm);
+                if let Some(range) = pitboard_core::warm::Range::new(from, to) {
+                    overview.range = range;
+                }
+                self.warm = Some(overview.clone());
+                Answer::WarmSet { done: Ok(overview) }
+            }
             Job::Look => Answer::Looked {
                 changed: self.changed,
                 measured: self.readings,

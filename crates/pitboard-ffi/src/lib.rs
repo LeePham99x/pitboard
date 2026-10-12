@@ -59,7 +59,8 @@ pub use present::{
     MachineShown, MenuBarText, MenuEntry, MenuNotices, NoticeAction, OpenWindow, PaceStanding,
     PageLoad, PanelNotice, PickerAccount, PickerShown, Question, RenewalShown, ScheduleShown,
     SetupStep, Severity, SheetText, SheetTool, SigningInText, StoreDeletion, StowText,
-    WaitingShown, WindowOffer, WindowWaiting, downloads_quit_question, name_to_save,
+    WaitingShown, WarmAccountShown, WarmShown, WindowOffer, WindowWaiting, downloads_quit_question,
+    name_to_save,
 };
 
 mod account_windows;

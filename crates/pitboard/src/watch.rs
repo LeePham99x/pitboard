@@ -1,23 +1,27 @@
-//! `pitboard watch`: switching Claude Code by itself for as long as somebody leaves it
-//! running in a terminal, as the app does with its setting on.
+//! `pitboard watch`: switching Claude Code by itself, and warming up the accounts turned on
+//! for it, for as long as somebody leaves it running in a terminal, as the app does.
 //!
 //! A program in the foreground, which stops with its terminal or with Ctrl-C. Nothing
 //! installs it and it starts nothing that outlives it: running it is the opt-in. What it
-//! decides, and what it never does, is [`pitboard_core::autoswitch`]'s.
+//! decides, and what it never does, is [`pitboard_core::autoswitch`]'s and
+//! [`pitboard_core::warm`]'s.
 //!
 //! It asks the services about every account as often as the app does, and looks at what the
 //! status lines and the other front ends record as often as the app looks, so it costs
 //! Anthropic no more than the app would.
 
 use crate::{Report, emit, followed, ui};
-use pitboard_core::autoswitch::{self, Auto, Blind, DECIDE_EVERY_SECONDS, Look, Skip, Threshold};
+use pitboard_core::autoswitch::{Auto, Blind, Look, Skip, Threshold};
+use pitboard_core::duty::cadence::{DECIDE_EVERY_SECONDS, Refusals};
 use pitboard_core::error::{self, Error};
 use pitboard_core::provider::ProviderId;
 use pitboard_core::service::{Changing, Done, Failed, Pitboard};
+use pitboard_core::switch::warm::WarmUp;
 use pitboard_core::usage::Window;
+use pitboard_core::warm::{Overview, Standing};
 use pitboard_core::words;
 use serde_json::{Value, json};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::process::ExitCode;
 use std::time::Duration;
 
@@ -43,20 +47,24 @@ pub fn run(pitboard: &Pitboard, threshold: Threshold, as_json: bool) -> ExitCode
     if let Err(refused) = pitboard.permit() {
         return emit(Report::failed(Some("watch"), refused), as_json);
     }
+    let warming = pitboard.warm_overview().ok();
     emit(
         Report::done(
             "watch",
-            json!({ "event": "watching", "threshold": threshold.percent() }),
+            watching_json(threshold, warming.as_ref()),
             format!(
                 "Watching Claude Code. Pitboard switches to another of your accounts once a \
-                 limit of the one in use reaches {}%. Stop with Ctrl-C.\n",
-                threshold.percent()
+                 limit of the one in use reaches {}%{}. Stop with Ctrl-C.\n",
+                threshold.percent(),
+                warming.as_ref().map(warms).unwrap_or_default()
             ),
         ),
         as_json,
     );
     let mut told = Told::default();
     let mut refusals = Refusals::default();
+    let mut warm_told = WarmTold::default();
+    let mut warm_refusals = Refusals::default();
     let (mut read_at, mut decided_at, mut seen) = (None::<i64>, 0, None);
     loop {
         let now = epoch();
@@ -67,20 +75,40 @@ pub fn run(pitboard: &Pitboard, threshold: Threshold, as_json: bool) -> ExitCode
             read_at = Some(now);
         }
         let written = Some((pitboard.changed_at(), pitboard.readings_changed_at()));
-        if written != seen || now >= refusals.due(decided_at) || now < decided_at {
+        let due = refusals.due(instant(decided_at), every());
+        if written != seen || instant(now) >= due || now < decided_at {
             (seen, decided_at) = (written, now);
             let outcome = decided(
-                refusals.wait(now),
+                refusals.waits(instant(now)),
                 || pitboard.auto_look(threshold),
                 || pitboard.auto_switch(threshold),
             );
             if let Some(outcome) = outcome {
-                refusals.after(&outcome, now);
+                match &outcome {
+                    Ok(_) => refusals.ended(),
+                    Err(_) => {
+                        refusals.refused(instant(now));
+                    }
+                }
                 let say = |outcome| said(outcome, threshold, true);
                 if matches!(&outcome, Err(failed) if ends_watching(&failed.error)) {
                     return emit(say(outcome), as_json);
                 }
                 if let Some(report) = told.untold(outcome, say) {
+                    emit(report, as_json);
+                }
+            }
+            // Nothing a warm-up comes to ends watching: switching goes on, and the warm-up is
+            // tried again once its refusals have waited.
+            if !warm_refusals.waits(instant(now)) {
+                let outcome = pitboard.warm_up();
+                match &outcome {
+                    Ok(_) => warm_refusals.ended(),
+                    Err(_) => {
+                        warm_refusals.refused(instant(now));
+                    }
+                }
+                for report in warm_told.untold(outcome) {
                     emit(report, as_json);
                 }
             }
@@ -110,56 +138,6 @@ fn decided(
             error,
             warnings: Vec::new(),
         })),
-    }
-}
-
-/// Refusals of switching by itself in a row, and the wait after them, so the next decision
-/// under the lock is no sooner than the core waits after as many failed attempts in a row. A
-/// refusal the core raised before it could record anything would otherwise be asked again,
-/// and written in the audit log, at every decision. One it recorded, after an attempt, is
-/// followed by a look that stands on what the core recorded with it, its own wait or why it
-/// tries no more, which ends the row.
-#[derive(Default)]
-struct Refusals {
-    in_a_row: u32,
-    /// When the last was.
-    at: i64,
-    /// Until when the next decision under the lock waits.
-    until: i64,
-}
-
-impl Refusals {
-    /// Whether a decision under the lock waits at `now`. A clock gone back before the last
-    /// refusal waits on nothing.
-    fn wait(&self, now: i64) -> bool {
-        (self.at..self.until).contains(&now)
-    }
-
-    /// When to decide next after deciding at `at`: `DECIDE_EVERY_SECONDS` later, or as the
-    /// wait ends where that comes first.
-    fn due(&self, at: i64) -> i64 {
-        let every = at + DECIDE_EVERY_SECONDS;
-        if self.wait(at) {
-            every.min(self.until)
-        } else {
-            every
-        }
-    }
-
-    /// Counts what deciding at `at` came to: a refusal waits longer than the one before it,
-    /// and anything else ends the row.
-    fn after(&mut self, outcome: &Changing<Auto>, at: i64) {
-        *self = match outcome {
-            Ok(_) => Refusals::default(),
-            Err(_) => {
-                let in_a_row = self.in_a_row + 1;
-                Refusals {
-                    in_a_row,
-                    at,
-                    until: at + autoswitch::retry_after(in_a_row),
-                }
-            }
-        };
     }
 }
 
@@ -218,6 +196,143 @@ impl Told {
         }
         self.watching = watching;
         Some(report)
+    }
+}
+
+/// The `watching` event's data: the share it switches at, and the accounts it warms up with
+/// the span of the day, where any is turned on.
+fn watching_json(threshold: Threshold, warming: Option<&Overview>) -> Value {
+    let mut data = json!({ "event": "watching", "threshold": threshold.percent() });
+    if let Some(overview) = warming.filter(|overview| overview.accounts.iter().any(|c| c.on)) {
+        data["warm"] = json!({
+            "range": crate::warm::range_json(overview.range),
+            "accounts": overview
+                .accounts
+                .iter()
+                .filter(|choice| choice.on)
+                .map(|choice| choice.account.clone())
+                .collect::<Vec<_>>(),
+        });
+    }
+    data
+}
+
+/// What it warms up, as the start line's last clause says it: ", and warms up work and
+/// personal from 06:00 to 22:00", or nothing where no account is turned on.
+fn warms(overview: &Overview) -> String {
+    let on: Vec<String> = overview
+        .accounts
+        .iter()
+        .filter(|choice| choice.on)
+        .map(|choice| ui::paint(ui::BOLD, &choice.account))
+        .collect();
+    if on.is_empty() {
+        return String::new();
+    }
+    format!(
+        ", and warms up {} from {}",
+        words::listed(on),
+        overview.range
+    )
+}
+
+/// What `watch` has said of warming up: each reason it held an account back or could not warm
+/// it up, by account, said once until that account warms up, and why nothing is warmed up here,
+/// said once until it stops being so.
+#[derive(Default)]
+struct WarmTold {
+    by_account: HashMap<String, HashSet<String>>,
+    halted: Option<String>,
+    errors: HashSet<String>,
+}
+
+impl WarmTold {
+    /// What of `outcome` has not been said, as the reports `watch` prints of it.
+    fn untold(&mut self, outcome: Changing<WarmUp>) -> Vec<Report> {
+        let moment = |at| pitboard_core::time::moment(at, epoch());
+        let done = match outcome {
+            Ok(done) => done,
+            Err(failed) => {
+                let key = match &failed.error {
+                    Error::WarmUpFailed { label, .. } | Error::WarmUpNotDue { label, .. } => {
+                        format!("{label}/{}", failed.error.code())
+                    }
+                    // Its words name the account, where it is of one.
+                    error => format!("{}/{error}", error.code()),
+                };
+                return if self.errors.insert(key) {
+                    vec![Report::refused("watch", failed)]
+                } else {
+                    Vec::new()
+                };
+            }
+        };
+        match done.value {
+            WarmUp::Started { account, until } => {
+                self.by_account.remove(&account);
+                self.errors
+                    .retain(|key| !key.starts_with(&format!("{account}/")));
+                let line = crate::warm::warmed_line(&account, until);
+                vec![Report::done(
+                    "watch",
+                    json!({ "event": "warmed_up", "account": account, "until": until }),
+                    stamp(format!("{line}\n")),
+                )]
+            }
+            WarmUp::Running { .. } | WarmUp::Nothing => Vec::new(),
+            WarmUp::Stands(overview) => self.stands(&overview, &moment),
+        }
+    }
+
+    /// Why nothing is warmed up here, and why each account turned on is held back, where
+    /// not said yet.
+    fn stands(&mut self, overview: &Overview, moment: &dyn Fn(i64) -> String) -> Vec<Report> {
+        let mut reports = Vec::new();
+        match &overview.halted {
+            Some(halt) => {
+                if self.halted.as_deref() != Some(halt.code()) {
+                    self.halted = Some(halt.code().to_owned());
+                    reports.push(Report::done(
+                        "watch",
+                        json!({ "event": "warm_up_halted", "reason": halt.code() }),
+                        stamp(format!("{}\n", crate::warm::halted_line(halt))),
+                    ));
+                }
+                return reports;
+            }
+            None => self.halted = None,
+        }
+        for choice in &overview.accounts {
+            let Some(Standing::Held(hold)) = &choice.standing else {
+                continue;
+            };
+            let until = hold.until();
+            let key = format!("held/{}", hold.told_apart());
+            if !self
+                .by_account
+                .entry(choice.account.clone())
+                .or_default()
+                .insert(key)
+            {
+                continue;
+            }
+            let standing = Standing::Held(hold.clone());
+            reports.push(Report::done(
+                "watch",
+                json!({
+                    "event": "warm_up_held",
+                    "account": choice.account,
+                    "reason": hold.code(),
+                    "until": until,
+                }),
+                stamp(format!(
+                    "{} {}, so Pitboard is not warming it up for now.\n",
+                    ui::paint(ui::BOLD, &choice.account),
+                    words::warm_standing(&standing, moment)
+                )),
+            ));
+        }
+        reports
     }
 }
 
@@ -412,9 +527,19 @@ fn ends_watching(error: &Error) -> bool {
     )
 }
 
-/// Seconds since 1970, for when to read and decide next. Not what is decided from: the core
-/// reads its own clock.
-fn epoch() -> i64 {
+/// `epoch` as the instant a front end's [`Refusals`] are measured on.
+fn instant(epoch: i64) -> Duration {
+    Duration::from_secs(epoch.unsigned_abs())
+}
+
+/// How often it decides though nothing was written, as the core says every front end does.
+fn every() -> Duration {
+    Duration::from_secs(DECIDE_EVERY_SECONDS.unsigned_abs())
+}
+
+/// Seconds since 1970, for when to read and decide next, and for writing a moment as a person
+/// reads it. Not what is decided from: the core reads its own clock.
+pub(crate) fn epoch() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |since| {
@@ -425,7 +550,6 @@ fn epoch() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pitboard_core::autoswitch::RETRY_MOST_SECONDS;
     use pitboard_core::provider::{Adoption, Held};
     use pitboard_core::service::Warning;
 
@@ -790,72 +914,6 @@ mod tests {
         );
     }
 
-    /// After a refusal the next decision under the lock waits as long as the core waits after
-    /// as many failed attempts in a row. The look goes on meanwhile, and anything it or a
-    /// decision comes to ends the row, as the core's own wait after an attempt it recorded
-    /// does.
-    #[test]
-    fn a_refusal_is_tried_again_only_after_the_cores_wait() {
-        const AT: i64 = 1_760_000_000;
-        let refused = || {
-            Err(Failed {
-                error: Error::SignedInAccountChanged,
-                warnings: Vec::new(),
-            })
-        };
-        let mut refusals = Refusals::default();
-        assert!(!refusals.wait(AT));
-        assert_eq!(refusals.due(AT), AT + DECIDE_EVERY_SECONDS);
-
-        refusals.after(&refused(), AT);
-        assert!(refusals.wait(AT + 59));
-        assert!(!refusals.wait(AT + 60));
-        assert!(
-            !refusals.wait(AT - 1),
-            "a clock gone backwards waits on nothing"
-        );
-        assert_eq!(
-            refusals.due(AT),
-            AT + DECIDE_EVERY_SECONDS,
-            "it looks meanwhile"
-        );
-        assert_eq!(
-            refusals.due(AT + 45),
-            AT + 60,
-            "and decides as the wait ends"
-        );
-
-        refusals.after(&refused(), AT + 60);
-        assert!(refusals.wait(AT + 179));
-        assert!(!refusals.wait(AT + 180));
-        for _ in 0..8 {
-            refusals.after(&refused(), AT);
-        }
-        assert!(refusals.wait(AT + RETRY_MOST_SECONDS - 1));
-        assert!(
-            !refusals.wait(AT + RETRY_MOST_SECONDS),
-            "at most a quarter of an hour"
-        );
-
-        let recorded = Auto::Waiting {
-            from: "work".into(),
-            limit: limit(9_000),
-            until: AT + 260,
-        };
-        let looked = decided(
-            refusals.wait(AT + 200),
-            || Ok(Look::Stands(Box::new(recorded))),
-            || panic!("a decision under the lock while it waits"),
-        );
-        refusals.after(&looked.expect("what the look stands on"), AT + 200);
-        assert!(!refusals.wait(AT + 200));
-        refusals.after(&refused(), AT + 200);
-        assert!(
-            !refusals.wait(AT + 260),
-            "a row ended starts again at a minute"
-        );
-    }
-
     /// A reason Pitboard cannot judge whether to switch at all is an event of its own, with
     /// no account or limit, and says what to do where the command line has a command for it.
     #[test]
@@ -942,5 +1000,126 @@ mod tests {
         assert!(told.says(blind(Blind::NotEnrolled {
             email: "you@example.com".into()
         })));
+    }
+
+    mod warming {
+        use super::*;
+        use pitboard_core::warm::{Choice, Halt, Hold, Range};
+
+        fn overview(halted: Option<Halt>, held: Option<Hold>) -> Overview {
+            Overview {
+                range: Range::DEFAULT,
+                halted,
+                accounts: vec![Choice {
+                    account: "work".into(),
+                    qualified: "claude/work".into(),
+                    on: true,
+                    standing: held.map(Standing::Held),
+                    now: Standing::Due,
+                }],
+            }
+        }
+
+        fn stands(overview: Overview) -> Changing<WarmUp> {
+            Ok(Done {
+                value: WarmUp::Stands(Box::new(overview)),
+                warnings: Vec::new(),
+            })
+        }
+
+        fn events(reports: &[Report]) -> Vec<String> {
+            reports
+                .iter()
+                .map(|report| report.result.as_ref().expect("an event")["event"].to_string())
+                .collect()
+        }
+
+        /// Why an account is held back is said once until it warms up; why nothing is warmed
+        /// up here once until it stops being so.
+        #[test]
+        fn each_reason_is_said_once_until_it_ends() {
+            let mut told = WarmTold::default();
+            let held = || stands(overview(None, Some(Hold::NoReading)));
+            assert_eq!(events(&told.untold(held())), ["\"warm_up_held\""]);
+            assert!(told.untold(held()).is_empty());
+
+            let halted = || stands(overview(Some(Halt::ProgramMissing), None));
+            assert_eq!(events(&told.untold(halted())), ["\"warm_up_halted\""]);
+            assert!(told.untold(halted()).is_empty());
+            told.untold(stands(overview(None, None)));
+            assert_eq!(
+                events(&told.untold(halted())),
+                ["\"warm_up_halted\""],
+                "said again once it came back"
+            );
+
+            let warmed = Ok(Done {
+                value: WarmUp::Started {
+                    account: "work".into(),
+                    until: Some(1_760_000_000),
+                },
+                warnings: Vec::new(),
+            });
+            assert_eq!(events(&told.untold(warmed)), ["\"warmed_up\""]);
+            assert_eq!(
+                events(&told.untold(held())),
+                ["\"warm_up_held\""],
+                "said again after it warmed up"
+            );
+        }
+
+        #[test]
+        fn a_failure_of_one_account_is_said_once_until_it_warms_up() {
+            let mut told = WarmTold::default();
+            let failed = || {
+                Err(Failed {
+                    error: Error::WarmUpFailed {
+                        label: "work".into(),
+                        why: pitboard_core::warm::Failure::NotStarted,
+                    },
+                    warnings: Vec::new(),
+                })
+            };
+            assert_eq!(told.untold(failed()).len(), 1);
+            assert!(told.untold(failed()).is_empty());
+        }
+
+        /// A limit used up is said once, though each answer may give its reset a second apart.
+        #[test]
+        fn a_limit_used_up_is_said_once_whatever_second_its_reset_is_given() {
+            let mut told = WarmTold::default();
+            let used_up = |resets_at| {
+                let limit = Window {
+                    kind: "weekly_all".into(),
+                    scope: None,
+                    percent: 100.0,
+                    resets_at: Some(resets_at),
+                    is_active: true,
+                    severity: None,
+                    length_seconds: None,
+                };
+                stands(overview(None, Some(Hold::LimitUsedUp { limit })))
+            };
+            assert_eq!(told.untold(used_up(1_760_000_000)).len(), 1);
+            assert!(told.untold(used_up(1_760_000_001)).is_empty());
+        }
+
+        /// Another error is said once for its words, which name the account it is of.
+        #[test]
+        fn another_error_is_said_once_for_each_account_it_names() {
+            let mut told = WarmTold::default();
+            let expired = |label: &str| {
+                Err(Failed {
+                    error: Error::ParkedLoginRefused {
+                        tool: ProviderId::Claude,
+                        label: label.into(),
+                    },
+                    warnings: Vec::new(),
+                })
+            };
+            assert_eq!(told.untold(expired("work")).len(), 1);
+            assert!(told.untold(expired("work")).is_empty());
+            assert_eq!(told.untold(expired("personal")).len(), 1);
+        }
     }
 }

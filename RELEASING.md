@@ -3,7 +3,8 @@
 A tag `v<version>` releases Pitboard through `.github/workflows/release.yml`. A tag with a
 suffix, such as `v0.6.0-rc1`, makes a GitHub pre-release instead. A pre-release gets an
 empty release body, publishes nothing to crates.io and has no update feed, so no installed
-copy updates into it. The `feed`, `tap` and `brew` jobs skip it.
+copy updates into it. The `feed`, `tap` and `brew` jobs skip it. The `install-script` job
+runs for it, without the step that goes through usepitboard.com.
 
 The `guard` job runs before anything is built. It refuses any tag whose version, without
 the suffix, differs from `Cargo.toml`. For a full release, it also refuses a version with
@@ -56,16 +57,27 @@ anything public in `pitboard-core` is a new minor version, as Cargo reads one: 0
   line and the app together.
 - The first release after 0.11.0 is 0.12.0. In `pitboard-core`, `status::Row` and
   `state::Account` have the new field `plan`, and `state::Detail::Codex` no longer has
-  one. `state::State::discarded` holds `state::Dropped` entries, and `State::discard`
-  takes a `state::ParkKind`. The account index is schema 8, which 0.11.0 refuses, so the
-  release's notes say to update the command line and the app together.
+  one. The account index stays schema 7: 0.11.0 reads a Codex account's plan where it was
+  and drops a Claude Code account's at its next save.
+- The first release after 0.12.0 is 0.13.0. In `pitboard-core`, `autoswitch::retry_after`,
+  `RETRY_SECONDS`, `RETRY_MOST_SECONDS`, `ATTEMPTS` and `DECIDE_EVERY_SECONDS` moved to
+  `duty::cadence`, which the warm-up shares, and `autoswitch::Look` is now
+  `duty::Look<Auto>`. `provider::ProviderId` has the variant `Desktop`, and its
+  `program_variable`, `install_places`, `home_variable` and `login_command` are gone;
+  `Context::program_for` returns an `Option`. `switch::Outcome` has the variant
+  `Installed` and `provider::Adoption` the variant `NextOpen`, and `service::Warning`,
+  `error::Error` and `status::Stale` have new variants, which break an exhaustive `match`
+  on them. `status::Row` has the new field `read_at`, `status::Report` `awaiting`, and
+  `state::Park` `kind` and `session_expires_at`. `state::Park::refresh_fingerprint` is now
+  `login`, `state::State::discarded` holds `state::Dropped` entries, and `State::discard`
+  takes a `state::ParkKind`. `service::Pitboard::abandon_recovery` returns a
+  `switch::GaveUp`, and `switch::sign_in` and `switch::sign_in_watched` are no longer
+  public. The account index is schema 8, which 0.12.0 refuses, so the release's notes say
+  to update the command line and the app together.
 - The first release with Claude Desktop waits until ARCHITECTURE.md's hand measurements M1
-  to M10 are recorded. In `pitboard-core`, `switch::Outcome` has the variant `Installed` and
-  `provider::Adoption` the variant `NextOpen`, which break an exhaustive `match` on them.
-  `status::Row` has the new field `read_at`, `status::Report` `awaiting`, and `state::Park`
-  `kind` and `session_expires_at`. `service::Pitboard::abandon_recovery` returns a
-  `switch::GaveUp`. `provider::ProviderId` has the variant `Desktop`, and
-  `service::Warning`, `error::Error` and `status::Stale` have new variants.
+  to M10 are recorded.
+- The first release that carries `install.sh` needs [the redirect](#the-redirect) in place
+  before its tag.
 
 1. In CHANGELOG.md, add `## [<version>] - YYYY-MM-DD` directly under `## [Unreleased]`, so
    the entries there fall under the version. The guard looks for a line that starts
@@ -88,6 +100,7 @@ and build number from `Cargo.toml`.
    `publish` job when it waits in the `release` environment. The run builds and signs
    everything and exchanges the crates.io token, but publishes nothing to crates.io. A
    Trusted Publishing registration that does not match fails here, where it costs nothing.
+   The `install-script` job runs the pre-release's own install script on each target.
    Releases 0.3.0 to 0.5.0 each had an `-rc1` tag.
 
    ```sh
@@ -106,11 +119,13 @@ and build number from `Cargo.toml`.
 4. If the `tap` job fails to push, re-run it. It reads the same `SHA256SUMS` from the run.
 5. If the `publish` job fails after both crates reached crates.io, re-run it. It skips
    crates.io when that version of `pitboard` is already there.
+6. If the `install-script` job fails at the step "Install the way the README says to",
+   check [the redirect](#the-redirect), then re-run the job.
 
 ## What a release publishes
 
-The jobs run in this order: `guard`, then `build` and `app`, then `publish`, then `feed`
-and `tap`, then `brew`.
+The jobs run in this order: `guard`, then `build` and `app`, then `publish`, then `feed`,
+`tap` and `install-script`, then `brew`.
 
 A full release publishes:
 
@@ -121,13 +136,20 @@ A full release publishes:
   `README.md`.
 - The app, a universal build with the command line for both macOS targets inside it.
 - A bill of materials beside each tarball and beside the app.
-- `SHA256SUMS`.
+- `install.sh`, the install script, with the version and the four tarballs' checksums
+  written in.
+- `SHA256SUMS`, with a line for each tarball, the app and `install.sh`.
 - `appcast.xml`, the update feed.
 - The Homebrew tap.
 
 A pre-release publishes the same files on GitHub, without `appcast.xml`. No release
 uploads a source tarball: nothing installs from one, and crates.io has the source. The
 release body is the version's section of CHANGELOG.md.
+
+Every release is a draft until its files are up. softprops/action-gh-release makes a full
+release that way on its own, then publishes it. It would make a pre-release already
+published, so the `publish` job passes it `draft: true`, and its step "Publish the
+pre-release" publishes the draft with `gh release edit`.
 
 When the Apple secrets are set, the macOS binaries and the app are signed with the
 Developer ID certificate and notarised. The command line needs both, because a tarball
@@ -136,8 +158,22 @@ ad-hoc signature.
 
 Every file on the GitHub release has a GitHub attestation. `SHA256SUMS` is made in the job
 that publishes the files it lists, so on its own it shows only that a download arrived
-whole. The attestation also names the workflow and commit that made it.
+whole. The attestation also names the workflow and commit that made it. `install.sh` is
+filled from that `SHA256SUMS` before its own line goes in, so its attestation also covers
+the checksums written into it.
 [Verify a download](https://docs.usepitboard.com/install/verify) tells users how to check.
+
+## Immutable releases
+
+Immutable releases are a repository setting that only the owner changes. Once a release is
+published, its files cannot be added, replaced or deleted, and its tag cannot be moved or
+deleted. Its title, notes and pre-release and `latest` marks stay editable. A deleted
+release's tag can then be deleted, but its name cannot be used again. The setting covers
+only releases published after it is turned on.
+
+The release workflow works with the setting on or off, because every release is a draft
+until its files are up. With it on, a mistake in a published release's files is fixed only
+by a new version. A re-run of `publish` then works only while the release is still a draft.
 
 ## Secrets and environments
 
@@ -187,7 +223,8 @@ update key (see [Rotate the update key](#rotate-the-update-key)).
 The `tap` job writes `datlechin/homebrew-tap` for every full release. Within the same run,
 the `publish` job hands the `tap` job the `SHA256SUMS` it made of the files it published.
 The `tap` job fills the version and checksum placeholders in `packaging/pitboard.rb` and
-`packaging/pitboard-app.rb`, taking the checksums from that file.
+`packaging/pitboard-app.rb` with `.github/scripts/fill-template.sh`, taking the checksums
+from that file. The `publish` job fills `install.sh` with the same script.
 
 It never reads the checksums back from the release. Anyone able to change the release
 could change a file and its checksum line together.
@@ -224,10 +261,83 @@ four together:
 
 After the `tap` job, the `brew` job installs from the public tap on a clean macOS runner and
 a clean Linux one. It runs the two `brew install` lines that `README.md`,
-`packaging/tap-README.md`, `docs/install.mdx` and `docs/quickstart.mdx` give, so change all
-four and the job together. It installs the `pitboard` cask on both and checks the version,
+`packaging/tap-README.md` and `docs/install.mdx` give, so change all three and the job
+together. It installs the `pitboard` cask on both and checks the version,
 `pitboard doctor`, the man page and the completions. On macOS, it then installs
 `pitboard-app` in its place and checks that the `pitboard` on `PATH` is the app's.
+
+## The install script
+
+`packaging/install.sh` is a template, with `@VERSION@` and a `@SHA256_<TARGET>@` placeholder
+for each tarball, named as in the casks. After the step "Checksums", the `publish` job fills
+it into `install.sh` with `fill-template.sh`, from the `SHA256SUMS` that step made, and
+checks it with `sh -n`. Then it adds the script's own line to `SHA256SUMS`, attests the
+script and uploads it with the other files. So each release's script installs that
+release's tarballs, checked against checksums taken in the run that published them.
+
+A release's own copy is at
+`https://github.com/datlechin/pitboard/releases/download/v<version>/install.sh`. The line
+for readers is:
+
+```sh
+curl -fsSL https://usepitboard.com/install.sh | sh
+```
+
+`usepitboard.com/install.sh` redirects to
+`https://github.com/datlechin/pitboard/releases/latest/download/install.sh`, the copy in the
+full release GitHub marks `latest`. GitHub never marks a pre-release `latest`, so the line
+never installs one.
+
+### The redirect
+
+The redirect is a Cloudflare Single Redirect rule on the `usepitboard.com` zone. It lives in
+the owner's Cloudflare dashboard, outside this repository. Nothing here deploys it, and no
+workflow holds a Cloudflare token. Whoever can edit the rule picks the script every reader
+of the line runs, so access to that Cloudflare account matters as much as the `release`
+environment.
+
+| Setting | Value |
+| --- | --- |
+| Rule name | `install.sh to latest release` |
+| When incoming requests match | Custom filter expression `(http.host eq "usepitboard.com" and http.request.uri.path eq "/install.sh")` |
+| Then | Static redirect to `https://github.com/datlechin/pitboard/releases/latest/download/install.sh` |
+| Status code | 302 |
+| Preserve query string | Off |
+| Order | First among the Single Redirects |
+
+Cloudflare runs Single Redirects before Page Rules and takes the first redirect that
+matches, so the rule that sends the rest of `usepitboard.com` to the repository stays after
+it. It is a 302 because a client may cache a 301 (RFC 9110, section 15.4.2), and a cached
+one would outlive a change to the rule.
+
+Add the rule before the tag of the first release that carries `install.sh`, because the
+`install-script` job runs the line. Until that release is out, the rule leads to a 404. To
+check it, run this and look for a 302 to the GitHub address:
+
+```sh
+curl -sSI https://usepitboard.com/install.sh | grep -i -E '^HTTP|^location'
+```
+
+### The install-script job
+
+After `publish`, the `install-script` job runs the script on a clean runner for each target:
+`macos-latest`, `macos-15-intel`, `ubuntu-latest` and `ubuntu-24.04-arm`. It runs for a
+pre-release too.
+
+1. It pipes the release's own copy into `sh`, then checks the version, `pitboard doctor`,
+   the man page and the three completion files. The version it looks for is `Cargo.toml`'s,
+   without the tag's suffix.
+2. It runs the copy again, and checks that a new binary was renamed over the old one and
+   that no `.pitboard.*` staging file is left.
+3. On `ubuntu-latest`, it installs in an Alpine container, as a user, with BusyBox `wget`.
+4. For a full release, it waits up to 2 minutes for `usepitboard.com/install.sh` to serve
+   this version, checks that it serves this release's copy over HTTPS alone, then runs that
+   line.
+5. It checks the script's attestation.
+
+It checks out nothing and reads no secret. Where `README.md`, `docs/install.mdx` and
+`docs/quickstart.mdx` give the line, they give the one this job runs, so change them and
+the job together.
 
 ## Rotate the update key
 
@@ -320,7 +430,7 @@ Read on 22 September 2026, against Sparkle 2.10.0.
 - An ad-hoc signed bundle was checked, and its designated requirement is a list of
   cdhashes. A copy installed from an ad-hoc build therefore has no code signing route.
 - `pitboard doctor` exits 3 where Claude Code has never run, which is every clean runner.
-  So the `brew` job accepts 0 and 3, and fails on anything else.
+  So the `brew` and `install-script` jobs accept 0 and 3, and fail on anything else.
 - `cargo cyclonedx` writes a bill of materials beside every `Cargo.toml` in the workspace,
   whatever `--manifest-path` says. The release keeps the one for the crate in each
   artefact and deletes the rest. A target that is not installed still resolves.
@@ -372,3 +482,27 @@ Homebrew 7.0.6. A copy of the tap was tried in each shape it could take.
 - Homebrew 7.0.6 has no `conflicts_with formula:`, only `conflicts_with cask:`.
 - `binary`, `manpage` and the three completion stanzas work on Linux. `zap launchctl:` does
   nothing there.
+
+### The install script and the release
+
+Read or run on 12 October 2026.
+
+- softprops/action-gh-release 3.0.3 (`efb35369`), read in `src/github.ts` and `src/run.ts`,
+  makes a full release as a draft whatever `draft` says, uploads its files, then publishes
+  it. Given `draft: true`, it leaves any release a draft. It makes a pre-release a draft only
+  when given `draft: true`. On a re-run it finds the draft by its tag and keeps it a draft.
+  An upload to a published immutable release fails, with a message that points at
+  `draft: true`.
+- gh 2.101.0's `gh release edit <tag> --draft=false` finds a draft by its tag, through
+  `shared.FetchRelease`, and publishes it. This was read, not run.
+- `fill-template.sh`, given v0.11.0's `SHA256SUMS`, wrote both casks byte for byte as the
+  tap served them at its commit `pitboard 0.11.0` (`c69c7e1`), under macOS `/bin/sh` and
+  under dash. The tap job's inline fill it replaced, run in bash on Ubuntu 24.04, wrote the
+  same files from that `SHA256SUMS` and from a 0.12.0 one with an `install.sh` line.
+- `usepitboard.com/install.sh` answered 302 to the repository, and
+  `releases/latest/download/install.sh` ended in a 404, since no release carried the
+  script. The repository had immutable releases off, and v0.7.0 to v0.11.0 were mutable.
+- On 11 October 2026, `releases/latest/download` skipped a pre-release newer than the full
+  release before it, measured on neovim's `nightly` and `v0.12.6`.
+- v0.7.0-rc1's command line says `pitboard 0.7.0` to `--version`, and its man page says
+  `"pitboard 0.7.0"`: `Cargo.toml`'s version, without the tag's suffix.

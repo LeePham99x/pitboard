@@ -516,6 +516,28 @@ fn to_api(error: crate::provider::ProviderError) -> ApiError {
     }
 }
 
+/// The account filed under `id` asked about now with `document`, past the floor between asks
+/// but not past a wait the service asked for, and its answer recorded as a read records it:
+/// what Pitboard holds of it then, where the service answered. For a warm-up, to see the
+/// period it started.
+pub(crate) fn ask_one(
+    ctx: &Context,
+    permit: Permit,
+    tool: &'static dyn Provider,
+    id: &str,
+    document: &Value,
+    signed_in: bool,
+) -> Option<Snapshot> {
+    let remembered = readings::load(ctx);
+    let (answer, learned) = ask_usage(ctx, tool, id, document, signed_in, remembered.get(id), true);
+    if let Some(learned) = learned {
+        budget::record(ctx, permit, &[learned]);
+    }
+    let answer = answer.ok()?;
+    readings::answered(ctx, permit, &[(id.to_owned(), answer)]);
+    readings::load(ctx).remove(id)
+}
+
 /// Ask about the account filed under `id`, or say why not.
 fn ask_usage(
     ctx: &Context,

@@ -406,6 +406,7 @@ fn an_accounts_own_menu_offers_what_can_be_done_to_it() {
         })
     };
     let offer = |title: &str, intent: Intent| ItemOffer {
+        checked: None,
         title: title.into(),
         intent,
         enabled: true,
@@ -451,6 +452,7 @@ fn an_accounts_own_menu_offers_what_can_be_done_to_it() {
     assert_eq!(
         spare_row.forget,
         Some(ItemOffer {
+            checked: None,
             title: "Forget…".into(),
             intent: Intent::Forget {
                 qualified: "claude/spare".into()
@@ -1994,8 +1996,8 @@ fn notices_come_the_most_pressing_first() {
     );
 }
 
-/// Advice offers the account of the same tool with the most room, as a button that switches
-/// to it by its label with its tool. It names the tool only once two are shown, so a machine
+/// Advice offers an account of the same tool with room, as a button that switches to it by
+/// its label with its tool. It names the tool only once two are shown, so a machine
 /// with one tool reads as it always did.
 ///
 /// PresentationTests.swift's adviceOffersTheAccountWithRoomAndNamesItsToolOnlyBesideAnother.

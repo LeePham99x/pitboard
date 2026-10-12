@@ -8,8 +8,10 @@ You need Claude Code signed in to one of your accounts. If it is not, run `claud
 <Steps>
   <Step title="Install">
     ```sh
-    brew install datlechin/tap/pitboard
+    curl -fsSL https://usepitboard.com/install.sh | sh
     ```
+
+    If it says `~/.local/bin` is not on your `PATH`, do as it says.
 
     Then check that it runs:
 
@@ -17,11 +19,9 @@ You need Claude Code signed in to one of your accounts. If it is not, run `claud
     pitboard --version
     ```
 
-    ```text
-    pitboard 0.10.0
-    ```
+    It prints `pitboard` and its version.
 
-    For the menu bar app, or to install without Homebrew, see [Install Pitboard](/install).
+    For the menu bar app, or to install with Homebrew, see [Install Pitboard](/install).
   </Step>
   <Step title="Enrol the account you are signed in to">
     Pitboard knows each account by a [label](/reference/commands#labels), a short name you choose. Enrol the account in use as `personal`:
