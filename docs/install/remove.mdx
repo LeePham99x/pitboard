@@ -32,6 +32,8 @@ Removing the program alone leaves every parked login on the machine.
     ```sh
     /Applications/Pitboard.app/Contents/Helpers/pitboard uninstall
     ```
+
+    If you installed with the script, run `~/.local/bin/pitboard uninstall`.
   </Step>
 </Steps>
 
@@ -53,11 +55,23 @@ If you set `PITBOARD_HOME`, or `pitboard uninstall` refuses or leaves parked log
 
 | Installed with | To remove it |
 | --- | --- |
+| The install script | Delete the five files it installed. |
 | `pitboard` cask | `brew uninstall --cask pitboard` |
 | `pitboard-app` cask | `brew uninstall --cask pitboard-app` |
 | `cargo binstall` or `cargo install` | `cargo uninstall pitboard` |
 | A release tarball | Delete `pitboard`, and the man page and completion files if you copied them. |
 | The app from a release download | Move `Pitboard.app` to the Trash. |
+
+For the install script:
+
+```sh
+rm ~/.local/bin/pitboard ~/.local/share/man/man1/pitboard.1 \
+  ~/.local/share/bash-completion/completions/pitboard \
+  ~/.local/share/zsh/site-functions/_pitboard \
+  ~/.local/share/fish/vendor_completions.d/pitboard.fish
+```
+
+With `PITBOARD_INSTALL_DIR` set, `pitboard` is in that folder and the rest in the `share` folder beside it.
 
 - `--zap` on either cask also removes a daily renewal schedule that `pitboard uninstall` left.
 - `--zap` on `pitboard-app` also removes the app's files in `~/Library`.

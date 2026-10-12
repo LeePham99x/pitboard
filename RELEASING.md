@@ -244,8 +244,8 @@ four together:
 
 After the `tap` job, the `brew` job installs from the public tap on a clean macOS runner and
 a clean Linux one. It runs the two `brew install` lines that `README.md`,
-`packaging/tap-README.md`, `docs/install.mdx` and `docs/quickstart.mdx` give, so change all
-four and the job together. It installs the `pitboard` cask on both and checks the version,
+`packaging/tap-README.md` and `docs/install.mdx` give, so change all three and the job
+together. It installs the `pitboard` cask on both and checks the version,
 `pitboard doctor`, the man page and the completions. On macOS, it then installs
 `pitboard-app` in its place and checks that the `pitboard` on `PATH` is the app's.
 

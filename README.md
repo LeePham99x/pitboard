@@ -36,13 +36,28 @@ it has not been run with a real signed-in Claude Code or Codex.
 
 ## Install
 
+The command line, on macOS and Linux:
+
+```sh
+curl -fsSL https://usepitboard.com/install.sh | sh
+```
+
+The script puts `pitboard` in `~/.local/bin`, with its man page and completions under
+`~/.local/share`. It installs a download only when it matches the checksum its release
+wrote into the script, and it changes no shell profile.
+[Install Pitboard](https://docs.usepitboard.com/install) has the rest, and
+[Verify a download](https://docs.usepitboard.com/install/verify) says how to check the
+script before you run it.
+
+With Homebrew:
+
 ```sh
 brew install datlechin/tap/pitboard            # the command line, macOS and Linux
 brew install --cask datlechin/tap/pitboard-app # the menu bar app, macOS 14 or later
 ```
 
 The app includes the command line and keeps both up to date, so install one or the other.
-Neither needs Rust. Without Homebrew, use one of these:
+Neither the script nor Homebrew needs Rust. The other ways:
 
 - With [cargo-binstall](https://github.com/cargo-bins/cargo-binstall) installed,
   `cargo binstall pitboard` fetches the release's command line for your machine.
@@ -111,8 +126,8 @@ includes these pages:
 - [Security and privacy](https://docs.usepitboard.com/security)
 - [Troubleshooting](https://docs.usepitboard.com/troubleshooting)
 
-`pitboard --help` lists the commands. After a Homebrew install, `man pitboard` describes
-each one.
+`pitboard --help` lists the commands. After an install with the script or Homebrew,
+`man pitboard` describes each one.
 
 ## Contributing
 

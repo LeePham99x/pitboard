@@ -10,7 +10,8 @@ An attestation is a signed record, kept by GitHub, of the workflow and commit th
 - each command line tarball
 - the app's zip file
 - a CycloneDX bill of materials (`.cdx.json`) beside each tarball and the app
-- `SHA256SUMS`, the checksums of the tarballs and the app
+- `install.sh`, the [install script](/install#install-with-the-script)
+- `SHA256SUMS`, the checksums of the tarballs, the app and `install.sh`
 - `appcast.xml`, the feed the app updates from
 
 A pre-release, tagged like `v0.10.0-rc1`, has no `appcast.xml`.
@@ -64,7 +65,22 @@ Pitboard-v0.10.0-macos.zip: OK
 
 A file that differs prints `FAILED`, and the command exits with status 1.
 
-Homebrew checks the files it installs against the checksums the release workflow took. It refuses one changed on the release page later.
+Homebrew and the install script check what they install against the checksums the release workflow took. Each refuses a download changed on the release page later.
+
+## Check the install script
+
+Piped to `sh`, the script runs unchecked. Its checksums cover the tarball it downloads, not the script. To check the script, download it and check its attestation:
+
+```sh
+curl -fsSLO https://usepitboard.com/install.sh
+gh attestation verify install.sh --repo datlechin/pitboard
+```
+
+After `Verification succeeded!`, run the file you checked:
+
+```sh
+sh install.sh
+```
 
 ## Check the signature on macOS
 

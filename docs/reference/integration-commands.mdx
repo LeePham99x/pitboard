@@ -100,11 +100,23 @@ It writes the script to standard output. With `--json`, it prints no script and 
 
 | Install | Scripts |
 | --- | --- |
+| The install script | `bash-completion/completions/pitboard`, `zsh/site-functions/_pitboard` and `fish/vendor_completions.d/pitboard.fish`, under `~/.local/share` |
 | Either Homebrew cask | `etc/bash_completion.d/pitboard`, `share/zsh/site-functions/_pitboard` and `share/fish/vendor_completions.d/pitboard.fish`, under `$(brew --prefix)` |
 | Release tarball | `completions/pitboard.bash`, `pitboard.zsh` and `pitboard.fish` |
 | The app | The same three files in `Pitboard.app/Contents/Resources/completions/` |
 
 No release includes the elvish or PowerShell script.
+
+bash-completion 2.2 or later and fish 4 load the install script's files from those folders. zsh loads its file once `~/.zshrc` has these lines:
+
+```sh
+fpath=(~/.local/share/zsh/site-functions $fpath)
+autoload -Uz compinit && compinit
+```
+
+Where `~/.zshrc` already runs `compinit`, add only the first line, before it.
+
+zsh 5.9 on macOS 27 and on Debian 13 does not have that folder on its `fpath`, as measured on 12 October 2026.
 
 zsh loads `_pitboard` from any folder on its `fpath`:
 
@@ -113,7 +125,7 @@ mkdir -p ~/.zfunc
 pitboard completions zsh > ~/.zfunc/_pitboard
 ```
 
-Then add `fpath=(~/.zfunc $fpath)` to `~/.zshrc`, before `compinit` runs.
+Then add the same two lines to `~/.zshrc`, with `~/.zfunc` as the folder.
 
 ## `manpage`
 
@@ -129,9 +141,12 @@ It is one page, with the sections `NAME`, `SYNOPSIS`, `DESCRIPTION`, `OPTIONS`, 
 
 | Install | Man page |
 | --- | --- |
+| The install script | `~/.local/share/man/man1/pitboard.1` |
 | Either Homebrew cask | `share/man/man1/pitboard.1`, under `$(brew --prefix)` |
 | Release tarball | `pitboard.1` |
 | The app | `Pitboard.app/Contents/Resources/man/pitboard.1` |
+
+`man` finds the install script's page while `~/.local/bin` is on your `PATH`, on macOS and with man-db.
 
 To read it without installing it:
 
