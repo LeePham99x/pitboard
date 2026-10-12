@@ -117,7 +117,8 @@ final class PanesAndSettingsTests: XCTestCase {
 
         // The model answers once the core has kept it, so the switch is waited for.
         work.click()
-        let on = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == 1"), object: work)
+        let on = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == 1"), object: work)
         XCTAssertEqual(XCTWaiter.wait(for: [on], timeout: 5), .completed)
     }
 
