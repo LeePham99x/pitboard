@@ -35,6 +35,9 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - `pitboard repair` and `pitboard adopt` say when they set aside a Claude Desktop folder,
   and `pitboard uninstall` how many such folders it deleted. `--json` gives them as
   `set_aside`, and as `set_aside_removed` for `uninstall`.
+- The conformance check reads Claude Desktop's facts out of Claude's `app.asar` with
+  `--provider desktop`. No job runs it: a person runs it by hand on an installed copy. On
+  2.7032.0 every fact that names a literal holds.
 
 ### Changed
 

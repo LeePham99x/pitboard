@@ -1,32 +1,3 @@
-//! Check what Pitboard believes about a coding tool against a build of that tool.
-//!
-//! Every load-bearing fact in Pitboard was read out of one build and lives in
-//! [`pitboard_core::assumptions`] with the literals it is readable by. This reads those
-//! literals out of a binary and says which ones are still there.
-//!
-//! What it is: a cheap, shallow drift alarm. A literal being present does not prove the
-//! behaviour around it is unchanged, and this never says it does. A literal disappearing
-//! does prove something moved, which is the only thing worth waking somebody for.
-//!
-//! What it is not: a test of Pitboard against a running Claude Code. That needs a real
-//! sign-in and a real keychain and cannot run unattended.
-//!
-//! A build is for one system, and a tool's builds for different systems carry different
-//! code: Claude Code's Linux build has no keychain code at all. So the system is read from
-//! the binary's own header, ELF, Mach-O or PE, and a fact is read only from the builds its
-//! register's table reads it on. Before that, a Linux build reported both keychain facts
-//! gone and a keyring arrived, on every build from 2.1.278 on, while the macOS build missed
-//! the one real change in 2.1.281. A fact not read on a build's system is listed with the
-//! reason, or with the pull request of the Windows work that reads it there.
-//!
-//! ```text
-//! pitboard-conformance <path to a binary> [--provider claude|codex] [--json]
-//! ```
-//!
-//! Each tool has its own register, and a build of one tool says nothing about another's
-//! facts, so a run checks one tool's build against that tool's register. Claude Code is
-//! the default, which is what every run before there was a second tool meant.
-
 use pitboard_core::assumptions::{self, Assumption, OnSystem, Platform, Reading};
 use pitboard_core::provider::ProviderId;
 use std::fmt::Write as _;
@@ -39,7 +10,7 @@ fn main() -> ExitCode {
         Err(problem) => {
             eprintln!("{problem}");
             eprintln!(
-                "usage: pitboard-conformance <path to a binary> [--provider {}] [--json]",
+                "usage: pitboard-conformance <path to a build> [--provider {}] [--json]",
                 known().join("|")
             );
             return ExitCode::from(2);
@@ -53,12 +24,12 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let Some(platform) = platform_of(&bytes) else {
-        eprintln!(
-            "{path} is not an ELF, a Mach-O, or an x64 or ARM64 PE binary, so its system is \
-             unknown"
-        );
-        return ExitCode::from(2);
+    let platform = match platform_of(&bytes, provider) {
+        Ok(platform) => platform,
+        Err(refused) => {
+            eprintln!("{}", refused.said(&path, provider));
+            return ExitCode::from(2);
+        }
     };
     let strings = assumptions::printable_runs(&bytes, 6);
     let sorted = Sorted::of(provider, platform, &strings);
@@ -237,20 +208,41 @@ fn text_report(path: &str, provider: ProviderId, platform: Platform, sorted: &So
     out
 }
 
-/// The system a binary is built for, from its header: an ELF binary is taken for Linux, a
-/// Mach-O one, thin or universal, for macOS, and a PE one for x64 or ARM64 for Windows.
-/// The tools Pitboard reads ship no other kind, and anything else is refused rather than
-/// guessed at.
-fn platform_of(bytes: &[u8]) -> Option<Platform> {
-    match bytes.get(..4)? {
-        [0x7f, b'E', b'L', b'F'] => Some(Platform::Linux),
+fn platform_of(bytes: &[u8], provider: ProviderId) -> Result<Platform, Refused> {
+    match bytes.get(..4).ok_or(Refused::Unknown)? {
+        [0x7f, b'E', b'L', b'F'] => Ok(Platform::Linux),
         [0xcf, 0xfa, 0xed, 0xfe]
         | [0xce, 0xfa, 0xed, 0xfe]
         | [0xfe, 0xed, 0xfa, 0xcf]
         | [0xfe, 0xed, 0xfa, 0xce]
-        | [0xca, 0xfe, 0xba, 0xbe] => Some(Platform::MacOs),
-        [b'M', b'Z', ..] => windows_machine(bytes),
-        _ => None,
+        | [0xca, 0xfe, 0xba, 0xbe] => Ok(Platform::MacOs),
+        [b'M', b'Z', ..] => windows_machine(bytes).ok_or(Refused::Unknown),
+        // Electron's asar: a pickle holding the index's size, then the JSON index at byte 16.
+        [4, 0, 0, 0] if bytes.get(16..24) == Some(b"{\"files\"".as_slice()) => {
+            assumptions::archive_platform(provider).ok_or(Refused::Archive)
+        }
+        _ => Err(Refused::Unknown),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Refused {
+    Archive,
+    Unknown,
+}
+
+impl Refused {
+    fn said(self, path: &str, provider: ProviderId) -> String {
+        match self {
+            Refused::Archive => format!(
+                "{path} is an Electron app's archive, which {}'s register reads on no system",
+                provider.name()
+            ),
+            Refused::Unknown => format!(
+                "{path} is not an ELF, a Mach-O, an x64 or ARM64 PE binary or an Electron app's \
+                 archive, so its system is unknown"
+            ),
+        }
     }
 }
 
@@ -282,6 +274,7 @@ fn known() -> Vec<&'static str> {
 /// build.
 fn parse(args: &[String]) -> Result<(String, ProviderId, bool), String> {
     let mut path = None;
+    // what every run meant before there was a second tool
     let mut provider = ProviderId::Claude;
     let mut as_json = false;
     let mut rest = args.iter();
@@ -310,11 +303,12 @@ mod tests {
     /// wrong list of facts. Headers as the 2.1.284 packages have them.
     #[test]
     fn the_system_is_read_from_the_binary() {
-        assert_eq!(platform_of(b"\x7fELF\x02\x01"), Some(Platform::Linux));
-        assert_eq!(platform_of(b"\xcf\xfa\xed\xfe\x0c"), Some(Platform::MacOs));
-        assert_eq!(platform_of(b"\xca\xfe\xba\xbe"), Some(Platform::MacOs));
-        assert_eq!(platform_of(b"#!/bin/sh"), None);
-        assert_eq!(platform_of(b"\x7fE"), None);
+        let system = |bytes: &[u8]| platform_of(bytes, ProviderId::Claude);
+        assert_eq!(system(b"\x7fELF\x02\x01"), Ok(Platform::Linux));
+        assert_eq!(system(b"\xcf\xfa\xed\xfe\x0c"), Ok(Platform::MacOs));
+        assert_eq!(system(b"\xca\xfe\xba\xbe"), Ok(Platform::MacOs));
+        assert_eq!(system(b"#!/bin/sh"), Err(Refused::Unknown));
+        assert_eq!(system(b"\x7fE"), Err(Refused::Unknown));
     }
 
     /// A PE header: `MZ`, the signature's offset at 0x3C, then the signature and the
@@ -335,43 +329,132 @@ mod tests {
     /// says where, and another place is followed as well.
     #[test]
     fn a_windows_build_is_read_from_its_pe_header() {
-        assert_eq!(
-            platform_of(&pe(0x78, b"PE\0\0", 0x8664)),
-            Some(Platform::Windows)
-        );
-        assert_eq!(
-            platform_of(&pe(0x78, b"PE\0\0", 0xaa64)),
-            Some(Platform::Windows)
-        );
-        assert_eq!(
-            platform_of(&pe(0x118, b"PE\0\0", 0xaa64)),
-            Some(Platform::Windows)
-        );
+        let system = |bytes: &[u8]| platform_of(bytes, ProviderId::Claude);
+        assert_eq!(system(&pe(0x78, b"PE\0\0", 0x8664)), Ok(Platform::Windows));
+        assert_eq!(system(&pe(0x78, b"PE\0\0", 0xaa64)), Ok(Platform::Windows));
+        assert_eq!(system(&pe(0x118, b"PE\0\0", 0xaa64)), Ok(Platform::Windows));
     }
 
     /// Anything that is not quite a PE header for one of the two machines is unknown, never
     /// taken for Windows on its first two bytes.
     #[test]
     fn what_is_not_an_x64_or_arm64_pe_binary_is_unknown() {
+        let unknown =
+            |bytes: &[u8]| platform_of(bytes, ProviderId::Claude) == Err(Refused::Unknown);
         // A DOS program: `MZ`, and no signature at the offset its header gives.
         let mut dos = vec![0u8; 0x80];
         dos[..2].copy_from_slice(b"MZ");
-        assert_eq!(platform_of(&dos), None);
+        assert!(unknown(&dos));
         // Something else where the signature should be.
-        assert_eq!(platform_of(&pe(0x80, b"NE\0\0", 0x8664)), None);
+        assert!(unknown(&pe(0x80, b"NE\0\0", 0x8664)));
         // Cut short: before the offset, inside the signature, and inside the machine.
-        assert_eq!(platform_of(b"MZ\x90\x00"), None);
-        assert_eq!(platform_of(&pe(0x80, b"PE\0\0", 0x8664)[..0x82]), None);
-        assert_eq!(platform_of(&pe(0x80, b"PE\0\0", 0x8664)[..0x85]), None);
+        assert!(unknown(b"MZ\x90\x00"));
+        assert!(unknown(&pe(0x80, b"PE\0\0", 0x8664)[..0x82]));
+        assert!(unknown(&pe(0x80, b"PE\0\0", 0x8664)[..0x85]));
         // An offset past the end, and one at the very top of the range.
         let mut far = pe(0x80, b"PE\0\0", 0x8664);
         far[0x3c..0x40].copy_from_slice(&0x1000u32.to_le_bytes());
-        assert_eq!(platform_of(&far), None);
+        assert!(unknown(&far));
         far[0x3c..0x40].copy_from_slice(&u32::MAX.to_le_bytes());
-        assert_eq!(platform_of(&far), None);
+        assert!(unknown(&far));
         // 32-bit x86 and 32-bit ARM, which neither tool ships.
-        assert_eq!(platform_of(&pe(0x80, b"PE\0\0", 0x014c)), None);
-        assert_eq!(platform_of(&pe(0x80, b"PE\0\0", 0x01c4)), None);
+        assert!(unknown(&pe(0x80, b"PE\0\0", 0x014c)));
+        assert!(unknown(&pe(0x80, b"PE\0\0", 0x01c4)));
+    }
+
+    // As Electron writes one: the index's size, the JSON index at byte 16, then the files as is.
+    fn asar(files: &[(&str, &str)]) -> Vec<u8> {
+        let mut offset = 0;
+        let mut index = serde_json::Map::new();
+        for (name, body) in files {
+            index.insert(
+                (*name).to_owned(),
+                serde_json::json!({ "size": body.len(), "offset": offset.to_string() }),
+            );
+            offset += body.len();
+        }
+        let index = serde_json::json!({ "files": index }).to_string();
+        let padded = index.len().next_multiple_of(4);
+        let payload = u32::try_from(4 + padded).expect("a small index");
+        let mut bytes = Vec::new();
+        bytes.extend(4u32.to_le_bytes());
+        bytes.extend((payload + 4).to_le_bytes());
+        bytes.extend(payload.to_le_bytes());
+        bytes.extend(
+            u32::try_from(index.len())
+                .expect("a small index")
+                .to_le_bytes(),
+        );
+        bytes.extend(index.as_bytes());
+        bytes.resize(16 + padded, 0);
+        for (_, body) in files {
+            bytes.extend(body.as_bytes());
+        }
+        bytes
+    }
+
+    #[test]
+    fn an_electron_archive_is_read_for_the_tool_whose_register_reads_one() {
+        let probes = every_probe(ProviderId::Desktop, Platform::MacOs);
+        let archive = asar(&[("package.json", "{}"), (".vite/build/index.js", &probes)]);
+        assert_eq!(
+            platform_of(&archive, ProviderId::Desktop),
+            Ok(Platform::MacOs)
+        );
+        let strings = assumptions::printable_runs(&archive, 6);
+        let sorted = Sorted::of(ProviderId::Desktop, Platform::MacOs, &strings);
+        assert!(sorted.moved().is_empty(), "{:?}", names(&sorted.readings));
+
+        // A pickle's first word with no index at byte 16 is no archive.
+        let unknown =
+            |bytes: &[u8]| platform_of(bytes, ProviderId::Desktop) == Err(Refused::Unknown);
+        assert!(unknown(&archive[..20]));
+        assert!(unknown(b"\x04\x00\x00\x00"));
+        let mut other = archive.clone();
+        other[16..24].copy_from_slice(b"{\"links\"");
+        assert!(unknown(&other));
+        let mut other = archive;
+        other[0] = 8;
+        assert!(unknown(&other));
+    }
+
+    #[test]
+    fn an_electron_archive_for_a_tool_that_ships_binaries_is_refused() {
+        let archive = asar(&[("index.js", "")]);
+        for provider in [ProviderId::Claude, ProviderId::Codex] {
+            assert_eq!(
+                platform_of(&archive, provider),
+                Err(Refused::Archive),
+                "{provider:?}"
+            );
+        }
+        assert_eq!(
+            Refused::Archive.said("app.asar", ProviderId::Codex),
+            "app.asar is an Electron app's archive, which Codex's register reads on no system"
+        );
+        assert_eq!(
+            Refused::Unknown.said("app.asar", ProviderId::Desktop),
+            "app.asar is not an ELF, a Mach-O, an x64 or ARM64 PE binary or an Electron app's \
+             archive, so its system is unknown"
+        );
+    }
+
+    #[test]
+    fn every_desktop_fact_is_read_on_macos_alone() {
+        assert_eq!(
+            assumptions::archive_platform(ProviderId::Desktop),
+            Some(Platform::MacOs)
+        );
+        for a in assumptions::of(ProviderId::Desktop) {
+            assert_eq!(
+                assumptions::read_on(ProviderId::Desktop, a.name),
+                [Platform::MacOs],
+                "{}",
+                a.name
+            );
+        }
+        let sorted = Sorted::of(ProviderId::Desktop, Platform::MacOs, "");
+        assert!(sorted.not_read.is_empty() && sorted.pending.is_empty());
     }
 
     const SYSTEMS: [Platform; 3] = [Platform::MacOs, Platform::Linux, Platform::Windows];
@@ -557,6 +640,10 @@ mod tests {
         assert_eq!(
             parse(&args("/b")).unwrap(),
             ("/b".into(), ProviderId::Claude, false)
+        );
+        assert_eq!(
+            parse(&args("--provider desktop /a/app.asar")).unwrap(),
+            ("/a/app.asar".into(), ProviderId::Desktop, false)
         );
     }
 

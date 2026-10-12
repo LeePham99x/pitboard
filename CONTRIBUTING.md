@@ -419,21 +419,29 @@ cargo run -p pitboard-conformance -- <codex binary> --provider codex
 
 Add `--json` for a report a program can read. The checker exits 1 when a fact has moved: a
 literal it needs is gone, or one it rules out has turned up. It exits 2 when it cannot make
-sense of its arguments or read the binary.
+sense of its arguments, read the file or tell its system.
 
-Point it at the tool's native binary, not the npm wrapper, which carries no binary. The
-checker reads the binary's header to tell a macOS, Linux or Windows build apart, and reads
-each fact only from the systems its line in the register's `PER_SYSTEM` table reads it on.
-Claude Code's Linux and Windows builds have no keychain backend, so the keychain facts are
-read from its macOS build alone. `.github/workflows/conformance.yml` takes Claude Code's
-builds from the packages `@anthropic-ai/claude-code-<system>`, and Codex's from `vendor/`
-in `@openai/codex@<version>-<system>`, for `linux-x64`, `darwin-arm64`, `win32-x64` and
-`win32-arm64`.
+Point it at Claude Code's or Codex's native binary, not the npm wrapper, which carries no
+binary. The checker reads the binary's header to tell a macOS, Linux or Windows build
+apart, and reads each fact only from the systems its line in the register's `PER_SYSTEM`
+table reads it on. Claude Code's Linux and Windows builds have no keychain backend, so the
+keychain facts are read from its macOS build alone. `.github/workflows/conformance.yml`
+takes Claude Code's builds from the packages `@anthropic-ai/claude-code-<system>`, and
+Codex's from `vendor/` in `@openai/codex@<version>-<system>`, for `linux-x64`,
+`darwin-arm64`, `win32-x64` and `win32-arm64`.
 
 Claude Desktop's register, `provider/desktop/assumptions.rs`, was read by hand from two
 builds: 2.19675.0, which the experiments ran, and 2.7032.0, whose `app.asar` was read and
-never run. Each entry says which. No conformance job reads it: the checker reads no
-archive yet.
+never run. Each entry says which. No conformance job reads it, since where Claude's builds
+are published is not recorded. Run the checker by hand on a Mac where Claude is installed.
+It reads Claude's bundle, not its data folder, and does not open Claude:
+
+```sh
+cargo run -p pitboard-conformance -- /Applications/Claude.app/Contents/Resources/app.asar --provider desktop
+```
+
+An app's `app.asar` has no system of its own: Claude Desktop's is read for macOS, where its
+register reads every fact.
 
 To add a fact, add an `Assumption` to the tool's register:
 

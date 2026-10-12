@@ -528,8 +528,8 @@ pages load, as a browser would.
 - `.github/`:
   - `workflows/ci.yml` checks every push to `main` and every pull request, and
     `workflows/release.yml` turns a `v` tag into a release.
-  - `workflows/conformance.yml` checks each tool's newest builds, one for each system,
-    against its register.
+  - `workflows/conformance.yml` checks Claude Code's and Codex's newest builds, one for each
+    system, against their registers.
   - `workflows/sparkle.yml` opens an issue when Sparkle has a release newer than the one
     `apps/macos/project.yml` pins, because Dependabot cannot read that pin.
   - `actions/xcodegen` puts the pinned XcodeGen on `PATH` for every job that builds the
@@ -1280,8 +1280,8 @@ pages load, as a browser would.
   version, as in 0.3.0, and after 1.0 a new major version.
 - Pitboard and each tool meet at the tool's register. What Pitboard relies on about a tool
   is written there, with the systems each fact was read on, and the conformance run checks
-  it against the tool's newest builds twice a week. No run checks Claude Desktop's
-  register: the checker reads no archive yet.
+  it against the tool's newest builds twice a week, except Claude Desktop's, which a person
+  runs by hand on an installed copy until a source of its builds is recorded.
 - Pitboard and each service meet at a few requests. The list, with what each request
   carries, is in
   [What leaves your machine](https://docs.usepitboard.com/security#what-leaves-your-machine).
@@ -1420,9 +1420,12 @@ such as `credman_target` beside the keychain's `credential_service_name`. It is 
 second reading under the first fact's name.
 
 `pitboard-conformance` tells a build's system by its header: ELF for Linux, Mach-O for
-macOS, and PE for Windows, for x64 and ARM64 only. It refuses any other file. It reports
-which facts can still be read from the build, which have moved, which name nothing to look
-for, which it skipped and why, and which wait on the Windows work.
+macOS, and PE for Windows, for x64 and ARM64 only. A tool shipped as an Electron app is read
+from its `app.asar`, whose files are stored uncompressed, for the system its register names
+in `assumptions::archive_platform`. The checker refuses any other file, and an archive whose
+tool's register names no system. It reports which facts can still be read from the build,
+which have moved, which name nothing to look for, which it skipped and why, and which wait
+on the Windows work.
 
 The check is shallow on purpose. A literal being present does not prove the behaviour around
 it is unchanged. A literal disappearing, or a ruled-out one appearing, does prove something
@@ -1465,9 +1468,13 @@ fact is read on macOS alone: on Linux the file is Claude Code's only store, and 
 it is too unless Credential Manager is turned on, which W22 reads. The checker finds every
 fact each build was read for.
 
-`.github/workflows/conformance.yml` checks the newest builds of each tool against its
-register on Mondays and Thursdays, or a version given by hand. It reads four builds of each
-tool, `linux-x64`, `darwin-arm64`, `win32-x64` and `win32-arm64`, all on Linux. Its most
+On 12 October 2026 the checker was run by hand on the `app.asar` of Claude Desktop 2.7032.0,
+installed on a Mac, and Claude was not run. The 19 facts that name literals hold, and the
+other six are about behaviour.
+
+`.github/workflows/conformance.yml` checks the newest builds of Claude Code and Codex against
+their registers on Mondays and Thursdays, or a version given by hand. It reads four builds of
+each, `linux-x64`, `darwin-arm64`, `win32-x64` and `win32-arm64`, all on Linux. Its most
 recent run says which facts can still be read from each build it checked, and which have
 moved.
 

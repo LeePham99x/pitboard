@@ -221,6 +221,15 @@ pub fn verified_against(provider: ProviderId, platform: Platform) -> &'static st
     }
 }
 
+// An app.asar names no system: it is read for the one its tool's register reads every fact on.
+pub fn archive_platform(provider: ProviderId) -> Option<Platform> {
+    match provider {
+        ProviderId::Claude => None,
+        ProviderId::Codex => None,
+        ProviderId::Desktop => Some(Platform::MacOs),
+    }
+}
+
 /// Every provider's register, in one list.
 ///
 /// A provider whose register is missing from here is one nothing checks, and nothing would
