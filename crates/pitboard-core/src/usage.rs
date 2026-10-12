@@ -269,6 +269,9 @@ pub struct Room {
     pub used: Option<f64>,
     /// Of the fullest of its other limits.
     pub fullest: f64,
+    /// Whether it has a weekly limit for all models, which keeps what it leaves unused in five
+    /// hours for later in the week. A reading that may leave limits out counts as having one.
+    pub weekly: bool,
 }
 
 /// The room an account whose reading holds `theirs` has for a switch away from `limit` of
@@ -294,12 +297,12 @@ pub fn room(
         return None;
     }
     let given = |had: &Window| theirs.iter().find(|window| window.same_limit(had));
+    let gives = |kind: &str| {
+        theirs
+            .iter()
+            .any(|window| window.scope.is_none() && limit_name(&window.kind) == kind)
+    };
     if !lists_every_limit {
-        let gives = |kind: &str| {
-            theirs
-                .iter()
-                .any(|window| window.scope.is_none() && limit_name(&window.kind) == kind)
-        };
         let overall = gives("session") && gives("weekly_all");
         let unknown = |had: &Window| {
             given(had).is_none() && !(overall && had.scope.is_some() && !had.same_limit(limit))
@@ -316,16 +319,19 @@ pub fn room(
     Some(Room {
         used: given(limit).map(|window| window.used(now)),
         fullest,
+        weekly: !lists_every_limit || gives("weekly_all"),
     })
 }
 
-/// The candidate with the most room: the least used of the limit, one without it as one with
-/// none used, then the least full in its others. The first of those alike.
-pub fn roomiest<T>(candidates: impl IntoIterator<Item = (T, Room)>) -> Option<(T, Room)> {
+/// The candidate to switch to. One without a weekly limit for all models comes first, since
+/// what it leaves unused in five hours is lost at the reset. Then the least used of the
+/// limit, one without it as one with none used, then the least full in its others. The first
+/// of those alike.
+pub fn preferred<T>(candidates: impl IntoIterator<Item = (T, Room)>) -> Option<(T, Room)> {
     candidates.into_iter().min_by(|(_, a), (_, b)| {
-        a.used
-            .unwrap_or(0.0)
-            .total_cmp(&b.used.unwrap_or(0.0))
+        a.weekly
+            .cmp(&b.weekly)
+            .then_with(|| a.used.unwrap_or(0.0).total_cmp(&b.used.unwrap_or(0.0)))
             .then_with(|| a.fullest.total_cmp(&b.fullest))
     })
 }

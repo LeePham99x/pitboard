@@ -188,8 +188,11 @@ pages load, as a browser would.
     `usage::room`, which the app's advice asks at 100. A limit a reading that lists every
     limit leaves out is one the account does not have. Any other reading leaves no room
     unless it gives every limit of the account in use, except a model's limit other than the
-    one at the share where it gives the five-hour and weekly limits. `usage::roomiest` picks
-    the account with the most room in that limit, then the least full in its others. Below
+    one at the share where it gives the five-hour and weekly limits. `usage::preferred` puts
+    an account without a weekly limit for all models first, since what it leaves unused in
+    five hours is lost at the reset, and counts a reading that may leave limits out as one
+    with it. Among those alike it takes the most room in that limit, then the least full in
+    its others. Below
     the share it is `Below`, with the fullest limit still running. A limit at the share not
     switched away from is a `Hold` with its `Skip`: no room, naming the accounts it could go
     to that Anthropic gave no reading of, the limit already left, the attempts spent, the
