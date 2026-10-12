@@ -278,6 +278,38 @@ impl Warning {
             Warning::ReadOnly { .. } | Warning::ReadOnlyBelowTheFloor { .. } => "read_only",
         }
     }
+
+    pub fn tool(&self) -> Option<ProviderId> {
+        match self {
+            Warning::ParkedLoginRefused { tool, .. }
+            | Warning::LockCompromised { tool }
+            | Warning::AuthOverridden { tool, .. }
+            | Warning::FallbackLogin { tool, .. }
+            | Warning::WrittenOnTheCommandLine { tool, .. }
+            | Warning::SessionsUnknown { tool, .. }
+            | Warning::SessionsUnknownAfterSignIn { tool, .. }
+            | Warning::SignInParkedNotInUse { tool, .. }
+            | Warning::LoginReplaced { tool, .. }
+            | Warning::InUseUnconfirmed { tool, .. }
+            | Warning::ConfigNamesAnother { tool, .. }
+            | Warning::TakenAsNamed { tool, .. }
+            | Warning::SetAside { tool, .. }
+            | Warning::LooksSignedOut { tool, .. }
+            | Warning::MoveWaiting { tool, .. }
+            | Warning::SignInAwaited { tool, .. }
+            | Warning::ItemGone { tool, .. } => Some(*tool),
+            Warning::MoveSettled(moved) => Some(moved.tool),
+            Warning::Recovered(_)
+            | Warning::ConfigNotUpdated(_)
+            | Warning::ParksPendingRemoval(_)
+            | Warning::RenewalFailed(_)
+            | Warning::SessionsStillRunning { .. }
+            | Warning::SessionsKeepTheOldLogin { .. }
+            | Warning::SwitchStuck(_)
+            | Warning::ReadOnly { .. }
+            | Warning::ReadOnlyBelowTheFloor { .. } => None,
+        }
+    }
 }
 
 impl fmt::Display for Warning {

@@ -4,11 +4,11 @@
 //! alert.
 
 use super::words;
-use super::{Question, Seen, SheetText, SheetTool, SigningInText, StowText, alert_of};
+use super::{Choice, Question, Seen, SheetText, SheetTool, SigningInText, StowText, alert_of};
 use crate::Tool;
 use crate::account_windows::AlertText;
-use crate::model::state::{Leftover, trimmed};
-use crate::model::{Failure, QuitQuestion, Sheet};
+use crate::model::state::{After, InAppAdd, Leftover, Recording, in_its_app, split, trimmed};
+use crate::model::{Failure, Intent, QuitQuestion, Sheet};
 use pitboard_core::switch::Foreseen;
 use pitboard_core::words as said;
 
@@ -83,8 +83,146 @@ pub(crate) fn not_offered(seen: &Seen, addable: &[Tool]) -> Option<String> {
         return None;
     }
     let names: Vec<&str> = missing.iter().map(|tool| tool.name.as_str()).collect();
-    let programs: Vec<&str> = missing.iter().map(|tool| tool.program.as_str()).collect();
+    // A tool that signs in inside its app is found by its data folder, not by a program.
+    let programs: Vec<String> = missing
+        .iter()
+        .map(|tool| {
+            if in_its_app(&tool.code) {
+                format!("{}’s data folder", tool.program)
+            } else {
+                tool.program.clone()
+            }
+        })
+        .collect();
+    let programs: Vec<&str> = programs.iter().map(String::as_str).collect();
     Some(words::not_offered(seen.os, &names, &programs))
+}
+
+fn nothing_to_park(seen: &Seen, provider: &str) -> bool {
+    seen.in_use_of(provider).is_none()
+        || seen.state.warnings.iter().any(|warning| {
+            warning.code == "looks_signed_out" && warning.provider.as_deref() == Some(provider)
+        })
+        || seen.state.refused_by(provider) == Some("live_credential_absent")
+}
+
+// The message and the default button of the form for a tool that signs in inside its app.
+fn in_app_form(seen: &Seen, sheet: &Sheet, provider: &str) -> (String, String) {
+    let app = seen.program_of(provider);
+    let park = seen
+        .in_use_of(provider)
+        .filter(|_| !nothing_to_park(seen, provider));
+    let awaiting = seen.state.status.as_ref().and_then(|status| {
+        status
+            .awaiting
+            .iter()
+            .find(|awaiting| awaiting.provider == provider)
+    });
+    let current = seen.state.in_app_add(provider) == InAppAdd::Current;
+    let first = !seen
+        .accounts()
+        .iter()
+        .any(|account| account.provider == provider);
+    match sheet {
+        Sheet::SignInAgain { label, .. } if current => (
+            format!(
+                "Open {app} and check that it shows {label}, then quit it. Pitboard records the \
+                 account {app} is signed in to as {label}’s login."
+            ),
+            format!("Record as {label}"),
+        ),
+        Sheet::SignInAgain { label, .. } => match park {
+            Some(work) if work == label => (
+                format!(
+                    "Pitboard parks {label}’s login as it is, which leaves {app} signed out and \
+                     signs nothing out at claude.ai. Then you sign in to {label} again in {app}, \
+                     and Pitboard records it once {app} quits."
+                ),
+                format!("Park {label}"),
+            ),
+            Some(work) => (
+                format!(
+                    "Pitboard parks {work}, which leaves {app} signed out and signs nothing out \
+                     at claude.ai. Then you sign in to {label} again in {app}, and Pitboard \
+                     records it once {app} quits."
+                ),
+                format!("Park {work}"),
+            ),
+            None => (
+                format!(
+                    "{app} is signed out. Pitboard waits while you sign in to {label} in {app}, \
+                     and records it once {app} quits."
+                ),
+                "Start Sign-In".into(),
+            ),
+        },
+        _ if current && first => (
+            format!(
+                "Pitboard records the account {app} is signed in to under this name. Check which \
+                 account {app} shows first: Pitboard can’t ask claude.ai whose it is."
+            ),
+            "Add Account".into(),
+        ),
+        _ if current => match awaiting {
+            Some(awaiting) => (
+                format!(
+                    "{app} is signed out so you can sign in to the account you’re adding, and \
+                     {} is parked. Sign in to it in {app} and quit {app}, then add it here.",
+                    split(&awaiting.put_back).1
+                ),
+                format!("Add the Account {app} Shows"),
+            ),
+            None => (
+                format!(
+                    "Pitboard can’t identify the login {app} holds. Open {app}, check which \
+                     account it shows, and quit it. Pitboard records that account under this \
+                     name: one you added, or a new one."
+                ),
+                format!("Add the Account {app} Shows"),
+            ),
+        },
+        _ => match park {
+            Some(work) => (
+                format!(
+                    "Pitboard parks {work}, which leaves {app} signed out and signs nothing out \
+                     at claude.ai. Then you sign in to the other account in {app}, and Pitboard \
+                     adds it once {app} quits."
+                ),
+                format!("Park {work}"),
+            ),
+            None => (
+                format!(
+                    "{app} is signed out. Pitboard waits while you sign in to the account you’re \
+                     adding in {app}, and adds it once {app} quits."
+                ),
+                "Start Sign-In".into(),
+            ),
+        },
+    }
+}
+
+// A tool the sheet's picker offers, with what the sheet says and its button does once picked.
+fn sheet_tool(seen: &Seen, sheet: &Sheet, tool: &Tool) -> SheetTool {
+    let (message, confirm) = if in_its_app(&tool.code) {
+        in_app_form(seen, sheet, &tool.code)
+    } else {
+        (sign_in_message(&tool.name, None), "Sign In".into())
+    };
+    SheetTool {
+        code: tool.code.clone(),
+        name: tool.name.clone(),
+        message,
+        confirm,
+    }
+}
+
+// What the sheet says under its fields while it records the account an app shows.
+fn progress(seen: &Seen, tool: &str) -> Option<String> {
+    let app = seen.program_of(tool);
+    Some(match seen.state.recording()? {
+        Recording::Quitting => format!("Quitting {app}…"),
+        Recording::Reading => format!("Reading {app}’s account…"),
+    })
 }
 
 /// What the sheet over the main window says, while one is up that names an account. The
@@ -95,42 +233,73 @@ pub(crate) fn sheet_text(seen: &Seen) -> Option<SheetText> {
     let addable = seen.addable();
     let tool = starts_on(sheet, &addable);
     let saving = state.saving.contains(sheet);
+    let progress = progress(seen, &tool);
     let text = match sheet {
-        Sheet::Add { .. } => SheetText {
-            title: "Add Account".into(),
-            message: sign_in_message(&seen.tool_name(&tool), None),
-            tools: if addable.len() > 1 {
-                addable
-                    .iter()
-                    .map(|offered| SheetTool {
-                        code: offered.code.clone(),
-                        name: offered.name.clone(),
-                        message: sign_in_message(&offered.name, None),
-                    })
-                    .collect()
+        Sheet::Add { .. } => {
+            let (message, confirm) = if in_its_app(&tool) {
+                in_app_form(seen, sheet, &tool)
             } else {
-                Vec::new()
-            },
-            tool,
-            account: None,
-            name: String::new(),
-            prompt: "work".into(),
-            not_offered: not_offered(seen, &addable),
-            confirm: "Sign In".into(),
-            saving,
-        },
-        Sheet::SignInAgain { label, .. } => SheetText {
-            title: format!("Sign In to {label} Again"),
-            message: sign_in_message(&seen.tool_name(&tool), Some(label)),
-            tools: Vec::new(),
-            tool,
-            account: Some(label.clone()),
-            name: label.clone(),
-            prompt: "work".into(),
-            not_offered: None,
-            confirm: "Sign In".into(),
-            saving,
-        },
+                (
+                    sign_in_message(&seen.tool_name(&tool), None),
+                    "Sign In".into(),
+                )
+            };
+            // An add left halfway is finished under the name it was started with.
+            let name = state
+                .status
+                .as_ref()
+                .and_then(|status| {
+                    status
+                        .awaiting
+                        .iter()
+                        .find(|awaiting| awaiting.provider == tool && !awaiting.again)
+                })
+                .map(|awaiting| awaiting.label.clone())
+                .unwrap_or_default();
+            SheetText {
+                title: "Add Account".into(),
+                message,
+                tools: if addable.len() > 1 {
+                    addable
+                        .iter()
+                        .map(|offered| sheet_tool(seen, sheet, offered))
+                        .collect()
+                } else {
+                    Vec::new()
+                },
+                tool,
+                account: None,
+                name,
+                prompt: "work".into(),
+                not_offered: not_offered(seen, &addable),
+                confirm,
+                saving,
+                progress,
+            }
+        }
+        Sheet::SignInAgain { label, .. } => {
+            let (message, confirm) = if in_its_app(&tool) {
+                in_app_form(seen, sheet, &tool)
+            } else {
+                (
+                    sign_in_message(&seen.tool_name(&tool), Some(label)),
+                    "Sign In".into(),
+                )
+            };
+            SheetText {
+                title: format!("Sign In to {label} Again"),
+                message,
+                tools: Vec::new(),
+                tool,
+                account: Some(label.clone()),
+                name: label.clone(),
+                prompt: "work".into(),
+                not_offered: None,
+                confirm,
+                saving,
+                progress,
+            }
+        }
         Sheet::Name { email, .. } => SheetText {
             title: "Name This Account".into(),
             message: format!(
@@ -146,6 +315,7 @@ pub(crate) fn sheet_text(seen: &Seen) -> Option<SheetText> {
             not_offered: None,
             confirm: "Save".into(),
             saving,
+            progress: None,
         },
         Sheet::Rename { label, .. } => SheetText {
             title: format!("Rename “{label}”"),
@@ -160,6 +330,7 @@ pub(crate) fn sheet_text(seen: &Seen) -> Option<SheetText> {
             not_offered: None,
             confirm: "Rename".into(),
             saving,
+            progress: None,
         },
         Sheet::Stow => return None,
     };
@@ -205,9 +376,20 @@ pub(crate) fn stow_text(seen: &Seen) -> Option<StowText> {
 
 /// What a sign-in under way says, whichever sheet started it: the model runs one at a time.
 pub(crate) fn signing_in_text(seen: &Seen) -> Option<SigningInText> {
+    if let Some(signing) = seen.state.signing().filter(|signing| signing.in_its_app) {
+        return Some(in_app_signing_in_text(seen, signing));
+    }
     let signing = seen.state.shown_sign_in()?;
     let tool = seen.tool_name(&signing.provider);
     Some(SigningInText {
+        waiting: "Waiting for your browser".into(),
+        cancel: Choice {
+            title: "Cancel".into(),
+            intent: Intent::CancelSignIn,
+            enabled: true,
+        },
+        escape_cancels: true,
+        undo: None,
         title: format!("Signing In to {tool}"),
         message: format!(
             "Finish signing in as {} in your browser. This closes once {tool} says you’re in.",
@@ -229,16 +411,141 @@ pub(crate) fn signing_in_text(seen: &Seen) -> Option<SigningInText> {
     })
 }
 
-/// The question about quitting an app that holds a tool's login before switching.
-pub(crate) fn quit_confirmation(question: &QuitQuestion) -> Question {
+// It offers to put back the account the core parked for it, not the one last read in use.
+fn in_app_signing_in_text(seen: &Seen, signing: &crate::model::state::SigningIn) -> SigningInText {
+    let provider = &signing.provider;
+    let app = seen.program_of(provider);
+    let (message, waiting) = if signing.quitting {
+        (
+            format!("Pitboard is quitting {app}. {app} may ask about work in progress first."),
+            format!("Quitting {app}"),
+        )
+    } else if !signing.started {
+        match seen
+            .in_use_of(provider)
+            .filter(|_| !nothing_to_park(seen, provider))
+        {
+            Some(work) => (format!("Parking {work}."), format!("Parking {work}")),
+            None => ("Getting ready.".into(), "Starting".into()),
+        }
+    } else {
+        (
+            words::in_app_waiting(
+                app,
+                &signing.name,
+                signing.again,
+                signing.step,
+                signing.opened_for_it,
+            ),
+            format!("Waiting for {app} to quit"),
+        )
+    };
+    let put_back = signing.put_back.as_deref().filter(|_| signing.started);
+    SigningInText {
+        title: if signing.again {
+            format!("Sign In to {} Again", signing.name)
+        } else {
+            "Add Account".into()
+        },
+        message,
+        code_note: String::new(),
+        refused: None,
+        waiting,
+        cancel: Choice {
+            title: if put_back.is_some() {
+                "Later"
+            } else {
+                "Cancel"
+            }
+            .into(),
+            intent: Intent::CancelSignIn,
+            enabled: !signing.quitting,
+        },
+        escape_cancels: signing.started && put_back.is_none(),
+        undo: put_back.map(|qualified| Choice {
+            title: format!("Put {} Back", split(qualified).1),
+            intent: Intent::SwitchTo {
+                qualified: qualified.to_owned(),
+            },
+            enabled: seen.state.switch_under_way().is_none(),
+        }),
+    }
+}
+
+pub(crate) fn quit_confirmation(seen: &Seen, question: &QuitQuestion, then: &After) -> Question {
     let name = &question.name;
-    Question {
-        title: format!("Quit {name} to switch?"),
-        message: format!(
-            "{name} keeps using the account it started with until it quits. Pitboard quits \
-             it, switches, and opens it again."
-        ),
-        confirm: format!("Quit {name} and Switch"),
+    let (tool, label) = split(&question.qualified);
+    if !in_its_app(tool) {
+        return Question {
+            title: format!("Quit {name} to switch?"),
+            message: format!(
+                "{name} keeps using the account it started with until it quits. Pitboard quits \
+                 it, switches, and opens it again."
+            ),
+            confirm: format!("Quit {name} and Switch"),
+        };
+    }
+    let only_while_closed = |does: &str| format!("Pitboard {does} only while {name} is closed.");
+    match then {
+        After::Switch => Question {
+            title: format!("Quit {name} to switch?"),
+            message: format!(
+                "{} It quits {name}, switches to {label}, and opens it again.",
+                only_while_closed(&format!("moves {name}’s login"))
+            ),
+            confirm: format!("Quit {name} and Switch"),
+        },
+        After::SignIn { from, .. } => {
+            let title = match from {
+                Some(Sheet::SignInAgain { .. }) => {
+                    format!("Quit {name} to sign in to {label} again?")
+                }
+                _ => format!("Quit {name} to add an account?"),
+            };
+            match seen
+                .in_use_of(tool)
+                .filter(|_| !nothing_to_park(seen, tool))
+            {
+                Some(work) => Question {
+                    title,
+                    message: format!(
+                        "{} It quits {name}, parks {work}, and opens {name} again for you to \
+                         sign in.",
+                        only_while_closed(&format!("parks {work}"))
+                    ),
+                    confirm: format!("Quit {name} and Park {work}"),
+                },
+                None => Question {
+                    title,
+                    message: format!(
+                        "{} It quits {name} and opens it again for you to sign in.",
+                        only_while_closed("starts waiting for a sign-in")
+                    ),
+                    confirm: format!("Quit {name} and Start Sign-In"),
+                },
+            }
+        }
+        After::Enrol { from, .. } => {
+            let reads = only_while_closed(&format!("reads which account {name} is signed in to"));
+            match from {
+                Some(Sheet::SignInAgain { .. }) => Question {
+                    title: format!("Quit {name} to record {label}?"),
+                    message: format!(
+                        "{reads} It quits {name}, records that account as {label}’s login, and \
+                         opens it again."
+                    ),
+                    confirm: format!("Quit {name} and Record"),
+                },
+                _ => Question {
+                    title: format!("Quit {name} to add {label}?"),
+                    message: format!(
+                        "{reads} It quits {name}, records that account as {label}, and opens it \
+                         again."
+                    ),
+                    confirm: format!("Quit {name} and Add"),
+                },
+            }
+        }
     }
 }
 
@@ -303,20 +610,385 @@ mod tests {
         );
     }
 
-    /// The question about quitting an app to switch names the app, and so does its button.
+    use crate::Account;
+    use crate::model::state::{Cadence, State};
+    use crate::present::testing::{
+        Utc, awaiting, claude_code, claude_desktop, desktop_account, desktop_warning, read, status,
+    };
+    use pitboard_core::host::Os;
+    use pitboard_core::switch::WaitStep;
+
+    fn asked(qualified: &str, app_id: &str, name: &str) -> QuitQuestion {
+        QuitQuestion {
+            qualified: qualified.into(),
+            app_id: app_id.into(),
+            name: name.into(),
+        }
+    }
+
+    const CLAUDE: &str = "com.anthropic.claudefordesktop";
+
+    fn add_desktop() -> Sheet {
+        Sheet::Add {
+            provider: Some("desktop".into()),
+        }
+    }
+
+    // What the form for `sheet` says on a Mac that read `accounts`, warned of `warnings`.
+    fn form(sheet: Sheet, accounts: Vec<Account>, warnings: Vec<crate::Warning>) -> SheetText {
+        form_of(
+            &mut read(
+                status(accounts, warnings),
+                vec![claude_code(), claude_desktop()],
+            ),
+            sheet,
+        )
+    }
+
+    fn form_of(state: &mut State, sheet: Sheet) -> SheetText {
+        state.sheet = Some(sheet);
+        sheet_text(&Seen::new(state, 0, &Utc, Os::MacOs)).expect("a form")
+    }
+
+    fn work_and_home() -> Vec<Account> {
+        vec![
+            desktop_account("work", true),
+            desktop_account("home", false),
+        ]
+    }
+
     #[test]
-    fn the_question_about_quitting_names_the_app() {
-        let asked = quit_confirmation(&QuitQuestion {
-            qualified: "codex/work".into(),
-            app_id: "com.openai.codex".into(),
-            name: "ChatGPT".into(),
-        });
+    fn chatgpt_is_asked_to_quit_in_its_own_words() {
+        let state = State::new(Cadence::APP);
+        let seen = Seen::new(&state, 0, &Utc, Os::MacOs);
+        let asked = quit_confirmation(
+            &seen,
+            &asked("codex/work", "com.openai.codex", "ChatGPT"),
+            &After::Switch,
+        );
         assert_eq!(asked.title, "Quit ChatGPT to switch?");
         assert_eq!(asked.confirm, "Quit ChatGPT and Switch");
         assert_eq!(
             asked.message,
             "ChatGPT keeps using the account it started with until it quits. Pitboard quits \
              it, switches, and opens it again."
+        );
+    }
+
+    #[test]
+    fn claude_desktop_not_offered_names_its_data_folder() {
+        let state = read(status(Vec::new(), Vec::new()), vec![claude_code()]);
+        let seen = Seen::new(&state, 0, &Utc, Os::MacOs);
+        assert_eq!(
+            not_offered(&seen, &seen.addable()).as_deref(),
+            Some(
+                "Codex and Claude Desktop are not offered: Pitboard did not find codex or \
+                 Claude’s data folder on this Mac."
+            )
+        );
+        let state = read(
+            status(Vec::new(), Vec::new()),
+            vec![claude_code(), crate::present::testing::codex()],
+        );
+        let seen = Seen::new(&state, 0, &Utc, Os::MacOs);
+        assert_eq!(
+            not_offered(&seen, &seen.addable()).as_deref(),
+            Some(
+                "Claude Desktop is not offered: Pitboard did not find Claude’s data folder on \
+                 this Mac."
+            )
+        );
+    }
+
+    #[test]
+    fn each_tool_in_the_add_sheet_names_its_own_button() {
+        let mut accounts = work_and_home();
+        accounts.push(
+            crate::present::testing::account(Some("work"))
+                .signed_in()
+                .build(),
+        );
+        let text = form(Sheet::Add { provider: None }, accounts, Vec::new());
+        assert_eq!(
+            text.tools
+                .iter()
+                .map(|tool| (tool.code.as_str(), tool.confirm.as_str()))
+                .collect::<Vec<_>>(),
+            [("claude", "Sign In"), ("desktop", "Park work")]
+        );
+        assert_eq!(text.confirm, "Sign In", "it starts on Claude Code");
+    }
+
+    #[test]
+    fn the_add_sheet_for_claude_desktop_says_what_it_does_in_each_case() {
+        let case = |accounts: Vec<Account>, warnings: Vec<crate::Warning>| {
+            let text = form(add_desktop(), accounts, warnings);
+            (text.message, text.confirm)
+        };
+        assert_eq!(
+            case(Vec::new(), Vec::new()),
+            (
+                "Pitboard records the account Claude is signed in to under this name. Check \
+                 which account Claude shows first: Pitboard can’t ask claude.ai whose it is."
+                    .into(),
+                "Add Account".into()
+            )
+        );
+        assert_eq!(
+            case(work_and_home(), Vec::new()),
+            (
+                "Pitboard parks work, which leaves Claude signed out and signs nothing out at \
+                 claude.ai. Then you sign in to the other account in Claude, and Pitboard adds \
+                 it once Claude quits."
+                    .into(),
+                "Park work".into()
+            )
+        );
+        let signed_out = (
+            "Claude is signed out. Pitboard waits while you sign in to the account you’re \
+             adding in Claude, and adds it once Claude quits."
+                .to_owned(),
+            "Start Sign-In".to_owned(),
+        );
+        assert_eq!(
+            case(
+                vec![
+                    desktop_account("work", false),
+                    desktop_account("home", false)
+                ],
+                Vec::new()
+            ),
+            signed_out
+        );
+        assert_eq!(
+            case(
+                work_and_home(),
+                vec![desktop_warning(
+                    "looks_signed_out",
+                    "Claude looks signed out"
+                )]
+            ),
+            signed_out
+        );
+        let doubt = (
+            "Pitboard can’t identify the login Claude holds. Open Claude, check which account \
+             it shows, and quit it. Pitboard records that account under this name: one you \
+             added, or a new one."
+                .to_owned(),
+            "Add the Account Claude Shows".to_owned(),
+        );
+        for code in ["in_use_unconfirmed", "move_waiting"] {
+            assert_eq!(
+                case(work_and_home(), vec![desktop_warning(code, code)]),
+                doubt,
+                "{code}"
+            );
+        }
+        let mut waiting = status(
+            vec![
+                desktop_account("work", false),
+                desktop_account("home", false),
+            ],
+            Vec::new(),
+        );
+        waiting.awaiting = vec![awaiting("travel", "work", false)];
+        let mut state = read(waiting, vec![claude_code(), claude_desktop()]);
+        let text = form_of(&mut state, add_desktop());
+        assert_eq!(
+            (
+                text.message.as_str(),
+                text.confirm.as_str(),
+                text.name.as_str()
+            ),
+            (
+                "Claude is signed out so you can sign in to the account you’re adding, and \
+                 work is parked. Sign in to it in Claude and quit Claude, then add it here.",
+                "Add the Account Claude Shows",
+                "travel"
+            )
+        );
+    }
+
+    #[test]
+    fn a_claude_that_looks_signed_out_is_offered_a_sign_in_with_nothing_to_park() {
+        let warned = vec![desktop_warning(
+            "looks_signed_out",
+            "Claude looks signed out",
+        )];
+        let mut state = read(
+            status(work_and_home(), warned),
+            vec![claude_code(), claude_desktop()],
+        );
+        assert_eq!(form_of(&mut state, add_desktop()).confirm, "Start Sign-In");
+        let seen = Seen::new(&state, 0, &Utc, Os::MacOs);
+        let question = quit_confirmation(
+            &seen,
+            &asked("desktop/travel", CLAUDE, "Claude"),
+            &After::SignIn {
+                provider: "desktop".into(),
+                name: "travel".into(),
+                from: Some(add_desktop()),
+            },
+        );
+        assert_eq!(question.confirm, "Quit Claude and Start Sign-In");
+        assert_eq!(
+            question.message,
+            "Pitboard starts waiting for a sign-in only while Claude is closed. It quits Claude \
+             and opens it again for you to sign in."
+        );
+    }
+
+    #[test]
+    fn recording_from_sign_in_again_asks_to_record_the_account() {
+        let again = Sheet::SignInAgain {
+            provider: "desktop".into(),
+            label: "home".into(),
+        };
+        let text = form(
+            again.clone(),
+            work_and_home(),
+            vec![desktop_warning("in_use_unconfirmed", "in doubt")],
+        );
+        assert_eq!(text.confirm, "Record as home");
+        let state = State::new(Cadence::APP);
+        let seen = Seen::new(&state, 0, &Utc, Os::MacOs);
+        let question = quit_confirmation(
+            &seen,
+            &asked("desktop/home", CLAUDE, "Claude"),
+            &After::Enrol {
+                provider: "desktop".into(),
+                name: "home".into(),
+                from: Some(again),
+            },
+        );
+        assert_eq!(question.title, "Quit Claude to record home?");
+        assert_eq!(
+            question.message,
+            "Pitboard reads which account Claude is signed in to only while Claude is closed. It \
+             quits Claude, records that account as home’s login, and opens it again."
+        );
+        assert_eq!(question.confirm, "Quit Claude and Record");
+    }
+
+    #[test]
+    fn the_quit_question_says_what_the_quit_is_for() {
+        let state = read(
+            status(work_and_home(), Vec::new()),
+            vec![claude_code(), claude_desktop()],
+        );
+        let seen = Seen::new(&state, 0, &Utc, Os::MacOs);
+        let said = |qualified: &str, then: After| {
+            let question = quit_confirmation(&seen, &asked(qualified, CLAUDE, "Claude"), &then);
+            (question.title, question.message, question.confirm)
+        };
+        assert_eq!(
+            said("desktop/home", After::Switch),
+            (
+                "Quit Claude to switch?".into(),
+                "Pitboard moves Claude’s login only while Claude is closed. It quits Claude, \
+                 switches to home, and opens it again."
+                    .into(),
+                "Quit Claude and Switch".into()
+            )
+        );
+        let parks = "Pitboard parks work only while Claude is closed. It quits Claude, parks \
+                     work, and opens Claude again for you to sign in.";
+        assert_eq!(
+            said(
+                "desktop/travel",
+                After::SignIn {
+                    provider: "desktop".into(),
+                    name: "travel".into(),
+                    from: Some(add_desktop()),
+                }
+            ),
+            (
+                "Quit Claude to add an account?".into(),
+                parks.into(),
+                "Quit Claude and Park work".into()
+            )
+        );
+        assert_eq!(
+            said(
+                "desktop/home",
+                After::SignIn {
+                    provider: "desktop".into(),
+                    name: "home".into(),
+                    from: Some(Sheet::SignInAgain {
+                        provider: "desktop".into(),
+                        label: "home".into(),
+                    }),
+                }
+            ),
+            (
+                "Quit Claude to sign in to home again?".into(),
+                parks.into(),
+                "Quit Claude and Park work".into()
+            )
+        );
+        assert_eq!(
+            said(
+                "desktop/travel",
+                After::Enrol {
+                    provider: "desktop".into(),
+                    name: "travel".into(),
+                    from: Some(add_desktop()),
+                }
+            ),
+            (
+                "Quit Claude to add travel?".into(),
+                "Pitboard reads which account Claude is signed in to only while Claude is \
+                 closed. It quits Claude, records that account as travel, and opens it again."
+                    .into(),
+                "Quit Claude and Add".into()
+            )
+        );
+    }
+
+    #[test]
+    fn the_wait_is_said_step_by_step() {
+        let both = |message: &str| {
+            format!(
+                "{message}\n\nDon’t choose Log out in Claude: it ends the login Claude holds at \
+                 claude.ai, and Pitboard can’t bring it back."
+            )
+        };
+        let said =
+            |again, step, opened| words::in_app_waiting("Claude", "travel", again, step, opened);
+        assert_eq!(
+            said(false, Some(WaitStep::Waiting), true),
+            both(
+                "In Claude, sign in to the account you’re adding. When it shows your chats, quit \
+                 Claude with Command-Q, and Pitboard adds it as travel."
+            )
+        );
+        assert_eq!(
+            said(false, Some(WaitStep::Open), false),
+            both(
+                "Open Claude and sign in to the account you’re adding. When it shows your chats, \
+                 quit Claude with Command-Q, and Pitboard adds it as travel."
+            )
+        );
+        assert_eq!(
+            said(false, Some(WaitStep::QuitSignedOut), true),
+            both(
+                "Claude quit with nobody signed in. Open Claude, sign in to the account you’re \
+                 adding, then quit it with Command-Q."
+            )
+        );
+        assert_eq!(
+            said(false, Some(WaitStep::QuitUnfinished), true),
+            both(
+                "Claude quit before it finished signing in. Open Claude, wait until it shows \
+                 your chats, then quit it with Command-Q."
+            )
+        );
+        assert_eq!(
+            said(true, None, true),
+            both(
+                "In Claude, sign in to travel again. When it shows your chats, quit Claude with \
+                 Command-Q, and Pitboard records it as travel’s login."
+            )
         );
     }
 
@@ -334,6 +1006,7 @@ mod tests {
                 message: "ANTHROPIC_API_KEY is set".into(),
                 account: None,
                 held: None,
+                provider: None,
             }],
         });
         assert_eq!(alert.title, "Couldn’t switch to personal");

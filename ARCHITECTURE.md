@@ -359,7 +359,9 @@ pages load, as a browser would.
     makes a `PitboardModel`, sends it an `Intent` for each thing asked of it, and its
     `ModelListener` is told of each numbered `Snapshot`; its `AppControl` quits and opens
     other apps, and its `Notifications` posts what has run out and a login replaced outside
-    Pitboard. `state.rs` holds what the model knows and decides what follows each message,
+    Pitboard. `state.rs` holds what the model knows and decides what follows each message;
+    what follows the quit question is `After`, private to the model: a switch, a sign-in
+    inside an app, or recording the account an app is signed in to;
     `advice.rs` which account to offer once the one in use has run out, `preferences.rs`
     what the app's own preferences are, `machine.rs` what the model knows of this machine
     rather than its accounts, and `windows.rs` the account windows' bookkeeping; `lanes.rs`
@@ -419,17 +421,19 @@ pages load, as a browser would.
   - `fixture/` holds the fixtures, the worlds a debug build of either app and its UI tests
     launch into by name, as the macOS app's debug build and UI tests do. Only the `fixture`
     feature compiles them, and it enables `pitboard-core`'s `test-support`. `worlds.rs`
-    makes each of the ten on the real core: a home in the fixture's own folder in the
+    makes each of the twelve on the real core: a home in the fixture's own folder in the
     temporary directory, `MemoryHost` and `ScriptedApi`, and every account put there by the
     core as a person would have, signed in, enrolled, parked and switched on a clock set to
     when it happened. `tools.rs` plays each tool's sign-in through the core's
-    `SignInScript`, with the person at the browser; `apps.rs` is the fixture's other apps,
-    where ChatGPT runs Codex's login and quits when asked, and its notifications, which post
-    nothing; `pages.rs` the stand-in pages an account window loads on `pitboard-fixture://`,
-    from the site table. `mod.rs` holds what every build exports of them, the same in each:
-    `PitboardModel::fixture`, `PitboardModel::fixture_in`, `fixture_names` and
-    `fixture_page`, which without the feature refuse, naming it, or name none. `tests.rs` is the macOS app's former
-    `FixtureTests.swift` ported, and what each UI test reads in its world.
+    `SignInScript`, with the person at the browser; `apps.rs` is the fixture's other apps:
+    ChatGPT, which runs Codex's login and quits when asked, and Claude, which
+    `testing::desktop::FakeClaude` plays over the fixture's machine; and its notifications,
+    which post nothing; `pages.rs` the stand-in pages an account window loads on
+    `pitboard-fixture://`, from the site table. `mod.rs` holds what every build exports of
+    them, the same in each: `PitboardModel::fixture`, `PitboardModel::fixture_in`,
+    `fixture_names` and `fixture_page`, which without the feature refuse, naming it, or name
+    none. `tests.rs` is the macOS app's former `FixtureTests.swift` ported, and what each UI
+    test reads in its world.
 - `crates/pitboard-sites`: the sites an account's window opens, and what a link from outside
   may be. A leaf, with no I/O and nothing of the core, whose one dependency is `url`, for
   IDNA alone.
@@ -641,7 +645,10 @@ pages load, as a browser would.
   test is put off there. A core test of Claude Desktop's folder calls, which Windows refuses
   because Pitboard supports the tool on macOS alone, says
   `#[cfg_attr(windows, ignore = "Claude Desktop is macOS only: …")]`. An integration test of
-  Claude Desktop returns at its start where `os::claude_desktop_runs_here()` is false.
+  Claude Desktop returns at its start where `os::claude_desktop_runs_here()` is false. A
+  test of the app model's or a fixture's Claude Desktop returns at its start where
+  `ProviderId::Desktop.supported_on(host::OS)` is false, since the app lists the tool only
+  there.
 - No test addresses a name a real login may be kept under. `guard_not_live` refuses by
   pattern, never by a hash computed for a real home, the families
   `pitboard_core::provider::names` tells apart, which the measurement probe's leak check
@@ -816,14 +823,27 @@ pages load, as a browser would.
   lane of changes, and what holds the login and quitting an app on the lane of processes,
   so a read answers while either waits. An app is quit only when the person says so, the
   way a person quits it and never by force, and is given 30 seconds, asked every 200
-  milliseconds whether it still runs; one that has not quit by then stops the switch before
-  anything changes. An `AppControl` that throws says the app still runs, so nothing is
-  switched under an app nobody saw go. Pitboard opens again only the copy it quit, as soon
-  as the switch is over, whether or not it worked. `Intent::QuitAndSwitch` names the
-  account of the question it answers, as `AppModel.quitAndSwitch` took the question, so an
-  app may close the question with `Intent::KeepAppOpen` before or after it sends the answer:
-  a question closed unanswered is kept until another switch is asked for, and an answer is
-  taken once.
+  milliseconds whether it still runs and, once it does not, whether the core still finds
+  anything holding its login (`Pitboard::holding`); one that has not quit by then stops the
+  change before anything changes, and Pitboard says it is still open. A quit that lands
+  later changes nothing and opens nothing. An `AppControl` that throws says the app still
+  runs, so nothing is changed under an app nobody saw go. Pitboard opens again only the copy
+  it quit, as soon as the change is over: always for a tool whose login is a document; for
+  Claude Desktop after a switch or a refusal, where the core says its folder is whole
+  (`Pitboard::whole`: false while `state.moving` holds the tool's record, false where its
+  `in_use` names nobody, an account of it holds a folder park and no `awaiting` stands for
+  it, false where the index does not read, true otherwise), and when Pitboard opens it for a
+  sign-in, unless a move of its login waits (`Pitboard::moving`). `Intent::QuitAndSwitch`
+  names the account of the question it answers, as `AppModel.quitAndSwitch` took the
+  question, so an app may close the question with `Intent::KeepAppOpen` before or after it
+  sends the answer: a question closed unanswered is kept until another switch, sign-in or
+  enrolment is asked for, and an answer is taken once.
+- For a tool whose login is its app's files, a quit is over once the core finds nothing of
+  the app running, inside the same 30 seconds. An app opened for a sign-in inside it comes to
+  the front; one opened after a switch or a refusal stays behind Pitboard's window. Its
+  changes never overlap: a switch waits until a park of the tool for a sign-in has started,
+  no sign-in or recording of it starts while a switch of it is claimed, and a copy another
+  change quit meanwhile is opened after that switch, never while it moves the app's files.
 - With its setting on, the app asks the core's look whether to switch Claude Code by itself
   after every read, after numbers or a change the poll found, as the setting is turned on or
   its share changed, and every 30 seconds after the last look ended, the core's
@@ -875,18 +895,21 @@ pages load, as a browser would.
   numbers, that says Claude Code's config has named another account since Anthropic last
   named the login stored (`in_use_unconfirmed`) starts one read that asks, which settles
   whose the login is. Once for each thing it says, so a config that stays as it is costs no
-  more reads.
+  more reads. Only a warning about a tool such a read can settle starts one: a Claude
+  Desktop login is asked of no service, so its `in_use_unconfirmed` starts none.
 - Every other change this app makes to the account index holds it as a switch does, and the
   poll leaves the index alone meanwhile: naming the login signed in now, a sign-in's
-  enrolment, a rename, forgetting, writing the account in use into Claude Code's config,
-  giving up on an interrupted switch and renewing parked logins. Each holds the index inside
-  `State::apply` from the moment its intent is taken, a sign-in's from the moment its thread
-  is told to enrol, until the read after it is over, landed, dropped or failed, or until the
-  change itself has failed, so a change made elsewhere is noticed by the next look once none
-  is under way. A look can find the index as such a change wrote it and land after the
-  change has answered, before the read the change asked for: taken for a change made
-  elsewhere, it dropped that read as one that started before a change, and a look that
-  landed while a rename was made put away what the account's last switch said
+  enrolment, parking the account in use for a sign-in inside its app (from the quit
+  question's answer until the read after `SignInStarted`), a rename, forgetting, writing the
+  account in use into Claude Code's config, giving up on an interrupted switch and renewing
+  parked logins. Each holds the index inside `State::apply` from the moment its intent is
+  taken, a sign-in's from the moment its thread is told to enrol, until the read after it is
+  over, landed, dropped or failed, or until the change itself has failed, so a change made
+  elsewhere is noticed by the next look once none is under way. A look can find the index as
+  such a change wrote it and land after the change has answered, before the read the change
+  asked for: taken for a change made elsewhere, it dropped that read as one that started
+  before a change, and a look that landed while a rename was made put away what the
+  account's last switch said
   ([A look and the app's own changes](#a-look-and-the-apps-own-changes)).
 - What a tool's last switch said is kept apart from the read's warnings, one per tool, until
   that tool no longer has the account it switched to signed in or the person puts it away:
@@ -941,7 +964,8 @@ pages load, as a browser would.
   administrator's password are each app's own, and once an app has linked it, it sends
   `Intent::LookForCommandLine` for the model to look for the command line again.
 - `AppControl` names an app by one string, the id the core's holder detection gives it,
-  which on macOS is its bundle id, in `provider/codex/holders.rs`. What names an app on
+  which on macOS is its bundle id, in `provider/codex/holders.rs` for ChatGPT and in
+  `provider/desktop/mod.rs`'s `HOLDER` for Claude. What names an app on
   Windows, and so what the core's holder detection gives there, is a question still open
   for the owner; the trait takes one string so that a Windows id fits it unchanged.
 - One thread tells a `ModelListener`, so snapshots arrive in revision order, and a snapshot
@@ -2840,6 +2864,13 @@ Measured on 6 October 2026 on macOS 27.0, with `pitboard-ffi` built for
   - A read lists the account in use first, and the read of what is known lists only
     enrolled accounts, so a login nobody has named is listed once the first read has asked
     its service whose it is.
+- `claudeDesktop` and `claudeDesktopOpen` are made by the real core over a Claude that
+  `testing::desktop::FakeClaude` plays in the fixture's folder: home enrolled from a
+  terminal, then work added by a sign-in inside Claude, which parks home, while the core's
+  wait asks every 10 milliseconds. Their Claude writes its data folder as 2.7032.0 does as it
+  quits, and in `claudeDesktopOpen`, opened in front for a sign-in, signs in to a third
+  account after 5 seconds and quits 2 seconds later. Claude Desktop is put there only where
+  Pitboard supports it, on macOS.
 - stuck shows the notice offering Give Up… as the app starts, as the Swift fixture did, now
   from the core's own read: a read says an interrupted switch is waiting wherever the next
   change would be refused over it, as a warning with the refusal's code,

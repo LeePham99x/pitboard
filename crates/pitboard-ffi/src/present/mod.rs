@@ -422,6 +422,8 @@ pub struct SheetText {
     /// A name typed in it is being saved, which cannot be withdrawn: nothing in it can be
     /// pressed meanwhile, and it cannot be closed.
     pub saving: bool,
+    // what it says under its fields while an app it asked to quit quits, or its account is read
+    pub progress: Option<String>,
 }
 
 /// What the sheet for putting away the login Claude Code left in a file behind the keychain
@@ -453,6 +455,8 @@ pub struct SheetTool {
     pub code: String,
     pub name: String,
     pub message: String,
+    // what the default button says once this tool is picked
+    pub confirm: String,
 }
 
 /// What a sign-in under way says, in the sheet it was started from.
@@ -464,6 +468,13 @@ pub struct SigningInText {
     pub code_note: String,
     /// Why the field is offered again: the tool refused the code typed back.
     pub refused: Option<String>,
+    // the line beside its spinner
+    pub waiting: String,
+    pub cancel: Choice,
+    // whether Escape and closing the sheet are its cancel button
+    pub escape_cancels: bool,
+    // undoes what was done for it, where something was: Put work Back
+    pub undo: Option<Choice>,
 }
 
 /// What every part of a snapshot is worked out from.
@@ -516,6 +527,10 @@ impl<'a> Seen<'a> {
     pub(crate) fn tool_name(&self, code: &str) -> String {
         self.tool(code)
             .map_or_else(|| code.to_owned(), |tool| tool.name.clone())
+    }
+
+    pub(crate) fn program_of<'s>(&'s self, code: &'s str) -> &'s str {
+        self.tool(code).map_or(code, |tool| tool.program.as_str())
     }
 
     /// The tool's name where a sentence has to say which, once more than one is shown.
@@ -600,11 +615,20 @@ impl<'a> Seen<'a> {
                 .cloned()
                 .collect()
         };
-        asked
+        let mut services: Vec<&str> = Vec::new();
+        for tool in &asked {
+            if !services.contains(&tool.service.as_str()) {
+                services.push(&tool.service);
+            }
+        }
+        services.join(" or ")
+    }
+
+    pub(crate) fn in_use_of(&self, provider: &str) -> Option<&str> {
+        self.accounts()
             .iter()
-            .map(|tool| tool.service.as_str())
-            .collect::<Vec<_>>()
-            .join(" or ")
+            .find(|account| account.provider == provider && account.signed_in)
+            .and_then(|account| account.label.as_deref())
     }
 
     /// An account named where nothing around it says which tool it is for: its label, and
@@ -672,7 +696,9 @@ pub(crate) fn present_on(os: Os, state: &State, now: i64, local: &dyn LocalTime)
         sheet_text: sheets::sheet_text(&seen),
         signing_in_text: sheets::signing_in_text(&seen),
         stow_text: sheets::stow_text(&seen),
-        quit_confirmation: state.asking().map(sheets::quit_confirmation),
+        quit_confirmation: state
+            .asking_for()
+            .map(|(question, then)| sheets::quit_confirmation(&seen, question, then)),
         failure_alert: state.presented.as_ref().map(sheets::failure_alert),
         machine: machine::machine(&seen),
         account_windows: windows::account_windows(&seen),
@@ -762,6 +788,40 @@ mod tests {
         assert_eq!(
             unreadable.date_and_time("2026-09-27T14:05:09+07:00"),
             "2026-09-27T14:05:09+07:00"
+        );
+    }
+
+    #[test]
+    fn each_service_is_named_once() {
+        use crate::present::testing::{
+            account, claude_code, claude_desktop, desktop, desktop_account, read, status,
+        };
+        let claude = account(Some("work")).signed_in().build();
+        let state = read(
+            status(
+                vec![claude.clone(), desktop_account("work", true)],
+                Vec::new(),
+            ),
+            vec![claude_code(), claude_desktop()],
+        );
+        assert_eq!(
+            Seen::new(&state, MIDDAY, &Utc, Os::MacOs).services(),
+            "Anthropic"
+        );
+        let state = read(
+            status(
+                vec![
+                    claude,
+                    account(Some("main")).of("codex").signed_in().build(),
+                    desktop_account("work", true),
+                ],
+                Vec::new(),
+            ),
+            desktop(),
+        );
+        assert_eq!(
+            Seen::new(&state, MIDDAY, &Utc, Os::MacOs).services(),
+            "Anthropic or OpenAI"
         );
     }
 }

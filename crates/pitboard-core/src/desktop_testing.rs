@@ -1,7 +1,9 @@
 // The Claude Desktop the tests play, on a scratch folder. Nothing here touches the real one.
 
-use crate::host::Cookie;
+use crate::context::Context;
 use crate::host::memory::{MemoryHost, StandInCookie, StandInJar};
+use crate::host::{Cookie, Host};
+use crate::state::Key;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -26,6 +28,20 @@ impl Person {
     }
 }
 
+// The people of the app's Claude Desktop accounts, in its model's tests and its fixtures.
+pub const WORK: Person = Person {
+    uuid: "6f1c0a52-1111-4a6e-9d0b-2f6c1a9e7b10",
+    session: "work-session",
+};
+pub const HOME: Person = Person {
+    uuid: "b2aa91c4-3333-4c7a-a1d2-5e8f0c21d4e5",
+    session: "home-session",
+};
+pub const TRAVEL: Person = Person {
+    uuid: "c3bb02d5-5555-4d8b-b2e3-6f9a1d32e5f6",
+    session: "travel-session",
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JarAs {
     // a real SQLite jar, for the real hosts
@@ -44,7 +60,7 @@ pub struct FakeClaude {
     scratch: PathBuf,
     host: Arc<MemoryHost>,
     jar: JarAs,
-    mind: std::cell::RefCell<Mind>,
+    mind: std::sync::Mutex<Mind>,
 }
 
 // What a running Claude holds in memory and writes as it quits.
@@ -76,8 +92,14 @@ impl FakeClaude {
             scratch: scratch.to_path_buf(),
             host,
             jar,
-            mind: std::cell::RefCell::default(),
+            mind: std::sync::Mutex::default(),
         }
+    }
+
+    fn mind(&self) -> std::sync::MutexGuard<'_, Mind> {
+        self.mind
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     pub fn data(&self) -> PathBuf {
@@ -91,7 +113,7 @@ impl FakeClaude {
     // Listed, its own program and a helper it started. It makes the stores that are missing
     // and writes a key of its own into its settings.
     pub fn opens(&self) {
-        *self.mind.borrow_mut() = Mind::default();
+        *self.mind() = Mind::default();
         opened(&self.data());
         self.lists();
     }
@@ -118,7 +140,7 @@ impl FakeClaude {
 
     // The session in memory, nothing on disk yet.
     pub fn signs_in(&self, who: &Person) {
-        *self.mind.borrow_mut() = Mind {
+        *self.mind() = Mind {
             session: Some(Some(*who)),
             reported: false,
         };
@@ -126,12 +148,12 @@ impl FakeClaude {
 
     // The account's name is written as Claude quits (E4).
     pub fn reports(&self) {
-        self.mind.borrow_mut().reported = true;
+        self.mind().reported = true;
     }
 
     // Another session value under the same name, as on 5 October: the account stays signed in.
     pub fn renews(&self, who: &Person, session: &'static str) {
-        *self.mind.borrow_mut() = Mind {
+        *self.mind() = Mind {
             session: Some(Some(Person {
                 uuid: who.uuid,
                 session,
@@ -142,7 +164,7 @@ impl FakeClaude {
 
     // The session gone, both caches the emptied value, the name kept (E1b).
     pub fn logs_out(&self) {
-        *self.mind.borrow_mut() = Mind {
+        *self.mind() = Mind {
             session: Some(None),
             reported: false,
         };
@@ -151,13 +173,13 @@ impl FakeClaude {
     // Writes the jar and `config.json` whole, then leaves its own key's removal in a valid
     // sidecar, as 2.7032.0 does. Unlisted (E8).
     pub fn quits(&self) {
-        let mind = std::mem::take(&mut *self.mind.borrow_mut());
+        let mind = std::mem::take(&mut *self.mind());
         quit(&self.data(), self.jar, &mind);
         self.crashes();
     }
 
     pub fn quits_before_reporting(&self) {
-        self.mind.borrow_mut().reported = false;
+        self.mind().reported = false;
         self.quits();
     }
 
@@ -175,6 +197,55 @@ impl FakeClaude {
     pub fn signed_in_as(&self, who: &Person) {
         plant(&self.data(), who, self.jar);
     }
+
+    // Whether its stand-in jar holds a claude.ai session, as a Claude that opens signed in has.
+    pub fn holds_a_session(&self) -> bool {
+        let jar = self.data().join("Cookies");
+        let found = self.host.cookies(&jar, &[".claude.ai"], &["sessionKey"]);
+        // The host also gives a cookie of that name from any other site.
+        found.is_ok_and(|jar| {
+            jar.cookies
+                .iter()
+                .any(|cookie| cookie.host == ".claude.ai" && cookie.name == "sessionKey")
+        })
+    }
+}
+
+// `who` signs in inside Claude while `pitboard` waits, then is enrolled as `label`.
+pub fn signs_in_inside(
+    pitboard: &crate::service::Pitboard,
+    claude: &FakeClaude,
+    label: &str,
+    who: &Person,
+) -> Result<(), String> {
+    let watched = pitboard
+        .sign_in_watched(label)
+        .map_err(|failed| format!("parking for a sign-in inside Claude: {}", failed.error))?;
+    claude.opens();
+    let steps = watched.steps();
+    let given_up = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    while steps.now() != Some(crate::switch::WaitStep::Open) {
+        if std::time::Instant::now() > given_up {
+            watched.cancel();
+            return Err("the wait never saw Claude open".into());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    claude.signs_in(who);
+    claude.reports();
+    claude.quits();
+    let login = watched
+        .finish()
+        .map_err(|error| format!("waiting for Claude to quit: {error}"))?;
+    pitboard
+        .enroll_signed_in(label, login)
+        .map(drop)
+        .map_err(|failed| {
+            format!(
+                "enrolling {label}, signed in inside Claude: {}",
+                failed.error
+            )
+        })
 }
 
 // The stores Claude makes when it opens, and a key of its own in its settings.
@@ -349,6 +420,32 @@ pub fn plant(folder: &Path, who: &Person, jar: JarAs) {
     .expect("settings");
     // Not the mode a new file gets, so a write that loses it shows. Windows sets none yet.
     let _ = crate::host::fs::testing::make_private(&settings);
+}
+
+// Claude is listed from the leave's third look, the one after its last write: no fault point.
+pub fn leave_a_move_waiting(ctx: &Context, host: &MemoryHost, account: &Key) {
+    let program = ctx
+        .scratch_claude()
+        .expect("a context naming a scratch Claude")
+        .app
+        .join("Contents/MacOS/Claude");
+    let program = program.to_string_lossy();
+    let state = crate::state::load(ctx).expect("the index");
+    let to = state
+        .accounts
+        .iter()
+        .map(|enrolled| Key::new(enrolled.provider(), enrolled.label.clone()))
+        .find(|key| key.provider == account.provider && key != account)
+        .expect("another account to switch to");
+    host.listed_from(3, &program);
+    let stopped = crate::service::Pitboard::new(ctx.clone()).switch_to(&to.qualified());
+    host.listed_no_longer(&program);
+    let code = stopped.map(drop).map_err(|failed| failed.error.code());
+    assert_eq!(
+        code,
+        Err("app_opened_midway"),
+        "the move stops after its last write"
+    );
 }
 
 pub fn write_jar(path: &Path, jar: JarAs, cookies: &[Cookie]) {

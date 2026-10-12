@@ -152,6 +152,14 @@ pub fn site_menus(accounts: Vec<Account>) -> Vec<SiteMenu> {
 /// Forgetting an account that has a window deletes what that window keeps too, and a person
 /// deciding should know.
 pub(crate) fn forget_message_on(os: Os, account: &Account, accounts: &[Account]) -> String {
+    if crate::model::state::in_its_app(&account.provider) {
+        let app = pitboard_core::provider::ProviderId::parse(&account.provider)
+            .map_or(account.provider.as_str(), |tool| tool.program());
+        return format!(
+            "Pitboard deletes the login it parked for this account and the folders set aside \
+             for it. Using it again needs a sign-in in {app}."
+        );
+    }
     let windows = windows_of_account(account, accounts);
     if windows.is_empty() {
         return "Pitboard deletes the login it parked for this account. Using it again needs a \
@@ -192,6 +200,7 @@ pub(crate) mod tests {
             stale: None,
             stale_explanation: None,
             plan: None,
+            read_at: None,
         }
     }
 
@@ -371,5 +380,15 @@ pub(crate) mod tests {
         for os in [Os::MacOs, Os::Linux, Os::Windows] {
             assert_eq!(forget_message_on(os, &api(), &[api()]), said);
         }
+    }
+
+    #[test]
+    fn forgetting_a_claude_desktop_account_says_it_needs_a_sign_in_in_claude() {
+        let home = account(Some("home"), "desktop", "5b1e");
+        assert_eq!(
+            forget_message_on(Os::MacOs, &home, std::slice::from_ref(&home)),
+            "Pitboard deletes the login it parked for this account and the folders set aside \
+             for it. Using it again needs a sign-in in Claude."
+        );
     }
 }

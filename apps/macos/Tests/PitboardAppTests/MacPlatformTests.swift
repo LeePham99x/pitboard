@@ -44,7 +44,7 @@ private final class StandInApp: RunningApp {
     let opened = Opened()
     let apps = MacAppControl(
         copies: { $0 == "com.openai.codex" ? [busy, other] : [] },
-        open: { opened.keep($0) })
+        open: { url, _ in opened.keep(url) })
 
     #expect(try apps.running(app: "com.openai.codex") == "/Applications/ChatGPT.app")
     #expect(try apps.running(app: "com.example.none") == nil)
@@ -58,8 +58,26 @@ private final class StandInApp: RunningApp {
     #expect(busy.asked == ["terminate", "terminate"], "a copy that quit is not asked again")
     #expect(other.asked == ["terminate"])
 
-    try apps.reopen(location: "/Applications/ChatGPT.app")
+    try apps.reopen(location: "/Applications/ChatGPT.app", front: false)
     #expect(opened.urls == [URL(fileURLWithPath: "/Applications/ChatGPT.app")])
+}
+
+@Test func anAppComesForwardOnlyWhenAsked() throws {
+    let fronts = Fronts()
+    let apps = MacAppControl(copies: { _ in [] }, open: { _, front in fronts.keep(front) })
+    try apps.reopen(location: "/Applications/Claude.app", front: true)
+    try apps.reopen(location: "/Applications/Claude.app", front: false)
+    #expect(fronts.asked == [true, false])
+    #expect(MacAppControl.opening(front: true).activates)
+    #expect(!MacAppControl.opening(front: false).activates)
+}
+
+private final class Fronts: @unchecked Sendable {
+    // Unchecked because every read and write holds `lock`.
+    private let lock = NSLock()
+    private var kept: [Bool] = []
+    var asked: [Bool] { lock.withLock { kept } }
+    func keep(_ front: Bool) { lock.withLock { kept.append(front) } }
 }
 
 private final class Opened: @unchecked Sendable {

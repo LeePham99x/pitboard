@@ -2,8 +2,9 @@
 //! the way the Swift tests' Fixtures.swift made them, and a person's clock that a test can
 //! read, in UTC.
 
+use crate::model::state::{Cadence, State};
 use crate::model::{LocalTime, PlatformError};
-use crate::{Account, Limit, Parked, Source, Tool, Usage};
+use crate::{Account, Awaiting, Limit, Parked, Source, Status, Tool, Usage, Warning};
 use pitboard_core::provider::ProviderId;
 
 pub(crate) fn claude_code() -> Tool {
@@ -16,6 +17,70 @@ pub(crate) fn codex() -> Tool {
 
 pub(crate) fn both_tools() -> Vec<Tool> {
     vec![claude_code(), codex()]
+}
+
+pub(crate) fn claude_desktop() -> Tool {
+    crate::tool(ProviderId::Desktop)
+}
+
+// Every tool a Mac lists.
+pub(crate) fn desktop() -> Vec<Tool> {
+    vec![claude_code(), codex(), claude_desktop()]
+}
+
+// A Claude Desktop account as the core reports one: no email and no usage, ever.
+pub(crate) fn desktop_account(label: &str, signed_in: bool) -> Account {
+    Account {
+        email: String::new(),
+        stale: Some("no_usage".into()),
+        stale_explanation: Some("Pitboard reads no usage for Claude Desktop".into()),
+        ..account(Some(label))
+            .of("desktop")
+            .unmeasured()
+            .switchable(!signed_in)
+            .signed_in_if(signed_in)
+            .build()
+    }
+}
+
+// A warning about Claude Desktop, as the core says one.
+pub(crate) fn desktop_warning(code: &str, message: &str) -> Warning {
+    Warning {
+        code: code.into(),
+        message: message.into(),
+        account: None,
+        held: None,
+        provider: Some("desktop".into()),
+    }
+}
+
+// An add or a Sign In Again inside Claude left halfway, `put_back` parked for it.
+pub(crate) fn awaiting(label: &str, put_back: &str, again: bool) -> Awaiting {
+    Awaiting {
+        provider: "desktop".into(),
+        label: label.into(),
+        put_back: format!("desktop/{put_back}"),
+        since: 0,
+        again,
+    }
+}
+
+// What a read of `status` leaves the model with, `found` installed.
+pub(crate) fn read(status: Status, found: Vec<Tool>) -> State {
+    let mut state = State::new(Cadence::APP);
+    state.warnings = status.warnings.clone();
+    state.status = Some(status);
+    state.installed = Some(found);
+    state
+}
+
+pub(crate) fn status(accounts: Vec<Account>, warnings: Vec<Warning>) -> Status {
+    Status {
+        now: 0,
+        accounts,
+        warnings,
+        awaiting: Vec::new(),
+    }
 }
 
 /// A limit as the core reports one, resetting at 100 unless a test says otherwise.
@@ -118,6 +183,10 @@ impl AccountMade {
         }
     }
 
+    fn signed_in_if(self, signed_in: bool) -> AccountMade {
+        AccountMade { signed_in, ..self }
+    }
+
     pub(crate) fn switchable(self, switchable: bool) -> AccountMade {
         AccountMade {
             switchable: Some(switchable),
@@ -159,6 +228,7 @@ impl AccountMade {
                 parked_at: 0,
                 access_expires_at: None,
                 refresh_expires_at: Some(refresh_expires_at),
+                session_expires_at: None,
             }),
             ..self
         }
@@ -200,6 +270,7 @@ impl AccountMade {
             stale: None,
             stale_explanation: self.explanation,
             plan: None,
+            read_at: None,
             label: self.label,
             provider: self.provider,
         }
@@ -224,6 +295,7 @@ pub(crate) fn unplaced(provider: &str, signed_in: bool) -> Account {
         stale: Some("login_unreadable".into()),
         stale_explanation: Some("Codex's login could not be read; run `pitboard doctor`".into()),
         plan: None,
+        read_at: None,
     }
 }
 

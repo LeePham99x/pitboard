@@ -25,7 +25,7 @@
 
 use pitboard_core::context::Environment;
 use pitboard_core::host::Os;
-use pitboard_core::provider::{ProviderId, SignsIn};
+use pitboard_core::provider::ProviderId;
 use pitboard_core::{doctor, switch, words};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -77,8 +77,8 @@ pub use account_windows::{
 // answers that only the model reads. None of it is exported.
 mod launch;
 pub(crate) use launch::{
-    Adoption, AppCore, AutoLooked, AutoSwitched, Change, Check, Enrolled, EnrolledAs, Holding,
-    OwnCommandLine, PitboardError, Remedy, Renewed, SignInSession, Switch, Switched,
+    Adoption, AppCore, AutoLooked, AutoSwitched, Change, Check, Enrolled, EnrolledAs, GaveUp,
+    Holding, OwnCommandLine, PitboardError, Remedy, Renewed, SignInSession, Switch, Switched,
 };
 // What a test or a fixture makes the app's core of, in place of the environment.
 #[cfg(any(test, feature = "fixture"))]
@@ -91,7 +91,6 @@ pub struct Tool {
     pub code: String,
     /// As its own documentation names it: `Claude Code`, `Codex`.
     pub name: String,
-    /// The command that runs it, which is what a person restarts.
     pub program: String,
     /// The company behind it, which is who is asked about its accounts.
     pub service: String,
@@ -103,8 +102,6 @@ pub(crate) fn listed(os: Os) -> impl Iterator<Item = ProviderId> {
         .iter()
         .copied()
         .filter(move |tool| tool.supported_on(os))
-        // The app has no model yet for a tool that signs in inside its own app.
-        .filter(|tool| tool.signs_in() == SignsIn::ByItsProgram)
 }
 
 pub(crate) fn tools_on(os: Os) -> Vec<Tool> {
@@ -187,6 +184,8 @@ pub struct Warning {
     /// What the file a `fallback_login` warning is about holds, which says whether it can be
     /// put away: one Pitboard cannot read cannot. `None` for every other warning.
     pub held: Option<Held>,
+    // the tool it is about, as a `Tool`'s code, where it names one
+    pub provider: Option<String>,
 }
 
 /// What a file behind a tool's store holds, as far as Pitboard can read it.
@@ -262,6 +261,8 @@ pub struct Parked {
     pub parked_at: i64,
     pub access_expires_at: Option<i64>,
     pub refresh_expires_at: Option<i64>,
+    // when the session cookie a parked app login holds says it lapses
+    pub session_expires_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
@@ -296,6 +297,8 @@ pub struct Account {
     pub stale_explanation: Option<String>,
     /// The plan its login says it is on, or last said: "Max 20x", "Pro".
     pub plan: Option<String>,
+    // when Pitboard last read it in use, for a tool no read asks
+    pub read_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
@@ -304,6 +307,19 @@ pub struct Status {
     /// The signed-in account first.
     pub accounts: Vec<Account>,
     pub warnings: Vec<Warning>,
+    // the sign-ins inside an app left halfway, each with an account parked for it
+    pub awaiting: Vec<Awaiting>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct Awaiting {
+    pub provider: String,
+    pub label: String,
+    // the account parked for it, as SwitchTo takes it: desktop/work
+    pub put_back: String,
+    pub since: i64,
+    // a Sign In Again of `label`, not an add
+    pub again: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]

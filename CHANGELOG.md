@@ -45,6 +45,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - `pitboard uninstall` asks whether to delete, saying the other accounts need signing in
   again, where it said a browser sign-in: a Claude Desktop account signs in again inside
   Claude.
+- A switch that quits the ChatGPT app waits, inside its 30 seconds, for the `codex` running
+  inside ChatGPT to go too before it switches.
 
 ## [0.11.0] - 2026-10-10
 

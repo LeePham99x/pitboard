@@ -10,14 +10,15 @@ use super::state::{Answer, Cadence, Job, Msg, Now, State};
 use super::{AppControl, Intent, Notifications, PlatformError, RunOutNotice, Snapshot};
 use crate::account_windows::records::{self, Entry, Records};
 use crate::{
-    Abandoned, Account, Adoption, AppCore, AutoLooked, AutoSwitched, Change, Check, Enrolled,
-    EnrolledAs, FoundCommandLine, Holding, Level, Limit, Made, OwnCommandLine, PitboardError,
-    Remedy, Renewed, Schedule, Source, Status, Switch, Switched, Tool, Usage, Warning,
+    Account, Adoption, AppCore, AutoLooked, AutoSwitched, Change, Check, Enrolled, EnrolledAs,
+    FoundCommandLine, GaveUp, Holding, Level, Limit, Made, OwnCommandLine, PitboardError, Remedy,
+    Renewed, Schedule, Source, Status, Switch, Switched, Tool, Usage, Warning,
 };
 use pitboard_core::context::Context;
 use pitboard_core::provider::ProviderId;
 use pitboard_core::service;
 use pitboard_core::switch::{Left, Stowed};
+use pitboard_core::testing::desktop::{self, FakeClaude, JarAs};
 use pitboard_core::testing::{MemoryHost, ScriptedApi, live_service};
 use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::path::PathBuf;
@@ -40,6 +41,40 @@ pub(super) fn claude_code() -> Tool {
 
 pub(super) fn codex() -> Tool {
     crate::tool(ProviderId::Codex)
+}
+
+pub(super) use crate::present::testing::{
+    awaiting, claude_desktop, desktop_account, desktop_warning,
+};
+
+// Claude's bundle id, which is how the core's holder detection names it.
+pub(super) const CLAUDE: &str = "com.anthropic.claudefordesktop";
+
+// Claude running with a login in memory, as the core's holder detection reports it.
+pub(super) fn claude_holding() -> Holding {
+    Holding {
+        kind: "claude_desktop".into(),
+        phrase: "Claude".into(),
+        pids: vec![812],
+        remedy: Remedy::ReopenApp {
+            app_id: CLAUDE.into(),
+            name: "Claude".into(),
+        },
+    }
+}
+
+// Claude Desktop with work in use and home parked, Claude open where `open`.
+pub(super) fn desktop_machine(open: bool) -> Machine {
+    let mut machine = Machine::reading(Ok(status(vec![
+        desktop_account("work", true),
+        desktop_account("home", false),
+    ])));
+    machine.found = vec![claude_code(), claude_desktop()];
+    machine
+        .held
+        .insert("desktop".into(), vec![claude_holding()]);
+    machine.apps = StandInApps::new(if open { &[CLAUDE] } else { &[] }, true);
+    machine
 }
 
 /// A limit as the core reports one.
@@ -85,6 +120,7 @@ pub(super) fn account(
         stale: None,
         stale_explanation: None,
         plan: None,
+        read_at: None,
     }
 }
 
@@ -112,6 +148,7 @@ pub(super) fn warned(accounts: Vec<Account>, warnings: Vec<Warning>) -> Status {
         now: 0,
         accounts,
         warnings,
+        awaiting: Vec::new(),
     }
 }
 
@@ -121,6 +158,7 @@ pub(super) fn warning(code: &str, message: &str) -> Warning {
         message: message.into(),
         account: None,
         held: None,
+        provider: None,
     }
 }
 
@@ -337,7 +375,7 @@ impl AppControl for StandInApps {
         Ok(())
     }
 
-    fn reopen(&self, location: String) -> Result<(), PlatformError> {
+    fn reopen(&self, location: String, front: bool) -> Result<(), PlatformError> {
         if self.fail_open.load(Ordering::SeqCst) {
             return Err(StandInApps::refused("to open an app"));
         }
@@ -346,10 +384,11 @@ impl AppControl for StandInApps {
             .and_then(|rest| rest.strip_suffix(".app"))
             .unwrap_or(&location)
             .to_owned();
+        let opened = if front { "open-front" } else { "open" };
         self.asked
             .lock()
             .expect("a test's own lock")
-            .push(format!("open {app}"));
+            .push(format!("{opened} {app}"));
         self.running.lock().expect("a test's own lock").insert(app);
         Ok(())
     }
@@ -444,9 +483,16 @@ pub(super) struct Machine {
     /// The other apps on this machine.
     pub apps: Arc<StandInApps>,
     /// What giving up on an interrupted switch gives.
-    pub abandoned: Result<Option<Abandoned>, Refusal>,
+    pub abandoned: Result<GaveUp, Refusal>,
     /// What starting a sign-in's tool gives.
     pub starting: Result<(), Refusal>,
+    // the account the core parked for a sign-in inside an app, as SwitchTo takes it
+    pub put_back: Option<String>,
+    // whether, after an app has quit, the core still finds part of it running
+    pub lingers: bool,
+    // what the core says of an app's data folder: whole, and a move of its login waiting
+    pub whole: bool,
+    pub moving: bool,
     /// What enrolling what a sign-in signed in to gives.
     pub enrolling: Result<Enrolled, Refusal>,
     /// Every sign-in started, as the model named the account.
@@ -552,8 +598,12 @@ impl Machine {
             auto_at: Vec::new(),
             held: HashMap::new(),
             apps: StandInApps::new(&[], true),
-            abandoned: Ok(None),
+            abandoned: Ok(GaveUp::default()),
             starting: Ok(()),
+            put_back: None,
+            lingers: false,
+            whole: true,
+            moving: false,
             enrolling: enrolled_as(EnrolledAs::SignedIn, Vec::new()),
             signed_in: Vec::new(),
             pasted: Vec::new(),
@@ -665,22 +715,25 @@ impl Machine {
             // What holds the login, and quitting an app, by the lanes' own rules over what
             // the test says runs, with no time given to quit: an app quits when asked, or
             // is still running.
-            Job::Holding { qualified } => {
+            Job::Holding { qualified, then } => {
                 let provider = super::state::split(&qualified).0;
                 let holdings = self.held.get(provider).map_or(&[][..], Vec::as_slice);
                 Answer::Held {
                     question: lanes::holder(holdings, self.apps.as_ref(), &qualified),
                     qualified,
+                    then,
                 }
             }
-            Job::Quit { question } => Answer::Quit {
+            Job::Quit { question, then } => Answer::Quit {
                 outcome: lanes::quit(
                     self.apps.as_ref(),
                     &question.app_id,
                     Duration::ZERO,
                     Duration::ZERO,
+                    || self.lingers,
                 ),
                 question,
+                then,
             },
             Job::Switch { qualified, reopen } => {
                 self.switched_to.push(qualified.clone());
@@ -702,9 +755,19 @@ impl Machine {
                     done: self.auto.clone().map_err(|refused| refused.error()),
                 }
             }
-            Job::Open { location } => {
-                let _ = self.apps.reopen(location);
-                Answer::Opened
+            // By the lane's own rule, over what the test says of the app's folder.
+            Job::Open {
+                location,
+                tool,
+                front,
+            } => {
+                let may = if front { !self.moving } else { self.whole };
+                let opened = may && self.apps.reopen(location, front).is_ok();
+                Answer::Opened {
+                    tool,
+                    front,
+                    opened,
+                }
             }
             Job::Abandon => {
                 Answer::Abandoned(self.abandoned.clone().map_err(|refused| refused.error()))
@@ -716,6 +779,7 @@ impl Machine {
                 Answer::SignInStarted {
                     id,
                     started: self.starting.clone().map_err(|refused| refused.error()),
+                    put_back: self.put_back.clone(),
                 }
             }
             Job::PasteCode { id, code } => {
@@ -733,11 +797,14 @@ impl Machine {
                 provider,
                 name,
                 from,
+                reopen,
             } => {
                 self.enrolled.push(format!("{provider}/{name}"));
                 Answer::Enrolled {
                     provider,
+                    name,
                     from,
+                    reopen,
                     done: self
                         .enrolling_current
                         .clone()
@@ -1077,6 +1144,16 @@ impl Hand {
         crate::present::present(&self.state, self.now.epoch(), &crate::present::testing::Utc)
     }
 
+    // What a Mac's app is shown now, whichever system runs the test.
+    pub(super) fn on_a_mac(&self) -> Snapshot {
+        crate::present::present_on(
+            pitboard_core::host::Os::MacOs,
+            &self.state,
+            self.now.epoch(),
+            &crate::present::testing::Utc,
+        )
+    }
+
     /// How many of the jobs asked for so far are `which`.
     pub(super) fn count(&self, which: fn(&Job) -> bool) -> usize {
         self.asked.iter().filter(|job| which(job)).count()
@@ -1156,6 +1233,8 @@ impl World {
             .with_search_path(String::new())
             .with_memory_stores(Arc::clone(&host))
             .with_scripted_api(Arc::clone(&api))
+            .with_scratch_claude(root.join("claude"))
+            .with_awaited_every(Duration::from_millis(2))
             .with_caller("app".into());
         World {
             root,
@@ -1240,6 +1319,36 @@ impl World {
 
     pub(super) fn elsewhere(&self) -> service::Pitboard {
         service::Pitboard::new(self.ctx.clone().with_caller("cli".into()))
+    }
+
+    // The Claude this machine's core reads, in its scratch folder.
+    pub(super) fn claude(&self) -> FakeClaude {
+        FakeClaude::on(
+            Arc::clone(&self.host),
+            &self.root.join("claude"),
+            JarAs::StandIn,
+        )
+    }
+
+    // home enrolled, then work added by a sign-in inside Claude, which parks home
+    pub(super) fn desktop_pair(&self) {
+        let claude = self.claude();
+        desktop::plant(&claude.data(), &desktop::HOME, JarAs::StandIn);
+        let pitboard = self.elsewhere();
+        pitboard
+            .enroll_current("desktop/home")
+            .expect("home enrolled");
+        desktop::signs_in_inside(&pitboard, &claude, "desktop/work", &desktop::WORK)
+            .expect("work added by a sign-in inside Claude");
+    }
+
+    // A move of `desktop/work`'s login left waiting, as a Claude opened during it leaves one.
+    pub(super) fn desktop_move_waiting(&self) {
+        desktop::leave_a_move_waiting(
+            &self.ctx,
+            &self.host,
+            &pitboard_core::state::Key::new(ProviderId::Desktop, "work"),
+        );
     }
 
     /// Claude Code signed in as `who` and enrolled as `label`, with its five-hour window

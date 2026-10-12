@@ -31,11 +31,11 @@ func account(
         switchable: switchable ?? (!signedIn && label != nil), parked: nil,
         usage: Usage(
             source: .live, observedAt: 0, windows: [], listsEveryLimit: provider == "claude"),
-        stale: nil, staleExplanation: nil, plan: nil)
+        stale: nil, staleExplanation: nil, plan: nil, readAt: nil)
 }
 
 func status(_ accounts: [Account], warnings: [Warning] = []) -> Status {
-    Status(now: 0, accounts: accounts, warnings: warnings)
+    Status(now: 0, accounts: accounts, warnings: warnings, awaiting: [])
 }
 
 /// Stands in for the Rust model: hands out the snapshot a test gives it, and keeps every
@@ -97,7 +97,7 @@ func snapshot(
             schedule: ScheduleShown(
                 schedule: nil, on: false, changing: false, enabled: true, runs: nil,
                 scheduledIn: nil, note: nil, failed: nil),
-            renewal: RenewalShown(renewing: false, note: ""),
+            renewal: RenewalShown(renewing: false, note: "", about: ""),
             checks: ChecksShown(
                 lines: [], summary: nil, checking: false, checked: nil, waiting: nil),
             activity: ActivityShown(lines: [], empty: nil),

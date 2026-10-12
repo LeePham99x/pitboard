@@ -21,10 +21,6 @@ protocol RunningApp: AnyObject {
 
 extension NSRunningApplication: RunningApp {}
 
-/// Other apps on this Mac, by bundle id, which the model may quit and open again around a
-/// switch: one that runs a tool for itself and keeps the tool's login in memory while it is
-/// open, as ChatGPT does with Codex's.
-///
 /// An app is asked to quit the way Command-Q asks it, which lets it ask about work in
 /// progress, and never forced: a forced quit loses whatever it had not saved. How long it is
 /// given, and what happens when it does not quit, is the model's.
@@ -32,9 +28,9 @@ final class MacAppControl: AppControl, @unchecked Sendable {
     // Unchecked because both closures are only called, never changed, and what they reach,
     // NSRunningApplication's list and NSWorkspace, are safe from any thread.
     private let copies: (String) -> [any RunningApp]
-    private let open: (URL) -> Void
+    private let open: (URL, Bool) -> Void
 
-    init(copies: @escaping (String) -> [any RunningApp], open: @escaping (URL) -> Void) {
+    init(copies: @escaping (String) -> [any RunningApp], open: @escaping (URL, Bool) -> Void) {
         self.copies = copies
         self.open = open
     }
@@ -44,14 +40,19 @@ final class MacAppControl: AppControl, @unchecked Sendable {
     static func live() -> MacAppControl {
         MacAppControl(
             copies: { NSRunningApplication.runningApplications(withBundleIdentifier: $0) },
-            open: { url in
+            open: { url, front in
                 DispatchQueue.main.async {
-                    let configuration = NSWorkspace.OpenConfiguration()
-                    // Whatever Pitboard has to say about the switch stays in front of it.
-                    configuration.activates = false
-                    NSWorkspace.shared.openApplication(at: url, configuration: configuration)
+                    NSWorkspace.shared.openApplication(
+                        at: url, configuration: opening(front: front))
                 }
             })
+    }
+
+    // In front for a sign-in inside the app; otherwise behind what Pitboard has to say.
+    static func opening(front: Bool) -> NSWorkspace.OpenConfiguration {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = front
+        return configuration
     }
 
     private func running(_ app: String) -> [any RunningApp] {
@@ -67,8 +68,8 @@ final class MacAppControl: AppControl, @unchecked Sendable {
         for copy in running(app) { copy.terminate() }
     }
 
-    func reopen(location: String) throws {
-        open(URL(fileURLWithPath: location))
+    func reopen(location: String, front: Bool) throws {
+        open(URL(fileURLWithPath: location), front)
     }
 }
 

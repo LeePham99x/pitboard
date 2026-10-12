@@ -311,6 +311,7 @@ fn signing_in(
             tell(Answer::SignInStarted {
                 id,
                 started: Err(error),
+                put_back: None,
             });
             return worker.sign_ins.end(id);
         }
@@ -323,13 +324,15 @@ fn signing_in(
         && tell(Answer::SignInStarted {
             id,
             started: Ok(()),
+            put_back: session.put_back.clone(),
         })
         && {
             // A read that stopped with a panic is taken as the tool having stopped saying
             // anything, so the sign-in is still over, one way or the other.
             let _ = catch_unwind(AssertUnwindSafe(|| {
                 while let Some(text) = session.next_line() {
-                    if !tell(Answer::SignInSaid { id, text }) {
+                    let step = session.step();
+                    if !tell(Answer::SignInSaid { id, text, step }) {
                         break;
                     }
                 }
@@ -537,21 +540,24 @@ impl Worker {
             Job::AskInstalled => Answer::Installed {
                 tools: core.installed(),
             },
-            Job::Holding { qualified } => {
+            Job::Holding { qualified, then } => {
                 let holdings = core.holding(split(&qualified).0.to_owned());
                 Answer::Held {
                     question: holder(&holdings, self.apps.as_ref(), &qualified),
                     qualified,
+                    then,
                 }
             }
-            Job::Quit { question } => Answer::Quit {
+            Job::Quit { question, then } => Answer::Quit {
                 outcome: quit(
                     self.apps.as_ref(),
                     &question.app_id,
                     self.quit_within,
                     self.quit_checked_every,
+                    || core.holds_app(split(&question.qualified).0, &question.app_id),
                 ),
                 question,
+                then,
             },
             Job::Switch { qualified, reopen } => Answer::Switched {
                 done: core.switch_to(qualified.clone()),
@@ -564,11 +570,23 @@ impl Worker {
             Job::AutoSwitch { at } => Answer::AutoSwitched {
                 done: core.auto_switch(at),
             },
-            Job::Open { location } => {
-                // An app that cannot be opened again is the person's to open: nothing here
-                // can mend it, and the switch is made either way.
-                let _ = self.apps.reopen(location);
-                Answer::Opened
+            // One that cannot be opened again is the person's to open: nothing here mends it.
+            Job::Open {
+                location,
+                tool,
+                front,
+            } => {
+                let may = if front {
+                    !core.moving(&tool)
+                } else {
+                    core.whole(&tool)
+                };
+                let opened = may && self.apps.reopen(location, front).is_ok();
+                Answer::Opened {
+                    tool,
+                    front,
+                    opened,
+                }
             }
             Job::Abandon => Answer::Abandoned(core.abandon_recovery()),
             // Named with their tool, as AppModel.swift's `qualified(_:for:)` named them, so a
@@ -577,10 +595,13 @@ impl Worker {
                 provider,
                 name,
                 from,
+                reopen,
             } => Answer::Enrolled {
                 done: core.enroll_current(format!("{provider}/{name}")),
                 provider,
+                name,
                 from,
+                reopen,
             },
             Job::Rename {
                 provider,
@@ -784,6 +805,7 @@ pub(crate) fn quit(
     app: &str,
     within: Duration,
     every: Duration,
+    held: impl Fn() -> bool,
 ) -> QuitOutcome {
     let copy = match apps.running(app.to_owned()) {
         Ok(Some(copy)) => copy,
@@ -794,12 +816,21 @@ pub(crate) fn quit(
         return QuitOutcome::StillRunning;
     }
     let deadline = Instant::now() + within;
-    while !matches!(apps.running(app.to_owned()), Ok(None)) {
-        let now = Instant::now();
-        if now >= deadline {
-            return QuitOutcome::StillRunning;
+    let wait = |until: &dyn Fn() -> bool| {
+        while !until() {
+            let now = Instant::now();
+            if now >= deadline {
+                return false;
+            }
+            std::thread::sleep(every.min(deadline - now));
         }
-        std::thread::sleep(every.min(deadline - now));
+        true
+    };
+    if !wait(&|| matches!(apps.running(app.to_owned()), Ok(None))) {
+        return QuitOutcome::StillRunning;
+    }
+    if !wait(&|| !held()) {
+        return QuitOutcome::Lingering { copy };
     }
     QuitOutcome::Quit { copy }
 }
@@ -841,8 +872,12 @@ fn notify(listener: &dyn ModelListener, told: &Receiver<Snapshot>, stopped: &Ato
 mod tests {
     use super::*;
     use crate::model::Intent;
-    use crate::model::state::{Cadence, Now, State};
-    use crate::model::testing::{CHATGPT_CODEX, Posted, StandInApps, World, chatgpt_holding};
+    use crate::model::QuitQuestion;
+    use crate::model::state::{After, Cadence, Now, State};
+    use crate::model::testing::{
+        CHATGPT_CODEX, CLAUDE, Posted, StandInApps, World, chatgpt_holding,
+    };
+    use pitboard_core::provider::ProviderId;
     #[cfg(unix)]
     use pitboard_core::testing::fs as files;
 
@@ -928,6 +963,7 @@ mod tests {
                 provider: "codex".into(),
                 name: "job".into(),
                 from: None,
+                reopen: None,
             },
             Job::Rename {
                 provider: "claude".into(),
@@ -947,10 +983,16 @@ mod tests {
         for job in [
             Job::Holding {
                 qualified: "codex/work".into(),
+                then: After::Switch,
             },
-            Job::Quit { question },
+            Job::Quit {
+                question,
+                then: After::Switch,
+            },
             Job::Open {
                 location: "/Applications/ChatGPT.app".into(),
+                tool: "codex".into(),
+                front: false,
             },
         ] {
             assert_eq!(job.lane(), Lane::Processes, "{job:?}");
@@ -981,6 +1023,7 @@ mod tests {
 
         let held = |qualified: &str| match worker.work(Job::Holding {
             qualified: qualified.into(),
+            then: After::Switch,
         }) {
             Answer::Held { question, .. } => question,
             other => panic!("not what holds the login: {other:?}"),
@@ -1045,13 +1088,13 @@ mod tests {
         let within = Duration::from_millis(50);
         let every = Duration::from_millis(5);
         assert_eq!(
-            quit(apps.as_ref(), CHATGPT, within, every),
+            quit(apps.as_ref(), CHATGPT, within, every, || false),
             QuitOutcome::Quit {
                 copy: StandInApps::copy_of(CHATGPT)
             }
         );
         assert_eq!(
-            quit(apps.as_ref(), CHATGPT, within, every),
+            quit(apps.as_ref(), CHATGPT, within, every, || false),
             QuitOutcome::NotRunning
         );
         assert_eq!(
@@ -1064,7 +1107,7 @@ mod tests {
         let within = Duration::from_millis(100);
         let started = Instant::now();
         assert_eq!(
-            quit(busy.as_ref(), CHATGPT, within, every),
+            quit(busy.as_ref(), CHATGPT, within, every, || false),
             QuitOutcome::StillRunning
         );
         assert!(started.elapsed() >= within);
@@ -1083,6 +1126,7 @@ mod tests {
             CHATGPT,
             Duration::from_millis(100),
             Duration::from_millis(20),
+            || false,
         );
         assert_eq!(outcome, QuitOutcome::StillRunning);
         // Once before asking it to quit, then at 0, 20, 40, 60, 80 and 100 ms, give or take
@@ -1102,7 +1146,7 @@ mod tests {
         let unseen = StandInApps::new(&[CHATGPT], true);
         unseen.fail_running(true);
         assert_eq!(
-            quit(unseen.as_ref(), CHATGPT, within, every),
+            quit(unseen.as_ref(), CHATGPT, within, every, || false),
             QuitOutcome::StillRunning
         );
         assert!(
@@ -1113,7 +1157,7 @@ mod tests {
         let unasked = StandInApps::new(&[CHATGPT], true);
         unasked.fail_quit(true);
         assert_eq!(
-            quit(unasked.as_ref(), CHATGPT, within, every),
+            quit(unasked.as_ref(), CHATGPT, within, every, || false),
             QuitOutcome::StillRunning
         );
         assert!(unasked.is_running(CHATGPT));
@@ -1616,16 +1660,193 @@ mod tests {
         let apps = StandInApps::new(&[], true);
         let world = World::new("open");
         let worker = worker(world.core(), Arc::clone(&apps));
-        let answer = worker.work(Job::Open {
+        let open = || Job::Open {
             location: StandInApps::copy_of(CHATGPT),
-        });
-        assert!(matches!(answer, Answer::Opened));
+            tool: "codex".into(),
+            front: false,
+        };
+        let answer = worker.work(open());
+        assert!(matches!(answer, Answer::Opened { opened: true, .. }));
         assert_eq!(apps.asked(), [format!("open {CHATGPT}")]);
 
         apps.fail_open(true);
-        let answer = worker.work(Job::Open {
-            location: StandInApps::copy_of(CHATGPT),
-        });
-        assert!(matches!(answer, Answer::Opened));
+        let answer = worker.work(open());
+        assert!(matches!(answer, Answer::Opened { opened: false, .. }));
+    }
+
+    #[test]
+    fn a_quit_waits_for_what_the_core_still_finds_of_the_app() {
+        let apps = StandInApps::new(&[CHATGPT], true);
+        let asked = std::sync::atomic::AtomicUsize::new(0);
+        let outcome = quit(
+            apps.as_ref(),
+            CHATGPT,
+            Duration::from_millis(500),
+            Duration::from_millis(5),
+            || asked.fetch_add(1, Ordering::SeqCst) < 3,
+        );
+        assert_eq!(
+            outcome,
+            QuitOutcome::Quit {
+                copy: StandInApps::copy_of(CHATGPT)
+            }
+        );
+        assert_eq!(asked.load(Ordering::SeqCst), 4, "asked until nothing held");
+    }
+
+    #[test]
+    fn a_quit_whose_app_leaves_something_running_is_lingering() {
+        let apps = StandInApps::new(&[CHATGPT], true);
+        let (arrivals, release) = apps.hold_running();
+        let within = Duration::from_millis(200);
+        let asked = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let quitting = {
+            let (apps, asked) = (Arc::clone(&apps), Arc::clone(&asked));
+            std::thread::spawn(move || {
+                quit(
+                    apps.as_ref(),
+                    CHATGPT,
+                    within,
+                    Duration::from_millis(5),
+                    || {
+                        asked.fetch_add(1, Ordering::SeqCst);
+                        true
+                    },
+                )
+            })
+        };
+        arrivals.recv().expect("asked where it is");
+        release.send(()).expect("let go");
+        arrivals.recv().expect("asked whether it has gone");
+        // Seen gone only once the whole time is spent.
+        std::thread::sleep(within);
+        drop(release);
+        assert_eq!(
+            quitting.join().expect("an outcome"),
+            QuitOutcome::Lingering {
+                copy: StandInApps::copy_of(CHATGPT)
+            }
+        );
+        assert_eq!(
+            asked.load(Ordering::SeqCst),
+            1,
+            "within the same time, no more"
+        );
+        assert!(!apps.is_running(CHATGPT));
+    }
+
+    fn open_claude(front: bool) -> Job {
+        Job::Open {
+            location: StandInApps::copy_of(CLAUDE),
+            tool: "desktop".into(),
+            front,
+        }
+    }
+
+    fn opened(answer: Answer) -> bool {
+        match answer {
+            Answer::Opened { opened, .. } => opened,
+            other => panic!("not an opening: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_app_is_opened_again_only_where_its_folder_is_whole() {
+        if !ProviderId::Desktop.supported_on(pitboard_core::host::OS) {
+            return;
+        }
+        let world = World::new("whole");
+        world.desktop_pair();
+        let apps = StandInApps::new(&[], true);
+        let worker = worker(world.core(), Arc::clone(&apps));
+        assert!(opened(worker.work(open_claude(false))));
+        apps.set_running(&[]);
+        world.desktop_move_waiting();
+        assert!(!opened(worker.work(open_claude(false))), "a move waits");
+        assert!(!opened(worker.work(open_claude(true))));
+        assert_eq!(apps.asked(), [format!("open {CLAUDE}")]);
+    }
+
+    #[test]
+    fn a_sign_in_with_nothing_parked_opens_claude_in_front() {
+        if !ProviderId::Desktop.supported_on(pitboard_core::host::OS) {
+            return;
+        }
+        let world = World::new("logged-out");
+        world.desktop_pair();
+        let claude = world.claude();
+        claude.opens();
+        claude.logs_out();
+        claude.quits();
+        world
+            .elsewhere()
+            .forget("desktop/work")
+            .expect("work signed out in Claude, forgotten");
+        let core = world.core();
+        assert!(!core.whole("desktop"), "nobody in use, home parked");
+        assert!(!core.moving("desktop"));
+        let apps = StandInApps::new(&[], true);
+        let worker = worker(core, Arc::clone(&apps));
+        assert!(
+            !opened(worker.work(open_claude(false))),
+            "a folder left with nobody in use stays closed"
+        );
+        assert!(opened(worker.work(open_claude(true))));
+        assert_eq!(apps.asked(), [format!("open-front {CLAUDE}")]);
+    }
+
+    #[test]
+    fn a_sign_in_while_a_move_waits_opens_nothing() {
+        if !ProviderId::Desktop.supported_on(pitboard_core::host::OS) {
+            return;
+        }
+        let world = World::new("move-waits");
+        world.desktop_pair();
+        world.desktop_move_waiting();
+        let apps = StandInApps::new(&[], true);
+        let worker = worker(world.core(), Arc::clone(&apps));
+        assert!(!opened(worker.work(open_claude(true))));
+        assert!(apps.asked().is_empty());
+    }
+
+    #[test]
+    fn a_codex_in_a_terminal_is_never_waited_for() {
+        let quit_chatgpt = |chatgpt_leaves_its_codex: bool| {
+            let world = World::new("terminal-codex");
+            world
+                .host
+                .runs_at("codex", &[CHATGPT_CODEX, "/usr/local/bin/codex"]);
+            let apps = StandInApps::new(&[CHATGPT], true);
+            let host = Arc::clone(&world.host);
+            apps.on_quit(move |_| {
+                if chatgpt_leaves_its_codex {
+                    host.runs_at("codex", &[CHATGPT_CODEX, "/usr/local/bin/codex"]);
+                } else {
+                    host.runs_at("codex", &["/usr/local/bin/codex"]);
+                }
+            });
+            let worker = worker(world.core(), Arc::clone(&apps));
+            match worker.work(Job::Quit {
+                question: QuitQuestion {
+                    qualified: "codex/work".into(),
+                    app_id: CHATGPT.into(),
+                    name: "ChatGPT".into(),
+                },
+                then: After::Switch,
+            }) {
+                Answer::Quit { outcome, .. } => outcome,
+                other => panic!("not a quit: {other:?}"),
+            }
+        };
+        let copy = StandInApps::copy_of(CHATGPT);
+        assert_eq!(
+            quit_chatgpt(false),
+            QuitOutcome::Quit { copy: copy.clone() }
+        );
+        assert_eq!(
+            quit_chatgpt(true),
+            QuitOutcome::Lingering { copy },
+            "the codex inside ChatGPT is waited for"
+        );
     }
 }

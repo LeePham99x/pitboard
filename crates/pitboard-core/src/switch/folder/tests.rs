@@ -1663,6 +1663,53 @@ fn whole_is_false_while_a_move_waits_and_after_a_switch_left_signed_out() {
     windows,
     ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
 )]
+fn a_move_left_waiting_for_the_apps_tests_is_the_switchs_own_record() {
+    let m = desktop_pair("left-waiting");
+    crate::desktop_testing::leave_a_move_waiting(&m.ctx, &m.mem, &m.key("work"));
+    let pitboard = crate::service::Pitboard::new(m.ctx.clone());
+    assert!(!pitboard.whole(ProviderId::Desktop));
+    assert!(pitboard.moving(ProviderId::Desktop));
+    let state = state::load(&m.ctx).expect("state");
+    let moving = state.moving(ProviderId::Desktop).expect("the record stays");
+    assert_eq!(moving.label, "work");
+    let crate::provider::LoginKind::Folder(app) = crate::provider::of(ProviderId::Desktop) else {
+        unreachable!("a folder tool")
+    };
+    assert!(
+        matches!(super::open(&m.ctx, app), super::Open::No),
+        "Claude is closed again"
+    );
+}
+
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+)]
+fn a_session_the_apps_fixture_sees_is_claude_ais_own() {
+    let m = desktop_machine("holds-a-session");
+    let claude = m.claude();
+    assert!(claude.holds_a_session());
+    let elsewhere = Cookie {
+        host: ".example.com".into(),
+        name: "sessionKey".into(),
+        path: "/".into(),
+        stored: b"v10elsewhere".to_vec(),
+        expires_utc: 0,
+    };
+    write_stand_in_jar(&data(&m).join("Cookies"), 24, &[elsewhere]);
+    assert!(!claude.holds_a_session(), "another site's cookie");
+    claude.opens();
+    claude.logs_out();
+    claude.quits();
+    assert!(!claude.holds_a_session(), "logged out");
+}
+
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+)]
 fn moving_is_true_only_while_a_move_waits_or_the_index_does_not_read() {
     let m = desktop_pair("moving");
     let pitboard = crate::service::Pitboard::new(m.ctx.clone());

@@ -374,14 +374,7 @@ pub(crate) fn codex_account(label: &str, who: &str, parked: Option<Park>) -> Acc
     }
 }
 
-pub(crate) const WORK: crate::desktop_testing::Person = crate::desktop_testing::Person {
-    uuid: "6f1c0a52-1111-4a6e-9d0b-2f6c1a9e7b10",
-    session: "work-session",
-};
-pub(crate) const HOME: crate::desktop_testing::Person = crate::desktop_testing::Person {
-    uuid: "b2aa91c4-3333-4c7a-a1d2-5e8f0c21d4e5",
-    session: "home-session",
-};
+pub(crate) use crate::desktop_testing::{HOME, WORK};
 
 pub(crate) const STRANGER: crate::desktop_testing::Person = crate::desktop_testing::Person {
     uuid: "0b7e2c44-2222-4d1f-8a35-91c0de77aa01",

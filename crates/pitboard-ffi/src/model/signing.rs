@@ -7,14 +7,16 @@
 
 use super::changing::a_look_landing_after;
 use super::lanes::Lane;
-use super::state::{Answer, Job};
+use super::state::{After, Answer, Job};
 use super::switching::a_read_that_started_before;
 use super::testing::{
-    Hand, Machine, a_look_or_a_read, any_read, claude, claude_code, codex, codex_account,
+    CLAUDE, Hand, Machine, StandInApps, a_look_or_a_read, any_read, awaiting, claude, claude_code,
+    claude_desktop, codex, codex_account, desktop_account, desktop_machine, desktop_warning,
     enrolled_as, installed_ask, refusal, status, still_running, switched, warning,
 };
-use super::{Intent, Pane, RestartNeeded, RunningSignIn, Sheet, WindowRequest};
+use super::{Intent, Pane, QuitQuestion, RestartNeeded, RunningSignIn, Sheet, WindowRequest};
 use crate::EnrolledAs;
+use pitboard_core::switch::WaitStep;
 
 /// What `claude auth login` 2.1.289 writes once it reads a code typed back, as the register's
 /// `sign_in_output` holds it.
@@ -42,7 +44,7 @@ fn present(sheet: Sheet) -> Intent {
     Intent::PresentSheet { sheet }
 }
 
-fn add(provider: Option<&str>) -> Sheet {
+pub(super) fn add(provider: Option<&str>) -> Sheet {
     Sheet::Add {
         provider: provider.map(str::to_owned),
     }
@@ -75,6 +77,7 @@ fn says(model: &mut Hand, id: u64, text: &str) {
     model.give(Answer::SignInSaid {
         id,
         text: text.into(),
+        step: None,
     });
 }
 
@@ -675,6 +678,7 @@ fn a_sign_in_waiting_on_a_cancelled_one_starts_once_that_one_has_let_go() {
             model.give(Answer::SignInStarted {
                 id,
                 started: Err(refusal("sign_in_incomplete", "no", Vec::new()).error()),
+                put_back: None,
             });
         }),
         (
@@ -683,6 +687,7 @@ fn a_sign_in_waiting_on_a_cancelled_one_starts_once_that_one_has_let_go() {
                 model.give(Answer::SignInStarted {
                     id,
                     started: Ok(()),
+                    put_back: None,
                 });
                 model.run(machine);
                 assert_eq!(machine.stopped, [id]);
@@ -696,6 +701,7 @@ fn a_sign_in_waiting_on_a_cancelled_one_starts_once_that_one_has_let_go() {
                 model.give(Answer::SignInStarted {
                     id,
                     started: Ok(()),
+                    put_back: None,
                 });
                 assert_eq!(
                     model.take(|job| matches!(job, Job::StopSignIn { .. })),
@@ -717,6 +723,7 @@ fn a_sign_in_waiting_on_a_cancelled_one_starts_once_that_one_has_let_go() {
             model.give(Answer::SignInStarted {
                 id,
                 started: Ok(()),
+                put_back: None,
             });
             model.give(Answer::Lost(Job::SignInOver { id, enrol: true }));
         }),
@@ -724,6 +731,7 @@ fn a_sign_in_waiting_on_a_cancelled_one_starts_once_that_one_has_let_go() {
             model.give(Answer::SignInStarted {
                 id,
                 started: Ok(()),
+                put_back: None,
             });
             model.give(Answer::SignInFinished {
                 id,
@@ -1402,9 +1410,734 @@ fn each_sign_in_is_told_once_whether_to_enrol() {
     assert_eq!(
         model.give(Answer::SignInSaid {
             id: second,
-            text: PROMPT.into()
+            text: PROMPT.into(),
+            step: None,
         }),
         [],
         "a sign-in no longer under way says nothing more"
     );
+}
+
+// Signing in inside an app: Claude Desktop's.
+
+pub(super) fn adding_in_claude(open: bool) -> (Hand, Machine) {
+    let mut model = Hand::new();
+    let mut machine = desktop_machine(open);
+    model.refresh(&mut machine);
+    put_up(&mut model, &mut machine, add(Some("desktop")));
+    (model, machine)
+}
+
+pub(super) fn travel() -> Intent {
+    sign_in("desktop", "travel")
+}
+
+fn a_quit(job: &Job) -> bool {
+    matches!(job, Job::Quit { .. })
+}
+
+// The quit question asked for an add, answered as its confirm button answers it.
+fn quit_for_it(model: &mut Hand, machine: &mut Machine) {
+    model.send(travel());
+    model.run(machine);
+    let question = model.shown().quit_question.expect("asked first");
+    model.send(Intent::QuitAndSwitch {
+        qualified: question.qualified,
+    });
+    model.run(machine);
+}
+
+fn page(model: &Hand) -> crate::present::SigningInText {
+    model.on_a_mac().signing_in_text.expect("the waiting page")
+}
+
+#[test]
+fn an_add_for_a_tool_that_signs_in_inside_its_app_asks_before_it_quits_the_app() {
+    let (mut model, mut machine) = adding_in_claude(true);
+    let jobs = model.send(travel());
+    assert_eq!(
+        jobs,
+        [Job::Holding {
+            qualified: "desktop/travel".into(),
+            then: After::SignIn {
+                provider: "desktop".into(),
+                name: "travel".into(),
+                from: Some(add(Some("desktop"))),
+            },
+        }]
+    );
+    assert!(model.on_a_mac().sheet_text.expect("the form").saving);
+    model.run(&mut machine);
+    let shown = model.on_a_mac();
+    assert_eq!(
+        shown.quit_question,
+        Some(QuitQuestion {
+            qualified: "desktop/travel".into(),
+            app_id: CLAUDE.into(),
+            name: "Claude".into(),
+        })
+    );
+    assert_eq!(
+        shown.quit_confirmation.expect("asked").title,
+        "Quit Claude to add an account?"
+    );
+    assert_eq!(shown.signing_in, None, "nothing parked before the answer");
+    assert_eq!(shown.switch_under_way, None);
+    assert!(machine.signed_in.is_empty());
+    assert!(machine.apps.asked().is_empty());
+}
+
+#[test]
+fn the_app_is_opened_in_front_once_the_account_in_use_is_parked() {
+    let (mut model, mut machine) = adding_in_claude(true);
+    machine.put_back = Some("desktop/work".into());
+    quit_for_it(&mut model, &mut machine);
+    assert_eq!(machine.signed_in, ["desktop/travel"]);
+    assert_eq!(
+        machine.apps.asked(),
+        [format!("quit {CLAUDE}"), format!("open-front {CLAUDE}")]
+    );
+    assert!(model.asked.iter().any(|job| *job
+        == Job::Open {
+            location: StandInApps::copy_of(CLAUDE),
+            tool: "desktop".into(),
+            front: true,
+        }));
+    let page = page(&model);
+    assert_eq!(page.waiting, "Waiting for Claude to quit");
+    assert!(
+        page.message
+            .starts_with("In Claude, sign in to the account you’re adding.")
+    );
+}
+
+#[test]
+fn a_park_refused_opens_the_app_again_behind() {
+    let (mut model, mut machine) = adding_in_claude(true);
+    machine.starting = Err(refusal(
+        "login_in_doubt",
+        "Pitboard recorded this Claude login as work’s, and Claude names an account you haven’t \
+         added for it.",
+        Vec::new(),
+    ));
+    quit_for_it(&mut model, &mut machine);
+    assert_eq!(
+        machine.apps.asked(),
+        [format!("quit {CLAUDE}"), format!("open {CLAUDE}")]
+    );
+    let shown = model.on_a_mac();
+    assert_eq!(shown.signing_in, None);
+    assert_eq!(
+        shown.sheet_failure.expect("said in the sheet").title,
+        "Couldn’t sign in to travel"
+    );
+    assert_eq!(
+        shown.sheet_text.expect("the form").confirm,
+        "Add the Account Claude Shows"
+    );
+    machine.changed += 1;
+    model.notice(&mut machine);
+    assert_eq!(
+        model.count(super::testing::offline_read),
+        1,
+        "a refused park lets the index go"
+    );
+}
+
+#[test]
+fn cancelling_while_parking_stops_what_started_and_opens_claude_behind() {
+    let (mut model, mut machine) = adding_in_claude(true);
+    machine.put_back = Some("desktop/work".into());
+    model.send(travel());
+    model.run(&mut machine);
+    let question = model.shown().quit_question.expect("asked");
+    model.send(Intent::QuitAndSwitch {
+        qualified: question.qualified,
+    });
+    let quit = model.next();
+    let answer = machine.answer(quit);
+    model.give(answer);
+    let Job::SignIn { id, .. } = model.take(|job| matches!(job, Job::SignIn { .. })) else {
+        unreachable!("taken as a sign-in");
+    };
+    model.send(Intent::CancelSignIn);
+    let jobs = model.give(Answer::SignInStarted {
+        id,
+        started: Ok(()),
+        put_back: Some("desktop/work".into()),
+    });
+    assert!(jobs.contains(&Job::StopSignIn { id }), "{jobs:?}");
+    assert!(
+        jobs.iter().any(|job| matches!(
+            job,
+            Job::Open { tool, front: false, .. } if tool == "desktop"
+        )),
+        "{jobs:?}"
+    );
+    assert_eq!(model.shown().signing_in, None);
+    model.run(&mut machine);
+    assert_eq!(
+        machine.apps.asked(),
+        [format!("quit {CLAUDE}"), format!("open {CLAUDE}")]
+    );
+    machine.changed += 1;
+    model.notice(&mut machine);
+    assert_eq!(model.count(super::testing::offline_read), 1);
+}
+
+#[test]
+fn an_add_cancelled_before_its_park_starts_lets_the_index_go_and_opens_claude_behind() {
+    let (mut model, mut machine) = adding_in_claude(true);
+    let first = starts(&mut model, &mut machine, "claude", "one");
+    model.send(Intent::CancelSignIn);
+    // Its stop unanswered, it holds the core's one sign-in at a time.
+    model.take(|job| matches!(job, Job::StopSignIn { .. }));
+    quit_for_it(&mut model, &mut machine);
+    model.send(Intent::CancelSignIn);
+    model.run(&mut machine);
+    model.give(Answer::SignInStopped { id: first });
+    model.run(&mut machine);
+    assert_eq!(
+        machine.signed_in,
+        ["claude/one"],
+        "travel's park never started"
+    );
+    assert_eq!(
+        machine.apps.asked(),
+        [format!("quit {CLAUDE}"), format!("open {CLAUDE}")]
+    );
+    machine.changed += 1;
+    model.notice(&mut machine);
+    assert_eq!(model.count(super::testing::offline_read), 1);
+}
+
+#[test]
+fn a_park_cancelled_in_flight_and_asked_again_keeps_each_hold_its_own() {
+    for open in [false, true] {
+        let (mut model, mut machine) = adding_in_claude(open);
+        machine.put_back = Some("desktop/work".into());
+        model.send(travel());
+        if open {
+            model.run(&mut machine);
+            let question = model.shown().quit_question.expect("asked");
+            model.send(Intent::QuitAndSwitch {
+                qualified: question.qualified,
+            });
+        }
+        let held = model.next();
+        let answer = machine.answer(held);
+        model.give(answer);
+        let first = model.take(|job| matches!(job, Job::SignIn { .. }));
+        let Job::SignIn { id, .. } = first.clone() else {
+            unreachable!("taken as a sign-in");
+        };
+        model.send(Intent::CancelSignIn);
+        model.send(travel());
+        model.run(&mut machine);
+        let started = machine.answer(first);
+        model.give(started);
+        model.run(&mut machine);
+        model.give(Answer::SignInQuiet { id });
+        model.run(&mut machine);
+        assert_eq!(
+            machine.signed_in,
+            ["desktop/travel", "desktop/travel"],
+            "{open}"
+        );
+        assert_eq!(running(&model).id, id + 1, "{open}: the second started");
+        let quit_and_opened: &[String] = if open {
+            &[format!("quit {CLAUDE}"), format!("open-front {CLAUDE}")]
+        } else {
+            &[]
+        };
+        assert_eq!(
+            machine.apps.asked(),
+            quit_and_opened,
+            "{open}: opened once the second has parked"
+        );
+        machine.changed += 1;
+        model.notice(&mut machine);
+        assert_eq!(model.count(super::testing::offline_read), 1, "{open}");
+    }
+}
+
+// Claude's quit failing each way: (quits, lingers, lost, what is said, what the apps were asked).
+pub(super) fn quits_failed() -> [(bool, bool, bool, String, Vec<String>); 3] {
+    let still_open = "Claude is still open, so nothing has changed. Quit it, then try again.";
+    let lingering = "Part of Claude is still running after it quit, so nothing has changed. Wait \
+                     until it ends, or quit it in Activity Monitor, then try again.";
+    let (quit, open) = (format!("quit {CLAUDE}"), format!("open {CLAUDE}"));
+    [
+        (false, false, false, still_open.into(), vec![quit.clone()]),
+        (true, true, false, lingering.into(), vec![quit, open]),
+        (true, false, true, still_open.into(), Vec::new()),
+    ]
+}
+
+#[test]
+fn an_add_whose_app_does_not_quit_parks_nothing_and_lets_its_sheet_go() {
+    for (quits, lingers, lost, message, asked) in quits_failed() {
+        let (mut model, mut machine) = adding_in_claude(true);
+        machine.apps = StandInApps::new(&[CLAUDE], quits);
+        machine.lingers = lingers;
+        machine.put_back = Some("desktop/work".into());
+        model.send(travel());
+        model.run(&mut machine);
+        let question = model.shown().quit_question.expect("asked");
+        model.send(Intent::QuitAndSwitch {
+            qualified: question.qualified,
+        });
+        if lost {
+            let quit = model.take(a_quit);
+            model.give(Answer::Lost(quit));
+        }
+        model.run(&mut machine);
+        assert!(machine.signed_in.is_empty(), "{message}");
+        let shown = model.on_a_mac();
+        assert_eq!(shown.signing_in, None);
+        assert_eq!(shown.sheet, Some(add(Some("desktop"))));
+        let failure = shown.sheet_failure.expect("said in the sheet");
+        assert_eq!(failure.title, "Couldn’t sign in to travel");
+        assert_eq!(failure.message, message);
+        assert!(!shown.sheet_text.expect("the form").saving, "{message}");
+        assert_eq!(machine.apps.asked(), asked);
+        machine.changed += 1;
+        model.notice(&mut machine);
+        assert_eq!(
+            model.count(super::testing::offline_read),
+            1,
+            "the index is not held"
+        );
+        model.send(Intent::CloseSheet);
+        assert_eq!(model.shown().sheet, None, "{message}");
+    }
+}
+
+#[test]
+fn no_park_starts_beside_a_switch_of_its_tool() {
+    let (mut model, mut machine) = adding_in_claude(true);
+    model.send(Intent::SwitchTo {
+        qualified: "desktop/home".into(),
+    });
+    assert_eq!(model.send(travel()), [], "asked while the switch runs");
+    model.run(&mut machine);
+    assert!(machine.signed_in.is_empty());
+
+    let (mut model, mut machine) = adding_in_claude(false);
+    model.send(travel());
+    model.send(Intent::SwitchTo {
+        qualified: "desktop/home".into(),
+    });
+    model.run(&mut machine);
+    assert!(
+        machine.signed_in.is_empty(),
+        "asked before the switch, it would park once the switch is claimed"
+    );
+    assert_eq!(machine.switched_to, ["desktop/home"]);
+    assert!(!model.on_a_mac().sheet_text.expect("the form").saving);
+}
+
+#[test]
+fn keeping_the_app_open_starts_no_sign_in_and_lets_the_sheet_go() {
+    let (mut model, mut machine) = adding_in_claude(true);
+    model.send(travel());
+    model.run(&mut machine);
+    assert!(model.on_a_mac().sheet_text.expect("the form").saving);
+    assert_eq!(model.send(Intent::KeepAppOpen), []);
+    let shown = model.on_a_mac();
+    assert_eq!(shown.quit_question, None);
+    assert_eq!(shown.signing_in, None);
+    assert!(!shown.sheet_text.expect("the form").saving);
+    assert_eq!(model.count(a_quit), 0);
+    assert!(machine.apps.asked().is_empty());
+}
+
+#[test]
+fn a_first_account_of_such_a_tool_is_recorded_as_the_one_signed_in() {
+    let mut model = Hand::new();
+    let mut machine = Machine::reading(Ok(status(vec![claude("work", true, 10.0)])));
+    machine.found = vec![claude_code(), claude_desktop()];
+    model.refresh(&mut machine);
+    put_up(&mut model, &mut machine, add(Some("desktop")));
+    assert_eq!(
+        model.on_a_mac().sheet_text.expect("the form").confirm,
+        "Add Account"
+    );
+    let jobs = model.send(sign_in("desktop", "work"));
+    assert_eq!(
+        jobs,
+        [Job::Holding {
+            qualified: "desktop/work".into(),
+            then: After::Enrol {
+                provider: "desktop".into(),
+                name: "work".into(),
+                from: Some(add(Some("desktop"))),
+            },
+        }]
+    );
+    model.run(&mut machine);
+    assert_eq!(machine.enrolled, ["desktop/work"]);
+    assert!(machine.signed_in.is_empty());
+    assert_eq!(model.shown().sheet, None, "its sheet closes");
+}
+
+#[test]
+fn a_first_account_refused_as_signed_out_offers_the_sign_in_next() {
+    let mut model = Hand::new();
+    let mut machine = Machine::reading(Ok(status(vec![claude("work", true, 10.0)])));
+    machine.found = vec![claude_code(), claude_desktop()];
+    machine.enrolling_current = Err(refusal(
+        "live_credential_absent",
+        "Claude isn’t signed in.",
+        Vec::new(),
+    ));
+    model.refresh(&mut machine);
+    put_up(&mut model, &mut machine, add(Some("desktop")));
+    model.send(sign_in("desktop", "work"));
+    model.run(&mut machine);
+    let shown = model.on_a_mac();
+    assert_eq!(
+        shown.sheet_failure.expect("said in the sheet").title,
+        "Couldn’t add work"
+    );
+    assert_eq!(shown.sheet_text.expect("the form").confirm, "Start Sign-In");
+    let jobs = model.send(sign_in("desktop", "work"));
+    assert!(
+        matches!(
+            &jobs[..],
+            [Job::Holding {
+                then: After::SignIn { .. },
+                ..
+            }]
+        ),
+        "{jobs:?}"
+    );
+}
+
+#[test]
+fn an_add_that_met_a_login_pitboard_cannot_place_records_the_account_claude_shows() {
+    let (mut model, mut machine) = adding_in_claude(false);
+    machine.starting = Err(refusal("login_in_doubt", "in doubt", Vec::new()));
+    model.send(travel());
+    model.run(&mut machine);
+    assert_eq!(machine.signed_in, ["desktop/travel"]);
+    assert_eq!(
+        model.on_a_mac().sheet_text.expect("the form").confirm,
+        "Add the Account Claude Shows"
+    );
+    let jobs = model.send(travel());
+    assert!(
+        matches!(
+            &jobs[..],
+            [Job::Holding {
+                then: After::Enrol { .. },
+                ..
+            }]
+        ),
+        "{jobs:?}"
+    );
+}
+
+#[test]
+fn the_wait_says_each_step_it_meets() {
+    let (mut model, mut machine) = adding_in_claude(false);
+    machine.put_back = Some("desktop/work".into());
+    model.send(travel());
+    model.run(&mut machine);
+    let id = running(&model).id;
+    let step = |model: &mut Hand, text: &str, step| {
+        model.give(Answer::SignInSaid {
+            id,
+            text: text.into(),
+            step: Some(step),
+        });
+        page(model)
+    };
+    let open = step(&mut model, "Claude is open.\n", WaitStep::Open);
+    assert!(
+        open.message
+            .starts_with("Open Claude and sign in to the account you’re adding."),
+        "Pitboard did not open it: {}",
+        open.message
+    );
+    assert_eq!(open.waiting, "Waiting for Claude to quit");
+    let nobody = step(
+        &mut model,
+        "Claude quit with nobody signed in. Still waiting.\n",
+        WaitStep::QuitSignedOut,
+    );
+    assert!(
+        nobody
+            .message
+            .starts_with("Claude quit with nobody signed in.")
+    );
+    let unfinished = step(
+        &mut model,
+        "Claude quit before it finished signing in.\n",
+        WaitStep::QuitUnfinished,
+    );
+    assert!(
+        unfinished
+            .message
+            .starts_with("Claude quit before it finished signing in.")
+    );
+}
+
+#[test]
+fn later_stops_the_wait_and_reads_again() {
+    let (mut model, mut machine) = adding_in_claude(false);
+    machine.put_back = Some("desktop/work".into());
+    model.send(travel());
+    model.run(&mut machine);
+    let id = running(&model).id;
+    assert_eq!(page(&model).cancel.title, "Later");
+    let reads = model.count(any_read);
+    let jobs = model.send(Intent::CancelSignIn);
+    assert!(jobs.contains(&Job::StopSignIn { id }), "{jobs:?}");
+    model.run(&mut machine);
+    assert!(
+        model.count(any_read) > reads,
+        "the notice of an add left halfway is read"
+    );
+    assert_eq!(model.shown().signing_in, None);
+}
+
+#[test]
+fn cancelling_while_claude_quits_parks_nothing_and_opens_it_again() {
+    let (mut model, mut machine) = adding_in_claude(true);
+    model.send(travel());
+    model.run(&mut machine);
+    let question = model.shown().quit_question.expect("asked");
+    model.send(Intent::QuitAndSwitch {
+        qualified: question.qualified,
+    });
+    assert!(!page(&model).cancel.enabled, "held back while Claude quits");
+    assert_eq!(model.send(Intent::CancelSignIn), []);
+    model.run(&mut machine);
+    assert!(machine.signed_in.is_empty(), "nothing parked");
+    assert_eq!(
+        machine.apps.asked(),
+        [format!("quit {CLAUDE}"), format!("open {CLAUDE}")]
+    );
+}
+
+#[test]
+fn a_sheet_that_is_saving_does_not_close() {
+    let mut model = Hand::new();
+    let mut machine = Machine::reading(Ok(status(Vec::new())));
+    let name = Sheet::Name {
+        provider: "claude".into(),
+        email: "a@example.com".into(),
+    };
+    put_up(&mut model, &mut machine, name.clone());
+    model.send(Intent::Enrol {
+        provider: "claude".into(),
+        name: "work".into(),
+    });
+    model.send(Intent::CloseSheet);
+    assert_eq!(
+        model.shown().sheet,
+        Some(name),
+        "a save cannot be withdrawn"
+    );
+    model.run(&mut machine);
+    assert_eq!(model.shown().sheet, None, "closed once enrolled");
+
+    let (mut model, mut machine) = adding_in_claude(true);
+    model.send(travel());
+    model.send(Intent::CloseSheet);
+    assert_eq!(model.shown().sheet, Some(add(Some("desktop"))));
+    model.run(&mut machine);
+    model.send(Intent::KeepAppOpen);
+    model.send(Intent::CloseSheet);
+    assert_eq!(model.shown().sheet, None);
+}
+
+#[test]
+fn a_question_answered_over_another_sign_in_lets_its_sheet_go() {
+    let (mut model, mut machine) = adding_in_claude(true);
+    model.send(travel());
+    model.run(&mut machine);
+    let question = model.shown().quit_question.expect("asked");
+    put_up(&mut model, &mut machine, add(None));
+    starts(&mut model, &mut machine, "claude", "one");
+    model.send(Intent::QuitAndSwitch {
+        qualified: question.qualified,
+    });
+    model.send(Intent::KeepAppOpen);
+    model.send(Intent::CancelSignIn);
+    model.run(&mut machine);
+    assert_eq!(model.count(a_quit), 0);
+    put_up(&mut model, &mut machine, add(Some("desktop")));
+    assert!(!model.on_a_mac().sheet_text.expect("the form").saving);
+    model.send(Intent::CloseSheet);
+    assert_eq!(model.shown().sheet, None);
+}
+
+#[test]
+fn parking_for_a_sign_in_holds_the_index_until_its_read_is_over() {
+    let (mut model, mut machine) = adding_in_claude(false);
+    machine.put_back = Some("desktop/work".into());
+    model.send(travel());
+    let held = model.next();
+    let answer = machine.answer(held);
+    model.give(answer);
+    let sign_in = model.take(|job| matches!(job, Job::SignIn { .. }));
+    machine.changed += 1;
+    model.notice(&mut machine);
+    assert_eq!(
+        model.count(super::testing::offline_read),
+        0,
+        "the park is this app's own change"
+    );
+    let started = machine.answer(sign_in);
+    model.give(started);
+    model.run(&mut machine);
+    machine.changed += 1;
+    model.notice(&mut machine);
+    assert_eq!(
+        model.count(super::testing::offline_read),
+        1,
+        "let go once the read after it is over"
+    );
+}
+
+#[test]
+fn a_sign_in_again_of_the_account_in_use_is_said_as_a_new_login() {
+    let mut model = Hand::new();
+    let mut machine = desktop_machine(false);
+    machine.put_back = Some("desktop/work".into());
+    machine.enrolling = enrolled_as(EnrolledAs::InUse { again: true }, Vec::new());
+    model.refresh(&mut machine);
+    put_up(
+        &mut model,
+        &mut machine,
+        Sheet::SignInAgain {
+            provider: "desktop".into(),
+            label: "work".into(),
+        },
+    );
+    assert_eq!(
+        model.on_a_mac().sheet_text.expect("the form").confirm,
+        "Park work"
+    );
+    model.send(sign_in("desktop", "work"));
+    model.run(&mut machine);
+    let id = running(&model).id;
+    ends(&mut model, &mut machine, id);
+    let notice = model
+        .on_a_mac()
+        .notices
+        .into_iter()
+        .find(|notice| notice.id == "switch/desktop")
+        .expect("what the sign-in did");
+    assert_eq!(notice.title, "work has a new login");
+    assert_eq!(
+        notice.lines,
+        ["Signed in to work again. Claude is signed in to it now."]
+    );
+}
+
+#[test]
+fn a_resumed_add_offers_to_put_its_account_back() {
+    let mut model = Hand::new();
+    let read = crate::Status {
+        awaiting: vec![awaiting("travel", "work", false)],
+        ..status(vec![
+            desktop_account("work", false),
+            desktop_account("home", false),
+        ])
+    };
+    let mut machine = desktop_machine(false);
+    machine.answer = Ok(read);
+    machine.enrolling_current = Err(refusal(
+        "live_credential_absent",
+        "Claude isn’t signed in.",
+        Vec::new(),
+    ));
+    machine.put_back = Some("desktop/work".into());
+    model.refresh(&mut machine);
+    put_up(&mut model, &mut machine, add(Some("desktop")));
+    let form = model.on_a_mac().sheet_text.expect("the form");
+    assert_eq!(form.name, "travel");
+    assert_eq!(form.confirm, "Add the Account Claude Shows");
+    model.send(travel());
+    model.run(&mut machine);
+    assert_eq!(
+        model.on_a_mac().sheet_text.expect("the form").confirm,
+        "Start Sign-In"
+    );
+    model.send(travel());
+    model.run(&mut machine);
+    let page = page(&model);
+    assert_eq!(
+        page.undo.map(|undo| (undo.title, undo.intent)),
+        Some((
+            "Put work Back".into(),
+            Intent::SwitchTo {
+                qualified: "desktop/work".into()
+            }
+        ))
+    );
+    assert_eq!(page.cancel.title, "Later");
+    assert!(!page.escape_cancels);
+}
+
+#[test]
+fn nothing_parked_from_a_logged_out_claude_offers_no_put_back() {
+    let mut model = Hand::new();
+    let mut machine = desktop_machine(false);
+    machine.answer = Ok(super::testing::warned(
+        vec![
+            desktop_account("work", true),
+            desktop_account("home", false),
+        ],
+        vec![desktop_warning(
+            "looks_signed_out",
+            "Claude looks signed out since Pitboard last read work in use.",
+        )],
+    ));
+    model.refresh(&mut machine);
+    put_up(&mut model, &mut machine, add(Some("desktop")));
+    assert_eq!(
+        model.on_a_mac().sheet_text.expect("the form").confirm,
+        "Start Sign-In"
+    );
+    model.send(travel());
+    model.run(&mut machine);
+    assert_eq!(machine.signed_in, ["desktop/travel"]);
+    let page = page(&model);
+    assert_eq!(page.cancel.title, "Cancel");
+    assert!(page.escape_cancels);
+    assert_eq!(page.undo, None);
+}
+
+#[test]
+fn no_undo_is_offered_before_the_core_says_what_it_parked() {
+    let (mut model, mut machine) = adding_in_claude(false);
+    machine.put_back = Some("desktop/work".into());
+    model.send(travel());
+    let held = model.next();
+    let answer = machine.answer(held);
+    model.give(answer);
+    let page = page(&model);
+    assert_eq!(page.undo, None);
+    assert!(!page.escape_cancels);
+    assert_eq!(page.cancel.title, "Cancel");
+    assert_eq!(page.waiting, "Parking work");
+}
+
+#[test]
+fn the_page_says_pitboard_opened_claude_only_where_it_did() {
+    for (moving, said) in [
+        (true, "Open Claude and sign in"),
+        (false, "In Claude, sign in"),
+    ] {
+        let (mut model, mut machine) = adding_in_claude(true);
+        machine.put_back = Some("desktop/work".into());
+        machine.moving = moving;
+        quit_for_it(&mut model, &mut machine);
+        let page = page(&model);
+        assert!(page.message.starts_with(said), "{moving}: {}", page.message);
+    }
 }

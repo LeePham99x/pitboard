@@ -229,6 +229,10 @@ impl MemoryHost {
         locked(&self.later).push((from, path.into()));
     }
 
+    pub fn listed_no_longer(&self, path: &str) {
+        locked(&self.later).retain(|(_, listed)| listed != Path::new(path));
+    }
+
     pub fn listings(&self) -> usize {
         self.listings.load(Ordering::SeqCst)
     }

@@ -9,7 +9,7 @@ use super::{
 };
 use crate::model::RunOutNotice;
 use crate::model::advice::Advice;
-use crate::model::state::split;
+use crate::model::state::{in_its_app, split};
 use crate::model::{Intent, LastSwitch, Pane, Sheet};
 use crate::{Adoption, Held, Warning};
 use pitboard_core::provider::ProviderId;
@@ -64,14 +64,77 @@ fn dismiss(intent: Intent) -> NoticeAction {
     }
 }
 
-/// What the read warns about, but for the one its failure already says. A failure's message
-/// is not one of its warnings, and dropping the first of them hid one that was.
 fn other_warnings<'a>(seen: &'a Seen) -> impl Iterator<Item = &'a Warning> {
     let problem = seen.problem();
-    seen.state
-        .warnings
+    let stuck = seen.state.stuck;
+    seen.state.warnings.iter().filter(move |warning| {
+        Some(warning.message.as_str()) != problem
+            && warning.code != "sign_in_awaited"
+            && !(stuck && warning.code == "move_waiting")
+    })
+}
+
+// Not one whose own sheet this app shows, which offers the same.
+fn awaiting(seen: &Seen) -> Vec<PanelNotice> {
+    let Some(status) = &seen.state.status else {
+        return Vec::new();
+    };
+    status
+        .awaiting
         .iter()
-        .filter(move |warning| Some(warning.message.as_str()) != problem)
+        .filter(|awaiting| {
+            !seen
+                .state
+                .signing()
+                .is_some_and(|signing| signing.in_its_app && signing.provider == awaiting.provider)
+        })
+        .map(|awaiting| {
+            let provider = &awaiting.provider;
+            let app = seen.program_of(provider);
+            let put_back = split(&awaiting.put_back).1;
+            let (title, finish, sheet) = if awaiting.again {
+                (
+                    format!("Signing in to {} again isn’t finished", awaiting.label),
+                    "Finish Signing In…",
+                    Sheet::SignInAgain {
+                        provider: provider.clone(),
+                        label: awaiting.label.clone(),
+                    },
+                )
+            } else {
+                (
+                    format!(
+                        "Adding a {} account isn’t finished",
+                        seen.tool_name(provider)
+                    ),
+                    "Finish Adding…",
+                    Sheet::Add {
+                        provider: Some(provider.clone()),
+                    },
+                )
+            };
+            notice(
+                format!("awaiting/{provider}"),
+                Severity::Warning,
+                title,
+                words::awaiting_lines(app, &awaiting.label, put_back, awaiting.again),
+                vec![
+                    NoticeAction {
+                        title: finish.into(),
+                        intent: Intent::PresentSheet { sheet },
+                        dismisses: false,
+                        switches: false,
+                        enabled: true,
+                        confirm: None,
+                    },
+                    NoticeAction {
+                        title: format!("Put {put_back} Back"),
+                        ..switch_action(seen, &awaiting.put_back, put_back)
+                    },
+                ],
+            )
+        })
+        .collect()
 }
 
 /// What `last` warned about that the read after it did not already show, so nothing is said
@@ -184,6 +247,7 @@ pub(crate) fn notices(seen: &Seen, footing: &Footing) -> Vec<PanelNotice> {
     for last in &state.last_switches {
         said.push(of_last_switch(seen, last));
     }
+    said.extend(awaiting(seen));
     // What a switch's notice says already, which is only what the read does not repeat: a
     // warning both carry is the read's to say, and leaving it out of both said it nowhere.
     let shown: Vec<&Warning> = state
@@ -227,6 +291,15 @@ pub(crate) fn notices(seen: &Seen, footing: &Footing) -> Vec<PanelNotice> {
             vec![dismiss(Intent::DismissAbandoned)],
         ));
     }
+    if !state.moves_given_up().is_empty() {
+        said.push(notice(
+            "moves_given_up".into(),
+            Severity::Info,
+            "Gave up on the interrupted move".into(),
+            state.moves_given_up().to_vec(),
+            vec![dismiss(Intent::DismissAbandoned)],
+        ));
+    }
     if let Some(stowed) = &state.stowed {
         said.push(notice(
             "stowed".into(),
@@ -245,6 +318,9 @@ pub(crate) fn notices(seen: &Seen, footing: &Footing) -> Vec<PanelNotice> {
 /// keychain is put away from a sheet of its own, which says whose its login is first, where
 /// Pitboard can read it: one it cannot read it cannot put away, and the warning says why.
 fn warning_actions(seen: &Seen, warning: &Warning) -> Vec<NoticeAction> {
+    if let Some(provider) = warning.provider.as_deref().filter(|tool| in_its_app(tool)) {
+        return in_app_actions(seen, provider, &warning.code);
+    }
     match warning.code.as_str() {
         "config_names_another" => update_config_action(seen),
         "fallback_login" if warning.held != Some(Held::Unreadable) => {
@@ -259,6 +335,51 @@ fn warning_actions(seen: &Seen, warning: &Warning) -> Vec<NoticeAction> {
         }
         _ => Vec::new(),
     }
+}
+
+// A move waiting is given up only once a change from this app could not settle it.
+fn in_app_actions(seen: &Seen, provider: &str, code: &str) -> Vec<NoticeAction> {
+    if !matches!(
+        code,
+        "in_use_unconfirmed" | "config_names_another" | "move_waiting"
+    ) {
+        return Vec::new();
+    }
+    let app = seen.program_of(provider);
+    let mut actions = vec![NoticeAction {
+        title: format!("Add the Account {app} Shows…"),
+        intent: Intent::PresentSheet {
+            sheet: Sheet::Add {
+                provider: Some(provider.to_owned()),
+            },
+        },
+        dismisses: false,
+        switches: false,
+        enabled: true,
+        confirm: None,
+    }];
+    let stopped = matches!(
+        seen.state.refused_by(provider),
+        Some("recovery_undetermined" | "recovery_elsewhere" | "move_mixed")
+    );
+    if code == "move_waiting" && stopped {
+        actions.push(NoticeAction {
+            title: "Give Up…".into(),
+            intent: Intent::AbandonStuckSwitch,
+            dismisses: false,
+            switches: false,
+            enabled: true,
+            confirm: Some(Question {
+                title: "Give up on the interrupted move?".into(),
+                message: format!(
+                    "Every folder is kept and nothing is deleted. Whatever is in {app}’s folder \
+                     stays there."
+                ),
+                confirm: "Give Up".into(),
+            }),
+        });
+    }
+    actions
 }
 
 /// Writing the account in use into Claude Code's config, held back while a switch is under
@@ -426,18 +547,24 @@ pub(crate) fn menu_notices(seen: &Seen, footing: &Footing, notices: &[PanelNotic
         .iter()
         .filter(|notice| notice.severity != Severity::Info)
         .collect();
+    // A sign-in left halfway offers its way on before its way back.
     let switches = pressing
         .iter()
-        .filter_map(|notice| {
-            let action = notice.actions.iter().find(|action| action.switches)?;
-            Some(MenuEntry {
+        .flat_map(|notice| {
+            let switching = notice.actions.iter().find(|action| action.switches);
+            let on = notice
+                .actions
+                .iter()
+                .find(|action| !action.switches && !action.dismisses)
+                .filter(|_| notice.id.starts_with("awaiting/"));
+            on.into_iter().chain(switching).map(|action| MenuEntry {
                 title: action.title.clone(),
                 subtitle: Some(notice.title.clone()),
                 help: None,
                 severity: None,
                 intent: Some(action.intent.clone()),
                 link: None,
-                enabled: seen.state.switch_under_way().is_none(),
+                enabled: action.enabled && seen.state.switch_under_way().is_none(),
             })
         })
         .collect();
@@ -515,5 +642,217 @@ mod tests {
         let mut sorted = vec![Severity::Error, Severity::Info, Severity::Warning];
         sorted.sort();
         assert_eq!(sorted, severities);
+    }
+
+    use crate::LastSwitch;
+    use crate::present::present_on;
+    use crate::present::testing::{
+        Utc, account, awaiting, claude_code, claude_desktop, desktop_account, desktop_warning,
+        read, status,
+    };
+    use pitboard_core::host::Os;
+
+    fn parked_both() -> crate::Status {
+        status(
+            vec![
+                desktop_account("work", false),
+                desktop_account("home", false),
+            ],
+            Vec::new(),
+        )
+    }
+
+    fn shown(status: crate::Status) -> crate::Snapshot {
+        let state = read(status, vec![claude_code(), claude_desktop()]);
+        present_on(Os::MacOs, &state, 0, &Utc)
+    }
+
+    fn awaiting_notice(shown: &crate::Snapshot) -> PanelNotice {
+        shown
+            .notices
+            .iter()
+            .find(|notice| notice.id == "awaiting/desktop")
+            .expect("the notice of a sign-in left halfway")
+            .clone()
+    }
+
+    fn actions(notice: &PanelNotice) -> Vec<(&str, &Intent)> {
+        notice
+            .actions
+            .iter()
+            .map(|action| (action.title.as_str(), &action.intent))
+            .collect()
+    }
+
+    #[test]
+    fn an_add_left_halfway_is_a_notice_with_its_way_on_and_its_way_back() {
+        let mut read = parked_both();
+        read.awaiting = vec![awaiting("travel", "work", false)];
+        let notice = awaiting_notice(&shown(read));
+        assert_eq!(notice.severity, Severity::Warning);
+        assert_eq!(
+            notice.title,
+            "Adding a Claude Desktop account isn’t finished"
+        );
+        assert_eq!(
+            notice.lines,
+            [
+                "Claude is signed out for a sign-in, and work is parked.",
+                "Sign in to the account you’re adding in Claude, quit Claude, then choose \
+                 Finish Adding. Put work Back undoes it."
+            ]
+        );
+        assert_eq!(
+            actions(&notice),
+            [
+                (
+                    "Finish Adding…",
+                    &Intent::PresentSheet {
+                        sheet: Sheet::Add {
+                            provider: Some("desktop".into())
+                        }
+                    }
+                ),
+                (
+                    "Put work Back",
+                    &Intent::SwitchTo {
+                        qualified: "desktop/work".into()
+                    }
+                )
+            ]
+        );
+    }
+
+    #[test]
+    fn a_sign_in_again_left_halfway_is_said_as_one() {
+        let mut read = parked_both();
+        read.awaiting = vec![awaiting("home", "work", true)];
+        let notice = awaiting_notice(&shown(read));
+        assert_eq!(notice.title, "Signing in to home again isn’t finished");
+        assert_eq!(
+            notice.lines[1],
+            "Sign in to home in Claude, quit Claude, then choose Finish Signing In. Put work \
+             Back undoes it."
+        );
+        assert_eq!(
+            actions(&notice)[0],
+            (
+                "Finish Signing In…",
+                &Intent::PresentSheet {
+                    sheet: Sheet::SignInAgain {
+                        provider: "desktop".into(),
+                        label: "home".into()
+                    }
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn the_awaited_sign_in_is_said_once() {
+        let mut read = parked_both();
+        read.awaiting = vec![awaiting("travel", "work", false)];
+        read.warnings = vec![desktop_warning(
+            "sign_in_awaited",
+            "Claude is signed out for a sign-in, and work is parked.",
+        )];
+        let shown = shown(read);
+        assert_eq!(
+            shown
+                .notices
+                .iter()
+                .map(|notice| notice.id.as_str())
+                .collect::<Vec<_>>(),
+            ["awaiting/desktop"]
+        );
+    }
+
+    #[test]
+    fn a_claude_desktop_login_in_doubt_offers_the_account_claude_shows() {
+        for code in ["in_use_unconfirmed", "config_names_another"] {
+            let read = status(
+                vec![
+                    desktop_account("work", true),
+                    desktop_account("home", false),
+                ],
+                vec![desktop_warning(code, "Claude’s settings have named home.")],
+            );
+            let shown = shown(read);
+            let notice = shown
+                .notices
+                .iter()
+                .find(|notice| notice.id.starts_with(&format!("warning/{code}/")))
+                .expect("the warning's notice");
+            assert_eq!(
+                actions(notice),
+                [(
+                    "Add the Account Claude Shows…",
+                    &Intent::PresentSheet {
+                        sheet: Sheet::Add {
+                            provider: Some("desktop".into())
+                        }
+                    }
+                )],
+                "{code}"
+            );
+        }
+        let claude_code_config = status(
+            vec![account(Some("work")).signed_in().build()],
+            vec![crate::Warning {
+                provider: Some("claude".into()),
+                ..desktop_warning("config_names_another", "Claude Code’s config names home.")
+            }],
+        );
+        let shown = shown(claude_code_config);
+        assert_eq!(
+            shown.notices[0].actions[0].title, "Update Claude Code’s Config",
+            "Claude Code's own stays"
+        );
+    }
+
+    #[test]
+    fn an_add_left_halfway_offers_finish_and_put_back_in_the_menu() {
+        let mut read = parked_both();
+        read.awaiting = vec![awaiting("travel", "work", false)];
+        let menu = shown(read).menu_notices;
+        assert_eq!(
+            menu.switches
+                .iter()
+                .map(|entry| entry.title.as_str())
+                .collect::<Vec<_>>(),
+            ["Finish Adding…", "Put work Back"]
+        );
+        assert!(menu.switches.iter().all(|entry| entry.subtitle.as_deref()
+            == Some("Adding a Claude Desktop account isn’t finished")));
+    }
+
+    #[test]
+    fn a_switch_of_claude_desktop_says_claude_opens_signed_in() {
+        let read = status(
+            vec![
+                desktop_account("home", true),
+                desktop_account("work", false),
+            ],
+            Vec::new(),
+        );
+        let mut state = super::super::testing::read(read, vec![claude_code(), claude_desktop()]);
+        state.last_switches = vec![LastSwitch {
+            provider: "desktop".into(),
+            to: "desktop/home".into(),
+            follows_at: None,
+            restart: None,
+            said: None,
+            warnings: Vec::new(),
+            opens: Some("Claude opens signed in to it.".into()),
+        }];
+        let shown = present_on(Os::MacOs, &state, 0, &Utc);
+        let notice = shown
+            .notices
+            .iter()
+            .find(|notice| notice.id == "switch/desktop")
+            .expect("what the switch said");
+        assert_eq!(notice.title, "Switched to home");
+        assert_eq!(notice.severity, Severity::Info);
+        assert_eq!(notice.lines, ["Claude opens signed in to it."]);
     }
 }

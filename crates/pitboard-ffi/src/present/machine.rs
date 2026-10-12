@@ -97,6 +97,8 @@ pub struct RenewalShown {
     /// What the button is beside: what it does, until it has been pressed, and then what the
     /// last renewal did, in the words `pitboard renew` says it in.
     pub note: String,
+    // what daily renewal does, under its switch
+    pub about: String,
 }
 
 /// Doctor's checks, as the window shows them.
@@ -364,6 +366,12 @@ fn renewal(seen: &Seen) -> RenewalShown {
             Some(Ok(renewals)) => crate::renewal_note(renewals),
             Some(Err(refused)) => refused.to_string(),
         },
+        about: words::renewal_about(
+            seen.os,
+            seen.accounts()
+                .iter()
+                .any(|account| crate::model::state::in_its_app(&account.provider)),
+        ),
     }
 }
 
@@ -440,5 +448,40 @@ fn command_line(seen: &Seen) -> CommandLineShown {
         },
         offers_link: nowhere && own.lasting(),
         cannot_link: (nowhere && own.temporary).then(|| words::cannot_link(seen.os)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::present::present_on;
+    use crate::present::testing::{
+        Utc, account, claude_code, claude_desktop, desktop_account, read, status,
+    };
+    use pitboard_core::host::Os;
+
+    #[test]
+    fn the_renewal_note_says_a_claude_desktop_login_is_never_renewed() {
+        let about = |accounts| {
+            let state = read(
+                status(accounts, Vec::new()),
+                vec![claude_code(), claude_desktop()],
+            );
+            present_on(Os::MacOs, &state, 0, &Utc).machine.renewal.about
+        };
+        let claude_code_alone = about(vec![account(Some("work")).signed_in().build()]);
+        assert_eq!(
+            claude_code_alone,
+            "A parked login is renewed whenever Pitboard runs, and otherwise not, so one you \
+             leave alone for weeks expires and needs a browser sign-in. Daily renewal hands \
+             that to your Mac’s own scheduler. It renews your parked logins and does nothing \
+             else: it never switches account and never asks for usage."
+        );
+        assert_eq!(
+            about(vec![
+                account(Some("work")).signed_in().build(),
+                desktop_account("work", true)
+            ]),
+            format!("{claude_code_alone} A parked Claude Desktop login is never renewed.")
+        );
     }
 }
