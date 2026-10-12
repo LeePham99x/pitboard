@@ -1,0 +1,85 @@
+---
+title: "Warm up accounts"
+sidebarTitle: "Warm up"
+description: "Have Pitboard start the five-hour period of the accounts you choose as soon as the last one resets."
+---
+
+A five-hour period starts with the account's first request after the last one reset, so one started early resets early. A warm-up has Claude Code send one short message with the account's login as soon as the last period resets. [When a period starts](/concepts/usage#when-a-period-starts) has the measurements.
+
+Warm-up is off for every account until you turn it on for one. Pitboard warms up Claude Code accounts only, between hours you choose, 06:00 to 22:00 by default.
+
+## Turn it on
+
+<Tabs>
+  <Tab title="App">
+    In **Settings** > **General**, under **Warm up limits**, turn on each account to warm up. Set the hours with **From** and **To**.
+
+    You can also choose **Warm Up Automatically** in an account's shortcut menu in the **Accounts** pane.
+
+    The app warms up accounts only while it is open. Each account's row says when it warms up next.
+  </Tab>
+  <Tab title="Command line">
+    Turn it on for an account, and set the hours:
+
+    ```sh
+    pitboard warm on work
+    pitboard warm range 07:00 23:00
+    ```
+
+    Then run `pitboard watch` and leave the terminal open. `pitboard warm` lists each account and when it warms up next.
+
+    ```text
+    Pitboard warms up these accounts from 07:00 to 23:00, while the app or `pitboard watch` runs.
+      work      on   warms up again at 14:50
+      personal  off
+    ```
+  </Tab>
+</Tabs>
+
+The app, `pitboard watch` and `pitboard warm` share one setting. [`warm`](/reference/account-commands#warm) lists every form of the command.
+
+## Warm up an account now
+
+<Tabs>
+  <Tab title="App">
+    In the **Accounts** pane, choose **Warm Up Now** in the account's shortcut menu.
+  </Tab>
+  <Tab title="Command line">
+    ```sh
+    pitboard warm now work
+    ```
+  </Tab>
+</Tabs>
+
+It ignores the hours. It starts nothing while the account's five-hour period is running.
+
+## What a warm-up sends
+
+Claude Code sends one request on its smallest model, with no tools, from a folder of its own in the Pitboard directory. Pitboard hands it the account's access token and nothing else. Measured with Claude Code 2.1.296, the request costs about 3,100 tokens of the plan.
+
+[What leaves your machine](/security#what-leaves-your-machine) lists it with every other request.
+
+## When it holds back
+
+Pitboard holds an account back while one of these holds:
+
+| Reason | Ends when |
+| --- | --- |
+| One of the account's own limits is used up, not only a model's. | That limit resets. |
+| Anthropic has given no reading of the account. | Pitboard's next read gets one. |
+| Its parked login has expired. | You [sign in to it again](/guides/sign-in-again). |
+| It is not in use and has nothing parked. | You switch to it or sign in to it again. |
+| Three warm-ups of it came to nothing today. | The next day starts. |
+
+An account whose plan has no five-hour limit is never warmed up.
+
+Pitboard warms up no account at all while one of these holds:
+
+| Reason | Ends when |
+| --- | --- |
+| Claude Code is not installed where Pitboard looks. | You install it. |
+| Claude Code's managed settings make it sign in another way. | The settings no longer do. |
+| A switch was interrupted. | Your next change finishes it, or [`pitboard abandon`](/reference/recovery-commands#abandon) gives up on it. |
+| Claude Code uses [`CLAUDE_CODE_CUSTOM_OAUTH_URL`](/reference/files#environment-variables). | You unset it. |
+
+The app posts **Pitboard could not warm up an account** once for each reason a warm-up came to nothing. [`pitboard log`](/reference/maintenance-commands#log) records every warm-up as `warm-up`.

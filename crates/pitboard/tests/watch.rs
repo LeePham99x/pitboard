@@ -291,3 +291,35 @@ fn a_share_outside_fifty_to_ninety_nine_is_refused() {
         assert_eq!(code, 2, "--at {share}: {err}");
     }
 }
+
+/// With an account turned on, `watch` says so as it starts, and warms the account up once its
+/// five-hour period is not running: the run's answer and the reading after it say it started.
+#[test]
+#[cfg_attr(windows, ignore = "a warm-up runs on macOS and Linux")]
+fn watch_warms_up_an_account_turned_on_once_its_period_is_not_running() {
+    let mut env = two_accounts("watch-warm");
+    env.an_hour_on();
+    env.install_fake_claude_print();
+    env.claude_usage(None);
+    let (_, err, code) = env.run(&["status"]);
+    assert_eq!(code, 0, "status: {err}");
+    let (_, err, code) = env.run(&["warm", "on", "beta"]);
+    assert_eq!(code, 0, "warm on: {err}");
+    // All day, so the hour this runs at does not matter.
+    let (_, err, code) = env.run(&["warm", "range", "00:00", "24:00"]);
+    assert_eq!(code, 0, "warm range: {err}");
+    // The read `watch` makes as it starts is held off by the one just made; the reading after
+    // the run is not.
+    env.claude_usage(Some(5 * 3600));
+
+    let watching = Watching::start(&env);
+    let started = watching.next();
+    assert_eq!(started["event"], "watching", "{started}");
+    assert_eq!(started["warm"]["accounts"], json!(["beta"]), "{started}");
+    let warmed = (0..4)
+        .map(|_| watching.next())
+        .find(|data| data["event"] == "warmed_up")
+        .expect("beta warmed up");
+    assert_eq!(warmed["account"], "beta");
+    assert!(warmed["until"].as_i64().is_some(), "{warmed}");
+}

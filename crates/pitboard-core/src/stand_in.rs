@@ -115,6 +115,10 @@ pub enum Step {
         takes: String,
         refuses: String,
     },
+    /// Writes at `at` what it was handed on descriptor 3, as a run that reads a token there
+    /// reads it, and what its standard input held, as one JSON object: `descriptor` and
+    /// `input`, each null where nothing could be read.
+    ReadsDescriptor { at: PathBuf },
     /// Listens on this port of 127.0.0.1, as a sign-in's own server does, until it exits.
     HoldsPort(u16),
     /// Keeps the file at `at` open, made if it is not there, until it exits: with `locked`,
@@ -452,6 +456,15 @@ impl Run<'_> {
             Step::Exits(code) => return Ok(Took::Ends(*code)),
             Step::WritesItsPid(at) => write_whole(at, &format!("{}\n", std::process::id()))?,
             Step::Records { at, variables } => self.records(at, variables, args)?,
+            Step::ReadsDescriptor { at } => {
+                let descriptor = std::fs::read_to_string("/dev/fd/3").ok();
+                let mut input = String::new();
+                let input = self.input.read_to_string(&mut input).ok().map(|_| input);
+                write_whole(
+                    at,
+                    &serde_json::json!({ "descriptor": descriptor, "input": input }).to_string(),
+                )?;
+            }
             Step::WritesLogin {
                 under,
                 name,

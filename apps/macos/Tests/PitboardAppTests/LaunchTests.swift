@@ -175,7 +175,7 @@ private struct ScratchDirectory {
         #expect(Fixture.variable == "PITBOARD_FIXTURE")
         let launched = [
             "twoTools", "oneTool", "empty", "firstLaunch", "noClaudeCode", "unnamed",
-            "onlyOne", "readFailure", "stuck", "chatGPTOpen",
+            "onlyOne", "readFailure", "stuck", "chatGPTOpen", "warmUp",
         ]
         if !fixtureNames().isEmpty {
             #expect(fixtureNames() == launched)

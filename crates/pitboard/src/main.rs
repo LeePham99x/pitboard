@@ -17,6 +17,7 @@ mod json;
 mod manpage;
 mod render;
 mod ui;
+mod warm;
 mod watch;
 
 /// Bumped only when a field changes shape. Adding a field or an error code is not a
@@ -128,8 +129,14 @@ enum Command {
     Doctor,
     /// One line for Claude Code's status bar; reads its session JSON on stdin
     Statusline,
-    /// Switch Claude Code to another of your accounts before the one in use runs out, for as
-    /// long as this runs
+    /// Start the five-hour period of the accounts you choose as soon as the last one resets,
+    /// while the app or `pitboard watch` runs
+    Warm {
+        #[command(subcommand)]
+        what: Option<warm::WarmCommand>,
+    },
+    /// Switch Claude Code to another of your accounts before the one in use runs out, and warm
+    /// up the accounts `pitboard warm on` turned on, for as long as this runs
     Watch {
         /// Switch once a limit of the account in use reaches this share, from 50 to 99
         #[arg(
@@ -140,8 +147,8 @@ enum Command {
                 .range(i64::from(Threshold::LOWEST)..=i64::from(Threshold::HIGHEST)),
         )]
         at: u8,
-        /// Decide once from the usage Pitboard last measured, asking no service for usage,
-        /// and stop
+        /// Decide once whether to switch, from the usage Pitboard last measured, asking no
+        /// service for usage, and stop. Warms nothing up
         #[arg(long)]
         once: bool,
     },
@@ -172,6 +179,7 @@ impl Command {
             Command::Doctor => "doctor",
             Command::Statusline => "statusline",
             Command::Watch { .. } => "watch",
+            Command::Warm { .. } => "warm",
             Command::Completions { .. } | Command::Manpage => "generate",
         }
     }
@@ -1141,6 +1149,7 @@ fn main() -> ExitCode {
             }
         }
         Command::Rename { from, to } => rename(&pitboard, &from, &to),
+        Command::Warm { ref what } => warm::run(&pitboard, what.as_ref()),
         // These write a file for a shell or for man, not a report, so there is no envelope
         // to put them in. Asking for one is a command line that cannot be satisfied.
         Command::Completions { .. } | Command::Manpage if cli.json => Report {

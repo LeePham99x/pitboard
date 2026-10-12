@@ -120,6 +120,10 @@ In the order of `pitboard --help`:
 | `rename` | `from`, `to` and `email`. |
 | `doctor` | `environment`, the paths and login stores Pitboard found and the version of OpenAI's Codex CLI. `checks`, each with `code`, `name`, `level` (`ok`, `warn` or `fail`), `detail` and `advice`, as [`doctor`](/reference/maintenance-commands#doctor) lists. |
 | `statusline` | `line`, the status line without colour, as [`statusline`](/reference/integration-commands#statusline) describes. |
+| `warm` | `range`, with `from` and `to` as `HH:MM`; `halted`, `null`, or an object with `reason`, a `warm_up_halted` code from [Watch events](/reference/json-output#watch-events), where nothing can be warmed up here; and `accounts`, one object per Claude Code account with `label` and `on`. An account turned on also has `state`: `due`, `running`, `resting`, `waiting` or `held`, with `until` and `next_at` where they are known and, for `held`, `reason`, a code from [Watch events](/reference/json-output#watch-events). |
+| `warm on`, `warm off` | `label`, `on`, and `changed`, `false` when it was so already. |
+| `warm range` | `range`, with `from` and `to`. |
+| `warm now` | `label`, `outcome`, `started` or `running`, and `until`, when its five-hour period resets, or `null` where Anthropic has not said yet. |
 | `watch` | One envelope per event, as [Watch events](/reference/json-output#watch-events) lists. |
 | `completions`, `manpage` | `{}`, in the failure shape [The envelope](/reference/json-output#the-envelope) gives. |
 
@@ -177,23 +181,26 @@ Each object in `windows` is one limit:
 
 ## Watch events
 
-Each event's envelope has `command` set to `watch`. With `--once`, `watch` prints one event. The `data` of every event has `event` and `threshold`, the share it switches at, such as `95`.
+Each event's envelope has `command` set to `watch`. With `--once`, `watch` prints one event. The `data` of every event has `event`. Every event but the warm-up ones also has `threshold`, the share it switches at, such as `95`.
 
 | `event` | When | Other fields |
 | --- | --- | --- |
-| `watching` | `watch` starts. Not printed with `--once`. | None |
+| `watching` | `watch` starts. Not printed with `--once`. | `warm`, where an account is turned on for warm-ups: `range` and `accounts`, their labels |
 | `idle` | No limit of the account in use has reached the share. | `account`, `limit`, `as_of` and `held_until` |
 | `switched` | Pitboard switched Claude Code. | `from`, `to`, `limit` and `adoption` |
 | `waiting` | A limit reached the share, and a try at switching away came to nothing. | `from`, `limit` and `until` |
 | `no_room` | A limit reached the share, and no other account has room. | `from`, `limit` and `unread` |
 | `skipped` | A limit reached the share, and Pitboard stays on the account for a `reason`. | `from`, `limit` and `reason`, and `until` for `settling` |
 | `not_watching` | Pitboard cannot decide whether to switch. | `reason`, and `email`, `account`, or `detail` and `until`, by reason |
+| `warmed_up` | Pitboard warmed up an account. | `account` and `until` |
+| `warm_up_held` | An account turned on is held back. | `account`, `reason` and `until` |
+| `warm_up_halted` | Nothing can be warmed up here. | `reason` |
 
 The other fields:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `account` | string | The Claude Code account in use, by its label: for `idle`, the one Pitboard watches, and for `no_reading`, the one with no reading. |
+| `account` | string | The Claude Code account in use, by its label: for `idle`, the one Pitboard watches, and for `no_reading`, the one with no reading. For `warmed_up` and `warm_up_held`, the account warmed up or held back. |
 | `from` | string | The Claude Code account in use, by its label as `pitboard use` takes it. |
 | `to` | string | The account switched to, by its label. |
 | `limit` | object or null | The limit of `from` that reached the share, as last read: `kind`, `scope`, `percent` and `resets_at`, as in [Status data](/reference/json-output#status-data). A limit reaches the share at its whole percentage, a half rounded up, so `percent` can be `94.5` for a `threshold` of `95`. For `idle`, the fullest limit of `account` that has not reset, or `null` when it has none. |
@@ -201,8 +208,8 @@ The other fields:
 | `held_until` | integer or null | When Pitboard may next ask Anthropic about `account`, while it waits after a rate limit or an error. `null` otherwise. |
 | `unread` | array of strings | The accounts Pitboard could switch to that Anthropic has given no reading of yet, by label. Empty when there are none. |
 | `adoption` | object | How sessions already running pick up the switch: the `polling` or `renewal` shape of [Data by command](/reference/json-output#data-by-command). |
-| `until` | integer | For `waiting`, when Pitboard tries again. For `settling`, when the account has been in use 5 minutes. For `not_identified`, when Pitboard tries again to identify the login. |
-| `reason` | string | A code from the next two tables. |
+| `until` | integer or null | For `waiting`, when Pitboard tries again. For `settling`, when the account has been in use 5 minutes. For `not_identified`, when Pitboard tries again to identify the login. For `warmed_up`, when the period started resets, or `null` where Anthropic has not said yet. For `warm_up_held`, when the reason ends, where that is known. |
+| `reason` | string | A code from the tables below. |
 | `email` | string | For `not_enrolled`, the email address of the account whose login Claude Code has stored. |
 | `detail` | string | For `not_identified`, why Pitboard could not identify the login, in a few words. |
 
@@ -227,6 +234,30 @@ For `not_watching`, `reason` is one of these:
 | `no_reading` | Anthropic has given no reading of `account`, the account in use. |
 
 [When it holds back](/guides/automatic-switching#when-it-holds-back) says when each reason ends.
+
+For `warm_up_held`, `reason` is one of these:
+
+| `reason` | Meaning |
+| --- | --- |
+| `limit_used_up` | One of the account's own limits is used up. `until` is when it resets. |
+| `no_reading` | Anthropic has given no reading of the account. |
+| `nothing_to_start` | Its plan has no five-hour limit. |
+| `parked_login_expired` | Its parked login has expired. |
+| `nothing_parked` | It is not in use and has nothing parked. |
+| `attempts_spent` | Three warm-ups of it came to nothing today. `until` is the start of the next day. |
+
+For `warm_up_halted`, `reason` is one of these:
+
+| `reason` | Meaning |
+| --- | --- |
+| `switch_interrupted` | A switch did not finish. |
+| `custom_oauth_endpoint` | `CLAUDE_CODE_CUSTOM_OAUTH_URL` is set, so Pitboard does not act on Claude Code. |
+| `warm_up_auth_overridden` | Claude Code's managed settings sign it in another way. |
+| `claude_not_found` | Claude Code is not installed where Pitboard looks. |
+
+[When it holds back](/guides/warm-up#when-it-holds-back) says when each ends.
+
+A warm-up that came to nothing prints an envelope with `ok` set to `false` and its error, once for each reason until that account warms up.
 
 An error prints an envelope with `ok` set to `false`, and `watch` goes on. An error that ends `watch` prints the same, and `watch` exits with its status. [`watch`](/reference/account-commands#watch) says which errors end it, and what it prints only once.
 

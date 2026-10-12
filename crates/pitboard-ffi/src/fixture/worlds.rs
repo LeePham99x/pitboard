@@ -10,7 +10,7 @@
 
 use super::FixtureError;
 use super::apps::{CHATGPT, FixtureApps, Unposted};
-use super::tools::Browser;
+use super::tools::{Browser, Warmer};
 use crate::model::preferences::Preferences;
 use crate::model::state::Cadence;
 use crate::model::{
@@ -70,11 +70,14 @@ pub(crate) enum World {
     Stuck,
     /// `TwoTools`, with ChatGPT open and running Codex's login.
     ChatGptOpen,
+    /// `OneTool`, with personal turned on for warm-ups all day and its five-hour period not
+    /// running, so the app warms it up as it starts.
+    WarmUp,
 }
 
 impl World {
     /// Every world, in the order the macOS app's `Fixture` listed them.
-    pub(crate) const ALL: [World; 10] = [
+    pub(crate) const ALL: [World; 11] = [
         World::TwoTools,
         World::OneTool,
         World::Empty,
@@ -85,6 +88,7 @@ impl World {
         World::ReadFailure,
         World::Stuck,
         World::ChatGptOpen,
+        World::WarmUp,
     ];
 
     /// Its name, as `PITBOARD_FIXTURE` gives it and the UI tests launch it.
@@ -100,6 +104,7 @@ impl World {
             World::ReadFailure => "readFailure",
             World::Stuck => "stuck",
             World::ChatGptOpen => "chatGPTOpen",
+            World::WarmUp => "warmUp",
         }
     }
 
@@ -128,7 +133,8 @@ impl World {
             | World::OnlyOne
             | World::ReadFailure
             | World::Stuck
-            | World::ChatGptOpen => &[ProviderId::Claude, ProviderId::Codex],
+            | World::ChatGptOpen
+            | World::WarmUp => &[ProviderId::Claude, ProviderId::Codex],
         }
     }
 }
@@ -253,6 +259,9 @@ pub(crate) struct Machine {
     usage: Mutex<HashMap<String, Vec<usage::Window>>>,
     /// How many logins have been made, so each has tokens of its own.
     logins: AtomicUsize,
+    /// Whose each access token is, by person id, so a warm-up made with one starts that
+    /// person's period.
+    owners: Mutex<HashMap<String, String>>,
     /// Every access token each person's logins have had, by their id: what a service is
     /// asked about them with, which a test puts out of reach.
     #[cfg(test)]
@@ -293,6 +302,7 @@ impl Machine {
             now: epoch_now(),
             usage: Mutex::new(HashMap::new()),
             logins: AtomicUsize::new(0),
+            owners: Mutex::new(HashMap::new()),
             #[cfg(test)]
             tokens: Mutex::new(HashMap::new()),
         })
@@ -334,12 +344,68 @@ impl Machine {
         self.root().join("bin")
     }
 
-    /// The machine as the app has it, signing in through `browser`.
-    pub(crate) fn app_context(&self, browser: Arc<Browser>) -> Context {
+    /// The machine as the app has it, signing in through `browser` and warming up through
+    /// `warmer`.
+    pub(crate) fn app_context(&self, browser: Arc<Browser>, warmer: Arc<Warmer>) -> Context {
         self.base
             .clone()
             .with_caller("app".into())
             .with_sign_in_script(browser)
+            .with_warm_script(warmer)
+    }
+
+    /// A warm-up made with the access token `access` has started its person's five-hour
+    /// period, which runs five hours from now: what their service says from then on, whichever
+    /// of their logins it is asked with.
+    pub(crate) fn started_period(&self, access: &str) {
+        let owners = self
+            .owners
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        let Some(id) = owners.get(access) else {
+            return;
+        };
+        let now = epoch_now();
+        {
+            let mut usage = self.usage();
+            for window in usage.entry(id.clone()).or_default() {
+                if window.kind == "session" {
+                    window.percent = 1.0;
+                    window.resets_at = Some(now + 5 * HOUR);
+                }
+            }
+        }
+        let person = Person::new(ProviderId::Claude, id, "");
+        for (token, _) in owners.iter().filter(|(_, owner)| *owner == id) {
+            self.api.using(token, self.used_by(&person));
+        }
+    }
+
+    /// `person`'s five-hour period is not running, as Anthropic gives one with no reset, and
+    /// they have used `weekly` of their weekly limit, which resets in `resets_in` seconds.
+    fn rests(&self, person: &Person, weekly: f64, resets_in: i64) {
+        let windows = vec![
+            usage::Window {
+                kind: "session".into(),
+                scope: None,
+                percent: 0.0,
+                resets_at: None,
+                is_active: true,
+                severity: None,
+                length_seconds: Some(5 * HOUR),
+            },
+            usage::Window {
+                kind: "weekly_all".into(),
+                scope: None,
+                percent: weekly,
+                resets_at: Some(self.now + resets_in),
+                is_active: true,
+                severity: None,
+                length_seconds: Some(7 * DAY),
+            },
+        ];
+        self.usage().insert(person.id.clone(), windows);
     }
 
     /// The machine as `caller` had it `ago` seconds before the world was made.
@@ -488,6 +554,10 @@ impl Machine {
             );
         }
         self.api.using(access, self.used_by(person));
+        self.owners
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(access.to_owned(), person.id.clone());
         #[cfg(test)]
         self.tokens
             .lock()
@@ -698,7 +768,10 @@ pub(crate) fn make(world: World, folder: Folder) -> Result<Launched, Unmade> {
             &[]
         },
     );
-    let ctx = machine.app_context(Arc::new(Browser::new(Arc::clone(&machine))));
+    let ctx = machine.app_context(
+        Arc::new(Browser::new(Arc::clone(&machine))),
+        Arc::new(Warmer::new(Arc::clone(&machine))),
+    );
     let found = world.installed().to_vec();
     let (helper, places) = (machine.helper(), vec![machine.bin()]);
     let core = Arc::new(AppCore::asking(
@@ -817,6 +890,24 @@ fn seed(world: World, machine: &Machine) -> Result<(), Unmade> {
             uses(machine, &work);
             let login = machine.login(&work, machine.now + DAY, machine.now + 30 * DAY);
             machine.signs_in(&work, &login)
+        }
+        World::WarmUp => {
+            let (work, personal) = (work(), personal());
+            uses(machine, &work);
+            machine.rests(&personal, 61.0, 190_000);
+            let now = machine.now;
+            let login = machine.login(&work, now + DAY, now + 30 * DAY);
+            machine.enrolled(&work, "work", &login, "cli", 3 * DAY)?;
+            let login = machine.login(&personal, now + DAY, now + 30 * DAY);
+            machine.parked(&personal, "personal", &login, "app", 2 * DAY)?;
+            let app = machine.front_end("app", DAY).1;
+            app.warm_turn("personal", true)
+                .map_err(refused("turning on personal's warm-up"))?;
+            let all_day = pitboard_core::warm::Range::new(0, 24 * 60)
+                .ok_or_else(|| Unmade("a day is not a span".into()))?;
+            app.warm_range(all_day)
+                .map(drop)
+                .map_err(refused("warming up all day"))
         }
         World::Empty | World::FirstLaunch | World::NoClaudeCode => Ok(()),
     }

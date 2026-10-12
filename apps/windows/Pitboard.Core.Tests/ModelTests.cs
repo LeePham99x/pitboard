@@ -132,7 +132,10 @@ public sealed class ModelTests
             Found: null, InTerminal: null, UpdateNote: null, OffersLink: false, CannotLink: null),
         AutoSwitch: new AutoSwitchShown(
             On: false, At: 95, Lowest: 50, Highest: 99, Enabled: true,
-            AtLabel: "Switch when a limit reaches 95%", Note: "", Standing: null));
+            AtLabel: "Switch when a limit reaches 95%", Note: "", Standing: null),
+        Warm: new WarmShown(
+            From: 360, To: 1320, RangeLabel: "06:00 to 22:00", Accounts: [], Standing: null, Note: "",
+            Enabled: false));
 
     /// <summary>
     /// What an app's AppControl does: says what runs, asks an app to quit, opens one again,
@@ -612,20 +615,20 @@ public sealed class ModelTests
             Spoken: "spare (Codex)", InUse: false,
             NeedsSignIn: false, Unplaced: false, Switching: false, Action: use,
             Summary: "5-hour 72%", Problem: null, StaleNote: null, Pace: null,
-            ParkedNote: "Parked login good for 3 more days", Help: null, Limits: [limit],
+            ParkedNote: "Parked login good for 3 more days", WarmNote: null, Help: null, Limits: [limit],
             Offers:
             [
-                new ItemOffer(Title: "Use spare", Intent: use.Intent, Enabled: true, Confirm: null),
+                new ItemOffer(Title: "Use spare", Intent: use.Intent, Enabled: true, Confirm: null, Checked: null),
                 new ItemOffer(
                     Title: "Sign In Again…", Intent: new Intent.PresentSheet(new Sheet.SignInAgain("codex", "spare")),
-                    Enabled: false, Confirm: null),
+                    Enabled: false, Confirm: null, Checked: null),
                 new ItemOffer(
                     Title: "Rename…", Intent: new Intent.PresentSheet(new Sheet.Rename("codex", "spare")),
-                    Enabled: true, Confirm: null),
+                    Enabled: true, Confirm: null, Checked: null),
             ],
             Windows: [new WindowOffer(Title: "Open chatgpt.com", Window: window)],
             Forget: new ItemOffer(
-                Title: "Forget…", Intent: new Intent.Forget("codex/spare"), Enabled: true,
+                Title: "Forget…", Intent: new Intent.Forget("codex/spare"), Enabled: true, Checked: null,
                 Confirm: new Question(
                     Title: "Forget “spare (Codex)”?",
                     Message: "Pitboard deletes the login it parked for this account.", Confirm: "Forget")));

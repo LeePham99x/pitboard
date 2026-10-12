@@ -416,6 +416,18 @@ pub(crate) fn auto_refused_notice(code: &str, message: &str) -> RunOutNotice {
     }
 }
 
+/// A warm-up Pitboard tried by itself that started no period, in the core's words, which name
+/// the account, so one account's does not replace another's.
+pub(crate) fn warm_failed_notice(code: &str, message: &str) -> RunOutNotice {
+    RunOutNotice {
+        id: format!("warm-failed/{code}/{message}"),
+        title: "Pitboard could not warm up an account".into(),
+        subtitle: None,
+        body: message.into(),
+        switch_to: None,
+    }
+}
+
 fn capitalised(text: &str) -> String {
     let mut chars = text.chars();
     chars.next().map_or_else(String::new, |first| {

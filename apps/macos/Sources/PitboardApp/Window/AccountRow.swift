@@ -68,10 +68,11 @@ struct AccountRow: View {
     }
 
     /// What is worth knowing beyond the limits: why it cannot be used, why its numbers are
-    /// not new, which limit of the account in use runs out first at its pace, and how long a
-    /// parked login stays usable.
+    /// not new, which limit of the account in use runs out first at its pace, how long a
+    /// parked login stays usable, and where its warm-up stands.
     private var notes: [String] {
-        [item.problem, item.staleNote, item.pace, item.parkedNote].compactMap { $0 }
+        [item.problem, item.staleNote, item.pace, item.parkedNote, item.warmNote]
+            .compactMap { $0 }
     }
 
     @ViewBuilder private var trailing: some View {

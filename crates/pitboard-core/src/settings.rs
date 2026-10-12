@@ -186,6 +186,17 @@ pub fn overrides(ctx: &Context) -> Vec<Override> {
     found
 }
 
+/// [`overrides`] for a run of Claude Code started with nothing of this process's environment
+/// and its own config directory, `config`, as a warm-up's is: the managed settings', which
+/// every run of Claude Code on this machine reads, and that directory's own.
+pub(crate) fn overrides_of_a_run_in(config: &std::path::Path) -> Vec<Override> {
+    managed_files()
+        .iter()
+        .chain(std::iter::once(&config.join("settings.json")))
+        .flat_map(|path| overrides_in(path))
+        .collect()
+}
+
 #[cfg(test)]
 pub(crate) mod tests_support {
     use super::*;

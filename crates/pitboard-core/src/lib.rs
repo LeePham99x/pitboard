@@ -54,6 +54,7 @@ pub mod autoswitch;
 pub mod budget;
 pub mod context;
 pub mod doctor;
+pub mod duty;
 pub mod error;
 pub mod in_use;
 pub mod label;
@@ -70,6 +71,7 @@ pub mod statusline;
 pub mod switch;
 pub mod time;
 pub mod usage;
+pub mod warm;
 pub mod words;
 
 pub(crate) mod atomic;
@@ -110,6 +112,7 @@ pub mod testing {
     pub use crate::store::vault_read;
     pub use crate::switch::{ScriptedSignIn, SignInScript};
     pub use crate::time::{Clock, FixedClock};
+    pub use crate::warm::run::{Ran, Started, WarmScript};
 
     /// Every variable Pitboard reads from its environment, by name, which a test withholds
     /// from every command it runs unless it means to pass one on.

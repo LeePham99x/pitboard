@@ -410,6 +410,7 @@ fn an_accounts_own_menu_offers_what_can_be_done_to_it() {
         })
     };
     let offer = |title: &str, intent: Intent| ItemOffer {
+        checked: None,
         title: title.into(),
         intent,
         enabled: true,
@@ -455,6 +456,7 @@ fn an_accounts_own_menu_offers_what_can_be_done_to_it() {
     assert_eq!(
         spare_row.forget,
         Some(ItemOffer {
+            checked: None,
             title: "Forget…".into(),
             intent: Intent::Forget {
                 qualified: "claude/spare".into()

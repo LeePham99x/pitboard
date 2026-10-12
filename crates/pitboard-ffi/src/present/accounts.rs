@@ -238,7 +238,11 @@ pub(crate) fn item(seen: &Seen, account: &Account) -> AccountItem {
         needs_sign_in,
         unplaced: account.unplaced,
         switching,
-        offers: offers(account, action.as_ref(), busy),
+        offers: offers(account, action.as_ref(), busy)
+            .into_iter()
+            .chain(warm_offers(seen, account))
+            .collect(),
+        warm_note: warm_note(seen, account),
         windows: windows_of_account(account, seen.accounts())
             .into_iter()
             .map(|window| WindowOffer {
@@ -283,6 +287,7 @@ fn offers(account: &Account, action: Option<&ItemAction>, busy: bool) -> Vec<Ite
         intent,
         enabled,
         confirm: None,
+        checked: None,
     };
     let own = action.and_then(|action| {
         let title = match &action.intent {
@@ -324,6 +329,76 @@ fn offers(account: &Account, action: Option<&ItemAction>, busy: bool) -> Vec<Ite
     own.into_iter().chain(named.into_iter().flatten()).collect()
 }
 
+/// What warming up an account is, as the core's last word on it says, where it can be warmed
+/// up: a Claude Code account enrolled under a name.
+fn warm_choice<'a>(seen: &'a Seen, account: &Account) -> Option<&'a pitboard_core::warm::Choice> {
+    let qualified = account.qualified.as_deref()?;
+    seen.state
+        .warm
+        .overview
+        .as_ref()?
+        .accounts
+        .iter()
+        .find(|choice| choice.qualified == qualified)
+}
+
+/// What an account's own menu offers of warming it up, after everything else it offers:
+/// **Warm Up Now**, which can be chosen while its five-hour period is not running and nothing
+/// holds a warm-up back, and none is under way; and **Warm Up Automatically**, checked while
+/// it is turned on.
+fn warm_offers(seen: &Seen, account: &Account) -> Vec<ItemOffer> {
+    let Some(choice) = warm_choice(seen, account) else {
+        return Vec::new();
+    };
+    let warm = &seen.state.warm;
+    let halted = warm
+        .overview
+        .as_ref()
+        .is_some_and(|overview| overview.halted.is_some());
+    vec![
+        ItemOffer {
+            title: "Warm Up Now".into(),
+            intent: Intent::WarmNow {
+                qualified: choice.qualified.clone(),
+            },
+            enabled: !halted
+                && warm.running.is_none()
+                && choice.now == pitboard_core::warm::Standing::Due,
+            confirm: None,
+            checked: None,
+        },
+        ItemOffer {
+            title: "Warm Up Automatically".into(),
+            intent: Intent::SetWarm {
+                qualified: choice.qualified.clone(),
+                on: !choice.on,
+            },
+            enabled: true,
+            confirm: None,
+            checked: Some(choice.on),
+        },
+    ]
+}
+
+/// Where an account turned on for warm-ups stands, as the line under it says: "Warms up again
+/// at 22:50", or that one is under way.
+fn warm_note(seen: &Seen, account: &Account) -> Option<String> {
+    let choice = warm_choice(seen, account)?;
+    let warming = match seen.state.warm.running.as_ref() {
+        Some(Some(asked)) => *asked == choice.qualified,
+        Some(None) => choice.standing == Some(pitboard_core::warm::Standing::Due),
+        None => false,
+    };
+    if warming {
+        return Some("Warming up…".into());
+    }
+    let standing = choice.standing.as_ref()?;
+    let clock = |at| seen.clock(at);
+    Some(words::capitalised(&pitboard_core::words::warm_standing(
+        standing, &clock,
+    )))
+}
+
 /// Forgetting an account, with the question asked first, where it may be forgotten: one
 /// enrolled, and not the one in use, whose record is the only one of who is signed in, and
 /// which the core refuses. The question names it, and says what forgetting it deletes in the
@@ -334,6 +409,7 @@ fn forget(seen: &Seen, account: &Account, spoken_name: &str) -> Option<ItemOffer
         .as_ref()
         .filter(|_| account.label.is_some() && !account.signed_in)?;
     Some(ItemOffer {
+        checked: None,
         title: "Forget…".into(),
         intent: Intent::Forget {
             qualified: qualified.clone(),

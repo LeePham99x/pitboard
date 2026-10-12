@@ -18,7 +18,9 @@ use pitboard_core::autoswitch::{Auto, Blind, Look, Skip, Threshold};
 use pitboard_core::context::Environment;
 use pitboard_core::provider::{self, ProviderId};
 use pitboard_core::service::{self, Changing};
+use pitboard_core::switch::warm::WarmUp;
 use pitboard_core::switch::{Left, Stowed};
+use pitboard_core::warm::{Overview, Range};
 use pitboard_core::{doctor, status, switch, usage, words};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -874,6 +876,39 @@ impl AppCore {
             Look::Stands(auto) => AutoLooked::Stands(auto_switched(*auto, Vec::new(), threshold)),
             Look::Act => AutoLooked::Act,
         })
+    }
+
+    /// Each Claude Code account, whether Pitboard warms it up and where it stands, and the
+    /// span of the day, from the core's files alone, so a read asks it every time.
+    pub(crate) fn warm_overview(&self) -> Result<Overview, PitboardError> {
+        Ok(self.readable()?.core.warm_overview()?)
+    }
+
+    /// Warms up the first account turned on that is due, as the core decides: looking at its
+    /// files first, so where none is due it takes no lock and says where each one stands.
+    pub(crate) fn warm_up(&self) -> Result<WarmUp, PitboardError> {
+        changed(self.core().core.warm_up(), |warmed, _| warmed)
+    }
+
+    /// Warms up the account `qualified` names now, whatever the span of the day.
+    pub(crate) fn warm_now(&self, qualified: String) -> Result<WarmUp, PitboardError> {
+        changed(self.core().core.warm_now(&qualified), |warmed, _| warmed)
+    }
+
+    /// Warms up the account `qualified` names from now on, or stops.
+    pub(crate) fn warm_turn(&self, qualified: String, on: bool) -> Result<(), PitboardError> {
+        changed(self.core().core.warm_turn(&qualified, on), |_, _| ())
+    }
+
+    /// Warms up from `from` to `to`, in minutes of the day, `to` up to 24:00. A span that
+    /// starts and ends at once is refused as the command line refuses it.
+    pub(crate) fn warm_range(&self, from: u16, to: u16) -> Result<(), PitboardError> {
+        let range = Range::new(from, to).ok_or_else(|| {
+            PitboardError::from(pitboard_core::error::Error::Usage(
+                "the span starts and ends at the same time".into(),
+            ))
+        })?;
+        changed(self.core().core.warm_range(range), |_, _| ())
     }
 
     /// Enroll the account signed in now under `label`.

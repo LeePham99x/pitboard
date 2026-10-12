@@ -38,6 +38,16 @@ Where an answer may leave a limit out, Pitboard keeps it until it resets:
 
 A Claude Code session's numbers only move a limit the account's last answer gave. Once that limit resets, they start its next period.
 
+## When a period starts
+
+A Claude Code account's five-hour period starts with its first request after the last one reset, one on the smallest model included. It starts at the start of the ten minutes that request fell in: a request at 17:52 starts a period that resets at 22:50. Until then, Anthropic gives the limit no reset.
+
+The weekly limit runs on a fixed cycle. At its reset, the next week starts at once, at 0%, whether or not anything is sent.
+
+While one of the account's own limits is used up, Anthropic refuses every request, and a refused request starts no five-hour period. A model's limit used up alone was not measured.
+
+All three were measured on 12 October 2026 with Claude Code 2.1.296 on a Team and a Max account. Pitboard can [warm up an account](/guides/warm-up) to start a period as soon as the last one resets.
+
 ## Pace
 
 An even pace uses a limit at one rate from the start of its period to its reset: 50% by halfway through a week. Pitboard gives the difference in percentage points.

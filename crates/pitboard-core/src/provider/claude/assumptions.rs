@@ -62,6 +62,18 @@ const fn later_on_windows(
     }
 }
 
+/// A fact a warm-up stands on, read on 12 October 2026 from 2.1.296's macOS build, and from
+/// its Linux build as bytes, and measured on the macOS build with real accounts. Pitboard
+/// warms up no account on Windows.
+const fn warm_up(name: &'static str) -> PerSystem {
+    PerSystem {
+        name,
+        macos: Read("2.1.296"),
+        linux: Read("2.1.296"),
+        windows: NotRead("Pitboard warms up no account on Windows"),
+    }
+}
+
 /// What each fact below is on each system. The Windows readings are a reading of the
 /// Windows builds' code for each fact, and of every literal its entry probes for, which
 /// both Windows builds hold. Where Claude Code does something else on Windows, that is a
@@ -230,6 +242,12 @@ pub const PER_SYSTEM: &[PerSystem] = &[
         linux: Read("2.1.296"),
         windows: Read("2.1.296"),
     },
+    warm_up("headless_token_descriptor"),
+    warm_up("headless_print_mode"),
+    warm_up("headless_result"),
+    warm_up("request_starts_the_five_hour_period"),
+    warm_up("weekly_period_is_a_fixed_cycle"),
+    warm_up("used_up_limit_refuses_every_request"),
 ];
 
 pub const ASSUMPTIONS: &[Assumption] = &[
@@ -851,6 +869,107 @@ pub const ASSUMPTIONS: &[Assumption] = &[
             "organization?.rate_limit_tier??null",
             "?.subscriptionType??null,rateLimitTier:",
         ],
+        absent: &[],
+    },
+    Assumption {
+        name: "headless_token_descriptor",
+        fact: "where `CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR` names a descriptor, Claude Code \
+               reads an OAuth access token from it, an inherited pipe until a newline or its \
+               end, and signs in with that token alone: no refresh token and no expiry, so it \
+               is never renewed, and never written to the credential store. It is written to \
+               disk only under `CLAUDE_CODE_REMOTE`. An ordinary sign-in's access token \
+               serves, as a token from `claude setup-token` does: measured on 12 October 2026 \
+               with the parked logins of two accounts. No keychain item was made",
+        read_from: "the descriptor reader, the login it makes of the token it reads, and the \
+                    disk handoff only a remote session makes; and measured in a private \
+                    `CLAUDE_CONFIG_DIR` and `HOME`",
+        verified_against: "2.1.296",
+        depends: "Claude Code's warm-up command, which hands a run the access token alone, on \
+                  descriptor 3, so a run can spend no refresh token a park or Claude Code \
+                  still holds",
+        probe: &[
+            "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR",
+            "(until newline or end-of-stream)",
+            "refreshToken:null,expiresAt:null",
+        ],
+        absent: &[],
+    },
+    Assumption {
+        name: "headless_print_mode",
+        fact: "`-p` answers one prompt and exits; `--model haiku` takes the smallest model; \
+               `--tools \"\"` offers none; `--strict-mcp-config` starts no MCP server but \
+               those named on the command line; `--disable-slash-commands` loads no skill; \
+               `--no-session-persistence` keeps no session on disk; `--output-format json` \
+               prints one JSON result. Print mode adds what it reads on standard input to the \
+               prompt. Run so on 12 October 2026, a request cost 3,086 tokens written to the \
+               cache and 6 others, and 7 to 15 seconds",
+        read_from: "the command line's options and their help, and measured",
+        verified_against: "2.1.296",
+        depends: "Claude Code's warm-up command, its arguments, and the token kept off \
+                  standard input",
+        probe: &[
+            "\"-p, --print\"",
+            "\"--tools <tools...>\"",
+            "\"--no-session-persistence\"",
+            "\"--strict-mcp-config\"",
+            "\"--disable-slash-commands\"",
+            "\"--output-format <format>\"",
+        ],
+        absent: &[],
+    },
+    Assumption {
+        name: "headless_result",
+        fact: "print mode's JSON result holds `is_error`, `result`, the answer or what went \
+               wrong in Claude Code's words, and where the service refused the request, \
+               `api_error_status` and `api_error`: 429 with `usage_limit_reached` where a \
+               limit of the account is used up, and exit status 1",
+        read_from: "the result print mode prints, measured on 12 October 2026 on an account \
+                    with its weekly limit used up and on two with room",
+        verified_against: "2.1.296",
+        depends: "Claude Code's warm-up verdict: what a run came to",
+        probe: &["api_error_status", "usage_limit_reached"],
+        absent: &[],
+    },
+    Assumption {
+        name: "request_starts_the_five_hour_period",
+        fact: "an account's five-hour period starts with its first request after the last one \
+               reset, print mode's on the smallest model included, and counts on the plan, not \
+               the monthly credit. It starts at the start of the ten minutes the request fell \
+               in: a request at 17:52 gave a reset at 22:50, one at 18:02 gave 23:00. Until \
+               then the usage answer gives the limit's row, `session`, at 0% with no reset, \
+               and `five_hour` with no reset",
+        read_from: "measured on 12 October 2026 on a Team 5x and a Max 20x account: the usage \
+                    answer before a request and 20 seconds after it",
+        verified_against: "2.1.296",
+        depends: "warm::decide, which reads a period not running as one with no reset or a \
+                  passed one, and counts a warm-up the last reading did not see as a period \
+                  running from the start of its ten minutes",
+        probe: &[],
+        absent: &[],
+    },
+    Assumption {
+        name: "weekly_period_is_a_fixed_cycle",
+        fact: "the weekly limit, and a model's weekly limit beside it, runs on a fixed cycle: \
+               at its reset the next week starts at once, with no request, at 0%",
+        read_from: "measured on 12 October 2026 on a Max 20x account whose weekly limit reset \
+                    at 18:00: at 18:02, before any request, the answer gave the next week's \
+                    reset at 0%",
+        verified_against: "2.1.296",
+        depends: "warm::decide, which starts the five-hour period alone",
+        probe: &[],
+        absent: &[],
+    },
+    Assumption {
+        name: "used_up_limit_refuses_every_request",
+        fact: "while a limit of the account's own, not a model's, is used up, the service \
+               refuses a request, which spends nothing and starts no five-hour period. Not \
+               measured with only a model's limit used up",
+        read_from: "measured on 12 October 2026 on a Max 20x account with its weekly limit \
+                    used up: the request was refused with `usage_limit_reached`, 0 tokens, and \
+                    the answer after it still had no five-hour period running",
+        verified_against: "2.1.296",
+        depends: "warm::decide, which warms up no account with a limit used up",
+        probe: &[],
         absent: &[],
     },
 ];

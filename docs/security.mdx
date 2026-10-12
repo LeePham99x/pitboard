@@ -43,7 +43,7 @@ A claude.ai window signs in on claude.ai's own pages. WebKit keeps the sign-in's
 
 ## What leaves your machine
 
-Pitboard has no server of its own and makes only these requests:
+Pitboard has no server of its own and makes only these requests itself:
 
 | Request | Carries | Used for |
 | --- | --- | --- |
@@ -56,11 +56,13 @@ Pitboard has no server of its own and makes only these requests:
 | `github.com/datlechin/pitboard/releases` | Nothing of yours | The app's update check and downloads: see [Updates](/reference/settings#updates). The install script and the tarball it downloads |
 | `usepitboard.com/install.sh` | Nothing of yours | The line in [Install with the script](/install#install-with-the-script): a redirect, kept at Cloudflare, to the script on GitHub |
 
+A [warm-up](/guides/warm-up) is Claude Code's run, not Pitboard's: `claude -p` sends one message on its smallest model to Anthropic, and fetches what Claude Code fetches as it starts, such as the account's profile and policy limits. Pitboard starts it from a folder in the Pitboard directory, with `PATH`, your user name and any proxy variables from its own environment and nothing else, and hands it the account's access token on a pipe. It never hands Claude Code a refresh token, so the run cannot renew or spend a login. Claude Code keeps that token in no store (read in Claude Code 2.1.296).
+
 The command line never checks for updates.
 
 GitHub redirects each release download to `release-assets.githubusercontent.com`, as measured on 12 October 2026.
 
-Pitboard renews a login a tool may be using in two cases. [`pitboard stow`](/reference/recovery-commands#stow) renews one it puts away with an expired access token. A change or a read renews Claude Code's login in use where it must [identify it](/concepts/switching#how-pitboard-knows-whose-login-it-is) and its access token has expired. Both hold [Claude Code's renewal locks](/reference/files#claude-code-files) meanwhile.
+Pitboard renews a login a tool may be using in three cases. [`pitboard stow`](/reference/recovery-commands#stow) renews one it puts away with an expired access token. A change or a read renews Claude Code's login in use where it must [identify it](/concepts/switching#how-pitboard-knows-whose-login-it-is) and its access token has expired. A warm-up of the account in use renews its login where the access token would lapse within 5 minutes. All three hold [Claude Code's renewal locks](/reference/files#claude-code-files) meanwhile.
 
 Pitboard's own requests verify TLS against your system's trust store and time out after 5 seconds.
 

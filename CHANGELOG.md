@@ -6,6 +6,22 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- Pitboard warms up the Claude Code accounts you turn it on for: as soon as an account's
+  five-hour period resets, Claude Code sends one short message with that account's login, so
+  the next period starts at once and resets as early as it can. Turn it on in **Settings** >
+  **General** > **Warm up limits**, with **Warm Up Automatically** in an account's shortcut
+  menu, or with `pitboard warm on <account>`, between hours you set, 06:00 to 22:00 by
+  default (`pitboard warm range`). The app warms up accounts while it is open, and
+  `pitboard watch` while it runs; **Warm Up Now** and `pitboard warm now <account>` start one
+  at once. Pitboard sends no model request of its own: it runs `claude -p` on Haiku with no
+  tools, in a folder of its own, and hands it the account's access token on a pipe, never a
+  refresh token. Measured with Claude Code 2.1.296 on 12 October 2026, the request starts the
+  period at the start of its ten minutes, counts on the plan and costs about 3,100 tokens.
+  The weekly limit runs on a fixed cycle, so nothing starts it.
+  [Warm up accounts](https://docs.usepitboard.com/guides/warm-up) has the rules.
+
 ## [0.12.0] - 2026-10-12
 
 ### Added

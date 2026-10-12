@@ -13,6 +13,9 @@ To open Settings, click Pitboard's item in the menu bar, then choose **Settings*
 | **Menu bar shows** | No heading | **Account and usage** |
 | **Switch Claude Code automatically** | **Before an account runs out** | Off |
 | **Switch when a limit reaches** | **Before an account runs out** | 95%, from 50% to 99% in steps of 1% |
+| **From** | **Warm up limits** | 06:00 |
+| **To** | **Warm up limits** | 22:00 |
+| A switch for each Claude Code account | **Warm up limits** | Off |
 | **Renew parked logins daily** | **While you're away** | Off |
 | **Renew Now** | **While you're away** | A button |
 
@@ -63,6 +66,22 @@ While the setting is on, a line under the share says what the app last decided:
 | **Switched Claude Code from work to personal: work had used 97% of its 5-hour limit.** | The app switched. |
 
 [When it holds back](/guides/automatic-switching#when-it-holds-back) lists each reason. [Notifications](/reference/app#notifications) lists what the app posts.
+
+### Warm up limits
+
+While the app is open, it warms up each Claude Code account turned on here, between **From** and **To** each day, as [Warm up accounts](/guides/warm-up) describes. `pitboard warm` changes the same setting, and `pitboard watch` reads it.
+
+**To** at 00:00 is the end of the day. A **From** later than **To** runs past midnight.
+
+Each account's row shows where its warm-up stands while it is on. A line under the list says what comes next:
+
+| Line | Shown when |
+| --- | --- |
+| **Next warm-up: work at 14:50.** | An account is turned on, and this is the soonest it warms up. |
+| **Warming up work now.** | That warm-up is due or under way. |
+| **The last warm-up came to nothing:**, then the error | A warm-up the app made by itself failed. It shows until the next one starts a period or finds nothing due. |
+| Why the setting cannot be read, such as **Which accounts Pitboard warms up, at …, cannot be read** | `warm.json` cannot be read. |
+| **Pitboard is not warming up accounts:**, then the reason | Nothing can be warmed up here, for a reason in the second table of [When it holds back](/guides/warm-up#when-it-holds-back). |
 
 ### Renew parked logins daily
 

@@ -356,6 +356,42 @@ pub(crate) fn look(
     }
 }
 
+/// [`look`], with the login stored renewed first where its access token lapses within `ahead`
+/// seconds, as a session renews it before a request: for a warm-up, which hands a tool that
+/// access token alone, with no refresh token to renew it by. Renewed under Claude Code's own
+/// locks, as telling whose a lapsed login is renews it.
+pub(crate) fn fresh(
+    ctx: &Context,
+    permit: Permit,
+    state: &mut State,
+    which: ProviderId,
+    ahead: i64,
+) -> Result<(Live, InUse)> {
+    let (live, found) = look(ctx, permit, state, which)?;
+    let Live::Login(login) = live else {
+        return Ok((live, found));
+    };
+    let lapses = provider::of(which)
+        .expiry(&login.document)
+        .access_expires_at
+        .is_some_and(|at| at <= ctx.now() + ahead);
+    if !lapses {
+        return Ok((Live::Login(login), found));
+    }
+    let (document, renewed, lock_lost) =
+        renewed(ctx, permit, state, which, &login.store, &login.document)
+            .map_err(|untold| untold.said(which))?;
+    let owner = renewed.owner.clone();
+    let recorded = renewed.recorded(found.named);
+    let live = Live::Login(Login {
+        store: login.store,
+        document,
+        owner,
+        lock_lost: login.lock_lost || lock_lost,
+    });
+    Ok((live, recorded))
+}
+
 /// Whose login `which` has stored now, recorded in `state`, saved where that changed, and
 /// written in the activity log where it changed outside Pitboard. For a change, which holds
 /// Pitboard's lock.
