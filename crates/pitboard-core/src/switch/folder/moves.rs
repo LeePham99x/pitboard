@@ -191,21 +191,31 @@ fn placed(app: &dyn Folder, root: &Path) -> Result<()> {
     Ok(())
 }
 
+// This Mac's id as one check read it, written into every manifest that path makes.
+pub(super) struct Mac(String);
+
+impl Mac {
+    // A manifest that names no Mac could never be put back, so none is written.
+    pub(super) fn here(ctx: &Context) -> Result<Mac> {
+        let id = ctx.this_machine();
+        if id == state::UNKNOWN_MACHINE {
+            return Err(Error::MachineUnknown);
+        }
+        Ok(Mac(id))
+    }
+}
+
 // Before anything is reserved or moved. A refusal changes nothing.
 pub(super) fn may_start(
     ctx: &Context,
     permit: Permit,
     app: &dyn Folder,
     root: &Path,
-) -> Result<()> {
+) -> Result<Mac> {
     layout(app, root)?;
     parks::ready(ctx, permit, root)?;
     placed(app, root)?;
-    // A manifest that names no Mac could never be put back, so none is written.
-    if ctx.this_machine() == state::UNKNOWN_MACHINE {
-        return Err(Error::MachineUnknown);
-    }
-    Ok(())
+    Mac::here(ctx)
 }
 
 pub(super) fn nobody(at: i64) -> InUse {
@@ -269,6 +279,7 @@ pub(super) fn leave(
     app: &'static dyn Folder,
     root: &Path,
     leaving: Leaving<'_>,
+    mac: &Mac,
 ) -> Result<(Park, Vec<Warning>)> {
     let tool = app.id();
     let account = enrolled(state, leaving.key)?;
@@ -306,7 +317,7 @@ pub(super) fn leave(
         login: Some(moving.login.clone()),
         session_expires_at: leaving.session.expires_at,
         parked_at: ctx.now(),
-        machine: ctx.this_machine(),
+        machine: mac.0.clone(),
         items: moving.items.clone(),
         keys: moving.keys.clone(),
         left_in_folder: Vec::new(),
@@ -438,6 +449,7 @@ pub(super) fn commit_leave(
     moving: &Moving,
 ) -> Result<(Park, Vec<Warning>)> {
     let tool = app.id();
+    forget_left(ctx, permit, state, tool)?;
     let now = ctx.now();
     let park = folder_park(ctx, moving, now);
     match state
@@ -559,6 +571,7 @@ pub(super) fn check_park(
     state: &State,
     app: &dyn Folder,
     key: &Key,
+    mac: &Mac,
 ) -> Result<Checked> {
     let tool = app.id();
     let account = enrolled(state, key)?;
@@ -592,7 +605,7 @@ pub(super) fn check_park(
             "its record names no Mac, so Pitboard cannot tell whether {name} can read it here"
         )));
     }
-    if manifest.machine != ctx.this_machine() {
+    if manifest.machine != mac.0 {
         return Err(corrupt(format!(
             "it was parked on another Mac, and {name} cannot read it here where its key differs"
         )));
@@ -643,12 +656,13 @@ fn places_free(app: &dyn Folder, root: &Path, checked: &Checked, setting_aside: 
     Ok(())
 }
 
-// The account a give-up left items of in the app's folder, with the folder whose manifest says so.
-fn left_behind(
+// Each folder of the tool's parks and asides whose manifest lists items a give-up left in the
+// app's folder, with that manifest.
+fn listing_left(
     ctx: &Context,
     state: &State,
     tool: crate::provider::ProviderId,
-) -> Option<(String, String)> {
+) -> Vec<(String, Manifest)> {
     let parked = state
         .accounts
         .iter()
@@ -661,13 +675,44 @@ fn left_behind(
         .iter()
         .filter(|aside| aside.tool == tool)
         .map(|aside| aside.name.clone());
-    parked.chain(aside).find_map(|name| {
-        let manifest = parks::manifest(ctx, &name).ok().flatten()?;
-        (!manifest.left_in_folder.is_empty()).then_some((manifest.account?, name))
-    })
+    parked
+        .chain(aside)
+        .filter_map(|name| {
+            let manifest = parks::manifest(ctx, &name).ok().flatten()?;
+            (!manifest.left_in_folder.is_empty()).then_some((name, manifest))
+        })
+        .collect()
+}
+
+// The account a give-up left items of in the app's folder.
+fn left_behind(ctx: &Context, state: &State, tool: crate::provider::ProviderId) -> Option<String> {
+    listing_left(ctx, state, tool)
+        .into_iter()
+        .find_map(|(_, manifest)| manifest.account)
+}
+
+// Once the app's folder's items are moved or filed under an account, they are that account's:
+// no manifest lists them as a give-up's any more.
+pub(super) fn forget_left(
+    ctx: &Context,
+    permit: Permit,
+    state: &State,
+    tool: crate::provider::ProviderId,
+) -> Result<()> {
+    for (name, mut manifest) in listing_left(ctx, state, tool) {
+        manifest.left_in_folder.clear();
+        parks::write_manifest(ctx, permit, &name, &manifest).map_err(|source| {
+            Error::HomeUnwritable {
+                path: parks::at(ctx, &name),
+                source,
+            }
+        })?;
+    }
+    Ok(())
 }
 
 // An aside's record, written before anything moves into it: what the settings held, kept.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn keep_aside(
     ctx: &Context,
     permit: Permit,
@@ -676,6 +721,7 @@ pub(super) fn keep_aside(
     account: Option<String>,
     items: Vec<String>,
     keys: &Keys,
+    mac: &Mac,
 ) -> Step {
     let manifest = Manifest {
         v: parks::VERSION,
@@ -685,7 +731,7 @@ pub(super) fn keep_aside(
         login: None,
         session_expires_at: None,
         parked_at: ctx.now(),
-        machine: ctx.this_machine(),
+        machine: mac.0.clone(),
         items,
         keys: keys.digests(),
         left_in_folder: Vec::new(),
@@ -708,6 +754,7 @@ pub(super) fn arrive(
     checked: Checked,
     leftovers: bool,
     from: Option<String>,
+    mac: &Mac,
 ) -> Result<Vec<Warning>> {
     let tool = app.id();
     let account = enrolled(state, key)?;
@@ -756,8 +803,16 @@ pub(super) fn arrive(
     let forward = || -> Step<Vec<String>> {
         let held = settings(app, root)?.account_keys(app);
         if let Some(aside) = &aside {
-            let filed = left.as_ref().map(|(account, _)| account.clone());
-            keep_aside(ctx, permit, app, aside, filed, present(app, root)?, &held)?;
+            keep_aside(
+                ctx,
+                permit,
+                app,
+                aside,
+                left.clone(),
+                present(app, root)?,
+                &held,
+                mac,
+            )?;
             fault::point("arrive.aside_kept");
         }
         if !held.is_empty() {
@@ -781,10 +836,9 @@ pub(super) fn arrive(
                 &in_the_way,
                 |_| "arrive.item_aside",
             )?;
-            if let Some((_, name)) = &left {
-                forget_left(ctx, permit, name)?;
-            }
         }
+        // What a give-up listed is in the aside, under the account its manifest names, or gone.
+        forget_left(ctx, permit, state, tool).map_err(|e| e.to_string())?;
         let rest = moving.items.iter().filter(|item| *item != jar(app)).rev();
         for item in rest.chain(moving.items.iter().filter(|item| *item == jar(app))) {
             let (from, to) = (parks::item(ctx, &moving.park, item), root.join(item));
@@ -815,16 +869,6 @@ pub(super) fn arrive(
     warnings.extend(commit_arrive(ctx, permit, state, app, &moving, false)?);
     purge(ctx, permit, state);
     Ok(warnings)
-}
-
-// Once the items a give-up left are set aside, its park's manifest stops listing them.
-fn forget_left(ctx: &Context, permit: Permit, name: &str) -> Step {
-    let Some(mut manifest) = parks::manifest(ctx, name)? else {
-        return Ok(());
-    };
-    manifest.left_in_folder.clear();
-    parks::write_manifest(ctx, permit, name, &manifest)
-        .map_err(|e| format!("a manifest could not be written: {e}"))
 }
 
 // For an arrive: the folder holds the login whole, and the park none of it.

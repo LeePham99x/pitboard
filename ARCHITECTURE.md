@@ -2386,6 +2386,8 @@ was read on Linux or Windows.
 - `Cookies` is SQLite at `meta.version` 24, and every value starts `v10`. A session cookie
   expires about four weeks after it is set. With Claude open, `Cookies-journal` is empty
   between writes and there is no `Cookies-wal` (2.19675.0, 3 October 2026).
+- At `meta.version` 24 each cookie's value, decrypted, starts with a SHA-256 of its host,
+  which Claude's own cookie importer checks and strips (2.7032.0).
 - The session cookies are `sessionKey`, `sessionKeyV2`, `sessionKeyV3`, `sessionKeyLC` and
   `sessionKeyV3LC`, for `claude.ai` and `.claude.ai` (2.7032.0).
 - A `sessionKey`'s stored value is the same after a quit and an open (E3, 2.19675.0).
@@ -2434,6 +2436,7 @@ Not measured. Each row says what Pitboard does where it cannot know.
 | Whether a stale journal Pitboard left in place can become valid again | Only where a later write makes `config.json` the file it was written over, and then its body is that run's settings |
 | The names of Chromium's and the settings store's temporary files | Three patterns pass. Any other name stops the start of a move |
 | Whether the builds people run keep the five cookie names, `meta.version` 24 and `v10` | Signed out needs none of the five names and emptied caches. Another shape refuses |
+| Whether Claude ever keeps a `sessionKey` for both `.claude.ai` and `claude.ai` | Refused, whatever the values: one session on both hosts is not told from two |
 | Whether the emptied token cache is 28 characters on the builds people run | A cache of another length is not emptied, so the folder is never read as signed out |
 | Whether the token caches change while an account is in use | Keys are never written over keys. A parked copy that differs goes aside |
 | Whether a session with none of its three keys opens as its account and writes them again (read in 2.7032.0, not run) | Reached only by a kill between the keys and the jar. The next change reads again |
@@ -2441,7 +2444,7 @@ Not measured. Each row says what Pitboard does where it cannot know.
 | Whether Claude makes a missing `Local Storage`, `Session Storage`, `IndexedDB` or `WebStorage` again | An item in neither place is gone on without, and said. The jar never is |
 | Whether a session cookie's expiry slides, and how long a parked session lives | `session_expires_at` is a note in days, never a refusal |
 | Whether an update, a reinstall or a keychain reset keeps `Claude Safe Storage` | Not checked: it would be a keychain call. A park from another Mac is refused by its manifest |
-| How Claude's own account switcher keeps accounts on disk | Two rows of one session name refuse. The recorded session under another name is doubt |
+| How Claude's own account switcher keeps accounts on disk | Two rows of one session name for one host refuse. The recorded session under another name is doubt |
 | Whether helpers outlive a crashed main program | Every program inside a `Claude.app` counts as Claude open |
 | Whether the updater's helper runs from outside the bundle between a quit and a relaunch | A program inside a `Claude.app` or the data folder counts. One copied elsewhere does not |
 | Whether the Claude Code under `claude-code/`, MCP servers or the Cowork VM outlive the main program | A program inside the data folder counts. The others do not |
@@ -2468,7 +2471,7 @@ date, or stays in the table with what was seen.
 | --- | --- | --- |
 | M1 | The first-level names of the build people run, listed after Chat, the Code tab and Cowork were each used once, and again while Claude runs | Before a Claude Desktop login is moved |
 | M2 | Whether `config.json.journal` is there after a quit and after a force quit, and which field each hash equals | Before a Claude Desktop login is moved |
-| M3 | The cookie names, the first three bytes of each value, `meta`'s versions, and the token caches' lengths after a Log out | Before a Claude Desktop login is moved |
+| M3 | The cookie names and hosts, the first three bytes of each value, `meta`'s versions, and the token caches' lengths after a Log out | Before a Claude Desktop login is moved |
 | M4 | The session fingerprint and the three keys' digests before and after ten put-backs across two days | Before a Claude Desktop login is moved |
 | M5 | A sign-in over a stale name with a quit at 5, 10, 20, 40 and 70 seconds: whose name the session is under | Before a release |
 | M6 | A quit with a task running: whether Claude asks, and how long each process stays listed | Before a release |

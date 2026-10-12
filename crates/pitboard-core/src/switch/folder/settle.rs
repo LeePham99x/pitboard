@@ -352,7 +352,7 @@ pub(super) fn settle(
             let back = || -> Step {
                 take_back(ctx, permit, app, &root, &moving, jar)?;
                 if facts.folder_jar == FolderJar::None {
-                    finish_setting_aside(ctx, permit, app, &root, &moving)?;
+                    finish_setting_aside(ctx, permit, state, app, &root, &moving)?;
                 }
                 Ok(())
             };
@@ -362,6 +362,7 @@ pub(super) fn settle(
             Ended::Undone
         }
         Row::ArriveBackKeysAside => {
+            let mac = moves::Mac::here(ctx)?;
             let mut moving = moving.clone();
             let aside = crate::park::reserve_aside(ctx, permit, state)?;
             moving.asides.insert(aside.clone(), SetAside::InTheWay);
@@ -370,7 +371,7 @@ pub(super) fn settle(
             fault::point("settle.aside_named");
             let back = || -> Step {
                 let held = moves::settings(app, &root)?.account_keys(app);
-                moves::keep_aside(ctx, permit, app, &aside, None, Vec::new(), &held)?;
+                moves::keep_aside(ctx, permit, app, &aside, None, Vec::new(), &held, &mac)?;
                 fault::point("settle.aside_kept");
                 moves::put_keys(app, permit, &root, &Keys::none())?;
                 fault::point("settle.keys_cleared");
@@ -458,6 +459,7 @@ fn take_back(
 fn finish_setting_aside(
     ctx: &Context,
     permit: Permit,
+    state: &State,
     app: &dyn Folder,
     root: &Path,
     moving: &Moving,
@@ -465,7 +467,7 @@ fn finish_setting_aside(
     for aside in moving.asides.keys() {
         if moves::exists(&parks::item(ctx, aside, moves::jar(app)))? {
             let rest = moves::present(app, root)?;
-            return moves::move_out(
+            moves::move_out(
                 ctx,
                 permit,
                 app,
@@ -473,7 +475,9 @@ fn finish_setting_aside(
                 aside,
                 &rest,
                 |_| "settle.item_aside",
-            );
+            )?;
+            // What a give-up listed is in this aside now, under the account its manifest names.
+            return moves::forget_left(ctx, permit, state, app.id()).map_err(|e| e.to_string());
         }
     }
     Ok(())
@@ -554,6 +558,7 @@ pub(super) fn give_up(
                 return Err(Error::MoveMixed { label, places });
             }
             FolderJar::Other | FolderJar::Mine => {
+                let mac = moves::Mac::here(ctx)?;
                 let aside = crate::park::reserve_aside(ctx, permit, state)?;
                 moving.asides.insert(aside.clone(), SetAside::GivenUp);
                 state.moving.insert(tool.code().to_string(), moving.clone());
@@ -568,6 +573,7 @@ pub(super) fn give_up(
                         Some(moving.id.clone()),
                         left.clone(),
                         &Keys::none(),
+                        &mac,
                     )?;
                     moves::move_out(
                         ctx,

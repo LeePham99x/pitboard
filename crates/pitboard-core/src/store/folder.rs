@@ -32,7 +32,7 @@ pub(crate) struct Manifest {
     pub items: Vec<String>,
     // SHA-256, hex, of each account key's value as the settings held it
     pub keys: BTreeMap<String, String>,
-    // the account's items a give-up left in the app's folder, which the next arrive sets aside
+    // the account's items a give-up left in the app's folder
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub left_in_folder: Vec<String>,
 }

@@ -1,7 +1,7 @@
 use super::super::harness::{
-    HOME, Machine, NOW, STRANGER, WORK, as_a_dead_runs, data, desktop_machine, desktop_pair, hold,
-    hold_where_deleted, hold_where_twice, recover, rested, settled, sign_in_inside, snapshot, tree,
-    unchanged, whereabouts,
+    HOME, Machine, NOW, STRANGER, WORK, as_a_dead_runs, audit_lines, data, desktop_machine,
+    desktop_pair, hold, hold_where_deleted, hold_where_twice, recover, rested, settled,
+    sign_in_inside, snapshot, tree, unchanged, whereabouts,
 };
 use super::super::{Outcome, enroll, forget, repair, settle, switch, update_config};
 use crate::desktop_testing::{EMPTIED, JarAs, Person, plant, write_stand_in_jar};
@@ -1506,6 +1506,47 @@ fn a_leave_is_refused_where_this_mac_cannot_be_identified() {
     windows,
     ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
 )]
+fn nothing_is_set_aside_where_this_mac_cannot_be_identified() {
+    let blind = |m: &mut Machine| {
+        m.ctx = m.ctx.clone().with_unknown_machine();
+        recover(m).expect("swept");
+        snapshot(m)
+    };
+
+    // The start of a sign-in, which sets aside the keys a Log out left.
+    let mut m = desktop_machine("no-machine-start");
+    let claude = m.claude();
+    claude.opens();
+    claude.logs_out();
+    claude.quits();
+    let before = blind(&mut m);
+    let stopped = watched(&m, "travel").err().expect("refused");
+    assert_eq!(stopped.code(), "machine_unknown");
+    unchanged(&m, &before, "the start of a sign-in");
+
+    // Recovery of an arrive, which sets aside the keys Claude wrote over it.
+    let mut m = desktop_pair("no-machine-settle");
+    killed(&m, "arrive.jar_in", "home");
+    let emptied: Value = serde_json::from_str(EMPTIED).expect("JSON");
+    set(&m, "oauth:tokenCache", Some(emptied));
+    let before = blind(&mut m);
+    assert_eq!(code(confirm_(&m, "work")), "machine_unknown");
+    unchanged(&m, &before, "recovery");
+    assert!(state_of(&m).moving(ProviderId::Desktop).is_some());
+
+    // A give-up, which sets aside what the move left beside another session.
+    let mut m = mixed("no-machine-give-up");
+    let before = blind(&mut m);
+    assert_eq!(code(enrol(&m, "third")), "machine_unknown");
+    unchanged(&m, &before, "a give-up");
+    assert!(state_of(&m).moving(ProviderId::Desktop).is_some());
+}
+
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+)]
 fn an_arrive_into_a_folder_with_no_indexeddb_makes_its_parent() {
     let m = desktop_pair("no-indexeddb");
     let died = crate::fault::killing("leave.done", || used(&m, "home"));
@@ -2128,6 +2169,91 @@ fn an_add_from_a_logged_out_claude_never_files_a_session_under_the_old_name() {
     hold(&m, "an add after a Log out");
 }
 
+// Rows 3, 5 and 10: `work`'s session is gone, so the start of a sign-in records nobody in use.
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+)]
+fn a_sign_in_from_a_logged_out_claude_records_nobody_in_use() {
+    // Rows 5 and 3: nothing to set aside, so the record is the save.
+    let emptied = desktop_machine("emptied-nobody");
+    without_items(&emptied);
+    for key in [
+        "oauth:tokenCache",
+        "oauth:tokenCacheV2",
+        "lastKnownAccountUuid",
+    ] {
+        set(&emptied, key, None);
+    }
+    let no_folder = desktop_machine("no-folder-nobody");
+    std::fs::remove_dir_all(data(&no_folder)).expect("removed");
+    for (m, row) in [(emptied, "row 5"), (no_folder, "row 3")] {
+        watched(&m, "travel").expect("waiting").cancel();
+        let state = state_of(&m);
+        let record = state.in_use(ProviderId::Desktop).expect("recorded");
+        assert_eq!((&record.owner, &record.named), (&None, &None), "{row}");
+        assert!(state.aside.is_empty(), "{row}: {:?}", state.aside);
+        assert!(
+            audit_lines(&m, "in-use").contains(&(String::new(), "signed_out_outside".into())),
+            "{row}: {:?}",
+            audit_lines(&m, "in-use")
+        );
+        hold_where_deleted(&m, row);
+    }
+
+    // Row 10: the keys Log out left are set aside in the same save.
+    let m = desktop_machine("logged-out-nobody");
+    let claude = m.claude();
+    claude.opens();
+    claude.logs_out();
+    claude.quits();
+    let waiting = watched(&m, "travel").expect("waiting");
+    said_until(&waiting.said(), "Waiting for Claude to quit");
+    waiting.cancel();
+    let state = state_of(&m);
+    let record = state.in_use(ProviderId::Desktop).expect("recorded");
+    assert_eq!((&record.owner, &record.named), (&None, &None));
+    assert!(
+        state
+            .get(&m.key("work"))
+            .expect("enrolled")
+            .replaced_at
+            .is_some(),
+        "`work`'s only login was the one Log out ended"
+    );
+    assert!(
+        audit_lines(&m, "in-use").contains(&(String::new(), "signed_out_outside".into())),
+        "{:?}",
+        audit_lines(&m, "in-use")
+    );
+    let read = crate::service::Pitboard::new(m.ctx.clone())
+        .status_offline()
+        .expect("read");
+    assert!(
+        !read
+            .warnings
+            .iter()
+            .any(|warning| warning.code() == "in_use_unconfirmed"),
+        "{:?}",
+        read.warnings
+    );
+    hold(&m, "a sign-in started after a Log out");
+
+    // Claude writes an emptied cache again: the next start saves its aside though the record
+    // already names nobody.
+    set(
+        &m,
+        "oauth:tokenCache",
+        Some(serde_json::from_str(EMPTIED).expect("JSON")),
+    );
+    watched(&m, "travel").expect("waiting").cancel();
+    let state = state_of(&m);
+    let asides = state.aside.iter().filter(|a| a.why == SetAside::InTheWay);
+    assert_eq!(asides.count(), 2, "{:?}", state.aside);
+    hold(&m, "a sign-in started again after a Log out");
+}
+
 #[test]
 #[cfg_attr(
     windows,
@@ -2607,6 +2733,199 @@ fn a_give_up_never_points_a_manifest_at_a_session_it_did_not_park() {
     let state = state_of(&m);
     assert!(park_of(&m, "work").is_none(), "given to nobody");
     assert!(state.aside.iter().any(|a| a.name == park));
+}
+
+// `work`'s leave given up with its items left in Claude's folder.
+fn left_by_a_give_up(name: &str) -> Machine {
+    let m = desktop_pair(name);
+    tokens_beside_no_session(&m);
+    let gave = gave_up(&m).expect("given up");
+    assert!(!gave.moves[0].left.is_empty(), "{gave:?}");
+    m
+}
+
+// Whose each folder set aside as in the way is, oldest first, as the index and its manifest
+// file it.
+fn in_the_way(m: &Machine) -> Vec<Option<String>> {
+    state_of(m)
+        .aside
+        .iter()
+        .filter(|aside| aside.why == SetAside::InTheWay)
+        .map(|aside| {
+            let manifest = crate::store::folder::manifest(&m.ctx, &aside.name)
+                .expect("reads")
+                .expect("there");
+            assert_eq!(manifest.account, aside.account);
+            aside.account.clone()
+        })
+        .collect()
+}
+
+// What the manifest of `label`'s park lists as left in Claude's folder.
+fn listed_left(m: &Machine, label: &str) -> Vec<String> {
+    let park = park_of(m, label).expect("parked").service;
+    crate::store::folder::manifest(&m.ctx, &park)
+        .expect("reads")
+        .expect("there")
+        .left_in_folder
+}
+
+// A listing a give-up wrote, which nothing took since.
+fn list_left(m: &Machine, label: &str) {
+    let park = park_of(m, label).expect("parked").service;
+    let mut manifest = crate::store::folder::manifest(&m.ctx, &park)
+        .expect("reads")
+        .expect("there");
+    manifest.left_in_folder = vec!["Local Storage".into()];
+    crate::store::folder::write_manifest(&m.ctx, Permit::for_a_test(), &park, &manifest)
+        .expect("written");
+}
+
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+)]
+fn what_a_give_up_left_is_filed_under_its_account_only_until_another_takes_it() {
+    let work = Some(format!("desktop_{}", WORK.uuid));
+    let m = left_by_a_give_up("left-filed");
+    assert!(!listed_left(&m, "work").is_empty());
+    let claude = m.claude();
+    claude.opens();
+    claude.quits();
+    used(&m, "home");
+    assert_eq!(
+        in_the_way(&m),
+        std::slice::from_ref(&work),
+        "nothing took them since"
+    );
+    assert!(listed_left(&m, "work").is_empty(), "set aside");
+    hold(&m, "left by a give-up, set aside");
+
+    // The arrive killed once it set the first of them aside: recovery sets the rest aside with
+    // it, and what Claude makes after is nobody's.
+    let m = left_by_a_give_up("left-killed");
+    let claude = m.claude();
+    claude.opens();
+    claude.quits();
+    killed(&m, "arrive.item_aside", "home");
+    // The next change settles the arrive first.
+    assert_eq!(code(confirm_(&m, "work")), "account_not_in_use");
+    assert_eq!(
+        in_the_way(&m),
+        std::slice::from_ref(&work),
+        "set aside by recovery"
+    );
+    assert!(listed_left(&m, "work").is_empty(), "set aside by recovery");
+    claude.opens();
+    claude.quits();
+    used(&m, "home");
+    assert_eq!(in_the_way(&m), [work.clone(), None], "Claude's own since");
+    hold(&m, "left by a give-up, set aside by recovery");
+    rested(&m, "left by a give-up, set aside by recovery");
+
+    // The arrive killed before its jar went aside: the listing stays with the items.
+    let m = left_by_a_give_up("left-keys-killed");
+    let claude = m.claude();
+    claude.opens();
+    claude.quits();
+    killed(&m, "arrive.keys_cleared", "home");
+    assert_eq!(code(confirm_(&m, "work")), "account_not_in_use");
+    assert!(
+        !listed_left(&m, "work").is_empty(),
+        "still in Claude's folder"
+    );
+    used(&m, "home");
+    assert_eq!(
+        in_the_way(&m),
+        [work.clone(), work.clone()],
+        "the keys, then the items"
+    );
+    assert!(listed_left(&m, "work").is_empty(), "set aside");
+    claude.opens();
+    claude.logs_out();
+    claude.quits();
+    used(&m, "work");
+    assert_eq!(
+        in_the_way(&m),
+        [work.clone(), work, None],
+        "Claude's own since"
+    );
+    hold(&m, "left by a give-up, set aside after a kill");
+    rested(&m, "left by a give-up, set aside after a kill");
+
+    // Somebody signs in over them and is enrolled, leaves with them, then a Log out.
+    let m = left_by_a_give_up("left-taken");
+    let claude = m.claude();
+    claude.opens();
+    claude.signs_in(&STRANGER);
+    claude.reports();
+    claude.quits();
+    enrol(&m, "j").expect("filed as the person says");
+    assert!(listed_left(&m, "work").is_empty(), "filed under `j`");
+    used(&m, "home");
+    claude.opens();
+    claude.logs_out();
+    claude.quits();
+    used(&m, "j");
+    assert_eq!(in_the_way(&m), [None], "never `work`'s");
+    hold(&m, "left by a give-up, then taken by another");
+    rested(&m, "left by a give-up, then taken by another");
+
+    // A listing nothing took goes with the next leave, and with the next arrive.
+    let m = desktop_pair("left-moved");
+    list_left(&m, "home");
+    watched(&m, "travel").expect("`work` parked").cancel();
+    assert!(
+        listed_left(&m, "home").is_empty(),
+        "taken by `work`'s leave"
+    );
+    list_left(&m, "home");
+    used(&m, "work");
+    assert!(
+        listed_left(&m, "home").is_empty(),
+        "gone by `work`'s arrive"
+    );
+    hold(&m, "a listing nothing took, then a leave and an arrive");
+}
+
+// A leave whose commit cannot clear a listing waits, and the next change finishes it.
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+)]
+fn a_listing_that_cannot_be_cleared_leaves_the_leave_to_the_next_change() {
+    let m = desktop_pair("left-unwritable");
+    list_left(&m, "home");
+    let park = crate::store::folder::at(&m.ctx, &park_of(&m, "home").expect("parked").service);
+    let mode = std::fs::metadata(&park).expect("there").permissions();
+    crate::host::fs::testing::deny_changes(&park).expect("read-only");
+    let refused = use_(&m, "home");
+    std::fs::set_permissions(&park, mode).expect("changeable again");
+    assert_eq!(code(refused), "home_unwritable");
+    let moving = state_of(&m)
+        .moving(ProviderId::Desktop)
+        .cloned()
+        .expect("the leave waits");
+    assert_eq!(moving.half, state::Half::Leave);
+    assert_eq!(in_use(&m).as_deref(), Some("work"), "nothing committed");
+    assert!(!listed_left(&m, "home").is_empty(), "kept");
+    assert!(!data(&m).join("Cookies").exists(), "`work`'s jar left");
+    assert!(
+        crate::store::folder::item(&m.ctx, &moving.park, "Cookies").exists(),
+        "`work`'s jar parked"
+    );
+    assert_eq!(code(confirm_(&m, "work")), "account_not_in_use");
+    assert!(
+        state_of(&m).moving(ProviderId::Desktop).is_none(),
+        "finished"
+    );
+    assert!(listed_left(&m, "home").is_empty(), "taken by the leave");
+    used(&m, "home");
+    assert_eq!(in_use(&m).as_deref(), Some("home"));
+    hold(&m, "a leave finished by the next change");
+    rested(&m, "a leave finished by the next change");
 }
 
 #[test]

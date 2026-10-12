@@ -70,16 +70,23 @@ pub(super) fn session(ctx: &Context, jar: &Path) -> Result<Option<SignedIn>, Unr
             )));
         }
     }
+    // A `sessionKey` for each host, as Claude's own account switcher may leave. At version 24
+    // each value carries a hash of its host, so one session there is not told from two.
+    let mut keys = sessions
+        .iter()
+        .filter(|cookie| cookie.name == SESSION_NAMES[0]);
+    if let (Some(one), Some(other)) = (keys.next(), keys.next()) {
+        return Err(format_unread(&format!(
+            "two `{}` cookies, for {} and {}",
+            one.name, one.host, other.host
+        )));
+    }
     let Some(first) = sessions.first() else {
         return Ok(None);
     };
-    let key = HOSTS
+    let key = sessions
         .iter()
-        .find_map(|host| {
-            sessions
-                .iter()
-                .find(|c| c.name == SESSION_NAMES[0] && c.host == *host && c.path == "/")
-        })
+        .find(|c| c.name == SESSION_NAMES[0] && c.path == "/")
         .ok_or_else(|| format_unread(&format!("`{}` and no `sessionKey`", first.name)))?;
     Ok(Some(SignedIn {
         login: crate::store::fingerprint(&hex::encode(&key.stored)),
@@ -236,6 +243,29 @@ mod tests {
         let jar = scratch.0.join("Cookies");
         write_stand_in_jar(&jar, 25, &[]);
         assert!(format_refusal(session(&ctx, &jar)).contains("cannot read"));
+    }
+
+    #[test]
+    fn a_session_key_for_each_host_is_another_format() {
+        let (scratch, ctx, _) = scratch("two-hosts");
+        let two = [
+            cookie(".claude.ai", "sessionKey", b"v10a"),
+            cookie("claude.ai", "sessionKey", b"v10b"),
+        ];
+        let what = format_refusal(read(&scratch, &ctx, &two));
+        assert!(
+            what.contains("two `sessionKey` cookies, for .claude.ai and claude.ai"),
+            "{what}"
+        );
+        // Below version 24 one session on both hosts is one value, and it refuses too.
+        let jar = scratch.0.join("Cookies");
+        let one = [
+            cookie("claude.ai", "sessionKey", b"v10a"),
+            cookie(".claude.ai", "sessionKey", b"v10a"),
+        ];
+        write_stand_in_jar(&jar, 23, &one);
+        let what = format_refusal(session(&ctx, &jar));
+        assert!(what.contains("two `sessionKey` cookies"), "{what}");
     }
 
     #[test]

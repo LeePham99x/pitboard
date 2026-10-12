@@ -339,8 +339,8 @@ pub const ASSUMPTIONS: &[Assumption] = &[
         read_from: "This repository's static read of `app.asar`, 11 October 2026, `M` @2969996, \
                     @2970037, `P` @984528",
         verified_against: READ_FROM_THE_ARCHIVE,
-        depends: "two rows of one session name refuse; the recorded session under another name \
-                  is doubt",
+        depends: "two rows of one session name for one host, or a `sessionKey` for each host, \
+                  refuse; the recorded session under another name is doubt",
         probe: &["disableMultiAccount", "96101707"],
         absent: &[],
     },

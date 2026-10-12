@@ -2,8 +2,8 @@
 // thread waits for it to be opened and quit signed in. The core opens and quits nothing.
 
 use super::super::enroll::{Enrolled, SignIn, Steps, WatchedSignIn};
-use super::super::{Error, Result, Settled, enrolled, exclusive, shape};
-use super::moves::{self, Leaving, Step};
+use super::super::{Error, Result, Settled, enrolled, exclusive, identify, shape};
+use super::moves::{self, Leaving, Mac, Step};
 use super::verdict::{Unsure, Verdict, look};
 use super::{Begun, Open, begin, midway, open, refusal, saying, there};
 use crate::context::Context;
@@ -48,6 +48,7 @@ impl Wait {
 
 // The three keys a signed-out app kept, as after a Log out, set aside before the wait: a
 // sign-in quit within seconds then leaves a session with no name, never one under the old.
+// The aside is indexed in `state` for the caller to save.
 fn set_keys_aside(
     ctx: &Context,
     permit: Permit,
@@ -67,10 +68,11 @@ fn set_keys_aside(
     if held.is_empty() {
         return Ok(None);
     }
+    let mac = Mac::here(ctx)?;
     crate::store::folder::ready(ctx, permit, root)?;
     let aside = crate::park::reserve_aside(ctx, permit, state)?;
     let kept = || -> Step {
-        moves::keep_aside(ctx, permit, app, &aside, None, Vec::new(), &held)?;
+        moves::keep_aside(ctx, permit, app, &aside, None, Vec::new(), &held, &mac)?;
         fault::point("start.aside_kept");
         moves::put_keys(app, permit, root, &Keys::none())?;
         fault::point("start.keys_cleared");
@@ -86,8 +88,6 @@ fn set_keys_aside(
         account: None,
         login: None,
     });
-    state::save(ctx, permit, state)?;
-    fault::point("start.saved");
     Ok(Some(Warning::SetAside {
         tool,
         path: crate::store::folder::at(ctx, &aside),
@@ -128,7 +128,7 @@ pub(crate) fn start(
                 session,
                 as_named,
             } => {
-                moves::may_start(&ctx, permit, app, &root)?;
+                let mac = moves::may_start(&ctx, permit, app, &root)?;
                 let awaited = Awaited {
                     since: ctx.now(),
                     label: key.label.clone(),
@@ -140,7 +140,7 @@ pub(crate) fn start(
                     session: &session,
                     awaited: Some(awaited),
                 };
-                let (_, said) = moves::leave(&ctx, permit, &mut state, app, &root, leaving)?;
+                let (_, said) = moves::leave(&ctx, permit, &mut state, app, &root, leaving, &mac)?;
                 if as_named {
                     warnings.push(Warning::TakenAsNamed {
                         tool,
@@ -152,28 +152,41 @@ pub(crate) fn start(
                 Some(holder)
             }
             Verdict::Nobody { .. } => {
+                let mut changed = false;
                 if there(tool, &root)? {
-                    warnings.extend(set_keys_aside(&ctx, permit, &mut state, app, &root)?);
+                    let set_aside = set_keys_aside(&ctx, permit, &mut state, app, &root)?;
+                    changed |= set_aside.is_some();
+                    warnings.extend(set_aside);
                 }
+                let now = ctx.now();
+                let (recorded, noticed) =
+                    identify::record(&mut state, tool, moves::nobody(now), now);
+                changed |= recorded;
                 // Only a record with an account parked for it stands: it becomes this sign-in's.
                 let standing = state.awaiting(tool).cloned();
-                match standing {
+                let held = match standing {
                     Some(standing) => {
                         let held = state
                             .by_id(tool, &standing.put_back)
                             .map(crate::state::Account::key);
                         let taken_up = Awaited {
-                            since: ctx.now(),
+                            since: now,
                             label: key.label.clone(),
                             account: again.clone(),
                             put_back: standing.put_back,
                         };
                         state.awaiting.insert(tool.code().to_string(), taken_up);
-                        state::save(&ctx, permit, &state)?;
+                        changed = true;
                         held
                     }
                     None => None,
+                };
+                if changed {
+                    state::save(&ctx, permit, &state)?;
+                    fault::point("start.saved");
                 }
+                identify::write_down(&ctx, permit, &noticed);
+                held
             }
             Verdict::Unsure(unsure) => return Err(refusal(&state, tool, &unsure)),
         };

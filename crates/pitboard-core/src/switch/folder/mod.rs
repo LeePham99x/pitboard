@@ -362,6 +362,7 @@ fn enroll_as(
         };
         let (_, noticed) = identify::record(&mut state, tool, found, now);
         state.awaiting.remove(tool.code());
+        moves::forget_left(&ctx, permit, &state, tool)?;
         state::save(&ctx, permit, &state)?;
         warnings.extend(filed);
         identify::write_down(&ctx, permit, &noticed);
@@ -420,15 +421,16 @@ pub(crate) fn switch(
                 session,
                 as_named,
             } => {
-                moves::may_start(&ctx, permit, app, &root)?;
-                let checked = moves::check_park(&ctx, &state, app, key)?;
+                let mac = moves::may_start(&ctx, permit, app, &root)?;
+                let checked = moves::check_park(&ctx, &state, app, key, &mac)?;
                 let from = state.typed(&holder);
                 let leaving = moves::Leaving {
                     key: &holder,
                     session: &session,
                     awaited: None,
                 };
-                let (parked, said) = moves::leave(&ctx, permit, &mut state, app, &root, leaving)?;
+                let (parked, said) =
+                    moves::leave(&ctx, permit, &mut state, app, &root, leaving, &mac)?;
                 if as_named {
                     warnings.push(Warning::TakenAsNamed {
                         tool,
@@ -446,6 +448,7 @@ pub(crate) fn switch(
                     checked,
                     false,
                     Some(from.clone()),
+                    &mac,
                 )?);
                 Ok(Outcome::Switched {
                     provider: tool,
@@ -456,10 +459,10 @@ pub(crate) fn switch(
                 })
             }
             Verdict::Nobody { leftovers } => {
-                moves::may_start(&ctx, permit, app, &root)?;
-                let checked = moves::check_park(&ctx, &state, app, key)?;
+                let mac = moves::may_start(&ctx, permit, app, &root)?;
+                let checked = moves::check_park(&ctx, &state, app, key, &mac)?;
                 warnings.extend(moves::arrive(
-                    &ctx, permit, &mut state, app, &root, key, checked, leftovers, None,
+                    &ctx, permit, &mut state, app, &root, key, checked, leftovers, None, &mac,
                 )?);
                 Ok(Outcome::Installed {
                     provider: tool,
