@@ -628,12 +628,17 @@ impl Env {
     /// login of whichever `CLAUDE_CONFIG_DIR` it is run with, the private directory Pitboard
     /// makes for a sign-in, and does nothing else. Started any other way, it refuses.
     pub fn install_fake_claude(&self, credential: &str) {
-        self.install_fake_claude_waiting(credential, std::time::Duration::ZERO);
+        self.put_fake_claude(credential, None);
     }
 
-    /// `install_fake_claude`, whose sign-in waits `waiting` before it stores the login, as
-    /// a person takes a while in the browser.
-    pub fn install_fake_claude_waiting(&self, credential: &str, waiting: std::time::Duration) {
+    /// `install_fake_claude`, whose sign-in waits for a line on its standard input before it
+    /// stores the login, as a person takes a while in the browser. Where its input ends
+    /// first, it stores nothing.
+    pub fn install_fake_claude_held(&self, credential: &str) {
+        self.put_fake_claude(credential, Some(Step::WaitsForALine));
+    }
+
+    fn put_fake_claude(&self, credential: &str, held: Option<Step>) {
         let bin = self.root.join("bin");
         std::fs::create_dir_all(&bin).unwrap();
         let store = match os::claude_code_login() {
@@ -655,17 +660,15 @@ impl Env {
             },
             Kept::Sealed => unreachable!("{SEALS_NOTHING}"),
         };
-        let waits = u64::try_from(waiting.as_millis()).expect("a wait a test can make");
+        let mut steps = vec![Step::Says("Opening browser to sign in\n".into())];
+        steps.extend(held);
+        steps.push(store);
         put_stand_in(
             &bin.join(os::program("claude")),
             // Talks on stdout like the real one, and can be made to wait like a person does.
             &Script::Plays {
                 args: Some(vec!["auth".into(), "login".into()]),
-                steps: vec![
-                    Step::Says("Opening browser to sign in\n".into()),
-                    Step::Waits(waits),
-                    store,
-                ],
+                steps,
             },
         );
     }

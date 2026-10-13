@@ -181,6 +181,12 @@ CI also runs:
   installed on Linux
 - a guard that fails when `.github/workflows/rotation.yml` names a repository secret
 
+The `all-green` job waits for every other job and fails when any of them failed or was
+cancelled. It says in one place whether a run passed, so a job added to
+`.github/workflows/ci.yml` goes in its `needs`. A leg of a matrix that fails leaves the
+other legs running. A push to a pull request cancels the run it replaces, and each job stops
+at a time limit set from its recent runs.
+
 ## The app
 
 The Swift package in `apps/macos/` links the core as `apps/macos/PitboardFFI.xcframework`, with
@@ -529,7 +535,7 @@ The maintainer adds the version heading when making a release, as
 
 A pull request against `main` needs all of the following:
 
-- CI passes.
+- CI's `all-green` check passes.
 - A change in behaviour comes with a test that failed before the change, as
   [Rules](#rules) asks.
 - A changed snapshot comes with the reason the `--json` contract moved.

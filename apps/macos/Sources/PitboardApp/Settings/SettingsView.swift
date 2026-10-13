@@ -17,6 +17,9 @@ struct SettingsView: View {
         case updates
     }
 
+    // A taller pane scrolls. Between the toolbar and the Dock, 1024 x 768 has 590 points.
+    static let tallestPane: CGFloat = 560
+
     @AppStorage("settingsTab") private var tab = Tab.general
 
     var body: some View {
@@ -32,6 +35,7 @@ struct SettingsView: View {
                 .tag(Tab.updates)
         }
         .frame(width: 500)
+        .frame(maxHeight: Self.tallestPane)
         .fixedSize(horizontal: false, vertical: true)
         .appWindow(presence)
         // An app with no Dock icon opens its settings behind everything otherwise, because

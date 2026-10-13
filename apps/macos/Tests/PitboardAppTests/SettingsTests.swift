@@ -1,12 +1,14 @@
 import Foundation
 import PitboardKit
+import SwiftUI
 import Testing
 
 @testable import PitboardApp
 
 // What the settings do with macOS's own APIs, which the model does not: opening at login,
-// and linking the command line with an administrator's password. Daily renewal, Renew Now
-// and which `pitboard` a terminal runs are the model's, tested in `pitboard-ffi`.
+// linking the command line with an administrator's password, and fitting the screen. Daily
+// renewal, Renew Now and which `pitboard` a terminal runs are the model's, tested in
+// `pitboard-ffi`.
 
 /// A login item that answers the way macOS can: a registration may wait for approval or be
 /// refused, and the person may change it in System Settings while the app is running.
@@ -99,6 +101,37 @@ private final class ScriptedLoginItem: LoginItem {
     openAtLogin.set(false)
     #expect(openAtLogin.failed == nil)
     #expect(openAtLogin.state == .disabled)
+}
+
+// MARK: - Fitting the screen
+
+/// How tall the settings ask to be on `tab`, with `warming` accounts listed for warm-ups.
+@MainActor
+private func settingsHeight(_ tab: SettingsView.Tab, warming: Int = 0) -> CGFloat {
+    let defaults = TestDefaults()
+    defaults.set(tab.rawValue, forKey: "settingsTab")
+    let accounts = (0..<warming).map {
+        WarmAccountShown(
+            qualified: "claude/\($0)", title: "\($0)", plan: "Max 5x", on: false, standing: nil)
+    }
+    let model = AppModel(model: StandInModel(snapshot(0, warming: accounts)))
+    let settings = SettingsView(
+        model: model, openAtLogin: OpenAtLogin(ScriptedLoginItem()),
+        commandLineLink: CommandLineLink(
+            CommandLineTool(helper: nil, link: "/nowhere/pitboard", execute: { _ in nil }),
+            model: model),
+        presence: AppPresence(apply: { _ in }, bringForward: {}, settle: {}),
+        updates: NoUpdates())
+    return NSHostingView(rootView: settings.defaultAppStorage(defaults)).fittingSize.height
+}
+
+/// General stops at the tallest a pane may be, however many accounts it lists for warm-ups,
+/// and scrolls, so its window fits a 1024 x 768 screen. A short pane keeps its own height.
+@MainActor
+@Test func aLongPaneScrollsAndAShortOneKeepsItsHeight() {
+    #expect(settingsHeight(.general, warming: 20) == SettingsView.tallestPane)
+    #expect(settingsHeight(.commandLine) < SettingsView.tallestPane)
+    #expect(settingsHeight(.updates) < SettingsView.tallestPane)
 }
 
 // MARK: - Linking the command line
