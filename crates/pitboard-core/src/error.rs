@@ -115,7 +115,7 @@ impl Cause {
     }
 
     /// The same question asked of a provider rather than of Anthropic directly.
-    pub fn of_provider(error: &crate::provider::ProviderError) -> Cause {
+    pub(crate) fn of_provider(error: &crate::provider::ProviderError) -> Cause {
         use crate::provider::ProviderError as P;
         match error {
             P::Unauthorized => Cause::TokenExpired,

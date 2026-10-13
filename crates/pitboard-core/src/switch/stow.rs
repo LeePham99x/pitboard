@@ -195,7 +195,7 @@ pub(crate) fn find(ctx: &Context, state: &State) -> Result<Option<Left>> {
 /// before a renewal to find it free, so no network round trip holds up its writes. The file,
 /// and the login stored where the file goes because of it, are read again under it as the
 /// file goes, since a `/logout` that gave up waiting writes with no lock held.
-pub fn stow(settled: Settled, seen: &str) -> Result<(Stowed, Vec<Warning>)> {
+pub(crate) fn stow(settled: Settled, seen: &str) -> Result<(Stowed, Vec<Warning>)> {
     let Settled {
         _exclusive,
         mut state,

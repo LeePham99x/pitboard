@@ -39,7 +39,7 @@ pub struct Adopted {
 
 /// Take over this Pitboard directory. `None` when it was already this machine's, which is
 /// the ordinary case and not an error: running it when there is nothing to do says so.
-pub fn adopt(ctx: &Context, permit: Permit) -> Result<Option<Adopted>> {
+pub(crate) fn adopt(ctx: &Context, permit: Permit) -> Result<Option<Adopted>> {
     let _exclusive = exclusive(ctx, permit)?;
     let (mut state, here) = state::load_any_machine(ctx)?;
     if here {

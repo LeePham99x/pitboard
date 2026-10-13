@@ -354,7 +354,7 @@ impl RunLock {
 }
 
 /// Warms up `key`'s account, or stops. Whether that changed anything.
-pub fn turn(settled: Settled, key: &Key, on: bool) -> Result<bool> {
+pub(crate) fn turn(settled: Settled, key: &Key, on: bool) -> Result<bool> {
     let Settled {
         _exclusive,
         state,
@@ -380,7 +380,7 @@ pub fn turn(settled: Settled, key: &Key, on: bool) -> Result<bool> {
 }
 
 /// Warms up within `range` of each day.
-pub fn range(settled: Settled, range: Range) -> Result<Range> {
+pub(crate) fn range(settled: Settled, range: Range) -> Result<Range> {
     let Settled {
         _exclusive,
         ctx,

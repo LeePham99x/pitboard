@@ -331,7 +331,11 @@ fn moved_since(run: &Run, before: Option<&Run>) -> Vec<Window> {
 /// Without a `permit`, which a run as root or under sudo is not given, it writes nothing:
 /// the session's last run is read and this one is not kept, and nothing is filed. The line
 /// is drawn the same way from the files as they are.
-pub fn read(ctx: &Context, permit: Option<crate::service::Permit>, input: &str) -> StatusLine {
+pub(crate) fn read(
+    ctx: &Context,
+    permit: Option<crate::service::Permit>,
+    input: &str,
+) -> StatusLine {
     let input: Value = serde_json::from_str(input).unwrap_or(Value::Null);
     let state = crate::state::load(ctx).unwrap_or_default();
     // Whose login Claude Code has stored, as Anthropic last said, and whether its config has

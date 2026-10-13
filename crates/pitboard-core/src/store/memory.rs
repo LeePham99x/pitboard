@@ -73,7 +73,8 @@ pub struct MemoryStore {
 
 impl MemoryStore {
     /// An empty store that reports itself as `kind`.
-    pub fn of(kind: Backend) -> Arc<MemoryStore> {
+    #[cfg(test)]
+    pub(crate) fn of(kind: Backend) -> Arc<MemoryStore> {
         MemoryStore::on_trail(kind, String::new(), Arc::default())
     }
 

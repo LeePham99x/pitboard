@@ -16,7 +16,7 @@ use crate::state::{self, Key};
 /// account Pitboard last recorded in use is refused with why, and so is any account with
 /// nothing parked, which may be the one whose login is stored; one with a parked login the
 /// record does not name is not in use.
-pub fn forget(settled: Settled, key: &Key) -> Result<(String, Vec<Warning>)> {
+pub(crate) fn forget(settled: Settled, key: &Key) -> Result<(String, Vec<Warning>)> {
     let Settled {
         _exclusive,
         mut state,

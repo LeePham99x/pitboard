@@ -17,7 +17,7 @@ fn path(ctx: &Context) -> PathBuf {
 
 /// A failure to audit never fails the operation it describes. A change refused at the gate
 /// every change passes is not recorded: recording it would be a change.
-pub fn record(ctx: &Context, permit: Permit, verb: &str, subject: &str, outcome: &str) {
+pub(crate) fn record(ctx: &Context, permit: Permit, verb: &str, subject: &str, outcome: &str) {
     let _ = append(
         ctx,
         permit,

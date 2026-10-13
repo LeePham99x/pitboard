@@ -1293,7 +1293,7 @@ mod tests {
     /// the app does not name, which would send the person to install the app again.
     #[test]
     fn the_app_schedules_nothing_where_pitboard_may_change_nothing() {
-        let host = pitboard_core::host::memory::MemoryHost::new();
+        let host = pitboard_core::testing::MemoryHost::new();
         host.runs_with(pitboard_core::host::Elevation::Elevated { why: "as root" });
         let core = AppCore::asking(
             move || {
@@ -1330,7 +1330,7 @@ mod tests {
         std::fs::write(&helper, "").expect("a command line");
         let app = |pitboard: PathBuf| {
             let (home, helper) = (home.clone(), helper.clone());
-            let host = pitboard_core::host::memory::MemoryHost::new();
+            let host = pitboard_core::testing::MemoryHost::new();
             AppCore::asking(
                 move || {
                     let mut made = made(None, Some(&helper));
@@ -1384,7 +1384,7 @@ mod tests {
             (full.clone(), "pitboard".into(), "PITBOARD_HOME"),
             (full.clone(), PathBuf::new(), "PITBOARD_HOME"),
         ] {
-            let host = pitboard_core::host::memory::MemoryHost::new();
+            let host = pitboard_core::testing::MemoryHost::new();
             let given = pitboard.clone();
             let core = AppCore::asking(
                 move || {

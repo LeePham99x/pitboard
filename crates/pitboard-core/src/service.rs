@@ -1602,7 +1602,7 @@ impl Pitboard {
     }
 
     /// Warms up the first account turned on that is due, as [`crate::duty::warm`] says, for a front
-    /// end somebody asked to: the app, or `pitboard watch`. [`Pitboard::warm_look`] says
+    /// end somebody asked to: the app, or `pitboard watch`. `Pitboard::warm_look` says
     /// whether one may be, waiting on no lock.
     pub fn warm_up(&self) -> Changing<switch::warm::WarmUp> {
         let permit = self.permitted()?;
@@ -1624,7 +1624,7 @@ impl Pitboard {
     /// What warming up would come to now, from files alone: what stands, with where each
     /// account turned on stands, or that only [`Pitboard::warm_up`] can say. Waits on no lock,
     /// reads no keychain and asks nobody, so a front end may look as often as it likes.
-    pub fn warm_look(&self) -> Result<crate::duty::Look<crate::duty::warm::Overview>> {
+    pub(crate) fn warm_look(&self) -> Result<crate::duty::Look<crate::duty::warm::Overview>> {
         let state = state::load(&self.ctx)?;
         crate::duty::warm::look(&self.ctx, &state)
     }
@@ -1701,7 +1701,7 @@ impl Pitboard {
     }
 
     /// Puts away the login left in the file behind Claude Code's store, while the file still
-    /// holds what `seen` was taken of, as [`switch::stow`] says. Recorded in the audit log as
+    /// holds what `seen` was taken of, as `switch::stow` says. Recorded in the audit log as
     /// `stow`, of the account the login was found to be where it is enrolled, with what became
     /// of it, or with the error that stopped it. Settled with what a change of Claude Code's
     /// login warns of but the file, which is what it puts away.

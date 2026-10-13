@@ -120,7 +120,7 @@ pub(super) fn write_journal(ctx: &Context, permit: Permit, entry: &Journal) -> R
 }
 
 /// A switch was interrupted, and the next command that changes state will finish it.
-pub fn pending(ctx: &Context) -> bool {
+pub(crate) fn pending(ctx: &Context) -> bool {
     journal_path(ctx).exists()
 }
 

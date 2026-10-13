@@ -9,10 +9,10 @@ use crate::model::state::in_its_app;
 use crate::{Level, Warning};
 use pitboard_core::error::{Error, LoginDoubt, Then};
 use pitboard_core::host::{Os, Private};
-use pitboard_core::usage::pace::{Pace, Standing};
 use pitboard_core::provider::ProviderId;
 use pitboard_core::service::{Stored, Warning as CoreWarning};
 use pitboard_core::state::SetAside;
+use pitboard_core::usage::pace::{Pace, Standing};
 use pitboard_core::usage::whole;
 use unicode_segmentation::UnicodeSegmentation;
 

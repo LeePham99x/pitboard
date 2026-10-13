@@ -3,7 +3,8 @@
 //! read off every answer.
 
 #[cfg(any(test, feature = "test-support"))]
-pub mod scripted;
+#[cfg_attr(not(feature = "test-support"), allow(unreachable_pub))]
+pub(crate) mod scripted;
 
 use crate::context::Context;
 use std::sync::{Arc, OnceLock};

@@ -46,7 +46,7 @@ pub struct Removed {
 /// is not this Pitboard's to delete, so it is left, and does not keep the directory. A
 /// renewed login settling could not save yet is the only copy of that login, so it is
 /// neither deleted nor left unnamed: it keeps the directory too.
-pub fn uninstall(settled: Settled) -> Result<Removed> {
+pub(crate) fn uninstall(settled: Settled) -> Result<Removed> {
     let Settled {
         _exclusive,
         mut state,

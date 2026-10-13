@@ -19,8 +19,8 @@
 //! file that has nothing to do with the token, and a signature that looked sufficient after
 //! Claude and Codex would have been wrong.
 //!
-//! Three facts, as values rather than code paths: [`Adoption`], [`ParkSemantics`],
-//! [`Isolation`]. These are things the engine and the front ends must branch on, and a
+//! Three facts, as values rather than code paths: [`Adoption`], `ParkSemantics`,
+//! `Isolation`. These are things the engine and the front ends must branch on, and a
 //! value lets them branch on the fact instead of on the provider's name. Nothing anywhere
 //! should read `if provider == Claude`.
 //!
@@ -198,13 +198,13 @@ impl std::fmt::Display for ProviderId {
 /// say which shape it is, and a credential can never be handed to the wrong engine by
 /// accident. What is inside is that engine's business and nothing else's.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Credential {
-    pub provider: ProviderId,
-    pub raw: Value,
+pub(crate) struct Credential {
+    pub(crate) provider: ProviderId,
+    pub(crate) raw: Value,
 }
 
 impl Credential {
-    pub fn new(provider: ProviderId, raw: Value) -> Credential {
+    pub(crate) fn new(provider: ProviderId, raw: Value) -> Credential {
         Credential { provider, raw }
     }
 }
@@ -226,7 +226,7 @@ pub struct Owner {
 
 impl Owner {
     /// Whether `other` is this login: the same account in the same organisation.
-    pub fn same_login(&self, other: &Owner) -> bool {
+    pub(crate) fn same_login(&self, other: &Owner) -> bool {
         self.account_uuid == other.account_uuid && self.organization_uuid == other.organization_uuid
     }
 }
@@ -236,8 +236,7 @@ impl Owner {
 /// Every variant says whether asking again later could answer differently, because that is
 /// the difference between a switch that should wait and one that should stop.
 #[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
-pub enum ProviderError {
+pub(crate) enum ProviderError {
     #[error("the session has expired")]
     Unauthorized,
     /// `retry_after` is what the service said to wait, in seconds, where it said anything.
@@ -341,7 +340,7 @@ pub enum Held {
 /// copy left live while its twin sits in the vault is a token the person's own next login
 /// can kill in both places at once.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ParkSemantics {
+pub(crate) enum ParkSemantics {
     /// A park may be a copy; the live credential can keep working.
     CopyWhileLive,
     /// There must never be two usable copies of one account's credential at rest on this
@@ -359,7 +358,7 @@ pub enum ParkSemantics {
 /// are global constants which `GEMINI_CLI_HOME` does not namespace, so the "private"
 /// sign-in would write over the live login instead of beside it.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Isolation {
+pub(crate) enum Isolation {
     /// A home override fully isolates a sign-in from the live credential.
     Isolated,
     /// It does not, and here is what to tell the person.
@@ -368,11 +367,11 @@ pub enum Isolation {
 
 /// When a login stops working, in epoch seconds. `None` where the tool does not say.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Expiry {
+pub(crate) struct Expiry {
     /// Until then its usage can be asked without renewing it first.
-    pub access_expires_at: Option<i64>,
+    pub(crate) access_expires_at: Option<i64>,
     /// Until then it can be restored at all.
-    pub refresh_expires_at: Option<i64>,
+    pub(crate) refresh_expires_at: Option<i64>,
 }
 
 /// Where one tool keeps its live login: the backends it reads, in the order it reads them,

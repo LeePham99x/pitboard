@@ -51,7 +51,7 @@ fn window_seconds(window: &crate::usage::Window) -> Option<i64> {
 /// starting together, short enough that nobody notices.
 const UNKNOWN_FLOOR: i64 = 60;
 
-pub fn floor_for(reading: Option<&Snapshot>) -> i64 {
+pub(crate) fn floor_for(reading: Option<&Snapshot>) -> i64 {
     let shortest = reading
         .map(|s| s.windows.as_slice())
         .unwrap_or_default()
@@ -70,16 +70,16 @@ const UNREACHABLE_MOST: i64 = 900;
 
 /// What is known about asking one account.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-pub struct Record {
+pub(crate) struct Record {
     /// When Anthropic last answered about this account, in epoch seconds.
     #[serde(default)]
-    pub answered_at: i64,
+    pub(crate) answered_at: i64,
     /// Not before this, in epoch seconds. Set by a refusal, cleared by an answer.
     #[serde(default)]
-    pub held_until: i64,
+    pub(crate) held_until: i64,
     /// Refusals in a row, which is what makes the wait grow.
     #[serde(default)]
-    pub refusals: u32,
+    pub(crate) refusals: u32,
 }
 
 /// One account's line in the ledger: its record, and why its wait was set.
@@ -145,7 +145,7 @@ fn save(ctx: &Context, permit: Permit, ledger: &Ledger) {
 
 /// Why an account is not being asked about right now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Held {
+pub(crate) enum Held {
     /// Asked recently enough that the answer cannot have moved by a point.
     Fresh,
     /// Anthropic asked for less traffic.
@@ -165,7 +165,7 @@ pub enum Held {
 /// how somebody says the network is back. It does not go past a wait the service asked for:
 /// that request is the traffic the service asked not to get, and it would answer with the
 /// same refusal.
-pub fn may_ask(
+pub(crate) fn may_ask(
     ctx: &Context,
     id: &str,
     last_reading: Option<&Snapshot>,
@@ -184,7 +184,7 @@ pub fn may_ask(
 
 /// What one request turned out to be, for recording afterwards.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Outcome {
+pub(crate) enum Outcome {
     Answered,
     /// Anthropic asked for less traffic. `Some` is what it said to wait, in seconds.
     RateLimited(Option<i64>),
@@ -199,7 +199,7 @@ pub enum Outcome {
 /// entry and write the whole thing back, so the last writer would erase what the others
 /// learned. Which is exactly what happened: two accounts asked together, one budgeted and
 /// one not, forever.
-pub fn record(ctx: &Context, permit: Permit, outcomes: &[(String, Outcome)]) {
+pub(crate) fn record(ctx: &Context, permit: Permit, outcomes: &[(String, Outcome)]) {
     if outcomes.is_empty() {
         return;
     }
@@ -266,7 +266,7 @@ pub(crate) fn held_until(ctx: &Context, id: &str) -> Option<i64> {
 }
 
 /// Every account currently being held off, for `doctor` to report.
-pub fn holds(ctx: &Context) -> Vec<(String, i64)> {
+pub(crate) fn holds(ctx: &Context) -> Vec<(String, i64)> {
     let now = ctx.now();
     let mut held: Vec<(String, i64)> = load(ctx)
         .into_iter()
@@ -278,7 +278,7 @@ pub fn holds(ctx: &Context) -> Vec<(String, i64)> {
 }
 
 /// Drop what is known about an account nobody is enrolled as any more.
-pub fn forget(ctx: &Context, permit: Permit, id: &str) {
+pub(crate) fn forget(ctx: &Context, permit: Permit, id: &str) {
     let mut ledger = load(ctx);
     if ledger.remove(id).is_some() {
         save(ctx, permit, &ledger);

@@ -143,7 +143,7 @@ impl Location {
 /// `processes` sorted into `holders`, each to the first whose location holds it, in the
 /// holders' order. A kind with nothing running is left out, and so is a process no holder
 /// claims, which a list ending in [`Location::Anywhere`] never leaves.
-pub fn classify(processes: &[Process], holders: &[Holder]) -> Vec<Holding> {
+pub(crate) fn classify(processes: &[Process], holders: &[Holder]) -> Vec<Holding> {
     let mut holding: Vec<Holding> = holders
         .iter()
         .map(|&holder| Holding {
@@ -214,12 +214,12 @@ impl Holding {
 }
 
 /// Everything running, as one noun phrase: "2 `codex` sessions and the ChatGPT app".
-pub fn described(holding: &[Holding]) -> String {
+pub(crate) fn described(holding: &[Holding]) -> String {
     crate::words::listed(holding.iter().map(Holding::phrase).collect())
 }
 
 /// The same, with the pids of each: "2 `codex` sessions (pid 41, 42)".
-pub fn described_with_pids(holding: &[Holding]) -> String {
+pub(crate) fn described_with_pids(holding: &[Holding]) -> String {
     crate::words::listed(
         holding
             .iter()
@@ -229,7 +229,7 @@ pub fn described_with_pids(holding: &[Holding]) -> String {
 }
 
 /// Whether what is running reads as more than one thing, for "is" or "are".
-pub fn plural(holding: &[Holding]) -> bool {
+pub(crate) fn plural(holding: &[Holding]) -> bool {
     holding.iter().map(Holding::things).sum::<usize>() > 1
 }
 
@@ -237,7 +237,7 @@ pub fn plural(holding: &[Holding]) -> bool {
 /// "Quit them and start again to use the new account." Several kinds are each said in turn,
 /// apart, since one clause can have an "and" of its own: "To use the new account: quit the
 /// `codex` sessions and start them again; quit ChatGPT with Command-Q and open it again."
-pub fn remedies(holding: &[Holding], purpose: &str) -> String {
+pub(crate) fn remedies(holding: &[Holding], purpose: &str) -> String {
     match holding {
         [] => String::new(),
         [one] => format!("{} {purpose}.", capitalised(&one.clause(true))),

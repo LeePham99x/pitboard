@@ -314,7 +314,7 @@ pub trait SignInScript: Send + Sync + std::fmt::Debug {
 
 /// One sign-in a `SignInScript` started, as its program would be driven.
 #[cfg(any(test, feature = "test-support"))]
-pub trait ScriptedSignIn: Send {
+pub trait ScriptedSignIn: Send + Sync {
     /// A line typed back. False where nothing reads it any more, as a closed stdin is.
     fn typed(&mut self, line: &str) -> bool;
     /// Waits for it to end, and says whether it ended signed in, with the login stored in its
@@ -542,7 +542,7 @@ enum Readable {
 
 /// Enroll the account signed in to `which` now, or with `signed_in`, the one a sign-in just
 /// produced.
-pub fn enroll(
+pub(crate) fn enroll(
     settled: Settled,
     key: &Key,
     signed_in: Option<SignIn>,

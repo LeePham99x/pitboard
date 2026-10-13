@@ -4,7 +4,7 @@ mod adopt;
 mod auto;
 #[cfg(test)]
 mod crash;
-mod enroll;
+pub(crate) mod enroll;
 pub(crate) mod folder;
 #[cfg(test)]
 mod foreign;
@@ -27,24 +27,29 @@ mod uninstall;
 pub mod warm;
 
 pub use crate::pending::Reclaimed;
-pub use adopt::{Adopted, adopt};
+pub use adopt::Adopted;
+pub(crate) use adopt::adopt;
 pub(crate) use auto::automatically;
+pub(crate) use enroll::enroll;
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use enroll::planted;
-pub use enroll::{Enrolled, Said, SignIn, Steps, WatchedSignIn, enroll};
+pub use enroll::{Enrolled, Said, SignIn, Steps, WatchedSignIn};
 #[cfg(any(test, feature = "test-support"))]
 pub use enroll::{ScriptedSignIn, SignInScript};
 pub(crate) use enroll::{one_at_a_time, sign_in, sign_in_watched_as};
 pub use folder::awaited::WaitStep;
 pub use folder::{Ended, GivenUp, MoveSettled};
-pub use forget::forget;
-pub use journal::{Abandoned, Recovered, pending as interrupted};
-pub(crate) use journal::{Asking, interrupted_tool};
-pub use rename::rename;
-pub use renew::{Due, Renewal, renew_due, renew_parked};
+pub(crate) use forget::forget;
+pub use journal::{Abandoned, Recovered};
+pub(crate) use journal::{Asking, interrupted_tool, pending as interrupted};
+pub(crate) use rename::rename;
+pub use renew::Renewal;
+pub(crate) use renew::{Due, renew_due, renew_parked};
 pub(crate) use stow::find as left_login;
-pub use stow::{Foreseen, Kept, Left, Stowed, stow};
-pub use uninstall::{Removed, uninstall};
+pub(crate) use stow::stow;
+pub use stow::{Foreseen, Kept, Left, Stowed};
+pub use uninstall::Removed;
+pub(crate) use uninstall::uninstall;
 
 use crate::context::Context;
 use crate::error::{Error, Result};
@@ -98,7 +103,7 @@ pub enum Outcome {
 /// command that changes state starts from one, so none acts on what a crash left behind,
 /// and it carries the [`Permit`] it was settled with, which is what lets the change write.
 #[derive(Debug)]
-pub struct Settled {
+pub(crate) struct Settled {
     _exclusive: std::fs::File,
     state: State,
     ctx: Context,
@@ -181,7 +186,7 @@ fn refuse_custom_oauth(ctx: &Context, tool: Option<ProviderId>) -> Result<()> {
 /// or not the command that follows succeeds.
 ///
 /// `tool` is the tool the change that follows is about, where it is about one.
-pub fn settle(
+pub(crate) fn settle(
     ctx: &Context,
     permit: Permit,
     tool: Option<ProviderId>,
@@ -233,7 +238,7 @@ pub(crate) fn stuck(ctx: &Context, state: &State, asking: Asking) -> Option<Erro
 /// state does not name. `settle` already does this from Pitboard's own list of names on
 /// every change; this is the thorough version, for a machine whose list was lost with its
 /// state file, or written by a version that kept no list.
-pub fn repair(settled: Settled) -> Result<(Reclaimed, Vec<Warning>)> {
+pub(crate) fn repair(settled: Settled) -> Result<(Reclaimed, Vec<Warning>)> {
     let Settled {
         _exclusive,
         mut state,
@@ -449,7 +454,7 @@ fn read_stored(
     }
 }
 
-pub fn switch(settled: Settled, key: &Key) -> Result<(Outcome, Vec<Warning>)> {
+pub(crate) fn switch(settled: Settled, key: &Key) -> Result<(Outcome, Vec<Warning>)> {
     let tool = match provider::of(key.provider) {
         LoginKind::Document(tool) => tool,
         LoginKind::Folder(app) => return folder::switch(settled, key, app),
@@ -482,7 +487,7 @@ pub fn switch(settled: Settled, key: &Key) -> Result<(Outcome, Vec<Warning>)> {
 /// What [`switch`] does for the account in use, for a button drawn while it was: writes it
 /// into its tool's own record where that names another account. Refused, moving nothing,
 /// where another account's login is stored by then, which [`switch`] would switch back from.
-pub fn update_config(settled: Settled, key: &Key) -> Result<(Outcome, Vec<Warning>)> {
+pub(crate) fn update_config(settled: Settled, key: &Key) -> Result<(Outcome, Vec<Warning>)> {
     let tool = match provider::of(key.provider) {
         LoginKind::Document(tool) => tool,
         LoginKind::Folder(app) => return folder::confirm(settled, key, app),

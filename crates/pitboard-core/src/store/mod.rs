@@ -23,8 +23,8 @@ use std::path::PathBuf;
 /// Where a credential lives. `Keychain` occurs only where the machine has one: its host
 /// offers no other, so callers need no checks of their own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum Backend {
+pub(crate) enum Backend {
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Keychain,
     File,
     Absent,
@@ -35,7 +35,7 @@ pub enum Backend {
 }
 
 impl Backend {
-    pub fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             Backend::Keychain => "keychain",
             Backend::File => "file",
@@ -140,28 +140,28 @@ impl Error {
 /// login three times per switch, and meant every caller knowing that only one platform has
 /// a ceiling at all.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Cost {
+pub(crate) struct Cost {
     /// Bytes this document needs of the store's cheapest route.
-    pub needs: usize,
+    pub(crate) needs: usize,
     /// Bytes that route has.
-    pub limit: usize,
+    pub(crate) limit: usize,
     /// Whether the store has another route above the ceiling, and is allowed to use it.
-    pub second_route: bool,
+    pub(crate) second_route: bool,
 }
 
 impl Cost {
     /// Past the cheapest route.
-    pub fn over(self) -> bool {
+    pub(crate) fn over(self) -> bool {
         self.needs > self.limit
     }
 
     /// Past it, and written the more visible way rather than refused.
-    pub fn on_the_second_route(self) -> bool {
+    pub(crate) fn on_the_second_route(self) -> bool {
         self.over() && self.second_route
     }
 
     /// Past it with nothing left to try.
-    pub fn refused(self) -> bool {
+    pub(crate) fn refused(self) -> bool {
         self.over() && !self.second_route
     }
 }

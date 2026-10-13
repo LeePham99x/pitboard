@@ -33,7 +33,7 @@ impl Sheet {
     ///
     /// `salt` makes the digests this report's own. Pass something that changes between
     /// reports and does not identify the machine on its own.
-    pub fn new(salt: impl Into<String>, home: impl Into<String>) -> Sheet {
+    pub(crate) fn new(salt: impl Into<String>, home: impl Into<String>) -> Sheet {
         Sheet {
             salt: salt.into(),
             secrets: Vec::new(),
@@ -42,7 +42,7 @@ impl Sheet {
     }
 
     /// Hide every occurrence of `secret`, under a digest prefixed by `kind`.
-    pub fn hide(mut self, secret: impl Into<String>, kind: &'static str) -> Sheet {
+    pub(crate) fn hide(mut self, secret: impl Into<String>, kind: &'static str) -> Sheet {
         let secret = secret.into();
         // Too short to be worth hiding is also too short to hide safely: a two-character
         // login name would rewrite half the report.
@@ -68,7 +68,7 @@ impl Sheet {
     /// The home comes first, because a login name is usually inside it: digesting the name
     /// before shortening the path would leave a path nobody can read and a digest where a
     /// `~` belongs.
-    pub fn over(&self, text: &str) -> String {
+    pub(crate) fn over(&self, text: &str) -> String {
         let mut out = text.to_string();
         // A path is worth keeping, and whose it is is not.
         if self.home.len() >= 4 {

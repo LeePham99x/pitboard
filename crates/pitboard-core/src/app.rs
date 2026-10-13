@@ -217,7 +217,7 @@ pub enum AppFile {
 
 impl AppFile {
     /// Its name in Pitboard's directory.
-    pub fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             AppFile::Preferences => "app.json",
             AppFile::Told => "told.json",
@@ -229,7 +229,7 @@ impl AppFile {
 /// and cannot be read, because it is not this user's to read, a disk failed, another program
 /// holds it or it is not text, is an error and not nothing: an app that took it as nothing
 /// would write what it has over what it never read.
-pub fn read_app_file(ctx: &Context, file: AppFile) -> std::io::Result<Option<String>> {
+pub(crate) fn read_app_file(ctx: &Context, file: AppFile) -> std::io::Result<Option<String>> {
     read_file(&home::dir(ctx).join(file.name()))
 }
 
@@ -263,7 +263,12 @@ pub fn write_file(permit: Permit, path: &Path, body: &str) -> std::io::Result<()
 /// Keeps `body` in `file`, as the core writes its own: Pitboard's directory made private
 /// first where it is not there yet, and the file written whole or not at all, private to its
 /// owner.
-pub fn write_app_file(ctx: &Context, permit: Permit, file: AppFile, body: &str) -> Result<()> {
+pub(crate) fn write_app_file(
+    ctx: &Context,
+    permit: Permit,
+    file: AppFile,
+    body: &str,
+) -> Result<()> {
     let path = home::dir(ctx).join(file.name());
     let unwritable = |source| Error::HomeUnwritable {
         path: path.clone(),

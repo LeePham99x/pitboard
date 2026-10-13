@@ -41,62 +41,60 @@ pub struct Check {
     pub advice: String,
 }
 
-/// Everything read from the machine, so judging it touches nothing. Each check that is
-/// added reads something more, so it cannot be built outside this crate.
-#[non_exhaustive]
-pub struct Facts {
+/// Everything read from the machine, so judging it touches nothing.
+pub(crate) struct Facts {
     /// The system these were read on, which is what decides some of the judgements.
-    pub os: Os,
-    pub security_tool: Option<String>,
-    pub config_path: PathBuf,
-    pub config: Result<Value, Error>,
-    pub config_account: Option<claude::ConfigAccount>,
-    pub service: String,
-    pub account: String,
-    pub default_slot: bool,
-    pub storage_dir: String,
-    pub backend: Result<store::Backend, store::Error>,
-    pub credential_file: PathBuf,
-    pub credential: Result<Option<Value>, store::Error>,
+    pub(crate) os: Os,
+    pub(crate) security_tool: Option<String>,
+    pub(crate) config_path: PathBuf,
+    pub(crate) config: Result<Value, Error>,
+    pub(crate) config_account: Option<claude::ConfigAccount>,
+    pub(crate) service: String,
+    pub(crate) account: String,
+    pub(crate) default_slot: bool,
+    pub(crate) storage_dir: String,
+    pub(crate) backend: Result<store::Backend, store::Error>,
+    pub(crate) credential_file: PathBuf,
+    pub(crate) credential: Result<Option<Value>, store::Error>,
     /// What the live login costs against the store's ceiling, where there is one.
-    pub credential_cost: Option<store::Cost>,
+    pub(crate) credential_cost: Option<store::Cost>,
     /// What is taking up the room, largest first: (what it is, bytes).
-    pub credential_parts: Vec<(String, usize)>,
-    pub home: PathBuf,
-    pub home_access: Option<Access>,
+    pub(crate) credential_parts: Vec<(String, usize)>,
+    pub(crate) home: PathBuf,
+    pub(crate) home_access: Option<Access>,
     /// Anything on this disk holding a login that somebody other than the owner can read:
     /// (path, its access). Empty on a machine with a keychain and a tidy plaintext
     /// fallback, and the whole security story on a machine without one.
-    pub readable_by_others: Vec<(String, Access)>,
-    pub machine_id_known: bool,
+    pub(crate) readable_by_others: Vec<(String, Access)>,
+    pub(crate) machine_id_known: bool,
     /// `CLAUDE_CODE_HOVER_REST`, which switches on the successor credential backend.
-    pub hover_rest_env: bool,
+    pub(crate) hover_rest_env: bool,
     /// Claude Code's supervisor daemon, where one has ever run for this slot.
-    pub daemon: Option<daemon::Daemon>,
+    pub(crate) daemon: Option<daemon::Daemon>,
     /// Names Pitboard wrote down before creating a park and has not resolved yet.
-    pub pending_parks: Vec<String>,
+    pub(crate) pending_parks: Vec<String>,
     /// Which Claude Code is installed here, read off disk.
-    pub claude_version: Option<String>,
+    pub(crate) claude_version: Option<String>,
     /// Every reason a session here would authenticate as something other than the stored
     /// login, read from settings files as well as from this process's environment.
-    pub auth_overrides: Vec<crate::settings::Override>,
+    pub(crate) auth_overrides: Vec<crate::settings::Override>,
     /// What of those settings Pitboard does not read here, where it does not read them all:
     /// Claude Code's managed settings on Windows, until W17.
-    pub auth_unread: Option<&'static str>,
+    pub(crate) auth_unread: Option<&'static str>,
     /// Accounts Pitboard is not asking Anthropic about yet, and for how long: (uuid, seconds).
-    pub asking_held: Vec<(String, i64)>,
-    pub state: Result<State, Error>,
+    pub(crate) asking_held: Vec<(String, i64)>,
+    pub(crate) state: Result<State, Error>,
     /// Whose login Claude Code has stored, as Anthropic last said, where the account list
     /// can be read.
-    pub in_use: Option<crate::in_use::Known>,
+    pub(crate) in_use: Option<crate::in_use::Known>,
     /// Each enrolled account's parked login, read back from the vault.
-    pub parks: Vec<ParkFact>,
-    pub interrupted: bool,
+    pub(crate) parks: Vec<ParkFact>,
+    pub(crate) interrupted: bool,
     /// The refusal the next change would make over the interrupted switch, where that
     /// change could not finish it and that can be told without asking anybody.
-    pub stuck: Option<String>,
+    pub(crate) stuck: Option<String>,
     /// What is read about Codex here, for the section that is about it.
-    pub codex: CodexFacts,
+    pub(crate) codex: CodexFacts,
     /// Whether Claude Code is on this machine at all: installed, run once, signed in, or
     /// holding enrolled accounts. A machine that uses only Codex is not told Claude Code is
     /// broken.
@@ -104,69 +102,69 @@ pub struct Facts {
     // Claude Desktop's, where an account of it is enrolled or a folder is set aside for it.
     pub desktop: Option<DesktopFacts>,
     /// The daily renewal schedule, where this home has one installed.
-    pub schedule: Option<ScheduleFact>,
+    pub(crate) schedule: Option<ScheduleFact>,
     /// How Pitboard's requests leave this machine, as its environment says.
-    pub network: NetworkFact,
+    pub(crate) network: NetworkFact,
     /// Whether this is the app's doctor, whose environment is the one the system started the
     /// app with, not a shell's: the schedule's runs are started the same way, and given a
     /// shell's proxy only where it was installed from one.
-    pub in_the_app: bool,
+    pub(crate) in_the_app: bool,
     /// Whether this process runs as the person themselves, as the host says, which is what
     /// the gate every change passes asks.
-    pub elevation: crate::host::Elevation,
+    pub(crate) elevation: crate::host::Elevation,
     /// Claude Code's fallback file, where it is behind the keychain holding the login in use.
-    pub fallback_login: Option<FallbackLogin>,
-    pub floor: crate::host::Floor,
-    pub now: i64,
+    pub(crate) fallback_login: Option<FallbackLogin>,
+    pub(crate) floor: crate::host::Floor,
+    pub(crate) now: i64,
 }
 
 /// How Pitboard's requests leave this machine: directly, or through the HTTP proxy its
 /// environment names, read as ureq 3.4.2 reads one from a process's environment. A SOCKS
 /// proxy, which Pitboard does not use yet, fails each request it would have carried.
-pub struct NetworkFact {
+pub(crate) struct NetworkFact {
     /// The proxy the environment names, where it names one Pitboard can read.
-    pub proxy: Option<ProxyFact>,
+    pub(crate) proxy: Option<ProxyFact>,
     /// The variables before it set to something that is not a proxy's address, which
     /// Pitboard passes over, in the order it reads them.
-    pub passed_over: Vec<&'static str>,
+    pub(crate) passed_over: Vec<&'static str>,
 }
 
 /// The proxy the environment names.
-pub struct ProxyFact {
+pub(crate) struct ProxyFact {
     /// The variable that names it.
-    pub variable: &'static str,
+    pub(crate) variable: &'static str,
     /// Its scheme, host and port, with `***` for a user name or a password it holds.
-    pub address: String,
+    pub(crate) address: String,
     /// Its host and port, `proxy.example.com:3128`, as `address` shows them: the part of it
     /// that can name the company whose network it is.
-    pub server: String,
+    pub(crate) server: String,
     /// Whether its host is loopback, this machine itself, which names nothing beyond it.
-    pub on_loopback: bool,
+    pub(crate) on_loopback: bool,
     /// Whether it is a SOCKS proxy, which Pitboard does not use yet: a request to a host it
     /// does not exempt fails before anything is sent, and one to a host it exempts goes out
     /// directly.
-    pub socks: bool,
+    pub(crate) socks: bool,
     /// `NO_PROXY` or `no_proxy`, whichever is read, where either is set.
-    pub exempting: Option<&'static str>,
+    pub(crate) exempting: Option<&'static str>,
     /// The hosts Pitboard calls that it exempts, which Pitboard reaches directly.
-    pub exempt: Vec<String>,
+    pub(crate) exempt: Vec<String>,
 }
 
 /// The daily renewal schedule as it is installed, read from the file Pitboard wrote and
 /// never by asking the scheduler.
-pub struct ScheduleFact {
+pub(crate) struct ScheduleFact {
     /// The file the platform's scheduler reads.
-    pub path: PathBuf,
+    pub(crate) path: PathBuf,
     /// The Pitboard it runs, where the file names one the way Pitboard writes it.
-    pub program: Option<PathBuf>,
+    pub(crate) program: Option<PathBuf>,
     /// Whether that Pitboard is still there to be run.
-    pub program_found: bool,
+    pub(crate) program_found: bool,
     /// How its runs send requests, as the proxy variables its file gives them say: those of
     /// the Pitboard that installed it, read as this run's are ([`Facts::network`]).
-    pub network: NetworkFact,
+    pub(crate) network: NetworkFact,
     /// Whether its runs send requests another way than this run does: through another proxy
     /// or none, with another user name or password, or with other hosts exempt.
-    pub network_differs: bool,
+    pub(crate) network_differs: bool,
 }
 
 /// What is read about Codex CLI on this machine.
@@ -174,51 +172,51 @@ pub struct ScheduleFact {
 /// Read without running it and without touching a keychain item Codex created for itself:
 /// its home, its configuration, the one file it keeps its login in by default, and which
 /// `codex` processes are running.
-pub struct CodexFacts {
+pub(crate) struct CodexFacts {
     /// `CODEX_HOME`, or `~/.codex`.
-    pub home: PathBuf,
+    pub(crate) home: PathBuf,
     /// Whether that directory exists. It does once Codex has been run here, and not before.
-    pub present: bool,
+    pub(crate) present: bool,
     /// How many Codex accounts Pitboard has enrolled.
-    pub enrolled: usize,
+    pub(crate) enrolled: usize,
     /// Where Codex is configured to keep its login, in Codex's own words:
     /// `cli_auth_credentials_store`'s `file`, `keyring`, `auto` or `ephemeral`, or `secrets`
     /// for a keychain store with `[features] secret_auth_storage`, which Codex has no one
     /// word for. `unknown` where a layer Codex reads it from is there and cannot be read as
     /// Codex reads it, which stops Codex from starting.
-    pub backend: &'static str,
+    pub(crate) backend: &'static str,
     /// The setting that chose it, in words that follow it in brackets: `Codex's default`,
     /// `` `cli_auth_credentials_store = "keyring"` in /etc/codex/config.toml ``, or `pinned to
     /// `keyring` by /etc/codex/requirements.toml`. For `unknown`, what cannot be read.
-    pub backend_setting: String,
+    pub(crate) backend_setting: String,
     /// What would choose the file store instead, as a sentence with no full stop: the line to
     /// set and where, or who can. For `unknown`, what Codex does until what cannot be read is
     /// put right, as sentences with no last full stop. Empty for the file.
-    pub backend_remedy: String,
+    pub(crate) backend_remedy: String,
     /// Where the default store keeps it.
-    pub auth_file: PathBuf,
+    pub(crate) auth_file: PathBuf,
     /// Who can reach that file, where there is such a file.
-    pub auth_access: Option<Access>,
+    pub(crate) auth_access: Option<Access>,
     /// Whose login the file holds, or why that could not be told. `Ok(None)` for no file,
     /// and for a store Pitboard does not read.
-    pub login: Result<Option<CodexLogin>, CodexLoginTrouble>,
+    pub(crate) login: Result<Option<CodexLogin>, CodexLoginTrouble>,
     /// Where the `codex` Pitboard would run is, where it is anywhere.
-    pub program: Option<PathBuf>,
+    pub(crate) program: Option<PathBuf>,
     /// Which Codex that is, read off the path it is installed at. `None` both where there
     /// is no `codex` and where its path does not say; [`CodexFacts::program`] tells which.
-    pub version: Option<String>,
+    pub(crate) version: Option<String>,
     /// Every `codex` running as this user, by where it runs from. `None` where that could
     /// not be asked.
-    pub running: Option<Vec<crate::holder::Holding>>,
+    pub(crate) running: Option<Vec<crate::holder::Holding>>,
 }
 
 /// Whose a Codex login is, as its own ID token says. Nothing in here is a secret: the
 /// fingerprint is a handle on the refresh token, never the token.
-pub struct CodexLogin {
-    pub email: String,
-    pub account_id: String,
+pub(crate) struct CodexLogin {
+    pub(crate) email: String,
+    pub(crate) account_id: String,
     /// Empty where the login holds no refresh token.
-    pub fingerprint: String,
+    pub(crate) fingerprint: String,
 }
 
 /// Why Codex's login names no account Pitboard can handle.
@@ -227,7 +225,7 @@ pub struct CodexLogin {
 /// some way Pitboard does not switch, such as with an API key, is somebody's choice and
 /// nothing is wrong with it; a login that cannot be read, or that mixes two accounts, is.
 #[derive(Debug)]
-pub enum CodexLoginTrouble {
+pub(crate) enum CodexLoginTrouble {
     /// Signed in, and not with an account Pitboard parks or switches. Says why, in Codex's
     /// terms.
     NotAnAccount(String),
@@ -235,26 +233,25 @@ pub enum CodexLoginTrouble {
     Unusable(String),
 }
 
-pub struct ParkFact {
+pub(crate) struct ParkFact {
     /// Which tool the account belongs to, which is what decides how it is named back to a
     /// person: bare for Claude Code, `codex/work` for Codex.
-    pub provider: ProviderId,
-    pub label: String,
+    pub(crate) provider: ProviderId,
     /// The name a command on this machine takes for it: qualified where another tool has an
     /// account of the same name, since a bare one would then be ambiguous.
-    pub name: String,
+    pub(crate) name: String,
     /// Whether its login is the one its tool has stored, as far as files say.
-    pub active: bool,
+    pub(crate) active: bool,
     /// When this account last came to be in use, where that is recorded.
-    pub last_used_at: Option<i64>,
-    pub park: Option<Park>,
+    pub(crate) last_used_at: Option<i64>,
+    pub(crate) park: Option<Park>,
     /// Why it cannot be read back, if it cannot.
-    pub unreadable: Option<Unreadable>,
+    pub(crate) unreadable: Option<Unreadable>,
 }
 
 /// Why a parked login could not be read back.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Unreadable {
+pub(crate) enum Unreadable {
     /// It is behind a keychain that is locked here, which says nothing about the login.
     Locked,
     /// Missing, damaged, or refused by the store, in words.
@@ -262,12 +259,12 @@ pub enum Unreadable {
 }
 
 /// Claude Code's plaintext fallback file, there while the keychain holds the login in use.
-pub struct FallbackLogin {
-    pub path: PathBuf,
+pub(crate) struct FallbackLogin {
+    pub(crate) path: PathBuf,
     /// A handle on the refresh token of the login it holds, never the token: `None` where
     /// it holds no login, empty where that login has no refresh token, and why where what
     /// it holds cannot be read.
-    pub fingerprint: Result<Option<String>, store::Error>,
+    pub(crate) fingerprint: Result<Option<String>, store::Error>,
 }
 
 impl ParkFact {
@@ -296,7 +293,6 @@ fn park_facts(ctx: &Context, state: &State) -> Vec<ParkFact> {
         .iter()
         .map(|a| ParkFact {
             provider: a.provider(),
-            label: a.label.clone(),
             name: state.typed(&a.key()),
             last_used_at: a.last_used_at,
             active: in_use
@@ -418,7 +414,7 @@ fn desktop_facts(ctx: &Context, state: &State) -> Option<DesktopFacts> {
     Some(facts)
 }
 
-pub fn gather(ctx: &Context) -> Facts {
+pub(crate) fn gather(ctx: &Context) -> Facts {
     let config = claude::load_config(ctx);
     let state = crate::state::load(ctx);
     let service = claude::live_service(ctx);
@@ -835,7 +831,7 @@ fn running(command: Option<String>) -> String {
     command.map_or_else(|| ".".into(), |command| format!(": `{command}`."))
 }
 
-pub fn evaluate(facts: &Facts) -> Vec<Check> {
+pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
     let mut checks = Vec::new();
     // Claude Code's own checks, where there is a Claude Code, or where there is no other
     // tool either: a new machine is told what to do first, as it always was. A machine
@@ -1531,10 +1527,10 @@ fn judge_fallback_login(facts: &Facts) -> Option<Check> {
 }
 
 /// A parked login this close to expiring is worth renewing now.
-pub const RENEW_WITHIN: i64 = 3 * 86_400;
+pub(crate) const RENEW_WITHIN: i64 = 3 * 86_400;
 
 /// Whether a parked login is due to be renewed by when its refresh token expires, at
-/// `refresh_expires_at`: within [`RENEW_WITHIN`], and not yet. One that has expired cannot
+/// `refresh_expires_at`: within `RENEW_WITHIN`, and not yet. One that has expired cannot
 /// be renewed, and its account needs a sign-in. A renewal run, doctor's parked login check,
 /// the standing `pitboard status` gives an account and the column form of a parked login's
 /// life all ask this, so they agree on when a login is due. A run also renews a login whose
@@ -2744,7 +2740,7 @@ pub struct Diagnosis {
     pub redaction: crate::redact::Sheet,
 }
 
-pub fn run(ctx: &Context) -> Diagnosis {
+pub(crate) fn run(ctx: &Context) -> Diagnosis {
     if let Err(Error::HomeNotAbsolute { variable, path }) = home::check_absolute(ctx) {
         return unplaced(ctx, variable, &path);
     }
@@ -3130,7 +3126,6 @@ mod tests {
             .iter()
             .map(|a| ParkFact {
                 provider: ProviderId::Desktop,
-                label: a.label.clone(),
                 name: format!("desktop/{}", a.label),
                 active: a.label == "work",
                 last_used_at: None,
@@ -3813,7 +3808,6 @@ mod tests {
         ParkFact {
             provider: ProviderId::Claude,
             last_used_at: None,
-            label: label.into(),
             name: Key::new(ProviderId::Claude, label).typed(),
             active: false,
             park: Some(Park {
@@ -4406,7 +4400,6 @@ mod tests {
         let mut f = facts();
         f.parks = vec![ParkFact {
             provider: ProviderId::Claude,
-            label: "work".into(),
             name: Key::new(ProviderId::Claude, "work").typed(),
             active: false,
             last_used_at: Some(f.now - 31 * 86_400),
@@ -5150,7 +5143,6 @@ mod tests {
             ParkFact {
                 provider: ProviderId::Claude,
                 last_used_at: None,
-                label: "empty".into(),
                 name: Key::new(ProviderId::Claude, "empty").typed(),
                 active: false,
                 park: None,
@@ -5159,7 +5151,6 @@ mod tests {
             ParkFact {
                 provider: ProviderId::Claude,
                 last_used_at: None,
-                label: "live".into(),
                 name: Key::new(ProviderId::Claude, "live").typed(),
                 active: true,
                 park: None,

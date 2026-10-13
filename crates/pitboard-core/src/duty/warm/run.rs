@@ -25,7 +25,7 @@ pub(crate) struct Headless {
     pub(crate) token: Option<String>,
 }
 
-pub use crate::host::Ran;
+pub(crate) use crate::host::Ran;
 
 /// The private home a tool's warm-up runs in, under Pitboard's directory: `home` for `HOME`,
 /// `tmp` for `TMPDIR`, `work` to run from, and whatever the tool keeps of its own beside them.

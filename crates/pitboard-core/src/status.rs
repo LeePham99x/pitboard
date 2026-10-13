@@ -111,20 +111,12 @@ impl Stale {
         }
     }
 
-    /// What is worth a word, in the default tool's words.
-    ///
-    /// For a caller holding a code and nothing else. A row knows its own tool, and
-    /// [`Row::explanation`] says it in that tool's words.
-    pub fn explanation(self) -> Option<&'static str> {
-        self.explanation_for(crate::label::DEFAULT)
-    }
-
     /// Only what is worth a word: a parked login going quiet is how parking works.
     ///
     /// Named for the tool the row belongs to. "Anthropic could not be reached" said about a
     /// Codex account sends somebody to check the wrong service, and "`claude` renews it"
     /// said about a Codex session names a program that has nothing to do with it.
-    pub fn explanation_for(self, provider: ProviderId) -> Option<&'static str> {
+    pub(crate) fn explanation_for(self, provider: ProviderId) -> Option<&'static str> {
         // A sentence per tool rather than one assembled at run time, so every word a person
         // reads is here to be read, and Claude Code's are exactly what they always were.
         let per_tool = |claude: &'static str, codex: &'static str| match provider {
@@ -432,7 +424,7 @@ pub(crate) fn shown(state: &State, which: ProviderId) -> bool {
 /// Codex login's own claims ([`in_use::known`]). Not from Claude Code's config, which a
 /// Claude Code process started or signed in on another login can rewrite with its own
 /// account.
-pub fn gather_offline(ctx: &Context, state: &State) -> Report {
+pub(crate) fn gather_offline(ctx: &Context, state: &State) -> Report {
     let known: BTreeMap<ProviderId, Option<Owner>> = tools(state)
         .into_iter()
         .map(|which| (which, in_use::known(ctx, state, which).owner().cloned()))
@@ -1798,11 +1790,6 @@ mod tests {
                 before(stale),
                 "{stale:?}"
             );
-            assert_eq!(
-                stale.explanation(),
-                stale.explanation_for(ProviderId::Claude),
-                "a caller with only a code gets the default tool's words"
-            );
         }
     }
 
@@ -2533,9 +2520,13 @@ mod tests {
             .parks
             .iter()
             .filter(|p| p.active)
-            .map(|p| p.label.as_str())
+            .map(|p| p.name.as_str())
             .collect();
-        assert_eq!(active, ["b"], "doctor reads the same machine the same way");
+        assert_eq!(
+            active,
+            ["codex/b"],
+            "doctor reads the same machine the same way"
+        );
     }
 
     /// Only nothing at all is nobody. A Claude Code document with no account in it is what

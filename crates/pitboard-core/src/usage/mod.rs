@@ -2,7 +2,7 @@
 //! `limits[]` array or as named `five_hour`/`seven_day` objects; both are normalised at the
 //! boundary, and a value that fails to normalise is dropped rather than drawn.
 
-pub mod budget;
+pub(crate) mod budget;
 pub mod pace;
 pub(crate) mod readings;
 
@@ -35,7 +35,7 @@ pub struct Window {
 /// Anthropic names its windows rather than timing them: `session` and the older
 /// `five_hour` are the five-hour limit, and every `weekly_` kind, like the older
 /// `seven_day`, runs a week. A kind not listed here has no length Pitboard can vouch for.
-pub fn anthropic_window_length(kind: &str) -> Option<i64> {
+pub(crate) fn anthropic_window_length(kind: &str) -> Option<i64> {
     match kind {
         "session" | "five_hour" => Some(5 * 3600),
         "seven_day" => Some(7 * 86_400),
@@ -396,7 +396,7 @@ fn window_from_named(kind: &str, v: &Value) -> Option<Window> {
 /// only where `limits` held rows and every one was read. A row dropped for a value that
 /// does not normalise is still a limit of the account's, and an answer without `limits`
 /// names the five-hour and weekly limits alone.
-pub fn from_usage_object(u: &Value, observed_at: i64) -> Snapshot {
+pub(crate) fn from_usage_object(u: &Value, observed_at: i64) -> Snapshot {
     let limits = u.get("limits").and_then(Value::as_array);
     let mut windows: Vec<Window> = limits
         .into_iter()

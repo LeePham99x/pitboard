@@ -21,14 +21,14 @@ use std::path::PathBuf;
 
 /// What `daemon.lock` says, and whether that daemon is still there.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Daemon {
-    pub pid: u32,
+pub(crate) struct Daemon {
+    pub(crate) pid: u32,
     /// The Claude Code that is running it, as the daemon recorded itself.
-    pub version: Option<String>,
+    pub(crate) version: Option<String>,
     /// The pid answers to a signal. A pid the system has since reused would read as running,
     /// which over-reports a daemon rather than missing one, and is the safe direction for a
     /// fact that only ever warns.
-    pub running: bool,
+    pub(crate) running: bool,
 }
 
 /// The daemon of this slot, where one has ever run. `None` means no `daemon.lock`, which is

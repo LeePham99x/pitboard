@@ -204,7 +204,7 @@ pub fn not_warming(why: &crate::duty::warm::Halt) -> String {
 }
 
 /// Why a warm-up started nothing, as a clause.
-pub fn warm_failed(why: &crate::duty::warm::Failure) -> String {
+pub(crate) fn warm_failed(why: &crate::duty::warm::Failure) -> String {
     use crate::duty::warm::Failure;
     match why {
         Failure::LimitReached => {
@@ -568,7 +568,7 @@ pub fn renewal_note(due: usize, renewed: usize) -> String {
 
 /// A login as a message names it: by its email, and as another organisation's, or for
 /// Codex another workspace's, where the account it is told apart from has that email too.
-pub fn login(tool: crate::provider::ProviderId, email: &str, shares_email: bool) -> String {
+pub(crate) fn login(tool: crate::provider::ProviderId, email: &str, shares_email: bool) -> String {
     use crate::provider::ProviderId;
     let group = match tool {
         ProviderId::Claude => "organisation",
