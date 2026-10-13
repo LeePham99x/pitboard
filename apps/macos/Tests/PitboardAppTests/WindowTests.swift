@@ -1,3 +1,4 @@
+import AppKit
 import PitboardKit
 import Testing
 
@@ -82,4 +83,22 @@ import Testing
     #expect(
         Sheet.rename(provider: "claude", label: "personal").id
             == Sheet.rename(provider: "claude", label: "personal").id)
+}
+
+/// The sign-in page's link is copied in place of whatever was there, as an address for an
+/// app that reads one and as text for a field that reads only text, such as a browser's
+/// address bar. Written to a pasteboard of the test's own, never the one people copy to.
+@Test func theSignInLinkIsCopiedAsAnAddressAndAsText() throws {
+    let board = NSPasteboard(name: NSPasteboard.Name("pitboard-test-\(UUID().uuidString)"))
+    defer { board.releaseGlobally() }
+    board.clearContents()
+    board.setString("copied before", forType: .string)
+    let link = try #require(
+        URL(string: "https://claude.com/cai/oauth/authorize?code=true&state=pitboard-fixture"))
+
+    board.copy(link: link)
+
+    #expect(board.pasteboardItems?.count == 1)
+    #expect(board.string(forType: .URL) == link.absoluteString)
+    #expect(board.string(forType: .string) == link.absoluteString)
 }

@@ -6,8 +6,14 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Copy Link** in the sign-in dialog copies the sign-in page's address, to paste into
+  another browser or browser profile.
+
 ### Changed
 
+- **Open Sign-In Page** in the sign-in dialog is renamed **Open**.
 - The `pitboard` cask's caveats link
   [Upgrade from 0.3.0 or earlier](https://docs.usepitboard.com/install/upgrade-from-0-3-0) in
   place of the commands that remove 0.3.0's formula.
