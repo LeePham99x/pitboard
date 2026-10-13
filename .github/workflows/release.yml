@@ -140,9 +140,7 @@ jobs:
 
   # The menu bar app, signed and notarised when the Apple secrets are set; without them it
   # is still built and released, ad-hoc signed, which Gatekeeper warns about on first
-  # launch. Secrets: CERTIFICATES_P12 (base64 .p12), CERTIFICATES_PASSWORD,
-  # APPLE_API_KEY_P8 (base64 .p8), APPLE_API_KEY_ID, APPLE_API_ISSUER,
-  # SPARKLE_PUBLIC_KEY, SPARKLE_PRIVATE_KEY.
+  # launch. RELEASING.md lists the secrets.
   app:
     needs: guard
     runs-on: macos-latest
@@ -170,11 +168,11 @@ jobs:
       # An installed copy checks the archive against the public key in the bundle it came
       # from, and takes an update whose key has changed only through the other route, which
       # needs the new bundle to satisfy the old one's designated requirement. That holds
-      # for a Developer ID build and never for an ad-hoc one. So a changed key either is a
-      # rotation somebody is running on purpose or strands whoever installed an ad-hoc
-      # build, and no revocation reaches either. The key is compared with the one the last
-      # release shipped, and a change is refused unless the repository variable
-      # SPARKLE_KEY_ROTATION names this version.
+      # for a Developer ID build and never for an ad-hoc one, whose designated requirement
+      # is its own cdhash. So a changed key either is a rotation somebody is running on
+      # purpose or strands whoever installed an ad-hoc build, and no revocation reaches
+      # either. The key is compared with the one the last release shipped, and a change is
+      # refused unless the repository variable SPARKLE_KEY_ROTATION names this version.
       - name: The update key this release ships
         env:
           GH_TOKEN: ${{ github.token }}
@@ -347,6 +345,7 @@ jobs:
             mv "crates/$1/bom.json" "$3"
             find crates -name bom.json -delete
           }
+          # macOS and musl resolve different dependencies, so each target has its own.
           for target in aarch64-apple-darwin x86_64-apple-darwin \
                         x86_64-unknown-linux-musl aarch64-unknown-linux-musl; do
             bom pitboard "$target" \
@@ -369,7 +368,8 @@ jobs:
       # workflow in which repository is running, and revokes it when the job ends. There is
       # no CARGO_REGISTRY_TOKEN left to leak and nothing to rotate. What can be wrong
       # instead is the registration on crates.io, so the exchange runs on a pre-release
-      # too, where finding out costs nothing.
+      # too, where finding out costs nothing. The token lasts 30 minutes, so the exchange
+      # comes right before the upload.
       - uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
         id: registry
       # First, because a crates.io upload cannot be undone and a GitHub release can. The
@@ -519,10 +519,8 @@ jobs:
     if: needs.guard.outputs.prerelease == 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # HOMEBREW_TAP_TOKEN is a fine-grained token for datlechin/homebrew-tap alone, with
-    # Contents read and write and nothing else beyond the Metadata read access GitHub
-    # requires. It is the only credential in this release that reaches another repository,
-    # so it lives in an environment of its own and no other job can read it.
+    # HOMEBREW_TAP_TOKEN is the only credential in this release that reaches another
+    # repository, so it lives in an environment of its own and no other job can read it.
     environment: homebrew-tap
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -559,7 +557,9 @@ jobs:
               "$VERSION" "$sums"
           done
           # The formula built from source and is gone. The migration points whoever still
-          # has it at the cask of the same name.
+          # has it at the cask of the same name. Homebrew 7.0.6 follows it only to a trusted
+          # cask, on a machine that has installed a cask before. No cask_renames.json moves
+          # the old app cask on: it would win every lookup of pitboard.
           cp packaging/tap_migrations.json "$tap/tap_migrations.json"
           rm -f "$tap/Formula/pitboard.rb"
           # The tap's own page, so it cannot go on naming casks the tap no longer has.
@@ -786,6 +786,7 @@ jobs:
             [ "$version" = "pitboard $BASE" ]
           '
 
+      # releases/latest skips a pre-release, so only a full release is reachable this way.
       - if: needs.guard.outputs.prerelease == 'false'
         name: Install the way the README says to
         run: |

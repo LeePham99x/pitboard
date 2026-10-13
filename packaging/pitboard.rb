@@ -50,7 +50,8 @@ cask "pitboard" do
   desc "Switch Claude Code and Codex between your own accounts"
   homepage "https://usepitboard.com/"
 
-  # The app carries this same command line and links it to the same place.
+  # The app carries this same command line and links it to the same place. Homebrew 7.0.6 has
+  # no conflicts_with formula:, so 0.3.0's formula cannot be named here.
   conflicts_with cask: "pitboard-app"
 
   binary "pitboard-v#{version}-#{arch}-#{os}/pitboard"
