@@ -1108,7 +1108,8 @@ fn six_to_seven(document: &mut serde_json::Value) {
     document["schema"] = serde_json::json!(7);
 }
 
-// A bump: 0.11.0 reads `discarded` as names, and would call a file of typed entries corrupt.
+// A bump: every earlier release reads `discarded` as names, and would call a file of typed
+// entries corrupt.
 fn seven_to_eight(document: &mut serde_json::Value) {
     if let Some(discarded) = document.get_mut("discarded").and_then(Value::as_array_mut) {
         for entry in discarded {
