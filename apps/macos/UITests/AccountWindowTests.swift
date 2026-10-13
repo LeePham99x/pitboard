@@ -1,14 +1,10 @@
 import XCTest
 
 /// In a fixture an account's window loads a stand-in page, so nothing reaches either site.
-final class AccountWindowTests: XCTestCase {
-    override func setUp() {
-        continueAfterFailure = false
-    }
-
+final class AccountWindowTests: FixtureTestCase {
     @MainActor
     func testOpeningAClaudeAccountsWindowFromTheMenu() {
-        let app = XCUIApplication.launched(.onlyOne)
+        let app = launch(.onlyOne)
         app.openMenu()
         app.menuItem("Open claude.ai as work").click()
         let window = app.accountWindow("work")
@@ -19,7 +15,7 @@ final class AccountWindowTests: XCTestCase {
 
     @MainActor
     func testEachSiteOffersItsOwnToolsAccounts() {
-        let app = XCUIApplication.launched(.twoTools)
+        let app = launch(.twoTools)
         app.openMenu()
         let claude = app.menuItem("Open claude.ai")
         XCTAssertTrue(claude.waitForExistence(timeout: 5))
@@ -40,7 +36,7 @@ final class AccountWindowTests: XCTestCase {
 
     @MainActor
     func testNoAccountOffersNoWindow() {
-        let app = XCUIApplication.launched(.empty)
+        let app = launch(.empty)
         app.openMenu()
         XCTAssertTrue(app.menuItem("Open Pitboard").waitForExistence(timeout: 5))
         XCTAssertFalse(app.menuItem("Open claude.ai").exists)
@@ -118,10 +114,10 @@ final class AccountWindowTests: XCTestCase {
         // A row is one element for VoiceOver, its name and state read together.
         let row = app.descendants(matching: .any)["download"]
         XCTAssertTrue(row.waitForExistence(timeout: 10))
-        let done = NSPredicate(
-            format: "label CONTAINS 'notes.txt' AND label CONTAINS 'Downloaded'")
-        expectation(for: done, evaluatedWith: row)
-        waitForExpectations(timeout: 10)
+        XCTAssertTrue(
+            row.wait(
+                until: "label CONTAINS 'notes.txt' AND label CONTAINS 'Downloaded'",
+                timeout: 10))
     }
 
     @MainActor
@@ -161,7 +157,7 @@ final class AccountWindowTests: XCTestCase {
 
     @MainActor
     func testAnAccountsShortcutMenuOpensItsWindow() {
-        let app = XCUIApplication.launched(.twoTools)
+        let app = launch(.twoTools)
         app.openWindow()
         let row = app.accountRow("codex/spare")
         XCTAssertTrue(row.waitForExistence(timeout: 10))
@@ -178,7 +174,7 @@ final class AccountWindowTests: XCTestCase {
 
     @MainActor
     private func openChatGPT() -> XCUIApplication {
-        let app = XCUIApplication.launched(.twoTools)
+        let app = launch(.twoTools)
         app.openMenu()
         let open = app.menuItem("Open chatgpt.com")
         XCTAssertTrue(open.waitForExistence(timeout: 5))

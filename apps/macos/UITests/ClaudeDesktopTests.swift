@@ -1,14 +1,10 @@
 import XCTest
 
 // The fixture's Claude is a stand-in: no real app is quit or opened.
-final class ClaudeDesktopTests: XCTestCase {
-    override func setUp() {
-        continueAfterFailure = false
-    }
-
+final class ClaudeDesktopTests: FixtureTestCase {
     @MainActor
     func testClaudeDesktopAccountsAreListedUnderTheirTool() throws {
-        let app = XCUIApplication.launched(.claudeDesktop)
+        let app = launch(.claudeDesktop)
         app.openMenu()
         XCTAssertTrue(app.menuItem("Claude Desktop").waitForExistence(timeout: 5))
         // Claude Code has a work of its own, in the section above.
@@ -25,7 +21,7 @@ final class ClaudeDesktopTests: XCTestCase {
 
     @MainActor
     func testUsingAClaudeDesktopAccountWithClaudeClosedSwitchesAtOnce() {
-        let app = XCUIApplication.launched(.claudeDesktop)
+        let app = launch(.claudeDesktop)
         app.openWindow()
         let home = app.accountRow("desktop/home")
         XCTAssertTrue(home.waitForExistence(timeout: 5))
@@ -37,7 +33,7 @@ final class ClaudeDesktopTests: XCTestCase {
 
     @MainActor
     func testUsingAClaudeDesktopAccountAsksToQuitClaudeFirst() {
-        let app = XCUIApplication.launched(.claudeDesktopOpen)
+        let app = launch(.claudeDesktopOpen)
         app.openWindow()
         let home = app.accountRow("desktop/home")
         XCTAssertTrue(home.waitForExistence(timeout: 5))
@@ -59,7 +55,7 @@ final class ClaudeDesktopTests: XCTestCase {
 
     @MainActor
     func testAddingAClaudeDesktopAccountAsksToQuitClaudeOverTheSheet() {
-        let app = XCUIApplication.launched(.claudeDesktopOpen)
+        let app = launch(.claudeDesktopOpen)
         app.openWindow()
         startAddingTravel(app)
 
@@ -90,7 +86,7 @@ final class ClaudeDesktopTests: XCTestCase {
 
     @MainActor
     func testAnAddLeftHalfwayOffersToPutTheParkedAccountBack() {
-        let app = XCUIApplication.launched(.claudeDesktop)
+        let app = launch(.claudeDesktop)
         app.openWindow()
         startAddingTravel(app)
 
@@ -100,7 +96,7 @@ final class ClaudeDesktopTests: XCTestCase {
         XCTAssertTrue(waiting.waitForExistence(timeout: 10))
         XCTAssertFalse(app.alert.exists, "Claude was closed, so nothing asked")
         app.typeKey(.escape, modifierFlags: [])
-        XCTAssertFalse(waiting.waitForNonExistence(timeout: 2), "the waiting page stays")
+        XCTAssertTrue(waiting.exists, "the waiting page stays")
         XCTAssertTrue(app.sheets.firstMatch.buttons["Put work Back"].exists)
 
         app.sheets.firstMatch.buttons["Later"].click()

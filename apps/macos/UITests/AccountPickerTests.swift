@@ -1,13 +1,9 @@
 import XCTest
 
-final class AccountPickerTests: XCTestCase {
-    override func setUp() {
-        continueAfterFailure = false
-    }
-
+final class AccountPickerTests: FixtureTestCase {
     @MainActor
     func testASharedLinkAsksWhichAccountOpensIt() {
-        let app = XCUIApplication.launched(.twoTools)
+        let app = launch(.twoTools)
         app.share("https://chatgpt.com/c/shared")
         let picker = app.picker
         XCTAssertTrue(picker.waitForExistence(timeout: 10))
@@ -37,7 +33,7 @@ final class AccountPickerTests: XCTestCase {
 
     @MainActor
     func testALinkToAnotherSiteIsRefused() {
-        let app = XCUIApplication.launched(.twoTools)
+        let app = launch(.twoTools)
         app.share("https://example.com/page")
         let picker = app.picker
         XCTAssertTrue(picker.waitForExistence(timeout: 10))
@@ -50,7 +46,7 @@ final class AccountPickerTests: XCTestCase {
 
     @MainActor
     func testCancellingOpensNothing() {
-        let app = XCUIApplication.launched(.onlyOne)
+        let app = launch(.onlyOne)
         app.share("https://claude.ai/new")
         let picker = app.picker
         XCTAssertTrue(
@@ -62,7 +58,7 @@ final class AccountPickerTests: XCTestCase {
 
     @MainActor
     func testALinkForASiteWithNoAccountOffersToAddOne() {
-        let app = XCUIApplication.launched(.onlyOne)
+        let app = launch(.onlyOne)
         app.share("https://chatgpt.com/")
         let picker = app.picker
         XCTAssertTrue(picker.text("==", "No chatgpt.com Account").waitForExistence(timeout: 10))
@@ -74,7 +70,7 @@ final class AccountPickerTests: XCTestCase {
     /// Someone else's sign-in link is refused: it would sign the window in as them.
     @MainActor
     func testASignInLinkIsRefused() {
-        let app = XCUIApplication.launched(.onlyOne)
+        let app = launch(.onlyOne)
         app.share("https://claude.ai/magic-link#someone")
         let picker = app.picker
         XCTAssertTrue(picker.text("==", "Can’t Open This Link").waitForExistence(timeout: 10))

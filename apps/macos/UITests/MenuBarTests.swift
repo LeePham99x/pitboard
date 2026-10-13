@@ -1,13 +1,9 @@
 import XCTest
 
-final class MenuBarTests: XCTestCase {
-    override func setUp() {
-        continueAfterFailure = false
-    }
-
+final class MenuBarTests: FixtureTestCase {
     @MainActor
     func testTheMenuListsEveryAccountUnderItsTool() {
-        let app = XCUIApplication.launched(.twoTools)
+        let app = launch(.twoTools)
         app.openMenu()
         for title in [
             "Claude Code", "Codex", "work", "personal", "old", "main · Pro", "spare · Pro",
@@ -23,7 +19,7 @@ final class MenuBarTests: XCTestCase {
 
     @MainActor
     func testChoosingAnotherAccountSwitchesToIt() {
-        let app = XCUIApplication.launched(.oneTool)
+        let app = launch(.oneTool)
         app.openMenu()
         app.menuItem("personal").click()
         app.openMenu()
@@ -35,7 +31,7 @@ final class MenuBarTests: XCTestCase {
 
     @MainActor
     func testAnExpiredAccountOpensSigningInAgain() {
-        let app = XCUIApplication.launched(.twoTools)
+        let app = launch(.twoTools)
         app.openMenu()
         app.menuItem("old").click()
         XCTAssertTrue(app.staticTexts["Sign In to old Again"].waitForExistence(timeout: 5))
@@ -43,7 +39,7 @@ final class MenuBarTests: XCTestCase {
 
     @MainActor
     func testAddAccountOpensTheSheet() {
-        let app = XCUIApplication.launched(.oneTool)
+        let app = launch(.oneTool)
         app.openMenu()
         app.menuItem("Add Account…").click()
         XCTAssertTrue(app.staticTexts["Add Account"].waitForExistence(timeout: 5))
@@ -52,7 +48,7 @@ final class MenuBarTests: XCTestCase {
 
     @MainActor
     func testSettingsOpens() {
-        let app = XCUIApplication.launched(.oneTool)
+        let app = launch(.oneTool)
         app.openMenu()
         app.menuItem("Settings…").click()
         XCTAssertTrue(app.windows["General"].waitForExistence(timeout: 5))
@@ -60,7 +56,7 @@ final class MenuBarTests: XCTestCase {
 
     @MainActor
     func testAMachineWithoutClaudeCodeSaysSo() {
-        let app = XCUIApplication.launched(.noClaudeCode)
+        let app = launch(.noClaudeCode)
         app.openMenu()
         XCTAssertTrue(app.menuItem("Claude Code isn’t installed").waitForExistence(timeout: 5))
     }
@@ -68,7 +64,7 @@ final class MenuBarTests: XCTestCase {
     /// The fixture's account list cannot be read, so there is no account to list.
     @MainActor
     func testAFailedReadIsSaidInTheMenuAndInTheWindow() {
-        let app = XCUIApplication.launched(.readFailure)
+        let app = launch(.readFailure)
         app.openMenu()
         let item = app.menuItem("Couldn’t read usage")
         XCTAssertTrue(item.waitForExistence(timeout: 5))
@@ -84,7 +80,7 @@ final class MenuBarTests: XCTestCase {
     /// whichever pane it was on.
     @MainActor
     func testShowingANoticeOpensTheWindowOnTheAccounts() {
-        let app = XCUIApplication.launched(.stuck)
+        let app = launch(.stuck)
         app.openWindow()
         app.descendants(matching: .any)["sidebar.machine"].click()
         let checks = app.staticTexts["interrupted switch"]
@@ -100,7 +96,7 @@ final class MenuBarTests: XCTestCase {
 
     @MainActor
     func testQuitQuits() {
-        let app = XCUIApplication.launched(.oneTool)
+        let app = launch(.oneTool)
         app.openMenu()
         app.menuItem("Quit Pitboard").click()
         XCTAssertTrue(app.wait(for: .notRunning, timeout: 5))
