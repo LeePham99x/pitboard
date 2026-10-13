@@ -22,10 +22,12 @@ struct AccountSheetView: View {
     }
 }
 
-struct SheetLayout<Content: View, Buttons: View>: View {
+struct SheetLayout<Content: View, Status: View, Buttons: View>: View {
     let title: String
     let message: String
     @ViewBuilder let content: Content
+    /// At the leading end of the buttons, where a Mac sheet shows its spinner while it waits.
+    @ViewBuilder let status: Status
     @ViewBuilder let buttons: Buttons
 
     var body: some View {
@@ -42,12 +44,26 @@ struct SheetLayout<Content: View, Buttons: View>: View {
                 .scrollDisabled(true)
                 .fixedSize(horizontal: false, vertical: true)
             HStack {
+                status
                 Spacer()
                 buttons
             }
             .padding([.horizontal, .bottom], 20)
         }
         .frame(width: 440)
+    }
+}
+
+extension SheetLayout where Status == EmptyView {
+    init(
+        title: String,
+        message: String,
+        @ViewBuilder content: () -> Content,
+        @ViewBuilder buttons: () -> Buttons
+    ) {
+        self.init(
+            title: title, message: message, content: content, status: { EmptyView() },
+            buttons: buttons)
     }
 }
 
