@@ -485,6 +485,14 @@ pub fn write_stand_in_jar(path: &Path, compatible: i64, cookies: &[Cookie]) {
 mod tests {
     use super::*;
 
+    // By the guard, not by a write that failed: SQLite is macOS's alone.
+    fn refused(write: &dyn Fn()) -> bool {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(write))
+            .err()
+            .and_then(|panicked| panicked.downcast::<String>().ok())
+            .is_some_and(|said| said.contains("give it a folder of its own"))
+    }
+
     // Under a fake home, so a write the guard lets through lands in a scratch.
     #[test]
     fn nothing_here_writes_inside_the_accounts_own_application_support() {
@@ -494,13 +502,6 @@ mod tests {
         let _guarding = crate::context::testing::also_guarding(&home);
         let data = home.join("Library/Application Support/Claude");
         let jar = data.join("Cookies");
-        // By the guard, not by a write that failed: SQLite is macOS's alone.
-        let refused = |write: &dyn Fn()| {
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(write))
-                .err()
-                .and_then(|panicked| panicked.downcast::<String>().ok())
-                .is_some_and(|said| said.contains("give it a folder of its own"))
-        };
         let planted = refused(&|| plant(&data, &WORK, JarAs::StandIn));
         let signed_in = refused(&|| sign_in_on_disk(&data, &WORK, JarAs::StandIn));
         let sqlite = refused(&|| write_jar(&jar, JarAs::Sqlite, &[]));
@@ -518,6 +519,36 @@ mod tests {
         assert!(bare, "write_stand_in_jar");
         assert!(planted_through, "plant, through `..`");
         assert!(signed_in_through, "sign_in_on_disk, through `..`");
+        assert!(!written, "nothing was written");
+    }
+
+    // A link to a file not made yet resolves nowhere, and a write through it makes the file.
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Claude Desktop is macOS only: Windows makes no link"
+    )]
+    fn nothing_here_writes_through_a_link_to_a_file_not_made_yet() {
+        let root =
+            std::env::temp_dir().join(format!("pitboard-fake-claude-link-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let home = root.join("home");
+        let data = home.join("Library/Application Support/Claude");
+        let scratch = root.join("scratch");
+        for made in [&data, &scratch] {
+            std::fs::create_dir_all(made).expect("a folder of the test's own");
+        }
+        let _guarding = crate::context::testing::also_guarding(&home);
+        let jar = scratch.join("Cookies");
+        crate::host::fs::testing::link(&data.join("Cookies"), &jar).expect("a link");
+        let sqlite = refused(&|| write_jar(&jar, JarAs::Sqlite, &[]));
+        let stand_in = refused(&|| write_jar(&jar, JarAs::StandIn, &[]));
+        let bare = refused(&|| write_stand_in_jar(&jar, 24, &[]));
+        let written = data.join("Cookies").exists();
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(sqlite, "write_jar, SQLite");
+        assert!(stand_in, "write_jar, the stand-in");
+        assert!(bare, "write_stand_in_jar");
         assert!(!written, "nothing was written");
     }
 }

@@ -112,6 +112,12 @@ pub(crate) fn same_volume(_a: &Path, _b: &Path) -> io::Result<bool> {
     Err(not_yet())
 }
 
+// The guard asks for macOS's firmlinks, which Windows has none of.
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn file_id(_path: &Path) -> Option<(u64, u64)> {
+    None
+}
+
 /// Who besides its owner can reach `path`: nobody can tell until W15 reads its access
 /// control list.
 pub fn access(_path: &Path) -> Option<Access> {

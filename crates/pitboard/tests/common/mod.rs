@@ -13,6 +13,7 @@ pub mod os;
 use os::Kept;
 use pitboard_core::context::Environment;
 use pitboard_core::testing::fs as files;
+use pitboard_core::testing::lies_in;
 use pitboard_core::testing::stand_in::{self, Script, Step};
 
 /// Put a program at `path` that plays `script`: the compiled stand-in, the same on every
@@ -62,39 +63,12 @@ pub fn real_slots() -> [String; 2] {
 pub fn refuse_a_real_login_place(scratch: &Path) {
     let places = pitboard_core::testing::real_login_places(&started_in())
         .unwrap_or_else(|why| panic!("{why}, so no test can tell its folder from a real login's"));
-    if let Some(place) = places.iter().find(|place| clashes(scratch, place)) {
+    if let Some(place) = places.iter().find(|place| lies_in(scratch, place)) {
         panic!(
             "a test may not use {} as its own folder: it is, holds or lies in {}",
             scratch.display(),
             place.display()
         );
-    }
-}
-
-fn clashes(scratch: &Path, place: &Path) -> bool {
-    let same = pitboard_core::host::same_path_in_any_case;
-    let (scratch, place) = (resolved(scratch), resolved(place));
-    scratch.ancestors().any(|folder| same(folder, &place))
-        || place.ancestors().any(|folder| same(folder, &scratch))
-}
-
-fn resolved(path: &Path) -> PathBuf {
-    let mut rest = Vec::new();
-    let mut existing = path;
-    loop {
-        if let Ok(found) = std::fs::canonicalize(existing) {
-            return rest
-                .iter()
-                .rev()
-                .fold(found, |found, name| found.join(name));
-        }
-        match (existing.parent(), existing.file_name()) {
-            (Some(parent), Some(name)) => {
-                rest.push(name);
-                existing = parent;
-            }
-            _ => return path.to_path_buf(),
-        }
     }
 }
 
@@ -109,10 +83,10 @@ fn a_folder_that_is_holds_or_lies_in_a_login_place_clashes() {
         root.join("home"),
         root.join("home").join(".CLAUDE").join("inside"),
     ] {
-        assert!(clashes(&scratch, &place), "{}", scratch.display());
+        assert!(lies_in(&scratch, &place), "{}", scratch.display());
     }
     for scratch in [root.join("home").join(".claudex"), root.join("elsewhere")] {
-        assert!(!clashes(&scratch, &place), "{}", scratch.display());
+        assert!(!lies_in(&scratch, &place), "{}", scratch.display());
     }
     std::fs::remove_dir_all(&root).unwrap();
 }
@@ -124,8 +98,25 @@ fn a_link_into_a_login_place_clashes() {
     let place = root.join(".codex");
     std::fs::create_dir_all(&place).unwrap();
     files::link_dir(&place, &root.join("through")).unwrap();
-    assert!(clashes(&root.join("through").join("inside"), &place));
+    assert!(lies_in(&root.join("through").join("inside"), &place));
     std::fs::remove_dir_all(&root).unwrap();
+}
+
+// /System/Volumes/Data/Users is /Users, and `canonicalize` keeps either name as it is.
+#[test]
+#[cfg_attr(
+    not(target_os = "macos"),
+    ignore = "a firmlink to the Data volume is macOS's own"
+)]
+fn a_folder_named_through_the_data_volume_clashes() {
+    let root = std::env::temp_dir().join(format!("pitboard-clash-data-{}", std::process::id()));
+    let place = root.join(".claude");
+    std::fs::create_dir_all(&place).unwrap();
+    let real = std::fs::canonicalize(&place).unwrap();
+    let through = Path::new("/System/Volumes/Data").join(real.strip_prefix("/").unwrap());
+    let caught = lies_in(&through.join("inside"), &place);
+    std::fs::remove_dir_all(&root).unwrap();
+    assert!(caught, "{}", through.display());
 }
 
 #[test]

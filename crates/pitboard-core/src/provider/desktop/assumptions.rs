@@ -107,10 +107,13 @@ pub const ASSUMPTIONS: &[Assumption] = &[
     Assumption {
         name: "desktop_first_level_entries",
         fact: "The data folder's first level holds the names `desktop::layout` lists, each the \
-               account's, staying or passing. Names the code makes and no folder held are not \
-               on the list.",
-        read_from: "A listing of a data folder under 2.7032.0, names only, 11 October 2026; \
-                    `P` @965893",
+               account's, staying or passing: those a listing under 2.7032.0 held, the items \
+               E2 moved, and `Claude Extensions`, `Claude Extensions Settings` and \
+               `extensions-installations.json`, which 2.7032.0's code makes for installed \
+               extensions. Every other name its code makes is unread.",
+        read_from: "A listing of a data folder under 2.7032.0, names only, 11 October 2026; the \
+                    contributor's experiment E2, 4 October 2026; the three extension names read \
+                    in `app.asar`, 11 October 2026, `P` @965893",
         verified_against: READ_FROM_THE_ARCHIVE,
         depends: "`Desktop::classify`: a name it does not classify stops the start of a move",
         probe: &[
@@ -140,6 +143,25 @@ pub const ASSUMPTIONS: &[Assumption] = &[
         absent: &[],
     },
     Assumption {
+        name: "desktop_chromium_temporary",
+        fact: "Chromium writes a file through a temporary beside it named `.<base bundle \
+               id>.<file>.XXXXXX`, and Electron makes Claude's base bundle id its \
+               `ElectronTeamID` and bundle id: `.Q6L2SF6YDW.com.anthropic.claudefordesktop.\
+               <file>.` and six letters or digits.",
+        read_from: "Electron v44.4.3's `shell/app/electron_main_delegate_mac.mm` \
+                    (`SetUpBundleOverrides`) and Chromium 152.0.7977.130's \
+                    `base/files/file_util_posix.cc` (`FormatTemporaryFileName`) and \
+                    `base/files/important_file_writer.cc`, the versions 2.7032.0's framework \
+                    names; `ElectronTeamID` and `CFBundleIdentifier` from \
+                    `/Applications/Claude.app/Contents/Info.plist` of 2.7032.0, 13 October \
+                    2026. No listing has held one",
+        verified_against: READ_FROM_THE_ARCHIVE,
+        depends: "`Desktop::classify` passes such a name where `<file>` stays; any other \
+                  temporary of Chromium's is unread and stops the start of a move",
+        probe: &[],
+        absent: &[],
+    },
+    Assumption {
         name: "desktop_cookie_jar",
         fact: "`Cookies` is SQLite at `meta.version` 24; every value starts `v10`; `sessionKey` \
                and `sessionKeyV3` hold one ciphertext; a session cookie expires about four \
@@ -150,6 +172,23 @@ pub const ASSUMPTIONS: &[Assumption] = &[
         verified_against: VERIFIED_AGAINST,
         depends: "`host/macos/sqlite.rs` and `desktop::jar`: compatibility above 24, a value not \
                   `v10`, a journal not empty refuse",
+        probe: &[],
+        absent: &[],
+    },
+    Assumption {
+        name: "desktop_cookie_host_hash",
+        fact: "At `meta.version` 24 Chromium puts the SHA-256 of a cookie's host before its \
+               value and encrypts both, so one session stored for both hosts is two different \
+               stored values. Claude's importer of Chrome's cookies checks and strips the same \
+               hash.",
+        read_from: "Chromium 152.0.7977.130's \
+                    `net/extras/sqlite/sqlite_persistent_cookie_store.cc`, its version 24 note \
+                    and `DoCommit`, the version 2.7032.0's framework names; this repository's \
+                    static read of `app.asar`, 13 October 2026, \
+                    `.vite/build/index.chunk-o_ZG2Orq.js` @9530, and @10473, which hands it the \
+                    row's `host_key`",
+        verified_against: READ_FROM_THE_ARCHIVE,
+        depends: "`desktop::jar`: a `sessionKey` for each host refuses whatever the values",
         probe: &[],
         absent: &[],
     },
@@ -359,7 +398,9 @@ pub const PER_SYSTEM: &[PerSystem] = &[
     on_a_mac("desktop_account_keys", VERIFIED_AGAINST),
     on_a_mac("desktop_first_level_entries", READ_FROM_THE_ARCHIVE),
     on_a_mac("desktop_kept_by_account", READ_FROM_THE_ARCHIVE),
+    on_a_mac("desktop_chromium_temporary", READ_FROM_THE_ARCHIVE),
     on_a_mac("desktop_cookie_jar", VERIFIED_AGAINST),
+    on_a_mac("desktop_cookie_host_hash", READ_FROM_THE_ARCHIVE),
     on_a_mac("desktop_session_cookie_names", READ_FROM_THE_ARCHIVE),
     on_a_mac("desktop_session_same_across_quit", VERIFIED_AGAINST),
     on_a_mac("desktop_session_replaced_in_place", VERIFIED_AGAINST),

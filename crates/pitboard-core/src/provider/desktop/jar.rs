@@ -70,8 +70,8 @@ pub(super) fn session(ctx: &Context, jar: &Path) -> Result<Option<SignedIn>, Unr
             )));
         }
     }
-    // A `sessionKey` for each host, as Claude's own account switcher may leave. At version 24
-    // each value carries a hash of its host, so one session there is not told from two.
+    // A `sessionKey` for each host, as Claude's own account switcher may leave. One session
+    // there is not told from two: the register's `desktop_cookie_host_hash`.
     let mut keys = sessions
         .iter()
         .filter(|cookie| cookie.name == SESSION_NAMES[0]);

@@ -45,8 +45,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - `pitboard repair` gives a Claude Desktop account the parked login it finds where the folder
   `state.json` names for it is gone, as after a backup of `state.json` is restored.
 - The conformance check reads Claude Desktop's facts out of Claude's `app.asar` with
-  `--provider desktop`. No job runs it: a person runs it by hand on an installed copy. On
-  2.7032.0 every fact that names a literal holds.
+  `--provider desktop`, and refuses Claude's program. No job runs it: a person runs it by
+  hand on an installed copy. On 2.7032.0 every fact that names a literal holds.
 - The app adds, switches and signs in again to Claude Desktop accounts on macOS. It asks
   before it quits Claude, over the Add Account dialog too, and opens Claude again only once
   its data folder is whole: in front for you to sign in, behind after a switch. An add left

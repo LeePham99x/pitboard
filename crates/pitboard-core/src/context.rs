@@ -200,9 +200,9 @@ pub(crate) fn refuse_a_real_claude(path: &std::path::Path) {
             user::lies_in_the_accounts_own(path, below)
                 || fake
                     .as_ref()
-                    .is_some_and(|home| user::lies_in(path, &home.join(below)))
+                    .is_some_and(|home| crate::host::lies_in(path, &home.join(below)))
         })
-        || user::lies_in(path, std::path::Path::new("/Applications/Claude.app"));
+        || crate::host::lies_in(path, std::path::Path::new("/Applications/Claude.app"));
     assert!(
         !real,
         "a test named {} for Claude, which is, holds or lies in this account's own \
@@ -894,8 +894,8 @@ mod tests {
     fn a_relative_name_lies_where_the_working_directory_puts_it() {
         let here = std::env::current_dir().expect("a working directory");
         let name = Path::new("pitboard-never-made");
-        assert!(crate::host::user::lies_in(name, &here));
-        assert!(!crate::host::user::lies_in(name, &here.join("elsewhere")));
+        assert!(crate::host::lies_in(name, &here));
+        assert!(!crate::host::lies_in(name, &here.join("elsewhere")));
     }
 
     // A relative name lands wherever the test runs.
@@ -936,13 +936,25 @@ mod tests {
         let data = linked("one", "data", &support);
         let claude = linked("two", "Claude.app", &app);
         let elsewhere = linked("three", "data", &other);
+        let not_made = linked("four", "data", &support.join("never-made"));
+        let not_made_relative = linked(
+            "five",
+            "data",
+            Path::new("../home/Library/Application Support/Claude/never-made"),
+        );
         std::fs::remove_dir_all(&root).expect("the scratch removed");
         assert!(data, "data linked into Application Support");
         assert!(claude, "Claude.app linked to ~/Applications/Claude.app");
         assert!(!elsewhere, "data linked to a folder of the test's own");
+        assert!(not_made, "data linked to a folder not made yet there");
+        assert!(not_made_relative, "the same, by a relative link");
     }
 
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Claude Desktop is macOS only: Windows has no `/Applications`"
+    )]
     fn a_scratch_of_an_applications_folder_panics() {
         let home =
             std::env::temp_dir().join(format!("pitboard-scratch-apps-{}", std::process::id()));

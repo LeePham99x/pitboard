@@ -3315,6 +3315,31 @@ mod tests {
         windows,
         ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
     )]
+    fn doctor_says_the_build_of_the_claude_installed() {
+        let m = crate::switch::harness::desktop_machine("doctor-build");
+        m.mem.app_at(
+            std::path::Path::new("/Applications/Claude.app"),
+            "2.31226.1",
+        );
+        let diagnosis = run(&m.ctx);
+        let build = diagnosis
+            .checks
+            .iter()
+            .find(|c| c.code == "desktop_build")
+            .expect("the build is said");
+        assert!(
+            build.detail.starts_with("Claude 2.31226.1; "),
+            "{}",
+            build.detail
+        );
+        assert_eq!(diagnosis.environment["desktop"]["build"], "2.31226.1");
+    }
+
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+    )]
     fn a_park_doctor_cannot_look_at_is_never_said_missing() {
         let m = crate::switch::harness::desktop_pair("doctor-park-unread");
         let state = crate::state::load(&m.ctx).expect("state");

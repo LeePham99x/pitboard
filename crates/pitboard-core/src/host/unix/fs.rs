@@ -93,49 +93,27 @@ fn c_path(path: &Path) -> io::Result<std::ffi::CString> {
 
 fn not_replacing(renamed: libc::c_int) -> io::Result<()> {
     if renamed == 0 {
-        return Ok(());
+        Ok(())
+    } else {
+        Err(refusal(io::Error::last_os_error()))
     }
-    let refused = io::Error::last_os_error();
-    Err(match refused.raw_os_error() {
+}
+
+fn refusal(refused: io::Error) -> io::Error {
+    match refused.raw_os_error() {
         Some(libc::EEXIST) => io::Error::new(io::ErrorKind::AlreadyExists, refused),
         // a volume that cannot refuse to replace is refused, never renamed over
         Some(libc::ENOTSUP | libc::EINVAL | libc::ENOSYS) => {
             io::Error::new(io::ErrorKind::Unsupported, refused)
         }
         _ => refused,
-    })
+    }
 }
 
 // The kernel's own never-replace rename: what is at `to`, a dangling link included, stays.
-#[cfg(target_vendor = "apple")]
 pub(crate) fn move_new(_: Permit, from: &Path, to: &Path) -> io::Result<()> {
     let (from, to) = (c_path(from)?, c_path(to)?);
-    // SAFETY: both pointers are to NUL-terminated strings that outlive the call, which
-    // reads them and writes no memory of this process.
-    not_replacing(unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_EXCL) })
-}
-
-#[cfg(target_os = "linux")]
-pub(crate) fn move_new(_: Permit, from: &Path, to: &Path) -> io::Result<()> {
-    let (from, to) = (c_path(from)?, c_path(to)?);
-    // SAFETY: both pointers are to NUL-terminated strings that outlive the call, which
-    // reads them and writes no memory of this process; `AT_FDCWD` names no descriptor.
-    let renamed = unsafe {
-        libc::syscall(
-            libc::SYS_renameat2,
-            libc::AT_FDCWD,
-            from.as_ptr(),
-            libc::AT_FDCWD,
-            to.as_ptr(),
-            libc::RENAME_NOREPLACE,
-        )
-    };
-    not_replacing(if renamed == 0 { 0 } else { -1 })
-}
-
-#[cfg(not(any(target_vendor = "apple", target_os = "linux")))]
-pub(crate) fn move_new(_: Permit, _from: &Path, _to: &Path) -> io::Result<()> {
-    Err(io::ErrorKind::Unsupported.into())
+    not_replacing(crate::host::os::rename_exclusive(&from, &to))
 }
 
 fn nearest(path: &Path) -> io::Result<std::fs::Metadata> {
@@ -156,6 +134,12 @@ fn nearest(path: &Path) -> io::Result<std::fs::Metadata> {
 pub(crate) fn same_volume(a: &Path, b: &Path) -> io::Result<bool> {
     use std::os::unix::fs::MetadataExt;
     Ok(nearest(a)?.dev() == nearest(b)?.dev())
+}
+
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn file_id(path: &Path) -> Option<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::metadata(path).map(|it| (it.dev(), it.ino())).ok()
 }
 
 /// Set the modification time of the directory at `path` to `at`.
@@ -438,33 +422,17 @@ mod tests {
     #[test]
     fn a_volume_that_cannot_refuse_is_refused_not_renamed_over() {
         for errno in [libc::ENOTSUP, libc::EINVAL, libc::ENOSYS] {
-            // SAFETY: the errno location is this thread's own.
-            unsafe { *errno_location() = errno };
             assert_eq!(
-                not_replacing(-1).unwrap_err().kind(),
+                refusal(io::Error::from_raw_os_error(errno)).kind(),
                 io::ErrorKind::Unsupported,
                 "{errno}"
             );
         }
-        // SAFETY: as above.
-        unsafe { *errno_location() = libc::EEXIST };
         assert_eq!(
-            not_replacing(-1).unwrap_err().kind(),
+            refusal(io::Error::from_raw_os_error(libc::EEXIST)).kind(),
             io::ErrorKind::AlreadyExists
         );
         assert!(not_replacing(0).is_ok());
-    }
-
-    #[cfg(target_vendor = "apple")]
-    unsafe fn errno_location() -> *mut libc::c_int {
-        // SAFETY: __error only answers where this thread keeps its errno.
-        unsafe { libc::__error() }
-    }
-
-    #[cfg(not(target_vendor = "apple"))]
-    unsafe fn errno_location() -> *mut libc::c_int {
-        // SAFETY: __errno_location only answers where this thread keeps its errno.
-        unsafe { libc::__errno_location() }
     }
 
     #[test]

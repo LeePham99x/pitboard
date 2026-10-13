@@ -67,14 +67,29 @@ pub(super) fn classify(name: &OsStr) -> Class {
     }
 }
 
+const TEAM_ID: &str = "Q6L2SF6YDW";
+
 fn passing(name: &str) -> bool {
     crate::atomic::temp_owner(name).is_some()
         || name
             .strip_prefix("config.json.corrupt-")
             .is_some_and(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
-        || name
-            .strip_prefix(".org.chromium.Chromium.")
-            .is_some_and(|rest| rest.chars().count() == 6)
+        || chromium_temporary(name).is_some_and(|(file, made)| {
+            STAYS.contains(&file)
+                && made.len() == 6
+                && made.bytes().all(|b| b.is_ascii_alphanumeric())
+        })
+}
+
+// Chromium's temporary beside a file it writes, under Claude's team and bundle ids: the
+// register's `desktop_chromium_temporary`.
+fn chromium_temporary(name: &str) -> Option<(&str, &str)> {
+    name.strip_prefix('.')?
+        .strip_prefix(TEAM_ID)?
+        .strip_prefix('.')?
+        .strip_prefix(super::BUNDLE_ID)?
+        .strip_prefix('.')?
+        .rsplit_once('.')
 }
 
 #[cfg(test)]
@@ -144,7 +159,8 @@ mod tests {
             ".config.json.4242.1.pitboard",
             ".config.json.4242.pitboard",
             "config.json.corrupt-1791000000123",
-            ".org.chromium.Chromium.a1B2c3",
+            ".Q6L2SF6YDW.com.anthropic.claudefordesktop.Preferences.a1B2c3",
+            ".Q6L2SF6YDW.com.anthropic.claudefordesktop.Local State.Zz09Ab",
         ] {
             assert_eq!(classify(OsStr::new(name)), Class::Passing, "{name}");
         }
@@ -167,7 +183,12 @@ mod tests {
             "SingletonCookie",
             "config.json.corrupt-",
             "config.json.corrupt-12a",
-            ".org.chromium.Chromium.abc",
+            ".org.chromium.Chromium.a1B2c3",
+            ".Q6L2SF6YDW.com.anthropic.claudefordesktop.Preferences.abc",
+            ".Q6L2SF6YDW.com.anthropic.claudefordesktop.Preferences.a1B2c!",
+            ".Q6L2SF6YDW.com.anthropic.claudefordesktop.Cookies.a1B2c3",
+            ".Q6L2SF6YDW.com.anthropic.claudefordesktop.something-new.a1B2c3",
+            ".com.anthropic.claudefordesktop.Preferences.a1B2c3",
             "something-new",
         ] {
             assert_eq!(classify(OsStr::new(name)), Class::Unread, "{name}");

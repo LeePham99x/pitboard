@@ -462,7 +462,8 @@ cargo run -p pitboard-conformance -- /Applications/Claude.app/Contents/Resources
 ```
 
 An app's `app.asar` has no system of its own: Claude Desktop's is read for macOS, where its
-register reads every fact.
+register reads every fact. In 2.7032.0, Claude's program, `Contents/MacOS/Claude`, holds
+only the bundle id of the register's literals. The checker refuses it and exits 2.
 
 To add a fact, add an `Assumption` to the tool's register:
 

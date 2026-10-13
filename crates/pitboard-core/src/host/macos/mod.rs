@@ -22,6 +22,9 @@ use std::sync::Arc;
 
 pub(super) const OS: Os = Os::MacOs;
 
+// No build for tests reads an app installed on the machine running it.
+const READS_APPS: bool = !cfg!(any(test, feature = "test-support"));
+
 /// What `posix_spawn` is told when Pitboard starts the person's login shell: a session of its
 /// own, and none of this process's descriptors but the three it is handed, whatever in the
 /// app opened the rest. `POSIX_SPAWN_SETSID` is 0x0400 in `<sys/spawn.h>` of the macOS 27
@@ -32,6 +35,12 @@ pub(super) const SPAWN_FLAGS: libc::c_short =
 /// macOS has a login shell to ask.
 pub(super) fn login_path(env: &Environment) -> LoginPath {
     super::unix::shell::login_path(env, SPAWN_FLAGS)
+}
+
+pub(super) fn rename_exclusive(from: &std::ffi::CStr, to: &std::ffi::CStr) -> libc::c_int {
+    // SAFETY: both pointers are to NUL-terminated strings that outlive the call, which
+    // reads them and writes no memory of this process.
+    unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_EXCL) }
 }
 
 /// The keychain account Pitboard stores its own items under.
@@ -78,15 +87,11 @@ impl Host for MacOs {
     }
 
     fn app_version(&self, bundle: &Path) -> Option<String> {
-        if administered::READ_BY_REAL_HOSTS {
-            bundle::version(bundle)
-        } else {
-            None
-        }
+        READS_APPS.then(|| bundle::version(bundle)).flatten()
     }
 
     fn app_id(&self, bundle: &Path) -> Option<String> {
-        bundle::identifier(bundle)
+        READS_APPS.then(|| bundle::identifier(bundle)).flatten()
     }
 
     fn scheduler(&self) -> Option<&dyn Scheduler> {

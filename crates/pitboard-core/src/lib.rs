@@ -125,6 +125,11 @@ pub mod testing {
         crate::context::variables()
     }
 
+    // The one guard every test's folder is refused by.
+    pub fn lies_in(path: &std::path::Path, place: &std::path::Path) -> bool {
+        crate::host::lies_in(path, place)
+    }
+
     pub fn real_login_places(
         started_in: &crate::context::Context,
     ) -> Result<Vec<std::path::PathBuf>, String> {

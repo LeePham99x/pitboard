@@ -1017,7 +1017,9 @@ pub(super) fn commit_arrive(
     }
     let owner = account.as_ref().map(crate::state::Account::owner);
     let in_use = InUse {
-        named: owner.is_some().then(|| moving.id.clone()),
+        named: owner
+            .as_ref()
+            .and_then(|owner| crate::in_use::naming(tool, owner)),
         owner,
         login: moving.login.clone(),
         known_at: now,

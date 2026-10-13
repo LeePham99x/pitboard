@@ -209,25 +209,30 @@ fn text_report(path: &str, provider: ProviderId, platform: Platform, sorted: &So
 }
 
 fn platform_of(bytes: &[u8], provider: ProviderId) -> Result<Platform, Refused> {
-    match bytes.get(..4).ok_or(Refused::Unknown)? {
-        [0x7f, b'E', b'L', b'F'] => Ok(Platform::Linux),
+    let program = match bytes.get(..4).ok_or(Refused::Unknown)? {
+        [0x7f, b'E', b'L', b'F'] => Platform::Linux,
         [0xcf, 0xfa, 0xed, 0xfe]
         | [0xce, 0xfa, 0xed, 0xfe]
         | [0xfe, 0xed, 0xfa, 0xcf]
         | [0xfe, 0xed, 0xfa, 0xce]
-        | [0xca, 0xfe, 0xba, 0xbe] => Ok(Platform::MacOs),
-        [b'M', b'Z', ..] => windows_machine(bytes).ok_or(Refused::Unknown),
+        | [0xca, 0xfe, 0xba, 0xbe] => Platform::MacOs,
+        [b'M', b'Z', ..] => windows_machine(bytes).ok_or(Refused::Unknown)?,
         // Electron's asar: a pickle holding the index's size, then the JSON index at byte 16.
         [4, 0, 0, 0] if bytes.get(16..24) == Some(b"{\"files\"".as_slice()) => {
-            assumptions::archive_platform(provider).ok_or(Refused::Archive)
+            return assumptions::archive_platform(provider).ok_or(Refused::Archive);
         }
-        _ => Err(Refused::Unknown),
+        _ => return Err(Refused::Unknown),
+    };
+    match assumptions::archive_platform(provider) {
+        Some(_) => Err(Refused::Program),
+        None => Ok(program),
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Refused {
     Archive,
+    Program,
     Unknown,
 }
 
@@ -236,6 +241,11 @@ impl Refused {
         match self {
             Refused::Archive => format!(
                 "{path} is an Electron app's archive, which {}'s register reads on no system",
+                provider.name()
+            ),
+            Refused::Program => format!(
+                "{path} is a program, and {}'s register is read from its app's archive, \
+                 `Contents/Resources/app.asar`",
                 provider.name()
             ),
             Refused::Unknown => format!(
@@ -436,6 +446,37 @@ mod tests {
             Refused::Unknown.said("app.asar", ProviderId::Desktop),
             "app.asar is not an ELF, a Mach-O, an x64 or ARM64 PE binary or an Electron app's \
              archive, so its system is unknown"
+        );
+    }
+
+    // Of the archive's literals, Claude's program holds only the bundle id, so nearly every
+    // fact would read moved.
+    #[test]
+    fn a_program_of_a_tool_whose_register_reads_its_archive_is_refused() {
+        for program in [
+            b"\xcf\xfa\xed\xfe\x0c".to_vec(),
+            b"\xca\xfe\xba\xbe".to_vec(),
+            b"\x7fELF\x02\x01".to_vec(),
+            pe(0x78, b"PE\0\0", 0xaa64),
+        ] {
+            assert_eq!(
+                platform_of(&program, ProviderId::Desktop),
+                Err(Refused::Program),
+                "{program:x?}"
+            );
+            assert!(platform_of(&program, ProviderId::Claude).is_ok());
+        }
+        assert_eq!(
+            platform_of(b"#!/bin/sh", ProviderId::Desktop),
+            Err(Refused::Unknown)
+        );
+        assert_eq!(
+            Refused::Program.said(
+                "/Applications/Claude.app/Contents/MacOS/Claude",
+                ProviderId::Desktop
+            ),
+            "/Applications/Claude.app/Contents/MacOS/Claude is a program, and Claude Desktop's \
+             register is read from its app's archive, `Contents/Resources/app.asar`"
         );
     }
 

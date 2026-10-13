@@ -716,8 +716,10 @@ pages load, as a browser would.
   `/Applications/Claude.app`, from the home and the Pitboard
   folder the system names for the account whatever the environment says (the passwd
   database, or `FOLDERID_Profile` and `FOLDERID_LocalAppData`), and those the environment
-  the tests were started in names. A folder is compared with each in any case, through
-  every link the file system resolves. CI's Windows legs check after each run, with the
+  the tests were started in names. One function answers it on every system,
+  `host::lies_in`, for the integration tests and for a test's Claude folder alike: in any
+  case, through every link, one that leads nowhere yet included, and on macOS and Linux by
+  device and inode too. CI's Windows legs check after each run, with the
   probe and as the user the tests ran as, that no item of those families or
   `pitboard-citest-*` is in its Credential Manager, that Task Scheduler's `\Pitboard\` is
   empty, and that no real login folder appeared.
@@ -1511,8 +1513,9 @@ second reading under the first fact's name.
 `pitboard-conformance` tells a build's system by its header: ELF for Linux, Mach-O for
 macOS, and PE for Windows, for x64 and ARM64 only. A tool shipped as an Electron app is read
 from its `app.asar`, whose files are stored uncompressed, for the system its register names
-in `assumptions::archive_platform`. The checker refuses any other file, and an archive whose
-tool's register names no system. It reports which facts can still be read from the build,
+in `assumptions::archive_platform`. The checker refuses any other file, an archive whose
+tool's register names no system, and a program of a tool whose register is read from its
+archive. It reports which facts can still be read from the build,
 which have moved, which name nothing to look for, which it skipped and why, and which wait
 on the Windows work.
 
@@ -1559,7 +1562,8 @@ fact each build was read for.
 
 On 12 October 2026 the checker was run by hand on the `app.asar` of Claude Desktop 2.7032.0,
 installed on a Mac, and Claude was not run. The 19 facts that name literals hold, and the
-other six are about behaviour.
+other six are about behaviour. On 13 October it was run again with two more facts that name
+no literal, and the 19 still hold.
 
 `.github/workflows/conformance.yml` checks the newest builds of Claude Code and Codex against
 their registers on Mondays and Thursdays, or a version given by hand. It reads four builds of
@@ -2383,8 +2387,13 @@ was read on Linux or Windows.
   an account whole, both ways (E2, 2.19675.0, 4 October 2026).
 - The token caches are keyed by `lastKnownAccountUuid` and hold the account's OAuth tokens
   (E2 and E9, 2.19675.0; read again in 2.7032.0).
-- The data folder's first level holds the names `desktop::layout` lists (a listing under
-  2.7032.0, 11 October 2026).
+- The data folder's first level holds the names `desktop::layout` lists: those a listing
+  under 2.7032.0 held (11 October 2026), the items E2 moved, and three names 2.7032.0's code
+  makes for installed extensions. Every other name its code makes is unread.
+- Chromium writes a file through a temporary beside it, which in Claude is named
+  `.Q6L2SF6YDW.com.anthropic.claudefordesktop.<file>.` and six letters or digits (Electron
+  44.4.3's and Chromium 152.0.7977.130's source, the versions 2.7032.0 runs; no listing has
+  held one).
 - `claude-code-sessions`, `local-agent-mode-sessions`, `spaces-present`, `fcache` and
   `cowork-enabled-cli-ops.json` each carry their account or organisation, so they stay in
   the data folder (2.7032.0).
@@ -2392,7 +2401,8 @@ was read on Linux or Windows.
   expires about four weeks after it is set. With Claude open, `Cookies-journal` is empty
   between writes and there is no `Cookies-wal` (2.19675.0, 3 October 2026).
 - At `meta.version` 24 each cookie's value, decrypted, starts with a SHA-256 of its host,
-  which Claude's own cookie importer checks and strips (2.7032.0).
+  which Claude's own cookie importer checks and strips (Chromium 152.0.7977.130's source;
+  2.7032.0).
 - The session cookies are `sessionKey`, `sessionKeyV2`, `sessionKeyV3`, `sessionKeyLC` and
   `sessionKeyV3LC`, for `claude.ai` and `.claude.ai` (2.7032.0).
 - A `sessionKey`'s stored value is the same after a quit and an open (E3, 2.19675.0).
@@ -2439,7 +2449,7 @@ Not measured. Each row says what Pitboard does where it cannot know.
 | Whose `Partitions`, `Service Worker`, `session-popouts.json`, `cowork-plugin-oauth.json`, `cowork-plugin-env.json`, `ccd-environment-config.json`, `ccd-session-presets.json`, `buddy-tokens.json`, `developer_settings.json` and `configLibrary` are | Each stops the start of a move |
 | Whether 2.19675.0 and the builds people run write `config.json.journal` in 2.7032.0's format | A journal valid by its own hashes is the settings. A stale one is ignored. A header that does not parse refuses every change |
 | Whether a stale journal Pitboard left in place can become valid again | Only where a later write makes `config.json` the file it was written over, and then its body is that run's settings |
-| The names of Chromium's and the settings store's temporary files | Three patterns pass. Any other name stops the start of a move |
+| The names of Chromium's and the settings store's temporary files, which no listing has held | Three patterns pass, Chromium's only beside a file that stays. Any other name stops the start of a move |
 | Whether the builds people run keep the five cookie names, `meta.version` 24 and `v10` | Signed out needs none of the five names and emptied caches. Another shape refuses |
 | Whether Claude ever keeps a `sessionKey` for both `.claude.ai` and `claude.ai` | Refused, whatever the values: one session on both hosts is not told from two |
 | Whether the emptied token cache is 28 characters on the builds people run | A cache of another length is not emptied, so the folder is never read as signed out |

@@ -29,6 +29,22 @@ pub(super) fn login_path(env: &Environment) -> LoginPath {
     super::unix::shell::login_path(env, SPAWN_FLAGS)
 }
 
+pub(super) fn rename_exclusive(from: &std::ffi::CStr, to: &std::ffi::CStr) -> libc::c_int {
+    // SAFETY: both pointers are to NUL-terminated strings that outlive the call, which
+    // reads them and writes no memory of this process; `AT_FDCWD` names no descriptor.
+    let renamed = unsafe {
+        libc::syscall(
+            libc::SYS_renameat2,
+            libc::AT_FDCWD,
+            from.as_ptr(),
+            libc::AT_FDCWD,
+            to.as_ptr(),
+            libc::RENAME_NOREPLACE,
+        )
+    };
+    if renamed == 0 { 0 } else { -1 }
+}
+
 #[derive(Debug)]
 struct Linux {
     scheduler: systemd::Systemd,

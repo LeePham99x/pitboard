@@ -63,54 +63,7 @@ pub(crate) fn is_the_accounts_own_home(path: &std::path::Path) -> bool {
 
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn lies_in_the_accounts_own(path: &std::path::Path, below: &str) -> bool {
-    passwd_home().is_some_and(|home| lies_in(path, &home.join(below)))
-}
-
-// Is, holds or lies in: as text from the working directory, as the file system resolves each,
-// and by device and inode, so a relative name, a link into `place` or a firmlink is caught too.
-#[cfg(any(test, feature = "test-support"))]
-pub(crate) fn lies_in(path: &std::path::Path, place: &std::path::Path) -> bool {
-    let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
-    let (real, real_place) = (resolved(&path), resolved(place));
-    near(&path, place)
-        || near(&real, &real_place)
-        || meets(&real, &real_place)
-        || meets(&real_place, &real)
-}
-
-#[cfg(any(test, feature = "test-support"))]
-fn near(a: &std::path::Path, b: &std::path::Path) -> bool {
-    a.starts_with(b) || b.starts_with(a)
-}
-
-// A folder above `a` that is `b`'s deepest existing one by device and inode, since
-// `canonicalize` keeps /System/Volumes/Data/Users, which is /Users.
-#[cfg(any(test, feature = "test-support"))]
-fn meets(a: &std::path::Path, b: &std::path::Path) -> bool {
-    use std::os::unix::fs::MetadataExt;
-    let found = |p: &std::path::Path| std::fs::metadata(p).map(|it| (it.dev(), it.ino())).ok();
-    let Some((deepest, below_b)) = b
-        .ancestors()
-        .find_map(|above| Some((found(above)?, b.strip_prefix(above).ok()?)))
-    else {
-        return false;
-    };
-    a.ancestors().any(|above| {
-        found(above) == Some(deepest)
-            && a.strip_prefix(above)
-                .is_ok_and(|below_a| near(below_a, below_b))
-    })
-}
-
-// The deepest part of `path` that exists, resolved, with the rest after it as it is.
-#[cfg(any(test, feature = "test-support"))]
-fn resolved(path: &std::path::Path) -> PathBuf {
-    path.ancestors()
-        .find_map(|found| {
-            let real = std::fs::canonicalize(found).ok()?;
-            Some(real.join(path.strip_prefix(found).ok()?))
-        })
-        .unwrap_or_else(|| path.to_path_buf())
+    passwd_home().is_some_and(|home| crate::host::lies_in(path, &home.join(below)))
 }
 
 /// The one way a unit test reaches this account's real home.
