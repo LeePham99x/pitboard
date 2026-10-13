@@ -6,6 +6,15 @@ description: "Pitboard knows a Claude Desktop login by its session cookie, and m
 
 A Claude Desktop login is claude.ai's session cookie in `Cookies`, the site's storage beside it, and three keys of `config.json`. [Claude Desktop files](/reference/files#claude-desktop-files) lists them.
 
+## What Pitboard does not do for Claude Desktop
+
+Pitboard reads no usage for a Claude Desktop account and asks claude.ai nothing.
+
+- Pitboard never switches Claude Desktop by itself: it has no usage to decide from.
+- Pitboard never renews a parked Claude Desktop login. It shows when the sign-in may lapse, from the date the session cookie carries. That date is a guess: claude.ai may end the sign-in sooner or keep it longer.
+- A parked login that no longer works opens Claude signed out. [Sign in again](/guides/claude-desktop#sign-in-again) mends it.
+- A Claude Desktop account has no [account window](/guides/account-windows). Those belong to Claude Code accounts.
+
 ## Claude Desktop logins
 
 Pitboard asks claude.ai nothing and decrypts nothing, so no service tells it whose a login is. It knows a login by an 8-byte fingerprint of its session cookie as stored. As measured in Claude 2.19675.0, that stored value stays the same across a quit and an open.
