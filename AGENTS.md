@@ -1,23 +1,31 @@
 # AGENTS.md
 
 Pitboard is a Rust command line and a native macOS menu bar app that switch between a
-person's own Claude Code and Codex logins. It moves real OAuth logins, so a mistake here
-can sign someone out of a paid account. [CONTRIBUTING.md](CONTRIBUTING.md) is the full
-guide; this file is what an agent needs before it touches anything.
+person's own Claude Code, Codex and, on macOS, Claude Desktop logins. It moves real logins,
+so a mistake here can sign someone out of a paid account. [CONTRIBUTING.md](CONTRIBUTING.md)
+is the full guide; this file is what an agent needs before it touches anything.
 
 ## Never
 
 - Never write to, overwrite or delete a keychain item that holds a real login, such as
-  `Claude Code-credentials`. Tests name their items after themselves and call
+  `Claude Code-credentials`, and never read `Claude Safe Storage`, the key Claude Desktop
+  encrypts its cookies with. Tests name their items after themselves and call
   `common::guard_not_live` before the first write.
 - Never run `claude`, `codex login`, `codex logout` or `claude auth login` against a real
-  home: they replace or revoke the login stored there.
+  home: they replace or revoke the login stored there. Never start, quit or signal Claude
+  (`com.anthropic.claudefordesktop`) from a test or a script: a test's Claude is the
+  stand-in under its own scratch `Claude.app`.
 - Never run a `pitboard` built from a branch, or the built app, against your real home.
   Point `HOME`, `CODEX_HOME` and `CLAUDE_CONFIG_DIR` at a fresh directory first, and build
-  before you set them, since Cargo and rustup read `HOME` too.
-- Never write to `~/.claude`, `~/.claude.json`, `~/.codex` or `~/.pitboard` from a test
-  or a script.
-- Never print a token. `pitboard doctor --json` hides them; raw files do not.
+  before you set them, since Cargo and rustup read `HOME` too. With `HOME` elsewhere,
+  Pitboard finds no Claude Desktop. A check that needs a real Claude runs on a macOS user
+  account that holds no real login.
+- From a test or a script, never write to `~/.claude`, `~/.claude.json`, `~/.codex` or
+  `~/.pitboard`, and never read, list, move, write or delete anything under
+  `~/Library/Application Support/Claude` or `Claude-3p`. A test's Claude data folder is a
+  scratch one it names with `Context::with_scratch_claude` or
+  `PITBOARD_TEST_CLAUDE_DESKTOP`, and a build for tests cannot find the real one.
+- Never print a token or a cookie. `pitboard doctor --json` hides them; raw files do not.
 - Tests never touch launchd, systemd, `/usr/local/bin`, `/Applications` or
   `~/Library/LaunchAgents`.
 - Never load claude.ai or chatgpt.com, or sign in to either, from a test, a script or a
@@ -25,13 +33,6 @@ guide; this file is what an agent needs before it touches anything.
   and keep their data in memory. Never read, copy or delete anything under
   `~/Library/WebKit/com.usepitboard.Pitboard`, where the account windows keep real
   sign-ins.
-- Never read, list, move, write or delete anything under
-  `~/Library/Application Support/Claude` or `Claude-3p` from a test, a script, or a branch
-  build on a macOS user account that holds a real login. A test's Claude data folder is a
-  scratch one it names with `Context::with_scratch_claude` or `PITBOARD_TEST_CLAUDE_DESKTOP`,
-  and a build for tests cannot find the real one.
-- Never start, quit or signal Claude (`com.anthropic.claudefordesktop`) from a test or a
-  script. A test's Claude is the stand-in under its own scratch `Claude.app`.
 - Never open a `pitboard://` or `pitboard-debug://` link against a real home: it starts
   whichever copy claims the scheme, with the real home. UI tests send `pitboard-debug://`
   links only to a debug build they launched in a fixture.
@@ -45,8 +46,8 @@ guide; this file is what an agent needs before it touches anything.
 
 ### On Windows
 
-Pitboard for Windows is being built. [Windows](CONTRIBUTING.md#windows) says how to build
-and test it there.
+Pitboard for Windows is being built, without Claude Desktop, which is macOS's alone.
+[Windows](CONTRIBUTING.md#windows) says how to build and test it there.
 
 - Never write to, overwrite or delete a Credential Manager item that holds a real login:
   `Claude Code-credentials` and every `Claude Code-credentials-<hash>`, each piece of them
@@ -96,9 +97,10 @@ fixtures and UI tests.
 ## Rules
 
 - A behaviour change starts with a test that fails against the current code.
-- A claim about Claude Code or Codex needs a reading of a named build or an experiment,
-  recorded in the tool's register (`crates/pitboard-core/src/provider/*/assumptions.rs`),
-  a test or the commit message. [Tool registers](CONTRIBUTING.md#tool-registers) says how.
+- A claim about Claude Code, Codex or Claude Desktop needs a reading of a named build or an
+  experiment, recorded in the tool's register
+  (`crates/pitboard-core/src/provider/*/assumptions.rs`), a test or the commit message.
+  [Tool registers](CONTRIBUTING.md#tool-registers) says how.
 - A change people would notice gets an entry under `## [Unreleased]` in
   [CHANGELOG.md](CHANGELOG.md).
 - A change that breaks `pitboard-core`'s public API raises the minor version in
