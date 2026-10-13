@@ -7,14 +7,7 @@
     /// names `fixtureNames()` gives: the real core and the real model over a machine of their
     /// own. Only a debug build reads `PITBOARD_FIXTURE`, so nothing outside can put a release
     /// in a world that is not real, and only a library built with `--fixture` has them.
-    ///
-    /// What is here is the native half a fixture needs: a login item that registers nothing,
-    /// a command line linked in the fixture's own folder without a password, and the account
-    /// windows' stand-ins in `FixtureWeb.swift`. The model keeps the windows' records in the
-    /// fixture's folder, and answers the debug build's Pitboard links, whichever build this
-    /// is, so a UI test's link never reaches a copy installed.
     enum Fixture {
-        /// The environment variable a debug build reads the fixture's name from.
         static let variable = "PITBOARD_FIXTURE"
 
         /// The defaults a fixture keeps the app's view preferences in, emptied at every launch
@@ -34,11 +27,8 @@
             return temporary.appendingPathComponent("pitboard-fixture", isDirectory: true)
         }
 
-        /// The fixture called `name`'s world, which reads, notices changes and reads when a
-        /// menu opens, as the app does on a real machine, since that is what the UI tests are
-        /// testing; it posts no notification. A name that is none of them, or a library built
-        /// without fixtures, stops the launch, saying why in the core's words: the latter
-        /// names the flag a library with them is built with.
+        /// The world reads, notices changes and reads when a menu opens, as the app does on a
+        /// real machine, since that is what the UI tests test. It posts no notification.
         @MainActor
         static func dependencies(named name: String, environment: [String: String])
             -> Dependencies
@@ -70,10 +60,8 @@
                 quitting: {})
         }
 
-        /// The command line inside the fixture's stand-in app, which the model's world makes,
-        /// and a link to it in the fixture's `bin`, where the model looks for the `pitboard` a
-        /// terminal runs: made without asking anyone for a password, so linking it can be
-        /// tried without writing to `/usr/local/bin`.
+        /// Links into the fixture's `bin`, where the model looks for the `pitboard` a terminal
+        /// runs, so linking can be tried with no password and no write to `/usr/local/bin`.
         static func commandLineTool(in folder: URL) -> CommandLineTool {
             let helper = folder.appendingPathComponent("Pitboard.app/Contents/Helpers/pitboard")
             let bin = folder.appendingPathComponent("bin")
@@ -90,7 +78,6 @@
         }
     }
 
-    /// A login item that remembers what it was told and registers nothing.
     @MainActor
     final class FixtureLoginItem: LoginItem {
         private(set) var state: LoginItemState = .disabled

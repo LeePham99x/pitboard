@@ -7,7 +7,6 @@ import Testing
 /// A renewal schedule an app up to 0.3.0 wrote starts the app with `renew`, and the command
 /// line inside this one does the renewal in its place. A copy with none inside it starts
 /// nothing, rather than a menu bar app that would repair the schedule from inside its job.
-/// Anything else opens the app.
 @Test func aScheduleThatStartsTheAppRenewsWithTheCommandLineInsideIt() {
     let app = "/Applications/Pitboard.app/Contents/MacOS/Pitboard"
     let helper = "/Applications/Pitboard.app/Contents/Helpers/pitboard"
@@ -20,9 +19,7 @@ import Testing
     #expect(Launch.action(for: [app, "-AppleLanguages", "(en)"], helper: helper) == .app)
 }
 
-/// A scratch directory, standing in for both the Pitboard directory and the app's own
-/// folder, with or without the model's `app.json` and `windows.json` in it. Removed by
-/// `remove()`.
+/// Stands in for both the Pitboard directory and the app's own folder.
 private struct ScratchDirectory {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent("pitboard-earlier-\(UUID().uuidString)")
@@ -33,7 +30,6 @@ private struct ScratchDirectory {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     }
 
-    /// The store of the earlier preferences and records over `defaults`, with its files here.
     func store(_ defaults: UserDefaults) -> EarlierStore {
         EarlierStore(defaults: defaults, appFile: appFile, windowsFile: windowsFile)
     }
@@ -54,7 +50,7 @@ private struct ScratchDirectory {
 
 /// What this app kept in UserDefaults before the model kept its preferences in Pitboard's
 /// directory is handed over as it was, with the old nudge's key beside the others, for the
-/// model to read as it reads them. Nothing set is nothing handed over.
+/// model to read as it reads them.
 @Test func whatUserDefaultsHeldIsHandedOverAsItWas() throws {
     let directory = try ScratchDirectory()
     defer { directory.remove() }
@@ -106,7 +102,7 @@ private struct ScratchDirectory {
 /// The account windows' records this app kept in UserDefaults, exactly as its `StoreRecord`
 /// and `PageRecord` wrote them, are handed over as they were: every Pitboard directory's by
 /// its standardised path, and each store as `UUID.uuidString` writes it, in upper case, which
-/// the model takes in any case. Nothing set is nothing handed over.
+/// the model takes in any case.
 @Test func theWindowsRecordsAreHandedOverAsTheAppWroteThem() throws {
     let directory = try ScratchDirectory()
     defer { directory.remove() }
@@ -155,8 +151,6 @@ private struct ScratchDirectory {
     #expect(store.handOverWindows() == nil)
 }
 
-/// The store is the one in the Pitboard directory the core reads from the environment, and
-/// the records' in the app's own folder.
 @Test func theStoreIsInThePitboardDirectoryTheCoreReads() {
     let store = EarlierStore(
         defaults: TestDefaults(),
@@ -182,10 +176,6 @@ private struct ScratchDirectory {
         }
     }
 
-    /// A fixture's folder is where the model makes its world: `pitboard-fixture` in the
-    /// temporary directory as Rust's `std::env::temp_dir` finds it, which reads `TMPDIR`
-    /// where Foundation's temporary directory does not. Its command line is linked in that
-    /// folder's `bin`, where the model looks, to the one inside its stand-in app.
     @Test func aFixtureLinksItsCommandLineWhereItsModelLooks() {
         #expect(
             Fixture.folder(environment: ["TMPDIR": "/private/tmp/x/"]).path

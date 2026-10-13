@@ -1,11 +1,8 @@
 // swift-tools-version: 6.2
 import PackageDescription
 
-// Everything the app does, as libraries its tests can load without starting the app. The app
-// itself is Pitboard.xcodeproj, which links PitboardApp, adds Sparkle, and carries the UI
-// tests and the Share extension. The extension links PitboardShareBindings and
-// PitboardLinkTarget alone: it is sandboxed, and has no business with the core, its bindings
-// or anything else the app links.
+// Everything the app does, as libraries its tests can load without starting the app.
+// project.yml makes the app, its Share extension and its UI tests from them.
 
 // Not on the generated bindings, whose warnings are UniFFI's.
 let handWritten: [SwiftSetting] = [.treatAllWarnings(as: .error)]
@@ -28,11 +25,9 @@ let package = Package(
             // UniFFI's generated code does not yet meet Swift 6's strict concurrency checks.
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
-        // The check of a shared link and the Pitboard link that hands it over, from Rust's
-        // pitboard-sites, for the Share extension alone. Nothing here links it with
-        // PitboardFFI: two Rust static libraries in one binary each bring their own standard
-        // library. So no test target here uses it, since a SwiftPM may build every test
-        // target into one bundle; pitboard-share-ffi's tests are Rust's.
+        // For the Share extension alone. No test target links it: SwiftPM may build every
+        // test target into one bundle with PitboardFFI, and scripts/build-app.sh says why two
+        // Rust static libraries must not share a binary.
         .target(
             name: "PitboardShareBindings",
             dependencies: ["PitboardShareFFI"],
@@ -43,9 +38,7 @@ let package = Package(
             dependencies: ["PitboardBindings"],
             swiftSettings: handWritten
         ),
-        // Where a Pitboard link goes: the scheme each build declares, and the app a Share
-        // extension is inside. Foundation only, so the app and its extension both link it,
-        // and a test target may too.
+        // Foundation only, so the app, its extension and a test target can each link it.
         .target(name: "PitboardLinkTarget", swiftSettings: handWritten),
         .target(
             name: "PitboardApp",

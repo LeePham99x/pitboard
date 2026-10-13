@@ -1,10 +1,7 @@
 import Foundation
 
-/// How the app keeps itself up to date, as the menu and the settings see it.
-///
-/// The updater is Sparkle, which the app target links and this library does not: its tests
-/// and its previews then need no framework that only a signed bundle can load. A build from
-/// a clone carries no update key, and there the updater is not available at all.
+/// The updater is Sparkle, which the app target links and this library does not, so the
+/// library's tests need no framework that only a signed bundle can load.
 @MainActor
 public protocol Updates: AnyObject, Observable {
     /// Whether this build can update itself.
@@ -17,7 +14,6 @@ public protocol Updates: AnyObject, Observable {
     func check()
 }
 
-/// For a build that cannot update itself.
 @MainActor
 @Observable
 final class NoUpdates: Updates {

@@ -1,9 +1,6 @@
 import PitboardKit
 import SwiftUI
 
-/// An account's limits, a row each: its name, how much of it is used, when it comes back,
-/// and how that compares with an even use of it.
-///
 /// A grid, so the columns line up across rows and the name column is as wide as its widest
 /// name: a limit scoped to one model is named "week · Sonnet 4.5", which no fixed width
 /// holds at every text size. What each column says is the model's, made again every minute,
@@ -24,9 +21,7 @@ struct UsageBars: View {
     }
 }
 
-/// One limit, as a row of `UsageBars`: the platform's capacity bar, tinted by how much is
-/// used and marked where an even use would be by now, with the name and the figures beside
-/// it. VoiceOver hears the row as one sentence, read from its name, and not the bar and
+/// VoiceOver hears the row as one sentence, read from its name, and not the bar and
 /// each figure on their own.
 struct UsageBar: View {
     let limit: LimitRow

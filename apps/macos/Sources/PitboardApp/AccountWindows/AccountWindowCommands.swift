@@ -1,10 +1,9 @@
 import PitboardKit
 import SwiftUI
 
-/// The account windows' scene: one window per enrolled account, keyed by its store, so
-/// opening an account's window again brings the one open forward.
+/// Keyed by the account's store, so opening an account's window again brings the open one
+/// forward.
 struct AccountWindowScene: Scene {
-    /// The scene's id, named once so the scene and the code that opens it cannot drift apart.
     static let id = "account"
 
     let windows: AccountWindows
@@ -19,8 +18,6 @@ struct AccountWindowScene: Scene {
     }
 }
 
-/// The menu bar's commands for account windows: opening one in the File menu, going back and
-/// forward, zooming, finding, and removing what one keeps.
 struct AccountWindowCommands: Commands {
     let windows: AccountWindows
     @FocusedValue(WebSession.self) private var session
@@ -59,8 +56,6 @@ struct AccountWindowCommands: Commands {
     }
 }
 
-/// "Open claude.ai as work" for a site with one account, and an "Open claude.ai" submenu of
-/// titles for a site with several: in the File menu and the menu bar item's menu alike.
 struct SiteMenuItems: View {
     let windows: AccountWindows
     @Environment(\.openWindow) private var openWindow

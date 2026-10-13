@@ -4,12 +4,9 @@
 # committed:
 #
 # - PitboardFFI.xcframework and Sources/PitboardBindings: Pitboard's core, which the app
-#   links through PitboardKit.
+#   links.
 # - PitboardShareFFI.xcframework and Sources/PitboardShareBindings: pitboard-share-ffi, the
-#   check of a shared link, which the Share extension links and nothing else does.
-#
-# The two never meet in one binary: each library carries its own copy of Rust's standard
-# library, and scripts/build-app.sh fails a build where they do.
+#   check of a shared link, which the Share extension links.
 #
 # --fixture builds the core with its `fixture` feature, for a debug build and the UI tests to
 # launch into a fixture: the worlds are Rust, and only a library built so has them. Its

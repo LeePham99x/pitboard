@@ -34,7 +34,6 @@ final class AppPresence {
         self.settle = settle
     }
 
-    /// The app itself.
     static func live() -> AppPresence {
         AppPresence(
             apply: { NSApp.setActivationPolicy($0) },
@@ -49,11 +48,10 @@ final class AppPresence {
             settle: { try? await Task.sleep(for: .milliseconds(500)) })
     }
 
-    /// Whether any of the app's windows is open.
     var hasWindows: Bool { !open.isEmpty }
 
-    /// Brings Pitboard to the front to show a window it is about to open, as a regular app
-    /// first, so it comes forward with its Dock icon and its menus.
+    /// For a window about to open. Regular first, so Pitboard comes forward with its Dock
+    /// icon and its menus.
     func activate() {
         apply(.regular)
         bringForward()

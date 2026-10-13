@@ -3,8 +3,7 @@ import Testing
 
 @testable import PitboardApp
 
-/// A scratch directory with an app bundle carrying a command line, and whatever a test puts
-/// beside it. Its name has a space and a quote in it, as a folder somebody made might.
+/// Its name has a space and a quote in it, as a folder somebody made might.
 private struct Scratch {
     let root: URL
     var app: URL { root.appendingPathComponent("Fake.app") }
@@ -18,7 +17,6 @@ private struct Scratch {
         try program(at: helper)
     }
 
-    /// A directory under the root, made if it is not there.
     func directory(_ name: String) throws -> String {
         let made = root.appendingPathComponent(name)
         try FileManager.default.createDirectory(at: made, withIntermediateDirectories: true)
@@ -39,11 +37,10 @@ private struct Scratch {
     func remove() { try? FileManager.default.removeItem(at: root) }
 }
 
-/// A link is made only to the command line inside an app, where the core says an app keeps
-/// it, and only where it is there. Whether the app stays where it is, rather than running
-/// from the temporary copy macOS makes of one opened where it was downloaded, is the model's
-/// to say before it offers the link. The app is a stand-in the test makes, so the answer
-/// does not depend on whether the Mac running the tests has Pitboard installed.
+/// Whether the app stays where it is, rather than running from the temporary copy macOS
+/// makes of one opened where it was downloaded, is the model's to say before it offers the
+/// link. The app is a stand-in the test makes, so the answer does not depend on whether the
+/// Mac running the tests has Pitboard installed.
 @Test func onlyTheCommandLineInsideAnAppIsLinked() throws {
     let scratch = try Scratch()
     defer { scratch.remove() }
@@ -60,10 +57,9 @@ private struct Scratch {
     #expect(!built.linkable)
 }
 
-/// A link is offered only to a command line this user may run, as the core judges a program
-/// wherever it looks for one. A directory where the command line would be is not one, though
-/// macOS lets this user search it, which `FileManager.isExecutableFile` took for running it;
-/// nor is a file this user may not run.
+/// Judged as the core judges a program wherever it looks for one. A directory where the
+/// command line would be is not one, though macOS lets this user search it, which
+/// `FileManager.isExecutableFile` took for running it.
 @Test func aLinkIsOfferedOnlyToACommandLineThisUserMayRun() throws {
     let scratch = try Scratch()
     defer { scratch.remove() }
@@ -102,9 +98,8 @@ private struct Scratch {
     #expect(compiles, "\(String(describing: refused))")
 }
 
-/// The command makes the directory and the link, and replaces a link already there, such as
-/// one left by a copy of the app that has since moved. Run here without administrator
-/// rights, in a scratch directory whose name a shell would otherwise read commands in.
+/// Run without administrator rights, in a scratch directory whose name a shell would
+/// otherwise read commands in.
 @MainActor
 @Test func theCommandMakesTheLink() throws {
     let scratch = try Scratch()
@@ -128,9 +123,7 @@ private struct Scratch {
 }
 
 /// Anything where the link goes that is not a link is somebody's own, such as a Pitboard
-/// they copied there, so it is kept and no script runs. A link is replaced whether or not
-/// what it leads to is there, such as one left by a copy of the app that has since moved,
-/// and so is nothing at all.
+/// they copied there, so it is kept and no script runs.
 @Test func somebodysOwnFileWhereTheLinkGoesIsKept() async throws {
     let scratch = try Scratch()
     defer { scratch.remove() }
@@ -169,7 +162,7 @@ private struct Scratch {
 }
 
 /// A password prompt somebody dismissed is their answer, not a failure: AppleScript raises
-/// -128 for it. Any other error is a failure, in AppleScript's own words where it has any.
+/// -128 for it.
 @Test func aDismissedPasswordPromptIsAnAnswer() {
     func error(_ number: Int, _ message: String? = nil) -> NSDictionary {
         var error: [String: Any] = [NSAppleScript.errorNumber: number]

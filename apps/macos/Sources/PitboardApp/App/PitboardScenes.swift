@@ -1,9 +1,6 @@
 import PitboardKit
 import SwiftUI
 
-/// Every scene the app has, for the app target's `App` to return: the menu bar item, the
-/// main window, each account's window, the account picker, and the settings.
-///
 /// The menu bar item comes first, which makes it the scene the app starts with: an app with
 /// no Dock icon opens no window at launch.
 public struct PitboardScenes: Scene {

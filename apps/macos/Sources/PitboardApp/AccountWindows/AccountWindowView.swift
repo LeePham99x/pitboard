@@ -1,20 +1,16 @@
 import PitboardKit
 import SwiftUI
 
-/// An account's window on its site: titled with the account, the page below a toolbar to go
-/// back, forward and reload, and what the window has to say above it.
-///
 /// A window for one site and one account, not a browser: no address field and no tabs of its
 /// own. Links that leave the site go to the browser.
 struct AccountWindowView: View {
     let windows: AccountWindows
-    /// The account's store, the window's value; nil for a window macOS restored without one.
+    /// Nil for a window macOS restored without one.
     let store: UUID?
 
     @State private var session: WebSession?
     @Environment(\.dismissWindow) private var dismissWindow
 
-    /// The window as the model has it open, once it can show its page.
     private var opened: OpenWindow? { store.flatMap(windows.opened) }
 
     var body: some View {
@@ -47,7 +43,6 @@ struct AccountWindowView: View {
         if let session {
             SessionView(windows: windows, session: session, account: session.account)
         } else {
-            // Until the model lists the window as open, what it waits for, in its words.
             let waiting = windows.model.accountWindows.waiting
             Group {
                 switch waiting.shown {
@@ -70,7 +65,6 @@ struct AccountWindowView: View {
     }
 }
 
-/// An open account window's page, toolbar and commands.
 private struct SessionView: View {
     let windows: AccountWindows
     @Bindable var session: WebSession
@@ -142,7 +136,6 @@ private struct SessionView: View {
     }
 }
 
-/// What a window has to say, in a bar above its page, until it is dismissed.
 private struct NoteBar: View {
     let note: WindowNote
     let dismiss: () -> Void
@@ -175,11 +168,8 @@ private struct NoteBar: View {
     }
 }
 
-/// An account window's downloads, newest first, each with its progress and what can be done
-/// with it.
 private struct DownloadsList: View {
     let windows: AccountWindows
-    /// The window's store, as the model writes it.
     let store: String
 
     var body: some View {
@@ -219,7 +209,6 @@ private struct DownloadsList: View {
 
 private struct TransferRow: View {
     let transfer: DownloadShown
-    /// WebKit's progress, with the bytes written so far, while it runs.
     let progress: Progress?
     let reveal: (String) -> Void
     let cancel: () -> Void

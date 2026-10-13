@@ -1,13 +1,7 @@
 import PitboardKit
 import SwiftUI
 
-/// Pitboard's one window, beside the menu rather than instead of it.
-///
-/// The menu is the glance and the switch. This is where the things that need room go: each
-/// account with its limits drawn out and everything that can be done to it, what Pitboard
-/// has to say in full, everything it has changed, and what it finds about this Mac.
 struct MainWindow: View {
-    /// The scene's id, named once so the menu bar item and the scene cannot drift apart.
     static let id = "main"
 
     let model: AppModel
@@ -81,7 +75,6 @@ struct MainWindow: View {
         Binding(get: { pane }, set: { if let chosen = $0 { pane = chosen } })
     }
 
-    /// The question about quitting an app, with the switch its answer names.
     private var quitAsked: QuitAsked? {
         guard let question = model.quitConfirmation, let asked = model.quitQuestion else {
             return nil
@@ -90,7 +83,6 @@ struct MainWindow: View {
     }
 }
 
-/// What the quit question asks, and the account to switch to once it is answered.
 private struct QuitAsked: Equatable {
     let question: Question
     let qualified: String

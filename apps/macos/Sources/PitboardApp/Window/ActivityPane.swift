@@ -1,9 +1,7 @@
 import PitboardKit
 import SwiftUI
 
-/// Everything Pitboard has changed, newest first, from the log it keeps: every switch,
-/// enrolment, rename, forget and renewal, whichever front end asked for it, as the model says
-/// each.
+/// Pitboard's log, newest first, whichever front end made each change.
 struct ActivityPane: View {
     let model: AppModel
 

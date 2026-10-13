@@ -3,29 +3,21 @@ import Foundation
 import PitboardKit
 import WebKit
 
-/// Every download the account windows start, as WebKit has it: each one's `WKDownload`,
-/// where it is saving to and its progress, from deciding where it goes to its end.
-///
-/// What each window lists, and where each download is, is the model's, in
-/// `AccountWindowsShown.downloads`: this tells it as each starts, is given its file and ends.
 /// Downloads carry on after their window closes: the person asked for the file, not for the
 /// window to stay open. WebKit quarantines each file itself, as a browser's are, and makes a
-/// suggested name safe; what is left is never overwriting a file, whose name the core's
+/// suggested name safe. What is left here is never overwriting a file, whose name the core's
 /// `downloadDestination` gives, and asking before a frame or a page off the site saves one.
 @MainActor
 final class DownloadCenter: NSObject, WKDownloadDelegate {
-    /// A download still under way here.
     private struct Live {
         let download: WKDownload
         /// Whether to ask the person first, until WebKit asks where it goes.
         var asking: Bool?
-        /// Where it saves, once that is decided.
         var destination: URL?
     }
 
     private let folder: URL
     private let model: AppModel
-    /// The downloads still under way, by the id the model knows each by.
     private var live: [String: Live] = [:]
     /// Destinations given to downloads still running, which no other may be given.
     private var reserved: Set<URL> = []
@@ -35,8 +27,6 @@ final class DownloadCenter: NSObject, WKDownloadDelegate {
         self.model = model
     }
 
-    /// Takes over `download`, which a page of `account`'s window started, asking the person
-    /// first when `asking` says to.
     func start(_ download: WKDownload, for account: WindowAccount, asking: Bool) {
         let id = UUID().uuidString
         live[id] = Live(download: download, asking: asking)
@@ -47,24 +37,20 @@ final class DownloadCenter: NSObject, WKDownloadDelegate {
                 name: download.originalRequest?.url?.lastPathComponent))
     }
 
-    /// WebKit's progress for the download `id`, with the bytes written so far, while it runs.
     func progress(of id: String) -> Progress? {
         live[id]?.download.progress
     }
 
-    /// What to ask before quitting, which stops every download under way here, in the
-    /// model's words, or nil while none is. Counted here rather than from the snapshot: a
-    /// download started a moment before Quit is under way before the snapshot that lists it.
+    /// Counted here rather than from the snapshot: a download started a moment before Quit is
+    /// under way before the snapshot that lists it.
     var quitQuestion: Question? {
         downloadsQuitQuestion(running: UInt32(clamping: live.count))
     }
 
-    /// Shows the file `file` a download saved in Finder.
     func reveal(_ file: String) {
         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: file)])
     }
 
-    /// Stops every download running and deletes what each had written, as Pitboard quits.
     func stopAll() {
         for (id, running) in live {
             running.download.cancel()
@@ -74,8 +60,7 @@ final class DownloadCenter: NSObject, WKDownloadDelegate {
         live = [:]
     }
 
-    /// Stops the download `id`, frees its name, and deletes what it had written. WebKit says
-    /// nothing more about a download the app cancels.
+    /// WebKit says nothing more about a download the app cancels.
     func cancel(_ id: String) {
         guard let running = live.removeValue(forKey: id) else { return }
         model.send(.downloadEnded(id: id, end: .cancelled))
@@ -145,7 +130,6 @@ final class DownloadCenter: NSObject, WKDownloadDelegate {
         )
     }
 
-    /// The id the model knows `download` by, while it is under way.
     private func id(of download: WKDownload) -> String? {
         live.first { $0.value.download === download }?.key
     }

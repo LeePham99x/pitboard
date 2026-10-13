@@ -5,15 +5,13 @@ import WebKit
 
 @testable import PitboardApp
 
-// Which stores go, and when, are the model's decisions, tested in pitboard-ffi's
-// `model/windowing.rs` and `account_windows/records.rs`. These are WebKit's side: the tries
-// and pauses of a deletion, and what the model is told of it.
+// Which stores go, and when, is the model's, tested in pitboard-ffi's `model/windowing.rs`
+// and `account_windows/records.rs`.
 
-/// What a store refuses while something still holds it.
 private struct InUse: Error {}
 
-/// Stores as WebKit keeps them, without WebKit: each refuses its deletion as many times as a
-/// test says, as one a window or WebKit's network process still holds does.
+/// Each refuses its deletion as many times as a test says, as a store a window or WebKit's
+/// network process still holds does.
 @MainActor
 final class StandInStores: WebsiteDataStores {
     var refusals: [UUID: Int] = [:]
@@ -41,14 +39,13 @@ final class StandInStores: WebsiteDataStores {
     }
 }
 
-/// The pauses a janitor was told to wait, waited for no time at all.
 @MainActor
 final class Pauses {
     private(set) var asked: [Duration] = []
     func pause(_ duration: Duration) async { asked.append(duration) }
 }
 
-/// What a janitor told the model, in order: each store, and whether it went.
+/// Each store a janitor told the model of, and whether it went.
 @MainActor
 private final class Said {
     var told: [(UUID, Bool)] = []
@@ -61,12 +58,10 @@ private func janitor(_ stores: StandInStores, pauses: Pauses = Pauses()) -> Stor
 
 private let one = UUID(uuidString: "00000000-0000-4000-8000-000000000001")!
 
-/// The model's ask for `one`, the `ask`th.
 private func asked(_ ask: UInt64) -> StoreDeletion {
     StoreDeletion(store: one.uuidString.lowercased(), ask: ask)
 }
 
-/// Asks `janitor` to delete what `asks` name, and waits until it has told of each.
 @MainActor
 private func delete(_ janitor: StoreJanitor, _ asks: [StoreDeletion], said: Said) async {
     let before = said.told.count
@@ -92,11 +87,8 @@ private func delete(_ janitor: StoreJanitor, _ asks: [StoreDeletion], said: Said
     #expect(said.told.map(\.1) == [true])
 }
 
-/// A store something keeps holding is said to be held after every try, for the model to ask
-/// for again after its next read, which deletes it once nothing holds it.
-///
-/// StoreJanitorTests.swift's aStoreStillHeldIsLeftForTheNextSweep, as it was at a3e5ce0,
-/// whose record is the model's now.
+/// The model asks for a held store again after its next read, which deletes it once nothing
+/// holds it.
 @MainActor
 @Test func aStoreStillHeldIsSaidToBeHeld() async {
     let stores = StandInStores()
@@ -117,7 +109,6 @@ private func delete(_ janitor: StoreJanitor, _ asks: [StoreDeletion], said: Said
     #expect(said.told.map(\.1) == [false, true])
 }
 
-/// The retries are short, as measured, and end within a few seconds.
 @Test func theRetriesEndWithinFourSeconds() {
     let total = StoreJanitor.retries.reduce(Duration.zero, +)
     #expect(total < .seconds(4))
@@ -126,9 +117,6 @@ private func delete(_ janitor: StoreJanitor, _ asks: [StoreDeletion], said: Said
 
 /// An ask that several snapshots list before the model has heard how it went is deleted
 /// once, while a new ask for the same store, after it was held, is deleted again.
-///
-/// StoreJanitorTests.swift's twoSweepsAtOnceDeleteAStoreOnce, as it was at a3e5ce0, whose
-/// claimed set is the model's now.
 @MainActor
 @Test func anAskIsDeletedOnce() async {
     let stores = StandInStores()
@@ -146,11 +134,6 @@ private func delete(_ janitor: StoreJanitor, _ asks: [StoreDeletion], said: Said
     #expect(stores.attempts[one] == 3, "a new ask")
 }
 
-/// The records are kept under the Pitboard directory the core reads, standardised as they
-/// were when the app worked the directory out itself, so an update keeps every store and page
-/// it recorded. The core gives the path as the environment does, `.`, `..` and trailing `/`
-/// included, and the key is that path without them.
-///
 /// Without `HOME`, a library an app ships takes the account's own home, where Foundation
 /// finds it. A library built with the fixtures, as CI builds the one these tests run, is told
 /// there is none, so nothing it is given reaches a real home: its directory is then
@@ -178,8 +161,7 @@ private func delete(_ janitor: StoreJanitor, _ asks: [StoreDeletion], said: Said
     }
 }
 
-/// The records are kept in the app's own folder in Application Support, named by its bundle
-/// id, whatever `HOME` says, as WebKit keeps the stores they describe. Nothing is written.
+/// Nothing is written.
 @Test func theRecordsAreKeptInTheAppsOwnFolder() throws {
     let support = try #require(
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first)

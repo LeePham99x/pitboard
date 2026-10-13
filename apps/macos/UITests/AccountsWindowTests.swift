@@ -1,14 +1,11 @@
 import XCTest
 
-/// The window's accounts: adding, signing in again, naming, renaming, forgetting, switching.
 final class AccountsWindowTests: XCTestCase {
     override func setUp() {
         continueAfterFailure = false
     }
 
-    /// A new Claude Code account: its sign-in asks for the code from the browser, and once it
-    /// is pasted the account is listed and the sheet closes. The fixture's Claude Code takes a
-    /// code as the real one does, `<code>#<state>`.
+    /// The fixture's Claude Code takes a code as the real one does, `<code>#<state>`.
     @MainActor
     func testAddingAClaudeCodeAccount() {
         let app = XCUIApplication.launched(.oneTool)
@@ -47,9 +44,8 @@ final class AccountsWindowTests: XCTestCase {
         XCTAssertTrue(app.accountRow("codex/third").waitForExistence(timeout: 10))
     }
 
-    /// Cancelling a sign-in closes its sheet, stops it and adds nothing. Sign In stays
-    /// disabled while a sign-in runs, so another sign-in that can be started and finished
-    /// afterwards is what shows the first one was stopped.
+    /// Sign In stays disabled while a sign-in runs, so a second sign-in that starts and
+    /// finishes is what shows the first one was stopped.
     @MainActor
     func testCancellingASignInAddsNothing() {
         let app = XCUIApplication.launched(.oneTool)
@@ -79,8 +75,6 @@ final class AccountsWindowTests: XCTestCase {
         XCTAssertTrue(app.accountRow("claude/third").waitForExistence(timeout: 10))
     }
 
-    /// A rename to a name another account has is refused in the sheet, with the name still
-    /// there to correct; a free name is taken.
     @MainActor
     func testRenamingAnAccount() {
         let app = XCUIApplication.launched(.oneTool)
@@ -102,7 +96,6 @@ final class AccountsWindowTests: XCTestCase {
         XCTAssertTrue(app.accountRow("claude/home").waitForExistence(timeout: 5))
     }
 
-    /// Forgetting asks first, and Cancel keeps the account.
     @MainActor
     func testForgettingAsksFirst() {
         let app = XCUIApplication.launched(.oneTool)
@@ -120,7 +113,6 @@ final class AccountsWindowTests: XCTestCase {
         XCTAssertTrue(row.waitForNonExistence(timeout: 5))
     }
 
-    /// The account in use cannot be forgotten, so its menu does not offer it.
     @MainActor
     func testTheAccountInUseOffersNoForget() {
         let app = XCUIApplication.launched(.oneTool)
@@ -133,8 +125,6 @@ final class AccountsWindowTests: XCTestCase {
         app.typeKey(.escape, modifierFlags: [])
     }
 
-    /// Use switches from the window, and a Codex switch says running sessions keep the old
-    /// account until they are restarted, until it is dismissed.
     @MainActor
     func testUsingACodexAccountSaysSessionsKeepTheOldOne() {
         let app = XCUIApplication.launched(.twoTools)
@@ -151,9 +141,7 @@ final class AccountsWindowTests: XCTestCase {
         XCTAssertTrue(notice.waitForNonExistence(timeout: 5))
     }
 
-    /// With ChatGPT open and running Codex's login, Use asks before quitting it. Cancel
-    /// changes nothing; Quit ChatGPT and Switch switches, which the notice about the switch
-    /// says. The fixture's ChatGPT is a stand-in: no real app is quit.
+    /// The fixture's ChatGPT is a stand-in: no real app is quit.
     @MainActor
     func testUsingACodexAccountAsksToQuitChatGPTFirst() {
         let app = XCUIApplication.launched(.chatGPTOpen)
@@ -176,7 +164,6 @@ final class AccountsWindowTests: XCTestCase {
         XCTAssertTrue(notice.waitForExistence(timeout: 5))
     }
 
-    /// Naming the login in use, from the tip above it.
     @MainActor
     func testNamingTheAccountInUse() {
         let app = XCUIApplication.launched(.unnamed)
@@ -191,7 +178,6 @@ final class AccountsWindowTests: XCTestCase {
         XCTAssertTrue(app.accountRow("claude/work").waitForExistence(timeout: 5))
     }
 
-    /// A machine nobody is signed in on offers adding an account.
     @MainActor
     func testAnEmptyMachineOffersAnAccount() {
         let app = XCUIApplication.launched(.empty)
@@ -201,7 +187,6 @@ final class AccountsWindowTests: XCTestCase {
         XCTAssertTrue(app.textFields["sheet.name"].waitForExistence(timeout: 5))
     }
 
-    /// An interrupted switch can be given up on, after asking, and says what it kept.
     @MainActor
     func testGivingUpOnAnInterruptedSwitch() {
         let app = XCUIApplication.launched(.stuck)
@@ -216,8 +201,6 @@ final class AccountsWindowTests: XCTestCase {
         XCTAssertTrue(notice.text("CONTAINS", "2 logins kept").exists)
     }
 
-    /// With one account there is nothing to switch to, so the window suggests adding a second,
-    /// and Not Now puts the suggestion away.
     @MainActor
     func testOneAccountIsOfferedASecondUntilNotNow() {
         let app = XCUIApplication.launched(.onlyOne)
@@ -229,8 +212,7 @@ final class AccountsWindowTests: XCTestCase {
         XCTAssertTrue(app.accountRow("claude/work").exists)
     }
 
-    /// Command-N adds an account from any pane, and the window goes to the accounts, which
-    /// is what the sheet is about and where the new one is listed.
+    /// The window goes to the accounts, where the new one is listed.
     @MainActor
     func testCommandNAddsAnAccountFromAnyPane() {
         let app = XCUIApplication.launched(.oneTool)
@@ -247,7 +229,6 @@ final class AccountsWindowTests: XCTestCase {
         XCTAssertFalse(activity.exists)
     }
 
-    /// The first launch ever opens the window by itself.
     @MainActor
     func testTheFirstLaunchOpensTheWindow() {
         let app = XCUIApplication.launched(.firstLaunch)

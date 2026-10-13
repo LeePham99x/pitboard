@@ -3,35 +3,24 @@ import Foundation
 import PitboardKit
 import WebKit
 
-/// One account's window on its site while it is open: the account, the policy its pages
-/// follow, its own page, the sign-in window one of its pages opened, and what it has to say.
 @MainActor
 @Observable
 final class WebSession {
     private(set) var account: WindowAccount
     let policy: NavigationPolicy
-    /// The window's own page. Made again when the window's data is removed, so nothing the
-    /// signed-in page does can land in the store after it is cleared.
     private(set) var page: Page
-    /// What the bar above the page says, until it is dismissed or replaced.
     var note: WindowNote?
-    /// File > Remove Website Data… was chosen for this window, which asks first.
     var removalAsked = false
 
     @ObservationIgnored private let delegate: PageDelegate
     @ObservationIgnored private let downloads: DownloadCenter
     @ObservationIgnored private let openElsewhere: @MainActor (URL) -> Void
-    /// What a page of this window is made from: the account's store and the environment's
-    /// own setup.
     @ObservationIgnored private let configuration: () -> WKWebViewConfiguration
-    /// The sign-in window a page of this one opened, while it is open. One at a time: a
-    /// second replaces the first, as a site starting its sign-in again expects.
+    /// One at a time: a second replaces the first, as a site starting its sign-in again
+    /// expects.
     @ObservationIgnored private(set) var popup: PopupWindow?
-    /// The number of the last page the model asked this window to load.
     @ObservationIgnored private var loaded: UInt64
 
-    /// The window `open` is, on `store`, starting at the page the model says, and saying what
-    /// it says as the window opens: how to sign in, where its store is new.
     init(
         open: OpenWindow, policy: NavigationPolicy, store: WKWebsiteDataStore,
         environment: WebEnvironment, downloads: DownloadCenter
@@ -50,34 +39,28 @@ final class WebSession {
         page.load(URL(string: open.load.url) ?? policy.home)
     }
 
-    /// Takes the account as a read found it again: a rename retitles the window and keeps
-    /// everything else.
+    /// A rename retitles the window and keeps everything else.
     func update(_ account: WindowAccount) {
         guard account != self.account else { return }
         self.account = account
     }
 
-    /// Loads the page the model asked for, once: a link chosen for this window while it is
-    /// open. Back returns to where the window was.
+    /// A link chosen for this window while it is open. Back returns to where the window was.
     func load(_ load: PageLoad) {
         guard load.serial != loaded, let url = URL(string: load.url) else { return }
         loaded = load.serial
         page.load(url)
     }
 
-    /// Stops everything, for good: the window has closed. Downloads carry on.
     func close() {
         popup?.close()
         page.close()
     }
 
-    /// The account's store, which every page of this window keeps its data in.
     var store: WKWebsiteDataStore {
         page.webView.configuration.websiteDataStore
     }
 
-    /// Starts the window again with a page of its own at the site's home, as a window that
-    /// has never been signed in, once its data has been removed.
     func startOver() {
         page = Page(role: .window, configuration: configuration())
         delegate.attach(to: self, page: page)
@@ -87,7 +70,6 @@ final class WebSession {
 
     // MARK: - What the page's delegate hands over
 
-    /// The navigation `action` asks for of `page`, as the policy sees it.
     func request(for action: WKNavigationAction, of page: Page) -> NavigationRequest {
         let target = NavigationTarget(frameIsMain: action.targetFrame?.isMainFrame)
         let frame = Self.askingFrame(of: action)
@@ -109,7 +91,6 @@ final class WebSession {
             asker: asker)
     }
 
-    /// Which page `frame` is, as the policy tells pages apart.
     func asker(_ frame: WKFrameInfo?) -> Asker {
         guard let frame else { return .other }
         let origin = frame.securityOrigin
@@ -127,23 +108,22 @@ final class WebSession {
         action.value(forKey: #keyPath(WKNavigationAction.sourceFrame)) as? WKFrameInfo
     }
 
-    /// Says `kind` in the bar above the page.
     func say(_ kind: WindowNoteKind) {
         note = WindowNote(kind, for: account)
     }
 
-    /// Hands `url` to macOS, then says `note` when the policy gave one: a web page the site
-    /// sent to the browser without a click is usually a sign-in to connect something, which
-    /// the browser connects to whichever account of the site it is signed in to.
+    /// A web page the site sent to the browser without a click is usually a sign-in to connect
+    /// something, which the browser connects to whichever account of the site it is signed in
+    /// to: hence the note.
     func handOver(_ url: String, note: WindowNoteKind?) {
         guard let url = URL(string: url) else { return }
         openElsewhere(url)
         if let note { say(note) }
     }
 
-    /// A sign-in window for a page of this one, made from `configuration`, which WebKit hands
-    /// over as a copy of the opener's: the window shares the account's store, and the page in
-    /// it keeps `window.opener`.
+    /// The sign-in window's page must be made from the `configuration` WebKit hands over, a
+    /// copy of the opener's: that is what shares the account's store and keeps
+    /// `window.opener`.
     func openPopup(
         configuration: WKWebViewConfiguration, features: WKWindowFeatures,
         over parent: NSWindow?
@@ -162,12 +142,10 @@ final class WebSession {
         return page.webView
     }
 
-    /// The sign-in window's page asked to close, as a sign-in does once it is done.
     func closePopup() {
         popup?.close()
     }
 
-    /// Hands a download a page started to the downloads, asking first when `ask` says to.
     func download(_ download: WKDownload, ask: Bool) {
         downloads.start(download, for: account, asking: ask)
     }

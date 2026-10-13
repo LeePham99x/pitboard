@@ -8,7 +8,7 @@ struct SettingsView: View {
     let presence: AppPresence
     let updates: any Updates
 
-    // `settingsTab` keeps the pane last shown by these names, so none may change.
+    // `DefaultsKey.settingsTab` keeps the pane last shown by these names, so none may change.
     enum Tab: String, CaseIterable {
         case general
         case limits
@@ -21,7 +21,7 @@ struct SettingsView: View {
     // are left between the toolbar and the Dock.
     static let tallestPane: CGFloat = 560
 
-    @AppStorage("settingsTab") private var tab = Tab.general
+    @AppStorage(DefaultsKey.settingsTab) private var tab = Tab.general
 
     var body: some View {
         TabView(selection: $tab) {

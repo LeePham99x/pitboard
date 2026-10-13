@@ -2,12 +2,7 @@ import AppKit
 import PitboardKit
 import SwiftUI
 
-/// What only an app delegate can do for Pitboard: start the model once the app has
-/// launched and stop it as the app quits, tell it when the Mac wakes and when somebody opens
-/// a menu, the Dock icon's menu, a click on the Dock icon with no window open, and asking
-/// before quitting stops a download.
-///
-/// It owns the app's models, since AppKit asks it these at any time and it has to answer
+/// Owns the app's models, since AppKit asks it things at any time and it has to answer
 /// from the same models the scenes show. Links from the Share extension are not its: the
 /// account picker's scene receives them.
 @MainActor
@@ -16,10 +11,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     let windows: AccountWindows
     let openAtLogin: OpenAtLogin
     let commandLineLink: CommandLineLink
-    /// Which of the model's requests for the main window the menu bar item and the window
-    /// have answered.
     let windowRequests = WindowRequests()
-    /// Where the app keeps its view preferences, which views read through `@AppStorage`.
     let defaults: UserDefaults
     private let quitting: @MainActor () -> Void
     private var watching: [NSObjectProtocol] = []
@@ -36,19 +28,18 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         super.init()
     }
 
-    /// Starts what the model runs by itself, and tells it what only the app hears of: the Mac
-    /// waking, after which numbers read before it slept say nothing about now, and a menu of
-    /// this app opening. The menu bar item's menu is the glance the whole app exists for, and
-    /// SwiftUI says nothing when it opens; AppKit says it of every menu, so a top-level one is
-    /// taken to be it.
     public func applicationDidFinishLaunching(_ notification: Notification) {
         let model = model
         watching = [
+            // Numbers read before the Mac slept say nothing about now.
             NSWorkspace.shared.notificationCenter.addObserver(
                 forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
             ) { _ in
                 MainActor.assumeIsolated { model.send(.woke) }
             },
+            // The menu bar item's menu is the glance the whole app exists for, and SwiftUI
+            // says nothing when it opens. AppKit says it of every menu, so a top-level one is
+            // taken to be it.
             NotificationCenter.default.addObserver(
                 forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main
             ) { note in
@@ -61,14 +52,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         model.send(.start)
     }
 
-    /// Stops the model, a sign-in under way with it, before the app goes.
     public func applicationWillTerminate(_ notification: Notification) {
         model.shutdown()
         quitting()
     }
 
-    /// The Dock icon's menu, while Pitboard has one: each account's window, as the File menu
-    /// offers them, and the Pitboard window. macOS lists the windows open above it.
+    /// macOS lists the windows open above this menu.
     public func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
         let menu = NSMenu()
         for entry in windows.menus {
@@ -111,9 +100,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         model.send(.showWindow(pane: nil))
     }
 
-    /// Opening Pitboard again from Finder, Spotlight or Launchpad with no window open shows
-    /// the Pitboard window. A Dock click with every window minimised brings one back instead,
-    /// as AppKit does by itself.
+    /// A Dock click with every window minimised brings one back, as AppKit does by itself.
     public func applicationShouldHandleReopen(
         _ sender: NSApplication, hasVisibleWindows flag: Bool
     ) -> Bool {
