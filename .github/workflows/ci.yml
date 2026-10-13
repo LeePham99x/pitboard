@@ -8,6 +8,12 @@ on:
 permissions:
   contents: read
 
+# A push to a pull request cancels the run it replaces. A push to main is a group of its own,
+# so every commit on main keeps its run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
@@ -15,6 +21,7 @@ env:
 jobs:
   fmt:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -24,9 +31,11 @@ jobs:
 
   clippy:
     strategy:
+      fail-fast: false
       matrix:
         os: [macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -39,9 +48,11 @@ jobs:
 
   test:
     strategy:
+      fail-fast: false
       matrix:
         os: [macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -67,6 +78,7 @@ jobs:
           - os: macos-latest
             shells: sh dash bash zsh
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -101,7 +113,7 @@ jobs:
             triple: aarch64-pc-windows-msvc
             machine: ARM64
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
+    timeout-minutes: 30
     env:
       # RUSTFLAGS replaces every target's own rustflags, so the static C runtime a Windows
       # release is built with is named here. The cfg opens the build to Windows before Windows
@@ -299,7 +311,7 @@ jobs:
   # a cross-check from Linux.
   windows-msrv:
     runs-on: windows-2025
-    timeout-minutes: 60
+    timeout-minutes: 15
     env:
       RUSTFLAGS: -D warnings -C target-feature=+crt-static --cfg pitboard_unreleased_windows
     defaults:
@@ -386,6 +398,7 @@ jobs:
     # core, compiled and called on every change, so a change C# cannot express, or bindings
     # that no longer match the library, fail here rather than in the app.
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       DOTNET_CLI_TELEMETRY_OPTOUT: 1
       DOTNET_NOLOGO: 1
@@ -440,6 +453,7 @@ jobs:
 
   msrv:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -457,6 +471,7 @@ jobs:
     # What pitboard-core's last version on crates.io promises. A change that breaks it needs
     # the version in Cargo.toml raised, as RELEASING.md says, and fails here until it is.
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -467,6 +482,7 @@ jobs:
 
   deny:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -479,6 +495,7 @@ jobs:
   # the pull request that changes it rather than the month after.
   rehearsal:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -488,3 +505,28 @@ jobs:
             echo "the rehearsal asks for a repository secret, so it can be given one" >&2
             exit 1
           fi
+
+  # The one check a merge on main needs. It fails when any job above failed or was cancelled,
+  # and runs even then, since a required check that was skipped counts as passed. A job added
+  # above goes in its needs.
+  all-green:
+    if: always()
+    needs:
+      - fmt
+      - clippy
+      - test
+      - install-script
+      - windows
+      - windows-msrv
+      - apple
+      - csharp
+      - msrv
+      - semver
+      - deny
+      - rehearsal
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: re-actors/alls-green@b5b5b37504aa4183270bd3d855c52a67f212be35 # v1.3.0
+        with:
+          jobs: ${{ toJSON(needs) }}
