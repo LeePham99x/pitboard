@@ -35,16 +35,19 @@ pub(crate) fn is_the_accounts_own_home(_path: &std::path::Path) -> bool {
 
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn lies_in_the_accounts_own(path: &std::path::Path, below: &str) -> bool {
-    let Some(own) =
-        known_folder(&windows_sys::Win32::UI::Shell::FOLDERID_Profile).map(|home| home.join(below))
-    else {
-        return false;
-    };
+    known_folder(&windows_sys::Win32::UI::Shell::FOLDERID_Profile)
+        .is_some_and(|home| lies_in(path, &home.join(below)))
+}
+
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn lies_in(path: &std::path::Path, place: &std::path::Path) -> bool {
+    // `absolute` removes a `..` as Windows does, before any link is followed.
+    let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
     let resolved = |p: &std::path::Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.into());
     let near = |a: &std::path::Path, b: &std::path::Path| {
         crate::host::same_path_in_any_case(a, b) || a.starts_with(b) || b.starts_with(a)
     };
-    near(path, &own) || near(&resolved(path), &resolved(&own))
+    near(&path, place) || near(&resolved(&path), &resolved(place))
 }
 
 #[cfg(feature = "test-support")]

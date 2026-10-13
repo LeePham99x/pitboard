@@ -77,9 +77,13 @@ jobs:
           sudo apt-get install -y musl-tools
           echo "CC_$(echo '${{ matrix.target }}' | tr '-' '_')=musl-gcc" >> "$GITHUB_ENV"
 
-      # The SDK's SQLite is named, so pkg-config never picks Homebrew's, which a Mac may lack.
+      # The SDK's SQLite, not Homebrew's, which a Mac may lack. libsqlite3-sys asks pkg-config
+      # even where SQLITE3_LIB_DIR is set, unless SQLITE3_NO_PKG_CONFIG is set too. The otool
+      # check below stops a build that links another all the same.
       - if: runner.os == 'macOS'
-        run: echo "SQLITE3_LIB_DIR=$(xcrun --show-sdk-path)/usr/lib" >> "$GITHUB_ENV"
+        run: |
+          echo "SQLITE3_LIB_DIR=$(xcrun --show-sdk-path)/usr/lib" >> "$GITHUB_ENV"
+          echo "SQLITE3_NO_PKG_CONFIG=1" >> "$GITHUB_ENV"
       - run: cargo build --release --locked -p pitboard --target ${{ matrix.target }}
       - if: runner.os == 'macOS'
         run: |

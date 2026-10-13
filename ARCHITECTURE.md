@@ -574,8 +574,8 @@ pages load, as a browser would.
     for both Mac architectures; `--fixture` builds the core with its fixtures.
     `scripts/build-app.sh` generates the project and builds `Pitboard.app` with
     `xcodebuild`, with the command line inside at `Contents/Helpers/pitboard`. It never
-    passes `--fixture`, and fails where the core's library or the app holds a fixture
-    world's text.
+    passes `--fixture`, and fails where the core's library, the app or the command line
+    inside it holds a fixture world's text or the variable only a build for tests reads.
 - `packaging/`: the templates a release fills and publishes, and the tap's other files.
   The casks `pitboard.rb` for the command line and `pitboard-app.rb` for the app go into the
   tap `datlechin/homebrew-tap`, with `tap_migrations.json` and the tap's README.

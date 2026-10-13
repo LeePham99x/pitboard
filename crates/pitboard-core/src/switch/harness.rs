@@ -700,7 +700,7 @@ impl Machine {
     pub(crate) fn claude(&self) -> crate::desktop_testing::FakeClaude {
         crate::desktop_testing::FakeClaude::on(
             Arc::clone(&self.mem),
-            &self.root.join("claude"),
+            &self.ctx,
             crate::desktop_testing::JarAs::StandIn,
         )
     }

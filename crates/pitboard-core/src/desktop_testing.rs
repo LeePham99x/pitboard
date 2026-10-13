@@ -57,7 +57,8 @@ const EXPIRES_UTC: i64 = (1_762_500_000 + 11_644_473_600) * 1_000_000;
 pub const EMPTIED: &str = "\"0123456789abcdefghijklmnopqr\"";
 
 pub struct FakeClaude {
-    scratch: PathBuf,
+    data: PathBuf,
+    app: PathBuf,
     host: Arc<MemoryHost>,
     jar: JarAs,
     mind: std::sync::Mutex<Mind>,
@@ -86,10 +87,13 @@ pub const STORES: [(&str, &str); 4] = [
 ];
 
 impl FakeClaude {
-    // `scratch` is the folder `Context::with_scratch_claude` was given.
-    pub fn on(host: Arc<MemoryHost>, scratch: &Path, jar: JarAs) -> FakeClaude {
+    pub fn on(host: Arc<MemoryHost>, ctx: &Context, jar: JarAs) -> FakeClaude {
+        let scratch = ctx
+            .scratch_claude()
+            .expect("a context naming a scratch Claude");
         FakeClaude {
-            scratch: scratch.to_path_buf(),
+            data: scratch.data.clone(),
+            app: scratch.app.clone(),
             host,
             jar,
             mind: std::sync::Mutex::default(),
@@ -103,11 +107,11 @@ impl FakeClaude {
     }
 
     pub fn data(&self) -> PathBuf {
-        self.scratch.join("data")
+        self.data.clone()
     }
 
     pub fn program(&self) -> PathBuf {
-        self.scratch.join("Claude.app/Contents/MacOS/Claude")
+        self.app.join("Contents/MacOS/Claude")
     }
 
     // Listed, its own program and a helper it started. It makes the stores that are missing
@@ -119,8 +123,8 @@ impl FakeClaude {
     }
 
     fn lists(&self) {
-        let helper = self.scratch.join(
-            "Claude.app/Contents/Frameworks/Claude Helper (Renderer).app/Contents/MacOS/\
+        let helper = self.app.join(
+            "Contents/Frameworks/Claude Helper (Renderer).app/Contents/MacOS/\
              Claude Helper (Renderer)",
         );
         let (program, helper) = (self.program(), helper);
@@ -315,6 +319,7 @@ fn quit(data: &Path, jar_as: JarAs, mind: &Mind) {
 
 // What Claude writes over whatever `folder` holds as it quits signed in to `who`.
 pub fn sign_in_on_disk(folder: &Path, who: &Person, jar: JarAs) {
+    crate::context::refuse_a_real_claude(folder);
     opened(folder);
     quit(
         folder,
@@ -398,6 +403,7 @@ fn cookies(who: &Person) -> Vec<Cookie> {
 }
 
 pub fn plant(folder: &Path, who: &Person, jar: JarAs) {
+    crate::context::refuse_a_real_claude(folder);
     std::fs::create_dir_all(folder).expect("a scratch data folder");
     write_jar(&folder.join("Cookies"), jar, &cookies(who));
     std::fs::write(folder.join("Cookies-journal"), b"").expect("a journal");
@@ -449,6 +455,7 @@ pub fn leave_a_move_waiting(ctx: &Context, host: &MemoryHost, account: &Key) {
 }
 
 pub fn write_jar(path: &Path, jar: JarAs, cookies: &[Cookie]) {
+    crate::context::refuse_a_real_claude(path);
     match jar {
         JarAs::Sqlite => crate::host::write_jar(path, cookies).expect("a jar"),
         JarAs::StandIn => write_stand_in_jar(path, 24, cookies),
@@ -456,6 +463,7 @@ pub fn write_jar(path: &Path, jar: JarAs, cookies: &[Cookie]) {
 }
 
 pub fn write_stand_in_jar(path: &Path, compatible: i64, cookies: &[Cookie]) {
+    crate::context::refuse_a_real_claude(path);
     let jar = StandInJar {
         version: compatible,
         compatible,
@@ -471,4 +479,45 @@ pub fn write_stand_in_jar(path: &Path, compatible: i64, cookies: &[Cookie]) {
             .collect(),
     };
     std::fs::write(path, serde_json::to_vec(&jar).expect("JSON")).expect("a stand-in jar");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Under a fake home, so a write the guard lets through lands in a scratch.
+    #[test]
+    fn nothing_here_writes_inside_the_accounts_own_application_support() {
+        let home =
+            std::env::temp_dir().join(format!("pitboard-fake-claude-home-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        let _guarding = crate::context::testing::also_guarding(&home);
+        let data = home.join("Library/Application Support/Claude");
+        let jar = data.join("Cookies");
+        // By the guard, not by a write that failed: SQLite is macOS's alone.
+        let refused = |write: &dyn Fn()| {
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(write))
+                .err()
+                .and_then(|panicked| panicked.downcast::<String>().ok())
+                .is_some_and(|said| said.contains("give it a folder of its own"))
+        };
+        let planted = refused(&|| plant(&data, &WORK, JarAs::StandIn));
+        let signed_in = refused(&|| sign_in_on_disk(&data, &WORK, JarAs::StandIn));
+        let sqlite = refused(&|| write_jar(&jar, JarAs::Sqlite, &[]));
+        let stand_in = refused(&|| write_jar(&jar, JarAs::StandIn, &[]));
+        let bare = refused(&|| write_stand_in_jar(&jar, 24, &[]));
+        let climbed = home.join("never-made/../Library/Application Support/Claude");
+        let planted_through = refused(&|| plant(&climbed, &WORK, JarAs::StandIn));
+        let signed_in_through = refused(&|| sign_in_on_disk(&climbed, &WORK, JarAs::StandIn));
+        let written = home.exists();
+        let _ = std::fs::remove_dir_all(&home);
+        assert!(planted, "plant");
+        assert!(signed_in, "sign_in_on_disk");
+        assert!(sqlite, "write_jar, SQLite");
+        assert!(stand_in, "write_jar, the stand-in");
+        assert!(bare, "write_stand_in_jar");
+        assert!(planted_through, "plant, through `..`");
+        assert!(signed_in_through, "sign_in_on_disk, through `..`");
+        assert!(!written, "nothing was written");
+    }
 }

@@ -1409,11 +1409,7 @@ impl World {
 
     // The Claude this machine's core reads, in its scratch folder.
     pub(super) fn claude(&self) -> FakeClaude {
-        FakeClaude::on(
-            Arc::clone(&self.host),
-            &self.root.join("claude"),
-            JarAs::StandIn,
-        )
+        FakeClaude::on(Arc::clone(&self.host), &self.ctx, JarAs::StandIn)
     }
 
     // home enrolled, then work added by a sign-in inside Claude, which parks home

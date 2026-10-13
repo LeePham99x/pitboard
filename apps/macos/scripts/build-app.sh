@@ -31,8 +31,9 @@ build=$((${version%%.*} * 10000 + ${rest%%.*} * 100 + ${rest#*.}))
 ./apps/macos/scripts/build-xcframework.sh
 
 # A fixture world's text, which only a core built with the `fixture` feature holds: a word
-# of its stand-in pages and an account of its worlds. Looked for in the core's library here,
-# and in the app once it is built, which links that library.
+# of its stand-in pages and an account of its worlds; and the variable only a build for tests
+# reads. Looked for in the core's library here, in the app once it is built, which links that
+# library, and in the command line the app carries.
 holds_a_fixture() {
     LC_ALL=C grep -a -q -e 'A Pitboard fixture page' -e 'dana@work.example' \
         -e 'PITBOARD_TEST_CLAUDE_DESKTOP' "$1"
@@ -105,9 +106,12 @@ done
 
 links_the_systems_sqlite "$app/Contents/MacOS/Pitboard" "the app"
 
-# The SDK's SQLite is named, so pkg-config never picks another.
+# The SDK's SQLite. libsqlite3-sys asks pkg-config even where SQLITE3_LIB_DIR is set, and
+# takes another SQLite it knows, unless SQLITE3_NO_PKG_CONFIG is set too.
+# links_the_systems_sqlite stops a build that links another all the same.
 SQLITE3_LIB_DIR="$(xcrun --show-sdk-path)/usr/lib"
-export SQLITE3_LIB_DIR
+SQLITE3_NO_PKG_CONFIG=1
+export SQLITE3_LIB_DIR SQLITE3_NO_PKG_CONFIG
 # The command line comes inside the app, so one update moves both, and the renewal
 # schedule has a Pitboard to run: the app has no renewal of its own.
 for target in aarch64-apple-darwin x86_64-apple-darwin; do
@@ -117,6 +121,10 @@ cli=apps/macos/build/cli-universal
 lipo -create target/aarch64-apple-darwin/release/pitboard \
     target/x86_64-apple-darwin/release/pitboard -output "$cli"
 links_the_systems_sqlite "$cli" "the pitboard in the app"
+if holds_a_fixture "$cli"; then
+    echo "the pitboard in the app is a build for tests" >&2
+    exit 1
+fi
 # Helpers, which is where a bundle keeps a tool that is not its main program. In MacOS it
 # would be the same file as Pitboard on a case-insensitive volume, and overwrite it.
 mkdir -p "$app/Contents/Helpers"

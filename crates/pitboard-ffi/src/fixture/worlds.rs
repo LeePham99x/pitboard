@@ -315,11 +315,7 @@ impl Machine {
                 "the fixture's machine reaches this one's keychain or the network".into(),
             ));
         }
-        let claude = Arc::new(FakeClaude::on(
-            Arc::clone(&host),
-            &root.join("claude"),
-            JarAs::StandIn,
-        ));
+        let claude = Arc::new(FakeClaude::on(Arc::clone(&host), &base, JarAs::StandIn));
         Ok(Machine {
             folder,
             host,

@@ -178,6 +178,68 @@ pub struct ScratchClaude {
     pub app: PathBuf,
 }
 
+// Through every link, against the home the system names whatever the environment says.
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn refuse_a_real_claude(path: &std::path::Path) {
+    use crate::host::user;
+    assert!(
+        !path
+            .components()
+            .any(|part| part == std::path::Component::ParentDir),
+        "a test named {} for Claude through `..`, which may lead anywhere once a folder is made: \
+         give it a folder of its own",
+        path.display()
+    );
+    #[cfg(test)]
+    let fake = testing::guarded_home();
+    #[cfg(not(test))]
+    let fake: Option<PathBuf> = None;
+    let real = ["Library/Application Support", "Applications/Claude.app"]
+        .into_iter()
+        .any(|below| {
+            user::lies_in_the_accounts_own(path, below)
+                || fake
+                    .as_ref()
+                    .is_some_and(|home| user::lies_in(path, &home.join(below)))
+        })
+        || user::lies_in(path, std::path::Path::new("/Applications/Claude.app"));
+    assert!(
+        !real,
+        "a test named {} for Claude, which is, holds or lies in this account's own \
+         Application Support or a real Claude.app: give it a folder of its own",
+        path.display()
+    );
+}
+
+#[cfg(test)]
+pub(crate) mod testing {
+    use std::cell::RefCell;
+    use std::path::{Path, PathBuf};
+
+    thread_local! {
+        static GUARDED: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
+    }
+
+    // While what this returns is kept, the guards on this thread's test refuse `home`'s places
+    // as well as the account's own, so a test of them need name no real place.
+    pub(crate) fn also_guarding(home: &Path) -> AlsoGuarding {
+        GUARDED.with(|guarded| *guarded.borrow_mut() = Some(home.to_path_buf()));
+        AlsoGuarding(())
+    }
+
+    pub(crate) struct AlsoGuarding(());
+
+    impl Drop for AlsoGuarding {
+        fn drop(&mut self) {
+            GUARDED.with(|guarded| guarded.borrow_mut().take());
+        }
+    }
+
+    pub(super) fn guarded_home() -> Option<PathBuf> {
+        GUARDED.with(|guarded| guarded.borrow().clone())
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Context {
     pub(crate) home: PathBuf,
@@ -527,19 +589,23 @@ impl Context {
         }
     }
 
-    // Refuses a folder in this account's own Application Support, without listing anything.
+    // Refuses before anything there is listed or opened.
     #[cfg(any(test, feature = "test-support"))]
     #[doc(hidden)]
     pub fn with_scratch_claude(mut self, folder: PathBuf) -> Context {
         assert!(
-            !crate::host::user::lies_in_the_accounts_own(&folder, "Library/Application Support"),
-            "a test named a Claude data folder inside this account's own Application Support: \
-             give it a folder of its own"
+            folder.is_absolute(),
+            "a test named its Claude folder {} relative to wherever it runs: name it in full",
+            folder.display()
         );
-        self.scratch_claude = Some(ScratchClaude {
+        let scratch = ScratchClaude {
             data: folder.join("data"),
             app: folder.join("Claude.app"),
-        });
+        };
+        for named in [&folder, &scratch.data, &scratch.app] {
+            refuse_a_real_claude(named);
+        }
+        self.scratch_claude = Some(scratch);
         self
     }
 
@@ -758,22 +824,18 @@ mod tests {
         assert!(variables().any(|name| name == "PITBOARD_TEST_CLAUDE_DESKTOP"));
         assert!(!READ.contains(&"PITBOARD_TEST_CLAUDE_DESKTOP"));
         assert!(Context::for_unit_test().scratch_claude().is_none());
+        let folder = std::env::temp_dir().join("pitboard-scratch-claude");
+        let named = folder.to_string_lossy().into_owned();
         let env: Environment = [
             ("HOME", "/home/x"),
-            (
-                "PITBOARD_TEST_CLAUDE_DESKTOP",
-                "/tmp/pitboard-scratch-claude",
-            ),
+            ("PITBOARD_TEST_CLAUDE_DESKTOP", named.as_str()),
         ]
         .into_iter()
         .collect();
         let read = Context::for_command_line(&env);
         let scratch = read.scratch_claude().expect("named");
-        assert_eq!(scratch.data, Path::new("/tmp/pitboard-scratch-claude/data"));
-        assert_eq!(
-            scratch.app,
-            Path::new("/tmp/pitboard-scratch-claude/Claude.app")
-        );
+        assert_eq!(scratch.data, folder.join("data"));
+        assert_eq!(scratch.app, folder.join("Claude.app"));
     }
 
     // It panics before anything there is listed or opened.
@@ -807,6 +869,141 @@ mod tests {
         assert!(!named(
             std::env::temp_dir().join("pitboard-scratch-elsewhere")
         ));
+        let _guarding = testing::also_guarding(&std::env::temp_dir().join("pitboard-fake-home"));
+        assert!(
+            named(support.join("pitboard-test-never-made")),
+            "while a test guards a fake home too"
+        );
+    }
+
+    // `..` past a folder not made yet is resolved only once something makes that folder.
+    #[test]
+    fn a_scratch_named_through_a_folder_not_made_yet_panics() {
+        let home =
+            std::env::temp_dir().join(format!("pitboard-scratch-climb-{}", std::process::id()));
+        let _guarding = testing::also_guarding(&home);
+        let climbed = std::panic::catch_unwind(|| {
+            Context::new("/nowhere".into())
+                .with_scratch_claude(home.join("never-made/../Library/Application Support/x"))
+        });
+        assert!(climbed.is_err());
+    }
+
+    // As a helper given the name would write it: from the working directory.
+    #[test]
+    fn a_relative_name_lies_where_the_working_directory_puts_it() {
+        let here = std::env::current_dir().expect("a working directory");
+        let name = Path::new("pitboard-never-made");
+        assert!(crate::host::user::lies_in(name, &here));
+        assert!(!crate::host::user::lies_in(name, &here.join("elsewhere")));
+    }
+
+    // A relative name lands wherever the test runs.
+    #[test]
+    fn a_relative_scratch_panics() {
+        let named = std::panic::catch_unwind(|| {
+            Context::new("/nowhere".into()).with_scratch_claude("pitboard-scratch".into())
+        });
+        assert!(named.is_err());
+    }
+
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Claude Desktop is macOS only: Windows makes no link"
+    )]
+    fn a_scratch_whose_data_or_app_links_to_a_real_place_panics() {
+        let root =
+            std::env::temp_dir().join(format!("pitboard-scratch-links-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let home = root.join("home");
+        let support = home.join("Library/Application Support/Claude");
+        let app = home.join("Applications/Claude.app");
+        let other = root.join("other");
+        for made in [&support, &app, &other] {
+            std::fs::create_dir_all(made).expect("a folder to link to");
+        }
+        let _guarding = testing::also_guarding(&home);
+        let linked = |scratch: &str, name: &str, to: &Path| {
+            let scratch = root.join(scratch);
+            std::fs::create_dir_all(&scratch).expect("a scratch");
+            crate::host::fs::testing::link_dir(to, &scratch.join(name)).expect("a link");
+            std::panic::catch_unwind(|| {
+                Context::new("/nowhere".into()).with_scratch_claude(scratch)
+            })
+            .is_err()
+        };
+        let data = linked("one", "data", &support);
+        let claude = linked("two", "Claude.app", &app);
+        let elsewhere = linked("three", "data", &other);
+        std::fs::remove_dir_all(&root).expect("the scratch removed");
+        assert!(data, "data linked into Application Support");
+        assert!(claude, "Claude.app linked to ~/Applications/Claude.app");
+        assert!(!elsewhere, "data linked to a folder of the test's own");
+    }
+
+    #[test]
+    fn a_scratch_of_an_applications_folder_panics() {
+        let home =
+            std::env::temp_dir().join(format!("pitboard-scratch-apps-{}", std::process::id()));
+        let _guarding = testing::also_guarding(&home);
+        let named = |folder: PathBuf| {
+            std::panic::catch_unwind(move || {
+                Context::new("/nowhere".into()).with_scratch_claude(folder)
+            })
+            .is_err()
+        };
+        assert!(named("/Applications".into()));
+        assert!(named(home.join("Applications")));
+        assert!(!named(home.join("Applications/elsewhere")));
+    }
+
+    // /System/Volumes/Data/Users is /Users, and `canonicalize` keeps either name as it is.
+    #[test]
+    #[cfg_attr(
+        not(target_os = "macos"),
+        ignore = "a firmlink to the Data volume is macOS's own"
+    )]
+    fn a_scratch_named_through_the_data_volume_panics() {
+        let root =
+            std::env::temp_dir().join(format!("pitboard-scratch-data-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let support = root.join("home/Library/Application Support/Claude");
+        let scratch = root.join("scratch");
+        for made in [&support, &scratch] {
+            std::fs::create_dir_all(made).expect("a folder of the test's own");
+        }
+        let through = |place: &Path| {
+            let real = std::fs::canonicalize(place).expect("a folder of the test's own");
+            Path::new("/System/Volumes/Data").join(real.strip_prefix("/").expect("from the root"))
+        };
+        crate::host::fs::testing::link_dir(&through(&support), &scratch.join("data"))
+            .expect("a link");
+        let _guarding = testing::also_guarding(&root.join("home"));
+        let named = |folder: PathBuf| {
+            std::panic::catch_unwind(move || {
+                Context::new("/nowhere".into()).with_scratch_claude(folder)
+            })
+            .is_err()
+        };
+        let linked = named(scratch);
+        let inside = named(through(&support).join("pitboard-test"));
+        let own = named(through(&root).join("own"));
+        let applications = named("/System/Volumes/Data/Applications".into());
+        std::fs::remove_dir_all(&root).expect("the scratch removed");
+        assert!(
+            linked,
+            "data linked into Application Support through the Data volume"
+        );
+        assert!(
+            inside,
+            "a scratch in Application Support named through the Data volume"
+        );
+        assert!(
+            !own,
+            "a folder of the test's own named through the Data volume"
+        );
+        assert!(applications, "/Applications named through the Data volume");
     }
 
     /// An empty `CLAUDE_CONFIG_DIR` is kept, by the builder as by the environment, since
