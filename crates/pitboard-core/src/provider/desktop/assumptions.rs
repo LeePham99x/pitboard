@@ -27,10 +27,14 @@ pub const ASSUMPTIONS: &[Assumption] = &[
                inside its bundle.",
         read_from: "The contributor's listing of the bundle and `ps -x -o pid=,ppid=,comm=` with \
                     Claude open, 3 October 2026; the bundle id read again from 2.7032.0's \
-                    `Info.plist`, 11 October 2026",
+                    `Info.plist`, 11 October 2026, and with `CFBundleExecutable` `Claude` from \
+                    `/Applications/Claude.app/Contents/Info.plist` of 2.7032.0, 13 October 2026",
         verified_against: VERIFIED_AGAINST,
-        depends: "`desktop::running` counts every program inside a `Claude.app`; \
-                  `desktop::HOLDER` names the bundle id the app asks to quit",
+        depends: "`desktop::running` counts every program inside the bundle with this id, \
+                  whatever the bundle is named; where a bundle's id does not read, every \
+                  program inside a `Claude.app`, and the main program and `Claude Helper` \
+                  apps at these paths in any bundle; `desktop::HOLDER` names the bundle id the \
+                  app asks to quit",
         probe: &["com.anthropic.claudefordesktop"],
         absent: &[],
     },
@@ -41,8 +45,8 @@ pub const ASSUMPTIONS: &[Assumption] = &[
         read_from: "The contributor's `ps` sample with Chrome and Claude open, 3 October 2026, \
                     kept as the test fixture of `desktop::running`",
         verified_against: VERIFIED_AGAINST,
-        depends: "`is_the_app` counts `chrome-native-host` only where its parent runs from a \
-                  `Claude.app`",
+        depends: "`is_the_app` counts `chrome-native-host` only where its parent runs from \
+                  inside Claude's bundle",
         probe: &["chrome-native-host"],
         absent: &[],
     },

@@ -415,6 +415,11 @@ impl Host for MemoryHost {
         locked(&self.versions).get(bundle).cloned()
     }
 
+    // Nothing asks: a build for tests counts its scratch Claude by where it runs.
+    fn app_id(&self, _bundle: &Path) -> Option<String> {
+        None
+    }
+
     /// What a test said is running, and nothing on the machine running the tests. `None`
     /// once a test has said the list cannot be read.
     // Not over `listing`: `doctor` asks this on every machine, and it must not count as one.

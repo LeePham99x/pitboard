@@ -69,6 +69,10 @@ impl Host for Linux {
         None
     }
 
+    fn app_id(&self, _bundle: &Path) -> Option<String> {
+        None
+    }
+
     fn scheduler(&self) -> Option<&dyn Scheduler> {
         Some(&self.scheduler)
     }

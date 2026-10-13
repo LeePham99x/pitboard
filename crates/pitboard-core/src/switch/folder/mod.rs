@@ -248,11 +248,13 @@ fn enroll_as(
     // A move that cannot be settled is given up only once this enrolment will go through.
     let (stopped, warnings) = match settle::settle(&ctx, permit, &mut state, app) {
         Ok(settled) => (false, settled),
-        Err(Error::RecoveryUndetermined { .. }) => (true, Vec::new()),
+        Err(Error::RecoveryUndetermined { .. } | Error::RecoveryStopped { .. }) => {
+            (true, Vec::new())
+        }
         Err(other) => return Err(other),
     };
     saying(warnings, |warnings| {
-        let (named, login, aside, taken_as_named) = match look(&ctx, &state, app)? {
+        let (named, login, aside, recorded) = match look(&ctx, &state, app)? {
             Verdict::Nobody { .. } => {
                 return Err(Error::LiveCredentialAbsent {
                     tool,
@@ -263,27 +265,27 @@ fn enroll_as(
                 key: holder,
                 session,
                 ..
-            } => (Named::Enrolled(holder), session.login, None, false),
+            } => (Named::Enrolled(holder), session.login, None, None),
             Verdict::Unsure(Unsure::Unfinished) => return Err(Error::SignInUnfinished { tool }),
-            Verdict::Unsure(Unsure::RecordedUnderAnother { named, .. }) => {
+            Verdict::Unsure(Unsure::RecordedUnderAnother { recorded, named }) => {
                 let login = state
                     .in_use(tool)
                     .map(|record| record.login.clone())
                     .unwrap_or_default();
-                (named, login, None, true)
+                (named, login, None, Some(state.typed(&recorded)))
             }
             Verdict::Unsure(Unsure::AlsoParked {
                 key: holder,
                 session,
-            }) => (Named::Enrolled(holder), session.login, None, false),
+            }) => (Named::Enrolled(holder), session.login, None, None),
             Verdict::Unsure(Unsure::Unseen { named, session }) => {
-                (named, session.login, None, false)
+                (named, session.login, None, None)
             }
             Verdict::Unsure(Unsure::HeldTwice {
                 named,
                 session,
                 also_in,
-            }) => (named, session.login, Some(also_in), false),
+            }) => (named, session.login, Some(also_in), None),
         };
         let owner = match &named {
             Named::Enrolled(holder) => enrolled(&state, holder)?.owner(),
@@ -322,10 +324,11 @@ fn enroll_as(
         ));
         // Said once saved: a save that fails carries only what settling and giving up saved.
         let mut filed = Vec::new();
-        if taken_as_named {
+        if recorded.is_some() {
             filed.push(Warning::TakenAsNamed {
                 tool,
                 label: state.typed(key),
+                recorded,
             });
         }
         let superseded = |state: &State| -> Vec<Key> {
@@ -435,6 +438,7 @@ pub(crate) fn switch(
                     warnings.push(Warning::TakenAsNamed {
                         tool,
                         label: from.clone(),
+                        recorded: None,
                     });
                 }
                 warnings.extend(said);
@@ -587,7 +591,7 @@ pub(crate) fn abandon(
     let _closed = closed(ctx, app)?;
     match settle::settle(ctx, permit, state, app) {
         Ok(settled) => Ok((None, settled)),
-        Err(Error::RecoveryUndetermined { .. }) => {
+        Err(Error::RecoveryUndetermined { .. } | Error::RecoveryStopped { .. }) => {
             settle::give_up(ctx, permit, state, app, false).map(split)
         }
         Err(other) => Err(other),

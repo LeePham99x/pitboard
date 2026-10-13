@@ -145,6 +145,7 @@ pub(crate) fn start(
                     warnings.push(Warning::TakenAsNamed {
                         tool,
                         label: state.typed(&holder),
+                        recorded: None,
                     });
                 }
                 warnings.extend(said);

@@ -819,6 +819,12 @@ pub(crate) fn in_app_refusal(error: &Error) -> Option<String> {
              again: Pitboard settles the move first.",
             bare(label)
         ),
+        Error::RecoveryStopped { label, detail } => format!(
+            "Pitboard stopped while settling an interrupted move of {}’s login ({detail}). \
+             Nothing is lost. Keep {app} closed and try again: Pitboard settles the move first. \
+             If it stops again, choose Give Up… on the interrupted move’s notice.",
+            bare(label)
+        ),
         Error::SwitchLeftSignedOut {
             from: Some(from),
             to,
@@ -936,11 +942,26 @@ pub(crate) fn in_app_warning(warning: &CoreWarning) -> Option<String> {
                 }
             }
         }
-        CoreWarning::TakenAsNamed { label, .. } => format!(
+        CoreWarning::TakenAsNamed {
+            label,
+            recorded: None,
+            ..
+        } => format!(
             "Pitboard hadn’t seen the login {app} held, and took it as {label}’s because {app} \
              names that account. If {app} showed another account, choose Use {label}, check in \
              {app}, quit it, then choose Add Account… and Add the Account {app} Shows.",
             label = bare(label)
+        ),
+        CoreWarning::TakenAsNamed {
+            label,
+            recorded: Some(recorded),
+            ..
+        } => format!(
+            "Pitboard had recorded the login {app} held as {}’s, and filed it as {}’s because \
+             {app} names that account. Open {app} and check which account it shows. If it’s \
+             another, quit {app}, then choose Add Account… and Add the Account {app} Shows.",
+            bare(recorded),
+            bare(label)
         ),
         CoreWarning::LooksSignedOut { label, .. } => format!(
             "{app} looks signed out since Pitboard last read {} in use. Pitboard checks at the \
@@ -2005,6 +2026,10 @@ mod tests {
                 label: typed("work"),
                 detail: "a rename failed".into(),
             },
+            Error::RecoveryStopped {
+                label: typed("work"),
+                detail: "a rename failed".into(),
+            },
             Error::SwitchLeftSignedOut {
                 from: Some(typed("work")),
                 to: typed("home"),
@@ -2113,6 +2138,12 @@ mod tests {
             CoreWarning::TakenAsNamed {
                 tool,
                 label: typed("work"),
+                recorded: None,
+            },
+            CoreWarning::TakenAsNamed {
+                tool,
+                label: typed("home"),
+                recorded: Some(typed("work")),
             },
             CoreWarning::LooksSignedOut {
                 tool,

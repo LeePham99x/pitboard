@@ -249,6 +249,11 @@ pub(super) fn settle(
         to: label.clone(),
         detail,
     };
+    // A row's own step failed: it may have moved or written before it did.
+    let stopped = |detail: String| Error::RecoveryStopped {
+        label: label.clone(),
+        detail,
+    };
     if moving.slot != moves::slot(ctx, app) {
         return Err(Error::RecoveryElsewhere {
             tool,
@@ -285,7 +290,7 @@ pub(super) fn settle(
                 let kept = moves::kept_keys(ctx, &moving.park)?;
                 moves::put_keys(app, permit, &root, &kept)
             };
-            back().map_err(&undetermined)?;
+            back().map_err(&stopped)?;
             fault::point("settle.keys_back");
             midway(ctx, app, Some(label.clone()))?;
             state.discard(&moving.park, ParkKind::Folder);
@@ -314,7 +319,7 @@ pub(super) fn settle(
                 }
                 leave_on(ctx, permit, app, &root, &moving, &moving.items)
             };
-            let gone = on().map_err(&undetermined)?;
+            let gone = on().map_err(&stopped)?;
             said.extend(moves::gone_warnings(tool, &label, gone));
             midway(ctx, app, Some(label.clone()))?;
             said.extend(moves::commit_leave(ctx, permit, state, app, &moving)?.1);
@@ -328,7 +333,7 @@ pub(super) fn settle(
                 .filter(|item| !facts.in_park.contains(item))
                 .cloned()
                 .collect();
-            let gone = leave_on(ctx, permit, app, &root, &moving, &rest).map_err(&undetermined)?;
+            let gone = leave_on(ctx, permit, app, &root, &moving, &rest).map_err(&stopped)?;
             said.extend(moves::gone_warnings(tool, &label, gone));
             midway(ctx, app, Some(label.clone()))?;
             said.extend(moves::commit_leave(ctx, permit, state, app, &moving)?.1);
@@ -356,7 +361,7 @@ pub(super) fn settle(
                 }
                 Ok(())
             };
-            back().map_err(&undetermined)?;
+            back().map_err(&stopped)?;
             midway(ctx, app, Some(label.clone()))?;
             arrive_undone(ctx, state, app, &moving, &mut said);
             Ended::Undone
@@ -377,7 +382,7 @@ pub(super) fn settle(
                 fault::point("settle.keys_cleared");
                 take_back(ctx, permit, app, &root, &moving, true)
             };
-            back().map_err(&undetermined)?;
+            back().map_err(&stopped)?;
             midway(ctx, app, Some(label.clone()))?;
             arrive_undone(ctx, state, app, &moving, &mut said);
             Ended::Undone
@@ -517,6 +522,10 @@ pub(super) fn give_up(
         to: label.clone(),
         detail,
     };
+    let stopped = |detail: String| Error::RecoveryStopped {
+        label: label.clone(),
+        detail,
+    };
     let mut warnings = Vec::new();
     let mut left = Vec::new();
     if !elsewhere {
@@ -542,7 +551,7 @@ pub(super) fn give_up(
                     parks::write_manifest(ctx, permit, &moving.park, &manifest)
                         .map_err(|e| format!("the park's manifest could not be written: {e}"))
                 };
-                listed().map_err(&undetermined)?;
+                listed().map_err(&stopped)?;
             }
             FolderJar::Other if !said => {
                 let folder = parks::at(ctx, &moving.park);
@@ -585,7 +594,7 @@ pub(super) fn give_up(
                         |_| "give_up.item_aside",
                     )
                 };
-                aside_it().map_err(&undetermined)?;
+                aside_it().map_err(&stopped)?;
                 left.clear();
             }
         }
@@ -598,12 +607,11 @@ pub(super) fn give_up(
             facts.park_jar,
             facts.park_login,
         );
-        park.map_err(&undetermined)?;
+        park.map_err(&stopped)?;
         midway(ctx, app, Some(label.clone()))?;
     } else {
         let (park_jar, park_login) = park_alone(ctx, app, &moving);
-        park_given_up(ctx, permit, state, app, &moving, park_jar, park_login)
-            .map_err(&undetermined)?;
+        park_given_up(ctx, permit, state, app, &moving, park_jar, park_login).map_err(&stopped)?;
     }
     let before = state.aside.len();
     warnings.extend(moves::index_asides(ctx, state, app, &moving));

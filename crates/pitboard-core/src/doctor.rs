@@ -352,9 +352,8 @@ fn claude_desktop() -> Option<&'static dyn crate::provider::folder::Folder> {
 fn desktop_facts(ctx: &Context, state: &State) -> Option<DesktopFacts> {
     let tool = ProviderId::Desktop;
     let app = claude_desktop()?;
-    let enrolled = state.accounts.iter().any(|a| a.provider() == tool);
-    let recorded = enrolled || state.in_use(tool).is_some();
-    if !recorded && !state.aside.iter().any(|aside| aside.tool == tool) {
+    let enrolled = crate::status::shown(state, tool);
+    if !enrolled && !state.aside.iter().any(|aside| aside.tool == tool) {
         return None;
     }
     let root = app.root(ctx).map_err(|e| e.to_string());
@@ -388,8 +387,8 @@ fn desktop_facts(ctx: &Context, state: &State) -> Option<DesktopFacts> {
             .collect(),
         build: desktop_build(ctx),
     };
-    // Nothing of Claude is read until one of its accounts is enrolled or recorded in use.
-    if let (true, Ok(root)) = (recorded, &root) {
+    // Nothing of Claude is read until one of its accounts is enrolled.
+    if let (true, Ok(root)) = (enrolled, &root) {
         facts.refused = app.refuses(root);
         facts.present = root.is_dir();
         let settings = app.settings(root);
@@ -2558,18 +2557,12 @@ fn judge_desktop_login(facts: &DesktopFacts, state: &State, now: i64) -> Option<
     let enroll = "Open Claude, check which account it shows, quit it with Command-Q, then run \
                   `pitboard enroll desktop/<label>` under that account's name.";
     let Some(last) = &known.last else {
-        return state
-            .accounts
-            .iter()
-            .any(|a| a.provider() == tool)
-            .then(|| {
-                warn(
-                    "desktop_login",
-                    name,
-                    "Pitboard has not read who is signed in to Claude",
-                    "The next change to a Claude Desktop account reads it, with Claude closed.",
-                )
-            });
+        return Some(warn(
+            "desktop_login",
+            name,
+            "Pitboard has not read who is signed in to Claude",
+            "The next change to a Claude Desktop account reads it, with Claude closed.",
+        ));
     };
     let when = time::moment(last.known_at, now);
     let who = Stored::of(state, tool, last.owner.as_ref());

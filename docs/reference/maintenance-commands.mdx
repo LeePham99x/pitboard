@@ -260,7 +260,7 @@ Codex's checks come after Claude Code's, under the heading `Codex`. They appear 
 | Codex is signed in some way other than a ChatGPT sign-in, such as an API key | `warn` | `ok` |
 | The login in `auth.json` cannot be used | `fail` | `warn` |
 
-Claude Desktop's checks come last, under the heading `Claude Desktop`. They appear when a Claude Desktop account is enrolled, Pitboard has read who is in use in Claude, or a folder is set aside. They read Claude's settings, the names at its data folder's first level and the folders in `parks/`, and open no cookie and list no process.
+Claude Desktop's checks come last, under the heading `Claude Desktop`. They appear when a Claude Desktop account is enrolled or a folder is set aside. They read the folders in `parks/`, and open no cookie and list no process. Once a Claude Desktop account is enrolled, they also read Claude's settings and the names at its data folder's first level.
 
 When Codex's or Claude Desktop's checks appear and Claude Code is absent, `doctor` leaves out `config_file`, `identity`, `in_use`, `slot`, `credential_size`, `credential_store`, `credential`, `fallback_login`, `storage_v5` and `claude_version`. Claude Code is absent when it has no config file, no `claude` program and no stored login, and no Claude Code account is enrolled.
 

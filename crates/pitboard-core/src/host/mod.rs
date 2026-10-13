@@ -429,6 +429,8 @@ pub(crate) trait Host: Send + Sync + std::fmt::Debug {
 
     fn app_version(&self, bundle: &Path) -> Option<String>;
 
+    fn app_id(&self, bundle: &Path) -> Option<String>;
+
     /// The system's own scheduler, which runs daily renewal. `None` where there is none
     /// Pitboard knows how to ask.
     fn scheduler(&self) -> Option<&dyn Scheduler>;

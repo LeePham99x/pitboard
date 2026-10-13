@@ -108,7 +108,7 @@ Claude Desktop keeps a login in Claude's own files: claude.ai's session cookie i
 
 Pitboard renames `Cookies` and the site's storage into a folder of its own and back, and never copies a file. A rename cannot leave a file half written, so each is whole in one of two places: Claude's data folder, or one folder under `~/.pitboard/parks`. `state.json` names both places before the first rename. Pitboard moves the three keys by rewriting `config.json`, and keeps them in that folder while the account is parked.
 
-Pitboard moves them only while Claude is closed. It reads the list of processes before it starts, again before it records the move, and after its last write. Any program inside a `Claude.app`, or inside the data folder, counts as Claude open. [Claude Desktop files](/reference/files#claude-desktop-files) gives the one exception. While it moves them, Pitboard holds a lock on the data folder, so another Pitboard directory changes nothing there.
+Pitboard moves them only while Claude is closed. It reads the list of processes before it starts, again before it records the move, and after its last write. Any program inside Claude, or inside the data folder, counts as Claude open. [Claude Desktop files](/reference/files#claude-desktop-files) says how Pitboard tells Claude, and gives the exceptions. While it moves them, Pitboard holds a lock on the data folder, so another Pitboard directory changes nothing there.
 
 A switch parks one account, which leaves Claude signed out, then puts the other in. Pitboard records each half as done before the next begins. Adding an account parks the account in use and stops there: you sign in inside Claude, and Pitboard enrols that account once Claude quits. Neither signs anything out at claude.ai.
 

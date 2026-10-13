@@ -128,7 +128,17 @@ As measured in Claude 2.19675.0, these items and three keys of `config.json` mov
 
 Everything else stays in the data folder, such as `claude-code-sessions`, `local-agent-mode-sessions`, `Preferences` and the caches. As read in 2.7032.0, the first two keep each account's sessions in a folder named for the account.
 
-During a change, Pitboard holds an advisory lock on the data folder itself, and deletes nothing of Claude's there. It reads Claude's build from `/Applications/Claude.app` for `pitboard doctor`. A program running from inside any `Claude.app`, or from inside the data folder, counts as Claude open. A `chrome-native-host` that Chrome started for Claude's browser extension does not count.
+During a change, Pitboard holds an advisory lock on the data folder itself, and deletes nothing of Claude's there. It reads Claude's build from `/Applications/Claude.app` for `pitboard doctor`.
+
+Pitboard reads the list of processes to tell whether Claude is open:
+
+| Program | Counts as Claude open |
+| --- | --- |
+| Inside an app whose bundle identifier is `com.anthropic.claudefordesktop`, whatever the app is named | Yes |
+| Inside the data folder | Yes |
+| Inside an app named `Claude.app` whose identifier Pitboard cannot read | Yes |
+| `Contents/MacOS/Claude`, or inside `Contents/Frameworks/Claude Helper*.app`, in an app whose identifier Pitboard cannot read | Yes |
+| A `chrome-native-host` that Chrome started for Claude's browser extension | No |
 
 Each folder in `~/.pitboard/parks/` is a parked login, named as [Parked logins](/reference/files#parked-logins) says, or a folder set aside, named `pitboard-aside-<time>`:
 

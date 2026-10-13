@@ -85,6 +85,10 @@ impl Host for MacOs {
         }
     }
 
+    fn app_id(&self, bundle: &Path) -> Option<String> {
+        bundle::identifier(bundle)
+    }
+
     fn scheduler(&self) -> Option<&dyn Scheduler> {
         Some(&self.scheduler)
     }

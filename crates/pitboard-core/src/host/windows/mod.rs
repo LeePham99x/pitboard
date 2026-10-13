@@ -90,6 +90,10 @@ impl Host for Windows {
         None
     }
 
+    fn app_id(&self, _bundle: &Path) -> Option<String> {
+        None
+    }
+
     /// Task Scheduler is written for by W25.
     fn scheduler(&self) -> Option<&dyn Scheduler> {
         None

@@ -832,6 +832,14 @@ pub enum Error {
     )]
     MoveStopped { label: String, detail: String },
 
+    // A settle or a give-up that failed partway: coded `recovery_undetermined`, given up alike.
+    #[error(
+        "Pitboard stopped while settling an interrupted move of `{label}`'s login ({detail}). \
+         Nothing is lost. Keep Claude closed and run this again: Pitboard settles the move \
+         first. If it stops again, `pitboard abandon` keeps every folder and moves on."
+    )]
+    RecoveryStopped { label: String, detail: String },
+
     #[error("{}", left_signed_out(from.as_deref(), to, detail))]
     SwitchLeftSignedOut {
         from: Option<String>,
@@ -959,7 +967,7 @@ impl Error {
             SessionExpired { .. } => "session_expired",
             IdentityUnverifiable { .. } => "identity_unverifiable",
             SignedInAccountChanged => "signed_in_account_changed",
-            RecoveryUndetermined { .. } => "recovery_undetermined",
+            RecoveryUndetermined { .. } | RecoveryStopped { .. } => "recovery_undetermined",
             RecoveryElsewhere { .. } => "recovery_elsewhere",
             ProgramNotFound { tool } => match tool {
                 ProviderId::Claude => "claude_not_found",
@@ -1688,6 +1696,21 @@ mod tests {
             })
             .2
             .ends_with("`desktop/home` is still parked. Run `pitboard use desktop/home` again.")
+        );
+        assert_eq!(
+            said(Error::RecoveryStopped {
+                label: label(),
+                detail: "d".into()
+            }),
+            (
+                "recovery_undetermined",
+                1,
+                "Pitboard stopped while settling an interrupted move of `desktop/work`'s login \
+                 (d). Nothing is lost. Keep Claude closed and run this again: Pitboard settles \
+                 the move first. If it stops again, `pitboard abandon` keeps every folder and \
+                 moves on."
+                    .into()
+            )
         );
         let parks = PathBuf::from("/p/parks");
         for (why, words) in [

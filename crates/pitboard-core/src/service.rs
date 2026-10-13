@@ -183,10 +183,12 @@ pub enum Warning {
         config: Stored,
         in_use: Stored,
     },
-    // A login Pitboard had not seen was filed under the account the app names.
+    // A login filed under the account the app names: one Pitboard had not seen, or one it had
+    // recorded as `recorded`'s.
     TakenAsNamed {
         tool: ProviderId,
         label: String,
+        recorded: Option<String>,
     },
     // A folder kept under `parks`, deleting nothing.
     SetAside {
@@ -551,11 +553,26 @@ impl fmt::Display for Warning {
                     write!(f, " {}", in_use.how_to_name())
                 }
             },
-            Warning::TakenAsNamed { label, .. } => write!(
+            Warning::TakenAsNamed {
+                label,
+                recorded: None,
+                ..
+            } => write!(
                 f,
                 "Pitboard had not seen the login Claude held, and took it as `{label}`'s because \
                  Claude names that account. If Claude showed another account, run `pitboard use \
                  {label}`, check in Claude, quit it, and enrol it under its own name."
+            ),
+            Warning::TakenAsNamed {
+                label,
+                recorded: Some(recorded),
+                ..
+            } => write!(
+                f,
+                "Pitboard had recorded the login Claude held as `{recorded}`'s, and filed it as \
+                 `{label}`'s because Claude names that account. Open Claude and check which \
+                 account it shows. If it is another, quit Claude with Command-Q, then run \
+                 `pitboard enroll desktop/<label>` under that account's name."
             ),
             Warning::SetAside {
                 path, label, why, ..
@@ -931,14 +948,12 @@ impl Pitboard {
     /// read that asks nobody has none of. For every other tool, what Pitboard recorded
     /// stands, so a read that could not ask says what one that asks nobody says.
     fn standing(&self, state: &state::State, found: &[(ProviderId, InUse)]) -> Vec<Warning> {
-        // So a Mac with no Claude Desktop account enrolled or recorded reads nothing of Claude.
-        let shown = |tool: ProviderId| {
-            tool == crate::label::DEFAULT
-                || state.accounts.iter().any(|a| a.provider() == tool)
-                || state.in_use(tool).is_some()
-        };
         let mut warnings = replaced(state);
-        for &tool in ProviderId::ALL.iter().filter(|&&tool| shown(tool)) {
+        // So a Mac with no Claude Desktop account enrolled reads nothing of Claude.
+        for &tool in ProviderId::ALL
+            .iter()
+            .filter(|&&tool| status::shown(state, tool))
+        {
             let (known, signed_out) = match crate::provider::of(tool) {
                 LoginKind::Document(driver) if driver.identifies_by_itself() => continue,
                 LoginKind::Document(_) => {
@@ -1970,6 +1985,49 @@ mod tests {
             "as with no Claude at all"
         );
         assert!(!with_claude.2.contains("desktop_"), "{}", with_claude.2);
+    }
+
+    // Forgetting the one account leaves a record of nobody in use, which opts nothing in.
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+    )]
+    fn forgetting_the_last_claude_desktop_account_stops_every_read_of_claude() {
+        let m = crate::switch::harness::desktop_machine("forgot-last");
+        let claude = m.claude();
+        claude.opens();
+        claude.logs_out();
+        claude.quits();
+        let pitboard = Pitboard::new(m.ctx.clone());
+        pitboard.forget("desktop/work").expect("forgotten");
+        claude.signed_in_as(&crate::switch::harness::STRANGER);
+        let state = state::load(&m.ctx).expect("state");
+        assert!(state.accounts.is_empty());
+        assert!(state.in_use(ProviderId::Desktop).is_some(), "{state:?}");
+
+        let (listings, jars) = (m.mem.listings(), m.mem.jars_asked().len());
+        let said = crate::fault::killing("settings.read", || {
+            let codes = |done: Done<status::Report>| -> Vec<&'static str> {
+                done.warnings.iter().map(Warning::code).collect()
+            };
+            let doctor: Vec<&str> = pitboard
+                .doctor()
+                .checks
+                .iter()
+                .map(|c| c.code)
+                .filter(|code| code.starts_with("desktop_"))
+                .collect();
+            (
+                codes(pitboard.status(true).expect("read")),
+                codes(pitboard.status_offline().expect("read")),
+                doctor,
+            )
+        })
+        .expect("no read opened Claude's settings");
+        assert_eq!(said, (Vec::new(), Vec::new(), Vec::new()));
+        assert_eq!(m.mem.listings(), listings);
+        assert_eq!(m.mem.jars_asked().len(), jars);
     }
 
     #[test]

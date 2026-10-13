@@ -411,10 +411,13 @@ fn tools(state: &State) -> Vec<ProviderId> {
     ProviderId::ALL
         .iter()
         .copied()
-        .filter(|&which| {
-            which == crate::label::DEFAULT || state.accounts.iter().any(|a| a.provider() == which)
-        })
+        .filter(|&which| shown(state, which))
         .collect()
+}
+
+// The one rule: a read's warnings and `doctor` ask it too.
+pub(crate) fn shown(state: &State, which: ProviderId) -> bool {
+    which == crate::label::DEFAULT || state.accounts.iter().any(|a| a.provider() == which)
 }
 
 /// What is known without asking anyone: whose login each tool has stored, as its service last

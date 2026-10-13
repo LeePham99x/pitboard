@@ -89,11 +89,11 @@ pages load, as a browser would.
     `same_path_in_any_case` is how Windows compares paths, for the core and the apps alike.
     On macOS the `Host` trait also answers every process with its parent (`listing`), a
     Chromium cookie jar's rows, read only, through the system's SQLite (`macos/sqlite.rs`),
-    and an app bundle's version (`macos/bundle.rs`). `fs::private_dir` says whether a folder
-    is this user's own and closed to others, and `fs::lock_dir` takes a folder's advisory
-    lock without waiting. `fs::move_new` is the kernel's own rename that never replaces what
-    is there, the one way a Claude Desktop login moves, and `fs::same_volume` says whether
-    two paths can be renamed between.
+    and an app bundle's version and identifier (`macos/bundle.rs`). `fs::private_dir` says
+    whether a folder is this user's own and closed to others, and `fs::lock_dir` takes a
+    folder's advisory lock without waiting. `fs::move_new` is the kernel's own rename that
+    never replaces what is there, the one way a Claude Desktop login moves, and
+    `fs::same_volume` says whether two paths can be renamed between.
   - `release.rs`: whether this build may do anything on its system. A Windows build of a
     0.x release may not, unless it was compiled with `--cfg pitboard_unreleased_windows`,
     which CI's Windows jobs set and no release does; macOS and Linux always may.
@@ -1217,8 +1217,9 @@ pages load, as a browser would.
   that does not read the store takes it from there, and
   `forget` asks as a switch does. For Claude Desktop the record is written only by a change,
   under `state.lock`, with Claude closed. A read opens `config.json` and
-  `config.json.journal` and nothing else of Claude's, lists no process, records nothing, and
-  says the record with the time it was read. Otherwise Claude Code's config is a sign that something
+  `config.json.journal` and nothing else of Claude's, and none of it while no Claude Desktop
+  account is enrolled. It lists no process, records nothing, and says the record with the
+  time it was read. Otherwise Claude Code's config is a sign that something
   signed in, and the words of a warning, never whose a login is: a Claude Code process
   started or signed in on another login can rewrite it with its own account.
   Of Pitboard, only a switch writes it, and `use` of the account already in use where it
@@ -1382,6 +1383,8 @@ pages load, as a browser would.
   It moves the eight items the register names by rename and its three settings keys by
   rewriting `config.json`, holding an advisory lock on the folder meanwhile. It deletes
   nothing of Claude's, `config.json.journal` included, and neither starts nor quits Claude.
+  It tells that Claude runs from the process list, by the identifier in the `Info.plist` of
+  the bundle each program runs from.
 - The code and the release meet at a `v` tag, which `.github/workflows/release.yml` turns
   into a release. [RELEASING.md](RELEASING.md) has the procedure.
 
@@ -2445,8 +2448,8 @@ Not measured. Each row says what Pitboard does where it cannot know.
 | Whether a session cookie's expiry slides, and how long a parked session lives | `session_expires_at` is a note in days, never a refusal |
 | Whether an update, a reinstall or a keychain reset keeps `Claude Safe Storage` | Not checked: it would be a keychain call. A park from another Mac is refused by its manifest |
 | How Claude's own account switcher keeps accounts on disk | Two rows of one session name for one host refuse. The recorded session under another name is doubt |
-| Whether helpers outlive a crashed main program | Every program inside a `Claude.app` counts as Claude open |
-| Whether the updater's helper runs from outside the bundle between a quit and a relaunch | A program inside a `Claude.app` or the data folder counts. One copied elsewhere does not |
+| Whether helpers outlive a crashed main program | Every program inside Claude's bundle counts as Claude open, whatever the bundle is named |
+| Whether the updater's helper runs from outside the bundle between a quit and a relaunch | A program inside Claude's bundle or the data folder counts. So does one inside a `Claude.app` whose identifier does not read, and Claude's main program or a `Claude Helper` inside any bundle whose identifier does not read. One copied elsewhere does not |
 | Whether the Claude Code under `claude-code/`, MCP servers or the Cowork VM outlive the main program | A program inside the data folder counts. The others do not |
 | How long a quit takes, and a quit Claude's own question refuses | The core never waits for a quit. It refuses while Claude is listed |
 | Whether a lock on a leveldb `LOCK` names the app, and whether inodes survive a launch | Neither is used |

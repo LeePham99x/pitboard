@@ -545,9 +545,16 @@ fn enroll_files_what_claude_names_and_sets_an_older_park_aside() {
     assert_eq!(code(enrol(&m, "other")), "already_enrolled");
     assert_eq!(snapshot(&m), before);
     let (_, warnings) = enrol(&m, "home").expect("filed as `home`'s");
+    let taken = warnings
+        .iter()
+        .find(|w| w.code() == "login_taken_as_named")
+        .expect("said");
     assert!(
-        warnings.iter().any(|w| w.code() == "login_taken_as_named"),
-        "{warnings:?}"
+        taken.to_string().starts_with(
+            "Pitboard had recorded the login Claude held as `desktop/work`'s, and filed it as \
+             `desktop/home`'s because Claude names that account."
+        ),
+        "{taken}"
     );
     assert_eq!(in_use(&m).as_deref(), Some("home"));
     let state = state::load(&m.ctx).expect("state");
@@ -564,6 +571,24 @@ fn enroll_files_what_claude_names_and_sets_an_older_park_aside() {
         "`work`, with no park, is marked replaced"
     );
     hold(&m, "row 14");
+
+    // Row 15: the account Claude names is nobody's yet.
+    let m = two_accounts("file-15");
+    names(&m, &STRANGER);
+    let (_, warnings) = enrol(&m, "third").expect("filed as `third`'s");
+    let taken = warnings
+        .iter()
+        .find(|w| w.code() == "login_taken_as_named")
+        .expect("said");
+    assert!(
+        taken.to_string().starts_with(
+            "Pitboard had recorded the login Claude held as `desktop/work`'s, and filed it as \
+             `desktop/third`'s because Claude names that account."
+        ),
+        "{taken}"
+    );
+    assert_eq!(in_use(&m).as_deref(), Some("third"));
+    hold(&m, "row 15");
 
     // Row 17: the account in use's older park set aside, never deleted.
     let m = two_accounts("file-17");
@@ -1357,6 +1382,13 @@ fn a_session_under_the_recorded_name_is_parked_as_claude_names_it() {
             [Warning::TakenAsNamed { label, .. }] if label == "desktop/work"
         ),
         "{warnings:?}"
+    );
+    assert!(
+        warnings[0]
+            .to_string()
+            .starts_with("Pitboard had not seen the login Claude held"),
+        "{}",
+        warnings[0]
     );
     let parked = park_of(&m, "work").expect("parked");
     assert_eq!(parked.login, renewed.login(), "under the fingerprint found");
@@ -3327,6 +3359,108 @@ fn a_failure_inside_recovery_keeps_the_record_and_never_settles_again() {
     );
     rested(&m, "taken back");
     assert!(park_of(&m, "home").is_some());
+}
+
+// The jar goes back first, so a later item that will not move leaves something changed.
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+)]
+fn a_recovery_that_stops_partway_never_says_nothing_has_changed() {
+    let m = desktop_pair("recovery-partway");
+    killed(&m, "arrive.jar_in", "home");
+    assert_eq!(whereabouts(&m, &HOME), ["Claude"]);
+    let before = state_of(&m)
+        .moving(ProviderId::Desktop)
+        .cloned()
+        .expect("recorded");
+    let stopped =
+        crate::fault::failing_nth("move_in", 2, || confirm_(&m, "work")).expect_err("stopped");
+    assert_eq!(stopped.code(), "recovery_undetermined");
+    let said = stopped.to_string();
+    assert!(!said.contains("Nothing has changed"), "{said}");
+    assert!(
+        said.contains("Keep Claude closed and run this again"),
+        "{said}"
+    );
+    assert_eq!(
+        whereabouts(&m, &HOME),
+        std::slice::from_ref(&before.park),
+        "its jar went back"
+    );
+    assert_eq!(state_of(&m).moving(ProviderId::Desktop), Some(&before));
+    assert_eq!(
+        code(confirm_(&m, "work")),
+        "account_not_in_use",
+        "its next run lands"
+    );
+    rested(&m, "taken back");
+}
+
+// A leave gone on with, and an arrive taken back past Claude's own emptied keys.
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+)]
+fn every_row_that_stops_partway_never_says_nothing_has_changed() {
+    let emptied: Value = serde_json::from_str(EMPTIED).expect("JSON");
+    for (at, name, signed_out) in [
+        ("leave.jar_out", "stops-jar-out", false),
+        ("leave.item_out", "stops-item-out", false),
+        ("arrive.jar_in", "stops-keys-aside", true),
+    ] {
+        let m = desktop_pair(name);
+        killed(&m, at, "home");
+        if signed_out {
+            set(&m, "oauth:tokenCache", Some(emptied.clone()));
+        }
+        let before = state_of(&m)
+            .moving(ProviderId::Desktop)
+            .cloned()
+            .expect("recorded");
+        let folder = tree(&data(&m));
+        let stopped =
+            crate::fault::failing_nth("move_in", 2, || confirm_(&m, "work")).expect_err("stopped");
+        assert_eq!(stopped.code(), "recovery_undetermined", "{at}");
+        let said = stopped.to_string();
+        assert!(!said.contains("Nothing has changed"), "{at}: {said}");
+        assert_ne!(tree(&data(&m)), folder, "{at}: something moved first");
+        let mut kept = state_of(&m)
+            .moving(ProviderId::Desktop)
+            .cloned()
+            .expect("the record is kept");
+        kept.asides
+            .retain(|aside, _| before.asides.contains_key(aside));
+        assert_eq!(kept, before, "{at}");
+        assert_eq!(
+            code(confirm_(&m, "work")),
+            "account_not_in_use",
+            "{at}: its next run lands"
+        );
+        rested(&m, at);
+    }
+}
+
+// The parts left in Claude's folder go aside one at a time.
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+)]
+fn a_give_up_that_stops_partway_never_says_nothing_has_changed() {
+    let m = mixed("give-up-partway");
+    let stopped =
+        crate::fault::failing_nth("move_in", 2, || enrol(&m, "third")).expect_err("stopped");
+    assert_eq!(stopped.code(), "recovery_undetermined");
+    let said = stopped.to_string();
+    assert!(!said.contains("Nothing has changed"), "{said}");
+    assert!(state_of(&m).moving(ProviderId::Desktop).is_some());
+    enrol(&m, "third").expect("the person's word is still the way out");
+    assert_eq!(in_use(&m).as_deref(), Some("third"));
+    hold(&m, "enrolled after a give-up that stopped");
+    rested(&m, "enrolled after a give-up that stopped");
 }
 
 // A leave whose jar would not move is settled at once and undone.
