@@ -1,6 +1,6 @@
 [package]
 name = "pitboard-core"
-description = "The engine behind Pitboard: parking and restoring Claude Code and Codex logins. Serves Pitboard's own front ends."
+description = "The engine behind Pitboard: switches Claude Code and Codex between accounts by parking and restoring their logins. Its API serves Pitboard's own front ends."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,7 +8,7 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 readme = "../../README.md"
-keywords = ["claude", "keychain", "credentials"]
+keywords = ["claude-code", "codex", "keychain", "credentials", "oauth"]
 categories = ["authentication"]
 
 [features]
