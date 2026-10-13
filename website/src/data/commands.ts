@@ -1,5 +1,6 @@
-// Each command as copied, and as shown: <wbr> marks where a phone may break it, .nw where it may not.
+import { SLUG } from "./site.ts";
 
+// Each command as copied, and as shown: <wbr> marks where a phone may break it, .nw where it may not.
 export interface Command {
   copy: string;
   html: string;
@@ -44,7 +45,7 @@ export function attestCommand(file: string): Command {
   const dot = file.lastIndexOf(".");
   const [stem, ext] = [file.slice(0, dot), file.slice(dot)];
   return {
-    copy: `gh attestation verify ${file} --repo datlechin/pitboard`,
-    html: `gh attestation verify <wbr><span class="nw"><span class="nw">${stem}</span><wbr><span class="nw">${ext}</span></span> <wbr><span class="nw"><span class="nw">--repo</span> <span class="nw">datlechin/pitboard</span></span>`,
+    copy: `gh attestation verify ${file} --repo ${SLUG}`,
+    html: `gh attestation verify <wbr><span class="nw"><span class="nw">${stem}</span><wbr><span class="nw">${ext}</span></span> <wbr><span class="nw"><span class="nw">--repo</span> <span class="nw">${SLUG}</span></span>`,
   };
 }

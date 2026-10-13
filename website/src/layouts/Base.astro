@@ -6,7 +6,6 @@ import monoUrl from "../assets/fonts/JetBrainsMono-2.304-wght.woff2?url";
 import SiteFooter from "../components/SiteFooter.astro";
 import SiteHeader from "../components/SiteHeader.astro";
 import { siteData } from "../lib/data.ts";
-import { SITE } from "../data/site.ts";
 
 interface Props {
   title: string;
@@ -17,7 +16,7 @@ interface Props {
 }
 const { title, description, current, path, jsonLd = [] } = Astro.props;
 const { stars } = await siteData();
-const canonical = path === null ? null : `${SITE}${path}`;
+const canonical = path === null ? null : new URL(path, Astro.site).href;
 
 // one statement a line, comments and indentation dropped: the hash in the CSP covers this text
 const head = headScript
@@ -77,7 +76,7 @@ const ogAlt =
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     {canonical && <meta property="og:url" content={canonical} />}
-    <meta property="og:image" content={`${SITE}/og.png`} />
+    <meta property="og:image" content={new URL("/og.png", Astro.site).href} />
     <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />

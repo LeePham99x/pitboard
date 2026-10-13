@@ -3,7 +3,7 @@ import Base from "../layouts/Base.astro";
 import "../styles/download.css";
 import CommandBox from "../components/CommandBox.astro";
 import { attestCommand, commands } from "../data/commands.ts";
-import { DOCS, SITE } from "../data/site.ts";
+import { DOCS } from "../data/site.ts";
 import { escapeHtml, longDate } from "../lib/changelog.ts";
 import { appZip, fileRows, formatSize, type Asset } from "../lib/github.ts";
 import { siteData } from "../lib/data.ts";
@@ -36,7 +36,7 @@ const jsonLd = [
     softwareVersion: release.version,
     downloadUrl: zip.url,
     license: "https://www.apache.org/licenses/LICENSE-2.0",
-    url: `${SITE}/download`,
+    url: new URL("/download", Astro.site).href,
   },
 ];
 ---

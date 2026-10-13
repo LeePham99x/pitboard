@@ -3,7 +3,7 @@ import Base from "../layouts/Base.astro";
 import "../styles/changelog.css";
 import { compareBase, longDate, monthOf } from "../lib/changelog.ts";
 import { siteData } from "../lib/data.ts";
-import { REPO, SITE, SPONSOR } from "../data/site.ts";
+import { REPO, SPONSOR } from "../data/site.ts";
 
 const { versions } = await siteData();
 const entries = versions.map((v, i) => {
@@ -74,7 +74,7 @@ const entries = versions.map((v, i) => {
                   type="button"
                   id={`${e.id}-copy`}
                   aria-labelledby={`${e.id}-copy ${e.id}-h`}
-                  data-copy={`${SITE}/changelog#${e.id}`}
+                  data-copy={new URL(`/changelog#${e.id}`, Astro.site).href}
                 >
                   Copy link
                 </button>

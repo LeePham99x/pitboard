@@ -1,7 +1,9 @@
-export const KINDS = ["Added", "Changed", "Deprecated", "Removed", "Fixed", "Security"] as const;
-export type Kind = (typeof KINDS)[number];
+import { REPO } from "../data/site.ts";
 
-export interface Section {
+const KINDS = ["Added", "Changed", "Deprecated", "Removed", "Fixed", "Security"] as const;
+type Kind = (typeof KINDS)[number];
+
+interface Section {
   kind: Kind;
   id: string;
   html: string;
@@ -102,7 +104,7 @@ export function parseChangelog(text: string): Version[] {
   return raw.map((r) => {
     const link = links.get(r.version);
     if (!link) throw new Error(`${r.version} has no link definition`);
-    if (!/^https:\/\/github\.com\/datlechin\/pitboard\/(compare|releases\/tag)\//.test(link)) {
+    if (![`${REPO}/compare/`, `${REPO}/releases/tag/`].some((p) => link.startsWith(p))) {
       throw new Error(`${r.version} links somewhere else: ${link}`);
     }
     const intro = renderBlocks(blocks(r.intro));
