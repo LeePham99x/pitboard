@@ -236,6 +236,7 @@ function main() {
   for (const key of ["single-page-application", '"routes"', '"route"', '"custom_domain"']) {
     if (wrangler.includes(key)) problems.push(`wrangler.jsonc names ${key}`);
   }
+  if (!wrangler.includes('"previews"')) problems.push("wrangler.jsonc has no previews block");
   if (!existsSync(join(DIST, "404.html"))) problems.push("dist has no 404.html");
   const sitemaps = files.filter((f) => /^sitemap.*\.xml$/.test(f));
   if (!sitemaps.length) problems.push("dist has no sitemap");
