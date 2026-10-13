@@ -66,11 +66,11 @@ command -v xcodegen >/dev/null || {
 }
 xcodegen generate --spec apps/macos/project.yml --quiet
 
-# Unsigned, because the bundle is not finished: the command line, the Share extension's icon
-# and the man pages go in after this, and a signature covers what is inside it. Sparkle is
-# the version and revision the committed Package.resolved pins or the build stops, since the
-# app's bill of materials reads it from there. Packages are cloned under apps/macos/build,
-# where the release finds Sparkle's tools.
+# Unsigned, because the bundle is not finished: the command line and the man pages go in
+# after this, and a signature covers what is inside it. Sparkle is the version and revision
+# the committed Package.resolved pins or the build stops, since the app's bill of materials
+# reads it from there. Packages are cloned under apps/macos/build, where the release finds
+# Sparkle's tools.
 xcodebuild -project apps/macos/Pitboard.xcodeproj -scheme Pitboard -configuration Release \
     -destination 'generic/platform=macOS' \
     -derivedDataPath apps/macos/build/DerivedData \
@@ -103,6 +103,18 @@ for scheme in \
         exit 1
     }
 done
+# Xcode compiles AppIcon.icon into Assets.car for macOS 26 and later, and into AppIcon.icns
+# for earlier systems, in the app and in the extension, whose own icon the Share menu shows.
+for bundle in "$app" "$appex"; do
+    [ -s "$bundle/Contents/Resources/AppIcon.icns" ] || {
+        echo "Xcode did not compile AppIcon.icon into $bundle" >&2
+        exit 1
+    }
+    [ "$(plutil -extract CFBundleIconFile raw "$bundle/Contents/Info.plist")" = AppIcon ] || {
+        echo "$bundle/Contents/Info.plist does not name AppIcon.icns" >&2
+        exit 1
+    }
+done
 
 links_the_systems_sqlite "$app/Contents/MacOS/Pitboard" "the app"
 
@@ -129,15 +141,6 @@ fi
 # would be the same file as Pitboard on a case-insensitive volume, and overwrite it.
 mkdir -p "$app/Contents/Helpers"
 cp "$cli" "$app/Contents/Helpers/pitboard"
-
-# Xcode compiles AppIcon.icon into Assets.car for macOS 26 and later, and into AppIcon.icns
-# for earlier systems. The Share menu shows the extension's own icon, which is the app's.
-[ -s "$app/Contents/Resources/AppIcon.icns" ] || {
-    echo "Xcode did not compile AppIcon.icon into AppIcon.icns" >&2
-    exit 1
-}
-mkdir -p "$appex/Contents/Resources"
-cp "$app/Contents/Resources/AppIcon.icns" "$appex/Contents/Resources/AppIcon.icns"
 
 # The man page and completions for whatever links the command line onto PATH, written by
 # the build that ships so they describe it, and before signing, since the app's signature

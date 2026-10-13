@@ -18,9 +18,6 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
-	<!-- Copied in from the app by scripts/build-app.sh. -->
-	<key>CFBundleIconFile</key>
-	<string>AppIcon</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<!-- The scheme of the app it came in, which it hands the link to. -->
