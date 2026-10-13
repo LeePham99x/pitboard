@@ -53,10 +53,10 @@ command -v xcodegen >/dev/null || {
 }
 xcodegen generate --spec apps/macos/project.yml --quiet
 
-# Unsigned, because the bundle is not finished: the command line, the icon and the man
-# pages go in after this, and a signature covers what is inside it. Sparkle is the version
-# and revision the committed Package.resolved pins or the build stops, since the app's bill
-# of materials reads it from there. Packages are cloned under apps/macos/build, where the release finds Sparkle's tools.
+# Unsigned, because the bundle is not finished: the command line, the Share extension's icon
+# and the man pages go in after this, and a signature covers what is inside it. Sparkle is
+# the version and revision the committed Package.resolved pins or the build stops, since the
+# app's bill of materials reads it from there. Packages are cloned under apps/macos/build, where the release finds Sparkle's tools.
 xcodebuild -project apps/macos/Pitboard.xcodeproj -scheme Pitboard -configuration Release \
     -destination 'generic/platform=macOS' \
     -derivedDataPath apps/macos/build/DerivedData \
@@ -104,11 +104,12 @@ lipo -create target/aarch64-apple-darwin/release/pitboard \
 mkdir -p "$app/Contents/Helpers"
 cp "$cli" "$app/Contents/Helpers/pitboard"
 
-mkdir -p "$app/Contents/Resources"
-swift apps/macos/scripts/make-icon.swift apps/macos/build
-iconutil --convert icns --output "$app/Contents/Resources/AppIcon.icns" \
-    apps/macos/build/AppIcon.iconset
-# The Share menu shows the extension's own icon, which is the app's.
+# Xcode compiles AppIcon.icon into Assets.car for macOS 26 and later, and into AppIcon.icns
+# for earlier systems. The Share menu shows the extension's own icon, which is the app's.
+[ -s "$app/Contents/Resources/AppIcon.icns" ] || {
+    echo "Xcode did not compile AppIcon.icon into AppIcon.icns" >&2
+    exit 1
+}
 mkdir -p "$appex/Contents/Resources"
 cp "$app/Contents/Resources/AppIcon.icns" "$appex/Contents/Resources/AppIcon.icns"
 

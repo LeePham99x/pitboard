@@ -98,7 +98,6 @@ extension Level {
 
 /// The symbols that mean one thing each, wherever they appear.
 enum Symbol {
-    static let menuBar = "speedometer"
     static let account = "person.crop.circle"
     static let accountInUse = "person.crop.circle.fill.badge.checkmark"
     static let accounts = "person.2"
