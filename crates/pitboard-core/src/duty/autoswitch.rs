@@ -37,10 +37,10 @@
 //!   Anthropic out of reach, is tried again later each time, up to
 //!   [`crate::duty::cadence::RETRY_MOST_SECONDS`].
 
-use crate::api::Owner;
 use crate::context::Context;
 use crate::duty::cadence::retry_after;
 use crate::duty::ledger::{self, Tries};
+use crate::provider::Owner;
 use crate::provider::ProviderId;
 use crate::service::Permit;
 use crate::state::{Account, Key, State};

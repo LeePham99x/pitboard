@@ -8,8 +8,8 @@
 //! not read the store takes the account in use from it ([`known`]). What the tool's own
 //! record names is only a sign that something signed in since.
 
-use crate::api::Owner;
 use crate::context::Context;
+use crate::provider::Owner;
 use crate::provider::{self, LoginKind, ProviderId};
 use crate::state::{Key, State, new_id};
 use serde::{Deserialize, Serialize};
@@ -136,7 +136,7 @@ pub(crate) fn known(ctx: &Context, state: &State, which: ProviderId) -> Known {
         },
         Ok(None) => found(None, String::new()),
         Ok(Some(credential)) => match tool.identify(ctx, &credential) {
-            Ok(owner) => found(Some(Owner::from(owner)), tool.fingerprint(&credential.raw)),
+            Ok(owner) => found(Some(owner), tool.fingerprint(&credential.raw)),
             Err(_) => Known {
                 last: None,
                 doubt: None,
@@ -176,7 +176,7 @@ pub(crate) fn judged_by(
 // The account `which`'s own record names now: for a folder tool, its settings' name key.
 pub(crate) fn names(ctx: &Context, which: ProviderId) -> Option<Owner> {
     match provider::of(which) {
-        LoginKind::Document(tool) => tool.own_record(ctx).map(Owner::from),
+        LoginKind::Document(tool) => tool.own_record(ctx),
         LoginKind::Folder(app) => {
             let root = app.root(ctx).ok()?;
             Some(named_only(app.settings(&root).ok()?.named(app)?))

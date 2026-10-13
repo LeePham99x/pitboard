@@ -17,10 +17,10 @@ use crate::model::{
     LocalTime, ModelListener, PitboardModel, Platform, WindowsLaunch, WindowsPlace,
 };
 use crate::{AppCore, Made};
-use pitboard_core::api::Owner;
 use pitboard_core::app::AppFile;
 use pitboard_core::context::Context;
 use pitboard_core::host::{OS, Os};
+use pitboard_core::provider::Owner;
 use pitboard_core::provider::ProviderId;
 use pitboard_core::service;
 use pitboard_core::state::Key;
@@ -543,7 +543,7 @@ impl Machine {
                 self.answers_for(person, &renewed);
                 self.api.renews(
                     &refresh,
-                    pitboard_core::api::Renewed {
+                    pitboard_core::testing::Renewed {
                         access_token: renewed,
                         refresh_token: Some(format!("{refresh}-renewed")),
                         expires_in: DAY,

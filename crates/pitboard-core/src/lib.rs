@@ -103,6 +103,7 @@ pub mod testing {
     /// as the core's own tests do.
     pub use crate::host::fs::testing as fs;
     pub use crate::host::memory::MemoryHost;
+    pub use crate::provider::claude::api::Renewed;
     pub use crate::provider::claude::paths::live_service;
     pub use crate::provider::claude::slot::{LIVE_SERVICE, dir_hash, service_for_dir};
     /// The program the integration tests, the model's tests and the fixtures' tests start in

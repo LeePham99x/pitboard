@@ -4330,7 +4330,7 @@ fn a_folder_move_waiting_does_not_stop_a_claude_code_switch() {
     state::save(&m.ctx, Permit::for_a_test(), &due).expect("saved");
     m.api.renews(
         "here-refresh",
-        crate::api::Renewed {
+        crate::provider::claude::api::Renewed {
             access_token: "renewed-access".into(),
             refresh_token: Some("here-renewed".into()),
             expires_in: 3600,

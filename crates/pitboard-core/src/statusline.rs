@@ -362,8 +362,8 @@ pub fn read(ctx: &Context, permit: Option<crate::service::Permit>, input: &str) 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::Owner;
     use crate::in_use::InUse;
+    use crate::provider::Owner;
     use crate::service::Permit;
     use crate::time::{Clock, FixedClock};
     use crate::usage::{Source, Window};

@@ -50,7 +50,7 @@ pub struct Facts {
     pub security_tool: Option<String>,
     pub config_path: PathBuf,
     pub config: Result<Value, Error>,
-    pub identity: Option<claude::Identity>,
+    pub config_account: Option<claude::ConfigAccount>,
     pub service: String,
     pub account: String,
     pub default_slot: bool,
@@ -282,14 +282,15 @@ fn park_facts(ctx: &Context, state: &State) -> Vec<ParkFact> {
     // only of a tool that has accounts here, and from files alone: Pitboard's record, and a
     // Codex login's own claims. Never Claude Code's config, which a Claude Code process
     // started or signed in on another login can rewrite with its own account.
-    let in_use: std::collections::BTreeMap<ProviderId, Option<crate::api::Owner>> = ProviderId::ALL
-        .iter()
-        .filter(|&&which| state.accounts.iter().any(|a| a.provider() == which))
-        .map(|&which| {
-            let known = crate::in_use::known(ctx, state, which);
-            (which, known.owner().cloned())
-        })
-        .collect();
+    let in_use: std::collections::BTreeMap<ProviderId, Option<crate::provider::Owner>> =
+        ProviderId::ALL
+            .iter()
+            .filter(|&&which| state.accounts.iter().any(|a| a.provider() == which))
+            .map(|&which| {
+                let known = crate::in_use::known(ctx, state, which);
+                (which, known.owner().cloned())
+            })
+            .collect();
     state
         .accounts
         .iter()
@@ -422,7 +423,7 @@ pub fn gather(ctx: &Context) -> Facts {
     let state = crate::state::load(ctx);
     let service = claude::live_service(ctx);
     let home = home::dir(ctx);
-    let identity = config.as_ref().ok().and_then(claude::identity);
+    let config_account = config.as_ref().ok().and_then(claude::config_account);
     Facts {
         os: crate::host::OS,
         security_tool: crate::host::OS
@@ -430,7 +431,7 @@ pub fn gather(ctx: &Context) -> Facts {
             .filter(|p| std::fs::metadata(p).is_ok())
             .map(str::to_string),
         config_path: claude::config_file(ctx),
-        identity,
+        config_account,
         config,
         account: slot::account_name(ctx),
         default_slot: claude::is_default_slot(ctx),
@@ -694,7 +695,7 @@ fn codex_login(ctx: &Context) -> Result<Option<CodexLogin>, CodexLoginTrouble> {
     let found = tool.identify(ctx, &credential).map_err(unusable)?;
     Ok(Some(CodexLogin {
         email: found.email,
-        account_id: found.account_id,
+        account_id: found.account_uuid,
         fingerprint: tool.fingerprint(&credential.raw),
     }))
 }
@@ -876,7 +877,7 @@ pub fn evaluate(facts: &Facts) -> Vec<Check> {
         ),
     });
 
-    checks.push(match &facts.identity {
+    checks.push(match &facts.config_account {
         Some(id) => ok(
             "identity",
             "identity",
@@ -986,14 +987,14 @@ pub fn evaluate(facts: &Facts) -> Vec<Check> {
         // signed in, "nothing is signed in" is not an observation, it is Pitboard looking
         // in the wrong place, and it is the failure that would follow Claude Code moving
         // where it keeps a login.
-        Ok(store::Backend::Absent) if facts.identity.is_some() => fail(
+        Ok(store::Backend::Absent) if facts.config_account.is_some() => fail(
             "credential_store",
             "credential store",
             format!(
                 "Claude Code's config says {} is signed in, and no store Pitboard reads \
                  holds that login",
                 facts
-                    .identity
+                    .config_account
                     .as_ref()
                     .map(|i| i.email.as_str())
                     .unwrap_or("somebody")
@@ -2837,7 +2838,7 @@ fn redaction_for(ctx: &Context, facts: &Facts) -> crate::redact::Sheet {
     )
     .hide(facts.account.clone(), "user");
 
-    if let Some(id) = &facts.identity {
+    if let Some(id) = &facts.config_account {
         sheet = sheet
             .hide(id.email.clone(), "email")
             .hide(id.account_uuid.clone(), "account")
@@ -3657,13 +3658,11 @@ mod tests {
             security_tool: Some("/usr/bin/security".into()),
             config_path: PathBuf::from("/home/x/.claude.json"),
             config: Ok(json!({"oauthAccount": {}})),
-            identity: Some(claude::Identity {
+            config_account: Some(claude::ConfigAccount {
                 email: "a@b.c".into(),
                 account_uuid: "acc".into(),
                 organization_uuid: "org".into(),
                 organization_name: None,
-                subscription: None,
-                rate_limit_tier: None,
             }),
             credential_parts: Vec::new(),
             credential_cost: Some(store::Cost {
@@ -3714,7 +3713,7 @@ mod tests {
     /// keychain, `acc`'s in `org`, as Anthropic named it a minute ago, with the config naming
     /// it too.
     fn in_use_as_named() -> crate::in_use::Known {
-        let owner = crate::api::Owner {
+        let owner = crate::provider::Owner {
             account_uuid: "acc".into(),
             email: "a@b.c".into(),
             organization_uuid: "org".into(),
@@ -4310,7 +4309,7 @@ mod tests {
         assert!(store.detail.contains("a@b.c"));
 
         // Nobody signed in at all is an ordinary state with an ordinary answer.
-        f.identity = None;
+        f.config_account = None;
         let checks = evaluate(&f);
         let store = check(&checks, "credential_store");
         assert_eq!(store.level, Level::Warn);

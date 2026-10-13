@@ -12,10 +12,10 @@
 
 use super::refresh::{self, Place, Progress, Refreshing, Renewed, Stop};
 use super::{Result, journal};
-use crate::api::Owner;
 use crate::context::Context;
 use crate::error::Error;
 use crate::in_use::{self, InUse};
+use crate::provider::Owner;
 use crate::provider::{self, LoginKind, Provider, ProviderError, ProviderId};
 use crate::service::Permit;
 use crate::state::{self, Account, Key, State};
@@ -72,9 +72,7 @@ pub(crate) fn whose(
     if let Some(found) = recorded(state, tool, document) {
         return Ok(found);
     }
-    let owner = tool
-        .identify(ctx, &provider::Credential::new(tool.id(), document.clone()))
-        .map(Owner::from)?;
+    let owner = tool.identify(ctx, &provider::Credential::new(tool.id(), document.clone()))?;
     Ok(Found {
         owner,
         login: tool.fingerprint(document),
@@ -226,7 +224,6 @@ fn renewed_under_the_lock(
                     .map_err(|e| failed(store::Error::Malformed(e.to_string()).into()))?;
                 let owner = tool
                     .identify(ctx, &provider::Credential::new(which, renewed.clone()))
-                    .map(Owner::from)
                     .map_err(Unrenewed::Asked)?;
                 let found = Found {
                     owner,

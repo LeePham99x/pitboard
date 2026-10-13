@@ -1,8 +1,8 @@
 use super::folder::awaited::{Wait, WaitStep};
 use super::{Error, Readied, Result, Settled, identify, identify_document, purge};
-use crate::api::Owner;
 use crate::context::Context;
 use crate::in_use::{self, InUse};
+use crate::provider::Owner;
 use crate::provider::folder::Folder;
 use crate::provider::{self, LoginKind, Provider, ProviderId};
 use crate::service::{Permit, Warning};

@@ -1361,7 +1361,7 @@ mod tests {
         ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn stow_refuses_a_login_of_an_account_not_enrolled_as_the_look_found_it() {
-        use pitboard_core::api::Owner;
+        use pitboard_core::provider::Owner;
         use pitboard_core::testing::{FixedClock, MemoryHost, ScriptedApi, live_service};
         use std::sync::Arc;
         const NOW: i64 = 1_760_000_000;

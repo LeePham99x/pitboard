@@ -51,7 +51,7 @@ use crate::error::{Error, Result};
 use crate::in_use::{self, InUse};
 use crate::service::{Permit, Warning};
 use crate::state::{Account, Key, Park, ParkKind, State};
-use crate::{api, fault, holder, home, lock, park, pending, state, store};
+use crate::{fault, holder, home, lock, park, pending, state, store};
 use journal::{Journal, clear_journal, reconcile, write_journal};
 use refresh::Refreshing;
 use serde_json::Value;
@@ -373,10 +373,9 @@ pub(super) fn identify_document(
     ctx: &Context,
     tool: &'static dyn Provider,
     document: &Value,
-) -> Result<api::Owner> {
+) -> Result<provider::Owner> {
     let credential = provider::Credential::new(tool.id(), document.clone());
     tool.identify(ctx, &credential)
-        .map(api::Owner::from)
         .map_err(|e| unidentified(tool.id(), e))
 }
 
@@ -771,12 +770,7 @@ fn switch_from(
     drop(guard);
     let lock_lost = lock_lost | Refreshing::let_go(refreshing) | renewal_lock_lost;
 
-    let outgoing_identity = provider::Identity {
-        account_id: outgoing.account_uuid.clone(),
-        email: outgoing.email.clone(),
-        group: Some(outgoing.organization_uuid).filter(|g| !g.is_empty()),
-    };
-    let cache_warning = write_config(ctx, permit, &mut state, tool, &target, &outgoing_identity);
+    let cache_warning = write_config(ctx, permit, &mut state, tool, &target, &outgoing);
     fault::point("switch.config_updated");
     let parks_pending = purge(ctx, permit, &mut state);
     clear_journal(ctx, permit);
@@ -831,7 +825,7 @@ fn already_active(
     let naming = in_use::naming(which, &target.owner());
     let named = tool
         .own_record(ctx)
-        .filter(|named| Some(state::new_id(which, &api::Owner::from(named.clone()))) != naming);
+        .filter(|named| Some(state::new_id(which, named)) != naming);
     let (config_updated, warnings) = match named {
         None => (false, Vec::new()),
         Some(named) => match write_config(ctx, permit, state, tool, target, &named) {
@@ -858,7 +852,7 @@ fn write_config(
     state: &mut State,
     tool: &'static dyn Provider,
     target: &Account,
-    named: &provider::Identity,
+    named: &provider::Owner,
 ) -> Option<Warning> {
     let which = tool.id();
     if let Err(error) = tool.after_switch(ctx, permit, target, named) {
@@ -912,7 +906,7 @@ fn ready(
     tool: &'static dyn Provider,
     live: &provider::LiveStore,
     first: &Value,
-    signed_in: &api::Owner,
+    signed_in: &provider::Owner,
     incoming: &Value,
     label: &str,
 ) -> Result<Readied> {
@@ -1044,7 +1038,7 @@ fn prove_incoming(
     let label = state.typed(key);
     if held.askable_at(ctx.now()) {
         let credential = provider::Credential::new(key.provider, incoming.clone());
-        match tool.verify(ctx, &credential).map(api::Owner::from) {
+        match tool.verify(ctx, &credential) {
             Ok(found) if target.owned_by(&found) => return Ok((held, incoming)),
             Ok(other) => {
                 return Err(Error::ParkedLoginBelongsElsewhere {

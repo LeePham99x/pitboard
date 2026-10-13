@@ -5,12 +5,12 @@
 //! can actually sit behind, which is worth knowing before a second tool is written against
 //! it rather than after.
 
+use super::api::{self, ApiError};
 use super::{configfile, document, live, paths as claude};
-use crate::api::{self, ApiError};
 use crate::context::Context;
 use crate::host::{OS, Os};
 use crate::provider::{
-    Adoption, Behind, Credential, Expiry, Held, Identity, Isolation, LiveStore, ParkSemantics,
+    Adoption, Behind, Credential, Expiry, Held, Isolation, LiveStore, Owner, ParkSemantics,
     Provider, ProviderError, ProviderId, SignInView,
 };
 use crate::service::Permit;
@@ -74,13 +74,13 @@ impl Provider for Claude {
     /// credential by a day. That round trip is the reason a switch needs the network at
     /// all, and it is deliberate: filing a login under the wrong account is worse than
     /// refusing to file it.
-    fn identify(&self, ctx: &Context, credential: &Credential) -> Result<Identity, ProviderError> {
+    fn identify(&self, ctx: &Context, credential: &Credential) -> Result<Owner, ProviderError> {
         let token =
             access_token(&credential.raw).ok_or_else(|| ProviderError::ShapeUnexpected {
                 provider: ProviderId::Claude,
                 detail: "it has no claudeAiOauth.accessToken".into(),
             })?;
-        api::owner(ctx, token).map(from_owner).map_err(from_api)
+        api::owner(ctx, token).map_err(from_api)
     }
 
     /// Anthropic's profile endpoint says whose a token is.
@@ -151,13 +151,13 @@ impl Provider for Claude {
     /// The account Claude Code's config names, as written there. One that names no
     /// organisation, as a sign-in that could not read the profile leaves it, is named with
     /// none (the register's `config_may_name_no_organisation`).
-    fn own_record(&self, ctx: &Context) -> Option<Identity> {
+    fn own_record(&self, ctx: &Context) -> Option<Owner> {
         let config = claude::load_config(ctx).ok()?;
-        let found = claude::identity(&config)?;
-        Some(Identity {
-            account_id: found.account_uuid,
+        let found = claude::config_account(&config)?;
+        Some(Owner {
+            account_uuid: found.account_uuid,
             email: found.email,
-            group: Some(found.organization_uuid).filter(|group| !group.is_empty()),
+            organization_uuid: found.organization_uuid,
         })
     }
 
@@ -172,16 +172,18 @@ impl Provider for Claude {
         ctx: &Context,
         permit: Permit,
         incoming: &crate::state::Account,
-        outgoing: &Identity,
+        outgoing: &Owner,
     ) -> Result<(), crate::error::Error> {
         let path = claude::config_file(ctx);
-        let outgoing_group = outgoing.group.clone().unwrap_or_default();
         configfile::backup(ctx, permit, &path)?;
         configfile::update(ctx, permit, &path, |config| {
             configfile::splice_identity(
                 config,
                 incoming.claude().map_or(&Value::Null, |c| c.oauth_account),
-                &[outgoing.account_id.as_str(), outgoing_group.as_str()],
+                &[
+                    outgoing.account_uuid.as_str(),
+                    outgoing.organization_uuid.as_str(),
+                ],
             )
         })
         .map(|_| ())
@@ -333,16 +335,6 @@ pub(super) fn access_token(login: &Value) -> Option<&str> {
         .filter(|token| !token.is_empty())
 }
 
-fn from_owner(owner: api::Owner) -> Identity {
-    Identity {
-        account_id: owner.account_uuid,
-        email: owner.email,
-        // An account outside an organisation reports an empty string, which is not the same
-        // as a tool that has no organisations at all.
-        group: Some(owner.organization_uuid).filter(|o| !o.is_empty()),
-    }
-}
-
 fn from_api(error: ApiError) -> ProviderError {
     match error {
         ApiError::Unauthorized => ProviderError::Unauthorized,
@@ -473,10 +465,10 @@ mod tests {
         config(serde_json::json!({"accountUuid": "acc", "emailAddress": "a@b.c"}));
         assert_eq!(
             Claude.own_record(&ctx),
-            Some(Identity {
-                account_id: "acc".into(),
+            Some(Owner {
+                account_uuid: "acc".into(),
                 email: "a@b.c".into(),
-                group: None,
+                organization_uuid: String::new(),
             })
         );
 
@@ -485,10 +477,10 @@ mod tests {
         }));
         assert_eq!(
             Claude.own_record(&ctx),
-            Some(Identity {
-                account_id: "acc".into(),
+            Some(Owner {
+                account_uuid: "acc".into(),
                 email: "a@b.c".into(),
-                group: Some("org".into()),
+                organization_uuid: "org".into(),
             })
         );
         let _ = std::fs::remove_dir_all(&home);

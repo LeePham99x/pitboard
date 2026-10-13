@@ -9,11 +9,12 @@
 //! in on this machine": each tool has a live login of its own or none, and a row is about
 //! exactly one of them.
 
-use crate::api::{ApiError, Owner};
 use crate::context::Context;
 use crate::error::Cause;
 use crate::in_use::{self, InUse};
 use crate::park;
+use crate::provider::Owner;
+use crate::provider::claude::api::ApiError;
 use crate::provider::claude::paths as claude;
 use crate::provider::{LoginKind, Provider, ProviderError, ProviderId};
 use crate::service::Permit;
@@ -661,8 +662,7 @@ fn ask_live(
                         &crate::provider::Credential::new(which, document.clone()),
                     )
                 })
-                .and_then(Result::ok)
-                .map(Owner::from);
+                .and_then(Result::ok);
             return Answered::learning_nothing(LiveLogin {
                 signed_in: Some(Err(unusable.to_string())),
                 known: claimed,
@@ -1315,7 +1315,7 @@ mod tests {
     /// their parked login is finished.
     #[test]
     fn anthropics_failures_are_told_apart() {
-        use crate::api::ApiError;
+        use crate::provider::claude::api::ApiError;
         let parked = |e: &ApiError| Stale::of(e, false);
         assert_eq!(
             parked(&ApiError::Unexpected { status: 503 }),

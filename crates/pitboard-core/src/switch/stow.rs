@@ -24,9 +24,9 @@
 
 use super::refresh::{self, Place, Progress, Refreshing, Renewed, Stop};
 use super::{Settled, identify, live_store, purge, read_stored, shape, write_lock};
-use crate::api::Owner;
 use crate::context::Context;
 use crate::error::{Cause, Error, Partway, Result};
+use crate::provider::Owner;
 use crate::provider::claude::live;
 use crate::provider::{self, ProviderError, ProviderId};
 use crate::service::{Permit, Warning};
@@ -378,7 +378,7 @@ impl Stowing<'_> {
         *raw = renewed;
         let login = held.slice.clone().expect("a renewed login");
         tool.identify(self.ctx, &provider::Credential::new(TOOL, login))
-            .map(|found| Some(Owner::from(found)))
+            .map(Some)
             .map_err(|error| not_identified(&self.path, &error))
     }
 
@@ -545,7 +545,7 @@ fn judge(
         return Ok(untold());
     }
     match tool.identify(ctx, &provider::Credential::new(TOOL, slice.clone())) {
-        Ok(found) => Ok(Whose::Owner(Owner::from(found))),
+        Ok(found) => Ok(Whose::Owner(found)),
         // Expired earlier than its own expiry said, or with no access token at all.
         Err(ProviderError::Unauthorized | ProviderError::ShapeUnexpected { .. }) => Ok(untold()),
         Err(error) => Err(not_identified(path, &error)),
@@ -1006,7 +1006,7 @@ mod tests {
         let m = machine("stow-park-kept-renewed");
         m.api.renews(
             "there-again",
-            crate::api::Renewed {
+            provider::claude::api::Renewed {
                 access_token: "access-there-renewed".into(),
                 refresh_token: Some("there-renewed".into()),
                 expires_in: 28_800,

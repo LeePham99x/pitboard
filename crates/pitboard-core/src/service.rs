@@ -692,7 +692,7 @@ impl Stored {
     pub(crate) fn of(
         state: &state::State,
         tool: ProviderId,
-        owner: Option<&crate::api::Owner>,
+        owner: Option<&crate::provider::Owner>,
     ) -> Stored {
         match owner {
             None => Stored::Nothing,

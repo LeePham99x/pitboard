@@ -313,9 +313,9 @@ fn apply(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::Renewed;
     use crate::api::scripted::{Asked as Question, ScriptedApi, Trouble};
     use crate::host::memory::MemoryHost;
+    use crate::provider::claude::api::Renewed;
     use crate::state::Account;
     use crate::store::memory::Fault;
     use crate::time::FixedClock;

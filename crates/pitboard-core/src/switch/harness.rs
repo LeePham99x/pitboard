@@ -11,9 +11,10 @@
 //! crash is a fact about parking a login and not about any one tool's.
 
 use super::*;
-use crate::api::Owner;
 use crate::api::scripted::ScriptedApi;
+use crate::provider::Owner;
 use crate::provider::ProviderId;
+use crate::provider::claude::api::Renewed;
 use crate::provider::claude::paths as claude;
 use crate::service::Permit;
 
@@ -815,7 +816,7 @@ pub(crate) fn renews(m: &Machine, refresh: &str, renewed: &str) {
         Tool::Claude => {
             m.api.renews(
                 refresh,
-                api::Renewed {
+                Renewed {
                     access_token: format!("access-{renewed}"),
                     refresh_token: Some(renewed.into()),
                     expires_in: 3600,
@@ -918,7 +919,7 @@ pub(crate) fn renews_meanwhile(
             .as_str()
             .expect("a refresh token")
             .to_string();
-        api.renew_trouble(&sent, api::scripted::Trouble::InvalidGrant);
+        api.renew_trouble(&sent, crate::api::scripted::Trouble::InvalidGrant);
         login["claudeAiOauth"]["refreshToken"] = json!(format!("{sent}-by-a-session"));
         login["claudeAiOauth"]["accessToken"] = json!(format!("access-{sent}-by-a-session"));
         login["claudeAiOauth"]["expiresAt"] = json!((NOW + 3600) * 1000);
@@ -1091,7 +1092,7 @@ pub(crate) fn hold(m: &Machine, after: &str) {
             tool.identify(&m.ctx, &provider::Credential::new(m.which, document))
                 .ok()
         })
-        .map(|found| found.account_id);
+        .map(|found| found.account_uuid);
     for a in &state.accounts {
         if Some(&a.account_uuid) == live_uuid.as_ref() {
             continue;

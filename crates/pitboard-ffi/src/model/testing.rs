@@ -1621,7 +1621,7 @@ impl World {
         let access = access.to_owned();
         self.api.owned_by(
             &access,
-            pitboard_core::api::Owner {
+            pitboard_core::provider::Owner {
                 account_uuid: who.into(),
                 email: format!("{who}@example.com"),
                 organization_uuid: format!("org-{who}"),

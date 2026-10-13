@@ -209,22 +209,26 @@ impl Credential {
     }
 }
 
-/// Who a credential belongs to, as the tool's own service understands it.
+/// Whose a login is. Unlike a refresh-token fingerprint, it does not change when a tool
+/// rotates the token.
 ///
-/// How this is learned is deliberately not part of the answer. Claude Code's is a network
-/// call to Anthropic on every switch, because its local config can lag the credential by a
-/// day. Codex's is a local decode of the ID token it already holds. Gemini's is a local
-/// decode when the token carries one and a network call when it does not. The engine wants
-/// the answer, not the method.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Identity {
-    /// Stable for the life of the account. A UUID for Claude, a UUID for Codex's
-    /// `chatgpt_account_id`, Google's `sub` for Gemini.
-    pub account_id: String,
+/// How it is learned is not part of the answer: Claude Code's from Anthropic, since its
+/// config can lag the credential by a day, and Codex's from the ID token it holds.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Owner {
+    /// Anthropic's account uuid, or Codex's ChatGPT account joined with the person in it.
+    pub account_uuid: String,
     pub email: String,
-    /// Claude's organisation, Codex's ChatGPT workspace, Gemini's project. `None` where the
-    /// tool has no such concept or did not say, which is not the same as an empty one.
-    pub group: Option<String>,
+    /// Claude's organisation or Codex's ChatGPT account. Empty for an account outside an
+    /// organisation, as Anthropic reports one.
+    pub organization_uuid: String,
+}
+
+impl Owner {
+    /// Whether `other` is this login: the same account in the same organisation.
+    pub fn same_login(&self, other: &Owner) -> bool {
+        self.account_uuid == other.account_uuid && self.organization_uuid == other.organization_uuid
+    }
 }
 
 /// Why an answer about a login could not be had.
@@ -428,7 +432,7 @@ pub(crate) trait Provider: Send + Sync + std::fmt::Debug {
     }
 
     /// Whose credential this is.
-    fn identify(&self, ctx: &Context, credential: &Credential) -> Result<Identity, ProviderError>;
+    fn identify(&self, ctx: &Context, credential: &Credential) -> Result<Owner, ProviderError>;
 
     /// Whether [`Provider::identify`] answers from the credential alone, asking nobody.
     /// Where it does, whose a login is can be told by a read that sends no request, as
@@ -442,7 +446,7 @@ pub(crate) trait Provider: Send + Sync + std::fmt::Debug {
     /// is without anybody's agreement, and that is not enough before installing it: a login
     /// the service has stopped accepting would be switched to, read back, found present,
     /// and fail the next time the person ran the tool, with nothing parked to go back to.
-    fn verify(&self, ctx: &Context, credential: &Credential) -> Result<Identity, ProviderError> {
+    fn verify(&self, ctx: &Context, credential: &Credential) -> Result<Owner, ProviderError> {
         self.identify(ctx, credential)
     }
 
@@ -501,7 +505,7 @@ pub(crate) trait Provider: Send + Sync + std::fmt::Debug {
     /// a sign that something signed in, the words for a message, and what a switch to the
     /// account in use writes over: never whose a login is, which row is in use, whose a
     /// session's numbers are, or whether an account may be forgotten.
-    fn own_record(&self, ctx: &Context) -> Option<Identity>;
+    fn own_record(&self, ctx: &Context) -> Option<Owner>;
 
     /// Correct whatever this tool caches about who is signed in, now that `incoming`'s
     /// login is live and the tool still names `outgoing`: the account switched away from, or
@@ -515,7 +519,7 @@ pub(crate) trait Provider: Send + Sync + std::fmt::Debug {
         ctx: &Context,
         permit: Permit,
         incoming: &crate::state::Account,
-        outgoing: &Identity,
+        outgoing: &Owner,
     ) -> Result<(), crate::error::Error>;
 
     /// The tool's own program, where it is installed. A private sign-in runs it, so its

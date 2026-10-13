@@ -10,9 +10,9 @@
     reason = "the one module that reads this process's environment"
 )]
 
-use crate::api::{Anthropic, Api};
 use crate::host::Host;
 use crate::provider::ProviderId;
+use crate::provider::claude::api::{Anthropic, Api};
 use crate::provider::codex::api::{Network as OpenAiNetwork, OpenAi};
 use crate::time::{Clock, SystemClock};
 use std::collections::HashMap;

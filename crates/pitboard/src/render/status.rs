@@ -421,7 +421,7 @@ pub(crate) fn json(report: &Report) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pitboard_core::api::Owner;
+    use pitboard_core::provider::Owner;
     use pitboard_core::state::Park;
 
     const NOW: i64 = 1_789_935_000;

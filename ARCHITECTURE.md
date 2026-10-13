@@ -289,8 +289,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     Pitboard puts it, under the app's home and where the system's package managers put
     programs. And the files an app keeps of its own in Pitboard's directory, `told.json` and
     `app.json`, written as the core writes its own and read by nothing of the core.
-  - `api.rs`: the requests to Anthropic, and the agent each context's requests go out on,
-    `api::agent`. The requests to OpenAI are in `provider/codex/api.rs`.
+  - `api.rs`: what every request shares, the agent each context's requests go out on,
+    `api::agent`. The requests to Anthropic are in `provider/claude/api.rs`, and those to
+    OpenAI in `provider/codex/api.rs`.
   - `proxy.rs`: the proxy those requests go through, read from the context's environment by
     the rules ureq 3.4.2 reads a process's with, the refusal of each request a SOCKS proxy
     would have carried (`proxy::Refusal`), what `doctor`'s `network` check says of it, and

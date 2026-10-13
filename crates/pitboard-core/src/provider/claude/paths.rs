@@ -171,27 +171,23 @@ pub(crate) fn load_config(ctx: &Context) -> Result<Value> {
 /// Claude Code process started or signed in on another login can write its own there (the
 /// register's `config_identity_is_the_last_writers`). Only Anthropic says whose a login is.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Identity {
-    pub email: String,
-    pub account_uuid: String,
-    pub organization_uuid: String,
-    pub organization_name: Option<String>,
-    pub subscription: Option<String>,
-    pub rate_limit_tier: Option<String>,
+pub(crate) struct ConfigAccount {
+    pub(crate) email: String,
+    pub(crate) account_uuid: String,
+    pub(crate) organization_uuid: String,
+    pub(crate) organization_name: Option<String>,
 }
 
 /// The three organization fields are written by separate fetches, not by the profile save,
 /// so a config that has never made them is normal and they stay `None`.
-pub(crate) fn identity(config: &Value) -> Option<Identity> {
+pub(crate) fn config_account(config: &Value) -> Option<ConfigAccount> {
     let o = config.get("oauthAccount")?.as_object()?;
     let s = |k: &str| o.get(k).and_then(Value::as_str).map(str::to_owned);
-    Some(Identity {
+    Some(ConfigAccount {
         email: s("emailAddress")?,
         account_uuid: s("accountUuid")?,
         organization_uuid: s("organizationUuid").unwrap_or_default(),
         organization_name: s("organizationName"),
-        subscription: s("organizationType"),
-        rate_limit_tier: s("organizationRateLimitTier"),
     })
 }
 
@@ -267,32 +263,30 @@ mod tests {
     }
 
     #[test]
-    fn identity_needs_an_email_and_an_account() {
+    fn the_config_account_needs_an_email_and_an_account() {
         let full = serde_json::json!({"oauthAccount": {
             "emailAddress": "a@b.c", "accountUuid": "u", "organizationUuid": "o",
             "organizationName": "Org", "organizationType": "claude_max",
             "organizationRateLimitTier": "default_claude_max_20x"}});
-        let id = identity(&full).expect("should parse");
+        let id = config_account(&full).expect("should parse");
         assert_eq!(id.email, "a@b.c");
-        assert_eq!(
-            id.rate_limit_tier.as_deref(),
-            Some("default_claude_max_20x")
-        );
+        assert_eq!(id.organization_name.as_deref(), Some("Org"));
 
-        assert!(identity(&serde_json::json!({})).is_none());
-        assert!(identity(&serde_json::json!({"oauthAccount": {"accountUuid": "u"}})).is_none());
+        assert!(config_account(&serde_json::json!({})).is_none());
+        assert!(
+            config_account(&serde_json::json!({"oauthAccount": {"accountUuid": "u"}})).is_none()
+        );
     }
 
     /// What 2.1.278 actually writes when it saves a profile: the organization fields come
     /// from other fetches and are often absent. An account is still identified.
     #[test]
-    fn identity_survives_a_config_with_no_organization_fields() {
+    fn the_config_account_survives_a_config_with_no_organization_fields() {
         let written = serde_json::json!({"oauthAccount": {
             "accountUuid": "u", "emailAddress": "a@b.c", "organizationUuid": "o",
             "billingType": "subscription", "seatTier": "max_20x"}});
-        let id = identity(&written).expect("should parse");
+        let id = config_account(&written).expect("should parse");
         assert_eq!(id.organization_uuid, "o");
         assert_eq!(id.organization_name, None);
-        assert_eq!(id.subscription, None);
     }
 }

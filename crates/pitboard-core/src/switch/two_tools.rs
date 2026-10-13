@@ -20,7 +20,7 @@ fn whose(m: &harness::Machine) -> Option<String> {
     provider::document(m.which)
         .identify(&m.ctx, &Credential::new(m.which, live))
         .ok()
-        .map(|found| found.account_id)
+        .map(|found| found.account_uuid)
 }
 
 /// The login moves: `there`'s goes live, `here`'s goes into the vault, and nothing of

@@ -7,7 +7,7 @@ use super::{api, paths};
 use crate::context::Context;
 use crate::host::Os;
 use crate::provider::{
-    Adoption, Behind, Credential, Expiry, Identity, Isolation, LiveStore, ParkSemantics, Provider,
+    Adoption, Behind, Credential, Expiry, Isolation, LiveStore, Owner, ParkSemantics, Provider,
     ProviderError, ProviderId, SignInView, jwt,
 };
 use crate::service::Permit;
@@ -95,7 +95,7 @@ impl Provider for Codex {
     /// The ID token is a JWT whose claims name the account, the email and the plan. Claude
     /// Code's equivalent costs a round trip on every switch because its local config can
     /// lag the credential by a day; Codex's cannot, because this is the credential.
-    fn identify(&self, _ctx: &Context, credential: &Credential) -> Result<Identity, ProviderError> {
+    fn identify(&self, _ctx: &Context, credential: &Credential) -> Result<Owner, ProviderError> {
         let shape = |detail: &str| ProviderError::ShapeUnexpected {
             provider: ProviderId::Codex,
             detail: detail.to_string(),
@@ -117,15 +117,15 @@ impl Provider for Codex {
         // `:` there made every real Codex park unwritable on Linux.
         let person = jwt::claim(&claims, &[OPENAI, "chatgpt_user_id"])
             .or_else(|| jwt::claim(&claims, &[OPENAI, "user_id"]));
-        Ok(Identity {
-            account_id: match person {
+        Ok(Owner {
+            account_uuid: match person {
                 Some(person) => format!("{chatgpt}_{person}"),
                 None => chatgpt.to_string(),
             },
             email: jwt::claim(&claims, &["email"])
                 .unwrap_or_default()
                 .to_string(),
-            group: Some(chatgpt.to_string()),
+            organization_uuid: chatgpt.to_string(),
         })
     }
 
@@ -196,7 +196,7 @@ impl Provider for Codex {
     /// The ID token names the account whether or not OpenAI still accepts the login, so
     /// that is asked separately, with the cheapest request that answers it: the same usage
     /// read `status` makes, which spends no quota.
-    fn verify(&self, ctx: &Context, credential: &Credential) -> Result<Identity, ProviderError> {
+    fn verify(&self, ctx: &Context, credential: &Credential) -> Result<Owner, ProviderError> {
         let found = self.identify(ctx, credential)?;
         self.usage(ctx, credential)?;
         Ok(found)
@@ -218,7 +218,7 @@ impl Provider for Codex {
     }
 
     /// Codex keeps no record apart from its login, whose ID token names the account.
-    fn own_record(&self, _ctx: &Context) -> Option<Identity> {
+    fn own_record(&self, _ctx: &Context) -> Option<Owner> {
         None
     }
 
@@ -228,7 +228,7 @@ impl Provider for Codex {
         _ctx: &Context,
         _: Permit,
         _incoming: &crate::state::Account,
-        _outgoing: &Identity,
+        _outgoing: &Owner,
     ) -> Result<(), crate::error::Error> {
         Ok(())
     }
@@ -480,7 +480,7 @@ mod tests {
                 &Credential::new(ProviderId::Codex, login()),
             )
             .expect("a login names its own account");
-        assert_eq!(found.account_id, "acc-1");
+        assert_eq!(found.account_uuid, "acc-1");
         assert_eq!(found.email, "a@b.c");
     }
 
@@ -558,9 +558,9 @@ mod tests {
                 .expect("identified")
         };
         let (one, two) = (person("user-1"), person("user-2"));
-        assert_ne!(one.account_id, two.account_id);
-        assert_eq!(one.group.as_deref(), Some("team"));
-        assert_eq!(one.account_id, "team_user-1");
+        assert_ne!(one.account_uuid, two.account_uuid);
+        assert_eq!(one.organization_uuid, "team");
+        assert_eq!(one.account_uuid, "team_user-1");
     }
 
     /// A login whose tokens name one account and whose account id names another is what a

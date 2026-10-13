@@ -102,8 +102,8 @@ pub enum Cause {
 }
 
 impl Cause {
-    pub fn of(error: &crate::api::ApiError) -> Cause {
-        use crate::api::ApiError;
+    pub(crate) fn of(error: &crate::provider::claude::api::ApiError) -> Cause {
+        use crate::provider::claude::api::ApiError;
         match error {
             ApiError::Unauthorized => Cause::TokenExpired,
             ApiError::RateLimited { .. } => Cause::RateLimited,

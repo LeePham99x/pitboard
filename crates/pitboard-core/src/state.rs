@@ -5,10 +5,10 @@
 //! machine: presenting a refresh token another machine has since rotated ends the login on
 //! both.
 
-use crate::api::Owner;
 use crate::context::Context;
 use crate::error::{Error, Result};
 use crate::in_use::{Identified, InUse, Replaced};
+use crate::provider::Owner;
 use crate::provider::ProviderId;
 use crate::service::Permit;
 use crate::{atomic, home};

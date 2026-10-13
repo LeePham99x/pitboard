@@ -453,7 +453,7 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                and a refresh answer without a refresh-token lifetime keeps the one it had",
         read_from: "the OAuth client id and the token refresh path",
         verified_against: VERIFIED_AGAINST,
-        depends: "api::CLIENT_ID and park::renewed, and the renewal `pitboard stow` makes of a \
+        depends: "provider::claude::api::CLIENT_ID and provider::claude::document::renewed, and the renewal `pitboard stow` makes of a \
                   login left in `.credentials.json` whose access token has expired",
         probe: &["9d1c250a-e61b-44d9-88ed-5944d1962f5e"],
         absent: &[],

@@ -23,6 +23,7 @@ use super::harness::{
 use super::*;
 use crate::api::scripted::{ScriptedApi, Trouble};
 use crate::fault;
+use crate::provider::claude::api::Renewed;
 use crate::service::Permit;
 use crate::store::memory::Fault;
 use serde_json::json;
@@ -178,7 +179,7 @@ fn a_switch_whose_token_rotated_while_it_was_interrupted_still_needs_anthropic()
 )]
 fn a_switch_between_two_organisations_is_settled_by_the_organisation_anthropic_names() {
     let m = machine("two-organisations-rotated");
-    let team = api::Owner {
+    let team = provider::Owner {
         account_uuid: "here".into(),
         email: "here@example.com".into(),
         organization_uuid: "org-team".into(),
@@ -622,7 +623,7 @@ fn renewing_killed_between_the_write_and_the_record_leaves_nothing_unnamed() {
     state::save(&m.ctx, Permit::for_a_test(), &state).expect("saved");
     m.api.renews(
         "there-refresh",
-        api::Renewed {
+        Renewed {
             access_token: "access-fresh".into(),
             refresh_token: Some("fresh".into()),
             expires_in: 3600,
@@ -689,7 +690,7 @@ fn a_renewal_that_cannot_record_its_answer_keeps_it_for_the_next_run() {
     state::save(&m.ctx, Permit::for_a_test(), &state).expect("saved");
     m.api.renews(
         "there-refresh",
-        api::Renewed {
+        Renewed {
             access_token: "access-fresh".into(),
             refresh_token: Some("fresh".into()),
             expires_in: 3600,
