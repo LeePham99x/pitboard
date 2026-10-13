@@ -125,13 +125,19 @@ private func settingsHeight(_ tab: SettingsView.Tab, warming: Int = 0) -> CGFloa
     return NSHostingView(rootView: settings.defaultAppStorage(defaults)).fittingSize.height
 }
 
-/// General stops at the tallest a pane may be, however many accounts it lists for warm-ups,
-/// and scrolls, so its window fits a 1024 x 768 screen. A short pane keeps its own height.
+// Only Limits lists accounts, so only it can outgrow a 1024 x 768 screen and scroll.
 @MainActor
 @Test func aLongPaneScrollsAndAShortOneKeepsItsHeight() {
-    #expect(settingsHeight(.general, warming: 20) == SettingsView.tallestPane)
-    #expect(settingsHeight(.commandLine) < SettingsView.tallestPane)
-    #expect(settingsHeight(.updates) < SettingsView.tallestPane)
+    #expect(settingsHeight(.limits, warming: 20) == SettingsView.tallestPane)
+    for tab in SettingsView.Tab.allCases where tab != .limits {
+        #expect(settingsHeight(tab, warming: 20) < SettingsView.tallestPane, "\(tab)")
+    }
+}
+
+@Test func aPaneKeptByAnEarlierVersionStillOpens() {
+    #expect(SettingsView.Tab(rawValue: "general") == .general)
+    #expect(SettingsView.Tab(rawValue: "commandLine") == .commandLine)
+    #expect(SettingsView.Tab(rawValue: "updates") == .updates)
 }
 
 // MARK: - Linking the command line
