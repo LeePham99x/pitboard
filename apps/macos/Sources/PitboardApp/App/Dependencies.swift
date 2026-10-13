@@ -11,7 +11,7 @@ import PitboardLinkTarget
 /// core on a machine of its own, and nothing reaches the keychain, the network, launchd, the
 /// login items or an administrator prompt of whoever runs the tests.
 @MainActor
-public struct Dependencies {
+struct Dependencies {
     let model: AppModel
     let defaults: UserDefaults
     let loginItem: any LoginItem
@@ -28,7 +28,7 @@ public struct Dependencies {
     /// records in the app's own folder in Application Support, under the Pitboard directory
     /// this launch serves, for the Pitboard links of this build's scheme: `pitboard`, or
     /// `pitboard-debug` in a debug build.
-    public static func live(
+    static func live(
         environment: [String: String] = ProcessInfo.processInfo.environment,
         bundle: URL = Bundle.main.bundleURL
     ) -> Dependencies {
@@ -67,7 +67,7 @@ public struct Dependencies {
 
     /// The world this launch runs in: `live()`, unless this is a debug build started with
     /// `PITBOARD_FIXTURE` naming one of the fixtures UI tests use.
-    public static func forLaunch(
+    static func forLaunch(
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> Dependencies {
         #if DEBUG

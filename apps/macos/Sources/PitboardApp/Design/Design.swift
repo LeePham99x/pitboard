@@ -12,7 +12,7 @@ import SwiftUI
 ///   column of percentages does not shift as they change.
 /// - Colour: the system's semantic colours. Colour only ever repeats something a word or a
 ///   shape already says, because not everybody sees it.
-/// - Symbols: SF Symbols, one per meaning, named here.
+/// - Symbols: SF Symbols.
 /// - Space: the platform's default padding and spacing, and the few measures below where a
 ///   component lays itself out.
 enum Design {
@@ -99,7 +99,6 @@ extension Level {
 /// The symbols that mean one thing each, wherever they appear.
 enum Symbol {
     static let account = "person.crop.circle"
-    static let accountInUse = "person.crop.circle.fill.badge.checkmark"
     static let accounts = "person.2"
     static let activity = "clock.arrow.circlepath"
     static let machine = "stethoscope"
@@ -107,8 +106,6 @@ enum Symbol {
     static let refresh = "arrow.clockwise"
     static let switchAccount = "arrow.left.arrow.right"
     static let signIn = "person.crop.circle.badge.exclamationmark"
-    static let rename = "pencil"
-    static let forget = "trash"
     static let update = "arrow.down.circle"
     static let terminal = "terminal"
     static let general = "gearshape"

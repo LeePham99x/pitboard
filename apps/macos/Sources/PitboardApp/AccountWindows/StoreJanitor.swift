@@ -2,15 +2,14 @@ import Foundation
 import PitboardKit
 import WebKit
 
-/// The account windows' stores as WebKit has them: makes each one a window needs, wipes one
-/// in place, and deletes the ones the model asks it to, trying a store WebKit still holds
-/// again a few times.
+/// The account windows' stores as WebKit has them: wipes one in place, and deletes the ones
+/// the model asks it to, trying a store WebKit still holds again a few times.
 ///
 /// Which stores go, and when, is the model's: one this Pitboard directory recorded making,
 /// that a read which succeeded no longer derives from any enrolled account and that no other
 /// Pitboard directory still there recorded too, which it asks for in
 /// `AccountWindowsShown.deleting`. The model records a store before it says a window opens,
-/// so every store made here is one it can ask for.
+/// so every store a window uses is one it can ask for.
 @MainActor
 final class StoreJanitor {
     private let stores: any WebsiteDataStores
@@ -29,12 +28,6 @@ final class StoreJanitor {
     init(stores: any WebsiteDataStores, pause: @escaping @MainActor (Duration) async -> Void) {
         self.stores = stores
         self.pause = pause
-    }
-
-    /// The store for the account window `id` names, which the model recorded before it said
-    /// the window opens.
-    func store(for id: UUID) -> WKWebsiteDataStore {
-        stores.store(for: id)
     }
 
     /// Removes everything `store` keeps, while its windows go on using it: cookies, storage,

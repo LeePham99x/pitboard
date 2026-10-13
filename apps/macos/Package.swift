@@ -14,7 +14,6 @@ let package = Package(
     name: "Pitboard",
     platforms: [.macOS(.v14)],
     products: [
-        .library(name: "PitboardKit", targets: ["PitboardKit"]),
         .library(name: "PitboardApp", targets: ["PitboardApp"]),
         .library(name: "PitboardShareBindings", targets: ["PitboardShareBindings"]),
         .library(name: "PitboardLinkTarget", targets: ["PitboardLinkTarget"]),

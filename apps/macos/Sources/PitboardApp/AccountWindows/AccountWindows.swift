@@ -13,7 +13,7 @@ import WebKit
 /// downloads. This tells the model what WebKit and the windows did, and does what it says.
 @MainActor
 @Observable
-public final class AccountWindows {
+final class AccountWindows {
     @ObservationIgnored let model: AppModel
     @ObservationIgnored let presence: AppPresence
     @ObservationIgnored let janitor: StoreJanitor
@@ -80,7 +80,8 @@ public final class AccountWindows {
         }
         let session = WebSession(
             open: open, policy: policy(for: open.account.site),
-            store: janitor.store(for: open.id), environment: environment, downloads: downloads)
+            store: environment.stores.store(for: open.id), environment: environment,
+            downloads: downloads)
         sessions[open.id] = session
         return session
     }

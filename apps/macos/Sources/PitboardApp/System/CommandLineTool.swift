@@ -119,7 +119,7 @@ struct CommandLineTool: Sendable {
 /// model looks for the `pitboard` a terminal runs again.
 @MainActor
 @Observable
-public final class CommandLineLink {
+final class CommandLineLink {
     @ObservationIgnored private let tool: CommandLineTool
     @ObservationIgnored private let model: AppModel
     /// Whether macOS's password prompt is up.

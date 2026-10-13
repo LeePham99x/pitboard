@@ -20,11 +20,11 @@ public protocol Updates: AnyObject, Observable {
 /// For a build that cannot update itself.
 @MainActor
 @Observable
-public final class NoUpdates: Updates {
-    public init() {}
-    public var available: Bool { false }
-    public var waiting: String? { nil }
-    public var checksAutomatically = false
-    public var installsAutomatically = false
-    public func check() {}
+final class NoUpdates: Updates {
+    init() {}
+    var available: Bool { false }
+    var waiting: String? { nil }
+    var checksAutomatically = false
+    var installsAutomatically = false
+    func check() {}
 }
