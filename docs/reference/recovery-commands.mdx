@@ -7,7 +7,7 @@ None of these commands takes an argument. [JSON output](/reference/json-output#d
 
 ## `stow`
 
-On macOS, `pitboard stow` puts away `~/.claude/.credentials.json` where it sits behind the keychain. The [`fallback_login`](/reference/errors#warning-codes) warning names that file. While it is there, open Claude Code sessions follow a switch only at their next renewal, as [Open sessions](/concepts/switching#open-sessions) explains. [Claude Code over SSH uses another account](/troubleshooting#claude-code-over-ssh-uses-another-account) says how the file gets there.
+On macOS, `pitboard stow` puts away `~/.claude/.credentials.json` where it sits behind the keychain. The [`fallback_login`](/reference/errors#warning-codes) warning names that file. While it is there, open Claude Code sessions follow a switch only at their next renewal, as [Open sessions](/concepts/open-sessions) explains. [Claude Code over SSH uses another account](/troubleshooting#claude-code-over-ssh-uses-another-account) says how the file gets there.
 
 | Option | Description |
 | --- | --- |
@@ -23,7 +23,7 @@ At a terminal, `stow` says what the file holds and asks first, as [Questions bef
 
 It never sends an expired access token. It renews such a login first and writes it back to the file before anything else. That write keeps the file's other keys. If `stow` is killed before the write, or the write fails, the next change writes the renewed login to the file, and `stow` then says the file changed. Until then, `stow` changes nothing and says why.
 
-Where the outcome turns on whose login Claude Code has stored, `stow` identifies that login too. If its access token has expired, the question before `stow` uses the account Pitboard last recorded, and `stow` itself renews the login as [a switch does](/concepts/switching#how-pitboard-knows-whose-login-it-is).
+Where the outcome turns on whose login Claude Code has stored, `stow` identifies that login too. If its access token has expired, the question before `stow` uses the account Pitboard last recorded, and `stow` itself renews the login as [a switch does](/concepts/identity).
 
 It then keeps the login where it is not kept already, and deletes the file:
 

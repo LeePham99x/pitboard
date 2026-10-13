@@ -130,7 +130,7 @@ In the order of `pitboard --help`:
 
 A Claude Desktop account has no email address, so `email` is empty wherever one of its accounts appears.
 
-`adoption` says how each tool takes up a switch, as [Open sessions](/concepts/switching#open-sessions) explains:
+`adoption` says how each tool takes up a switch, as [Open sessions](/concepts/open-sessions) explains:
 
 | Case | `adoption` | `adoption_ceiling_seconds` |
 | --- | --- | --- |
@@ -191,7 +191,7 @@ Each object in `accounts`:
 | `parked` | object or null | The parked login's `parked_at` and its expiries, as the next table lists, or `null` when nothing is parked. |
 | `lasts` | object or null | `seconds` and `why`. For the account in use, until its first limit runs out at its [pace](/concepts/usage#pace) (`why` is `filling`), or else until its first reset (`resets`). For any other account, until its first reset. `null` when no limit has a reset ahead. |
 | `usage` | object or null | The reading: `source`, `observed_at` (when it was taken) and `windows`. `null` when no usage is known. |
-| `stale` | string or null | Why the reading is not live, as [Stale codes](/reference/json-output#stale-codes) lists. |
+| `stale` | string or null | Why the reading is not live, as [Stale codes](/reference/errors#stale-codes) lists. |
 | `provider` | string | `claude`, `codex` or `desktop`. |
 | `qualified` | string or null | The label with its tool, such as `claude/work`. `null` for a login nobody enrolled. |
 | `plan` | string or null | The plan the account's login last said it is on, such as `Max 20x`, `Team 5x` or `Plus`. Pitboard records it when it enrols the account and each time it reads the account's login. `null` where no login Pitboard read said one. |
@@ -319,27 +319,3 @@ A switch prints this on one line:
   "error": null
 }
 ```
-
-## Stale codes
-
-[Usage shows old numbers](/troubleshooting#usage-shows-old-numbers) gives the text `pitboard status` prints for each code, and what to do.
-
-| `stale` | Meaning |
-| --- | --- |
-| `nothing_signed_in` | Nothing is signed in to the tool. |
-| `login_unreadable` | The tool's login is there and could not be read, such as behind a locked keychain. |
-| `login_unusable` | The tool's login is not one Pitboard can park or switch, such as one made with an API key. |
-| `session_expired` | The login in use has expired. The tool renews it at its next request. |
-| `parked_access_expired` | The parked login's access token has expired, and Pitboard could not renew it this time. |
-| `nothing_parked` | The account has no parked login. |
-| `login_replaced` | A sign-in outside Pitboard replaced the account's only login, so nothing is parked. Given with `--offline` too. |
-| `park_unreadable` | Pitboard could not read the parked login. |
-| `rate_limited` | The service asked for fewer requests, and Pitboard waits before it asks again. |
-| `unreachable` | The service could not be reached. |
-| `server_error` | The service answered with an error. |
-| `answer_not_understood` | The service's answer was not in a shape Pitboard reads. |
-| `login_refused` | The service no longer accepts the parked login. On the account in use, Anthropic no longer accepts the login in use, which Pitboard tried to renew to identify it. |
-| `asked_recently` | Pitboard asked too recently for the limit to have moved one percentage point, so it did not ask again. |
-| `interrupted` | The request stopped before it had an answer. |
-| `not_asked` | Pitboard read the account without asking the service, as `pitboard status --offline` does. |
-| `no_usage` | The account is a Claude Desktop account. Pitboard reads no usage for one: see [Claude Desktop accounts](/concepts/limits#claude-desktop-accounts). |

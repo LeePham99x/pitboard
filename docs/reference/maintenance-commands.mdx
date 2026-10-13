@@ -71,7 +71,7 @@ Usage: pitboard schedule [OPTIONS] <COMMAND>
 
 The job runs `pitboard renew` every 24 hours: a LaunchAgent on macOS, a systemd user timer on Linux. [Renewal schedule](/reference/files#renewal-schedule) lists its files.
 
-The job runs the `pitboard` that installed it, by full path. If that file is gone, `pitboard doctor` fails its `schedule` check: see [Daily renewal stopped working](/troubleshooting#daily-renewal-stopped-working).
+The job runs the `pitboard` that installed it, by full path. If that file is gone, `pitboard doctor` fails its `schedule` check: see [Daily renewal stopped working](/troubleshooting/accounts#daily-renewal-stopped-working).
 
 The job renews the parked logins in `~/.pitboard`, whatever `PITBOARD_HOME` it is given.
 
@@ -79,7 +79,7 @@ While `PITBOARD_HOME` names another directory, `install` refuses with `schedule_
 
 launchd and systemd start the job without your shell's environment. `install` copies into the job each proxy variable it was started with: `ALL_PROXY`, `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`, in either case. It also copies `PITBOARD_NO_ARGV`.
 
-Run `install` again after your proxy changes. Until then, `pitboard doctor` warns with `schedule_proxy`. The app's **Renew parked logins daily** setting gives the job the app's variables, not your shell's: see [The schedule uses another proxy](/troubleshooting#the-schedule-uses-another-proxy).
+Run `install` again after your proxy changes. Until then, `pitboard doctor` warns with `schedule_proxy`. The app's **Renew parked logins daily** setting gives the job the app's variables, not your shell's: see [The schedule uses another proxy](/troubleshooting/accounts#the-schedule-uses-another-proxy).
 
 On macOS, `install` refuses with `schedule_refused` when the program's path or a variable holds a character a LaunchAgent cannot hold, and names it.
 
@@ -303,7 +303,7 @@ Claude Desktop's checks read the folders in `~/.pitboard/parks`, open no cookie 
   | `claude_daemon` | `Claude Code daemon` | Whether Claude Code's daemon has run here, and whether it runs. Always `ok`. |
   | `pending_parks` | `parks being reclaimed` | Parked logins Pitboard started to write and has not accounted for. Warns when one cannot be read. |
   | `schedule` | `renewal schedule` | Only when daily renewal is on for `~/.pitboard`. Fails when the program it runs is gone or is the app itself. Warns when its file does not name a program. |
-  | `schedule_proxy` | `renewal schedule's proxy` | Only when the job's requests would go another way than this run's. Warns, but is `ok` in the app. See [The schedule uses another proxy](/troubleshooting#the-schedule-uses-another-proxy). |
+  | `schedule_proxy` | `renewal schedule's proxy` | Only when the job's requests would go another way than this run's. Warns, but is `ok` in the app. See [The schedule uses another proxy](/troubleshooting/accounts#the-schedule-uses-another-proxy). |
   | `claude_version` | `Claude Code build` | The installed Claude Code version, and the one Pitboard was checked against. Always `ok`. |
   | `auth_source` | `what a session authenticates with` | Warns when Claude Code uses something other than its stored login, such as `ANTHROPIC_API_KEY` or `apiKeyHelper`. |
   | `asking` | `asking Anthropic` | Warns while Pitboard waits to ask about usage, after a service asked for less traffic or could not be reached. The name lists the services asked. |

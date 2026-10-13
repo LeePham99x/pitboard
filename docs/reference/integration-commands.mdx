@@ -33,7 +33,7 @@ It prints the session's account, then every other enrolled Claude Code account, 
 | No triangle | On pace, or no pace for that limit. |
 | `(3h 00m)` | The age of another account's reading, once older than 15 minutes. The first account never shows one. |
 
-The first label comes from the session's periods when they [identify its account](/concepts/usage#what-the-status-line-adds). Otherwise it comes from the account in use: Pitboard's [record](/concepts/switching#how-pitboard-knows-whose-login-it-is) of Anthropic's last answer about Claude Code's login.
+The first label comes from the session's periods when they [identify its account](#which-account-a-session-records-for). Otherwise it comes from the account in use: Pitboard's [record](/concepts/identity) of Anthropic's last answer about Claude Code's login.
 
 That record is unconfirmed before Pitboard first asks, and while Claude Code's config names another account than at that answer. `pitboard status` confirms it.
 
@@ -67,6 +67,18 @@ It writes two files in the [Pitboard directory](/reference/files#the-pitboard-di
 | --- | --- |
 | `sessions.json` | What each session passed at its last run |
 | `usage.json` | Limits that moved since the session's last run, into the reading of the account its periods identify |
+
+### Which account a session records for
+
+The session's numbers name no account (read in Claude Code 2.1.294), but each account's periods reset at their own times. Pitboard records them for the one enrolled account whose reading holds a period the session passed, to within a minute, asking no service.
+
+A reading with another running period of one of those limits does not match. Nor does one that lists every limit but lacks one passed. With no match, or several, Pitboard records nothing. So an [open session](/concepts/open-sessions) still on its old account after a switch records there until it follows.
+
+A five-hour period begun since Pitboard last asked Anthropic matches no reading, so the weekly period passed with it identifies the account. A Team seat's session passes only its five-hour limit, and records nothing after a reset until Pitboard asks again.
+
+One risk is known. A session on an account no reading holds, such as an unenrolled one, can pass a five-hour period that resets within a minute of an enrolled account's. Its numbers then record for that account, and each answer from Anthropic corrects them only until the session's next response. The session's weekly period prevents this when that account's reading holds a different one, or no weekly limit for all models.
+
+A session's numbers only move a limit the account's last answer from Anthropic gave. Once that limit resets, they start its next period. Pitboard records only limits that moved since the session's last run. An idle session passes the same numbers again, which can predate an answer that lowered a percentage.
 
 As root or under `sudo`, it writes nothing.
 

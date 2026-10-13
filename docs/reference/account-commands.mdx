@@ -26,7 +26,7 @@ The two options cannot be given together.
 
 `status` sends every request at once, and each times out after 5 seconds. `--offline` sends no request and writes nothing. [How often Pitboard asks](/concepts/usage#how-often-pitboard-asks) says when an account is asked again, and what `--fresh` changes.
 
-[How Pitboard knows whose login it is](/concepts/switching#how-pitboard-knows-whose-login-it-is) explains the record for each tool.
+[How Pitboard knows whose login it is](/concepts/identity) explains the record for each tool.
 
 `status` exits 0 when a service cannot be reached, and that account's last line says why. It exits 1 on an error in [The Pitboard directory](/reference/errors#the-pitboard-directory).
 
@@ -82,7 +82,7 @@ Pitboard reads no usage for Claude Desktop
 
 Where any Claude Desktop account reads `login replaced outside Pitboard`, `status` leaves that line out.
 
-[Read the lines under each account](/guides/usage#read-the-lines-under-each-account) says what each line means, and [Status data](/reference/json-output#status-data) lists the `--json` fields.
+[Account status](/reference/account-status) says what each line means, and [Status data](/reference/json-output#status-data) lists the `--json` fields.
 
 ## `enroll`
 
@@ -244,7 +244,7 @@ After a switch, `use` prints `Switched to work; personal is parked.` and a secon
 
 A Claude Desktop switch while Claude is signed out parks nothing. Its first line is `Switched Claude Desktop to desktop/work.`
 
-[Open sessions](/concepts/switching#open-sessions) explains both Claude Code lines.
+[Open sessions](/concepts/open-sessions) explains both Claude Code lines.
 
 After a switch, `use` can warn:
 
@@ -288,7 +288,7 @@ Usage: pitboard forget [OPTIONS] <LABEL>
 
 Pitboard does not revoke the login it deletes: see [SECURITY.md](https://github.com/datlechin/pitboard/blob/main/SECURITY.md#out-of-scope).
 
-For a Claude Code or Codex account, the app deletes its window data, sign-in included, at its next read of the accounts. [Where account windows keep their data](/security#where-account-windows-keep-their-data) has the rules.
+For a Claude Code or Codex account, the app deletes its window data, sign-in included, at its next read of the accounts. [How account windows keep their data](/concepts/account-windows) has the rules.
 
 | Code | Tool | When |
 | --- | --- | --- |

@@ -1,0 +1,78 @@
+---
+title: "Fix accounts, usage and renewal"
+sidebarTitle: "Accounts and usage"
+description: "Fix a tool on another account than Pitboard shows, a locked keychain, old usage numbers, daily renewal and opening at login."
+---
+
+[Troubleshooting](/troubleshooting) covers Claude Code over SSH, runs as root and how to report a problem.
+
+## Claude Code shows another account than Pitboard
+
+`/status` in Claude Code shows the account its config names. Pitboard shows the account whose login is stored, which requests use. A sign-in, or a session started on another login, can write another account into the config: see [How Pitboard knows whose login it is](/concepts/identity).
+
+Pitboard warns with the cause, such as `config_names_another` or `in_use_unconfirmed`, and [Warning codes](/reference/errors#warning-codes) gives each fix.
+
+After a switch, an open session keeps the old account and its `/usage` for up to about 33 seconds. While a login file sits behind the keychain, it keeps them until its next renewal: see [Claude Code over SSH uses another account](/troubleshooting#claude-code-over-ssh-uses-another-account).
+
+## macOS says the keychain is locked
+
+Where macOS cannot ask for your password, as over SSH, a locked keychain stops Pitboard with `credential_store_locked`:
+
+```text
+error: the credential store could not be read: the keychain is locked and cannot ask to be unlocked from here; unlock it with `security unlock-keychain`, or run Pitboard from a desktop session
+```
+
+Unlock it, then run the command again. Meanwhile `pitboard doctor` marks each parked login `not read: the keychain is locked`. Those parked logins need no sign-in.
+
+## Codex keeps the old account
+
+Everything that runs Codex keeps its account until it starts again. [Restart what runs Codex](/guides/switch#restart-what-runs-codex) says how to restart each without losing a login.
+
+If the switch refused Codex's login store, see [Before you enrol a Codex account](/guides/codex#before-you-enrol-a-codex-account).
+
+## A parked login has expired
+
+`pitboard status` shows `login expired` beside the account, and Pitboard's menu shows **Needs signing in again**. [Sign in to the account again](/guides/sign-in-again), then [turn on daily renewal](/guides/renewal#turn-on-daily-renewal) to keep it from happening.
+
+## Usage shows old numbers
+
+Old numbers carry their age and often a reason, as in `measured 14:02, 3m ago · Anthropic could not be reached`. [Stale codes](/reference/errors#stale-codes) says what to do about each reason.
+
+With no reason, Pitboard asked moments ago, and [waits](/concepts/usage#how-often-pitboard-asks) 3 minutes for a five-hour limit. `pitboard status --fresh`, or **Refresh** in the app, asks anyway.
+
+## Pitboard cannot find Claude Code
+
+```text
+error: `claude` is not on this machine, and Pitboard signs in with Claude Code's own sign-in. Install Claude Code, or point Pitboard at it.
+```
+
+Install Claude Code. If it is installed, add its folder to your `PATH`, or set `PITBOARD_CLAUDE` to its path.
+
+The app looks for `claude` on your login shell's `PATH`, then in `~/.local/bin`, `/opt/homebrew/bin` and `/usr/local/bin`. It looks when it opens, and again a minute later if the shell took over 5 seconds to answer. It sees `PITBOARD_CLAUDE` only when `launchctl setenv` set it. After you install Claude Code, quit Pitboard and open it again.
+
+## Daily renewal stopped working
+
+`pitboard doctor` flags its `renewal schedule` line:
+
+| The line says | Cause |
+| --- | --- |
+| `which is not there any more` | The Pitboard the schedule runs was moved or removed. |
+| `which is the app itself and not a command line` | The schedule runs the app, which renews nothing. |
+| `does not say which Pitboard it runs` | The schedule's file names no program. |
+
+Turn **Renew parked logins daily** off and on in **Settings** > **Renewal**, or run:
+
+```sh
+pitboard schedule uninstall
+pitboard schedule install
+```
+
+### The schedule uses another proxy
+
+`pitboard doctor` warns on its `renewal schedule's proxy` line when the schedule's proxy differs from your shell's. Run `pitboard schedule install` from a shell where the proxy variables are right.
+
+In the app, turning **Renew parked logins daily** off and on gives the schedule only the proxy variables `launchctl setenv` set.
+
+## Pitboard does not open at login
+
+Turn on **Open Pitboard at login** in **Settings** > **General**. If macOS is waiting for you to allow it, click **Open Login Items Settings** and allow Pitboard there.

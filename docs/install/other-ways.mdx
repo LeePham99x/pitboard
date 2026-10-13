@@ -1,0 +1,30 @@
+---
+title: "Other ways to install"
+sidebarTitle: "Other ways"
+description: "Install the command line with Cargo or from a release file, or build the app from source."
+---
+
+[Install Pitboard](/install) gives the install script and Homebrew, and how to update each way.
+
+## Cargo
+
+[cargo-binstall](https://github.com/cargo-bins/cargo-binstall) downloads Pitboard's own release build for your machine. Building from source needs Rust 1.91 or later and a C compiler.
+
+```sh
+cargo binstall pitboard
+cargo install --locked pitboard
+```
+
+Neither installs the man page or the completions. [`pitboard manpage`](/reference/integration-commands#manpage) and [`pitboard completions`](/reference/integration-commands#completions) print them.
+
+## A release file
+
+[Download Pitboard](https://usepitboard.com/download#release-files) lists each file of the most recent release and what it is for. To check a file before you open it, follow [Verify a download](/install/verify).
+
+Each tarball holds `pitboard`, `pitboard.1`, `completions/`, `LICENSE`, `NOTICE` and `README.md`. Copy `pitboard` to a directory on your `PATH`.
+
+Move `Pitboard.app` to your Applications folder before you open it. Until then, macOS runs it from a temporary copy, and the app cannot turn on [daily renewal](/guides/renewal) or link its command line.
+
+## Build the app
+
+In a clone of [Pitboard's repository](https://github.com/datlechin/pitboard), `./apps/macos/scripts/build-app.sh` writes `apps/macos/build/Pitboard.app`. Copy it to your Applications folder. [CONTRIBUTING.md](https://github.com/datlechin/pitboard/blob/main/CONTRIBUTING.md#the-app) lists what it needs. An app you build has no updater.
