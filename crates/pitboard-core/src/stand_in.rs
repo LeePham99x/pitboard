@@ -65,8 +65,10 @@ pub enum Step {
     Says(String),
     /// Writes this to its standard error, as it is.
     Warns(String),
-    /// Waits this many milliseconds.
-    Waits(u64),
+    /// Waits for a line typed to it, as a person takes a while in the browser, then goes on.
+    /// Where its input ends first, it exits 1 and takes no step after it, so a test that
+    /// stops without letting it go leaves nothing done.
+    WaitsForALine,
     /// Exits with this code.
     Exits(u8),
     /// Writes its own process id at this path, whole: under a name of its own beside it, then
@@ -452,7 +454,13 @@ impl Run<'_> {
                 self.errors.write_all(text.as_bytes())?;
                 self.errors.flush()?;
             }
-            Step::Waits(millis) => std::thread::sleep(Duration::from_millis(*millis)),
+            Step::WaitsForALine => {
+                let mut line = Vec::new();
+                self.input.read_until(b'\n', &mut line)?;
+                if !line.ends_with(b"\n") {
+                    return Ok(Took::Ends(1));
+                }
+            }
             Step::Exits(code) => return Ok(Took::Ends(*code)),
             Step::WritesItsPid(at) => write_whole(at, &format!("{}\n", std::process::id()))?,
             Step::Records { at, variables } => self.records(at, variables, args)?,
@@ -688,7 +696,7 @@ mod tests {
             Some(&["auth", "login"]),
             vec![
                 Step::Says("Opening browser to sign in\n".into()),
-                Step::Waits(5),
+                Step::WaitsForALine,
                 Step::HoldsPort(1455),
                 Step::HoldsFile {
                     at: "/x/held".into(),
@@ -704,6 +712,26 @@ mod tests {
             serde_json::from_str::<Script>(&interprets).expect("read"),
             Script::Interprets
         );
+    }
+
+    /// A line typed lets it go on to its next step. Input that ends first ends it with 1, and
+    /// nothing after it is done.
+    #[test]
+    fn it_goes_on_once_a_line_is_typed_and_stops_where_its_input_ends() {
+        let script = plays(
+            None,
+            vec![Step::WaitsForALine, Step::Says("stored\n".into())],
+        );
+        let let_go = play(&script, &[], "\n", &[]);
+        assert_eq!((let_go.code, let_go.output.as_str()), (0, "stored\n"));
+        for ended in ["", "unfinished"] {
+            let stopped = play(&script, &[], ended, &[]);
+            assert_eq!(
+                (stopped.code, stopped.output.as_str()),
+                (1, ""),
+                "{ended:?}"
+            );
+        }
     }
 
     /// Arguments other than the ones a script wants are refused with 64, before any step:

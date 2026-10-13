@@ -5,6 +5,10 @@
 mod common;
 
 use common::{Env, two_accounts};
+use std::io::{BufRead, BufReader, Write};
+use std::process::{Child, ExitStatus, Stdio};
+use std::sync::mpsc::{Receiver, RecvTimeoutError};
+use std::time::{Duration, Instant};
 
 fn accounts(env: &Env) -> Vec<serde_json::Value> {
     env.state()["accounts"].as_array().unwrap().clone()
@@ -19,6 +23,97 @@ fn account(env: &Env, label: &str) -> serde_json::Value {
 
 fn envelope(out: &str) -> serde_json::Value {
     serde_json::from_str(out).unwrap_or_else(|e| panic!("not JSON ({e}): {out}"))
+}
+
+/// Long enough that only a run stuck for good reaches it: nothing is timed against it.
+const HUNG: Duration = Duration::from_secs(60);
+
+/// A `pitboard` left running, its standard input held open and its standard error read a
+/// line at a time. On drop, panic or not, its input is closed, which ends a stand-in waiting
+/// for a line with nothing stored, and it is killed and reaped.
+struct Running {
+    child: Child,
+    lines: Receiver<String>,
+    said: String,
+}
+
+impl Running {
+    fn start(env: &Env, args: &[&str]) -> Running {
+        let mut child = env
+            .command(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("pitboard starts");
+        let stderr = child.stderr.take().expect("its standard error");
+        let (send, lines) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                if send.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+        Running {
+            child,
+            lines,
+            said: String::new(),
+        }
+    }
+
+    /// The next line it says, or `None` once its standard error is closed.
+    fn next_line(&mut self, until: Instant) -> Option<String> {
+        match self
+            .lines
+            .recv_timeout(until.saturating_duration_since(Instant::now()))
+        {
+            Ok(line) => {
+                self.said.push_str(&line);
+                self.said.push('\n');
+                Some(line)
+            }
+            Err(RecvTimeoutError::Disconnected) => None,
+            Err(RecvTimeoutError::Timeout) => {
+                panic!("still running after {HUNG:?}, having said: {}", self.said)
+            }
+        }
+    }
+
+    /// Reads what it says up to a line holding `text`.
+    fn says(&mut self, text: &str) {
+        let until = Instant::now() + HUNG;
+        while !self
+            .next_line(until)
+            .unwrap_or_else(|| panic!("it never said {text:?}: {}", self.said))
+            .contains(text)
+        {}
+    }
+
+    fn is_running(&mut self) -> bool {
+        self.child.try_wait().expect("its status").is_none()
+    }
+
+    fn types_a_line(&mut self) {
+        let input = self.child.stdin.as_mut().expect("its standard input");
+        input.write_all(b"\n").expect("a line typed");
+    }
+
+    /// How it exits, and everything it said.
+    fn finished(mut self) -> (ExitStatus, String) {
+        let until = Instant::now() + HUNG;
+        while self.next_line(until).is_some() {}
+        let status = self.child.wait().expect("reaped");
+        (status, std::mem::take(&mut self.said))
+    }
+}
+
+impl Drop for Running {
+    fn drop(&mut self) {
+        drop(self.child.stdin.take());
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
 }
 
 #[test]
@@ -361,35 +456,27 @@ fn a_sign_in_in_progress_does_not_hold_up_a_switch() {
     let mut env = two_accounts("waiting");
     let (c, q) = (env.uuid('c'), env.uuid('q'));
     let credential = common::credential("refresh-c").to_string();
-    env.install_fake_claude_waiting(&credential, std::time::Duration::from_secs(4));
+    env.install_fake_claude_held(&credential);
     env.owns("access-refresh-c", &c, "c@example.com", &q);
-    let signing_in = env
-        .command(&["enroll", "side", "--sign-in"])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(500));
+    let mut signing_in = Running::start(&env, &["enroll", "side", "--sign-in"]);
+    // Pitboard starts the tool only once it holds the sign-in lock.
+    signing_in.says("Opening browser");
 
-    let started = std::time::Instant::now();
-    let (_, err, code) = env.run(&["use", "beta"]);
-    assert_eq!(code, 0, "{err}");
+    let (switched, said) = Running::start(&env, &["use", "beta"]).finished();
+    assert!(switched.success(), "{said}");
+    assert_eq!(env.live()["claudeAiOauth"]["refreshToken"], "refresh-b");
     assert!(
-        started.elapsed() < std::time::Duration::from_secs(3),
-        "the switch waited {:?} on a browser",
-        started.elapsed()
+        signing_in.is_running(),
+        "the sign-in ended before it was let go"
     );
 
-    let (_, err, code) = env.run(&["enroll", "other", "--sign-in"]);
-    assert_eq!(code, 1);
-    assert!(err.contains("already waiting"), "{err}");
+    let (refused, said) = Running::start(&env, &["enroll", "other", "--sign-in"]).finished();
+    assert_eq!(refused.code(), Some(1), "{said}");
+    assert!(said.contains("already waiting"), "{said}");
 
-    let finished = signing_in.wait_with_output().unwrap();
-    assert!(
-        finished.status.success(),
-        "{}",
-        String::from_utf8_lossy(&finished.stderr)
-    );
+    signing_in.types_a_line();
+    let (signed_in, said) = signing_in.finished();
+    assert!(signed_in.success(), "{said}");
     assert!(env.parked_service("side").is_some());
 }
 
