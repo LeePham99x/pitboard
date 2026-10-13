@@ -1,0 +1,19 @@
+---
+import Base from "../layouts/Base.astro";
+import { DOCS } from "../data/site.ts";
+---
+
+<Base
+  title="Page not found: Pitboard"
+  description="This page does not exist on usepitboard.com."
+  current={null}
+  path={null}
+>
+  <main id="main" class="wrap pt-14 max-sm:pt-8">
+    <h1 class="h1">Page not found</h1>
+    <p class="lead mt-4">
+      Try the <a href="/">home page</a>, the <a href="/changelog">changelog</a>, the
+      <a href="/download">downloads</a> or the <a href={DOCS}>docs</a>.
+    </p>
+  </main>
+</Base>

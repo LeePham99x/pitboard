@@ -1,0 +1,91 @@
+---
+import template from "../assets/logo/template.svg?raw";
+
+const paths = [...template.matchAll(/<path d="([^"]+)"[^>]*?(fill-opacity="[^"]+")?\/>/g)];
+if (paths.length !== 2) throw new Error("template.svg is not the kit's two paths");
+const [board, dim] = paths.map((m) => m[1]);
+const dimOpacity = /fill-opacity="([^"]+)"/.exec(template)?.[1] ?? "0.35";
+---
+
+<svg class="defs" aria-hidden="true" focusable="false">
+  <symbol id="pb-template" viewBox="0 0 16 16">
+    <path d={board} fill="currentColor"></path>
+    <path d={dim} fill="currentColor" fill-opacity={dimOpacity}></path>
+  </symbol>
+  <symbol id="ic-batt" viewBox="0 0 25 12">
+    <rect
+      x=".5"
+      y=".5"
+      width="21.5"
+      height="11"
+      rx="3.2"
+      fill="none"
+      stroke="currentColor"
+      stroke-opacity=".45"
+    ></rect>
+    <rect
+      x="22.9"
+      y="4"
+      width="1.6"
+      height="4"
+      rx=".8"
+      fill="currentColor"
+      fill-opacity=".45"
+    ></rect>
+    <rect x="2" y="2" width="15" height="8" rx="1.8" fill="currentColor"></rect>
+  </symbol>
+  <symbol id="ic-wifi" viewBox="0 0 16 12">
+    <path
+      d="M1.3 4.3a9.5 9.5 0 0 1 13.4 0M3.8 6.8a6 6 0 0 1 8.4 0"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.6"
+      stroke-linecap="round"
+    ></path>
+    <circle cx="8" cy="9.9" r="1.5" fill="currentColor"></circle>
+  </symbol>
+  <symbol id="ic-cc" viewBox="0 0 16 14">
+    <rect
+      x=".75"
+      y="1"
+      width="14.5"
+      height="5"
+      rx="2.5"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.2"
+    ></rect>
+    <circle cx="3.6" cy="3.5" r="1.5" fill="currentColor"></circle>
+    <rect
+      x=".75"
+      y="8"
+      width="14.5"
+      height="5"
+      rx="2.5"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.2"
+    ></rect>
+    <circle cx="12.4" cy="10.5" r="1.5" fill="currentColor"></circle>
+  </symbol>
+  <symbol id="ic-check" viewBox="0 0 9 9">
+    <path
+      d="M1 4.9 3.4 7.3 8 1.6"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.45"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    ></path>
+  </symbol>
+  <symbol id="ic-chev" viewBox="0 0 6 10">
+    <path
+      d="M1.2 1.2 4.8 5 1.2 8.8"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.4"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    ></path>
+  </symbol>
+</svg>

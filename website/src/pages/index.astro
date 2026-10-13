@@ -1,0 +1,277 @@
+---
+import Base from "../layouts/Base.astro";
+import "../styles/home.css";
+import AccountsWindow from "../components/AccountsWindow.astro";
+import Icons from "../components/Icons.astro";
+import InstallTabs from "../components/InstallTabs.astro";
+import MacScene from "../components/MacScene.astro";
+import TerminalStatus from "../components/TerminalStatus.astro";
+import TerminalTour from "../components/TerminalTour.astro";
+import { longDate } from "../lib/changelog.ts";
+import { appZip } from "../lib/github.ts";
+import { highlight, siteData } from "../lib/data.ts";
+import { statusLine } from "../data/terminal.ts";
+import { DOCS, REPO, SITE } from "../data/site.ts";
+
+const { versions, release } = await siteData();
+const zip = appZip(release);
+const recent = versions.slice(0, 3).map((v) => ({ ...v, highlight: highlight(v.version) }));
+
+const faq = [
+  {
+    q: "What does Pitboard work with?",
+    a: "Claude Code signed in to a Claude account, and OpenAI's Codex CLI signed in with ChatGPT, its login in <code>auth.json</code>. Pitboard does not support API keys, third-party providers or Gemini CLI.",
+    link: [
+      `${DOCS}/concepts/limits#tools-and-sign-ins-pitboard-does-not-support`,
+      "Tools and sign-ins Pitboard does not support",
+    ],
+  },
+  {
+    q: "Is this allowed?",
+    a: "Anthropic's and OpenAI's terms decide that. Pitboard moves only your own logins and cannot share an account between people.",
+    link: [`${DOCS}/concepts/limits#is-this-allowed`, "Is this allowed"],
+  },
+  {
+    q: "Why not use <code>/login</code> or <code>codex login</code>?",
+    a: "Both replace the login in use, so the account you leave needs a browser sign-in again. <code>codex login</code> also revokes the login it replaces.",
+    link: [`${DOCS}/guides/accounts#add-another-account`, "Add another account"],
+  },
+  {
+    q: "Does it run on Linux or Windows?",
+    a: "The command line runs on Linux, but it has not been run there with real logins. There is no Windows release.",
+    link: [`${DOCS}/install#what-you-need`, "What you need"],
+  },
+  {
+    q: "Is Pitboard made by Anthropic or OpenAI?",
+    a: "No. Pitboard is not affiliated with Anthropic or OpenAI. One person maintains it.",
+    link: [`${REPO}/blob/main/NOTICE`, "NOTICE"],
+  },
+];
+
+const jsonLd = [
+  { "@context": "https://schema.org", "@type": "WebSite", name: "Pitboard", url: `${SITE}/` },
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    name: "Pitboard",
+    applicationCategory: "DeveloperApplication",
+    operatingSystem: "macOS 14 or later, Linux",
+    softwareVersion: release.version,
+    downloadUrl: zip.url,
+    license: "https://www.apache.org/licenses/LICENSE-2.0",
+    url: `${SITE}/`,
+  },
+];
+---
+
+<Base
+  title="Pitboard: switch between your Claude Code and Codex accounts"
+  description="Switch Claude Code and Codex between your own accounts without signing out, and see what each one has left."
+  current="home"
+  path="/"
+  jsonLd={jsonLd}
+>
+  <Icons slot="defs" />
+  <main id="main">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="wrap hero-in">
+        <div class="hero-text">
+          <h1 class="h1" id="hero-title">Pitboard</h1>
+          <p class="lead">
+            Switch Claude Code and OpenAI's Codex CLI between accounts without signing out.
+          </p>
+          <p class="note os-note os-linux">On Linux, Pitboard has not been run with real logins.</p>
+          <p class="note os-note os-windows">
+            There is <a href={`${DOCS}/install#what-you-need`}>no Windows release</a>.
+          </p>
+          <p class="note os-note os-mobile">Pitboard runs on a Mac or a Linux computer.</p>
+          <InstallTabs n={1} zipUrl={zip.url} />
+        </div>
+
+        <div class="hero-fig">
+          <figure class="fig sv-app">
+            <MacScene />
+            <figcaption class="fig-cap">
+              <span class="vh">Pitboard's menu with two Claude Code accounts, personal and work, and
+                two Codex accounts, main and spare. Each shows how much of each limit it has used.
+                Behind the menu, the status line of a Claude Code session shows both Claude Code
+                accounts, work first.
+              </span
+              >Pitboard's menu with example accounts.
+            </figcaption>
+          </figure>
+          <TerminalStatus />
+        </div>
+      </div>
+    </section>
+
+    <section class="block" aria-labelledby="switch-title">
+      <div class="wrap">
+        <div class="block-in">
+          <h2 class="h2" id="switch-title">A switch changes only the account</h2>
+          <div class="prose">
+            <p>Your history, settings and projects stay where they are.</p>
+            <p>
+              Pitboard keeps the login of each account not in use, called a parked login. A switch
+              parks the login in use and puts the chosen one in its place.
+            </p>
+            <p>
+              <a href={`${DOCS}/guides/switch#what-happens-to-open-sessions`}
+                >Open Claude Code sessions</a
+              >
+              follow a switch within a minute. Restart anything that runs Codex, the ChatGPT app
+              included.
+            </p>
+
+            <figure class="fig demo sv-app" data-demo-fig>
+              <MacScene demo />
+              <figcaption class="fig-cap">
+                <span class="vh">Pitboard's menu with personal in use. The pointer chooses work, the
+                  check mark moves to work, and the menu bar shows work. Then the status line of a
+                  Claude Code session puts work first.
+                </span
+                >Switching accounts in Pitboard's menu.
+              </figcaption>
+            </figure>
+
+            <TerminalTour />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="block" aria-labelledby="trust-title">
+      <div class="wrap">
+        <div class="block-in">
+          <h2 class="h2" id="trust-title">Security and privacy</h2>
+          <div class="prose">
+            <p>
+              Pitboard has no server of its own and no telemetry. The docs
+              <a href={`${DOCS}/security#what-leaves-your-machine`}>list every request it makes</a>.
+            </p>
+            <p>
+              Pitboard keeps
+              <a href={`${DOCS}/security#where-parked-logins-are-kept`}>parked logins</a> in your
+              keychain on macOS and in files on Linux. Before a switch, it checks whose login is in
+              use and that Anthropic or OpenAI still accepts the next one.
+            </p>
+            <p>
+              <a href={`${DOCS}/security#what-pitboard-does-not-protect-against`}
+                >Read what Pitboard does not protect against</a
+              >.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="block" aria-labelledby="usage-title">
+      <div class="wrap">
+        <div class="block-in">
+          <h2 class="h2" id="usage-title">What each account has left</h2>
+          <div class="prose">
+            <p>
+              Pitboard shows each account's usage of every limit, and when each resets. For the
+              account in use, it says which limit runs out first at
+              <a href={`${DOCS}/concepts/usage#pace`}>this pace</a>.
+            </p>
+
+            <figure class="fig">
+              <AccountsWindow />
+              <figcaption class="fig-cap">
+                <span class="vh">The Accounts pane of the Pitboard window, listing Claude Code and
+                  Codex accounts. Each limit has a bar, its pace and when it resets.
+                </span
+                >The Pitboard window, with example accounts.
+              </figcaption>
+            </figure>
+
+            <p>
+              With <a href={`${DOCS}/guides/status-line`}><code>pitboard statusline</code></a> in
+              Claude Code's settings, each session shows the usage of each enrolled Claude Code
+              account.
+            </p>
+            <pre class="statusline" data-output set:html={statusLine} />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="block" aria-labelledby="more-title">
+      <div class="wrap">
+        <div class="block-in">
+          <h2 class="h2" id="more-title">Also in Pitboard</h2>
+          <div class="prose">
+            <p>
+              Pitboard can
+              <a href={`${DOCS}/guides/automatic-switching`}
+                >switch Claude Code to another account</a
+              >
+              before the one in use runs out. It is off by default.
+            </p>
+            <p>
+              The app opens each account's own
+              <a href={`${DOCS}/guides/account-windows`}>claude.ai or chatgpt.com window</a>. Google
+              sign-in fails there.
+            </p>
+            <p>
+              Claude Code's parked logins expire unless Pitboard renews them.
+              <a href={`${DOCS}/guides/renewal`}>Daily renewal</a> runs <code>pitboard renew</code>
+              once a day.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="block" aria-labelledby="releases-title">
+      <div class="wrap">
+        <div class="block-in">
+          <h2 class="h2" id="releases-title">Recent releases</h2>
+          <div class="prose">
+            <table class="tbl" aria-labelledby="releases-title">
+              <tbody>
+                {recent.map((v) => (
+                  <tr
+                    set:html={`<th scope="row"><a href="/changelog#v${v.version}">${v.version}</a></th><td class="t-date">${longDate(v.date)}</td><td>${v.highlight}</td>`}
+                  />
+                ))}
+              </tbody>
+            </table>
+            <p class="more"><a href="/changelog">All releases</a></p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="block" aria-labelledby="faq-title">
+      <div class="wrap">
+        <div class="block-in">
+          <h2 class="h2" id="faq-title">Questions</h2>
+          <div class="qas">
+            {faq.map((item) => <details class="qa">
+              <summary set:html={item.q} />
+              <div class="qa-a">
+                <p set:html={item.a} />
+                <p>
+                  <a href={item.link[0]}>{item.link[1]}</a>
+                </p>
+              </div>
+            </details>)}
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="block install-again" aria-labelledby="install-title">
+      <div class="wrap">
+        <div class="block-in">
+          <h2 class="h2" id="install-title">Install Pitboard</h2>
+          <div>
+            <InstallTabs n={2} zipUrl={zip.url} />
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</Base>

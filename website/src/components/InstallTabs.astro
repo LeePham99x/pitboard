@@ -1,0 +1,76 @@
+---
+import { commands } from "../data/commands.ts";
+import { DOCS } from "../data/site.ts";
+import CommandBox from "./CommandBox.astro";
+
+interface Props {
+  n: number;
+  zipUrl: string;
+}
+const { n, zipUrl } = Astro.props;
+---
+
+<div class="install">
+  <div class="tabs" role="tablist" aria-label="Install Pitboard">
+    <button
+      class="tab"
+      role="tab"
+      type="button"
+      id={`tab-app-${n}`}
+      aria-controls={`tp-app-${n}`}
+      aria-selected="true"
+      data-surface="app"
+    >
+      App
+    </button>
+    <button
+      class="tab"
+      role="tab"
+      type="button"
+      id={`tab-cli-${n}`}
+      aria-controls={`tp-cli-${n}`}
+      aria-selected="false"
+      tabindex="-1"
+      data-surface="cli"
+    >
+      Command line
+    </button>
+  </div>
+  <div class="tabpanels">
+    <div
+      class="tabpanel tp-app"
+      role="tabpanel"
+      id={`tp-app-${n}`}
+      aria-labelledby={`tab-app-${n}`}
+    >
+      <p class="tp-head">App</p>
+      <p class="note">The menu bar app needs macOS 14 or later and includes the command line.</p>
+      <a class="btn" href={zipUrl} data-download>Download for Mac</a>
+      <p class="cmd-lead">Or install it with Homebrew:</p>
+      <CommandBox command={commands.brewApp} />
+      <p class="note">
+        <span class="after">Move Pitboard to your Applications folder before you open it. </span
+        >Then <a href={`${DOCS}/guides/accounts`}>add your accounts</a>.
+      </p>
+    </div>
+    <div
+      class="tabpanel tp-cli"
+      role="tabpanel"
+      id={`tp-cli-${n}`}
+      aria-labelledby={`tab-cli-${n}`}
+    >
+      <p class="tp-head">Command line</p>
+      <CommandBox command={commands.installScript} />
+      <p class="note">
+        The script puts <code>pitboard</code> in <code>~/.local/bin</code> and changes no shell
+        profile.
+      </p>
+      <p class="note">
+        <a href={`${DOCS}/install/verify#check-the-install-script`}
+          >Check the script before you run it</a
+        >, <span class="nw">or see <a href="/download#other-ways">other ways to install</a>.</span>
+      </p>
+      <p class="note">Then <a href={`${DOCS}/guides/accounts`}>add your accounts</a>.</p>
+    </div>
+  </div>
+</div>
