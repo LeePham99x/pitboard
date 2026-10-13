@@ -613,7 +613,7 @@ pub(super) fn check_park(
     let manifest_file = parks::manifest_file(ctx, &park.service);
     let manifest = parks::read_manifest(ctx, &park.service)
         .map_err(|e| unseen(&manifest_file, e, "its manifest is missing".into()))?
-        .map_err(&corrupt)?;
+        .map_err(corrupt)?;
     if manifest.v != parks::VERSION
         || manifest.tool != tool.code()
         || manifest.account.as_deref() != Some(account.id.as_str())
@@ -657,7 +657,7 @@ pub(super) fn check_park(
     let keys_file = parks::keys_file(ctx, &park.service);
     let keys = park_keys(ctx, &park.service)
         .map_err(|e| unseen(&keys_file, e, "the park's `keys.json` is missing".into()))?
-        .map_err(&corrupt)?;
+        .map_err(corrupt)?;
     let named = keys
         .get(app.naming_key())
         .and_then(|value| serde_json::from_str::<String>(value.get()).ok());
@@ -810,8 +810,8 @@ pub(super) fn arrive(
         true => Some(crate::park::reserve_aside(ctx, permit, state)?),
         false => None,
     };
-    quiet(ctx, app).map_err(&before_record)?;
-    places_free(app, root, &checked, leftovers).map_err(&left_signed_out)?;
+    quiet(ctx, app).map_err(before_record)?;
+    places_free(app, root, &checked, leftovers).map_err(left_signed_out)?;
     let moving = Moving {
         half: Half::Arrive,
         started_at: ctx.now(),
@@ -829,7 +829,7 @@ pub(super) fn arrive(
         awaited: None,
     };
     state.moving.insert(tool.code().to_string(), moving.clone());
-    state::save(ctx, permit, state).map_err(&before_record)?;
+    state::save(ctx, permit, state).map_err(before_record)?;
     identify::write_down(ctx, permit, noticed);
     fault::point("arrive.recorded");
 
