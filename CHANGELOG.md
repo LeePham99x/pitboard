@@ -21,6 +21,11 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   `weekly`; `autoswitch::retry_after` and its constants moved to `duty::cadence`, and
   `autoswitch::Look` is now `duty::Look<Auto>`.
 
+### Fixed
+
+- **Settings** fits on smaller screens, such as 1024 x 768: a pane longer than the window
+  scrolls.
+
 ## [0.12.0] - 2026-10-12
 
 ### Added
