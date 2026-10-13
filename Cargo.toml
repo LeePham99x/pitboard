@@ -44,7 +44,7 @@ sha2 = "0.11"
 thiserror = "2"
 # Codex's configuration, read as Codex 0.160.0 reads it. The parser alone: Pitboard never
 # writes TOML, so neither the writer nor the order a table was written in is wanted.
-toml = { version = "0.9.12", default-features = false, features = ["std", "parse", "serde"] }
+toml = { version = "1.1.6", default-features = false, features = ["std", "parse", "serde"] }
 # macOS's forced managed preferences, which Codex reads the same way, through the bindings
 # Codex itself uses.
 core-foundation = "0.10.1"
