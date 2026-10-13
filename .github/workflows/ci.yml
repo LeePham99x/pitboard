@@ -454,20 +454,16 @@ jobs:
       - run: cargo "+$FLOOR" check -p pitboard-ffi --all-targets --locked --features fixture
 
   semver:
-    # What a published version promises, checked against the published version. It reports
-    # and does not block: the crate is the binary's engine before it is anyone's library,
-    # and a first run on a young crate finds things worth reading rather than obeying.
+    # What pitboard-core's last version on crates.io promises. A change that breaks it needs
+    # the version in Cargo.toml raised, as RELEASING.md says, and fails here until it is.
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
+      - uses: obi1kenobi/cargo-semver-checks-action@6b69fcf40e9b5fb17adeb57e4b6ecd020649a239 # v2.9
         with:
-          tool: cargo-semver-checks
-      - run: cargo semver-checks --package pitboard-core
+          package: pitboard-core
 
   deny:
     runs-on: ubuntu-latest

@@ -175,7 +175,7 @@ CI also runs:
 - the C# job: the core's C# bindings generated, compiled and called against the core on
   Linux, as the Windows app will call them, then against the core built with its fixtures,
   whose bindings must be the same and whose model a test starts
-- `cargo semver-checks --package pitboard-core`, which reports and does not block
+- `cargo semver-checks` on `pitboard-core`, against its last version on crates.io
 - the install script job, on macOS and Linux: `shellcheck` 0.11.0 on Linux, then
   `test-install.py` under every shell the job names for that system, with zsh and BusyBox
   installed on Linux
@@ -536,6 +536,10 @@ A pull request against `main` needs all of the following:
 - A dependency you add comes with a reason, and `cargo deny check` passes. It checks
   advisories, licences, bans and sources against `deny.toml`.
 - `CHANGELOG.md` has an entry, if someone using Pitboard would notice the change.
+- A change that removes, renames or reshapes anything public in `pitboard-core` raises the
+  minor version in `Cargo.toml`, and the `=` version of `pitboard-core` beside it, unless
+  `main` is already ahead of the last release. Then run `cargo update --workspace`.
+  [Prepare a release](RELEASING.md#prepare-a-release) says why.
 
 Since 0.3.0, most commit subjects are one present-tense sentence saying what Pitboard does
 after the change, with no prefix. An example is "The man page sets out every command instead
