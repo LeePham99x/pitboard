@@ -1861,6 +1861,7 @@ fn the_wait_says_each_step_it_meets() {
         open.message
     );
     assert_eq!(open.waiting, "Waiting for Claude to quit");
+    assert_eq!(open.announce, None);
     let nobody = step(
         &mut model,
         "Claude quit with nobody signed in. Still waiting.\n",
@@ -1870,6 +1871,11 @@ fn the_wait_says_each_step_it_meets() {
         nobody
             .message
             .starts_with("Claude quit with nobody signed in.")
+    );
+    assert_eq!(
+        nobody.announce.as_ref(),
+        Some(&nobody.message),
+        "asks again"
     );
     let unfinished = step(
         &mut model,
@@ -1881,6 +1887,7 @@ fn the_wait_says_each_step_it_meets() {
             .message
             .starts_with("Claude quit before it finished signing in.")
     );
+    assert_eq!(unfinished.announce.as_ref(), Some(&unfinished.message));
 }
 
 #[test]
@@ -1954,17 +1961,97 @@ fn a_sheet_that_is_saving_does_not_close() {
 }
 
 #[test]
-fn a_question_answered_over_another_sign_in_lets_its_sheet_go() {
+fn a_sheet_held_for_the_quit_question_stays_up_until_it_is_answered() {
+    let name = Sheet::Name {
+        provider: "claude".into(),
+        email: "a@example.com".into(),
+    };
+    let held = [
+        (add(Some("desktop")), travel()),
+        (
+            Sheet::SignInAgain {
+                provider: "desktop".into(),
+                label: "work".into(),
+            },
+            sign_in("desktop", "work"),
+        ),
+        (
+            Sheet::Name {
+                provider: "desktop".into(),
+                email: String::new(),
+            },
+            Intent::Enrol {
+                provider: "desktop".into(),
+                name: "travel".into(),
+            },
+        ),
+    ];
+    let up = |sheet: &Sheet, starts_it: &Intent| {
+        let mut model = Hand::new();
+        let mut machine = desktop_machine(true);
+        model.refresh(&mut machine);
+        put_up(&mut model, &mut machine, sheet.clone());
+        model.send(starts_it.clone());
+        (model, machine)
+    };
+    for (sheet, starts_it) in &held {
+        // Put up while Pitboard asks whether Claude runs, and while the question is asked.
+        for asked in [false, true] {
+            let (mut model, mut machine) = up(sheet, starts_it);
+            if asked {
+                model.run(&mut machine);
+                assert!(model.shown().quit_question.is_some(), "{sheet:?}");
+            }
+            model.send(present(name.clone()));
+            assert_eq!(model.shown().sheet.as_ref(), Some(sheet), "{asked}");
+            model.run(&mut machine);
+            let question = model.shown().quit_question.expect("asked");
+            model.send(Intent::QuitAndSwitch {
+                qualified: question.qualified,
+            });
+            model.send(present(name.clone()));
+            assert_eq!(
+                model.shown().sheet.as_ref(),
+                Some(sheet),
+                "{asked}: while Claude quits"
+            );
+        }
+        let (mut model, mut machine) = up(sheet, starts_it);
+        model.run(&mut machine);
+        model.send(Intent::KeepAppOpen);
+        model.send(present(name.clone()));
+        assert_eq!(
+            model.shown().sheet.as_ref(),
+            Some(&name),
+            "{sheet:?}: let go once the question is closed"
+        );
+    }
     let (mut model, mut machine) = adding_in_claude(true);
     model.send(travel());
     model.run(&mut machine);
     let question = model.shown().quit_question.expect("asked");
+    model.send(Intent::QuitAndSwitch {
+        qualified: question.qualified,
+    });
+    model.run(&mut machine);
+    let shown = model.on_a_mac();
+    assert_eq!(shown.sheet, Some(add(Some("desktop"))));
+    assert!(shown.signing_in_text.is_some(), "the wait is on screen");
+}
+
+#[test]
+fn a_late_answer_beside_another_sign_in_quits_nothing() {
+    let (mut model, mut machine) = adding_in_claude(true);
+    model.send(travel());
+    model.run(&mut machine);
+    let question = model.shown().quit_question.expect("asked");
+    // Closed before the app sends its answer, which lets the sheet be replaced meanwhile.
+    model.send(Intent::KeepAppOpen);
     put_up(&mut model, &mut machine, add(None));
     starts(&mut model, &mut machine, "claude", "one");
     model.send(Intent::QuitAndSwitch {
         qualified: question.qualified,
     });
-    model.send(Intent::KeepAppOpen);
     model.send(Intent::CancelSignIn);
     model.run(&mut machine);
     assert_eq!(model.count(a_quit), 0);

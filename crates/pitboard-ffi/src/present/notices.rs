@@ -192,14 +192,32 @@ pub(crate) fn notices(seen: &Seen, footing: &Footing) -> Vec<PanelNotice> {
         let reason = seen
             .problem()
             .map_or_else(|| words::switch_waits_for(&seen.services()), str::to_owned);
+        // Their own notices are left out: every change they offer waits for this switch.
+        let mut moving: Vec<(String, &str)> = Vec::new();
+        let waiting = state
+            .warnings
+            .iter()
+            .filter(|warning| warning.code == "move_waiting");
+        for tool in waiting.filter_map(|warning| warning.provider.as_deref()) {
+            let name = seen.tool_name(tool);
+            if !moving.iter().any(|(named, _)| *named == name) {
+                moving.push((name, seen.program_of(tool)));
+            }
+        }
+        let mut lines = vec![
+            reason,
+            "Giving up on it keeps every login. Nothing is deleted.".into(),
+        ];
+        lines.extend(
+            moving
+                .iter()
+                .map(|(tool, program)| words::move_waits_too(tool, program)),
+        );
         said.push(notice(
             "stuck".into(),
             Severity::Error,
             "An interrupted switch is waiting".into(),
-            vec![
-                reason,
-                "Giving up on it keeps every login. Nothing is deleted.".into(),
-            ],
+            lines,
             vec![NoticeAction {
                 title: "Give Up…".into(),
                 intent: Intent::AbandonStuckSwitch,
@@ -208,9 +226,7 @@ pub(crate) fn notices(seen: &Seen, footing: &Footing) -> Vec<PanelNotice> {
                 enabled: true,
                 confirm: Some(Question {
                     title: "Give up on the interrupted switch?".into(),
-                    message: "Every login is kept, and nothing is deleted. Pitboard stops \
-                              trying to finish it."
-                        .into(),
+                    message: words::give_up_stuck(&moving),
                     confirm: "Give Up".into(),
                 }),
             }],
@@ -551,9 +567,9 @@ fn capitalised(text: &str) -> String {
     })
 }
 
-/// What the menu says of the notices: advice as items that switch; anything else to know
-/// about, past a note, as one item that opens the window where it is said in full; and the
-/// one thing to do on a machine that has no tool.
+/// What the menu says of the notices: advice and an add left halfway as items that act on
+/// them; anything else to know about, past a note, as one item that opens the window where it
+/// is said in full; and the one thing to do on a machine that has no tool.
 pub(crate) fn menu_notices(seen: &Seen, footing: &Footing, notices: &[PanelNotice]) -> MenuNotices {
     let pressing: Vec<&PanelNotice> = notices
         .iter()
@@ -573,7 +589,8 @@ pub(crate) fn menu_notices(seen: &Seen, footing: &Footing, notices: &[PanelNotic
                 title: action.title.clone(),
                 subtitle: Some(notice.title.clone()),
                 help: None,
-                severity: None,
+                // The menu draws an item that switches with the switch's symbol.
+                severity: (!action.switches).then_some(notice.severity),
                 intent: Some(action.intent.clone()),
                 link: None,
                 enabled: action.enabled && seen.state.switch_under_way().is_none(),
@@ -796,6 +813,10 @@ mod tests {
                 .find(|notice| notice.id.starts_with(&format!("warning/{code}/")))
                 .expect("the warning's notice");
             assert_eq!(
+                notice.title, "The account in use is not confirmed",
+                "{code}"
+            );
+            assert_eq!(
                 actions(notice),
                 [(
                     "Add the Account Claude Shows…",
@@ -817,8 +838,78 @@ mod tests {
         );
         let shown = shown(claude_code_config);
         assert_eq!(
+            shown.notices[0].title,
+            "Claude Code’s config names another account"
+        );
+        assert_eq!(
             shown.notices[0].actions[0].title, "Update Claude Code’s Config",
             "Claude Code's own stays"
+        );
+    }
+
+    fn stuck_beside(warnings: Vec<Warning>) -> PanelNotice {
+        let read = status(
+            vec![
+                account(Some("work")).signed_in().build(),
+                desktop_account("work", false),
+                desktop_account("home", false),
+            ],
+            warnings,
+        );
+        let mut state = super::super::testing::read(read, vec![claude_code(), claude_desktop()]);
+        state.stuck = true;
+        let shown = present_on(Os::MacOs, &state, 0, &Utc);
+        assert!(
+            !shown
+                .notices
+                .iter()
+                .any(|notice| notice.id.starts_with("warning/move_waiting/")),
+            "its own notice offers what a stuck switch refuses"
+        );
+        shown
+            .notices
+            .into_iter()
+            .find(|notice| notice.id == "stuck")
+            .expect("the stuck notice")
+    }
+
+    #[test]
+    fn a_stuck_switch_says_the_claude_desktop_move_its_give_up_settles_too() {
+        let stuck = stuck_beside(vec![desktop_warning(
+            "move_waiting",
+            "A move of work’s login was interrupted. Quit Claude, then use any Claude Desktop \
+             account: Pitboard settles the move first.",
+        )]);
+        assert_eq!(
+            stuck.lines,
+            [
+                "An interrupted switch can’t be finished until Anthropic answers.",
+                "Giving up on it keeps every login. Nothing is deleted.",
+                "A Claude Desktop move was interrupted too. With Claude quit, Give Up… settles it \
+                 or gives it up as well, and keeps every folder.",
+            ]
+        );
+        assert_eq!(
+            stuck.actions[0]
+                .confirm
+                .as_ref()
+                .map(|asked| asked.message.as_str()),
+            Some(
+                "Every login is kept, and nothing is deleted. Pitboard stops trying to finish it \
+                 and, with Claude quit, settles or gives up the interrupted Claude Desktop move \
+                 too."
+            )
+        );
+        let alone = stuck_beside(Vec::new());
+        assert_eq!(alone.lines.len(), 2);
+        assert_eq!(
+            alone.actions[0]
+                .confirm
+                .as_ref()
+                .map(|asked| asked.message.as_str()),
+            Some(
+                "Every login is kept, and nothing is deleted. Pitboard stops trying to finish it."
+            )
         );
     }
 
@@ -836,6 +927,14 @@ mod tests {
         );
         assert!(menu.switches.iter().all(|entry| entry.subtitle.as_deref()
             == Some("Adding a Claude Desktop account isn’t finished")));
+        assert_eq!(
+            menu.switches
+                .iter()
+                .map(|entry| entry.severity)
+                .collect::<Vec<_>>(),
+            [Some(Severity::Warning), None],
+            "only Put work Back switches"
+        );
     }
 
     #[test]

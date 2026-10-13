@@ -20,10 +20,11 @@
 //! change poll leaves the account index alone: the change is the switch's own.
 //!
 //! Every other change this app makes to the account index holds it the same way, from the
-//! moment it is asked for, a sign-in's from the moment it is told to enrol, until the read
-//! after it is over or the change has failed. The Swift model held nothing for them, so a look
-//! that found the index as one had just written it, and was compared once that change had
-//! taken its read's ticket, counted the change as one made elsewhere and dropped that read.
+//! moment it is asked for, a sign-in's from the moment it is told to enrol, and a change of an
+//! app's login once the app is seen closed, until the read after it is over or the change has
+//! failed. The Swift model held nothing for them, so a look that found the index as one had
+//! just written it, and was compared once that change had taken its read's ticket, counted
+//! the change as one made elsewhere and dropped that read.
 //!
 //! A sign-in is told apart by its id, where the Swift model compared objects with `===`. Its
 //! thread hands on what the tool says as it says it, and once the tool has stopped saying
@@ -79,7 +80,7 @@ pub(crate) struct Cadence {
     /// again: a menu is opened far more often than the numbers change.
     pub(crate) stale_after: Duration,
     /// How long an app has to quit once asked. Long enough for one that asks about work in
-    /// progress to be answered; past it, nothing has changed and the switch is not made.
+    /// progress to be answered; past it, nothing has changed.
     pub(crate) quit_within: Duration,
     /// How often, meanwhile, it is asked whether the app is still running.
     pub(crate) quit_checked_every: Duration,
@@ -978,8 +979,6 @@ pub(crate) struct State {
     failures: u64,
     /// The requests for the main window.
     pub(crate) window: WindowRequest,
-    /// The sign-in under way, from the moment it is asked for until it has finished, failed
-    /// or been cancelled.
     signing_in: Option<SigningIn>,
     /// The sign-in that may still hold the core's one sign-in at a time, from when its thread
     /// is asked for until it has let go of it: until then its tool may still run, so the next
@@ -1845,9 +1844,10 @@ impl State {
 
     /// Puts `sheet` over the main window, opening it on the accounts the sheet is about.
     fn present_sheet(&mut self, sheet: Sheet, jobs: &mut Vec<Job>) {
-        // A sign-in under way keeps its sheet: replacing it would leave the tool's sign-in
+        // A sign-in under way keeps its sheet, and so does a change of an app's login from
+        // the moment Pitboard asks whether the app runs: replacing it would leave the change
         // running with nothing on screen to finish or stop it.
-        if self.signing_in.is_none() {
+        if self.signing_in.is_none() && !self.held_for_its_app() {
             // The first answer to what is installed may have come while the person's login
             // shell was too slow to say, and the core asks it once more when that was so.
             if self.sheet.is_none() && matches!(sheet, Sheet::Add { .. }) {
@@ -1865,6 +1865,18 @@ impl State {
             self.sheet = Some(sheet);
         }
         self.show_window(Some(Pane::Accounts));
+    }
+
+    // A save that changes no app's login lets its sheet be replaced and answers in the window.
+    fn held_for_its_app(&self) -> bool {
+        self.sheet.as_ref().is_some_and(|sheet| {
+            self.saving.contains(sheet)
+                && match sheet {
+                    Sheet::Add { .. } | Sheet::SignInAgain { .. } => true,
+                    Sheet::Name { provider, .. } => in_its_app(provider),
+                    Sheet::Rename { .. } | Sheet::Stow => false,
+                }
+        })
     }
 
     /// Asks which tools are installed, unless that is being asked already, whose answer
@@ -3166,11 +3178,7 @@ impl State {
     }
 
     fn quit_and_switch(&mut self, qualified: &str, jobs: &mut Vec<Job>) {
-        let Some(Quitting {
-            question,
-            then,
-            asked,
-        }) = self
+        let Some(Quitting { question, then, .. }) = self
             .quitting
             .take_if(|quitting| quitting.question.qualified == qualified)
         else {
@@ -3183,11 +3191,9 @@ impl State {
                 name,
                 from,
             } => {
-                // One sign-in at a time: another started from a sheet put up meanwhile.
+                // One sign-in at a time: another started from a sheet put up once the question
+                // was closed, which let this one's sheet go.
                 if self.signing_in.is_some() {
-                    if asked {
-                        self.saved(from.as_ref());
-                    }
                     return;
                 }
                 self.hold(from.as_ref());
@@ -3235,18 +3241,14 @@ impl State {
             code: None,
             warnings: Vec::new(),
         };
-        match outcome {
+        let lingering = match outcome {
             QuitOutcome::Quit { copy } => {
                 return self.go_on(qualified, then, Some(copy), true, jobs);
             }
             QuitOutcome::NotRunning => return self.go_on(qualified, then, None, true, jobs),
-            QuitOutcome::StillRunning => {}
-            QuitOutcome::Lingering { copy } => jobs.push(Job::Open {
-                location: copy,
-                tool: split(&qualified).0.to_owned(),
-                front: false,
-            }),
-        }
+            QuitOutcome::StillRunning => None,
+            QuitOutcome::Lingering { copy } => Some(copy),
+        };
         match then {
             After::Switch => {
                 self.switching = None;
@@ -3265,6 +3267,10 @@ impl State {
                 let title = could_not_enrol(from.as_ref(), &name);
                 self.save_failed(from.as_ref(), failed(title, other));
             }
+        }
+        // Here, once a switch this quit was for has let go: one asked meanwhile holds it back.
+        if let Some(copy) = lingering {
+            self.open_again(split(&qualified).0.to_owned(), copy, false, jobs);
         }
     }
 
@@ -3597,19 +3603,23 @@ impl State {
         now: Now,
         jobs: &mut Vec<Job>,
     ) {
+        let tool = split(qualified).0;
         match done {
             Ok(()) => {
                 self.changes_seen += 1;
+                self.refused_by.remove(tool);
                 self.updated_ms = None;
                 self.read_after_change(now, jobs);
             }
             Err(error) => {
                 self.change_over();
                 let title = could_not_forget(qualified);
-                self.present(match error {
+                let refused = match error {
                     Some(error) => Refused::of(title, error),
                     None => Refused::lost(title),
-                });
+                };
+                self.refused(tool, &refused);
+                self.present(refused);
             }
         }
     }

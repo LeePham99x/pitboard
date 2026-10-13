@@ -9,7 +9,7 @@ use crate::Tool;
 use crate::account_windows::AlertText;
 use crate::model::state::{After, InAppAdd, Leftover, Recording, in_its_app, split, trimmed};
 use crate::model::{Failure, Intent, QuitQuestion, Sheet};
-use pitboard_core::switch::Foreseen;
+use pitboard_core::switch::{Foreseen, WaitStep};
 use pitboard_core::words as said;
 
 /// The name a sheet would save or sign in as, from what was typed in it, or `None` while
@@ -391,6 +391,7 @@ pub(crate) fn signing_in_text(seen: &Seen) -> Option<SigningInText> {
         },
         escape_cancels: true,
         undo: None,
+        announce: None,
         title: format!("Signing In to {tool}"),
         message: format!(
             "Finish signing in as {} in your browser. This closes once {tool} says you’re in.",
@@ -442,6 +443,11 @@ fn in_app_signing_in_text(seen: &Seen, signing: &crate::model::state::SigningIn)
         )
     };
     let put_back = signing.put_back.as_deref().filter(|_| signing.started);
+    let asks_again = matches!(
+        signing.step,
+        Some(WaitStep::QuitSignedOut | WaitStep::QuitUnfinished)
+    );
+    let announce = (signing.started && asks_again).then(|| message.clone());
     SigningInText {
         title: if signing.again {
             format!("Sign In to {} Again", signing.name)
@@ -470,6 +476,7 @@ fn in_app_signing_in_text(seen: &Seen, signing: &crate::model::state::SigningIn)
             },
             enabled: seen.state.switch_under_way().is_none(),
         }),
+        announce,
     }
 }
 

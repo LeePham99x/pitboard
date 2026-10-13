@@ -63,9 +63,9 @@ struct MenuBarContent: View {
 
     // MARK: - What needs attention
 
-    /// How to install Claude Code where no tool is here; advice to switch, as items that
-    /// switch; anything else to know about, as one item that opens the window where it is
-    /// said in full; and an update that is ready.
+    /// How to install Claude Code where no tool is here; advice to switch, and an add left
+    /// halfway, as items that act on it; anything else to know about, as one item that opens
+    /// the window where it is said in full; and an update that is ready.
     @ViewBuilder private var attention: some View {
         let notices = model.menuNotices
         let waiting = updates.available ? updates.waiting : nil
@@ -85,7 +85,7 @@ struct MenuBarContent: View {
                     Button {
                         if let intent = advice.intent { model.send(intent) }
                     } label: {
-                        Image(systemName: Symbol.switchAccount)
+                        Image(systemName: advice.severity?.symbol ?? Symbol.switchAccount)
                         entry(advice)
                     }
                     .disabled(!advice.enabled)

@@ -117,6 +117,7 @@ Notices, most pressing first:
 | Notice | Shown when | Buttons |
 | --- | --- | --- |
 | **An interrupted switch is waiting** | A switch stopped partway, and Pitboard cannot yet tell whether it finished. | **Give Up**, which asks first |
+| **An interrupted switch is waiting**, with a Claude Desktop move waiting too | The same, and a Claude Desktop move was interrupted. The notice says so in place of **An interrupted move is waiting**. | **Give Up**, which asks first. With Claude quit, it settles or gives up the move too. |
 | **Couldn't read usage** | The last read failed, for the reason under the title. | None |
 | **work has no 5-hour limit left** | The account in use ran out of a limit, and another account of its tool has room. With more than one tool, the tool's name comes first. | **Switch to personal** |
 | **Switched to work**, or **Switched Codex to work** with more than one tool | A switch the app made finished, asked for or automatic. Its lines say what happens to open sessions, with a countdown for Claude Code. | **Dismiss** (an x) |
@@ -125,7 +126,7 @@ Notices, most pressing first:
 | **Claude Code's config names another account** | The config names another account than the one whose login Claude Code has stored. | **Update Claude Code's Config**, while the account in use is enrolled. It writes that account into the config and moves no login. It fails if another login is stored by then. |
 | **A login file is left behind the keychain** | `~/.claude/.credentials.json` sits behind the keychain. | **Put Away**. None when Pitboard cannot read the file. |
 | **An interrupted move is waiting** | A Claude Desktop move was interrupted, and its record waits. | **Add the Account Claude Shows**. **Give Up**, which asks first, once a Claude Desktop change from the app was refused because Pitboard cannot settle the move. |
-| **The account in use is not confirmed** or **Claude Code's config names another account**, for Claude Desktop | Claude's settings have named another account, or nobody, since Pitboard last read Claude. | **Add the Account Claude Shows** |
+| **The account in use is not confirmed**, for Claude Desktop | Claude's settings have named another account, or nobody, since Pitboard last read Claude. | **Add the Account Claude Shows** |
 | Another warning's title, such as **A parked login was refused** | A read or a change warned. [Warning codes](/reference/errors#warning-codes) lists each title. | None |
 | **Gave up on the interrupted switch** | You gave up on it. | **Dismiss** (an x) |
 | **Gave up on the interrupted move** | You gave up on a Claude Desktop move. Its lines say what was kept and what to do next. | **Dismiss** (an x) |
@@ -206,7 +207,7 @@ For Claude Desktop, **Add Account** and **Sign In to home Again** run no browser
 | **Add the Account Claude Shows** | An add waits, or Pitboard cannot identify the login Claude holds. | Records the account Claude is signed in to under the name. |
 | **Record as home** | In **Sign In to home Again**, where an add waits or Pitboard cannot identify the login Claude holds. | Records the account Claude is signed in to as `home`'s login. |
 
-While Pitboard quits Claude to record its account, then reads it, the dialog says **Quitting Claude**, then **Reading Claude's account**, under its fields.
+While Pitboard quits Claude to record its account, then reads it, the dialog says **Quitting Claude**, then **Reading Claude's account**, under its fields. **Tool** and **Name** are dimmed meanwhile, and while the quit question is up.
 
 While Pitboard waits for a sign-in inside Claude, the dialog keeps its title. It shows **Quitting Claude**, **Parking work** or **Starting**, then **Waiting for Claude to quit** and what to do in Claude. Its buttons:
 
@@ -233,6 +234,7 @@ If an action fails, its dialog stays open with what you entered and says why und
 | --- | --- | --- | --- |
 | **Forget "work"?**, or **Forget "work (Codex)"?** with more than one tool | **Forget**, or Delete on a selected row | **Pitboard deletes the login it parked for this account, and everything its claude.ai window keeps on this Mac, its sign-in included. Using it again needs a sign-in in your browser.** For a Codex account, it names the chatgpt.com window. For a Claude Desktop account: **Pitboard deletes the login it parked for this account and the folders set aside for it. Using it again needs a sign-in in Claude.** | **Forget**, **Cancel** |
 | **Give up on the interrupted switch?** | **Give Up** | **Every login is kept, and nothing is deleted. Pitboard stops trying to finish it.** | **Give Up**, **Cancel** |
+| The same | **Give Up**, with a Claude Desktop move waiting too | **Every login is kept, and nothing is deleted. Pitboard stops trying to finish it and, with Claude quit, settles or gives up the interrupted Claude Desktop move too.** | **Give Up**, **Cancel** |
 | **Quit ChatGPT to switch?** | A switch to a Codex account while the ChatGPT app is open | **ChatGPT keeps using the account it started with until it quits. Pitboard quits it, switches, and opens it again.** | **Quit ChatGPT and Switch**, **Cancel** |
 | **Quit Claude to switch?** | A switch to a Claude Desktop account while Claude is open | **Pitboard moves Claude's login only while Claude is closed. It quits Claude, switches to home, and opens it again.** | **Quit Claude and Switch**, **Cancel** |
 | **Quit Claude to add an account?**, or **Quit Claude to sign in to home again?** | **Park work** while Claude is open | **Pitboard parks work only while Claude is closed. It quits Claude, parks work, and opens Claude again for you to sign in.** | **Quit Claude and Park work**, **Cancel** |

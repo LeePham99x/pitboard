@@ -45,6 +45,10 @@ struct SignInSheet: View {
                 shown = nil
             }
         }
+        // VoiceOver does not read what appears by itself.
+        .onChange(of: model.signingInText?.announce, initial: true) { _, said in
+            if let said { AccessibilityNotification.Announcement(said).post() }
+        }
     }
 
     // MARK: - Before it starts
@@ -66,6 +70,7 @@ struct SignInSheet: View {
                         }
                     }
                     .accessibilityIdentifier("sheet.tool")
+                    .disabled(busy)
                 }
                 if let account = text?.account {
                     LabeledContent("Account", value: account)
@@ -74,6 +79,7 @@ struct SignInSheet: View {
                         .accessibilityIdentifier("sheet.name")
                         .focused($nameFocused)
                         .onSubmit(start)
+                        .disabled(busy)
                 }
                 if let working = text?.progress {
                     ProgressView(working)

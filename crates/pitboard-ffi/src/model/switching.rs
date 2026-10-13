@@ -1521,6 +1521,69 @@ fn a_switch_asked_while_claude_quits_for_a_sign_in_parks_nothing() {
 }
 
 #[test]
+fn claude_left_partly_running_for_an_add_opens_only_after_a_switch_asked_meanwhile() {
+    // An add that parks for a sign-in, and one that records the account Claude shows.
+    for recording in [false, true] {
+        let mut model = Hand::new();
+        let mut machine = desktop_machine(true);
+        machine.lingers = true;
+        machine.switched = desktop_switched();
+        if recording {
+            machine.answer = Ok(warned(
+                vec![
+                    desktop_account("work", true),
+                    desktop_account("home", false),
+                ],
+                vec![desktop_warning(
+                    "in_use_unconfirmed",
+                    "Claude’s settings have named home since Pitboard last read work in use.",
+                )],
+            ));
+        }
+        model.refresh(&mut machine);
+        model.send(Intent::PresentSheet { sheet: add_sheet() });
+        model.run(&mut machine);
+        model.send(Intent::SignIn {
+            provider: "desktop".into(),
+            name: "travel".into(),
+        });
+        model.run(&mut machine);
+        model.send(quit_and_switch("desktop/travel"));
+        model.send(Intent::SwitchTo {
+            qualified: "desktop/home".into(),
+        });
+        let quit = model.take(|job| matches!(job, Job::Quit { .. }));
+        let answer = machine.answer(quit);
+        model.give(answer);
+        model.run_but(&mut machine, a_switch);
+        assert_eq!(
+            machine.apps.asked(),
+            [format!("quit {CLAUDE}")],
+            "{recording}: nothing opens Claude while the switch is claimed"
+        );
+        let switch = model.take(a_switch);
+        assert_eq!(
+            switch,
+            Job::Switch {
+                qualified: "desktop/home".into(),
+                reopen: Some(StandInApps::copy_of(CLAUDE)),
+            },
+            "{recording}"
+        );
+        let answer = machine.answer(switch);
+        model.give(answer);
+        model.run(&mut machine);
+        assert_eq!(
+            machine.apps.asked(),
+            [format!("quit {CLAUDE}"), format!("open {CLAUDE}")],
+            "{recording}"
+        );
+        assert!(machine.signed_in.is_empty() && machine.enrolled.is_empty());
+        assert_eq!(machine.switched_to, ["desktop/home"]);
+    }
+}
+
+#[test]
 fn a_switch_asked_while_claude_parks_for_a_sign_in_waits_for_the_park() {
     for held_first in [true, false] {
         let mut model = Hand::new();
@@ -1754,6 +1817,43 @@ fn a_waiting_move_offers_no_give_up_before_a_change_has_tried_to_settle_it() {
     assert_eq!(
         notice_actions(&model, "warning/move_waiting/"),
         ["Add the Account Claude Shows…"]
+    );
+}
+
+#[test]
+fn a_forget_refused_while_a_move_waits_offers_to_give_it_up() {
+    let mut model = Hand::new();
+    let mut machine = desktop_machine(false);
+    machine.answer = Ok(warned(
+        vec![
+            desktop_account("work", false),
+            desktop_account("home", false),
+        ],
+        vec![move_waiting()],
+    ));
+    machine.forgetting = Err(refusal("recovery_undetermined", "undetermined", Vec::new()));
+    model.refresh(&mut machine);
+    model.send(Intent::Forget {
+        qualified: "desktop/home".into(),
+    });
+    model.run(&mut machine);
+    assert_eq!(
+        model.shown().failure.expect("said").title,
+        "Couldn’t forget home"
+    );
+    assert_eq!(
+        notice_actions(&model, "warning/move_waiting/"),
+        ["Add the Account Claude Shows…", "Give Up…"]
+    );
+    machine.forgetting = Ok(());
+    model.send(Intent::Forget {
+        qualified: "desktop/home".into(),
+    });
+    model.run(&mut machine);
+    assert_eq!(
+        notice_actions(&model, "warning/move_waiting/"),
+        ["Add the Account Claude Shows…"],
+        "a forget that lands settled the move first"
     );
 }
 

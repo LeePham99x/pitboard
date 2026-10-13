@@ -308,7 +308,7 @@ pub struct NoticeAction {
 pub struct MenuNotices {
     /// No tool Pitboard works with is here: how to install Claude Code.
     pub install: Option<MenuEntry>,
-    /// Advice, as items that switch.
+    /// Advice, as items that switch, and an add left halfway, as its way on and its way back.
     pub switches: Vec<MenuEntry>,
     /// Everything else to know about that is more than a note, as one item.
     pub others: Option<MenuEntry>,
@@ -480,6 +480,8 @@ pub struct SigningInText {
     pub escape_cancels: bool,
     // undoes what was done for it, where something was: Put work Back
     pub undo: Option<Choice>,
+    // said aloud as it appears: a step that asks for the sign-in again
+    pub announce: Option<String>,
 }
 
 /// What every part of a snapshot is worked out from.
@@ -605,26 +607,34 @@ impl<'a> Seen<'a> {
     }
 
     /// Who is asked about the accounts shown, as a sentence names them: "Anthropic", or
-    /// "Anthropic or OpenAI". Before there are accounts, whoever could be.
+    /// "Anthropic or OpenAI". Where no account shown is of a tool that is asked, whoever could be.
     pub(crate) fn services(&self) -> String {
-        let asked: Vec<Tool> = if self.accounts().is_empty() {
-            self.addable()
+        let asks =
+            |tool: &&Tool| ProviderId::parse(&tool.code).is_some_and(ProviderId::reads_usage);
+        let shown: Vec<&Tool> = self
+            .tools
+            .iter()
+            .filter(asks)
+            .filter(|tool| {
+                self.accounts()
+                    .iter()
+                    .any(|account| account.provider == tool.code)
+            })
+            .collect();
+        let addable = self.addable();
+        let asked = if shown.is_empty() {
+            addable.iter().filter(asks).collect()
         } else {
-            self.tools
-                .iter()
-                .filter(|tool| {
-                    self.accounts()
-                        .iter()
-                        .any(|account| account.provider == tool.code)
-                })
-                .cloned()
-                .collect()
+            shown
         };
         let mut services: Vec<&str> = Vec::new();
         for tool in &asked {
             if !services.contains(&tool.service.as_str()) {
                 services.push(&tool.service);
             }
+        }
+        if services.is_empty() {
+            services.push(ProviderId::Claude.service());
         }
         services.join(" or ")
     }
@@ -799,7 +809,7 @@ mod tests {
     #[test]
     fn each_service_is_named_once() {
         use crate::present::testing::{
-            account, claude_code, claude_desktop, desktop, desktop_account, read, status,
+            account, claude_code, claude_desktop, codex, desktop, desktop_account, read, status,
         };
         let claude = account(Some("work")).signed_in().build();
         let state = read(
@@ -827,6 +837,38 @@ mod tests {
         assert_eq!(
             Seen::new(&state, MIDDAY, &Utc, Os::MacOs).services(),
             "Anthropic or OpenAI"
+        );
+        let state = read(
+            status(
+                vec![
+                    account(Some("main")).of("codex").signed_in().build(),
+                    desktop_account("work", true),
+                ],
+                Vec::new(),
+            ),
+            desktop(),
+        );
+        assert_eq!(
+            Seen::new(&state, MIDDAY, &Utc, Os::MacOs).services(),
+            "OpenAI",
+            "nobody is asked about a Claude Desktop login"
+        );
+        let state = read(
+            status(Vec::new(), Vec::new()),
+            vec![codex(), claude_desktop()],
+        );
+        assert_eq!(
+            Seen::new(&state, MIDDAY, &Utc, Os::MacOs).services(),
+            "OpenAI"
+        );
+        let state = read(
+            status(vec![desktop_account("work", true)], Vec::new()),
+            vec![claude_desktop()],
+        );
+        assert_eq!(
+            Seen::new(&state, MIDDAY, &Utc, Os::MacOs).services(),
+            "Anthropic",
+            "never nobody"
         );
     }
 }

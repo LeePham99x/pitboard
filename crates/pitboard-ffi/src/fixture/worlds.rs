@@ -1,4 +1,4 @@
-//! The twelve worlds, each made on the real core, as the macOS app's `Fixture` named them.
+//! The worlds, each made on the real core, as the macOS app's `Fixture` named them.
 //!
 //! Each is a machine of its own: a home in a folder of the fixture's, Claude Code's keychain,
 //! Pitboard's vault, the process list and the scheduler in memory, and Anthropic and OpenAI

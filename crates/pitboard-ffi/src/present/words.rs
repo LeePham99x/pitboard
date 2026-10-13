@@ -210,6 +210,10 @@ pub(crate) fn warning_heading(warning: &Warning) -> &'static str {
         "recovery_undetermined" => "An interrupted switch is waiting",
         "login_replaced" => "A login was replaced outside Pitboard",
         "in_use_unconfirmed" => "The account in use is not confirmed",
+        // `in_app_warning` words the two alike for an app.
+        "config_names_another" if warning.provider.as_deref().is_some_and(in_its_app) => {
+            "The account in use is not confirmed"
+        }
         "config_names_another" => "Claude Code’s config names another account",
         "login_taken_as_named" => "A login was taken as the account named for it",
         "looks_signed_out" => "The account in use may be signed out",
@@ -235,6 +239,33 @@ pub(crate) fn logins(count: u32) -> String {
 /// What an interrupted switch nothing can finish waits for, where the read did not say.
 pub(crate) fn switch_waits_for(services: &str) -> String {
     format!("An interrupted switch can’t be finished until {services} answers.")
+}
+
+pub(crate) fn move_waits_too(tool: &str, program: &str) -> String {
+    format!(
+        "A {tool} move was interrupted too. With {program} quit, Give Up… settles it or gives it \
+         up as well, and keeps every folder."
+    )
+}
+
+// `moving`: each tool whose move waits, with its program.
+pub(crate) fn give_up_stuck(moving: &[(String, &str)]) -> String {
+    let stops = "Every login is kept, and nothing is deleted. Pitboard stops trying to finish it";
+    if moving.is_empty() {
+        return format!("{stops}.");
+    }
+    let tools: Vec<&str> = moving.iter().map(|(tool, _)| tool.as_str()).collect();
+    let mut programs: Vec<&str> = Vec::new();
+    for &(_, program) in moving {
+        if !programs.contains(&program) {
+            programs.push(program);
+        }
+    }
+    format!(
+        "{stops} and, with {} quit, settles or gives up the interrupted {} move too.",
+        listed(&programs),
+        listed(&tools)
+    )
 }
 
 /// What giving up on an interrupted switch kept.
