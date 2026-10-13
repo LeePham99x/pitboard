@@ -1299,6 +1299,9 @@ pub(super) struct World {
     places: Vec<PathBuf>,
     /// The login shell's `PATH`, as the app looked in it, where a test says one.
     search_path: Option<String>,
+    /// Handed to each core made here, so that `cores_gone` hears once every one has gone.
+    cores: Option<Sender<()>>,
+    cores_gone: Receiver<()>,
 }
 
 impl World {
@@ -1323,6 +1326,7 @@ impl World {
             .with_awaited_every(Duration::from_millis(2))
             .with_caller("app".into())
             .with_lock_waiting(2_000, Duration::from_millis(10));
+        let (cores, cores_gone) = channel();
         World {
             root,
             host,
@@ -1331,6 +1335,8 @@ impl World {
             helper: None,
             places: Vec::new(),
             search_path: None,
+            cores: Some(cores),
+            cores_gone,
         }
     }
 
@@ -1338,13 +1344,15 @@ impl World {
     /// from what the app was started with, with Claude Code's program found.
     pub(super) fn core(&self) -> Arc<AppCore> {
         let ctx = self.ctx.clone();
-        let (helper, places, search_path) = (
+        let (helper, places, search_path, alive) = (
             self.helper.clone(),
             self.places.clone(),
             self.search_path.clone(),
+            self.cores.clone(),
         );
         Arc::new(AppCore::asking(
             move || {
+                let _alive = &alive;
                 let made = Made {
                     core: service::Pitboard::new(ctx.clone()),
                     found: vec![ProviderId::Claude],
@@ -1885,6 +1893,10 @@ impl Drop for Writing {
 
 impl Drop for World {
     fn drop(&mut self) {
+        // A model's lanes may still be writing here after it is shut down or dropped, until
+        // each has ended and let go of the core it was given.
+        drop(self.cores.take());
+        let _ = self.cores_gone.recv_timeout(Duration::from_secs(20));
         let _ = std::fs::remove_dir_all(&self.root);
     }
 }

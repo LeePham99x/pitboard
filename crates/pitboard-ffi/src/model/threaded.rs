@@ -803,11 +803,12 @@ fn a_read_answers_while_the_core_switches() {
 /// place of `claude`, and a model over the core read once.
 #[cfg(unix)]
 struct SigningInWorld {
-    world: World,
-    claude: StandIn,
-    core: Arc<AppCore>,
-    told: Arc<Told>,
     model: Arc<PitboardModel>,
+    told: Arc<Told>,
+    core: Arc<AppCore>,
+    claude: StandIn,
+    // Last, as fields are dropped in order: it waits for every core to have gone.
+    world: World,
 }
 
 #[cfg(unix)]
