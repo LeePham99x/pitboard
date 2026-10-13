@@ -6,6 +6,12 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- The `pitboard` cask's caveats link
+  [Upgrade from 0.3.0 or earlier](https://docs.usepitboard.com/install/upgrade-from-0-3-0) in
+  place of the commands that remove 0.3.0's formula.
+
 ## [0.13.0] - 2026-10-13
 
 ### Added
