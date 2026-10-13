@@ -8,12 +8,10 @@ struct AccountWindowScene: Scene {
     static let id = "account"
 
     let windows: AccountWindows
-    let defaults: UserDefaults
 
     var body: some Scene {
         WindowGroup("Account", id: Self.id, for: UUID.self) { $store in
             AccountWindowView(windows: windows, store: store)
-                .defaultAppStorage(defaults)
         }
         .defaultSize(width: 1100, height: 800)
         // A window opens only for an account somebody chose, never empty from File > New.
