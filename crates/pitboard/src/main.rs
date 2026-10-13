@@ -27,7 +27,8 @@ const CONTRACT: u32 = 1;
 const ERROR: Style = AnsiColor::Red.on_default().bold();
 const WARNING: Style = AnsiColor::Yellow.on_default().bold();
 
-/// Park and restore your own logins of Claude Code and Codex, and see what each one has left.
+/// Switch Claude Code and Codex between your own accounts without signing out, and see what
+/// each one has left.
 #[derive(Parser)]
 #[command(name = "pitboard", version)]
 struct Cli {

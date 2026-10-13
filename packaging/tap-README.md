@@ -1,8 +1,8 @@
 # datlechin's Homebrew tap
 
-[Pitboard](https://github.com/datlechin/pitboard) switches between your own Claude Code and
-Codex logins and shows how much each one has left. This tap holds its two casks, `pitboard`
-and `pitboard-app`.
+[Pitboard](https://github.com/datlechin/pitboard) switches Claude Code and Codex between your
+own accounts without signing out, and shows what each one has left. This tap holds its two
+casks, `pitboard` and `pitboard-app`.
 
 Pitboard's release writes every file here from `packaging/` in Pitboard's repository. A
 change made here is replaced at the next release.

@@ -47,7 +47,7 @@ cask "pitboard" do
 
   url "https://github.com/datlechin/pitboard/releases/download/v#{version}/pitboard-v#{version}-#{arch}-#{os}.tar.gz"
   name "Pitboard"
-  desc "Park and restore your own Claude Code and Codex logins"
+  desc "Switch Claude Code and Codex between your own accounts"
   homepage "https://usepitboard.com/"
 
   # The app carries this same command line and links it to the same place.
