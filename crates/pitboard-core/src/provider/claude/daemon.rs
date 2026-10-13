@@ -25,12 +25,6 @@ pub struct Daemon {
     pub pid: u32,
     /// The Claude Code that is running it, as the daemon recorded itself.
     pub version: Option<String>,
-    /// Milliseconds since the epoch, as the daemon recorded them.
-    pub started_at: Option<i64>,
-    /// `transient` for one an ordinary session spawned.
-    pub origin: Option<String>,
-    /// The build the daemon launched, which is the installed Claude Code at that moment.
-    pub launch_target: Option<PathBuf>,
     /// The pid answers to a signal. A pid the system has since reused would read as running,
     /// which over-reports a daemon rather than missing one, and is the safe direction for a
     /// fact that only ever warns.
@@ -56,9 +50,6 @@ fn parse(raw: &str, alive: fn(u32) -> bool) -> Option<Daemon> {
     Some(Daemon {
         pid,
         version: text(&json, "version"),
-        started_at: json.get("startedAt").and_then(Value::as_i64),
-        origin: text(&json, "origin"),
-        launch_target: text(&json, "launchTarget").map(PathBuf::from),
         running: alive(pid),
     })
 }
@@ -97,14 +88,6 @@ mod tests {
         let d = parse(LOCK, live).expect("a lock file with a pid parses");
         assert_eq!(d.pid, 46789);
         assert_eq!(d.version.as_deref(), Some("2.1.278"));
-        assert_eq!(d.started_at, Some(1790079766317));
-        assert_eq!(d.origin.as_deref(), Some("transient"));
-        assert_eq!(
-            d.launch_target,
-            Some(PathBuf::from(
-                "/home/someone/.local/share/claude/versions/2.1.278"
-            ))
-        );
         assert!(d.running);
     }
 
@@ -118,9 +101,6 @@ mod tests {
         let d = parse(r#"{"pid": 1, "version": "", "processWrapper": ""}"#, dead)
             .expect("a pid is all that is required");
         assert_eq!(d.version, None);
-        assert_eq!(d.origin, None);
-        assert_eq!(d.launch_target, None);
-        assert_eq!(d.started_at, None);
     }
 
     #[test]

@@ -4451,9 +4451,6 @@ mod tests {
         f.daemon = Some(daemon::Daemon {
             pid: 4321,
             version: Some("2.1.278".into()),
-            started_at: Some(1_790_079_766_317),
-            origin: Some("transient".into()),
-            launch_target: None,
             running: true,
         });
         let checks = evaluate(&f);
