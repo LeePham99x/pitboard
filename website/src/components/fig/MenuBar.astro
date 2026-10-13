@@ -1,0 +1,25 @@
+---
+// The menu bar along a desk's top edge; the slot holds Pitboard's item.
+import MenuItem from "./MenuItem.astro";
+
+interface Props {
+  clock: string;
+}
+const { clock } = Astro.props;
+---
+
+<div
+  class="absolute inset-x-0 top-0 z-2 flex h-24 items-center justify-end bg-bar-bg pr-6 whitespace-nowrap text-bar-text tabular-nums inset-shadow-bar-b"
+>
+  <slot />
+  <MenuItem>
+    <svg class="h-12 w-25 shrink-0"><use href="#ic-batt"></use></svg>
+  </MenuItem>
+  <MenuItem>
+    <svg class="h-12 w-16 shrink-0"><use href="#ic-wifi"></use></svg>
+  </MenuItem>
+  <MenuItem>
+    <svg class="h-14 w-16 shrink-0"><use href="#ic-cc"></use></svg>
+  </MenuItem>
+  <MenuItem class="pl-9">{clock}</MenuItem>
+</div>

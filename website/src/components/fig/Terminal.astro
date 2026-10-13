@@ -1,0 +1,35 @@
+---
+// Terminal's Basic profile. The program output it prints colours its spans g, y, r and dim.
+import Lights from "./Lights.astro";
+
+interface Props {
+  title: string;
+  solo?: boolean;
+  class?: string;
+}
+const { title, solo = false, class: extra } = Astro.props;
+---
+
+<div
+  class:list={[
+    "z-1 flex flex-col overflow-hidden rounded-pt-12 bg-tw-bg shadow-terminal",
+    solo ? "relative w-560" : "absolute",
+    extra,
+  ]}
+>
+  <div
+    class="relative flex h-28 flex-none items-center bg-tw-bar px-10 font-semibold text-tw-title inset-shadow-tw-b"
+  >
+    <Lights /><span class="pointer-events-none absolute inset-x-0 text-center">{title}</span>
+  </div>
+  <div
+    class:list={[
+      "flex min-h-0 flex-1 flex-col overflow-hidden font-mono whitespace-pre text-tw-text ligatures-none [&_.dim]:text-tw-dim [&_.g]:text-tw-green [&_.r]:text-tw-red [&_.y]:text-tw-yellow [&_b]:text-tw-bold",
+      solo
+        ? "justify-start px-12 pt-8 pb-10 text-pt-12.5/18 *:min-h-18 *:whitespace-pre-wrap"
+        : "justify-end px-10 pb-7 text-pt-11/14 *:min-h-14",
+    ]}
+  >
+    <slot />
+  </div>
+</div>

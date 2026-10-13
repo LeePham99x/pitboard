@@ -28,7 +28,7 @@ function theming() {
   const btn = document.getElementById("theme-btn");
   const menu = document.getElementById("theme-menu");
   const items = menu ? all<HTMLButtonElement>("[role=menuitemradio]", menu) : [];
-  const segs = all<HTMLButtonElement>(".seg button");
+  const segs = all<HTMLButtonElement>("#theme-seg button");
   const metas = all<HTMLMetaElement>('meta[name="theme-color"]');
   const current = () => d.getAttribute("data-theme") || "system";
   function sync() {
@@ -102,12 +102,12 @@ function theming() {
     });
   });
   document.addEventListener("click", (e) => {
-    if (!menu.hidden && !(e.target as Element).closest(".theme")) close(false);
+    if (!menu.hidden && !(e.target as Element).closest("#theme")) close(false);
   });
 }
 
 function phoneMenu() {
-  for (const m of all<HTMLDetailsElement>("details.mnav")) {
+  for (const m of all<HTMLDetailsElement>("#mnav")) {
     m.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && m.open) {
         e.preventDefault();
@@ -145,7 +145,7 @@ function scrollers() {
 // The install tabs and the App and Command line buttons over each figure share one choice.
 function surfaces() {
   const tabs = all<HTMLButtonElement>("[role=tab][data-surface]");
-  const picks = all<HTMLButtonElement>(".sv-pick [data-surface]");
+  const picks = all<HTMLButtonElement>("button[data-surface]:not([role=tab])");
   if (!tabs.length && !picks.length) return;
   const mark = (name: string) => {
     for (const t of tabs) {
@@ -187,7 +187,7 @@ function copying() {
   const buttons = all<HTMLButtonElement>("[data-copy]");
   if (!buttons.length) return;
   const live = document.createElement("p");
-  live.className = "vh";
+  live.className = "sr-only";
   live.setAttribute("role", "status");
   document.body.appendChild(live);
   for (const b of buttons) {
@@ -200,8 +200,8 @@ function copying() {
       if (name) b.setAttribute("aria-label", name);
       live.textContent = "";
       if (shown) {
-        shown.classList.add("vh");
-        shown.parentElement?.classList.remove("full");
+        shown.classList.add("sr-only");
+        shown.parentElement?.removeAttribute("data-full");
         shown = null;
       }
     };
@@ -215,10 +215,10 @@ function copying() {
         const code = b.parentElement?.querySelector("code");
         if (code) {
           // a digest shown in part shows whole while it is selected
-          const hid = code.querySelector(".vh");
+          const hid = code.querySelector(".sr-only");
           if (hid) {
-            hid.classList.remove("vh");
-            code.classList.add("full");
+            hid.classList.remove("sr-only");
+            code.setAttribute("data-full", "");
             shown = hid;
           }
           const r = document.createRange();
@@ -251,13 +251,13 @@ function copying() {
 function afterDownload() {
   for (const a of all("[data-download]")) {
     a.addEventListener("click", () => {
-      for (const p of all(".after")) p.classList.add("shown");
+      for (const p of all("[data-after]")) p.setAttribute("data-shown", "");
     });
   }
 }
 
 function demo() {
-  const fig = document.querySelector(".demo .sv-app");
+  const fig = document.getElementById("demo");
   if (!fig) {
     d.removeAttribute("data-demo");
     return;

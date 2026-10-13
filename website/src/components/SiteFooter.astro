@@ -31,15 +31,30 @@ const columns = [
 ];
 ---
 
-<footer class="site-foot">
+<footer class="mt-(--block-space) pb-14">
   <div class="wrap">
-    <div class="foot-in">
-      <div class="foot-brand">
-        <a class="home" href="/" aria-label="Pitboard home"><Lockup /></a>
-        <p class="foot-by">
-          Made by <a href="https://nqd.vn">Ngo Quoc Dat</a>
-          <a class="foot-gh" href="https://github.com/datlechin" aria-label="Ngo Quoc Dat on GitHub"
-            ><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+    <div
+      class="grid grid-cols-[minmax(0,4fr)_minmax(0,8fr)] gap-x-12 gap-y-10 border-t border-rule pt-(--block-in) max-xl:grid-cols-[minmax(0,1fr)]"
+    >
+      <div>
+        <a
+          class="flex items-center rounded-sm text-logo-word no-underline hover:text-accent-hover"
+          href="/"
+          aria-label="Pitboard home"
+          ><Lockup class="mt-1 h-6 w-auto"
+        /></a>
+        <p class="mt-4 flex items-center gap-2.5 text-control text-muted">
+          Made by <a class="text-fg" href="https://nqd.vn">Ngo Quoc Dat</a>
+          <a
+            class="inline-flex text-fg"
+            href="https://github.com/datlechin"
+            aria-label="Ngo Quoc Dat on GitHub"
+            ><svg
+              class="size-4 fill-current"
+              viewBox="0 0 16 16"
+              aria-hidden="true"
+              focusable="false"
+            >
               <path
                 d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
               ></path>
@@ -47,14 +62,20 @@ const columns = [
           >
         </p>
       </div>
-      <div class="foot-cols">
+      <div
+        class="grid grid-cols-[repeat(3,max-content)] gap-x-14 gap-y-8 max-sm:grid-cols-[repeat(2,max-content)] max-sm:gap-x-10 max-2xs:grid-cols-[max-content]"
+      >
         {columns.map((c) => <nav aria-labelledby={c.id}>
-          <p class="foot-h" id={c.id}>
+          <p class="mb-2.5 font-mono text-ui font-semibold text-strong" id={c.id}>
             {c.title}
           </p>
           <ul>
             {c.links.map(([href, text]) => <li>
-              <a href={href}>{text}</a>
+              <a
+                class="text-control/8 text-fg no-underline hover:text-ink hover:underline hover:decoration-auto hover:decoration-current"
+                href={href}
+                >{text}</a
+              >
             </li>)}
           </ul>
         </nav>)}

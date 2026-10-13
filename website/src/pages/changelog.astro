@@ -1,6 +1,5 @@
 ---
 import Base from "../layouts/Base.astro";
-import "../styles/changelog.css";
 import { compareBase, longDate, monthOf } from "../lib/changelog.ts";
 import { siteData } from "../lib/data.ts";
 import { REPO, SPONSOR } from "../data/site.ts";
@@ -31,14 +30,26 @@ const entries = versions.map((v, i) => {
   path="/changelog"
 >
   <main id="main">
-    <div class="wrap cl">
-      <h1 class="h1 cl-h1">Changelog</h1>
+    <div
+      class="wrap grid grid-cols-[minmax(0,4fr)_minmax(0,8fr)] gap-x-12 pt-14 max-lg:grid-cols-[minmax(0,1fr)] max-lg:pt-12 max-sm:pt-8"
+    >
+      <h1 class="col-span-full font-mono text-h1 text-strong max-sm:text-h1-sm">Changelog</h1>
 
-      <nav class="rail" aria-label="Versions">
-        <div class="rail-in">
-          <ul>
+      <nav
+        class="col-start-1 row-start-3 pt-44 max-lg:-mx-(--gutter) max-lg:row-auto max-lg:border-b max-lg:border-grid max-lg:pt-10"
+        aria-label="Versions"
+      >
+        <div
+          class="sticky top-24 -mx-2 max-h-[calc(100vh-128px)] overflow-y-auto px-2 [scrollbar-width:thin] max-lg:static max-lg:m-0 max-lg:max-h-none max-lg:overflow-x-auto max-lg:overflow-y-hidden max-lg:pr-12 max-lg:pl-(--gutter) max-lg:[mask-image:linear-gradient(to_left,transparent,#000_48px)]"
+          id="rail"
+        >
+          <ul class="max-lg:flex max-lg:w-max max-lg:gap-7">
             {entries.map((e) => <li>
-              <a href={`#${e.id}`} data-v={e.id}>
+              <a
+                class="-mx-1.5 block w-fit px-1.5 py-0.75 font-mono text-ui/6 font-medium text-fg no-underline tabular-nums hover:text-ink hover:underline hover:decoration-auto hover:decoration-current hover:underline-offset-4 focus-visible:-outline-offset-2 aria-[current]:font-bold aria-[current]:text-ink max-lg:py-2.5 max-lg:text-control"
+                href={`#${e.id}`}
+                data-v={e.id}
+              >
                 {e.version}
               </a>
             </li>)}
@@ -46,31 +57,54 @@ const entries = versions.map((v, i) => {
         </div>
       </nav>
 
-      <div class="cl-main">
-        {entries.map((e) => (
+      <div
+        class="col-start-2 row-start-3 min-w-0 max-w-measure pt-24 max-lg:col-start-1 max-lg:row-auto max-lg:pt-14"
+      >
+        {entries.map((e, i) => (
           <>
-            {e.month && <p class="cl-month">{e.month}</p>}
-            <article class="entry" id={e.id} aria-labelledby={`${e.id}-h`}>
-              <div class="entry-head">
-                <h2 class="entry-v" id={`${e.id}-h`}>
+            {e.month && <p
+              class:list={[
+                "mb-4 font-mono text-control font-medium text-muted",
+                { "mt-28 max-sm:mt-20": i > 0 },
+              ]}
+            >
+              {e.month}
+            </p>}
+            <article
+              class:list={[
+                "border-t border-rule pt-7",
+                { "mt-28 max-sm:mt-20": i > 0 && !e.month },
+              ]}
+              id={e.id}
+              aria-labelledby={`${e.id}-h`}
+            >
+              <div class="flex flex-wrap items-baseline gap-x-5 gap-y-1">
+                <h2
+                  class="font-mono text-h2 text-strong ligatures-none max-sm:text-h2-sm"
+                  id={`${e.id}-h`}
+                >
                   {e.version}
                 </h2>
-                <time class="entry-d" datetime={e.date}>
+                <time class="font-mono text-control text-muted" datetime={e.date}>
                   {longDate(e.date)}
                 </time>
               </div>
-              {e.intro && <div class="entry-intro" data-source="changelog" set:html={e.intro} />}
-              {e.sections.map((s) => <div class="cl-sec">
-                <h3 class="cl-h3" id={s.id}>
+              {e.intro && (
+                <div class="changelog-md mt-6" data-source="changelog" set:html={e.intro} />
+              )}
+              {e.sections.map((s) => <div class="mt-10 max-sm:mt-8">
+                <h3 class="font-mono text-note/6 font-bold text-strong" id={s.id}>
                   {s.kind}
                 </h3>
-                <div class="cl-body" data-source="changelog" set:html={s.html} />
+                <div class="changelog-md mt-4" data-source="changelog" set:html={s.html} />
               </div>)}
-              <div class="entry-foot">
+              <div
+                class="mt-10 flex flex-wrap items-center gap-x-7 gap-y-3 font-mono text-control font-medium max-sm:gap-x-6 max-sm:text-ui/6"
+              >
                 <a href={e.files}>Files and checksums</a>
                 {e.other && <a href={e.other.href}>{e.other.text}</a>}
                 <button
-                  class="btn-quiet cl-copy"
+                  class="h-7 cursor-pointer rounded-sm border border-edge px-2.5 font-mono text-label font-medium text-strong hover:bg-sunken no-js:hidden"
                   type="button"
                   id={`${e.id}-copy`}
                   aria-labelledby={`${e.id}-copy ${e.id}-h`}
@@ -83,7 +117,7 @@ const entries = versions.map((v, i) => {
           </>
         ))}
 
-        <div class="cl-end prose">
+        <div class="prose mt-28 border-t border-rule pt-(--block-in) max-sm:mt-20">
           <p>
             Follow releases with the <a href="/changelog/rss.xml">RSS feed</a>. Release candidates
             are only on <a href={`${REPO}/releases`}>GitHub Releases</a>.

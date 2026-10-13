@@ -81,10 +81,7 @@ const quoted = (el) =>
 // CHANGELOG.md quotes a full-width c on purpose, in a look-alike claude.ai address.
 const FALLBACK = new Set([0xff43]);
 
-const MONO = (el) =>
-  ["code", "pre", "kbd"].includes(el.tag) ||
-  "data-output" in el.attrs ||
-  /\b(term|tw-body|statusline)\b/.test(el.attrs.class ?? "");
+const MONO = (el) => ["code", "pre", "kbd"].includes(el.tag) || "data-output" in el.attrs;
 
 export function checkPage(name, html, rules) {
   const problems = [];

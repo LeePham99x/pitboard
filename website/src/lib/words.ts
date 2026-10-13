@@ -67,15 +67,17 @@ export function runsOutNote(a: Account, moment: Moment): string | null {
 const span = (cls: string, text: string) => (text ? `<span class="${cls}">${text}</span>` : "");
 const pad = (text: string, width: number) => text + " ".repeat(Math.max(0, width - text.length));
 
-// crates/pitboard/src/ui.rs `bar`; a run of cells is one span, so figures.css can draw it seamless.
+// crates/pitboard/src/ui.rs `bar`; a run of cells is one span, drawn as one block of its colour.
+const cell = "bg-current [-webkit-text-fill-color:transparent]";
+const shade = "bg-current/32 [-webkit-text-fill-color:transparent]";
 function bar(limit: Limit): string {
   const width = 10;
   const filled = Math.min(width, Math.max(0, Math.round((limit.used / 100) * width)));
   const cells = (from: number, to: number) => {
     const full = Math.min(Math.max(filled, from), to);
     return (
-      span(`${level(limit.used)} bk`, "█".repeat(full - from)) +
-      span("dim sh", "░".repeat(to - full))
+      span(`${level(limit.used)} ${cell}`, "█".repeat(full - from)) +
+      span(`dim ${shade}`, "░".repeat(to - full))
     );
   };
   const s = standing(limit);

@@ -1,7 +1,9 @@
 ---
 import Base from "../layouts/Base.astro";
-import "../styles/download.css";
+import Block from "../components/Block.astro";
 import CommandBox from "../components/CommandBox.astro";
+import Disclosure from "../components/Disclosure.astro";
+import MacDownload from "../components/MacDownload.astro";
 import { attestCommand, commands } from "../data/commands.ts";
 import { DOCS } from "../data/site.ts";
 import { escapeHtml, longDate } from "../lib/changelog.ts";
@@ -19,13 +21,22 @@ const ways = [
 ] as const;
 // Cells written as one string: on a phone their text follows a label drawn by CSS, so a space
 // from the template's line breaks would show.
-const none = '<span class="none">None</span>';
+const none = '<span class="text-muted" data-none>None</span>';
 const shaCell = (a: Asset) =>
   a.sha256
-    ? `<code class="sha">${a.sha256.slice(0, 12)}<span class="vh">${a.sha256.slice(12)}</span></code><button class="btn-quiet" type="button" data-copy="${a.sha256}" aria-label="Copy the SHA-256 of ${escapeHtml(a.name)}">Copy</button>`
+    ? `<code class="text-[0.875rem] text-fg data-full:inline-block data-full:w-[12ch] data-full:align-top data-full:break-all data-full:whitespace-normal">${a.sha256.slice(0, 12)}<span class="sr-only">${a.sha256.slice(12)}</span></code><button class="ml-2 h-7 min-w-17.5 cursor-pointer rounded-sm px-1.5 text-left align-baseline font-mono text-label font-medium text-strong hover:bg-sunken hover:underline hover:underline-offset-4 focus-visible:outline-offset-0 no-js:hidden" type="button" data-copy="${a.sha256}" aria-label="Copy the SHA-256 of ${escapeHtml(a.name)}">Copy</button>`
     : none;
 const bomCell = (b: Asset | null) =>
-  b ? `<a href="${escapeHtml(b.url)}"><code>.cdx.json</code></a>, ${formatSize(b.size)}` : none;
+  b
+    ? `<a href="${escapeHtml(b.url)}"><code class="text-[0.875rem]">.cdx.json</code></a>, ${formatSize(b.size)}`
+    : none;
+const cell =
+  "border-b border-grid text-left align-baseline max-files:m-0 max-files:border-0 max-files:p-0";
+const label =
+  "max-files:before:mr-2 max-files:before:font-mono max-files:before:text-label max-files:before:font-medium max-files:before:text-muted";
+const lead = "mt-8 text-note text-fg";
+const body = "max-w-[28em] text-pretty";
+const note = "max-w-[28em] text-note text-pretty text-muted [&_code]:text-inherit";
 const jsonLd = [
   {
     "@context": "https://schema.org",
@@ -48,186 +59,252 @@ const jsonLd = [
   path="/download"
   jsonLd={jsonLd}
 >
-  <main id="main" class="dl">
-    <div class="wrap dl-head">
-      <h1 class="h1">Download Pitboard</h1>
-      <div class="dl-ver">
-        <p>Version {release.version}, released <span class="nw">{longDate(latest.date)}</span></p>
+  <main id="main" class="flex flex-col">
+    <div class="wrap -order-3 pt-14 max-sm:pt-8">
+      <h1 class="font-mono text-h1 text-strong max-sm:text-h1-sm">Download Pitboard</h1>
+      <div class="mt-4 flex flex-wrap gap-x-6 gap-y-1">
+        <p>
+          Version {release.version}, released
+          <span class="whitespace-nowrap">{longDate(latest.date)}</span>
+        </p>
         <p><a href={`/changelog#v${release.version}`}>Release notes</a></p>
       </div>
     </div>
 
-    <div class="dl-get">
-      <div class="wrap dl-cols">
-        <section class="dl-col" id="app" aria-labelledby="app-title">
-          <h2 class="h2" id="app-title">App</h2>
-          <div class="dl-body">
-            <p class="dl-linux">The app is for macOS; on Linux, use the command line.</p>
-            <div><a class="btn" href={zip.url}>Download for Mac</a></div>
-            <p class="note">
-              <code>{zip.name}</code>, <span class="nw">{formatSize(zip.size)}</span>
+    <div class="pt-16 os-windows:pt-(--block-space) max-sm:pt-12" id="get">
+      <div
+        class="wrap grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] items-start gap-x-12 gap-y-(--block-space) max-lg:grid-cols-[minmax(0,1fr)]"
+      >
+        <section
+          class="min-w-0 border-t border-rule pt-(--block-in)"
+          id="app"
+          aria-labelledby="app-title"
+        >
+          <h2 class="font-mono text-h2 text-balance text-strong max-sm:text-h2-sm" id="app-title">
+            App
+          </h2>
+          <div class="mt-7">
+            <p class:list={[body, "hidden os-linux:block"]}>
+              The app is for macOS; on Linux, use the command line.
             </p>
-            <p class="dl-req">The app needs macOS 14 or later, on Apple silicon or Intel.</p>
-            <p>
+            <div class="os-linux:mt-5">
+              <MacDownload
+                class="os-linux:bg-transparent os-linux:text-ink os-linux:inset-ring os-linux:inset-ring-edge os-linux:hover:bg-sunken"
+                href={zip.url}
+              />
+            </div>
+            <p class:list={[note, "mt-3"]}>
+              <code>{zip.name}</code>, <span class="whitespace-nowrap">{formatSize(zip.size)}</span>
+            </p>
+            <p class:list={[body, "mt-4 os-linux:hidden"]}>
+              The app needs macOS 14 or later, on Apple silicon or Intel.
+            </p>
+            <p class:list={[body, "mt-4"]}>
               Move Pitboard to your Applications folder before you open it. Opened elsewhere, it
               cannot turn on daily renewal or install its command line.
             </p>
-            <p class="cmd-lead">Or install it with Homebrew:</p>
-            <CommandBox command={commands.brewApp} />
-            <p>
+            <p class:list={[body, lead]}>Or install it with Homebrew:</p>
+            <CommandBox class="mt-2" command={commands.brewApp} />
+            <p class:list={[body, "mt-5"]}>
               The app includes the command line, so install one or the other. <b>Settings</b> &gt;
               <b>Command Line</b> puts it on your <code>PATH</code>.
             </p>
           </div>
         </section>
 
-        <section class="dl-col" id="command-line" aria-labelledby="cli-title">
-          <h2 class="h2" id="cli-title">Command line</h2>
-          <div class="dl-body">
-            <p>
+        <section
+          class="min-w-0 border-t border-rule pt-(--block-in) os-linux:-order-1"
+          id="command-line"
+          aria-labelledby="cli-title"
+        >
+          <h2 class="font-mono text-h2 text-balance text-strong max-sm:text-h2-sm" id="cli-title">
+            Command line
+          </h2>
+          <div class="mt-7">
+            <p class={body}>
               The command line runs on Apple silicon and Intel Macs, and on x86_64 and aarch64
               Linux.
             </p>
-            <p>
+            <p class:list={[body, "mt-4"]}>
               On Linux, Pitboard builds and passes its tests but has not been run with real logins.
             </p>
-            <CommandBox command={commands.installScript} />
-            <p>
+            <CommandBox class="mt-4" command={commands.installScript} />
+            <p class:list={[body, "mt-5"]}>
               The script puts the command line of the most recent release in
               <code>~/.local/bin</code>. It skips release candidates and changes no shell profile.
             </p>
-            <p>
+            <p class:list={[body, "mt-4"]}>
               <a href={`${DOCS}/install/verify#check-the-install-script`}
                 >Check the script before you run it</a
               >.
             </p>
-            <p class="cmd-lead">Or install it with Homebrew:</p>
-            <CommandBox command={commands.brewCli} />
-            <details class="qa" id="other-ways">
-              <summary>Other ways to install</summary>
-              <div class="qa-a ways-box">
-                <table class="ways" role="table">
-                  <thead role="rowgroup">
-                    <tr role="row">
-                      <th scope="col" role="columnheader">Way</th>
-                      <th scope="col" role="columnheader">Command</th>
-                    </tr>
-                  </thead>
-                  <tbody role="rowgroup">
-                    {ways.map(([way, command]) => <tr role="row">
-                      <th scope="row" role="rowheader">
-                        {way}
-                      </th>
-                      <td role="cell">
-                        <CommandBox command={command} />
-                      </td>
-                    </tr>)}
-                  </tbody>
-                </table>
-              </div>
-            </details>
+            <p class:list={[body, lead]}>Or install it with Homebrew:</p>
+            <CommandBox class="mt-2" command={commands.brewCli} />
+            <Disclosure
+              class="mt-10 border-t"
+              id="other-ways"
+              summary="Other ways to install"
+              flush
+            >
+              <table class="block w-full border-collapse" role="table">
+                <thead class="sr-only" role="rowgroup">
+                  <tr class="block" role="row">
+                    <th class="block p-0" scope="col" role="columnheader">Way</th>
+                    <th class="block p-0" scope="col" role="columnheader">Command</th>
+                  </tr>
+                </thead>
+                <tbody class="block" role="rowgroup">
+                  {ways.map(([way, command], i) => <tr
+                    class:list={["block", { "mt-5": i > 0 }]}
+                    role="row"
+                  >
+                    <th
+                      class="mb-2 block p-0 text-left text-note/[1.5] font-normal text-fg"
+                      scope="row"
+                      role="rowheader"
+                    >
+                      {way}
+                    </th>
+                    <td class="block p-0" role="cell">
+                      <CommandBox command={command} wide />
+                    </td>
+                  </tr>)}
+                </tbody>
+              </table>
+            </Disclosure>
           </div>
         </section>
       </div>
     </div>
 
-    <section class="block" id="release-files" aria-labelledby="files-title">
-      <div class="wrap">
-        <div class="block-in one">
-          <h2 class="h2" id="files-title">Release files</h2>
-          <div>
-            <table class="tbl files" role="table">
-              <caption class="vh">
-                Files of Pitboard{release.version}
-              </caption>
-              <thead role="rowgroup">
-                <tr role="row">
-                  <th scope="col" role="columnheader">File</th>
-                  <th scope="col" role="columnheader">For</th>
-                  <th scope="col" role="columnheader">Size</th>
-                  <th scope="col" role="columnheader">SHA-256</th>
-                  <th scope="col" role="columnheader">Bill of materials</th>
-                </tr>
-              </thead>
-              <tbody role="rowgroup">
-                {rows.map(({ asset, forHtml, bom }) => <tr role="row">
-                  <th scope="row" role="rowheader">
-                    <a href={asset.url}><code>{asset.name}</code></a>
-                  </th>
-                  <td class="f-for" role="cell" set:html={forHtml} />
-                  <td class="f-size" role="cell">
-                    {formatSize(asset.size)}
-                  </td>
-                  <td class="f-sha" role="cell" set:html={shaCell(asset)} />
-                  <td class="f-bom" role="cell" set:html={bomCell(bom)} />
-                </tr>)}
-              </tbody>
-            </table>
-            <p class="note dl-files-note">
-              Each tarball unpacks into a folder named like the tarball.
-            </p>
-          </div>
-        </div>
+    <Block id="release-files" titleId="files-title" title="Release files" one>
+      <div>
+        <table class="w-full border-collapse text-note/[1.5] max-files:block" role="table">
+          <caption class="sr-only">
+            Files of Pitboard{release.version}
+          </caption>
+          <thead class="max-files:sr-only" role="rowgroup">
+            <tr class="max-files:block" role="row">
+              {["File", "For", "Size", "SHA-256", "Bill of materials"].map((h) => <th
+                class:list={[
+                  cell,
+                  "pr-6 pb-3.5 font-mono text-ui font-semibold whitespace-nowrap text-strong max-files:block",
+                ]}
+                scope="col"
+                role="columnheader"
+              >
+                {h}
+              </th>)}
+            </tr>
+          </thead>
+          <tbody class="max-files:block" role="rowgroup">
+            {rows.map(({ asset, forHtml, bom }, i) => <tr
+              class="max-files:flex max-files:flex-wrap max-files:items-baseline max-files:gap-x-5 max-files:gap-y-1.5 max-files:border-b max-files:border-grid max-files:pt-4 max-files:pb-4.5 max-files:first:border-t"
+              role="row"
+            >
+              <th
+                class:list={[
+                  cell,
+                  "py-3.5 pr-6 font-mono text-ui/5.5 font-medium 2xl:whitespace-nowrap max-files:flex-[1_1_100%] max-files:text-control/5.5",
+                ]}
+                scope="row"
+                role="rowheader"
+              >
+                <a href={asset.url}
+                  ><code class="text-[1em] whitespace-normal 2xl:whitespace-nowrap"
+                    >{asset.name}</code
+                  ></a
+                >
+              </th>
+              <td
+                class:list={[cell, "py-3.5 pr-6 max-files:flex-[1_1_100%]"]}
+                role="cell"
+                set:html={forHtml}
+              />
+              <td
+                class:list={[
+                  cell,
+                  "py-3.5 pr-6 whitespace-nowrap tabular-nums max-files:text-muted",
+                ]}
+                role="cell"
+              >
+                {formatSize(asset.size)}
+              </td>
+              <td
+                class:list={[
+                  cell,
+                  label,
+                  "py-3.5 pr-6 whitespace-nowrap max-files:before:content-['SHA-256'_/_'']",
+                ]}
+                role="cell"
+                set:html={shaCell(asset)}
+              />
+              <td
+                class:list={[
+                  cell,
+                  label,
+                  "py-3.5 whitespace-nowrap max-files:before:content-['Bill_of_materials'_/_''] max-files:has-[[data-none]]:hidden max-sm:whitespace-normal",
+                  { "max-sm:mt-1": i > 0 },
+                ]}
+                role="cell"
+                set:html={bomCell(bom)}
+              />
+            </tr>)}
+          </tbody>
+        </table>
+        <p class="mt-5 max-w-measure text-note text-pretty text-muted">
+          Each tarball unpacks into a folder named like the tarball.
+        </p>
       </div>
-    </section>
+    </Block>
 
-    <section class="block" id="verify" aria-labelledby="verify-title">
-      <div class="wrap">
-        <div class="block-in">
-          <h2 class="h2" id="verify-title">Verify a download</h2>
-          <div class="prose">
-            <p>
-              Every release file has a GitHub attestation. To check one, run this in its folder,
-              signed in to <code>gh</code>:
-            </p>
-            <CommandBox command={attestCommand(zip.name)} />
-            <p>
-              To compare checksums, verify <code>SHA256SUMS</code> with <code>gh</code> first, then
-              run this on macOS:
-            </p>
-            <CommandBox command={commands.shasum} />
-            <p class="cmd-lead">On Linux:</p>
-            <CommandBox command={commands.sha256sum} />
-            <p>
-              The app and macOS command line are signed by team <code>D7HJ5TFYCU</code> and
-              notarised. Linux files are not signed.
-            </p>
-            <p>The docs <a href={`${DOCS}/install/verify`}>explain each check</a>.</p>
-          </div>
-        </div>
+    <Block id="verify" titleId="verify-title" title="Verify a download">
+      <div class="prose">
+        <p>
+          Every release file has a GitHub attestation. To check one, run this in its folder, signed
+          in to <code>gh</code>:
+        </p>
+        <CommandBox class="mt-3 xl:max-w-none" command={attestCommand(zip.name)} />
+        <p class="mt-7">
+          To compare checksums, verify <code>SHA256SUMS</code> with <code>gh</code> first, then run
+          this on macOS:
+        </p>
+        <CommandBox class="mt-3 xl:max-w-none" command={commands.shasum} />
+        <p class="mt-7 text-note text-fg">On Linux:</p>
+        <CommandBox class="mt-3 xl:max-w-none" command={commands.sha256sum} />
+        <p class="mt-7">
+          The app and macOS command line are signed by team <code>D7HJ5TFYCU</code> and notarised.
+          Linux files are not signed.
+        </p>
+        <p>The docs <a href={`${DOCS}/install/verify`}>explain each check</a>.</p>
       </div>
-    </section>
+    </Block>
 
-    <section class="block" id="remove" aria-labelledby="remove-title">
-      <div class="wrap">
-        <div class="block-in">
-          <h2 class="h2" id="remove-title">Remove Pitboard</h2>
-          <div class="prose">
-            <p>
-              Before you <a href={`${DOCS}/install/remove`}>delete Pitboard</a>, quit the app and
-              run <code>pitboard uninstall</code>, or its parked logins stay on your computer.
-              <code>pitboard uninstall</code> deletes them, so every account not in use needs a
-              browser sign-in again.
-            </p>
-            <p class="note">
-              If Homebrew installed Pitboard 0.3.0 or earlier, follow
-              <a href={`${DOCS}/install/upgrade-from-0-3-0`}>Upgrade from 0.3.0 or earlier</a>.
-            </p>
-          </div>
-        </div>
+    <Block id="remove" titleId="remove-title" title="Remove Pitboard">
+      <div class="prose">
+        <p>
+          Before you <a href={`${DOCS}/install/remove`}>delete Pitboard</a>, quit the app and run
+          <code>pitboard uninstall</code>, or its parked logins stay on your computer.
+          <code>pitboard uninstall</code> deletes them, so every account not in use needs a browser
+          sign-in again.
+        </p>
+        <p class="mt-8 text-note text-muted">
+          If Homebrew installed Pitboard 0.3.0 or earlier, follow
+          <a href={`${DOCS}/install/upgrade-from-0-3-0`}>Upgrade from 0.3.0 or earlier</a>.
+        </p>
       </div>
-    </section>
+    </Block>
 
-    <section class="block" id="windows" aria-labelledby="windows-title">
-      <div class="wrap">
-        <div class="block-in">
-          <h2 class="h2" id="windows-title">Windows</h2>
-          <div class="prose">
-            <p>There is no Windows release.</p>
-          </div>
-        </div>
+    <Block
+      id="windows"
+      titleId="windows-title"
+      title="Windows"
+      class="os-windows:-order-2 os-windows:pt-16"
+    >
+      <div class="prose">
+        <p>There is no Windows release.</p>
       </div>
-    </section>
+    </Block>
   </main>
   <script>
     import "../scripts/download.ts";

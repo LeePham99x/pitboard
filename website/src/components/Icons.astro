@@ -1,5 +1,4 @@
 ---
-// The menu bar's symbols, and stand-ins for the SF Symbols Design.swift names.
 import template from "../assets/logo/template.svg?raw";
 
 const paths = [...template.matchAll(/<path d="([^"]+)"[^>]*?(fill-opacity="[^"]+")?\/>/g)];
@@ -29,7 +28,7 @@ const line = {
 };
 ---
 
-<svg class="defs" aria-hidden="true" focusable="false">
+<svg class="absolute size-0 overflow-hidden" aria-hidden="true" focusable="false">
   <symbol id="pb-template" viewBox="0 0 16 16">
     <path d={board} fill="currentColor"></path>
     <path d={dim} fill="currentColor" fill-opacity={dimOpacity}></path>

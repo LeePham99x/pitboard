@@ -1,0 +1,13 @@
+---
+interface Props {
+  on?: boolean;
+}
+const { on = false } = Astro.props;
+---
+
+<span
+  class:list={[
+    "relative h-15 w-26 flex-none rounded-pill after:absolute after:top-1 after:size-13 after:rounded-circle after:bg-white after:shadow-knob",
+    on ? "bg-win-blue after:left-12" : "bg-win-track after:left-1",
+  ]}
+></span>

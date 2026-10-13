@@ -13,25 +13,35 @@ interface Props {
 }
 const { app, cli, class: extra, pick = true } = Astro.props;
 const both = cli !== undefined && Astro.slots.has("cli");
+const onApp = both ? "block surface-cli:hidden" : "block";
+const onCli = "block surface-app:hidden no-js:mt-6";
+const button =
+  "cursor-pointer rounded-xs px-2.5 py-0.75 font-mono text-label font-medium text-fg aria-pressed:bg-ink aria-pressed:text-on-ink";
 ---
 
-<figure class:list={["fig", extra]} data-both={both ? "" : undefined}>
-  {both && pick && <div class="sv-pick" role="group" aria-label="Show Pitboard as">
-    <button type="button" data-surface="app" aria-pressed="true">App</button>
-    <button type="button" data-surface="cli" aria-pressed="false">Command line</button>
+<figure class:list={["min-w-0", extra]}>
+  {both && pick && <div
+    class="mb-3 flex w-fit gap-0.5 rounded-sm border border-edge p-0.5 no-js:hidden"
+    role="group"
+    aria-label="Show Pitboard as"
+  >
+    <button class={button} type="button" data-surface="app" aria-pressed="true">App</button>
+    <button class={button} type="button" data-surface="cli" aria-pressed="false">
+      Command line
+    </button>
   </div>}
-  <div class="fig-box">
-    <div class="sv-app"><slot /></div>
-    {both && <div class="sv-cli">
+  <div class="@container">
+    <div class={onApp}><slot /></div>
+    {both && <div class={onCli}>
       <slot name="cli" />
     </div>}
   </div>
-  <figcaption class="fig-cap">
-    <span class="sv-app"
-      ><span class="vh" set:html={`${app.describe} `} /><span set:html={app.caption}
+  <figcaption class="mt-3.5 font-mono text-ui text-muted [&_code]:text-[1em] [&_code]:text-muted">
+    <span class={onApp}
+      ><span class="sr-only" set:html={`${app.describe} `} /><span set:html={app.caption}
     /></span>
-    {both && <span class="sv-cli">
-      <span class="vh" set:html={`${cli!.describe} `} />
+    {both && <span class={onCli}>
+      <span class="sr-only" set:html={`${cli!.describe} `} />
       <span set:html={cli!.caption} />
     </span>}
   </figcaption>

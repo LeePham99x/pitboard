@@ -1,0 +1,35 @@
+---
+// A section with its heading beside its content, or above it when `one`.
+interface Props {
+  id?: string;
+  titleId: string;
+  title: string;
+  one?: boolean;
+  class?: string;
+}
+const { id, titleId, title, one = false, class: extra } = Astro.props;
+---
+
+<section class:list={["pt-(--block-space)", extra]} id={id} aria-labelledby={titleId}>
+  <div class="wrap">
+    <div
+      class:list={[
+        "grid items-start gap-x-12 border-t border-rule pt-(--block-in)",
+        one
+          ? "grid-cols-[minmax(0,1fr)]"
+          : "grid-cols-[minmax(0,4fr)_minmax(0,8fr)] max-xl:grid-cols-[minmax(0,1fr)]",
+      ]}
+    >
+      <h2
+        class:list={[
+          "pt-0.5 font-mono text-h2 text-balance text-strong max-sm:text-h2-sm",
+          one ? "mb-7" : "max-xl:mb-6",
+        ]}
+        id={titleId}
+      >
+        {title}
+      </h2>
+      <slot />
+    </div>
+  </div>
+</section>

@@ -9,26 +9,27 @@ const rows = [
   ["10 Oct 2026 at 09:16", "Enrol", "work", "Command line"],
   ["10 Oct 2026 at 09:14", "Enrol", "personal", "Command line"],
 ];
+const th = "px-6 py-5 text-left font-normal text-win-sub inset-shadow-sep-b";
 ---
 
-<PitboardWindow pane="activity" title="Activity" tools={["sf-refresh"]} panel="p-log">
-  <table class="tbl-mac">
+<PitboardWindow pane="activity" title="Activity" tools={["sf-refresh"]}>
+  <table class="w-full border-collapse text-pt-12/15 whitespace-nowrap tabular-nums">
     <thead>
       <tr>
-        <th>Date</th>
-        <th>Change</th>
-        <th>Account</th>
-        <th>Result</th>
-        <th>Asked By</th>
+        <th class={th}>Date</th>
+        <th class={th}>Change</th>
+        <th class={th}>Account</th>
+        <th class={th}>Result</th>
+        <th class={th}>Asked By</th>
       </tr>
     </thead>
     <tbody>
-      {rows.map(([date, change, account, by]) => <tr>
+      {rows.map(([date, change, account, by]) => <tr class="*:px-6 *:py-4 even:*:bg-win-stripe">
         <td>{date}</td>
         <td>{change}</td>
         <td>{account}</td>
-        <td class="sub">Done</td>
-        <td class="sub">{by}</td>
+        <td class="text-win-sub">Done</td>
+        <td class="text-win-sub">{by}</td>
       </tr>)}
     </tbody>
   </table>

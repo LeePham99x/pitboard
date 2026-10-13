@@ -1,30 +1,29 @@
 ---
 // The run-out notification, the only one with a button (MacPlatform.swift).
+import MenuBar from "./MenuBar.astro";
+import MenuItem from "./MenuItem.astro";
 import { clock } from "../../data/world.ts";
 ---
 
-<div class="desk p-notice" aria-hidden="true" data-output>
-  <div class="mb">
-    <div class="mb-i">
-      <svg class="mb-mark"><use href="#pb-template"></use></svg> personal 100%
-    </div>
-    <div class="mb-i">
-      <svg class="mb-batt"><use href="#ic-batt"></use></svg>
-    </div>
-    <div class="mb-i">
-      <svg class="mb-wifi"><use href="#ic-wifi"></use></svg>
-    </div>
-    <div class="mb-i">
-      <svg class="mb-cc"><use href="#ic-cc"></use></svg>
-    </div>
-    <div class="mb-i mb-clock">{clock.runOut}</div>
-  </div>
-  <div class="nb">
-    <img class="nb-icon" src="/icon-192.png" alt="" width="38" height="38" />
-    <span class="nb-text">
-      <b>personal has no weekly limit left<span>now</span></b>
+<div class="desk h-160" aria-hidden="true" data-output>
+  <MenuBar clock={clock.runOut}>
+    <MenuItem>
+      <svg class="size-16 shrink-0"><use href="#pb-template"></use></svg> personal 100%
+    </MenuItem>
+  </MenuBar>
+  <div
+    class="absolute top-36 right-14 flex w-370 items-center gap-10 rounded-pt-18 bg-mn-bg p-12 text-mn-text shadow-banner backdrop-blur-xl backdrop-saturate-180"
+  >
+    <img class="size-38 flex-none" src="/icon-192.png" alt="" width="38" height="38" />
+    <span class="min-w-0 flex-1 text-pt-13/16">
+      <b class="flex justify-between gap-6 font-bold whitespace-nowrap"
+        >personal has no weekly limit
+        left<span class="text-pt-12 font-normal text-mn-sub">now</span></b
+      >
       Claude Code<br />work has 60% of its own left.
     </span>
-    <span class="nb-act">Switch</span>
+    <span class="flex flex-none items-center self-stretch pl-10 font-medium inset-shadow-mn-l"
+      >Switch</span
+    >
   </div>
 </div>

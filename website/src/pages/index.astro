@@ -1,7 +1,7 @@
 ---
 import Base from "../layouts/Base.astro";
-import "../styles/figures.css";
-import "../styles/home.css";
+import Block from "../components/Block.astro";
+import Disclosure from "../components/Disclosure.astro";
 import Icons from "../components/Icons.astro";
 import InstallTabs from "../components/InstallTabs.astro";
 import Accounts from "../components/fig/Accounts.astro";
@@ -24,6 +24,11 @@ import { statusLine } from "../lib/words.ts";
 const { versions, release } = await siteData();
 const zip = appZip(release);
 const recent = versions.slice(0, 3).map((v) => ({ ...v, highlight: highlight(v.version) }));
+// a row is one string: on a phone its cells run inline, where whitespace between them would show
+const cell = "border-b border-grid py-3.5 text-left align-baseline max-sm:border-0 max-sm:p-0";
+const row = (v: (typeof recent)[number]) =>
+  `<th class="${cell} pr-6 font-mono text-control font-semibold whitespace-nowrap max-sm:mr-3 max-sm:inline" scope="row"><a href="/changelog#v${v.version}">${v.version}</a></th><td class="${cell} pr-6 text-note/[1.5] whitespace-nowrap text-muted max-sm:inline">${longDate(v.date)}</td><td class="${cell} max-sm:mt-1 max-sm:block">${v.highlight}</td>`;
+const note = "mt-4 hidden max-w-measure text-note text-pretty text-muted";
 
 const faq = [
   {
@@ -96,22 +101,26 @@ const jsonLd = [
 >
   <Icons slot="defs" />
   <main id="main">
-    <section class="hero" aria-labelledby="hero-title">
-      <div class="wrap hero-in">
-        <div class="hero-text">
-          <h1 class="h1" id="hero-title">Pitboard</h1>
-          <p class="lead">
+    <section class="pt-14" aria-labelledby="hero-title">
+      <div
+        class="wrap grid grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start gap-x-12 max-xl:grid-cols-[minmax(0,1fr)]"
+      >
+        <div class="pt-6">
+          <h1 class="font-mono text-h1 text-strong max-sm:text-h1-sm" id="hero-title">Pitboard</h1>
+          <p class="mt-4 max-w-lead text-lead text-pretty text-fg max-sm:text-lead-sm">
             Switch Claude Code and OpenAI's Codex CLI between your accounts without signing out.
           </p>
-          <p class="note os-note os-linux">On Linux, Pitboard has not been run with real logins.</p>
-          <p class="note os-note os-windows">
+          <p class:list={[note, "os-linux:block"]}>
+            On Linux, Pitboard has not been run with real logins.
+          </p>
+          <p class:list={[note, "os-windows:block"]}>
             There is <a href={`${DOCS}/install#what-you-need`}>no Windows release</a>.
           </p>
-          <p class="note os-note os-mobile">Pitboard runs on a Mac or a Linux computer.</p>
-          <InstallTabs n={1} zipUrl={zip.url} />
+          <p class:list={[note, "os-mobile:block"]}>Pitboard runs on a Mac or a Linux computer.</p>
+          <InstallTabs class="mt-10" n={1} zipUrl={zip.url} />
         </div>
         <Figure
-          class="hero-fig demo"
+          class="mt-8.75 max-xl:mt-8"
           pick={false}
           app={{
             caption: "Switching accounts in Pitboard's menu.",
@@ -183,7 +192,11 @@ const jsonLd = [
         With <a href={`${DOCS}/guides/status-line`}><code>pitboard statusline</code></a> in Claude
         Code's settings, each session shows the usage of every Claude Code account:
       </p>
-      <pre class="statusline" data-output set:html={statusLine("before")} />
+      <pre
+        class="w-fit max-w-full overflow-x-auto rounded-md border border-grid bg-term-bg px-3.5 py-2.5 font-mono text-ui whitespace-pre text-term-text [&_.dim]:text-term-dim [&_.g]:text-term-green [&_.r]:text-term-red [&_.y]:text-term-yellow [&_b]:text-term-bold"
+        data-output
+        set:html={statusLine("before")}
+      />
       <Figure
         slot="fig"
         app={{
@@ -202,9 +215,14 @@ const jsonLd = [
       </Figure>
     </Feature>
 
-    <section class="feat" aria-labelledby="runs-out-title" id="runs-out">
+    <section class="pt-(--block-space)" aria-labelledby="runs-out-title" id="runs-out">
       <div class="wrap">
-        <h2 class="h2 feat-head" id="runs-out-title">Before an account runs out</h2>
+        <h2
+          class="border-t border-rule pt-(--block-in) font-mono text-h2 text-balance text-strong max-sm:text-h2-sm"
+          id="runs-out-title"
+        >
+          Before an account runs out
+        </h2>
         <Row id="offer-title" title="When one runs out">
           <p>
             <a href={`${DOCS}/guides/switch#when-an-account-runs-out`}
@@ -415,54 +433,40 @@ const jsonLd = [
       </Figure>
     </Feature>
 
-    <section class="block" aria-labelledby="releases-title">
-      <div class="wrap">
-        <div class="block-in">
-          <h2 class="h2" id="releases-title">Recent releases</h2>
-          <div>
-            <table class="tbl" aria-labelledby="releases-title">
-              <tbody>
-                {recent.map((v) => (
-                  <tr
-                    set:html={`<th scope="row"><a href="/changelog#v${v.version}">${v.version}</a></th><td class="t-date">${longDate(v.date)}</td><td>${v.highlight}</td>`}
-                  />
-                ))}
-              </tbody>
-            </table>
-            <p class="more"><a href="/changelog">All releases</a></p>
-          </div>
-        </div>
+    <Block titleId="releases-title" title="Recent releases">
+      <div>
+        <table
+          class="w-full border-collapse text-table max-sm:block"
+          aria-labelledby="releases-title"
+        >
+          <tbody class="max-sm:block">
+            {recent.map((v) => (
+              <tr
+                class="max-sm:block max-sm:border-b max-sm:border-grid max-sm:py-3.5"
+                set:html={row(v)}
+              />
+            ))}
+          </tbody>
+        </table>
+        <p class="mt-5"><a href="/changelog">All releases</a></p>
       </div>
-    </section>
+    </Block>
 
-    <section class="block" aria-labelledby="faq-title">
-      <div class="wrap">
-        <div class="block-in">
-          <h2 class="h2" id="faq-title">Questions</h2>
-          <div>
-            {faq.map((item) => <details class="qa">
-              <summary set:html={item.q} />
-              <div class="qa-a">
-                <p set:html={item.a} />
-                <p>
-                  <a href={item.link[0]}>{item.link[1]}</a>
-                </p>
-              </div>
-            </details>)}
-          </div>
-        </div>
+    <Block titleId="faq-title" title="Questions">
+      <div>
+        {faq.map((item) => <Disclosure summary={item.q}>
+          <p set:html={item.a} />
+          <p>
+            <a href={item.link[0]}>{item.link[1]}</a>
+          </p>
+        </Disclosure>)}
       </div>
-    </section>
+    </Block>
 
-    <section class="block" aria-labelledby="install-title">
-      <div class="wrap">
-        <div class="block-in">
-          <h2 class="h2" id="install-title">Install Pitboard</h2>
-          <div>
-            <InstallTabs n={2} zipUrl={zip.url} />
-          </div>
-        </div>
+    <Block titleId="install-title" title="Install Pitboard">
+      <div>
+        <InstallTabs n={2} zipUrl={zip.url} />
       </div>
-    </section>
+    </Block>
   </main>
 </Base>
