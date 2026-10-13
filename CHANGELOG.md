@@ -54,6 +54,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   `program_variable` and `install_places`, and `ProviderId::home_variable`,
   `ProviderId::login_command`, `switch::sign_in` and `switch::sign_in_watched` are gone.
   `ProviderId::Desktop` and many other items are added.
+- The app ships without Sparkle's XPC services, which only a sandboxed app uses.
 
 ## [0.13.0] - 2026-10-13
 

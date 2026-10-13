@@ -80,10 +80,15 @@ xcodebuild -project apps/macos/Pitboard.xcodeproj -scheme Pitboard -configuratio
     MARKETING_VERSION="$version" CURRENT_PROJECT_VERSION="$build" \
     CODE_SIGNING_ALLOWED=NO build
 ditto apps/macos/build/DerivedData/Build/Products/Release/Pitboard.app "$app"
-[ -d "$app/Contents/Frameworks/Sparkle.framework" ] || {
+sparkle=$app/Contents/Frameworks/Sparkle.framework
+[ -d "$sparkle" ] || {
     echo "Xcode did not embed Sparkle.framework" >&2
     exit 1
 }
+# Sparkle's XPC services are for a sandboxed app. Pitboard is not sandboxed and sets neither
+# SUEnableInstallerLauncherService nor SUEnableDownloaderService, so Sparkle downloads and
+# starts its installer in process, and its sandboxing page says such an app may remove them.
+rm -rf "$sparkle/XPCServices" "$sparkle/Versions/B/XPCServices"
 # The Share extension is universal like the app, and a release names pitboard:// in every
 # place the app and the extension read it from.
 appex=$app/Contents/PlugIns/PitboardShare.appex
@@ -172,14 +177,12 @@ fi
 # shellcheck disable=SC2086 # $options is a list of flags.
 codesign --force $options --sign "$identity" -i com.usepitboard.Pitboard.cli \
     "$app/Contents/Helpers/pitboard"
-for helper in "$app/Contents/Frameworks/Sparkle.framework/Versions/"*/XPCServices/*.xpc \
-    "$app/Contents/Frameworks/Sparkle.framework/Versions/"*/Updater.app \
-    "$app/Contents/Frameworks/Sparkle.framework/Versions/"*/Autoupdate; do
+for helper in "$sparkle/Versions/B/Updater.app" "$sparkle/Versions/B/Autoupdate"; do
     # shellcheck disable=SC2086 # $options is a list of flags.
-    [ -e "$helper" ] && codesign --force $options --sign "$identity" "$helper"
+    codesign --force $options --sign "$identity" "$helper"
 done
 # shellcheck disable=SC2086 # $options is a list of flags.
-codesign --force $options --sign "$identity" "$app/Contents/Frameworks/Sparkle.framework"
+codesign --force $options --sign "$identity" "$sparkle"
 # An app extension must be sandboxed, or macOS refuses to run it, and a signature made
 # without --entitlements carries none. It is signed before the app, and the app's own
 # signature is made without --deep, so it keeps this one. The key is written with its dots
