@@ -36,8 +36,9 @@ mint a11y
   **Use Pitboard**, and in that group in `docs.json`. `index`, `quickstart`, `install`,
   `troubleshooting` and `security` sit at the top.
 - Images go in `images/` and are referenced as `/images/name.png`.
-- The site icon, `favicon.svg`, is a hand-written copy of the icon
-  `apps/macos/scripts/make-icon.swift` draws. Nothing regenerates it, so change both together.
+- The site icons, `favicon.svg` and `favicon-dark.svg`, and the header logos in `logo/` are
+  Pitboard's mark, the board the app's icon and `MenuBarMark.swift` draw. Nothing
+  regenerates them, so change them together.
 - `.mintignore` lists the files Mintlify must not publish, such as `AGENTS.md`.
 
 A page that moves needs a redirect in `docs.json`, so links from outside the site keep

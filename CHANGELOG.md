@@ -15,6 +15,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The app's icon and its mark in the menu bar are a pit board held up, its top row lit, in
+  place of three bars and a speedometer.
 - The automatic switch, and the app's offer once an account runs out, prefer an account
   without a weekly limit for all models, such as a Team seat.
 - In `pitboard-core`, `usage::roomiest` is now `usage::preferred` and `usage::Room` gains
