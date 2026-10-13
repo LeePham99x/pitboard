@@ -31,21 +31,27 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: rustup toolchain install
-      # An x64 Rust that an ARM64 image ran under emulation would build x64 programs.
-      - name: Rust builds for this leg's machine
-        env:
-          TRIPLE: ${{ matrix.triple }}
+      - uses: ./.github/actions/rust
+        with:
+          cache: false
+      # ring compiles its C with clang on ARM64 Windows, and nothing else.
+      - if: runner.arch == 'ARM64'
+        run: clang --version
+      - name: This image
+        shell: pwsh
         run: |
-          host=$(rustc -vV | sed -n 's/^host: //p')
-          echo "Rust's host is $host"
-          test "$host" = "$TRIPLE"
-      # The pitboard.exe a 0.x release is built as, which refuses everything.
-      - env:
-          RUSTFLAGS: -D warnings -C target-feature=+crt-static
-          CARGO_TARGET_DIR: target/gated
-        run: cargo build --locked -p pitboard
-      - run: cargo build --locked -p pitboard-probe
+          cmd /c ver
+          rustc -vV
+          Get-Command clang, llvm-readobj -ErrorAction SilentlyContinue | Select-Object Name, Source
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (Test-Path $vswhere) {
+            & $vswhere -latest -products * -property catalog_productDisplayVersion
+            & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.ARM64 -property installationPath
+          }
+          exit 0
+      - uses: ./.github/actions/windows-builds
+        with:
+          triple: ${{ matrix.triple }}
       # What the owner's VM session runs. The VM fetches nothing itself, so the owner copies
       # these in. Uploaded before the runner facts, so a runner-facts failure still leaves them.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

@@ -566,6 +566,9 @@ pages load, as a browser would.
   - `workflows/windows-facts.yml`, started by hand, measures the Windows runners and builds
     the programs a VM session runs.
   - `actions/apple-keychain` imports the Developer ID certificate for every job that signs.
+  - `actions/rust` installs the toolchain and restores the Cargo cache for every job outside
+    `release.yml`, and `actions/windows-builds` makes the builds both Windows workflows start
+    from.
   - `scripts/` holds the EdDSA key and signature helpers, and the scripts that add Sparkle,
     the command line and the Share extension's library to the app's bill of materials.
     `fill-template.sh` writes a release's version and checksums into a `packaging/`

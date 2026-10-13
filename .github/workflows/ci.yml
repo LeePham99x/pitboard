@@ -26,7 +26,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: rustup toolchain install
+      - uses: ./.github/actions/rust
+        with:
+          cache: false
       - run: cargo fmt --check
 
   clippy:
@@ -40,12 +42,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: rustup toolchain install
-      # Only main saves a cache, and a pull request restores main's: the repository holds
-      # 10 GB of cache, and caches saved by pull requests pushed main's out.
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: ./.github/actions/rust
       - run: cargo clippy --all-targets --locked
       # The fixtures, which only a build with the feature compiles.
       - run: cargo clippy -p pitboard-ffi --all-targets --locked --features fixture
@@ -61,10 +58,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: rustup toolchain install
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: ./.github/actions/rust
       - run: cargo test --locked -- --skip writing_preserves_attributes
       # The fixtures, each a world on the real core, which only a build with the feature has.
       - run: cargo test --locked -p pitboard-ffi --features fixture
@@ -133,47 +127,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # ring compiles its C with clang on ARM64 Windows, and nothing else, so the image's clang
-      # is said first.
-      - if: runner.arch == 'ARM64'
-        run: clang --version
-      - run: rustup toolchain install
-      # Every build below is for the machine Rust says it runs on, so that must be this leg's:
-      # an x64 Rust that an ARM64 image ran under emulation would build, check and test x64.
-      - name: Rust builds for this leg's machine
-        env:
-          TRIPLE: ${{ matrix.triple }}
-        run: |
-          host=$(rustc -vV | sed -n 's/^host: //p')
-          echo "Rust's host is $host"
-          test "$host" = "$TRIPLE"
-      # What the image is, for the record of each image's facts: its Windows build, Rust,
-      # LLVM and Visual Studio. Said, never relied on.
-      - name: This image
-        shell: pwsh
-        run: |
-          cmd /c ver
-          rustc -vV
-          Get-Command clang, llvm-readobj -ErrorAction SilentlyContinue | Select-Object Name, Source
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          if (Test-Path $vswhere) {
-            & $vswhere -latest -products * -property catalog_productDisplayVersion
-            & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.ARM64 -property installationPath
-          }
-          exit 0
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: ./.github/actions/rust
+      # Every test step below lists Credential Manager with the probe this builds, for the
+      # leak check.
+      - uses: ./.github/actions/windows-builds
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      # What a release builds: no test-support and no cfg, so the release gate is closed. In a
-      # folder of its own, so the lints and tests below keep theirs.
-      - env:
-          RUSTFLAGS: -D warnings -C target-feature=+crt-static
-          CARGO_TARGET_DIR: target/gated
-        run: cargo build --locked -p pitboard
-      # That build is a program for this leg's machine, answers --version, holds its C runtime,
-      # and refuses every command with windows_not_released, leaving every folder it is
-      # pointed at empty. Its folders are set in this step alone, since Cargo and rustup find
-      # their own homes through USERPROFILE.
+          triple: ${{ matrix.triple }}
+      # The gated build is a program for this leg's machine, answers --version, holds its C
+      # runtime, and refuses every command with windows_not_released, leaving every folder it
+      # is pointed at empty. Its folders are set in this step alone, since Cargo and rustup
+      # find their own homes through USERPROFILE.
       - name: A Windows build of a 0.x release changes nothing
         shell: pwsh
         env:
@@ -223,8 +186,6 @@ jobs:
           # The runner ends a PowerShell step with the last program's exit code, which here is
           # a refusal's.
           exit 0
-      # Built first: every test step below lists Credential Manager with it for the leak check.
-      - run: cargo build --locked -p pitboard-probe
       # Tests from here run as a fresh standard user: the job's user is elevated in every program.
       # windows_refuses as it runs against a build that is not opened: every one of its
       # changes and reads refuses with windows_not_released, and every folder stays empty.
@@ -295,12 +256,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: ./.github/actions/rust
       - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
         with:
           tool: cargo-hack@0.6.45
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
       # --rust-version installs the rust-version in Cargo.toml and checks with it; the
       # workspace behaviour keeps it one cargo check, not one per package.
       - run: cargo hack check --rust-version --workspace-behavior=cargo --workspace --all-targets --locked
@@ -320,11 +279,9 @@ jobs:
       - run: |
           sudo xcode-select --switch /Applications/Xcode_26.6.app
           xcodebuild -version
-      - run: rustup toolchain install
-      - run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: ./.github/actions/rust
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          targets: aarch64-apple-darwin x86_64-apple-darwin
       # PitboardBindings and PitboardShareBindings are generated, so only what is written by
       # hand is checked.
       - run: >
@@ -392,10 +349,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: rustup toolchain install
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: ./.github/actions/rust
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: apps/windows/global.json
@@ -447,12 +401,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: ./.github/actions/rust
       - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
         with:
           tool: cargo-hack@0.6.45
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo hack check --rust-version --workspace-behavior=cargo --workspace --all-targets --locked
       # The fixtures, which only a build with the feature compiles.
       - run: cargo hack check --rust-version --workspace-behavior=cargo -p pitboard-ffi --all-targets --locked --features fixture
