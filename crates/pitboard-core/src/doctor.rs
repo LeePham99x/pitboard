@@ -391,10 +391,12 @@ fn desktop_facts(ctx: &Context, state: &State) -> Option<DesktopFacts> {
             .collect(),
         build: desktop_build(ctx),
     };
-    // Nothing of Claude is read until one of its accounts is enrolled.
-    if let (true, Ok(root)) = (enrolled, &root) {
+    if let Ok(root) = &root {
         facts.refused = app.refuses(root);
         facts.present = root.is_dir();
+    }
+    // Nothing inside Claude's data folder is read until one of its accounts is enrolled.
+    if let (true, Ok(root)) = (enrolled, &root) {
         let settings = app.settings(root);
         let (known, signed_out) = switch::folder::judged(state, app, settings.as_ref().ok());
         facts.known = Some(known);
@@ -3364,6 +3366,37 @@ mod tests {
             "{home:?}"
         );
         assert!(!home.2.contains("--sign-in"), "{home:?}");
+    }
+
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+    )]
+    fn a_data_folder_is_found_where_only_a_folder_set_aside_is_left() {
+        use crate::state::{Aside, SetAside};
+        let m = crate::switch::harness::desktop_pair("doctor-aside-only");
+        let mut state = crate::state::load(&m.ctx).expect("state");
+        state
+            .accounts
+            .retain(|account| account.provider() != ProviderId::Desktop);
+        state.aside.push(Aside {
+            name: "pitboard-aside-1".into(),
+            tool: ProviderId::Desktop,
+            at: NOW,
+            why: SetAside::Orphan,
+            account: None,
+            login: None,
+        });
+        let facts = desktop_facts(&m.ctx, &state).expect("a folder set aside shows Claude Desktop");
+        let parks = park_facts(&m.ctx, &state);
+        let checks = judge_desktop(&facts, &state, &parks, crate::switch::harness::NOW);
+        let folder = checks
+            .iter()
+            .find(|c| c.code == "desktop_data_folder")
+            .map(|c| (c.level, c.detail.clone()))
+            .expect("the data folder is checked");
+        assert_eq!(folder.0, Level::Ok, "{folder:?}");
     }
 
     #[test]
