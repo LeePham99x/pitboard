@@ -63,29 +63,14 @@ fn environment(home: &Path, config_dir: Option<&str>) -> serde_json::Value {
     doctor(home, config_dir, &[])["data"]["environment"].clone()
 }
 
-struct Scratch(PathBuf);
-
-impl Scratch {
-    fn home(&self) -> PathBuf {
-        self.0.join("home")
-    }
-}
-
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
-}
-
-fn scratch(name: &str) -> Scratch {
-    let p = std::env::temp_dir().join(format!("pitboard-env-{}-{name}", std::process::id()));
-    common::refuse_a_real_login_place(&p);
-    let _ = std::fs::remove_dir_all(&p);
-    let scratch = Scratch(p);
-    std::fs::create_dir_all(scratch.home()).unwrap();
-    common::os::make_account_folders(&scratch.0.join("account"));
-    std::fs::write(scratch.home().join(".claude.json"), "{}").unwrap();
-    scratch
+fn scratch() -> (tempfile::TempDir, PathBuf) {
+    let scratch = tempfile::tempdir().unwrap();
+    common::refuse_a_real_login_place(scratch.path());
+    let home = scratch.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    common::os::make_account_folders(&scratch.path().join("account"));
+    std::fs::write(home.join(".claude.json"), "{}").unwrap();
+    (scratch, home)
 }
 
 /// Claude Code 2.1.289 reads an empty `CLAUDE_CONFIG_DIR` as unset for its config file and
@@ -97,8 +82,7 @@ fn scratch(name: &str) -> Scratch {
 /// command says so, and `doctor` fails its `homes` check and checks nothing else.
 #[test]
 fn an_empty_config_dir_is_refused() {
-    let scratch = scratch("empty");
-    let home = scratch.home();
+    let (_scratch, home) = scratch();
     let unset = environment(&home, None);
     assert_eq!(unset["credential_service"], "Claude Code-credentials");
 
@@ -134,8 +118,7 @@ fn an_empty_config_dir_is_refused() {
 #[test]
 #[cfg_attr(windows, ignore = "W17: finding programs on Windows")]
 fn a_program_the_environment_names_is_the_one_the_command_line_runs() {
-    let scratch = scratch("named");
-    let home = scratch.home();
+    let (_scratch, home) = scratch();
     let claude = home.join("elsewhere/claude/versions/9.9.9");
     let codex = home.join("elsewhere/codex/releases/9.9.8-aarch64-apple-darwin/bin/codex");
     for program in [&claude, &codex] {

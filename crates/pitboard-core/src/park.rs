@@ -543,28 +543,16 @@ mod tests {
 
     /// A machine whose stores are in memory, whose clock stands still, and whose home is a
     /// scratch directory: reserving a name writes it down before it is used.
-    fn machine() -> (Context, Arc<MemoryHost>, Scratch) {
-        let root = std::env::temp_dir().join(format!(
-            "pitboard-park-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&root);
+    fn machine() -> (Context, Arc<MemoryHost>, tempfile::TempDir) {
+        let scratch = tempfile::tempdir().expect("a scratch home");
+        let root = scratch.path().to_path_buf();
         let mem = MemoryHost::new();
         let clock = Arc::new(FixedClock::at(1_760_000_000));
         let ctx = Context::new(root.clone())
-            .with_pitboard_home(root.clone())
+            .with_pitboard_home(root)
             .with_memory_stores(Arc::clone(&mem))
             .with_clock(clock as Arc<dyn crate::time::Clock>);
-        (ctx, mem, Scratch(root))
-    }
-
-    /// Takes the scratch home away when the test ends, however it ends.
-    struct Scratch(std::path::PathBuf);
-    impl Drop for Scratch {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
+        (ctx, mem, scratch)
     }
 
     #[test]

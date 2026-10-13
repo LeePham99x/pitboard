@@ -104,23 +104,12 @@ mod tests {
 
     const NOW: i64 = 1_789_935_000;
 
-    struct Scratch(PathBuf);
-    impl Drop for Scratch {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-
-    fn machine(name: &str) -> (Context, Scratch) {
-        let root = std::env::temp_dir().join(format!(
-            "pitboard-sessions-{name}-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&root);
-        let ctx = Context::new(root.clone()).with_pitboard_home(root.clone());
+    fn machine() -> (Context, tempfile::TempDir) {
+        let scratch = tempfile::tempdir().expect("a scratch home");
+        let root = scratch.path().to_path_buf();
+        let ctx = Context::new(root.clone()).with_pitboard_home(root);
         home::ensure(&ctx, Permit::for_a_test()).expect("a home");
-        (ctx, Scratch(root))
+        (ctx, scratch)
     }
 
     fn at(ctx: &Context, now: i64) -> Context {
@@ -146,7 +135,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn a_session_gets_back_what_it_passed_the_run_before() {
-        let (ctx, _scratch) = machine("exchange");
+        let (ctx, _scratch) = machine();
         let ctx = at(&ctx, NOW);
         assert_eq!(
             exchange(&ctx, Permit::for_a_test(), "pane", &run(20.0)),
@@ -175,7 +164,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn a_session_an_earlier_pitboard_kept_is_still_compared_with() {
-        let (ctx, _scratch) = machine("earlier");
+        let (ctx, _scratch) = machine();
         std::fs::write(
             path(&ctx),
             serde_json::json!({"pane": {
@@ -200,7 +189,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn a_run_that_changes_nothing_leaves_the_file_alone() {
-        let (ctx, _scratch) = machine("unchanged");
+        let (ctx, _scratch) = machine();
         exchange(&at(&ctx, NOW), Permit::for_a_test(), "pane", &run(20.0));
         let written = std::fs::read_to_string(path(&ctx)).unwrap();
         std::fs::write(path(&ctx), format!("{written} ")).unwrap();
@@ -225,7 +214,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn a_session_not_seen_for_a_week_is_dropped() {
-        let (ctx, _scratch) = machine("pruned");
+        let (ctx, _scratch) = machine();
         exchange(&at(&ctx, NOW), Permit::for_a_test(), "gone", &run(20.0));
         exchange(&at(&ctx, NOW), Permit::for_a_test(), "open", &run(30.0));
         for day in 1..=7 {

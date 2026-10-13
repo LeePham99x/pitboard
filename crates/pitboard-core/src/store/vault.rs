@@ -142,21 +142,10 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn a_parked_login_is_readable_only_by_its_owner() {
-        let root = std::env::temp_dir().join(format!(
-            "pitboard-vault-modes-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&root);
-        struct Scratch(PathBuf);
-        impl Drop for Scratch {
-            fn drop(&mut self) {
-                let _ = std::fs::remove_dir_all(&self.0);
-            }
-        }
-        let _guard = Scratch(root.clone());
+        let scratch = tempfile::tempdir().expect("a scratch home");
+        let root = scratch.path();
 
-        let ctx = Context::new(root.clone()).with_pitboard_home(root.join(".pitboard"));
+        let ctx = Context::new(root.to_path_buf()).with_pitboard_home(root.join(".pitboard"));
         let vault = FileVault::new(&ctx);
         let name = "pitboard-park-1f0e2d3c-4b5a-4968-8776-a5b4c3d2e1f0-1789935600123";
         vault

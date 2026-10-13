@@ -12,7 +12,6 @@ mod common;
 
 use pitboard_core::testing::stand_in::{Script, Step};
 use std::net::TcpListener;
-use std::path::PathBuf;
 use std::process::Command;
 
 /// Set in the child's environment, which is how the child knows it is the one to sign in.
@@ -34,24 +33,12 @@ fn a_sign_in_never_runs_the_program_the_tests_environment_names() {
     }
 }
 
-/// A scratch directory, removed however the test ends.
-struct Scratch(PathBuf);
-
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
-}
-
 /// Runs this test again in a child whose environment names, for both tools, a program no
 /// test may run, which only writes down that it was run.
 fn in_a_child_given_both_variables() {
-    let scratch =
-        Scratch(std::env::temp_dir().join(format!("pitboard-inherited-{}", std::process::id())));
-    let _ = std::fs::remove_dir_all(&scratch.0);
-    std::fs::create_dir_all(&scratch.0).expect("a scratch directory");
-    let ran = scratch.0.join("ran");
-    let trap = scratch.0.join("must-not-run");
+    let scratch = tempfile::tempdir().expect("a scratch directory");
+    let ran = scratch.path().join("ran");
+    let trap = scratch.path().join("must-not-run");
     common::put_stand_in(
         &trap,
         &Script::Plays {

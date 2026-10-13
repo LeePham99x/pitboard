@@ -139,27 +139,16 @@ mod tests {
 
     const NOW: i64 = 1_760_000_000;
 
-    struct Scratch(std::path::PathBuf);
-    impl Drop for Scratch {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-
-    fn machine(name: &str) -> (Context, Arc<MemoryHost>, Scratch) {
-        let root = std::env::temp_dir().join(format!(
-            "pitboard-adopt-{name}-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&root);
+    fn machine() -> (Context, Arc<MemoryHost>, tempfile::TempDir) {
+        let scratch = tempfile::tempdir().expect("a scratch home");
+        let root = scratch.path().to_path_buf();
         let mem = MemoryHost::new();
         let ctx = Context::new(root.clone())
-            .with_pitboard_home(root.clone())
+            .with_pitboard_home(root)
             .with_memory_stores(Arc::clone(&mem))
             .with_clock(Arc::new(FixedClock::at(NOW)) as Arc<dyn Clock>);
         crate::home::ensure(&ctx, Permit::for_a_test()).expect("a home");
-        (ctx, mem, Scratch(root))
+        (ctx, mem, scratch)
     }
 
     fn oauth() -> serde_json::Value {
@@ -211,7 +200,7 @@ mod tests {
         ignore = "Claude Desktop is macOS only: Windows makes and removes no folder"
     )]
     fn adopting_sets_aside_the_folder_parks_of_another_mac_and_deletes_none() {
-        let (ctx, mem, _scratch) = machine("folders");
+        let (ctx, mem, _scratch) = machine();
         from_elsewhere(&ctx, &mem);
         let path = crate::home::dir(&ctx).join("state.json");
         let mut state: State =
@@ -335,7 +324,7 @@ mod tests {
         };
 
         // A leave: its park and the aside it made, never one it only named.
-        let (ctx, mem, _scratch) = machine("moves");
+        let (ctx, mem, _scratch) = machine();
         from_elsewhere(&ctx, &mem);
         let path = crate::home::dir(&ctx).join("state.json");
         let mut state: State =
@@ -380,7 +369,7 @@ mod tests {
         assert!(park_at.join("items/Cookies").exists() && made_at.join("items/Cookies").exists());
 
         // An arrive of a park the account holds from the other Mac: set aside once.
-        let (ctx, mem, _scratch) = machine("moves-held");
+        let (ctx, mem, _scratch) = machine();
         from_elsewhere(&ctx, &mem);
         let mut state: State = serde_json::from_str(
             &std::fs::read_to_string(crate::home::dir(&ctx).join("state.json")).unwrap(),
@@ -417,7 +406,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn a_home_from_another_machine_keeps_its_accounts_and_loses_its_logins() {
-        let (ctx, mem, _scratch) = machine("takeover");
+        let (ctx, mem, _scratch) = machine();
         let service = from_elsewhere(&ctx, &mem);
 
         assert!(
@@ -463,7 +452,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn a_login_replaced_on_another_machine_is_not_said_here() {
-        let (ctx, mem, _scratch) = machine("takeover-replaced");
+        let (ctx, mem, _scratch) = machine();
         from_elsewhere(&ctx, &mem);
         let path = crate::home::dir(&ctx).join("state.json");
         let mut written: serde_json::Value =
@@ -497,7 +486,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn adopting_a_home_that_is_already_this_machines_does_nothing() {
-        let (ctx, _mem, _scratch) = machine("nothing-to-do");
+        let (ctx, _mem, _scratch) = machine();
         let mut state = State::default();
         state.accounts.push(Account {
             last_used_at: None,
@@ -526,7 +515,7 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn adopting_an_empty_home_is_not_an_error() {
-        let (ctx, _mem, _scratch) = machine("empty");
+        let (ctx, _mem, _scratch) = machine();
         assert_eq!(adopt(&ctx, Permit::for_a_test()).expect("adopting"), None);
     }
 }

@@ -44,6 +44,7 @@ rusqlite = { version = "0.39.0", default-features = false }
 # those over SHA-1. Nothing secret is hashed.
 sha1 = { version = "0.11", default-features = false }
 sha2 = "0.11"
+tempfile = "3.27"
 thiserror = "2"
 # Codex's configuration, read as Codex 0.160.0 reads it. The parser alone: Pitboard never
 # writes TOML, so neither the writer nor the order a table was written in is wanted.

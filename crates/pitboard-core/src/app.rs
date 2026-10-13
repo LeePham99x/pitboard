@@ -649,28 +649,31 @@ mod tests {
     /// A scratch directory with an app bundle carrying a command line, and whatever a test
     /// puts beside it. Its name has a space and a quote in it, as a folder somebody made
     /// might. Nothing in it is ever run.
-    struct Scratch(PathBuf);
+    struct Scratch(tempfile::TempDir);
 
     impl Scratch {
         fn new() -> Scratch {
-            let root = std::env::temp_dir().join(format!(
-                "pitboard's tool {}-{:?}",
-                std::process::id(),
-                std::thread::current().id()
-            ));
-            let _ = std::fs::remove_dir_all(&root);
-            let scratch = Scratch(root);
+            let scratch = Scratch(
+                tempfile::Builder::new()
+                    .prefix("pitboard's tool ")
+                    .tempdir()
+                    .expect("a scratch directory"),
+            );
             scratch.program(&scratch.helper(), true);
             scratch
         }
 
+        fn path(&self) -> &Path {
+            self.0.path()
+        }
+
         fn helper(&self) -> PathBuf {
-            self.0.join("Fake.app/Contents/Helpers/pitboard")
+            self.path().join("Fake.app/Contents/Helpers/pitboard")
         }
 
         /// A directory under the root, made if it is not there.
         fn dir(&self, name: &str) -> PathBuf {
-            let made = self.0.join(name);
+            let made = self.path().join(name);
             std::fs::create_dir_all(&made).expect("a scratch directory");
             made
         }
@@ -681,12 +684,6 @@ mod tests {
             if runnable {
                 testing::make_runnable(at).expect("runnable");
             }
-        }
-    }
-
-    impl Drop for Scratch {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
         }
     }
 
@@ -703,8 +700,11 @@ mod tests {
         let plain = scratch.dir("plain");
         scratch.program(&plain.join("pitboard"), false);
         let dangling = scratch.dir("dangling");
-        testing::link(&scratch.0.join("gone/pitboard"), &dangling.join("pitboard"))
-            .expect("a link to nothing");
+        testing::link(
+            &scratch.path().join("gone/pitboard"),
+            &dangling.join("pitboard"),
+        )
+        .expect("a link to nothing");
         let brew = scratch.dir("brew/bin");
         testing::link(
             Path::new("../../Fake.app/Contents/Helpers/pitboard"),
@@ -713,7 +713,7 @@ mod tests {
         .expect("a link as Homebrew makes one");
         let cargo = scratch.dir("cargo/bin");
         scratch.program(&cargo.join("pitboard"), true);
-        let helpers = scratch.0.join("helpers");
+        let helpers = scratch.path().join("helpers");
         testing::link_dir(scratch.helper().parent().expect("Helpers"), &helpers)
             .expect("a link to a directory");
 
@@ -743,7 +743,7 @@ mod tests {
         );
         assert_eq!(find(&[], Some(&own)), CommandLine::Nowhere);
 
-        let other = scratch.0.join("Other.app/Contents/Helpers/pitboard");
+        let other = scratch.path().join("Other.app/Contents/Helpers/pitboard");
         assert_eq!(
             find(&[&brew], Some(&other)),
             CommandLine::Another(brew.join("pitboard")),

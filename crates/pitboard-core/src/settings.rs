@@ -201,25 +201,13 @@ pub(crate) fn overrides_of_a_run_in(config: &std::path::Path) -> Vec<Override> {
 pub(crate) mod tests_support {
     use super::*;
 
-    pub(crate) struct Scratch(pub(crate) PathBuf);
-    impl Drop for Scratch {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-
-    pub(crate) fn home(name: &str) -> (Context, PathBuf, Scratch) {
-        let root = std::env::temp_dir().join(format!(
-            "pitboard-settings-{name}-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&root);
-        let config = root.join(".claude");
+    pub(crate) fn home() -> (Context, PathBuf, tempfile::TempDir) {
+        let scratch = tempfile::tempdir().expect("a scratch home");
+        let config = scratch.path().join(".claude");
         std::fs::create_dir_all(&config).expect("a config dir");
-        let ctx = Context::new(root.clone())
+        let ctx = Context::new(scratch.path().to_path_buf())
             .with_claude_config_dir(config.to_string_lossy().into_owned());
-        (ctx, config, Scratch(root))
+        (ctx, config, scratch)
     }
 
     pub(crate) fn write(path: &std::path::Path, value: Value) {
@@ -247,14 +235,14 @@ mod tests {
 
     #[test]
     fn an_ordinary_machine_has_nothing_in_the_way() {
-        let (ctx, config, _s) = home("clean");
+        let (ctx, config, _s) = home();
         write(&config.join("settings.json"), json!({"theme": "dark"}));
         assert_eq!(overrides(&ctx), Vec::new());
     }
 
     #[test]
     fn a_settings_file_that_sets_a_key_is_found_where_the_environment_would_not_be() {
-        let (ctx, config, _s) = home("env-block");
+        let (ctx, config, _s) = home();
         write(
             &config.join("settings.json"),
             json!({"env": {"ANTHROPIC_API_KEY": "sk-ant-something"}}),
@@ -267,7 +255,7 @@ mod tests {
 
     #[test]
     fn a_helper_that_prints_a_key_is_an_override_whatever_it_prints() {
-        let (ctx, config, _s) = home("helper");
+        let (ctx, config, _s) = home();
         write(
             &config.join("settings.json"),
             json!({"apiKeyHelper": "/usr/local/bin/get-key"}),
@@ -277,7 +265,7 @@ mod tests {
 
     #[test]
     fn a_third_party_provider_is_an_override_too() {
-        let (ctx, config, _s) = home("bedrock");
+        let (ctx, config, _s) = home();
         write(
             &config.join("settings.json"),
             json!({"env": {"CLAUDE_CODE_USE_BEDROCK": "1"}}),
@@ -288,7 +276,7 @@ mod tests {
     /// Claude Code reads an empty string, `0` and `false` as not set, and so does this.
     #[test]
     fn a_key_that_is_present_but_empty_sets_nothing() {
-        let (ctx, config, _s) = home("empty");
+        let (ctx, config, _s) = home();
         write(
             &config.join("settings.json"),
             json!({
@@ -305,7 +293,7 @@ mod tests {
 
     #[test]
     fn a_settings_file_that_is_not_json_is_not_a_reason_to_refuse_anything() {
-        let (ctx, config, _s) = home("broken");
+        let (ctx, config, _s) = home();
         std::fs::write(config.join("settings.json"), "{ not json").expect("written");
         assert_eq!(overrides(&ctx), Vec::new());
     }
@@ -319,7 +307,7 @@ mod custom_oauth_tests {
 
     #[test]
     fn a_custom_endpoint_in_a_settings_file_is_found_the_way_the_environment_one_is() {
-        let (ctx, config, _s) = home("custom-oauth");
+        let (ctx, config, _s) = home();
         assert!(!custom_oauth(&ctx));
         write(
             &config.join("settings.json"),
