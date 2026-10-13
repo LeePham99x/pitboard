@@ -43,11 +43,24 @@ use std::collections::{BTreeMap, HashMap};
 /// Older than this, a remembered reading shows its age.
 const FRESH_FOR: i64 = 15 * 60;
 
-/// The share of the five-hour and weekly limits already used, when known.
+/// How much of one limit is used, as far as the line can say.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub enum Share {
+    /// No reading says.
+    #[default]
+    Unread,
+    /// The share used, in percent.
+    Used(f64),
+    /// The account has no such limit: its reading lists every limit it has, and not this one,
+    /// as a Team seat's lists no weekly limit for all models.
+    Absent,
+}
+
+/// The five-hour and weekly limits.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Shares {
-    pub five_hour: Option<f64>,
-    pub weekly: Option<f64>,
+    pub five_hour: Share,
+    pub weekly: Share,
 }
 
 /// How fast the session's account is going on its five-hour and weekly limits, where that
@@ -99,13 +112,23 @@ fn limit<'a>(windows: &'a [Window], kinds: &[&str]) -> Option<&'a Window> {
         .find(|w| w.scope.is_none() && kinds.contains(&w.kind.as_str()))
 }
 
-/// The five-hour and weekly shares among `windows`.
-fn shares_of(windows: &[Window], now: i64) -> Shares {
-    let share = |kinds| limit(windows, kinds).map(|w| w.used(now));
+/// The five-hour and weekly shares among `windows`, which are every limit the account has
+/// where `every_limit` says so.
+fn shares_of(windows: &[Window], every_limit: bool, now: i64) -> Shares {
+    let share = |kinds| match limit(windows, kinds) {
+        Some(window) => Share::Used(window.used(now)),
+        None if every_limit => Share::Absent,
+        None => Share::Unread,
+    };
     Shares {
         five_hour: share(FIVE_HOUR),
         weekly: share(WEEKLY),
     }
+}
+
+/// The five-hour and weekly shares in `reading`.
+fn shares_in(reading: &Snapshot, now: i64) -> Shares {
+    shares_of(&reading.windows, reading.lists_every_limit, now)
 }
 
 /// The five-hour and weekly paces among `windows`, as of `at`, when they were read.
@@ -229,7 +252,7 @@ fn line(
             let reading = remembered.get(&account.id);
             Entry {
                 label: account.label.clone(),
-                shares: reading.map_or_else(Shares::default, |r| shares_of(&r.windows, now)),
+                shares: reading.map_or_else(Shares::default, |r| shares_in(r, now)),
                 age: reading
                     .and_then(|r| r.observed_at)
                     .map(|at| now - at)
@@ -242,19 +265,20 @@ fn line(
         Whose::Proven(_) | Whose::Unsaid => current.and_then(|a| remembered.get(&a.id)),
     };
     let folded = known.and_then(|known| crate::usage::moved(known, moved, now));
-    let (windows, at) = match folded.as_ref().or(known) {
+    let (windows, every_limit, at) = match folded.as_ref().or(known) {
         Some(reading) => (
             reading.windows.as_slice(),
+            reading.lists_every_limit,
             reading.observed_at.unwrap_or(now),
         ),
         // Numbers that prove no account, or an account Pitboard has no reading of: what the
         // session passed is all there is to show, and it is the session's latest.
-        None => (passed, now),
+        None => (passed, false, now),
     };
     StatusLine {
         current: current.map(|a| a.label.clone()),
         sure,
-        session: shares_of(windows, now),
+        session: shares_of(windows, every_limit, now),
         pace: paces_of(windows, at, now),
         others,
     }
@@ -426,8 +450,8 @@ mod tests {
 
     fn shares(five_hour: f64, weekly: f64) -> Shares {
         Shares {
-            five_hour: Some(five_hour),
-            weekly: Some(weekly),
+            five_hour: Share::Used(five_hour),
+            weekly: Share::Used(weekly),
         }
     }
 
@@ -838,11 +862,11 @@ mod tests {
 
         let busy = run(&ctx, "busy", &session(25.0, 7.0, NOW + 600));
         assert_eq!(busy.session, shares(25.0, 7.0));
-        assert_eq!(shares_of(&recorded(&ctx).windows, NOW), shares(25.0, 7.0));
+        assert_eq!(shares_in(&recorded(&ctx), NOW), shares(25.0, 7.0));
 
         let slow = run(&ctx, "slow", &session(20.0, 5.0, NOW + 600));
         assert_eq!(slow.session, shares(25.0, 7.0));
-        assert_eq!(shares_of(&recorded(&ctx).windows, NOW), shares(25.0, 7.0));
+        assert_eq!(shares_in(&recorded(&ctx), NOW), shares(25.0, 7.0));
     }
 
     /// A session knows how much is used and when it resets. Which limit the account is
@@ -930,7 +954,7 @@ mod tests {
         );
         assert_eq!(forgotten.current, None, "work is in other windows");
         assert_eq!(forgotten.session, shares(97.0, 62.0));
-        assert_eq!(shares_of(&recorded(&ctx).windows, NOW), shares(10.0, 30.0));
+        assert_eq!(shares_in(&recorded(&ctx), NOW), shares(10.0, 30.0));
     }
 
     /// A session Pitboard has not seen before passes the numbers of whatever response it had
@@ -963,7 +987,7 @@ mod tests {
             shares(10.0, 30.0),
             "the pane shows work's own"
         );
-        assert_eq!(shares_of(&recorded(&ctx).windows, NOW), shares(10.0, 30.0));
+        assert_eq!(shares_in(&recorded(&ctx), NOW), shares(10.0, 30.0));
 
         let next = run(
             &ctx,
@@ -971,7 +995,7 @@ mod tests {
             &passed((51.0, NOW + 2 * HOUR), (32.0, NOW + 3 * DAY)),
         );
         assert_eq!(next.session, shares(51.0, 32.0));
-        assert_eq!(shares_of(&recorded(&ctx).windows, NOW), shares(51.0, 32.0));
+        assert_eq!(shares_in(&recorded(&ctx), NOW), shares(51.0, 32.0));
     }
 
     /// Pitboard has no reading of an account it has not asked Anthropic about, so a session's
@@ -1037,9 +1061,9 @@ mod tests {
             "pane",
             &passed((96.0, NOW + 4 * HOUR), (61.0, NOW + 5 * DAY)),
         );
-        assert_eq!(shares_of(&recorded(&ctx).windows, NOW), shares(0.0, 30.0));
+        assert_eq!(shares_in(&recorded(&ctx), NOW), shares(0.0, 30.0));
         assert_eq!(
-            recorded_for(&ctx, "personal").map(|reading| shares_of(&reading.windows, NOW)),
+            recorded_for(&ctx, "personal").map(|reading| shares_in(&reading, NOW)),
             Some(shares(96.0, 61.0))
         );
     }
@@ -1104,7 +1128,7 @@ mod tests {
             &passed((41.0, NOW - 10), (31.0, NOW + 3 * DAY)),
         );
         assert_eq!(shown.session, shares(0.0, 31.0));
-        assert_eq!(shares_of(&recorded(&ctx).windows, NOW), shares(0.0, 31.0));
+        assert_eq!(shares_in(&recorded(&ctx), NOW), shares(0.0, 31.0));
         let offline = crate::status::gather_offline(&ctx, &state());
         let row = offline
             .rows
@@ -1163,7 +1187,7 @@ mod tests {
             assert!(shown.sure, "{after} s on");
             assert_eq!(shown.session, shares(five_hour, weekly));
             assert_eq!(
-                shares_of(&recorded(&ctx).windows, NOW),
+                shares_in(&recorded(&ctx), NOW),
                 shares(five_hour, weekly),
                 "{after} s on"
             );
@@ -1303,7 +1327,7 @@ mod tests {
             let alone = run(&ctx, "seat", &five_hour_alone(used, NOW + 5 * HOUR));
             assert!(!alone.sure);
         }
-        assert_eq!(shares_of(&recorded(&ctx).windows, NOW), shares(0.0, 40.0));
+        assert_eq!(shares_in(&recorded(&ctx), NOW), shares(0.0, 40.0));
 
         using(&ctx, "personal");
         run(
@@ -1318,7 +1342,7 @@ mod tests {
         );
         assert_eq!(shown.current.as_deref(), Some("work"));
         assert_eq!(shown.session, shares(2.0, 41.0));
-        assert_eq!(shares_of(&recorded(&ctx).windows, NOW), shares(2.0, 41.0));
+        assert_eq!(shares_in(&recorded(&ctx), NOW), shares(2.0, 41.0));
     }
 
     /// Two accounts' windows can reset within a minute of each other. Numbers in a window
@@ -1361,7 +1385,31 @@ mod tests {
         );
         assert_eq!(told.current.as_deref(), Some("work"));
         assert!(told.sure);
-        assert_eq!(shares_of(&recorded(&ctx).windows, NOW), shares(25.0, 31.0));
+        assert_eq!(shares_in(&recorded(&ctx), NOW), shares(25.0, 31.0));
+    }
+
+    /// A reading that lists every limit its account has says the account has none of a limit
+    /// it leaves out; one that does not leaves it unread.
+    #[test]
+    fn a_limit_left_out_is_absent_only_from_a_reading_of_every_limit() {
+        let seat = |every_limit| Snapshot {
+            windows: vec![Window {
+                kind: "session".into(),
+                scope: None,
+                percent: 20.0,
+                resets_at: Some(NOW + HOUR),
+                is_active: false,
+                severity: None,
+                length_seconds: None,
+            }],
+            observed_at: Some(NOW),
+            answered_at: Some(NOW),
+            lists_every_limit: every_limit,
+            source: Source::Remembered,
+        };
+        assert_eq!(shares_in(&seat(true), NOW).weekly, Share::Absent);
+        assert_eq!(shares_in(&seat(false), NOW).weekly, Share::Unread);
+        assert_eq!(shares_in(&seat(true), NOW).five_hour, Share::Used(20.0));
     }
 
     /// An answer lists every limit its account has, so a Team seat whose answer has no

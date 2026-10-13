@@ -1099,26 +1099,28 @@ fn a_mistyped_command_line_still_answers_in_json_when_asked() {
     assert_eq!(envelope["error"]["code"], "usage");
 }
 
+/// `pitboard statusline` run as Claude Code runs it, with `session` on standard input.
+fn statusline(env: &Env, session: serde_json::Value) -> std::process::Output {
+    let mut child = env
+        .command(&["statusline"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(session.to_string().as_bytes())
+        .unwrap();
+    child.wait_with_output().unwrap()
+}
+
 #[test]
 #[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn the_status_line_names_the_account_in_use_and_the_others() {
     let env = two_accounts("statusline");
-    let statusline = |session: serde_json::Value| {
-        use std::io::Write;
-        let mut child = env
-            .command(&["statusline"])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .unwrap();
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(session.to_string().as_bytes())
-            .unwrap();
-        child.wait_with_output().unwrap()
-    };
+    let statusline = |session| statusline(&env, session);
     let opened = statusline(serde_json::json!({"session_id": "pane"}));
     assert!(opened.status.success());
     assert_eq!(
@@ -1142,6 +1144,25 @@ fn the_status_line_names_the_account_in_use_and_the_others() {
     assert_eq!(
         anstream::adapter::strip_str(&line).to_string(),
         "alpha? 46%·70%  beta ?·?\n"
+    );
+}
+
+/// A Team seat's answer lists every limit it has, and no weekly limit for all models: the
+/// line leaves that limit out rather than say `?`, which is a limit with no reading.
+#[test]
+#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
+fn the_status_line_leaves_out_a_limit_an_account_does_not_have() {
+    let mut env = two_accounts("statusline-seat");
+    env.team_seat_usage();
+    let (_, err, code) = env.run(&["status"]);
+    assert_eq!(code, 0, "{err}");
+
+    let out = statusline(&env, serde_json::json!({"session_id": "pane"}));
+
+    assert!(out.status.success());
+    assert_eq!(
+        anstream::adapter::strip_str(&String::from_utf8_lossy(&out.stdout)).to_string(),
+        "alpha 20%  beta 20%\n"
     );
 }
 
