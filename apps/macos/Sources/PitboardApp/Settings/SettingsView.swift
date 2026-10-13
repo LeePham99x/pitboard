@@ -17,7 +17,8 @@ struct SettingsView: View {
         case updates
     }
 
-    // A taller pane scrolls. Between the toolbar and the Dock, 1024 x 768 has 590 points.
+    // A taller pane scrolls. With the window at the top of a 1024 x 768 screen, 590 points
+    // are left between the toolbar and the Dock.
     static let tallestPane: CGFloat = 560
 
     @AppStorage("settingsTab") private var tab = Tab.general

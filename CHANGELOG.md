@@ -27,8 +27,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- **Settings** fits on smaller screens, such as 1024 x 768: a pane longer than the window
-  scrolls.
+- **Settings** fits on smaller screens, such as 1024 x 768: it opens at the top of the
+  screen, and a pane longer than the window scrolls.
 
 ## [0.12.0] - 2026-10-12
 

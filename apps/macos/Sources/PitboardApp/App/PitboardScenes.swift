@@ -75,5 +75,8 @@ public struct PitboardScenes: Scene {
             )
             .defaultAppStorage(defaults)
         }
+        // A taller pane grows the window downward, so it opens at the top of the screen,
+        // where the tallest pane still clears the Dock.
+        .defaultPosition(.top)
     }
 }
