@@ -42,7 +42,7 @@ private final class StandInApp: RunningApp {
     let opened = Opened()
     let apps = MacAppControl(
         copies: { $0 == "com.openai.codex" ? [busy, other] : [] },
-        open: { opened.keep($0) })
+        open: { url, front in opened.keep(Opening(url: url, front: front)) })
 
     #expect(try apps.running(app: "com.openai.codex") == "/Applications/ChatGPT.app")
     #expect(try apps.running(app: "com.example.none") == nil)
@@ -56,16 +56,38 @@ private final class StandInApp: RunningApp {
     #expect(busy.asked == ["terminate", "terminate"], "a copy that quit is not asked again")
     #expect(other.asked == ["terminate"])
 
-    try apps.reopen(location: "/Applications/ChatGPT.app")
-    #expect(opened.urls == [URL(fileURLWithPath: "/Applications/ChatGPT.app")])
+    try apps.reopen(location: "/Applications/ChatGPT.app", front: false)
+    #expect(
+        opened.asked == [
+            Opening(url: URL(fileURLWithPath: "/Applications/ChatGPT.app"), front: false)
+        ])
+}
+
+@Test func anAppComesForwardOnlyWhenAsked() throws {
+    let opened = Opened()
+    let apps = MacAppControl(
+        copies: { _ in [] },
+        open: { url, front in opened.keep(Opening(url: url, front: front)) })
+    try apps.reopen(location: "/Applications/Claude.app", front: true)
+    try apps.reopen(location: "/Applications/Claude.app", front: false)
+    let claude = URL(fileURLWithPath: "/Applications/Claude.app")
+    #expect(
+        opened.asked == [Opening(url: claude, front: true), Opening(url: claude, front: false)])
+    #expect(MacAppControl.opening(front: true).activates)
+    #expect(!MacAppControl.opening(front: false).activates)
+}
+
+private struct Opening: Equatable {
+    let url: URL
+    let front: Bool
 }
 
 private final class Opened: @unchecked Sendable {
     // Unchecked because every read and write holds `lock`.
     private let lock = NSLock()
-    private var kept: [URL] = []
-    var urls: [URL] { lock.withLock { kept } }
-    func keep(_ url: URL) { lock.withLock { kept.append(url) } }
+    private var kept: [Opening] = []
+    var asked: [Opening] { lock.withLock { kept } }
+    func keep(_ opening: Opening) { lock.withLock { kept.append(opening) } }
 }
 
 /// macOS keeps the person's 12 or 24 hours in their locale.

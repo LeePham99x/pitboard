@@ -7,7 +7,7 @@
 //! every change here fails as unsupported, which every caller already reports as a write that
 //! failed, and [`access`] says nothing.
 
-use crate::host::Access;
+use crate::host::{Access, Private};
 use crate::service::Permit;
 use std::fs::File;
 use std::io;
@@ -91,6 +91,33 @@ pub(crate) fn remove_dir_all(_: Permit, _path: &Path) -> io::Result<()> {
     Err(not_yet())
 }
 
+// Claude Desktop is macOS only, so nothing asks these here.
+pub(crate) fn private_dir(_path: &Path) -> io::Result<Private> {
+    Err(not_yet())
+}
+
+pub(crate) fn lock_dir(_path: &Path) -> io::Result<File> {
+    Err(not_yet())
+}
+
+pub(crate) fn move_new(_: Permit, _from: &Path, _to: &Path) -> io::Result<()> {
+    Err(not_yet())
+}
+
+pub(crate) fn flush_dir(_dir: &Path) -> io::Result<()> {
+    Err(not_yet())
+}
+
+pub(crate) fn same_volume(_a: &Path, _b: &Path) -> io::Result<bool> {
+    Err(not_yet())
+}
+
+// The guard asks for macOS's firmlinks, which Windows has none of.
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn file_id(_path: &Path) -> Option<(u64, u64)> {
+    None
+}
+
 /// Who besides its owner can reach `path`: nobody can tell until W15 reads its access
 /// control list.
 pub fn access(_path: &Path) -> Option<Access> {
@@ -168,6 +195,10 @@ pub mod testing {
     pub fn link_dir(_target: &Path, _at: &Path) -> io::Result<()> {
         Err(not_yet())
     }
+
+    pub fn inode(_path: &Path) -> io::Result<u64> {
+        Err(not_yet())
+    }
 }
 
 #[cfg(test)]
@@ -181,7 +212,7 @@ mod tests {
     #[test]
     fn every_change_to_a_files_access_waits_for_w15() {
         let path = Path::new("never-made");
-        let answers: [(&str, io::Result<()>); 9] = [
+        let answers: [(&str, io::Result<()>); 10] = [
             ("open_to_others", testing::open_to_others(path)),
             ("make_private", testing::make_private(path)),
             ("read_only_for_owner", testing::read_only_for_owner(path)),
@@ -191,6 +222,7 @@ mod tests {
             ("allow_changes", testing::allow_changes(path)),
             ("link", testing::link(path, path)),
             ("link_dir", testing::link_dir(path, path)),
+            ("inode", testing::inode(path).map(drop)),
         ];
         for (what, answer) in answers {
             let refused = answer.expect_err(what);

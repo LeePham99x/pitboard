@@ -80,7 +80,7 @@ struct MenuBarContent: View {
                     Button {
                         if let intent = advice.intent { model.send(intent) }
                     } label: {
-                        Image(systemName: Symbol.switchAccount)
+                        Image(systemName: advice.severity?.symbol ?? Symbol.switchAccount)
                         entry(advice)
                     }
                     .disabled(!advice.enabled)

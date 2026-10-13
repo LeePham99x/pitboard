@@ -3,7 +3,8 @@
 use super::{Result, Settled, purge};
 use crate::context::Context;
 use crate::error::Error;
-use crate::service::Permit;
+use crate::provider::{self, LoginKind, ProviderId};
+use crate::service::{Permit, Warning};
 use crate::state::Account;
 use crate::{home, schedule, state};
 
@@ -11,7 +12,7 @@ use crate::{home, schedule, state};
 /// built outside this crate.
 #[non_exhaustive]
 pub struct Removed {
-    /// Parked logins deleted from the keychain or the vault.
+    // Parked logins deleted: from the keychain or the vault, or a folder under `parks`.
     pub parks: usize,
     /// Parked logins that could not be deleted, and renewed logins not saved where their tool
     /// keeps them yet, which is why the home was kept.
@@ -21,10 +22,14 @@ pub struct Removed {
     /// may be another Pitboard's. Always none where the vault is inside Pitboard's own
     /// directory.
     pub left: usize,
+    // Folders set aside, deleted with every parked login.
+    pub set_aside: usize,
     /// Whether ~/.pitboard itself is gone.
     pub home_removed: bool,
     /// Whether the daily renewal schedule was taken away. `false` where there was none.
     pub schedule_removed: bool,
+    // A move of an app's login that waited, as it was settled first.
+    pub warnings: Vec<Warning>,
 }
 
 /// Takes away the daily renewal schedule, deletes every parked login this Pitboard wrote,
@@ -32,8 +37,7 @@ pub struct Removed {
 /// whoever is signed in stays signed in.
 ///
 /// The schedule goes first. It runs `pitboard renew` every day, which would make a new
-/// directory once this one is gone, and if it cannot be taken away nothing else has been
-/// touched yet.
+/// directory once this one is gone.
 ///
 /// The directory is removed last and only when every parked login is gone, because
 /// state.json is the only index of those keychain items. Deleting it first would leave live
@@ -48,32 +52,74 @@ pub fn uninstall(settled: Settled) -> Result<Removed> {
         ctx,
         permit,
     } = settled;
-    let schedule_removed = remove_schedule(&ctx, permit)?;
+    // An app's folder is read only where a login of it is parked or set aside or a move of one
+    // waits, and held until every park is deleted. Refused before anything is taken away.
+    let mut warnings = Vec::new();
+    let mut _closed = Vec::new();
+    for &tool in ProviderId::ALL {
+        match provider::of(tool) {
+            LoginKind::Document(_) => {}
+            LoginKind::Folder(app) => {
+                if let Some((closed, said)) =
+                    super::folder::before_uninstall(&ctx, permit, &mut state, app)?
+                {
+                    _closed.push(closed);
+                    warnings.extend(said);
+                }
+            }
+        }
+    }
+    match take_away(&ctx, permit, &mut state) {
+        Ok(removed) => Ok(Removed {
+            warnings,
+            ..removed
+        }),
+        Err(refused) => Err(refused.after(warnings)),
+    }
+}
+
+// The rest of `uninstall`, once each app's folder is held and a move of it settled.
+fn take_away(ctx: &Context, permit: Permit, state: &mut state::State) -> Result<Removed> {
+    let schedule_removed = remove_schedule(ctx, permit)?;
     let held = state.accounts.iter().filter_map(|a| a.parked.as_ref());
     let left = held
         .clone()
         .filter(|park| state.is_foreign(&park.service))
         .count();
     let parks = held.count() - left;
+    let asides: Vec<String> = state.aside.iter().map(|aside| aside.name.clone()).collect();
     for key in state.accounts.iter().map(Account::key).collect::<Vec<_>>() {
         state.remove(&key);
     }
+    state.forget_asides();
+    state.forget_discarded();
     state.forget_in_use();
-    state::save(&ctx, permit, &state)?;
-    let undeleted = purge(&ctx, permit, &mut state);
+    state::save(ctx, permit, state)?;
+    let undeleted = purge(ctx, permit, state);
+    let asides_left = asides
+        .iter()
+        .filter(|name| {
+            state
+                .discarded
+                .iter()
+                .any(|listed| listed.service == **name)
+        })
+        .count();
     let pending = undeleted + state.renewing.len();
     // The sweep in settle has already resolved every outstanding name, so what is left
     // refers to nothing. The home goes next, and an index of names with no home is noise.
     if pending == 0 {
-        crate::pending::clear(&ctx, permit);
+        crate::pending::clear(ctx, permit);
     }
-    let home_removed = pending == 0 && remove_home(&ctx, permit);
+    let home_removed = pending == 0 && remove_home(ctx, permit);
     Ok(Removed {
-        parks: parks.saturating_sub(undeleted),
+        parks: parks.saturating_sub(undeleted - asides_left),
         pending,
         left,
+        set_aside: asides.len() - asides_left,
         home_removed,
         schedule_removed,
+        warnings: Vec::new(),
     })
 }
 
@@ -149,7 +195,13 @@ mod tests {
             assert_eq!(state.accounts.len(), 2, "{:?}", m.which);
             let there = state.get(&m.key("there")).expect("`there` is enrolled");
             let park = there.parked.as_ref().expect("`there` is still parked");
-            crate::park::load(&m.ctx, &m.key("there"), park).expect("its parked login is kept");
+            crate::park::load(
+                &m.ctx,
+                crate::provider::document(m.which),
+                &m.key("there"),
+                park,
+            )
+            .expect("its parked login is kept");
             assert!(home::dir(&m.ctx).is_dir());
             assert!(matches!(
                 schedule::status(&m.ctx),
@@ -232,6 +284,59 @@ mod tests {
                     .map(str::to_owned)),
             Some("here-again".into())
         );
+    }
+
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Claude Desktop is macOS only: Windows makes and removes no folder"
+    )]
+    fn uninstalling_counts_the_set_aside_folders_it_deleted_and_keeps_the_rest_listed() {
+        use crate::host::fs::testing;
+        use crate::provider::ProviderId;
+        let m = machine("uninstall-asides");
+        let parks = crate::store::folder::parks_dir(&m.ctx);
+        let names = ["pitboard-aside-1", "pitboard-aside-2"];
+        let mut state = state::load(&m.ctx).expect("state");
+        for name in names {
+            std::fs::create_dir_all(parks.join(name).join("items")).expect("a folder");
+            std::fs::write(parks.join(name).join("items/Cookies"), b"a jar").expect("a jar");
+            state.aside.push(state::Aside {
+                name: name.into(),
+                tool: ProviderId::Desktop,
+                at: 1,
+                why: state::SetAside::InTheWay,
+                account: None,
+                login: None,
+            });
+        }
+        state::save(&m.ctx, Permit::for_a_test(), &state).expect("saved");
+        let uninstalled = || {
+            uninstall(
+                settle(&m.ctx, Permit::for_a_test(), None)
+                    .expect("nothing to recover")
+                    .0,
+            )
+            .expect("uninstalled")
+        };
+
+        // Open to others: nothing under it is deleted, and the vault's park still is.
+        testing::allow_changes(&parks).expect("open to others");
+        let removed = uninstalled();
+        assert_eq!(
+            (removed.parks, removed.set_aside, removed.pending),
+            (1, 0, 2)
+        );
+        assert!(!removed.home_removed);
+        for name in names {
+            assert!(parks.join(name).join("items/Cookies").exists(), "{name}");
+            assert!(state::load(&m.ctx).expect("state").names(name), "{name}");
+        }
+
+        testing::make_private(&parks).expect("private");
+        let removed = uninstalled();
+        assert_eq!(removed.pending, 0);
+        assert!(removed.home_removed);
     }
 
     /// launchd and systemd renew the default home, so uninstalling any other one leaves

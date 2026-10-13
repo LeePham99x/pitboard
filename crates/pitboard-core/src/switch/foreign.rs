@@ -10,7 +10,7 @@
 //! there a park `repair` finds is this Pitboard's own.
 
 use super::harness::{
-    Machine, NOW, account, codex_access, codex_account, codex_id, codex_login, codex_machine,
+    Machine, NOW, Tool, account, codex_access, codex_account, codex_id, codex_login, codex_machine,
     machine, oauth, owner, renews,
 };
 use super::*;
@@ -24,29 +24,29 @@ const MACHINES: [Make; 2] = [machine, codex_machine];
 
 /// The account id this machine's tool gives `who`.
 fn id(m: &Machine, who: &str) -> String {
-    match m.which {
-        ProviderId::Claude => who.to_string(),
-        ProviderId::Codex => codex_id(who),
+    match Tool::of(m.which) {
+        Tool::Claude => who.to_string(),
+        Tool::Codex => codex_id(who),
     }
 }
 
 /// `who`'s account, enrolled the way this machine's tool enrols one.
 fn enrolled(m: &Machine, who: &str, parked: Option<Park>) -> Account {
-    match m.which {
-        ProviderId::Claude => account(who, who, parked),
-        ProviderId::Codex => codex_account(who, who, parked),
+    match Tool::of(m.which) {
+        Tool::Claude => account(who, who, parked),
+        Tool::Codex => codex_account(who, who, parked),
     }
 }
 
 /// A login of `who`'s on a refresh chain of its own, as this machine's tool parks one, and
 /// a service that answers for it.
 fn login(m: &Machine, who: &str, refresh: &str) -> Value {
-    match m.which {
-        ProviderId::Claude => {
+    match Tool::of(m.which) {
+        Tool::Claude => {
             m.api.owned_by(&format!("access-{refresh}"), owner(who));
             oauth(refresh, 30)
         }
-        ProviderId::Codex => {
+        Tool::Codex => {
             m.api.using(
                 &codex_access(refresh),
                 crate::usage::Snapshot {
@@ -65,9 +65,9 @@ fn login(m: &Machine, who: &str, refresh: &str) -> Value {
 /// The same, with its access token lapsed, so the next renewal is due.
 fn lapsed(m: &Machine, who: &str, refresh: &str) -> Value {
     let mut document = login(m, who, refresh);
-    match m.which {
-        ProviderId::Claude => document["expiresAt"] = json!((NOW - 60) * 1000),
-        ProviderId::Codex => {
+    match Tool::of(m.which) {
+        Tool::Claude => document["expiresAt"] = json!((NOW - 60) * 1000),
+        Tool::Codex => {
             document["tokens"]["access_token"] = json!(crate::provider::jwt::unsigned(
                 &json!({"exp": NOW - 60, "for": refresh})
             ));
@@ -92,8 +92,14 @@ fn parked_elsewhere(m: &Machine, who: &str, document: &Value) -> (Context, Park)
         .clone()
         .with_pitboard_home(m.ctx_home().join(".pitboard-elsewhere"));
     let service = park::reserve(&other, Permit::for_a_test(), &id(m, who)).expect("a free name");
-    let parked =
-        park::store_at(&other, Permit::for_a_test(), m.which, &service, document).expect("parked");
+    let parked = park::store_at(
+        &other,
+        Permit::for_a_test(),
+        provider::document(m.which),
+        &service,
+        document,
+    )
+    .expect("parked");
     let mut theirs = State::default();
     theirs.accounts.push(enrolled(m, who, Some(parked.clone())));
     state::save(&other, Permit::for_a_test(), &theirs).expect("saved");
@@ -107,6 +113,7 @@ fn repair_here(m: &Machine) -> Reclaimed {
             .0,
     )
     .expect("repaired")
+    .0
 }
 
 /// The whole of what went wrong. Another Pitboard has `here` parked; this one has `here`
@@ -144,9 +151,20 @@ fn a_park_repair_gave_back_outlives_a_switch_away_from_its_account() {
             recorded.service
         );
         assert!(state.foreign.is_empty(), "nothing here holds it now");
-        assert!(!state.discarded.contains(&recorded.service));
+        assert!(
+            !state
+                .discarded
+                .iter()
+                .any(|d| d.service == recorded.service)
+        );
         assert_eq!(
-            park::load(&other, &m.key("here"), &recorded).expect("the other Pitboard's park"),
+            park::load(
+                &other,
+                provider::document(m.which),
+                &m.key("here"),
+                &recorded
+            )
+            .expect("the other Pitboard's park"),
             theirs,
             "{:?}",
             m.which
@@ -171,7 +189,12 @@ fn forgetting_its_account_leaves_a_park_repair_gave_back() {
 
         let state = state::load(&m.ctx).expect("state");
         assert!(state.foreign.is_empty());
-        assert!(!state.discarded.contains(&recorded.service));
+        assert!(
+            !state
+                .discarded
+                .iter()
+                .any(|d| d.service == recorded.service)
+        );
         assert!(
             m.mem.vault().peek(&recorded.service).is_some(),
             "{:?}: it is still where the other Pitboard left it",
@@ -235,7 +258,7 @@ fn a_park_repair_gave_back_is_deleted_once_a_switch_installs_it() {
             .0;
         switch(settled, &m.key("away")).expect("switched");
 
-        let tool = provider::of(m.which);
+        let tool = provider::document(m.which);
         assert_eq!(
             tool.fingerprint(&m.live().expect("a live login")),
             tool.fingerprint(&theirs)
@@ -304,7 +327,7 @@ fn a_park_repair_gave_back_is_deleted_once_a_killed_renewal_spends_it() {
             state
                 .get(&m.key("away"))
                 .and_then(|a| a.parked.as_ref())
-                .map(|p| p.refresh_fingerprint.clone()),
+                .map(|p| p.login.clone()),
             Some(store::fingerprint("away-renewed")),
             "{:?}",
             m.which
@@ -328,9 +351,9 @@ fn a_park_repair_gave_back_that_the_service_refuses_is_let_go_and_left() {
         let m = make("foreign-refused");
         enrol_away(&m);
         let (_, recorded) = parked_elsewhere(&m, "away", &lapsed(&m, "away", "away-elsewhere"));
-        match m.which {
-            ProviderId::Claude => m.api.renew_trouble("away-elsewhere", Trouble::InvalidGrant),
-            ProviderId::Codex => m
+        match Tool::of(m.which) {
+            Tool::Claude => m.api.renew_trouble("away-elsewhere", Trouble::InvalidGrant),
+            Tool::Codex => m
                 .api
                 .codex_renew_trouble("away-elsewhere", Trouble::InvalidGrant),
         };
@@ -366,7 +389,7 @@ fn a_park_this_pitboard_wrote_down_and_lost_is_still_deleted_when_replaced() {
         park::store_at(
             &m.ctx,
             Permit::for_a_test(),
-            m.which,
+            provider::document(m.which),
             &service,
             &login(&m, "here", "here-lost"),
         )
@@ -399,7 +422,14 @@ fn a_park_this_pitboard_wrote_down_and_lost_is_still_deleted_when_replaced() {
 /// restored from a backup leaves it. Only its account names it.
 fn lost(m: &Machine, who: &str, document: &Value) -> Park {
     let service = park::service_name(&id(m, who), (NOW - 60) * 1000);
-    park::store_at(&m.ctx, Permit::for_a_test(), m.which, &service, document).expect("parked")
+    park::store_at(
+        &m.ctx,
+        Permit::for_a_test(),
+        provider::document(m.which),
+        &service,
+        document,
+    )
+    .expect("parked")
 }
 
 /// Off macOS the vault is a directory inside Pitboard's own, which no other Pitboard parks

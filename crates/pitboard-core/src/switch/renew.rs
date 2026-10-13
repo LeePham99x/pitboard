@@ -5,8 +5,9 @@
 use super::{journal, purge, try_exclusive};
 use crate::context::Context;
 use crate::error::{Error, Result};
+use crate::provider::{LoginKind, Provider};
 use crate::service::Permit;
-use crate::state::{Key, Park, State};
+use crate::state::{Key, Park, ParkKind, State};
 use crate::{park, state};
 use serde_json::Value;
 
@@ -94,13 +95,18 @@ pub fn renew_due(ctx: &Context, permit: Permit, due: Due) -> Vec<(Key, Renewal)>
         return Vec::new();
     };
     let now = ctx.now();
-    let covered = |state: &State| -> Vec<(Key, Park)> {
+    let covered = |state: &State| -> Vec<(Key, &'static dyn Provider, Park)> {
         state
             .accounts
             .iter()
             .filter_map(|a| {
+                let tool = match crate::provider::of(a.provider()) {
+                    LoginKind::Document(tool) => tool,
+                    // An app's login is never renewed.
+                    LoginKind::Folder(_) => return None,
+                };
                 let held = a.parked.as_ref()?;
-                due.covers(held, now).then(|| (a.key(), held.clone()))
+                due.covers(held, now).then(|| (a.key(), tool, held.clone()))
             })
             .collect()
     };
@@ -116,38 +122,39 @@ pub fn renew_due(ctx: &Context, permit: Permit, due: Due) -> Vec<(Key, Renewal)>
     // Each renewal is a round trip that can take as long as the request timeout, so they
     // are asked together. What comes back is then written one at a time: the state file is
     // one file, and the order of writes to it is not something to leave to chance.
-    let asked: Vec<(Key, Park, Result<Asked>)> = std::thread::scope(|scope| {
-        let handles: Vec<_> = to_renew
-            .into_iter()
-            .map(|(key, held)| {
-                let ctx = &*ctx;
-                let handle = scope.spawn({
-                    let key = key.clone();
-                    let held = held.clone();
-                    move || ask(ctx, permit, &key, &held)
-                });
-                (key, held, handle)
-            })
-            .collect();
-        handles
-            .into_iter()
-            .map(|(key, held, handle)| {
-                let answer = handle.join().unwrap_or_else(|_| {
-                    Err(Error::RenewalFailed {
-                        label: key.typed(),
-                        cause: None,
-                        detail: "the renewal thread stopped".into(),
-                    })
-                });
-                (key, held, answer)
-            })
-            .collect()
-    });
+    let asked: Vec<(Key, &'static dyn Provider, Park, Result<Asked>)> =
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = to_renew
+                .into_iter()
+                .map(|(key, tool, held)| {
+                    let ctx = &*ctx;
+                    let handle = scope.spawn({
+                        let key = key.clone();
+                        let held = held.clone();
+                        move || ask(ctx, permit, tool, &key, &held)
+                    });
+                    (key, tool, held, handle)
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|(key, tool, held, handle)| {
+                    let answer = handle.join().unwrap_or_else(|_| {
+                        Err(Error::RenewalFailed {
+                            label: key.typed(),
+                            cause: None,
+                            detail: "the renewal thread stopped".into(),
+                        })
+                    });
+                    (key, tool, held, answer)
+                })
+                .collect()
+        });
     let outcomes = asked
         .into_iter()
-        .map(|(key, held, answer)| {
-            let outcome =
-                apply(ctx, permit, &mut state, &key, &held, answer).unwrap_or_else(Renewal::Failed);
+        .map(|(key, tool, held, answer)| {
+            let outcome = apply(ctx, permit, &mut state, tool, &key, &held, answer)
+                .unwrap_or_else(Renewal::Failed);
             (key, outcome)
         })
         .collect();
@@ -166,14 +173,19 @@ struct Asked {
 
 /// The part of a renewal that talks to Anthropic. Touches no shared state, so several run
 /// at once.
-fn ask(ctx: &Context, permit: Permit, key: &Key, held: &Park) -> Result<Asked> {
-    let document = park::load(ctx, key, held)?;
+fn ask(
+    ctx: &Context,
+    permit: Permit,
+    tool: &'static dyn Provider,
+    key: &Key,
+    held: &Park,
+) -> Result<Asked> {
+    let document = park::load(ctx, tool, key, held)?;
     // The service spends the old refresh token as it answers, so an answer that could not
     // be written back would lose the login. Where it could not be, the service is not
     // asked: a renewed login is this one with new tokens of the same length, so this one's
     // size answers for it. On macOS with PITBOARD_NO_ARGV, that is every Codex park.
     park::price(ctx, key.provider, &key.typed(), &held.service, &document)?;
-    let tool = crate::provider::of(key.provider);
     let credential = crate::provider::Credential::new(key.provider, document);
     match tool.renew(ctx, permit, &credential) {
         Ok(fresh) => Ok(Asked {
@@ -207,10 +219,19 @@ pub(super) fn renew_one(
     ctx: &Context,
     permit: Permit,
     state: &mut State,
+    tool: &'static dyn Provider,
     key: &Key,
     held: &Park,
 ) -> Result<Option<Park>> {
-    match apply(ctx, permit, state, key, held, ask(ctx, permit, key, held))? {
+    match apply(
+        ctx,
+        permit,
+        state,
+        tool,
+        key,
+        held,
+        ask(ctx, permit, tool, key, held),
+    )? {
         Renewal::Renewed => Ok(state.get(key).and_then(|a| a.parked.clone())),
         Renewal::Refused => Err(Error::ParkedLoginRefused {
             tool: key.provider,
@@ -226,6 +247,7 @@ fn apply(
     ctx: &Context,
     permit: Permit,
     state: &mut State,
+    tool: &'static dyn Provider,
     key: &Key,
     held: &Park,
     asked: Result<Asked>,
@@ -257,7 +279,7 @@ fn apply(
     let id = state.get(key).map(|a| a.id.clone()).unwrap_or_default();
     let store = || {
         park::reserve(ctx, permit, &id)
-            .and_then(|service| park::store_at(ctx, permit, key.provider, &service, &next))
+            .and_then(|service| park::store_at(ctx, permit, tool, &service, &next))
     };
     let parked = match store().or_else(|_| store()) {
         Ok(parked) => parked,
@@ -265,7 +287,7 @@ fn apply(
             // Anthropic has already spent the old refresh token, so the copy Pitboard holds
             // is dead whatever happens next. Dropping it now means status stops offering a
             // login that cannot work and says to sign in again instead.
-            state.discard(&held.service);
+            state.discard(&held.service, ParkKind::Vault);
             let _ = state::save(ctx, permit, state);
             return Err(Error::RenewalFailed {
                 label: state.typed(key),
@@ -278,7 +300,7 @@ fn apply(
     crate::fault::point("renew.park_stored");
     // The renewal spent the copy it replaces, whoever wrote it, so that one is discarded
     // rather than merely replaced.
-    state.discard(&held.service);
+    state.discard(&held.service, ParkKind::Vault);
     state.park(key, parked.clone());
     // A save that fails leaves the fresh copy where it is. Its name is on Pitboard's own
     // list of names it wrote, so the next command gives it back to the account in place of
@@ -359,7 +381,7 @@ mod tests {
         let park = park::store_at(
             ctx,
             Permit::for_a_test(),
-            crate::provider::ProviderId::Claude,
+            crate::provider::document(crate::provider::ProviderId::Claude),
             &service,
             &oauth(refresh, access_expires_at),
         )

@@ -13,26 +13,34 @@
 
 use crate::context::Context;
 use crate::error::{Error, Result};
+use crate::park::Orphan;
+use crate::provider::LoginKind;
 use crate::service::Permit;
-use crate::state::State;
-use crate::{atomic, home, park, store};
+use crate::state::{Key, Park, ParkKind, State};
+use crate::{atomic, home, park};
 use std::path::PathBuf;
 
 fn path(ctx: &Context) -> PathBuf {
     home::dir(ctx).join("pending")
 }
 
-fn read(ctx: &Context) -> Vec<String> {
+fn read(ctx: &Context) -> Vec<(ParkKind, String)> {
     std::fs::read_to_string(path(ctx))
         .unwrap_or_default()
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty())
-        .map(str::to_owned)
+        .map(|line| match line.strip_prefix(FOLDER) {
+            Some(name) => (ParkKind::Folder, name.to_owned()),
+            None => (ParkKind::Vault, line.to_owned()),
+        })
         .collect()
 }
 
-fn store_list(ctx: &Context, permit: Permit, names: &[String]) -> Result<()> {
+// A name holds no space, so a folder's line splits exactly.
+const FOLDER: &str = "folder ";
+
+fn store_list(ctx: &Context, permit: Permit, names: &[(ParkKind, String)]) -> Result<()> {
     let path = path(ctx);
     if names.is_empty() {
         // Nothing outstanding: leave no file rather than an empty one, so the ordinary
@@ -43,7 +51,14 @@ fn store_list(ctx: &Context, permit: Permit, names: &[String]) -> Result<()> {
             Err(source) => return Err(Error::HomeUnwritable { path, source }),
         }
     }
-    let mut body = names.join("\n");
+    let lines: Vec<String> = names
+        .iter()
+        .map(|(kind, name)| match kind {
+            ParkKind::Vault => name.clone(),
+            ParkKind::Folder => format!("{FOLDER}{name}"),
+        })
+        .collect();
+    let mut body = lines.join("\n");
     body.push('\n');
     atomic::write(permit, &path, body.as_bytes(), atomic::Perms::Secret)
         .map_err(|source| Error::HomeUnwritable { path, source })
@@ -52,13 +67,22 @@ fn store_list(ctx: &Context, permit: Permit, names: &[String]) -> Result<()> {
 /// Write a name down before anything is written into it. A name here that never receives a
 /// login costs one line and is dropped by the next sweep.
 pub fn reserve(ctx: &Context, permit: Permit, service: &str) -> Result<()> {
+    write_down(ctx, permit, (ParkKind::Vault, service.to_string()))
+}
+
+// A folder under `parks`, written down before it is made.
+pub(crate) fn reserve_folder(ctx: &Context, permit: Permit, name: &str) -> Result<()> {
+    write_down(ctx, permit, (ParkKind::Folder, name.to_string()))
+}
+
+fn write_down(ctx: &Context, permit: Permit, line: (ParkKind, String)) -> Result<()> {
     home::ensure(ctx, permit).map_err(|source| Error::HomeUnwritable {
         path: home::dir(ctx),
         source,
     })?;
     let mut names = read(ctx);
-    if !names.iter().any(|n| n == service) {
-        names.push(service.to_string());
+    if !names.contains(&line) {
+        names.push(line);
     }
     store_list(ctx, permit, &names)
 }
@@ -77,6 +101,8 @@ pub struct Reclaimed {
     pub strangers: Vec<String>,
     /// Left exactly as they are, because the store could not be read.
     pub unreadable: Vec<String>,
+    // Folders under `parks` no account here can take, kept in `state.aside`, never deleted.
+    pub set_aside: Vec<String>,
 }
 
 impl Reclaimed {
@@ -89,6 +115,7 @@ impl Reclaimed {
             && self.deleted.is_empty()
             && self.strangers.is_empty()
             && self.unreadable.is_empty()
+            && self.set_aside.is_empty()
     }
 }
 
@@ -108,11 +135,13 @@ pub fn sweep(ctx: &Context, permit: Permit, state: &mut State) -> Result<Reclaim
 /// dumps the keychain.
 pub fn reclaim(ctx: &Context, permit: Permit, state: &mut State) -> Result<Reclaimed> {
     let ours = read(ctx);
-    let Some(stored) = store::vault_list(ctx)? else {
+    let mut names = Vec::new();
+    for kind in park::EVERY_KIND {
         // A store that cannot be enumerated: Pitboard's own list is all there is.
-        return resolve(ctx, permit, state, ours.clone(), &ours);
-    };
-    let mut names = stored;
+        if let Some(stored) = park::parks(kind).list(ctx)? {
+            names.extend(stored.into_iter().map(|name| (kind, name)));
+        }
+    }
     for listed in &ours {
         if !names.contains(listed) {
             names.push(listed.clone());
@@ -136,45 +165,137 @@ fn resolve(
     ctx: &Context,
     permit: Permit,
     state: &mut State,
-    names: Vec<String>,
-    ours: &[String],
+    names: Vec<(ParkKind, String)>,
+    ours: &[(ParkKind, String)],
 ) -> Result<Reclaimed> {
     let mut keep = Vec::new();
     let mut out = Reclaimed::default();
-    for service in names {
+    for (kind, service) in names {
         if state.names(&service) {
             continue;
         }
-        let written_here = ours.contains(&service);
-        match store::vault_read(ctx, &service) {
-            // Claimed but never written to. Nothing was ever there.
-            Ok(None) => {}
-            // Cannot tell. Try again next time rather than guess.
-            Err(_) => {
-                out.unreadable.push(service.clone());
-                if written_here {
-                    keep.push(service);
+        let written_here = ours.iter().any(|(k, name)| *k == kind && *name == service);
+        let found = park::parks(kind).orphan(ctx, state, &service);
+        match kind {
+            ParkKind::Folder => resolve_folder(
+                ctx,
+                permit,
+                state,
+                &service,
+                found,
+                written_here,
+                &mut out,
+                &mut keep,
+            ),
+            ParkKind::Vault => match found {
+                // Claimed but never written to. Nothing was ever there.
+                Orphan::Nothing => {}
+                // Cannot tell. Try again next time rather than guess.
+                Orphan::Unreadable => {
+                    out.unreadable.push(service.clone());
+                    if written_here {
+                        keep.push((kind, service));
+                    }
                 }
-            }
-            Ok(Some(raw)) => match adopt(ctx, permit, state, &service, &raw, written_here) {
-                Some(label) => out.given_back.push((label, service)),
-                None if written_here => {
-                    // This Pitboard wrote this name down, wrote a login into it, and
-                    // nothing here recorded it. That is an orphan and nothing else can be.
-                    release(ctx, permit, state, &service);
-                    out.deleted.push(service);
-                }
-                None => out.strangers.push(service),
+                found => match adopt(ctx, permit, state, found, written_here) {
+                    Some(label) => out.given_back.push((label, service)),
+                    None if written_here => {
+                        // This Pitboard wrote this name down, wrote a login into it, and
+                        // nothing here recorded it. That is an orphan and nothing else can be.
+                        release(ctx, permit, state, &service);
+                        out.deleted.push(service);
+                    }
+                    None => out.strangers.push(service),
+                },
             },
         }
     }
+    // The state first, so a run killed between the two leaves no login neither file names.
+    if !out.given_back.is_empty() || !out.deleted.is_empty() || !out.set_aside.is_empty() {
+        crate::state::save(ctx, permit, state)?;
+    }
+    crate::fault::point("pending.recorded");
     if keep != ours {
         store_list(ctx, permit, &keep)?;
     }
-    if !out.given_back.is_empty() || !out.deleted.is_empty() {
-        crate::state::save(ctx, permit, state)?;
-    }
     Ok(out)
+}
+
+// Given back to the account that takes it, and otherwise set aside, written here or not.
+#[allow(clippy::too_many_arguments)]
+fn resolve_folder(
+    ctx: &Context,
+    permit: Permit,
+    state: &mut State,
+    name: &str,
+    found: Orphan,
+    written_here: bool,
+    out: &mut Reclaimed,
+    keep: &mut Vec<(ParkKind, String)>,
+) {
+    let taker = match &found {
+        Orphan::Login { id, .. } => takes(ctx, state, id),
+        Orphan::Nothing | Orphan::Unreadable | Orphan::Unnamed => None,
+    };
+    match (found, taker) {
+        // Reserved and never filled: what is there holds nothing.
+        (Orphan::Nothing, _) => {
+            let _ = crate::store::folder::remove_emptied(ctx, permit, name);
+        }
+        (Orphan::Unreadable, _) => {
+            out.unreadable.push(name.to_string());
+            if written_here {
+                keep.push((ParkKind::Folder, name.to_string()));
+            }
+        }
+        (Orphan::Login { park, .. }, Some(key)) => give_back(ctx, permit, state, &key, *park, out),
+        (found, _) => {
+            park::set_aside_orphan(ctx, state, name, &found, ctx.now());
+            out.set_aside.push(name.to_string());
+        }
+    }
+}
+
+// Enrolled, holding no park that is there, and not in use: an older login of the account in use
+// stays aside.
+pub(crate) fn takes(ctx: &Context, state: &State, id: &str) -> Option<Key> {
+    let account = state.owner_of_park(id)?;
+    let tool = account.provider();
+    let in_use = state.in_use(tool).and_then(|record| record.account(tool));
+    let holds = account
+        .parked
+        .as_ref()
+        .is_some_and(|held| !gone(ctx, state, held));
+    (!holds && in_use.as_deref() != Some(id)).then(|| account.key())
+}
+
+// A recorded folder park whose folder is not found, as a `state.json` restored from a backup names.
+fn gone(ctx: &Context, state: &State, park: &Park) -> bool {
+    park.kind == ParkKind::Folder
+        && !state.moves(&park.service)
+        && matches!(
+            park::parks(ParkKind::Folder).taken(ctx, &park.service),
+            Ok(false)
+        )
+}
+
+pub(crate) fn give_back(
+    ctx: &Context,
+    permit: Permit,
+    state: &mut State,
+    key: &Key,
+    park: Park,
+    out: &mut Reclaimed,
+) {
+    let name = park.service.clone();
+    let held = state.get(key).and_then(|account| account.parked.clone());
+    if let Some(held) = held.filter(|held| gone(ctx, state, held)) {
+        state.discard(&held.service, ParkKind::Folder);
+    }
+    state.park(key, park);
+    let label = key.typed();
+    crate::audit::record(ctx, permit, "reclaim", &label, "ok");
+    out.given_back.push((label, name));
 }
 
 /// Give an orphan back to the account whose name it carries, where that account is enrolled
@@ -196,22 +317,24 @@ fn adopt(
     ctx: &Context,
     permit: Permit,
     state: &mut State,
-    service: &str,
-    raw: &str,
+    found: Orphan,
     written_here: bool,
 ) -> Option<String> {
-    let (id, at_millis) = park::parts_of(service)?;
-    let oauth = serde_json::from_str::<serde_json::Value>(raw).ok()?;
+    let Orphan::Login { id, park, document } = found else {
+        return None;
+    };
     let account = state.owner_of_park(&id)?;
     let key = account.key();
-    let park = park::describe(key.provider, service, at_millis / 1000, &oauth);
-    if park.refresh_fingerprint.is_empty() || !park.restorable_at(ctx.now()) {
+    let tool = match crate::provider::of(key.provider) {
+        LoginKind::Document(tool) => tool,
+        // A vault line whose id is a folder tool's account is not given back.
+        LoginKind::Folder(_) => return None,
+    };
+    if !park.restorable_at(ctx.now()) {
         return None;
     }
     let replaces_an_older_copy = |held: &crate::state::Park| {
-        written_here
-            && held.refresh_fingerprint != park.refresh_fingerprint
-            && park.parked_at >= held.parked_at
+        written_here && held.login != park.login && park.parked_at >= held.parked_at
     };
     if account
         .parked
@@ -222,15 +345,15 @@ fn adopt(
     }
     // A copy of the login signed in now is not something to give back, for a tool whose
     // park may never be a copy.
-    if park::is_live_twin(ctx, key.provider, &oauth) {
+    if park::is_live_twin(ctx, tool, &document) {
         return None;
     }
     // A vault of files lives inside this home, so whatever is in it is this Pitboard's
     // whether or not it was written down, and is deleted like any other once let go.
-    if written_here || !store::vault_is_shared(ctx) {
-        state.park(&key, park);
+    if written_here || !park::parks(ParkKind::Vault).shared(ctx) {
+        state.park(&key, *park);
     } else {
-        state.park_foreign(&key, park);
+        state.park_foreign(&key, *park);
     }
     let label = key.typed();
     crate::audit::record(ctx, permit, "reclaim", &label, "ok");
@@ -258,6 +381,7 @@ pub fn clear(ctx: &Context, permit: Permit) {
 pub fn outstanding(ctx: &Context, state: Option<&State>) -> Vec<String> {
     read(ctx)
         .into_iter()
+        .map(|(_, service)| service)
         .filter(|service| !state.is_some_and(|state| state.names(service)))
         .collect()
 }
@@ -357,12 +481,147 @@ mod tests {
         state.accounts.push(account("work", "acc"));
         state.park(
             &work(),
-            park::describe(ProviderId::Claude, service, NOW, &oauth("r")),
+            park::describe(
+                crate::provider::document(ProviderId::Claude),
+                service,
+                NOW,
+                &oauth("r"),
+            ),
         );
 
         assert!(outstanding(&ctx, Some(&state)).is_empty());
         assert_eq!(outstanding(&ctx, None), [service]);
         assert_eq!(outstanding(&ctx, Some(&State::default())), [service]);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Claude Desktop is macOS only: Windows makes and removes no folder"
+    )]
+    fn a_folder_name_in_pending_is_never_asked_of_the_vault() {
+        let (ctx, mem, root) = machine("folder-line");
+        let (gone, unread) = ("pitboard-park-desktop_a-1", "pitboard-aside-2");
+        let folder = crate::store::folder::at(&ctx, unread);
+        std::fs::create_dir_all(folder.join("items")).unwrap();
+        std::fs::write(folder.join("items/Cookies"), b"a jar").unwrap();
+        std::fs::write(folder.join("manifest.json"), b"not json").unwrap();
+        std::fs::write(
+            path(&ctx),
+            format!("folder {gone}\npitboard-park-acc-1\nfolder {unread}\n"),
+        )
+        .unwrap();
+        assert_eq!(
+            read(&ctx),
+            [
+                (ParkKind::Folder, gone.to_string()),
+                (ParkKind::Vault, "pitboard-park-acc-1".to_string()),
+                (ParkKind::Folder, unread.to_string()),
+            ]
+        );
+
+        let mut state = State::default();
+        let swept = sweep(&ctx, Permit::for_a_test(), &mut state).expect("swept");
+        assert_eq!(swept.unreadable, [unread]);
+        let asked: Vec<String> = mem.trail().into_iter().map(|touch| touch.service).collect();
+        assert_eq!(asked, ["pitboard-park-acc-1"], "the vault's line alone");
+        assert_eq!(
+            std::fs::read_to_string(path(&ctx)).unwrap(),
+            format!("folder {unread}\n"),
+            "a folder's line is written back as a folder's"
+        );
+        assert!(folder.join("items/Cookies").exists());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Claude Desktop is macOS only: Windows makes and removes no folder"
+    )]
+    fn an_orphan_folder_is_set_aside_and_a_vault_orphan_is_deleted_as_before() {
+        let (ctx, mem, root) = machine("orphans");
+        let (vault, folder) = (
+            "pitboard-park-acc-1760000000000",
+            "pitboard-park-desktop_a-1",
+        );
+        reserve(&ctx, Permit::for_a_test(), vault).expect("reserved");
+        mem.vault().plant(vault, &oauth("r").to_string());
+        let kept = crate::store::folder::at(&ctx, folder);
+        std::fs::create_dir_all(kept.join("items")).unwrap();
+        std::fs::write(kept.join("items/Cookies"), b"a jar").unwrap();
+        let mut listed = std::fs::read_to_string(path(&ctx)).unwrap();
+        listed.push_str(&format!("folder {folder}\n"));
+        std::fs::write(path(&ctx), listed).unwrap();
+
+        let mut state = State::default();
+        let swept = sweep(&ctx, Permit::for_a_test(), &mut state).expect("swept");
+        assert_eq!(
+            swept.deleted,
+            [vault],
+            "nobody's, written here: deleted as before"
+        );
+        assert_eq!(swept.set_aside, [folder]);
+        assert_eq!(
+            state.discarded,
+            [crate::state::Dropped {
+                service: vault.into(),
+                kind: ParkKind::Vault,
+                forgotten: false,
+            }]
+        );
+        assert_eq!(state.aside.len(), 1);
+        assert_eq!(state.aside[0].name, folder);
+        assert_eq!(state.aside[0].why, crate::state::SetAside::Orphan);
+        assert_eq!(state.aside[0].tool, ProviderId::Desktop);
+        assert!(kept.join("items/Cookies").exists(), "never deleted");
+        assert!(!path(&ctx).exists(), "both lines resolved");
+        let saved = crate::state::load(&ctx).expect("saved");
+        assert_eq!(saved.aside, state.aside);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Claude Desktop is macOS only: Windows makes and removes no folder"
+    )]
+    fn a_sweep_killed_between_its_two_writes_leaves_no_login_unnamed() {
+        let (ctx, mem, root) = machine("killed");
+        let (vault, folder) = (
+            "pitboard-park-acc-1760000000000",
+            "pitboard-park-desktop_a-1",
+        );
+        reserve(&ctx, Permit::for_a_test(), vault).expect("reserved");
+        mem.vault().plant(vault, &oauth("r").to_string());
+        let kept = crate::store::folder::at(&ctx, folder);
+        std::fs::create_dir_all(kept.join("items")).unwrap();
+        std::fs::write(kept.join("items/Cookies"), b"a jar").unwrap();
+        let mut listed = std::fs::read_to_string(path(&ctx)).unwrap();
+        listed.push_str(&format!("folder {folder}\n"));
+        std::fs::write(path(&ctx), &listed).unwrap();
+
+        let mut state = State::default();
+        let died = crate::fault::killing("pending.recorded", || {
+            sweep(&ctx, Permit::for_a_test(), &mut state)
+        });
+        assert_eq!(died.unwrap_err(), "pending.recorded");
+        let saved = crate::state::load(&ctx).expect("saved");
+        assert!(saved.names(vault), "listed to be deleted");
+        assert!(saved.names(folder), "set aside");
+        assert_eq!(
+            std::fs::read_to_string(path(&ctx)).unwrap(),
+            listed,
+            "the lines go only once the state names them"
+        );
+
+        let mut state = saved;
+        let again = sweep(&ctx, Permit::for_a_test(), &mut state).expect("swept");
+        assert!(again.is_empty(), "{again:?}");
+        assert!(!path(&ctx).exists(), "both lines dropped");
+        assert_eq!(state.aside.len(), 1);
+        assert!(kept.join("items/Cookies").exists());
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -420,7 +679,12 @@ mod tests {
         state.accounts.push(account("work", "acc"));
         state.park(
             &work(),
-            park::describe(ProviderId::Claude, held.0, held.2, &oauth(held.1)),
+            park::describe(
+                crate::provider::document(ProviderId::Claude),
+                held.0,
+                held.2,
+                &oauth(held.1),
+            ),
         );
         (ctx, state, root)
     }
@@ -451,7 +715,7 @@ mod tests {
             1
         );
         assert_eq!(parked(&state).as_deref(), Some(held));
-        assert!(state.discarded.iter().any(|s| s == orphan));
+        assert!(state.discarded.iter().any(|d| d.service == orphan));
         assert!(outstanding(&ctx, None).is_empty());
         let _ = std::fs::remove_dir_all(root);
     }
@@ -475,7 +739,7 @@ mod tests {
             1
         );
         assert_eq!(parked(&state).as_deref(), Some(held));
-        assert!(state.discarded.iter().any(|s| s == orphan));
+        assert!(state.discarded.iter().any(|d| d.service == orphan));
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -497,7 +761,7 @@ mod tests {
         assert_eq!(reclaimed.given_back.len(), 1);
         assert_eq!(parked(&state).as_deref(), Some(orphan));
         assert!(
-            state.discarded.iter().any(|s| s == held),
+            state.discarded.iter().any(|d| d.service == held),
             "the spent copy goes"
         );
         let _ = std::fs::remove_dir_all(root);
@@ -632,7 +896,7 @@ mod tests {
 
         assert_eq!(reclaimed.deleted, vec![service.to_string()]);
         assert!(reclaimed.strangers.is_empty());
-        assert!(state.discarded.iter().any(|s| s == service));
+        assert!(state.discarded.iter().any(|d| d.service == service));
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -651,7 +915,12 @@ mod tests {
         state.accounts.push(account("work", "acc"));
         state.park(
             &work(),
-            park::describe(ProviderId::Claude, service, NOW, &oauth("r")),
+            park::describe(
+                crate::provider::document(ProviderId::Claude),
+                service,
+                NOW,
+                &oauth("r"),
+            ),
         );
 
         assert_eq!(

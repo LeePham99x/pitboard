@@ -1,9 +1,10 @@
 # Security policy
 
-Pitboard moves and parks the logins of Claude Code and OpenAI's Codex CLI. Each holds a
-refresh token with full access to a paid account. A Codex parked login is Codex's whole
-`auth.json`, which can also hold an OpenAI API key. Each of the app's account windows keeps
-a claude.ai or chatgpt.com sign-in.
+Pitboard moves and parks the logins of Claude Code, OpenAI's Codex CLI and Claude Desktop.
+Each grants full access to a paid account. A Claude Code or Codex login holds a refresh
+token. A Codex parked login is Codex's whole `auth.json`, which can also hold an OpenAI API
+key. A Claude Desktop login is Claude's own files, its session cookie among them. Each of the
+app's account windows keeps a claude.ai or chatgpt.com sign-in.
 
 ## Supported versions
 
@@ -45,8 +46,8 @@ works.
 
 - Pitboard identifies each login before it moves one, and refuses a parked login whose
   fingerprint changed.
-- The next change finishes or undoes an interrupted switch first, and changes nothing if it
-  cannot tell how.
+- Before it changes a tool's login again, Pitboard finishes or undoes that tool's interrupted
+  switch, and changes nothing if it cannot tell how.
 - No parked login goes untracked, and the next write deletes temporary files a killed run
   left.
 - A locked or unreadable keychain reads as unreadable, never as empty.
@@ -56,6 +57,12 @@ works.
   lists.
 - A switch takes Claude Code's locks before it writes its login, and reads every login back.
 - A Codex login is moved, never copied. One whose tokens and account id disagree is refused.
+- A Claude Desktop login is moved, never copied, and only while Claude is closed. Pitboard
+  reads no keychain item, decrypts no cookie and sends no request for it.
+- Pitboard identifies a Claude Desktop login by its session cookie's fingerprint. It takes
+  the account Claude names in one case only, and refuses in any other doubt.
+- In Claude's data folder, Pitboard deletes nothing of Claude's. Only `pitboard forget` and
+  `pitboard uninstall` delete a parked Claude Desktop login or a folder set aside.
 - Pitboard refuses a synced directory, and a state file written on another machine.
 - Pitboard sends each login only to the service that issued it, verifies TLS, and has no
   telemetry.
@@ -83,18 +90,18 @@ works.
 ### Out of scope
 
 - Another process running as you, which can read each account window's data as it can a
-  browser's.
+  browser's, and a parked Claude Desktop login as it can Claude's own.
 - Another user with administrator access to your computer.
 - Anyone who can already read your files. On Linux, file modes alone keep parked logins
   private.
 - The sites' own pages and what they embed, which run in WebKit as they would in a browser.
 - A page a site opens in your browser, which uses your browser's sign-in.
-- A compromised Claude Code, Codex or library Pitboard uses. CI checks the Rust libraries for
-  known advisories, and Sparkle only for a newer release.
+- A compromised Claude Code, Codex, Claude Desktop or library Pitboard uses. CI checks the
+  Rust libraries for known advisories, and Sparkle only for a newer release.
 - A changed install script piped to `sh`. Only its attestation shows where it came from.
 - Signing out in a `codex` started before a switch, which revokes the login Pitboard parked.
-- An unused account's parked login, which Pitboard keeps renewing while the account is
-  enrolled.
+- An unused Claude Code or Codex account's parked login, which Pitboard keeps renewing while
+  the account is enrolled.
 - A deleted parked login, which stays valid until it expires. Pitboard revokes no login:
   whether Anthropic accepts a revocation is not measured.
 - A forged ID token on your disk. Pitboard reads a Codex login's account from it without

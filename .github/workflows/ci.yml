@@ -282,6 +282,11 @@ jobs:
       - uses: ./.github/actions/rust
         with:
           targets: aarch64-apple-darwin x86_64-apple-darwin
+      # rusqlite is macOS's alone, so only a Mac proves the floor builds it.
+      - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
+        with:
+          tool: cargo-hack@0.6.45
+      - run: cargo hack check --rust-version --workspace-behavior=cargo -p pitboard-core -p pitboard -p pitboard-ffi --all-targets --locked
       # PitboardBindings and PitboardShareBindings are generated, so only what is written by
       # hand is checked.
       - run: >
@@ -374,7 +379,7 @@ jobs:
       # set serve both, and the library without them must hold none of a fixture's text.
       - run: |
           if LC_ALL=C grep -a -q -e 'A Pitboard fixture page' -e 'dana@work.example' \
-            target/release/libpitboard_ffi.so; then
+            -e 'PITBOARD_TEST_CLAUDE_DESKTOP' target/release/libpitboard_ffi.so; then
             echo "a library built without the fixture feature holds a fixture" >&2
             exit 1
           fi

@@ -2,6 +2,7 @@
 
 use super::identify::{self, Live};
 use super::{Error, Result, Settled, enrolled, purge};
+use crate::provider::{self, LoginKind};
 use crate::service::Warning;
 use crate::state::{self, Key};
 
@@ -24,27 +25,44 @@ pub fn forget(settled: Settled, key: &Key) -> Result<(String, Vec<Warning>)> {
     } = settled;
     let account = enrolled(&state, key)?;
     let mut lost = None;
-    let in_use = match identify::now(&ctx, permit, &mut state, key.provider) {
-        Ok(Live::Login(login)) => {
-            lost = login.lock_warning(key.provider);
-            account.owned_by(&login.owner)
+    // An app's data folder stays held until the account is gone.
+    let mut _closed = None;
+    let mut said = Vec::new();
+    let asked = match provider::of(key.provider) {
+        LoginKind::Document(tool) => match identify::now(&ctx, permit, &mut state, tool) {
+            Ok(Live::Login(login)) => {
+                lost = login.lock_warning(key.provider);
+                Ok(account.owned_by(&login.owner))
+            }
+            Ok(Live::Nothing) => Ok(false),
+            Err(unknown) => Err(unknown),
+        },
+        LoginKind::Folder(app) => {
+            let asked = super::folder::in_use_for_forget(&ctx, permit, &mut state, key, app)?;
+            _closed = asked.closed;
+            said = asked.warnings;
+            asked.in_use
         }
-        Ok(Live::Nothing) => false,
+    };
+    let in_use = match asked {
+        Ok(in_use) => in_use,
         Err(unknown) => {
             let recorded = state
                 .account_in_use(key.provider)
                 .is_some_and(|in_use| in_use.is(key));
             if recorded || account.parked.is_none() {
-                return Err(unknown);
+                return Err(unknown.after(said));
             }
             false
         }
     };
     if in_use {
-        return Err(Error::CannotForgetActiveAccount { label: key.typed() });
+        return Err(Error::CannotForgetActiveAccount { label: key.typed() }.after(said));
     }
     state.remove(key);
-    state::save(&ctx, permit, &state)?;
+    if let Err(unsaved) = state::save(&ctx, permit, &state) {
+        return Err(unsaved.after(said));
+    }
     crate::fault::point("forget.recorded");
     crate::readings::forget(&ctx, permit, &account.id);
     crate::budget::forget(&ctx, permit, &account.id);
@@ -53,6 +71,7 @@ pub fn forget(settled: Settled, key: &Key) -> Result<(String, Vec<Warning>)> {
     Ok((
         account.email,
         lost.into_iter()
+            .chain(said)
             .chain((pending > 0).then_some(Warning::ParksPendingRemoval(pending)))
             .collect(),
     ))
@@ -74,7 +93,7 @@ mod tests {
         let m = machine(name);
         let mut state = state::load(&m.ctx).expect("state");
         state.upsert(in_organisation("team", "here", "org-team", None));
-        let login = crate::provider::of(m.which).fingerprint(&document("here-refresh"));
+        let login = crate::provider::document(m.which).fingerprint(&document("here-refresh"));
         let named = InUse::of(state.get(&m.key(recorded)).expect("enrolled"), &login, NOW);
         state.identified(m.which, named, NOW);
         state::save(&m.ctx, Permit::for_a_test(), &state).expect("saved");

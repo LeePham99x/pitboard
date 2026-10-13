@@ -1,4 +1,4 @@
-//! The ten worlds, each made on the real core, as the macOS app's `Fixture` named them.
+//! The worlds, each made on the real core, as the macOS app's `Fixture` named them.
 //!
 //! Each is a machine of its own: a home in a folder of the fixture's, Claude Code's keychain,
 //! Pitboard's vault, the process list and the scheduler in memory, and Anthropic and OpenAI
@@ -9,7 +9,7 @@
 //! core and the model make of that machine.
 
 use super::FixtureError;
-use super::apps::{CHATGPT, FixtureApps, Unposted};
+use super::apps::{CHATGPT, CLAUDE, FixtureApps, Unposted};
 use super::tools::{Browser, Warmer};
 use crate::model::preferences::Preferences;
 use crate::model::state::Cadence;
@@ -24,6 +24,7 @@ use pitboard_core::host::{OS, Os};
 use pitboard_core::provider::ProviderId;
 use pitboard_core::service;
 use pitboard_core::state::Key;
+use pitboard_core::testing::desktop::{self as desktop, FakeClaude, JarAs};
 use pitboard_core::testing::fs as files;
 use pitboard_core::testing::{Fault, FixedClock, MemoryHost, ScriptedApi, live_service};
 use pitboard_core::usage;
@@ -70,6 +71,10 @@ pub(crate) enum World {
     Stuck,
     /// `TwoTools`, with ChatGPT open and running Codex's login.
     ChatGptOpen,
+    // `OneTool`, and Claude Desktop with work in use and home parked, where Pitboard has it.
+    ClaudeDesktop,
+    // `ClaudeDesktop`, with Claude open.
+    ClaudeDesktopOpen,
     /// `OneTool`, with personal turned on for warm-ups all day and its five-hour period not
     /// running, so the app warms it up as it starts.
     WarmUp,
@@ -77,7 +82,7 @@ pub(crate) enum World {
 
 impl World {
     /// Every world, in the order the macOS app's `Fixture` listed them.
-    pub(crate) const ALL: [World; 11] = [
+    pub(crate) const ALL: [World; 13] = [
         World::TwoTools,
         World::OneTool,
         World::Empty,
@@ -88,6 +93,8 @@ impl World {
         World::ReadFailure,
         World::Stuck,
         World::ChatGptOpen,
+        World::ClaudeDesktop,
+        World::ClaudeDesktopOpen,
         World::WarmUp,
     ];
 
@@ -104,6 +111,8 @@ impl World {
             World::ReadFailure => "readFailure",
             World::Stuck => "stuck",
             World::ChatGptOpen => "chatGPTOpen",
+            World::ClaudeDesktop => "claudeDesktop",
+            World::ClaudeDesktopOpen => "claudeDesktopOpen",
             World::WarmUp => "warmUp",
         }
     }
@@ -135,7 +144,15 @@ impl World {
             | World::Stuck
             | World::ChatGptOpen
             | World::WarmUp => &[ProviderId::Claude, ProviderId::Codex],
+            World::ClaudeDesktop | World::ClaudeDesktopOpen => {
+                &[ProviderId::Claude, ProviderId::Desktop]
+            }
         }
+    }
+
+    fn has_claude_desktop(self) -> bool {
+        matches!(self, World::ClaudeDesktop | World::ClaudeDesktopOpen)
+            && ProviderId::Desktop.supported_on(OS)
     }
 }
 
@@ -250,6 +267,8 @@ pub(crate) struct Machine {
     folder: Folder,
     pub(crate) host: Arc<MemoryHost>,
     pub(crate) api: Arc<ScriptedApi>,
+    // the Claude the fixture plays, in `claude` in its folder: nothing reads the real one
+    pub(crate) claude: Arc<FakeClaude>,
     /// The machine as every front end on it has it, with no caller, clock or browser yet.
     base: Context,
     /// When the world was made, which everything in it is put relative to.
@@ -285,7 +304,9 @@ impl Machine {
             .with_codex_program(Machine::program_in(&root, ProviderId::Codex))
             .with_schedule_program(Machine::helper_in(&root))
             .with_memory_stores(Arc::clone(&host))
-            .with_scripted_api(Arc::clone(&api));
+            .with_scripted_api(Arc::clone(&api))
+            .with_scratch_claude(root.join("claude"))
+            .with_awaited_every(std::time::Duration::from_millis(10));
         // Claude Code's login goes in its default slot, under the name the real one has on
         // this machine, so nothing is put anywhere until the machine is known to be the one
         // in memory.
@@ -294,10 +315,12 @@ impl Machine {
                 "the fixture's machine reaches this one's keychain or the network".into(),
             ));
         }
+        let claude = Arc::new(FakeClaude::on(Arc::clone(&host), &base, JarAs::StandIn));
         Ok(Machine {
             folder,
             host,
             api,
+            claude,
             base,
             now: epoch_now(),
             usage: Mutex::new(HashMap::new()),
@@ -311,6 +334,12 @@ impl Machine {
     /// The fixture's own folder.
     pub(crate) fn root(&self) -> &Path {
         self.folder.path()
+    }
+
+    // The machine as a terminal has it now, for a test to change it the way one would.
+    #[cfg(test)]
+    pub(crate) fn terminal(&self) -> Context {
+        self.base.clone().with_caller("cli".into())
     }
 
     /// The machine's home.
@@ -760,13 +789,15 @@ pub(crate) fn make(world: World, folder: Folder) -> Result<Launched, Unmade> {
                 .map_err(|error| Unmade(format!("keeping the app's preferences: {error}")))?;
         }
     }
+    let running: &[&str] = match world {
+        World::ChatGptOpen => &[CHATGPT],
+        World::ClaudeDesktopOpen if world.has_claude_desktop() => &[CLAUDE],
+        _ => &[],
+    };
     let apps = FixtureApps::new(
         Arc::clone(&machine.host),
-        if world == World::ChatGptOpen {
-            &[CHATGPT]
-        } else {
-            &[]
-        },
+        Arc::clone(&machine.claude),
+        running,
     );
     let ctx = machine.app_context(
         Arc::new(Browser::new(Arc::clone(&machine))),
@@ -869,6 +900,14 @@ fn seed(world: World, machine: &Machine) -> Result<(), Unmade> {
             claude_accounts(machine)?;
             claude_switches(machine)
         }
+        World::ClaudeDesktop | World::ClaudeDesktopOpen => {
+            claude_accounts(machine)?;
+            claude_switches(machine)?;
+            if world.has_claude_desktop() {
+                claude_desktop(machine)?;
+            }
+            Ok(())
+        }
         World::ReadFailure => {
             claude_accounts(machine)?;
             claude_switches(machine)?;
@@ -970,6 +1009,20 @@ fn claude_switches(machine: &Machine) -> Result<(), Unmade> {
     machine
         .switched("claude/work", "app", HOUR)
         .map_err(refused("switching back to work"))
+}
+
+// home enrolled five days ago, then work added two days ago by a sign-in inside Claude.
+fn claude_desktop(machine: &Machine) -> Result<(), Unmade> {
+    let data = machine.claude.data();
+    desktop::plant(&data, &desktop::HOME, JarAs::StandIn);
+    machine
+        .front_end("cli", 5 * DAY)
+        .1
+        .enroll_current("desktop/home")
+        .map_err(refused("enrolling Claude Desktop's home"))?;
+    let (_, front_end) = machine.front_end("cli", 2 * DAY);
+    desktop::signs_in_inside(&front_end, &machine.claude, "desktop/work", &desktop::WORK)
+        .map_err(Unmade)
 }
 
 /// A Claude Code account parked a month ago and never switched to since: its access token

@@ -178,6 +178,110 @@ pub fn same_path_in_any_case(a: &Path, b: &Path) -> bool {
     }
 }
 
+// Is, holds or lies in, for a build for tests to refuse, the same on every system: through
+// every link, one to nothing yet included, and in any case, as macOS's own volumes compare.
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn lies_in(path: &Path, place: &Path) -> bool {
+    let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    let (real, real_place) = (resolved(&path, LINKS), resolved(place, LINKS));
+    near(&path, place)
+        || near(&real, &real_place)
+        || meets(&real, &real_place)
+        || meets(&real_place, &real)
+}
+
+// So a loop of links ends, as the system's own lookup does.
+#[cfg(any(test, feature = "test-support"))]
+const LINKS: u8 = 32;
+
+#[cfg(any(test, feature = "test-support"))]
+fn near(a: &Path, b: &Path) -> bool {
+    begins(a, b) || begins(b, a)
+}
+
+#[cfg(any(test, feature = "test-support"))]
+fn begins(path: &Path, with: &Path) -> bool {
+    let with = plain(with);
+    plain(path)
+        .ancestors()
+        .any(|above| same_path_in_any_case(above, &with))
+}
+
+// `canonicalize` spells `C:\x` as `\\?\C:\x`.
+#[cfg(any(test, feature = "test-support"))]
+fn plain(path: &Path) -> PathBuf {
+    use std::path::{Component, Prefix};
+    let mut parts = path.components();
+    let Some(Component::Prefix(prefix)) = parts.next() else {
+        return path.to_path_buf();
+    };
+    let head = match prefix.kind() {
+        Prefix::VerbatimDisk(disk) => format!("{}:", char::from(disk)),
+        Prefix::VerbatimUNC(server, share) => format!(
+            r"\\{}\{}",
+            server.to_string_lossy(),
+            share.to_string_lossy()
+        ),
+        _ => return path.to_path_buf(),
+    };
+    PathBuf::from(head).join(parts.as_path())
+}
+
+// A folder above `a` that is `b`'s deepest existing one, whatever either is named:
+// `canonicalize` keeps /System/Volumes/Data/Users, which is /Users.
+#[cfg(any(test, feature = "test-support"))]
+fn meets(a: &Path, b: &Path) -> bool {
+    let Some((deepest, below_b)) = b
+        .ancestors()
+        .find_map(|above| Some((fs::file_id(above)?, b.strip_prefix(above).ok()?)))
+    else {
+        return false;
+    };
+    a.ancestors().any(|above| {
+        fs::file_id(above) == Some(deepest)
+            && a.strip_prefix(above)
+                .is_ok_and(|below_a| near(below_a, below_b))
+    })
+}
+
+// The deepest part that exists, resolved, or a link there followed though it leads nowhere
+// yet; the rest after it as written, less each `..`, as a folder made there would take it.
+#[cfg(any(test, feature = "test-support"))]
+fn resolved(path: &Path, links: u8) -> PathBuf {
+    for found in path.ancestors() {
+        let Ok(rest) = path.strip_prefix(found) else {
+            continue;
+        };
+        if let Ok(real) = std::fs::canonicalize(found) {
+            return beyond(real, rest);
+        }
+        let link = std::fs::symlink_metadata(found).is_ok_and(|it| it.file_type().is_symlink());
+        if let (true, Some(left), Ok(to)) = (link, links.checked_sub(1), std::fs::read_link(found))
+        {
+            let to = match found.parent() {
+                Some(parent) => parent.join(to),
+                None => to,
+            };
+            return resolved(&beyond(to, rest), left);
+        }
+    }
+    path.to_path_buf()
+}
+
+#[cfg(any(test, feature = "test-support"))]
+fn beyond(mut at: PathBuf, rest: &Path) -> PathBuf {
+    for part in rest.components() {
+        match part {
+            std::path::Component::ParentDir => {
+                at.pop();
+            }
+            std::path::Component::CurDir => {}
+            part => at.push(part),
+        }
+    }
+    at
+}
+
 /// Whether two names are one as Windows compares a file's name: each character in its upper
 /// case, one for one, and no other change, so `é` written as one character and as `e` with an
 /// accent are two names. A character whose upper case is more than one, such as `ß`, and one
@@ -237,6 +341,17 @@ pub struct Access {
     pub described: String,
 }
 
+// What a folder Pitboard keeps logins in is, as `fs::private_dir` finds it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Private {
+    Yes,
+    Shared,
+    NotOwn,
+    Link,
+    NotADirectory,
+    Missing,
+}
+
 /// What a person makes private with the command [`Os::make_private_command`] gives.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
@@ -292,6 +407,65 @@ pub struct Process {
     pub path: PathBuf,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Listed {
+    pub pid: u32,
+    pub parent: u32,
+    pub path: PathBuf,
+}
+
+// Those of `all` whose program's own name is `program`, as `Host::processes` answers.
+pub(crate) fn named(all: Vec<Listed>, program: &str) -> Vec<Process> {
+    all.into_iter()
+        .filter(|p| p.path.file_name().is_some_and(|name| name == program))
+        .map(|p| Process {
+            pid: p.pid,
+            path: p.path,
+        })
+        .collect()
+}
+
+pub struct Jar {
+    pub version: i64,
+    pub compatible: i64,
+    pub cookies: Vec<Cookie>,
+}
+
+pub struct Cookie {
+    pub host: String,
+    pub name: String,
+    pub path: String,
+    pub stored: Vec<u8>,
+    pub expires_utc: i64,
+}
+
+// Lengths only: a cookie's value is a login.
+impl std::fmt::Debug for Cookie {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Cookie")
+            .field("host", &self.host)
+            .field("name", &self.name)
+            .field("path", &self.path)
+            .field("stored", &format_args!("{} bytes", self.stored.len()))
+            .field("expires_utc", &self.expires_utc)
+            .finish()
+    }
+}
+
+#[derive(Debug)]
+pub enum JarError {
+    Absent,
+    // a write is under way, or the jar is held
+    Unsettled(String),
+    // read, and not a shape Pitboard knows
+    Unknown(String),
+    Unreadable(String),
+    Unsupported,
+}
+
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) use os::write_jar;
+
 /// What a program run with a ceiling ([`proc::run_within`]) came to: its exit status, `None`
 /// where a signal or the ceiling ended it, and what it printed on standard output.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -336,13 +510,30 @@ pub(crate) trait Host: Send + Sync + std::fmt::Debug {
     /// nothing in it can be anybody else's.
     fn vault_is_shared(&self) -> bool;
 
+    // every process this user runs; Err says why the list could not be read
+    fn listing(&self) -> std::result::Result<Vec<Listed>, String>;
+
     /// The processes this user is running `program` in, with where each runs from. `None`
     /// where the process list could not be read, which is not the same as none running.
     ///
     /// What is compared is the program's own name, so a script or a shell that merely
     /// mentions the program is not counted. Only this user's: another user's sessions use
     /// another user's login, which a switch here never touches.
-    fn processes(&self, program: &str) -> Option<Vec<Process>>;
+    fn processes(&self, program: &str) -> Option<Vec<Process>> {
+        Some(named(self.listing().ok()?, program))
+    }
+
+    // a Chromium jar's rows for `hosts`, and those named one of `names` on any host, as stored
+    fn cookies(
+        &self,
+        jar: &Path,
+        hosts: &[&str],
+        names: &[&str],
+    ) -> std::result::Result<Jar, JarError>;
+
+    // None on a real host in a build for tests; a test names a version through `app_at`.
+    fn app_version(&self, bundle: &Path) -> Option<String>;
+    fn app_id(&self, bundle: &Path) -> Option<String>;
 
     /// The system's own scheduler, which runs daily renewal. `None` where there is none
     /// Pitboard knows how to ask.
@@ -508,6 +699,41 @@ mod tests {
         assert!(!same("Straße", "STRASSE"), "ß is upper case as it is");
         assert!(!same("Codex.exe", "Codex"));
         assert!(!same("/a/b", "/a/b/c"));
+    }
+
+    // One answer on every system: macOS's own volumes ignore case, and Windows drops `..` as
+    // written, which a folder made where none is yet would do too.
+    #[test]
+    fn a_path_lies_in_a_place_in_any_case_and_past_a_folder_not_made_yet() {
+        let root = std::env::temp_dir().join(format!("pitboard-lies-in-{}", std::process::id()));
+        let place = root.join("Library/Application Support");
+        let lies = |path: &str| lies_in(&root.join(path), &place);
+        assert!(lies("Library/Application Support/x"));
+        assert!(lies("library/APPLICATION SUPPORT/x"), "in any case");
+        assert!(lies("LIBRARY"), "it holds it");
+        assert!(lies("never-made/../Library/Application Support/x"));
+        assert!(!lies("Library/Application Supportx"));
+        assert!(!lies("never-made/Library/Application Support"));
+        assert!(!lies("Library/../elsewhere/Application Support"));
+        assert!(!root.exists());
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn a_verbatim_path_lies_where_its_plain_spelling_does() {
+        let lies = |path: &str, place: &str| lies_in(Path::new(path), Path::new(place));
+        assert!(lies(
+            r"\\?\C:\Users\Dana\Library\x",
+            r"c:\users\dana\library"
+        ));
+        assert!(lies(
+            r"C:\Users\Dana\Library\x",
+            r"\\?\c:\users\dana\library"
+        ));
+        assert!(!lies(
+            r"\\?\D:\Users\Dana\Library\x",
+            r"C:\Users\Dana\Library"
+        ));
     }
 
     /// Pitboard writes for a scheduler of each system's own: launchd and a systemd user timer.

@@ -2,8 +2,9 @@
 
 mod common;
 
-use common::{Env, account, clashes, guard_not_live, os, real_slots, refuse_a_real_login_place};
+use common::{Env, account, guard_not_live, os, real_slots, refuse_a_real_login_place};
 use pitboard_core::testing::fs as files;
+use pitboard_core::testing::lies_in;
 
 #[test]
 fn a_folder_that_is_holds_or_lies_in_a_login_place_clashes() {
@@ -16,10 +17,10 @@ fn a_folder_that_is_holds_or_lies_in_a_login_place_clashes() {
         root.join("home"),
         root.join("home").join(".CLAUDE").join("inside"),
     ] {
-        assert!(clashes(&scratch, &place), "{}", scratch.display());
+        assert!(lies_in(&scratch, &place), "{}", scratch.display());
     }
     for scratch in [root.join("home").join(".claudex"), root.join("elsewhere")] {
-        assert!(!clashes(&scratch, &place), "{}", scratch.display());
+        assert!(!lies_in(&scratch, &place), "{}", scratch.display());
     }
     std::fs::remove_dir_all(&root).unwrap();
 }
@@ -31,8 +32,26 @@ fn a_link_into_a_login_place_clashes() {
     let place = root.join(".codex");
     std::fs::create_dir_all(&place).unwrap();
     files::link_dir(&place, &root.join("through")).unwrap();
-    assert!(clashes(&root.join("through").join("inside"), &place));
+    assert!(lies_in(&root.join("through").join("inside"), &place));
     std::fs::remove_dir_all(&root).unwrap();
+}
+
+// /System/Volumes/Data/Users is /Users, and `canonicalize` keeps either name as it is.
+#[test]
+#[cfg_attr(
+    not(target_os = "macos"),
+    ignore = "a firmlink to the Data volume is macOS's own"
+)]
+fn a_folder_named_through_the_data_volume_clashes() {
+    let root = std::env::temp_dir().join(format!("pitboard-clash-data-{}", std::process::id()));
+    let place = root.join(".claude");
+    std::fs::create_dir_all(&place).unwrap();
+    let real = std::fs::canonicalize(&place).unwrap();
+    let through =
+        std::path::Path::new("/System/Volumes/Data").join(real.strip_prefix("/").unwrap());
+    let caught = lies_in(&through.join("inside"), &place);
+    std::fs::remove_dir_all(&root).unwrap();
+    assert!(caught, "{}", through.display());
 }
 
 #[test]
@@ -147,6 +166,32 @@ fn the_harness_can_park_a_login_find_it_and_take_it_away() {
     env.delete_park(&service);
 }
 
+#[test]
+#[cfg_attr(windows, ignore = "W20: parking logins on Windows")]
+fn a_discarded_test_park_is_deleted_by_env_drop() {
+    let env = Env::new("discarded-park");
+    let service = format!(
+        "pitboard-park-{}-1",
+        pitboard_core::testing::dir_hash("discarded-park")
+    );
+    std::fs::create_dir_all(env.root.join("pitboard")).unwrap();
+    std::fs::write(
+        env.root.join("pitboard/state.json"),
+        serde_json::json!({"schema": 8, "discarded": [{"service": service}]}).to_string(),
+    )
+    .unwrap();
+    env.write_park(&service, r#"{"claudeAiOauth":{"refreshToken":"r"}}"#);
+    let ctx = env.context();
+    drop(env);
+
+    let left = pitboard_core::testing::vault_read(&ctx, &service).map(|found| found.is_some());
+    let _ = pitboard_core::testing::vault_delete(&ctx, &service);
+    assert!(
+        matches!(left, Ok(false)),
+        "{service} outlived the test that parked it: {left:?}"
+    );
+}
+
 // `status` reads every tool's live login, and the suite once put the developer's Codex
 // account in a snapshot.
 #[test]
@@ -163,9 +208,14 @@ fn every_tool_is_pointed_at_a_scratch_home() {
         })
         .collect();
     let folders = os::account_folders(&env.root);
-    let homes = ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "PITBOARD_HOME"]
-        .into_iter()
-        .chain(folders.iter().map(|(name, _)| *name));
+    let homes = [
+        "CLAUDE_CONFIG_DIR",
+        "CODEX_HOME",
+        "PITBOARD_HOME",
+        "PITBOARD_TEST_CLAUDE_DESKTOP",
+    ]
+    .into_iter()
+    .chain(folders.iter().map(|(name, _)| *name));
     for (_, folder) in &folders {
         assert!(folder.is_dir(), "{} is not made", folder.display());
     }

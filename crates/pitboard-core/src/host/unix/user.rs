@@ -61,6 +61,11 @@ pub(crate) fn is_the_accounts_own_home(path: &std::path::Path) -> bool {
     passwd_home().is_some_and(|own| resolved(&own) == resolved(path))
 }
 
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn lies_in_the_accounts_own(path: &std::path::Path, below: &str) -> bool {
+    passwd_home().is_some_and(|home| crate::host::lies_in(path, &home.join(below)))
+}
+
 /// The one way a unit test reaches this account's real home.
 #[cfg(test)]
 pub(crate) mod testing {

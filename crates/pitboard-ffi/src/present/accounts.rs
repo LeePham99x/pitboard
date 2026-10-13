@@ -193,18 +193,23 @@ pub(crate) fn item(seen: &Seen, account: &Account) -> AccountItem {
     } else {
         None
     };
-    let stale_note = if problem.is_none() {
-        account.stale_explanation.clone()
-    } else {
-        None
+    // No usage is read for an app's login: the menu's line says so once.
+    let in_its_app = crate::model::state::in_its_app(&account.provider);
+    let stale_note = match account.read_at {
+        Some(read_at) if in_its_app && account.signed_in => Some(format!(
+            "Read {} ago, with {} closed",
+            said::span(seen.now - read_at),
+            seen.program_of(&account.provider)
+        )),
+        _ if problem.is_some() || account.stale.as_deref() == Some("no_usage") => None,
+        _ => account.stale_explanation.clone(),
     };
     let parked_note = if account.signed_in {
         None
     } else {
-        said::parked_life(
-            account.parked.as_ref().and_then(|p| p.refresh_expires_at),
-            seen.now,
-        )
+        let parked = account.parked.as_ref();
+        said::parked_life(parked.and_then(|p| p.refresh_expires_at), seen.now)
+            .or_else(|| said::session_life(parked.and_then(|p| p.session_expires_at), seen.now))
     };
     let pace = runs_out_first(account, seen.now).map(|(limit, in_seconds)| {
         let windows = account.usage.as_ref().map_or(&[][..], |u| &u.windows);
@@ -529,6 +534,9 @@ fn summary(seen: &Seen, account: &Account, switching: bool, needs_sign_in: bool)
         return "Needs signing in again".into();
     }
     let windows = account.usage.as_ref().map_or(&[][..], |u| &u.windows);
+    if windows.is_empty() && account.stale.as_deref() == Some("no_usage") {
+        return words::NO_USAGE_READ.into();
+    }
     if windows.is_empty() {
         return account.email.clone();
     }
@@ -971,5 +979,67 @@ mod tests {
         assert_eq!(resets(Some(noon)), "resetting now");
         assert_eq!(resets(Some(noon - 60)), "resetting now");
         assert_eq!(resets(None), "");
+    }
+
+    use crate::present::present_on;
+    use crate::present::testing::{Utc, claude_desktop, desktop_account, read, status};
+    use pitboard_core::host::Os;
+
+    const NOW: i64 = 1_800_000_000;
+
+    fn desktop_rows(accounts: Vec<Account>) -> Vec<AccountItem> {
+        let state = read(status(accounts, Vec::new()), vec![claude_desktop()]);
+        present_on(Os::MacOs, &state, NOW, &Utc)
+            .sections
+            .into_iter()
+            .flat_map(|section| section.accounts)
+            .collect()
+    }
+
+    #[test]
+    fn a_claude_desktop_row_says_no_usage_once_and_when_its_sign_in_may_lapse() {
+        let home = Account {
+            parked: Some(crate::Parked {
+                parked_at: NOW - 86_400,
+                access_expires_at: None,
+                refresh_expires_at: None,
+                session_expires_at: Some(NOW + 25 * 86_400 + 3_600),
+            }),
+            ..desktop_account("home", false)
+        };
+        let rows = desktop_rows(vec![desktop_account("work", true), home]);
+        assert_eq!(rows[0].summary, "No usage read");
+        assert_eq!(rows[1].summary, "No usage read");
+        assert_eq!(rows[1].stale_note, None, "said once, in the menu's line");
+        assert_eq!(
+            rows[1].parked_note.as_deref(),
+            Some("Its sign-in may lapse in 25 days")
+        );
+        let lapsed = Account {
+            parked: Some(crate::Parked {
+                parked_at: 0,
+                access_expires_at: None,
+                refresh_expires_at: None,
+                session_expires_at: Some(NOW - 1),
+            }),
+            ..desktop_account("home", false)
+        };
+        assert_eq!(
+            desktop_rows(vec![lapsed])[0].parked_note.as_deref(),
+            Some("Its sign-in may have lapsed")
+        );
+    }
+
+    #[test]
+    fn a_claude_desktop_row_in_use_says_when_it_was_read() {
+        let work = Account {
+            read_at: Some(NOW - 2 * 3_600),
+            ..desktop_account("work", true)
+        };
+        let rows = desktop_rows(vec![work]);
+        assert_eq!(
+            rows[0].stale_note.as_deref(),
+            Some("Read 2h 00m ago, with Claude closed")
+        );
     }
 }

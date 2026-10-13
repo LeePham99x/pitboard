@@ -253,6 +253,7 @@ mod tests {
             now: 0,
             accounts,
             warnings: Vec::new(),
+            awaiting: Vec::new(),
         }
     }
 

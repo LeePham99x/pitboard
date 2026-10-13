@@ -1,7 +1,7 @@
-//! The engine behind Pitboard: parking and restoring a person's own Claude Code and Codex
-//! logins, and reading what each has left. It serves Pitboard's own front ends, the command
-//! line and the native apps, which reach it through [`service::Pitboard`] with an explicit
-//! [`context::Context`].
+//! The engine behind Pitboard: parking and restoring a person's own Claude Code, Codex and
+//! Claude Desktop logins, and reading what each Claude Code and Codex account has left. It
+//! serves Pitboard's own front ends, the command line and the native apps, which reach it
+//! through [`service::Pitboard`] with an explicit [`context::Context`].
 //!
 //! # What is supported
 //!
@@ -19,8 +19,7 @@
 //! later release, so those structs are `#[non_exhaustive]` too.
 //!
 //! What is deliberately not reachable: nothing outside this crate may write Pitboard's index.
-//! Every change goes through [`switch`], which records what it is about to do first and
-//! finishes an interrupted one before starting another.
+//! Every change goes through [`switch`], which records what it is about to do first.
 
 // Pitboard for Windows is being built, and reaches people only once the command line, the
 // app, their installers and their docs are done. Until then a Windows build of a release
@@ -53,6 +52,10 @@ pub mod audit;
 pub mod autoswitch;
 pub mod budget;
 pub mod context;
+// The Claude Desktop the tests play, reached as `testing::desktop`.
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
+pub mod desktop_testing;
 pub mod doctor;
 pub mod duty;
 pub mod error;
@@ -98,6 +101,7 @@ pub(crate) mod store;
 #[doc(hidden)]
 pub mod testing {
     pub use crate::api::scripted::{Answer, Asked, ScriptedApi, Trouble};
+    pub use crate::desktop_testing as desktop;
     /// What a test or a fixture does to a file's access, or to make a link, which only this
     /// system's face says how to do: the integration tests and the apps' fixtures do it here,
     /// as the core's own tests do.
@@ -120,6 +124,11 @@ pub mod testing {
         crate::context::variables()
     }
 
+    // The one guard every test's folder is refused by.
+    pub fn lies_in(path: &std::path::Path, place: &std::path::Path) -> bool {
+        crate::host::lies_in(path, place)
+    }
+
     pub fn real_login_places(
         started_in: &crate::context::Context,
     ) -> Result<Vec<std::path::PathBuf>, String> {
@@ -136,6 +145,9 @@ pub mod testing {
                     crate::provider::claude::paths::config_file(ctx),
                     crate::provider::codex::paths::home(ctx),
                     ctx.pitboard_home.clone(),
+                    ctx.home.join("Library/Application Support/Claude"),
+                    ctx.home.join("Library/Application Support/Claude-3p"),
+                    std::path::PathBuf::from("/Applications/Claude.app"),
                 ]
             })
             .filter(|place| place.is_absolute())
@@ -168,7 +180,15 @@ pub mod testing {
         which: crate::provider::ProviderId,
         document: &str,
     ) -> crate::error::Result<crate::switch::SignIn> {
+        use crate::provider::LoginKind;
         let document = serde_json::from_str(document).expect("a login a test wrote as JSON");
-        crate::switch::planted(ctx, crate::service::gate(ctx)?, which, document)
+        match crate::provider::of(which) {
+            LoginKind::Document(tool) => {
+                crate::switch::planted(ctx, crate::service::gate(ctx)?, tool, document)
+            }
+            LoginKind::Folder(_) => Err(crate::error::Error::Usage(
+                "a Claude Desktop sign-in is played by testing::desktop".into(),
+            )),
+        }
     }
 }

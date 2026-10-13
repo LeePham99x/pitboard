@@ -1,7 +1,7 @@
 ---
 title: "Files and environment variables"
 sidebarTitle: "Files and variables"
-description: "Where Pitboard keeps its files, which Claude Code and Codex files it reads, and the environment variables it reads."
+description: "Where Pitboard keeps its files, which of each tool's files it reads, and the environment variables it reads."
 ---
 
 Paths here are defaults. [Environment variables](/reference/files#environment-variables) can move them.
@@ -14,10 +14,10 @@ Pitboard creates each directory at mode 0700 and each file at 0600. A directory 
 
 | File | Holds | Written or taken by |
 | --- | --- | --- |
-| `state.json` | The enrolled accounts with their email addresses, ids and plans, their parked logins' names and expiry, whose login each tool has stored, and a renewal of Claude Code's login not saved yet | Every change and renewal, and a read that finds a tool's stored login changed or an account's plan different from the one recorded |
+| `state.json` | The enrolled accounts with their email addresses, ids and plans, their parked logins' names and expiry, whose login each tool has stored, a renewal of Claude Code's login not saved yet, a Claude Desktop move under way, a sign-in inside Claude left halfway, and which folders in `parks/` are set aside | Every change and renewal, and a read that finds a tool's stored login changed or an account's plan different from the one recorded |
 | `state.lock` | The lock that lets one change run at a time | As `state.json`, and every automatic switch |
-| `journal.json` | The record of a switch until it is done. One left behind marks an [interrupted switch](/concepts/switching#interrupted-switches). | A switch |
-| `pending` | Names of parked logins about to be written, one per line, which the next change resolves. Absent when empty. | Anything that parks a login |
+| `journal.json` | The record of a Claude Code or Codex switch until it is done. One left behind marks an [interrupted switch](/concepts/switching#interrupted-switches). | A switch |
+| `pending` | Names of parked logins about to be written, one per line, which the next change resolves. A line for a folder in `parks/` starts with `folder `. Absent when empty. | Anything that parks a login |
 | `autoswitch.json` | What the automatic switch tried and said at each limit, until a minute after it resets, or 7 days with no reset known. When it last failed to identify Claude Code's login. | The automatic switch |
 | `signin.lock` | The lock that allows one sign-in at a time | A sign-in |
 | `warm.json` | The accounts turned on for warm-ups, by id, and the hours they are made in | `pitboard warm on`, `off` and `range`, and the app's **Warm up limits** |
@@ -25,7 +25,8 @@ Pitboard creates each directory at mode 0700 and each file at 0600. A directory 
 | `warm.lock` | The lock that allows one warm-up at a time | A warm-up |
 | `warm/` | Where Claude Code runs a warm-up, in `warm/claude/`, with a home and config of its own made for the run and removed after it. | A warm-up |
 | `signin/` | Where a tool signs in, apart from the login in use. Removed when the sign-in ends, or by the next one. | A sign-in |
-| `vault/` | Linux: the parked logins, one file each | Anything that parks or renews a login |
+| `vault/` | Linux: the parked logins of Claude Code and Codex, one file each | Anything that parks or renews a login |
+| `parks/` | macOS: the parked logins of Claude Desktop and the folders set aside, one folder each, as [Folders in parks](/reference/files#folders-in-parks) lists | A change to a Claude Desktop account, `repair` and `adopt` |
 | `usage.json` | The newest usage reading of each account | Reading usage, and the status line |
 | `usage.lock` | The lock around `usage.json` and `sessions.json` | As `usage.json` |
 | `asking.json` | When Pitboard last asked Anthropic or OpenAI about each account, and any wait before it asks again | Reading usage |
@@ -35,7 +36,7 @@ Pitboard creates each directory at mode 0700 and each file at 0600. A directory 
 | `app.json` | The app's preferences, listed in [The app](/reference/files#the-app) | The app |
 | `told.json` | Each run-out the app has notified you of, by account and limit, with its reset | The app |
 
-Only `vault/` and `signin/` can hold a login. `backups/` holds your email address, account ids and the path of each project Claude Code has opened.
+Only `vault/`, `signin/` and `parks/` can hold a login. `backups/` holds your email address, account ids and the path of each project Claude Code has opened.
 
 Pitboard refuses a directory that a sync client copies to other machines, with `state_on_synced_drive`. It reads the path with links resolved:
 
@@ -49,18 +50,45 @@ Your home's own folders count, so `/home/sync/.pitboard` is refused.
 
 ## Parked logins
 
-On macOS, each parked login is an item in your default keychain, named `pitboard-park-<account id>-<time>`. Its keychain account is the one Claude Code's own item uses, from `USER`.
+| Tool | System | A parked login is | Named |
+| --- | --- | --- | --- |
+| Claude Code, Codex | macOS | An item in your default keychain | `pitboard-park-<account id>-<time>` |
+| Claude Code, Codex | Linux | A file in `~/.pitboard/vault/` | `pitboard-park-<account id>-<time>.json` |
+| Claude Desktop | macOS | A folder in `~/.pitboard/parks/`, as [Folders in parks](/reference/files#folders-in-parks) lists | `pitboard-park-<account id>-<time>` |
 
-On Linux, each is a file in `~/.pitboard/vault/`, named `pitboard-park-<account id>-<time>.json`.
+A keychain item's account is the one Claude Code's own item uses, from `USER`.
 
-When Pitboard renews Claude Code's login, a copy of the renewed login waits beside them as `pitboard-park-renewing-<time>` until it is saved where Claude Code keeps it.
+When Pitboard renews Claude Code's login, a copy of the renewed login waits beside the parked logins as `pitboard-park-renewing-<time>` until it is saved where Claude Code keeps it.
 
-| Part | What it is |
+`<account id>` is the id Pitboard gives the account at enrolment, which never changes:
+
+| Tool | `<account id>` |
 | --- | --- |
-| `<account id>` | The id Pitboard gives the account at enrolment, which never changes. Claude Code: the Anthropic account UUID and organisation UUID joined by `_`, or the account UUID alone for an older account. Codex: built from the account's ChatGPT ids. |
-| `<time>` | When the login was parked or last renewed, in milliseconds since 1 January 1970 |
+| Claude Code | The Anthropic account UUID and organisation UUID joined by `_`, or the account UUID alone for an older account |
+| Codex | Built from the account's ChatGPT ids |
+| Claude Desktop | `desktop_` and the account UUID Claude's settings named |
+
+`<time>` is when the login was parked or last renewed, in milliseconds since 1 January 1970.
 
 [Where parked logins are kept](/security#where-parked-logins-are-kept) says who can read them.
+
+### Folders in parks
+
+Each folder in `~/.pitboard/parks/` is a Claude Desktop parked login or a folder set aside. `state.json` records which folders are set aside.
+
+| Folder | Named |
+| --- | --- |
+| A parked login | `pitboard-park-<account id>-<time>` |
+| A parked login set aside | Its name as a parked login |
+| A folder made for what a move set aside, such as what was in Claude's way | `pitboard-aside-<time>` |
+
+Each folder holds:
+
+| Path in the folder | What it is |
+| --- | --- |
+| `manifest.json` | The tool, the account, the account Claude's settings named, the session cookie's fingerprint and expiry, when it was parked, a hash of this Mac's identifier, the items, a SHA-256 digest of each key, and the items a give-up left in the data folder. Written before the first rename. |
+| `keys.json` | The three keys of `config.json`, as Claude wrote them. |
+| `items/` | The login's items, under their names in Claude's data folder. |
 
 ## Claude Code files
 
@@ -108,6 +136,35 @@ Pitboard does not read three places Codex also reads:
 - A profile's `<name>.config.toml`, read only with `--profile`, which `codex login` refuses.
 - An enterprise's cloud configuration, which `codex login` does not load. Whether a running Codex follows its store is not known.
 
+## Claude Desktop files
+
+Claude's data folder is `~/Library/Application Support/Claude`. As read in Claude 2.7032.0, that `~` is your account's own home, whatever `HOME` says. Where `HOME` names another folder, Pitboard leaves Claude Desktop alone.
+
+As measured in Claude 2.19675.0, eight items and three keys of `config.json` hold an account. Moving them moves it whole, both ways. Pitboard moves them only while Claude is closed: the items by renaming, the keys by rewriting `config.json`. Any item may be missing.
+
+| Path in the data folder | What Pitboard does with it |
+| --- | --- |
+| `Cookies` | Moves it with the account. A change reads the name, expiry and stored value of claude.ai's session cookies, and keeps an 8-byte fingerprint of the value. Pitboard decrypts nothing. |
+| `Cookies-journal`, `Local Storage`, `Session Storage`, `WebStorage`, `File System` | Moves them with the account. |
+| `IndexedDB/https_claude.ai_0.indexeddb.leveldb`, `IndexedDB/https_claude.ai_0.indexeddb.blob` | Moves them with the account. |
+| `config.json` | Claude's settings. A read takes the account they name, `lastKnownAccountUuid`, and whether both token caches are emptied. A change moves the keys `oauth:tokenCache`, `oauth:tokenCacheV2` and `lastKnownAccountUuid` with the account, and writes the other keys back as they were. |
+| `config.json.journal` | A write of `config.json` that Claude has not finished. As read in 2.7032.0, Pitboard reads it as the settings where the hashes on its first line say it is valid. It ignores it where they say it is stale. Pitboard never deletes it. |
+| Every name at the folder's first level | Read by each change before it moves anything, and by `pitboard doctor`. A name Pitboard has not read stops a move: see [The data folder holds an entry Pitboard has not read](/troubleshooting#the-data-folder-holds-an-entry-pitboard-has-not-read). |
+
+Everything else stays in the data folder, such as `claude-code-sessions`, `local-agent-mode-sessions`, `Preferences` and the caches. As read in 2.7032.0, the first two keep each account's sessions in a folder named for the account.
+
+During a change, Pitboard holds an advisory lock on the data folder itself. It deletes nothing of Claude's there. For `pitboard doctor`, it reads Claude's build from `/Applications/Claude.app`.
+
+Pitboard reads the list of processes to tell whether Claude is open:
+
+| Program | Counts as Claude open |
+| --- | --- |
+| Inside an app whose bundle identifier is `com.anthropic.claudefordesktop`, whatever the app is named | Yes |
+| Inside the data folder | Yes |
+| Inside an app named `Claude.app` whose identifier Pitboard cannot read | Yes |
+| `Contents/MacOS/Claude`, or inside `Contents/Frameworks/Claude Helper*.app`, in an app whose identifier Pitboard cannot read | Yes |
+| A `chrome-native-host` that Chrome started for Claude's browser extension | No |
+
 ## Renewal schedule
 
 `pitboard schedule install`, or turning on **Renew parked logins daily** in **Settings** > **Renewal**, writes these files. `pitboard schedule uninstall`, or turning it off, removes them. So does `pitboard uninstall` while Pitboard's directory is `~/.pitboard`.
@@ -146,7 +203,7 @@ It keeps these in `app.json` in Pitboard's directory, so they follow `PITBOARD_H
 
 | Key | Holds |
 | --- | --- |
-| `second_account_declined` | The tools, `claude` or `codex`, whose second-account tip you dismissed with **Not Now** |
+| `second_account_declined` | The tools, `claude`, `codex` or `desktop`, whose second-account tip you dismissed with **Not Now** |
 | `has_been_seen` | Whether the app has opened its window at first launch |
 | `auto_switch` | `true` while **Switch Claude Code automatically** is on. Left out while it is off. |
 | `auto_switch_at` | The share it switches at, a whole percentage. 95 while left out. A value outside 50 to 99 reads as the nearer end. |
@@ -176,7 +233,7 @@ A variable that names a folder must hold a full path: [`home_not_absolute`](/ref
 
 | Variable | Read by | Effect |
 | --- | --- | --- |
-| `HOME` | Both | Your home, the `~` in every path here. Unset, your account's home. |
+| `HOME` | Both | Your home, the `~` in every path here. Unset, your account's home. Where it names another folder than your account's own, Pitboard leaves Claude Desktop alone: see [Claude Desktop files](/reference/files#claude-desktop-files). |
 | `PITBOARD_HOME` | Both | Pitboard's directory, in place of `~/.pitboard`. Daily renewal renews `~/.pitboard` whatever this says. |
 | `PITBOARD_NO_ARGV` | Both | `1`: on macOS, Pitboard never writes a login on `security`'s argument line. See [Large logins on macOS](/security#large-logins-on-macos). |
 | `PITBOARD_API_BASE` | Both | For Pitboard's tests. An `http` URL on a loopback IP address gets Pitboard's requests. |

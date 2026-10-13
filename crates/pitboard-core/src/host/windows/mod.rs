@@ -23,10 +23,10 @@ pub(crate) mod proc;
 pub(crate) mod user;
 
 use super::administered::Administered;
-use super::{Elevation, Floor, Host, LoginPath, Os, Process, Scheduler};
+use super::{Elevation, Floor, Host, Jar, JarError, Listed, LoginPath, Os, Process, Scheduler};
 use crate::context::{Context, Environment};
 use crate::store::{Backend, PlainFile, RawStore, Unbuilt};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 pub(super) const OS: Os = Os::Windows;
@@ -77,6 +77,23 @@ impl Host for Windows {
         None
     }
 
+    // Nothing asks: Claude Desktop's data folder is refused here first.
+    fn listing(&self) -> Result<Vec<Listed>, String> {
+        Err("this system's process list is not read for Claude Desktop".into())
+    }
+
+    fn cookies(&self, _jar: &Path, _hosts: &[&str], _names: &[&str]) -> Result<Jar, JarError> {
+        Err(JarError::Unsupported)
+    }
+
+    fn app_version(&self, _bundle: &Path) -> Option<String> {
+        None
+    }
+
+    fn app_id(&self, _bundle: &Path) -> Option<String> {
+        None
+    }
+
     /// Task Scheduler is written for by W25.
     fn scheduler(&self) -> Option<&dyn Scheduler> {
         None
@@ -95,6 +112,11 @@ impl Host for Windows {
     fn managed_preference(&self, _domain: &str, _key: &str) -> Administered {
         Administered::Unset
     }
+}
+
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn write_jar(_path: &Path, _cookies: &[super::Cookie]) -> std::io::Result<()> {
+    Err(std::io::ErrorKind::Unsupported.into())
 }
 
 pub(super) fn host() -> Arc<dyn Host> {
@@ -142,7 +164,7 @@ mod tests {
     fn claude_codes_chain_is_unreadable_and_never_the_file() {
         let ctx = ctx();
         let why = "Pitboard does not switch Claude Code on Windows yet";
-        let live = crate::provider::of(ProviderId::Claude)
+        let live = crate::provider::document(ProviderId::Claude)
             .live(&ctx)
             .expect("a chain");
         assert_eq!(
@@ -168,7 +190,7 @@ mod tests {
     #[test]
     fn codexs_store_is_refused_until_its_configuration_is_read() {
         let ctx = ctx();
-        match crate::provider::of(ProviderId::Codex).live(&ctx) {
+        match crate::provider::document(ProviderId::Codex).live(&ctx) {
             Err(crate::provider::ProviderError::Unsupported {
                 provider: ProviderId::Codex,
                 reason,
@@ -206,6 +228,16 @@ mod tests {
         for tool in ["claude", "codex"] {
             assert_eq!(ctx.host().processes(tool), None, "{tool}");
         }
+        assert!(host().listing().is_err());
+        assert!(matches!(
+            host().cookies(
+                std::path::Path::new("C:/x/Cookies"),
+                &["claude.ai"],
+                &["sessionKey"]
+            ),
+            Err(JarError::Unsupported)
+        ));
+        assert_eq!(host().app_version(std::path::Path::new("C:/x")), None);
         assert!(super::proc::may_be_running(std::process::id()));
         assert!(super::proc::may_be_running(u32::MAX));
     }
@@ -253,6 +285,12 @@ mod tests {
         unsupported(fs::open_private_lock(permit, &dir.join("c")).map(drop));
         unsupported(fs::create_dir_all(permit, &dir));
         unsupported(fs::create_dir(permit, &dir));
+        unsupported(fs::private_dir(&dir).map(drop));
+        unsupported(fs::lock_dir(&dir).map(drop));
+        unsupported(fs::move_new(permit, &dir, &dir.join("x")));
+        unsupported(fs::flush_dir(&dir));
+        unsupported(fs::same_volume(&dir, &dir).map(drop));
+        unsupported(super::write_jar(&dir.join("Cookies"), &[]));
         assert!(!dir.exists(), "nothing was made");
         assert_eq!(fs::access(&std::env::temp_dir()), None);
         assert!(!proc::can_run(&std::env::current_exe().expect("this test")));

@@ -9,9 +9,11 @@
 //! what a switch, an enrolment or a renewal came to, doctor's checks, and why something
 //! failed.
 
+use crate::model::state::in_its_app;
+use crate::present::words::{in_app_given_up, in_app_refusal, in_app_warning};
 use crate::{
-    Abandoned, Account, FoundCommandLine, Level, Limit, Parked, Schedule, Source, Status, Tool,
-    Usage, Warning, found_command_line, tool,
+    Abandoned, Account, Awaiting, FoundCommandLine, Level, Limit, Parked, Schedule, Source, Status,
+    Tool, Usage, Warning, found_command_line, tool,
 };
 use pitboard_core::app::AppContext;
 use pitboard_core::autoswitch::{Auto, Blind, Look, Skip, Threshold};
@@ -45,7 +47,7 @@ impl From<pitboard_core::error::Error> for PitboardError {
     fn from(error: pitboard_core::error::Error) -> Self {
         PitboardError::Failed {
             code: error.code().to_string(),
-            message: error.to_string(),
+            message: in_app_refusal(&error).unwrap_or_else(|| error.to_string()),
             warnings: Vec::new(),
         }
     }
@@ -55,7 +57,7 @@ impl From<service::Failed> for PitboardError {
     fn from(failed: service::Failed) -> Self {
         PitboardError::Failed {
             code: failed.error.code().to_string(),
-            message: failed.error.to_string(),
+            message: in_app_refusal(&failed.error).unwrap_or_else(|| failed.error.to_string()),
             warnings: warnings(&failed.warnings),
         }
     }
@@ -66,7 +68,8 @@ fn warnings(found: &[service::Warning]) -> Vec<Warning> {
         .iter()
         .map(|w| Warning {
             code: w.code().to_string(),
-            message: w.to_string(),
+            message: in_app_warning(w).unwrap_or_else(|| w.to_string()),
+            provider: w.tool().map(|tool| tool.code().into()),
             account: match w {
                 service::Warning::LoginReplaced { tool, id, .. } => Some(account_id(*tool, id)),
                 _ => None,
@@ -93,6 +96,14 @@ fn account_id(tool: ProviderId, id: &str) -> String {
     }
 }
 
+// What giving up came to: the switch, each move given up in the app's words, and warnings.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub(crate) struct GaveUp {
+    pub(crate) switch: Option<Abandoned>,
+    pub(crate) moves: Vec<String>,
+    pub(crate) warnings: Vec<Warning>,
+}
+
 /// One change Pitboard made, as `pitboard log` shows them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Change {
@@ -111,12 +122,41 @@ pub(crate) struct Change {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Adoption {
     /// On its own, within this many seconds.
-    Follows { within_seconds: u32 },
+    Follows {
+        within_seconds: u32,
+    },
     /// On its own, when its login is next renewed, because the file at `path` sits behind
     /// the store the switch wrote.
-    Renewal { path: String },
+    Renewal {
+        path: String,
+    },
     /// Never: `program` has to be quit and started again.
-    Restart { program: String },
+    Restart {
+        program: String,
+    },
+    // The app `name` was closed for the switch and holds the login from its next opening.
+    NextOpen {
+        name: String,
+    },
+}
+
+impl Adoption {
+    // What becomes of what is already running, as a sentence.
+    pub(crate) fn follows(&self) -> String {
+        match self {
+            Adoption::Follows { within_seconds } => {
+                format!("Sessions already running follow within {within_seconds} seconds.")
+            }
+            Adoption::Renewal { path } => format!(
+                "Sessions already running {}: {path} is there.",
+                pitboard_core::words::kept_until_renewed()
+            ),
+            Adoption::Restart { program } => {
+                format!("Restart any running `{program}` for this to take effect.")
+            }
+            Adoption::NextOpen { name } => format!("{name} opens signed in to it."),
+        }
+    }
 }
 
 /// What makes one kind of process take a switch.
@@ -175,6 +215,12 @@ pub(crate) enum Switch {
         /// Which tool's login moved.
         provider: String,
         from: String,
+        to: String,
+        adoption: Adoption,
+    },
+    // Put in use where the tool held nobody's login: no account was parked for it.
+    Installed {
+        provider: String,
         to: String,
         adoption: Adoption,
     },
@@ -322,10 +368,12 @@ fn account(row: status::Row, now: i64) -> Account {
         // In the row's own tool's words: a Codex row is not about Anthropic.
         stale_explanation: row.explanation().map(str::to_owned),
         plan: row.plan,
+        read_at: row.read_at,
         parked: row.parked.map(|p| Parked {
             parked_at: p.parked_at,
             access_expires_at: p.access_expires_at,
             refresh_expires_at: p.refresh_expires_at,
+            session_expires_at: p.session_expires_at,
         }),
         usage: row.usage.map(|u| Usage {
             source: match u.source {
@@ -359,6 +407,18 @@ fn status_of(done: service::Done<status::Report>) -> Status {
     let now = done.value.now;
     Status {
         now,
+        awaiting: done
+            .value
+            .awaiting
+            .into_iter()
+            .map(|awaited| Awaiting {
+                provider: awaited.provider.code().into(),
+                put_back: awaited.put_back.qualified(),
+                label: awaited.label.label,
+                since: awaited.since,
+                again: awaited.again,
+            })
+            .collect(),
         accounts: done
             .value
             .rows
@@ -381,6 +441,9 @@ fn adoption_of(adoption: pitboard_core::provider::Adoption) -> Adoption {
         pitboard_core::provider::Adoption::RestartRequired { program, .. } => Adoption::Restart {
             program: program.into(),
         },
+        pitboard_core::provider::Adoption::NextOpen { app } => {
+            Adoption::NextOpen { name: app.into() }
+        }
     }
 }
 
@@ -445,12 +508,12 @@ fn changed<T, R>(
     Ok(make(done.value, warnings(&done.warnings)))
 }
 
-/// A sign-in in progress: the tool's own, running with its output piped here because an
-/// app has no terminal to hand it. Both tools open the browser themselves and finish
-/// through a loopback callback. Claude Code reads stdin only for a fallback code to paste;
-/// Codex prints the address to open when its browser cannot, and reads nothing.
 pub(crate) struct SignInSession {
     watched: Mutex<Option<switch::WatchedSignIn>>,
+    // where the core's wait for an app to quit signed in is, apart from `watched` as `said` is
+    steps: switch::Steps,
+    // the account the core parked for it, as `SwitchTo` takes it
+    pub(crate) put_back: Option<String>,
     /// Apart from `watched`: reading waits on the tool, and Codex says nothing between its
     /// address and the browser coming back, so a read that held `watched` kept a cancel or
     /// a paste waiting until then.
@@ -467,6 +530,11 @@ impl SignInSession {
     /// Blocks until the tool says something or stops.
     pub(crate) fn next_line(&self) -> Option<String> {
         self.said.next()
+    }
+
+    // Where the wait for an app to quit signed in is; None for a program's sign-in.
+    pub(crate) fn step(&self) -> Option<switch::WaitStep> {
+        self.steps.now()
     }
 
     /// Types back the code the browser showed after signing in.
@@ -790,9 +858,7 @@ impl AppCore {
         let Ok(made) = self.readable_asking_again() else {
             return Vec::new();
         };
-        ProviderId::ALL
-            .iter()
-            .copied()
+        crate::listed(pitboard_core::host::OS)
             .filter(|tool| made.found.contains(tool))
             .map(tool)
             .collect()
@@ -822,6 +888,15 @@ impl AppCore {
                     } => Switch::Switched {
                         provider: provider.code().into(),
                         from,
+                        to,
+                        adoption: adoption_of(adoption),
+                    },
+                    switch::Outcome::Installed {
+                        provider,
+                        to,
+                        adoption,
+                    } => Switch::Installed {
+                        provider: provider.code().into(),
                         to,
                         adoption: adoption_of(adoption),
                     },
@@ -927,6 +1002,8 @@ impl AppCore {
         let watched = made.core.sign_in_watched(&label)?;
         Ok(Arc::new(SignInSession {
             said: watched.said(),
+            steps: watched.steps(),
+            put_back: watched.put_back().map(|key| key.qualified()),
             watched: Mutex::new(Some(watched)),
             label,
             made,
@@ -977,17 +1054,41 @@ impl AppCore {
         Ok(status_of(self.readable()?.core.status_offline()?))
     }
 
-    /// Give up on an interrupted switch that cannot be finished, keeping every login it
-    /// names. The way out when recovery cannot reach Anthropic, which until now sent the
-    /// person to a terminal.
-    ///
-    /// `None` when there was no interrupted switch.
-    pub(crate) fn abandon_recovery(&self) -> Result<Option<Abandoned>, PitboardError> {
-        Ok(self.core().core.abandon_recovery()?.map(|a| Abandoned {
-            from: a.from,
-            to: a.to,
-            logins_kept: u32::try_from(a.kept).unwrap_or(u32::MAX),
-        }))
+    pub(crate) fn abandon_recovery(&self) -> Result<GaveUp, PitboardError> {
+        let gave_up = self.core().core.abandon_recovery()?;
+        Ok(GaveUp {
+            switch: gave_up.switch.map(|a| Abandoned {
+                from: a.from,
+                to: a.to,
+                logins_kept: u32::try_from(a.kept).unwrap_or(u32::MAX),
+            }),
+            moves: gave_up.moves.iter().map(in_app_given_up).collect(),
+            warnings: warnings(&gave_up.warnings),
+        })
+    }
+
+    // An app whose login is its files stays closed on an index nobody can read.
+    pub(crate) fn whole(&self, provider: &str) -> bool {
+        let Some(which) = ProviderId::parse(provider).filter(|_| in_its_app(provider)) else {
+            return true;
+        };
+        self.readable_asking_again()
+            .is_ok_and(|made| made.core.whole(which))
+    }
+
+    pub(crate) fn moving(&self, provider: &str) -> bool {
+        let Some(which) = ProviderId::parse(provider).filter(|_| in_its_app(provider)) else {
+            return false;
+        };
+        self.readable_asking_again()
+            .map_or(true, |made| made.core.moving(which))
+    }
+
+    // Only what quitting that app puts right: a `codex` in a terminal is not waited for.
+    pub(crate) fn holds_app(&self, provider: &str, app_id: &str) -> bool {
+        self.holding(provider.to_owned()).iter().any(
+            |held| matches!(&held.remedy, Remedy::ReopenApp { app_id: app, .. } if app == app_id),
+        )
     }
 
     /// What Pitboard has changed, newest last: nothing where nothing may be read here, as
@@ -1319,6 +1420,12 @@ mod tests {
             assert!(core.log(500).is_empty());
             assert_eq!(core.schedule(), None, "not a schedule that is absent");
             assert!(core.holding("codex".into()).is_empty());
+            assert!(
+                !core.whole("desktop") && core.moving("desktop"),
+                "{variable}"
+            );
+            assert!(core.whole("codex") && !core.moving("codex"));
+            assert!(core.whole("nobody") && !core.moving("nobody"));
             assert!(installed(&core).is_empty(), "{variable}");
             assert_eq!(core.command_line(), FoundCommandLine::Nowhere);
             let checks = core.doctor().expect("doctor's own to say");
@@ -1371,8 +1478,19 @@ mod tests {
             },
             ASK_AGAIN_AFTER,
         ));
-        assert_eq!(tools().len(), 2, "listing the tools asks nothing");
+        let listed = match pitboard_core::host::OS {
+            pitboard_core::host::Os::MacOs => 3,
+            pitboard_core::host::Os::Linux | pitboard_core::host::Os::Windows => 2,
+        };
+        assert_eq!(tools().len(), listed, "listing the tools asks nothing");
         assert_eq!(asks.count(), 0, "and nor does making the core");
+        assert!(core.whole("codex") && !core.moving("codex"));
+        assert!(core.whole("nobody") && !core.moving("nobody"));
+        assert_eq!(
+            asks.count(),
+            0,
+            "nor opening an app whose login is a document"
+        );
         let calls: Vec<_> = (0..3)
             .map(|which| {
                 let core = core.clone();

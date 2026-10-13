@@ -14,7 +14,7 @@ use crate::context::Context;
 use crate::duty::ledger::Tries;
 use crate::error::Error;
 use crate::provider::ProviderId;
-use crate::provider::claude;
+use crate::provider::{self, claude};
 use crate::service::Permit;
 use crate::service::Warning;
 use crate::state::Key;
@@ -149,7 +149,7 @@ pub(crate) fn warm_up(settled: Settled, target: Target) -> Result<(WarmUp, Vec<W
             let _ = status::ask_one(
                 ctx,
                 permit,
-                ProviderId::Claude,
+                provider::claude_code(),
                 &account.id,
                 &handed.login,
                 handed.signed_in,
@@ -201,19 +201,22 @@ fn hand_over(
                 .access_expires_at
                 .is_some_and(|at| at <= now + AHEAD_SECONDS)
             {
-                held = renew::renew_one(ctx, permit, state, key, &held)?.ok_or_else(|| {
-                    Error::WarmUpFailed {
-                        label: label.clone(),
-                        why: Failure::Unreachable,
-                    }
+                held = renew::renew_one(ctx, permit, state, provider::claude_code(), key, &held)?
+                    .ok_or_else(|| Error::WarmUpFailed {
+                    label: label.clone(),
+                    why: Failure::Unreachable,
                 })?;
             }
-            (park::load(ctx, key, &held)?, false, Vec::new())
+            (
+                park::load(ctx, provider::claude_code(), key, &held)?,
+                false,
+                Vec::new(),
+            )
         }
         None => {
             let (live, found) =
-                identify::fresh(ctx, permit, state, ProviderId::Claude, AHEAD_SECONDS)?;
-            identify::keep(ctx, permit, state, ProviderId::Claude, found)?;
+                identify::fresh(ctx, permit, state, provider::claude_code(), AHEAD_SECONDS)?;
+            identify::keep(ctx, permit, state, provider::claude_code(), found)?;
             match live {
                 identify::Live::Login(login) if account.owned_by(&login.owner) => {
                     let warnings = login.lock_warning(ProviderId::Claude).into_iter().collect();
@@ -256,7 +259,8 @@ fn started(
 ) -> std::result::Result<Option<i64>, Failure> {
     for pause in [0, ASKED_AGAIN_AFTER] {
         ctx.clock.pause(pause);
-        let Some(reading) = status::ask_one(ctx, permit, ProviderId::Claude, id, login, signed_in)
+        let Some(reading) =
+            status::ask_one(ctx, permit, provider::claude_code(), id, login, signed_in)
         else {
             return Ok(None);
         };
@@ -457,6 +461,42 @@ mod tests {
         pitboard
             .warm_turn("codex/main", false)
             .expect("turning one off is always fine");
+    }
+
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
+    fn a_claude_desktop_account_is_not_warmed_up_and_says_why() {
+        let m = machine("warm-desktop");
+        let mut state = state::load(&m.ctx).expect("state");
+        state.accounts.push(state::Account {
+            label: "work".into(),
+            id: "desktop_work".into(),
+            account_uuid: "work".into(),
+            email: String::new(),
+            parked: None,
+            last_used_at: None,
+            replaced_at: None,
+            plan: None,
+            detail: state::Detail::Desktop {},
+        });
+        state::save(&m.ctx, Permit::for_a_test(), &state).expect("saved");
+        let pitboard = Pitboard::new(m.ctx.clone());
+        let turned = pitboard
+            .warm_turn("desktop/work", true)
+            .expect_err("refused");
+        let now = pitboard.warm_now("desktop/work").expect_err("refused");
+        for refused in [turned.error, now.error] {
+            assert_eq!(refused.code(), "warm_up_unsupported");
+            assert_eq!(
+                refused.to_string(),
+                "`desktop/work` is a Claude Desktop account, and Pitboard sends no request for \
+                 one, so it warms up none."
+            );
+        }
+        assert!(!warm::path(&m.ctx).exists(), "nothing written");
     }
 
     #[test]

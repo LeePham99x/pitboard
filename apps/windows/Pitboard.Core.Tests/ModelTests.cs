@@ -89,10 +89,10 @@ public sealed class ModelTests
                 Source.Live, At,
                 [new Limit("session", 18_000, null, 42.0, At + 3_600, null, true)],
                 ListsEveryLimit: true),
-            Stale: null, StaleExplanation: null, Plan: null);
+            Stale: null, StaleExplanation: null, Plan: null, ReadAt: null);
         return new Snapshot(
             Revision: revision, Now: At, Reading: false, UpdatedAt: At,
-            Status: new Status(At, [work], []), Warnings: [], ReadFailure: null, Stuck: false,
+            Status: new Status(At, [work], [], []), Warnings: [], ReadFailure: null, Stuck: false,
             Installed: [new Tool(Code: "claude", Name: "Claude Code", Program: "claude", Service: "Anthropic")],
             SwitchUnderWay: null, QuitQuestion: null,
             LastSwitches: [], Abandoned: null, Failure: null,
@@ -124,7 +124,9 @@ public sealed class ModelTests
         Schedule: new ScheduleShown(
             Schedule: null, On: false, Changing: false, Enabled: true, Runs: null, ScheduledIn: null, Note: null,
             Failed: null),
-        Renewal: new RenewalShown(Renewing: false, Note: "Renew every parked login that is due."),
+        Renewal: new RenewalShown(
+            Renewing: false, Note: "Renew every parked login that is due.",
+            About: "A parked login is renewed whenever Pitboard runs, and otherwise not."),
         Checks: new ChecksShown(Lines: [], Summary: null, Checking: false, Checked: null, Waiting: "Checking this Mac…"),
         Activity: new ActivityShown(
             Lines: [], Empty: new EmptyList(Title: "No Activity", Detail: "Pitboard lists every change it makes here.")),
@@ -160,7 +162,8 @@ public sealed class ModelTests
             Asked.Add($"quit {app}");
         }
 
-        public void Reopen(string location) => Asked.Add($"open {location}");
+        public void Reopen(string location, bool front) =>
+            Asked.Add(front ? $"open-front {location}" : $"open {location}");
     }
 
     [TestMethod]
@@ -266,6 +269,29 @@ public sealed class ModelTests
         Assert.AreNotEqual<Intent>(new Intent.KeepAppOpen(), intents[1]);
     }
 
+    // Generated in the core's field order, though Windows lists no such tool.
+    [TestMethod]
+    public void AStatusCarriesAnAddLeftHalfway()
+    {
+        var snapshot = Read(5) with
+        {
+            Status = new Status(
+                At, [], [],
+                [
+                    new Awaiting(
+                        Provider: "desktop", Label: "travel", PutBack: "desktop/work", Since: At,
+                        Again: false),
+                ]),
+        };
+        Assert.HasCount(1, snapshot.Status!.Awaiting);
+        var awaiting = snapshot.Status.Awaiting[0];
+        Assert.AreEqual("desktop", awaiting.Provider);
+        Assert.AreEqual("travel", awaiting.Label);
+        Assert.AreEqual("desktop/work", awaiting.PutBack);
+        Assert.AreEqual(At, awaiting.Since);
+        Assert.IsFalse(awaiting.Again);
+    }
+
     /// <summary>
     /// A snapshot carries what a switch said as records of their own: the switch under way and
     /// the question about quitting the app that holds its login, what each tool's last switch
@@ -275,7 +301,8 @@ public sealed class ModelTests
     public void ASnapshotCarriesWhatASwitchSaid()
     {
         var stillRunning = new Warning(
-            "sessions_still_running", "2 `codex` sessions are still running", Account: null, Held: null);
+            "sessions_still_running", "2 `codex` sessions are still running", Account: null, Held: null,
+            Provider: null);
         var switched = new LastSwitch(
             Provider: "codex", To: "codex/work", FollowsAt: null,
             Restart: new RestartNeeded(Program: "codex", From: "personal"), Said: null, Warnings: [stillRunning]);
@@ -355,7 +382,8 @@ public sealed class ModelTests
                     Id: "claude:work", Provider: "claude", Label: "work", Qualified: "claude/work",
                     Unplaced: false, Email: "work@example.com",
                     AccountId: "4f3c2a10-8b7e-4d2a-9c1e-5a6b7c8d9e0f", SignedIn: true, Switchable: false,
-                    Parked: null, Usage: null, Stale: null, StaleExplanation: null, Plan: null),
+                    Parked: null, Usage: null, Stale: null, StaleExplanation: null, Plan: null,
+                    ReadAt: null),
             ])[0];
         var link = PitboardFfiMethods.SiteLink("https://claude.ai/chat/x");
         var windows = NoWindows() with
@@ -489,7 +517,7 @@ public sealed class ModelTests
 
         var copy = apps.Running("OpenAI.ChatGPT");
         apps.RequestQuit("OpenAI.ChatGPT");
-        apps.Reopen(copy!);
+        apps.Reopen(copy!, false);
         var refused = Assert.ThrowsExactly<PlatformException.Failed>(() => apps.RequestQuit("OpenAI.ChatGPT"));
 
         Assert.AreEqual(@"C:\Program Files\OpenAI.ChatGPT\OpenAI.ChatGPT.exe", copy);
@@ -607,7 +635,8 @@ public sealed class ModelTests
                 new Account(
                     Id: "codex:spare", Provider: "codex", Label: "spare", Qualified: "codex/spare",
                     Unplaced: false, Email: "spare@example.com", AccountId: "spare", SignedIn: false,
-                    Switchable: true, Parked: null, Usage: null, Stale: null, StaleExplanation: null, Plan: null),
+                    Switchable: true, Parked: null, Usage: null, Stale: null, StaleExplanation: null, Plan: null,
+                    ReadAt: null),
             ])[0];
         var spare = new AccountItem(
             Id: "codex:spare", Provider: "codex", Qualified: "codex/spare", Title: "spare",
@@ -727,7 +756,9 @@ public sealed class ModelTests
             Schedule = new ScheduleShown(
                 Schedule: new Schedule.Installed(Path: plist, EverySeconds: 86_400), On: true, Changing: false,
                 Enabled: true, Runs: "Every day", ScheduledIn: plist, Note: null, Failed: null),
-            Renewal = new RenewalShown(Renewing: false, Note: "Renewed one."),
+            Renewal = new RenewalShown(
+                Renewing: false, Note: "Renewed one.",
+                About: "A parked login is renewed whenever Pitboard runs, and otherwise not."),
             Checks = new ChecksShown(
                 Lines: [keychain], Summary: "1 broken: do not switch accounts until fixed.", Checking: false,
                 Checked: "Checked at 14:05", Waiting: null),
@@ -898,7 +929,8 @@ public sealed class ModelTests
         string[] ordered =
         [
             "twoTools", "oneTool", "empty", "firstLaunch", "noClaudeCode", "unnamed", "onlyOne",
-            "readFailure", "stuck", "chatGPTOpen", "warmUp",
+            "readFailure", "stuck", "chatGPTOpen", "claudeDesktop", "claudeDesktopOpen",
+            "warmUp",
         ];
         CollectionAssert.AreEqual(ordered, names);
         var unknown = Assert.ThrowsExactly<FixtureException.Unknown>(

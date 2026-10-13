@@ -48,11 +48,20 @@ pub enum Fault {
     LocksAfterWrite,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Touch {
+    pub store: String,
+    pub call: &'static str,
+    pub service: String,
+}
+
 /// One store. Plant, peek and enumerate without going through the store's own rules, so a
 /// test can set up a machine state and then assert on it.
 #[derive(Debug)]
 pub struct MemoryStore {
     kind: Backend,
+    name: String,
+    trail: Arc<Mutex<Vec<Touch>>>,
     items: Mutex<HashMap<String, String>>,
     faults: Mutex<HashMap<String, (usize, Fault)>>,
     blanket: Mutex<Option<Fault>>,
@@ -65,8 +74,18 @@ pub struct MemoryStore {
 impl MemoryStore {
     /// An empty store that reports itself as `kind`.
     pub fn of(kind: Backend) -> Arc<MemoryStore> {
+        MemoryStore::on_trail(kind, String::new(), Arc::default())
+    }
+
+    pub(crate) fn on_trail(
+        kind: Backend,
+        name: String,
+        trail: Arc<Mutex<Vec<Touch>>>,
+    ) -> Arc<MemoryStore> {
         Arc::new(MemoryStore {
             kind,
+            name,
+            trail,
             items: Mutex::new(HashMap::new()),
             faults: Mutex::new(HashMap::new()),
             blanket: Mutex::new(None),
@@ -185,6 +204,17 @@ impl MemoryStore {
             .insert(service.to_string());
     }
 
+    fn touched(&self, call: &'static str, service: &str) {
+        self.trail
+            .lock()
+            .expect("a poisoned test store is a failed test")
+            .push(Touch {
+                store: self.name.clone(),
+                call,
+                service: service.to_string(),
+            });
+    }
+
     /// What this service does on this call, counting the call down towards its fault.
     fn fault_for(&self, service: &str) -> Option<Fault> {
         let mut faults = self
@@ -227,14 +257,17 @@ impl RawStore for Arc<MemoryStore> {
     }
 
     fn contains(&self, service: &str) -> Result<bool, Error> {
+        self.touched("contains", service);
         Ok(self.look(service, false)?.is_some())
     }
 
     fn read(&self, service: &str) -> Result<Option<String>, Error> {
+        self.touched("read", service);
         self.look(service, true)
     }
 
     fn write(&self, _: Permit, service: &str, contents: &str) -> Result<(), Error> {
+        self.touched("write", service);
         if self.has_locked(service) {
             return Err(Error::Write("the keychain is locked".into()));
         }
@@ -274,6 +307,7 @@ impl RawStore for Arc<MemoryStore> {
     }
 
     fn delete(&self, _: Permit, service: &str) -> Result<(), Error> {
+        self.touched("delete", service);
         self.items
             .lock()
             .expect("a poisoned test store is a failed test")
@@ -282,6 +316,7 @@ impl RawStore for Arc<MemoryStore> {
     }
 
     fn list(&self) -> Result<Option<Vec<String>>, Error> {
+        self.touched("list", "");
         Ok(Some(
             self.services()
                 .into_iter()

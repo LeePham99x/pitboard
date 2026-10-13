@@ -8,6 +8,20 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Pitboard switches [Claude Desktop](https://docs.usepitboard.com/guides/claude-desktop)
+  accounts on macOS with `pitboard use desktop/<label>`, while Claude is closed.
+- `pitboard enroll desktop/<label>` adds the account Claude is signed in to. With
+  `--sign-in`, it parks that account and adds the one you sign in to inside Claude.
+- The app adds, switches and signs in again to Claude Desktop accounts, and asks before it
+  quits Claude.
+- `pitboard status` says when Pitboard last read a Claude Desktop account in use, and when a
+  parked one's sign-in may lapse.
+- `pitboard doctor` checks Claude Desktop under a heading of its own.
+- `pitboard abandon` gives up an interrupted Claude Desktop move.
+- `pitboard repair` gives a Claude Desktop account back its parked login.
+- `pitboard adopt` sets aside a Claude Desktop login parked on another Mac.
+- `pitboard uninstall` refuses while Claude is signed out and a Claude Desktop login is
+  parked or set aside, since deleting them would leave no Claude Desktop login.
 - **Copy Link** in the sign-in dialog copies the sign-in page's address, to paste into
   another browser or browser profile.
 
@@ -17,6 +31,29 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - The `pitboard` cask's caveats link
   [Upgrade from 0.3.0 or earlier](https://docs.usepitboard.com/install/upgrade-from-0-3-0) in
   place of the commands that remove 0.3.0's formula.
+- The account index is schema 8, which earlier versions cannot read. Update the command line
+  and the app together.
+- `pitboard uninstall`'s question says the other accounts need signing in again, where it
+  said a browser sign-in.
+- A switch that quits the ChatGPT app waits until the `codex` running inside it has quit
+  too.
+- With no account enrolled, `pitboard status` says it found no Claude Code login, not that
+  nothing is signed in, and how to enrol a Codex account and, on macOS, a Claude Desktop
+  one.
+- A refused change says the interrupted switch it finished or undid before the refusal, not
+  after it.
+- While `CLAUDE_CODE_CUSTOM_OAUTH_URL` is set, `pitboard abandon` refuses only where a Claude
+  Code switch is interrupted.
+- In `pitboard-core`, `state::Park.refresh_fingerprint` is now `login`, `State.discarded`
+  holds `state::Dropped`, and `State::discard` takes a `state::ParkKind`. `State`, `Park`,
+  `status::Row`, `status::Report`, `service::Failed`, `switch::Reclaimed`,
+  `switch::Adopted`, `Error::LiveCredentialAbsent` and `Error::AlreadyEnrolled` gain fields,
+  and `switch::Outcome` and `provider::Adoption` gain variants. `switch::abandon` and
+  `Pitboard::abandon_recovery` return `switch::GaveUp`, `switch::repair` returns its
+  warnings too, and `Context::program_for` an `Option`. `ProviderId::cli` replaces
+  `program_variable` and `install_places`, and `ProviderId::home_variable`,
+  `ProviderId::login_command`, `switch::sign_in` and `switch::sign_in_watched` are gone.
+  `ProviderId::Desktop` and many other items are added.
 
 ## [0.13.0] - 2026-10-13
 

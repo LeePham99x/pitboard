@@ -1,29 +1,33 @@
 ---
 title: "Introduction"
-description: "Switch Claude Code and Codex between your own accounts without signing out, and see what each one has left."
+description: "Switch Claude Code, Codex and Claude Desktop between your own accounts without signing out, and see Claude Code and Codex usage."
 ---
 
-Without Pitboard, changing account in Claude Code or OpenAI's Codex CLI means signing out and signing in again in a browser.
+Without Pitboard, changing account in Claude Code, OpenAI's Codex CLI or Claude Desktop means signing out and signing in again.
 
 <Frame>
   <img src="/images/menu.png" alt="The Pitboard menu, listing Claude Code and Codex accounts, with a check mark on each one in use and, under each account's name, its usage or that it needs signing in again" width="300" />
 </Frame>
 
-Pitboard keeps the login of each account you are not using, called a [parked login](/concepts/switching#parked-logins). A switch puts the chosen account's parked login where the tool reads it. Your history, settings and projects stay where they are.
+Pitboard keeps the login of each account you are not using, called a [parked login](/concepts/switching#parked-logins). A switch puts the chosen account's parked login where Claude Code, Codex or Claude Desktop reads it. Your history, settings and projects stay where they are.
 
-[Open Claude Code sessions](/concepts/switching#open-sessions) follow a switch within about 33 seconds, with no restart. Anything that runs Codex keeps the old account until it starts again. [What happens to open sessions](/guides/switch#what-happens-to-open-sessions) lists what to restart.
+[Open Claude Code sessions](/concepts/switching#open-sessions) follow a switch within about 33 seconds, with no restart. Anything that runs Codex keeps the old account until it starts again. Claude Desktop switches only while Claude is closed, and Claude opens signed in to the account switched to. [What happens to open sessions](/guides/switch#what-happens-to-open-sessions) says what each tool does.
 
-Pitboard finishes or undoes an [interrupted switch](/concepts/switching#interrupted-switches) before it makes any other change.
+Pitboard finishes or undoes an [interrupted switch](/concepts/switching#interrupted-switches) before it changes that tool's login again.
 
 Pitboard can also [switch Claude Code by itself](/guides/automatic-switching) before the account in use runs out. It is off until you turn it on.
 
-The menu bar app gives each account its own [window on claude.ai or chatgpt.com](/guides/account-windows), where you sign in as that account.
+The menu bar app gives each Claude Code and Codex account its own [window on claude.ai or chatgpt.com](/guides/account-windows), where you sign in as that account.
 
 Pitboard has no server of its own and no telemetry. It sends each login only to the service that issued it. [What leaves your machine](/security#what-leaves-your-machine) lists every request.
 
 ## What it works with
 
-Pitboard works with Claude Code, and with Codex signed in with ChatGPT. For Codex, read [Before you enrol a Codex account](/guides/codex#before-you-enrol-a-codex-account) first.
+| Tool | Systems | Read first |
+| --- | --- | --- |
+| Claude Code | macOS and Linux | [Quickstart](/quickstart) |
+| Codex, signed in with ChatGPT | macOS and Linux | [Before you enrol a Codex account](/guides/codex#before-you-enrol-a-codex-account) |
+| Claude Desktop | macOS | [Before you add a Claude Desktop account](/guides/claude-desktop#before-you-add-a-claude-desktop-account) |
 
 The command line runs on macOS and Linux. The menu bar app runs on macOS 14 or later and includes the command line. [What you need](/install#what-you-need) gives the architectures and how far each system is tested.
 

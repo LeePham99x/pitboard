@@ -5,6 +5,8 @@ description: "Enrol the account each tool is signed in to, add more through a si
 
 Pitboard switches only between accounts you enrol. Each one gets a label, the name you switch to it by.
 
+Claude Desktop accounts are added inside Claude, as [Use Pitboard with Claude Desktop](/guides/claude-desktop) shows.
+
 ## Add the account you are signed in to
 
 For OpenAI's Codex CLI, check [Before you enrol a Codex account](/guides/codex#before-you-enrol-a-codex-account) first.
@@ -80,13 +82,21 @@ Pitboard counts each organisation your Anthropic account belongs to as a separat
 
 ## Choose a label
 
-A label is one word, such as `work`. When you enrol an account, `work` names a Claude Code account and `codex/work` a Codex one. In the app, choose the tool and enter the name without `codex/`.
+A label is one word, such as `work`. When you enrol an account, write the label for its tool:
 
-Other commands take `work` alone while only one tool has a `work` account. Otherwise, write `claude/work` or `codex/work`. [Labels](/reference/commands#labels) has the full rules.
+| Tool | Label |
+| --- | --- |
+| Claude Code | `work` |
+| Codex | `codex/work` |
+| Claude Desktop | `desktop/work` |
+
+In the app, choose the tool and enter the name without its prefix.
+
+Other commands take `work` alone while only one tool has a `work` account. Otherwise, write `claude/work`, `codex/work` or `desktop/work`. [Labels](/reference/commands#labels) has the full rules.
 
 ## Rename an account
 
-Renaming changes only the label. The account keeps its parked login, and its [account window](/guides/account-windows) stays signed in.
+Renaming changes only the label. The account keeps its parked login, and a Claude Code or Codex account's [account window](/guides/account-windows) stays signed in.
 
 <Tabs>
   <Tab title="App">
@@ -107,7 +117,14 @@ Renaming changes only the label. The account keeps its parked login, and its [ac
 
 ## Forget an account
 
-Forgetting an account deletes its parked login. It also deletes everything its [account window](/guides/account-windows) keeps on this Mac, its sign-in included. To forget the account in use, switch to another account first.
+Forgetting an account deletes its parked login and what Pitboard keeps beside it on this Mac:
+
+| Tool | Deleted with the parked login |
+| --- | --- |
+| Claude Code, Codex | Everything the account's [window](/guides/account-windows) keeps, its sign-in included |
+| Claude Desktop | The folders Pitboard set aside for the account |
+
+To forget the account in use, switch to another account first.
 
 <Tabs>
   <Tab title="App">

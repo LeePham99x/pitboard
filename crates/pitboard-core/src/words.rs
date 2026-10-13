@@ -565,14 +565,487 @@ pub fn renewal_note(due: usize, renewed: usize) -> String {
 /// Codex another workspace's, where the account it is told apart from has that email too.
 pub fn login(tool: crate::provider::ProviderId, email: &str, shares_email: bool) -> String {
     use crate::provider::ProviderId;
-    if !shares_email {
-        return email.to_owned();
-    }
     let group = match tool {
         ProviderId::Claude => "organisation",
         ProviderId::Codex => "workspace",
+        // Nobody tells Pitboard a Claude Desktop account's email.
+        ProviderId::Desktop if email.is_empty() => return "another Claude Desktop account".into(),
+        ProviderId::Desktop => "account",
     };
+    if !shares_email {
+        return email.to_owned();
+    }
     format!("{email} in another {group}")
+}
+
+// What signs a tool in, to start a sentence (`starts`) or to go on with one.
+pub(crate) fn sign_in_yourself(tool: crate::provider::ProviderId, starts: bool) -> String {
+    use crate::provider::ProviderId;
+    let said = match tool {
+        ProviderId::Claude => "Run `claude`",
+        ProviderId::Codex => "Run `codex login`",
+        ProviderId::Desktop => "Open Claude",
+    };
+    starting(said, starts)
+}
+
+// What runs a tool once, as its sessions do.
+pub(crate) fn run_it(tool: crate::provider::ProviderId, starts: bool) -> String {
+    use crate::provider::ProviderId;
+    let said = match tool {
+        ProviderId::Claude => "Run `claude`",
+        ProviderId::Codex => "Run `codex`",
+        ProviderId::Desktop => "Open Claude",
+    };
+    starting(said, starts)
+}
+
+// What reads a tool's login from where it was, where this run reads another place.
+pub(crate) fn pointing_where_it_did(tool: crate::provider::ProviderId) -> String {
+    use crate::provider::ProviderId;
+    match tool {
+        ProviderId::Claude => "Run Pitboard with CLAUDE_CONFIG_DIR pointing where it did",
+        ProviderId::Codex => "Run Pitboard with CODEX_HOME pointing where it did",
+        ProviderId::Desktop => "Run Pitboard as the account whose Claude that is",
+    }
+    .into()
+}
+
+fn starting(said: &str, starts: bool) -> String {
+    if starts {
+        return said.into();
+    }
+    let mut chars = said.chars();
+    chars
+        .next()
+        .map(|first| first.to_lowercase().chain(chars).collect())
+        .unwrap_or_default()
+}
+
+pub(crate) fn nothing_signed_in(tool: crate::provider::ProviderId, label: Option<&str>) -> String {
+    use crate::provider::ProviderId;
+    match tool {
+        ProviderId::Claude | ProviderId::Codex => format!(
+            "nothing is signed in to {} right now. {}, sign in, then try again.",
+            tool.name(),
+            sign_in_yourself(tool, true)
+        ),
+        ProviderId::Desktop => format!(
+            "Claude is not signed in. Run `pitboard enroll {} --sign-in`, then sign in inside \
+             Claude and quit it: Pitboard waits for that, and sets aside any account name \
+             Claude kept first.",
+            label.unwrap_or("desktop/<label>")
+        ),
+    }
+}
+
+// What a sign-in inside Claude says while Pitboard waits. Labels are as typed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WaitLine<'a> {
+    Parked { label: &'a str },
+    Add { label: &'a str },
+    Again { label: &'a str },
+    NoLogOut,
+    Waiting { put_back: Option<&'a str> },
+    Open,
+    QuitSignedOut,
+    QuitUnfinished,
+}
+
+// One line, ending in a newline.
+pub(crate) fn awaited(line: WaitLine<'_>) -> String {
+    let said = match line {
+        WaitLine::Parked { label } => format!(
+            "Parked `{label}`. Claude is signed out, and nothing was signed out at claude.ai."
+        ),
+        WaitLine::Add { label } => format!(
+            "Open Claude and sign in to the account to add as `{label}`. When Claude shows \
+             your chats, quit it with Command-Q."
+        ),
+        WaitLine::Again { label } => format!(
+            "Open Claude and sign in to `{label}` again. When Claude shows your chats, quit it \
+             with Command-Q."
+        ),
+        WaitLine::NoLogOut => "Do not choose Log out in Claude: it ends the login Claude holds \
+                              at claude.ai, and Pitboard cannot bring it back."
+            .into(),
+        WaitLine::Waiting {
+            put_back: Some(label),
+        } => format!(
+            "Waiting for Claude to quit. Control-C stops waiting and keeps `{label}` parked; \
+             `pitboard use {label}` puts it back."
+        ),
+        WaitLine::Waiting { put_back: None } => {
+            "Waiting for Claude to quit. Control-C stops waiting.".into()
+        }
+        WaitLine::Open => "Claude is open.".into(),
+        WaitLine::QuitSignedOut => "Claude quit with nobody signed in. Still waiting.".into(),
+        WaitLine::QuitUnfinished => "Claude quit before it finished signing in. Open it, wait \
+                                    until it shows your chats, then quit it. Still waiting."
+            .into(),
+    };
+    format!("{said}\n")
+}
+
+// `label`, `put_back` as typed.
+pub(crate) fn sign_in_awaited(label: &str, put_back: &str, again: bool) -> String {
+    let whom = if again {
+        format!("`{label}` again")
+    } else {
+        "another account".to_string()
+    };
+    format!(
+        "Claude is signed out so you can sign in to {whom}, and `{put_back}` is parked. Sign in \
+         inside Claude, quit it, then run `pitboard enroll {label}`. To go back, run `pitboard \
+         use {put_back}`."
+    )
+}
+
+pub(crate) fn move_waiting(label: &str) -> String {
+    format!(
+        "A move of `{label}`'s login was interrupted. Keep Claude closed: the next change to a \
+         Claude Desktop account settles it first."
+    )
+}
+
+// Why a waiting move was left as it was, and what to do, for a refusal `abandon` and `repair`
+// both meet. `command` is the one to run again.
+fn move_left(why: &crate::error::Error, command: &str) -> Option<(String, String)> {
+    use crate::error::Error;
+    let again = format!("run `{command}` again");
+    Some(match why {
+        Error::AppOpen { app, still } if still.is_empty() => (
+            format!("{app} is open"),
+            format!("Quit {app} with Command-Q, then {again}."),
+        ),
+        Error::AppOpen { app, still } => (
+            format!("{} from {app} is still running", listed(still.clone())),
+            wait_for_still(&again),
+        ),
+        Error::AppStateUnknown { app, why } => (
+            format!("it could not tell whether {app} is open ({why})"),
+            format!("Run `{command}` again."),
+        ),
+        Error::LoginFolderBusy { app } => (
+            format!("another Pitboard is changing {app}'s login"),
+            format!("Run `{command}` again once it has finished."),
+        ),
+        Error::LoginFolderUnreadable { tool, detail } => (
+            format!(
+                "it could not read {}'s cookie store ({detail})",
+                tool.program()
+            ),
+            format!(
+                "Open {program}, quit it with Command-Q, then {again}.",
+                program = tool.program()
+            ),
+        ),
+        Error::AppOpenedMidway { app, .. } => (
+            format!("{app} was opened meanwhile"),
+            format!("Nothing is lost. Quit {app} with Command-Q, then {again}."),
+        ),
+        // A park Pitboard could not look at, as `store::folder::unread` says it.
+        Error::Store(crate::store::Error::Unreadable(detail)) => (
+            detail.clone(),
+            format!("Make that path, and each folder it is in, readable to you, then {again}."),
+        ),
+        _ => return None,
+    })
+}
+
+// After `abandon` gave up a switch, so never that nothing has changed.
+pub(crate) fn move_not_given_up(label: &str, why: &crate::error::Error) -> String {
+    use crate::error::Error;
+    let (because, then) = match (move_left(why, "pitboard abandon"), why) {
+        (Some((because, then)), _) => (Some(because), then),
+        (None, Error::MoveMixed { places, .. }) => (
+            Some(format!(
+                "giving it up would leave parts of it beside another login in Claude's folder: \
+                 {}",
+                places.join(", ")
+            )),
+            mixed_way_out(label),
+        ),
+        (None, other) => (
+            None,
+            format!(
+                "It stopped at `{}`: run `pitboard abandon` again to see why.",
+                other.code()
+            ),
+        ),
+    };
+    match because {
+        Some(because) => format!(
+            "Pitboard did not give up the interrupted move of `{label}`'s login, because \
+             {because}. {then}"
+        ),
+        None => {
+            format!("Pitboard did not give up the interrupted move of `{label}`'s login. {then}")
+        }
+    }
+}
+
+// For `repair`, which goes on past the move, so never that nothing has changed.
+pub(crate) fn move_not_settled(label: &str, why: &crate::error::Error) -> String {
+    use crate::error::Error;
+    let (because, then) = match (move_left(why, "pitboard repair"), why) {
+        (Some(left), _) => left,
+        (None, Error::RecoveryUndetermined { detail, .. }) => (
+            format!("it cannot tell where it stopped ({detail})"),
+            undetermined_way_out(),
+        ),
+        (None, Error::RecoveryStopped { detail, .. }) => (
+            format!("it stopped partway ({detail})"),
+            "Nothing is lost. Keep Claude closed and run `pitboard repair` again. If it stops \
+             again, `pitboard abandon` keeps every folder and moves on."
+                .into(),
+        ),
+        (None, Error::RecoveryElsewhere { tool, slot, .. }) => (
+            format!(
+                "{} kept its data in {slot} when the move was interrupted, and this run finds \
+                 it somewhere else",
+                tool.program()
+            ),
+            elsewhere_way_out(*tool),
+        ),
+        (None, other) => (
+            format!("it stopped at `{}`", other.code()),
+            "The next change to a Claude Desktop account settles it first, or says why it \
+             cannot."
+                .into(),
+        ),
+    };
+    format!(
+        "Pitboard did not settle the interrupted move of `{label}`'s login, because {because}. \
+         {then}"
+    )
+}
+
+// For a move Pitboard cannot tell where it stopped.
+pub(crate) fn undetermined_way_out() -> String {
+    "Open Claude to see whether it is signed in and to which account, then quit it with \
+     Command-Q. If it is signed in, run `pitboard enroll desktop/<label>` for the account it \
+     shows. If it is signed out, `pitboard abandon` keeps every folder and moves on."
+        .into()
+}
+
+// For a move interrupted while the app kept its data somewhere else.
+pub(crate) fn elsewhere_way_out(tool: crate::provider::ProviderId) -> String {
+    format!(
+        "{}, or `pitboard abandon` to keep every folder and move on.",
+        pointing_where_it_did(tool)
+    )
+}
+
+pub(crate) fn wait_for_still(then: &str) -> String {
+    format!("Wait until it ends, or quit it in Activity Monitor, then {then}.")
+}
+
+pub(crate) fn mixed_way_out(label: &str) -> String {
+    format!(
+        "Open Claude, check which account it shows, quit it with Command-Q, then run `pitboard \
+         enroll desktop/<label>` under that account's name: Pitboard sets the parts of \
+         `{label}` aside first."
+    )
+}
+
+pub(crate) fn move_settled(
+    label: &str,
+    half: crate::state::Half,
+    ended: crate::switch::Ended,
+) -> String {
+    use crate::state::Half;
+    use crate::switch::Ended;
+    let came_to = match (half, ended) {
+        (Half::Leave, Ended::Undone) => format!("Pitboard undid it, and `{label}` is in use"),
+        (Half::Leave, Ended::Finished) => {
+            "Pitboard finished parking it, and Claude is signed out".to_string()
+        }
+        (Half::Arrive, Ended::Undone) => {
+            format!("Pitboard took it back out, `{label}` is parked and Claude is signed out")
+        }
+        (Half::Arrive, Ended::Finished) => {
+            "it had in fact finished, and Pitboard has recorded that".to_string()
+        }
+    };
+    format!("an earlier move of `{label}`'s login was interrupted; {came_to}")
+}
+
+pub(crate) fn item_gone(label: &str, item: &str) -> String {
+    format!(
+        "`{item}` of `{label}`'s login was in neither place after the move, so Pitboard went on \
+         without it. Claude makes it again."
+    )
+}
+
+pub(crate) fn given_up(given_up: &crate::switch::GivenUp) -> String {
+    let label = crate::state::Key::new(given_up.tool, &given_up.label).typed();
+    let enroll = crate::state::Key::new(given_up.tool, "<label>").typed();
+    let mut said = format!(
+        "Pitboard gave up the move of `{label}`'s login and kept every folder: {} parked, {} \
+         set aside.",
+        given_up.parked, given_up.set_aside
+    );
+    if let Some(slot) = &given_up.slot {
+        said.push_str(&format!(
+            " The move was in {slot}, which this run did not read."
+        ));
+    }
+    let way_on = format!(
+        "`pitboard enroll {enroll}` for the account Claude shows, or `pitboard use {enroll}` \
+         where Claude is signed out."
+    );
+    if given_up.left.is_empty() {
+        said.push_str(&format!(" Run {way_on}"));
+    } else {
+        let left = listed(
+            given_up
+                .left
+                .iter()
+                .map(|item| format!("`{item}`"))
+                .collect(),
+        );
+        let stay = if given_up.left.len() == 1 {
+            "stays"
+        } else {
+            "stay"
+        };
+        said.push_str(&format!(
+            " {left} {stay} in Claude's folder. Open Claude once and quit it with Command-Q, \
+             then run {way_on}"
+        ));
+    }
+    said
+}
+
+// Claude's settings name `named` since Pitboard last read `last` in use: no service is asked.
+pub(crate) fn desktop_named(
+    named: &crate::service::Stored,
+    last: &crate::service::Stored,
+) -> String {
+    use crate::service::Stored;
+    let since = match last {
+        Stored::Account(_) | Stored::Unenrolled(_) => format!(
+            "since Pitboard last read {} in use, so Claude may hold another login",
+            last.said("nobody")
+        ),
+        Stored::Nothing | Stored::Unknown => {
+            "since Pitboard last read Claude signed out, so somebody may have signed in".into()
+        }
+    };
+    format!(
+        "Claude's settings have named {} {since}",
+        named.said("nobody")
+    )
+}
+
+// By the date the session cookie carries, hedged: claude.ai may end it sooner or keep it.
+pub fn session_life(session_expires_at: Option<i64>, now: i64) -> Option<String> {
+    let left = session_expires_at? - now;
+    Some(match left / DAY {
+        _ if left <= 0 => "Its sign-in may have lapsed".into(),
+        0 => "Its sign-in may lapse in under a day".into(),
+        1 => "Its sign-in may lapse in 1 day".into(),
+        days => format!("Its sign-in may lapse in {days} days"),
+    })
+}
+
+// Nobody tells Pitboard a Claude Desktop account's email, so its name stands alone.
+pub fn with_email(name: &str, email: &str) -> String {
+    if email.is_empty() {
+        name.into()
+    } else {
+        format!("{name} ({email})")
+    }
+}
+
+// Hedged, as `session_life` is: the date is the cookie's, and claude.ai may end it sooner.
+pub fn session_life_column(session_expires_at: i64, now: i64) -> String {
+    match session_expires_at - now {
+        left if left <= 0 => "sign-in may have lapsed".into(),
+        left => format!("sign-in may lapse in {}", span(left)),
+    }
+}
+
+pub fn enrolled_lines(
+    tool: crate::provider::ProviderId,
+    enrolled: &crate::switch::Enrolled,
+    name: &str,
+    to_use: &str,
+    another: &str,
+) -> String {
+    use crate::provider::ProviderId;
+    use crate::switch::Enrolled;
+    let in_its_app = match (tool, enrolled) {
+        (ProviderId::Claude | ProviderId::Codex, _) => None,
+        (ProviderId::Desktop, Enrolled::Current { .. }) => Some(format!(
+            "Enrolled {name}, the account Claude is signed in to now. Check that Claude shows \
+             that account: Pitboard cannot ask claude.ai whose it is.\nAdd another: pitboard \
+             enroll {another} --sign-in\n"
+        )),
+        (ProviderId::Desktop, Enrolled::InUse { again: false, .. }) => Some(format!(
+            "Enrolled {name}, the account Claude is signed in to now.\n"
+        )),
+        (ProviderId::Desktop, Enrolled::InUse { again: true, .. }) => Some(format!(
+            "Signed in to {name} again. Claude is signed in to it now.\n"
+        )),
+        // `folder::enroll` makes neither.
+        (ProviderId::Desktop, Enrolled::SignedIn { .. } | Enrolled::Renewed { .. }) => None,
+    };
+    if let Some(said) = in_its_app {
+        return said;
+    }
+    match enrolled {
+        Enrolled::Current { email } => format!(
+            "Enrolled {}, the account signed in now.\nAdd another without signing out of it: \
+             pitboard enroll {another} --sign-in\n",
+            with_email(name, email)
+        ),
+        Enrolled::SignedIn { email } => format!(
+            "Enrolled {}. Switch to it with: pitboard use {to_use}\n",
+            with_email(name, email)
+        ),
+        Enrolled::Renewed { email } => format!(
+            "Renewed {}: its parked login is a fresh one.\n",
+            with_email(name, email)
+        ),
+        Enrolled::InUse { email, again: true } => format!(
+            "Signed in to {} again. Its new login is the one in use now.\n",
+            with_email(name, email)
+        ),
+        Enrolled::InUse {
+            email,
+            again: false,
+        } => format!(
+            "Enrolled {}, the account signed in now. Its new login is the one in use.\n",
+            with_email(name, email)
+        ),
+    }
+}
+
+// `tool` is None for a label that names no account.
+pub fn forget_question(tool: Option<crate::provider::ProviderId>, label: &str) -> String {
+    use crate::provider::ProviderId;
+    match tool {
+        None | Some(ProviderId::Claude | ProviderId::Codex) => format!(
+            "Forget {label} and delete its parked login? Adding it again needs a browser \
+             sign-in. [y/N] "
+        ),
+        Some(ProviderId::Desktop) => format!(
+            "Forget {label} and delete its parked login and the folders set aside for it? \
+             Adding it again needs a sign-in in Claude. [y/N] "
+        ),
+    }
+}
+
+// What `adopt` says of the Claude Desktop logins it set aside, each account as typed.
+pub fn adopted_folders(labels: &[String]) -> String {
+    let named = listed(labels.iter().map(|label| format!("`{label}`")).collect());
+    format!(
+        "Pitboard set aside the parked Claude Desktop logins of {named}. They were parked on \
+         another Mac, and Claude cannot read them here where its key differs. `pitboard \
+         forget` of an account deletes its own."
+    )
 }
 
 /// The line under doctor's checks, or over them in the app. Checks that only warn are
@@ -694,6 +1167,169 @@ pub fn listed(mut items: Vec<String>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn claude_desktops_words_hedge_what_nobody_measured() {
+        use crate::provider::ProviderId;
+        let now = 1_791_000_000;
+        let life = |left: i64| session_life(Some(now + left), now);
+        assert_eq!(
+            life(25 * DAY + 60).as_deref(),
+            Some("Its sign-in may lapse in 25 days")
+        );
+        assert_eq!(life(DAY).as_deref(), Some("Its sign-in may lapse in 1 day"));
+        assert_eq!(
+            life(60).as_deref(),
+            Some("Its sign-in may lapse in under a day")
+        );
+        assert_eq!(life(0).as_deref(), Some("Its sign-in may have lapsed"));
+        assert_eq!(session_life(None, now), None);
+        assert_eq!(
+            adopted_folders(&["desktop/work".into(), "desktop/home".into()]),
+            "Pitboard set aside the parked Claude Desktop logins of `desktop/work` and \
+             `desktop/home`. They were parked on another Mac, and Claude cannot read them here \
+             where its key differs. `pitboard forget` of an account deletes its own."
+        );
+        assert_eq!(
+            login(ProviderId::Desktop, "", false),
+            "another Claude Desktop account"
+        );
+        assert_eq!(sign_in_yourself(ProviderId::Desktop, false), "open Claude");
+        assert_eq!(
+            pointing_where_it_did(ProviderId::Desktop),
+            "Run Pitboard as the account whose Claude that is"
+        );
+    }
+
+    #[test]
+    fn a_name_with_no_email_has_no_brackets() {
+        assert_eq!(with_email("work", "a@example.com"), "work (a@example.com)");
+        assert_eq!(with_email("desktop/work", ""), "desktop/work");
+    }
+
+    #[test]
+    fn enrolled_lines_say_what_main_said_for_claude_code_and_codex() {
+        use crate::provider::ProviderId;
+        use crate::switch::Enrolled;
+        let email = || "a@example.com".to_string();
+        for tool in [ProviderId::Claude, ProviderId::Codex] {
+            let said = |enrolled: Enrolled| {
+                enrolled_lines(tool, &enrolled, "work", "codex/work", "codex/<label>")
+            };
+            assert_eq!(
+                said(Enrolled::Current { email: email() }),
+                "Enrolled work (a@example.com), the account signed in now.\n\
+                 Add another without signing out of it: pitboard enroll codex/<label> \
+                 --sign-in\n"
+            );
+            assert_eq!(
+                said(Enrolled::SignedIn { email: email() }),
+                "Enrolled work (a@example.com). Switch to it with: pitboard use codex/work\n"
+            );
+            assert_eq!(
+                said(Enrolled::Renewed { email: email() }),
+                "Renewed work (a@example.com): its parked login is a fresh one.\n"
+            );
+            assert_eq!(
+                said(Enrolled::InUse {
+                    email: email(),
+                    again: true
+                }),
+                "Signed in to work (a@example.com) again. Its new login is the one in use now.\n"
+            );
+            assert_eq!(
+                said(Enrolled::InUse {
+                    email: email(),
+                    again: false
+                }),
+                "Enrolled work (a@example.com), the account signed in now. Its new login is the \
+                 one in use.\n"
+            );
+        }
+    }
+
+    #[test]
+    fn enrolled_lines_for_claude_desktop_name_the_account_claude_is_signed_in_to() {
+        use crate::provider::ProviderId;
+        use crate::switch::Enrolled;
+        let said = |enrolled: Enrolled| {
+            enrolled_lines(
+                ProviderId::Desktop,
+                &enrolled,
+                "desktop/work",
+                "desktop/work",
+                "desktop/<label>",
+            )
+        };
+        assert_eq!(
+            said(Enrolled::Current {
+                email: String::new()
+            }),
+            "Enrolled desktop/work, the account Claude is signed in to now. Check that Claude \
+             shows that account: Pitboard cannot ask claude.ai whose it is.\n\
+             Add another: pitboard enroll desktop/<label> --sign-in\n"
+        );
+        assert_eq!(
+            said(Enrolled::InUse {
+                email: String::new(),
+                again: false
+            }),
+            "Enrolled desktop/work, the account Claude is signed in to now.\n"
+        );
+        assert_eq!(
+            said(Enrolled::InUse {
+                email: String::new(),
+                again: true
+            }),
+            "Signed in to desktop/work again. Claude is signed in to it now.\n"
+        );
+        assert_eq!(
+            said(Enrolled::SignedIn {
+                email: String::new()
+            }),
+            "Enrolled desktop/work. Switch to it with: pitboard use desktop/work\n"
+        );
+        assert!(
+            !said(Enrolled::Renewed {
+                email: String::new()
+            })
+            .contains("()")
+        );
+    }
+
+    #[test]
+    fn the_forget_question_says_a_claude_desktop_account_signs_in_again_in_claude() {
+        use crate::provider::ProviderId;
+        let main = "Forget work and delete its parked login? Adding it again needs a browser \
+                    sign-in. [y/N] ";
+        for tool in [None, Some(ProviderId::Claude), Some(ProviderId::Codex)] {
+            assert_eq!(forget_question(tool, "work"), main, "{tool:?}");
+        }
+        assert_eq!(
+            forget_question(Some(ProviderId::Desktop), "desktop/home"),
+            "Forget desktop/home and delete its parked login and the folders set aside for it? \
+             Adding it again needs a sign-in in Claude. [y/N] "
+        );
+    }
+
+    #[test]
+    fn a_session_life_is_hedged_and_never_says_expired() {
+        const NOW: i64 = 1_789_935_000;
+        let column = |left: i64| session_life_column(NOW + left, NOW);
+        assert_eq!(column(25 * DAY + 3 * HOUR), "sign-in may lapse in 25d 3h");
+        assert_eq!(column(2 * HOUR + 5 * MINUTE), "sign-in may lapse in 2h 05m");
+        assert_eq!(column(30), "sign-in may lapse in <1m");
+        assert_eq!(column(0), "sign-in may have lapsed");
+        assert_eq!(column(-DAY), "sign-in may have lapsed");
+        for left in [-DAY, 0, 30, DAY, 40 * DAY] {
+            let said = format!(
+                "{} {}",
+                column(left),
+                session_life(Some(NOW + left), NOW).unwrap_or_default()
+            );
+            assert!(!said.contains("expire"), "{said}");
+        }
+    }
 
     /// Why Pitboard did not switch by itself is said in the app as well as in a terminal,
     /// so it names no command: the app gives up on an interrupted switch with a button.
@@ -1075,5 +1711,131 @@ mod tests {
             doctor_summary([Level::Fail, Level::Warn, Level::Fail]),
             "2 broken: do not switch accounts until fixed."
         );
+    }
+
+    // Said once `abandon` has given up a switch, where "nothing has changed" is false.
+    #[test]
+    fn a_move_not_given_up_says_why_and_never_that_nothing_changed() {
+        use crate::error::Error;
+        use crate::provider::ProviderId;
+        let tool = ProviderId::Desktop;
+        let app = "Claude";
+        let said = |why| move_not_given_up("desktop/work", &why);
+        assert_eq!(
+            said(Error::AppOpen {
+                app,
+                still: Vec::new()
+            }),
+            "Pitboard did not give up the interrupted move of `desktop/work`'s login, because \
+             Claude is open. Quit Claude with Command-Q, then run `pitboard abandon` again."
+        );
+        assert_eq!(
+            said(Error::MachineUnknown),
+            "Pitboard did not give up the interrupted move of `desktop/work`'s login. It \
+             stopped at `machine_unknown`: run `pitboard abandon` again to see why."
+        );
+        assert_eq!(
+            said(crate::store::folder::unread(
+                "desktop/work",
+                std::path::Path::new("/Users/dana/.pitboard/parks/p/items/Cookies"),
+                "a test held the jar"
+            )),
+            "Pitboard did not give up the interrupted move of `desktop/work`'s login, because \
+             `desktop/work`'s parked login at /Users/dana/.pitboard/parks/p/items/Cookies could \
+             not be looked at (a test held the jar). Make that path, and each folder it is in, \
+             readable to you, then run `pitboard abandon` again."
+        );
+        for why in [
+            Error::AppOpen {
+                app,
+                still: vec!["ShipIt (pid 812)".into()],
+            },
+            Error::AppStateUnknown {
+                app,
+                why: "ps failed".into(),
+            },
+            Error::LoginFolderBusy { app },
+            Error::LoginFolderUnreadable {
+                tool,
+                detail: "a test held the jar".into(),
+            },
+            Error::AppOpenedMidway {
+                app,
+                label: Some("desktop/work".into()),
+            },
+            Error::MoveMixed {
+                label: "desktop/work".into(),
+                places: vec!["`Session Storage` in Claude's folder".into()],
+            },
+        ] {
+            let sentence = said(why);
+            assert!(sentence.contains(", because "), "{sentence}");
+            assert!(
+                !sentence.to_lowercase().contains("nothing has changed"),
+                "{sentence}"
+            );
+        }
+    }
+
+    // Said by `repair`, which goes on past the move, so never that nothing has changed.
+    #[test]
+    fn a_move_not_settled_says_why_and_never_that_nothing_changed() {
+        use crate::error::{Error, Then};
+        use crate::provider::ProviderId;
+        let tool = ProviderId::Desktop;
+        let app = "Claude";
+        let label = || "desktop/work".to_string();
+        let said = |why| move_not_settled("desktop/work", &why);
+        assert_eq!(
+            said(Error::RecoveryUndetermined {
+                tool,
+                from: label(),
+                to: label(),
+                detail: "a settings file that is not valid JSON".into(),
+            }),
+            "Pitboard did not settle the interrupted move of `desktop/work`'s login, because it \
+             cannot tell where it stopped (a settings file that is not valid JSON). Open Claude \
+             to see whether it is signed in and to which account, then quit it with Command-Q. \
+             If it is signed in, run `pitboard enroll desktop/<label>` for the account it shows. \
+             If it is signed out, `pitboard abandon` keeps every folder and moves on."
+        );
+        assert_eq!(
+            said(Error::MachineUnknown),
+            "Pitboard did not settle the interrupted move of `desktop/work`'s login, because it \
+             stopped at `machine_unknown`. The next change to a Claude Desktop account settles \
+             it first, or says why it cannot."
+        );
+        for why in [
+            Error::AppOpen {
+                app,
+                still: Vec::new(),
+            },
+            Error::LoginFolderBusy { app },
+            Error::RecoveryStopped {
+                label: label(),
+                detail: "`WebStorage` could not be moved".into(),
+            },
+            Error::RecoveryElsewhere {
+                tool,
+                from: label(),
+                to: label(),
+                slot: "/Volumes/Old/Claude".into(),
+            },
+            Error::LoginFolderUnknown {
+                tool,
+                what: "does not exist yet".into(),
+                then: Then::OpenAndQuit,
+            },
+            Error::Store(crate::store::Error::Unreadable("denied".into())),
+        ] {
+            let sentence = said(why);
+            assert!(sentence.contains(", because "), "{sentence}");
+            assert!(sentence.ends_with('.'), "{sentence}");
+            let lower = sentence.to_lowercase();
+            assert!(
+                !lower.contains("nothing has changed") && !lower.contains("nothing was changed"),
+                "{sentence}"
+            );
+        }
     }
 }

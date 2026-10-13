@@ -9,7 +9,7 @@ use crate::error::{Error, Result};
 use crate::holder::{self, capitalised};
 use crate::host::{Elevation, Floor};
 use crate::in_use::{self, Doubt, InUse, Known};
-use crate::provider::{Held, ProviderId};
+use crate::provider::{Held, LoginKind, Provider, ProviderId};
 use crate::state::{self, Account, Key, new_id};
 use crate::switch::{self, Enrolled, Outcome, Recovered, Renewal, Settled, SignIn};
 use crate::{audit, readings, schedule, status, statusline};
@@ -183,6 +183,66 @@ pub enum Warning {
         config: Stored,
         in_use: Stored,
     },
+    // A login filed under the account the app names: one Pitboard had not seen, or one it had
+    // recorded as `recorded`'s.
+    TakenAsNamed {
+        tool: ProviderId,
+        label: String,
+        recorded: Option<String>,
+    },
+    // A folder kept under `parks`, deleting nothing.
+    SetAside {
+        tool: ProviderId,
+        path: std::path::PathBuf,
+        label: Option<String>,
+        why: state::SetAside,
+    },
+    // A folder kept under `parks` that holds only the keys `label` had before the app rewrote
+    // them, deleting nothing.
+    KeysSetAside {
+        tool: ProviderId,
+        path: std::path::PathBuf,
+        label: Option<String>,
+    },
+    // The app's settings say what a Log out leaves since the account was read in use.
+    LooksSignedOut {
+        tool: ProviderId,
+        label: String,
+    },
+    // A move an earlier run left was settled before this change.
+    MoveSettled(switch::MoveSettled),
+    // A move waits in the index: the next change to the tool settles it first.
+    MoveWaiting {
+        tool: ProviderId,
+        label: String,
+    },
+    // `abandon` gave up a switch, then could not give up this move, for `why`.
+    MoveNotGivenUp {
+        tool: ProviderId,
+        label: String,
+        why: Error,
+    },
+    // `repair` could not settle this move, for `why`, and repaired the rest.
+    MoveNotSettled {
+        tool: ProviderId,
+        label: String,
+        why: Error,
+    },
+    // The app is signed out for a sign-in inside it, with `put_back` parked. Labels as typed.
+    SignInAwaited {
+        tool: ProviderId,
+        label: String,
+        put_back: String,
+        since: i64,
+        // a Sign In Again of `label`, not an add
+        again: bool,
+    },
+    // An item of the login was in neither place after its move, which went on without it.
+    ItemGone {
+        tool: ProviderId,
+        label: String,
+        item: String,
+    },
     /// This process may change nothing, because it runs as root or under sudo, or elevated on
     /// Windows, or nobody could tell whether it does, so a read answers from what Pitboard
     /// last measured: it renews nothing, asks nobody and writes nothing. `why` is how it runs,
@@ -226,7 +286,54 @@ impl Warning {
             Warning::LoginReplaced { .. } => "login_replaced",
             Warning::InUseUnconfirmed { .. } => "in_use_unconfirmed",
             Warning::ConfigNamesAnother { .. } => "config_names_another",
+            Warning::TakenAsNamed { .. } => "login_taken_as_named",
+            Warning::SetAside { .. } | Warning::KeysSetAside { .. } => "set_aside",
+            Warning::LooksSignedOut { .. } => "looks_signed_out",
+            Warning::MoveSettled(moved) => match moved.ended {
+                switch::Ended::Undone => "interrupted_move_undone",
+                switch::Ended::Finished => "interrupted_move_finished",
+            },
+            Warning::MoveWaiting { .. } => "move_waiting",
+            Warning::MoveNotGivenUp { .. } => "move_not_given_up",
+            Warning::MoveNotSettled { .. } => "move_not_settled",
+            Warning::SignInAwaited { .. } => "sign_in_awaited",
+            Warning::ItemGone { .. } => "login_item_gone",
             Warning::ReadOnly { .. } | Warning::ReadOnlyBelowTheFloor { .. } => "read_only",
+        }
+    }
+
+    pub fn tool(&self) -> Option<ProviderId> {
+        match self {
+            Warning::ParkedLoginRefused { tool, .. }
+            | Warning::LockCompromised { tool }
+            | Warning::AuthOverridden { tool, .. }
+            | Warning::FallbackLogin { tool, .. }
+            | Warning::WrittenOnTheCommandLine { tool, .. }
+            | Warning::SessionsUnknown { tool, .. }
+            | Warning::SessionsUnknownAfterSignIn { tool, .. }
+            | Warning::SignInParkedNotInUse { tool, .. }
+            | Warning::LoginReplaced { tool, .. }
+            | Warning::InUseUnconfirmed { tool, .. }
+            | Warning::ConfigNamesAnother { tool, .. }
+            | Warning::TakenAsNamed { tool, .. }
+            | Warning::SetAside { tool, .. }
+            | Warning::KeysSetAside { tool, .. }
+            | Warning::LooksSignedOut { tool, .. }
+            | Warning::MoveWaiting { tool, .. }
+            | Warning::MoveNotGivenUp { tool, .. }
+            | Warning::MoveNotSettled { tool, .. }
+            | Warning::SignInAwaited { tool, .. }
+            | Warning::ItemGone { tool, .. } => Some(*tool),
+            Warning::MoveSettled(moved) => Some(moved.tool),
+            Warning::Recovered(_)
+            | Warning::ConfigNotUpdated(_)
+            | Warning::ParksPendingRemoval(_)
+            | Warning::RenewalFailed(_)
+            | Warning::SessionsStillRunning { .. }
+            | Warning::SessionsKeepTheOldLogin { .. }
+            | Warning::SwitchStuck(_)
+            | Warning::ReadOnly { .. }
+            | Warning::ReadOnlyBelowTheFloor { .. } => None,
         }
     }
 }
@@ -366,83 +473,194 @@ impl fmt::Display for Warning {
                 f,
                 "{} goes on with the login it has: Pitboard could not tell whose it is \
                  ({why}), so it parked the new login for `{label}` rather than write over \
-                 that one. If that login no longer works, run `{}` and sign in to `{label}` \
+                 that one. If that login no longer works, {} and sign in to `{label}` \
                  there.",
                 tool.name(),
-                tool.login_command()
+                crate::words::sign_in_yourself(*tool, false)
             ),
             Warning::LoginReplaced {
                 tool, label, now, ..
-            } => {
-                write!(
+            } => match (tool, now) {
+                (ProviderId::Desktop, Stored::Nothing) => write!(
                     f,
-                    "`{label}`'s login was replaced by a sign-in outside Pitboard"
-                )?;
-                let tool = tool.name();
-                match now {
-                    Stored::Account(now) => write!(f, ": {tool} now has `{now}`'s login stored,")?,
-                    Stored::Unenrolled(email) => {
-                        write!(f, ": {tool} now has {email}'s login stored,")?;
+                    "`{label}` was signed out in Claude, which ends its login at claude.ai, and \
+                     Pitboard holds no login for it. Run `pitboard enroll {label} --sign-in` to \
+                     sign in to it again."
+                ),
+                (ProviderId::Claude | ProviderId::Codex | ProviderId::Desktop, now) => {
+                    write!(
+                        f,
+                        "`{label}`'s login was replaced by a sign-in outside Pitboard"
+                    )?;
+                    let tool = tool.name();
+                    match now {
+                        Stored::Account(now) => {
+                            write!(f, ": {tool} now has `{now}`'s login stored,")?;
+                        }
+                        Stored::Unenrolled(email) if email.is_empty() => write!(
+                            f,
+                            ": {tool} now has the login of an account Pitboard has not enrolled,"
+                        )?,
+                        Stored::Unenrolled(email) => {
+                            write!(f, ": {tool} now has {email}'s login stored,")?;
+                        }
+                        Stored::Nothing => write!(f, ": {tool} now has no login stored,")?,
+                        Stored::Unknown => write!(f, ",")?,
                     }
-                    Stored::Nothing => write!(f, ": {tool} now has no login stored,")?,
-                    Stored::Unknown => write!(f, ",")?,
+                    write!(
+                        f,
+                        " and Pitboard holds no login for `{label}`. Run `pitboard enroll \
+                         {label} --sign-in` to sign in to it again."
+                    )
                 }
-                write!(
-                    f,
-                    " and Pitboard holds no login for `{label}`. Run `pitboard enroll {label} \
-                     --sign-in` to sign in to it again."
-                )
-            }
+            },
             Warning::InUseUnconfirmed {
                 tool,
                 last,
                 named,
-                asked: false,
-            } => write!(
-                f,
-                "{name}'s config names {named}, and Pitboard has not asked {service} whose login \
-                 {name} has stored since Pitboard was updated, so another login may be stored. \
-                 The account it last switched to is {last}. `pitboard status` asks.",
-                name = tool.name(),
-                named = named.said("no account"),
-                service = tool.service(),
-                last = last.said("none"),
-            ),
-            Warning::InUseUnconfirmed {
-                tool, last, named, ..
-            } => {
-                write!(
+                asked,
+            } => match tool {
+                ProviderId::Desktop => desktop_named(f, named, last),
+                ProviderId::Claude | ProviderId::Codex if !asked => write!(
                     f,
-                    "{name}'s config has named {named} since Pitboard last asked {service} whose \
-                     login {name} has stored, so another login may be stored.",
+                    "{name}'s config names {named}, and Pitboard has not asked {service} whose \
+                     login {name} has stored since Pitboard was updated, so another login may be \
+                     stored. The account it last switched to is {last}. `pitboard status` asks.",
                     name = tool.name(),
                     named = named.said("no account"),
                     service = tool.service(),
-                )?;
-                match last {
-                    Stored::Account(_) | Stored::Unenrolled(_) => {
-                        write!(f, " The one stored then was {}'s.", last.said(""))?;
+                    last = last.said("none"),
+                ),
+                ProviderId::Claude | ProviderId::Codex => {
+                    write!(
+                        f,
+                        "{name}'s config has named {named} since Pitboard last asked {service} \
+                         whose login {name} has stored, so another login may be stored.",
+                        name = tool.name(),
+                        named = named.said("no account"),
+                        service = tool.service(),
+                    )?;
+                    match last {
+                        Stored::Account(_) | Stored::Unenrolled(_) => {
+                            write!(f, " The one stored then was {}'s.", last.said(""))?;
+                        }
+                        Stored::Nothing => write!(f, " None was stored then.")?,
+                        Stored::Unknown => {}
                     }
-                    Stored::Nothing => write!(f, " None was stored then.")?,
-                    Stored::Unknown => {}
+                    write!(f, " `pitboard status` asks again.")
                 }
-                write!(f, " `pitboard status` asks again.")
-            }
+            },
             Warning::ConfigNamesAnother {
                 tool,
                 config,
                 in_use,
+            } => match tool {
+                ProviderId::Desktop => desktop_named(f, config, in_use),
+                ProviderId::Claude | ProviderId::Codex => {
+                    let config = config.said("no account");
+                    write!(
+                        f,
+                        "{name}'s config names {config}, and the login {name} has stored is \
+                         {}'s, as {} said. `/status` in {name} shows {config}.",
+                        in_use.said("nobody"),
+                        tool.service(),
+                        name = tool.name(),
+                    )?;
+                    write!(f, " {}", in_use.how_to_name())
+                }
+            },
+            Warning::TakenAsNamed {
+                label,
+                recorded: None,
+                ..
+            } => write!(
+                f,
+                "Pitboard had not seen the login Claude held, and took it as `{label}`'s because \
+                 Claude names that account. If Claude showed another account, run `pitboard use \
+                 {label}`, check in Claude, quit it, and enrol it under its own name."
+            ),
+            Warning::TakenAsNamed {
+                label,
+                recorded: Some(recorded),
+                ..
+            } => write!(
+                f,
+                "Pitboard had recorded the login Claude held as `{recorded}`'s, and filed it as \
+                 `{label}`'s because Claude names that account. Open Claude and check which \
+                 account it shows. If it is another, quit Claude with Command-Q, then run \
+                 `pitboard enroll desktop/<label>` under that account's name."
+            ),
+            Warning::SetAside {
+                path, label, why, ..
             } => {
-                let config = config.said("no account");
+                let path = path.display();
+                match (why, label) {
+                    (state::SetAside::Superseded, Some(label)) => write!(
+                        f,
+                        "Pitboard kept `{label}`'s earlier parked login in {path} and deleted \
+                         nothing. `pitboard doctor` lists it."
+                    ),
+                    (state::SetAside::Superseded, None) => write!(
+                        f,
+                        "Pitboard kept an earlier parked login in {path} and deleted nothing. \
+                         `pitboard doctor` lists it."
+                    ),
+                    (state::SetAside::GivenUp, Some(label)) => write!(
+                        f,
+                        "Pitboard moved the parts of `{label}`'s login left in Claude's folder \
+                         into {path} and deleted nothing. `pitboard doctor` lists them."
+                    ),
+                    (state::SetAside::GivenUp, None) => write!(
+                        f,
+                        "Pitboard moved the parts of a login left in Claude's folder into {path} \
+                         and deleted nothing. `pitboard doctor` lists them."
+                    ),
+                    (
+                        state::SetAside::InTheWay
+                        | state::SetAside::AnotherMachine
+                        | state::SetAside::Orphan,
+                        _,
+                    ) => write!(
+                        f,
+                        "Pitboard moved what it found in the way into {path} and deleted nothing."
+                    ),
+                }
+            }
+            Warning::KeysSetAside { path, label, .. } => {
+                let whose = label
+                    .as_ref()
+                    .map_or_else(|| "a login".to_string(), |label| format!("`{label}`"));
                 write!(
                     f,
-                    "{name}'s config names {config}, and the login {name} has stored is {}'s, as \
-                     {} said. `/status` in {name} shows {config}.",
-                    in_use.said("nobody"),
-                    tool.service(),
-                    name = tool.name(),
-                )?;
-                write!(f, " {}", in_use.how_to_name())
+                    "Claude rewrote {whose}'s keys. Pitboard kept the earlier ones in {} and \
+                     deleted nothing. `pitboard doctor` lists them.",
+                    path.display()
+                )
+            }
+            Warning::LooksSignedOut { label, .. } => write!(
+                f,
+                "Claude looks signed out since Pitboard last read `{label}` in use. The next \
+                 change to a Claude Desktop account checks."
+            ),
+            Warning::MoveSettled(moved) => {
+                let label = Key::new(moved.tool, moved.label.clone()).typed();
+                f.write_str(&crate::words::move_settled(&label, moved.half, moved.ended))
+            }
+            Warning::MoveWaiting { label, .. } => f.write_str(&crate::words::move_waiting(label)),
+            Warning::MoveNotGivenUp { label, why, .. } => {
+                f.write_str(&crate::words::move_not_given_up(label, why))
+            }
+            Warning::MoveNotSettled { label, why, .. } => {
+                f.write_str(&crate::words::move_not_settled(label, why))
+            }
+            Warning::SignInAwaited {
+                label,
+                put_back,
+                again,
+                ..
+            } => f.write_str(&crate::words::sign_in_awaited(label, put_back, *again)),
+            Warning::ItemGone { label, item, .. } => {
+                f.write_str(&crate::words::item_gone(label, item))
             }
             Warning::ReadOnly { why } => {
                 read_only(f, &crate::words::elevated(crate::host::OS, *why))
@@ -488,6 +706,9 @@ impl Stored {
     pub(crate) fn said(&self, nobody: &str) -> String {
         match self {
             Stored::Account(name) => format!("`{name}`"),
+            Stored::Unenrolled(email) if email.is_empty() => {
+                "an account Pitboard has not enrolled".into()
+            }
             Stored::Unenrolled(email) => email.clone(),
             Stored::Nothing | Stored::Unknown => nobody.to_string(),
         }
@@ -566,6 +787,15 @@ fn in_doubt(state: &state::State, tool: ProviderId, known: &Known) -> Option<War
         })
 }
 
+fn desktop_named(f: &mut fmt::Formatter<'_>, named: &Stored, last: &Stored) -> fmt::Result {
+    write!(
+        f,
+        "{}. Open Claude, check which account it shows, quit it with Command-Q, then run \
+         `pitboard enroll desktop/<label>` under that account's name.",
+        crate::words::desktop_named(named, last)
+    )
+}
+
 fn read_only(f: &mut fmt::Formatter<'_>, said: &crate::words::ChangesNothing) -> fmt::Result {
     write!(
         f,
@@ -581,12 +811,46 @@ pub struct Done<T> {
     pub warnings: Vec<Warning>,
 }
 
+// The sign-in a read says is waited for, with the account parked for it.
+fn sign_in_awaited(state: &state::State, tool: ProviderId) -> Option<Warning> {
+    let awaited = state.awaiting(tool)?;
+    let put_back = state.by_id(tool, &awaited.put_back)?.key();
+    Some(Warning::SignInAwaited {
+        tool,
+        label: state.typed(&Key::new(tool, awaited.label.clone())),
+        put_back: state.typed(&put_back),
+        since: awaited.since,
+        again: awaited.account.is_some(),
+    })
+}
+
 /// A change that failed, with what was found on the way: recovering an interrupted switch
 /// is reported even when the change that followed it fails.
 #[derive(Debug)]
 pub struct Failed {
     pub error: Error,
     pub warnings: Vec<Warning>,
+    // how many of `warnings`, from the first, were done before the refusal
+    pub said_first: usize,
+}
+
+impl Failed {
+    // A change's refusal beside what was `found` before it ran. What was done first leads: an
+    // interrupted switch settled before the change, then what the change did.
+    fn of(mut error: Error, found: Vec<Warning>) -> Failed {
+        let (mut warnings, found): (Vec<Warning>, Vec<Warning>) = found
+            .into_iter()
+            .partition(|warning| matches!(warning, Warning::Recovered(_)));
+        warnings.extend(error.take_said_first());
+        let said_first = warnings.len();
+        warnings.extend(found);
+        warnings.extend(error.take_warnings());
+        Failed {
+            error,
+            warnings,
+            said_first,
+        }
+    }
 }
 
 pub type Changing<T> = std::result::Result<Done<T>, Failed>;
@@ -625,6 +889,7 @@ impl Pitboard {
         self.permit().map_err(|error| Failed {
             error,
             warnings: Vec::new(),
+            said_first: 0,
         })
     }
 
@@ -724,17 +989,42 @@ impl Pitboard {
     /// read that asks nobody has none of. For every other tool, what Pitboard recorded
     /// stands, so a read that could not ask says what one that asks nobody says.
     fn standing(&self, state: &state::State, found: &[(ProviderId, InUse)]) -> Vec<Warning> {
-        let doubts = ProviderId::ALL
+        let mut warnings = replaced(state);
+        // So a Mac with no Claude Desktop account enrolled reads nothing of Claude.
+        for &tool in ProviderId::ALL
             .iter()
-            .filter(|&&tool| !crate::provider::of(tool).identifies_by_itself())
-            .filter_map(|&tool| {
-                let known = match found.iter().find(|(which, _)| *which == tool) {
-                    Some((_, found)) => in_use::judged(&self.ctx, tool, Some(found.clone())),
-                    None => in_use::known(&self.ctx, state, tool),
-                };
-                in_doubt(state, tool, &known)
-            });
-        replaced(state).into_iter().chain(doubts).collect()
+            .filter(|&&tool| status::shown(state, tool))
+        {
+            let (known, signed_out) = match crate::provider::of(tool) {
+                LoginKind::Document(driver) if driver.identifies_by_itself() => continue,
+                LoginKind::Document(_) => {
+                    let known = match found.iter().find(|(which, _)| *which == tool) {
+                        Some((_, found)) => in_use::judged(&self.ctx, tool, Some(found.clone())),
+                        None => in_use::known(&self.ctx, state, tool),
+                    };
+                    (known, None)
+                }
+                LoginKind::Folder(app) => {
+                    warnings.extend(sign_in_awaited(state, tool));
+                    // A move under way leaves the settings between two accounts: only it is said.
+                    if let Some(moving) = state.moving(tool) {
+                        warnings.push(Warning::MoveWaiting {
+                            tool,
+                            label: state.typed(&Key::new(tool, moving.label.clone())),
+                        });
+                        continue;
+                    }
+                    // No read learns whose an app's login is, so `found` names none.
+                    crate::switch::folder::read(&self.ctx, state, app)
+                }
+            };
+            warnings.extend(in_doubt(state, tool, &known));
+            warnings.extend(signed_out.map(|key| Warning::LooksSignedOut {
+                tool,
+                label: state.typed(&key),
+            }));
+        }
+        warnings
     }
 
     pub fn doctor(&self) -> Diagnosis {
@@ -823,6 +1113,7 @@ impl Pitboard {
         let looked = self.auto_look(threshold).map_err(|error| Failed {
             error,
             warnings: Vec::new(),
+            said_first: 0,
         })?;
         if let Look::Stands(value) = looked {
             return Ok(Done {
@@ -837,10 +1128,7 @@ impl Pitboard {
                 warnings.extend(more);
                 Ok(Done { value, warnings })
             }
-            Err(mut error) => {
-                warnings.extend(error.take_warnings());
-                Err(Failed { error, warnings })
-            }
+            Err(error) => Err(Failed::of(error, warnings)),
         }
     }
 
@@ -865,6 +1153,7 @@ impl Pitboard {
         let state = state::load(&self.ctx).map_err(|error| Failed {
             error,
             warnings: Vec::new(),
+            said_first: 0,
         })?;
         crate::label::resolve(&state, typed)
             .map(Account::key)
@@ -924,7 +1213,7 @@ impl Pitboard {
             warnings.push(Warning::Recovered(r));
         }
         audit::record(&self.ctx, permit, verb, subject, code);
-        Failed { error, warnings }
+        Failed::of(error, warnings)
     }
 
     /// The account `pitboard enroll <typed>` is about: the one already enrolled under that
@@ -961,38 +1250,57 @@ impl Pitboard {
         state::load(&self.ctx).map_or_else(|_| key.typed(), |state| state.typed(&key))
     }
 
-    /// The tool's own sign-in in a private directory, for the tool `typed` names. It takes
-    /// no lock but its own, so a person taking their time in a browser never holds up a
-    /// switch.
+    // A program's sign-in runs in a private directory and takes no lock but its own.
     pub fn sign_in(&self, typed: &str) -> std::result::Result<SignIn, Failed> {
         let permit = self.permitted()?;
-        let key = self.signing_in(permit, typed)?;
-        switch::sign_in(&self.ctx, permit, key.provider)
+        let key = self.chosen(permit, "enroll", typed)?;
+        let driver = match crate::provider::of(key.provider) {
+            LoginKind::Document(driver) => driver,
+            // The wait is the core's, and it prints nothing: a front end reads `said`.
+            LoginKind::Folder(_) => {
+                return self
+                    .sign_in_watched(typed)?
+                    .finish()
+                    .map_err(|error| self.not_started(permit, typed, error));
+            }
+        };
+        self.ready_to_sign_in(driver)
+            .and_then(|()| switch::sign_in(&self.ctx, permit, driver))
             .map_err(|error| self.not_started(permit, typed, error))
     }
 
-    /// The same sign-in with its output piped, for a front end that has no terminal to
-    /// hand over. The caller shows what the tool says and can type a code back.
+    // Watched: the caller shows what is said, and types a code back where the tool reads one.
     pub fn sign_in_watched(
         &self,
         typed: &str,
     ) -> std::result::Result<switch::WatchedSignIn, Failed> {
         let permit = self.permitted()?;
-        let key = self.signing_in(permit, typed)?;
-        switch::sign_in_watched_as(&self.ctx, permit, &key)
-            .map_err(|error| self.not_started(permit, typed, error))
-    }
-
-    /// Which account a sign-in is for, once everything that could refuse it has been asked.
-    ///
-    /// A name no account could have is refused the way every change refuses one, settling
-    /// an interrupted switch on the way; anything else refused here is recorded and nothing
-    /// more, since nothing was about to change.
-    fn signing_in(&self, permit: Permit, typed: &str) -> std::result::Result<Key, Failed> {
         let key = self.chosen(permit, "enroll", typed)?;
-        self.ready_to_sign_in(key.provider)
-            .map_err(|error| self.not_started(permit, typed, error))?;
-        Ok(key)
+        let driver = match crate::provider::of(key.provider) {
+            LoginKind::Document(driver) => driver,
+            // Inside the app: the account in use is parked, then a thread waits for the app
+            // to quit signed in. `signin.lock` is taken before `state.lock`, as every sign-in's.
+            LoginKind::Folder(app) => {
+                let one_at_a_time = switch::one_at_a_time(&self.ctx, permit)
+                    .map_err(|error| self.not_started(permit, typed, error))?;
+                let subject = key.typed();
+                let settling = self.settled_for(permit, "park", &subject, Some(key.provider))?;
+                // A sign-in returns no warnings, so what settling found is said first.
+                let first = settling
+                    .1
+                    .iter()
+                    .map(|warning| format!("{warning}\n"))
+                    .collect();
+                return self
+                    .change(permit, "park", &subject, settling, |settled| {
+                        switch::folder::awaited::start(settled, &key, app, one_at_a_time, first)
+                    })
+                    .map(|started| started.value);
+            }
+        };
+        self.ready_to_sign_in(driver)
+            .and_then(|()| switch::sign_in_watched_as(&self.ctx, permit, driver, &key))
+            .map_err(|error| self.not_started(permit, typed, error))
     }
 
     /// A sign-in that did not start, or did not finish, for a reason other than its name.
@@ -1001,21 +1309,22 @@ impl Pitboard {
         Failed {
             error,
             warnings: Vec::new(),
+            said_first: 0,
         }
     }
 
     /// Checked before a sign-in starts, so a person does not sign in through a browser
     /// only to be told the state file belongs to another machine, that the tool is not
     /// installed, or that the account could never be switched to afterwards.
-    fn ready_to_sign_in(&self, tool: crate::provider::ProviderId) -> Result<()> {
+    fn ready_to_sign_in(&self, driver: &'static dyn Provider) -> Result<()> {
+        let tool = driver.id();
         if tool == crate::provider::ProviderId::Claude && self.ctx.custom_oauth() {
             return Err(Error::CustomOauthEndpoint);
         }
         state::load(&self.ctx)?;
-        let driver = crate::provider::of(tool);
         // An account signed in here is one to switch to later, which needs a live store
         // Pitboard can write. Asked now rather than after a browser round trip.
-        switch::live_store(&self.ctx, tool)?;
+        switch::live_store(&self.ctx, driver)?;
         // A private sign-in works by pointing the tool's own login at a scratch directory
         // through its home variable. Where that does not really isolate it, running one
         // would write over the login somebody is using, and there is no override: forcing
@@ -1028,7 +1337,12 @@ impl Pitboard {
         if driver.program(&self.ctx).is_none() {
             return Err(Error::ProgramMissing {
                 tool,
-                program: self.ctx.program_for(tool).display().to_string(),
+                program: self
+                    .ctx
+                    .program_for(tool)
+                    .unwrap_or(std::path::Path::new(tool.program()))
+                    .display()
+                    .to_string(),
             });
         }
         Ok(())
@@ -1059,9 +1373,8 @@ impl Pitboard {
         )
     }
 
-    /// Throws away a record of an interrupted switch that cannot be finished, keeping
-    /// every login it names. The way out when recovery cannot reach Anthropic.
-    pub fn abandon_recovery(&self) -> Result<Option<switch::Abandoned>> {
+    // The way out of a switch recovery cannot finish and of a move it cannot settle.
+    pub fn abandon_recovery(&self) -> Result<switch::GaveUp> {
         let permit = self.permit()?;
         let outcome = switch::abandon(&self.ctx, permit);
         audit::record(
@@ -1142,9 +1455,7 @@ impl Pitboard {
     /// file was lost or restored from a backup, where the store is the only record left.
     pub fn repair(&self) -> Changing<switch::Reclaimed> {
         let permit = self.permitted()?;
-        self.changing(permit, "repair", "", None, |settled| {
-            switch::repair(settled).map(|r| (r, Vec::new()))
-        })
+        self.changing(permit, "repair", "", None, switch::repair)
     }
 
     /// What is running `which`'s tool with a login in memory that a switch would leave it
@@ -1156,6 +1467,47 @@ impl Pitboard {
             switch::StillHolding::These(holding) => holding,
             switch::StillHolding::Nothing | switch::StillHolding::Unknown => Vec::new(),
         }
+    }
+
+    // Whether `which`'s app may be opened again after a switch or a refusal, from the index
+    // alone. Not while a move waits, nor where it would open signed out with every account
+    // parked and no sign-in waited for.
+    pub fn whole(&self, which: ProviderId) -> bool {
+        match crate::provider::of(which) {
+            LoginKind::Document(_) => true,
+            LoginKind::Folder(_) => {
+                let Ok(state) = state::load(&self.ctx) else {
+                    return false;
+                };
+                let parked = state.accounts.iter().any(|a| {
+                    a.provider() == which
+                        && a.parked
+                            .as_ref()
+                            .is_some_and(|park| park.kind == state::ParkKind::Folder)
+                });
+                let nobody = state
+                    .in_use(which)
+                    .is_some_and(|record| record.owner.is_none());
+                let left_signed_out = nobody && parked && state.awaiting(which).is_none();
+                state.moving(which).is_none() && !left_signed_out
+            }
+        }
+    }
+
+    // Whether a move of `which`'s login waits, from the index alone: asked before its app is
+    // opened for a sign-in inside it, where it is meant to be signed out.
+    pub fn moving(&self, which: ProviderId) -> bool {
+        match crate::provider::of(which) {
+            LoginKind::Document(_) => false,
+            LoginKind::Folder(_) => {
+                state::load(&self.ctx).map_or(true, |state| state.moving(which).is_some())
+            }
+        }
+    }
+
+    // Where an app's parked logins and the folders set aside are kept, for a front end to name.
+    pub fn parks_folder(&self) -> std::path::PathBuf {
+        crate::store::folder::parks_dir(&self.ctx)
     }
 
     /// When Pitboard's account index last changed, in epoch milliseconds, for a front end
@@ -1194,7 +1546,10 @@ impl Pitboard {
     pub fn uninstall(&self) -> Changing<switch::Removed> {
         let permit = self.permitted()?;
         self.changing(permit, "uninstall", "", None, |settled| {
-            switch::uninstall(settled).map(|r| (r, Vec::new()))
+            switch::uninstall(settled).map(|mut removed| {
+                let said = std::mem::take(&mut removed.warnings);
+                (removed, said)
+            })
         })
     }
 
@@ -1252,6 +1607,7 @@ impl Pitboard {
         let looked = self.warm_look().map_err(|error| Failed {
             error,
             warnings: Vec::new(),
+            said_first: 0,
         })?;
         if let crate::duty::Look::Stands(overview) = looked {
             return Ok(Done {
@@ -1295,10 +1651,7 @@ impl Pitboard {
                 warnings.extend(more);
                 Ok(Done { value, warnings })
             }
-            Err(mut error) => {
-                warnings.extend(error.take_warnings());
-                Err(Failed { error, warnings })
-            }
+            Err(error) => Err(Failed::of(error, warnings)),
         }
     }
 
@@ -1362,14 +1715,22 @@ impl Pitboard {
     /// files as well as from this process's environment, so the app, which has no shell
     /// environment at all, gets the same answer as the command line.
     fn overridden(&self, tool: ProviderId) -> Option<Warning> {
-        let names = crate::provider::of(tool).overridden_by(&self.ctx);
+        let driver = match crate::provider::of(tool) {
+            LoginKind::Document(driver) => driver,
+            LoginKind::Folder(_) => return None,
+        };
+        let names = driver.overridden_by(&self.ctx);
         (!names.is_empty()).then_some(Warning::AuthOverridden { tool, names })
     }
 
     /// What a file behind `tool`'s store says, where one is there. It reads that store, so a
     /// read that asks nobody does not ask it.
     fn left_behind(&self, tool: ProviderId) -> Option<Warning> {
-        let behind = crate::provider::of(tool).behind(&self.ctx)?;
+        let driver = match crate::provider::of(tool) {
+            LoginKind::Document(driver) => driver,
+            LoginKind::Folder(_) => return None,
+        };
+        let behind = driver.behind(&self.ctx)?;
         Some(Warning::FallbackLogin {
             tool,
             path: behind.path,
@@ -1412,10 +1773,9 @@ impl Pitboard {
                 warnings.extend(more);
                 Ok(Done { value, warnings })
             }
-            Err(mut error) => {
+            Err(error) => {
                 audit::record(&self.ctx, permit, verb, subject, error.code());
-                warnings.extend(error.take_warnings());
-                Err(Failed { error, warnings })
+                Err(Failed::of(error, warnings))
             }
         }
     }
@@ -1455,6 +1815,7 @@ impl Pitboard {
             Failed {
                 error,
                 warnings: Vec::new(),
+                said_first: 0,
             }
         })?;
         let recovered = recovered.map(|r| {
@@ -1480,7 +1841,7 @@ trait Audited {
 impl Audited for Outcome {
     fn audit_code(&self) -> &'static str {
         match self {
-            Outcome::Switched { .. } => "ok",
+            Outcome::Switched { .. } | Outcome::Installed { .. } => "ok",
             Outcome::AlreadyActive {
                 config_updated: true,
                 ..
@@ -1491,6 +1852,7 @@ impl Audited for Outcome {
 }
 
 impl Audited for switch::Reclaimed {}
+impl Audited for switch::WatchedSignIn {}
 impl Audited for Enrolled {}
 impl Audited for String {}
 impl Audited for bool {}
@@ -1520,7 +1882,7 @@ impl Audited for switch::Removed {
 mod tests {
     use super::*;
     use crate::switch::harness::{
-        Machine, audit_lines, codex_machine, hold, machine, signed_in_outside, state_file,
+        Machine, Tool, audit_lines, codex_machine, hold, machine, signed_in_outside, state_file,
     };
     use std::collections::BTreeMap;
     use std::sync::Arc;
@@ -1529,6 +1891,490 @@ mod tests {
 
     /// A name is refused the same way whichever tool it is for.
     const MACHINES: [(&str, Make); 2] = [("claude", machine), ("codex", codex_machine)];
+
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+    )]
+    fn a_read_opens_no_jar_and_lists_no_process() {
+        let m = crate::switch::harness::desktop_machine("reads");
+        let pitboard = Pitboard::new(m.ctx.clone());
+        let (jars, listings) = (m.mem.jars_asked().len(), m.mem.listings());
+        // Claude Code's own record, of nobody, is this first read's to make.
+        pitboard.status(true).expect("read");
+        let before = state_file(&m);
+        let online = pitboard.status(true).expect("read");
+        let offline = pitboard.status_offline().expect("read");
+        let doctor = pitboard.doctor();
+        pitboard.statusline("{}");
+        assert_eq!(m.mem.jars_asked().len(), jars, "no jar was opened");
+        assert_eq!(m.mem.listings(), listings, "no process was listed");
+        assert_eq!(state_file(&m), before, "nothing was recorded");
+
+        // And in the rows a change would open the jar for: 10, 15 and 6.
+        let data = m.ctx_home().join("claude/data");
+        let rows: [(&str, &dyn Fn()); 3] = [
+            ("no session", &|| {
+                crate::desktop_testing::write_stand_in_jar(&data.join("Cookies"), 24, &[]);
+            }),
+            ("another name", &|| {
+                let settings = data.join("config.json");
+                let written = std::fs::read_to_string(&settings).expect("settings");
+                let renamed = written.replace(
+                    crate::switch::harness::WORK.uuid,
+                    "0b7e2c44-2222-4d1f-8a35-91c0de77aa01",
+                );
+                std::fs::write(&settings, renamed).expect("renamed");
+            }),
+            ("no jar", &|| {
+                std::fs::remove_file(data.join("Cookies")).expect("the jar taken away");
+            }),
+        ];
+        for (row, change) in rows {
+            change();
+            pitboard.status(true).expect("read");
+            pitboard.status_offline().expect("read");
+            pitboard.doctor();
+            pitboard.statusline("{}");
+            assert_eq!(m.mem.jars_asked().len(), jars, "{row}: no jar was opened");
+            assert_eq!(m.mem.listings(), listings, "{row}: no process was listed");
+            assert_eq!(state_file(&m), before, "{row}: nothing was recorded");
+        }
+
+        for report in [&online.value, &offline.value] {
+            let row = report
+                .rows
+                .iter()
+                .find(|row| row.provider == ProviderId::Desktop)
+                .expect("a row");
+            assert!(row.signed_in);
+            assert_eq!(row.read_at, Some(crate::switch::harness::NOW));
+        }
+        for warnings in [&online.warnings, &offline.warnings] {
+            assert!(
+                warnings
+                    .iter()
+                    .all(|w| !w.to_string().contains("Claude Desktop")
+                        && w.code() != "in_use_unconfirmed"),
+                "{warnings:?}"
+            );
+        }
+        let codes: Vec<&str> = doctor.checks.iter().map(|c| c.code).collect();
+        for code in [
+            "desktop_data_folder",
+            "desktop_settings",
+            "desktop_layout",
+            "desktop_login",
+            "desktop_parked_login",
+            "desktop_build",
+        ] {
+            assert!(codes.contains(&code), "{code}: {codes:?}");
+        }
+        assert!(
+            doctor
+                .checks
+                .iter()
+                .filter(|c| c.code.starts_with("desktop_"))
+                .all(|c| c.level == doctor::Level::Ok),
+            "{:?}",
+            doctor
+                .checks
+                .iter()
+                .map(|c| (c.code, &c.detail))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    // Claude's settings there and unreadable, which a read of them would trip over.
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+    )]
+    fn a_mac_with_no_claude_desktop_account_reads_nothing_of_claude() {
+        let plain = machine("no-desktop-plain");
+        let m = machine("no-desktop");
+        let scratch = m.ctx_home().join("claude");
+        std::fs::create_dir_all(scratch.join("data")).expect("a data folder");
+        std::fs::write(scratch.join("data/config.json"), "{").expect("settings");
+        crate::host::fs::testing::deny_reading(&scratch.join("data/config.json")).expect("000");
+        let read = |m: &Machine, ctx: Context| {
+            let pitboard = Pitboard::new(ctx);
+            let codes = |done: Done<status::Report>| {
+                let warnings: Vec<&str> = done.warnings.iter().map(Warning::code).collect();
+                (done.value.rows.len(), format!("{warnings:?}"))
+            };
+            let doctor: Vec<&str> = pitboard.doctor().checks.iter().map(|c| c.code).collect();
+            assert_eq!(m.mem.listings(), 0);
+            assert!(m.mem.jars_asked().is_empty());
+            (
+                codes(pitboard.status(true).expect("read")),
+                codes(pitboard.status_offline().expect("read")),
+                format!("{doctor:?}"),
+            )
+        };
+        let with_claude = crate::fault::killing("settings.read", || {
+            read(&m, m.ctx.clone().with_scratch_claude(scratch))
+        })
+        .expect("no read opened Claude's settings");
+        assert_eq!(
+            with_claude,
+            read(&plain, plain.ctx.clone()),
+            "as with no Claude at all"
+        );
+        assert!(!with_claude.2.contains("desktop_"), "{}", with_claude.2);
+    }
+
+    // Forgetting the one account leaves a record of nobody in use, which opts nothing in.
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+    )]
+    fn forgetting_the_last_claude_desktop_account_stops_every_read_of_claude() {
+        let m = crate::switch::harness::desktop_machine("forgot-last");
+        let claude = m.claude();
+        claude.opens();
+        claude.logs_out();
+        claude.quits();
+        let pitboard = Pitboard::new(m.ctx.clone());
+        pitboard.forget("desktop/work").expect("forgotten");
+        claude.signed_in_as(&crate::switch::harness::STRANGER);
+        let state = state::load(&m.ctx).expect("state");
+        assert!(state.accounts.is_empty());
+        assert!(state.in_use(ProviderId::Desktop).is_some(), "{state:?}");
+
+        let (listings, jars) = (m.mem.listings(), m.mem.jars_asked().len());
+        let said = crate::fault::killing("settings.read", || {
+            let codes = |done: Done<status::Report>| -> Vec<&'static str> {
+                done.warnings.iter().map(Warning::code).collect()
+            };
+            let doctor: Vec<&str> = pitboard
+                .doctor()
+                .checks
+                .iter()
+                .map(|c| c.code)
+                .filter(|code| code.starts_with("desktop_"))
+                .collect();
+            (
+                codes(pitboard.status(true).expect("read")),
+                codes(pitboard.status_offline().expect("read")),
+                doctor,
+            )
+        })
+        .expect("no read opened Claude's settings");
+        assert_eq!(said, (Vec::new(), Vec::new(), Vec::new()));
+        assert_eq!(m.mem.listings(), listings);
+        assert_eq!(m.mem.jars_asked().len(), jars);
+    }
+
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+    )]
+    fn what_claudes_settings_say_since_is_a_warning_of_every_read() {
+        let m = crate::switch::harness::desktop_machine("standing");
+        let pitboard = Pitboard::new(m.ctx.clone());
+        let settings = m.ctx_home().join("claude/data/config.json");
+        let said = |pitboard: &Pitboard| -> Vec<String> {
+            pitboard
+                .status_offline()
+                .expect("read")
+                .warnings
+                .iter()
+                .map(|w| format!("{}: {w}", w.code()))
+                .collect()
+        };
+        assert!(said(&pitboard).is_empty());
+
+        let written = std::fs::read_to_string(&settings).expect("settings");
+        std::fs::write(
+            &settings,
+            written.replace(
+                crate::switch::harness::WORK.uuid,
+                "0b7e2c44-2222-4d1f-8a35-91c0de77aa01",
+            ),
+        )
+        .expect("renamed");
+        let warned = said(&pitboard);
+        assert_eq!(warned.len(), 1, "{warned:?}");
+        assert!(
+            warned[0].starts_with(
+                "in_use_unconfirmed: Claude's settings have named an account Pitboard has not \
+                 enrolled since Pitboard last read `desktop/work` in use, so Claude may hold \
+                 another login. Open Claude,"
+            ),
+            "{warned:?}"
+        );
+
+        let emptied: String = written
+            .lines()
+            .map(|line| match line.split_once(": ") {
+                Some((key, _)) if key.contains("oauth:tokenCache") => {
+                    format!("{key}: {},\n", crate::desktop_testing::EMPTIED)
+                }
+                _ => format!("{line}\n"),
+            })
+            .collect();
+        std::fs::write(&settings, emptied).expect("emptied");
+        let warned = said(&pitboard);
+        assert_eq!(
+            warned,
+            [
+                "looks_signed_out: Claude looks signed out since Pitboard last read `desktop/work` \
+              in use. The next change to a Claude Desktop account checks."
+            ]
+        );
+        assert_eq!(m.mem.listings(), 1, "the enrolment's look, and no read's");
+    }
+
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+    )]
+    fn what_stands_is_judged_from_one_read_of_claudes_settings() {
+        let m = crate::switch::harness::desktop_machine("one-read");
+        let pitboard = Pitboard::new(m.ctx.clone());
+        let state = state::load(&m.ctx).expect("state");
+        let (warnings, reads) =
+            crate::fault::counting("settings.read", || pitboard.standing(&state, &[]));
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(reads, 1);
+        let (known, reads) = crate::fault::counting("settings.read", || {
+            in_use::known(&m.ctx, &state, ProviderId::Desktop)
+        });
+        assert_eq!((known.doubt, reads), (None, 1));
+    }
+
+    #[test]
+    fn a_folder_set_aside_is_said_with_its_account_or_with_no_name() {
+        use state::SetAside;
+        let said = |why, label: Option<&str>| {
+            Warning::SetAside {
+                tool: ProviderId::Desktop,
+                path: "/p/parks/x".into(),
+                label: label.map(str::to_owned),
+                why,
+            }
+            .to_string()
+        };
+        assert_eq!(
+            said(SetAside::Superseded, Some("desktop/home")),
+            "Pitboard kept `desktop/home`'s earlier parked login in /p/parks/x and deleted \
+             nothing. `pitboard doctor` lists it."
+        );
+        assert_eq!(
+            said(SetAside::Superseded, None),
+            "Pitboard kept an earlier parked login in /p/parks/x and deleted nothing. `pitboard \
+             doctor` lists it."
+        );
+        assert_eq!(
+            said(SetAside::GivenUp, Some("desktop/work")),
+            "Pitboard moved the parts of `desktop/work`'s login left in Claude's folder into \
+             /p/parks/x and deleted nothing. `pitboard doctor` lists them."
+        );
+        assert_eq!(
+            said(SetAside::GivenUp, None),
+            "Pitboard moved the parts of a login left in Claude's folder into /p/parks/x and \
+             deleted nothing. `pitboard doctor` lists them."
+        );
+        for why in [
+            SetAside::InTheWay,
+            SetAside::AnotherMachine,
+            SetAside::Orphan,
+        ] {
+            for label in [None, Some("desktop/work")] {
+                assert_eq!(
+                    said(why, label),
+                    "Pitboard moved what it found in the way into /p/parks/x and deleted nothing."
+                );
+            }
+        }
+        let keys = |label: Option<&str>| Warning::KeysSetAside {
+            tool: ProviderId::Desktop,
+            path: "/p/parks/x".into(),
+            label: label.map(str::to_owned),
+        };
+        assert_eq!(keys(None).code(), "set_aside");
+        assert_eq!(
+            keys(Some("desktop/home")).to_string(),
+            "Claude rewrote `desktop/home`'s keys. Pitboard kept the earlier ones in /p/parks/x \
+             and deleted nothing. `pitboard doctor` lists them."
+        );
+        assert_eq!(
+            keys(None).to_string(),
+            "Claude rewrote a login's keys. Pitboard kept the earlier ones in /p/parks/x and \
+             deleted nothing. `pitboard doctor` lists them."
+        );
+    }
+
+    // What a change did before it refused leads, with a journal recovery, which ran before
+    // it; what it only found follows.
+    #[test]
+    fn a_refused_change_counts_what_it_did_first() {
+        let found = || Warning::LooksSignedOut {
+            tool: ProviderId::Claude,
+            label: "work".into(),
+        };
+        let refusal = || Error::AccountNotInUse {
+            tool: ProviderId::Desktop,
+            label: "desktop/work".into(),
+        };
+        let waiting = || Warning::MoveWaiting {
+            tool: ProviderId::Desktop,
+            label: "desktop/work".into(),
+        };
+        let recovered = || {
+            Warning::Recovered(switch::Recovered {
+                from: "home".into(),
+                to: "work".into(),
+                finished: true,
+            })
+        };
+        let codes = |failed: &Failed| -> Vec<&'static str> {
+            failed.warnings.iter().map(Warning::code).collect()
+        };
+        let failed = Failed::of(refusal().after(vec![waiting()]), vec![found()]);
+        assert_eq!(codes(&failed), ["move_waiting", "looks_signed_out"]);
+        assert_eq!(failed.said_first, 1);
+        assert_eq!(failed.error.code(), "account_not_in_use");
+        let failed = Failed::of(refusal(), vec![found()]);
+        assert_eq!(codes(&failed), ["looks_signed_out"]);
+        assert_eq!(failed.said_first, 0);
+        let failed = Failed::of(refusal(), vec![found(), recovered()]);
+        assert_eq!(
+            codes(&failed),
+            ["interrupted_switch_finished", "looks_signed_out"]
+        );
+        assert_eq!(failed.said_first, 1);
+        let failed = Failed::of(refusal().after(vec![waiting()]), vec![found(), recovered()]);
+        assert_eq!(
+            codes(&failed),
+            [
+                "interrupted_switch_finished",
+                "move_waiting",
+                "looks_signed_out"
+            ]
+        );
+        assert_eq!(failed.said_first, 2);
+    }
+
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+    )]
+    fn what_holds_claude_desktops_login_is_said() {
+        let m = crate::switch::harness::desktop_machine("holding");
+        let pitboard = Pitboard::new(m.ctx.clone());
+        let claude = m.claude();
+        assert!(pitboard.holding(ProviderId::Desktop).is_empty());
+        claude.opens();
+        let holding = pitboard.holding(ProviderId::Desktop);
+        assert_eq!(holding.len(), 1, "{holding:?}");
+        assert_eq!(holding[0].holder.kind, "claude_desktop");
+        assert_eq!(holding[0].pids.len(), 2, "its own program and a helper");
+        claude.crashes();
+        assert!(pitboard.holding(ProviderId::Desktop).is_empty());
+        m.mem.without_a_process_list();
+        assert!(matches!(
+            switch::still_holding(&m.ctx, ProviderId::Desktop),
+            switch::StillHolding::Unknown
+        ));
+        assert!(pitboard.holding(ProviderId::Desktop).is_empty());
+    }
+
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+    )]
+    fn a_desktop_row_says_no_usage_and_asks_nobody() {
+        use crate::status::Stale;
+        let m = crate::switch::harness::desktop_machine("rows");
+        let now = crate::switch::harness::NOW;
+        let mut state = state::load(&m.ctx).expect("state");
+        let another = |label: &str, parked, replaced_at| Account {
+            label: label.into(),
+            id: format!("desktop_{label}"),
+            account_uuid: label.into(),
+            email: String::new(),
+            parked,
+            last_used_at: None,
+            replaced_at,
+            plan: None,
+            detail: state::Detail::Desktop {},
+        };
+        let park = state::Park {
+            service: "pitboard-park-desktop_home-1".into(),
+            kind: state::ParkKind::Folder,
+            parked_at: now,
+            login: "0a1b2c3d4e5f6071".into(),
+            access_expires_at: None,
+            refresh_expires_at: None,
+            session_expires_at: Some(now + 20 * 86_400),
+        };
+        state.accounts.push(another("home", Some(park), None));
+        state.accounts.push(another("gone", None, Some(now - 5)));
+        state::save(&m.ctx, Permit::for_a_test(), &state).expect("saved");
+
+        let pitboard = Pitboard::new(m.ctx.clone());
+        for report in [
+            pitboard.status(true).expect("read").value,
+            pitboard.status_offline().expect("read").value,
+        ] {
+            let row = |label: &str| {
+                report
+                    .rows
+                    .iter()
+                    .find(|row| {
+                        row.provider == ProviderId::Desktop && row.label.as_deref() == Some(label)
+                    })
+                    .unwrap_or_else(|| panic!("a row for {label}"))
+            };
+            let (work, home, gone) = (row("work"), row("home"), row("gone"));
+            assert!(work.signed_in && !home.signed_in && !gone.signed_in);
+            assert_eq!(work.read_at, Some(now));
+            assert_eq!((home.read_at, gone.read_at), (None, None));
+            for row in [work, home] {
+                assert_eq!(row.stale, Some(Stale::NoUsage));
+                assert!(row.usage.is_none() && row.plan.is_none() && row.lasts(now).is_none());
+                assert_eq!(row.email, "");
+                assert_eq!(row.organization_uuid, None);
+            }
+            assert!(home.switchable(now), "no deadline is known");
+            assert_eq!(gone.stale, Some(Stale::LoginReplaced));
+            assert_eq!(
+                gone.stale
+                    .and_then(|stale| stale.explanation_for(gone.provider)),
+                Some("its login was signed out or replaced in Claude; sign in again")
+            );
+            assert_eq!(
+                Stale::NoUsage.explanation_for(ProviderId::Desktop),
+                Some("Pitboard reads no usage for Claude Desktop")
+            );
+            assert_eq!(
+                Stale::Unreachable.explanation_for(ProviderId::Desktop),
+                None
+            );
+        }
+        assert!(m.api.asked().is_empty(), "{:?}", m.api.asked());
+        assert!(
+            m.mem
+                .trail()
+                .iter()
+                .all(|touch| !touch.service.starts_with("pitboard-park-desktop_")),
+            "{:?}",
+            m.mem.trail()
+        );
+        assert!(
+            m.mem.jars_asked().len() == 1 && m.mem.listings() == 1,
+            "the enrolment's own"
+        );
+    }
 
     type Refuse = fn(&Pitboard, ProviderId) -> Option<Failed>;
 
@@ -1944,9 +2790,9 @@ mod tests {
                 .expect_err("refused");
 
             let codes: Vec<&str> = read.warnings.iter().map(Warning::code).collect();
-            let expected: &[&str] = match m.which {
-                ProviderId::Claude => &[],
-                ProviderId::Codex => &["recovery_undetermined"],
+            let expected: &[&str] = match Tool::of(m.which) {
+                Tool::Claude => &[],
+                Tool::Codex => &["recovery_undetermined"],
             };
             assert_eq!(codes, expected, "{tool}: {}", refused.error);
             let codes: Vec<&str> = known.warnings.iter().map(Warning::code).collect();
@@ -1958,14 +2804,14 @@ mod tests {
             );
 
             let gave_up = pitboard.abandon_recovery();
-            match m.which {
-                ProviderId::Claude => assert_eq!(
+            match Tool::of(m.which) {
+                Tool::Claude => assert_eq!(
                     gave_up.expect_err("refused").code(),
                     "custom_oauth_endpoint",
                     "{tool}"
                 ),
-                ProviderId::Codex => {
-                    assert!(gave_up.expect("given up").is_some(), "{tool}");
+                Tool::Codex => {
+                    assert!(gave_up.expect("given up").switch.is_some(), "{tool}");
                     assert!(!switch::interrupted(&m.ctx), "{tool}: nothing waits");
                 }
             }
@@ -2199,9 +3045,11 @@ mod tests {
         state.accounts[0].parked = Some(crate::state::Park {
             service: "pitboard-park-here-1".into(),
             parked_at: 1,
-            refresh_fingerprint: "f".into(),
+            kind: crate::state::ParkKind::Vault,
+            login: "f".into(),
             access_expires_at: None,
             refresh_expires_at: None,
+            session_expires_at: None,
         });
         assert!(
             said(&state).is_empty(),
@@ -2889,6 +3737,7 @@ mod tests {
         outcome.err().map(|error| Failed {
             error,
             warnings: Vec::new(),
+            said_first: 0,
         })
     }
 

@@ -144,13 +144,14 @@ pub struct Stowed {
 /// that needs the login stored renewed, which only putting the file away does, whose Pitboard
 /// last recorded it to be stands in.
 pub(crate) fn find(ctx: &Context, state: &State) -> Result<Option<Left>> {
+    let tool = provider::claude_code();
     let path = live::credential_file(ctx);
-    let live = live_store(ctx, TOOL)?;
+    let live = live_store(ctx, tool)?;
     let Some((_, raw)) = read_left(&live)? else {
         return Ok(None);
     };
     let held = contents(&raw)?;
-    let stored = read_stored(TOOL, &live)?.map(|(_, document)| document);
+    let stored = read_stored(tool, &live)?.map(|(_, document)| document);
     let login = match judge(ctx, state, &held, stored.as_ref(), &path)? {
         Whose::Kept(kept) => Foreseen::Kept(kept),
         Whose::Untold => Foreseen::Untold,
@@ -158,7 +159,7 @@ pub(crate) fn find(ctx: &Context, state: &State) -> Result<Option<Left>> {
             None => Foreseen::NotEnrolled(owner),
             Some(account) => {
                 let told = stored
-                    .map(|document| identify::told(ctx, state, TOOL, &document))
+                    .map(|document| identify::told(ctx, state, tool, &document))
                     .transpose()
                     .map_err(|e| super::unidentified(TOOL, e))?;
                 let stored = match told {
@@ -245,13 +246,14 @@ struct Stowing<'a> {
 impl Stowing<'_> {
     fn run(&mut self, state: &mut State, seen: &str) -> Result<Stowed> {
         let (ctx, permit) = (self.ctx, self.permit);
+        let tool = provider::claude_code();
         refresh::finished(ctx, permit, state, TOOL)?;
-        let live = live_store(ctx, TOOL)?;
+        let live = live_store(ctx, tool)?;
         let (_, mut raw) = read_left(&live)?
             .filter(|(_, raw)| store::fingerprint(raw) == seen)
             .ok_or_else(|| self.changed())?;
         let mut held = contents(&raw)?;
-        let stored = read_stored(TOOL, &live)?.map(|(_, document)| document);
+        let stored = read_stored(tool, &live)?.map(|(_, document)| document);
         let judged = judge(ctx, state, &held, stored.as_ref(), &self.path)?;
         if let Whose::Owner(owner) = &judged
             && state.account_of(TOOL, owner).is_none()
@@ -273,7 +275,7 @@ impl Stowing<'_> {
         };
         fault::point("stow.identified");
 
-        let refreshing = Refreshing::take(ctx, permit, TOOL)?;
+        let refreshing = Refreshing::take(ctx, permit, tool)?;
         if unchanged(&live, &raw)?.is_none() {
             return Err(self.changed());
         }
@@ -287,7 +289,7 @@ impl Stowing<'_> {
         };
         fault::point("stow.kept");
 
-        let writing = write_lock(ctx, permit, TOOL)?;
+        let writing = write_lock(ctx, permit, tool)?;
         let file = unchanged(&live, &raw)?.ok_or_else(|| self.changed())?;
         // A file that goes because of the login stored, as that very login or a second
         // sign-in of its account, goes only while Claude Code has still stored the login it
@@ -321,7 +323,7 @@ impl Stowing<'_> {
     /// waits in the vault, which is how far this run went. Nothing waited for that slot
     /// before, as [`refresh::finished`] saw first.
     fn told(&mut self, state: &mut State) -> Result<identify::Live> {
-        let told = identify::now(self.ctx, self.permit, state, TOOL);
+        let told = identify::now(self.ctx, self.permit, state, provider::claude_code());
         if told.is_err() && state.renewing.iter().any(|left| left.tool == TOOL) {
             self.partway = Partway::StoredRenewedKept;
         }
@@ -339,7 +341,7 @@ impl Stowing<'_> {
         raw: &mut String,
         held: &mut Contents,
     ) -> Result<Option<Owner>> {
-        let tool = provider::of(TOOL);
+        let tool = provider::claude_code();
         let slice = held.slice.clone().expect("only a login is renewed");
         let file = self.ctx.host().file(self.path.clone());
         let place = Place {
@@ -351,7 +353,7 @@ impl Stowing<'_> {
             self.ctx,
             self.permit,
             state,
-            TOOL,
+            tool,
             place,
             raw,
             &slice,
@@ -434,9 +436,9 @@ fn unchanged<'a>(live: &'a provider::LiveStore, raw: &str) -> Result<Option<&'a 
 /// Whether Claude Code has still stored `judged`, the login stored that the file's was told
 /// by.
 fn still_stored(live: &provider::LiveStore, judged: Option<&Value>) -> Result<bool> {
-    let tool = provider::of(TOOL);
+    let tool = provider::claude_code();
     let login = |document: &Value| tool.slice(document).ok();
-    let now = read_stored(TOOL, live)?.map(|(_, document)| document);
+    let now = read_stored(tool, live)?.map(|(_, document)| document);
     Ok(now.as_ref().and_then(login) == judged.and_then(login))
 }
 
@@ -453,7 +455,7 @@ struct Contents {
 fn contents(raw: &str) -> Result<Contents> {
     let document = live::document_in(raw);
     let slice = live::holds_a_login(&document)
-        .then(|| provider::of(TOOL).slice(&document))
+        .then(|| provider::claude_code().slice(&document))
         .transpose()
         .map_err(|e| shape(TOOL, e))?;
     let login = slice.as_ref().and_then(Value::as_object);
@@ -490,7 +492,7 @@ fn judge(
     let Some(slice) = &held.slice else {
         return Ok(Whose::Kept(Kept::NoLogin));
     };
-    let tool = provider::of(TOOL);
+    let tool = provider::claude_code();
     let login = tool.fingerprint(slice);
     // A login with no refresh token has no fingerprint, and matches nothing by it.
     if !login.is_empty() {
@@ -506,7 +508,7 @@ fn judge(
             account
                 .parked
                 .as_ref()
-                .filter(|park| account.provider() == TOOL && park.refresh_fingerprint == login)
+                .filter(|park| account.provider() == TOOL && park.login == login)
                 .map(|park| (account, park))
         }) {
             // A park that does not read back keeps nothing: the login is that account's, and
@@ -586,7 +588,7 @@ fn switchable(ctx: &Context, state: &State, account: &Account) -> Result<bool> {
 /// Whether `parked`, `account`'s park, reads back as recorded. A vault that cannot be read
 /// says nothing either way, and stops it.
 fn reads_back(ctx: &Context, account: &Account, parked: &state::Park) -> Result<bool> {
-    match park::load(ctx, &account.key(), parked) {
+    match park::load(ctx, provider::claude_code(), &account.key(), parked) {
         Ok(_) => Ok(true),
         Err(Error::Store(unreadable)) => Err(Error::Store(unreadable)),
         Err(_) => Ok(false),
@@ -623,7 +625,7 @@ fn park_for(
     let service = park::reserve(ctx, permit, &id)?;
     state.copying_from_file(&service);
     state::save(ctx, permit, state)?;
-    let parked = park::store_at(ctx, permit, TOOL, &service, slice)?;
+    let parked = park::store_at(ctx, permit, provider::claude_code(), &service, slice)?;
     fault::point("stow.park_stored");
     state.park(&key, parked);
     // Unrecorded, the park would be an item nothing refers to, never deleted.
@@ -677,7 +679,7 @@ mod tests {
     fn in_the_file(m: &Machine) -> Option<String> {
         let held = left_file(m).peek(&m.service)?;
         let document: Value = serde_json::from_str(&held).expect("JSON");
-        Some(provider::of(TOOL).fingerprint(&document))
+        Some(provider::document(TOOL).fingerprint(&document))
     }
 
     /// `label`, enrolled with nothing parked.
@@ -747,7 +749,7 @@ mod tests {
     fn parked_fingerprint(m: &Machine, label: &str) -> Option<String> {
         let state = state::load(&m.ctx).expect("state");
         let parked = state.get(&m.key(label))?.parked.clone()?;
-        Some(parked.refresh_fingerprint)
+        Some(parked.login)
     }
 
     fn fingerprint(refresh: &str) -> String {
@@ -832,7 +834,8 @@ mod tests {
             .get(&m.key("there"))
             .and_then(|a| a.parked.clone())
             .expect("parked");
-        let held = park::load(&m.ctx, &m.key("there"), &parked).expect("it reads back");
+        let held = park::load(&m.ctx, provider::document(TOOL), &m.key("there"), &parked)
+            .expect("it reads back");
         assert_eq!(held["claudeAiOauth"]["refreshToken"], "there-refresh");
         assert!(m.api.asked().is_empty(), "{:?}", m.api.asked());
     }
@@ -895,7 +898,13 @@ mod tests {
             .get(&m.key("elsewhere"))
             .and_then(|a| a.parked.clone())
             .expect("parked");
-        let held = park::load(&m.ctx, &m.key("elsewhere"), &parked).expect("it reads back");
+        let held = park::load(
+            &m.ctx,
+            provider::document(TOOL),
+            &m.key("elsewhere"),
+            &parked,
+        )
+        .expect("it reads back");
         assert_eq!(held["claudeAiOauth"]["refreshToken"], "elsewhere-refresh");
         assert!(
             held.get("mcpOAuth").is_none(),
@@ -1161,7 +1170,9 @@ mod tests {
             left_file(&m).plant(&m.service, contents);
 
             assert_eq!(
-                provider::of(TOOL).behind(&m.ctx).map(|behind| behind.held),
+                provider::document(TOOL)
+                    .behind(&m.ctx)
+                    .map(|behind| behind.held),
                 Some(provider::Held::NoLogin),
                 "{contents:?}"
             );
@@ -2105,7 +2116,13 @@ mod tests {
                 .get(&m.key("elsewhere"))
                 .and_then(|a| a.parked.clone())
                 .expect("parked");
-            let held = park::load(&m.ctx, &m.key("elsewhere"), &parked).expect("it reads back");
+            let held = park::load(
+                &m.ctx,
+                provider::document(TOOL),
+                &m.key("elsewhere"),
+                &parked,
+            )
+            .expect("it reads back");
             assert_eq!(
                 held["claudeAiOauth"]["refreshToken"], "elsewhere-renewed",
                 "{stop}"

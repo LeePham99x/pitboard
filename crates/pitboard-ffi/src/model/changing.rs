@@ -8,12 +8,14 @@
 //! the accounts afterwards, as a rename does.
 
 use super::advice::Told;
-use super::state::{Answer, Job};
+use super::signing::quits_failed;
+use super::state::{After, Answer, Job};
 use super::stowing::{left, parked_now};
 use super::switching::{a_read_that_started_before, switch};
 use super::testing::{
-    Hand, Machine, a_look, a_look_or_a_read, any_read, claude, codex_account, enrolled_as,
-    offline_read, refusal, status, still_running, switched, warned, warning,
+    CLAUDE, Hand, Machine, StandInApps, a_look, a_look_or_a_read, a_switch, any_read, claude,
+    codex_account, desktop_machine, enrolled_as, offline_read, refusal, status, still_running,
+    switched, warned, warning,
 };
 use super::{Intent, Sheet};
 use crate::present::testing::account;
@@ -735,6 +737,7 @@ fn a_name_is_saved_as_its_sheet_offers_it() {
             provider: "codex".into(),
             name: "job".into(),
             from: None,
+            reopen: None,
         }]
     );
     assert_eq!(
@@ -771,11 +774,6 @@ fn a_sheet_saving_a_name_holds_back_until_it_answers() {
     assert_eq!(model.send(enrol("claude", "work")).len(), 1, "and again");
 }
 
-/// What a sheet could not save once it has gone, closed or replaced while the save ran, is
-/// said in the window: something asked for that did not happen is said somewhere. The Swift
-/// handed it back to the sheet that asked, which had gone, so it was said nowhere.
-///
-/// Reaches people in PR 10.
 #[test]
 fn a_name_that_cannot_be_saved_once_its_sheet_has_gone_is_said_in_the_window() {
     let mut model = Hand::new();
@@ -785,7 +783,9 @@ fn a_name_that_cannot_be_saved_once_its_sheet_has_gone_is_said_in_the_window() {
 
     put_up(&mut model, &mut machine, naming("claude", "a@example.com"));
     model.send(enrol("claude", "work"));
-    model.send(Intent::CloseSheet);
+    model.send(Intent::PresentSheet {
+        sheet: renaming("claude", "other"),
+    });
     let requests = model.shown().window_request.serial;
     model.run(&mut machine);
     let shown = model.shown();
@@ -953,4 +953,154 @@ fn a_config_update_refused_is_said_in_the_window() {
     assert_eq!(refused.code.as_deref(), Some("account_not_in_use"));
     assert!(shown.last_switches.is_empty());
     assert!(machine.switched_to.is_empty());
+}
+
+// Recording the account an app shows, which reads its data folder only while it is closed.
+fn recording_travel(model: &mut Hand, machine: &mut Machine) {
+    model.refresh(machine);
+    model.send(enrol("desktop", "travel"));
+    model.run(machine);
+    let question = model.shown().quit_question.expect("asked first");
+    model.send(Intent::QuitAndSwitch {
+        qualified: question.qualified,
+    });
+    model.run(machine);
+}
+
+#[test]
+fn recording_the_account_an_app_shows_asks_before_it_quits_the_app() {
+    let mut model = Hand::new();
+    let mut machine = desktop_machine(true);
+    model.refresh(&mut machine);
+    let jobs = model.send(enrol("desktop", "travel"));
+    assert_eq!(
+        jobs,
+        [Job::Holding {
+            qualified: "desktop/travel".into(),
+            then: After::Enrol {
+                provider: "desktop".into(),
+                name: "travel".into(),
+                from: None,
+            },
+        }]
+    );
+    model.run(&mut machine);
+    assert!(
+        machine.enrolled.is_empty(),
+        "nothing read before the answer"
+    );
+    assert_eq!(
+        model
+            .on_a_mac()
+            .quit_confirmation
+            .expect("asked first")
+            .title,
+        "Quit Claude to add travel?"
+    );
+    let mut model = Hand::new();
+    recording_travel(&mut model, &mut machine);
+    assert_eq!(machine.enrolled, ["desktop/travel"]);
+    assert!(model.asked.contains(&Job::Enrol {
+        provider: "desktop".into(),
+        name: "travel".into(),
+        from: None,
+        reopen: Some(StandInApps::copy_of(CLAUDE)),
+    }));
+}
+
+#[test]
+fn a_recording_whose_app_does_not_quit_reads_nothing_and_lets_its_sheet_go() {
+    let adding = Sheet::Add {
+        provider: Some("desktop".into()),
+    };
+    for (quits, lingers, lost, message, asked) in quits_failed() {
+        let mut model = Hand::new();
+        let mut machine = desktop_machine(true);
+        machine.answer = Ok(status(vec![claude("work", true, 10.0)]));
+        machine.apps = StandInApps::new(&[CLAUDE], quits);
+        machine.lingers = lingers;
+        model.refresh(&mut machine);
+        put_up(&mut model, &mut machine, adding.clone());
+        model.send(Intent::SignIn {
+            provider: "desktop".into(),
+            name: "travel".into(),
+        });
+        model.run(&mut machine);
+        let question = model.shown().quit_question.expect("asked");
+        model.send(Intent::QuitAndSwitch {
+            qualified: question.qualified,
+        });
+        if lost {
+            let quit = model.take(|job| matches!(job, Job::Quit { .. }));
+            model.give(Answer::Lost(quit));
+        }
+        model.run(&mut machine);
+        assert!(machine.enrolled.is_empty(), "{message}");
+        let shown = model.on_a_mac();
+        assert_eq!(shown.sheet, Some(adding.clone()));
+        let failure = shown.sheet_failure.expect("said in the sheet");
+        assert_eq!(failure.title, "Couldn’t add travel");
+        assert_eq!(failure.message, message);
+        let form = shown.sheet_text.expect("the form");
+        assert!(!form.saving, "{message}");
+        assert_eq!(form.progress, None);
+        assert_eq!(machine.apps.asked(), asked);
+        machine.changed += 1;
+        model.notice(&mut machine);
+        assert_eq!(model.count(offline_read), 1, "the index is not held");
+        model.send(Intent::CloseSheet);
+        assert_eq!(model.shown().sheet, None, "{message}");
+    }
+}
+
+#[test]
+fn the_app_quit_to_record_an_account_is_opened_only_after_a_switch_asked_meanwhile() {
+    let mut model = Hand::new();
+    let mut machine = desktop_machine(true);
+    machine.switched = switched("desktop", "desktop/work", "desktop/home", Vec::new());
+    model.refresh(&mut machine);
+    model.send(enrol("desktop", "travel"));
+    model.run(&mut machine);
+    let question = model.shown().quit_question.expect("asked first");
+    model.send(Intent::QuitAndSwitch {
+        qualified: question.qualified,
+    });
+    let quit = model.next();
+    let answer = machine.answer(quit);
+    model.give(answer);
+    model.send(Intent::SwitchTo {
+        qualified: "desktop/home".into(),
+    });
+    model.run_but(&mut machine, a_switch);
+    assert_eq!(machine.enrolled, ["desktop/travel"]);
+    let switch = model.take(a_switch);
+    assert_eq!(
+        machine.apps.asked(),
+        [format!("quit {CLAUDE}")],
+        "nothing opens Claude while the switch runs"
+    );
+    let answer = machine.answer(switch);
+    model.give(answer);
+    model.run(&mut machine);
+    assert_eq!(
+        machine.apps.asked(),
+        [format!("quit {CLAUDE}"), format!("open {CLAUDE}")]
+    );
+}
+
+#[test]
+fn the_app_quit_to_record_an_account_is_opened_again_behind() {
+    for enrolling in [
+        enrolled_as(EnrolledAs::Current, Vec::new()),
+        Err(refusal("login_in_doubt", "in doubt", Vec::new())),
+    ] {
+        let mut model = Hand::new();
+        let mut machine = desktop_machine(true);
+        machine.enrolling_current = enrolling;
+        recording_travel(&mut model, &mut machine);
+        assert_eq!(
+            machine.apps.asked(),
+            [format!("quit {CLAUDE}"), format!("open {CLAUDE}")]
+        );
+    }
 }

@@ -5,6 +5,9 @@ suffix, such as `v<version>-rc1`, makes a GitHub pre-release.
 
 ## Prepare a release
 
+The first release with Claude Desktop waits until the hand measurements M1 to M10 in
+[ARCHITECTURE.md](ARCHITECTURE.md#claude-desktop) are recorded.
+
 1. Pick the version: minor for anything people would notice, patch for fixes alone. A
    `pitboard-core` API break has already raised the minor version in `Cargo.toml`, as
    [Submit a change](CONTRIBUTING.md#submit-a-change) asks.

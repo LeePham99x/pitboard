@@ -3,7 +3,7 @@
 //! of the model an app launches into it. Where the real core answers otherwise than the
 //! Swift fixture did, the test says so and holds what the core does.
 
-use super::apps::CHATGPT;
+use super::apps::{CHATGPT, CLAUDE, QUITS_AFTER, SIGNS_IN_AFTER};
 use super::pages;
 use super::tools::{CLAUDE_ADDRESS, CLAUDE_REFUSES, CODEX_ADDRESS};
 use super::worlds::{Folder, Launched, World, make, out_of_reach};
@@ -14,6 +14,7 @@ use crate::{
     Adoption, AppCore, Enrolled, EnrolledAs, FoundCommandLine, PitboardError, Schedule, Status,
     Switch,
 };
+use pitboard_core::host::{OS, Os};
 use pitboard_core::provider::{self, ProviderId};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
@@ -121,7 +122,17 @@ fn sign_in_to_the_end(core: &AppCore, label: &str) -> Result<Enrolled, PitboardE
 fn each_fixture_starts_where_its_tests_expect() {
     let work = "claude/work, in use";
     for world in World::ALL {
+        let desktop = matches!(world, World::ClaudeDesktop | World::ClaudeDesktopOpen);
+        if desktop && !ProviderId::Desktop.supported_on(OS) {
+            continue;
+        }
         let expected: Vec<&str> = match world {
+            World::ClaudeDesktop | World::ClaudeDesktopOpen => vec![
+                work,
+                "claude/personal",
+                "desktop/work, in use",
+                "desktop/home",
+            ],
             World::TwoTools | World::ChatGptOpen => vec![
                 work,
                 "claude/old, parked_access_expired",
@@ -173,20 +184,30 @@ fn each_fixture_starts_where_its_tests_expect() {
             assert_eq!(who(&offline), who(&fresh), "{}", world.name());
             assert_eq!(offline.warnings, Vec::new(), "{}", world.name());
         }
+        let listed: &[&str] = match OS {
+            Os::MacOs => &["claude", "codex", "desktop"],
+            Os::Linux | Os::Windows => &["claude", "codex"],
+        };
         assert_eq!(
             crate::tools()
                 .iter()
                 .map(|tool| tool.code.as_str())
                 .collect::<Vec<_>>(),
-            ["claude", "codex"]
+            listed
         );
         let installed: Vec<String> = core.installed().into_iter().map(|tool| tool.code).collect();
-        let expected: &[&str] = if world == World::NoClaudeCode {
-            &[]
-        } else {
-            &["claude", "codex"]
+        let expected: &[&str] = match world {
+            World::NoClaudeCode => &[],
+            World::ClaudeDesktop | World::ClaudeDesktopOpen => &["claude", "desktop"],
+            _ => &["claude", "codex"],
         };
         assert_eq!(installed, expected, "{}", world.name());
+        assert_eq!(
+            launched.apps.is_running(CLAUDE),
+            world == World::ClaudeDesktopOpen,
+            "{}",
+            world.name()
+        );
     }
 }
 
@@ -210,6 +231,8 @@ fn the_ui_tests_name_every_fixture_as_the_app_does() {
             "readFailure",
             "stuck",
             "chatGPTOpen",
+            "claudeDesktop",
+            "claudeDesktopOpen",
             "warmUp",
         ]
     );
@@ -852,13 +875,19 @@ fn giving_up_on_the_interrupted_switch_happens_once() {
 
     assert_eq!(
         core.abandon_recovery().expect("given up"),
-        Some(crate::Abandoned {
-            from: "work".into(),
-            to: "personal".into(),
-            logins_kept: 2,
-        })
+        crate::GaveUp {
+            switch: Some(crate::Abandoned {
+                from: "work".into(),
+                to: "personal".into(),
+                logins_kept: 2,
+            }),
+            ..crate::GaveUp::default()
+        }
     );
-    assert_eq!(core.abandon_recovery().expect("nothing to give up"), None);
+    assert_eq!(
+        core.abandon_recovery().expect("nothing to give up"),
+        crate::GaveUp::default()
+    );
     let after = read(core);
     assert_eq!(
         described(&after),
@@ -1207,6 +1236,350 @@ fn the_chatgpt_fixture_is_quit_for_a_codex_switch_and_opened_again() {
     model.shutdown();
 }
 
+#[test]
+fn claude_is_quit_for_a_switch_and_opened_again_behind() {
+    if !ProviderId::Desktop.supported_on(OS) {
+        return;
+    }
+    let launched = made(World::ClaudeDesktopOpen);
+    let core = &launched.core;
+    assert_eq!(
+        core.holding("desktop".into())
+            .iter()
+            .map(|held| held.kind.as_str())
+            .collect::<Vec<_>>(),
+        ["claude_desktop"]
+    );
+    let (model, told) = started(&launched);
+    model.send(Intent::SwitchTo {
+        qualified: "desktop/home".into(),
+    });
+    let asked = told.until("the quit question", |snapshot| {
+        snapshot.quit_question.is_some()
+    });
+    let question = asked.quit_question.expect("asked");
+    assert_eq!(question.name, "Claude");
+    assert_eq!(
+        asked.quit_confirmation.expect("its words").title,
+        "Quit Claude to switch?"
+    );
+    model.send(Intent::QuitAndSwitch {
+        qualified: question.qualified,
+    });
+    told.until("the switch, read back", |snapshot| {
+        snapshot.switch_under_way.is_none()
+            && snapshot
+                .status
+                .as_ref()
+                .is_some_and(|status| in_use(status).contains(&"desktop/home".into()))
+    });
+    model.shutdown();
+    assert_eq!(
+        launched.apps.asked(),
+        [format!("quit {CLAUDE}"), format!("open {CLAUDE}")]
+    );
+    assert!(launched.apps.is_running(CLAUDE));
+}
+
+#[test]
+fn an_add_in_claude_desktop_parks_waits_and_enrols_with_claude_in_front() {
+    use pitboard_core::switch::WaitStep;
+    if !ProviderId::Desktop.supported_on(OS) {
+        return;
+    }
+    // The steps, through the core's own wait, with the fixture's Claude played by hand.
+    let launched = made(World::ClaudeDesktop);
+    let (core, claude) = (&launched.core, &launched.machine.claude);
+    let session = core.sign_in("desktop/travel".into()).expect("work parked");
+    assert_eq!(session.put_back.as_deref(), Some("desktop/work"));
+    let reading = {
+        let session = Arc::clone(&session);
+        std::thread::spawn(move || {
+            let mut said = Vec::new();
+            while let Some(line) = session.next_line() {
+                said.push(line);
+            }
+            said
+        })
+    };
+    let until = |step: WaitStep| {
+        let started = Instant::now();
+        while session.step() != Some(step) {
+            assert!(started.elapsed() < PATIENCE, "never {step:?}");
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    };
+    until(WaitStep::Waiting);
+    claude.opens();
+    until(WaitStep::Open);
+    claude.quits();
+    until(WaitStep::QuitSignedOut);
+    claude.opens();
+    until(WaitStep::Open);
+    claude.signs_in(&pitboard_core::testing::desktop::TRAVEL);
+    claude.reports();
+    claude.quits();
+    let said = reading.join().expect("everything the wait said");
+    assert!(
+        said.iter()
+            .any(|line| line.starts_with("Claude quit with nobody signed in")),
+        "{said:?}"
+    );
+    let enrolled = session.finish().expect("travel enrolled");
+    assert_eq!(enrolled.outcome, EnrolledAs::InUse { again: false });
+
+    // The same add from the app, over a Claude that is open.
+    let launched = made(World::ClaudeDesktopOpen);
+    let (model, told) = started(&launched);
+    model.send(Intent::PresentSheet {
+        sheet: Sheet::Add {
+            provider: Some("desktop".into()),
+        },
+    });
+    model.send(Intent::SignIn {
+        provider: "desktop".into(),
+        name: "travel".into(),
+    });
+    let asked = told.until("the quit question", |snapshot| {
+        snapshot.quit_question.is_some()
+    });
+    assert_eq!(
+        asked.quit_confirmation.expect("its words").confirm,
+        "Quit Claude and Park work"
+    );
+    model.send(Intent::QuitAndSwitch {
+        qualified: asked.quit_question.expect("asked").qualified,
+    });
+    let waiting = told.until("the wait, with Claude opened for it", |snapshot| {
+        snapshot
+            .signing_in_text
+            .as_ref()
+            .is_some_and(|text| text.message.starts_with("In Claude, sign in"))
+    });
+    let text = waiting.signing_in_text.expect("the page");
+    assert_eq!(text.waiting, "Waiting for Claude to quit");
+    assert_eq!(
+        text.undo.map(|undo| undo.title).as_deref(),
+        Some("Put work Back")
+    );
+    told.until("travel added and in use", |snapshot| {
+        snapshot.signing_in.is_none()
+            && snapshot.sheet.is_none()
+            && snapshot
+                .status
+                .as_ref()
+                .is_some_and(|status| in_use(status).contains(&"desktop/travel".into()))
+    });
+    model.shutdown();
+    assert_eq!(
+        launched.apps.asked(),
+        [format!("quit {CLAUDE}"), format!("open-front {CLAUDE}")]
+    );
+    assert!(!launched.apps.is_running(CLAUDE), "the person quit it");
+}
+
+#[test]
+fn an_add_left_halfway_is_put_back_by_use() {
+    if !ProviderId::Desktop.supported_on(OS) {
+        return;
+    }
+    let launched = made(World::ClaudeDesktop);
+    let (model, told) = started(&launched);
+    model.send(Intent::PresentSheet {
+        sheet: Sheet::Add {
+            provider: Some("desktop".into()),
+        },
+    });
+    model.send(Intent::SignIn {
+        provider: "desktop".into(),
+        name: "travel".into(),
+    });
+    let waiting = told.until("work parked for the sign-in", |snapshot| {
+        snapshot
+            .signing_in_text
+            .as_ref()
+            .is_some_and(|text| text.undo.is_some())
+    });
+    let text = waiting.signing_in_text.expect("the page");
+    assert!(
+        text.message.starts_with("Open Claude and sign in"),
+        "{text:?}"
+    );
+    assert_eq!(text.cancel.title, "Later");
+    assert!(!text.escape_cancels);
+    model.send(Intent::CancelSignIn);
+    let left = told.until("the add left halfway", |snapshot| {
+        snapshot.signing_in.is_none()
+            && snapshot
+                .notices
+                .iter()
+                .any(|notice| notice.id == "awaiting/desktop")
+    });
+    let notice = left
+        .notices
+        .iter()
+        .find(|notice| notice.id == "awaiting/desktop")
+        .expect("its notice");
+    assert_eq!(
+        notice
+            .actions
+            .iter()
+            .map(|action| action.title.as_str())
+            .collect::<Vec<_>>(),
+        ["Finish Adding…", "Put work Back"]
+    );
+    model.send(notice.actions[1].intent.clone());
+    told.until("work back in use", |snapshot| {
+        snapshot.switch_under_way.is_none()
+            && !snapshot
+                .notices
+                .iter()
+                .any(|notice| notice.id == "awaiting/desktop")
+            && snapshot
+                .status
+                .as_ref()
+                .is_some_and(|status| in_use(status).contains(&"desktop/work".into()))
+    });
+    model.shutdown();
+    assert_eq!(launched.apps.asked(), Vec::<String>::new());
+}
+
+#[test]
+fn a_claude_pitboard_quits_before_anybody_signs_in_writes_nothing_after() {
+    use crate::model::AppControl;
+    if !ProviderId::Desktop.supported_on(OS) {
+        return;
+    }
+    let launched = made(World::ClaudeDesktopOpen);
+    let apps = &launched.apps;
+    let copy = apps.running(CLAUDE.into()).expect("asked").expect("open");
+    apps.request_quit(CLAUDE.into()).expect("asked to quit");
+    let session = launched
+        .core
+        .sign_in("desktop/travel".into())
+        .expect("work parked");
+    apps.reopen(copy, true).expect("opened for the sign-in");
+    apps.request_quit(CLAUDE.into()).expect("asked to quit");
+    std::thread::sleep(SIGNS_IN_AFTER + QUITS_AFTER + Duration::from_secs(1));
+    assert!(!launched.machine.claude.holds_a_session());
+    assert!(!launched.apps.is_running(CLAUDE));
+    session.cancel();
+}
+
+// The actions of the notice whose id starts `id`, by title.
+fn actions_of(snapshot: &Snapshot, id: &str) -> Vec<String> {
+    snapshot
+        .notices
+        .iter()
+        .find(|notice| notice.id.starts_with(id))
+        .map(|notice| {
+            (notice.actions.iter())
+                .map(|action| action.title.clone())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[test]
+fn a_stopped_move_is_given_up_from_the_app() {
+    if !ProviderId::Desktop.supported_on(OS) {
+        return;
+    }
+    let launched = made(World::ClaudeDesktop);
+    let machine = &launched.machine;
+    pitboard_core::testing::desktop::leave_a_move_waiting(
+        &machine.terminal(),
+        &machine.host,
+        &pitboard_core::state::Key::new(ProviderId::Desktop, "work"),
+    );
+    // Opened, somebody signed in to a third account, quit: recovery cannot tell.
+    machine.claude.opens();
+    machine
+        .claude
+        .signs_in(&pitboard_core::testing::desktop::TRAVEL);
+    machine.claude.reports();
+    machine.claude.quits();
+    let (model, told) = started(&launched);
+    let waiting = told.until("the move said waiting", |snapshot| {
+        !actions_of(snapshot, "warning/move_waiting/").is_empty()
+    });
+    assert_eq!(
+        actions_of(&waiting, "warning/move_waiting/"),
+        ["Add the Account Claude Shows…"],
+        "no change has tried to settle it yet"
+    );
+    model.send(Intent::SwitchTo {
+        qualified: "desktop/home".into(),
+    });
+    let refused = told.until("the switch refused", |snapshot| {
+        actions_of(snapshot, "warning/move_waiting/").len() == 2
+    });
+    assert_eq!(
+        refused
+            .failure
+            .as_ref()
+            .and_then(|failure| failure.code.as_deref()),
+        Some("recovery_undetermined")
+    );
+    let notice = (refused.notices.iter())
+        .find(|notice| notice.id.starts_with("warning/move_waiting/"))
+        .expect("its notice");
+    assert_eq!(
+        actions_of(&refused, "warning/move_waiting/"),
+        ["Add the Account Claude Shows…", "Give Up…"]
+    );
+    model.send(notice.actions[1].intent.clone());
+    let gave_up = told.until("the move given up", |snapshot| {
+        snapshot
+            .notices
+            .iter()
+            .any(|notice| notice.id == "moves_given_up")
+    });
+    model.shutdown();
+    let notice = (gave_up.notices.iter())
+        .find(|notice| notice.id == "moves_given_up")
+        .expect("its notice");
+    assert_eq!(notice.title, "Gave up on the interrupted move");
+    assert!(
+        notice.lines[0].starts_with("Pitboard gave up the move of work’s login"),
+        "{notice:?}"
+    );
+    assert!(!launched.core.moving("desktop"), "nothing waits");
+}
+
+#[test]
+fn a_move_the_give_up_settles_is_said_as_finished() {
+    if !ProviderId::Desktop.supported_on(OS) {
+        return;
+    }
+    let launched = made(World::ClaudeDesktop);
+    let machine = &launched.machine;
+    pitboard_core::testing::desktop::leave_a_move_waiting(
+        &machine.terminal(),
+        &machine.host,
+        &pitboard_core::state::Key::new(ProviderId::Desktop, "work"),
+    );
+    let (model, told) = started(&launched);
+    told.until("the move said waiting", |snapshot| {
+        !actions_of(snapshot, "warning/move_waiting/").is_empty()
+    });
+    // As the stuck notice's Give Up… asks it: recovery finishes this move.
+    model.send(Intent::AbandonStuckSwitch);
+    let settled = told.until("the move said finished", |snapshot| {
+        (snapshot.notices.iter())
+            .any(|notice| notice.id.starts_with("warning/interrupted_move_finished/"))
+    });
+    model.shutdown();
+    assert!(
+        !settled
+            .notices
+            .iter()
+            .any(|notice| notice.id == "moves_given_up"),
+        "nothing given up"
+    );
+    assert!(!launched.core.moving("desktop"), "nothing waits");
+}
+
 /// The fixture's ChatGPT leaves the process list as it quits and comes back as it is
 /// opened again, so the core sees it go and come back as it would on a real machine.
 #[test]
@@ -1225,7 +1598,7 @@ fn chatgpt_leaves_the_process_list_as_it_quits() {
     apps.request_quit(CHATGPT.into()).expect("asked to quit");
     assert_eq!(apps.running(CHATGPT.into()).expect("asked"), None);
     assert!(core.holding("codex".into()).is_empty());
-    apps.reopen(copy).expect("opened");
+    apps.reopen(copy, false).expect("opened");
     assert_eq!(core.holding("codex".into()).len(), 1);
     assert!(
         !made(World::TwoTools).apps.is_running(CHATGPT),

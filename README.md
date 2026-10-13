@@ -1,7 +1,7 @@
 # Pitboard
 
-Switch Claude Code and Codex between your own accounts without signing out, and see what each
-one has left.
+Switch Claude Code, Codex and Claude Desktop between your own accounts without signing out,
+and see what each Claude Code and Codex account has left.
 
 [![CI](https://github.com/datlechin/pitboard/actions/workflows/ci.yml/badge.svg)](https://github.com/datlechin/pitboard/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/pitboard.svg)](https://crates.io/crates/pitboard)
@@ -13,18 +13,19 @@ one has left.
   width="300">
 
 Pitboard keeps the login of each account you are not using, called a parked login. A switch
-puts the chosen account's parked login where Claude Code or OpenAI's Codex CLI reads it. Your
-history, settings and projects stay where they are.
+puts the chosen account's parked login where Claude Code, OpenAI's Codex CLI or Claude
+Desktop reads it. Your history, settings and projects stay where they are.
 
 [Open Claude Code sessions](https://docs.usepitboard.com/concepts/switching#open-sessions)
 follow a switch with no restart. A running `codex` keeps the old account until it starts
-again.
+again. Claude Desktop switches on macOS only, while Claude is closed. The app offers to quit
+Claude, and the command line refuses while it is open.
 
-The menu bar app also gives each account its own
+The menu bar app also gives each Claude Code and Codex account its own
 [window on claude.ai or chatgpt.com](https://docs.usepitboard.com/guides/account-windows).
 
 Pitboard has no server of its own and no telemetry. It sends each login only to the service
-that issued it.
+that issued it, and sends nothing for a Claude Desktop account.
 [What leaves your machine](https://docs.usepitboard.com/security#what-leaves-your-machine)
 lists every request.
 
@@ -64,12 +65,14 @@ pitboard use work               # switch Claude Code to work
 
 In the app, click Pitboard's item in the menu bar and choose the account. The
 [Quickstart](https://docs.usepitboard.com/quickstart) shows each step and what it prints. For
-Codex, put `codex/` before each label, as
-[Use Pitboard with Codex](https://docs.usepitboard.com/guides/codex) explains.
+Codex or Claude Desktop, put `codex/` or `desktop/` before each label, as
+[Use Pitboard with Codex](https://docs.usepitboard.com/guides/codex) and
+[Use Pitboard with Claude Desktop](https://docs.usepitboard.com/guides/claude-desktop) explain.
 
 Add accounts only this way, never with Claude Code's `/login` or with `codex login`. Each
 replaces the login in use without Pitboard parking it. The account that was in use then needs
-a browser sign-in.
+a browser sign-in. Never choose **Log out** in Claude: it ends the login Claude holds at
+claude.ai, and Pitboard cannot bring it back.
 
 ## Documentation
 

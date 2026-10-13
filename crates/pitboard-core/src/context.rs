@@ -52,9 +52,19 @@ const READ: &[&str] = &[
     "SUDO_UID",
 ];
 
+// Read only by a build for tests: a release lists none and reads none.
+#[cfg(any(test, feature = "test-support"))]
+const READ_BY_BUILDS_FOR_TESTS: &[&str] = &[TEST_CLAUDE_DESKTOP];
+#[cfg(not(any(test, feature = "test-support")))]
+const READ_BY_BUILDS_FOR_TESTS: &[&str] = &[];
+
+#[cfg(any(test, feature = "test-support"))]
+const TEST_CLAUDE_DESKTOP: &str = "PITBOARD_TEST_CLAUDE_DESKTOP";
+
 /// Every variable Pitboard reads from its environment, by name.
 pub(crate) fn variables() -> impl Iterator<Item = &'static str> {
     READ.iter()
+        .chain(READ_BY_BUILDS_FOR_TESTS.iter())
         .chain(crate::settings::OVERRIDING_ENV.iter())
         .chain(crate::proxy::NAMING.iter())
         .chain(crate::proxy::EXEMPTING.iter())
@@ -161,6 +171,75 @@ impl<K: Into<OsString>, V: Into<OsString>> FromIterator<(K, V)> for Environment 
     }
 }
 
+// Declared in every build, so code behind `cfg!` compiles in a release too.
+#[derive(Debug, Clone)]
+pub struct ScratchClaude {
+    pub data: PathBuf,
+    pub app: PathBuf,
+}
+
+// Through every link, against the home the system names whatever the environment says.
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn refuse_a_real_claude(path: &std::path::Path) {
+    use crate::host::user;
+    assert!(
+        !path
+            .components()
+            .any(|part| part == std::path::Component::ParentDir),
+        "a test named {} for Claude through `..`, which may lead anywhere once a folder is made: \
+         give it a folder of its own",
+        path.display()
+    );
+    #[cfg(test)]
+    let fake = testing::guarded_home();
+    #[cfg(not(test))]
+    let fake: Option<PathBuf> = None;
+    let real = ["Library/Application Support", "Applications/Claude.app"]
+        .into_iter()
+        .any(|below| {
+            user::lies_in_the_accounts_own(path, below)
+                || fake
+                    .as_ref()
+                    .is_some_and(|home| crate::host::lies_in(path, &home.join(below)))
+        })
+        || crate::host::lies_in(path, std::path::Path::new("/Applications/Claude.app"));
+    assert!(
+        !real,
+        "a test named {} for Claude, which is, holds or lies in this account's own \
+         Application Support or a real Claude.app: give it a folder of its own",
+        path.display()
+    );
+}
+
+#[cfg(test)]
+pub(crate) mod testing {
+    use std::cell::RefCell;
+    use std::path::{Path, PathBuf};
+
+    thread_local! {
+        static GUARDED: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
+    }
+
+    // While what this returns is kept, the guards on this thread's test refuse `home`'s places
+    // as well as the account's own, so a test of them need name no real place.
+    pub(crate) fn also_guarding(home: &Path) -> AlsoGuarding {
+        GUARDED.with(|guarded| *guarded.borrow_mut() = Some(home.to_path_buf()));
+        AlsoGuarding(())
+    }
+
+    pub(crate) struct AlsoGuarding(());
+
+    impl Drop for AlsoGuarding {
+        fn drop(&mut self) {
+            GUARDED.with(|guarded| guarded.borrow_mut().take());
+        }
+    }
+
+    pub(super) fn guarded_home() -> Option<PathBuf> {
+        GUARDED.with(|guarded| guarded.borrow().clone())
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Context {
     pub(crate) home: PathBuf,
@@ -191,8 +270,8 @@ pub struct Context {
     /// Which front end asked, for the audit log. A change made from the menu bar and one
     /// typed at a prompt read the same otherwise.
     pub(crate) caller: String,
-    /// The `claude` that runs a sign-in; a bare name is looked up on the search path.
-    pub(crate) claude_program: PathBuf,
+    // each tool's program for a sign-in; a bare name is looked up on the search path
+    pub(crate) programs: std::collections::BTreeMap<ProviderId, PathBuf>,
     /// Where Anthropic's endpoints are reached instead, for tests; `api` honours loopback only.
     pub(crate) api_base: Option<String>,
     /// The proxy the environment names for Pitboard's requests, read as ureq 3.4.2 reads one.
@@ -205,8 +284,6 @@ pub struct Context {
     pub(crate) hover_rest: bool,
     /// `CODEX_HOME`, which moves everything Codex keeps, including its keyring account.
     pub(crate) codex_home: Option<String>,
-    /// The `codex` that runs a sign-in; a bare name is looked up on the search path.
-    pub(crate) codex_program: PathBuf,
     /// The Pitboard the daily renewal schedule runs. `None` is this program, which is right
     /// for the command line and wrong for an app: the schedule runs `pitboard renew`, so an
     /// app names the command line it comes with.
@@ -242,11 +319,26 @@ pub struct Context {
     /// nothing here at all.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) sign_in_script: Option<Arc<dyn crate::switch::SignInScript>>,
+    #[cfg(any(test, feature = "test-support"))]
+    scratch_claude: Option<ScratchClaude>,
+    #[cfg(any(test, feature = "test-support"))]
+    awaited_every: Option<std::time::Duration>,
+    #[cfg(test)]
+    unknown_machine: bool,
     /// Who plays a warm-up's run in place of the tool's program, where a test or a fixture
     /// says. `None` in every real context, and in any build without `test-support` there is
     /// nothing here at all.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) warm_script: Option<Arc<dyn crate::warm::run::WarmScript>>,
+}
+
+fn programs(
+    named: impl Fn(ProviderId, crate::provider::Cli) -> PathBuf,
+) -> std::collections::BTreeMap<ProviderId, PathBuf> {
+    ProviderId::ALL
+        .iter()
+        .filter_map(|&tool| Some((tool, named(tool, tool.cli()?))))
+        .collect()
 }
 
 impl Context {
@@ -299,13 +391,12 @@ impl Context {
             argv_fallback: true,
             overriding_auth: Vec::new(),
             caller: "unknown".into(),
-            claude_program: PathBuf::from("claude"),
+            programs: programs(|tool, _| PathBuf::from(tool.program())),
             api_base: None,
             proxy: crate::proxy::Proxies::default(),
             agent: crate::api::Agents::default(),
             hover_rest: false,
             codex_home: None,
-            codex_program: PathBuf::from("codex"),
             schedule_program: None,
             search_path: None,
             scheduled_job: None,
@@ -317,6 +408,12 @@ impl Context {
             openai: Arc::new(OpenAiNetwork),
             #[cfg(any(test, feature = "test-support"))]
             sign_in_script: None,
+            #[cfg(any(test, feature = "test-support"))]
+            scratch_claude: None,
+            #[cfg(any(test, feature = "test-support"))]
+            awaited_every: None,
+            #[cfg(test)]
+            unknown_machine: false,
             #[cfg(any(test, feature = "test-support"))]
             warm_script: None,
         }
@@ -367,7 +464,7 @@ impl Context {
 
     /// The `claude` Pitboard would run to sign someone in.
     pub fn claude_program(&self) -> &std::path::Path {
-        &self.claude_program
+        &self.programs[&ProviderId::Claude]
     }
 
     /// Whether the argument-line write is allowed for an oversized login.
@@ -393,19 +490,19 @@ impl Context {
 
     /// An app started from Finder does not see the shell's `PATH`, so it names `claude` itself.
     pub fn with_claude_program(mut self, program: PathBuf) -> Context {
-        self.claude_program = program;
+        self.programs.insert(ProviderId::Claude, program);
         self
     }
 
     /// The same for `codex`.
     pub fn with_codex_program(mut self, program: PathBuf) -> Context {
-        self.codex_program = program;
+        self.programs.insert(ProviderId::Codex, program);
         self
     }
 
     /// The `codex` Pitboard would run to sign someone in.
     pub fn codex_program(&self) -> &std::path::Path {
-        &self.codex_program
+        &self.programs[&ProviderId::Codex]
     }
 
     /// An app is not a command line, so it names the one it comes with for the schedule to
@@ -470,20 +567,77 @@ impl Context {
         self.marked_as_scheduled
     }
 
-    /// The program named for this tool, found or not.
-    pub fn program_for(&self, tool: ProviderId) -> &std::path::Path {
-        match tool {
-            ProviderId::Claude => &self.claude_program,
-            ProviderId::Codex => &self.codex_program,
-        }
+    // The program named for this tool, found or not; None for a tool with no program to run.
+    pub fn program_for(&self, tool: ProviderId) -> Option<&std::path::Path> {
+        self.programs.get(&tool).map(PathBuf::as_path)
     }
 
     /// Run `program` for this tool, where an app found it.
     pub(crate) fn set_program(&mut self, tool: ProviderId, program: PathBuf) {
-        match tool {
-            ProviderId::Claude => self.claude_program = program,
-            ProviderId::Codex => self.codex_program = program,
+        self.programs.insert(tool, program);
+    }
+
+    // The Claude a test named; None in a release.
+    pub(crate) fn scratch_claude(&self) -> Option<&ScratchClaude> {
+        #[cfg(any(test, feature = "test-support"))]
+        {
+            self.scratch_claude.as_ref()
         }
+        #[cfg(not(any(test, feature = "test-support")))]
+        {
+            None
+        }
+    }
+
+    // Refuses before anything there is listed or opened.
+    #[cfg(any(test, feature = "test-support"))]
+    #[doc(hidden)]
+    pub fn with_scratch_claude(mut self, folder: PathBuf) -> Context {
+        assert!(
+            folder.is_absolute(),
+            "a test named its Claude folder {} relative to wherever it runs: name it in full",
+            folder.display()
+        );
+        let scratch = ScratchClaude {
+            data: folder.join("data"),
+            app: folder.join("Claude.app"),
+        };
+        for named in [&folder, &scratch.data, &scratch.app] {
+            refuse_a_real_claude(named);
+        }
+        self.scratch_claude = Some(scratch);
+        self
+    }
+
+    // How often a sign-in waited for asks the process list: a second, unless a test said.
+    pub(crate) fn awaited_every(&self) -> std::time::Duration {
+        #[cfg(any(test, feature = "test-support"))]
+        if let Some(every) = self.awaited_every {
+            return every;
+        }
+        std::time::Duration::from_secs(1)
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    #[doc(hidden)]
+    pub fn with_awaited_every(mut self, every: std::time::Duration) -> Context {
+        self.awaited_every = Some(every);
+        self
+    }
+
+    // What every park's manifest names its Mac by; `unknown` where a unit test said so.
+    pub(crate) fn this_machine(&self) -> String {
+        #[cfg(test)]
+        if self.unknown_machine {
+            return crate::state::UNKNOWN_MACHINE.into();
+        }
+        crate::state::machine_id()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_unknown_machine(mut self) -> Context {
+        self.unknown_machine = true;
+        self
     }
 
     /// The command line's context, from this process's own environment.
@@ -528,12 +682,12 @@ impl Context {
     pub(crate) fn read(env: &Environment, caller: &str) -> Context {
         let home = env.home();
         let owned = |name: &str| env.text(name).map(str::to_owned);
-        let program = |tool: ProviderId| {
-            env.path(tool.program_variable())
+        let program = |tool: ProviderId, cli: crate::provider::Cli| {
+            env.path(cli.program_variable)
                 .filter(|named| !named.is_empty())
                 .map_or_else(|| PathBuf::from(tool.program()), PathBuf::from)
         };
-        Context {
+        let read = Context {
             pitboard_home: env.pitboard_home(),
             home,
             claude_config_dir: owned("CLAUDE_CONFIG_DIR"),
@@ -547,13 +701,12 @@ impl Context {
                 .map(|name| (*name).to_string())
                 .collect(),
             caller: caller.into(),
-            claude_program: program(ProviderId::Claude),
+            programs: programs(program),
             api_base: owned("PITBOARD_API_BASE"),
             proxy: crate::proxy::Proxies::read(env),
             agent: crate::api::Agents::default(),
             hover_rest: matches!(env.text("CLAUDE_CODE_HOVER_REST"), Some("1" | "true")),
             codex_home: owned("CODEX_HOME").filter(|v| !v.is_empty()),
-            codex_program: program(ProviderId::Codex),
             schedule_program: None,
             // Unset is nowhere, as it is to the shell: nothing is found on an empty `PATH`.
             search_path: Some(env.path("PATH").unwrap_or_default().to_os_string()),
@@ -567,8 +720,19 @@ impl Context {
             #[cfg(any(test, feature = "test-support"))]
             sign_in_script: None,
             #[cfg(any(test, feature = "test-support"))]
+            scratch_claude: None,
+            #[cfg(any(test, feature = "test-support"))]
+            awaited_every: None,
+            #[cfg(test)]
+            unknown_machine: false,
+            #[cfg(any(test, feature = "test-support"))]
             warm_script: None,
+        };
+        #[cfg(any(test, feature = "test-support"))]
+        if let Some(folder) = env.path(TEST_CLAUDE_DESKTOP).filter(|f| !f.is_empty()) {
+            return read.with_scratch_claude(PathBuf::from(folder));
         }
+        read
     }
 
     /// Answer for every service from a script, where a test can produce a 429 or a
@@ -655,6 +819,205 @@ mod tests {
     use super::*;
     use std::path::Path;
 
+    #[test]
+    fn the_test_variable_is_listed_only_in_a_build_for_tests() {
+        assert!(variables().any(|name| name == "PITBOARD_TEST_CLAUDE_DESKTOP"));
+        assert!(!READ.contains(&"PITBOARD_TEST_CLAUDE_DESKTOP"));
+        assert!(Context::for_unit_test().scratch_claude().is_none());
+        let folder = std::env::temp_dir().join("pitboard-scratch-claude");
+        let named = folder.to_string_lossy().into_owned();
+        let env: Environment = [
+            ("HOME", "/home/x"),
+            ("PITBOARD_TEST_CLAUDE_DESKTOP", named.as_str()),
+        ]
+        .into_iter()
+        .collect();
+        let read = Context::for_command_line(&env);
+        let scratch = read.scratch_claude().expect("named");
+        assert_eq!(scratch.data, folder.join("data"));
+        assert_eq!(scratch.app, folder.join("Claude.app"));
+    }
+
+    // It panics before anything there is listed or opened.
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Claude Desktop is macOS only: Windows names no Application Support"
+    )]
+    fn a_scratch_inside_the_real_application_support_panics() {
+        let home = {
+            let _reaching = crate::host::user::testing::reaching_the_real_home();
+            crate::host::user::home().expect("this account has a home")
+        };
+        let support = home.join("Library/Application Support");
+        let named = |folder: PathBuf| {
+            std::panic::catch_unwind(move || {
+                Context::new("/nowhere".into()).with_scratch_claude(folder)
+            })
+            .is_err()
+        };
+        assert!(named(support.join("pitboard-test-never-made")));
+        assert!(named(support.clone()));
+        assert!(named(home.join("Library")), "it holds it");
+        // The home is linked, since Linux has no `Library` for a link to resolve through.
+        let link = std::env::temp_dir().join(format!("pitboard-home-link-{}", std::process::id()));
+        let _ = std::fs::remove_file(&link);
+        crate::host::fs::testing::link_dir(&home, &link).expect("a link");
+        let through = named(link.join("Library/Application Support/pitboard-test-never-made"));
+        let _ = std::fs::remove_file(&link);
+        assert!(through, "through a link");
+        assert!(!named(
+            std::env::temp_dir().join("pitboard-scratch-elsewhere")
+        ));
+        let _guarding = testing::also_guarding(&std::env::temp_dir().join("pitboard-fake-home"));
+        assert!(
+            named(support.join("pitboard-test-never-made")),
+            "while a test guards a fake home too"
+        );
+    }
+
+    // `..` past a folder not made yet is resolved only once something makes that folder.
+    #[test]
+    fn a_scratch_named_through_a_folder_not_made_yet_panics() {
+        let home =
+            std::env::temp_dir().join(format!("pitboard-scratch-climb-{}", std::process::id()));
+        let _guarding = testing::also_guarding(&home);
+        let climbed = std::panic::catch_unwind(|| {
+            Context::new("/nowhere".into())
+                .with_scratch_claude(home.join("never-made/../Library/Application Support/x"))
+        });
+        assert!(climbed.is_err());
+    }
+
+    // As a helper given the name would write it: from the working directory.
+    #[test]
+    fn a_relative_name_lies_where_the_working_directory_puts_it() {
+        let here = std::env::current_dir().expect("a working directory");
+        let name = Path::new("pitboard-never-made");
+        assert!(crate::host::lies_in(name, &here));
+        assert!(!crate::host::lies_in(name, &here.join("elsewhere")));
+    }
+
+    // A relative name lands wherever the test runs.
+    #[test]
+    fn a_relative_scratch_panics() {
+        let named = std::panic::catch_unwind(|| {
+            Context::new("/nowhere".into()).with_scratch_claude("pitboard-scratch".into())
+        });
+        assert!(named.is_err());
+    }
+
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Claude Desktop is macOS only: Windows makes no link"
+    )]
+    fn a_scratch_whose_data_or_app_links_to_a_real_place_panics() {
+        let root =
+            std::env::temp_dir().join(format!("pitboard-scratch-links-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let home = root.join("home");
+        let support = home.join("Library/Application Support/Claude");
+        let app = home.join("Applications/Claude.app");
+        let other = root.join("other");
+        for made in [&support, &app, &other] {
+            std::fs::create_dir_all(made).expect("a folder to link to");
+        }
+        let _guarding = testing::also_guarding(&home);
+        let linked = |scratch: &str, name: &str, to: &Path| {
+            let scratch = root.join(scratch);
+            std::fs::create_dir_all(&scratch).expect("a scratch");
+            crate::host::fs::testing::link_dir(to, &scratch.join(name)).expect("a link");
+            std::panic::catch_unwind(|| {
+                Context::new("/nowhere".into()).with_scratch_claude(scratch)
+            })
+            .is_err()
+        };
+        let data = linked("one", "data", &support);
+        let claude = linked("two", "Claude.app", &app);
+        let elsewhere = linked("three", "data", &other);
+        let not_made = linked("four", "data", &support.join("never-made"));
+        let not_made_relative = linked(
+            "five",
+            "data",
+            Path::new("../home/Library/Application Support/Claude/never-made"),
+        );
+        std::fs::remove_dir_all(&root).expect("the scratch removed");
+        assert!(data, "data linked into Application Support");
+        assert!(claude, "Claude.app linked to ~/Applications/Claude.app");
+        assert!(!elsewhere, "data linked to a folder of the test's own");
+        assert!(not_made, "data linked to a folder not made yet there");
+        assert!(not_made_relative, "the same, by a relative link");
+    }
+
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Claude Desktop is macOS only: Windows has no `/Applications`"
+    )]
+    fn a_scratch_of_an_applications_folder_panics() {
+        let home =
+            std::env::temp_dir().join(format!("pitboard-scratch-apps-{}", std::process::id()));
+        let _guarding = testing::also_guarding(&home);
+        let named = |folder: PathBuf| {
+            std::panic::catch_unwind(move || {
+                Context::new("/nowhere".into()).with_scratch_claude(folder)
+            })
+            .is_err()
+        };
+        assert!(named("/Applications".into()));
+        assert!(named(home.join("Applications")));
+        assert!(!named(home.join("Applications/elsewhere")));
+    }
+
+    // /System/Volumes/Data/Users is /Users, and `canonicalize` keeps either name as it is.
+    #[test]
+    #[cfg_attr(
+        not(target_os = "macos"),
+        ignore = "a firmlink to the Data volume is macOS's own"
+    )]
+    fn a_scratch_named_through_the_data_volume_panics() {
+        let root =
+            std::env::temp_dir().join(format!("pitboard-scratch-data-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let support = root.join("home/Library/Application Support/Claude");
+        let scratch = root.join("scratch");
+        for made in [&support, &scratch] {
+            std::fs::create_dir_all(made).expect("a folder of the test's own");
+        }
+        let through = |place: &Path| {
+            let real = std::fs::canonicalize(place).expect("a folder of the test's own");
+            Path::new("/System/Volumes/Data").join(real.strip_prefix("/").expect("from the root"))
+        };
+        crate::host::fs::testing::link_dir(&through(&support), &scratch.join("data"))
+            .expect("a link");
+        let _guarding = testing::also_guarding(&root.join("home"));
+        let named = |folder: PathBuf| {
+            std::panic::catch_unwind(move || {
+                Context::new("/nowhere".into()).with_scratch_claude(folder)
+            })
+            .is_err()
+        };
+        let linked = named(scratch);
+        let inside = named(through(&support).join("pitboard-test"));
+        let own = named(through(&root).join("own"));
+        let applications = named("/System/Volumes/Data/Applications".into());
+        std::fs::remove_dir_all(&root).expect("the scratch removed");
+        assert!(
+            linked,
+            "data linked into Application Support through the Data volume"
+        );
+        assert!(
+            inside,
+            "a scratch in Application Support named through the Data volume"
+        );
+        assert!(
+            !own,
+            "a folder of the test's own named through the Data volume"
+        );
+        assert!(applications, "/Applications named through the Data volume");
+    }
+
     /// An empty `CLAUDE_CONFIG_DIR` is kept, by the builder as by the environment, since
     /// Claude Code takes it as the empty path for its config dir; the context is then
     /// refused as one whose home is not a full path. It was read as unset, which pointed
@@ -676,7 +1039,7 @@ mod tests {
             Some(""),
             "empty is set, and pins the default slot"
         );
-        assert_eq!(ctx.claude_program, PathBuf::from("claude"));
+        assert_eq!(ctx.claude_program(), Path::new("claude"));
         let env: Environment = [("HOME", "/home/x"), ("CLAUDE_CONFIG_DIR", "")]
             .into_iter()
             .collect();

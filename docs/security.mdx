@@ -3,17 +3,19 @@ title: "Security and privacy"
 description: "Pitboard keeps parked logins on your machine, sends them only to the service that issued them, and has no telemetry."
 ---
 
-Pitboard moves and stores the OAuth refresh tokens of Claude Code and OpenAI's Codex CLI. Each grants full access to a paid account. [SECURITY.md](https://github.com/datlechin/pitboard/blob/main/SECURITY.md) lists what Pitboard protects against and how to report a vulnerability.
+Pitboard moves and stores the OAuth refresh tokens of Claude Code and OpenAI's Codex CLI, and the files that hold a Claude Desktop login. Each grants full access to a paid account. [SECURITY.md](https://github.com/datlechin/pitboard/blob/main/SECURITY.md) lists what Pitboard protects against and how to report a vulnerability.
 
 ## Where parked logins are kept
 
-On macOS, parked logins are keychain items whose names start with `pitboard-park-`. Pitboard reads and writes them, and Claude Code's item, only through `/usr/bin/security`, the one program that item trusts. On macOS 26, an item written through the Security framework takes about a second for each read by `security`, against 0.01 seconds.
+On macOS, Claude Code and Codex parked logins are keychain items whose names start with `pitboard-park-`. Pitboard reads and writes them, and Claude Code's item, only through `/usr/bin/security`, the one program that item trusts. On macOS 26, an item written through the Security framework takes about a second for each read by `security`, against 0.01 seconds.
 
 A Claude Code parked login holds the OAuth block and the account's other fields, such as `trustedDeviceToken`. Whether restoring a device token spares a re-verification has not been measured. A Codex parked login is the whole `auth.json`. As read in Codex 0.154.0, that file can also hold an OpenAI API key.
 
+A Claude Desktop parked login is Claude's own files and three keys of `config.json`, in a folder under `~/.pitboard/parks` that only you can open. Pitboard renames them there and back, and never copies them. It reads no keychain item for Claude Desktop, `Claude Safe Storage` included, and decrypts no cookie. Of the session cookie, it keeps only a fingerprint. [Folders in parks](/reference/files#folders-in-parks) has the layout.
+
 On Linux, parked logins are files in `~/.pitboard/vault/`, at mode 0600 in a 0700 directory. Claude Code keeps its own login in a plaintext `~/.claude/.credentials.json`, as [Claude Code files](/reference/files#claude-code-files) lists. Any process running as you can read both.
 
-`pitboard doctor` fails if anyone else has access to the vault or Claude Code's file. For Codex's `auth.json`, it warns.
+`pitboard doctor` fails if anyone else has access to the vault, `parks` or Claude Code's file. For Codex's `auth.json`, it warns.
 
 Of Pitboard's other files, only `signin/` holds a login, while a sign-in runs: see [The Pitboard directory](/reference/files#the-pitboard-directory).
 
@@ -39,11 +41,11 @@ Anthropic's [Legal and compliance](https://code.claude.com/docs/en/legal-and-com
 
 > Anthropic does not permit third-party developers to offer Claude.ai login into their own applications, or to route requests through Free, Pro, or Max plan credentials on behalf of their users. Moreover, developers may not collect, store, or intermediate Claude.ai credentials or session tokens — sign-in to a Claude account must complete through Anthropic's own flow.
 
-A claude.ai window signs in on claude.ai's own pages. WebKit keeps the sign-in's cookies under Pitboard's bundle identifier. Whether Anthropic counts that under the clause is not known.
+A claude.ai window signs in on claude.ai's own pages. WebKit keeps the sign-in's cookies under Pitboard's bundle identifier. A Claude Desktop switch renames Claude's files, its session cookie among them, into a folder of Pitboard's and back. Whether Anthropic counts either under the clause is not known.
 
 ## What leaves your machine
 
-Pitboard has no server of its own and makes only these requests itself:
+Pitboard has no server of its own and sends no request for a Claude Desktop account. It makes only these requests itself:
 
 | Request | Carries | Used for |
 | --- | --- | --- |

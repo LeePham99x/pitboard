@@ -10,7 +10,7 @@
 
 use crate::api::Owner;
 use crate::context::Context;
-use crate::provider::{self, ProviderId};
+use crate::provider::{self, LoginKind, ProviderId};
 use crate::state::{Key, State, new_id};
 use serde::{Deserialize, Serialize};
 
@@ -111,7 +111,10 @@ impl Known {
 /// account, the login's own claims, or the record where the login cannot be read. For
 /// another, the record, judged against what the tool's own record names now ([`judged`]).
 pub(crate) fn known(ctx: &Context, state: &State, which: ProviderId) -> Known {
-    let tool = provider::of(which);
+    let tool = match provider::of(which) {
+        LoginKind::Document(tool) => tool,
+        LoginKind::Folder(app) => return crate::switch::folder::read(ctx, state, app).0,
+    };
     if !tool.identifies_by_itself() {
         return judged(ctx, which, state.in_use(which).cloned());
     }
@@ -147,7 +150,15 @@ pub(crate) fn known(ctx: &Context, state: &State, which: ProviderId) -> Known {
 /// record names now. Where that is another account than when `last` was checked against the
 /// store, something may have signed in since.
 pub(crate) fn judged(ctx: &Context, which: ProviderId, last: Option<InUse>) -> Known {
-    let own_record = names(ctx, which);
+    judged_by(which, last, names(ctx, which))
+}
+
+// For a caller that read the tool's own record itself, so one read is judged once.
+pub(crate) fn judged_by(
+    which: ProviderId,
+    last: Option<InUse>,
+    own_record: Option<Owner>,
+) -> Known {
     let now = own_record.as_ref().map(|owner| new_id(which, owner));
     let doubt = match &last {
         None => Some(Doubt::NeverEstablished),
@@ -162,10 +173,24 @@ pub(crate) fn judged(ctx: &Context, which: ProviderId, last: Option<InUse>) -> K
     }
 }
 
-/// The account `which`'s own record names now, as [`provider::Provider::own_record`] reads
-/// it.
+// The account `which`'s own record names now: for a folder tool, its settings' name key.
 pub(crate) fn names(ctx: &Context, which: ProviderId) -> Option<Owner> {
-    provider::of(which).own_record(ctx).map(Owner::from)
+    match provider::of(which) {
+        LoginKind::Document(tool) => tool.own_record(ctx).map(Owner::from),
+        LoginKind::Folder(app) => {
+            let root = app.root(ctx).ok()?;
+            Some(named_only(app.settings(&root).ok()?.named(app)?))
+        }
+    }
+}
+
+// Nobody tells Pitboard an app account's email or organisation.
+pub(crate) fn named_only(account_uuid: String) -> Owner {
+    Owner {
+        account_uuid,
+        email: String::new(),
+        organization_uuid: String::new(),
+    }
 }
 
 /// What `which`'s own record names now, by the id [`new_id`] gives that account's login.
@@ -178,7 +203,10 @@ pub(crate) fn named(ctx: &Context, which: ProviderId) -> Option<String> {
 
 /// What `which`'s own record names once a switch has written `owner`'s account there.
 pub(crate) fn naming(which: ProviderId, owner: &Owner) -> Option<String> {
-    (!provider::of(which).identifies_by_itself()).then(|| new_id(which, owner))
+    match provider::of(which) {
+        LoginKind::Document(tool) => (!tool.identifies_by_itself()).then(|| new_id(which, owner)),
+        LoginKind::Folder(_) => Some(new_id(which, owner)),
+    }
 }
 
 #[cfg(test)]

@@ -33,6 +33,12 @@ pub(crate) fn is_the_accounts_own_home(_path: &std::path::Path) -> bool {
     false
 }
 
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn lies_in_the_accounts_own(path: &std::path::Path, below: &str) -> bool {
+    known_folder(&windows_sys::Win32::UI::Shell::FOLDERID_Profile)
+        .is_some_and(|home| crate::host::lies_in(path, &home.join(below)))
+}
+
 #[cfg(feature = "test-support")]
 pub(crate) fn accounts_own_home() -> Option<PathBuf> {
     known_folder(&windows_sys::Win32::UI::Shell::FOLDERID_Profile)

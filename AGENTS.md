@@ -1,8 +1,8 @@
 # AGENTS.md
 
-Pitboard is a Rust command line and a native macOS menu bar app that switch Claude Code and
-Codex between a person's own accounts. It moves real OAuth logins, so a mistake here can sign
-someone out of a paid account. These rules apply to people too.
+Pitboard is a Rust command line and a native macOS menu bar app that switch Claude Code,
+Codex and, on macOS, Claude Desktop between a person's own accounts. It moves real logins, so
+a mistake here can sign someone out of a paid account. These rules apply to people too.
 [CONTRIBUTING.md](CONTRIBUTING.md) says how to set up, check and submit a change.
 
 ## Never
@@ -10,11 +10,17 @@ someone out of a paid account. These rules apply to people too.
 - Never write to, overwrite or delete a keychain item that holds a real login, such as
   `Claude Code-credentials`. A test names its items after itself and calls
   `common::guard_not_live` before its first write.
+- Never read `Claude Safe Storage`, the keychain item that holds the key to Claude Desktop's
+  cookies.
 - Never run `claude`, `claude auth login`, `codex login` or `codex logout` against a real
   home. They replace or revoke the login stored there.
+- Never start, quit or signal Claude (`com.anthropic.claudefordesktop`) from a test or a
+  script. A test's Claude is the stand-in under its own scratch `Claude.app`.
 - Never run a `pitboard` built from a branch against your real home. Build first, then point
   `HOME`, `PITBOARD_HOME`, `CLAUDE_CONFIG_DIR` and `CODEX_HOME` at a fresh directory, since
   Cargo and rustup read `HOME` too.
+- Never check a branch build against a real Claude on a macOS account that holds logins.
+  Use a user account made for it: with `HOME` elsewhere, a build finds no Claude Desktop.
 - Never start an app you built outside a fixture. Run a debug build's executable with
   `PITBOARD_FIXTURE` and those four homes set, as
   [Run the debug build](CONTRIBUTING.md#run-the-debug-build) shows. A release build reads no
@@ -24,7 +30,10 @@ someone out of a paid account. These rules apply to people too.
 - From a test or a script, never write to `~/.claude`, `~/.claude.json`, `~/.codex` or
   `~/.pitboard`. A test that writes gives every home a scratch directory, `CODEX_HOME`
   included.
-- Never print a token. `pitboard doctor --json` hides them; raw files do not.
+- From a test or a script, never read, list, move, write or delete anything under
+  `~/Library/Application Support/Claude` or `Claude-3p`. A test names its own data folder
+  with `Context::with_scratch_claude` or `PITBOARD_TEST_CLAUDE_DESKTOP`.
+- Never print a token or a cookie. `pitboard doctor --json` hides them; raw files do not.
 - Never run the tests as root or under `sudo` on a machine that holds logins.
 - Tests never touch launchd, systemd, `/usr/local/bin`, `/Applications` or
   `~/Library/LaunchAgents`.
@@ -88,8 +97,8 @@ checks of each other section of CONTRIBUTING.md the change reaches.
 ## Rules
 
 - A behaviour change starts with a test that fails against the current code.
-- A claim about Claude Code or Codex needs a reading of a named build or an experiment,
-  recorded in the tool's register, a test or the commit message.
+- A claim about Claude Code, Codex or Claude Desktop needs a reading of a named build or an
+  experiment, recorded in the tool's register, a test or the commit message.
   [Tool registers](CONTRIBUTING.md#tool-registers) says how.
 - A change people would notice gets an entry under `## [Unreleased]` in
   [CHANGELOG.md](CHANGELOG.md), as [Changelog](CONTRIBUTING.md#changelog) says.

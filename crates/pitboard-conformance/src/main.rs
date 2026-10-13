@@ -8,7 +8,8 @@
 //! the binary's own header and a fact is read only from the builds its register's table
 //! reads it on. Read from the Linux build alone, Claude Code's keychain facts looked gone on
 //! every build from 2.1.278 on, while the one real change, in 2.1.281, showed only in the
-//! macOS build.
+//! macOS build. Claude Desktop's facts are read from its app's archive, `app.asar`, which
+//! its register's table ties to macOS.
 
 use clap::Parser;
 use clap::builder::{PossibleValuesParser, TypedValueParser};
@@ -18,13 +19,15 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-/// Check Pitboard's facts about Claude Code or Codex against a build of that tool.
+/// Check Pitboard's facts about Claude Code, Codex or Claude Desktop against a build of that
+/// tool.
 ///
 /// Exits 1 when a fact has moved, and 2 when the arguments or the build cannot be read.
 #[derive(Parser, Debug, PartialEq)]
 #[command(name = "pitboard-conformance")]
 struct Args {
-    /// The tool's native binary, not its npm wrapper.
+    /// The tool's native binary, not its npm wrapper; for Claude Desktop, its app's
+    /// `Contents/Resources/app.asar`.
     build: PathBuf,
     /// The tool whose register the build is read against.
     #[arg(long, default_value = ProviderId::Claude.code(), value_parser = provider())]
@@ -49,13 +52,12 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let Some(platform) = platform_of(&bytes) else {
-        eprintln!(
-            "{} is not an ELF, a Mach-O, or an x64 or ARM64 PE binary, so its system is \
-             unknown",
-            path.display()
-        );
-        return ExitCode::from(2);
+    let platform = match platform_of(&bytes, args.provider) {
+        Ok(platform) => platform,
+        Err(refused) => {
+            eprintln!("{}", refused.said(path, args.provider));
+            return ExitCode::from(2);
+        }
     };
     let strings = assumptions::printable_runs(&bytes, 6);
     let sorted = Sorted::of(args.provider, platform, &strings);
@@ -231,20 +233,54 @@ fn text_report(path: &Path, provider: ProviderId, platform: Platform, sorted: &S
     out
 }
 
-/// The system a binary is built for, from its header: an ELF binary is taken for Linux, a
-/// Mach-O one, thin or universal, for macOS, and a PE one for x64 or ARM64 for Windows.
-/// The tools Pitboard reads ship no other kind, and anything else is refused rather than
-/// guessed at.
-fn platform_of(bytes: &[u8]) -> Option<Platform> {
-    match bytes.get(..4)? {
-        [0x7f, b'E', b'L', b'F'] => Some(Platform::Linux),
+fn platform_of(bytes: &[u8], provider: ProviderId) -> Result<Platform, Refused> {
+    let program = match bytes.get(..4).ok_or(Refused::Unknown)? {
+        [0x7f, b'E', b'L', b'F'] => Platform::Linux,
         [0xcf, 0xfa, 0xed, 0xfe]
         | [0xce, 0xfa, 0xed, 0xfe]
         | [0xfe, 0xed, 0xfa, 0xcf]
         | [0xfe, 0xed, 0xfa, 0xce]
-        | [0xca, 0xfe, 0xba, 0xbe] => Some(Platform::MacOs),
-        [b'M', b'Z', ..] => windows_machine(bytes),
-        _ => None,
+        | [0xca, 0xfe, 0xba, 0xbe] => Platform::MacOs,
+        [b'M', b'Z', ..] => windows_machine(bytes).ok_or(Refused::Unknown)?,
+        // Electron's asar: a pickle holding the index's size, then the JSON index at byte 16.
+        [4, 0, 0, 0] if bytes.get(16..24) == Some(b"{\"files\"".as_slice()) => {
+            return assumptions::archive_platform(provider).ok_or(Refused::Archive);
+        }
+        _ => return Err(Refused::Unknown),
+    };
+    match assumptions::archive_platform(provider) {
+        Some(_) => Err(Refused::Program),
+        None => Ok(program),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Refused {
+    Archive,
+    Program,
+    Unknown,
+}
+
+impl Refused {
+    fn said(self, path: &Path, provider: ProviderId) -> String {
+        match self {
+            Refused::Archive => format!(
+                "{} is an Electron app's archive, which {}'s register reads on no system",
+                path.display(),
+                provider.name()
+            ),
+            Refused::Program => format!(
+                "{} is a program, and {}'s register is read from its app's archive, \
+                 `Contents/Resources/app.asar`",
+                path.display(),
+                provider.name()
+            ),
+            Refused::Unknown => format!(
+                "{} is not an ELF, a Mach-O, an x64 or ARM64 PE binary or an Electron app's \
+                 archive, so its system is unknown",
+                path.display()
+            ),
+        }
     }
 }
 
@@ -275,11 +311,12 @@ mod tests {
     /// wrong list of facts. Headers as the 2.1.284 packages have them.
     #[test]
     fn the_system_is_read_from_the_binary() {
-        assert_eq!(platform_of(b"\x7fELF\x02\x01"), Some(Platform::Linux));
-        assert_eq!(platform_of(b"\xcf\xfa\xed\xfe\x0c"), Some(Platform::MacOs));
-        assert_eq!(platform_of(b"\xca\xfe\xba\xbe"), Some(Platform::MacOs));
-        assert_eq!(platform_of(b"#!/bin/sh"), None);
-        assert_eq!(platform_of(b"\x7fE"), None);
+        let system = |bytes: &[u8]| platform_of(bytes, ProviderId::Claude);
+        assert_eq!(system(b"\x7fELF\x02\x01"), Ok(Platform::Linux));
+        assert_eq!(system(b"\xcf\xfa\xed\xfe\x0c"), Ok(Platform::MacOs));
+        assert_eq!(system(b"\xca\xfe\xba\xbe"), Ok(Platform::MacOs));
+        assert_eq!(system(b"#!/bin/sh"), Err(Refused::Unknown));
+        assert_eq!(system(b"\x7fE"), Err(Refused::Unknown));
     }
 
     /// A PE header: `MZ`, the signature's offset at 0x3C, then the signature and the
@@ -300,43 +337,163 @@ mod tests {
     /// says where, and another place is followed as well.
     #[test]
     fn a_windows_build_is_read_from_its_pe_header() {
-        assert_eq!(
-            platform_of(&pe(0x78, b"PE\0\0", 0x8664)),
-            Some(Platform::Windows)
-        );
-        assert_eq!(
-            platform_of(&pe(0x78, b"PE\0\0", 0xaa64)),
-            Some(Platform::Windows)
-        );
-        assert_eq!(
-            platform_of(&pe(0x118, b"PE\0\0", 0xaa64)),
-            Some(Platform::Windows)
-        );
+        let system = |bytes: &[u8]| platform_of(bytes, ProviderId::Claude);
+        assert_eq!(system(&pe(0x78, b"PE\0\0", 0x8664)), Ok(Platform::Windows));
+        assert_eq!(system(&pe(0x78, b"PE\0\0", 0xaa64)), Ok(Platform::Windows));
+        assert_eq!(system(&pe(0x118, b"PE\0\0", 0xaa64)), Ok(Platform::Windows));
     }
 
     /// Anything that is not quite a PE header for one of the two machines is unknown, never
     /// taken for Windows on its first two bytes.
     #[test]
     fn what_is_not_an_x64_or_arm64_pe_binary_is_unknown() {
+        let unknown =
+            |bytes: &[u8]| platform_of(bytes, ProviderId::Claude) == Err(Refused::Unknown);
         // A DOS program: `MZ`, and no signature at the offset its header gives.
         let mut dos = vec![0u8; 0x80];
         dos[..2].copy_from_slice(b"MZ");
-        assert_eq!(platform_of(&dos), None);
+        assert!(unknown(&dos));
         // Something else where the signature should be.
-        assert_eq!(platform_of(&pe(0x80, b"NE\0\0", 0x8664)), None);
+        assert!(unknown(&pe(0x80, b"NE\0\0", 0x8664)));
         // Cut short: before the offset, inside the signature, and inside the machine.
-        assert_eq!(platform_of(b"MZ\x90\x00"), None);
-        assert_eq!(platform_of(&pe(0x80, b"PE\0\0", 0x8664)[..0x82]), None);
-        assert_eq!(platform_of(&pe(0x80, b"PE\0\0", 0x8664)[..0x85]), None);
+        assert!(unknown(b"MZ\x90\x00"));
+        assert!(unknown(&pe(0x80, b"PE\0\0", 0x8664)[..0x82]));
+        assert!(unknown(&pe(0x80, b"PE\0\0", 0x8664)[..0x85]));
         // An offset past the end, and one at the very top of the range.
         let mut far = pe(0x80, b"PE\0\0", 0x8664);
         far[0x3c..0x40].copy_from_slice(&0x1000u32.to_le_bytes());
-        assert_eq!(platform_of(&far), None);
+        assert!(unknown(&far));
         far[0x3c..0x40].copy_from_slice(&u32::MAX.to_le_bytes());
-        assert_eq!(platform_of(&far), None);
+        assert!(unknown(&far));
         // 32-bit x86 and 32-bit ARM, which neither tool ships.
-        assert_eq!(platform_of(&pe(0x80, b"PE\0\0", 0x014c)), None);
-        assert_eq!(platform_of(&pe(0x80, b"PE\0\0", 0x01c4)), None);
+        assert!(unknown(&pe(0x80, b"PE\0\0", 0x014c)));
+        assert!(unknown(&pe(0x80, b"PE\0\0", 0x01c4)));
+    }
+
+    // As Electron writes one: the index's size, the JSON index at byte 16, then the files as is.
+    fn asar(files: &[(&str, &str)]) -> Vec<u8> {
+        let mut offset = 0;
+        let mut index = serde_json::Map::new();
+        for (name, body) in files {
+            index.insert(
+                (*name).to_owned(),
+                serde_json::json!({ "size": body.len(), "offset": offset.to_string() }),
+            );
+            offset += body.len();
+        }
+        let index = serde_json::json!({ "files": index }).to_string();
+        let padded = index.len().next_multiple_of(4);
+        let payload = u32::try_from(4 + padded).expect("a small index");
+        let mut bytes = Vec::new();
+        bytes.extend(4u32.to_le_bytes());
+        bytes.extend((payload + 4).to_le_bytes());
+        bytes.extend(payload.to_le_bytes());
+        bytes.extend(
+            u32::try_from(index.len())
+                .expect("a small index")
+                .to_le_bytes(),
+        );
+        bytes.extend(index.as_bytes());
+        bytes.resize(16 + padded, 0);
+        for (_, body) in files {
+            bytes.extend(body.as_bytes());
+        }
+        bytes
+    }
+
+    #[test]
+    fn an_electron_archive_is_read_for_the_tool_whose_register_reads_one() {
+        let probes = every_probe(ProviderId::Desktop, Platform::MacOs);
+        let archive = asar(&[("package.json", "{}"), (".vite/build/index.js", &probes)]);
+        assert_eq!(
+            platform_of(&archive, ProviderId::Desktop),
+            Ok(Platform::MacOs)
+        );
+        let strings = assumptions::printable_runs(&archive, 6);
+        let sorted = Sorted::of(ProviderId::Desktop, Platform::MacOs, &strings);
+        assert!(sorted.moved().is_empty(), "{:?}", names(&sorted.readings));
+
+        // A pickle's first word with no index at byte 16 is no archive.
+        let unknown =
+            |bytes: &[u8]| platform_of(bytes, ProviderId::Desktop) == Err(Refused::Unknown);
+        assert!(unknown(&archive[..20]));
+        assert!(unknown(b"\x04\x00\x00\x00"));
+        let mut other = archive.clone();
+        other[16..24].copy_from_slice(b"{\"links\"");
+        assert!(unknown(&other));
+        let mut other = archive;
+        other[0] = 8;
+        assert!(unknown(&other));
+    }
+
+    #[test]
+    fn an_electron_archive_for_a_tool_that_ships_binaries_is_refused() {
+        let archive = asar(&[("index.js", "")]);
+        for provider in [ProviderId::Claude, ProviderId::Codex] {
+            assert_eq!(
+                platform_of(&archive, provider),
+                Err(Refused::Archive),
+                "{provider:?}"
+            );
+        }
+        assert_eq!(
+            Refused::Archive.said(Path::new("app.asar"), ProviderId::Codex),
+            "app.asar is an Electron app's archive, which Codex's register reads on no system"
+        );
+        assert_eq!(
+            Refused::Unknown.said(Path::new("app.asar"), ProviderId::Desktop),
+            "app.asar is not an ELF, a Mach-O, an x64 or ARM64 PE binary or an Electron app's \
+             archive, so its system is unknown"
+        );
+    }
+
+    // Of the archive's literals, Claude's program holds only the bundle id, so nearly every
+    // fact would read moved.
+    #[test]
+    fn a_program_of_a_tool_whose_register_reads_its_archive_is_refused() {
+        for program in [
+            b"\xcf\xfa\xed\xfe\x0c".to_vec(),
+            b"\xca\xfe\xba\xbe".to_vec(),
+            b"\x7fELF\x02\x01".to_vec(),
+            pe(0x78, b"PE\0\0", 0xaa64),
+        ] {
+            assert_eq!(
+                platform_of(&program, ProviderId::Desktop),
+                Err(Refused::Program),
+                "{program:x?}"
+            );
+            assert!(platform_of(&program, ProviderId::Claude).is_ok());
+        }
+        assert_eq!(
+            platform_of(b"#!/bin/sh", ProviderId::Desktop),
+            Err(Refused::Unknown)
+        );
+        assert_eq!(
+            Refused::Program.said(
+                Path::new("/Applications/Claude.app/Contents/MacOS/Claude"),
+                ProviderId::Desktop
+            ),
+            "/Applications/Claude.app/Contents/MacOS/Claude is a program, and Claude Desktop's \
+             register is read from its app's archive, `Contents/Resources/app.asar`"
+        );
+    }
+
+    #[test]
+    fn every_desktop_fact_is_read_on_macos_alone() {
+        assert_eq!(
+            assumptions::archive_platform(ProviderId::Desktop),
+            Some(Platform::MacOs)
+        );
+        for a in assumptions::of(ProviderId::Desktop) {
+            assert_eq!(
+                assumptions::read_on(ProviderId::Desktop, a.name),
+                [Platform::MacOs],
+                "{}",
+                a.name
+            );
+        }
+        let sorted = Sorted::of(ProviderId::Desktop, Platform::MacOs, "");
+        assert!(sorted.not_read.is_empty() && sorted.pending.is_empty());
     }
 
     const SYSTEMS: [Platform; 3] = [Platform::MacOs, Platform::Linux, Platform::Windows];
@@ -543,6 +700,14 @@ mod tests {
             Args {
                 build: "/b".into(),
                 provider: ProviderId::Claude,
+                json: false
+            }
+        );
+        assert_eq!(
+            parse("--provider desktop /a/app.asar").unwrap(),
+            Args {
+                build: "/a/app.asar".into(),
+                provider: ProviderId::Desktop,
                 json: false
             }
         );

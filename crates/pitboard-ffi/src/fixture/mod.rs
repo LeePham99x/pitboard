@@ -91,8 +91,10 @@ impl PitboardModel {
     /// did. Its preferences and what it has told are that machine's too, and empty at each
     /// launch; only `firstLaunch` is a machine whose app has never been seen. Other apps are
     /// the fixture's, where ChatGPT runs Codex's login in `chatGPTOpen` and quits when asked,
-    /// and nothing is posted as a notification. Clock times are said as `local_time` says
-    /// them. Nothing runs until the app sends `Intent::Start`.
+    /// and Claude, a stand-in of the core's, runs in `claudeDesktopOpen`, quits when asked and,
+    /// opened in front for a sign-in, signs in and quits; nothing is posted as a notification.
+    /// Clock times are said as `local_time` says them. Nothing runs until the app sends
+    /// `Intent::Start`.
     ///
     /// The machine is the folder `pitboard-fixture` in this process's temporary directory,
     /// where the macOS app's own fixture code keeps what it makes, so one fixture at a time:

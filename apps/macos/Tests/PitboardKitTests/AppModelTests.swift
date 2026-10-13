@@ -56,7 +56,7 @@ private func snapshot(
             schedule: ScheduleShown(
                 schedule: nil, on: false, changing: false, enabled: true, runs: nil,
                 scheduledIn: nil, note: nil, failed: nil),
-            renewal: RenewalShown(renewing: false, note: ""),
+            renewal: RenewalShown(renewing: false, note: "", about: ""),
             checks: ChecksShown(
                 lines: [], summary: nil, checking: false, checked: nil, waiting: nil),
             activity: ActivityShown(lines: [], empty: nil),
@@ -86,9 +86,9 @@ private func status(_ labels: String..., now: Int64 = 0, measured: Int64? = nil)
                 usage: measured.map {
                     Usage(source: .live, observedAt: $0, windows: [], listsEveryLimit: true)
                 },
-                stale: nil, staleExplanation: nil, plan: nil)
+                stale: nil, staleExplanation: nil, plan: nil, readAt: nil)
         },
-        warnings: [])
+        warnings: [], awaiting: [])
 }
 
 /// Whether reading `part` of `model` is told of a change while `change` runs.

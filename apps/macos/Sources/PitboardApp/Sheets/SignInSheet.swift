@@ -5,12 +5,13 @@ import SwiftUI
 /// Adds an account, or signs in again to one whose parked login can no longer be used,
 /// through the tool's own sign-in, which the model runs.
 ///
-/// Both tools open the default browser themselves and finish through their own callback,
-/// so the sheet offers the address each prints: to open where no browser opened, or to copy
-/// into another browser or browser profile. The code field appears only for a tool that
-/// reads one, only once it asks, and again once Claude Code has refused the code typed back.
-/// The sheet stays over the window while the browser is in front, which a menu could not:
-/// it closed the moment the browser came forward.
+/// Claude Code and Codex open the default browser themselves and finish through their own
+/// callback, so the sheet offers the address each prints: to open where no browser opened,
+/// or to copy into another browser or browser profile. The code field appears only for a
+/// tool that reads one, only once it asks, and again once Claude Code has refused the code
+/// typed back. Claude Desktop signs in inside Claude, and the sheet says each step of it.
+/// The sheet stays over the window while the browser or Claude is in front, which a menu
+/// could not: it closed the moment the browser came forward.
 struct SignInSheet: View {
     let model: AppModel
     let sheet: Sheet
@@ -56,6 +57,10 @@ struct SignInSheet: View {
                 shown = nil
             }
         }
+        // VoiceOver does not read what appears by itself.
+        .onChange(of: model.signingInText?.announce, initial: true) { _, said in
+            if let said { AccessibilityNotification.Announcement(said).post() }
+        }
     }
 
     // MARK: - Before it starts
@@ -63,9 +68,11 @@ struct SignInSheet: View {
     @ViewBuilder private var form: some View {
         let text = model.sheetText
         let tools = text?.tools ?? []
+        let chosen = tools.first { $0.code == provider }
+        let busy = text?.saving ?? false
         SheetLayout(
             title: text?.title ?? "",
-            message: tools.first { $0.code == provider }?.message ?? text?.message ?? ""
+            message: chosen?.message ?? text?.message ?? ""
         ) {
             Section {
                 if !tools.isEmpty {
@@ -75,6 +82,7 @@ struct SignInSheet: View {
                         }
                     }
                     .accessibilityIdentifier("sheet.tool")
+                    .disabled(busy)
                 }
                 if let account = text?.account {
                     LabeledContent("Account", value: account)
@@ -83,6 +91,11 @@ struct SignInSheet: View {
                         .accessibilityIdentifier("sheet.name")
                         .focused($nameFocused)
                         .onSubmit(start)
+                        .disabled(busy)
+                }
+                if let working = text?.progress {
+                    ProgressView(working)
+                        .controlSize(.small)
                 }
             } footer: {
                 if let missing = text?.notOffered {
@@ -97,17 +110,20 @@ struct SignInSheet: View {
         } buttons: {
             Button("Cancel", role: .cancel) { dismiss() }
                 .keyboardShortcut(.cancelAction)
-            Button(text?.confirm ?? "", action: start)
+                .disabled(busy)
+            Button(chosen?.confirm ?? text?.confirm ?? "", action: start)
                 .keyboardShortcut(.defaultAction)
                 .disabled(
-                    nameToSave(sheet: sheet, typed: name) == nil || model.signingIn != nil)
+                    nameToSave(sheet: sheet, typed: name) == nil || model.signingIn != nil
+                        || busy)
         }
         .onAppear { nameFocused = text?.account == nil }
+        .interactiveDismissDisabled(busy)
     }
 
     private func start() {
         guard let name = nameToSave(sheet: sheet, typed: name), model.signingIn == nil,
-            shown == nil
+            shown == nil, model.sheetText?.saving != true
         else { return }
         model.send(.signIn(provider: provider, name: name))
     }
@@ -117,20 +133,22 @@ struct SignInSheet: View {
     private func progress(_ signingIn: RunningSignIn, _ text: SigningInText) -> some View {
         let page = signingIn.url.flatMap(URL.init(string:))
         return SheetLayout(title: text.title, message: text.message) {
-            Section {
-                LabeledContent("Sign-In Page") {
-                    HStack {
-                        Button("Copy Link") {
-                            if let page { NSPasteboard.general.copy(link: page) }
+            if text.offersLink {
+                Section {
+                    LabeledContent("Sign-In Page") {
+                        HStack {
+                            Button("Copy Link") {
+                                if let page { NSPasteboard.general.copy(link: page) }
+                            }
+                            Button("Open") {
+                                if let page { openURL(page) }
+                            }
+                            .help(page?.absoluteString ?? "")
                         }
-                        Button("Open") {
-                            if let page { openURL(page) }
-                        }
-                        .help(page?.absoluteString ?? "")
+                        // Dimmed rather than left out until the tool prints the address, so
+                        // the sheet does not grow a moment after it opens.
+                        .disabled(page == nil)
                     }
-                    // Dimmed rather than left out until the tool prints the address, so the
-                    // sheet does not grow a moment after it opens.
-                    .disabled(page == nil)
                 }
             }
             if signingIn.wantsCode {
@@ -155,20 +173,26 @@ struct SignInSheet: View {
             // HIG asks of one on a Mac. VoiceOver still names it.
             ProgressView()
                 .controlSize(.small)
-                .accessibilityLabel("Waiting for your browser")
+                .accessibilityLabel(text.waiting)
         } buttons: {
-            Button("Cancel", role: .cancel) {
-                model.send(.cancelSignIn)
+            Button(text.cancel.title, role: text.escapeCancels ? .cancel : nil) {
+                model.send(text.cancel.intent)
                 shown = nil
                 dismiss()
             }
-            .keyboardShortcut(.cancelAction)
+            .keyboardShortcut(text.escapeCancels ? .cancelAction : nil)
+            .disabled(!text.cancel.enabled)
+            if let undo = text.undo {
+                Button(undo.title) { model.send(undo.intent) }
+                    .disabled(!undo.enabled)
+            }
             if signingIn.wantsCode {
                 Button("Submit Code", action: send)
                     .keyboardShortcut(.defaultAction)
                     .disabled(code.isEmpty)
             }
         }
+        .interactiveDismissDisabled(!text.escapeCancels)
     }
 
     /// The model takes the code without the white space around it, and types it back only

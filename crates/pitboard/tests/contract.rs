@@ -4,7 +4,7 @@
 
 mod common;
 
-use common::{Env, two_accounts};
+use common::{Env, HOME, WORK, os, two_accounts};
 use serde_json::Value;
 
 fn json(env: &Env, args: &[&str]) -> (Value, i32) {
@@ -26,22 +26,52 @@ fn json_as_printed(env: &Env, args: &[&str]) -> (String, Value, i32) {
     (out, value, code)
 }
 
+// A moment where there is one: a null is part of the contract too.
+fn time() -> insta::internals::Redaction {
+    insta::dynamic_redaction(|value, _| {
+        if value.is_nil() {
+            value
+        } else {
+            insta::internals::Content::from("[time]")
+        }
+    })
+}
+
 /// Every envelope, with the exit code it came with.
 macro_rules! contract {
     ($name:literal, $value:expr, $code:expr) => {
         insta::assert_json_snapshot!($name, serde_json::json!({ "exit": $code, "envelope": $value }), {
-            ".envelope.data.accounts[].usage.observed_at" => "[time]",
-            ".envelope.data.accounts[].parked.parked_at" => "[time]",
-            ".envelope.data.accounts[].parked.access_expires_at" => "[time]",
-            ".envelope.data.accounts[].parked.refresh_expires_at" => "[time]",
-            ".envelope.data.parked_at" => "[time]",
-            ".envelope.data.limit.resets_at" => "[time]",
-            ".envelope.data.as_of" => "[time]",
+            ".envelope.data.accounts[].usage.observed_at" => time(),
+            ".envelope.data.accounts[].parked.parked_at" => time(),
+            ".envelope.data.accounts[].parked.access_expires_at" => time(),
+            ".envelope.data.accounts[].parked.refresh_expires_at" => time(),
+            ".envelope.data.accounts[].parked.session_expires_at" => time(),
+            ".envelope.data.accounts[].read_at" => time(),
+            ".envelope.data.awaiting[].since" => time(),
+            ".envelope.data.parked_at" => time(),
+            ".envelope.data.limit.resets_at" => time(),
+            ".envelope.data.as_of" => time(),
             // Hashed from the config directory, so it is this machine's; `slot` has its
             // own tests.
             ".envelope.data.slot.service" => "[slot]",
             // In the test's own scratch home.
             ".envelope.data.path" => "[path]",
+        });
+    };
+}
+
+// `doctor`'s envelope, with this machine's paths and the checks' wording redacted.
+macro_rules! doctor_contract {
+    ($name:literal, $value:expr, $code:expr) => {
+        insta::assert_json_snapshot!($name, serde_json::json!({ "exit": $code, "envelope": $value }), {
+            ".envelope.data.environment.config_file" => "[path]",
+            ".envelope.data.environment.storage_dir" => "[path]",
+            ".envelope.data.environment.home" => "[path]",
+            ".envelope.data.environment.credential_service" => "[slot]",
+            ".envelope.data.environment.credential_store" => "[backend]",
+            ".envelope.data.environment.codex.home" => "[path]",
+            ".envelope.data.environment.desktop.data_folder" => "[path]",
+            ".envelope.data.checks" => "[checks]",
         });
     };
 }
@@ -156,7 +186,13 @@ fn repair() {
     assert_eq!(code, 0);
     assert_eq!(value["command"], "repair");
     assert_eq!(value["ok"], true);
-    for field in ["given_back", "deleted", "strangers", "unreadable"] {
+    for field in [
+        "given_back",
+        "deleted",
+        "strangers",
+        "unreadable",
+        "set_aside",
+    ] {
         assert!(
             value["data"][field].is_array(),
             "the envelope always carries {field}"
@@ -336,15 +372,101 @@ fn doctor() {
         );
         assert!(["ok", "warn", "fail"].contains(&check["level"].as_str().unwrap()));
     }
-    insta::assert_json_snapshot!("doctor", serde_json::json!({ "exit": code, "envelope": value }), {
-        ".envelope.data.environment.config_file" => "[path]",
-        ".envelope.data.environment.storage_dir" => "[path]",
-        ".envelope.data.environment.home" => "[path]",
-        ".envelope.data.environment.credential_service" => "[slot]",
-        ".envelope.data.environment.credential_store" => "[backend]",
-        ".envelope.data.environment.codex.home" => "[path]",
-        ".envelope.data.checks" => "[checks]",
-    });
+    doctor_contract!("doctor", value, code);
+}
+
+// The test's own Claude: a SQLite jar, and the stand-in under its own `Claude.app` while it runs.
+#[test]
+fn desktop() {
+    if !os::claude_desktop_runs_here() {
+        return;
+    }
+    let env = two_accounts("contract-desktop");
+    env.install_fake_codex("0.154.0");
+    env.plant_desktop(&WORK);
+    let (value, code) = json(&env, &["enroll", "desktop/work"]);
+    contract!("enroll_desktop_current", value, code);
+    let (_, err, code) = env.sign_in_inside_claude(&["enroll", "desktop/home", "--sign-in"], &HOME);
+    assert_eq!(code, 0, "enroll desktop/home --sign-in: {err}");
+    let (_, err, code) = env.run(&["use", "desktop/work"]);
+    assert_eq!(code, 0, "use desktop/work: {err}");
+
+    let (value, code) = json(&env, &["status"]);
+    contract!("status_with_desktop", value, code);
+
+    let (value, code) = json(&env, &["doctor"]);
+    let printed = value.to_string();
+    for secret in [WORK.uuid, HOME.uuid, "a@example.com"] {
+        assert!(!printed.contains(secret), "the report carries {secret}");
+    }
+    for check in value["data"]["checks"].as_array().unwrap() {
+        let mut keys: Vec<&str> = check
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            ["advice", "code", "detail", "level", "name"],
+            "{check}"
+        );
+    }
+    doctor_contract!("doctor_with_desktop", value, code);
+
+    let claude = env.open_claude();
+    let (value, code) = json(&env, &["use", "desktop/home"]);
+    contract!("use_desktop_app_open", value, code);
+    drop(claude);
+    let (value, code) = json(&env, &["use", "desktop/home"]);
+    contract!("use_desktop_switched", value, code);
+    let (_, err, code) = env.run(&["use", "desktop/work"]);
+    assert_eq!(code, 0, "use desktop/work: {err}");
+    let (value, code) = json(&env, &["forget", "desktop/home", "--yes"]);
+    contract!("forget_desktop", value, code);
+}
+
+#[test]
+fn desktop_awaiting() {
+    if !os::claude_desktop_runs_here() {
+        return;
+    }
+    let env = two_accounts("contract-desktop-awaiting");
+    env.desktop_accounts();
+    let mut adding = env.running(&["enroll", "desktop/travel", "--sign-in"]);
+    adding.until("Waiting for Claude to quit");
+    // Pitboard catches no signal, so Control-C ends it as a kill does.
+    drop(adding);
+    let (value, code) = json(&env, &["status"]);
+    contract!("status_desktop_awaiting", value, code);
+    let (value, code) = json(&env, &["use", "desktop/work"]);
+    contract!("use_desktop_installed", value, code);
+}
+
+// A build for tests given no Claude of its own has none, on macOS and Linux. On Windows the
+// change's lock comes first, and Windows refuses to make it.
+#[test]
+#[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
+fn desktop_unsupported() {
+    let env = Env::new("contract-desktop-unsupported");
+    let without = |args: &[&str]| {
+        let mut command = env.command(&[args, &["--json"]].concat());
+        command.env_remove("PITBOARD_TEST_CLAUDE_DESKTOP");
+        let out = command.output().expect("run Pitboard");
+        let printed = String::from_utf8_lossy(&out.stdout).into_owned();
+        let value: Value =
+            serde_json::from_str(&printed).unwrap_or_else(|e| panic!("{e}: {printed}"));
+        (value, out.status.code().unwrap_or(-1))
+    };
+    let (value, code) = without(&["enroll", "desktop/work", "--sign-in"]);
+    assert_eq!(
+        (value["error"]["code"].as_str(), code),
+        (Some("live_store_unsupported"), 3),
+        "{value}"
+    );
+    let (value, code) = without(&["enroll", "desktop/work"]);
+    contract!("desktop_unsupported", value, code);
 }
 
 /// A machine with Claude Code and Codex both signed in. Every account says which tool it is

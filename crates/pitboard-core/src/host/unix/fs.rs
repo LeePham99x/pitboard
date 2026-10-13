@@ -9,7 +9,7 @@
 //! or a directory, giving one an access or a time, and moving, copying or removing one. So
 //! nothing removes or makes a file without having asked whether this process may.
 
-use crate::host::Access;
+use crate::host::{Access, Private};
 use crate::service::Permit;
 use std::fs::{File, OpenOptions};
 use std::io;
@@ -78,7 +78,68 @@ pub(crate) fn copy_access(_: Permit, existing: &Path, temp: &Path) -> io::Result
 /// Make a rename in `dir` durable. ext4 and xfs can lose a rename across a crash even when
 /// the file's contents were synced. Best effort: the contents are durable already.
 pub(crate) fn sync_dir(dir: &Path) {
-    let _ = File::open(dir).and_then(|d| d.sync_all());
+    let _ = flush_dir(dir);
+}
+
+pub(crate) fn flush_dir(dir: &Path) -> io::Result<()> {
+    File::open(dir)?.sync_all()
+}
+
+fn c_path(path: &Path) -> io::Result<std::ffi::CString> {
+    use std::os::unix::ffi::OsStrExt;
+    std::ffi::CString::new(path.as_os_str().as_bytes())
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))
+}
+
+fn not_replacing(renamed: libc::c_int) -> io::Result<()> {
+    if renamed == 0 {
+        Ok(())
+    } else {
+        Err(refusal(io::Error::last_os_error()))
+    }
+}
+
+fn refusal(refused: io::Error) -> io::Error {
+    match refused.raw_os_error() {
+        Some(libc::EEXIST) => io::Error::new(io::ErrorKind::AlreadyExists, refused),
+        // a volume that cannot refuse to replace is refused, never renamed over
+        Some(libc::ENOTSUP | libc::EINVAL | libc::ENOSYS) => {
+            io::Error::new(io::ErrorKind::Unsupported, refused)
+        }
+        _ => refused,
+    }
+}
+
+// The kernel's own never-replace rename: what is at `to`, a dangling link included, stays.
+pub(crate) fn move_new(_: Permit, from: &Path, to: &Path) -> io::Result<()> {
+    let (from, to) = (c_path(from)?, c_path(to)?);
+    not_replacing(crate::host::os::rename_exclusive(&from, &to))
+}
+
+fn nearest(path: &Path) -> io::Result<std::fs::Metadata> {
+    let mut at = path;
+    loop {
+        match std::fs::metadata(at) {
+            Ok(found) => return Ok(found),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => match at.parent() {
+                Some(parent) => at = parent,
+                None => return Err(e),
+            },
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+// Each asked of its nearest ancestor that exists.
+pub(crate) fn same_volume(a: &Path, b: &Path) -> io::Result<bool> {
+    use std::os::unix::fs::MetadataExt;
+    Ok(nearest(a)?.dev() == nearest(b)?.dev())
+}
+
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn file_id(path: &Path) -> Option<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::metadata(path).map(|it| (it.dev(), it.ino())).ok()
 }
 
 /// Set the modification time of the directory at `path` to `at`.
@@ -121,6 +182,38 @@ pub(crate) fn remove_dir(_: Permit, path: &Path) -> io::Result<()> {
 /// Remove the directory at `path` and everything in it.
 pub(crate) fn remove_dir_all(_: Permit, path: &Path) -> io::Result<()> {
     std::fs::remove_dir_all(path)
+}
+
+pub(crate) fn private_dir(path: &Path) -> io::Result<Private> {
+    use std::os::unix::fs::MetadataExt;
+    let found = match std::fs::symlink_metadata(path) {
+        Ok(found) => found,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Private::Missing),
+        Err(e) => return Err(e),
+    };
+    // SAFETY: geteuid only reports this process's effective user id.
+    let me = unsafe { libc::geteuid() };
+    Ok(if found.file_type().is_symlink() {
+        Private::Link
+    } else if !found.is_dir() {
+        Private::NotADirectory
+    } else if found.uid() != me {
+        Private::NotOwn
+    } else if found.mode() & 0o077 != 0 {
+        Private::Shared
+    } else {
+        Private::Yes
+    })
+}
+
+// An advisory lock on a read-only descriptor, never waited for: nothing is written there.
+pub(crate) fn lock_dir(path: &Path) -> io::Result<File> {
+    let folder = File::open(path)?;
+    match folder.try_lock() {
+        Ok(()) => Ok(folder),
+        Err(std::fs::TryLockError::WouldBlock) => Err(io::ErrorKind::WouldBlock.into()),
+        Err(std::fs::TryLockError::Error(e)) => Err(e),
+    }
 }
 
 /// Who besides its owner can reach `path`. `None` where it cannot be looked at.
@@ -224,6 +317,12 @@ pub mod testing {
     pub fn link_dir(target: &Path, at: &Path) -> io::Result<()> {
         std::os::unix::fs::symlink(target, at)
     }
+
+    // What a rename keeps and a copy does not: how a test tells a move from a copy.
+    pub fn inode(path: &Path) -> io::Result<u64> {
+        use std::os::unix::fs::MetadataExt;
+        Ok(std::fs::symlink_metadata(path)?.ino())
+    }
 }
 
 #[cfg(test)]
@@ -242,6 +341,132 @@ mod tests {
 
     fn mode(p: &Path) -> u32 {
         std::fs::metadata(p).unwrap().permissions().mode() & 0o777
+    }
+
+    #[test]
+    fn a_folder_is_private_only_where_it_is_this_users_own_directory_closed_to_others() {
+        let dir = scratch("private");
+        assert_eq!(private_dir(&dir).unwrap(), Private::Missing);
+        create_private_dir(Permit::for_a_test(), &dir).unwrap();
+        assert_eq!(private_dir(&dir).unwrap(), Private::Yes);
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o750)).unwrap();
+        assert_eq!(private_dir(&dir).unwrap(), Private::Shared);
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let link = dir.with_extension("link");
+        let _ = std::fs::remove_file(&link);
+        std::os::unix::fs::symlink(&dir, &link).unwrap();
+        assert_eq!(private_dir(&link).unwrap(), Private::Link);
+        std::fs::write(dir.join("file"), b"").unwrap();
+        assert_eq!(
+            private_dir(&dir.join("file")).unwrap(),
+            Private::NotADirectory
+        );
+        use std::os::unix::fs::MetadataExt;
+        let mine = std::fs::metadata(&dir).unwrap().uid();
+        if std::fs::metadata("/").unwrap().uid() != mine {
+            assert_eq!(private_dir(Path::new("/")).unwrap(), Private::NotOwn);
+        }
+        std::fs::remove_file(&link).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_rename_never_lands_on_something_already_there() {
+        use std::os::unix::fs::MetadataExt;
+        let dir = scratch("move-new");
+        let permit = Permit::for_a_test();
+        create_private_dir(permit, &dir).unwrap();
+        let (from, to) = (dir.join("from"), dir.join("to"));
+        std::fs::write(&from, b"incoming").unwrap();
+        std::fs::write(&to, b"already there").unwrap();
+        let refused = move_new(permit, &from, &to).unwrap_err();
+        assert_eq!(refused.kind(), io::ErrorKind::AlreadyExists, "{refused}");
+        assert_eq!(std::fs::read(&to).unwrap(), b"already there");
+        assert_eq!(std::fs::read(&from).unwrap(), b"incoming");
+
+        std::fs::remove_file(&to).unwrap();
+        testing::link(&dir.join("nowhere"), &to).unwrap();
+        let refused = move_new(permit, &from, &to).unwrap_err();
+        assert_eq!(
+            refused.kind(),
+            io::ErrorKind::AlreadyExists,
+            "a dangling link"
+        );
+        assert!(std::fs::symlink_metadata(&to).unwrap().is_symlink());
+        assert!(!dir.join("nowhere").exists());
+        std::fs::remove_file(&to).unwrap();
+
+        let (dir_from, empty, full) = (dir.join("dir-from"), dir.join("empty"), dir.join("full"));
+        std::fs::create_dir(&dir_from).unwrap();
+        std::fs::create_dir(&empty).unwrap();
+        std::fs::create_dir(&full).unwrap();
+        std::fs::write(full.join("kept"), b"kept").unwrap();
+        for there in [&empty, &full] {
+            let refused = move_new(permit, &dir_from, there).unwrap_err();
+            assert_eq!(refused.kind(), io::ErrorKind::AlreadyExists, "{refused}");
+        }
+        assert!(dir_from.is_dir());
+        assert_eq!(std::fs::read(full.join("kept")).unwrap(), b"kept");
+
+        let inode = std::fs::metadata(&from).unwrap().ino();
+        move_new(permit, &from, &to).unwrap();
+        assert_eq!(
+            std::fs::metadata(&to).unwrap().ino(),
+            inode,
+            "a move keeps the inode"
+        );
+        assert!(!from.exists());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_volume_that_cannot_refuse_is_refused_not_renamed_over() {
+        for errno in [libc::ENOTSUP, libc::EINVAL, libc::ENOSYS] {
+            assert_eq!(
+                refusal(io::Error::from_raw_os_error(errno)).kind(),
+                io::ErrorKind::Unsupported,
+                "{errno}"
+            );
+        }
+        assert_eq!(
+            refusal(io::Error::from_raw_os_error(libc::EEXIST)).kind(),
+            io::ErrorKind::AlreadyExists
+        );
+        assert!(not_replacing(0).is_ok());
+    }
+
+    #[test]
+    fn one_scratch_folder_is_one_volume_and_a_missing_path_asks_its_parent() {
+        let dir = scratch("volume");
+        create_private_dir(Permit::for_a_test(), &dir).unwrap();
+        assert!(same_volume(&dir, &dir.join("not/made/yet")).unwrap());
+        // devfs on macOS, devtmpfs on Linux: never the volume a scratch folder is on
+        assert!(!same_volume(&dir, Path::new("/dev")).unwrap());
+        assert!(flush_dir(&dir).is_ok());
+        assert!(flush_dir(&dir.join("missing")).is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_locked_folder_refuses_a_second_lock() {
+        let dir = scratch("lock");
+        create_private_dir(Permit::for_a_test(), &dir).unwrap();
+        let before: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().collect();
+        let held = lock_dir(&dir).unwrap();
+        assert_eq!(
+            lock_dir(&dir).map(drop).map_err(|e| e.kind()),
+            Err(io::ErrorKind::WouldBlock)
+        );
+        held.unlock().unwrap();
+        let again = lock_dir(&dir).unwrap();
+        drop(again);
+        assert!(before.is_empty());
+        assert_eq!(
+            std::fs::read_dir(&dir).unwrap().count(),
+            0,
+            "nothing written"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

@@ -41,14 +41,7 @@ struct RenewalSettings: View {
                     Text(renewal.note)
                 }
             } footer: {
-                Text(
-                    "A parked login is renewed whenever Pitboard runs, and otherwise not, so "
-                        + "one you leave alone for weeks expires and needs a browser sign-in. "
-                        + "Daily renewal hands that to your Mac’s own scheduler. It renews "
-                        + "your parked logins and does nothing else: it never switches account "
-                        + "and never asks for usage."
-                )
-                .footnote()
+                Text(renewal.about).footnote()
             }
         }
         .formStyle(.grouped)

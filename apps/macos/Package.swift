@@ -23,7 +23,9 @@ let package = Package(
             name: "PitboardBindings",
             dependencies: ["PitboardFFI"],
             // UniFFI's generated code does not yet meet Swift 6's strict concurrency checks.
-            swiftSettings: [.swiftLanguageMode(.v5)]
+            swiftSettings: [.swiftLanguageMode(.v5)],
+            // The core links the system's SQLite, and a static library carries no link line.
+            linkerSettings: [.linkedLibrary("sqlite3")]
         ),
         // For the Share extension alone. No test target links it: SwiftPM may build every
         // test target into one bundle with PitboardFFI, and scripts/build-app.sh says why two

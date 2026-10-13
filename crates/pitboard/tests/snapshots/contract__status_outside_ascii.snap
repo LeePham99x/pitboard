@@ -58,7 +58,8 @@ expression: "serde_json :: json! ({ \"exit\" : code, \"envelope\" : value })"
           "stale": null,
           "provider": "claude",
           "qualified": "claude/Đạt",
-          "plan": "Max"
+          "plan": "Max",
+          "read_at": null
         },
         {
           "label": "🏁",
@@ -70,7 +71,8 @@ expression: "serde_json :: json! ({ \"exit\" : code, \"envelope\" : value })"
           "parked": {
             "parked_at": "[time]",
             "access_expires_at": "[time]",
-            "refresh_expires_at": "[time]"
+            "refresh_expires_at": "[time]",
+            "session_expires_at": null
           },
           "lasts": null,
           "usage": {
@@ -102,9 +104,11 @@ expression: "serde_json :: json! ({ \"exit\" : code, \"envelope\" : value })"
           "stale": null,
           "provider": "claude",
           "qualified": "claude/🏁",
-          "plan": "Max"
+          "plan": "Max",
+          "read_at": null
         }
-      ]
+      ],
+      "awaiting": []
     },
     "warnings": [],
     "error": null

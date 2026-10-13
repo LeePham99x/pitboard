@@ -7,18 +7,22 @@ struct AccountSheetView: View {
     let sheet: Sheet
 
     var body: some View {
-        switch sheet {
-        case .add, .signInAgain:
-            SignInSheet(model: model, sheet: sheet)
-        case .name(let provider, _):
-            NameSheet(model: model, sheet: sheet) { .enrol(provider: provider, name: $0) }
-        case .rename(let provider, let label):
-            NameSheet(model: model, sheet: sheet) {
-                .rename(provider: provider, label: label, to: $0)
+        Group {
+            switch sheet {
+            case .add, .signInAgain:
+                SignInSheet(model: model, sheet: sheet)
+            case .name(let provider, _):
+                NameSheet(model: model, sheet: sheet) { .enrol(provider: provider, name: $0) }
+            case .rename(let provider, let label):
+                NameSheet(model: model, sheet: sheet) {
+                    .rename(provider: provider, label: label, to: $0)
+                }
+            case .stow:
+                StowSheet(model: model)
             }
-        case .stow:
-            StowSheet(model: model)
         }
+        // Only while the model keeps this sheet: as it closes, the window's take over.
+        .windowAlerts(model, shown: model.sheet?.id == sheet.id)
     }
 }
 

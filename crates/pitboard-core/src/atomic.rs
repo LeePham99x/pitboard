@@ -19,6 +19,17 @@ pub enum Perms {
 }
 
 pub fn write(permit: Permit, path: &Path, contents: &[u8], perms: Perms) -> io::Result<()> {
+    write_at(permit, path, contents, perms, "atomic.temp_written")
+}
+
+// `write`, with a fault point named `at` between the temporary and its rename.
+pub(crate) fn write_at(
+    permit: Permit,
+    path: &Path,
+    contents: &[u8],
+    perms: Perms,
+    at: &'static str,
+) -> io::Result<()> {
     let dir = path
         .parent()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no parent"))?;
@@ -42,6 +53,7 @@ pub fn write(permit: Permit, path: &Path, contents: &[u8], perms: Perms) -> io::
         if let Perms::MatchExisting = perms {
             fs::copy_access(permit, path, &temp)?;
         }
+        crate::fault::point(at);
         fs::rename(permit, &temp, path)
     })();
 
@@ -59,7 +71,7 @@ static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 
 /// The pid in a temporary name `write` creates, `.<file>.<pid>.<n>.pitboard`, or in the
 /// `.<file>.<pid>.pitboard` of earlier versions; `None` for any other name.
-fn temp_owner(file_name: &str) -> Option<u32> {
+pub(crate) fn temp_owner(file_name: &str) -> Option<u32> {
     let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
     let (rest, last) = file_name
         .strip_prefix('.')?
@@ -101,7 +113,7 @@ fn remove_stale(permit: Permit, path: &Path) -> io::Result<()> {
 
 /// Remove temporaries a killed run left in `dir`: each can hold a whole credential. Only a
 /// dead process's are touched; this process's may be mid-write on another thread.
-fn sweep(permit: Permit, dir: &Path) {
+pub(crate) fn sweep(permit: Permit, dir: &Path) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };

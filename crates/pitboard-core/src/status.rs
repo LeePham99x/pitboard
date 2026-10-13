@@ -14,7 +14,7 @@ use crate::context::Context;
 use crate::error::Cause;
 use crate::in_use::{self, InUse};
 use crate::provider::claude::paths as claude;
-use crate::provider::{ProviderError, ProviderId};
+use crate::provider::{LoginKind, Provider, ProviderError, ProviderId};
 use crate::service::Permit;
 use crate::state::{Key, Park, State};
 use crate::switch::identify;
@@ -66,6 +66,8 @@ pub enum Stale {
     Interrupted,
     /// Nobody was asked: this reading was taken without touching the network.
     NotAsked,
+    // A tool no service is asked about: Claude Desktop's.
+    NoUsage,
 }
 
 impl Stale {
@@ -103,6 +105,7 @@ impl Stale {
             Stale::AskedRecently => "asked_recently",
             Stale::Interrupted => "interrupted",
             Stale::NotAsked => "not_asked",
+            Stale::NoUsage => "no_usage",
         }
     }
 
@@ -123,53 +126,61 @@ impl Stale {
         // A sentence per tool rather than one assembled at run time, so every word a person
         // reads is here to be read, and Claude Code's are exactly what they always were.
         let per_tool = |claude: &'static str, codex: &'static str| match provider {
-            ProviderId::Claude => claude,
-            ProviderId::Codex => codex,
+            ProviderId::Claude => Some(claude),
+            ProviderId::Codex => Some(codex),
+            // No service is asked for it, so no service's answer is said of it.
+            ProviderId::Desktop => None,
         };
         match self {
             Stale::NothingSignedIn => Some("nothing is signed in"),
-            Stale::LoginUnreadable => Some(per_tool(
+            Stale::LoginUnreadable => per_tool(
                 "Claude Code's login could not be read; run `pitboard doctor`",
                 "Codex's login could not be read; run `pitboard doctor`",
-            )),
-            Stale::LoginUnusable => Some(per_tool(
+            ),
+            Stale::LoginUnusable => per_tool(
                 "Claude Code's login is not one Pitboard can park or switch; run `pitboard doctor`",
                 "Codex's login is not one Pitboard can park or switch; run `pitboard doctor`",
-            )),
-            Stale::SessionExpired => Some(per_tool(
+            ),
+            Stale::SessionExpired => per_tool(
                 "Claude Code's session has expired; `claude` renews it",
                 "Codex's session has expired; `codex` renews it",
-            )),
+            ),
             Stale::ParkedAccessExpired | Stale::NothingParked => None,
-            Stale::LoginReplaced => {
-                Some("its login was replaced by a sign-in outside Pitboard; sign in again")
-            }
+            Stale::LoginReplaced => Some(match provider {
+                ProviderId::Claude | ProviderId::Codex => {
+                    "its login was replaced by a sign-in outside Pitboard; sign in again"
+                }
+                ProviderId::Desktop => {
+                    "its login was signed out or replaced in Claude; sign in again"
+                }
+            }),
             Stale::ParkUnreadable => Some("its parked login cannot be read; run `pitboard doctor`"),
-            Stale::RateLimited => Some(per_tool(
+            Stale::RateLimited => per_tool(
                 "Anthropic is rate limiting usage checks",
                 "OpenAI is rate limiting usage checks",
-            )),
-            Stale::Unreachable => Some(per_tool(
+            ),
+            Stale::Unreachable => per_tool(
                 "Anthropic could not be reached",
                 "OpenAI could not be reached",
-            )),
-            Stale::ServerError => Some(per_tool(
+            ),
+            Stale::ServerError => per_tool(
                 "Anthropic answered with an error; try again later",
                 "OpenAI answered with an error; try again later",
-            )),
-            Stale::AnswerNotUnderstood => Some(per_tool(
+            ),
+            Stale::AnswerNotUnderstood => per_tool(
                 "Anthropic's answer was not understood",
                 "OpenAI's answer was not understood",
-            )),
+            ),
             Stale::LoginRefused => Some("its parked login is no longer accepted; sign in again"),
             // Not worth a word: it is the ordinary state of a number that is
             // already as true as asking again would make it.
             Stale::AskedRecently => None,
             Stale::Interrupted => Some("the check did not finish"),
-            Stale::NotAsked => Some(per_tool(
+            Stale::NotAsked => per_tool(
                 "read without asking Anthropic",
                 "read without asking OpenAI",
-            )),
+            ),
+            Stale::NoUsage => Some("Pitboard reads no usage for Claude Desktop"),
         }
     }
 }
@@ -198,6 +209,8 @@ pub struct Row {
     pub stale: Option<Stale>,
     /// The plan its login says, or last said where this read did not see it: "Max 20x".
     pub plan: Option<String>,
+    // when Pitboard last read this login in use, for a tool no read asks: Claude Desktop's
+    pub read_at: Option<i64>,
 }
 
 impl Row {
@@ -266,6 +279,35 @@ pub struct Report {
     /// without ever saying which slot it was speaking for, so on a machine with a second
     /// config directory it was silently answering about one of them.
     pub slot: Slot,
+    // Each sign-in inside an app that is waited for, with an account parked for it.
+    pub awaiting: Vec<SignInAwaited>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SignInAwaited {
+    pub provider: ProviderId,
+    pub label: Key,
+    pub put_back: Key,
+    pub since: i64,
+    // a Sign In Again of `label`, not an add
+    pub again: bool,
+}
+
+fn awaiting(state: &State) -> Vec<SignInAwaited> {
+    state
+        .awaiting
+        .iter()
+        .filter_map(|(code, awaited)| {
+            let provider = ProviderId::parse(code)?;
+            Some(SignInAwaited {
+                provider,
+                label: Key::new(provider, awaited.label.clone()),
+                put_back: state.by_id(provider, &awaited.put_back)?.key(),
+                since: awaited.since,
+                again: awaited.account.is_some(),
+            })
+        })
+        .collect()
 }
 
 /// A credential slot, named.
@@ -330,6 +372,7 @@ impl Facts {
 /// when it is asked: a Codex login keeps its token somewhere a Claude Code login does not.
 fn parked_document(
     ctx: &Context,
+    tool: &'static dyn Provider,
     key: &Key,
     parked: Option<&Park>,
     now: i64,
@@ -337,7 +380,15 @@ fn parked_document(
     match parked {
         None => Err(Stale::NothingParked),
         Some(p) if !p.askable_at(now) => Err(Stale::ParkedAccessExpired),
-        Some(p) => park::load(ctx, key, p).map_err(|_| Stale::ParkUnreadable),
+        Some(p) => park::load(ctx, tool, key, p).map_err(|_| Stale::ParkUnreadable),
+    }
+}
+
+// An app's login: no store is read and no service asked, and its row says when it was read.
+fn asks_nobody(which: ProviderId) -> bool {
+    match crate::provider::of(which) {
+        LoginKind::Document(_) => false,
+        LoginKind::Folder(_) => true,
     }
 }
 
@@ -360,10 +411,13 @@ fn tools(state: &State) -> Vec<ProviderId> {
     ProviderId::ALL
         .iter()
         .copied()
-        .filter(|&which| {
-            which == crate::label::DEFAULT || state.accounts.iter().any(|a| a.provider() == which)
-        })
+        .filter(|&which| shown(state, which))
         .collect()
+}
+
+// The one rule: a read's warnings and `doctor` ask it too.
+pub(crate) fn shown(state: &State, which: ProviderId) -> bool {
+    which == crate::label::DEFAULT || state.accounts.iter().any(|a| a.provider() == which)
 }
 
 /// What is known without asking anyone: whose login each tool has stored, as its service last
@@ -399,6 +453,7 @@ pub fn gather_offline(ctx: &Context, state: &State) -> Report {
     Report {
         now: ctx.now(),
         slot: slot_of(ctx),
+        awaiting: awaiting(state),
         rows: assemble(
             state,
             &facts,
@@ -471,21 +526,13 @@ fn to_api(error: crate::provider::ProviderError) -> ApiError {
 pub(crate) fn ask_one(
     ctx: &Context,
     permit: Permit,
-    which: ProviderId,
+    tool: &'static dyn Provider,
     id: &str,
     document: &Value,
     signed_in: bool,
 ) -> Option<Snapshot> {
     let remembered = readings::load(ctx);
-    let (answer, learned) = ask_usage(
-        ctx,
-        which,
-        id,
-        document,
-        signed_in,
-        remembered.get(id),
-        true,
-    );
+    let (answer, learned) = ask_usage(ctx, tool, id, document, signed_in, remembered.get(id), true);
     if let Some(learned) = learned {
         budget::record(ctx, permit, &[learned]);
     }
@@ -497,7 +544,7 @@ pub(crate) fn ask_one(
 /// Ask about the account filed under `id`, or say why not.
 fn ask_usage(
     ctx: &Context,
-    which: ProviderId,
+    tool: &'static dyn Provider,
     id: &str,
     document: &Value,
     signed_in: bool,
@@ -515,9 +562,9 @@ fn ask_usage(
     // Through the provider, because what a usage call needs is not the same everywhere:
     // Codex sends an account id header it reads out of the credential, and Gemini needs a
     // project id from a file the credential never mentions.
-    let answer = crate::provider::of(which).usage(
+    let answer = tool.usage(
         ctx,
-        &crate::provider::Credential::new(which, document.clone()),
+        &crate::provider::Credential::new(tool.id(), document.clone()),
     );
     // A park that is not the shape its own tool keeps was damaged at rest, which is a fact
     // about the vault and not about the service. Said as such rather than as an answer the
@@ -569,12 +616,12 @@ fn ask_live(
     ctx: &Context,
     permit: Permit,
     state: &State,
-    which: ProviderId,
+    tool: &'static dyn Provider,
     read: &LiveRead,
     remembered: &HashMap<String, Snapshot>,
     fresh: bool,
 ) -> Answered {
-    let tool = crate::provider::of(which);
+    let which = tool.id();
     let recorded = || last_known(state, which);
     let nobody = || Answered {
         found: identify::nobody(read.named.as_deref(), ctx.now()),
@@ -626,7 +673,7 @@ fn ask_live(
             });
         }
     }
-    let (renewed, found) = match identify::told_by_a_read(ctx, permit, state, which, document) {
+    let (renewed, found) = match identify::told_by_a_read(ctx, permit, state, tool, document) {
         Ok(told) => told,
         Err(error) => {
             let error = to_api(error);
@@ -640,7 +687,7 @@ fn ask_live(
     };
     let id = state.id_of(which, &found.owner);
     let document = renewed.as_ref().unwrap_or(document);
-    let (usage, learned) = ask_usage(ctx, which, &id, document, true, remembered.get(&id), fresh);
+    let (usage, learned) = ask_usage(ctx, tool, &id, document, true, remembered.get(&id), fresh);
     Answered {
         login: LiveLogin {
             signed_in: Some(Ok(found.owner.clone())),
@@ -721,32 +768,47 @@ pub(crate) struct Answers {
 /// login renewed to tell whose it is is saved where its tool keeps it.
 pub(crate) fn ask(ctx: &Context, permit: Permit, state: &State, fresh: bool) -> Answers {
     let now = ctx.now();
+    let mut unasked = Vec::new();
     // Each tool's live login, whole, or why it could not be read. Not a token out of it:
     // what a usage call needs is not the same everywhere, and pulling one field out here
     // would decide that for all of them. What the tool's own record names is read first,
     // as `in_use::named` says why.
-    let live_reads: Vec<(ProviderId, LiveRead)> = tools(state)
+    let live_reads: Vec<(&'static dyn Provider, LiveRead)> = tools(state)
         .into_iter()
-        .map(|which| {
+        .filter_map(|which| {
+            let tool = match crate::provider::of(which) {
+                LoginKind::Document(tool) => tool,
+                LoginKind::Folder(_) => {
+                    unasked.push(which);
+                    return None;
+                }
+            };
             let named = in_use::named(ctx, which);
-            let login = crate::provider::of(which)
+            let login = tool
                 .read_live(ctx)
                 .map(|found| found.map(|credential| credential.raw));
-            (which, LiveRead { named, login })
+            Some((tool, LiveRead { named, login }))
         })
         .collect();
-    let parked_documents: Vec<Result<Value, Stale>> = state
+    let parked_documents: Vec<Result<(&'static dyn Provider, Value), Stale>> = state
         .accounts
         .iter()
-        .map(|a| parked_document(ctx, &a.key(), a.parked.as_ref(), now))
+        .map(|a| match crate::provider::of(a.provider()) {
+            LoginKind::Document(tool) => {
+                parked_document(ctx, tool, &a.key(), a.parked.as_ref(), now)
+                    .map(|document| (tool, document))
+            }
+            LoginKind::Folder(_) => Err(Stale::NoUsage),
+        })
         .collect();
     let mut plans: BTreeMap<String, Plan> = state
         .accounts
         .iter()
         .zip(&parked_documents)
-        .filter_map(|(account, document)| {
+        .filter_map(|(account, parked)| {
+            let (tool, document) = parked.as_ref().ok()?;
             let plan = Plan {
-                said: crate::provider::of(account.provider()).plan(document.as_ref().ok()?),
+                said: tool.plan(document),
                 seen: Seen::Parked(account.parked.as_ref()?.service.clone()),
             };
             Some((account.id.clone(), plan))
@@ -760,13 +822,12 @@ pub(crate) fn ask(ctx: &Context, permit: Permit, state: &State, fresh: bool) -> 
             // only ever stand in for its own tool.
             let per_tool: Vec<_> = live_reads
                 .iter()
-                .map(|(which, read)| {
+                .map(|(tool, read)| {
                     let remembered = &remembered;
-                    let which = *which;
-                    let handle = scope.spawn(move || {
-                        ask_live(ctx, permit, state, which, read, remembered, fresh)
-                    });
-                    (which, handle)
+                    let tool = *tool;
+                    let handle = scope
+                        .spawn(move || ask_live(ctx, permit, state, tool, read, remembered, fresh));
+                    (tool.id(), handle)
                 })
                 .collect();
             let parked: Vec<_> = parked_documents
@@ -776,9 +837,9 @@ pub(crate) fn ask(ctx: &Context, permit: Permit, state: &State, fresh: bool) -> 
                     let remembered = &remembered;
                     scope.spawn(move || match token.as_ref() {
                         Err(stale) => (Err(*stale), None),
-                        Ok(document) => ask_usage(
+                        Ok((tool, document)) => ask_usage(
                             ctx,
-                            account.provider(),
+                            *tool,
                             &account.id,
                             document,
                             false,
@@ -800,7 +861,17 @@ pub(crate) fn ask(ctx: &Context, permit: Permit, state: &State, fresh: bool) -> 
             )
         });
 
-    let mut live = BTreeMap::new();
+    let mut live: BTreeMap<ProviderId, LiveLogin> = unasked
+        .into_iter()
+        .map(|which| {
+            let login = LiveLogin {
+                known: last_known(state, which),
+                usage: Some(Err(Stale::NoUsage)),
+                ..LiveLogin::default()
+            };
+            (which, login)
+        })
+        .collect();
     let mut learned = Vec::new();
     let mut found = Vec::new();
     for (which, answered) in settle(state, answers) {
@@ -870,6 +941,7 @@ pub(crate) fn report(
     Report {
         slot: slot_of(ctx),
         now,
+        awaiting: awaiting(state),
         rows,
         // The default tool's answer. Every tool's is in the rows, which is where a
         // machine with more than one signed in has to be read from: there is no single
@@ -895,6 +967,12 @@ fn rank(which: ProviderId) -> usize {
         .unwrap_or(usize::MAX)
 }
 
+fn read_at(state: &State, which: ProviderId, signed_in: bool) -> Option<i64> {
+    (signed_in && asks_nobody(which))
+        .then(|| state.in_use(which).map(|record| record.known_at))
+        .flatten()
+}
+
 fn assemble(
     state: &State,
     facts: &Facts,
@@ -913,6 +991,7 @@ fn assemble(
                 // Unreachable, unreadable, or never asked. The service decides who is
                 // signed in; without its answer this time, what it last said stands in.
                 (Some(Err(_)), _) | (None, false) => live.known.as_ref(),
+                (None, true) if asks_nobody(which) => live.known.as_ref(),
                 (None, true) => None,
             }?;
             Some((which, owner))
@@ -940,12 +1019,20 @@ fn assemble(
             let id = account.id.as_str();
             let which = account.provider();
             let signed_in = live_ids.get(&which).is_some_and(|live| live == id);
-            let (usage, stale) = if signed_in {
+            let replaced = account.parked.is_none() && account.replaced_at.is_some();
+            let (usage, stale) = if !which.reads_usage() {
+                let why = if replaced && !signed_in {
+                    Stale::LoginReplaced
+                } else {
+                    Stale::NoUsage
+                };
+                (None, Some(why))
+            } else if signed_in {
                 let live = facts
                     .live_for(which)
                     .map_or(Err(Stale::NothingSignedIn), LiveLogin::usage);
                 reading(id, &live)
-            } else if account.parked.is_none() && account.replaced_at.is_some() {
+            } else if replaced {
                 reading(id, &Err(Stale::LoginReplaced))
             } else {
                 let parked = facts.parked.get(id).cloned();
@@ -969,6 +1056,7 @@ fn assemble(
                 usage,
                 stale,
                 plan,
+                read_at: read_at(state, which, signed_in),
             }
         })
         .collect();
@@ -1001,6 +1089,7 @@ fn assemble(
                 usage,
                 stale,
                 plan,
+                read_at: read_at(state, which, true),
             });
             continue;
         }
@@ -1023,6 +1112,7 @@ fn assemble(
                 usage: None,
                 stale: live.usage().err(),
                 plan: None,
+                read_at: None,
             });
         }
     }
@@ -1080,9 +1170,11 @@ mod tests {
         Park {
             service: "pitboard-park-x-1".into(),
             parked_at: NOW - 86_400,
-            refresh_fingerprint: "f".into(),
+            kind: crate::state::ParkKind::Vault,
+            login: "f".into(),
             access_expires_at: Some(NOW - 3_600),
             refresh_expires_at: Some(refresh_expires_at),
+            session_expires_at: None,
         }
     }
 
@@ -1386,7 +1478,7 @@ mod tests {
             &ctx,
             Permit::for_a_test(),
             &state(&["work"]),
-            ProviderId::Claude,
+            crate::provider::document(ProviderId::Claude),
             &stored(json!({"claudeAiOauth": {
                 "accessToken": "access-w",
                 "subscriptionType": "team",
@@ -1450,7 +1542,7 @@ mod tests {
             park::store_at(
                 &ctx,
                 Permit::for_a_test(),
-                ProviderId::Claude,
+                crate::provider::document(ProviderId::Claude),
                 &service,
                 &block,
             )
@@ -1565,7 +1657,7 @@ mod tests {
         let ask = |signed_in| {
             ask_usage(
                 &ctx,
-                ProviderId::Claude,
+                crate::provider::document(ProviderId::Claude),
                 "t-uuid",
                 &login,
                 signed_in,
@@ -1587,7 +1679,7 @@ mod tests {
         let not_codex = serde_json::json!({"claudeAiOauth": {"accessToken": "t"}});
         let (answer, learned) = ask_usage(
             &ctx,
-            ProviderId::Codex,
+            crate::provider::document(ProviderId::Codex),
             "t-acc",
             &not_codex,
             false,
@@ -1605,10 +1697,22 @@ mod tests {
     fn a_parked_login_past_its_access_expiry_is_not_asked() {
         let ctx = Context::for_unit_test();
         let personal = Key::new(ProviderId::Claude, "personal");
-        let token = parked_document(&ctx, &personal, Some(&parked(NOW + 86_400)), NOW);
+        let token = parked_document(
+            &ctx,
+            crate::provider::document(ProviderId::Claude),
+            &personal,
+            Some(&parked(NOW + 86_400)),
+            NOW,
+        );
         assert_eq!(token, Err(Stale::ParkedAccessExpired));
         assert_eq!(
-            parked_document(&ctx, &personal, None, NOW),
+            parked_document(
+                &ctx,
+                crate::provider::document(ProviderId::Claude),
+                &personal,
+                None,
+                NOW
+            ),
             Err(Stale::NothingParked)
         );
     }
@@ -1647,7 +1751,7 @@ mod tests {
     }
 
     /// Every stale reason, for the tests that hold each one to something.
-    const EVERY_STALE: [Stale; 16] = [
+    const EVERY_STALE: [Stale; 17] = [
         Stale::NothingSignedIn,
         Stale::LoginUnreadable,
         Stale::LoginUnusable,
@@ -1664,6 +1768,7 @@ mod tests {
         Stale::AskedRecently,
         Stale::Interrupted,
         Stale::NotAsked,
+        Stale::NoUsage,
     ];
 
     /// What a Claude Code row said before a row knew its tool, word for word. A person who
@@ -1692,6 +1797,7 @@ mod tests {
             Stale::LoginUnusable => Some(
                 "Claude Code's login is not one Pitboard can park or switch; run `pitboard doctor`",
             ),
+            Stale::NoUsage => Some("Pitboard reads no usage for Claude Desktop"),
         };
         for stale in EVERY_STALE {
             assert_eq!(
@@ -1713,6 +1819,10 @@ mod tests {
     #[test]
     fn a_codex_row_names_openai_and_codex_never_anthropic_or_claude() {
         for stale in EVERY_STALE {
+            // Only a row of a tool no service is asked about carries it, which Codex is not.
+            if stale == Stale::NoUsage {
+                continue;
+            }
             let Some(said) = stale.explanation_for(ProviderId::Codex) else {
                 assert_eq!(stale.explanation_for(ProviderId::Claude), None, "{stale:?}");
                 continue;
@@ -1960,7 +2070,7 @@ mod tests {
             &ctx,
             Permit::for_a_test(),
             &State::default(),
-            ProviderId::Claude,
+            crate::provider::document(ProviderId::Claude),
             &stored(logged_out),
             &HashMap::new(),
             true,
@@ -2138,7 +2248,7 @@ mod tests {
             &ctx,
             Permit::for_a_test(),
             &State::default(),
-            ProviderId::Claude,
+            crate::provider::document(ProviderId::Claude),
             &stored(json!({"claudeAiOauth": {"accessToken": "access-x"}})),
             &HashMap::new(),
             true,
@@ -2158,7 +2268,7 @@ mod tests {
     fn offline_every_tool_names_its_own_signed_in_account() {
         let home = scratch("offline");
         let (ctx, _mem, api) = machine(&home.0, Some("alpha-uuid"));
-        let codex = crate::provider::of(ProviderId::Codex)
+        let codex = crate::provider::document(ProviderId::Codex)
             .live(&ctx)
             .expect("Codex keeps its login in a file here");
         let login = json!({
@@ -2253,7 +2363,7 @@ mod tests {
 
     /// Put `raw` where this machine's Codex keeps its login, exactly as written.
     fn plant_codex(ctx: &Context, raw: &str) {
-        let codex = crate::provider::of(ProviderId::Codex)
+        let codex = crate::provider::document(ProviderId::Codex)
             .live(ctx)
             .expect("Codex keeps its login in a file here");
         crate::store::write_raw(&codex.chain, Permit::for_a_test(), &codex.service, raw)
@@ -2451,7 +2561,7 @@ mod tests {
                 &ctx,
                 Permit::for_a_test(),
                 &beta_in_use,
-                ProviderId::Claude,
+                crate::provider::document(ProviderId::Claude),
                 &stored(document),
                 &HashMap::new(),
                 true,
@@ -2544,6 +2654,7 @@ mod tests {
             usage: None,
             stale: Some(Stale::LoginUnreadable),
             plan: None,
+            read_at: None,
         };
         assert!(row.unplaced());
         row.stale = Some(Stale::LoginUnusable);

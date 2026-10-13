@@ -4,21 +4,22 @@
 //! window's words, each under its own name in snake case. The state is driven through
 //! `State::apply` by hand and read as `present` makes it, its clock times in UTC.
 
-use super::signing::signs_in;
+use super::signing::{add, adding_in_claude, signs_in, travel};
 use super::switching::switch;
 use super::testing::{
-    CHATGPT, Hand, Machine, StandInApps, chatgpt_holding, claude_code, codex, enrolled_as, refusal,
-    status, switched, warned, warning,
+    CHATGPT, Hand, Machine, StandInApps, awaiting, chatgpt_holding, claude_code, codex,
+    desktop_account, desktop_machine, desktop_warning, enrolled_as, refusal, status, switched,
+    warned, warning,
 };
 use super::{Intent, Pane, Sheet, Snapshot, WindowRequest};
 use crate::account_windows::forget_message_on;
-use crate::present::testing::{LimitExt, Unreadable, Utc, account, unplaced, window};
+use crate::present::testing::{LimitExt, Unreadable, account, unplaced, window};
 use crate::present::{
     AccountItem, AccountsShown, Choice, Footing, ItemOffer, MenuEntry, NoticeAction, PaceStanding,
-    PanelNotice, Question, SetupStep, Severity, WindowOffer, present, present_on,
+    PanelNotice, Question, SetupStep, Severity, WindowOffer, present,
 };
-use crate::{Abandoned, Account, EnrolledAs, Limit, Warning};
-use pitboard_core::host::{OS, Os};
+use crate::{Abandoned, Account, EnrolledAs, GaveUp, Limit, Warning};
+use pitboard_core::host::OS;
 use std::time::Duration;
 
 /// 12:00 UTC on Wednesday 14 January 2026, a day far from any change of clocks.
@@ -93,11 +94,6 @@ fn offered(row: &AccountItem) -> Vec<(&str, bool)> {
 
 fn present_sheet(sheet: Sheet) -> Intent {
     Intent::PresentSheet { sheet }
-}
-
-/// What a Mac's app is shown, whichever system runs the test.
-fn on_a_mac(model: &Hand) -> Snapshot {
-    present_on(Os::MacOs, &model.state, model.now.epoch(), &Utc)
 }
 
 fn interrupted() -> Warning {
@@ -1879,11 +1875,14 @@ fn giving_up_on_a_switch_says_what_was_kept_until_put_away() {
     assert_eq!(ids(&model.shown()), ["stuck"]);
 
     machine.answer = Ok(status(vec![account(Some("work")).signed_in().build()]));
-    machine.abandoned = Ok(Some(Abandoned {
-        from: "personal".into(),
-        to: "work".into(),
-        logins_kept: 2,
-    }));
+    machine.abandoned = Ok(GaveUp {
+        switch: Some(Abandoned {
+            from: "personal".into(),
+            to: "work".into(),
+            logins_kept: 2,
+        }),
+        ..GaveUp::default()
+    });
     model.send(Intent::AbandonStuckSwitch);
     model.run(&mut machine);
     assert_eq!(
@@ -1900,11 +1899,14 @@ fn giving_up_on_a_switch_says_what_was_kept_until_put_away() {
         )]
     );
 
-    machine.abandoned = Ok(Some(Abandoned {
-        from: "personal".into(),
-        to: "work".into(),
-        logins_kept: 1,
-    }));
+    machine.abandoned = Ok(GaveUp {
+        switch: Some(Abandoned {
+            from: "personal".into(),
+            to: "work".into(),
+            logins_kept: 1,
+        }),
+        ..GaveUp::default()
+    });
     model.send(Intent::AbandonStuckSwitch);
     model.run(&mut machine);
     assert_eq!(
@@ -1942,11 +1944,14 @@ fn notices_come_the_most_pressing_first() {
     model.refresh(&mut machine);
 
     machine.answer = Ok(status(accounts()));
-    machine.abandoned = Ok(Some(Abandoned {
-        from: "personal".into(),
-        to: "work".into(),
-        logins_kept: 2,
-    }));
+    machine.abandoned = Ok(GaveUp {
+        switch: Some(Abandoned {
+            from: "personal".into(),
+            to: "work".into(),
+            logins_kept: 2,
+        }),
+        ..GaveUp::default()
+    });
     model.send(Intent::AbandonStuckSwitch);
     model.run(&mut machine);
 
@@ -2217,11 +2222,14 @@ fn a_notices_action_is_either_a_button_or_what_puts_it_away() {
     model.refresh(&mut machine);
     machine.switched = switched("codex", "codex/side", "codex/work", Vec::new());
     switch(&mut model, &mut machine, "codex/work");
-    machine.abandoned = Ok(Some(Abandoned {
-        from: "personal".into(),
-        to: "work".into(),
-        logins_kept: 2,
-    }));
+    machine.abandoned = Ok(GaveUp {
+        switch: Some(Abandoned {
+            from: "personal".into(),
+            to: "work".into(),
+            logins_kept: 2,
+        }),
+        ..GaveUp::default()
+    });
     model.send(Intent::AbandonStuckSwitch);
     model.run(&mut machine);
     machine.answer = Ok(warned(accounts(100.0), vec![interrupted()]));
@@ -2291,11 +2299,14 @@ fn the_menu_says_what_needs_attention_in_one_item() {
 
     // A note is not pressing enough for the menu.
     machine.answer = Ok(status(vec![account(Some("work")).signed_in().build()]));
-    machine.abandoned = Ok(Some(Abandoned {
-        from: "personal".into(),
-        to: "work".into(),
-        logins_kept: 1,
-    }));
+    machine.abandoned = Ok(GaveUp {
+        switch: Some(Abandoned {
+            from: "personal".into(),
+            to: "work".into(),
+            logins_kept: 1,
+        }),
+        ..GaveUp::default()
+    });
     model.send(Intent::AbandonStuckSwitch);
     model.run(&mut machine);
     assert_eq!(ids(&model.shown()), ["abandoned"]);
@@ -2406,14 +2417,15 @@ fn where_there_are_no_accounts_the_menu_and_the_window_say_why() {
     let mut nothing = Machine::reading(Ok(status(Vec::new())));
     nothing.found = Vec::new();
     bare.refresh(&mut nothing);
-    let shown = bare.shown();
+    let shown = bare.on_a_mac();
     assert_eq!(shown.menu_accounts_note, None);
     assert_eq!(
         shown.accounts_shown,
         AccountsShown::NoTool {
             title: "Claude Code Isn’t Installed".into(),
-            detail: "Pitboard switches the logins of Claude Code and Codex, so there is nothing \
-                     for it to do until one of them is installed and signed in once."
+            detail: "Pitboard switches the logins of Claude Code, Codex and Claude Desktop, so \
+                     there is nothing for it to do until one of them is installed and signed in \
+                     once."
                 .into(),
             link_title: "How to Install Claude Code".into(),
             link: "https://docs.claude.com/en/docs/claude-code/setup".into(),
@@ -2689,7 +2701,7 @@ fn adding(found: Vec<crate::Tool>, accounts: Vec<Account>) -> Snapshot {
     model.refresh(&mut machine);
     model.send(present_sheet(Sheet::Add { provider: None }));
     model.run(&mut machine);
-    on_a_mac(&model)
+    model.on_a_mac()
 }
 
 /// Only tools the app found a program for are offered for a new account, and the form says
@@ -2706,7 +2718,10 @@ fn a_new_account_is_offered_for_tools_that_are_here() {
     assert!(claude_only.tools.is_empty(), "nothing to pick from");
     assert_eq!(
         claude_only.not_offered.as_deref(),
-        Some("Codex is not offered: Pitboard did not find codex on this Mac.")
+        Some(
+            "Codex and Claude Desktop are not offered: Pitboard did not find codex or Claude’s \
+             data folder on this Mac."
+        )
     );
 
     let codex_only = adding(vec![codex()], Vec::new())
@@ -2718,7 +2733,13 @@ fn a_new_account_is_offered_for_tools_that_are_here() {
     let both = adding(vec![claude_code(), codex()], Vec::new())
         .sheet_text
         .expect("the sheet");
-    assert_eq!(both.not_offered, None);
+    assert_eq!(
+        both.not_offered.as_deref(),
+        Some(
+            "Claude Desktop is not offered: Pitboard did not find Claude’s data folder on this \
+             Mac."
+        )
+    );
     let offered: Vec<&str> = both.tools.iter().map(|t| t.code.as_str()).collect();
     assert_eq!(offered, ["claude", "codex"]);
     assert!(both.tools[1].message.contains("Codex’s own sign-in"));
@@ -2958,9 +2979,11 @@ fn a_sign_in_under_way_says_what_to_do_in_the_browser() {
     model.give(super::state::Answer::SignInStarted {
         id,
         started: Ok(()),
+        put_back: None,
     });
     let text = model.shown().signing_in_text.expect("what it says");
     assert_eq!(text.title, "Signing In to Claude Code");
+    assert!(text.offers_link, "a browser sign-in offers its page");
     assert_eq!(
         text.message,
         "Finish signing in as travel in your browser. This closes once Claude Code says \
@@ -2976,6 +2999,7 @@ fn a_sign_in_under_way_says_what_to_do_in_the_browser() {
     model.give(super::state::Answer::SignInSaid {
         id,
         text: "Paste code here if prompted > ".into(),
+        step: None,
     });
     model.send(Intent::PasteCode {
         code: "half".into(),
@@ -2983,6 +3007,7 @@ fn a_sign_in_under_way_says_what_to_do_in_the_browser() {
     model.give(super::state::Answer::SignInSaid {
         id,
         text: "Invalid code. Please make sure the full code was copied.\n".into(),
+        step: None,
     });
     assert_eq!(
         model.shown().signing_in_text.and_then(|text| text.refused),
@@ -3247,4 +3272,160 @@ fn the_service_asked_is_named_for_the_tools_shown() {
 fn a_typed_label_is_taken_apart() {
     assert_eq!(super::state::split("codex/work"), ("codex", "work"));
     assert_eq!(super::state::split("work"), ("claude", "work"));
+}
+
+// What a sign-in or a recording inside Claude says in its sheet, driven through the model.
+
+#[test]
+fn the_quit_question_is_carried_with_the_sheet_it_was_asked_from() {
+    let (mut model, mut machine) = adding_in_claude(true);
+    model.send(travel());
+    model.run(&mut machine);
+    let shown = model.on_a_mac();
+    assert_eq!(shown.sheet, Some(add(Some("desktop"))));
+    assert!(shown.quit_question.is_some());
+    assert_eq!(
+        shown.quit_confirmation.expect("asked").confirm,
+        "Quit Claude and Park work"
+    );
+    assert!(
+        shown.sheet_text.expect("the form").saving,
+        "its button holds back"
+    );
+}
+
+#[test]
+fn a_use_refused_in_doubt_opens_the_add_sheet_on_the_account_claude_shows() {
+    let mut model = at_noon();
+    let mut machine = desktop_machine(false);
+    machine.switched = Err(refusal(
+        "live_account_not_enrolled",
+        "Claude is signed in to an account you haven’t added, so it can’t be parked.",
+        Vec::new(),
+    ));
+    model.refresh(&mut machine);
+    switch(&mut model, &mut machine, "desktop/home");
+    model.send(present_sheet(add(Some("desktop"))));
+    model.run(&mut machine);
+    let form = model.on_a_mac().sheet_text.expect("the form");
+    assert_eq!(form.confirm, "Add the Account Claude Shows");
+    assert_eq!(
+        form.message,
+        "Pitboard can’t identify the login Claude holds. Open Claude, check which account it \
+         shows, and quit it. Pitboard records that account under this name: one you added, or \
+         a new one."
+    );
+}
+
+#[test]
+fn escape_never_leaves_an_add_with_its_account_parked() {
+    let (mut model, mut machine) = adding_in_claude(true);
+    machine.put_back = Some("desktop/work".into());
+    model.send(travel());
+    model.run(&mut machine);
+    let question = model.shown().quit_question.expect("asked");
+    model.send(Intent::QuitAndSwitch {
+        qualified: question.qualified,
+    });
+    let quitting = model.on_a_mac().signing_in_text.expect("the page");
+    assert_eq!(quitting.waiting, "Quitting Claude");
+    assert!(!quitting.escape_cancels);
+    assert!(!quitting.cancel.enabled);
+    model.run(&mut machine);
+    let waiting = model.on_a_mac().signing_in_text.expect("the page");
+    assert!(!waiting.escape_cancels, "Escape would leave work parked");
+    assert_eq!(waiting.cancel.title, "Later");
+    assert_eq!(
+        waiting.undo.map(|undo| undo.title).as_deref(),
+        Some("Put work Back")
+    );
+}
+
+#[test]
+fn the_sheet_says_claude_is_quitting_and_its_account_is_read() {
+    // `None` is what each Add Account in the app opens, on Claude Code here.
+    for opened_on in [Some("desktop"), None] {
+        let mut model = at_noon();
+        let mut machine = desktop_machine(true);
+        machine.answer = Ok(warned(
+            vec![
+                desktop_account("work", true),
+                desktop_account("home", false),
+            ],
+            vec![desktop_warning("in_use_unconfirmed", "in doubt")],
+        ));
+        model.refresh(&mut machine);
+        model.send(present_sheet(add(opened_on)));
+        model.run(&mut machine);
+        model.send(travel());
+        model.run(&mut machine);
+        assert_eq!(
+            model.on_a_mac().sheet_text.expect("the form").progress,
+            None,
+            "nothing yet while asked"
+        );
+        let question = model.shown().quit_question.expect("asked");
+        model.send(Intent::QuitAndSwitch {
+            qualified: question.qualified,
+        });
+        assert_eq!(
+            model
+                .on_a_mac()
+                .sheet_text
+                .expect("the form")
+                .progress
+                .as_deref(),
+            Some("Quitting Claude…"),
+            "opened on {opened_on:?}"
+        );
+        let quit = model.next();
+        let answer = machine.answer(quit);
+        model.give(answer);
+        assert_eq!(
+            model
+                .on_a_mac()
+                .sheet_text
+                .expect("the form")
+                .progress
+                .as_deref(),
+            Some("Reading Claude’s account…"),
+            "opened on {opened_on:?}"
+        );
+        model.run(&mut machine);
+        assert_eq!(model.shown().sheet, None, "closed once recorded");
+    }
+}
+
+#[test]
+fn an_add_this_app_waits_for_is_not_a_notice_too() {
+    let mut model = at_noon();
+    let read = crate::Status {
+        awaiting: vec![awaiting("travel", "work", false)],
+        ..status(vec![
+            desktop_account("work", false),
+            desktop_account("home", false),
+        ])
+    };
+    let mut machine = desktop_machine(false);
+    machine.answer = Ok(read);
+    machine.put_back = Some("desktop/work".into());
+    machine.enrolling_current = Err(refusal(
+        "live_credential_absent",
+        "Claude isn’t signed in.",
+        Vec::new(),
+    ));
+    model.refresh(&mut machine);
+    assert!(ids(&model.on_a_mac()).contains(&"awaiting/desktop".into()));
+    model.send(present_sheet(add(Some("desktop"))));
+    model.run(&mut machine);
+    model.send(travel());
+    model.run(&mut machine);
+    model.send(travel());
+    model.run(&mut machine);
+    let shown = model.on_a_mac();
+    assert!(shown.signing_in.is_some(), "this app waits for it");
+    assert!(
+        !ids(&shown).contains(&"awaiting/desktop".into()),
+        "its sheet offers the same"
+    );
 }

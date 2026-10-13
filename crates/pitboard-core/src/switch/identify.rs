@@ -16,7 +16,7 @@ use crate::api::Owner;
 use crate::context::Context;
 use crate::error::Error;
 use crate::in_use::{self, InUse};
-use crate::provider::{self, ProviderError, ProviderId};
+use crate::provider::{self, LoginKind, Provider, ProviderError, ProviderId};
 use crate::service::Permit;
 use crate::state::{self, Account, Key, State};
 use crate::status::{Plan, Seen};
@@ -59,22 +59,21 @@ pub(crate) fn nobody(named: Option<&str>, at: i64) -> Option<InUse> {
     })
 }
 
-/// Whose `document`, read from `which`'s store, is. The owner the record names where it is
+/// Whose `document`, read from `tool`'s store, is. The owner the record names where it is
 /// the very login the record was made for, by its fingerprint, which asks nobody; otherwise
 /// what the tool's service says now. A login with no refresh token has no fingerprint, and
 /// is always asked about.
 pub(crate) fn whose(
     ctx: &Context,
     state: &State,
-    which: ProviderId,
+    tool: &'static dyn Provider,
     document: &Value,
 ) -> std::result::Result<Found, ProviderError> {
-    if let Some(found) = recorded(state, which, document) {
+    if let Some(found) = recorded(state, tool, document) {
         return Ok(found);
     }
-    let tool = provider::of(which);
     let owner = tool
-        .identify(ctx, &provider::Credential::new(which, document.clone()))
+        .identify(ctx, &provider::Credential::new(tool.id(), document.clone()))
         .map(Owner::from)?;
     Ok(Found {
         owner,
@@ -84,9 +83,9 @@ pub(crate) fn whose(
 }
 
 /// Whose `document` is where it is the very login the record was made for.
-fn recorded(state: &State, which: ProviderId, document: &Value) -> Option<Found> {
-    let login = provider::of(which).fingerprint(document);
-    let known = state.in_use(which)?;
+fn recorded(state: &State, tool: &'static dyn Provider, document: &Value) -> Option<Found> {
+    let login = tool.fingerprint(document);
+    let known = state.in_use(tool.id())?;
     if login.is_empty() || known.login != login {
         return None;
     }
@@ -103,14 +102,13 @@ fn recorded(state: &State, which: ProviderId, document: &Value) -> Option<Found>
 pub(crate) fn told(
     ctx: &Context,
     state: &State,
-    which: ProviderId,
+    tool: &'static dyn Provider,
     document: &Value,
 ) -> std::result::Result<Option<Found>, ProviderError> {
-    let tool = provider::of(which);
     if tool.identifies_by_itself() {
-        return whose(ctx, state, which, document).map(Some);
+        return whose(ctx, state, tool, document).map(Some);
     }
-    if let Some(found) = recorded(state, which, document) {
+    if let Some(found) = recorded(state, tool, document) {
         return Ok(Some(found));
     }
     let lapsed = tool
@@ -120,7 +118,7 @@ pub(crate) fn told(
     if lapsed {
         return Ok(None);
     }
-    match whose(ctx, state, which, document) {
+    match whose(ctx, state, tool, document) {
         Err(ProviderError::Unauthorized) => Ok(None),
         asked => asked.map(Some),
     }
@@ -160,19 +158,19 @@ fn renewed(
     ctx: &Context,
     permit: Permit,
     state: &mut State,
-    which: ProviderId,
+    tool: &'static dyn Provider,
     store: &provider::LiveStore,
     document: &Value,
 ) -> std::result::Result<(Value, Found, bool), Unrenewed> {
-    if which == ProviderId::Claude && crate::settings::custom_oauth(ctx) {
+    if tool.id() == ProviderId::Claude && crate::settings::custom_oauth(ctx) {
         return Err(Unrenewed::Failed(Error::CustomOauthEndpoint));
     }
     fault::point("identify.lapsed");
     // A tool that takes no refresh lock is left to renew its own login.
-    let refreshing = Refreshing::take(ctx, permit, which)
+    let refreshing = Refreshing::take(ctx, permit, tool)
         .map_err(Unrenewed::Failed)?
         .ok_or(Unrenewed::Asked(ProviderError::Unauthorized))?;
-    let told = renewed_under_the_lock(ctx, permit, state, which, store, document);
+    let told = renewed_under_the_lock(ctx, permit, state, tool, store, document);
     let lost = Refreshing::let_go(Some(refreshing));
     told.map(|(document, found, lock_lost)| (document, found, lock_lost || lost))
 }
@@ -183,19 +181,19 @@ fn renewed_under_the_lock(
     ctx: &Context,
     permit: Permit,
     state: &mut State,
-    which: ProviderId,
+    tool: &'static dyn Provider,
     store: &provider::LiveStore,
     document: &Value,
 ) -> std::result::Result<(Value, Found, bool), Unrenewed> {
-    let tool = provider::of(which);
+    let which = tool.id();
     let failed = Unrenewed::Failed;
     let mut last = document.clone();
     for _ in 0..2 {
-        let (seen, now) = super::read_stored(which, store)
+        let (seen, now) = super::read_stored(tool, store)
             .map_err(failed)?
-            .ok_or_else(|| failed(super::nothing_signed_in(ctx, which)))?;
+            .ok_or_else(|| failed(super::nothing_signed_in(ctx, tool)))?;
         if now != last
-            && let Some(found) = told(ctx, state, which, &now).map_err(Unrenewed::Asked)?
+            && let Some(found) = told(ctx, state, tool, &now).map_err(Unrenewed::Asked)?
         {
             return Ok((now, found, false));
         }
@@ -207,7 +205,7 @@ fn renewed_under_the_lock(
         }
         let kept = store::holder(&store.chain, &store.service)
             .map_err(|e| failed(e.into()))?
-            .ok_or_else(|| failed(super::nothing_signed_in(ctx, which)))?;
+            .ok_or_else(|| failed(super::nothing_signed_in(ctx, tool)))?;
         let place = Place {
             store: kept,
             service: &store.service,
@@ -217,7 +215,7 @@ fn renewed_under_the_lock(
             ctx,
             permit,
             state,
-            which,
+            tool,
             place,
             &seen,
             &login,
@@ -261,10 +259,11 @@ pub(crate) fn told_by_a_read(
     ctx: &Context,
     permit: Permit,
     state: &State,
-    which: ProviderId,
+    tool: &'static dyn Provider,
     document: &Value,
 ) -> std::result::Result<(Option<Value>, Found), ProviderError> {
-    if let Some(found) = told(ctx, state, which, document)? {
+    let which = tool.id();
+    if let Some(found) = told(ctx, state, tool, document)? {
         return Ok((None, found));
     }
     let untold = || ProviderError::Unauthorized;
@@ -274,8 +273,8 @@ pub(crate) fn told_by_a_read(
     }
     let mut state = state::load(ctx).map_err(|_| untold())?;
     refresh::finished(ctx, permit, &mut state, which).map_err(|_| untold())?;
-    let store = super::live_store(ctx, which).map_err(|_| untold())?;
-    match renewed(ctx, permit, &mut state, which, &store, document) {
+    let store = super::live_store(ctx, tool).map_err(|_| untold())?;
+    match renewed(ctx, permit, &mut state, tool, &store, document) {
         Ok((renewed, found, _)) => Ok((Some(renewed), found)),
         // A renewal lost spent the refresh token stored, which Anthropic refuses from then on.
         Err(Unrenewed::Refused | Unrenewed::Failed(Error::RenewalLost { .. })) => {
@@ -314,7 +313,7 @@ impl Login {
     }
 }
 
-/// What `which`'s store holds now and whose it is, with the record of that, not recorded
+/// What `tool`'s store holds now and whose it is, with the record of that, not recorded
 /// yet. The tool's own record is read before its store, as [`in_use::named`] says why. A
 /// store holding nothing while the tool's own record names somebody is refused as
 /// [`super::nothing_signed_in`] says it: nothing is known of whose the login is. A login
@@ -326,21 +325,22 @@ pub(crate) fn look(
     ctx: &Context,
     permit: Permit,
     state: &mut State,
-    which: ProviderId,
+    tool: &'static dyn Provider,
 ) -> Result<(Live, InUse)> {
+    let which = tool.id();
     refresh::finished(ctx, permit, state, which)?;
-    let store = super::live_store(ctx, which)?;
+    let store = super::live_store(ctx, tool)?;
     let named = in_use::named(ctx, which);
-    match super::read_stored(which, &store)? {
+    match super::read_stored(tool, &store)? {
         None => {
             let nobody = nobody(named.as_deref(), ctx.now())
-                .ok_or_else(|| super::nothing_signed_in(ctx, which))?;
+                .ok_or_else(|| super::nothing_signed_in(ctx, tool))?;
             Ok((Live::Nothing, nobody))
         }
         Some((_, document)) => {
-            let (document, found, lock_lost) = match told(ctx, state, which, &document) {
+            let (document, found, lock_lost) = match told(ctx, state, tool, &document) {
                 Ok(Some(found)) => (document, found, false),
-                Ok(None) => renewed(ctx, permit, state, which, &store, &document)
+                Ok(None) => renewed(ctx, permit, state, tool, &store, &document)
                     .map_err(|untold| untold.said(which))?,
                 Err(error) => return Err(super::unidentified(which, error)),
             };
@@ -364,14 +364,14 @@ pub(crate) fn fresh(
     ctx: &Context,
     permit: Permit,
     state: &mut State,
-    which: ProviderId,
+    tool: &'static dyn Provider,
     ahead: i64,
 ) -> Result<(Live, InUse)> {
-    let (live, found) = look(ctx, permit, state, which)?;
+    let (live, found) = look(ctx, permit, state, tool)?;
     let Live::Login(login) = live else {
         return Ok((live, found));
     };
-    let lapses = provider::of(which)
+    let lapses = tool
         .expiry(&login.document)
         .access_expires_at
         .is_some_and(|at| at <= ctx.now() + ahead);
@@ -379,8 +379,8 @@ pub(crate) fn fresh(
         return Ok((Live::Login(login), found));
     }
     let (document, renewed, lock_lost) =
-        renewed(ctx, permit, state, which, &login.store, &login.document)
-            .map_err(|untold| untold.said(which))?;
+        renewed(ctx, permit, state, tool, &login.store, &login.document)
+            .map_err(|untold| untold.said(tool.id()))?;
     let owner = renewed.owner.clone();
     let recorded = renewed.recorded(found.named);
     let live = Live::Login(Login {
@@ -392,17 +392,17 @@ pub(crate) fn fresh(
     Ok((live, recorded))
 }
 
-/// Whose login `which` has stored now, recorded in `state`, saved where that changed, and
+/// Whose login `tool` has stored now, recorded in `state`, saved where that changed, and
 /// written in the activity log where it changed outside Pitboard. For a change, which holds
 /// Pitboard's lock.
 pub(crate) fn now(
     ctx: &Context,
     permit: Permit,
     state: &mut State,
-    which: ProviderId,
+    tool: &'static dyn Provider,
 ) -> Result<Live> {
-    let (live, found) = look(ctx, permit, state, which)?;
-    keep(ctx, permit, state, which, found)?;
+    let (live, found) = look(ctx, permit, state, tool)?;
+    keep(ctx, permit, state, tool, found)?;
     Ok(live)
 }
 
@@ -412,10 +412,10 @@ pub(crate) fn keep(
     ctx: &Context,
     permit: Permit,
     state: &mut State,
-    which: ProviderId,
+    tool: &'static dyn Provider,
     found: InUse,
 ) -> Result<()> {
-    let (changed, noticed) = record(state, which, found, ctx.now());
+    let (changed, noticed) = record(state, tool.id(), found, ctx.now());
     if changed {
         state::save(ctx, permit, state)?;
     }
@@ -500,7 +500,11 @@ pub(crate) fn record_read(
     let mut held = BTreeMap::new();
     let mut stored = |which: ProviderId| {
         held.entry(which)
-            .or_insert_with(|| holding(ctx, which))
+            .or_insert_with(|| match provider::of(which) {
+                LoginKind::Document(tool) => holding(ctx, tool),
+                // A read records nothing of an app's login.
+                LoginKind::Folder(_) => None,
+            })
             .clone()
     };
     for (which, found) in news(&state) {
@@ -536,12 +540,12 @@ pub(crate) fn record_read(
     }
 }
 
-/// What `which`'s store holds now, by its login's fingerprint: `Some(None)` where it holds no
+/// What `tool`'s store holds now, by its login's fingerprint: `Some(None)` where it holds no
 /// login, and `None` where it cannot be read or holds no one account's login.
-fn holding(ctx: &Context, which: ProviderId) -> Option<Option<String>> {
-    let live = super::live_store(ctx, which).ok()?;
-    let stored = super::read_stored(which, &live).ok()?;
-    Some(stored.map(|(_, document)| provider::of(which).fingerprint(&document)))
+fn holding(ctx: &Context, tool: &'static dyn Provider) -> Option<Option<String>> {
+    let live = super::live_store(ctx, tool).ok()?;
+    let stored = super::read_stored(tool, &live).ok()?;
+    Some(stored.map(|(_, document)| tool.fingerprint(&document)))
 }
 
 /// What recording whose login a tool has stored found changed outside Pitboard.
@@ -671,8 +675,13 @@ mod tests {
         let m = machine("identify-config-written-meanwhile");
         config_names(&m, "there");
         let mut state = state::load(&m.ctx).expect("state");
-        let (_, found) =
-            look(&m.ctx, Permit::for_a_test(), &mut state, ProviderId::Claude).expect("a look");
+        let (_, found) = look(
+            &m.ctx,
+            Permit::for_a_test(),
+            &mut state,
+            provider::document(ProviderId::Claude),
+        )
+        .expect("a look");
         let pitboard = Pitboard::new(m.ctx.clone());
         pitboard.switch_to("here").expect("already in use");
         let before = state_file(&m);
@@ -740,8 +749,13 @@ mod tests {
         let settled = super::super::settle(&m.ctx, Permit::for_a_test(), Some(m.which))
             .expect("nothing to recover")
             .0;
-        let signed = super::super::enroll::planted(&m.ctx, Permit::for_a_test(), m.which, login)
-            .expect("a sign-in");
+        let signed = super::super::enroll::planted(
+            &m.ctx,
+            Permit::for_a_test(),
+            provider::document(m.which),
+            login,
+        )
+        .expect("a sign-in");
         super::super::enroll::enroll(settled, &m.key(label), Some(signed)).expect("enrolled");
     }
 
@@ -859,7 +873,13 @@ mod tests {
         let no_refresh =
             serde_json::json!({"claudeAiOauth": {"accessToken": "access-here-refresh"}});
 
-        let found = whose(&m.ctx, &state, ProviderId::Claude, &no_refresh).expect("named");
+        let found = whose(
+            &m.ctx,
+            &state,
+            provider::document(ProviderId::Claude),
+            &no_refresh,
+        )
+        .expect("named");
 
         assert_eq!(found.owner, owner("here"));
         assert_eq!(
@@ -893,7 +913,12 @@ mod tests {
             ctx,
             permit,
         } = super::super::settle(ctx, Permit::for_a_test(), None)?.0;
-        now(&ctx, permit, &mut state, ProviderId::Claude)
+        now(
+            &ctx,
+            permit,
+            &mut state,
+            provider::document(ProviderId::Claude),
+        )
     }
 
     /// Killed once Anthropic has answered a renewal of `here`'s lapsed login, which spends
@@ -1326,7 +1351,7 @@ mod tests {
                 .expect("state")
                 .get(&m.key("here"))
                 .and_then(|account| account.parked.clone())
-                .map(|parked| parked.refresh_fingerprint)
+                .map(|parked| parked.login)
         };
         let pitboard = Pitboard::new(m.ctx.clone());
 
@@ -1609,8 +1634,13 @@ mod tests {
         } = super::super::settle(&m.ctx, Permit::for_a_test(), None)
             .expect("settled")
             .0;
-        let Live::Login(told) = now(&ctx, permit, &mut state, ProviderId::Codex).expect("told")
-        else {
+        let Live::Login(told) = now(
+            &ctx,
+            permit,
+            &mut state,
+            provider::document(ProviderId::Codex),
+        )
+        .expect("told") else {
             panic!("a login is stored");
         };
 

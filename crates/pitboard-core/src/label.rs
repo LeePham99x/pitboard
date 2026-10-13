@@ -200,6 +200,7 @@ mod tests {
                 oauth_account: serde_json::Value::Null,
             },
             ProviderId::Codex => Detail::Codex { workspace_id: None },
+            ProviderId::Desktop => Detail::Desktop {},
         };
         Account {
             label: label.into(),

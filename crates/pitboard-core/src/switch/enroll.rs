@@ -1,21 +1,10 @@
-//! Bringing an account under Pitboard's care.
-//!
-//! A parked copy is only safe if the live slot is replaced the moment it is taken; otherwise
-//! the tool keeps rotating the same token and the copy goes stale, and for a tool whose
-//! sign-out revokes what it finds, a copy left beside the live login is one the person's
-//! own next sign-out would end. So the account signed in now is recorded but not parked.
-//! Its first switch parks it at exactly that moment, and any other account is signed in
-//! inside a private directory, where the live slot is never touched and the vault is the
-//! new login's only holder.
-//!
-//! A sign-in to the account signed in now keeps the same rule. That account is not parked,
-//! so its new login is put in use the way a switch puts one there, in place of the old.
-
+use super::folder::awaited::{Wait, WaitStep};
 use super::{Error, Readied, Result, Settled, identify, identify_document, purge};
 use crate::api::Owner;
 use crate::context::Context;
 use crate::in_use::{self, InUse};
-use crate::provider::{self, ProviderId};
+use crate::provider::folder::Folder;
+use crate::provider::{self, LoginKind, Provider, ProviderId};
 use crate::service::{Permit, Warning};
 use crate::state::{Account, Key, Park, State};
 use crate::{home, lock, park, state, store};
@@ -37,12 +26,10 @@ pub enum Enrolled {
     InUse { email: String, again: bool },
 }
 
-/// A login a tool stored for Pitboard in a private directory, not yet enrolled. Dropping it
-/// deletes that directory and whatever the tool kept for it elsewhere.
+// Not yet enrolled. Dropping a program's deletes its private directory and what it kept.
 pub struct SignIn {
     provider: ProviderId,
-    dir: PathBuf,
-    document: Value,
+    how: How,
     ctx: Context,
     /// What it was reserved with: what enrolling it writes with, and what lets dropping it
     /// remove what it reserved.
@@ -52,36 +39,93 @@ pub struct SignIn {
     one_at_a_time: File,
 }
 
+// A program's sign-in as its enrolment reads it.
+struct Stored<'a> {
+    permit: Permit,
+    document: &'a Value,
+}
+
+enum How {
+    Privately {
+        tool: &'static dyn Provider,
+        dir: PathBuf,
+        document: Value,
+    },
+    // Inside the tool's own app, whose folder holds the login.
+    InItsApp {
+        app: &'static dyn Folder,
+        // the account parked for it; None where nothing is
+        put_back: Option<Key>,
+    },
+}
+
 impl SignIn {
     /// Which tool this login is for.
     pub fn provider(&self) -> ProviderId {
         self.provider
     }
+
+    pub(super) fn in_its_app(
+        ctx: &Context,
+        permit: Permit,
+        one_at_a_time: File,
+        app: &'static dyn Folder,
+        put_back: Option<Key>,
+    ) -> SignIn {
+        SignIn {
+            provider: app.id(),
+            how: How::InItsApp { app, put_back },
+            ctx: ctx.clone(),
+            permit,
+            one_at_a_time,
+        }
+    }
+
+    #[cfg(test)]
+    fn stored(&self) -> Stored<'_> {
+        match &self.how {
+            How::Privately { document, .. } => Stored {
+                permit: self.permit,
+                document,
+            },
+            How::InItsApp { .. } => panic!("a sign-in inside an app stores no document"),
+        }
+    }
+
+    // What the tool stored once its sign-in ended. An app's folder is the login: nothing is read.
+    fn read_back(&mut self) -> Result<()> {
+        match &mut self.how {
+            How::Privately {
+                tool,
+                dir,
+                document,
+            } => {
+                *document = signed_in_document(&self.ctx, *tool, dir)?;
+                Ok(())
+            }
+            How::InItsApp { .. } => Ok(()),
+        }
+    }
 }
 
 impl Drop for SignIn {
-    /// Clears the private directory, then lets go of the lock, so the next sign-in can start
-    /// the moment this returns.
-    ///
-    /// Let go of by name rather than by closing the file: a lock taken with `flock` belongs to
-    /// the open file, which every process another thread is starting holds a copy of until
-    /// it runs its program, though std opens the file so that the program does not keep it.
-    /// Closed, the lock stayed held until the last copy went, for up to milliseconds, as
-    /// ARCHITECTURE.md's Measured facts say, and a sign-in started in that time was refused
-    /// as one already waiting. Let go of, it is free whatever copies are still open.
+    // Unlocked, not only closed: a process another thread is starting holds a copy of the file
+    // until it runs its program, which kept the lock for milliseconds (ARCHITECTURE.md's
+    // Measured facts) and refused a sign-in started meanwhile.
     fn drop(&mut self) {
-        provider::of(self.provider).discard_signin(&self.ctx, self.permit, &self.dir);
-        let _ = crate::host::fs::remove_dir_all(self.permit, &self.dir);
+        match &self.how {
+            How::Privately { tool, dir, .. } => {
+                tool.discard_signin(&self.ctx, self.permit, dir);
+                let _ = crate::host::fs::remove_dir_all(self.permit, dir);
+            }
+            How::InItsApp { .. } => {}
+        }
         let _ = self.one_at_a_time.unlock();
     }
 }
 
-/// Takes the one-sign-in-at-a-time lock and prepares the private directory the tool will
-/// sign in to. Both the inherited and the watched sign-in start here.
-///
-/// A sign-in waits on a person in a browser, so it takes no lock but its own: a switch
-/// meanwhile goes ahead, and a second sign-in is refused rather than queued.
-fn reserve_signin(ctx: &Context, permit: Permit, which: ProviderId) -> Result<SignIn> {
+// The lock that makes a sign-in the one at a time, never waited for.
+pub(crate) fn one_at_a_time(ctx: &Context, permit: Permit) -> Result<File> {
     let home = home::ensure(ctx, permit).map_err(|source| Error::HomeUnwritable {
         path: home::dir(ctx),
         source,
@@ -104,29 +148,47 @@ fn reserve_signin(ctx: &Context, permit: Permit, which: ProviderId) -> Result<Si
             });
         }
     }
+    Ok(one_at_a_time)
+}
 
-    let dir = home.join("signin");
+// A program's sign-in: the one-at-a-time lock and the private directory it signs in to. It
+// takes no other lock, so a switch meanwhile goes ahead and a second sign-in is refused.
+fn reserve_signin(
+    ctx: &Context,
+    permit: Permit,
+    tool: &'static dyn Provider,
+) -> Result<(SignIn, PathBuf)> {
+    let one_at_a_time = one_at_a_time(ctx, permit)?;
+    let dir = home::dir(ctx).join("signin");
     // A sign-in that was killed rather than finished never ran its cleanup, so a login can
     // be sitting in the scratch slot with nothing naming it. The directory is always the
     // same one, so the slot is too, and this is the moment it can be cleared safely: the
     // lock above means no other sign-in is using it. Every tool's leftovers, because the
     // one that was killed need not be the one starting now.
-    for &tool in ProviderId::ALL {
-        provider::of(tool).discard_signin(ctx, permit, &dir);
+    for &which in ProviderId::ALL {
+        match provider::of(which) {
+            LoginKind::Document(each) => each.discard_signin(ctx, permit, &dir),
+            // No private directory is an app's.
+            LoginKind::Folder(_) => {}
+        }
     }
     let _ = crate::host::fs::remove_dir_all(permit, &dir);
     crate::host::fs::create_private_dir(permit, &dir).map_err(|source| Error::HomeUnwritable {
         path: dir.clone(),
         source,
     })?;
-    Ok(SignIn {
-        provider: which,
-        dir,
-        document: Value::Null,
+    let pending = SignIn {
+        provider: tool.id(),
+        how: How::Privately {
+            tool,
+            dir: dir.clone(),
+            document: Value::Null,
+        },
         ctx: ctx.clone(),
         permit,
         one_at_a_time,
-    })
+    };
+    Ok((pending, dir))
 }
 
 /// A sign-in that never ran. The crash matrix needs the state a finished sign-in leaves,
@@ -136,30 +198,36 @@ fn reserve_signin(ctx: &Context, permit: Permit, which: ProviderId) -> Result<Si
 pub(crate) fn planted(
     ctx: &Context,
     permit: Permit,
-    which: ProviderId,
+    tool: &'static dyn Provider,
     document: Value,
 ) -> Result<SignIn> {
-    let mut pending = reserve_signin(ctx, permit, which)?;
-    pending.document = document;
+    let (mut pending, _) = reserve_signin(ctx, permit, tool)?;
+    if let How::Privately { document: held, .. } = &mut pending.how {
+        *held = document;
+    }
     Ok(pending)
 }
 
 /// Run the tool's own sign-in in a private directory, where the live login is never
 /// touched, and read back the login it stored there.
-pub fn sign_in(ctx: &Context, permit: Permit, which: ProviderId) -> Result<SignIn> {
-    let mut pending = reserve_signin(ctx, permit, which)?;
+pub(crate) fn sign_in(
+    ctx: &Context,
+    permit: Permit,
+    tool: &'static dyn Provider,
+) -> Result<SignIn> {
+    let (mut pending, dir) = reserve_signin(ctx, permit, tool)?;
     // Pitboard never sees the sign-in; it reads the login the tool stores once it is done.
     // What the tool prints goes to stderr, so `--json` output stays one JSON line.
-    let finished = provider::of(which)
-        .sign_in(ctx, permit, &pending.dir)
+    let finished = tool
+        .sign_in(ctx, permit, &dir)
         .stdout(std::io::stderr())
         .status()
-        .map_err(|e| started(which, e))?
+        .map_err(|e| started(tool.id(), e))?
         .success();
     if !finished {
         return Err(Error::SignInIncomplete);
     }
-    pending.document = signed_in_document(ctx, which, &pending.dir)?;
+    pending.read_back()?;
     Ok(pending)
 }
 
@@ -170,29 +238,47 @@ fn started(which: ProviderId, e: std::io::Error) -> Error {
     }
 }
 
-fn signed_in_document(ctx: &Context, which: ProviderId, dir: &std::path::Path) -> Result<Value> {
-    let raw = provider::of(which)
-        .read_signin(ctx, dir)?
-        .ok_or(Error::SignInIncomplete)?;
+fn signed_in_document(
+    ctx: &Context,
+    tool: &'static dyn Provider,
+    dir: &std::path::Path,
+) -> Result<Value> {
+    let raw = tool.read_signin(ctx, dir)?.ok_or(Error::SignInIncomplete)?;
     serde_json::from_str(&raw).map_err(|e| Error::LiveCredentialShapeUnexpected {
-        tool: which,
+        tool: tool.id(),
         detail: e.to_string(),
     })
 }
 
-/// The same sign-in, watched rather than inherited: an app has no terminal to hand over, so
-/// it reads what the tool prints and can type a fallback code back where the tool asks for
-/// one.
+// A sign-in a front end follows through `said`.
 pub struct WatchedSignIn {
     tool: Running,
     said: Said,
+    steps: Steps,
     pending: SignIn,
 }
 
-/// The tool a watched sign-in runs: its program, or, where a test or a fixture says, a script
-/// playing it.
+// Where a sign-in waited for inside an app has got to, for a front end that words it itself.
+#[derive(Clone, Default)]
+pub struct Steps(std::sync::Arc<std::sync::Mutex<Option<WaitStep>>>);
+
+impl Steps {
+    // None for a program's sign-in.
+    pub fn now(&self) -> Option<WaitStep> {
+        self.0.lock().ok().and_then(|step| *step)
+    }
+
+    pub(super) fn set(&self, step: WaitStep) {
+        if let Ok(mut now) = self.0.lock() {
+            *now = Some(step);
+        }
+    }
+}
+
+// A script plays the program only where a test or a fixture says.
 enum Running {
     Program(std::process::Child),
+    InItsApp(Wait),
     #[cfg(any(test, feature = "test-support"))]
     Scripted(Box<dyn ScriptedSignIn>),
 }
@@ -244,6 +330,15 @@ impl Said {
     pub fn next(&self) -> Option<String> {
         self.0.lock().ok()?.recv().ok()
     }
+
+    // `next` for a test, which then fails where nothing is said rather than hang.
+    #[cfg(test)]
+    pub(crate) fn within(
+        &self,
+        wait: std::time::Duration,
+    ) -> std::result::Result<String, std::sync::mpsc::RecvTimeoutError> {
+        self.0.lock().expect("one reader").recv_timeout(wait)
+    }
 }
 
 impl WatchedSignIn {
@@ -258,6 +353,32 @@ impl WatchedSignIn {
         self.said.clone()
     }
 
+    pub fn steps(&self) -> Steps {
+        self.steps.clone()
+    }
+
+    // The account parked for this sign-in, which a switch to it puts back in use.
+    pub fn put_back(&self) -> Option<Key> {
+        match &self.pending.how {
+            How::Privately { .. } => None,
+            How::InItsApp { put_back, .. } => put_back.clone(),
+        }
+    }
+
+    pub(super) fn awaited(
+        pending: SignIn,
+        wait: Wait,
+        said: std::sync::mpsc::Receiver<String>,
+        steps: Steps,
+    ) -> WatchedSignIn {
+        WatchedSignIn {
+            tool: Running::InItsApp(wait),
+            said: Said(std::sync::Arc::new(std::sync::Mutex::new(said))),
+            steps,
+            pending,
+        }
+    }
+
     /// Types a line back, for a code the tool reads from stdin while it waits on the
     /// browser.
     pub fn paste(&mut self, line: &str) -> Result<()> {
@@ -268,6 +389,8 @@ impl WatchedSignIn {
                 writeln!(stdin, "{line}").map_err(|_| Error::SignInIncomplete)?;
                 stdin.flush().map_err(|_| Error::SignInIncomplete)
             }
+            // Nothing reads a code.
+            Running::InItsApp(_) => Err(Error::SignInIncomplete),
             #[cfg(any(test, feature = "test-support"))]
             Running::Scripted(run) => {
                 if run.typed(line) {
@@ -283,6 +406,10 @@ impl WatchedSignIn {
     pub fn finish(mut self) -> Result<SignIn> {
         let finished = match &mut self.tool {
             Running::Program(child) => child.wait().map_err(|_| Error::SignInIncomplete)?.success(),
+            Running::InItsApp(wait) => {
+                wait.finish()?;
+                true
+            }
             #[cfg(any(test, feature = "test-support"))]
             Running::Scripted(run) => run.wait(),
         };
@@ -290,8 +417,7 @@ impl WatchedSignIn {
             return Err(Error::SignInIncomplete);
         }
         let mut pending = self.pending;
-        pending.document =
-            signed_in_document(&pending.ctx.clone(), pending.provider, &pending.dir.clone())?;
+        pending.read_back()?;
         Ok(pending)
     }
 
@@ -304,6 +430,7 @@ impl WatchedSignIn {
                 let _ = child.kill();
                 let _ = child.wait();
             }
+            Running::InItsApp(wait) => wait.cancel(),
             #[cfg(any(test, feature = "test-support"))]
             Running::Scripted(run) => {
                 run.stop();
@@ -313,40 +440,36 @@ impl WatchedSignIn {
     }
 }
 
-/// Starts the sign-in with its output piped, for a caller that will show it.
-pub fn sign_in_watched(ctx: &Context, permit: Permit, which: ProviderId) -> Result<WatchedSignIn> {
-    start_watched(ctx, permit, which, None)
-}
-
-/// The same, for the account `key` names, which a script playing the tool is told of: the
-/// person at the browser knows which account they mean, where the tool never does.
 pub(crate) fn sign_in_watched_as(
     ctx: &Context,
     permit: Permit,
+    tool: &'static dyn Provider,
     key: &Key,
 ) -> Result<WatchedSignIn> {
-    start_watched(ctx, permit, key.provider, Some(&key.label))
+    start_watched(ctx, permit, tool, Some(&key.label))
 }
 
 fn start_watched(
     ctx: &Context,
     permit: Permit,
-    which: ProviderId,
+    tool: &'static dyn Provider,
     label: Option<&str>,
 ) -> Result<WatchedSignIn> {
-    let pending = reserve_signin(ctx, permit, which)?;
+    let which = tool.id();
+    let (pending, dir) = reserve_signin(ctx, permit, tool)?;
     #[cfg(any(test, feature = "test-support"))]
     if let Some(script) = ctx.sign_in_script() {
         let (say, said) = std::sync::mpsc::channel();
         return Ok(WatchedSignIn {
-            tool: Running::Scripted(script.start(which, label, &pending.dir, say)),
+            tool: Running::Scripted(script.start(which, label, &dir, say)),
             said: Said(std::sync::Arc::new(std::sync::Mutex::new(said))),
+            steps: Steps::default(),
             pending,
         });
     }
     // Only a script playing the tool is told whom the sign-in is for.
     let _ = label;
-    let command = provider::of(which).sign_in(ctx, permit, &pending.dir);
+    let command = tool.sign_in(ctx, permit, &dir);
     watch(command, pending).map_err(|e| started(which, e))
 }
 
@@ -390,6 +513,7 @@ fn watch(mut command: std::process::Command, pending: SignIn) -> std::io::Result
     Ok(WatchedSignIn {
         tool: Running::Program(child),
         said: Said(std::sync::Arc::new(std::sync::Mutex::new(said))),
+        steps: Steps::default(),
         pending,
     })
 }
@@ -420,14 +544,44 @@ pub fn enroll(
             login.provider.name(),
             key.provider.name()
         ))),
-        Some(login) => from_sign_in(&ctx, key, &mut state, &login),
-        None => record_current(&ctx, permit, key, &mut state),
+        Some(login) => match &login.how {
+            How::Privately { tool, document, .. } => {
+                let stored = Stored {
+                    permit: login.permit,
+                    document,
+                };
+                from_sign_in(&ctx, *tool, key, &mut state, &stored)
+            }
+            How::InItsApp { app, .. } => super::folder::awaited::enroll(
+                Settled {
+                    _exclusive,
+                    state,
+                    ctx,
+                    permit,
+                },
+                key,
+                *app,
+            ),
+        },
+        None => match provider::of(key.provider) {
+            LoginKind::Document(tool) => record_current(&ctx, permit, tool, key, &mut state),
+            LoginKind::Folder(app) => super::folder::enroll(
+                Settled {
+                    _exclusive,
+                    state,
+                    ctx,
+                    permit,
+                },
+                key,
+                app,
+            ),
+        },
     }
 }
 
 /// A label names one account of its tool for good: its own, or one not enrolled under
 /// another label.
-fn claim(state: &State, key: &Key, owner: &Owner) -> Result<()> {
+pub(super) fn claim(state: &State, key: &Key, owner: &Owner) -> Result<()> {
     if let Some(taken) = state.get(key)
         && !taken.owned_by(owner)
     {
@@ -443,6 +597,8 @@ fn claim(state: &State, key: &Key, owner: &Owner) -> Result<()> {
             tool: key.provider,
             email: owner.email.clone(),
             label: existing.key().typed(),
+            asked: key.typed(),
+            waited: false,
         });
     }
     Ok(())
@@ -451,6 +607,7 @@ fn claim(state: &State, key: &Key, owner: &Owner) -> Result<()> {
 fn record_current(
     ctx: &Context,
     permit: Permit,
+    tool: &'static dyn Provider,
     key: &Key,
     state: &mut State,
 ) -> Result<(Enrolled, Vec<Warning>)> {
@@ -460,9 +617,12 @@ fn record_current(
     // keychain says so in the store's own words instead of reading as a strange login. A
     // document with no account in it is nobody signed in: Claude Code's after a `/logout`
     // still holds the machine's MCP tokens.
-    let (stored, found) = identify::look(ctx, permit, state, which)?;
+    let (stored, found) = identify::look(ctx, permit, state, tool)?;
     let identify::Live::Login(stored) = stored else {
-        return Err(Error::LiveCredentialAbsent { tool: which });
+        return Err(Error::LiveCredentialAbsent {
+            tool: which,
+            label: None,
+        });
     };
     let lost = stored.lock_warning(which);
     let identify::Login {
@@ -482,7 +642,7 @@ fn record_current(
         &owner,
         parked,
         last_used_at,
-        &live,
+        tool.plan(&live),
     ));
     // Recorded once the account is enrolled, so the activity log names it.
     let (_, noticed) = identify::record(state, which, found, ctx.now());
@@ -502,28 +662,29 @@ fn record_current(
 /// parked the old one over it.
 fn from_sign_in(
     ctx: &Context,
+    tool: &'static dyn Provider,
     key: &Key,
     state: &mut State,
-    login: &SignIn,
+    login: &Stored<'_>,
 ) -> Result<(Enrolled, Vec<Warning>)> {
-    let owner = identify_document(ctx, login.provider, &login.document)?;
+    let owner = identify_document(ctx, tool, login.document)?;
     claim(state, key, &owner)?;
-    let (now, lost) = signed_in_now(ctx, login.permit, state, key.provider, &owner);
+    let (now, lost) = signed_in_now(ctx, login.permit, state, tool, &owner);
     let said = |(enrolled, warnings): (Enrolled, Vec<Warning>)| {
         (enrolled, lost.into_iter().chain(warnings).collect())
     };
     match now {
         SignedInNow::Theirs(live, first) => {
-            install_signed_in(ctx, key, state, login, &owner, &live, &first).map(said)
+            install_signed_in(ctx, tool, key, state, login, &owner, &live, &first).map(said)
         }
-        SignedInNow::NotTheirs => park_signed_in(ctx, key, state, login, &owner).map(said),
+        SignedInNow::NotTheirs => park_signed_in(ctx, tool, key, state, login, &owner).map(said),
         SignedInNow::Untold(why) => {
             // Somebody signing in to the account Pitboard last saw in use most likely wants
             // its broken login replaced, and parking is not that, so it is said.
             let last_in_use = state
                 .account_in_use(key.provider)
                 .is_some_and(|account| account.is(key));
-            let (enrolled, mut warnings) = park_signed_in(ctx, key, state, login, &owner)?;
+            let (enrolled, mut warnings) = park_signed_in(ctx, tool, key, state, login, &owner)?;
             if last_in_use {
                 warnings.push(Warning::SignInParkedNotInUse {
                     tool: key.provider,
@@ -555,12 +716,12 @@ fn signed_in_now(
     ctx: &Context,
     permit: Permit,
     state: &mut State,
-    which: ProviderId,
+    tool: &'static dyn Provider,
     owner: &Owner,
 ) -> (SignedInNow, Option<Warning>) {
-    match identify::now(ctx, permit, state, which) {
+    match identify::now(ctx, permit, state, tool) {
         Ok(identify::Live::Login(login)) => {
-            let lost = login.lock_warning(which);
+            let lost = login.lock_warning(tool.id());
             let identify::Login {
                 store,
                 document,
@@ -583,11 +744,13 @@ fn signed_in_now(
 /// a switch writes by, and record the account as `record_current` does. Nothing is parked,
 /// and a park the account already holds is kept. The old login is dropped, which is what
 /// the tool's own sign-in does to the login it replaces.
+#[allow(clippy::too_many_arguments)]
 fn install_signed_in(
     ctx: &Context,
+    tool: &'static dyn Provider,
     key: &Key,
     state: &mut State,
-    login: &SignIn,
+    login: &Stored<'_>,
     owner: &Owner,
     live: &provider::LiveStore,
     first: &Value,
@@ -603,16 +766,16 @@ fn install_signed_in(
         label: name.clone(),
         detail,
     };
-    let slice = provider::of(which)
-        .slice(&login.document)
+    let slice = tool
+        .slice(login.document)
         .map_err(|e| super::shape(which, e))?;
-    let guard = super::write_lock(ctx, permit, which)?;
+    let guard = super::write_lock(ctx, permit, tool)?;
     let Readied {
         before_raw,
         next,
         on_the_command_line,
         ..
-    } = super::ready(ctx, which, live, first, owner, &slice, &name).map_err(|e| match e {
+    } = super::ready(ctx, tool, live, first, owner, &slice, &name).map_err(|e| match e {
         Error::SignedInAccountChanged => not_kept(format!(
             "{} was signed in to another account meanwhile",
             which.name()
@@ -635,7 +798,7 @@ fn install_signed_in(
         Err(Error::SwitchRolledBack { detail, .. }) => return Err(not_kept(detail)),
         Err(Error::SwitchUnverified { detail, .. } | Error::SwitchCorrupted { detail, .. }) => {
             return Err(not_installed(
-                ctx, key, state, login, owner, detail, written,
+                ctx, tool, key, state, login, owner, detail, written,
             ));
         }
         Err(other) => return Err(other),
@@ -644,14 +807,14 @@ fn install_signed_in(
 
     // Read back as a switch reads back: a write that landed has not necessarily held.
     let lock_lost = guard.as_ref().is_some_and(lock::Guard::compromised);
-    let lost = match super::holds(which, live) {
+    let lost = match super::holds(tool, live) {
         Ok(true) => None,
         Ok(false) => Some("it was gone again before Pitboard finished".to_string()),
         Err(unreadable) => Some(unreadable.to_string()),
     };
     if let Some(detail) = lost {
         return Err(not_installed(
-            ctx, key, state, login, owner, detail, written,
+            ctx, tool, key, state, login, owner, detail, written,
         ));
     }
 
@@ -664,11 +827,11 @@ fn install_signed_in(
         owner,
         parked,
         Some(ctx.now()),
-        &login.document,
+        tool.plan(login.document),
     ));
     let installed = InUse {
         owner: Some(owner.clone()),
-        login: provider::of(which).fingerprint(&slice),
+        login: tool.fingerprint(&slice),
         known_at: ctx.now(),
         named,
     };
@@ -713,16 +876,18 @@ fn install_signed_in(
 ///
 /// What writing it warned about is carried on the error with what parking it warns about,
 /// because both happened whatever became of them.
+#[allow(clippy::too_many_arguments)]
 fn not_installed(
     ctx: &Context,
+    tool: &'static dyn Provider,
     key: &Key,
     state: &mut State,
-    login: &SignIn,
+    login: &Stored<'_>,
     owner: &Owner,
     detail: String,
     mut warnings: Vec<Warning>,
 ) -> Error {
-    let parked = match park_signed_in(ctx, key, state, login, owner) {
+    let parked = match park_signed_in(ctx, tool, key, state, login, owner) {
         Ok((_, parking)) => {
             warnings.extend(parking);
             true
@@ -740,18 +905,19 @@ fn not_installed(
 
 fn park_signed_in(
     ctx: &Context,
+    tool: &'static dyn Provider,
     key: &Key,
     state: &mut State,
-    login: &SignIn,
+    login: &Stored<'_>,
     owner: &Owner,
 ) -> Result<(Enrolled, Vec<Warning>)> {
     let permit = login.permit;
     let label = key.label.as_str();
-    let id = state.id_of(login.provider, owner);
-    let slice = provider::of(login.provider)
-        .slice(&login.document)
-        .map_err(|e| super::shape(login.provider, e))?;
-    let (fresh, parking) = park::keep(ctx, permit, key.provider, &key.typed(), &id, &slice)?;
+    let id = state.id_of(key.provider, owner);
+    let slice = tool
+        .slice(login.document)
+        .map_err(|e| super::shape(key.provider, e))?;
+    let (fresh, parking) = park::keep(ctx, permit, tool, &key.typed(), &id, &slice)?;
     let service = fresh.service.clone();
     // The window the roadmap named: the login is in the vault and nothing on the machine
     // says so yet.
@@ -761,13 +927,13 @@ fn park_signed_in(
     let renewed = existing.is_some();
     let last_used_at = existing.and_then(|a| a.last_used_at);
     state.upsert(account(
-        login.provider,
+        key.provider,
         id,
         label,
         owner,
         previous,
         last_used_at,
-        &login.document,
+        tool.plan(login.document),
     ));
     state.park(key, fresh);
     // Unrecorded, the new login would be an item nothing refers to, never deleted.
@@ -789,16 +955,30 @@ fn park_signed_in(
 ///
 /// For Claude Code, only what Anthropic just confirmed: leaving the rest out makes Claude
 /// Code fetch its own profile after a switch rather than trust a copy Pitboard wrote.
-fn account(
+pub(super) fn account(
     which: ProviderId,
     id: String,
     label: &str,
     owner: &Owner,
     parked: Option<Park>,
     last_used_at: Option<i64>,
-    login: &Value,
+    plan: Option<String>,
 ) -> Account {
-    let detail = match which {
+    Account {
+        last_used_at,
+        replaced_at: None,
+        plan,
+        label: label.to_string(),
+        id,
+        account_uuid: owner.account_uuid.clone(),
+        email: owner.email.clone(),
+        parked,
+        detail: detail(which, owner),
+    }
+}
+
+fn detail(which: ProviderId, owner: &Owner) -> state::Detail {
+    match which {
         ProviderId::Claude => state::Detail::Claude {
             organization_uuid: owner.organization_uuid.clone(),
             oauth_account: json!({
@@ -810,17 +990,7 @@ fn account(
         ProviderId::Codex => state::Detail::Codex {
             workspace_id: Some(owner.organization_uuid.clone()).filter(|id| !id.is_empty()),
         },
-    };
-    Account {
-        last_used_at,
-        replaced_at: None,
-        plan: provider::of(which).plan(login),
-        label: label.to_string(),
-        id,
-        account_uuid: owner.account_uuid.clone(),
-        email: owner.email.clone(),
-        parked,
-        detail,
+        ProviderId::Desktop => state::Detail::Desktop {},
     }
 }
 
@@ -830,8 +1000,8 @@ mod tests {
     use crate::api::scripted::Trouble;
     use crate::store::memory::Fault;
     use crate::switch::harness::{
-        self, Machine, NOW, codex_id, codex_login, codex_machine, hold, login_of, machine, oauth,
-        renews, signed_in,
+        self, Machine, NOW, Tool, codex_id, codex_login, codex_machine, hold, login_of, machine,
+        oauth, renews, signed_in,
     };
     use crate::switch::{Due, Outcome, renew_due, settle, switch};
     use crate::time::FixedClock;
@@ -845,7 +1015,7 @@ mod tests {
     /// Whether the login in use is the one this refresh token belongs to.
     fn in_use(m: &Machine, refresh: &str) -> bool {
         m.live().is_some_and(|live| {
-            provider::of(m.which).fingerprint(&live) == store::fingerprint(refresh)
+            provider::document(m.which).fingerprint(&live) == store::fingerprint(refresh)
         })
     }
 
@@ -877,7 +1047,7 @@ mod tests {
         planted(
             &m.ctx,
             Permit::for_a_test(),
-            ProviderId::Claude,
+            provider::document(ProviderId::Claude),
             harness::document(refresh),
         )
         .expect("a sign-in")
@@ -1006,13 +1176,19 @@ mod tests {
     fn signing_in_again_to_the_account_in_use_keeps_the_park_it_holds() {
         for (tool, make) in MACHINES {
             let m = make("again-keeps-park");
-            let (uuid, older) = match m.which {
-                ProviderId::Claude => ("here".to_string(), oauth("here-older", 30)),
-                ProviderId::Codex => (codex_id("here"), codex_login("here", "here-older")),
+            let (uuid, older) = match Tool::of(m.which) {
+                Tool::Claude => ("here".to_string(), oauth("here-older", 30)),
+                Tool::Codex => (codex_id("here"), codex_login("here", "here-older")),
             };
             let service = park::reserve(&m.ctx, Permit::for_a_test(), &uuid).expect("a free name");
-            let held = park::store_at(&m.ctx, Permit::for_a_test(), m.which, &service, &older)
-                .expect("parked");
+            let held = park::store_at(
+                &m.ctx,
+                Permit::for_a_test(),
+                provider::document(m.which),
+                &service,
+                &older,
+            )
+            .expect("parked");
             let mut state = state::load(&m.ctx).expect("state");
             state.park(&m.key("here"), held.clone());
             state::save(&m.ctx, Permit::for_a_test(), &state).expect("saved");
@@ -1055,7 +1231,7 @@ mod tests {
 
             let parked = park_of(&m, "here").expect("the outgoing login is parked");
             assert_eq!(
-                parked.refresh_fingerprint,
+                parked.login,
                 store::fingerprint("here-refresh-2"),
                 "{tool}: the new login is parked, not the one it replaced"
             );
@@ -1081,7 +1257,7 @@ mod tests {
             );
             assert_eq!(m.live(), live, "{tool}: the login in use is untouched");
             assert_eq!(
-                park_of(&m, "third").map(|p| p.refresh_fingerprint),
+                park_of(&m, "third").map(|p| p.login),
                 Some(store::fingerprint("third-refresh")),
                 "{tool}"
             );
@@ -1099,7 +1275,13 @@ mod tests {
                 login["claudeAiOauth"]["subscriptionType"] = json!("max");
                 login["claudeAiOauth"]["rateLimitTier"] = json!("default_claude_max_20x");
             }
-            let signed = planted(&m.ctx, Permit::for_a_test(), m.which, login).expect("a sign-in");
+            let signed = planted(
+                &m.ctx,
+                Permit::for_a_test(),
+                provider::document(m.which),
+                login,
+            )
+            .expect("a sign-in");
 
             enrolled_as(&m, "third", signed).unwrap_or_else(|e| panic!("{tool}: {e}"));
 
@@ -1146,7 +1328,7 @@ mod tests {
             );
             assert_eq!(m.live(), live, "{case}: the login in use is untouched");
             assert_eq!(
-                park_of(&m, "here").map(|p| p.refresh_fingerprint),
+                park_of(&m, "here").map(|p| p.login),
                 Some(store::fingerprint("here-refresh-2")),
                 "{case}: the new login is parked"
             );
@@ -1276,20 +1458,34 @@ mod tests {
             let m = make("changed-before-write");
             let key = m.key("here");
             let login = signed_in(&m, "here", "here-refresh-2");
-            let owner = identify_document(&m.ctx, m.which, &login.document).expect("whose");
+            let login = login.stored();
+            let owner = identify_document(&m.ctx, provider::document(m.which), login.document)
+                .expect("whose");
             let mut state = state::load(&m.ctx).expect("state");
-            let (SignedInNow::Theirs(live, first), _) =
-                signed_in_now(&m.ctx, Permit::for_a_test(), &mut state, m.which, &owner)
-            else {
+            let (SignedInNow::Theirs(live, first), _) = signed_in_now(
+                &m.ctx,
+                Permit::for_a_test(),
+                &mut state,
+                provider::document(m.which),
+                &owner,
+            ) else {
                 panic!("{tool}: `here` is signed in");
             };
 
             m.sign_in(&login_of(&m, "other", "other-refresh"));
             let vault = m.mem.vault().services();
             let recorded = serde_json::to_value(state::load(&m.ctx).expect("state")).unwrap();
-            let refused =
-                install_signed_in(&m.ctx, &key, &mut state, &login, &owner, &live, &first)
-                    .expect_err("refused");
+            let refused = install_signed_in(
+                &m.ctx,
+                provider::document(m.which),
+                &key,
+                &mut state,
+                &login,
+                &owner,
+                &live,
+                &first,
+            )
+            .expect_err("refused");
 
             assert_eq!(refused.code(), "sign_in_not_kept", "{tool}: {refused}");
             assert!(
@@ -1363,7 +1559,7 @@ mod tests {
                 "{tool}: {failed}"
             );
             assert_eq!(
-                park_of(&m, "here").map(|p| p.refresh_fingerprint),
+                park_of(&m, "here").map(|p| p.login),
                 Some(store::fingerprint("here-refresh-2")),
                 "{tool}"
             );
@@ -1405,7 +1601,7 @@ mod tests {
                         "{at}: {failed:?}"
                     );
                     assert_eq!(
-                        park_of(&m, "here").map(|p| p.refresh_fingerprint),
+                        park_of(&m, "here").map(|p| p.login),
                         Some(store::fingerprint("here-refresh-2")),
                         "{at}: parked as well"
                     );
@@ -1455,9 +1651,9 @@ mod tests {
             let said = warnings
                 .iter()
                 .find(|w| w.code() == "sessions_keep_old_login");
-            match m.which {
-                ProviderId::Claude => assert!(said.is_none(), "{warnings:?}"),
-                ProviderId::Codex => {
+            match Tool::of(m.which) {
+                Tool::Claude => assert!(said.is_none(), "{warnings:?}"),
+                Tool::Codex => {
                     let text = said.expect("warned").to_string();
                     assert!(text.contains("2 `codex` sessions"), "{text}");
                     assert!(text.contains("`codex/here`'s old login"), "{text}");
@@ -1488,9 +1684,9 @@ mod tests {
                 .unwrap_or_else(|e| panic!("{tool}: {e}"));
 
             let said = warnings.iter().find(|w| w.code() == "sessions_unknown");
-            match m.which {
-                ProviderId::Claude => assert!(said.is_none(), "{warnings:?}"),
-                ProviderId::Codex => {
+            match Tool::of(m.which) {
+                Tool::Claude => assert!(said.is_none(), "{warnings:?}"),
+                Tool::Codex => {
                     let text = said
                         .unwrap_or_else(|| panic!("warned: {warnings:?}"))
                         .to_string();
@@ -1564,12 +1760,12 @@ mod tests {
                     return false;
                 };
                 // Where each tool stores the login of a sign-in into `dir`.
-                match which {
-                    ProviderId::Claude => host.live().plant(
+                match Tool::of(which) {
+                    Tool::Claude => host.live().plant(
                         &crate::provider::claude::slot::service_for_dir(&dir.to_string_lossy()),
                         &document,
                     ),
-                    ProviderId::Codex => host
+                    Tool::Codex => host
                         .file_at(dir.join("auth.json"))
                         .plant("auth.json", &document),
                 }
@@ -1633,8 +1829,13 @@ mod tests {
             ));
             let ctx = nowhere(&m.ctx).with_sign_in_script(Arc::clone(&played) as _);
 
-            let mut watched = sign_in_watched_as(&ctx, Permit::for_a_test(), &m.key("newcomer"))
-                .unwrap_or_else(|e| panic!("{tool}: {e}"));
+            let mut watched = sign_in_watched_as(
+                &ctx,
+                Permit::for_a_test(),
+                provider::document(m.which),
+                &m.key("newcomer"),
+            )
+            .unwrap_or_else(|e| panic!("{tool}: {e}"));
             let said = watched.said();
             assert_eq!(
                 said.next().as_deref(),
@@ -1689,8 +1890,13 @@ mod tests {
             let m = make("scripted-stop");
             let played = Arc::new(Played::default());
             let ctx = nowhere(&m.ctx).with_sign_in_script(Arc::clone(&played) as _);
-            let watched = sign_in_watched(&ctx, Permit::for_a_test(), m.which)
-                .unwrap_or_else(|e| panic!("{tool}: {e}"));
+            let watched = start_watched(
+                &ctx,
+                Permit::for_a_test(),
+                provider::document(m.which),
+                None,
+            )
+            .unwrap_or_else(|e| panic!("{tool}: {e}"));
             let said = watched.said();
             assert!(said.next().is_some(), "{tool}");
             watched.cancel();
@@ -1698,7 +1904,7 @@ mod tests {
             let started = played.started.lock().expect("a test's own lock").clone();
             assert_eq!(started[0].1, None, "{tool}: nobody said whom it was for");
             assert!(park_of(&m, "newcomer").is_none(), "{tool}");
-            reserve_signin(&ctx, Permit::for_a_test(), m.which)
+            reserve_signin(&ctx, Permit::for_a_test(), provider::document(m.which))
                 .expect("a stopped sign-in lets the next one start");
         }
     }
@@ -1715,15 +1921,20 @@ mod tests {
             let m = make("lock-copied");
             let played = Arc::new(Played::default());
             let ctx = nowhere(&m.ctx).with_sign_in_script(Arc::clone(&played) as _);
-            let watched = sign_in_watched(&ctx, Permit::for_a_test(), m.which)
-                .unwrap_or_else(|e| panic!("{tool}: {e}"));
+            let watched = start_watched(
+                &ctx,
+                Permit::for_a_test(),
+                provider::document(m.which),
+                None,
+            )
+            .unwrap_or_else(|e| panic!("{tool}: {e}"));
             let copy = watched
                 .pending
                 .one_at_a_time
                 .try_clone()
                 .expect("a copy of the lock's descriptor");
             watched.cancel();
-            let next = reserve_signin(&ctx, Permit::for_a_test(), m.which);
+            let next = reserve_signin(&ctx, Permit::for_a_test(), provider::document(m.which));
             drop(copy);
             assert!(
                 next.is_ok(),
@@ -1740,8 +1951,12 @@ mod tests {
     #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_cancel_does_not_wait_on_a_tool_that_says_nothing() {
         let m = codex_machine("cancel");
-        let pending =
-            reserve_signin(&m.ctx, Permit::for_a_test(), ProviderId::Codex).expect("reserved");
+        let (pending, _) = reserve_signin(
+            &m.ctx,
+            Permit::for_a_test(),
+            provider::document(ProviderId::Codex),
+        )
+        .expect("reserved");
         let mut silent = std::process::Command::new("sleep");
         silent.arg("30");
         let watched = watch(silent, pending).expect("started");
@@ -1756,7 +1971,11 @@ mod tests {
             asked.elapsed() < Duration::from_secs(10),
             "the cancel waited on the tool"
         );
-        reserve_signin(&m.ctx, Permit::for_a_test(), ProviderId::Codex)
-            .expect("a cancelled sign-in lets the next one start");
+        reserve_signin(
+            &m.ctx,
+            Permit::for_a_test(),
+            provider::document(ProviderId::Codex),
+        )
+        .expect("a cancelled sign-in lets the next one start");
     }
 }

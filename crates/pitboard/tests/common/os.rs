@@ -50,6 +50,15 @@ pub fn same_variable(a: &str, b: &str) -> bool {
     }
 }
 
+// Pitboard switches Claude Desktop accounts on macOS alone, and a test's jar is SQLite there.
+pub fn claude_desktop_runs_here() -> bool {
+    match OS {
+        Os::MacOs => true,
+        Os::Linux => false,
+        Os::Windows => false,
+    }
+}
+
 // Pitboard reads none of the Windows ones before W14; listed so they pass on from then.
 pub fn passed_on() -> &'static [&'static str] {
     match OS {

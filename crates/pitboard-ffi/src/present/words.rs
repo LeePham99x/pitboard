@@ -5,9 +5,14 @@
 //! What the command line says too is not here but there, and called from here: a limit's
 //! names, a reset, a pace, a parked login's life.
 
+use crate::model::state::in_its_app;
 use crate::{Level, Warning};
-use pitboard_core::host::Os;
+use pitboard_core::error::{Error, LoginDoubt, Then};
+use pitboard_core::host::{Os, Private};
 use pitboard_core::pace::{Pace, Standing};
+use pitboard_core::provider::ProviderId;
+use pitboard_core::service::{Stored, Warning as CoreWarning};
+use pitboard_core::state::SetAside;
 use pitboard_core::usage::whole;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -205,7 +210,19 @@ pub(crate) fn warning_heading(warning: &Warning) -> &'static str {
         "recovery_undetermined" => "An interrupted switch is waiting",
         "login_replaced" => "A login was replaced outside Pitboard",
         "in_use_unconfirmed" => "The account in use is not confirmed",
+        // `in_app_warning` words the two alike for an app.
+        "config_names_another" if warning.provider.as_deref().is_some_and(in_its_app) => {
+            "The account in use is not confirmed"
+        }
         "config_names_another" => "Claude Code’s config names another account",
+        "login_taken_as_named" => "A login was taken as the account named for it",
+        "looks_signed_out" => "The account in use may be signed out",
+        "set_aside" => "Pitboard set a folder aside",
+        "move_waiting" => "An interrupted move is waiting",
+        "move_not_given_up" => "An interrupted move wasn’t given up",
+        "interrupted_move_undone" => "An interrupted move was undone",
+        "interrupted_move_finished" => "An interrupted move was finished",
+        "login_item_gone" => "Part of a login was gone",
         _ => "Pitboard has a warning",
     }
 }
@@ -222,6 +239,33 @@ pub(crate) fn logins(count: u32) -> String {
 /// What an interrupted switch nothing can finish waits for, where the read did not say.
 pub(crate) fn switch_waits_for(services: &str) -> String {
     format!("An interrupted switch can’t be finished until {services} answers.")
+}
+
+pub(crate) fn move_waits_too(tool: &str, program: &str) -> String {
+    format!(
+        "A {tool} move was interrupted too. With {program} quit, Give Up… settles it or gives it \
+         up as well, and keeps every folder."
+    )
+}
+
+// `moving`: each tool whose move waits, with its program.
+pub(crate) fn give_up_stuck(moving: &[(String, &str)]) -> String {
+    let stops = "Every login is kept, and nothing is deleted. Pitboard stops trying to finish it";
+    if moving.is_empty() {
+        return format!("{stops}.");
+    }
+    let tools: Vec<&str> = moving.iter().map(|(tool, _)| tool.as_str()).collect();
+    let mut programs: Vec<&str> = Vec::new();
+    for &(_, program) in moving {
+        if !programs.contains(&program) {
+            programs.push(program);
+        }
+    }
+    format!(
+        "{stops} and, with {} quit, settles or gives up the interrupted {} move too.",
+        listed(&programs),
+        listed(&tools)
+    )
 }
 
 /// What giving up on an interrupted switch kept.
@@ -388,6 +432,7 @@ pub(crate) fn change_verb(verb: &str) -> String {
         "uninstall" => "Uninstall".into(),
         "in-use" => "Login in use changed".into(),
         "stow" => "Put away a login left in a file".into(),
+        "park" => "Park for a sign-in".into(),
         "warm-up" => "Warm-up".into(),
         "warm-on" => "Warm-up turned on".into(),
         "warm-off" => "Warm-up turned off".into(),
@@ -503,6 +548,594 @@ pub(crate) fn checking(os: Os) -> String {
 /// 14:05".
 pub(crate) fn checked_at(clock: &str) -> String {
     format!("Checked at {clock}")
+}
+
+pub(crate) const NO_USAGE_READ: &str = "No usage read";
+
+// Why the app it asked to quit stopped a change: "… Quit it, then switch again."
+pub(crate) fn still_open(app: &str, again: &str) -> String {
+    format!("{app} is still open, so nothing has changed. Quit it, then {again}.")
+}
+
+pub(crate) fn part_still_running(app: &str, again: &str) -> String {
+    format!(
+        "Part of {app} is still running after it quit, so nothing has changed. Wait until it \
+         ends, or quit it in Activity Monitor, then {again}."
+    )
+}
+
+// What daily renewal does, under its switch, and that a parked app login never is renewed.
+pub(crate) fn renewal_about(os: Os, in_its_app: bool) -> String {
+    let scheduler = match os {
+        Os::MacOs => "your Mac’s own scheduler",
+        Os::Linux => "this computer’s own scheduler",
+        Os::Windows => "your PC’s own scheduler",
+    };
+    let about = format!(
+        "A parked login is renewed whenever Pitboard runs, and otherwise not, so one you leave \
+         alone for weeks expires and needs a browser sign-in. Daily renewal hands that to \
+         {scheduler}. It renews your parked logins and does nothing else: it never switches \
+         account and never asks for usage."
+    );
+    if in_its_app {
+        format!("{about} A parked Claude Desktop login is never renewed.")
+    } else {
+        about
+    }
+}
+
+// The lines of the notice for a sign-in inside `app` left halfway, `put_back` parked for it.
+pub(crate) fn awaiting_lines(app: &str, label: &str, put_back: &str, again: bool) -> Vec<String> {
+    let then = if again {
+        format!(
+            "Sign in to {label} in {app}, quit {app}, then choose Finish Signing In. Put \
+             {put_back} Back undoes it."
+        )
+    } else {
+        format!(
+            "Sign in to the account you’re adding in {app}, quit {app}, then choose Finish \
+             Adding. Put {put_back} Back undoes it."
+        )
+    };
+    vec![
+        format!("{app} is signed out for a sign-in, and {put_back} is parked."),
+        then,
+    ]
+}
+
+// What the sheet says while Pitboard waits for `app` to quit signed in, as the wait last said.
+pub(crate) fn in_app_waiting(
+    app: &str,
+    name: &str,
+    again: bool,
+    step: Option<pitboard_core::switch::WaitStep>,
+    opened_for_it: bool,
+) -> String {
+    use pitboard_core::switch::WaitStep;
+    let (sign_in, adds) = if again {
+        (
+            format!("sign in to {name} again"),
+            format!("Pitboard records it as {name}’s login"),
+        )
+    } else {
+        (
+            "sign in to the account you’re adding".to_owned(),
+            format!("Pitboard adds it as {name}"),
+        )
+    };
+    let first = match step {
+        Some(WaitStep::QuitSignedOut) => format!(
+            "{app} quit with nobody signed in. Open {app}, {sign_in}, then quit it with \
+             Command-Q."
+        ),
+        Some(WaitStep::QuitUnfinished) => format!(
+            "{app} quit before it finished signing in. Open {app}, wait until it shows your \
+             chats, then quit it with Command-Q."
+        ),
+        Some(WaitStep::Waiting | WaitStep::Open) | None if opened_for_it => format!(
+            "In {app}, {sign_in}. When it shows your chats, quit {app} with Command-Q, and \
+             {adds}."
+        ),
+        Some(WaitStep::Waiting | WaitStep::Open) | None => format!(
+            "Open {app} and {sign_in}. When it shows your chats, quit {app} with Command-Q, and \
+             {adds}."
+        ),
+    };
+    format!(
+        "{first}\n\nDon’t choose Log out in {app}: it ends the login {app} holds at claude.ai, \
+         and Pitboard can’t bring it back."
+    )
+}
+
+// An account the core names as typed, `desktop/work`, as the app names it: `work`.
+fn bare(typed: &str) -> &str {
+    crate::model::state::split(typed).1
+}
+
+// Where an account is named: one added by its name, any other as the app can say it.
+fn stored(stored: &Stored) -> String {
+    match stored {
+        Stored::Account(name) => bare(name).to_owned(),
+        Stored::Unenrolled(email) if email.is_empty() => "an account you haven’t added".into(),
+        Stored::Unenrolled(email) => email.clone(),
+        Stored::Nothing | Stored::Unknown => "nobody".into(),
+    }
+}
+
+fn add_what_it_shows(app: &str) -> String {
+    format!("choose Add Account…, then Add the Account {app} Shows, under that account’s name.")
+}
+
+// The core's sentence names a command or says to run this again, which the app cannot.
+pub(crate) fn in_app_refusal(error: &Error) -> Option<String> {
+    let desktop = ProviderId::Desktop;
+    let app = desktop.program();
+    let inside = |tool: &ProviderId| in_its_app(tool.code());
+    let inside_label = |label: &str| in_its_app(crate::model::state::split(label).0);
+    Some(match error {
+        Error::AppOpen { app, still } if still.is_empty() => format!(
+            "{app} is open, and Pitboard changes its login only while it is closed. Quit {app}, \
+             then try again. Nothing has changed."
+        ),
+        Error::AppOpen { app, still } => format!(
+            "{app} has quit, and {} from it is still running, and Pitboard changes {app}’s login \
+             only while all of it is closed. Wait until it ends, or quit it in Activity Monitor, \
+             then try again. Nothing has changed.",
+            listed(still)
+        ),
+        Error::AppStateUnknown { app, why } => format!(
+            "Pitboard couldn’t tell whether {app} is open ({why}), so nothing has changed. Try \
+             again."
+        ),
+        Error::LoginFolderBusy { app } => format!(
+            "Another Pitboard is changing {app}’s login now, so nothing has changed. Try again \
+             once it has finished."
+        ),
+        Error::MachineUnknown => "Pitboard couldn’t read this Mac’s identity, which it writes \
+                                  beside every parked Claude Desktop login so it never puts \
+                                  back one parked on another Mac. Nothing has changed."
+            .into(),
+        Error::LiveCredentialAbsent { tool, .. } if inside(tool) => format!(
+            "{} isn’t signed in. Choose Start Sign-In, then sign in to the account in {}.",
+            tool.program(),
+            tool.program()
+        ),
+        Error::SignInUnfinished { tool } if inside(tool) => {
+            let app = tool.program();
+            format!(
+                "{app} hasn’t finished signing in. Open {app}, wait until it shows your chats, \
+                 quit it, then try again. Nothing has changed."
+            )
+        }
+        Error::LiveAccountNotEnrolled { tool, .. } if inside(tool) => format!(
+            "{} is signed in to an account you haven’t added, so it can’t be parked. Choose Add \
+             Account…, then Add the Account {} Shows, to add it first.",
+            tool.program(),
+            tool.program()
+        ),
+        Error::AlreadyEnrolled {
+            tool,
+            label,
+            waited: true,
+            ..
+        } if inside(tool) => format!(
+            "{} is signed in to {label}, which you’ve added. Choose Record as {label} on its \
+             row’s Sign In Again… to record that login, then add another.",
+            tool.program(),
+            label = bare(label)
+        ),
+        Error::AlreadyEnrolled { tool, label, .. } if inside(tool) => format!(
+            "{} is signed in to {label}, which you’ve added already. Choose Use {label}, or Add \
+             Account… to add another.",
+            tool.program(),
+            label = bare(label)
+        ),
+        Error::LoginInDoubt { tool, why } if inside(tool) => match why {
+            LoginDoubt::NamedAnother { recorded, named } => format!(
+                "Pitboard recorded this {app} login as {}’s, and {app} names {} for it. Open \
+                 {app}, check which account it shows, quit it, then {} Nothing has changed.",
+                bare(recorded),
+                named
+                    .as_deref()
+                    .map_or("an account you haven’t added", bare),
+                add_what_it_shows(tool.program()),
+                app = tool.program()
+            ),
+            LoginDoubt::SignedInOutside { label } => format!(
+                "{app} was signed in to {} outside Pitboard, so Pitboard can’t tell this login \
+                 from the one it parked. Open {app}, check which account it shows, quit it, then \
+                 {} Nothing has changed.",
+                bare(label),
+                add_what_it_shows(tool.program()),
+                app = tool.program()
+            ),
+        },
+        Error::LoginFolderUnknown { tool, what, then } if inside(tool) => {
+            let app = tool.program();
+            let then = match then {
+                Then::Nothing => String::new(),
+                Then::OpenAndQuit => format!("Open {app}, quit it, then try again. "),
+                Then::UpdatePitboard => "Update Pitboard, or report it at \
+                                         https://github.com/datlechin/pitboard/issues if no \
+                                         release reads it yet. "
+                    .into(),
+                Then::CopyAside => format!(
+                    "{app} resets a settings file it can’t read when it opens, so copy it aside, \
+                     open {app}, quit it, then try again. "
+                ),
+                Then::SignInAndEnrol => format!(
+                    "Open {app}. If it asks you to sign in, sign in. Quit it, then choose Add \
+                     Account…, then Add the Account {app} Shows. "
+                ),
+            };
+            format!(
+                "{app}’s data folder {what}, so Pitboard moves no {} login. {then}Nothing has \
+                 changed.",
+                tool.name()
+            )
+        }
+        Error::LoginFolderUnreadable { tool, detail } if inside(tool) => {
+            let app = tool.program();
+            format!(
+                "Pitboard couldn’t read {app}’s cookie store ({detail}). Open {app}, quit it, then \
+                 try again. Nothing has changed."
+            )
+        }
+        Error::ParksNotPrivate { path, why } => {
+            let path = path.display();
+            let said = match why {
+                Private::Shared => format!(
+                    "{path} can be reached by others. Run chmod 700 on it in Terminal, then try \
+                     again."
+                ),
+                Private::Link => format!(
+                    "{path} is a link, so Pitboard parks no Claude Desktop login there. Point \
+                     PITBOARD_HOME at a folder of your own on this volume, then try again."
+                ),
+                Private::NotOwn => format!(
+                    "{path} isn’t yours, so Pitboard parks no Claude Desktop login there. Point \
+                     PITBOARD_HOME at a folder of your own on this volume, then try again."
+                ),
+                Private::NotADirectory | Private::Missing | Private::Yes => format!(
+                    "{path} isn’t a folder, so Pitboard parks no Claude Desktop login there. \
+                     Point PITBOARD_HOME at a folder of your own on this volume, then try again."
+                ),
+            };
+            format!("{said} Nothing has changed.")
+        }
+        Error::DifferentVolume { parks, root } => format!(
+            "Pitboard parks a Claude Desktop login by renaming it into {}, which is on another \
+             volume than {}, and it never copies one. Keep Pitboard’s folder on the volume your \
+             home is on. Nothing has changed.",
+            parks.display(),
+            root.display()
+        ),
+        Error::MoveUndone { label, detail } => format!(
+            "Pitboard couldn’t park {label}’s login ({detail}) and undid what it had done. \
+             {label} is in use, and nothing was lost. Try again.",
+            label = bare(label)
+        ),
+        Error::RecoveryUndetermined {
+            tool, to, detail, ..
+        } if inside(tool) => format!(
+            "An earlier move of {}’s login was interrupted, and Pitboard can’t tell where it \
+             stopped ({detail}). Nothing has changed. Open {app} to see whether it’s signed in \
+             and to which account, and quit it. If it’s signed in, choose Add Account…, then Add \
+             the Account {app} Shows. If it’s signed out, choose Give Up… on the interrupted \
+             move’s notice.",
+            bare(to),
+            app = tool.program()
+        ),
+        Error::RecoveryElsewhere { tool, to, slot, .. } if inside(tool) => format!(
+            "An earlier move of {}’s login was interrupted while {} kept its data in {slot}. \
+             Nothing has changed. Choose Give Up… on the interrupted move’s notice to keep every \
+             folder and move on.",
+            bare(to),
+            tool.program()
+        ),
+        Error::AppOpenedMidway {
+            app,
+            label: Some(label),
+        } => format!(
+            "{app} was opened while Pitboard moved {}’s login, so Pitboard stopped. Nothing is \
+             lost. Quit {app}, then try again: Pitboard settles the move first.",
+            bare(label)
+        ),
+        Error::AppOpenedMidway { app, label: None } => format!(
+            "{app} was opened while Pitboard set aside the account name {app} kept, so Pitboard \
+             stopped. Nothing is lost. Quit {app}, then try again."
+        ),
+        Error::MoveStopped { label, detail } => format!(
+            "Pitboard stopped while moving {}’s login ({detail}). Keep {app} closed and try \
+             again: Pitboard settles the move first.",
+            bare(label)
+        ),
+        Error::RecoveryStopped { label, detail } => format!(
+            "Pitboard stopped while settling an interrupted move of {}’s login ({detail}). \
+             Nothing is lost. Keep {app} closed and try again: Pitboard settles the move first. \
+             If it stops again, choose Give Up… on the interrupted move’s notice.",
+            bare(label)
+        ),
+        Error::SwitchLeftSignedOut {
+            from: Some(from),
+            to,
+            detail,
+        } => format!(
+            "{from} is parked, and {to} couldn’t be put in use ({detail}). {app} is signed out \
+             and both logins are parked. Choose Use {to} to try again, or Use {from} to go back.",
+            from = bare(from),
+            to = bare(to)
+        ),
+        Error::SwitchLeftSignedOut {
+            from: None,
+            to,
+            detail,
+        } => format!(
+            "{to} couldn’t be put in use ({detail}). {app} is signed out and {to} is still \
+             parked. Choose Use {to} to try again.",
+            to = bare(to)
+        ),
+        Error::MoveMixed { label, places } => format!(
+            "Giving up would leave parts of {} beside another login in {app}’s folder: {}. \
+             Nothing has changed. Open {app}, check which account it shows, quit it, then {}",
+            bare(label),
+            places.join(", "),
+            add_what_it_shows(app)
+        ),
+        Error::SignInSettledElsewhere { .. } => {
+            "This sign-in was finished, put back or removed elsewhere, so nothing was added.".into()
+        }
+        Error::NothingParked { tool, label } if inside(tool) => format!(
+            "{} has no parked login to switch to. Choose Sign In Again… on its row.",
+            bare(label)
+        ),
+        Error::AccountUnknown { label, .. } if inside_label(label) => format!(
+            "No {} account is added as {}. Choose Add Account… to add it.",
+            ProviderId::parse(crate::model::state::split(label).0)
+                .map_or(desktop.name(), ProviderId::name),
+            bare(label)
+        ),
+        Error::ParkedCredentialMissing { label } if inside_label(label) => format!(
+            "The parked login for {0} is missing. Choose Sign In Again… on {0}’s row.",
+            bare(label)
+        ),
+        Error::ParkedCredentialCorrupt { label, detail } if inside_label(label) => format!(
+            "The parked login for {0} is not the one Pitboard recorded ({detail}). Choose Sign In \
+             Again… on {0}’s row.",
+            bare(label)
+        ),
+        _ => return None,
+    })
+}
+
+// Without `pitboard_sites::listed`'s serial comma, as the documentation writes a list.
+pub(crate) fn listed(items: &[impl AsRef<str>]) -> String {
+    match items {
+        [] => String::new(),
+        [one] => one.as_ref().to_owned(),
+        [rest @ .., last] => {
+            let rest: Vec<&str> = rest.iter().map(AsRef::as_ref).collect();
+            format!("{} and {}", rest.join(", "), last.as_ref())
+        }
+    }
+}
+
+pub(crate) fn in_app_warning(warning: &CoreWarning) -> Option<String> {
+    let tool = warning.tool().filter(|tool| in_its_app(tool.code()))?;
+    let app = tool.program();
+    let add_what_it_shows = format!(
+        "Open {app}, check which account it shows, quit it, then choose Add the Account {app} \
+         Shows."
+    );
+    let named = |named: &Stored, last: &Stored| match last {
+        Stored::Account(_) | Stored::Unenrolled(_) => format!(
+            "{app}’s settings have named {} since Pitboard last read {} in use, so {app} may hold \
+             another login. {add_what_it_shows}",
+            stored(named),
+            stored(last)
+        ),
+        Stored::Nothing | Stored::Unknown => format!(
+            "{app}’s settings have named {} since Pitboard last read {app} signed out, so \
+             somebody may have signed in. {add_what_it_shows}",
+            stored(named)
+        ),
+    };
+    Some(match warning {
+        CoreWarning::InUseUnconfirmed {
+            named: by, last, ..
+        } => named(by, last),
+        CoreWarning::ConfigNamesAnother { config, in_use, .. } => named(config, in_use),
+        CoreWarning::LoginReplaced { label, now, .. } => {
+            let label = bare(label);
+            match now {
+                Stored::Nothing => format!(
+                    "{label} was signed out in {app}, which ends its login at claude.ai, and \
+                     Pitboard holds no login for it. Choose Sign In Again… on its row."
+                ),
+                now => {
+                    let has = match now {
+                        Stored::Account(now) => {
+                            format!(": {} now has {}’s login stored", tool.name(), bare(now))
+                        }
+                        Stored::Unenrolled(email) if email.is_empty() => format!(
+                            ": {} now has the login of an account you haven’t added",
+                            tool.name()
+                        ),
+                        Stored::Unenrolled(email) => {
+                            format!(": {} now has {email}’s login stored", tool.name())
+                        }
+                        Stored::Nothing | Stored::Unknown => String::new(),
+                    };
+                    format!(
+                        "{label}’s login was replaced by a sign-in outside Pitboard{has}, and \
+                         Pitboard holds no login for {label}. Choose Sign In Again… on its row."
+                    )
+                }
+            }
+        }
+        CoreWarning::TakenAsNamed {
+            label,
+            recorded: None,
+            ..
+        } => format!(
+            "Pitboard hadn’t seen the login {app} held, and took it as {label}’s because {app} \
+             names that account. If {app} showed another account, choose Use {label}, check in \
+             {app}, quit it, then choose Add Account… and Add the Account {app} Shows.",
+            label = bare(label)
+        ),
+        CoreWarning::TakenAsNamed {
+            label,
+            recorded: Some(recorded),
+            ..
+        } => format!(
+            "Pitboard had recorded the login {app} held as {}’s, and filed it as {}’s because \
+             {app} names that account. Open {app} and check which account it shows. If it’s \
+             another, quit {app}, then choose Add Account… and Add the Account {app} Shows.",
+            bare(recorded),
+            bare(label)
+        ),
+        CoreWarning::LooksSignedOut { label, .. } => format!(
+            "{app} looks signed out since Pitboard last read {} in use. Pitboard checks at the \
+             next change to a {} account.",
+            bare(label),
+            tool.name()
+        ),
+        CoreWarning::SetAside {
+            path, label, why, ..
+        } => {
+            let path = path.display();
+            let label = label.as_deref().map(bare);
+            match (why, label) {
+                (SetAside::Superseded, Some(label)) => format!(
+                    "Pitboard kept {label}’s earlier parked login in {path} and deleted nothing. \
+                     This Mac lists it."
+                ),
+                (SetAside::Superseded, None) => format!(
+                    "Pitboard kept an earlier parked login in {path} and deleted nothing. This \
+                     Mac lists it."
+                ),
+                (SetAside::GivenUp, Some(label)) => format!(
+                    "Pitboard moved the parts of {label}’s login left in {app}’s folder into \
+                     {path} and deleted nothing. This Mac lists them."
+                ),
+                (SetAside::GivenUp, None) => format!(
+                    "Pitboard moved the parts of a login left in {app}’s folder into {path} and \
+                     deleted nothing. This Mac lists them."
+                ),
+                (SetAside::InTheWay | SetAside::AnotherMachine | SetAside::Orphan, _) => {
+                    format!(
+                        "Pitboard moved what it found in the way into {path} and deleted nothing."
+                    )
+                }
+            }
+        }
+        CoreWarning::KeysSetAside { path, label, .. } => format!(
+            "{app} rewrote {}’s keys. Pitboard kept the earlier ones in {} and deleted nothing. \
+             This Mac lists them.",
+            label.as_deref().map_or("a login", bare),
+            path.display()
+        ),
+        CoreWarning::MoveWaiting { label, .. } => format!(
+            "A move of {}’s login was interrupted. Quit {app}, then use any {} account: Pitboard \
+             settles the move first.",
+            bare(label),
+            tool.name()
+        ),
+        CoreWarning::SignInAwaited {
+            label,
+            put_back,
+            again,
+            ..
+        } => awaiting_lines(app, bare(label), bare(put_back), *again).join(" "),
+        CoreWarning::MoveNotGivenUp { label, why, .. } => not_given_up(tool, bare(label), why),
+        _ => return None,
+    })
+}
+
+// After Give Up gave up a switch, so never that nothing has changed.
+fn not_given_up(tool: ProviderId, label: &str, why: &Error) -> String {
+    let app = tool.program();
+    let settles = format!(
+        "use any {} account: Pitboard settles the move first.",
+        tool.name()
+    );
+    let (because, then) = match why {
+        Error::AppOpen { still, .. } if still.is_empty() => (
+            Some(format!("{app} is open")),
+            format!("Quit {app}, then {settles}"),
+        ),
+        Error::AppOpen { still, .. } => (
+            Some(format!("{} from {app} is still running", listed(still))),
+            format!("Wait until it ends, or quit it in Activity Monitor, then {settles}"),
+        ),
+        Error::AppStateUnknown { why, .. } => (
+            Some(format!("it couldn’t tell whether {app} is open ({why})")),
+            format!("To try again, {settles}"),
+        ),
+        Error::LoginFolderBusy { .. } => (
+            Some(format!("another Pitboard is changing {app}’s login")),
+            format!("Once it has finished, {settles}"),
+        ),
+        Error::LoginFolderUnreadable { detail, .. } => (
+            Some(format!("it couldn’t read {app}’s cookie store ({detail})")),
+            format!("Open {app}, quit it, then {settles}"),
+        ),
+        Error::AppOpenedMidway { .. } => (
+            Some(format!("{app} was opened meanwhile")),
+            format!("Nothing is lost. Quit {app}, then {settles}"),
+        ),
+        Error::MoveMixed { places, .. } => (
+            Some(format!(
+                "giving it up would leave parts of it beside another login in {app}’s folder: {}",
+                places.join(", ")
+            )),
+            format!(
+                "Open {app}, check which account it shows, quit it, then {}",
+                add_what_it_shows(app)
+            ),
+        ),
+        _ => (None, format!("Quit {app}, then {settles}")),
+    };
+    match because {
+        Some(because) => format!(
+            "Pitboard didn’t give up the interrupted move of {label}’s login, because {because}. \
+             {then}"
+        ),
+        None => {
+            format!("Pitboard couldn’t give up the interrupted move of {label}’s login. {then}")
+        }
+    }
+}
+
+pub(crate) fn in_app_given_up(given_up: &pitboard_core::switch::GivenUp) -> String {
+    let app = given_up.tool.program();
+    let mut said = format!(
+        "Pitboard gave up the move of {}’s login and kept every folder: {} parked, {} set aside.",
+        bare(&given_up.label),
+        given_up.parked,
+        given_up.set_aside
+    );
+    if let Some(slot) = &given_up.slot {
+        said.push_str(&format!(
+            " The move was in {slot}, which Pitboard did not read."
+        ));
+    }
+    if !given_up.left.is_empty() {
+        let stay = if given_up.left.len() == 1 {
+            "stays"
+        } else {
+            "stay"
+        };
+        said.push_str(&format!(
+            " {} {stay} in {app}’s folder. Open {app} once and quit it.",
+            listed(&given_up.left)
+        ));
+    }
+    said.push_str(&format!(
+        " Choose Add Account… and Add the Account {app} Shows for the account {app} shows, or \
+         Use on an account where {app} is signed out."
+    ));
+    said
 }
 
 #[cfg(test)]
@@ -1021,6 +1654,7 @@ mod tests {
             message: String::new(),
             account: None,
             held: None,
+            provider: None,
         };
         for (code, heading) in headings {
             assert_eq!(warning_heading(&warning(code)), heading, "{code}");
@@ -1275,5 +1909,430 @@ mod tests {
         assert_eq!(runs_every(86_400), "Every day");
         assert_eq!(runs_every(43_200), "Every 12 hours");
         assert_eq!(checked_at("14:05"), "Checked at 14:05");
+    }
+
+    #[test]
+    fn a_parked_login_refused_is_named_as_the_app_names_its_account() {
+        assert_eq!(
+            in_app_refusal(&Error::ParkedCredentialMissing {
+                label: "desktop/home".into(),
+            })
+            .as_deref(),
+            Some("The parked login for home is missing. Choose Sign In Again… on home’s row.")
+        );
+        assert_eq!(
+            in_app_refusal(&Error::ParkedCredentialCorrupt {
+                label: "desktop/home".into(),
+                detail: "it was parked on another Mac".into(),
+            })
+            .as_deref(),
+            Some(
+                "The parked login for home is not the one Pitboard recorded (it was parked on \
+                 another Mac). Choose Sign In Again… on home’s row."
+            )
+        );
+        assert_eq!(
+            in_app_refusal(&Error::ParkedCredentialMissing {
+                label: "work".into(),
+            }),
+            None,
+            "Claude Code's says the core's sentence"
+        );
+    }
+
+    #[test]
+    fn a_list_in_the_apps_words_has_no_serial_comma() {
+        let still = Error::AppOpen {
+            app: "Claude",
+            still: vec![
+                "ShipIt (pid 812)".into(),
+                "Claude Helper (pid 813)".into(),
+                "chrome_crashpad_handler (pid 814)".into(),
+            ],
+        };
+        let said = in_app_refusal(&still).expect("in the app's words");
+        assert!(
+            said.contains(
+                "ShipIt (pid 812), Claude Helper (pid 813) and chrome_crashpad_handler (pid 814) \
+                 from it"
+            ),
+            "{said}"
+        );
+    }
+
+    #[test]
+    fn a_move_not_given_up_never_says_nothing_has_changed() {
+        let tool = ProviderId::Desktop;
+        let app = "Claude";
+        let said = |why| {
+            in_app_warning(&CoreWarning::MoveNotGivenUp {
+                tool,
+                label: "desktop/work".into(),
+                why,
+            })
+            .expect("the app's words")
+        };
+        assert_eq!(
+            said(Error::AppOpen {
+                app,
+                still: Vec::new()
+            }),
+            "Pitboard didn’t give up the interrupted move of work’s login, because Claude is \
+             open. Quit Claude, then use any Claude Desktop account: Pitboard settles the move \
+             first."
+        );
+        for why in [
+            Error::LoginFolderBusy { app },
+            Error::MoveMixed {
+                label: "desktop/work".into(),
+                places: vec!["`Session Storage` in Claude's folder".into()],
+            },
+            Error::MachineUnknown,
+        ] {
+            let sentence = said(why);
+            assert!(
+                !sentence.to_lowercase().contains("nothing has changed"),
+                "{sentence}"
+            );
+        }
+    }
+
+    #[test]
+    fn no_claude_desktop_sentence_in_the_app_names_a_command() {
+        use pitboard_core::error::Enrolled;
+        use pitboard_core::state::Half;
+        use pitboard_core::switch::{Ended, GivenUp, MoveSettled};
+        use std::path::PathBuf;
+        let tool = ProviderId::Desktop;
+        let app = "Claude";
+        let typed = |label: &str| format!("desktop/{label}");
+        let mut errors = vec![
+            Error::AppOpen {
+                app,
+                still: Vec::new(),
+            },
+            Error::AppOpen {
+                app,
+                still: vec!["ShipIt (pid 812)".into()],
+            },
+            Error::AppStateUnknown {
+                app,
+                why: "`ps` did not answer within 5 seconds".into(),
+            },
+            Error::LoginFolderBusy { app },
+            Error::LoginFolderUnreadable {
+                tool,
+                detail: "database is locked".into(),
+            },
+            Error::SignInUnfinished { tool },
+            Error::LoginInDoubt {
+                tool,
+                why: LoginDoubt::NamedAnother {
+                    recorded: typed("work"),
+                    named: Some(typed("home")),
+                },
+            },
+            Error::LoginInDoubt {
+                tool,
+                why: LoginDoubt::NamedAnother {
+                    recorded: typed("work"),
+                    named: None,
+                },
+            },
+            Error::LoginInDoubt {
+                tool,
+                why: LoginDoubt::SignedInOutside {
+                    label: typed("home"),
+                },
+            },
+            Error::DifferentVolume {
+                parks: PathBuf::from("/Volumes/Data/.pitboard/parks"),
+                root: PathBuf::from("/Users/dana/Library/Application Support/Claude"),
+            },
+            Error::MachineUnknown,
+            Error::AppOpenedMidway {
+                app,
+                label: Some(typed("work")),
+            },
+            Error::AppOpenedMidway { app, label: None },
+            Error::MoveUndone {
+                label: typed("work"),
+                detail: "a rename failed".into(),
+            },
+            Error::MoveStopped {
+                label: typed("work"),
+                detail: "a rename failed".into(),
+            },
+            Error::RecoveryStopped {
+                label: typed("work"),
+                detail: "a rename failed".into(),
+            },
+            Error::SwitchLeftSignedOut {
+                from: Some(typed("work")),
+                to: typed("home"),
+                detail: "a rename failed".into(),
+            },
+            Error::SwitchLeftSignedOut {
+                from: None,
+                to: typed("home"),
+                detail: "a rename failed".into(),
+            },
+            Error::MoveMixed {
+                label: typed("work"),
+                places: vec!["`Session Storage` in Claude's folder".into()],
+            },
+            Error::SignInSettledElsewhere {
+                label: typed("travel"),
+            },
+            Error::RecoveryUndetermined {
+                tool,
+                from: typed("work"),
+                to: typed("work"),
+                detail: "the jar is gone".into(),
+            },
+            Error::RecoveryElsewhere {
+                tool,
+                from: typed("work"),
+                to: typed("work"),
+                slot: "/Users/dana/Library/Application Support/Claude".into(),
+            },
+            Error::LiveStoreUnsupported {
+                tool,
+                reason: "Pitboard switches Claude Desktop accounts on macOS only".into(),
+            },
+            Error::LiveCredentialAbsent {
+                tool,
+                label: Some(typed("travel")),
+            },
+            Error::LiveAccountNotEnrolled {
+                tool,
+                who: String::new(),
+            },
+            Error::LabelTaken {
+                label: typed("home"),
+                who: "another Claude Desktop account".into(),
+            },
+            Error::NothingParked {
+                tool,
+                label: typed("home"),
+            },
+            Error::ParkedCredentialMissing {
+                label: typed("home"),
+            },
+            Error::ParkedCredentialCorrupt {
+                label: typed("home"),
+                detail: "it was parked on another Mac, and Claude cannot read it here where its \
+                         key differs"
+                    .into(),
+            },
+            Error::CannotForgetActiveAccount {
+                label: typed("work"),
+            },
+            Error::AccountUnknown {
+                label: typed("home"),
+                enrolled: Enrolled(vec![typed("work")]),
+            },
+            Error::AccountNotInUse {
+                tool,
+                label: typed("home"),
+            },
+        ];
+        for waited in [false, true] {
+            errors.push(Error::AlreadyEnrolled {
+                tool,
+                email: String::new(),
+                label: typed("home"),
+                asked: typed("travel"),
+                waited,
+            });
+        }
+        for then in [
+            Then::Nothing,
+            Then::OpenAndQuit,
+            Then::UpdatePitboard,
+            Then::CopyAside,
+            Then::SignInAndEnrol,
+        ] {
+            errors.push(Error::LoginFolderUnknown {
+                tool,
+                what: "holds `Network`, which this Pitboard has not read".into(),
+                then,
+            });
+        }
+        for why in [
+            Private::Shared,
+            Private::Link,
+            Private::NotOwn,
+            Private::NotADirectory,
+        ] {
+            errors.push(Error::ParksNotPrivate {
+                path: PathBuf::from("/Users/dana/.pitboard/parks"),
+                why,
+            });
+        }
+        let path = PathBuf::from("/Users/dana/.pitboard/parks/pitboard-aside-1791000400123");
+        let mut warnings = vec![
+            CoreWarning::TakenAsNamed {
+                tool,
+                label: typed("work"),
+                recorded: None,
+            },
+            CoreWarning::TakenAsNamed {
+                tool,
+                label: typed("home"),
+                recorded: Some(typed("work")),
+            },
+            CoreWarning::LooksSignedOut {
+                tool,
+                label: typed("work"),
+            },
+            CoreWarning::MoveWaiting {
+                tool,
+                label: typed("work"),
+            },
+            CoreWarning::ItemGone {
+                tool,
+                label: typed("work"),
+                item: "WebStorage".into(),
+            },
+        ];
+        for again in [false, true] {
+            warnings.push(CoreWarning::SignInAwaited {
+                tool,
+                label: typed("home"),
+                put_back: typed("work"),
+                since: 0,
+                again,
+            });
+        }
+        for why in [
+            Error::AppOpen {
+                app,
+                still: Vec::new(),
+            },
+            Error::AppOpen {
+                app,
+                still: vec!["ShipIt (pid 812)".into()],
+            },
+            Error::AppStateUnknown {
+                app,
+                why: "ps failed".into(),
+            },
+            Error::LoginFolderBusy { app },
+            Error::LoginFolderUnreadable {
+                tool,
+                detail: "a test held the jar".into(),
+            },
+            Error::AppOpenedMidway {
+                app,
+                label: Some(typed("work")),
+            },
+            Error::MoveMixed {
+                label: typed("work"),
+                places: vec!["`Session Storage` in Claude's folder".into()],
+            },
+            Error::MachineUnknown,
+        ] {
+            warnings.push(CoreWarning::MoveNotGivenUp {
+                tool,
+                label: typed("work"),
+                why,
+            });
+        }
+        for (half, ended) in [
+            (Half::Leave, Ended::Undone),
+            (Half::Leave, Ended::Finished),
+            (Half::Arrive, Ended::Undone),
+            (Half::Arrive, Ended::Finished),
+        ] {
+            warnings.push(CoreWarning::MoveSettled(MoveSettled {
+                tool,
+                label: "work".into(),
+                half,
+                ended,
+            }));
+        }
+        for why in [
+            SetAside::InTheWay,
+            SetAside::Superseded,
+            SetAside::AnotherMachine,
+            SetAside::GivenUp,
+            SetAside::Orphan,
+        ] {
+            for label in [Some(typed("home")), None] {
+                warnings.push(CoreWarning::SetAside {
+                    tool,
+                    path: path.clone(),
+                    label,
+                    why,
+                });
+            }
+        }
+        for label in [Some(typed("home")), None] {
+            warnings.push(CoreWarning::KeysSetAside {
+                tool,
+                path: path.clone(),
+                label,
+            });
+        }
+        let stored = [
+            Stored::Account(typed("home")),
+            Stored::Unenrolled(String::new()),
+            Stored::Nothing,
+            Stored::Unknown,
+        ];
+        for now in stored.clone() {
+            warnings.push(CoreWarning::LoginReplaced {
+                tool,
+                id: "desktop_5b1e".into(),
+                label: typed("work"),
+                now,
+            });
+        }
+        for (named, last) in stored
+            .iter()
+            .flat_map(|named| stored.iter().map(move |last| (named, last)))
+        {
+            warnings.push(CoreWarning::InUseUnconfirmed {
+                tool,
+                last: last.clone(),
+                named: named.clone(),
+                asked: true,
+            });
+            warnings.push(CoreWarning::ConfigNamesAnother {
+                tool,
+                config: named.clone(),
+                in_use: last.clone(),
+            });
+        }
+        let given_up = |left: Vec<String>, slot: Option<String>| GivenUp {
+            tool,
+            label: "work".into(),
+            parked: 1,
+            set_aside: 1,
+            left,
+            slot,
+        };
+        let mut said: Vec<String> = errors
+            .iter()
+            .map(|error| in_app_refusal(error).unwrap_or_else(|| error.to_string()))
+            .collect();
+        said.extend(
+            warnings
+                .iter()
+                .inspect(|warning| assert_eq!(warning.tool(), Some(tool)))
+                .map(|warning| in_app_warning(warning).unwrap_or_else(|| warning.to_string())),
+        );
+        said.push(in_app_given_up(&given_up(Vec::new(), None)));
+        said.push(in_app_given_up(&given_up(
+            vec!["Session Storage".into(), "WebStorage".into()],
+            Some("/Volumes/Old/Claude".into()),
+        )));
+        for sentence in said {
+            assert!(
+                !sentence.contains("pitboard ") && !sentence.contains("run this again"),
+                "{sentence}"
+            );
+        }
     }
 }

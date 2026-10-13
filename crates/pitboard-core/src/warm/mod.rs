@@ -269,7 +269,7 @@ pub(crate) fn halted(ctx: &Context) -> Option<Halt> {
     if !overridden.is_empty() {
         return Some(Halt::Overridden(overridden));
     }
-    crate::provider::of(ProviderId::Claude)
+    crate::provider::claude_code()
         .program(ctx)
         .is_none()
         .then_some(Halt::ProgramMissing)

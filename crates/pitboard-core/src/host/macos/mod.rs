@@ -1,22 +1,29 @@
 //! macOS: the login keychain, files, `ps`, launchd and managed preferences.
 
+mod bundle;
 mod helper;
 mod keychain;
 mod launchd;
 mod preferences;
 mod ps;
+mod sqlite;
 
 pub(crate) use super::unix::{fs, proc, user};
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) use sqlite::write_jar;
 
 use super::administered::{self, Administered};
 use super::unix::service;
-use super::{Elevation, Floor, Host, LoginPath, Os, Process, Scheduler};
+use super::{Elevation, Floor, Host, Jar, JarError, Listed, LoginPath, Os, Scheduler};
 use crate::context::{Context, Environment};
 use crate::store::{PlainFile, RawStore};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 pub(super) const OS: Os = Os::MacOs;
+
+// No build for tests reads an app installed on the machine running it.
+const READS_APPS: bool = !cfg!(any(test, feature = "test-support"));
 
 /// What `posix_spawn` is told when Pitboard starts the person's login shell: a session of its
 /// own, and none of this process's descriptors but the three it is handed, whatever in the
@@ -28,6 +35,12 @@ pub(super) const SPAWN_FLAGS: libc::c_short =
 /// macOS has a login shell to ask.
 pub(super) fn login_path(env: &Environment) -> LoginPath {
     super::unix::shell::login_path(env, SPAWN_FLAGS)
+}
+
+pub(super) fn rename_exclusive(from: &std::ffi::CStr, to: &std::ffi::CStr) -> libc::c_int {
+    // SAFETY: both pointers are to NUL-terminated strings that outlive the call, which
+    // reads them and writes no memory of this process.
+    unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_EXCL) }
 }
 
 /// The keychain account Pitboard stores its own items under.
@@ -65,8 +78,20 @@ impl Host for MacOs {
         true
     }
 
-    fn processes(&self, program: &str) -> Option<Vec<Process>> {
-        ps::processes(program)
+    fn listing(&self) -> Result<Vec<Listed>, String> {
+        ps::listing()
+    }
+
+    fn cookies(&self, jar: &Path, hosts: &[&str], names: &[&str]) -> Result<Jar, JarError> {
+        sqlite::cookies(jar, hosts, names)
+    }
+
+    fn app_version(&self, bundle: &Path) -> Option<String> {
+        READS_APPS.then(|| bundle::version(bundle)).flatten()
+    }
+
+    fn app_id(&self, bundle: &Path) -> Option<String> {
+        READS_APPS.then(|| bundle::identifier(bundle)).flatten()
     }
 
     fn scheduler(&self) -> Option<&dyn Scheduler> {

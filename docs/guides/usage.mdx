@@ -38,22 +38,27 @@ description: "Read each account's five-hour and weekly limits, when they reset a
   </Tab>
 </Tabs>
 
-With accounts of both tools, each tool has its own heading and its own account in use.
+With accounts of more than one tool, each tool has its own heading and its own account in use.
 
 ## Read the lines under each account
 
 | App | Command line | Meaning |
 | --- | --- | --- |
 | A check mark in the menu, **In Use** in the window | `●` and `signed in`, and `○` on the others | The tool is using this account. |
+| **Read 2h 05m ago, with Claude closed** in the window | `signed in · read 2h 05m ago` | When Pitboard last read the Claude Desktop account in use, during a change with Claude closed. |
 | **work · Max 20x** in the menu, a **Max 20x** tag beside the name in the window | `Max 20x` after the address | The plan the account's login says it is on. |
 | **5-hour 59%, weekly 73%** in the menu, a bar per limit in the window | `5h`, `week` and a bar per limit | How much of each limit the account has used. A limit for one model adds the model's name. |
+| **No usage read** in the menu | `Pitboard reads no usage for Claude Desktop`, once before its accounts | Pitboard reads no usage for a Claude Desktop account: see [Claude Desktop accounts](/concepts/limits#claude-desktop-accounts). |
 | A green, orange or red bar | A green, yellow or red bar and percentage | Under 70%, from 70% and from 90% used. |
 | **resetting now** in the window | `resetting now` | The reset time has passed. The figure is the last one measured until the next reading. |
 | A red or green mark across a bar, and **55% over pace** or **18% under pace** | `│` in a bar, and `55% over pace` or `18% under pace` | The mark is where an even [pace](/concepts/usage#pace) would be when the numbers were measured. Red: faster than that. Green: slower. `on pace`, with no mark: within 5 points of it. |
 | **weekly 73% (runs out in 11h 05m)** in the menu, and a note in the window | `weekly limit runs out in 11h 05m at this pace` | For the account in use, the limit that runs out first at its pace, and when. Under a minute, it reads **about to run out**. |
 | **5-hour used up until 22:12** in the menu, or **5-hour used up** once that time has passed | `100%` in red | The account has used all of the limit until it resets. |
-| **Parked login good for 26 more days** in the window | `ready · good for 26d 4h`, or `ready` alone for Codex | You can switch to the account. Its [parked login](/concepts/switching#parked-logins) lasts that long. Pitboard knows no expiry for a Codex login. |
+| **Parked login good for 26 more days** in the window | `ready · good for 26d 4h` | You can switch to the Claude Code account. Its [parked login](/concepts/switching#parked-logins) lasts that long. |
+| No note in the window | `ready` | You can switch to the Codex account. Pitboard knows no expiry for a Codex login. |
+| **Its sign-in may lapse in 25 days** in the window | `ready · sign-in may lapse in 25d 3h` | You can switch to the Claude Desktop account. [Claude Desktop accounts](/concepts/limits#claude-desktop-accounts) says how far to trust the date. |
 | **Parked login good for 2 more days** in the window | `ready · expires in 2d 3h`, then a command | The parked login expires within 3 days. [Renew now](/guides/renewal#renew-now). |
+| **Its sign-in may have lapsed** in the window | `ready · sign-in may have lapsed`, then a command | The date has passed. If Claude asks you to sign in after a switch, [sign in again](/guides/claude-desktop#sign-in-again). |
 | **Needs signing in again** in the menu, **Sign In Again** in the window | `login expired` or `nothing parked`, then a command | Pitboard holds no parked login it can use for the account. [Sign in to an account again](/guides/sign-in-again). |
 | **Needs signing in again** in the menu, with the reason in the window | `login replaced outside Pitboard`, then a command | A sign-in outside Pitboard replaced the account's only login. See [An account reads `login replaced outside Pitboard`](/troubleshooting#an-account-reads-login-replaced-outside-pitboard). |
 | **Login Pitboard can't use**, or a line such as **Claude Code's login could not be read; run `pitboard doctor`** | `login could not be read`, beside an account or `account unknown` | Pitboard could not read the tool's login. Beside an account, that login may be the account's. Run `pitboard doctor`. |
@@ -72,9 +77,9 @@ To see the last numbers measured, without asking Anthropic or OpenAI, run:
 pitboard status --offline
 ```
 
-It renews no parked login. Each account ends with a line such as `measured 14:02, 3m ago · read without asking Anthropic`.
+It renews no parked login. Each Claude Code or Codex account ends with a line such as `measured 14:02, 3m ago · read without asking Anthropic`.
 
-To ask about every account, even one asked about moments ago, run:
+To ask Anthropic and OpenAI again, even about an account asked moments ago, run:
 
 ```sh
 pitboard status --fresh

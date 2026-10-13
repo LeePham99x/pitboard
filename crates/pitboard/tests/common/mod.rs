@@ -15,6 +15,7 @@ pub mod os;
 use os::Kept;
 use pitboard_core::context::Environment;
 use pitboard_core::testing::fs as files;
+use pitboard_core::testing::lies_in;
 use pitboard_core::testing::stand_in::{self, Script, Step};
 
 /// Put a program at `path` that plays `script`: the compiled stand-in, the same on every
@@ -64,39 +65,12 @@ pub fn real_slots() -> [String; 2] {
 pub fn refuse_a_real_login_place(scratch: &Path) {
     let places = pitboard_core::testing::real_login_places(&started_in())
         .unwrap_or_else(|why| panic!("{why}, so no test can tell its folder from a real login's"));
-    if let Some(place) = places.iter().find(|place| clashes(scratch, place)) {
+    if let Some(place) = places.iter().find(|place| lies_in(scratch, place)) {
         panic!(
             "a test may not use {} as its own folder: it is, holds or lies in {}",
             scratch.display(),
             place.display()
         );
-    }
-}
-
-pub fn clashes(scratch: &Path, place: &Path) -> bool {
-    let same = pitboard_core::host::same_path_in_any_case;
-    let (scratch, place) = (resolved(scratch), resolved(place));
-    scratch.ancestors().any(|folder| same(folder, &place))
-        || place.ancestors().any(|folder| same(folder, &scratch))
-}
-
-fn resolved(path: &Path) -> PathBuf {
-    let mut rest = Vec::new();
-    let mut existing = path;
-    loop {
-        if let Ok(found) = std::fs::canonicalize(existing) {
-            return rest
-                .iter()
-                .rev()
-                .fold(found, |found, name| found.join(name));
-        }
-        match (existing.parent(), existing.file_name()) {
-            (Some(parent), Some(name)) => {
-                rest.push(name);
-                existing = parent;
-            }
-            _ => return path.to_path_buf(),
-        }
     }
 }
 
@@ -136,8 +110,12 @@ fn spells(name: &str, own: &str) -> bool {
     slot.eq_ignore_ascii_case(own)
 }
 
+use pitboard_core::testing::desktop::{self, JarAs, Person};
+use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::sync::mpsc::{self, RecvTimeoutError};
+use std::time::{Duration, Instant};
 
 const SECURITY: &str = "/usr/bin/security";
 
@@ -334,6 +312,10 @@ impl Env {
             ("CLAUDE_CONFIG_DIR", self.root.clone().into_os_string()),
             ("CODEX_HOME", self.codex_home().into_os_string()),
             ("PITBOARD_HOME", self.root.join("pitboard").into_os_string()),
+            (
+                "PITBOARD_TEST_CLAUDE_DESKTOP",
+                self.root.join("claude").into_os_string(),
+            ),
             ("PITBOARD_API_BASE", self.server.url().into()),
             ("PATH", os::search_path(&self.root.join("bin"))),
         ];
@@ -953,6 +935,174 @@ impl Env {
     }
 }
 
+// Claude Desktop accounts, each a session of its own, as a test's Claude signs in to them.
+pub const WORK: Person = Person {
+    uuid: "6f1c0a52-1111-4a6e-9d0b-2f6c1a9e7b10",
+    session: "work-session",
+};
+pub const HOME: Person = Person {
+    uuid: "b2aa91c4-3333-4c7a-a1d2-5e8f0c21d4e5",
+    session: "home-session",
+};
+pub const TRAVEL: Person = Person {
+    uuid: "c3bb02d5-5555-4d8b-b2e3-6f9a1d32e5f6",
+    session: "travel-session",
+};
+
+impl Env {
+    // This test's own Claude: its data folder `data` and its app `Claude.app`, never the real ones.
+    pub fn claude_desktop(&self) -> PathBuf {
+        self.root.join("claude")
+    }
+
+    // Claude closed and signed in to `who`, as it leaves its folder, with a SQLite jar.
+    pub fn plant_desktop(&self, who: &Person) {
+        desktop::plant(&self.claude_desktop().join("data"), who, JarAs::Sqlite);
+    }
+
+    // What Claude writes as it quits signed in to `who`, over whatever its folder holds.
+    pub fn claude_signs_in(&self, who: &Person) {
+        desktop::sign_in_on_disk(&self.claude_desktop().join("data"), who, JarAs::Sqlite);
+    }
+
+    // The stand-in under this test's own `Claude.app`, which `ps` lists there as Claude.
+    pub fn open_claude(&self) -> RunningClaude {
+        let program = self
+            .claude_desktop()
+            .join("Claude.app/Contents/MacOS/Claude");
+        std::fs::create_dir_all(program.parent().expect("its folder")).unwrap();
+        put_stand_in(
+            &program,
+            &Script::Plays {
+                args: None,
+                steps: vec![Step::WaitsForALine],
+            },
+        );
+        // Its input stays open, and nothing is typed to it, so it runs until it is dropped.
+        let running = Command::new(&program)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("the stand-in Claude starts");
+        RunningClaude(running)
+    }
+
+    // `pitboard <args>` left running, its standard error read a line at a time.
+    pub fn running(&self, args: &[&str]) -> Running {
+        let mut running = self
+            .command(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("pitboard starts");
+        let stderr = running.stderr.take().expect("its standard error");
+        let (send, lines) = mpsc::channel();
+        std::thread::spawn(move || {
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                if send.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+        Running {
+            running,
+            lines,
+            said: Vec::new(),
+        }
+    }
+
+    // A whole sign-in inside Claude: Claude opened once Pitboard waits, `who` signed in, quit.
+    pub fn sign_in_inside_claude(&self, args: &[&str], who: &Person) -> (String, String, i32) {
+        let mut signing_in = self.running(args);
+        signing_in.until("Waiting for Claude to quit");
+        let claude = self.open_claude();
+        signing_in.until("Claude is open.");
+        self.claude_signs_in(who);
+        drop(claude);
+        signing_in.finish()
+    }
+
+    // `desktop/work` in use and `desktop/home` parked, by a real enrolment, sign-in and switch.
+    pub fn desktop_accounts(&self) {
+        self.plant_desktop(&WORK);
+        let (_, err, code) = self.run(&["enroll", "desktop/work"]);
+        assert_eq!(code, 0, "enroll desktop/work: {err}");
+        let (_, err, code) =
+            self.sign_in_inside_claude(&["enroll", "desktop/home", "--sign-in"], &HOME);
+        assert_eq!(code, 0, "enroll desktop/home --sign-in: {err}");
+        let (_, err, code) = self.run(&["use", "desktop/work"]);
+        assert_eq!(code, 0, "use desktop/work: {err}");
+    }
+}
+
+// Killed and reaped on drop, panic or not: CI waits on a process a test leaves behind.
+pub struct RunningClaude(std::process::Child);
+
+impl Drop for RunningClaude {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+// Killed and reaped on drop, as `RunningClaude` is.
+pub struct Running {
+    running: std::process::Child,
+    lines: mpsc::Receiver<String>,
+    said: Vec<String>,
+}
+
+impl Running {
+    // Every line said so far, once one starting with `line` has been, within a minute.
+    pub fn until(&mut self, line: &str) -> Vec<String> {
+        loop {
+            let next = self
+                .lines
+                .recv_timeout(Duration::from_secs(60))
+                .unwrap_or_else(|_| panic!("no `{line}` within a minute: {:?}", self.said));
+            let found = next.starts_with(line);
+            self.said.push(next);
+            if found {
+                return self.said.clone();
+            }
+        }
+    }
+
+    // What it printed and its exit status, once it has ended, within a minute.
+    pub fn finish(mut self) -> (String, String, i32) {
+        let deadline = Instant::now() + Duration::from_secs(60);
+        // Its standard error closes as it exits, and nothing it starts keeps it.
+        loop {
+            match self
+                .lines
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            {
+                Ok(line) => self.said.push(line),
+                Err(RecvTimeoutError::Disconnected) => break,
+                Err(RecvTimeoutError::Timeout) => {
+                    panic!("still running after a minute: {:?}", self.said)
+                }
+            }
+        }
+        let status = self.running.wait().expect("its status");
+        let mut out = String::new();
+        if let Some(mut stdout) = self.running.stdout.take() {
+            let _ = stdout.read_to_string(&mut out);
+        }
+        let err: String = self.said.iter().map(|line| format!("{line}\n")).collect();
+        (out, err, status.code().unwrap_or(-1))
+    }
+}
+
+impl Drop for Running {
+    fn drop(&mut self) {
+        let _ = self.running.kill();
+        let _ = self.running.wait();
+    }
+}
+
 impl Env {
     /// Every park this test's Pitboard names: in its account index, parked or discarded, and
     /// in the record of a switch left interrupted, which names its parks there and nowhere
@@ -965,12 +1115,18 @@ impl Env {
         };
         let mut named = Vec::new();
         if let Some(v) = read("state.json") {
+            // Schema 7 lists each as its name.
+            let discarded = v["discarded"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|d| if d.is_string() { d } else { &d["service"] });
             let parked = v["accounts"]
                 .as_array()
                 .into_iter()
                 .flatten()
                 .map(|a| &a["parked"]["service"])
-                .chain(v["discarded"].as_array().into_iter().flatten());
+                .chain(discarded);
             named.extend(
                 parked
                     .filter_map(serde_json::Value::as_str)

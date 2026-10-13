@@ -797,7 +797,7 @@ pub(crate) fn judge(
         Decision::Hold(hold) => return Judged::Hold(hold),
         Decision::Switch(plan) => plan,
     };
-    let overridden = crate::provider::of(ProviderId::Claude).overridden_by(ctx);
+    let overridden = crate::provider::claude_code().overridden_by(ctx);
     if overridden.is_empty() {
         return Judged::Switch(plan);
     }
@@ -836,9 +836,11 @@ mod tests {
             parked: (!signed_in).then(|| Park {
                 service: format!("pitboard-park-{label}-1"),
                 parked_at: NOW,
-                refresh_fingerprint: label.into(),
+                kind: crate::state::ParkKind::Vault,
+                login: label.into(),
                 access_expires_at: Some(NOW + 3600),
                 refresh_expires_at: Some(NOW + 30 * 86_400),
+                session_expires_at: None,
             }),
             usage: Some(Snapshot {
                 windows,
@@ -849,6 +851,7 @@ mod tests {
             }),
             stale: None,
             plan: None,
+            read_at: None,
         }
     }
 

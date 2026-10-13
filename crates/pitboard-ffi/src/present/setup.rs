@@ -5,6 +5,7 @@ use super::accounts::in_order;
 use super::notices::INSTALL_CLAUDE_CODE;
 use super::words;
 use super::{AccountsShown, Choice, Footing, Seen, SetupStep};
+use crate::model::state::in_its_app;
 use crate::model::{Intent, Sheet};
 
 /// How far along setting Pitboard up this machine is, worked out across every tool.
@@ -93,16 +94,26 @@ pub(crate) fn step(seen: &Seen, footing: &Footing) -> Option<SetupStep> {
             })
         }
         Footing::OnlyOne { provider, label } => {
-            let tool = seen
-                .tool_if_shown(provider)
-                .map(|tool| format!("{tool} "))
-                .unwrap_or_default();
+            let in_its_app = in_its_app(provider);
+            let named = if in_its_app {
+                Some(seen.tool_name(provider))
+            } else {
+                seen.tool_if_shown(provider)
+            };
+            let tool = named.map(|tool| format!("{tool} ")).unwrap_or_default();
+            let adding = if in_its_app {
+                format!(
+                    "Adding another parks this one while you sign in to the other in {}.",
+                    seen.program_of(provider)
+                )
+            } else {
+                "Adding another signs in to it and parks its login beside this one.".into()
+            };
             Some(SetupStep {
                 title: format!("Add a second {tool}account"),
                 detail: format!(
                     "{label} is the only {tool}account Pitboard knows, so there’s nothing to \
-                     switch to. Adding another signs in to it and parks its login beside this \
-                     one."
+                     switch to. {adding}"
                 ),
                 actions: vec![
                     Choice {
@@ -137,13 +148,13 @@ pub(crate) fn step(seen: &Seen, footing: &Footing) -> Option<SetupStep> {
 /// known at all or what is known is empty. A machine without Claude Code says that instead.
 pub(crate) fn accounts_shown(seen: &Seen, footing: &Footing) -> AccountsShown {
     let names: Vec<&str> = seen.tools.iter().map(|tool| tool.name.as_str()).collect();
+    let names = words::listed(&names);
     match footing {
         Footing::NoClaudeCode => AccountsShown::NoTool {
             title: "Claude Code Isn’t Installed".into(),
             detail: format!(
-                "Pitboard switches the logins of {}, so there is nothing for it to do until \
-                 one of them is installed and signed in once.",
-                names.join(" and ")
+                "Pitboard switches the logins of {names}, so there is nothing for it to do \
+                 until one of them is installed and signed in once."
             ),
             link_title: "How to Install Claude Code".into(),
             link: INSTALL_CLAUDE_CODE.into(),
@@ -214,4 +225,43 @@ pub(crate) fn updated_window(seen: &Seen) -> String {
         .updated_ms
         .map(|ms| words::updated(&seen.clock(ms.div_euclid(1000))))
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::present::testing::{Utc, claude_desktop, desktop_account, read, status};
+    use crate::present::{AccountsShown, present_on};
+    use pitboard_core::host::Os;
+
+    #[test]
+    fn one_claude_desktop_account_is_offered_a_second_in_its_own_words() {
+        let state = read(
+            status(vec![desktop_account("work", true)], Vec::new()),
+            vec![claude_desktop()],
+        );
+        let step = present_on(Os::MacOs, &state, 0, &Utc)
+            .setup
+            .expect("a second account offered");
+        assert_eq!(step.title, "Add a second Claude Desktop account");
+        assert_eq!(
+            step.detail,
+            "work is the only Claude Desktop account Pitboard knows, so there’s nothing to \
+             switch to. Adding another parks this one while you sign in to the other in Claude."
+        );
+    }
+
+    #[test]
+    fn a_mac_with_no_tool_lists_every_tool() {
+        let state = read(status(Vec::new(), Vec::new()), Vec::new());
+        let AccountsShown::NoTool { detail, .. } =
+            present_on(Os::MacOs, &state, 0, &Utc).accounts_shown
+        else {
+            panic!("no tool here");
+        };
+        assert_eq!(
+            detail,
+            "Pitboard switches the logins of Claude Code, Codex and Claude Desktop, so there is \
+             nothing for it to do until one of them is installed and signed in once."
+        );
+    }
 }

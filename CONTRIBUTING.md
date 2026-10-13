@@ -42,9 +42,10 @@ and later, the `rust-version` in `Cargo.toml`.
    compiles. Read the region again right before changing it, and the diff after. An empty
    or surprisingly small diff is the symptom.
 3. Measure the tool. Claude Code's behaviour here is undocumented, Codex's moves with its
-   source, and both ship several times a week. A claim about either needs an experiment or
-   a reading of a named build, recorded in a test, the tool's register or the commit
-   message. [Tool registers](#tool-registers) says how.
+   source, and Claude Desktop documents none of the files Pitboard moves. Claude Code and
+   Codex ship several times a week. A claim about any of them needs an experiment or a
+   reading of a named build, recorded in a test, the tool's register or the commit message.
+   [Tool registers](#tool-registers) says how.
 
 ## Check a change
 
@@ -77,6 +78,9 @@ CI checks the workspace on Rust 1.91 too:
 cargo hack check --rust-version --workspace-behavior=cargo --workspace --all-targets --locked
 ```
 
+Only a Mac compiles `rusqlite`, so CI also checks `pitboard-core`, `pitboard` and
+`pitboard-ffi` on Rust 1.91 on a Mac.
+
 Some code compiles only on Linux. To lint it from a Mac:
 
 ```sh
@@ -94,6 +98,14 @@ cargo build --locked -p pitboard --example stand-in
 
 Unit tests run on `MemoryHost` and `Context::for_unit_test`, which reach no real home.
 Integration tests use the harness in `crates/pitboard/tests/common`.
+
+A build for tests finds Claude Desktop only in a scratch folder a test names, with
+`Context::with_scratch_claude` or `PITBOARD_TEST_CLAUDE_DESKTOP`. Claude's data folder is
+its `data`, and a program counts as Claude only inside its `Claude.app`. A folder that is,
+holds or lies in the account's own `Library/Application Support` or a `Claude.app` under
+either `Applications` panics. So does one named through `..`. The harness names one in each
+test's own folder, and starts the stand-in under its `Claude.app` where a test needs Claude
+open. `pitboard_core::testing::desktop` writes a data folder as Claude leaves one.
 
 As root, under `sudo`, from an elevated terminal on Windows, or on a file system without Unix
 modes, some tests fail and say why.
@@ -180,7 +192,9 @@ must never be started.
 
 `fixture_names()` lists the worlds, and a name that is none of them stops the launch and
 names them all. A fixture's Claude Code sign-in takes a code typed back as `<code>#<state>`,
-such as `fixture-code#state`.
+such as `fixture-code#state`. On macOS, `claudeDesktop` and `claudeDesktopOpen` hold Claude
+Desktop, with a stand-in Claude that is open in the second. Opened for a sign-in, it signs in
+to a third account and quits.
 
 The UI tests start the debug build, each in a fixture of its own. Run them from Xcode with
 **Product** > **Test**, or with:
@@ -297,12 +311,18 @@ and says which are still there:
 ```sh
 cargo run -p pitboard-conformance -- <claude binary>
 cargo run -p pitboard-conformance -- <codex binary> --provider codex
+cargo run -p pitboard-conformance -- <app.asar> --provider desktop
 ```
 
 Point it at the tool's native binary, not the npm wrapper, which carries none.
 `npm pack @anthropic-ai/claude-code-<system>@<version>` holds `claude`, and
 `npm pack @openai/codex@<version>-<system>` holds `codex` under `vendor/`. `<system>` is one
 of `darwin-arm64`, `linux-x64`, `win32-x64` and `win32-arm64`.
+
+Claude Desktop's register is read by hand from `Contents/Resources/app.asar` in Claude's
+bundle, on a Mac where Claude is installed. No conformance job reads it, since where its
+builds are published is not recorded. The checker reads the bundle, not the data folder, and
+never starts Claude.
 
 The checker exits 1 when a fact has moved: a literal it needs is gone, or one the fact rules
 out has turned up. It exits 2 when it cannot make sense of its arguments, read the binary or

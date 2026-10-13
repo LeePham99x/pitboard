@@ -206,10 +206,12 @@ pub enum Intent {
     /// question about quitting an app back to the front. Where an app keeps the tool's login
     /// in memory, as ChatGPT keeps Codex's, the switch waits on `Snapshot::quit_question`.
     SwitchTo { qualified: String },
-    /// The person let Pitboard quit the app the quit question for the switch to `qualified`
-    /// names: it is asked to quit the way a person quits it, the switch is made once it has,
-    /// and the copy that was running is opened again whether or not the switch worked. An
-    /// app still open after thirty seconds stops the switch before anything has changed.
+    /// The person let Pitboard quit the app the quit question last asked names, whatever it
+    /// asked for: a switch, a sign-in, recording an account. It is asked to quit the way a
+    /// person quits it, what was asked for is done once it has, and the copy that was running
+    /// is opened again where the core says it may be. An app still open after thirty
+    /// seconds, or one that leaves part of itself running, stops it before anything has
+    /// changed.
     ///
     /// It names the question it answers, as AppModel.swift's quitAndSwitch took it, because
     /// an alert can say it closed before its button acts: it is taken before or after
@@ -217,8 +219,7 @@ pub enum Intent {
     /// switch has been asked for in that question's place.
     QuitAndSwitch { qualified: String },
     /// The person kept the app open, or the question was closed some other way: the quit
-    /// question goes, and nothing is switched. The answer of the button that closed it, sent
-    /// after this, still switches.
+    /// question goes, and nothing is switched.
     KeepAppOpen,
     /// Somebody has read what `provider`'s tool's last switch said, and put it away.
     DismissSwitch { provider: String },
@@ -233,11 +234,15 @@ pub enum Intent {
     /// Sign in to `provider`'s tool, a `Tool`'s code, through the tool's own sign-in in a
     /// browser, as the account to be called `name`: a new account, or one enrolled already
     /// whose parked login can no longer be used, signed in to again, as the Swift model signs
-    /// in to both. The name is taken without the white space around it, and one with nothing
-    /// else in it starts nothing. One sign-in at a time: asked for while one is under way, it
-    /// does nothing. What goes wrong is said in the sheet it was started from, or in the
-    /// window where that sheet has gone, and the sheet closes once the sign-in has finished.
-    /// Signing in again to the account in use is kept as what its tool's last switch said.
+    /// in to both. For a tool that signs in inside its app, as `State::in_app_add` decides,
+    /// the account the app is signed in to is recorded under `name`, or the account in use is
+    /// parked and the app watched until it quits signed in, each asked through the quit
+    /// question first. The name is taken without the white space around it, and one with
+    /// nothing else in it starts nothing. One sign-in at a time: asked for while one is under
+    /// way, it does nothing. What goes wrong is said in the sheet it was started from, or in
+    /// the window where that sheet has gone, and the sheet closes once the sign-in has
+    /// finished. Signing in again to the account in use is kept as what its tool's last
+    /// switch said.
     SignIn { provider: String, name: String },
     /// Type back the code the browser showed, to the sign-in under way, once its tool asks
     /// for one: `RunningSignIn::wants_code`. Taken without the white space around it, and one
@@ -270,7 +275,8 @@ pub enum Intent {
     /// `name_to_save` takes it, and one with nothing else in it saves nothing; nor does a
     /// second Save from a sheet already saving. Once enrolled, the sheet naming a login of
     /// that tool closes, and only that one, and the accounts are read; what goes wrong is
-    /// said in the sheet it was asked from, or in the window where that sheet has gone.
+    /// said in the sheet it was asked from, or in the window where that sheet has gone. For a
+    /// tool that signs in inside its app it is asked through the quit question first.
     Enrol { provider: String, name: String },
     /// Give the account `label` of `provider`'s tool the name `to`, inside its own tool: the
     /// Rename sheet's Save, by the same rules, and a name it has already saves nothing. What
@@ -433,12 +439,8 @@ pub struct RunningSignIn {
     pub code_refused: bool,
 }
 
-/// A switch waiting for the person to let Pitboard quit an app first: the app keeps the
-/// tool's login in memory, would go on with the account switched away from, and its own
-/// sign-out would revoke the login Pitboard had just parked.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct QuitQuestion {
-    /// The account to switch to, its label with its tool.
     pub qualified: String,
     /// The app, as the core's holder detection names it and `AppControl` takes it: on macOS
     /// its bundle id.
@@ -479,6 +481,9 @@ pub struct LastSwitch {
     pub said: Option<String>,
     /// What the switch warned about, every warning of it.
     pub warnings: Vec<Warning>,
+    // For a tool whose app holds the login from when it is next opened: that, as a sentence.
+    #[uniffi(default)]
+    pub opens: Option<String>,
 }
 
 /// Something a person asked for that did not happen, for the window to say: an alert's
@@ -560,9 +565,6 @@ pub struct Snapshot {
     /// label with its tool, from the moment it is asked for until the read after it has
     /// landed. Nothing else is switched meanwhile, so the menu and the rows hold back.
     pub switch_under_way: Option<String>,
-    /// A switch waiting for the person to let Pitboard quit an app first, to ask in the
-    /// window: `Intent::QuitAndSwitch` with its `qualified`, or `Intent::KeepAppOpen`,
-    /// answers it.
     pub quit_question: Option<QuitQuestion>,
     /// What each tool's last switch said that is still true, one per tool at most: a tool's
     /// newer switch takes the place of what its last said, and one kept once the last was put
@@ -705,17 +707,6 @@ pub trait ModelListener: Send + Sync {
     fn changed(&self, snapshot: Snapshot) -> Result<(), PlatformError>;
 }
 
-/// Other apps on this machine, by an app id, which Pitboard may quit and open again around a
-/// switch: one that runs a tool for itself and keeps the tool's login in memory while it is
-/// open, as ChatGPT does with Codex's. The id is the one the core's holder detection names
-/// an app by, which on macOS is its bundle id. What names an app on Windows is still the
-/// owner's to decide, and the id is one string so that a Windows id fits.
-///
-/// Only quitting the way a person quits an app and opening one again are offered: never a
-/// forced quit, which would lose whatever the app had not saved. Called on a thread of the
-/// model's own, never the app's main thread, one call at a time. An error from `running` or
-/// `request_quit` is taken as the app still running, since Pitboard never switches under an
-/// app it could not see go; one from `reopen` leaves the app for the person to open.
 #[uniffi::export(with_foreign)]
 pub trait AppControl: Send + Sync {
     /// Where the running copy of the app was opened from, which is what `reopen` takes, or
@@ -724,12 +715,9 @@ pub trait AppControl: Send + Sync {
     /// Asks the app to quit the way a person quits it, which lets it ask about work in
     /// progress. Returns at once; the app may take a while, or decline.
     fn request_quit(&self, app: String) -> Result<(), PlatformError>;
-    /// Opens the app at `location` again, as `running` gave it, the way the system's own
-    /// shell would, without bringing it to the front: whatever Pitboard has to say about the
-    /// switch stays in front of it. Not called `open`, which UniFFI 0.31.2's list of Swift
-    /// keywords has: it writes a name on that list in backticks into the C header's table
-    /// of calls as well as into the Swift, and no C compiler takes it there.
-    fn reopen(&self, location: String) -> Result<(), PlatformError>;
+    // Not `open`, which UniFFI 0.31.2 backticks into the C header and no C compiler takes.
+    // front: brought to the front, for a sign-in in the app; otherwise behind Pitboard's window
+    fn reopen(&self, location: String, front: bool) -> Result<(), PlatformError>;
 }
 
 /// The app's model. Making one starts its threads and asks nothing of anyone: the core is
