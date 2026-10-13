@@ -202,12 +202,11 @@ of the same name. When Homebrew does that is under [Homebrew](#homebrew).
 Before 0.4.0, the cask `pitboard` installed the app. Anyone still on that old app cask has
 their app replaced by the command line, once. That cost was accepted.
 
-Four places give the same three commands to get the app back, in the same order. Change all
-four together:
+Three places give the same three commands to get the app back, in the same order. Change all
+three together:
 
 - The 0.4.0 entry in CHANGELOG.md.
 - `packaging/tap-README.md`.
-- The caveats in `packaging/pitboard.rb`.
 - `docs/install/upgrade-from-0-3-0.mdx`.
 
 After the `tap` job, the `brew` job installs from the public tap on a clean macOS runner and

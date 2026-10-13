@@ -61,11 +61,11 @@ cask "pitboard" do
 
   caveats <<~EOS
     On macOS the menu bar app is the pitboard-app cask, and it includes this command line.
-    To switch to it, or to get back an app the old pitboard cask installed:
+    To switch to it:
       brew uninstall --cask pitboard
-      brew uninstall --formula --force pitboard
       brew install --cask datlechin/tap/pitboard-app
-    The second line removes 0.3.0's formula if it is still there, and does nothing if not.
+    If this replaced an app the old pitboard cask installed, see
+    https://docs.usepitboard.com/install/upgrade-from-0-3-0
 
     To remove Pitboard with the logins it parked, run `pitboard uninstall` before
     `brew uninstall`.
