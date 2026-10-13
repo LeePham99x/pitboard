@@ -1,0 +1,80 @@
+name: Windows runner facts
+
+# A measurement, not a check: what an image does can change with no commit, and no pull
+# request can fix that. Run it by hand when a fact is wanted, such as after a Windows image
+# changes.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  facts:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            triple: x86_64-pc-windows-msvc
+          - os: windows-11-arm
+            triple: aarch64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      RUSTFLAGS: -D warnings -C target-feature=+crt-static --cfg pitboard_unreleased_windows
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      # An x64 Rust that an ARM64 image ran under emulation would build x64 programs.
+      - name: Rust builds for this leg's machine
+        env:
+          TRIPLE: ${{ matrix.triple }}
+        run: |
+          host=$(rustc -vV | sed -n 's/^host: //p')
+          echo "Rust's host is $host"
+          test "$host" = "$TRIPLE"
+      # The pitboard.exe a 0.x release is built as, which refuses everything.
+      - env:
+          RUSTFLAGS: -D warnings -C target-feature=+crt-static
+          CARGO_TARGET_DIR: target/gated
+        run: cargo build --locked -p pitboard
+      - run: cargo build --locked -p pitboard-probe
+      # What the owner's VM session runs. The VM fetches nothing itself, so the owner copies
+      # these in. Uploaded before the runner facts, so a runner-facts failure still leaves them.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: vm-session-${{ matrix.triple }}
+          path: |
+            target/debug/pitboard-probe.exe
+            target/debug/pitboard-probe-detached.exe
+            target/debug/pitboard-probe-detached-asmv1.exe
+            target/debug/pitboard-probe-sparse.exe
+            target/gated/debug/pitboard.exe
+          if-no-files-found: error
+          retention-days: 30
+      # The runner facts W12, W13, W16 and W17 are decided from, as the job's user on this
+      # disposable runner: the probe's safe blocks, the machine's policies, an exFAT and a
+      # FAT32 VHD made with diskpart, and a throwaway standard user started with
+      # Start-Process -Credential, with Developer Mode and then the symbolic-link right given
+      # for one run each. The script says what it changes and undoes it, and fails the step
+      # when a probe report is missing or cannot be parsed.
+      - name: Runner facts
+        shell: pwsh
+        env:
+          TRIPLE: ${{ matrix.triple }}
+        run: >
+          ./.github/scripts/runner-facts.ps1 -Probe target/debug/pitboard-probe.exe
+          -Triple $env:TRIPLE -Out (Join-Path $env:RUNNER_TEMP 'runner-facts.json')
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: runner-facts-${{ matrix.triple }}
+          path: ${{ runner.temp }}/runner-facts.json
+          if-no-files-found: warn

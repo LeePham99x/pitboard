@@ -98,7 +98,6 @@ extension Level {
 
 /// The symbols that mean one thing each, wherever they appear.
 enum Symbol {
-    static let menuBar = "speedometer"
     static let account = "person.crop.circle"
     static let accountInUse = "person.crop.circle.fill.badge.checkmark"
     static let accounts = "person.2"
@@ -113,6 +112,8 @@ enum Symbol {
     static let update = "arrow.down.circle"
     static let terminal = "terminal"
     static let general = "gearshape"
+    static let limits = "gauge.open.with.lines.needle.33percent"
+    static let renewal = "calendar.badge.clock"
     /// An account's window on its site.
     static let site = "globe"
     /// Back and forward in a window, which mirror for a language read right to left.

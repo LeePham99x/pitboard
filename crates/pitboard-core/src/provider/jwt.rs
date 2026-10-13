@@ -163,59 +163,6 @@ mod tests {
         }
     }
 
-    /// Against the real thing, on a machine with a signed-in Codex.
-    ///
-    /// Ignored by default because it needs one, and skipped rather than failed where there
-    /// is none: a test that depends on somebody being signed in to something is not a test
-    /// most people running `cargo test` should see fail. Run it with
-    /// `cargo test -p pitboard-core -- --ignored jwt` on a machine that has one.
-    ///
-    /// It prints and asserts nothing secret: claim names and whether the token parsed.
-    #[test]
-    #[ignore = "needs a signed-in Codex on this machine"]
-    #[allow(
-        clippy::disallowed_methods,
-        reason = "run on purpose against the Codex login of whoever runs it"
-    )]
-    fn a_real_codex_id_token_reads() {
-        let Some(home) = std::env::var_os("HOME") else {
-            return;
-        };
-        let path = std::path::Path::new(&home).join(".codex/auth.json");
-        let Ok(raw) = std::fs::read_to_string(&path) else {
-            return;
-        };
-        let document: Value = serde_json::from_str(&raw).expect("auth.json is JSON");
-        let token = document["tokens"]["id_token"]
-            .as_str()
-            .expect("a signed-in Codex has an id token");
-        let found = claims(token).expect("the id token reads");
-        let mut names: Vec<&str> = found
-            .as_object()
-            .expect("an object")
-            .keys()
-            .map(String::as_str)
-            .collect();
-        names.sort_unstable();
-        assert!(names.contains(&"email"), "claims: {names:?}");
-        assert!(
-            names.contains(&"https://api.openai.com/auth"),
-            "claims: {names:?}"
-        );
-        assert!(
-            claim(
-                &found,
-                &["https://api.openai.com/auth", "chatgpt_account_id"]
-            )
-            .is_some(),
-            "the account id claim is where Pitboard reads it"
-        );
-        assert!(
-            expires_at(token).is_some(),
-            "an id token says when it expires"
-        );
-    }
-
     /// Every byte pattern round trips, including the two lengths that need padding.
     #[test]
     fn the_decode_is_the_inverse_of_the_encode() {

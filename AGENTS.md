@@ -78,6 +78,7 @@ cargo fmt --check
 cargo clippy --all-targets --locked
 cargo test --locked -- --skip writing_preserves_attributes
 cargo deny check
+cargo semver-checks --package pitboard-core
 ```
 
 For the app, build the core's bindings once, with the fixtures its debug build, its UI tests
@@ -100,6 +101,8 @@ fixtures and UI tests.
   a test or the commit message. [Tool registers](CONTRIBUTING.md#tool-registers) says how.
 - A change people would notice gets an entry under `## [Unreleased]` in
   [CHANGELOG.md](CHANGELOG.md).
+- A change that breaks `pitboard-core`'s public API raises the minor version in
+  `Cargo.toml` in the same pull request, unless `main` is already ahead of the last release.
 - A commit subject is one present-tense sentence saying what Pitboard does after the
   change, with no prefix. The body says why, and what was measured.
 

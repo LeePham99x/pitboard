@@ -22,7 +22,7 @@ struct MenuBarLabel: View {
         // first, and an item that is only text is the widest thing up there. A Label would
         // render as the icon alone, so both are placed by hand.
         HStack(spacing: 4) {
-            Image(systemName: Symbol.menuBar)
+            Image(nsImage: MenuBarMark.image)
             if !title.isEmpty {
                 Text(title).monospacedDigit()
             }

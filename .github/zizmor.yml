@@ -1,0 +1,4 @@
+rules:
+  # Asks for GitHub's `uses: $/...` form, which actionlint 1.7.12 does not know yet.
+  self-repository:
+    disable: true

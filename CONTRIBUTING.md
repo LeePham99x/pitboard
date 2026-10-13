@@ -56,9 +56,8 @@ To work on the app, you need a Mac with Xcode, and its Swift must be 6.2 or late
    folder, in any spelling or piece, Codex's `cli|` and `secrets|` targets and anything
    under `Codex MCP Credentials`. A test writes only `pitboard-citest-*` names, the parks
    Pitboard names, and its own slot. A Codex test that writes points `CODEX_HOME` at a
-   scratch directory and never writes to `~/.codex`. The one ignored test that reads a real
-   `auth.json` only reads it. Nothing runs `codex login` or `codex logout` against a real
-   home, because both revoke the login stored there.
+   scratch directory and never writes to `~/.codex`. Nothing runs `codex login` or
+   `codex logout` against a real home, because both revoke the login stored there.
 
 4. Measure the tool, do not guess at it. Claude Code's behaviour here is undocumented,
    Codex's moves with its source, and both ship several times a week. A claim about either
@@ -165,23 +164,34 @@ CI also runs:
 
 - clippy and the tests on both macOS and Linux, and both again for `pitboard-ffi` with its
   fixtures
-- `cargo check --workspace --all-targets --locked` on Rust 1.91, and again for `pitboard-ffi`
-  with its fixtures, on Linux and on Windows
+- `cargo hack check --rust-version`, which checks the workspace on the `rust-version` in
+  `Cargo.toml`, and again for `pitboard-ffi` with its fixtures, on Linux and on Windows
 - the Windows job, on x64 and ARM64: the release gate proved on a build made as a release is,
   then clippy and the tests [Windows](#windows) lists
-- the app job: the core, the command line and the bindings checked on Rust 1.91, since only
-  a Mac compiles `rusqlite`, then `swift format lint --strict`,
-  `./apps/macos/scripts/build-app.sh`, a check that the command line inside the app runs and
-  holds both architectures, then `./apps/macos/scripts/build-xcframework.sh --fixture`,
-  `swift test` and the UI tests
+- the app job, on `macos-26` with Xcode 26.6, the newest Xcode that image has: the core,
+  the command line and the bindings checked on Rust 1.91, since only a Mac compiles
+  `rusqlite`, then `swift format lint --strict`, `./apps/macos/scripts/build-app.sh`, a
+  check that the command line inside the app runs and holds both architectures, then
+  `./apps/macos/scripts/build-xcframework.sh --fixture`, `swift test` and the UI tests, each
+  of which fails on its own after two minutes. Xcode 27.1, which development uses, is only on
+  GitHub's preview `xcode-27` image.
 - the C# job: the core's C# bindings generated, compiled and called against the core on
   Linux, as the Windows app will call them, then against the core built with its fixtures,
   whose bindings must be the same and whose model a test starts
-- `cargo semver-checks --package pitboard-core`, which reports and does not block
+- `cargo semver-checks` on `pitboard-core`, against its last version on crates.io
 - the install script job, on macOS and Linux: `shellcheck` 0.11.0 on Linux, then
   `test-install.py` under every shell the job names for that system, with zsh and BusyBox
   installed on Linux
-- a guard that fails when `.github/workflows/rotation.yml` names a repository secret
+- the workflows job: `actionlint` and `zizmor` on everything under `.github`,
+  PSScriptAnalyzer on the PowerShell in `.github/scripts`, and a guard that fails when
+  `.github/workflows/rotation.yml` names a repository secret
+
+The `all-green` job waits for every other job and fails when any of them failed or was
+cancelled. It says in one place whether a run passed, so a job added to
+`.github/workflows/ci.yml` goes in its `needs`. A leg of a matrix that fails leaves the
+other legs running. A push to a pull request cancels the run it replaces, and each job stops
+at a time limit set from its recent runs. Only a run on `main` saves the Rust cache; a pull
+request restores what `main` saved.
 
 ## The app
 
@@ -216,6 +226,9 @@ swift test --package-path apps/macos
 They never make the model over this Mac. Most hand the app's model snapshots from a
 stand-in, and one starts a fixture's model to see the bindings carry a snapshot end to end;
 against a library built without fixtures it is skipped, and says so.
+
+A Swift warning fails the build, in the package and in the project, except in the generated
+bindings.
 
 The UI tests start the debug build, each in a fixture. A fixture is a machine in a known
 state, where nothing reaches the keychain, the network or your accounts. Run the UI tests
@@ -424,6 +437,14 @@ only, never a machine of your own: it refuses to run anywhere but a GitHub-hoste
 refuses `use` and `renew` there with `elevated`, in the words for an account whose every
 program runs elevated, and writes nothing.
 
+The runner facts are a measurement, not a check, so no pull request runs them.
+`.github/workflows/windows-facts.yml` runs `runner-facts.ps1` on both images and uploads the
+programs a VM session runs. Start it by hand:
+
+```sh
+gh workflow run windows-facts.yml
+```
+
 ## Tool registers
 
 Each tool's register is `crates/pitboard-core/src/provider/<tool>/assumptions.rs`. What a
@@ -534,8 +555,9 @@ under `## [Unreleased]`. The file follows
 
 - Put each entry under one of six types, in this order: `### Added`, `### Changed`,
   `### Deprecated`, `### Removed`, `### Fixed`, `### Security`.
-- Write one change per bullet: what changed for the person using Pitboard, and why.
-- Say in words when a change breaks something that worked before.
+- Write one change per bullet, in one or two sentences: what changed for the person using
+  Pitboard. How it works and what was measured go in the docs and the commit message.
+- Start an entry that breaks a script or a habit with `**Breaking:**`, and say what to do.
 - Put a security fix under `### Security`.
 - Make links inside an entry inline and absolute. A release's notes are cut from its
   section, without the link definitions at the end of the file.
@@ -547,13 +569,17 @@ The maintainer adds the version heading when making a release, as
 
 A pull request against `main` needs all of the following:
 
-- CI passes.
+- CI's `all-green` check passes.
 - A change in behaviour comes with a test that failed before the change, as
   [Rules](#rules) asks.
 - A changed snapshot comes with the reason the `--json` contract moved.
 - A dependency you add comes with a reason, and `cargo deny check` passes. It checks
   advisories, licences, bans and sources against `deny.toml`.
 - `CHANGELOG.md` has an entry, if someone using Pitboard would notice the change.
+- A change that removes, renames or reshapes anything public in `pitboard-core` raises the
+  minor version in `Cargo.toml`, and the `=` version of `pitboard-core` beside it, unless
+  `main` is already ahead of the last release. Then run `cargo update --workspace`.
+  [Prepare a release](RELEASING.md#prepare-a-release) says why.
 
 Since 0.3.0, most commit subjects are one present-tense sentence saying what Pitboard does
 after the change, with no prefix. An example is "The man page sets out every command instead

@@ -76,11 +76,11 @@ func windowsShown(
 
 /// A snapshot with nothing in it but what a test says, as a model that has read nothing yet
 /// would make one, numbered `revision`. Its account windows are those of `status`'s
-/// accounts unless a test says otherwise.
+/// accounts unless a test says otherwise, and `warming` are the accounts listed for warm-ups.
 func snapshot(
     _ revision: UInt64, status: Status? = nil, readFailure: ReadFailure? = nil,
     window: WindowRequest = WindowRequest(serial: 0, pane: nil),
-    windows: AccountWindowsShown? = nil
+    windows: AccountWindowsShown? = nil, warming: [WarmAccountShown] = []
 ) -> Snapshot {
     Snapshot(
         revision: revision, now: 0, reading: false, updatedAt: nil, status: status,
@@ -108,8 +108,8 @@ func snapshot(
                 on: false, at: 95, lowest: 50, highest: 99, enabled: true,
                 atLabel: "Switch when a limit reaches 95%", note: "", standing: nil),
             warm: WarmShown(
-                from: 360, to: 1320, rangeLabel: "06:00 to 22:00", accounts: [], standing: nil,
-                note: "", enabled: false)),
+                from: 360, to: 1320, rangeLabel: "06:00 to 22:00", accounts: warming,
+                standing: nil, note: "", enabled: false)),
         accountWindows: windows ?? windowsShown(status?.accounts ?? []))
 }
 

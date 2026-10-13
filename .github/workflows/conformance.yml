@@ -45,11 +45,15 @@ jobs:
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Fetch the Claude Code to check
         id: fetch
+        env:
+          VERSION: ${{ inputs.version }}
         run: |
-          version="${{ inputs.version }}"
+          version=$VERSION
           if [ -z "$version" ]; then
             version=$(npm view @anthropic-ai/claude-code version)
           fi
@@ -65,11 +69,13 @@ jobs:
 
       - name: Read Pitboard's facts out of it
         id: probe
+        env:
+          BINARY: ${{ steps.fetch.outputs.binary }}
         run: |
           cargo run --locked --release -p pitboard-conformance -- \
-            "${{ steps.fetch.outputs.binary }}" | tee report.txt
+            "$BINARY" | tee report.txt
           cargo run --locked --release -p pitboard-conformance -- \
-            "${{ steps.fetch.outputs.binary }}" --json > report.json
+            "$BINARY" --json > report.json
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
@@ -90,11 +96,15 @@ jobs:
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Fetch the Codex to check
         id: fetch
+        env:
+          VERSION: ${{ inputs.codex_version }}
         run: |
-          version="${{ inputs.codex_version }}"
+          version=$VERSION
           if [ -z "$version" ]; then
             version=$(npm view @openai/codex version)
           fi
@@ -109,11 +119,13 @@ jobs:
           echo "binary=$binary" >> "$GITHUB_OUTPUT"
 
       - name: Read Pitboard's facts out of it
+        env:
+          BINARY: ${{ steps.fetch.outputs.binary }}
         run: |
           cargo run --locked --release -p pitboard-conformance -- \
-            "${{ steps.fetch.outputs.binary }}" --provider codex | tee report.txt
+            "$BINARY" --provider codex | tee report.txt
           cargo run --locked --release -p pitboard-conformance -- \
-            "${{ steps.fetch.outputs.binary }}" --provider codex --json > report.json
+            "$BINARY" --provider codex --json > report.json
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
