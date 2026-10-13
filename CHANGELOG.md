@@ -17,8 +17,9 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 - The automatic switch, and the app's offer once an account runs out, prefer an account
   without a weekly limit for all models, such as a Team seat.
-- In `pitboard-core`, `usage::roomiest` is now `usage::preferred`, and `usage::Room` gains
-  `weekly`.
+- In `pitboard-core`, `usage::roomiest` is now `usage::preferred` and `usage::Room` gains
+  `weekly`; `autoswitch::retry_after` and its constants moved to `duty::cadence`, and
+  `autoswitch::Look` is now `duty::Look<Auto>`.
 
 ## [0.12.0] - 2026-10-12
 
