@@ -1,0 +1,33 @@
+name: Windows builds
+description: >
+  Checks that Rust builds for this runner's own machine, then builds pitboard.exe as a 0.x
+  release is built, in target/gated, and pitboard-probe in target/debug.
+
+inputs:
+  triple:
+    description: The target triple of this runner's machine.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # An x64 Rust that an ARM64 image ran under emulation would build, check and test x64.
+    - name: Rust builds for this runner's machine
+      shell: bash
+      env:
+        TRIPLE: ${{ inputs.triple }}
+      run: |
+        host=$(rustc -vV | sed -n 's/^host: //p')
+        echo "Rust's host is $host"
+        test "$host" = "$TRIPLE"
+    # No test-support and no cfg, so the release gate is closed. In a folder of its own, so
+    # the job's other builds keep theirs.
+    - name: pitboard.exe as a 0.x release builds it
+      shell: bash
+      env:
+        RUSTFLAGS: -D warnings -C target-feature=+crt-static
+        CARGO_TARGET_DIR: target/gated
+      run: cargo build --locked -p pitboard
+    - name: pitboard-probe
+      shell: bash
+      run: cargo build --locked -p pitboard-probe

@@ -10,8 +10,9 @@ updates:
       # UniFFI moves only together with the C# generator, uniffi-bindgen-cs, which is released
       # for one UniFFI version at a time. Cargo.toml says why.
       - dependency-name: "uniffi*"
+  # "/" alone reads the workflows only, not the actions under .github/actions.
   - package-ecosystem: github-actions
-    directory: /
+    directories: ["/", "/.github/actions/*"]
     schedule:
       interval: weekly
     cooldown:
