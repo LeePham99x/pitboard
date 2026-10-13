@@ -1,0 +1,168 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { test } from "node:test";
+import { headers, policy } from "./csp.mjs";
+import { SITE_BANNED, bannedFromDocs, checkPage, checkVersions, wordPattern } from "./guard.mjs";
+import { elements, parse, textOf } from "./html.mjs";
+
+const docs = readFileSync(new URL("../../docs/AGENTS.md", import.meta.url), "utf8");
+const ascii = new Set(Array.from({ length: 0x7f - 0x20 }, (_, i) => i + 0x20));
+const rules = {
+  banned: wordPattern([...bannedFromDocs(docs), ...SITE_BANNED]),
+  text: new Set([...ascii, 0x2019]),
+  mono: new Set([...ascii, 0xb7, 0x2019, 0x2588]),
+};
+
+const page = (body, head = "") => `<!doctype html><html lang="en"><head><title>Pitboard</title>
+<meta name="description" content="A page."><link rel="canonical" href="https://usepitboard.com/">
+<meta property="og:image" content="https://usepitboard.com/og.png"><meta property="og:image:alt" content="The logo.">
+<meta name="twitter:card" content="summary_large_image">${head}</head><body><main id="main"><h1>Pitboard</h1>${body}</main></body></html>`;
+
+const problems = (body, head) => checkPage("p.html", page(body, head), rules).problems;
+
+test("reads the Banned words from docs/AGENTS.md", () => {
+  const words = bannedFromDocs(docs);
+  for (const w of [
+    "simply",
+    "seamless",
+    "leverage",
+    "e.g.",
+    "click on",
+    "Welcome to",
+    "Note that",
+  ]) {
+    assert.ok(words.includes(w), w);
+  }
+  assert.ok(!words.includes("key"));
+});
+
+test("passes a page that keeps the rules", () => {
+  assert.deepEqual(
+    problems("<p>Pitboard switches accounts. Run <code>pitboard use work</code>.</p>"),
+    [],
+  );
+});
+
+test("finds banned words, dashes, dots and a lower-case name in the site's own words", () => {
+  const cases = [
+    ["<p>It is seamless.</p>", /"seamless"/],
+    ["<p>Simply run it.</p>", /"Simply"/],
+    ["<p>Switch, e.g. to work.</p>", /"e\.g\."/],
+    ["<p>Never hit a limit again.</p>", /"Never hit"/],
+    ["<p>Fast — and small.</p>", /en or em dash/],
+    ["<p>Open source · free</p>", /dot or badge/],
+    ["<p>Install pitboard first.</p>", /lower-case pitboard/],
+    ["<p>Plain █ block</p>", /U\+2588/],
+    ["<h1>Two</h1>", /has 2 h1/],
+    ['<p style="color:red">Red</p>', /style attribute/],
+    ['<button aria-controls="nope">Go</button>', /#nope/],
+  ];
+  for (const [body, why] of cases) assert.match(problems(body).join("\n"), why, body);
+});
+
+test("leaves program output and the changelog their own words", () => {
+  assert.deepEqual(problems("<pre data-output>now █ · just</pre>"), []);
+  assert.deepEqual(
+    problems("<div data-output><span>Enrolled personal, the account signed in now.</span></div>"),
+    [],
+  );
+  assert.deepEqual(
+    problems('<div data-source="changelog"><p>It now renews the login.</p></div>'),
+    [],
+  );
+  // a dash is wrong everywhere, the changelog included
+  assert.match(problems('<div data-source="changelog"><p>a – b</p></div>').join(), /dash/);
+});
+
+test("needs the metadata every page carries", () => {
+  const bare = "<!doctype html><html><head></head><body><h1>X</h1></body></html>";
+  const found = checkPage("bare.html", bare, rules).problems.join("\n");
+  for (const what of [
+    "no title",
+    "no description",
+    "no canonical",
+    "no og:image",
+    "no og:image:alt",
+    "no twitter:card",
+    "main#main",
+  ]) {
+    assert.match(found, new RegExp(what.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+});
+
+test("finds two releases on one site", () => {
+  const one = (v) =>
+    checkPage(
+      "x.html",
+      page(
+        `<a href="https://github.com/datlechin/pitboard/releases/download/v${v}/Pitboard-v${v}-macos.zip">Mac</a>`,
+      ),
+      rules,
+    );
+  assert.deepEqual(
+    checkVersions(
+      new Map([
+        ["a.html", one("0.12.0")],
+        ["b.html", one("0.12.0")],
+      ]),
+    ),
+    [],
+  );
+  assert.equal(
+    checkVersions(
+      new Map([
+        ["a.html", one("0.12.0")],
+        ["b.html", one("0.11.0")],
+      ]),
+    ).length,
+    1,
+  );
+});
+
+test("hashes inline scripts byte for byte and refuses style attributes and foreign scripts", () => {
+  const head = 'console.log("theme");\n';
+  const html = page(
+    "<p>Hi</p>",
+    `<script>${head}</script><script type="application/ld+json">{"a":1}</script><script type="module" src="/_astro/site.js"></script>`,
+  );
+  const { csp, problems: none } = policy([["index.html", html]]);
+  const hash = createHash("sha256").update(head).digest("base64");
+  assert.deepEqual(none, []);
+  assert.match(
+    csp,
+    new RegExp(`script-src 'self' 'sha256-${hash.replace(/[+/=]/g, "\\$&")}'; style-src 'self';`),
+  );
+  assert.doesNotMatch(csp, /cloudflareinsights/);
+  const beacon = policy([
+    [
+      "i.html",
+      page("", '<script defer src="https://static.cloudflareinsights.com/beacon.min.js"></script>'),
+    ],
+  ]);
+  assert.match(beacon.csp, /script-src 'self' https:\/\/static\.cloudflareinsights\.com;/);
+  assert.match(beacon.csp, /connect-src 'self' https:\/\/cloudflareinsights\.com;/);
+  assert.match(
+    policy([["s.html", page('<div style="x"></div>')]]).problems.join(),
+    /style attribute/,
+  );
+  assert.match(
+    policy([
+      ["e.html", page("", '<script src="https://cdn.example/x.js"></script>')],
+    ]).problems.join(),
+    /a script from/,
+  );
+  assert.match(headers("default-src 'self'", false), /^\s+Content-Security-Policy-Report-Only: /m);
+  assert.match(headers("default-src 'self'", true), /^\s+Content-Security-Policy: /m);
+});
+
+test("reads the HTML Astro writes", () => {
+  const root = parse(
+    '<p class="a">x &amp; <b>y</b><br>z<svg><use href="#i"/></svg></p><script>if (a < b) {}</script>',
+  );
+  const [p] = elements(root, "p");
+  assert.equal(p.attrs.class, "a");
+  assert.equal(textOf(p), "x & yz");
+  assert.equal(elements(root, "use").length, 1);
+  assert.equal(elements(root, "script")[0].children[0].raw, "if (a < b) {}");
+});

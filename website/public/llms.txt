@@ -1,0 +1,16 @@
+# Pitboard
+
+> Switch Claude Code and OpenAI's Codex CLI between accounts without signing out.
+
+Install the command line on macOS or Linux:
+
+```sh
+curl -fsSL https://usepitboard.com/install.sh | sh
+```
+
+- [Documentation](https://docs.usepitboard.com/llms.txt)
+- [Install](https://docs.usepitboard.com/install)
+- [Quickstart](https://docs.usepitboard.com/quickstart)
+- [Security](https://docs.usepitboard.com/security)
+- [Download](https://usepitboard.com/download)
+- [Changelog](https://usepitboard.com/changelog)

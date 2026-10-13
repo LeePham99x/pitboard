@@ -1,0 +1,108 @@
+---
+import "../styles/global.css";
+import headScript from "../scripts/head.js?raw";
+import interUrl from "../assets/fonts/Inter-4.1-opsz-wght.woff2?url";
+import monoUrl from "../assets/fonts/JetBrainsMono-2.304-wght.woff2?url";
+import SiteFooter from "../components/SiteFooter.astro";
+import SiteHeader from "../components/SiteHeader.astro";
+import { siteData } from "../lib/data.ts";
+import { SITE } from "../data/site.ts";
+
+interface Props {
+  title: string;
+  description: string;
+  current: "home" | "changelog" | "download" | null;
+  path: string | null;
+  jsonLd?: object[];
+}
+const { title, description, current, path, jsonLd = [] } = Astro.props;
+const { stars } = await siteData();
+const canonical = path === null ? null : `${SITE}${path}`;
+
+// one statement a line, comments and indentation dropped: the hash in the CSP covers this text
+const head = headScript
+  .split("\n")
+  .map((l) => l.trim())
+  .filter((l) => l && !l.startsWith("//"))
+  .join("\n");
+
+// Cloudflare Web Analytics, only when a token is given and only for the production branch
+const token = process.env.PUBLIC_CF_BEACON_TOKEN;
+const branch = process.env.WORKERS_CI_BRANCH;
+if (token && !/^[0-9a-f]{32}$/.test(token)) {
+  throw new Error("PUBLIC_CF_BEACON_TOKEN is not a Web Analytics token");
+}
+const beacon = token && (!branch || branch === "main") ? JSON.stringify({ token }) : null;
+const ogAlt =
+  "Pitboard's logo and the line: Switch Claude Code and OpenAI's Codex CLI between accounts without signing out.";
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="color-scheme" content="light dark" />
+    <meta
+      name="theme-color"
+      content="#ffffff"
+      media="(prefers-color-scheme: light)"
+      data-scheme="light"
+    />
+    <meta
+      name="theme-color"
+      content="#090b0b"
+      media="(prefers-color-scheme: dark)"
+      data-scheme="dark"
+    />
+    <script is:inline set:html={head} />
+    {canonical && <link rel="canonical" href={canonical} />}
+    {path === null && <meta name="robots" content="noindex" />}
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <link
+      rel="alternate"
+      type="application/rss+xml"
+      title="Pitboard releases"
+      href="/changelog/rss.xml"
+    />
+    <link rel="preload" href={interUrl} as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href={monoUrl} as="font" type="font/woff2" crossorigin />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Pitboard" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    {canonical && <meta property="og:url" content={canonical} />}
+    <meta property="og:image" content={`${SITE}/og.png`} />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={ogAlt} />
+    <meta name="twitter:card" content="summary_large_image" />
+    {jsonLd.map((data) => (
+      <script is:inline type="application/ld+json" set:html={JSON.stringify(data)} />
+    ))}
+    {beacon && (
+      <script
+        is:inline
+        defer
+        src="https://static.cloudflareinsights.com/beacon.min.js"
+        data-cf-beacon={beacon}
+      />
+    )}
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <slot name="defs" />
+    <SiteHeader current={current} stars={stars} />
+    <slot />
+    <SiteFooter />
+    <script>
+      import "../scripts/site.ts";
+    </script>
+  </body>
+</html>

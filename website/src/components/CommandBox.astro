@@ -1,0 +1,24 @@
+---
+import type { Command } from "../data/commands.ts";
+import { plainText } from "../lib/changelog.ts";
+
+interface Props {
+  command: Command;
+}
+const { command } = Astro.props;
+if (plainText(command.html) !== command.copy) {
+  throw new Error(`the command shown is not the one copied: ${command.copy}`);
+}
+---
+
+<div class="cmd">
+  <span class="cmd-p" aria-hidden="true">$</span
+  ><code class="cmd-code" set:html={command.html} /><button
+    class="cmd-copy"
+    type="button"
+    data-copy={command.copy}
+    aria-label="Copy the command"
+  >
+    Copy
+  </button>
+</div>
