@@ -2,6 +2,10 @@
 //! `limits[]` array or as named `five_hour`/`seven_day` objects; both are normalised at the
 //! boundary, and a value that fails to normalise is dropped rather than drawn.
 
+pub mod budget;
+pub mod pace;
+pub(crate) mod readings;
+
 use crate::time;
 use serde_json::Value;
 

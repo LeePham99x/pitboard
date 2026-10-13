@@ -2,9 +2,9 @@
 //! interrupted switch first and is recorded in the audit log, and what went wrong on the way
 //! is reported alongside the result, whether or not the change then succeeds.
 
-use crate::autoswitch::{Auto, Look, Threshold};
 use crate::context::Context;
 use crate::doctor::{self, Diagnosis};
+use crate::duty::autoswitch::{Auto, Look, Threshold};
 use crate::error::{Error, Result};
 use crate::holder::{self, capitalised};
 use crate::host::{Elevation, Floor};
@@ -12,7 +12,8 @@ use crate::in_use::{self, Doubt, InUse, Known};
 use crate::provider::{Held, LoginKind, Provider, ProviderId};
 use crate::state::{self, Account, Key, new_id};
 use crate::switch::{self, Enrolled, Outcome, Recovered, Renewal, Settled, SignIn};
-use crate::{audit, readings, schedule, status, statusline};
+use crate::usage::readings;
+use crate::{audit, schedule, status, statusline};
 use std::fmt;
 
 /// Proof that this process may change something on this machine, which only the one gate
@@ -1099,7 +1100,7 @@ impl Pitboard {
     }
 
     /// Switches Claude Code by itself where a limit of the account in use has reached
-    /// `threshold` and another account has room, as [`crate::autoswitch`] says. For a front
+    /// `threshold` and another account has room, as [`crate::duty::autoswitch`] says. For a front
     /// end somebody asked to do that: the app with its setting on, or `pitboard watch`.
     ///
     /// Looks first from files alone ([`auto_look`]), so a look that finds nothing to do takes
@@ -1142,7 +1143,7 @@ impl Pitboard {
     /// [`auto_switch`]: Pitboard::auto_switch
     pub fn auto_look(&self, threshold: Threshold) -> Result<Look> {
         let state = state::load(&self.ctx)?;
-        Ok(crate::autoswitch::look(&self.ctx, &state, threshold))
+        Ok(crate::duty::autoswitch::look(&self.ctx, &state, threshold))
     }
 
     /// Which account somebody meant, as the key the engine looks accounts up by.
@@ -1583,10 +1584,10 @@ impl Pitboard {
 
     /// Each Claude Code account, whether Pitboard warms it up, and within which span of each
     /// day, from Pitboard's files alone: no lock, and nobody asked.
-    pub fn warm_overview(&self) -> Result<crate::warm::Overview> {
+    pub fn warm_overview(&self) -> Result<crate::duty::warm::Overview> {
         let state = state::load(&self.ctx)?;
-        let setting = crate::warm::load(&self.ctx)?;
-        Ok(crate::warm::overview(&self.ctx, &state, &setting))
+        let setting = crate::duty::warm::load(&self.ctx)?;
+        Ok(crate::duty::warm::overview(&self.ctx, &state, &setting))
     }
 
     /// Warms up the account `typed` names now, whatever the span of the day and the attempts
@@ -1600,7 +1601,7 @@ impl Pitboard {
         Self::warming(settled, switch::warm::Target::Account(key))
     }
 
-    /// Warms up the first account turned on that is due, as [`crate::warm`] says, for a front
+    /// Warms up the first account turned on that is due, as [`crate::duty::warm`] says, for a front
     /// end somebody asked to: the app, or `pitboard watch`. [`Pitboard::warm_look`] says
     /// whether one may be, waiting on no lock.
     pub fn warm_up(&self) -> Changing<switch::warm::WarmUp> {
@@ -1623,9 +1624,9 @@ impl Pitboard {
     /// What warming up would come to now, from files alone: what stands, with where each
     /// account turned on stands, or that only [`Pitboard::warm_up`] can say. Waits on no lock,
     /// reads no keychain and asks nobody, so a front end may look as often as it likes.
-    pub fn warm_look(&self) -> Result<crate::duty::Look<crate::warm::Overview>> {
+    pub fn warm_look(&self) -> Result<crate::duty::Look<crate::duty::warm::Overview>> {
         let state = state::load(&self.ctx)?;
-        crate::warm::look(&self.ctx, &state)
+        crate::duty::warm::look(&self.ctx, &state)
     }
 
     /// Settled for a warm-up, with an interrupted switch settling finished. Without what a
@@ -1671,12 +1672,15 @@ impl Pitboard {
 
     /// Warms up within `range` of each day, recorded in the activity log as `warm-range` of
     /// the span.
-    pub fn warm_range(&self, range: crate::warm::Range) -> Changing<crate::warm::Range> {
+    pub fn warm_range(
+        &self,
+        range: crate::duty::warm::Range,
+    ) -> Changing<crate::duty::warm::Range> {
         let permit = self.permitted()?;
         let subject = format!(
             "{}-{}",
-            crate::warm::clock(range.from()),
-            crate::warm::clock(range.to())
+            crate::duty::warm::clock(range.from()),
+            crate::duty::warm::clock(range.to())
         );
         let settled = self.settled_to_warm(permit, "warm-range", &subject)?;
         self.change(permit, "warm-range", &subject, settled, |settled| {
@@ -1856,7 +1860,7 @@ impl Audited for switch::WatchedSignIn {}
 impl Audited for Enrolled {}
 impl Audited for String {}
 impl Audited for bool {}
-impl Audited for crate::warm::Range {}
+impl Audited for crate::duty::warm::Range {}
 
 impl Audited for switch::Stowed {
     fn audit_code(&self) -> &'static str {

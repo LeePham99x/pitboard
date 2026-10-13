@@ -11,13 +11,13 @@
 
 use super::{Settled, Switched, identify, switch_from};
 use crate::audit;
-use crate::autoswitch::{self, Auto, Blind, Judged, Ledger, Threshold};
+use crate::duty::autoswitch::{self, Auto, Blind, Judged, Ledger, Threshold};
 use crate::error::{Error, Result};
 use crate::provider::{self, ProviderId};
 use crate::service::Warning;
 
 /// Switches Claude Code where a limit of the account in use has reached `threshold` and
-/// another account has room, as [`crate::autoswitch`] says, and records what it came to.
+/// another account has room, as [`crate::duty::autoswitch`] says, and records what it came to.
 ///
 /// Whose login Claude Code has stored is told first. Where it cannot be, nothing is judged
 /// from what Pitboard last knew, which may be another account's: that is recorded once, as
@@ -224,7 +224,7 @@ mod tests {
     };
     use super::super::*;
     use crate::api::scripted::Trouble;
-    use crate::autoswitch::{Auto, Blind, Decision, Ledger, Look, Skip, Threshold, decide};
+    use crate::duty::autoswitch::{Auto, Blind, Decision, Ledger, Look, Skip, Threshold, decide};
     use crate::duty::cadence::{ATTEMPTS, RETRY_SECONDS};
     use crate::service::{Permit, Pitboard};
     use crate::store::memory::Fault;
@@ -234,7 +234,7 @@ mod tests {
 
     /// What Anthropic has just answered of `uuid`'s five-hour and weekly limits.
     fn measured(m: &Machine, uuid: &str, session: f64, weekly: f64) {
-        crate::readings::answered(
+        crate::usage::readings::answered(
             &m.ctx,
             Permit::for_a_test(),
             &[(uuid.to_owned(), answer(m, session, weekly))],
@@ -271,7 +271,7 @@ mod tests {
     /// What the look at the files alone comes to, where it ends there and takes no lock.
     fn stands(m: &Machine) -> Auto {
         let state = state::load(&m.ctx).expect("state");
-        match crate::autoswitch::look(&m.ctx, &state, Threshold::DEFAULT) {
+        match crate::duty::autoswitch::look(&m.ctx, &state, Threshold::DEFAULT) {
             Look::Stands(stands) => *stands,
             Look::Act => panic!("the look goes on to the lock"),
         }
@@ -487,12 +487,12 @@ mod tests {
     )]
     fn a_rate_limit_hold_is_said_with_what_it_watches() {
         let (m, _) = nearly_out("auto-held", 60.0);
-        crate::budget::record(
+        crate::usage::budget::record(
             &m.ctx,
             Permit::for_a_test(),
             &[(
                 "here".into(),
-                crate::budget::Outcome::RateLimited(Some(3600)),
+                crate::usage::budget::Outcome::RateLimited(Some(3600)),
             )],
         );
         let looked = stands(&m);
@@ -564,7 +564,7 @@ mod tests {
             ],
             ..answer(&m, 97.0, 20.0)
         };
-        crate::readings::answered(
+        crate::usage::readings::answered(
             &m.ctx,
             Permit::for_a_test(),
             &[("here".to_owned(), a_second_off)],
@@ -595,7 +595,11 @@ mod tests {
                 ],
                 ..answer(&m, session, 20.0)
             };
-            crate::readings::answered(&m.ctx, Permit::for_a_test(), &[(uuid.to_owned(), answer)]);
+            crate::usage::readings::answered(
+                &m.ctx,
+                Permit::for_a_test(),
+                &[(uuid.to_owned(), answer)],
+            );
         };
         session_resets("there", 96.0, NOW + 7200);
         let reset = |looked: Auto| match looked {
@@ -629,7 +633,7 @@ mod tests {
             ..window(kind, percent)
         };
         for (uuid, session) in [("here", 97.0), ("there", 96.0)] {
-            crate::readings::answered(
+            crate::usage::readings::answered(
                 &m.ctx,
                 Permit::for_a_test(),
                 &[(
@@ -661,7 +665,7 @@ mod tests {
         clock.advance(1);
         let state = state::load(&m.ctx).expect("state");
         assert!(matches!(
-            crate::autoswitch::look(&m.ctx, &state, Threshold::DEFAULT),
+            crate::duty::autoswitch::look(&m.ctx, &state, Threshold::DEFAULT),
             Look::Act
         ));
         let looked = auto(&m).expect("a look").value;
@@ -697,7 +701,7 @@ mod tests {
         let (m, _) = nearly_out("auto-twice", 96.0);
         let state = state::load(&m.ctx).expect("state");
         for _ in 0..2 {
-            let looked = crate::autoswitch::look(&m.ctx, &state, Threshold::DEFAULT);
+            let looked = crate::duty::autoswitch::look(&m.ctx, &state, Threshold::DEFAULT);
             assert!(matches!(looked, Look::Act), "{looked:?}");
         }
         let rows = crate::status::gather_offline(&m.ctx, &state).rows;
@@ -910,7 +914,7 @@ mod tests {
         for attempt in 0..ATTEMPTS {
             tried.attempt(&plan, NOW + i64::from(attempt) * RETRY_SECONDS);
         }
-        let spent = crate::autoswitch::Hold {
+        let spent = crate::duty::autoswitch::Hold {
             from: plan.from.clone(),
             from_id: plan.from_id.clone(),
             limit: plan.limit.clone(),
@@ -1151,7 +1155,7 @@ mod tests {
         let died = fault::killing("switch.park_recorded", || switch(settled, &m.key("there")));
         assert_eq!(died.unwrap_err(), "switch.park_recorded");
         let state = state::load(&m.ctx).expect("state");
-        let look = || crate::autoswitch::look(&m.ctx, &state, Threshold::DEFAULT);
+        let look = || crate::duty::autoswitch::look(&m.ctx, &state, Threshold::DEFAULT);
         let lock = m.ctx_home().join(".pitboard/state.lock");
 
         let another_run = std::thread::scope(|scope| {

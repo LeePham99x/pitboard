@@ -3,22 +3,22 @@
 //!
 //! A program in the foreground, which stops with its terminal or with Ctrl-C. Nothing
 //! installs it and it starts nothing that outlives it: running it is the opt-in. What it
-//! decides, and what it never does, is [`pitboard_core::autoswitch`]'s and
-//! [`pitboard_core::warm`]'s.
+//! decides, and what it never does, is [`pitboard_core::duty::autoswitch`]'s and
+//! [`pitboard_core::duty::warm`]'s.
 //!
 //! It asks the services about every account as often as the app does, and looks at what the
 //! status lines and the other front ends record as often as the app looks, so it costs
 //! Anthropic no more than the app would.
 
 use crate::{Report, emit, followed, ui};
-use pitboard_core::autoswitch::{Auto, Blind, Look, Skip, Threshold};
+use pitboard_core::duty::autoswitch::{Auto, Blind, Look, Skip, Threshold};
 use pitboard_core::duty::cadence::{DECIDE_EVERY_SECONDS, Refusals};
+use pitboard_core::duty::warm::{Overview, Standing};
 use pitboard_core::error::{self, Error};
 use pitboard_core::provider::ProviderId;
 use pitboard_core::service::{Changing, Done, Failed, Pitboard};
 use pitboard_core::switch::warm::WarmUp;
 use pitboard_core::usage::Window;
-use pitboard_core::warm::{Overview, Standing};
 use pitboard_core::words;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
@@ -1010,7 +1010,7 @@ mod tests {
 
     mod warming {
         use super::*;
-        use pitboard_core::warm::{Choice, Halt, Hold, Range};
+        use pitboard_core::duty::warm::{Choice, Halt, Hold, Range};
 
         fn overview(halted: Option<Halt>, held: Option<Hold>) -> Overview {
             Overview {
@@ -1081,7 +1081,7 @@ mod tests {
                 Err(Failed {
                     error: Error::WarmUpFailed {
                         label: "work".into(),
-                        why: pitboard_core::warm::Failure::NotStarted,
+                        why: pitboard_core::duty::warm::Failure::NotStarted,
                     },
                     warnings: Vec::new(),
                     said_first: 0,

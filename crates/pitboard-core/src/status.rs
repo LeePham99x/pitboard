@@ -13,13 +13,14 @@ use crate::api::{ApiError, Owner};
 use crate::context::Context;
 use crate::error::Cause;
 use crate::in_use::{self, InUse};
+use crate::park;
 use crate::provider::claude::paths as claude;
 use crate::provider::{LoginKind, Provider, ProviderError, ProviderId};
 use crate::service::Permit;
 use crate::state::{Key, Park, State};
 use crate::switch::identify;
 use crate::usage::{Snapshot, Source};
-use crate::{budget, park, readings};
+use crate::usage::{budget, readings};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 
@@ -219,12 +220,12 @@ impl Row {
     /// whole tool exists to answer is which account to use next, and a share alone does not
     /// answer it. 73% of a weekly limit is plenty on Saturday and a warning on Monday. An
     /// account not in use is not being used, so it lasts until its first reset.
-    pub fn lasts(&self, now: i64) -> Option<crate::pace::Lasts<'_>> {
+    pub fn lasts(&self, now: i64) -> Option<crate::usage::pace::Lasts<'_>> {
         let usage = self.usage.as_ref()?;
         if self.signed_in {
-            crate::pace::lasts(&usage.windows, usage.observed_at.unwrap_or(now), now)
+            crate::usage::pace::lasts(&usage.windows, usage.observed_at.unwrap_or(now), now)
         } else {
-            crate::pace::until_reset(&usage.windows, now)
+            crate::usage::pace::until_reset(&usage.windows, now)
         }
     }
 

@@ -16,13 +16,13 @@ use crate::{
     Tool, Usage, Warning, found_command_line, tool,
 };
 use pitboard_core::app::AppContext;
-use pitboard_core::autoswitch::{Auto, Blind, Look, Skip, Threshold};
 use pitboard_core::context::Environment;
+use pitboard_core::duty::autoswitch::{Auto, Blind, Look, Skip, Threshold};
+use pitboard_core::duty::warm::{Overview, Range};
 use pitboard_core::provider::{self, ProviderId};
 use pitboard_core::service::{self, Changing};
 use pitboard_core::switch::warm::WarmUp;
 use pitboard_core::switch::{Left, Stowed};
-use pitboard_core::warm::{Overview, Range};
 use pitboard_core::{doctor, status, switch, usage, words};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

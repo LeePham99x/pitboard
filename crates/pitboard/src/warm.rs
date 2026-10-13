@@ -1,13 +1,13 @@
 //! `pitboard warm`: which accounts Pitboard warms up, and when. What a warm-up is, and what it
-//! never does, is [`pitboard_core::warm`]'s.
+//! never does, is [`pitboard_core::duty::warm`]'s.
 
 use crate::ui::{BOLD, DIM, columns, pad, paint};
 use crate::watch::epoch;
 use crate::{Report, changed};
 use clap::Subcommand;
+use pitboard_core::duty::warm::{self, Halt, Overview, Range, Standing};
 use pitboard_core::service::Pitboard;
 use pitboard_core::switch::warm::WarmUp;
-use pitboard_core::warm::{self, Halt, Overview, Range, Standing};
 use pitboard_core::words;
 use serde_json::{Value, json};
 

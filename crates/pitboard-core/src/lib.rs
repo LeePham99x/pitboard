@@ -49,8 +49,6 @@ pub mod api;
 pub mod app;
 pub mod assumptions;
 pub mod audit;
-pub mod autoswitch;
-pub mod budget;
 pub mod context;
 // The Claude Desktop the tests play, reached as `testing::desktop`.
 #[cfg(any(test, feature = "test-support"))]
@@ -61,7 +59,6 @@ pub mod duty;
 pub mod error;
 pub mod in_use;
 pub mod label;
-pub mod pace;
 pub mod provider;
 pub mod redact;
 pub mod release;
@@ -74,7 +71,6 @@ pub mod statusline;
 pub mod switch;
 pub mod time;
 pub mod usage;
-pub mod warm;
 pub mod words;
 
 pub(crate) mod atomic;
@@ -86,7 +82,6 @@ pub(crate) mod lock;
 pub(crate) mod park;
 pub(crate) mod pending;
 pub(crate) mod proxy;
-pub(crate) mod readings;
 pub(crate) mod sessions;
 /// The program the tests start in place of a tool, reached as `testing::stand_in`. Its own
 /// tests run with the core's.
@@ -102,6 +97,7 @@ pub(crate) mod store;
 pub mod testing {
     pub use crate::api::scripted::{Answer, Asked, ScriptedApi, Trouble};
     pub use crate::desktop_testing as desktop;
+    pub use crate::duty::warm::run::{Ran, Started, WarmScript};
     /// What a test or a fixture does to a file's access, or to make a link, which only this
     /// system's face says how to do: the integration tests and the apps' fixtures do it here,
     /// as the core's own tests do.
@@ -116,7 +112,6 @@ pub mod testing {
     pub use crate::store::vault_read;
     pub use crate::switch::{ScriptedSignIn, SignInScript};
     pub use crate::time::{Clock, FixedClock};
-    pub use crate::warm::run::{Ran, Started, WarmScript};
 
     /// Every variable Pitboard reads from its environment, by name, which a test withholds
     /// from every command it runs unless it means to pass one on.

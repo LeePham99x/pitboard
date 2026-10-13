@@ -4285,19 +4285,19 @@ fn a_folder_move_waiting_does_not_stop_a_claude_code_switch() {
         state
     };
 
-    let ledger = crate::autoswitch::Ledger::load(&m.ctx);
+    let ledger = crate::duty::autoswitch::Ledger::load(&m.ctx);
     let judged = |state: &state::State| {
         let here = state
             .get(&Key::new(ProviderId::Claude, "here"))
             .expect("enrolled");
         format!(
             "{:?}",
-            crate::autoswitch::judge(
+            crate::duty::autoswitch::judge(
                 &m.ctx,
                 state,
                 here,
                 &ledger,
-                crate::autoswitch::Threshold::DEFAULT,
+                crate::duty::autoswitch::Threshold::DEFAULT,
                 NOW
             )
         )

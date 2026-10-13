@@ -1,9 +1,9 @@
 use anstream::{ColorChoice, eprint, eprintln, print, println};
 use anstyle::{AnsiColor, Style};
 use clap::{CommandFactory, Parser, Subcommand};
-use pitboard_core::autoswitch::Threshold;
 use pitboard_core::context::Context;
 use pitboard_core::doctor;
+use pitboard_core::duty::autoswitch::Threshold;
 use pitboard_core::error::Error;
 use pitboard_core::provider::{Adoption, SignsIn};
 use pitboard_core::service::{Changing, Done, Failed, Pitboard, Warning};

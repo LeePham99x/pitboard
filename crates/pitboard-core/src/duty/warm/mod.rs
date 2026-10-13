@@ -342,7 +342,7 @@ pub(crate) fn overview(ctx: &Context, state: &State, setting: &Setting) -> Overv
     let now = ctx.now();
     let zone = ctx.zone();
     let in_use = in_use(ctx, state);
-    let readings = crate::readings::load(ctx);
+    let readings = crate::usage::readings::load(ctx);
     let ledger = decide::Ledger::load(ctx);
     Overview {
         range: setting.range,

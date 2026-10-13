@@ -3,7 +3,7 @@
 //! terminal, or when `NO_COLOR` asks it to.
 
 use anstyle::{AnsiColor, Style};
-use pitboard_core::pace::{Pace, Standing};
+use pitboard_core::usage::pace::{Pace, Standing};
 use pitboard_core::words::{self, UsageLevel};
 use std::fmt::Display;
 use unicode_width::UnicodeWidthStr;

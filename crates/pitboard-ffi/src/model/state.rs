@@ -49,14 +49,14 @@ use crate::{
     FoundCommandLine, GaveUp, OwnCommandLine, PitboardError, Renewed, Schedule, Status, Switch,
     Switched, Tool, Usage, Warning,
 };
-use pitboard_core::autoswitch::Threshold;
+use pitboard_core::duty::autoswitch::Threshold;
 use pitboard_core::duty::cadence::{DECIDE_EVERY_SECONDS, Refusals};
+use pitboard_core::duty::warm::Overview;
 use pitboard_core::label::SEPARATOR;
 use pitboard_core::provider::{self, ProviderId, SignsIn};
 use pitboard_core::switch::warm::WarmUp;
 use pitboard_core::switch::{Foreseen, Left, Stowed, WaitStep};
 use pitboard_core::usage::same_reset;
-use pitboard_core::warm::Overview;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::time::Duration;
 

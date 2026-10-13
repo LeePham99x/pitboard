@@ -82,7 +82,7 @@ pub(crate) fn dir(ctx: &Context) -> PathBuf {
 
 /// Removes what an older Pitboard kept here and this one does not: `readings/`, a
 /// fortnight of readings per account that how long an account lasts was once worked out
-/// from, before [`crate::pace`] took it from one reading. Only the files it wrote, one
+/// from, before [`crate::usage::pace`] took it from one reading. Only the files it wrote, one
 /// `<account id>.ndjson` each, and then the folder where nothing else is in it:
 /// `PITBOARD_HOME` can name a folder of somebody's own. Gone already is the ordinary answer.
 pub(crate) fn remove_retired(ctx: &Context, permit: Permit) {

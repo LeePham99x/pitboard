@@ -942,7 +942,7 @@ fn seed(world: World, machine: &Machine) -> Result<(), Unmade> {
             let app = machine.front_end("app", DAY).1;
             app.warm_turn("personal", true)
                 .map_err(refused("turning on personal's warm-up"))?;
-            let all_day = pitboard_core::warm::Range::new(0, 24 * 60)
+            let all_day = pitboard_core::duty::warm::Range::new(0, 24 * 60)
                 .ok_or_else(|| Unmade("a day is not a span".into()))?;
             app.warm_range(all_day)
                 .map(drop)

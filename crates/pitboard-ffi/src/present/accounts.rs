@@ -10,7 +10,7 @@ use super::{
 use crate::account_windows::{forget_message_on, windows_of_account};
 use crate::model::{Intent, Sheet};
 use crate::{Account, Limit, Tool};
-use pitboard_core::pace::{self, Pace, Standing};
+use pitboard_core::usage::pace::{self, Pace, Standing};
 use pitboard_core::words as said;
 use std::cmp::Ordering;
 
@@ -336,7 +336,10 @@ fn offers(account: &Account, action: Option<&ItemAction>, busy: bool) -> Vec<Ite
 
 /// What warming up an account is, as the core's last word on it says, where it can be warmed
 /// up: a Claude Code account enrolled under a name.
-fn warm_choice<'a>(seen: &'a Seen, account: &Account) -> Option<&'a pitboard_core::warm::Choice> {
+fn warm_choice<'a>(
+    seen: &'a Seen,
+    account: &Account,
+) -> Option<&'a pitboard_core::duty::warm::Choice> {
     let qualified = account.qualified.as_deref()?;
     seen.state
         .warm
@@ -368,7 +371,7 @@ fn warm_offers(seen: &Seen, account: &Account) -> Vec<ItemOffer> {
             },
             enabled: !halted
                 && warm.running.is_none()
-                && choice.now == pitboard_core::warm::Standing::Due,
+                && choice.now == pitboard_core::duty::warm::Standing::Due,
             confirm: None,
             checked: None,
         },
@@ -391,7 +394,7 @@ fn warm_note(seen: &Seen, account: &Account) -> Option<String> {
     let choice = warm_choice(seen, account)?;
     let warming = match seen.state.warm.running.as_ref() {
         Some(Some(asked)) => *asked == choice.qualified,
-        Some(None) => choice.standing == Some(pitboard_core::warm::Standing::Due),
+        Some(None) => choice.standing == Some(pitboard_core::duty::warm::Standing::Due),
         None => false,
     };
     if warming {

@@ -457,7 +457,7 @@ pub fn gather(ctx: &Context) -> Facts {
         claude_version: claude::installed_version(ctx),
         auth_overrides: crate::settings::overrides(ctx),
         auth_unread: crate::settings::unread(),
-        asking_held: crate::budget::holds(ctx),
+        asking_held: crate::usage::budget::holds(ctx),
         in_use: state
             .as_ref()
             .ok()

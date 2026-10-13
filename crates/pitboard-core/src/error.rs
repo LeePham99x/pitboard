@@ -249,7 +249,7 @@ pub enum Error {
     #[error("`{label}` was not warmed up: {}.", crate::words::warm_failed(.why))]
     WarmUpFailed {
         label: String,
-        why: crate::warm::Failure,
+        why: crate::duty::warm::Failure,
     },
 
     #[error("`{label}` {why}, so it is not warmed up now.")]
@@ -260,7 +260,7 @@ pub enum Error {
     },
 
     #[error("Pitboard warms up no account now: {}.", crate::words::not_warming(.halt))]
-    WarmUpHalted { halt: crate::warm::Halt },
+    WarmUpHalted { halt: crate::duty::warm::Halt },
 
     #[error("another Pitboard is warming up an account. Try again in a minute.")]
     WarmUpInProgress,

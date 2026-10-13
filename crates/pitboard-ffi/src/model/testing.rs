@@ -582,7 +582,7 @@ pub(super) struct Machine {
     pub command_line_asks: usize,
     /// What the core's files say of warming up accounts, as every read gives it, and why they
     /// could not be read where `warm_refused` says.
-    pub warm: Option<pitboard_core::warm::Overview>,
+    pub warm: Option<pitboard_core::duty::warm::Overview>,
     pub warm_refused: Option<Refusal>,
     /// What a warm-up gives, by itself or asked for now.
     pub warming: Result<pitboard_core::switch::warm::WarmUp, Refusal>,
@@ -595,9 +595,9 @@ pub(super) struct Machine {
 }
 
 /// What the core says of warming up where nothing has been set: the default span, nobody.
-pub(super) fn no_warm() -> pitboard_core::warm::Overview {
-    pitboard_core::warm::Overview {
-        range: pitboard_core::warm::Range::DEFAULT,
+pub(super) fn no_warm() -> pitboard_core::duty::warm::Overview {
+    pitboard_core::duty::warm::Overview {
+        range: pitboard_core::duty::warm::Range::DEFAULT,
         accounts: Vec::new(),
         halted: None,
     }
@@ -716,7 +716,7 @@ impl Machine {
     }
 
     /// What the core's files say of warming up, as a read gives it.
-    fn warm_overview(&self) -> Result<pitboard_core::warm::Overview, PitboardError> {
+    fn warm_overview(&self) -> Result<pitboard_core::duty::warm::Overview, PitboardError> {
         match &self.warm_refused {
             Some(refused) => Err(refused.error()),
             None => Ok(self.warm.clone().unwrap_or_else(no_warm)),
@@ -785,7 +785,7 @@ impl Machine {
             Job::SetWarmRange { from, to } => {
                 self.warm_ranges.push((from, to));
                 let mut overview = self.warm.clone().unwrap_or_else(no_warm);
-                if let Some(range) = pitboard_core::warm::Range::new(from, to) {
+                if let Some(range) = pitboard_core::duty::warm::Range::new(from, to) {
                     overview.range = range;
                 }
                 self.warm = Some(overview.clone());

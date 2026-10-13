@@ -329,7 +329,7 @@ pub struct Context {
     /// says. `None` in every real context, and in any build without `test-support` there is
     /// nothing here at all.
     #[cfg(any(test, feature = "test-support"))]
-    pub(crate) warm_script: Option<Arc<dyn crate::warm::run::WarmScript>>,
+    pub(crate) warm_script: Option<Arc<dyn crate::duty::warm::run::WarmScript>>,
 }
 
 fn programs(
@@ -785,14 +785,17 @@ impl Context {
     /// fixture that may start no program does this, and nothing else does.
     #[cfg(any(test, feature = "test-support"))]
     #[doc(hidden)]
-    pub fn with_warm_script(mut self, script: Arc<dyn crate::warm::run::WarmScript>) -> Context {
+    pub fn with_warm_script(
+        mut self,
+        script: Arc<dyn crate::duty::warm::run::WarmScript>,
+    ) -> Context {
         self.warm_script = Some(script);
         self
     }
 
     /// Who plays a warm-up's run, where somebody said.
     #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn warm_script(&self) -> Option<&Arc<dyn crate::warm::run::WarmScript>> {
+    pub(crate) fn warm_script(&self) -> Option<&Arc<dyn crate::duty::warm::run::WarmScript>> {
         self.warm_script.as_ref()
     }
 

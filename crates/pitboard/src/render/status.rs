@@ -2,10 +2,10 @@
 
 use crate::ui::{self, BAD, BOLD, DIM, GOOD, WARN, pad, paint};
 use pitboard_core::doctor::renewal_due;
-use pitboard_core::pace::Lasts;
 use pitboard_core::provider::ProviderId;
 use pitboard_core::state::Key;
 use pitboard_core::status::{Report, Row, Stale};
+use pitboard_core::usage::pace::Lasts;
 use pitboard_core::usage::{Snapshot, Source, Window, whole};
 use pitboard_core::{time, words};
 use serde_json::{Value, json};
