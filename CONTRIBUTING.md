@@ -515,8 +515,9 @@ under `## [Unreleased]`. The file follows
 
 - Put each entry under one of six types, in this order: `### Added`, `### Changed`,
   `### Deprecated`, `### Removed`, `### Fixed`, `### Security`.
-- Write one change per bullet: what changed for the person using Pitboard, and why.
-- Say in words when a change breaks something that worked before.
+- Write one change per bullet, in one or two sentences: what changed for the person using
+  Pitboard. How it works and what was measured go in the docs and the commit message.
+- Start an entry that breaks a script or a habit with `**Breaking:**`, and say what to do.
 - Put a security fix under `### Security`.
 - Make links inside an entry inline and absolute. A release's notes are cut from its
   section, without the link definitions at the end of the file.
