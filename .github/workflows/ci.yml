@@ -519,10 +519,9 @@ jobs:
             exit 1
           fi
 
-  # The usepitboard.com site in website/. It reads CHANGELOG.md and three docs files as well,
-  # so a pull request that changes none of them, nor website/, skips the steps and passes. The
-  # build reads the latest release from GitHub, writes the CSP and fails on any rule guard.mjs
-  # keeps.
+  # The usepitboard.com site in website/. A pull request that changes none of the files its
+  # build and tests read, listed in `touched`, skips the steps and passes. The build reads the
+  # latest release from GitHub, writes the CSP and fails on any rule guard.mjs keeps.
   website:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -539,8 +538,7 @@ jobs:
         working-directory: .
         run: |
           if [ "$GITHUB_EVENT_NAME" != pull_request ] || ! git diff --quiet HEAD^1 HEAD -- \
-            website CHANGELOG.md docs/AGENTS.md docs/quickstart.mdx docs/guides/status-line.mdx \
-            .github/workflows/ci.yml; then
+            website CHANGELOG.md docs crates/pitboard/src/watch.rs .github/workflows/ci.yml; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "nothing the site reads changed"
