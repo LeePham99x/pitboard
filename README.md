@@ -105,8 +105,8 @@ its use compares with an even pace, and the account in use says which limit runs
     week  █│█████░░░   73%  resets in 5d 18h  55% over pace
           weekly limit runs out in 11h 05m at this pace
 
-○ work      me@company.com  Team 5x  ready · good for 26d 4h
-    5h    █░░│░░░░░░   12%  resets in 3h 02m  27% under pace
+○ work      me@company.com  Max 20x  ready · good for 26d 4h
+    5h    █░░░│░░░░░   12%  resets in 3h 00m  28% under pace
     week  ████░░│░░░   40%  resets in 2d 4h   29% under pace
 ```
 

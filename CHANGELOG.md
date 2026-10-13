@@ -8,10 +8,6 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- Pitboard can [warm up](https://docs.usepitboard.com/guides/warm-up) a Claude Code account:
-  once its five-hour limit resets, Claude Code sends one short message with that account's
-  login, so the next window starts at once. Turn it on with `pitboard warm on <account>` or
-  in **Settings** > **Limits**.
 - Pitboard switches [Claude Desktop](https://docs.usepitboard.com/guides/claude-desktop)
   accounts on macOS with `pitboard use desktop/<label>`, while Claude is closed.
 - `pitboard enroll desktop/<label>` adds the account Claude is signed in to. With
@@ -29,24 +25,6 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- The app's icon and its mark in the menu bar are a pit board held up, its top row lit, in
-  place of three bars and a speedometer.
-- **Settings** has **Limits** and **Renewal** panes. The automatic switch and warm-ups moved
-  from **General** to **Limits**, and daily renewal and **Renew Now** to **Renewal**.
-- The automatic switch, and the app's offer once an account runs out, prefer an account
-  without a weekly limit for all models, such as a Team seat.
-- In `pitboard-core`, `usage::roomiest` is now `usage::preferred` and `usage::Room` gains
-  `weekly`; `autoswitch::retry_after` and its constants moved to `duty::cadence`, and
-  `autoswitch::Look` is now `duty::Look<Auto>`. `state::Park.refresh_fingerprint` is now
-  `login`, `State.discarded` holds `state::Dropped`, and `State::discard` takes a
-  `state::ParkKind`. `State`, `Park`, `status::Row`, `status::Report`, `service::Failed`,
-  `switch::Reclaimed`, `switch::Adopted`, `Error::LiveCredentialAbsent` and
-  `Error::AlreadyEnrolled` gain fields, and `switch::Outcome` and `provider::Adoption` gain
-  variants. `switch::abandon` and `Pitboard::abandon_recovery` return `switch::GaveUp`,
-  `switch::repair` returns its warnings too, and `Context::program_for` an `Option`.
-  `ProviderId::cli` replaces `program_variable` and `install_places`, and
-  `ProviderId::home_variable`, `ProviderId::login_command`, `switch::sign_in` and
-  `switch::sign_in_watched` are gone. `ProviderId::Desktop` and many other items are added.
 - The account index is schema 8, which earlier versions cannot read. Update the command line
   and the app together.
 - `pitboard uninstall`'s question says the other accounts need signing in again, where it
@@ -60,6 +38,37 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   after it.
 - While `CLAUDE_CODE_CUSTOM_OAUTH_URL` is set, `pitboard abandon` refuses only where a Claude
   Code switch is interrupted.
+- In `pitboard-core`, `state::Park.refresh_fingerprint` is now `login`, `State.discarded`
+  holds `state::Dropped`, and `State::discard` takes a `state::ParkKind`. `State`, `Park`,
+  `status::Row`, `status::Report`, `service::Failed`, `switch::Reclaimed`,
+  `switch::Adopted`, `Error::LiveCredentialAbsent` and `Error::AlreadyEnrolled` gain fields,
+  and `switch::Outcome` and `provider::Adoption` gain variants. `switch::abandon` and
+  `Pitboard::abandon_recovery` return `switch::GaveUp`, `switch::repair` returns its
+  warnings too, and `Context::program_for` an `Option`. `ProviderId::cli` replaces
+  `program_variable` and `install_places`, and `ProviderId::home_variable`,
+  `ProviderId::login_command`, `switch::sign_in` and `switch::sign_in_watched` are gone.
+  `ProviderId::Desktop` and many other items are added.
+
+## [0.13.0] - 2026-10-13
+
+### Added
+
+- Pitboard can [warm up](https://docs.usepitboard.com/guides/warm-up) a Claude Code account:
+  once its five-hour limit resets, Claude Code sends one short message with that account's
+  login, so the next window starts at once. Turn it on with `pitboard warm on <account>` or
+  in **Settings** > **Limits**.
+
+### Changed
+
+- The app's icon and its mark in the menu bar are a pit board held up, its top row lit, in
+  place of three bars and a speedometer.
+- **Settings** has **Limits** and **Renewal** panes. The automatic switch and warm-ups moved
+  from **General** to **Limits**, and daily renewal and **Renew Now** to **Renewal**.
+- The automatic switch, and the app's offer once an account runs out, prefer an account
+  without a weekly limit for all models, such as a Team seat.
+- In `pitboard-core`, `usage::roomiest` is now `usage::preferred` and `usage::Room` gains
+  `weekly`; `autoswitch::retry_after` and its constants moved to `duty::cadence`, and
+  `autoswitch::Look` is now `duty::Look<Auto>`.
 
 ### Fixed
 
@@ -881,7 +890,8 @@ yours needs it.
 - An audit log of every change Pitboard makes.
 - Schema 3: one parked login per account, with its expiry.
 
-[Unreleased]: https://github.com/datlechin/pitboard/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/datlechin/pitboard/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/datlechin/pitboard/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/datlechin/pitboard/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/datlechin/pitboard/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/datlechin/pitboard/compare/v0.9.0...v0.10.0

@@ -1,0 +1,30 @@
+---
+// The run-out notification, the only one with a button (MacPlatform.swift).
+import { clock } from "../../data/world.ts";
+---
+
+<div class="desk p-notice" aria-hidden="true" data-output>
+  <div class="mb">
+    <div class="mb-i">
+      <svg class="mb-mark"><use href="#pb-template"></use></svg> personal 100%
+    </div>
+    <div class="mb-i">
+      <svg class="mb-batt"><use href="#ic-batt"></use></svg>
+    </div>
+    <div class="mb-i">
+      <svg class="mb-wifi"><use href="#ic-wifi"></use></svg>
+    </div>
+    <div class="mb-i">
+      <svg class="mb-cc"><use href="#ic-cc"></use></svg>
+    </div>
+    <div class="mb-i mb-clock">{clock.runOut}</div>
+  </div>
+  <div class="nb">
+    <img class="nb-icon" src="/icon-192.png" alt="" width="38" height="38" />
+    <span class="nb-text">
+      <b>personal has no weekly limit left<span>now</span></b>
+      Claude Code<br />work has 60% of its own left.
+    </span>
+    <span class="nb-act">Switch</span>
+  </div>
+</div>

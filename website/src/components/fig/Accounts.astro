@@ -1,0 +1,110 @@
+---
+// AccountRow.swift, UsageBar.swift, and NoticeRow.swift for the notice a switch leaves.
+import PitboardWindow from "./PitboardWindow.astro";
+import { clock, type Moment, type Tool } from "../../data/world.ts";
+import { isInUse, level, paceText, runsOutNote, standing, toolAccounts } from "../../lib/words.ts";
+
+interface Props {
+  moment: Moment;
+  crop?: boolean;
+}
+const { moment, crop = false } = Astro.props;
+const tools: [Tool, string][] = [
+  ["claude", "Claude Code"],
+  ["codex", "Codex"],
+];
+const capitalised = (s: string) => s[0].toUpperCase() + s.slice(1);
+const warm: Record<string, string> = { personal: `Warms up again at ${clock.warmsAgain}` };
+---
+
+<PitboardWindow
+  pane="accounts"
+  title="Accounts"
+  subtitle={`Updated ${clock.read}`}
+  tools={["sf-refresh", "sf-plus"]}
+  panel={crop ? "p-crop" : "p-accounts"}
+  crop={crop}
+>
+  {crop && <div class="nt">
+    <svg class="nt-sym">
+      <use href="#sf-info-fill" />
+    </svg>
+    <span class="nt-text">
+      <b>Switched Claude Code to work</b>
+      <span class="nt-line">Claude Code sessions already open follow in 0:21</span>
+    </span>
+    <svg class="nt-x">
+      <use href="#sf-xmark" />
+    </svg>
+  </div>}
+  {tools.map(([tool, name]) => (
+    <>
+      <div class="ar-sec">{name}</div>
+      {toolAccounts(tool).map((a) => {
+        const on = isInUse(a, moment);
+        const notes = [
+          runsOutNote(a, moment) && capitalised(runsOutNote(a, moment)!),
+          !on && a.parked && `Parked login good for ${a.parked.app}`,
+          warm[a.label] && tool === "claude" ? warm[a.label] : null,
+        ].filter(Boolean);
+        return <div class="ar">
+          <div class="ar-head">
+            <svg class:list={["ar-sym", { in: on }]}>
+              <use href={on ? "#sf-person-fill" : "#sf-person"} />
+            </svg>
+            <span class="ar-id">
+              <span class="ar-name">
+                {a.label}
+                <span class="ar-plan">{a.plan}</span>
+              </span>
+              <span class="ar-mail">{a.email}</span>
+            </span>
+            {on ? (
+              <span class="ar-end">
+                <svg class="ico">
+                  <use href="#sf-check" />
+                </svg>
+                In Use
+              </span>
+            ) : (
+              <span class="btn-mac">Use</span>
+            )}
+          </div>
+          <div class="ar-lims">
+            {a.limits.map((l) => {
+              const s = standing(l);
+              return (
+                <>
+                  <span class="ar-k">{l.kind}</span>
+                  <svg class="gauge" viewBox="0 0 100 6" preserveAspectRatio="none">
+                    <rect class="t" width="100" height="6" rx="1.6" ry="3" />
+                    {l.used > 0 && (
+                      <rect class={level(l.used)} width={l.used} height="6" rx="1.6" ry="3" />
+                    )}
+                    {s !== null && s !== "even" && (
+                      <>
+                        <rect class="cut" x={l.even! - 1.4} y="-3" width="2.8" height="12" />
+                        <rect
+                          class={`m-${s}`}
+                          x={l.even! - 0.7}
+                          y="-3"
+                          width="1.4"
+                          height="12"
+                          rx="0.7"
+                        />
+                      </>
+                    )}
+                  </svg>
+                  <span class="ar-pct">{l.used}%</span>
+                  <span class="ar-reset">resets in {l.resets}</span>
+                  <span class:list={["ar-pace", s]}>{paceText(l)}</span>
+                </>
+              );
+            })}
+          </div>
+          {notes.map((n) => <p class="ar-note">{n}</p>)}
+        </div>;
+      })}
+    </>
+  ))}
+</PitboardWindow>

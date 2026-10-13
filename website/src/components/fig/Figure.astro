@@ -1,0 +1,38 @@
+---
+// An app figure and, with a `cli` slot, its terminal twin; captions and descriptions are HTML.
+interface Side {
+  caption: string;
+  describe: string;
+}
+interface Props {
+  app: Side;
+  cli?: Side;
+  class?: string;
+  // false where tabs beside the figure already pick, as the hero's install tabs do
+  pick?: boolean;
+}
+const { app, cli, class: extra, pick = true } = Astro.props;
+const both = cli !== undefined && Astro.slots.has("cli");
+---
+
+<figure class:list={["fig", extra]} data-both={both ? "" : undefined}>
+  {both && pick && <div class="sv-pick" role="group" aria-label="Show Pitboard as">
+    <button type="button" data-surface="app" aria-pressed="true">App</button>
+    <button type="button" data-surface="cli" aria-pressed="false">Command line</button>
+  </div>}
+  <div class="fig-box">
+    <div class="sv-app"><slot /></div>
+    {both && <div class="sv-cli">
+      <slot name="cli" />
+    </div>}
+  </div>
+  <figcaption class="fig-cap">
+    <span class="sv-app"
+      ><span class="vh" set:html={`${app.describe} `} /><span set:html={app.caption}
+    /></span>
+    {both && <span class="sv-cli">
+      <span class="vh" set:html={`${cli!.describe} `} />
+      <span set:html={cli!.caption} />
+    </span>}
+  </figcaption>
+</figure>

@@ -1,17 +1,25 @@
 ---
 import Base from "../layouts/Base.astro";
+import "../styles/figures.css";
 import "../styles/home.css";
-import AccountsWindow from "../components/AccountsWindow.astro";
 import Icons from "../components/Icons.astro";
 import InstallTabs from "../components/InstallTabs.astro";
-import MacScene from "../components/MacScene.astro";
-import TerminalStatus from "../components/TerminalStatus.astro";
-import TerminalTour from "../components/TerminalTour.astro";
+import Accounts from "../components/fig/Accounts.astro";
+import Activity from "../components/fig/Activity.astro";
+import Desk from "../components/fig/Desk.astro";
+import Figure from "../components/fig/Figure.astro";
+import Notice from "../components/fig/Notice.astro";
+import OpenLink from "../components/fig/OpenLink.astro";
+import Settings from "../components/fig/Settings.astro";
+import Term from "../components/fig/Term.astro";
+import Feature from "../components/home/Feature.astro";
+import Row from "../components/home/Row.astro";
+import { sessions } from "../data/sessions.ts";
+import { DOCS, REPO, SITE } from "../data/site.ts";
 import { longDate } from "../lib/changelog.ts";
 import { appZip } from "../lib/github.ts";
 import { highlight, siteData } from "../lib/data.ts";
-import { statusLine } from "../data/terminal.ts";
-import { DOCS, REPO, SITE } from "../data/site.ts";
+import { statusLine } from "../lib/words.ts";
 
 const { versions, release } = await siteData();
 const zip = appZip(release);
@@ -37,13 +45,23 @@ const faq = [
     link: [`${DOCS}/guides/accounts#add-another-account`, "Add another account"],
   },
   {
+    q: "Does Pitboard see my prompts?",
+    a: "No. Pitboard never sees a tool's requests and sends no model request of its own: a warm-up is Claude Code's own.",
+    link: [`${DOCS}/concepts/limits#rules`, "Rules"],
+  },
+  {
     q: "Does it run on Linux or Windows?",
     a: "The command line runs on Linux, but it has not been run there with real logins. There is no Windows release.",
     link: [`${DOCS}/install#what-you-need`, "What you need"],
   },
   {
+    q: "What happens if I uninstall it?",
+    a: "<code>pitboard uninstall</code> turns off daily renewal and deletes every parked login, then <code>~/.pitboard</code>. Each tool stays signed in to its account in use, and every other account needs a browser sign-in.",
+    link: [`${DOCS}/install/remove#delete-parked-logins-first`, "Delete parked logins first"],
+  },
+  {
     q: "Is Pitboard made by Anthropic or OpenAI?",
-    a: "No. Pitboard is not affiliated with Anthropic or OpenAI. One person maintains it.",
+    a: "No. Pitboard is not affiliated with Anthropic or OpenAI, and one person maintains it.",
     link: [`${REPO}/blob/main/NOTICE`, "NOTICE"],
   },
 ];
@@ -78,7 +96,7 @@ const jsonLd = [
         <div class="hero-text">
           <h1 class="h1" id="hero-title">Pitboard</h1>
           <p class="lead">
-            Switch Claude Code and OpenAI's Codex CLI between accounts without signing out.
+            Switch Claude Code and OpenAI's Codex CLI between your accounts without signing out.
           </p>
           <p class="note os-note os-linux">On Linux, Pitboard has not been run with real logins.</p>
           <p class="note os-note os-windows">
@@ -87,148 +105,316 @@ const jsonLd = [
           <p class="note os-note os-mobile">Pitboard runs on a Mac or a Linux computer.</p>
           <InstallTabs n={1} zipUrl={zip.url} />
         </div>
-
-        <div class="hero-fig">
-          <figure class="fig sv-app">
-            <MacScene />
-            <figcaption class="fig-cap">
-              <span class="vh">Pitboard's menu with two Claude Code accounts, personal and work, and
-                two Codex accounts, main and spare. Each shows how much of each limit it has used.
-                Behind the menu, the status line of a Claude Code session shows both Claude Code
-                accounts, work first.
-              </span
-              >Pitboard's menu with example accounts.
-            </figcaption>
-          </figure>
-          <TerminalStatus />
-        </div>
+        <Figure
+          class="hero-fig demo"
+          pick={false}
+          app={{
+            caption: "Switching accounts in Pitboard's menu.",
+            describe:
+              "Pitboard's menu open from the menu bar. Claude Code has personal and work, with personal in use; Codex has main and spare, with main in use. Each account shows its plan and how much of each limit it has used. The pointer chooses work, the check mark moves to work and the menu bar shows work 40%. Then the status line of the Claude Code session behind the menu puts work first.",
+          }}
+          cli={{
+            caption: "The same accounts in a terminal.",
+            describe:
+              "<code>pitboard</code> in a terminal lists the Claude Code accounts work, in use, and personal, then the Codex accounts main, in use, and spare. Each limit has a bar, how much is used, when it resets and its pace.",
+          }}
+        >
+          <Desk demo />
+          <Term slot="cli" session={sessions.status} />
+        </Figure>
       </div>
     </section>
 
-    <section class="block" aria-labelledby="switch-title">
+    <Feature id="switch" title="Switch without signing out">
+      <p>
+        Choose an account in the menu, or run <code>pitboard use work</code>. History, settings and
+        projects stay where they are.
+      </p>
+      <p>Pitboard keeps the login of each account not in use, called a parked login.</p>
+      <p>
+        <a href={`${DOCS}/guides/switch#what-happens-to-open-sessions`}
+          >Claude Code sessions already open follow the switch</a
+        >. Restart anything that runs Codex, the ChatGPT app included.
+      </p>
+      <p>
+        <a href={`${DOCS}/guides/accounts#add-another-account`}>Adding an account</a> opens the
+        tool's own sign-in, and the account in use stays signed in. Each organisation your Anthropic
+        account belongs to counts as a separate account.
+      </p>
+      <p>
+        While the ChatGPT app is open, the menu bar app
+        <a href={`${DOCS}/guides/switch#switch-while-the-chatgpt-app-is-open`}>offers to quit it</a
+        >, switch Codex and open it again.
+      </p>
+      <Figure
+        slot="fig"
+        app={{
+          caption: "The Pitboard window after the switch.",
+          describe:
+            "The top of the Accounts pane after a switch. A notice, Switched Claude Code to work, counts down: Claude Code sessions already open follow in 0:21. Under it, work is in use.",
+        }}
+        cli={{
+          caption: "Switching from a terminal.",
+          describe:
+            "<code>pitboard use work</code> prints: Switched to work; personal is parked. Claude Code sessions already running follow within 33 seconds.",
+        }}
+      >
+        <Accounts moment="after" crop />
+        <Term slot="cli" session={sessions.use} />
+      </Figure>
+    </Feature>
+
+    <Feature id="usage" title="What each account has left">
+      <p>Pitboard shows every limit of every account: how much is used and when it resets.</p>
+      <p>
+        A mark on each bar shows where <a href={`${DOCS}/concepts/usage#pace`}>an even pace</a>
+        would have reached. For the account in use, Pitboard says which limit runs out first.
+      </p>
+      <p>
+        <a href={`${DOCS}/reference/app#menu-bar-item`}>The menu bar</a> shows the account in use
+        and how much of its fullest limit is used.
+      </p>
+      <p>
+        With <a href={`${DOCS}/guides/status-line`}><code>pitboard statusline</code></a> in Claude
+        Code's settings, each session shows the usage of every Claude Code account:
+      </p>
+      <pre class="statusline" data-output set:html={statusLine("before")} />
+      <Figure
+        slot="fig"
+        app={{
+          caption: "The Pitboard window.",
+          describe:
+            "The Accounts pane of the Pitboard window. personal is in use, with its weekly limit at 73% and 55% over pace, and the line: Weekly limit runs out in 11h 05m at this pace. work's parked login is good for 26 more days. Codex's main and spare follow.",
+        }}
+        cli={{
+          caption: "The same accounts in a terminal.",
+          describe:
+            "<code>pitboard</code> lists the Claude Code accounts personal, in use, with its weekly limit running out in 11 hours 5 minutes at this pace, and work, ready, its parked login good for 26 days 4 hours. Then the Codex accounts main, in use, and spare.",
+        }}
+      >
+        <Accounts moment="before" />
+        <Term slot="cli" session={sessions.statusBefore} />
+      </Figure>
+    </Feature>
+
+    <section class="feat" aria-labelledby="runs-out-title" id="runs-out">
       <div class="wrap">
-        <div class="block-in">
-          <h2 class="h2" id="switch-title">A switch changes only the account</h2>
-          <div class="prose">
-            <p>Your history, settings and projects stay where they are.</p>
-            <p>
-              Pitboard keeps the login of each account not in use, called a parked login. A switch
-              parks the login in use and puts the chosen one in its place.
-            </p>
-            <p>
-              <a href={`${DOCS}/guides/switch#what-happens-to-open-sessions`}
-                >Open Claude Code sessions</a
-              >
-              follow a switch within a minute. Restart anything that runs Codex, the ChatGPT app
-              included.
-            </p>
-
-            <figure class="fig demo sv-app" data-demo-fig>
-              <MacScene demo />
-              <figcaption class="fig-cap">
-                <span class="vh">Pitboard's menu with personal in use. The pointer chooses work, the
-                  check mark moves to work, and the menu bar shows work. Then the status line of a
-                  Claude Code session puts work first.
-                </span
-                >Switching accounts in Pitboard's menu.
-              </figcaption>
-            </figure>
-
-            <TerminalTour />
-          </div>
-        </div>
+        <h2 class="h2 feat-head" id="runs-out-title">Before an account runs out</h2>
+        <Row id="offer-title" title="When one runs out">
+          <p>
+            <a href={`${DOCS}/guides/switch#when-an-account-runs-out`}
+              >When the account in use runs out</a
+            >
+            of a limit, the app offers another with room left. Its notification has a <b>Switch</b>
+            button.
+          </p>
+          <Figure
+            slot="fig"
+            app={{
+              caption: "The notification when an account runs out.",
+              describe:
+                "A notification from Pitboard: personal has no weekly limit left. Claude Code. work has 60% of its own left. It has a Switch button.",
+            }}
+          >
+            <Notice />
+          </Figure>
+        </Row>
+        <Row id="auto-title" title="Automatic switch" flip>
+          <p>
+            Pitboard can
+            <a href={`${DOCS}/guides/automatic-switching`}>switch Claude Code by itself</a> once a
+            limit of the account in use reaches a set share.
+          </p>
+          <p>An account without a weekly limit for all models, such as a Team seat, goes first.</p>
+          <p>
+            It never switches Codex, and runs only while the app is open or
+            <code>pitboard watch</code> runs.
+          </p>
+          <Figure
+            slot="fig"
+            app={{
+              caption: "Settings, in the Limits pane.",
+              describe:
+                "The Limits pane of Pitboard's Settings, with Switch Claude Code automatically turned on and Switch when a limit reaches 95%. Under it: Watching work: 40% of its weekly limit, as of 20:50.",
+            }}
+            cli={{
+              caption: "The same from a terminal.",
+              describe:
+                "<code>pitboard watch</code> prints that it switches to another account once a limit of the one in use reaches 95%, and warms up personal from 07:00 to 23:00, then: Watching work: 40% of its weekly limit, as of 20:50.",
+            }}
+          >
+            <Settings show="switch" />
+            <Term slot="cli" session={sessions.watch} />
+          </Figure>
+        </Row>
+        <Row id="warm-title" title="Warm-up">
+          <p>
+            When a five-hour period ends, a <a href={`${DOCS}/guides/warm-up`}>warm-up</a> has
+            Claude Code send one short message. The next period then resets as early as it can.
+          </p>
+          <p>It spends a little of the plan, for the Claude Code accounts you turn it on for.</p>
+          <p>
+            It runs only while the app is open or <code>pitboard watch</code> runs, within the hours
+            you set.
+          </p>
+          <Figure
+            slot="fig"
+            app={{
+              caption: "Warm-up in the Limits pane.",
+              describe:
+                "Warm up limits, from 07:00 to 23:00. personal is turned on and warms up again at 22:00; work is off. Next warm-up: personal at 22:00.",
+            }}
+            cli={{
+              caption: "The same from a terminal.",
+              describe:
+                "<code>pitboard warm</code> says Pitboard warms up these accounts from 07:00 to 23:00: personal on, warms up again at 22:00; work off.",
+            }}
+          >
+            <Settings show="warm" />
+            <Term slot="cli" session={sessions.warm} />
+          </Figure>
+        </Row>
       </div>
     </section>
 
-    <section class="block" aria-labelledby="trust-title">
-      <div class="wrap">
-        <div class="block-in">
-          <h2 class="h2" id="trust-title">Security and privacy</h2>
-          <div class="prose">
-            <p>
-              Pitboard has no server of its own and no telemetry. The docs
-              <a href={`${DOCS}/security#what-leaves-your-machine`}>list every request it makes</a>.
-            </p>
-            <p>
-              Pitboard keeps
-              <a href={`${DOCS}/security#where-parked-logins-are-kept`}>parked logins</a> in your
-              keychain on macOS and in files on Linux. Before a switch, it checks whose login is in
-              use and that Anthropic or OpenAI still accepts the next one.
-            </p>
-            <p>
-              <a href={`${DOCS}/security#what-pitboard-does-not-protect-against`}
-                >Read what Pitboard does not protect against</a
-              >.
-            </p>
-          </div>
-        </div>
-      </div>
-    </section>
+    <Feature id="windows" title="claude.ai and chatgpt.com for each account">
+      <p>
+        The app opens claude.ai or chatgpt.com
+        <a href={`${DOCS}/guides/account-windows`}>in a window for each account</a>, and each window
+        keeps its own sign-in.
+      </p>
+      <p>
+        You sign in once in each window, on the site's own pages.
+        <a href={`${DOCS}/guides/account-windows#what-a-window-cannot-do`}
+          >Google sign-in and passkeys do not work there</a
+        >.
+      </p>
+      <p>
+        <a href={`${DOCS}/guides/account-windows#open-a-page-from-your-browser`}
+          >Share a claude.ai or chatgpt.com page</a
+        >
+        from Safari, Chrome or Firefox to open it as one of your accounts.
+      </p>
+      <Figure
+        slot="fig"
+        app={{
+          caption: "Opening a shared link as an account.",
+          describe:
+            "The Open Link window: Open this claude.ai link as: personal, or work, whose window is open. work is chosen, with Cancel and Open buttons.",
+        }}
+      >
+        <OpenLink />
+      </Figure>
+    </Feature>
 
-    <section class="block" aria-labelledby="usage-title">
-      <div class="wrap">
-        <div class="block-in">
-          <h2 class="h2" id="usage-title">What each account has left</h2>
-          <div class="prose">
-            <p>
-              Pitboard shows each account's usage of every limit, and when each resets. For the
-              account in use, it says which limit runs out first at
-              <a href={`${DOCS}/concepts/usage#pace`}>this pace</a>.
-            </p>
+    <Feature id="renewal" title="Keep parked logins alive">
+      <p>
+        A Claude Code parked login expires unless Pitboard renews it.
+        <a href={`${DOCS}/guides/renewal`}>Daily renewal</a> renews every parked login that is due,
+        once a day, whether the app is open or not.
+      </p>
+      <p>
+        When a parked login stops working,
+        <a href={`${DOCS}/guides/sign-in-again`}><b>Sign In Again</b></a> gets a fresh one, and the
+        account in use stays signed in.
+      </p>
+      <p>
+        Pitboard notices a
+        <a href={`${DOCS}/troubleshooting#an-account-reads-login-replaced-outside-pitboard`}
+          >login replaced outside Pitboard</a
+        >, by <code>/login</code> or <code>codex login</code>, and names the command that fixes it.
+      </p>
+      <Figure
+        slot="fig"
+        app={{
+          caption: "Daily renewal in Settings.",
+          describe:
+            "The Renewal pane of Pitboard's Settings: Renew parked logins daily is on, runs every day, scheduled in a LaunchAgent. A button renews every parked login that is due.",
+        }}
+        cli={{
+          caption: "The same from a terminal.",
+          describe:
+            "<code>pitboard schedule install</code> prints: Parked logins will be renewed daily, the LaunchAgent's path, and that it never switches account and never asks Anthropic for usage.",
+        }}
+      >
+        <Settings show="renewal" />
+        <Term slot="cli" session={sessions.schedule} />
+      </Figure>
+    </Feature>
 
-            <figure class="fig">
-              <AccountsWindow />
-              <figcaption class="fig-cap">
-                <span class="vh">The Accounts pane of the Pitboard window, listing Claude Code and
-                  Codex accounts. Each limit has a bar, its pace and when it resets.
-                </span
-                >The Pitboard window, with example accounts.
-              </figcaption>
-            </figure>
+    <Feature id="cli" title="The command line">
+      <p>
+        <a href={`${DOCS}/reference/commands`}>The command line</a> enrols accounts, switches,
+        renews and reads usage, on macOS and Linux.
+      </p>
+      <p>
+        Every command takes <code>--json</code> and answers with
+        <a href={`${DOCS}/reference/json-output#the-envelope`}>one envelope</a>, with a stable code
+        for each error.
+      </p>
+      <p>
+        <a href={`${DOCS}/reference/account-commands#watch`}><code>pitboard watch</code></a> runs
+        the automatic switch and warm-ups in a terminal.
+      </p>
+      <p>Account windows and the offer to switch when an account runs out are in the app only.</p>
+      <Figure
+        slot="fig"
+        app={{
+          caption: "A command with <code>--json</code>.",
+          describe:
+            "<code>pitboard rename wrong right --json</code> prints the envelope on one line, with ok true and the data from wrong, to right and the email address.",
+        }}
+      >
+        <Term session={sessions.json} />
+      </Figure>
+    </Feature>
 
-            <p>
-              With <a href={`${DOCS}/guides/status-line`}><code>pitboard statusline</code></a> in
-              Claude Code's settings, each session shows the usage of each enrolled Claude Code
-              account.
-            </p>
-            <pre class="statusline" data-output set:html={statusLine} />
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="block" aria-labelledby="more-title">
-      <div class="wrap">
-        <div class="block-in">
-          <h2 class="h2" id="more-title">Also in Pitboard</h2>
-          <div class="prose">
-            <p>
-              Pitboard can
-              <a href={`${DOCS}/guides/automatic-switching`}
-                >switch Claude Code to another account</a
-              >
-              before the one in use runs out. It is off by default.
-            </p>
-            <p>
-              The app opens each account's own
-              <a href={`${DOCS}/guides/account-windows`}>claude.ai or chatgpt.com window</a>. Google
-              sign-in fails there.
-            </p>
-            <p>
-              Claude Code's parked logins expire unless Pitboard renews them.
-              <a href={`${DOCS}/guides/renewal`}>Daily renewal</a> runs <code>pitboard renew</code>
-              once a day.
-            </p>
-          </div>
-        </div>
-      </div>
-    </section>
+    <Feature id="security" title="Security and privacy">
+      <p>
+        Pitboard has no server of its own and no telemetry. The docs
+        <a href={`${DOCS}/security#what-leaves-your-machine`}>list every request it makes</a>.
+      </p>
+      <p>
+        <a href={`${DOCS}/security#where-parked-logins-are-kept`}>Parked logins</a> stay in your
+        keychain on macOS and in files on Linux. A login goes only to the service that issued it.
+      </p>
+      <p>
+        <a href={`${DOCS}/concepts/switching#what-a-switch-does`}>A switch</a> first checks whose
+        login is in use and that the next one still works.
+      </p>
+      <p>
+        <b>This Mac</b> and <code>pitboard doctor</code> check what Pitboard relies on.
+        <b>Activity</b> and <code>pitboard log</code>
+        <a href={`${DOCS}/reference/maintenance-commands#log`}>list every change</a> it makes.
+      </p>
+      <p>
+        <a href={`${DOCS}/security#what-pitboard-does-not-protect-against`}
+          >Read what Pitboard does not protect against</a
+        >.
+      </p>
+      <Figure
+        slot="fig"
+        app={{
+          caption: "The Activity pane.",
+          describe:
+            "The Activity pane of the Pitboard window lists the switch to work and a warm-up of personal, both asked by the Pitboard app, and the enrolment of work and personal from the command line, each Done.",
+        }}
+        cli={{
+          caption: "The same from a terminal.",
+          describe:
+            "<code>pitboard log</code> lists the enrolment of personal and work, a warm-up of personal and the switch to work, each ok.",
+        }}
+      >
+        <Activity />
+        <Term slot="cli" session={sessions.log} />
+      </Figure>
+    </Feature>
 
     <section class="block" aria-labelledby="releases-title">
       <div class="wrap">
         <div class="block-in">
           <h2 class="h2" id="releases-title">Recent releases</h2>
-          <div class="prose">
+          <div>
             <table class="tbl" aria-labelledby="releases-title">
               <tbody>
                 {recent.map((v) => (

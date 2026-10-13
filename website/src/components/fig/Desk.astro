@@ -1,0 +1,134 @@
+---
+// MenuBarContent.swift's menu over a Claude Code session. With `demo`, site.ts plays the switch.
+import { session } from "../../data/desk.ts";
+import { clock, type Tool } from "../../data/world.ts";
+import {
+  isInUse,
+  menuBarTitle,
+  menuLine,
+  menuTitle,
+  statusLine,
+  toolAccounts,
+} from "../../lib/words.ts";
+
+interface Props {
+  demo?: boolean;
+}
+const { demo = false } = Astro.props;
+
+const tools: [Tool, string][] = [
+  ["claude", "Claude Code"],
+  ["codex", "Codex"],
+];
+const actions: ({ title: string; sub?: string; keys?: string; more?: boolean } | null)[] = [
+  { title: "Add Account…", keys: "⌘N" },
+  { title: "Refresh", sub: `Updated ${clock.read}`, keys: "⌘R" },
+  null,
+  { title: "Open claude.ai", more: true },
+  { title: "Open chatgpt.com", more: true },
+  null,
+  { title: "Open Pitboard", keys: "⌘0" },
+  { title: "Settings…", keys: "⌘," },
+  { title: "Check for Updates…" },
+  null,
+  { title: "About Pitboard" },
+  { title: "Pitboard Help" },
+  { title: "Quit Pitboard", keys: "⌘Q" },
+];
+// one state, or both with the class that says which moment shows it
+// The session's status line follows the switch after the menu does.
+const either = (before: string, after: string, was = "dm-was", now = "dm-now") =>
+  demo && before !== after
+    ? `<span class="${was}">${before}</span><span class="${now}">${after}</span>`
+    : after;
+---
+
+<div class="desk p-hero" aria-hidden="true" data-output>
+  <div class="tw">
+    <div class="tw-bar">
+      <span class="tl"><i></i><i></i><i></i></span><span class="tw-title">claude</span>
+    </div>
+    <div class="tw-body">
+      {session.map((line) => (
+        <div set:html={line} />
+      ))}
+      <div class="tw-rule"></div>
+      <div>&gt; <span class="tw-cur"> </span></div>
+      <div class="tw-rule"></div>
+      <div
+        set:html={"  " + either(statusLine("before"), statusLine("after"), "sl-was", "sl-now")}
+      />
+    </div>
+  </div>
+  <div class="mb">
+    <div class="mb-pb">
+      <div class="mb-i on">
+        <svg class="mb-mark"><use href="#pb-template"></use></svg>
+        <span set:html={either(menuBarTitle("before"), menuBarTitle("after"))} />
+      </div>
+      <div class="mn">
+        {tools.map(([tool, name], i) => (
+          <>
+            {i > 0 && <div class="mn-sep" />}
+            <div class="mn-h">{name}</div>
+            {toolAccounts(tool).map((a) => <div
+              class:list={[
+                "mn-r two",
+                {
+                  on: isInUse(a, "after"),
+                  "was-on": demo && isInUse(a, "before"),
+                  pick: demo && a.label === "work" && tool === "claude",
+                },
+              ]}
+            >
+              <svg class="mn-ck">
+                <use href="#sf-check" />
+              </svg>
+              <span class="mn-c">
+                <span class="mn-t">{menuTitle(a)}</span>
+                <span class="mn-s" set:html={either(menuLine(a, "before"), menuLine(a, "after"))} />
+              </span>
+            </div>)}
+          </>
+        ))}
+        <div class="mn-sep"></div>
+        {actions.map((a) =>
+          a === null ? (
+            <div class="mn-sep" />
+          ) : (
+            <div class:list={["mn-r", { two: a.sub }]}>
+              <span class="mn-c">
+                <span class="mn-t">{a.title}</span>
+                {a.sub && <span class="mn-s">{a.sub}</span>}
+              </span>
+              <span class="mn-k">
+                {a.keys && [...a.keys].map((k) => <i>{k}</i>)}
+                {a.more && <svg class="mn-chev">
+                  <use href="#sf-chev" />
+                </svg>}
+              </span>
+            </div>
+          ),
+        )}
+      </div>
+    </div>
+    <div class="mb-i">
+      <svg class="mb-batt"><use href="#ic-batt"></use></svg>
+    </div>
+    <div class="mb-i">
+      <svg class="mb-wifi"><use href="#ic-wifi"></use></svg>
+    </div>
+    <div class="mb-i">
+      <svg class="mb-cc"><use href="#ic-cc"></use></svg>
+    </div>
+    <div class="mb-i mb-clock">{clock.menuBar}</div>
+  </div>
+  {demo && <svg class="ptr" viewBox="0 0 17 25">
+    <path
+      class="ptr-p"
+      d="M1.5 1.5v18.2l4.4-4.3 3.1 7.2 3.2-1.4-3.1-7.1h6.2Z"
+      stroke-width="1.3"
+      stroke-linejoin="round"
+    />
+  </svg>}
+</div>

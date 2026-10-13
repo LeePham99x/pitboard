@@ -1,5 +1,4 @@
-// The desktop the menu drops onto: a Claude Code session in a terminal behind it, with
-// example accounts. Each line is one terminal row, drawn with white-space: pre.
+// The Claude Code session behind the menu, a terminal row a line.
 
 export const session: string[] = [
   `<span class="d">&gt; the parser test fails about one run in ten, find out why</span>`,
@@ -34,7 +33,3 @@ export const session: string[] = [
   `  parses the log. It passed 50 runs in a row.`,
   ` `,
 ];
-
-// the session's status line once work is in use, and before, with personal in use
-export const statusNow = `  <b>work</b> <span class="g">12%▼</span><span class="d">·</span><span class="g">40%▼</span>  <span class="d">personal</span> <span class="g">59%</span><span class="d">·</span><span class="y">73%</span>`;
-export const statusWas = `  <b>personal</b> <span class="g">59%▼</span><span class="d">·</span><span class="y">73%</span><span class="r">▲</span>  <span class="d">work</span> <span class="g">12%</span><span class="d">·</span><span class="g">40%</span>`;

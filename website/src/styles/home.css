@@ -8,19 +8,24 @@
     overflow: hidden;
   }
 
+  /* text on the left, the figure on the right, as most of the reference landings set them */
   .hero {
     padding-top: 56px;
   }
   .hero-in {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    column-gap: 64px;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    column-gap: var(--gap);
+    align-items: start;
   }
   .hero-text {
     padding-top: 24px;
   }
   .hero-text > .lead {
     margin-top: 16px;
+  }
+  .hero-text > .install {
+    margin-top: 40px;
   }
   .os-note {
     display: none;
@@ -31,346 +36,149 @@
   html[data-os="mobile"] .os-mobile {
     display: block;
   }
-  .hero-text > .install {
-    margin-top: 40px;
-  }
-  /* the scene's top edge sits on the cap line of the H1 */
   .hero-fig {
-    align-self: start;
     margin-top: 35px;
   }
-  html:not(.js) .hero-fig > .fig + .fig {
-    margin-top: 40px;
-  }
-  .hero-fig .desk {
-    --desk-h: 582px;
-  }
-  .hero-fig .tw {
-    --tw-rows: 33;
-  }
 
-  /* the terminals scroll sideways in their own box when a phone is too narrow */
-  .term[data-scroll],
-  .term [data-scroll] {
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
+  .feat {
+    padding-top: var(--block-space);
   }
-
-  /* the Mac scene: a crop of a desktop drawn in points at macOS 1x, zoomed by --s */
-  /* font smoothing stays on: macOS draws its menus with it, and they look thin without it */
-  .desk {
-    --s: 1.25;
-    --desk-h: 300px;
-    position: relative;
-    height: calc(var(--s) * var(--desk-h));
-    overflow: hidden;
-    border: 1px solid var(--desk-edge);
-    border-radius: 6px;
-    background-color: var(--wall-b);
-    background-image:
-      repeating-radial-gradient(
-        circle at -10% 135%,
-        transparent 0 39px,
-        var(--wall-line) 39px 40px
-      ),
-      linear-gradient(var(--wall-a), var(--wall-b));
-    text-align: left;
-    -webkit-font-smoothing: auto;
-    -moz-osx-font-smoothing: auto;
-    -webkit-user-select: none;
-    user-select: none;
+  .feat-head,
+  .feat-in {
+    border-top: 1px solid var(--rule);
+    padding-top: var(--block-in);
   }
-  .desk-st {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    zoom: var(--s);
-  }
-  .desk svg {
-    display: block;
-    flex: none;
-  }
-
-  .mb {
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: 0;
-    z-index: 2;
-    display: flex;
-    justify-content: flex-end;
-    align-items: center;
-    height: 24px;
-    padding-right: 6px;
-    background: var(--bar-bg);
-    box-shadow: inset 0 -0.5px var(--bar-edge);
-    font: 400 13px/16px var(--f-sys);
-    color: var(--bar-text);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-  .mb-i {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    height: 22px;
-    padding: 0 7px;
-    border-radius: 6px;
-  }
-  .mb-i.on {
-    background: var(--bar-hl);
-  }
-  .mb-mark {
-    width: 16px;
-    height: 16px;
-  }
-  .mb-batt {
-    width: 25px;
-    height: 12px;
-  }
-  .mb-wifi {
-    width: 16px;
-    height: 12px;
-  }
-  .mb-cc {
-    width: 16px;
-    height: 14px;
-  }
-  .mb-clock {
-    padding-left: 9px;
-  }
-  .mb-pb {
-    position: relative;
-  }
-
-  .mn {
-    position: absolute;
-    left: 0;
-    top: 26px;
-    width: max-content;
-    padding: 5px 0;
-    border-radius: 10px;
-    background: var(--mn-bg);
-    -webkit-backdrop-filter: blur(24px) saturate(1.8);
-    backdrop-filter: blur(24px) saturate(1.8);
-    box-shadow:
-      0 0 0 0.5px var(--mn-edge),
-      inset 0 0 0 0.5px var(--mn-rim),
-      0 12px 36px -4px var(--mn-shadow),
-      0 2px 8px -2px var(--mn-shadow);
-    color: var(--mn-text);
-    font: 400 13px/16px var(--f-sys);
-    font-variant-numeric: normal;
-    white-space: nowrap;
-  }
-  .mn-h {
-    padding: 4.5px 18px 4px 30px;
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--mn-dim);
-  }
-  .mn-r {
-    position: relative;
-    display: flex;
-    align-items: center;
-    margin: 0 5px;
-    padding: 4px 13px 4px 25px;
-    border-radius: 6px;
-  }
-  .mn-r.two {
-    padding: 3px 13px 4px 25px;
-  }
-  .mn-c {
-    flex: 1;
-  }
-  .mn-t {
-    display: block;
-  }
-  .mn-s {
-    display: block;
-    font-size: 11px;
-    line-height: 15px;
-    color: var(--mn-sub);
-  }
-  .mn-k {
+  .feat-in {
     display: grid;
-    grid-template-columns: 12px 10px;
-    margin-left: 24px;
-    color: var(--mn-dim);
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    column-gap: var(--gap);
+    align-items: start;
   }
-  .mn-k i {
-    font-style: normal;
+  .feat-text > .prose {
+    margin-top: 24px;
   }
-  .mn-k i + i {
-    text-align: center;
-  }
-  .mn-chev {
-    grid-column: 2;
-    justify-self: end;
-    width: 6px;
-    height: 10px;
-    color: var(--mn-sub);
-  }
-  .mn-ck {
-    position: absolute;
-    left: 8.5px;
-    top: 50%;
-    width: 9px;
-    height: 9px;
-    margin-top: -4.5px;
-    opacity: 0;
-    transition: opacity 200ms var(--ease);
-  }
-  .mn-r.on .mn-ck {
-    opacity: 1;
-  }
-  .mn-sep {
-    height: 1px;
-    margin: 4.5px 16px 4.5px 30px;
-    background: var(--mn-sep);
-  }
-  .mn-r.hl {
-    background: var(--mn-hl);
-    color: var(--mn-hl-text);
-  }
-  .mn-r.hl .mn-s,
-  .mn-r.hl .mn-k {
-    color: inherit;
+  .feat-fig,
+  .row-fig {
+    min-width: 0;
   }
 
-  /* the session's lines sit on the window's bottom edge as a shell scrolls; 60 columns, so none wraps or clips */
-  .tw {
-    position: absolute;
-    z-index: 1;
-    left: var(--tw-l, 14px);
-    bottom: 14px;
-    width: 416px;
-    height: calc(34px + var(--tw-rows, 11) * 14px);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    border-radius: 12px;
-    background: var(--tw-bg);
-    box-shadow:
-      0 0 0 0.5px var(--tw-edge),
-      0 16px 40px -8px var(--tw-shadow),
-      0 3px 10px -2px var(--tw-shadow);
-  }
-  .tw-bar {
-    position: relative;
-    flex: none;
-    display: flex;
+  /* several features in one section: a row each, the figure changing sides */
+  .row {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    column-gap: var(--gap);
     align-items: center;
-    height: 28px;
-    padding: 0 10px;
-    background: var(--tw-bar);
-    box-shadow: inset 0 -0.5px var(--tw-sep);
-    font: 600 13px/16px var(--f-sys);
-    color: var(--tw-title);
+    margin-top: 56px;
   }
-  .tw-tl {
-    display: flex;
-    gap: 8px;
+  .row.flip {
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
   }
-  .tw-tl i {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: var(--tw-tl);
-    box-shadow: inset 0 0 0 0.5px var(--tw-tl-edge);
+  .row.flip > .row-text {
+    order: 2;
   }
-  .tw-title {
-    position: absolute;
-    left: 0;
-    right: 0;
-    text-align: center;
+  .h3 {
+    font: 600 20px/28px var(--f-text);
+    color: var(--text-strong);
   }
-  .tw-body {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-end;
-    overflow: hidden;
-    padding: 0 10px 6px;
-    font: 400 11px/14px var(--f-mono);
-    color: var(--tw-text);
+  .row-text > .prose {
+    margin-top: 12px;
+  }
+
+  .statusline {
+    width: fit-content;
+    max-width: 100%;
+    overflow-x: auto;
+    padding: 10px 14px;
+    border: 1px solid var(--grid);
+    border-radius: 6px;
+    background: var(--term-bg);
+    font: 400 14px/20px var(--f-mono);
+    color: var(--term-text);
     white-space: pre;
-    font-variant-ligatures: none;
   }
-  .tw-body > div {
-    min-height: 14px;
+  .statusline b {
+    color: var(--term-bold);
   }
-  .tw-body b {
-    font-weight: 700;
-    color: var(--tw-bold);
+  .statusline .dim {
+    color: var(--term-dim);
   }
-  .tw .d {
-    color: var(--tw-dim);
+  .statusline .g {
+    color: var(--term-green);
   }
-  .tw .g {
-    color: var(--tw-green);
+  .statusline .y {
+    color: var(--term-yellow);
   }
-  .tw .y {
-    color: var(--tw-yellow);
-  }
-  .tw .r {
-    color: var(--tw-red);
-  }
-  .tw-el {
-    display: inline-block;
-    width: 6px;
-    height: 6px;
-    margin: 0 2px 0 1px;
-    border: solid var(--tw-dim);
-    border-width: 0 0 1px 1px;
-    vertical-align: 3px;
-  }
-  .tw-cur {
-    background: var(--tw-dim);
-  }
-  .tw-rule {
-    background: linear-gradient(var(--tw-rule), var(--tw-rule)) 0 50% / 100% 1px no-repeat;
+  .statusline .r {
+    color: var(--term-red);
   }
 
-  .ptr {
-    position: absolute;
-    z-index: 3;
-    width: 14px;
-    height: 21px;
-    pointer-events: none;
+  .sv-pick {
+    display: flex;
+    gap: 2px;
+    width: fit-content;
+    margin-bottom: 12px;
+    padding: 2px;
+    border: 1px solid var(--border-ui);
+    border-radius: 2px;
   }
-  .ptr-p {
-    fill: var(--ptr-fill);
-    stroke: var(--ptr-edge);
+  .sv-pick button {
+    border: 0;
+    border-radius: 1px;
+    background: none;
+    padding: 3px 10px;
+    font: 500 13px/20px var(--f-mono);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .sv-pick button[aria-pressed="true"] {
+    background: var(--ink);
+    color: var(--on-ink);
+  }
+  html:not(.js) .sv-pick {
+    display: none;
+  }
+  .fig[data-both] .sv-app,
+  .fig[data-both] .sv-cli {
+    display: block;
+  }
+  html[data-surface="cli"] .fig[data-both] .sv-app,
+  html[data-surface="app"] .fig[data-both] .sv-cli {
+    display: none;
+  }
+  html:not(.js) .fig[data-both] .sv-cli {
+    margin-top: 24px;
+  }
+  .fig:not([data-both]) .sv-app {
+    display: block;
   }
 
-  /* block 2: a close-up of the switch, with room left of the menu for the session's status line */
-  .demo .desk {
-    --desk-h: 207px;
-  }
-  .demo .desk-st {
-    right: auto;
-    width: min(max(100%, 604px), calc(100% + 92px));
-  }
-  .demo .tw {
-    --tw-l: 12px;
-    --tw-rows: 8;
-  }
+  /* the switch in the menu, played once by site.ts: the pointer chooses work */
   .demo .ptr {
-    left: calc(100% - 152.4px);
-    top: 108.8px;
+    left: calc(372 * var(--u));
+    top: calc(83 * var(--u));
     transform-origin: 1px 1px;
     transition: transform 800ms var(--ease);
   }
   html[data-demo="start"] .demo .ptr {
-    transform: translate(-125px, -97px);
+    transform: translate(calc(-125 * var(--u)), calc(-60 * var(--u)));
   }
   html[data-demo="pick"] .demo .ptr {
     transform: scale(0.86);
     transition-duration: 100ms;
+  }
+  .demo .mn-r.pick {
+    background: var(--mn-hl);
+    color: var(--mn-hl-text);
+  }
+  .demo .mn-r.pick .mn-s {
+    color: inherit;
+  }
+  html:is([data-demo="start"], [data-demo="move"]) .demo .mn-r.pick {
+    background: none;
+    color: inherit;
+  }
+  html:is([data-demo="start"], [data-demo="move"]) .demo .mn-r.pick .mn-s {
+    color: var(--mn-sub);
   }
   .dm-was,
   .sl-was {
@@ -378,443 +186,50 @@
   }
   html:is([data-demo="start"], [data-demo="move"], [data-demo="hl"], [data-demo="pick"])
     .demo
-    .dm-was {
+    .dm-was,
+  html[data-demo] .demo .sl-was {
     display: inline;
   }
   html:is([data-demo="start"], [data-demo="move"], [data-demo="hl"], [data-demo="pick"])
     .demo
-    .dm-now {
+    .dm-now,
+  html[data-demo] .demo .sl-now {
     display: none;
   }
   html:is([data-demo="start"], [data-demo="move"], [data-demo="hl"], [data-demo="pick"])
     .demo
-    .r-personal
+    .mn-r.was-on
     .mn-ck {
     opacity: 1;
   }
   html:is([data-demo="start"], [data-demo="move"], [data-demo="hl"], [data-demo="pick"])
     .demo
-    .r-work
+    .mn-r.pick
     .mn-ck {
     opacity: 0;
   }
-  html:is([data-demo="start"], [data-demo="move"]) .demo .r-work.hl {
-    background: none;
-    color: inherit;
-  }
-  html:is([data-demo="start"], [data-demo="move"]) .demo .r-work.hl .mn-s {
-    color: var(--mn-sub);
-  }
-  html[data-demo] .demo .sl-was {
-    display: block;
-  }
-  html[data-demo] .demo .sl-now {
-    display: none;
+
+  .more {
+    margin-top: 20px;
   }
 
-  .tour pre {
-    white-space: normal;
-  }
-  .tour .tb,
-  .tour .ln {
-    display: block;
-  }
-  .tour .ln {
-    white-space: pre-wrap;
-  }
-  .tour .fit .ln {
-    white-space: pre;
-  }
-  .tour .tb + .tb {
-    margin-top: 1.6em;
-  }
-  .tour .ln.off {
-    visibility: hidden;
-  }
-  .tour .fit {
-    margin-top: 1.6em;
-  }
-  .tour .term-ctl [hidden] {
-    display: none;
-  }
-
-  .win {
-    background: var(--win-bg);
-    color: var(--win-text);
-    border: 1px solid var(--win-edge);
-    border-radius: 10px;
-    font: 400 13px/18px var(--f-sys);
-    overflow: hidden;
-    container-type: inline-size;
-    -webkit-font-smoothing: antialiased;
-  }
-  .win-bar {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    height: 56px;
-    padding: 0 16px;
-  }
-  .win-tl {
-    display: flex;
-    gap: 8px;
-  }
-  .win-tl i {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: var(--win-tl);
-  }
-  .win-title {
-    display: grid;
-  }
-  .win-title b {
-    font-size: 15px;
-    line-height: 19px;
-    font-weight: 600;
-  }
-  .win-title span {
-    font-size: 12px;
-    line-height: 15px;
-    color: var(--win-sub);
-  }
-  .win-tools {
-    margin-left: auto;
-    display: flex;
-    gap: 14px;
-    padding: 6px 12px;
-    border: 1px solid var(--win-sep);
-    border-radius: 16px;
-    color: var(--win-sub);
-  }
-  .win-tools svg {
-    width: 15px;
-    height: 15px;
-  }
-  .win-body {
-    padding: 0 20px 8px;
-  }
-  .win-sec {
-    padding: 14px 0 6px;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--win-sub);
-    border-bottom: 1px solid var(--win-sep);
-  }
-  .acct {
-    display: grid;
-    grid-template-columns: 24px minmax(0, 1fr) auto;
-    column-gap: 10px;
-    padding: 14px 0 14px;
-    border-bottom: 1px solid var(--win-sep);
-  }
-  .acct:last-child {
-    border-bottom: 0;
-  }
-  .acct-ic {
-    width: 22px;
-    height: 22px;
-    color: var(--win-sub);
-    margin-top: 4px;
-  }
-  .acct-ic.in {
-    color: var(--win-blue);
-  }
-  .acct-ic svg {
-    width: 22px;
-    height: 22px;
-  }
-  .acct-ic .pi {
-    fill: var(--win-bg);
-  }
-  .acct-id {
-    min-width: 0;
-  }
-  .acct-name {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    font-size: 14px;
-    line-height: 19px;
-    font-weight: 500;
-  }
-  .acct-plan {
-    font-size: 11.5px;
-    font-weight: 400;
-    color: var(--win-sub);
-  }
-  .acct-mail {
-    display: block;
-    color: var(--win-sub);
-    font-size: 12.5px;
-  }
-  .acct-end {
-    align-self: center;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    color: var(--win-sub);
-    font-size: 13px;
-  }
-  .acct-end svg {
-    width: 12px;
-    height: 12px;
-  }
-  .acct-use {
-    align-self: center;
-    padding: 3px 14px;
-    border-radius: 6px;
-    background: var(--win-btn);
-    color: var(--win-text);
-    font-size: 13px;
-  }
-  .lims {
-    grid-column: 2 / 4;
-    display: grid;
-    grid-template-columns: 34px minmax(0, 1fr) 40px 104px 100px;
-    align-items: center;
-    column-gap: 14px;
-    row-gap: 8px;
-    margin-top: 10px;
-  }
-  .lim-k {
-    color: var(--win-sub);
-  }
-  .bar {
-    position: relative;
-    height: 10px;
-    border-radius: 3px;
-    background: var(--win-track);
-  }
-  .bar i {
-    position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    width: 0;
-    border-radius: 3px;
-    background: var(--win-green);
-  }
-  /* the pace mark sits in a 4 px gap cut in the window colour, as the app draws it */
-  .bar b {
-    position: absolute;
-    left: 0;
-    top: -4px;
-    bottom: -4px;
-    width: 2px;
-    margin-left: -1px;
-    border-radius: 1px;
-    background: var(--win-green);
-    box-shadow: 0 0 0 1px var(--win-bg);
-  }
-  .bar.warn i {
-    background: var(--win-orange);
-  }
-  .bar.over b {
-    background: var(--win-red);
-  }
-  /* each example value, as a class: the CSP allows no style attribute */
-  .bar.v-7 i {
-    width: 7%;
-  }
-  .bar.v-12 i {
-    width: 12%;
-  }
-  .bar.v-18 i {
-    width: 18%;
-  }
-  .bar.v-40 i {
-    width: 40%;
-  }
-  .bar.v-59 i {
-    width: 59%;
-  }
-  .bar.v-73 i {
-    width: 73%;
-  }
-  .bar.m-17 b {
-    left: 17%;
-  }
-  .bar.m-18 b {
-    left: 18%;
-  }
-  .bar.m-33 b {
-    left: 33%;
-  }
-  .bar.m-39 b {
-    left: 39%;
-  }
-  .bar.m-69 b {
-    left: 69%;
-  }
-  .bar.m-77 b {
-    left: 77%;
-  }
-  .lim-pct {
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-  }
-  .lim-more {
-    display: contents;
-  }
-  .lim-more span {
-    color: var(--win-sub);
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-  .lim-more .over {
-    color: var(--win-red);
-  }
-  .acct-note {
-    grid-column: 2 / 4;
-    margin-top: 8px;
-    color: var(--win-sub);
-  }
-  @container (max-width: 560px) {
-    .win-body {
-      padding: 0 14px 6px;
+  @media (max-width: 1099px) {
+    .hero-in,
+    .feat-in,
+    .row,
+    .row.flip {
+      grid-template-columns: minmax(0, 1fr);
     }
-    .win-bar {
-      padding: 0 12px;
-      gap: 12px;
+    .row.flip > .row-text {
+      order: 0;
     }
-    .lims {
-      grid-template-columns: 34px minmax(0, 1fr) 36px;
-      column-gap: 10px;
-      row-gap: 4px;
-    }
-    .lim-more {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0 12px;
-      grid-column: 2 / -1;
-      margin-bottom: 6px;
-    }
-    .lim-more span {
-      text-align: left;
-      font-size: 12px;
-    }
-  }
-
-  .statusline {
-    width: fit-content;
-    max-width: 100%;
-    padding: 16px 20px;
-    border-radius: 6px;
-    border: 1px solid var(--term-edge);
-    background: var(--term-bg);
-    font: 400 15px/24px var(--f-mono);
-    color: var(--term-text);
-    white-space: pre-wrap;
-  }
-  .statusline b {
-    color: var(--term-bold);
-  }
-  .statusline .g {
-    color: var(--term-green);
-  }
-  .statusline .r {
-    color: var(--term-red);
-  }
-
-  /* the install block: tab rule and command box share one right edge */
-  .install {
-    max-width: 600px;
-  }
-  .install .cmd {
-    max-width: none;
-  }
-
-  .install-again .tabpanels {
-    padding-top: 28px;
-  }
-
-  @media (max-width: 1279px) {
-    .hero-in {
-      column-gap: 48px;
-    }
-  }
-  /* a narrower hero column: less side padding keeps the status block at 7 px a column */
-  @media (min-width: 1024px) and (max-width: 1279px) {
-    .hero-fig .term pre {
-      padding-left: 16px;
-      padding-right: 16px;
-      font-size: clamp(10px, calc(round(down, (100cqi - 32px) / 61, 1px) / 0.6), 15px);
-    }
-  }
-  /* under 1024: H1, subhead, the menu cropped under its account rows, then the install tabs */
-  @media (max-width: 1023px) {
-    .hero-in {
-      display: flex;
-      flex-direction: column;
-    }
-    .hero-text {
-      display: contents;
-      padding-top: 0;
-    }
-    .hero-text > .h1 {
-      order: 1;
-    }
-    .hero-text > .lead {
-      order: 2;
-    }
-    .hero-text > .os-note {
-      order: 3;
-    }
-    .hero-fig {
-      order: 4;
-      margin-top: 40px;
-      align-self: stretch;
-    }
-    .hero-text > .install {
-      order: 5;
-      margin-top: 40px;
-    }
-    .hero-fig .desk {
-      --desk-h: 250px;
-    }
-    .hero-fig .tw {
-      --tw-rows: 11;
-    }
-  }
-  @media (max-width: 639px) {
-    .hero {
-      padding-top: 32px;
-    }
-    .hero-fig {
+    .hero-fig,
+    .feat-fig,
+    .row-fig {
       margin-top: 32px;
     }
-    .hero-text > .install {
-      margin-top: 36px;
-    }
-    /* the stage runs past the crop's right edge, so the item and the whole menu stay in view */
-    .hero-fig .desk-st {
-      right: auto;
-      width: calc(100% + 92px);
-    }
-    .hero-fig .term,
-    .tour .term {
-      margin: 0 calc(-1 * var(--gutter));
-      border-radius: 0;
-      border-left: 0;
-      border-right: 0;
-    }
-    .statusline {
-      padding: 14px 14px;
-      font-size: 14px;
-      white-space: pre;
-    }
-  }
-  @media (max-width: 419px) {
-    .statusline {
-      padding: 12px;
-      font-size: 12.5px;
-    }
-  }
-  @media (max-width: 359px) {
-    .desk {
-      --s: 1.15;
+    .row {
+      margin-top: 48px;
     }
   }
 }
