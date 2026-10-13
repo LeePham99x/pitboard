@@ -1,5 +1,4 @@
 const d = document.documentElement;
-const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function put(k: string, v: string) {
   try {
@@ -143,16 +142,18 @@ function scrollers() {
   document.fonts?.ready.then(check);
 }
 
-// every tab list on the page shares one choice
-function tabs() {
-  const list = all<HTMLButtonElement>("[role=tab][data-surface]");
-  if (!list.length) return;
+// The install tabs and the App and Command line buttons over each figure share one choice.
+function surfaces() {
+  const tabs = all<HTMLButtonElement>("[role=tab][data-surface]");
+  const picks = all<HTMLButtonElement>(".sv-pick [data-surface]");
+  if (!tabs.length && !picks.length) return;
   const mark = (name: string) => {
-    for (const t of list) {
+    for (const t of tabs) {
       const on = t.dataset.surface === name;
       t.setAttribute("aria-selected", String(on));
       t.tabIndex = on ? 0 : -1;
     }
+    for (const b of picks) b.setAttribute("aria-pressed", String(b.dataset.surface === name));
   };
   const select = (name: string, focus: HTMLElement | null) => {
     mark(name);
@@ -161,6 +162,7 @@ function tabs() {
     put("tab", name);
     document.dispatchEvent(new CustomEvent("surface", { detail: name }));
   };
+  for (const b of picks) b.addEventListener("click", () => select(b.dataset.surface!, null));
   for (const tl of all("[role=tablist]")) {
     const own = all<HTMLButtonElement>("[role=tab]", tl);
     own.forEach((t, i) => {
@@ -254,139 +256,8 @@ function afterDownload() {
   }
 }
 
-function tour() {
-  const box = document.querySelector<HTMLElement>("[data-tour]");
-  if (!box) return;
-  const lines = all(".ln", box);
-  const bPause = box.querySelector<HTMLButtonElement>("[data-pause]")!;
-  const bReplay = box.querySelector<HTMLButtonElement>("[data-replay]")!;
-  const T = { i: lines.length, c: 0, run: false, h: 0, auto: false, started: false };
-  for (const l of lines) {
-    const t = l.querySelector(".ty");
-    if (t) t.setAttribute("data-t", t.textContent ?? "");
-  }
-  const reset = () => {
-    for (const l of lines) {
-      l.classList.add("off");
-      const t = l.querySelector(".ty");
-      if (t) t.textContent = "";
-    }
-    T.i = 0;
-    T.c = 0;
-  };
-  const ui = () => {
-    const end = T.i >= lines.length;
-    if (end && !T.run && document.activeElement === bPause) bReplay.focus();
-    bPause.hidden = end && !T.run;
-    bPause.textContent = T.run ? "Pause" : "Play";
-  };
-  // with reduced motion, each command and its output show at once, a block at a time
-  const block = () => {
-    const tb = lines[T.i].closest(".tb");
-    while (T.i < lines.length && lines[T.i].closest(".tb") === tb) {
-      const l = lines[T.i];
-      const t = l.querySelector(".ty");
-      l.classList.remove("off");
-      if (t) t.textContent = t.getAttribute("data-t");
-      T.i++;
-    }
-    T.c = 0;
-    T.h = window.setTimeout(tick, T.i < lines.length ? 1200 : 0);
-  };
-  const tick = () => {
-    if (T.i >= lines.length) {
-      T.run = false;
-      ui();
-      return;
-    }
-    if (still) {
-      block();
-      return;
-    }
-    const l = lines[T.i];
-    const t = l.querySelector(".ty");
-    const s = t?.getAttribute("data-t") ?? "";
-    l.classList.remove("off");
-    if (t && T.c < s.length) {
-      T.c++;
-      t.textContent = s.slice(0, T.c);
-      T.h = window.setTimeout(tick, 40);
-      return;
-    }
-    T.i++;
-    T.c = 0;
-    const n = lines[T.i];
-    let wait = 80;
-    if (n && n.closest(".tb") !== l.closest(".tb")) wait = 1200;
-    else if (n?.hasAttribute("data-wait")) wait = 1400;
-    else if (t) wait = 300;
-    T.h = window.setTimeout(tick, wait);
-  };
-  const play = () => {
-    clearTimeout(T.h);
-    T.run = true;
-    T.started = true;
-    ui();
-    tick();
-  };
-  const pause = () => {
-    clearTimeout(T.h);
-    T.run = false;
-    ui();
-  };
-  bPause.addEventListener("click", () => {
-    T.auto = false;
-    if (T.run) pause();
-    else play();
-  });
-  bReplay.addEventListener("click", () => {
-    T.auto = false;
-    clearTimeout(T.h);
-    reset();
-    play();
-  });
-  addEventListener("blur", () => {
-    if (T.run) {
-      T.auto = true;
-      pause();
-    }
-  });
-  addEventListener("focus", () => {
-    if (T.auto) {
-      T.auto = false;
-      play();
-    }
-  });
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden && T.run) {
-      T.auto = true;
-      pause();
-    }
-  });
-  if (!still && "IntersectionObserver" in window) {
-    reset();
-    const io = new IntersectionObserver(
-      (es) => {
-        for (const e of es) {
-          if (e.isIntersecting && !T.started) play();
-          else if (!e.isIntersecting && T.run) {
-            T.auto = true;
-            pause();
-          } else if (e.isIntersecting && T.auto) {
-            T.auto = false;
-            play();
-          }
-        }
-      },
-      { threshold: 0.5 },
-    );
-    io.observe(box);
-  }
-  ui();
-}
-
 function demo() {
-  const fig = document.querySelector("[data-demo-fig]");
+  const fig = document.querySelector(".demo .sv-app");
   if (!fig) {
     d.removeAttribute("data-demo");
     return;
@@ -445,8 +316,7 @@ addEventListener("hashchange", openTarget);
 theming();
 phoneMenu();
 scrollers();
-tabs();
+surfaces();
 copying();
 afterDownload();
-tour();
 demo();

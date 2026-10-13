@@ -1,0 +1,23 @@
+---
+import type { Session } from "../../data/sessions.ts";
+
+interface Props {
+  session: Session;
+}
+const { session } = Astro.props;
+---
+
+<div class="desk flow p-term" aria-hidden="true" data-output>
+  <div class="tw solo">
+    <div class="tw-bar">
+      <span class="tl"><i></i><i></i><i></i></span><span class="tw-title">{session.title}</span>
+    </div>
+    <div class="tw-body wrap">
+      <div><span class="tw-ps">%</span> {session.command}</div>
+      {session.output.map((line) => (
+        <div set:html={line || " "} />
+      ))}
+      <div><span class="tw-ps">%</span> <span class="tw-cur"> </span></div>
+    </div>
+  </div>
+</div>
