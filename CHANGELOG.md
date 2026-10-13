@@ -67,6 +67,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   Claude.
 - A switch that quits the ChatGPT app waits, inside its 30 seconds, for the `codex` running
   inside ChatGPT to go too before it switches.
+- `pitboard status` with no account enrolled says it found no Claude Code login, and how to
+  enrol a Codex or Claude Desktop account, where it said nothing was signed in.
+- A refused change says the interrupted switch it finished or undid first ahead of the
+  refusal, where it said it after.
 
 ## [0.12.0] - 2026-10-12
 

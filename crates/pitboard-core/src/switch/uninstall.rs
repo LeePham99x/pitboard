@@ -37,8 +37,7 @@ pub struct Removed {
 /// whoever is signed in stays signed in.
 ///
 /// The schedule goes first. It runs `pitboard renew` every day, which would make a new
-/// directory once this one is gone, and if it cannot be taken away nothing else has been
-/// touched yet.
+/// directory once this one is gone.
 ///
 /// The directory is removed last and only when every parked login is gone, because
 /// state.json is the only index of those keychain items. Deleting it first would leave live
@@ -70,7 +69,18 @@ pub fn uninstall(settled: Settled) -> Result<Removed> {
             }
         }
     }
-    let schedule_removed = remove_schedule(&ctx, permit)?;
+    match take_away(&ctx, permit, &mut state) {
+        Ok(removed) => Ok(Removed {
+            warnings,
+            ..removed
+        }),
+        Err(refused) => Err(refused.after(warnings)),
+    }
+}
+
+// The rest of `uninstall`, once each app's folder is held and a move of it settled.
+fn take_away(ctx: &Context, permit: Permit, state: &mut state::State) -> Result<Removed> {
+    let schedule_removed = remove_schedule(ctx, permit)?;
     let held = state.accounts.iter().filter_map(|a| a.parked.as_ref());
     let left = held
         .clone()
@@ -84,8 +94,8 @@ pub fn uninstall(settled: Settled) -> Result<Removed> {
     state.forget_asides();
     state.forget_discarded();
     state.forget_in_use();
-    state::save(&ctx, permit, &state)?;
-    let undeleted = purge(&ctx, permit, &mut state);
+    state::save(ctx, permit, state)?;
+    let undeleted = purge(ctx, permit, state);
     let asides_left = asides
         .iter()
         .filter(|name| {
@@ -99,9 +109,9 @@ pub fn uninstall(settled: Settled) -> Result<Removed> {
     // The sweep in settle has already resolved every outstanding name, so what is left
     // refers to nothing. The home goes next, and an index of names with no home is noise.
     if pending == 0 {
-        crate::pending::clear(&ctx, permit);
+        crate::pending::clear(ctx, permit);
     }
-    let home_removed = pending == 0 && remove_home(&ctx, permit);
+    let home_removed = pending == 0 && remove_home(ctx, permit);
     Ok(Removed {
         parks: parks.saturating_sub(undeleted - asides_left),
         pending,
@@ -109,7 +119,7 @@ pub fn uninstall(settled: Settled) -> Result<Removed> {
         set_aside: asides.len() - asides_left,
         home_removed,
         schedule_removed,
-        warnings,
+        warnings: Vec::new(),
     })
 }
 

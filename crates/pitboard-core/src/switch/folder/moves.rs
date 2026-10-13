@@ -1,6 +1,7 @@
 // The two halves of a move, each recorded before its first rename and committed by one save.
 // A login leaves keys first, then the jar, then the rest, and arrives in the reverse order.
 
+use super::super::identify::{self, Noticed};
 use super::super::{Error, Result, enrolled, purge};
 use super::{midway, quiet, settle, there};
 use crate::context::Context;
@@ -30,7 +31,11 @@ pub(super) fn of_the_jar(app: &dyn Folder, item: &str) -> bool {
 }
 
 pub(super) fn exists(path: &Path) -> Step<bool> {
-    super::found(path).map_err(|e| format!("{} could not be looked at: {e}", path.display()))
+    super::found(path).map_err(|e| not_looked_at(path, e))
+}
+
+pub(super) fn not_looked_at(path: &Path, why: impl std::fmt::Display) -> String {
+    format!("{} could not be looked at: {why}", path.display())
 }
 
 pub(super) fn settings(app: &dyn Folder, root: &Path) -> Step<AppSettings> {
@@ -255,13 +260,15 @@ fn after_failure(
             let finished = settled.iter().any(|warning| {
                 matches!(warning, Warning::MoveSettled(moved) if moved.ended == settle::Ended::Finished)
             });
+            // The move's own end is the outcome or the refusal; what else settling did is said.
+            let rest = settled
+                .into_iter()
+                .filter(|warning| !matches!(warning, Warning::MoveSettled(_)))
+                .collect();
             if finished {
-                Ok(settled
-                    .into_iter()
-                    .filter(|warning| !matches!(warning, Warning::MoveSettled(_)))
-                    .collect())
+                Ok(rest)
             } else {
-                Err(undone(detail))
+                Err(undone(detail).after(rest))
             }
         }
         Err(_) => Err(Error::MoveStopped {
@@ -553,9 +560,12 @@ pub(super) fn hold_what_is_there(
 }
 
 pub(super) fn kept_keys(ctx: &Context, name: &str) -> Step<Keys> {
-    parks::keys(ctx, name)
-        .map_err(|e| format!("the keys kept in the park could not be read: {e}"))?
-        .map_err(|why| format!("the park's `keys.json` {why}"))
+    park_keys(ctx, name).map_err(|e| format!("the keys kept in the park could not be read: {e}"))?
+}
+
+// The inner refusal is a `keys.json` that does not parse.
+fn park_keys(ctx: &Context, name: &str) -> std::io::Result<Step<Keys>> {
+    parks::keys(ctx, name).map(|read| read.map_err(|why| format!("the park's `keys.json` {why}")))
 }
 
 // A park that passed `check_park`, with what the arrive puts back.
@@ -580,17 +590,30 @@ pub(super) fn check_park(
         return Err(Error::NothingParked { tool, label });
     };
     let folder = parks::at(ctx, &park.service);
+    // Only "not found" is missing, which asks for a sign-in: what Pitboard could not look at
+    // is still there.
     match std::fs::symlink_metadata(&folder) {
         Ok(found) if found.is_dir() && !found.file_type().is_symlink() => {}
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+            return Err(parks::unread(&label, &folder, e));
+        }
         _ => return Err(Error::ParkedCredentialMissing { label }),
     }
     let corrupt = |detail: String| Error::ParkedCredentialCorrupt {
         label: label.clone(),
         detail,
     };
-    let manifest = parks::manifest(ctx, &park.service)
-        .map_err(&corrupt)?
-        .ok_or_else(|| corrupt("its manifest is missing".into()))?;
+    let unseen = |path: &Path, e: std::io::Error, missing: String| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            corrupt(missing)
+        } else {
+            parks::unread(&label, path, e)
+        }
+    };
+    let manifest_file = parks::manifest_file(ctx, &park.service);
+    let manifest = parks::read_manifest(ctx, &park.service)
+        .map_err(|e| unseen(&manifest_file, e, "its manifest is missing".into()))?
+        .map_err(&corrupt)?;
     if manifest.v != parks::VERSION
         || manifest.tool != tool.code()
         || manifest.account.as_deref() != Some(account.id.as_str())
@@ -610,23 +633,31 @@ pub(super) fn check_park(
             "it was parked on another Mac, and {name} cannot read it here where its key differs"
         )));
     }
-    match app.session(ctx, &parks::item(ctx, &park.service, jar(app))) {
+    let cookies = parks::item(ctx, &park.service, jar(app));
+    match app.session(ctx, &cookies) {
         Ok(Some(session)) if session.login == park.login => {}
         Ok(_) => {
             return Err(corrupt(
                 "its cookie store holds another session, or none".into(),
             ));
         }
-        Err(_) => return Err(corrupt("its cookie store could not be read".into())),
-    }
-    for item in &manifest.items {
-        match std::fs::symlink_metadata(parks::item(ctx, &park.service, item)) {
-            Ok(found) if !found.file_type().is_symlink() => {}
-            Ok(_) => return Err(corrupt(format!("`{item}` is a link"))),
-            Err(_) => return Err(corrupt(format!("`{item}` is missing from it"))),
+        Err(Unread::Unreadable(detail)) => return Err(parks::unread(&label, &cookies, detail)),
+        Err(Unread::Unknown { .. }) => {
+            return Err(corrupt("its cookie store could not be read".into()));
         }
     }
-    let keys = kept_keys(ctx, &park.service).map_err(&corrupt)?;
+    for item in &manifest.items {
+        let path = parks::item(ctx, &park.service, item);
+        match std::fs::symlink_metadata(&path) {
+            Ok(found) if !found.file_type().is_symlink() => {}
+            Ok(_) => return Err(corrupt(format!("`{item}` is a link"))),
+            Err(e) => return Err(unseen(&path, e, format!("`{item}` is missing from it"))),
+        }
+    }
+    let keys_file = parks::keys_file(ctx, &park.service);
+    let keys = park_keys(ctx, &park.service)
+        .map_err(|e| unseen(&keys_file, e, "the park's `keys.json` is missing".into()))?
+        .map_err(&corrupt)?;
     let named = keys
         .get(app.naming_key())
         .and_then(|value| serde_json::from_str::<String>(value.get()).ok());
@@ -743,6 +774,7 @@ pub(super) fn keep_aside(
 }
 
 // For an account whose park passed `check_park`. `from`: the account the leave before it parked.
+// `noticed`: what `state` holds that changed outside Pitboard, written down once it is saved.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn arrive(
     ctx: &Context,
@@ -754,6 +786,7 @@ pub(super) fn arrive(
     checked: Checked,
     leftovers: bool,
     from: Option<String>,
+    noticed: &[Noticed],
     mac: &Mac,
 ) -> Result<Vec<Warning>> {
     let tool = app.id();
@@ -797,6 +830,7 @@ pub(super) fn arrive(
     };
     state.moving.insert(tool.code().to_string(), moving.clone());
     state::save(ctx, permit, state).map_err(&before_record)?;
+    identify::write_down(ctx, permit, noticed);
     fault::point("arrive.recorded");
 
     let left = left_behind(ctx, state, tool);
@@ -945,6 +979,22 @@ pub(super) fn index_asides(
     said
 }
 
+// The park's copy of the keys, which the app rewrote since, kept aside. It holds no session.
+pub(super) fn keep_superseded(
+    ctx: &Context,
+    state: &mut State,
+    app: &dyn Folder,
+    moving: &Moving,
+) -> Warning {
+    let tool = app.id();
+    state.keep_aside(aside_of(ctx, app, moving, SetAside::Superseded, None));
+    Warning::KeysSetAside {
+        tool,
+        path: parks::at(ctx, &moving.park),
+        label: state.by_id(tool, &moving.id).map(|a| state.typed(&a.key())),
+    }
+}
+
 // The arrive's commit point. `superseded`: the app wrote its own keys since, so the park's
 // copy differs and is kept aside.
 pub(super) fn commit_arrive(
@@ -960,14 +1010,8 @@ pub(super) fn commit_arrive(
     let account = state.by_id(tool, &moving.id).cloned();
     let mut said = Vec::new();
     if superseded {
-        // The jar is back in the app's folder, so the folder kept holds no session.
-        state.keep_aside(aside_of(ctx, app, moving, SetAside::Superseded, None));
-        said.push(Warning::SetAside {
-            tool,
-            path: parks::at(ctx, &moving.park),
-            label: account.as_ref().map(|a| state.typed(&a.key())),
-            why: SetAside::Superseded,
-        });
+        // The jar is back in the app's folder.
+        said.push(keep_superseded(ctx, state, app, moving));
     } else {
         state.discard(&moving.park, ParkKind::Folder);
     }

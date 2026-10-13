@@ -27,8 +27,8 @@ const CONTRACT: u32 = 1;
 const ERROR: Style = AnsiColor::Red.on_default().bold();
 const WARNING: Style = AnsiColor::Yellow.on_default().bold();
 
-/// Park and restore your own logins of Claude Code, Codex and Claude Desktop, and see what each
-/// one has left.
+/// Park and restore your own logins of Claude Code, Codex and, on macOS, Claude Desktop, and see
+/// what each Claude Code and Codex account has left.
 #[derive(Parser)]
 #[command(name = "pitboard", version)]
 struct Cli {
@@ -43,7 +43,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// What is signed in, and how much each account has left (the default)
+    /// What is signed in, and how much each Claude Code and Codex account has left (the default)
     Status {
         /// Answer from what was last measured, without asking anyone
         #[arg(long)]
@@ -58,11 +58,11 @@ enum Command {
         /// Codex account, `desktop/work` a Claude Desktop one; a bare name means Claude Code
         #[arg(value_parser = label_to_enroll)]
         label: String,
-        /// Sign in through the tool's own sign-in, without signing out of the account in
-        /// use. For the account in use, this puts its new login in use; for another enrolled
-        /// label, it renews its parked login. For a Claude Desktop account, Pitboard parks the
-        /// account in use, leaving Claude signed out, and waits while you sign in inside Claude
-        /// and quit it.
+        /// For Claude Code and Codex, sign in through the tool's own sign-in, without signing
+        /// out of the account in use: for the account in use, this puts its new login in use,
+        /// and for another enrolled label, it renews its parked login. For Claude Desktop,
+        /// Pitboard parks the account in use, leaving Claude signed out, waits while you sign in
+        /// inside Claude and quit it, then puts that login in use under the label.
         #[arg(long)]
         sign_in: bool,
     },
@@ -242,6 +242,8 @@ struct Report {
     command: Option<&'static str>,
     result: Result<Value, Error>,
     warnings: Vec<Value>,
+    // what a refused change had done before it refused, said ahead of the refusal
+    said_first: Vec<Value>,
     human: String,
     exit: u8,
     /// A command that produced a report and still failed. The envelope then carries both
@@ -255,6 +257,7 @@ impl Report {
             command: Some(command),
             result: Ok(data),
             warnings: Vec::new(),
+            said_first: Vec::new(),
             human,
             exit: 0,
             failure: None,
@@ -267,6 +270,7 @@ impl Report {
             exit: error.exit_code(),
             result: Err(error),
             warnings: Vec::new(),
+            said_first: Vec::new(),
             human: String::new(),
             failure: None,
         }
@@ -274,8 +278,12 @@ impl Report {
 
     /// A change that failed, with what it found on the way.
     fn refused(command: &'static str, failed: Failed) -> Report {
+        let (first, rest) = failed
+            .warnings
+            .split_at(failed.said_first.min(failed.warnings.len()));
         Report {
-            warnings: warnings(&failed.warnings),
+            warnings: warnings(rest),
+            said_first: warnings(first),
             ..Report::failed(Some(command), failed.error)
         }
     }
@@ -303,12 +311,13 @@ fn emit(report: Report, as_json: bool) -> ExitCode {
                 }),
             ),
         };
+        let said: Vec<&Value> = report.said_first.iter().chain(&report.warnings).collect();
         let envelope = json!({
             "v": CONTRACT,
             "command": report.command,
             "ok": report.result.is_ok() && report.exit == 0,
             "data": data,
-            "warnings": report.warnings,
+            "warnings": said,
             "error": error,
         });
         println!("{}", json::ascii(&envelope));
@@ -320,29 +329,15 @@ fn emit(report: Report, as_json: bool) -> ExitCode {
                 w["message"].as_str().unwrap_or_default()
             );
         };
-        let (first, rest) = said_first(&report);
-        first.into_iter().for_each(warn);
+        // A refusal's "Nothing has changed" is about itself, so what came before is said first.
+        report.said_first.iter().for_each(warn);
         match &report.result {
             Ok(_) => print!("{}", report.human),
             Err(e) => eprintln!("{} {e}", paint(ERROR, "error:")),
         }
-        rest.into_iter().for_each(warn);
+        report.warnings.iter().for_each(warn);
     }
     ExitCode::from(report.exit)
-}
-
-// A settled move is said before the refusal, whose "Nothing has changed" is about itself.
-fn said_first(report: &Report) -> (Vec<&Value>, Vec<&Value>) {
-    let settled = |w: &&Value| {
-        matches!(
-            w["code"].as_str(),
-            Some("interrupted_move_undone" | "interrupted_move_finished")
-        )
-    };
-    match report.result {
-        Ok(_) => (Vec::new(), report.warnings.iter().collect()),
-        Err(_) => report.warnings.iter().partition(settled),
-    }
 }
 
 fn warnings(list: &[Warning]) -> Vec<Value> {
@@ -479,6 +474,7 @@ fn enroll_signing_in(pitboard: &Pitboard, label: &str) -> Report {
             watched.finish().map_err(|error| Failed {
                 error,
                 warnings: Vec::new(),
+                said_first: 0,
             })
         }),
     };
@@ -1294,33 +1290,43 @@ mod tests {
     }
 
     #[test]
-    fn a_move_settled_before_a_refusal_is_said_ahead_of_it() {
-        let report = |result: Result<Value, Error>| Report {
-            command: Some("use"),
-            result,
-            warnings: ["set_aside", "interrupted_move_finished", "login_item_gone"]
-                .map(|code| json!({ "code": code, "message": code }))
-                .into(),
-            human: String::new(),
-            exit: 1,
-            failure: None,
+    fn what_a_refused_change_did_first_is_said_ahead_of_it() {
+        use pitboard_core::provider::ProviderId;
+        use pitboard_core::switch::{Ended, MoveSettled};
+        let tool = ProviderId::Desktop;
+        let failed = Failed {
+            error: Error::Usage("refused".into()),
+            warnings: vec![
+                Warning::MoveSettled(MoveSettled {
+                    tool,
+                    label: "home".into(),
+                    half: pitboard_core::state::Half::Arrive,
+                    ended: Ended::Finished,
+                }),
+                Warning::SetAside {
+                    tool,
+                    path: "/Users/dana/.pitboard/parks/pitboard-aside-1".into(),
+                    label: Some("desktop/home".into()),
+                    why: pitboard_core::state::SetAside::Superseded,
+                },
+                Warning::LooksSignedOut {
+                    tool,
+                    label: "desktop/work".into(),
+                },
+            ],
+            said_first: 2,
         };
-        let codes = |said: Vec<&Value>| {
+        let codes = |said: &[Value]| {
             said.iter()
                 .map(|w| w["code"].as_str().unwrap_or_default().to_string())
                 .collect::<Vec<_>>()
         };
-        let refused = report(Err(Error::Usage("refused".into())));
-        let (first, rest) = said_first(&refused);
-        assert_eq!(codes(first), ["interrupted_move_finished"]);
-        assert_eq!(codes(rest), ["set_aside", "login_item_gone"]);
-        let done = report(Ok(Value::Null));
-        let (first, rest) = said_first(&done);
-        assert!(first.is_empty());
+        let refused = Report::refused("use", failed);
         assert_eq!(
-            codes(rest),
-            ["set_aside", "interrupted_move_finished", "login_item_gone"]
+            codes(&refused.said_first),
+            ["interrupted_move_finished", "set_aside"]
         );
+        assert_eq!(codes(&refused.warnings), ["looks_signed_out"]);
     }
 
     /// A switch made while `.credentials.json` sits behind the keychain says when running
@@ -1698,18 +1704,24 @@ mod tests {
         };
         let enroll = help(Some("enroll"));
         for said in [
-            "For a Claude Desktop account, Pitboard parks the account in use, leaving Claude \
-             signed out, and waits while you sign in inside Claude and quit it",
+            "For Claude Code and Codex, sign in through the tool's own sign-in, without signing \
+             out of the account in use: for the account in use, this puts its new login in use, \
+             and for another enrolled label, it renews its parked login.",
+            "For Claude Desktop, Pitboard parks the account in use, leaving Claude signed out, \
+             waits while you sign in inside Claude and quit it, then puts that login in use \
+             under the label",
             "`codex/work` names a Codex account, `desktop/work` a Claude Desktop one; a bare \
              name means Claude Code",
         ] {
             assert!(enroll.contains(said), "{said}: {enroll}");
         }
         assert!(help(Some("use")).contains("`desktop/work`"));
+        assert!(help(None).contains(
+            "Park and restore your own logins of Claude Code, Codex and, on macOS, Claude \
+                 Desktop, and see what each Claude Code and Codex account has left"
+        ));
         assert!(
-            help(None).contains(
-                "Park and restore your own logins of Claude Code, Codex and Claude Desktop"
-            )
+            help(Some("status")).contains("how much each Claude Code and Codex account has left")
         );
     }
 

@@ -452,6 +452,7 @@ pub(crate) fn switch(
                     checked,
                     false,
                     Some(from.clone()),
+                    &[],
                     &mac,
                 )?);
                 Ok(Outcome::Switched {
@@ -465,8 +466,12 @@ pub(crate) fn switch(
             Verdict::Nobody { leftovers } => {
                 let mac = moves::may_start(&ctx, permit, app, &root)?;
                 let checked = moves::check_park(&ctx, &state, app, key, &mac)?;
+                // Saved with the arrive's record: whoever was recorded in use signed out since.
+                let now = ctx.now();
+                let (_, noticed) = identify::record(&mut state, tool, moves::nobody(now), now);
                 warnings.extend(moves::arrive(
-                    &ctx, permit, &mut state, app, &root, key, checked, leftovers, None, &mac,
+                    &ctx, permit, &mut state, app, &root, key, checked, leftovers, None, &noticed,
+                    &mac,
                 )?);
                 Ok(Outcome::Installed {
                     provider: tool,
@@ -598,7 +603,7 @@ pub(crate) fn abandon(
     }
 }
 
-// For `repair`, only where a move waits: settled where it can be, said as waiting where not.
+// For `repair`, only where a move waits: settled where it can be, said with why where not.
 pub(crate) fn settle_for_repair(
     ctx: &Context,
     permit: Permit,
@@ -609,13 +614,10 @@ pub(crate) fn settle_for_repair(
     let Some(moving) = state.moving(tool) else {
         return Vec::new();
     };
-    let waiting = Warning::MoveWaiting {
-        tool,
-        label: state.typed(&Key::new(tool, moving.label.clone())),
-    };
+    let label = state.typed(&Key::new(tool, moving.label.clone()));
     match begin(ctx, permit, state, app) {
         Ok(begun) => begun.warnings,
-        Err(_) => vec![waiting],
+        Err(why) => vec![Warning::MoveNotSettled { tool, label, why }],
     }
 }
 

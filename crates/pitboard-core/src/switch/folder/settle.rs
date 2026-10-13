@@ -6,13 +6,14 @@ use super::super::{Error, Result, purge, shape};
 use super::moves::{self, Step};
 use super::{midway, there};
 use crate::context::Context;
+use crate::error::Then;
 use crate::fault;
 use crate::provider::ProviderId;
 use crate::provider::folder::{Folder, Keys, Unread};
 use crate::service::{Permit, Warning};
 use crate::state::{self, Half, Key, Moving, ParkKind, SetAside, State};
 use crate::store::folder as parks;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Ended {
@@ -71,15 +72,30 @@ enum KeysAre {
     Other,
 }
 
-struct Facts {
+// Where `places` found something it could not look at or read.
+#[derive(Clone, Copy)]
+enum Place {
+    Folder,
+    Park,
+}
+
+// What `places` could not look at or read: where, the item, its path and why.
+type Unseen<'a> = &'a dyn Fn(Place, &str, &Path, String) -> Error;
+
+// Where the login's jar and items are: all a give-up decides on.
+struct Places {
     park_jar: ParkJar,
     // the session the park's jar holds, where it holds one
     park_login: Option<String>,
     folder_jar: FolderJar,
-    keys: KeysAre,
     // of the listed items but the jar
     in_root: Vec<String>,
     in_park: Vec<String>,
+}
+
+struct Facts {
+    places: Places,
+    keys: KeysAre,
     // `keys.json` holds the keys the record names
     kept_mine: bool,
 }
@@ -101,8 +117,8 @@ fn row(app: &dyn Folder, half: Half, facts: &Facts) -> Row {
     use ParkJar as P;
     let name = app.app_name();
     let stop = |why: &str| Row::Stop(why.to_string());
-    let nothing_parked = facts.in_park.is_empty();
-    match (facts.park_jar, facts.folder_jar) {
+    let nothing_parked = facts.places.in_park.is_empty();
+    match (facts.places.park_jar, facts.places.folder_jar) {
         (_, F::Other) => Row::Stop(format!(
             "{name}'s folder holds a session that is not the one moving"
         )),
@@ -144,41 +160,55 @@ fn label_of(state: &State, tool: ProviderId, moving: &Moving) -> String {
     state.typed(&Key::new(tool, moving.label.clone()))
 }
 
-// A jar that does not read this time is said as one; anything else is not determined.
+// The app's own jar not looked at or not read this time is its folder's refusal; the park's
+// is `unseen`'s. One of a format not read, as `unknown` says it.
 fn jar_at(
     ctx: &Context,
     app: &dyn Folder,
+    place: Place,
     path: &Path,
-    undetermined: &dyn Fn(String) -> Error,
+    unseen: Unseen,
+    unknown: &dyn Fn(String, Then) -> Error,
 ) -> Result<Option<Option<String>>> {
-    if !there(app.id(), path)? {
+    let jar = moves::jar(app);
+    let found = match place {
+        Place::Folder => there(app.id(), path)?,
+        Place::Park => super::found(path).map_err(|e| unseen(place, jar, path, e.to_string()))?,
+    };
+    if !found {
         return Ok(None);
     }
     match app.session(ctx, path) {
         Ok(session) => Ok(Some(session.map(|session| session.login))),
-        Err(Unread::Unreadable(detail)) => Err(Error::LoginFolderUnreadable {
-            tool: app.id(),
-            detail,
+        Err(Unread::Unreadable(detail)) => Err(match place {
+            Place::Folder => Error::LoginFolderUnreadable {
+                tool: app.id(),
+                detail,
+            },
+            Place::Park => unseen(place, jar, path, detail),
         }),
-        Err(Unread::Unknown { what, .. }) => Err(undetermined(format!(
-            "{}'s data folder {what}",
-            app.app_name()
-        ))),
+        Err(Unread::Unknown { what, then }) => Err(unknown(what, then)),
     }
 }
 
-fn facts(
+fn places(
     ctx: &Context,
-    state: &State,
     app: &dyn Folder,
     root: &Path,
     moving: &Moving,
-    undetermined: &dyn Fn(String) -> Error,
-) -> Result<Facts> {
+    unseen: Unseen,
+    unknown: &dyn Fn(String, Then) -> Error,
+) -> Result<Places> {
     let jar = moves::jar(app);
-    let read = moves::settings(app, root).map_err(undetermined)?;
-    let parked = jar_at(ctx, app, &parks::item(ctx, &moving.park, jar), undetermined)?;
-    let in_folder = jar_at(ctx, app, &root.join(jar), undetermined)?;
+    let parked = jar_at(
+        ctx,
+        app,
+        Place::Park,
+        &parks::item(ctx, &moving.park, jar),
+        unseen,
+        unknown,
+    )?;
+    let in_folder = jar_at(ctx, app, Place::Folder, &root.join(jar), unseen, unknown)?;
     let park_jar = match &parked {
         None => ParkJar::None,
         Some(Some(login)) if *login == moving.login => ParkJar::Mine,
@@ -190,6 +220,39 @@ fn facts(
         Some(Some(login)) if *login == moving.login => FolderJar::Mine,
         Some(Some(_)) => FolderJar::Other,
     };
+    let seen = |place, item: &str, path: PathBuf| {
+        super::found(&path).map_err(|e| unseen(place, item, &path, e.to_string()))
+    };
+    let (mut in_root, mut in_park) = (Vec::new(), Vec::new());
+    for item in moving.items.iter().filter(|item| *item != jar) {
+        if seen(Place::Folder, item, root.join(item))? {
+            in_root.push(item.clone());
+        }
+        if seen(Place::Park, item, parks::item(ctx, &moving.park, item))? {
+            in_park.push(item.clone());
+        }
+    }
+    Ok(Places {
+        park_jar,
+        park_login: parked.flatten(),
+        folder_jar,
+        in_root,
+        in_park,
+    })
+}
+
+fn facts(
+    ctx: &Context,
+    state: &State,
+    app: &dyn Folder,
+    root: &Path,
+    moving: &Moving,
+    undetermined: &dyn Fn(String) -> Error,
+) -> Result<Facts> {
+    let read = moves::settings(app, root).map_err(undetermined)?;
+    let unseen = |_, _: &str, path: &Path, why| undetermined(moves::not_looked_at(path, why));
+    let unknown = |what, _| undetermined(format!("{}'s data folder {what}", app.app_name()));
+    let places = places(ctx, app, root, moving, &unseen, &unknown)?;
     let held = read.account_keys(app);
     let caches = app.keys().iter().filter(|key| **key != app.naming_key());
     let uuid = state
@@ -209,24 +272,11 @@ fn facts(
     } else {
         KeysAre::Other
     };
-    let (mut in_root, mut in_park) = (Vec::new(), Vec::new());
-    for item in moving.items.iter().filter(|item| *item != jar) {
-        if moves::exists(&root.join(item)).map_err(undetermined)? {
-            in_root.push(item.clone());
-        }
-        if moves::exists(&parks::item(ctx, &moving.park, item)).map_err(undetermined)? {
-            in_park.push(item.clone());
-        }
-    }
     let kept_mine =
         moves::kept_keys(ctx, &moving.park).is_ok_and(|kept| kept.digests() == moving.keys);
     Ok(Facts {
-        park_jar,
-        park_login: parked.flatten(),
-        folder_jar,
+        places,
         keys,
-        in_root,
-        in_park,
         kept_mine,
     })
 }
@@ -299,13 +349,7 @@ pub(super) fn settle(
         Row::LeaveKeysRewritten => {
             // The app wrote its own keys since, so the copy kept differs and is kept aside.
             if parks::at(ctx, &moving.park).is_dir() {
-                state.keep_aside(moves::aside_of(
-                    ctx,
-                    app,
-                    &moving,
-                    SetAside::Superseded,
-                    None,
-                ));
+                said.push(moves::keep_superseded(ctx, state, app, &moving));
             } else {
                 state.discard(&moving.park, ParkKind::Folder);
             }
@@ -328,9 +372,10 @@ pub(super) fn settle(
         Row::LeaveItemsOn => {
             // What is in both places is the app's own since, and stays.
             let rest: Vec<String> = facts
+                .places
                 .in_root
                 .iter()
-                .filter(|item| !facts.in_park.contains(item))
+                .filter(|item| !facts.places.in_park.contains(item))
                 .cloned()
                 .collect();
             let gone = leave_on(ctx, permit, app, &root, &moving, &rest).map_err(&stopped)?;
@@ -343,7 +388,7 @@ pub(super) fn settle(
             let gone: Vec<String> = moving
                 .items
                 .iter()
-                .filter(|item| *item != moves::jar(app) && !facts.in_root.contains(item))
+                .filter(|item| *item != moves::jar(app) && !facts.places.in_root.contains(item))
                 .cloned()
                 .collect();
             said.extend(moves::gone_warnings(tool, &label, gone));
@@ -356,7 +401,7 @@ pub(super) fn settle(
         Row::ArriveBack { jar } => {
             let back = || -> Step {
                 take_back(ctx, permit, app, &root, &moving, jar)?;
-                if facts.folder_jar == FolderJar::None {
+                if facts.places.folder_jar == FolderJar::None {
                     finish_setting_aside(ctx, permit, state, app, &root, &moving)?;
                 }
                 Ok(())
@@ -516,12 +561,6 @@ pub(super) fn give_up(
     };
     let label = label_of(state, tool, &moving);
     let elsewhere = moving.slot != moves::slot(ctx, app);
-    let undetermined = |detail: String| Error::RecoveryUndetermined {
-        tool,
-        from: label.clone(),
-        to: label.clone(),
-        detail,
-    };
     let stopped = |detail: String| Error::RecoveryStopped {
         label: label.clone(),
         detail,
@@ -530,17 +569,28 @@ pub(super) fn give_up(
     let mut left = Vec::new();
     if !elsewhere {
         let root = app.root(ctx).map_err(|e| shape(tool, e))?;
-        let facts = facts(ctx, state, app, &root, &moving, &undetermined)?;
+        // Not the settings, which a give-up never writes. What it cannot read refuses with its
+        // own advice: `recovery_undetermined` would send `abandon` back to itself.
+        let unknown = |what, then| Error::LoginFolderUnknown { tool, what, then };
+        let unseen = |place, item: &str, path: &Path, why: String| match place {
+            Place::Folder => Error::LoginFolderUnknown {
+                tool,
+                what: format!("has `{item}`, which Pitboard could not look at ({why})"),
+                then: Then::Nothing,
+            },
+            Place::Park => parks::unread(&label, path, why),
+        };
+        let places = places(ctx, app, &root, &moving, &unseen, &unknown)?;
         // A jar leaves first and arrives last, so where it is in the folder the rest is too.
-        if facts.folder_jar != FolderJar::Mine && facts.park_jar == ParkJar::Mine {
-            left = facts
+        if places.folder_jar != FolderJar::Mine && places.park_jar == ParkJar::Mine {
+            left = places
                 .in_root
                 .iter()
-                .filter(|item| !facts.in_park.contains(item) && !moves::of_the_jar(app, item))
+                .filter(|item| !places.in_park.contains(item) && !moves::of_the_jar(app, item))
                 .cloned()
                 .collect();
         }
-        match facts.folder_jar {
+        match places.folder_jar {
             _ if left.is_empty() => {}
             FolderJar::None | FolderJar::NoSession => {
                 let listed = || -> Step {
@@ -555,7 +605,7 @@ pub(super) fn give_up(
             }
             FolderJar::Other if !said => {
                 let folder = parks::at(ctx, &moving.park);
-                let places = left
+                let listed = left
                     .iter()
                     .map(|item| format!("`{item}` in {}'s folder", app.app_name()))
                     .chain(std::iter::once(format!(
@@ -564,7 +614,10 @@ pub(super) fn give_up(
                         folder.display()
                     )))
                     .collect();
-                return Err(Error::MoveMixed { label, places });
+                return Err(Error::MoveMixed {
+                    label,
+                    places: listed,
+                });
             }
             FolderJar::Other | FolderJar::Mine => {
                 let mac = moves::Mac::here(ctx)?;
@@ -604,8 +657,8 @@ pub(super) fn give_up(
             state,
             app,
             &moving,
-            facts.park_jar,
-            facts.park_login,
+            places.park_jar,
+            places.park_login,
         );
         park.map_err(&stopped)?;
         midway(ctx, app, Some(label.clone()))?;

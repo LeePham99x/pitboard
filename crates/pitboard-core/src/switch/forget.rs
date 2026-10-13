@@ -60,7 +60,9 @@ pub fn forget(settled: Settled, key: &Key) -> Result<(String, Vec<Warning>)> {
         return Err(Error::CannotForgetActiveAccount { label: key.typed() }.after(said));
     }
     state.remove(key);
-    state::save(&ctx, permit, &state)?;
+    if let Err(unsaved) = state::save(&ctx, permit, &state) {
+        return Err(unsaved.after(said));
+    }
     crate::fault::point("forget.recorded");
     crate::readings::forget(&ctx, permit, &account.id);
     crate::budget::forget(&ctx, permit, &account.id);

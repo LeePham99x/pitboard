@@ -121,9 +121,17 @@ fn provenance(usage: &Snapshot, now: i64) -> Option<String> {
 pub fn human(report: &Report) -> String {
     let now = report.now;
     if report.rows.is_empty() {
-        return "Nothing is signed in and no account is enrolled.\n\
-                Run `claude` and sign in, then `pitboard enroll <label>`.\n"
-            .into();
+        // With nothing enrolled, only Claude Code was read.
+        let mut said = "No account is enrolled, and Pitboard found no Claude Code login.\n\
+                        Run `claude` and sign in, then `pitboard enroll <label>`.\n\
+                        For Codex, run `pitboard enroll codex/<label>`.\n"
+            .to_string();
+        if ProviderId::Desktop.supported_on(pitboard_core::host::OS) {
+            said.push_str(
+                "For Claude Desktop, quit Claude, then run `pitboard enroll desktop/<label>`.\n",
+            );
+        }
+        return said;
     }
     let label_width = report
         .rows
@@ -485,6 +493,23 @@ mod tests {
 
     fn plain(styled: &str) -> String {
         anstream::adapter::strip_str(styled).to_string()
+    }
+
+    // With no account enrolled, a read looks at Claude Code alone: it says only that, and how
+    // each tool is enrolled.
+    #[test]
+    fn an_empty_report_says_what_was_read_and_how_to_enrol_each_tool() {
+        let text = plain(&human(&report(Vec::new())));
+        assert!(
+            text.starts_with("No account is enrolled, and Pitboard found no Claude Code login.\n"),
+            "{text}"
+        );
+        assert!(text.contains("`pitboard enroll codex/<label>`"), "{text}");
+        assert_eq!(
+            text.contains("`pitboard enroll desktop/<label>`"),
+            ProviderId::Desktop.supported_on(pitboard_core::host::OS),
+            "{text}"
+        );
     }
 
     #[test]

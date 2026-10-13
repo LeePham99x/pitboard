@@ -53,6 +53,19 @@ pub(crate) fn item(ctx: &Context, name: &str, item: &str) -> PathBuf {
     at(ctx, name).join(ITEMS).join(item)
 }
 
+pub(crate) fn manifest_file(ctx: &Context, name: &str) -> PathBuf {
+    at(ctx, name).join(MANIFEST)
+}
+
+// A park, or anything in it, not looked at: still there, as a vault not read is to the
+// keychain's twin.
+pub(crate) fn unread(label: &str, path: &Path, why: impl std::fmt::Display) -> crate::error::Error {
+    crate::error::Error::Store(super::Error::Unreadable(format!(
+        "`{label}`'s parked login at {} could not be looked at ({why})",
+        path.display()
+    )))
+}
+
 // `parks`, made private where missing, on the volume `root` is on. Never changes a mode.
 pub(crate) fn ready(ctx: &Context, permit: Permit, root: &Path) -> crate::error::Result<()> {
     use crate::error::Error;
@@ -135,7 +148,7 @@ pub(crate) fn write_manifest(
     let body = serde_json::to_vec_pretty(manifest).map_err(io::Error::other)?;
     crate::atomic::write(
         permit,
-        &at(ctx, name).join(MANIFEST),
+        &manifest_file(ctx, name),
         &body,
         crate::atomic::Perms::Secret,
     )
@@ -158,18 +171,26 @@ pub(crate) fn keys(ctx: &Context, name: &str) -> io::Result<Result<Keys, String>
 
 // None: no manifest. Refused: one that does not read, or that a newer Pitboard wrote.
 pub(crate) fn manifest(ctx: &Context, name: &str) -> Result<Option<Manifest>, String> {
-    let raw = match std::fs::read(at(ctx, name).join(MANIFEST)) {
-        Ok(raw) => raw,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(format!("its manifest could not be read: {e}")),
-    };
+    match read_manifest(ctx, name) {
+        Ok(read) => read.map(Some),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("its manifest could not be read: {e}")),
+    }
+}
+
+// The manifest. One that is not there is `NotFound`; the inner refusal is one that does not
+// parse, or that a newer Pitboard wrote.
+pub(crate) fn read_manifest(ctx: &Context, name: &str) -> io::Result<Result<Manifest, String>> {
+    std::fs::read(manifest_file(ctx, name)).map(|raw| parsed(&raw))
+}
+
+fn parsed(raw: &[u8]) -> Result<Manifest, String> {
     let found: serde_json::Value =
-        serde_json::from_slice(&raw).map_err(|e| format!("its manifest is not JSON: {e}"))?;
+        serde_json::from_slice(raw).map_err(|e| format!("its manifest is not JSON: {e}"))?;
     if found["v"].as_u64().is_some_and(|v| v > u64::from(VERSION)) {
         return Err("its manifest was written by a newer Pitboard".into());
     }
     serde_json::from_value(found)
-        .map(Some)
         .map_err(|e| format!("its manifest is not one Pitboard writes: {e}"))
 }
 

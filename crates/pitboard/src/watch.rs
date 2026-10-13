@@ -137,6 +137,7 @@ fn decided(
         Err(error) => Some(Err(Failed {
             error,
             warnings: Vec::new(),
+            said_first: 0,
         })),
     }
 }
@@ -189,9 +190,12 @@ impl Told {
         };
         let mut report = say(outcome);
         report
+            .said_first
+            .retain(|warning| self.warned.insert(warning.to_string()));
+        report
             .warnings
             .retain(|warning| self.warned.insert(warning.to_string()));
-        if !untold && report.warnings.is_empty() {
+        if !untold && report.said_first.is_empty() && report.warnings.is_empty() {
             return None;
         }
         self.watching = watching;
@@ -844,6 +848,7 @@ mod tests {
         let refused = Err(Failed {
             error: Error::SignedInAccountChanged,
             warnings: vec![fallback()],
+            said_first: 0,
         });
         assert!(said.heard(refused).is_some(), "an error is said once");
         let refused_again = Err(Failed {
@@ -854,6 +859,7 @@ mod tests {
                     tool: ProviderId::Claude,
                 },
             ],
+            said_first: 0,
         });
         let refused_again = said
             .heard(refused_again)
@@ -1078,6 +1084,7 @@ mod tests {
                         why: pitboard_core::warm::Failure::NotStarted,
                     },
                     warnings: Vec::new(),
+                    said_first: 0,
                 })
             };
             assert_eq!(told.untold(failed()).len(), 1);
@@ -1115,6 +1122,7 @@ mod tests {
                         label: label.into(),
                     },
                     warnings: Vec::new(),
+                    said_first: 0,
                 })
             };
             assert_eq!(told.untold(expired("work")).len(), 1);

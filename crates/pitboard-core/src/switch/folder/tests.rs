@@ -1022,7 +1022,7 @@ fn repair_never_lets_go_of_a_park_a_move_holds() {
     let (reclaimed, warnings) = repair(settled(&m)).expect("repaired");
 
     assert!(
-        matches!(warnings.as_slice(), [Warning::MoveWaiting { .. }]),
+        matches!(warnings.as_slice(), [Warning::MoveNotSettled { .. }]),
         "{warnings:?}"
     );
     assert!(reclaimed.given_back.is_empty(), "{reclaimed:?}");
@@ -1307,6 +1307,33 @@ fn a_switch_parks_the_account_in_use_and_puts_the_other_in() {
     );
     hold(&m, "and back");
     rested(&m, "and back");
+}
+
+// A switch Pitboard makes writes no `in-use` line. One into a Claude signed out since writes
+// who left and whose only login went, as a read of any other tool would.
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+)]
+fn a_use_into_a_signed_out_claude_says_who_left_in_the_activity_log() {
+    let m = desktop_pair("use-signed-out");
+    let before = audit_lines(&m, "in-use");
+    used(&m, "home");
+    assert_eq!(audit_lines(&m, "in-use"), before, "Pitboard's own switch");
+    let claude = m.claude();
+    claude.opens();
+    claude.logs_out();
+    claude.quits();
+    used(&m, "work");
+    let lines = audit_lines(&m, "in-use");
+    assert_eq!(
+        lines[before.len()..],
+        [
+            (String::new(), "signed_out_outside".to_string()),
+            ("desktop/home".to_string(), "login_replaced".to_string()),
+        ]
+    );
 }
 
 #[test]
@@ -1711,6 +1738,46 @@ fn a_park_from_another_mac_is_refused_before_anything_moves() {
     );
     unchanged(&m, &before, "`work` did not leave for it");
     assert_eq!(in_use(&m).as_deref(), Some("work"));
+}
+
+// A park Pitboard cannot look at, or a file of it it cannot read, is neither missing nor
+// another login, so nobody is sent to sign in again for it.
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+)]
+fn a_park_that_cannot_be_looked_at_is_never_said_missing() {
+    use crate::host::fs::testing;
+    let m = desktop_pair("park-unread");
+    let park = park_of(&m, "home").expect("parked").service;
+    let folder = crate::store::folder::at(&m.ctx, &park);
+    let items = folder.join("items");
+    recover(&m).expect("swept");
+    for (path, what) in [
+        (crate::store::folder::parks_dir(&m.ctx), "the park"),
+        (items.join("IndexedDB"), "a listed item"),
+        (items.clone(), "its items"),
+        (items.join("Cookies"), "its cookie store"),
+        (folder.join("manifest.json"), "its manifest"),
+        (crate::store::folder::keys_file(&m.ctx, &park), "its keys"),
+    ] {
+        let before = snapshot(&m);
+        testing::deny_reading(&path).expect("not looked into");
+        let stopped = refused(&m, "home");
+        testing::make_private(&path).expect("looked into again");
+        assert_eq!(
+            stopped.code(),
+            "credential_store_unreadable",
+            "{what}: {stopped}"
+        );
+        assert!(
+            !stopped.to_string().contains("--sign-in"),
+            "{what}: {stopped}"
+        );
+        unchanged(&m, &before, what);
+    }
+    used(&m, "home");
 }
 
 #[test]
@@ -2509,6 +2576,101 @@ fn abandon_settles_a_move_it_can_before_giving_up_any() {
     rested(&m, "settled by abandon");
     let nothing = gave_up(&m).expect("nothing waits");
     assert!(nothing.switch.is_none() && nothing.moves.is_empty() && nothing.warnings.is_empty());
+}
+
+// A give-up reads no settings, which it never writes, and a jar or an item it cannot read is
+// refused with its own way out, never with a sentence that sends the person back to `abandon`.
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+)]
+fn abandon_gives_up_whatever_the_settings_and_says_why_a_jar_or_an_item_stops_it() {
+    use crate::host::fs::testing;
+    let m = desktop_pair("abandon-settings");
+    killed(&m, "leave.jar_out", "home");
+    std::fs::write(data(&m).join("config.json"), "[]").expect("settings not read");
+    let gave = gave_up(&m).expect("given up");
+    assert_eq!(gave.moves.len(), 1, "{gave:?}");
+    assert!(state_of(&m).moving.is_empty());
+
+    let m = desktop_pair("abandon-jar");
+    killed(&m, "leave.keys_out", "home");
+    write_stand_in_jar(&data(&m).join("Cookies"), 25, &session_of(Some(&WORK)));
+    let stopped = gave_up(&m).expect_err("refused");
+    assert_eq!(stopped.code(), "login_folder_unknown", "{stopped}");
+    let said = stopped.to_string();
+    assert!(said.contains("Update Pitboard"), "{said}");
+    assert!(!said.contains("pitboard abandon"), "{said}");
+    // The first give-up swept what the kill left; one refused moves and indexes nothing.
+    let before = snapshot(&m);
+    let again = gave_up(&m).expect_err("refused again");
+    assert_eq!(again.code(), "login_folder_unknown", "{again}");
+    unchanged(&m, &before, "a jar not read");
+    assert!(state_of(&m).moving(ProviderId::Desktop).is_some());
+
+    let m = desktop_pair("abandon-item");
+    killed(&m, "leave.jar_out", "home");
+    let stores = data(&m).join("IndexedDB");
+    testing::deny_reading(&stores).expect("not looked into");
+    let stopped = gave_up(&m).expect_err("refused");
+    let before = snapshot(&m);
+    let again = gave_up(&m).expect_err("refused again");
+    unchanged(&m, &before, "an item not looked at");
+    testing::make_private(&stores).expect("looked into again");
+    for refused in [&stopped, &again] {
+        assert_eq!(refused.code(), "login_folder_unknown", "{refused}");
+        let said = refused.to_string();
+        assert!(said.contains("could not look at"), "{said}");
+        assert!(!said.contains("pitboard abandon"), "{said}");
+    }
+    assert!(state_of(&m).moving(ProviderId::Desktop).is_some());
+
+    // What of the park Pitboard cannot look at or read is said as the park's, never Claude's.
+    let m = desktop_pair("abandon-park");
+    killed(&m, "leave.verified", "home");
+    let park = state_of(&m)
+        .moving(ProviderId::Desktop)
+        .expect("waits")
+        .park
+        .clone();
+    let items = crate::store::folder::at(&m.ctx, &park).join("items");
+    let jar = items.join("Cookies");
+    let refused_twice = |m: &Machine| {
+        let stopped = gave_up(m).expect_err("refused");
+        let before = snapshot(m);
+        let again = gave_up(m).expect_err("refused again");
+        unchanged(m, &before, "the park not looked at");
+        [stopped, again]
+    };
+    let said_of = |refused: &[Error; 2], named: &std::path::Path| {
+        for refused in refused {
+            assert_eq!(refused.code(), "credential_store_unreadable", "{refused}");
+            let said = refused.to_string();
+            assert!(said.contains(&named.display().to_string()), "{said}");
+            for never in ["Open Claude", "data folder", "pitboard abandon"] {
+                assert!(!said.contains(never), "{said}");
+            }
+        }
+    };
+    let stores = items.join("IndexedDB");
+    testing::deny_reading(&stores).expect("not looked into");
+    let refused = refused_twice(&m);
+    testing::make_private(&stores).expect("looked into again");
+    said_of(&refused, &stores);
+    testing::deny_reading(&items).expect("not looked into");
+    let refused = refused_twice(&m);
+    testing::make_private(&items).expect("looked into again");
+    said_of(&refused, &jar);
+    m.mem.jar_unsettled(&jar);
+    let refused = refused_twice(&m);
+    said_of(&refused, &jar);
+    assert!(
+        refused[0].to_string().contains("(a test held the jar)"),
+        "{}",
+        refused[0]
+    );
+    assert!(state_of(&m).moving(ProviderId::Desktop).is_some());
 }
 
 #[test]
@@ -3317,10 +3479,19 @@ fn repair_says_a_move_it_cannot_settle_as_a_warning() {
     killed(&m, "leave.jar_out", "home");
     m.claude().opens();
     let (_, warnings) = repair(settled(&m)).expect("the rest is repaired");
+    let not_settled = |warnings: &[Warning]| {
+        let codes: Vec<&str> = warnings.iter().map(Warning::code).collect();
+        assert_eq!(codes, ["move_not_settled"], "{warnings:?}");
+        let said = warnings[0].to_string();
+        assert!(said.contains("`desktop/work`'s login"), "{said}");
+        said
+    };
+    let said = not_settled(&warnings);
     assert!(
-        matches!(warnings.as_slice(), [Warning::MoveWaiting { label, .. }] if label == "desktop/work"),
-        "{warnings:?}"
+        said.contains("because Claude is open. Quit Claude with Command-Q"),
+        "{said}"
     );
+    assert!(!said.contains("Keep Claude closed"), "{said}");
     assert!(state_of(&m).moving(ProviderId::Desktop).is_some());
     m.claude().crashes();
     let (_, warnings) = repair(settled(&m)).expect("repaired");
@@ -3329,6 +3500,24 @@ fn repair_says_a_move_it_cannot_settle_as_a_warning() {
         "{warnings:?}"
     );
     rested(&m, "settled by repair");
+
+    // What no next change settles either is said with its own way out.
+    let m = desktop_pair("repair-undetermined");
+    killed(&m, "leave.jar_out", "home");
+    std::fs::write(data(&m).join("config.json"), "[]").expect("settings not read");
+    let (_, warnings) = repair(settled(&m)).expect("the rest is repaired");
+    let said = not_settled(&warnings);
+    assert!(said.contains("cannot tell where it stopped"), "{said}");
+    assert!(said.contains("`pitboard abandon`"), "{said}");
+    assert!(!said.contains("settles it first"), "{said}");
+    assert!(
+        !said.contains("Nothing has changed"),
+        "repair went on: {said}"
+    );
+    assert!(
+        state_of(&m).moving(ProviderId::Desktop).is_some(),
+        "the move still waits"
+    );
 }
 
 #[test]
@@ -3495,6 +3684,56 @@ fn a_leave_that_fails_partway_is_undone_and_its_account_stays_in_use() {
     assert!(state_of(&m).moving.is_empty());
     hold(&m, "a leave undone");
     rested(&m, "a leave undone");
+}
+
+// What Claude left after a Log out, set aside before the arrive failed and was undone, is
+// said beside the refusal, whether only its keys or all of it had gone.
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+)]
+fn an_arrive_undone_at_once_says_what_it_set_aside() {
+    for nth in [1, 7] {
+        let m = desktop_pair(&format!("arrive-undone-{nth}"));
+        let claude = m.claude();
+        claude.opens();
+        claude.logs_out();
+        claude.quits();
+        let lines = audit_lines(&m, "in-use");
+        let mut stopped = crate::fault::failing_nth("move_in", nth, || refused(&m, "home"));
+        assert_eq!(stopped.code(), "switch_left_signed_out", "{nth}: {stopped}");
+        // Saved with the arrive's record, whatever the arrive came to.
+        assert_eq!(
+            audit_lines(&m, "in-use")[lines.len()..],
+            [
+                (String::new(), "signed_out_outside".to_string()),
+                ("desktop/work".to_string(), "login_replaced".to_string()),
+            ],
+            "{nth}"
+        );
+        let said = stopped.take_warnings();
+        let aside = state_of(&m)
+            .aside
+            .iter()
+            .find(|aside| aside.why == SetAside::InTheWay)
+            .map(|aside| crate::store::folder::at(&m.ctx, &aside.name))
+            .expect("set aside");
+        assert!(
+            said.iter().any(|warning| matches!(
+                warning,
+                Warning::SetAside { why: SetAside::InTheWay, path, .. } if *path == aside
+            )),
+            "{nth}: {said:?}"
+        );
+        assert!(
+            !said
+                .iter()
+                .any(|warning| matches!(warning, Warning::MoveSettled(_))),
+            "{nth}: the refusal says it was undone: {said:?}"
+        );
+        rested(&m, "an arrive undone at once");
+    }
 }
 
 #[test]
@@ -3674,6 +3913,16 @@ fn a_codex_switch_is_given_up_beside_a_move_that_cannot_be() {
     let folder = claudes(&m);
     let gave = gave_up(&m).expect("the switch is given up");
     switch_given_up_beside(&m, &gave, "(a test held the jar)");
+    let said = gave.warnings[0].to_string();
+    assert!(
+        said.contains(
+            &crate::store::folder::at(&m.ctx, &park)
+                .display()
+                .to_string()
+        ),
+        "{said}"
+    );
+    assert!(!said.contains("Open Claude"), "{said}");
     assert_eq!(claudes(&m), folder, "nothing of Claude's moved");
 }
 
@@ -3695,8 +3944,7 @@ fn settled_then_refused(
         failed.error
     );
     assert!(
-        failed
-            .warnings
+        failed.warnings[..failed.said_first]
             .iter()
             .any(|warning| warning.code() == settled),
         "{code}: {:?}",
@@ -3800,6 +4048,149 @@ fn a_refusal_after_a_settled_move_says_it_settled() {
         done.warnings
     );
     assert!(state_of(&m).get(&m.key("home")).is_none());
+}
+
+// A step that fails after the change settled a move still says the move settled.
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+)]
+fn a_failure_after_a_settled_move_still_says_it_settled() {
+    use crate::host::fs::testing;
+    let undone = "interrupted_move_undone";
+    let m = desktop_pair("settled-then-scheduled");
+    killed(&m, "leave.keys_out", "home");
+    crate::schedule::install(&m.ctx, Permit::for_a_test()).expect("scheduled");
+    let dir = crate::schedule::path(&m.ctx)
+        .and_then(|path| path.parent().map(std::path::Path::to_path_buf))
+        .expect("where the scheduler keeps it");
+    testing::deny_changes(&dir).expect("read-only");
+    settled_then_refused(&m, "home_unwritable", undone, |pitboard| {
+        pitboard.uninstall().err().expect("refused")
+    });
+    testing::allow_changes(&dir).expect("changeable again");
+    assert!(crate::home::dir(&m.ctx).is_dir());
+
+    let m = desktop_pair("settled-then-unsaved");
+    let park = park_of(&m, "home").expect("parked").service;
+    killed(&m, "leave.keys_out", "home");
+    let file = crate::home::dir(&m.ctx).join("state.json");
+    let kept = crate::home::dir(&m.ctx).join("state.kept");
+    let failed = crate::fault::meanwhile(
+        "settle.saved",
+        {
+            let (file, kept) = (file.clone(), kept.clone());
+            move || {
+                std::fs::rename(&file, &kept).expect("moved");
+                std::fs::create_dir_all(file.join("in the way")).expect("a folder in its place");
+            }
+        },
+        || forget(settled(&m), &m.key("home")),
+    );
+    std::fs::remove_dir_all(&file).expect("taken out of the way");
+    std::fs::rename(&kept, &file).expect("put back");
+    let mut failed = failed.expect_err("refused");
+    assert_eq!(failed.code(), "state_write_failed", "{failed}");
+    let said = failed.take_warnings();
+    assert!(
+        said.iter().any(|warning| warning.code() == undone),
+        "{said:?}"
+    );
+    // What forget deletes goes only after its record is saved.
+    assert!(crate::store::folder::at(&m.ctx, &park).is_dir());
+    assert_eq!(whereabouts(&m, &HOME), [park]);
+}
+
+// Claude ran as whoever its folder held and renewed that account's tokens.
+fn renewed(m: &Machine) {
+    let path = data(m).join("config.json");
+    let written = std::fs::read_to_string(&path).expect("settings");
+    let renewed = [WORK, HOME].iter().fold(written.clone(), |held, who| {
+        held.replacen(
+            &format!("|{}\"", who.session),
+            &format!("|{}-renewed\"", who.session),
+            1,
+        )
+    });
+    assert_ne!(renewed, written, "tokens to renew");
+    std::fs::write(&path, renewed).expect("Claude's own write");
+}
+
+// What settling set aside is said before the refusal, with the move it settled. The keys
+// Claude rewrote since the arrive are all the folder kept holds.
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+)]
+fn a_refusal_after_a_settled_move_says_all_it_did_first() {
+    let m = desktop_pair("superseded-then-refused");
+    killed(&m, "arrive.keys_in", "home");
+    renewed(&m);
+    let failed = crate::service::Pitboard::new(m.ctx.clone())
+        .update_config("desktop/work")
+        .expect_err("refused");
+    assert_eq!(
+        failed.error.code(),
+        "account_not_in_use",
+        "{}",
+        failed.error
+    );
+    let codes =
+        |said: &[Warning]| -> Vec<&'static str> { said.iter().map(Warning::code).collect() };
+    assert_eq!(
+        codes(&failed.warnings),
+        ["interrupted_move_finished", "set_aside"]
+    );
+    assert_eq!(failed.said_first, 2);
+    assert_eq!(
+        failed.warnings[1].to_string(),
+        format!(
+            "Claude rewrote `desktop/home`'s keys. Pitboard kept the earlier ones in {} and \
+             deleted nothing. `pitboard doctor` lists them.",
+            superseded(&m).display()
+        )
+    );
+}
+
+fn superseded(m: &Machine) -> std::path::PathBuf {
+    state_of(m)
+        .aside
+        .iter()
+        .find(|aside| aside.why == SetAside::Superseded)
+        .map(|aside| crate::store::folder::at(&m.ctx, &aside.name))
+        .expect("kept aside")
+}
+
+// Keys Claude rewrote while a leave waited are kept aside, and the change says so.
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+)]
+fn keys_claude_rewrote_during_a_leave_are_said_set_aside() {
+    let m = desktop_pair("keys-rewritten");
+    killed(&m, "leave.keys_kept", "home");
+    renewed(&m);
+    let done = crate::service::Pitboard::new(m.ctx.clone())
+        .update_config("desktop/work")
+        .expect("`work` in use");
+    // The leave never moved the jar: the folder kept holds only the keys.
+    let said: Vec<String> = done
+        .warnings
+        .iter()
+        .filter(|warning| warning.code() == "set_aside")
+        .map(ToString::to_string)
+        .collect();
+    assert_eq!(
+        said,
+        [format!(
+            "Claude rewrote `desktop/work`'s keys. Pitboard kept the earlier ones in {} and \
+             deleted nothing. `pitboard doctor` lists them.",
+            superseded(&m).display()
+        )]
+    );
 }
 
 // The enrolment gives the move up and sets `home`'s older park aside, then cannot save: it
@@ -4142,7 +4533,7 @@ fn a_temporary_left_inside_a_settings_write_is_swept() {
     windows,
     ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
 )]
-fn a_power_cut_that_undid_a_rename_is_recovered() {
+fn a_power_cut_that_undid_a_committed_rename_is_refused_and_moves_nothing() {
     let m = desktop_pair("power-cut");
     killed(&m, "leave.done", "home");
     let park = park_of(&m, "work").expect("parked").service;

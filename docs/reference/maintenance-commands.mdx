@@ -308,10 +308,10 @@ When Codex's or Claude Desktop's checks appear and Claude Code is absent, `docto
   | `desktop_settings` | `Claude settings` | `config.json`, and a `config.json.journal` beside it, can be read. Fails otherwise. |
   | `desktop_layout` | `Claude data folder layout` | Every name at the data folder's first level is one Pitboard has read. Warns otherwise: Pitboard starts no Claude Desktop move while one is there. |
   | `desktop_login` | `Claude Desktop in use` | The account Pitboard last read in use, and when. Warns when it has read none or Claude looks signed out. Warns when Claude's settings have named another account since, or that account also holds a parked login. |
-  | `desktop_parked_login` | `account desktop/<label>` | One per Claude Desktop account. Warns when nothing is parked to switch to, or its sign-in may have lapsed. Fails when its folder is missing from `parks/`. |
+  | `desktop_parked_login` | `account desktop/<label>` | One per Claude Desktop account. Warns when nothing is parked to switch to, its sign-in may have lapsed, or `parks/` could not be looked at. Fails when its folder is missing from `parks/`. |
   | `desktop_move` | `interrupted Claude Desktop move` | Only while a move waits. Always warns. |
   | `desktop_awaiting` | `awaited sign-in` | Only while Claude is signed out for a sign-in, with an account parked for it. Always warns. |
   | `desktop_parks_folder` | `parked Claude Desktop logins` | Only when `parks/` exists. Only you can open it, and it is on the data folder's volume. Fails otherwise. |
-  | `desktop_set_aside` | `folders set aside` | Only when folders are set aside. How many, and which hold a login. Warns when one holds a login that no account in use or parked keeps beside it. |
+  | `desktop_set_aside` | `folders set aside` | Only when folders are set aside. How many, which hold a login, and whose parts of a login the others hold. Warns when one holds a login that no account in use or parked keeps beside it. |
   | `desktop_build` | `Claude` | The installed Claude's version, and the builds Pitboard's facts were read from. Always `ok`. |
 </Accordion>

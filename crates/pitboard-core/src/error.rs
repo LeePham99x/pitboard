@@ -243,12 +243,7 @@ pub enum Error {
     )]
     WarmSettingCorrupt { path: PathBuf, detail: String },
 
-    #[error(
-        "`{label}` is a {} account, and Pitboard warms up Claude Code accounts only: when a {} \
-         period starts has not been measured.",
-        .tool.name(),
-        .tool.name()
-    )]
+    #[error("{}", warm_up_unsupported(*tool, label))]
     WarmUpUnsupported { tool: ProviderId, label: String },
 
     #[error("`{label}` was not warmed up: {}.", crate::words::warm_failed(.why))]
@@ -1033,19 +1028,24 @@ impl Error {
     /// Warnings a failed change carries in itself, for the caller to report beside it. Only
     /// a failure that happened after something worth warning about was done carries any.
     pub(crate) fn take_warnings(&mut self) -> Vec<crate::service::Warning> {
-        match self {
-            Error::SignInNotInstalled { warnings, .. } | Error::StowStopped { warnings, .. } => {
-                std::mem::take(warnings)
-            }
-            // What is left is the refusal itself.
-            Error::SaidFirst { said, error } => {
-                let mut said = std::mem::take(said);
-                *self = std::mem::replace(error.as_mut(), Error::SignInIncomplete);
-                said.extend(self.take_warnings());
-                said
-            }
-            _ => Vec::new(),
+        let mut said = self.take_said_first();
+        if let Error::SignInNotInstalled { warnings, .. } | Error::StowStopped { warnings, .. } =
+            self
+        {
+            said.append(warnings);
         }
+        said
+    }
+
+    // What the change had done before it refused, outermost first. What is left is the refusal
+    // itself.
+    pub(crate) fn take_said_first(&mut self) -> Vec<crate::service::Warning> {
+        let mut said = Vec::new();
+        while let Error::SaidFirst { said: first, error } = self {
+            said.append(first);
+            *self = std::mem::replace(error.as_mut(), Error::SignInIncomplete);
+        }
+        said
     }
 
     // This refusal, after a change that had done what `said` says.
@@ -1414,6 +1414,20 @@ fn left_signed_out(from: Option<&str>, to: &str, detail: &str) -> String {
     }
 }
 
+fn warm_up_unsupported(tool: ProviderId, label: &str) -> String {
+    match tool {
+        ProviderId::Claude | ProviderId::Codex => format!(
+            "`{label}` is a {name} account, and Pitboard warms up Claude Code accounts only: when \
+             a {name} period starts has not been measured.",
+            name = tool.name()
+        ),
+        ProviderId::Desktop => format!(
+            "`{label}` is a Claude Desktop account, and Pitboard sends no request for one, so it \
+             warms up none."
+        ),
+    }
+}
+
 fn recovery_undetermined(tool: ProviderId, from: &str, to: &str, detail: &str) -> String {
     match tool {
         ProviderId::Claude | ProviderId::Codex => format!(
@@ -1424,11 +1438,8 @@ fn recovery_undetermined(tool: ProviderId, from: &str, to: &str, detail: &str) -
         ),
         ProviderId::Desktop => format!(
             "An earlier move of `{to}`'s login was interrupted, and Pitboard cannot tell where it \
-             stopped ({detail}). Nothing has changed. Open Claude to see whether it is signed \
-             in and to which account, then quit it with Command-Q. If it is signed in, run \
-             `pitboard enroll {}` for the account it shows. If it is signed out, `pitboard \
-             abandon` keeps every folder and moves on.",
-            Key::new(tool, "<label>").typed()
+             stopped ({detail}). Nothing has changed. {}",
+            crate::words::undetermined_way_out()
         ),
     }
 }
@@ -1445,9 +1456,8 @@ fn recovery_elsewhere(tool: ProviderId, from: &str, to: &str, slot: &str) -> Str
         ),
         ProviderId::Desktop => format!(
             "An earlier move of `{to}`'s login was interrupted while Claude kept its data in \
-             {slot}, and this run finds it somewhere else. Nothing has changed. {}, or \
-             `pitboard abandon` to keep every folder and move on.",
-            crate::words::pointing_where_it_did(tool)
+             {slot}, and this run finds it somewhere else. Nothing has changed. {}",
+            crate::words::elsewhere_way_out(tool)
         ),
     }
 }

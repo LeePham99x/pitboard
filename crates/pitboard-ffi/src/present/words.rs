@@ -1029,6 +1029,12 @@ pub(crate) fn in_app_warning(warning: &CoreWarning) -> Option<String> {
                 }
             }
         }
+        CoreWarning::KeysSetAside { path, label, .. } => format!(
+            "{app} rewrote {}’s keys. Pitboard kept the earlier ones in {} and deleted nothing. \
+             This Mac lists them.",
+            label.as_deref().map_or("a login", bare),
+            path.display()
+        ),
         CoreWarning::MoveWaiting { label, .. } => format!(
             "A move of {}’s login was interrupted. Quit {app}, then use any {} account: Pitboard \
              settles the move first.",
@@ -2261,6 +2267,13 @@ mod tests {
                     why,
                 });
             }
+        }
+        for label in [Some(typed("home")), None] {
+            warnings.push(CoreWarning::KeysSetAside {
+                tool,
+                path: path.clone(),
+                label,
+            });
         }
         let stored = [
             Stored::Account(typed("home")),

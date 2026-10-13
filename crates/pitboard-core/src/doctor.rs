@@ -337,8 +337,8 @@ pub struct DesktopFacts {
     private: Option<crate::host::Private>,
     // whether `parks` is on the data folder's volume, where both could be asked
     one_volume: Option<bool>,
-    // each folder park's name, and whether it is a folder there
-    parked_here: Vec<(String, bool)>,
+    // each folder park's name, and whether it is a folder there, or why it was not looked at
+    parked_here: Vec<(String, Result<bool, String>)>,
     build: Option<String>,
 }
 
@@ -381,7 +381,11 @@ fn desktop_facts(ctx: &Context, state: &State) -> Option<DesktopFacts> {
             .filter(|park| park.kind == crate::state::ParkKind::Folder)
             .map(|park| {
                 let at = crate::store::folder::at(ctx, &park.service);
-                let folder = std::fs::symlink_metadata(at).is_ok_and(|found| found.is_dir());
+                let folder = match std::fs::symlink_metadata(at) {
+                    Ok(found) => Ok(found.is_dir()),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+                    Err(e) => Err(e.to_string()),
+                };
                 (park.service.clone(), folder)
             })
             .collect(),
@@ -1656,15 +1660,16 @@ fn judge_asking(facts: &Facts) -> Check {
     };
     let services = |tools: &mut Vec<ProviderId>| {
         tools.sort();
-        tools.dedup();
         if tools.is_empty() {
             tools.push(ProviderId::Claude);
         }
-        tools
-            .iter()
-            .map(|t| t.service())
-            .collect::<Vec<_>>()
-            .join(" and ")
+        let mut named: Vec<&str> = Vec::new();
+        for service in tools.iter().map(|t| t.service()) {
+            if !named.contains(&service) {
+                named.push(service);
+            }
+        }
+        named.join(" and ")
     };
     let mut asked: Vec<ProviderId> = facts
         .state
@@ -1673,6 +1678,7 @@ fn judge_asking(facts: &Facts) -> Check {
             s.accounts
                 .iter()
                 .map(crate::state::Account::provider)
+                .filter(|tool| tool.reads_usage())
                 .collect()
         })
         .unwrap_or_default();
@@ -2484,67 +2490,85 @@ fn judge_desktop(facts: &DesktopFacts, state: &State, parks: &[ParkFact], now: i
         .filter(|aside| aside.tool == ProviderId::Desktop)
         .collect();
     if !asides.is_empty() {
-        let holding: Vec<&&crate::state::Aside> = asides
-            .iter()
-            .filter(|aside| aside.login.is_some())
-            .collect();
+        let (holding, parts): (Vec<&crate::state::Aside>, Vec<&crate::state::Aside>) =
+            asides.iter().partition(|aside| aside.login.is_some());
         let name = "folders set aside";
         let n = asides.len();
-        if holding.is_empty() {
-            checks.push(ok(
+        let account = |aside: &crate::state::Aside| {
+            aside
+                .account
+                .as_deref()
+                .and_then(|id| state.owner_of_park(id))
+        };
+        let kept_beside = |aside: &crate::state::Aside| {
+            account(aside).is_some_and(|a| a.parked.is_some() || in_use.as_ref() == Some(&a.key()))
+        };
+        let said = |aside: &crate::state::Aside| {
+            let when = time::moment(aside.at, now);
+            let typed = account(aside).map(|a| state.typed(&a.key()));
+            match (aside.why, typed) {
+                (crate::state::SetAside::AnotherMachine, Some(typed)) => {
+                    format!("`{typed}`'s login from another Mac")
+                }
+                (crate::state::SetAside::Superseded, Some(typed)) if kept_beside(aside) => {
+                    format!("`{typed}`'s login from before a sign-in again, set aside {when}")
+                }
+                (
+                    crate::state::SetAside::Superseded | crate::state::SetAside::GivenUp,
+                    Some(typed),
+                ) => format!("`{typed}`'s earlier login, set aside {when}"),
+                _ => format!("a login no account here holds, set aside {when}"),
+            }
+        };
+        // No session: an account's earlier keys, the parts of its login a give-up left, or
+        // what Claude made while signed out.
+        let mut rest: Vec<String> = parts
+            .iter()
+            .filter_map(|aside| {
+                let when = time::moment(aside.at, now);
+                match (aside.why, account(aside).map(|a| state.typed(&a.key()))) {
+                    (_, Some(typed)) => {
+                        Some(format!("parts of `{typed}`'s login, set aside {when}"))
+                    }
+                    (crate::state::SetAside::InTheWay, None) => None,
+                    (_, None) => Some(format!(
+                        "parts of a login no account here holds, set aside {when}"
+                    )),
+                }
+            })
+            .collect();
+        let only_signed_out = rest.is_empty();
+        if rest.len() < parts.len() {
+            rest.push("what Claude made while signed out".into());
+        }
+        let mut detail = match holding.as_slice() {
+            [] => format!("{n} in {parks_dir}, none holding a login"),
+            held => format!(
+                "{n} in {parks_dir}, {} holding a login: {}",
+                held.len(),
+                words::listed(held.iter().map(|aside| said(aside)).collect())
+            ),
+        };
+        if !rest.is_empty() {
+            let (whose, only) = match holding.is_empty() {
+                true if only_signed_out => ("they hold", "only "),
+                true => ("they hold", ""),
+                false => ("the rest hold", ""),
+            };
+            detail.push_str(&format!("; {whose} {only}{}", words::listed(rest)));
+        }
+        checks.push(if holding.iter().all(|aside| kept_beside(aside)) {
+            ok("desktop_set_aside", name, detail)
+        } else {
+            warn(
                 "desktop_set_aside",
                 name,
-                format!(
-                    "{n} in {parks_dir}, none holding a login; they hold only what Claude made \
-                     while signed out"
-                ),
-            ));
-        } else {
-            let account = |aside: &crate::state::Aside| {
-                aside
-                    .account
-                    .as_deref()
-                    .and_then(|id| state.owner_of_park(id))
-            };
-            let kept_beside = |aside: &crate::state::Aside| {
-                account(aside)
-                    .is_some_and(|a| a.parked.is_some() || in_use.as_ref() == Some(&a.key()))
-            };
-            let said = |aside: &crate::state::Aside| {
-                let when = time::moment(aside.at, now);
-                let typed = account(aside).map(|a| state.typed(&a.key()));
-                match (aside.why, typed) {
-                    (crate::state::SetAside::AnotherMachine, Some(typed)) => {
-                        format!("`{typed}`'s login from another Mac")
-                    }
-                    (crate::state::SetAside::Superseded, Some(typed)) if kept_beside(aside) => {
-                        format!("`{typed}`'s login from before a sign-in again, set aside {when}")
-                    }
-                    (
-                        crate::state::SetAside::Superseded | crate::state::SetAside::GivenUp,
-                        Some(typed),
-                    ) => format!("`{typed}`'s earlier login, set aside {when}"),
-                    _ => format!("a login no account here holds, set aside {when}"),
-                }
-            };
-            let detail = format!(
-                "{n} in {parks_dir}, {} holding a login: {}",
-                holding.len(),
-                words::listed(holding.iter().map(|aside| said(aside)).collect())
-            );
-            checks.push(if holding.iter().all(|aside| kept_beside(aside)) {
-                ok("desktop_set_aside", name, detail)
-            } else {
-                warn(
-                    "desktop_set_aside",
-                    name,
-                    detail,
-                    "`pitboard repair` gives one back to its account where it can. `pitboard \
-                     forget` of an account deletes those set aside for it, and `pitboard \
-                     uninstall` deletes them all.",
-                )
-            });
-        }
+                detail,
+                "`pitboard repair` gives one back to its account where it can. `pitboard \
+                 forget` of an account deletes those set aside for it, and `pitboard \
+                 uninstall` deletes them all.",
+            )
+        });
     }
     checks.push(judge_desktop_build(facts));
     checks
@@ -2578,11 +2602,7 @@ fn judge_desktop_login(facts: &DesktopFacts, state: &State, now: i64) -> Option<
         Some(crate::in_use::Doubt::NamedMoved) => warn(
             "desktop_login",
             name,
-            format!(
-                "Claude's settings have named {} since Pitboard last read {} in use",
-                Stored::of(state, tool, known.own_record.as_ref()).said("nobody"),
-                who.said("nobody")
-            ),
+            words::desktop_named(&Stored::of(state, tool, known.own_record.as_ref()), &who),
             enroll,
         ),
         _ if facts.signed_out => warn(
@@ -2635,21 +2655,41 @@ fn judge_desktop_park(facts: &DesktopFacts, fact: &ParkFact, now: i64) -> Check 
     let here = facts
         .parked_here
         .iter()
-        .any(|(service, folder)| *service == park.service && *folder);
-    if !here {
-        return fail(
-            code,
-            name,
-            format!(
-                "its parked login is missing from {}",
-                facts.parks_dir.display()
-            ),
-            format!(
-                "Run `pitboard repair`. If it gives nothing back, run `pitboard enroll {} \
-                 --sign-in`.",
-                fact.typed()
-            ),
-        );
+        .find(|(service, _)| *service == park.service)
+        .map(|(_, folder)| folder);
+    match here {
+        Some(Ok(true)) => {}
+        // What Pitboard could not look at is still there: no sign-in, as `use` asks none.
+        Some(Err(e)) => {
+            return warn(
+                code,
+                name,
+                format!(
+                    "not read: Pitboard could not look at it in {} ({e})",
+                    facts.parks_dir.display()
+                ),
+                format!(
+                    "Make {}, and each folder it is in, readable to you, then run `pitboard \
+                     doctor` again.",
+                    facts.parks_dir.display()
+                ),
+            );
+        }
+        Some(Ok(false)) | None => {
+            return fail(
+                code,
+                name,
+                format!(
+                    "its parked login is missing from {}",
+                    facts.parks_dir.display()
+                ),
+                format!(
+                    "Run `pitboard repair`. If it gives nothing back, run `pitboard enroll {} \
+                     --sign-in`.",
+                    fact.typed()
+                ),
+            );
+        }
     }
     let Some(at) = park.session_expires_at else {
         return ok(code, name, "parked");
@@ -3100,7 +3140,7 @@ mod tests {
             doubt: None,
             own_record: Some(state.accounts[0].owner()),
         });
-        facts.parked_here = vec![("home-1".into(), true), ("old-1".into(), true)];
+        facts.parked_here = vec![("home-1".into(), Ok(true)), ("old-1".into(), Ok(true))];
         facts.build = Some("2.31226.1".into());
         let checks = judge_desktop(&facts, &state, &parks, NOW);
         let codes: Vec<&str> = checks.iter().map(|c| c.code).collect();
@@ -3271,6 +3311,37 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
+    )]
+    fn a_park_doctor_cannot_look_at_is_never_said_missing() {
+        let m = crate::switch::harness::desktop_pair("doctor-park-unread");
+        let state = crate::state::load(&m.ctx).expect("state");
+        let parks_dir = crate::store::folder::parks_dir(&m.ctx);
+        crate::host::fs::testing::deny_reading(&parks_dir).expect("parks shut");
+        let facts = desktop_facts(&m.ctx, &state);
+        crate::host::fs::testing::make_private(&parks_dir).expect("parks open again");
+        let facts = facts.expect("an account is enrolled");
+        let parks = park_facts(&m.ctx, &state);
+        let checks = judge_desktop(&facts, &state, &parks, crate::switch::harness::NOW);
+        let home = checks
+            .iter()
+            .find(|c| c.code == "desktop_parked_login" && c.name == "account desktop/home")
+            .map(|c| (c.level, c.detail.clone(), c.advice.clone()))
+            .expect("home's park is checked");
+        assert_eq!(home.0, Level::Warn, "{home:?}");
+        assert!(
+            home.1.starts_with(&format!(
+                "not read: Pitboard could not look at it in {} (",
+                parks_dir.display()
+            )),
+            "{home:?}"
+        );
+        assert!(!home.2.contains("--sign-in"), "{home:?}");
+    }
+
+    #[test]
     fn a_claude_desktop_login_is_redacted_from_a_report() {
         use crate::state::{Aside, SetAside};
         let uuid = "6f1c0a52-1111-4a6e-9d0b-2f6c1a9e7b10";
@@ -3341,11 +3412,44 @@ mod tests {
             .push(aside("pitboard-aside-1", SetAside::InTheWay, None, None));
         let none = set_aside(&state);
         assert_eq!(none[0].0, Level::Ok);
-        assert!(
-            none[0]
-                .1
-                .contains("1 in /Users/dana/.pitboard/parks, none holding a login")
+        assert_eq!(
+            none[0].1,
+            "1 in /Users/dana/.pitboard/parks, none holding a login; they hold only what Claude \
+             made while signed out"
         );
+
+        // Parts of an account's login: its earlier keys, or what a give-up left.
+        state.aside.push(aside(
+            "home-0",
+            SetAside::Superseded,
+            Some("desktop_home"),
+            None,
+        ));
+        state.aside.push(aside(
+            "work-0",
+            SetAside::GivenUp,
+            Some("desktop_work"),
+            None,
+        ));
+        state.aside.push(aside(
+            "gone-0",
+            SetAside::GivenUp,
+            Some("desktop_gone"),
+            None,
+        ));
+        let parts = set_aside(&state);
+        assert_eq!(parts[0].0, Level::Ok);
+        for said in [
+            "4 in /Users/dana/.pitboard/parks, none holding a login",
+            "parts of `desktop/home`'s login, set aside",
+            "parts of `desktop/work`'s login, set aside",
+            "parts of a login no account here holds, set aside",
+            "what Claude made while signed out",
+        ] {
+            assert!(parts[0].1.contains(said), "{said}: {parts:?}");
+        }
+        assert!(!parts[0].1.contains("only what Claude made"), "{parts:?}");
+        state.aside.truncate(1);
 
         state.aside.push(aside(
             "home-1",
@@ -3376,6 +3480,12 @@ mod tests {
                 .contains("`desktop/home`'s login from before a sign-in again, set aside"),
             "{kept:?}"
         );
+        assert!(
+            kept[0]
+                .1
+                .ends_with("; the rest hold what Claude made while signed out"),
+            "{kept:?}"
+        );
 
         state.aside.push(aside(
             "lost-1",
@@ -3399,6 +3509,86 @@ mod tests {
                 .1
                 .contains("a login no account here holds, set aside"),
             "{warned:?}"
+        );
+    }
+
+    // Claude's settings name an account since Pitboard last read Claude signed out: doctor
+    // says it as the read's warning does.
+    #[test]
+    fn claude_desktop_named_since_signed_out_reads_as_the_warning_does() {
+        let mut state = State::default();
+        state.accounts.push(desktop_account("work", None));
+        let nobody = crate::in_use::InUse {
+            owner: None,
+            login: String::new(),
+            known_at: NOW - 60,
+            named: None,
+        };
+        state.in_use.insert("desktop".into(), nobody.clone());
+        let mut facts = desktop();
+        facts.known = Some(crate::in_use::Known {
+            last: Some(nobody),
+            doubt: Some(crate::in_use::Doubt::NamedMoved),
+            own_record: Some(state.accounts[0].owner()),
+        });
+        let checks = judge_desktop(&facts, &state, &[], NOW);
+        let login = said(&checks, "desktop_login");
+        let warned = crate::service::Warning::InUseUnconfirmed {
+            tool: ProviderId::Desktop,
+            last: Stored::Nothing,
+            named: Stored::Account("desktop/work".into()),
+            asked: true,
+        }
+        .to_string();
+        assert_eq!(
+            login[0].1,
+            "Claude's settings have named `desktop/work` since Pitboard last read Claude signed \
+             out, so somebody may have signed in"
+        );
+        assert!(warned.starts_with(&login[0].1), "{warned}");
+    }
+
+    // Each service Pitboard asks is named once, and Claude Desktop, which it asks nothing,
+    // adds none.
+    #[test]
+    fn asking_names_each_service_it_asks_once() {
+        let account = |label: &str, detail| crate::state::Account {
+            label: label.into(),
+            id: label.into(),
+            account_uuid: label.into(),
+            email: String::new(),
+            parked: None,
+            last_used_at: None,
+            replaced_at: None,
+            plan: None,
+            detail,
+        };
+        let claude = || crate::state::Detail::Claude {
+            organization_uuid: "org".into(),
+            oauth_account: json!({}),
+        };
+        let codex = || crate::state::Detail::Codex { workspace_id: None };
+        let desktop = || crate::state::Detail::Desktop {};
+        let named = |accounts: Vec<crate::state::Account>| {
+            let mut f = facts();
+            f.state = Ok(State {
+                accounts,
+                ..State::default()
+            });
+            judge_asking(&f).name
+        };
+        assert_eq!(named(vec![account("work", desktop())]), "asking Anthropic");
+        assert_eq!(
+            named(vec![account("alpha", claude()), account("work", desktop())]),
+            "asking Anthropic"
+        );
+        assert_eq!(
+            named(vec![
+                account("alpha", claude()),
+                account("main", codex()),
+                account("work", desktop()),
+            ]),
+            "asking Anthropic and OpenAI"
         );
     }
 

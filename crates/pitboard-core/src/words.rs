@@ -708,45 +708,57 @@ pub(crate) fn move_waiting(label: &str) -> String {
     )
 }
 
-// After `abandon` gave up a switch, so never that nothing has changed.
-pub(crate) fn move_not_given_up(label: &str, why: &crate::error::Error) -> String {
+// Why a waiting move was left as it was, and what to do, for a refusal `abandon` and `repair`
+// both meet. `command` is the one to run again.
+fn move_left(why: &crate::error::Error, command: &str) -> Option<(String, String)> {
     use crate::error::Error;
-    let again = "run `pitboard abandon` again";
-    let (because, then) = match why {
+    let again = format!("run `{command}` again");
+    Some(match why {
         Error::AppOpen { app, still } if still.is_empty() => (
-            Some(format!("{app} is open")),
+            format!("{app} is open"),
             format!("Quit {app} with Command-Q, then {again}."),
         ),
         Error::AppOpen { app, still } => (
-            Some(format!(
-                "{} from {app} is still running",
-                listed(still.clone())
-            )),
-            wait_for_still(again),
+            format!("{} from {app} is still running", listed(still.clone())),
+            wait_for_still(&again),
         ),
         Error::AppStateUnknown { app, why } => (
-            Some(format!("it could not tell whether {app} is open ({why})")),
-            "Run `pitboard abandon` again.".into(),
+            format!("it could not tell whether {app} is open ({why})"),
+            format!("Run `{command}` again."),
         ),
         Error::LoginFolderBusy { app } => (
-            Some(format!("another Pitboard is changing {app}'s login")),
-            "Run `pitboard abandon` again once it has finished.".into(),
+            format!("another Pitboard is changing {app}'s login"),
+            format!("Run `{command}` again once it has finished."),
         ),
         Error::LoginFolderUnreadable { tool, detail } => (
-            Some(format!(
+            format!(
                 "it could not read {}'s cookie store ({detail})",
                 tool.program()
-            )),
+            ),
             format!(
                 "Open {program}, quit it with Command-Q, then {again}.",
                 program = tool.program()
             ),
         ),
         Error::AppOpenedMidway { app, .. } => (
-            Some(format!("{app} was opened meanwhile")),
+            format!("{app} was opened meanwhile"),
             format!("Nothing is lost. Quit {app} with Command-Q, then {again}."),
         ),
-        Error::MoveMixed { places, .. } => (
+        // A park Pitboard could not look at, as `store::folder::unread` says it.
+        Error::Store(crate::store::Error::Unreadable(detail)) => (
+            detail.clone(),
+            format!("Make that path, and each folder it is in, readable to you, then {again}."),
+        ),
+        _ => return None,
+    })
+}
+
+// After `abandon` gave up a switch, so never that nothing has changed.
+pub(crate) fn move_not_given_up(label: &str, why: &crate::error::Error) -> String {
+    use crate::error::Error;
+    let (because, then) = match (move_left(why, "pitboard abandon"), why) {
+        (Some((because, then)), _) => (Some(because), then),
+        (None, Error::MoveMixed { places, .. }) => (
             Some(format!(
                 "giving it up would leave parts of it beside another login in Claude's folder: \
                  {}",
@@ -754,9 +766,12 @@ pub(crate) fn move_not_given_up(label: &str, why: &crate::error::Error) -> Strin
             )),
             mixed_way_out(label),
         ),
-        other => (
+        (None, other) => (
             None,
-            format!("It stopped at `{}`: {again} to see why.", other.code()),
+            format!(
+                "It stopped at `{}`: run `pitboard abandon` again to see why.",
+                other.code()
+            ),
         ),
     };
     match because {
@@ -768,6 +783,58 @@ pub(crate) fn move_not_given_up(label: &str, why: &crate::error::Error) -> Strin
             format!("Pitboard did not give up the interrupted move of `{label}`'s login. {then}")
         }
     }
+}
+
+// For `repair`, which goes on past the move, so never that nothing has changed.
+pub(crate) fn move_not_settled(label: &str, why: &crate::error::Error) -> String {
+    use crate::error::Error;
+    let (because, then) = match (move_left(why, "pitboard repair"), why) {
+        (Some(left), _) => left,
+        (None, Error::RecoveryUndetermined { detail, .. }) => (
+            format!("it cannot tell where it stopped ({detail})"),
+            undetermined_way_out(),
+        ),
+        (None, Error::RecoveryStopped { detail, .. }) => (
+            format!("it stopped partway ({detail})"),
+            "Nothing is lost. Keep Claude closed and run `pitboard repair` again. If it stops \
+             again, `pitboard abandon` keeps every folder and moves on."
+                .into(),
+        ),
+        (None, Error::RecoveryElsewhere { tool, slot, .. }) => (
+            format!(
+                "{} kept its data in {slot} when the move was interrupted, and this run finds \
+                 it somewhere else",
+                tool.program()
+            ),
+            elsewhere_way_out(*tool),
+        ),
+        (None, other) => (
+            format!("it stopped at `{}`", other.code()),
+            "The next change to a Claude Desktop account settles it first, or says why it \
+             cannot."
+                .into(),
+        ),
+    };
+    format!(
+        "Pitboard did not settle the interrupted move of `{label}`'s login, because {because}. \
+         {then}"
+    )
+}
+
+// For a move Pitboard cannot tell where it stopped.
+pub(crate) fn undetermined_way_out() -> String {
+    "Open Claude to see whether it is signed in and to which account, then quit it with \
+     Command-Q. If it is signed in, run `pitboard enroll desktop/<label>` for the account it \
+     shows. If it is signed out, `pitboard abandon` keeps every folder and moves on."
+        .into()
+}
+
+// For a move interrupted while the app kept its data somewhere else.
+pub(crate) fn elsewhere_way_out(tool: crate::provider::ProviderId) -> String {
+    format!(
+        "{}, or `pitboard abandon` to keep every folder and move on.",
+        pointing_where_it_did(tool)
+    )
 }
 
 pub(crate) fn wait_for_still(then: &str) -> String {
@@ -851,13 +918,25 @@ pub(crate) fn given_up(given_up: &crate::switch::GivenUp) -> String {
     said
 }
 
-// Whose a login is, to start a sentence: its email, where its service gave one.
-pub fn whose(tool: crate::provider::ProviderId, email: &str) -> String {
-    use crate::provider::ProviderId;
-    match tool {
-        ProviderId::Desktop if email.is_empty() => "The account Claude is signed in to".into(),
-        ProviderId::Claude | ProviderId::Codex | ProviderId::Desktop => email.into(),
-    }
+// Claude's settings name `named` since Pitboard last read `last` in use: no service is asked.
+pub(crate) fn desktop_named(
+    named: &crate::service::Stored,
+    last: &crate::service::Stored,
+) -> String {
+    use crate::service::Stored;
+    let since = match last {
+        Stored::Account(_) | Stored::Unenrolled(_) => format!(
+            "since Pitboard last read {} in use, so Claude may hold another login",
+            last.said("nobody")
+        ),
+        Stored::Nothing | Stored::Unknown => {
+            "since Pitboard last read Claude signed out, so somebody may have signed in".into()
+        }
+    };
+    format!(
+        "Claude's settings have named {} {since}",
+        named.said("nobody")
+    )
 }
 
 // By the date the session cookie carries, hedged: claude.ai may end it sooner or keep it.
@@ -1092,11 +1171,6 @@ mod tests {
     #[test]
     fn claude_desktops_words_hedge_what_nobody_measured() {
         use crate::provider::ProviderId;
-        assert_eq!(
-            whose(ProviderId::Desktop, ""),
-            "The account Claude is signed in to"
-        );
-        assert_eq!(whose(ProviderId::Claude, "a@b.example"), "a@b.example");
         let now = 1_791_000_000;
         let life = |left: i64| session_life(Some(now + left), now);
         assert_eq!(
@@ -1660,6 +1734,17 @@ mod tests {
             "Pitboard did not give up the interrupted move of `desktop/work`'s login. It \
              stopped at `machine_unknown`: run `pitboard abandon` again to see why."
         );
+        assert_eq!(
+            said(crate::store::folder::unread(
+                "desktop/work",
+                std::path::Path::new("/Users/dana/.pitboard/parks/p/items/Cookies"),
+                "a test held the jar"
+            )),
+            "Pitboard did not give up the interrupted move of `desktop/work`'s login, because \
+             `desktop/work`'s parked login at /Users/dana/.pitboard/parks/p/items/Cookies could \
+             not be looked at (a test held the jar). Make that path, and each folder it is in, \
+             readable to you, then run `pitboard abandon` again."
+        );
         for why in [
             Error::AppOpen {
                 app,
@@ -1687,6 +1772,68 @@ mod tests {
             assert!(sentence.contains(", because "), "{sentence}");
             assert!(
                 !sentence.to_lowercase().contains("nothing has changed"),
+                "{sentence}"
+            );
+        }
+    }
+
+    // Said by `repair`, which goes on past the move, so never that nothing has changed.
+    #[test]
+    fn a_move_not_settled_says_why_and_never_that_nothing_changed() {
+        use crate::error::{Error, Then};
+        use crate::provider::ProviderId;
+        let tool = ProviderId::Desktop;
+        let app = "Claude";
+        let label = || "desktop/work".to_string();
+        let said = |why| move_not_settled("desktop/work", &why);
+        assert_eq!(
+            said(Error::RecoveryUndetermined {
+                tool,
+                from: label(),
+                to: label(),
+                detail: "a settings file that is not valid JSON".into(),
+            }),
+            "Pitboard did not settle the interrupted move of `desktop/work`'s login, because it \
+             cannot tell where it stopped (a settings file that is not valid JSON). Open Claude \
+             to see whether it is signed in and to which account, then quit it with Command-Q. \
+             If it is signed in, run `pitboard enroll desktop/<label>` for the account it shows. \
+             If it is signed out, `pitboard abandon` keeps every folder and moves on."
+        );
+        assert_eq!(
+            said(Error::MachineUnknown),
+            "Pitboard did not settle the interrupted move of `desktop/work`'s login, because it \
+             stopped at `machine_unknown`. The next change to a Claude Desktop account settles \
+             it first, or says why it cannot."
+        );
+        for why in [
+            Error::AppOpen {
+                app,
+                still: Vec::new(),
+            },
+            Error::LoginFolderBusy { app },
+            Error::RecoveryStopped {
+                label: label(),
+                detail: "`WebStorage` could not be moved".into(),
+            },
+            Error::RecoveryElsewhere {
+                tool,
+                from: label(),
+                to: label(),
+                slot: "/Volumes/Old/Claude".into(),
+            },
+            Error::LoginFolderUnknown {
+                tool,
+                what: "does not exist yet".into(),
+                then: Then::OpenAndQuit,
+            },
+            Error::Store(crate::store::Error::Unreadable("denied".into())),
+        ] {
+            let sentence = said(why);
+            assert!(sentence.contains(", because "), "{sentence}");
+            assert!(sentence.ends_with('.'), "{sentence}");
+            let lower = sentence.to_lowercase();
+            assert!(
+                !lower.contains("nothing has changed") && !lower.contains("nothing was changed"),
                 "{sentence}"
             );
         }

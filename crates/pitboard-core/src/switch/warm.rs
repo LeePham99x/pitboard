@@ -464,6 +464,42 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
+    )]
+    fn a_claude_desktop_account_is_not_warmed_up_and_says_why() {
+        let m = machine("warm-desktop");
+        let mut state = state::load(&m.ctx).expect("state");
+        state.accounts.push(state::Account {
+            label: "work".into(),
+            id: "desktop_work".into(),
+            account_uuid: "work".into(),
+            email: String::new(),
+            parked: None,
+            last_used_at: None,
+            replaced_at: None,
+            plan: None,
+            detail: state::Detail::Desktop {},
+        });
+        state::save(&m.ctx, Permit::for_a_test(), &state).expect("saved");
+        let pitboard = Pitboard::new(m.ctx.clone());
+        let turned = pitboard
+            .warm_turn("desktop/work", true)
+            .expect_err("refused");
+        let now = pitboard.warm_now("desktop/work").expect_err("refused");
+        for refused in [turned.error, now.error] {
+            assert_eq!(refused.code(), "warm_up_unsupported");
+            assert_eq!(
+                refused.to_string(),
+                "`desktop/work` is a Claude Desktop account, and Pitboard sends no request for \
+                 one, so it warms up none."
+            );
+        }
+        assert!(!warm::path(&m.ctx).exists(), "nothing written");
+    }
+
+    #[test]
     fn nothing_is_warmed_up_on_windows_yet() {
         let ctx = crate::context::Context::new(std::env::temp_dir().join("pitboard-warm-windows"));
         let unbuilt = warm::halted(&ctx) == Some(warm::Halt::Unbuilt);

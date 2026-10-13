@@ -197,6 +197,13 @@ pub enum Warning {
         label: Option<String>,
         why: state::SetAside,
     },
+    // A folder kept under `parks` that holds only the keys `label` had before the app rewrote
+    // them, deleting nothing.
+    KeysSetAside {
+        tool: ProviderId,
+        path: std::path::PathBuf,
+        label: Option<String>,
+    },
     // The app's settings say what a Log out leaves since the account was read in use.
     LooksSignedOut {
         tool: ProviderId,
@@ -211,6 +218,12 @@ pub enum Warning {
     },
     // `abandon` gave up a switch, then could not give up this move, for `why`.
     MoveNotGivenUp {
+        tool: ProviderId,
+        label: String,
+        why: Error,
+    },
+    // `repair` could not settle this move, for `why`, and repaired the rest.
+    MoveNotSettled {
         tool: ProviderId,
         label: String,
         why: Error,
@@ -274,7 +287,7 @@ impl Warning {
             Warning::InUseUnconfirmed { .. } => "in_use_unconfirmed",
             Warning::ConfigNamesAnother { .. } => "config_names_another",
             Warning::TakenAsNamed { .. } => "login_taken_as_named",
-            Warning::SetAside { .. } => "set_aside",
+            Warning::SetAside { .. } | Warning::KeysSetAside { .. } => "set_aside",
             Warning::LooksSignedOut { .. } => "looks_signed_out",
             Warning::MoveSettled(moved) => match moved.ended {
                 switch::Ended::Undone => "interrupted_move_undone",
@@ -282,6 +295,7 @@ impl Warning {
             },
             Warning::MoveWaiting { .. } => "move_waiting",
             Warning::MoveNotGivenUp { .. } => "move_not_given_up",
+            Warning::MoveNotSettled { .. } => "move_not_settled",
             Warning::SignInAwaited { .. } => "sign_in_awaited",
             Warning::ItemGone { .. } => "login_item_gone",
             Warning::ReadOnly { .. } | Warning::ReadOnlyBelowTheFloor { .. } => "read_only",
@@ -303,9 +317,11 @@ impl Warning {
             | Warning::ConfigNamesAnother { tool, .. }
             | Warning::TakenAsNamed { tool, .. }
             | Warning::SetAside { tool, .. }
+            | Warning::KeysSetAside { tool, .. }
             | Warning::LooksSignedOut { tool, .. }
             | Warning::MoveWaiting { tool, .. }
             | Warning::MoveNotGivenUp { tool, .. }
+            | Warning::MoveNotSettled { tool, .. }
             | Warning::SignInAwaited { tool, .. }
             | Warning::ItemGone { tool, .. } => Some(*tool),
             Warning::MoveSettled(moved) => Some(moved.tool),
@@ -610,6 +626,17 @@ impl fmt::Display for Warning {
                     ),
                 }
             }
+            Warning::KeysSetAside { path, label, .. } => {
+                let whose = label
+                    .as_ref()
+                    .map_or_else(|| "a login".to_string(), |label| format!("`{label}`"));
+                write!(
+                    f,
+                    "Claude rewrote {whose}'s keys. Pitboard kept the earlier ones in {} and \
+                     deleted nothing. `pitboard doctor` lists them.",
+                    path.display()
+                )
+            }
             Warning::LooksSignedOut { label, .. } => write!(
                 f,
                 "Claude looks signed out since Pitboard last read `{label}` in use. The next \
@@ -622,6 +649,9 @@ impl fmt::Display for Warning {
             Warning::MoveWaiting { label, .. } => f.write_str(&crate::words::move_waiting(label)),
             Warning::MoveNotGivenUp { label, why, .. } => {
                 f.write_str(&crate::words::move_not_given_up(label, why))
+            }
+            Warning::MoveNotSettled { label, why, .. } => {
+                f.write_str(&crate::words::move_not_settled(label, why))
             }
             Warning::SignInAwaited {
                 label,
@@ -757,23 +787,12 @@ fn in_doubt(state: &state::State, tool: ProviderId, known: &Known) -> Option<War
         })
 }
 
-// Claude's settings name `named` since Pitboard last read `last` in use: no service is asked.
 fn desktop_named(f: &mut fmt::Formatter<'_>, named: &Stored, last: &Stored) -> fmt::Result {
-    let named = named.said("nobody");
-    let since = match last {
-        Stored::Account(_) | Stored::Unenrolled(_) => format!(
-            "since Pitboard last read {} in use, so Claude may hold another login",
-            last.said("nobody")
-        ),
-        Stored::Nothing | Stored::Unknown => {
-            "since Pitboard last read Claude signed out, so somebody may have signed in".into()
-        }
-    };
     write!(
         f,
-        "Claude's settings have named {named} {since}. Open Claude, check which account it \
-         shows, quit it with Command-Q, then run `pitboard enroll desktop/<label>` under that \
-         account's name."
+        "{}. Open Claude, check which account it shows, quit it with Command-Q, then run \
+         `pitboard enroll desktop/<label>` under that account's name.",
+        crate::words::desktop_named(named, last)
     )
 }
 
@@ -811,6 +830,27 @@ fn sign_in_awaited(state: &state::State, tool: ProviderId) -> Option<Warning> {
 pub struct Failed {
     pub error: Error,
     pub warnings: Vec<Warning>,
+    // how many of `warnings`, from the first, were done before the refusal
+    pub said_first: usize,
+}
+
+impl Failed {
+    // A change's refusal beside what was `found` before it ran. What was done first leads: an
+    // interrupted switch settled before the change, then what the change did.
+    fn of(mut error: Error, found: Vec<Warning>) -> Failed {
+        let (mut warnings, found): (Vec<Warning>, Vec<Warning>) = found
+            .into_iter()
+            .partition(|warning| matches!(warning, Warning::Recovered(_)));
+        warnings.extend(error.take_said_first());
+        let said_first = warnings.len();
+        warnings.extend(found);
+        warnings.extend(error.take_warnings());
+        Failed {
+            error,
+            warnings,
+            said_first,
+        }
+    }
 }
 
 pub type Changing<T> = std::result::Result<Done<T>, Failed>;
@@ -849,6 +889,7 @@ impl Pitboard {
         self.permit().map_err(|error| Failed {
             error,
             warnings: Vec::new(),
+            said_first: 0,
         })
     }
 
@@ -1072,6 +1113,7 @@ impl Pitboard {
         let looked = self.auto_look(threshold).map_err(|error| Failed {
             error,
             warnings: Vec::new(),
+            said_first: 0,
         })?;
         if let Look::Stands(value) = looked {
             return Ok(Done {
@@ -1086,10 +1128,7 @@ impl Pitboard {
                 warnings.extend(more);
                 Ok(Done { value, warnings })
             }
-            Err(mut error) => {
-                warnings.extend(error.take_warnings());
-                Err(Failed { error, warnings })
-            }
+            Err(error) => Err(Failed::of(error, warnings)),
         }
     }
 
@@ -1114,6 +1153,7 @@ impl Pitboard {
         let state = state::load(&self.ctx).map_err(|error| Failed {
             error,
             warnings: Vec::new(),
+            said_first: 0,
         })?;
         crate::label::resolve(&state, typed)
             .map(Account::key)
@@ -1173,7 +1213,7 @@ impl Pitboard {
             warnings.push(Warning::Recovered(r));
         }
         audit::record(&self.ctx, permit, verb, subject, code);
-        Failed { error, warnings }
+        Failed::of(error, warnings)
     }
 
     /// The account `pitboard enroll <typed>` is about: the one already enrolled under that
@@ -1269,6 +1309,7 @@ impl Pitboard {
         Failed {
             error,
             warnings: Vec::new(),
+            said_first: 0,
         }
     }
 
@@ -1566,6 +1607,7 @@ impl Pitboard {
         let looked = self.warm_look().map_err(|error| Failed {
             error,
             warnings: Vec::new(),
+            said_first: 0,
         })?;
         if let crate::duty::Look::Stands(overview) = looked {
             return Ok(Done {
@@ -1609,10 +1651,7 @@ impl Pitboard {
                 warnings.extend(more);
                 Ok(Done { value, warnings })
             }
-            Err(mut error) => {
-                warnings.extend(error.take_warnings());
-                Err(Failed { error, warnings })
-            }
+            Err(error) => Err(Failed::of(error, warnings)),
         }
     }
 
@@ -1734,10 +1773,9 @@ impl Pitboard {
                 warnings.extend(more);
                 Ok(Done { value, warnings })
             }
-            Err(mut error) => {
+            Err(error) => {
                 audit::record(&self.ctx, permit, verb, subject, error.code());
-                warnings.extend(error.take_warnings());
-                Err(Failed { error, warnings })
+                Err(Failed::of(error, warnings))
             }
         }
     }
@@ -1777,6 +1815,7 @@ impl Pitboard {
             Failed {
                 error,
                 warnings: Vec::new(),
+                said_first: 0,
             }
         })?;
         let recovered = recovered.map(|r| {
@@ -2154,6 +2193,73 @@ mod tests {
                 );
             }
         }
+        let keys = |label: Option<&str>| Warning::KeysSetAside {
+            tool: ProviderId::Desktop,
+            path: "/p/parks/x".into(),
+            label: label.map(str::to_owned),
+        };
+        assert_eq!(keys(None).code(), "set_aside");
+        assert_eq!(
+            keys(Some("desktop/home")).to_string(),
+            "Claude rewrote `desktop/home`'s keys. Pitboard kept the earlier ones in /p/parks/x \
+             and deleted nothing. `pitboard doctor` lists them."
+        );
+        assert_eq!(
+            keys(None).to_string(),
+            "Claude rewrote a login's keys. Pitboard kept the earlier ones in /p/parks/x and \
+             deleted nothing. `pitboard doctor` lists them."
+        );
+    }
+
+    // What a change did before it refused leads, with a journal recovery, which ran before
+    // it; what it only found follows.
+    #[test]
+    fn a_refused_change_counts_what_it_did_first() {
+        let found = || Warning::LooksSignedOut {
+            tool: ProviderId::Claude,
+            label: "work".into(),
+        };
+        let refusal = || Error::AccountNotInUse {
+            tool: ProviderId::Desktop,
+            label: "desktop/work".into(),
+        };
+        let waiting = || Warning::MoveWaiting {
+            tool: ProviderId::Desktop,
+            label: "desktop/work".into(),
+        };
+        let recovered = || {
+            Warning::Recovered(switch::Recovered {
+                from: "home".into(),
+                to: "work".into(),
+                finished: true,
+            })
+        };
+        let codes = |failed: &Failed| -> Vec<&'static str> {
+            failed.warnings.iter().map(Warning::code).collect()
+        };
+        let failed = Failed::of(refusal().after(vec![waiting()]), vec![found()]);
+        assert_eq!(codes(&failed), ["move_waiting", "looks_signed_out"]);
+        assert_eq!(failed.said_first, 1);
+        assert_eq!(failed.error.code(), "account_not_in_use");
+        let failed = Failed::of(refusal(), vec![found()]);
+        assert_eq!(codes(&failed), ["looks_signed_out"]);
+        assert_eq!(failed.said_first, 0);
+        let failed = Failed::of(refusal(), vec![found(), recovered()]);
+        assert_eq!(
+            codes(&failed),
+            ["interrupted_switch_finished", "looks_signed_out"]
+        );
+        assert_eq!(failed.said_first, 1);
+        let failed = Failed::of(refusal().after(vec![waiting()]), vec![found(), recovered()]);
+        assert_eq!(
+            codes(&failed),
+            [
+                "interrupted_switch_finished",
+                "move_waiting",
+                "looks_signed_out"
+            ]
+        );
+        assert_eq!(failed.said_first, 2);
     }
 
     #[test]
@@ -3631,6 +3737,7 @@ mod tests {
         outcome.err().map(|error| Failed {
             error,
             warnings: Vec::new(),
+            said_first: 0,
         })
     }
 
