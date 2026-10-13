@@ -985,7 +985,8 @@ fn migrate(document: &mut serde_json::Value, path: &std::path::Path) -> Result<(
     let found = document
         .get("schema")
         .and_then(serde_json::Value::as_u64)
-        .unwrap_or_default() as u32;
+        .unwrap_or_default();
+    let found = u32::try_from(found).unwrap_or(u32::MAX);
     match found {
         SCHEMA => Ok(()),
         3..SCHEMA => {
@@ -1962,6 +1963,32 @@ mod tests {
             !said.contains("brew") && !said.contains("cargo"),
             "it names no one way of installing Pitboard: {said}"
         );
+    }
+
+    #[test]
+    fn a_schema_number_too_large_to_hold_is_refused() {
+        let mut document = serde_json::json!({
+            "schema": (1_u64 << 32) + u64::from(SCHEMA),
+            "machine": machine_id(),
+            "accounts": []
+        });
+        let err = migrate(&mut document, std::path::Path::new("/tmp/state.json")).unwrap_err();
+        assert_eq!(err.code(), "state_from_newer_version");
+    }
+
+    #[test]
+    fn each_migration_step_stamps_the_schema_it_brings_a_file_to() {
+        for (from, step) in [
+            (3, three_to_four as fn(&mut Value)),
+            (4, four_to_five),
+            (5, five_to_six),
+            (6, six_to_seven),
+            (7, seven_to_eight),
+        ] {
+            let mut document = serde_json::json!({"schema": from, "accounts": []});
+            step(&mut document);
+            assert_eq!(document["schema"], from + 1, "the step from {from}");
+        }
     }
 
     use super::*;
