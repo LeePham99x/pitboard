@@ -46,6 +46,8 @@ jobs:
       - run: rustup toolchain install
       - run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # Two keys that exist for the next twenty minutes. sign_update reads a private key as
       # the base64 of a 32 byte seed, which is what generate_keys -x exports, so these need

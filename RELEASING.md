@@ -344,7 +344,7 @@ mistaken key change through.
 `127.0.0.1` and bundles with the identifier `invalid.rehearsal.Pitboard`. It checks that
 rung one reaches a copy on the current key, and that rung two reaches only a copy that took
 rung one. It names no repository secret, so it cannot be given the real key; the workflow
-and CI's `rehearsal` job both fail if it names one.
+and CI's `workflows` job both fail if it names one.
 
 Keep the update key and the certificate in different places. If both are lost, no update
 can be made that an installed copy accepts, and every copy has to be installed again.

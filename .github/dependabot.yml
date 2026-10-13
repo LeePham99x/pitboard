@@ -4,6 +4,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     ignore:
       # UniFFI moves only together with the C# generator, uniffi-bindgen-cs, which is released
       # for one UniFFI version at a time. Cargo.toml says why.
@@ -12,3 +14,13 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+  # The SDK in global.json. MSTest.Sdk beside it is raised by hand: Dependabot does not read
+  # msbuild-sdks.
+  - package-ecosystem: dotnet-sdk
+    directory: /apps/windows
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
