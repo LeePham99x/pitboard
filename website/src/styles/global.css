@@ -102,6 +102,13 @@
   --win-orange: #f29200;
   --win-red: #ff3b30;
   --win-blue: #007aff;
+  --win-side: #f2f2f4;
+  --win-pick: #dcdce0;
+  --win-form: #f2f2f4;
+  --win-stripe: #f5f5f7;
+  --win-btn-edge: rgb(0 0 0 / 0.22);
+  --win-green-text: #248a3d;
+  --win-red-text: #d70015;
 
   --term-text: #d5dbd9;
   --term-dim: #8a938f;
@@ -188,6 +195,13 @@
     --win-orange: #ff9f0a;
     --win-red: #ff453a;
     --win-blue: #0a84ff;
+    --win-side: #262628;
+    --win-pick: #3a3a3c;
+    --win-form: #1a1a1a;
+    --win-stripe: #232325;
+    --win-btn-edge: rgb(0 0 0 / 0.5);
+    --win-green-text: #30d158;
+    --win-red-text: #ff6961;
   }
 }
 :root[data-theme="dark"] {
@@ -254,6 +268,13 @@
   --win-orange: #ff9f0a;
   --win-red: #ff453a;
   --win-blue: #0a84ff;
+  --win-side: #262628;
+  --win-pick: #3a3a3c;
+  --win-form: #1a1a1a;
+  --win-stripe: #232325;
+  --win-btn-edge: rgb(0 0 0 / 0.5);
+  --win-green-text: #30d158;
+  --win-red-text: #ff6961;
 }
 @media (max-width: 1099px) {
   :root {
@@ -866,11 +887,6 @@
     display: none;
   }
 
-  html[data-surface="cli"] .sv-app,
-  html[data-surface="app"] .sv-cli {
-    display: none;
-  }
-
   .fig {
     min-width: 0;
   }
@@ -882,93 +898,6 @@
   .fig-cap code {
     font-size: 1em;
     color: var(--text-muted);
-  }
-
-  .term {
-    background: var(--term-bg);
-    border: 1px solid var(--term-edge);
-    border-radius: 8px;
-    color: var(--term-text);
-    container-type: inline-size;
-    overflow: hidden;
-  }
-  .term pre {
-    padding: 20px 24px 22px;
-    font: 400 15px/1.6 var(--f-mono);
-    color: var(--term-text);
-    white-space: pre;
-    tab-size: 4;
-  }
-  .term .pr {
-    color: var(--term-dim);
-    user-select: none;
-    -webkit-user-select: none;
-  }
-  .term b {
-    font-weight: 700;
-    color: var(--term-bold);
-  }
-  .term .dim {
-    color: var(--term-dim);
-  }
-  .term .g {
-    color: var(--term-green);
-  }
-  .term .y {
-    color: var(--term-yellow);
-  }
-  .term .r {
-    color: var(--term-red);
-  }
-  .term :focus-visible {
-    outline-color: var(--focus-on-dark);
-  }
-  /* 61 columns: fit on a whole-pixel advance (0.6em) so bar cells join without seams */
-  .term .fit {
-    font-size: clamp(10px, calc((100cqi - 48px) / 36.6), 15px);
-    font-size: clamp(10px, calc(round(down, (100cqi - 48px) / 61, 1px) / 0.6), 15px);
-  }
-  .term-ctl {
-    display: flex;
-    justify-content: flex-end;
-    gap: 6px;
-    padding: 10px 12px 0;
-  }
-  .term-ctl button {
-    height: 26px;
-    padding: 0 10px;
-    border: 1px solid rgb(255 255 255 / 0.16);
-    border-radius: 2px;
-    background: none;
-    color: var(--term-text);
-    font: 500 12px/16px var(--f-mono);
-    cursor: pointer;
-  }
-  .term-ctl button:hover {
-    background: rgb(255 255 255 / 0.08);
-  }
-  .term-ctl button:disabled {
-    color: var(--term-dim);
-    border-color: rgb(255 255 255 / 0.08);
-    background: none;
-    cursor: default;
-  }
-  .term-ctl button:focus-visible {
-    outline: 2px solid var(--focus-on-dark);
-    outline-offset: 1px;
-  }
-  html:not(.js) .term-ctl {
-    display: none;
-  }
-  @media (max-width: 639px) {
-    .term pre {
-      padding: 14px 12px 16px;
-      font-size: 12.5px;
-    }
-    .term .fit {
-      font-size: clamp(10px, calc((100cqi - 24px) / 36.6), 15px);
-      font-size: clamp(10px, calc(round(down, (100cqi - 24px) / 61, 1px) / 0.6), 15px);
-    }
   }
 
   /* blocks: an ink rule marks the top edge, the heading sits beside the text */
@@ -1119,9 +1048,32 @@
     column-gap: var(--gap);
     row-gap: 40px;
   }
+  .foot-brand .lockup {
+    height: 24px;
+    width: auto;
+  }
+  .foot-by {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 16px;
+    font-size: 15px;
+    color: var(--text-muted);
+  }
+  .foot-by a {
+    color: var(--text);
+  }
+  .foot-gh {
+    display: inline-flex;
+  }
+  .foot-gh svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
+  }
   .foot-cols {
     display: grid;
-    grid-template-columns: repeat(2, max-content);
+    grid-template-columns: repeat(3, max-content);
     column-gap: 56px;
     row-gap: 32px;
   }
@@ -1139,6 +1091,12 @@
   .foot-cols a:hover {
     color: var(--ink);
     text-decoration: underline;
+  }
+  @media (max-width: 639px) {
+    .foot-cols {
+      grid-template-columns: repeat(2, max-content);
+      column-gap: 40px;
+    }
   }
   @media (max-width: 1099px) {
     .foot-in {

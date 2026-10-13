@@ -1,0 +1,17 @@
+---
+// One of several features in a section, its figure on the side `flip` says.
+interface Props {
+  id: string;
+  title: string;
+  flip?: boolean;
+}
+const { id, title, flip = false } = Astro.props;
+---
+
+<div class:list={["row", { flip }]} aria-labelledby={id} role="group">
+  <div class="row-text">
+    <h3 class="h3" id={id}>{title}</h3>
+    <div class="prose"><slot /></div>
+  </div>
+  <div class="row-fig"><slot name="fig" /></div>
+</div>

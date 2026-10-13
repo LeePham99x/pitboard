@@ -1,0 +1,40 @@
+---
+// As MainWindow.swift lays it out. A `crop` desk shows the window's top only.
+interface Props {
+  pane: "accounts" | "activity";
+  title: string;
+  subtitle?: string;
+  tools: string[];
+  panel: string;
+  crop?: boolean;
+}
+const { pane, title, subtitle, tools, panel, crop = false } = Astro.props;
+const panes = [
+  ["accounts", "Accounts", "sf-people"],
+  ["activity", "Activity", "sf-clock"],
+  ["machine", "This Mac", "sf-steth"],
+];
+---
+
+<div class:list={["desk", { flow: !crop }, panel]} aria-hidden="true" data-output>
+  <div class="mw pw">
+    <div class="pw-side">
+      <span class="tl"><i></i><i></i><i></i></span>
+      {panes.map(([id, name, icon]) => <div class:list={["pw-item", { on: id === pane }]}>
+        <svg class="ico">
+          <use href={`#${icon}`} />
+        </svg>
+        {name}
+      </div>)}
+    </div>
+    <div class="pw-main">
+      <div class="pw-bar">
+        <span class="pw-title"><b>{title}</b>{subtitle && <span>{subtitle}</span>}</span>
+        {tools.map((icon) => <svg class="ico">
+          <use href={`#${icon}`} />
+        </svg>)}
+      </div>
+      <div class="pw-body"><slot /></div>
+    </div>
+  </div>
+</div>

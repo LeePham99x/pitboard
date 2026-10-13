@@ -1,0 +1,125 @@
+---
+// One section of a Settings pane, in LimitsSettings.swift's and RenewalSettings.swift's words.
+import { clock } from "../../data/world.ts";
+
+interface Props {
+  show: "switch" | "warm" | "renewal";
+}
+const { show } = Astro.props;
+const tabs = [
+  ["general", "General", "sf-gear"],
+  ["limits", "Limits", "sf-gauge"],
+  ["renewal", "Renewal", "sf-cal"],
+  ["commandLine", "Command Line", "sf-term"],
+  ["updates", "Updates", "sf-down"],
+];
+const pane = show === "renewal" ? "renewal" : "limits";
+const title = show === "renewal" ? "Renewal" : "Limits";
+const panels = { switch: "p-switch", warm: "p-warm", renewal: "p-renew" } as const;
+const panel = panels[show];
+---
+
+<div class:list={["desk flow", panel]} aria-hidden="true" data-output>
+  <div class="mw sw">
+    <div class="sw-bar">
+      <span class="tl"><i></i><i></i><i></i></span>
+      <span class="sw-title">{title}</span>
+      {tabs.map(([id, name, icon]) => <span class:list={["sw-tab", { on: id === pane }]}>
+        <svg class="ico">
+          <use href={`#${icon}`} />
+        </svg>
+        {name}
+      </span>)}
+    </div>
+    <div class="form">
+      {show === "switch" && (
+        <>
+          <p class="form-h">Before an account runs out</p>
+          <div class="form-g">
+            <div class="form-r">
+              <span class="form-l">Switch Claude Code automatically</span>
+              <span class="sw-switch on" />
+            </div>
+            <div class="form-r">
+              <span class="form-l">Switch when a limit reaches 95%</span>
+              <span class="stepper" />
+            </div>
+            <div class="form-r">
+              <span class="form-x"
+                >Watching work: 40% of its weekly limit, as of {clock.read}.</span
+              >
+            </div>
+          </div>
+          <p class="form-f">
+            Pitboard switches Claude Code to another of your accounts with room below 95% in every
+            limit, once a limit of the one in use reaches 95%, while the app is open. Sessions
+            already running follow within about 33 seconds. It never switches back by itself, and
+            never switches Codex: a running codex keeps its account until restarted.
+          </p>
+        </>
+      )}
+      {show === "warm" && (
+        <>
+          <p class="form-h">Warm up limits</p>
+          <div class="form-g">
+            <div class="form-r">
+              <span class="form-l">From</span>
+              <span class="time">07:00</span>
+            </div>
+            <div class="form-r">
+              <span class="form-l">To</span>
+              <span class="time">23:00</span>
+            </div>
+            <div class="form-r">
+              <span class="form-l">
+                personal · Max 20x<small>Warms up again at {clock.warmsAgain}</small>
+              </span>
+              <span class="sw-switch on" />
+            </div>
+            <div class="form-r">
+              <span class="form-l">work · Max 20x</span>
+              <span class="sw-switch" />
+            </div>
+            <div class="form-r">
+              <span class="form-x">Next warm-up: personal at {clock.warmsAgain}.</span>
+            </div>
+          </div>
+          <p class="form-f">
+            Pitboard starts the five-hour period of each account turned on as soon as the last one
+            resets, within these hours, while the app is open, so it resets as early as it can.
+            Claude Code sends one short request with that account's own login. Pitboard warms up
+            Claude Code accounts only, and none with a limit used up.
+          </p>
+        </>
+      )}
+      {show === "renewal" && (
+        <>
+          <div class="form-g">
+            <div class="form-r">
+              <span class="form-l">Renew parked logins daily</span>
+              <span class="sw-switch on" />
+            </div>
+            <div class="form-r">
+              <span class="form-l">Runs</span>
+              <span class="form-v">Every day</span>
+            </div>
+            <div class="form-r">
+              <span class="form-l">Scheduled in</span>
+              <span class="form-v">/Users/me/Library/La…pitboard.renew.plist</span>
+            </div>
+            <div class="form-r">
+              <span class="form-l">Renew every parked login that is due.</span>
+              <span class="btn-mac">Renew Now</span>
+            </div>
+          </div>
+          <p class="form-f">
+            A parked login is renewed whenever Pitboard runs, and otherwise not, so one you leave
+            alone for weeks expires and needs a browser sign-in. Daily renewal hands that to your
+            Mac’s own scheduler. It renews your parked logins and does nothing else: it never
+            switches account and never asks for usage.
+          </p>
+        </>
+      )}
+    </div>
+  </div>
+</div>

@@ -1,0 +1,35 @@
+---
+// The Activity pane, with the entries sessions.ts's `pitboard log` prints, in the app's words.
+import PitboardWindow from "./PitboardWindow.astro";
+import { clock } from "../../data/world.ts";
+
+const rows = [
+  [`13 Oct 2026 at ${clock.switched}`, "Switch", "work", "Pitboard app"],
+  [`13 Oct 2026 at ${clock.warmed}`, "Warm-up", "personal", "Pitboard app"],
+  ["10 Oct 2026 at 09:16", "Enrol", "work", "Command line"],
+  ["10 Oct 2026 at 09:14", "Enrol", "personal", "Command line"],
+];
+---
+
+<PitboardWindow pane="activity" title="Activity" tools={["sf-refresh"]} panel="p-log">
+  <table class="tbl-mac">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Change</th>
+        <th>Account</th>
+        <th>Result</th>
+        <th>Asked By</th>
+      </tr>
+    </thead>
+    <tbody>
+      {rows.map(([date, change, account, by]) => <tr>
+        <td>{date}</td>
+        <td>{change}</td>
+        <td>{account}</td>
+        <td class="sub">Done</td>
+        <td class="sub">{by}</td>
+      </tr>)}
+    </tbody>
+  </table>
+</PitboardWindow>
