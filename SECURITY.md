@@ -83,11 +83,13 @@ A report is in scope when Pitboard fails at one of these.
 - Pitboard never copies a Claude Desktop login. It renames Claude's files into
   `~/.pitboard/parks` and back, and moves three keys of Claude's `config.json` with them,
   only while Claude is closed. `state.json` names both places before the first rename, and
-  Pitboard deletes nothing of Claude's.
+  Pitboard deletes nothing of Claude's in its data folder. Only `pitboard forget` and
+  `pitboard uninstall` delete a parked Claude Desktop login or a folder set aside.
 - A parked login stays on one machine, because a refresh token presented from a second
   machine can end the login on both. Pitboard refuses a state directory in a cloud-synced
   folder, or a state file written on another machine. `pitboard adopt` takes over such a
-  file, keeping the accounts and dropping their parked logins.
+  file, keeping the accounts, dropping their Claude Code and Codex parked logins and
+  setting aside their Claude Desktop ones.
 - Pitboard sends a login only to the service that issued it, verifies TLS against your
   operating system's trust store and has no telemetry. `PITBOARD_API_BASE` redirects
   requests for tests, and only to a loopback IP address, because the server that answers

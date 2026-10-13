@@ -473,7 +473,7 @@ pages load, as a browser would.
   - `fixture/` holds the fixtures, the worlds a debug build of either app and its UI tests
     launch into by name, as the macOS app's debug build and UI tests do. Only the `fixture`
     feature compiles them, and it enables `pitboard-core`'s `test-support`. `worlds.rs`
-    makes each of the twelve on the real core: a home in the fixture's own folder in the
+    makes each of the thirteen on the real core: a home in the fixture's own folder in the
     temporary directory, `MemoryHost` and `ScriptedApi`, and every account put there by the
     core as a person would have, signed in, enrolled, parked and switched on a clock set to
     when it happened. `tools.rs` plays each tool's sign-in through the core's
@@ -1460,8 +1460,8 @@ spent refresh token again. So it is a bump, and 0.10.0 refuses the file and says
 Schema 8 lists each parked login waiting to be deleted in `discarded` as an object: its
 `service`, and `kind`, how it was kept. An item of the vault leaves `kind` out. A schema 7
 file's names come forward as items of the vault. `park::purge`, `pending`'s sweep and
-`repair` reach a park of each kind through `park::parks(kind)`. 0.11.0 reads `discarded` as
-names and would call such a file corrupt. So it is a bump, and 0.11.0 refuses the file and
+`repair` reach a park of each kind through `park::parks(kind)`. 0.12.0 reads `discarded` as
+names and would call such a file corrupt. So it is a bump, and 0.12.0 refuses the file and
 says to update.
 
 Schema 8 also holds what a Claude Desktop login needs. A park says its `kind`, `folder` for

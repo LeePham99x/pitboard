@@ -12,37 +12,20 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   once its five-hour limit resets, Claude Code sends one short message with that account's
   login, so the next window starts at once. Turn it on with `pitboard warm on <account>` or
   in **Settings** > **Limits**.
-- Pitboard enrols a Claude Desktop account on macOS: `pitboard enroll desktop/<label>` with
-  Claude closed.
-- Pitboard switches Claude Desktop accounts on macOS with `pitboard use desktop/<label>`,
-  while Claude is closed.
-- `pitboard enroll desktop/<label> --sign-in` parks the account in use, waits while you sign
-  in inside Claude, and enrols that account.
-- `pitboard abandon` also gives up an interrupted Claude Desktop move, keeping every folder.
-  It gives up an interrupted Claude Code or Codex switch whatever Claude Desktop's state, and
-  says why a move it could not give up still waits.
-- `pitboard status` says when Pitboard last read a Claude Desktop account in use, as
-  `signed in · read 2h 05m ago`, and when a parked one's sign-in may lapse, from the date
-  Claude's own session cookie carries. `pitboard status --json` gives them as `read_at` and
-  `parked.session_expires_at`, and an add left halfway as `awaiting`, each beside what was
-  there. `pitboard doctor` checks Claude's data folder, settings, layout and parked logins
-  under a heading of their own, and `doctor --json` adds `environment.desktop`. Pitboard opens
-  none of Claude's cookies and lists no process to say any of it.
-- `pitboard repair` and `pitboard adopt` say when they set aside a Claude Desktop folder,
-  and `pitboard uninstall` how many such folders it deleted. `--json` gives them as
-  `set_aside`, and as `set_aside_removed` for `uninstall`.
+- Pitboard switches [Claude Desktop](https://docs.usepitboard.com/guides/claude-desktop)
+  accounts on macOS with `pitboard use desktop/<label>`, while Claude is closed.
+- `pitboard enroll desktop/<label>` adds the account Claude is signed in to. With
+  `--sign-in`, it parks that account and adds the one you sign in to inside Claude.
+- The app adds, switches and signs in again to Claude Desktop accounts, and asks before it
+  quits Claude.
+- `pitboard status` says when Pitboard last read a Claude Desktop account in use, and when a
+  parked one's sign-in may lapse.
+- `pitboard doctor` checks Claude Desktop under a heading of its own.
+- `pitboard abandon` gives up an interrupted Claude Desktop move.
+- `pitboard repair` gives a Claude Desktop account back its parked login.
+- `pitboard adopt` sets aside a Claude Desktop login parked on another Mac.
 - `pitboard uninstall` refuses while Claude is signed out and a Claude Desktop login is
-  parked or set aside, since it would delete every one Pitboard holds.
-- `pitboard repair` gives a Claude Desktop account the parked login it finds where the folder
-  `state.json` names for it is gone, as after a backup of `state.json` is restored.
-- The conformance check reads Claude Desktop's facts out of Claude's `app.asar` with
-  `--provider desktop`, and refuses Claude's program. No job runs it: a person runs it by
-  hand on an installed copy. On 2.7032.0 every fact that names a literal holds.
-- The app adds, switches and signs in again to Claude Desktop accounts on macOS. It asks
-  before it quits Claude, over the Add Account dialog too, and opens Claude again only once
-  its data folder is whole: in front for you to sign in, behind after a switch. An add left
-  halfway shows a notice with **Finish Adding** and **Put work Back**, after a relaunch too.
-  Settings say that Pitboard never renews a parked Claude Desktop login.
+  parked or set aside, since deleting them would leave no Claude Desktop login.
 
 ### Changed
 
@@ -54,17 +37,29 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   without a weekly limit for all models, such as a Team seat.
 - In `pitboard-core`, `usage::roomiest` is now `usage::preferred` and `usage::Room` gains
   `weekly`; `autoswitch::retry_after` and its constants moved to `duty::cadence`, and
-  `autoswitch::Look` is now `duty::Look<Auto>`.
-- `state.json` is schema 8. Pitboard 0.12.0 and earlier refuse it and say to update.
-- `pitboard uninstall` asks whether to delete, saying the other accounts need signing in
-  again, where it said a browser sign-in: a Claude Desktop account signs in again inside
-  Claude.
-- A switch that quits the ChatGPT app waits, inside its 30 seconds, for the `codex` running
-  inside ChatGPT to go too before it switches.
-- `pitboard status` with no account enrolled says it found no Claude Code login, and how to
-  enrol a Codex or Claude Desktop account, where it said nothing was signed in.
-- A refused change says the interrupted switch it finished or undid first ahead of the
-  refusal, where it said it after.
+  `autoswitch::Look` is now `duty::Look<Auto>`. `state::Park.refresh_fingerprint` is now
+  `login`, `State.discarded` holds `state::Dropped`, and `State::discard` takes a
+  `state::ParkKind`. `State`, `Park`, `status::Row`, `status::Report`, `service::Failed`,
+  `switch::Reclaimed`, `switch::Adopted`, `Error::LiveCredentialAbsent` and
+  `Error::AlreadyEnrolled` gain fields, and `switch::Outcome` and `provider::Adoption` gain
+  variants. `switch::abandon` and `Pitboard::abandon_recovery` return `switch::GaveUp`,
+  `switch::repair` returns its warnings too, and `Context::program_for` an `Option`.
+  `ProviderId::cli` replaces `program_variable` and `install_places`, and
+  `ProviderId::home_variable`, `ProviderId::login_command`, `switch::sign_in` and
+  `switch::sign_in_watched` are gone. `ProviderId::Desktop` and many other items are added.
+- The account index is schema 8, which earlier versions cannot read. Update the command line
+  and the app together.
+- `pitboard uninstall`'s question says the other accounts need signing in again, where it
+  said a browser sign-in.
+- A switch that quits the ChatGPT app waits until the `codex` running inside it has quit
+  too.
+- With no account enrolled, `pitboard status` says it found no Claude Code login, not that
+  nothing is signed in, and how to enrol a Codex account and, on macOS, a Claude Desktop
+  one.
+- A refused change says the interrupted switch it finished or undid before the refusal, not
+  after it.
+- While `CLAUDE_CODE_CUSTOM_OAUTH_URL` is set, `pitboard abandon` refuses only where a Claude
+  Code switch is interrupted.
 
 ### Fixed
 

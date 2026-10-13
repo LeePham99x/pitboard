@@ -249,9 +249,9 @@ add `PITBOARD_FIXTURE=twoTools` to the scheme's environment variables.
 
 The fixtures are Rust's, one set of worlds either app can launch into, in
 `crates/pitboard-ffi/src/fixture`: `twoTools`, `oneTool`, `empty`, `firstLaunch`,
-`noClaudeCode`, `unnamed`, `onlyOne`, `readFailure`, `stuck`, `chatGPTOpen`, `claudeDesktop`
-and `claudeDesktopOpen`, as `fixture_names()` gives them. Each is the real core over a
-machine of its own: a home in the folder `pitboard-fixture` in the temporary directory,
+`noClaudeCode`, `unnamed`, `onlyOne`, `readFailure`, `stuck`, `chatGPTOpen`, `claudeDesktop`,
+`claudeDesktopOpen` and `warmUp`, as `fixture_names()` gives them. Each is the real core over
+a machine of its own: a home in the folder `pitboard-fixture` in the temporary directory,
 `TMPDIR` where it is set, the keychain, the process list and the scheduler in memory, and
 Anthropic and OpenAI answering from a script. Its accounts were put there by the core,
 signed in, enrolled, parked and switched, so a world shows what the core makes of it:

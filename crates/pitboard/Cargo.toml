@@ -1,6 +1,6 @@
 [package]
 name = "pitboard"
-description = "Park and restore your own Claude Code, Codex and Claude Desktop logins on one machine, and see what each one has left."
+description = "Park and restore your own logins of Claude Code, Codex and, on macOS, Claude Desktop, and see what each Claude Code and Codex account has left."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

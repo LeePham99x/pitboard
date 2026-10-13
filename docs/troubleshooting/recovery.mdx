@@ -65,12 +65,12 @@ On macOS, every Pitboard directory shares the keychain, so a login `repair` give
 
 Migration Assistant or a backup can bring `~/.pitboard` from another computer. Pitboard refuses to use it. Commands stop with an error (`state_wrong_machine`) saying the account list `was written on another computer`. In the app, the **Accounts** pane shows **Couldn't Read Accounts** with the same message.
 
-Run `pitboard adopt`. It keeps your accounts and drops the parked logins they came with.
+Run `pitboard adopt`. It keeps your accounts and drops the parked logins they came with. It sets each Claude Desktop parked login aside instead.
 
 ```sh
 pitboard adopt
 ```
 
-It prints a line such as `pitboard enroll personal --sign-in` for each account whose parked login it dropped. Run each line, or sign in from the app as [Sign in to an account again](/guides/sign-in-again) shows.
+It prints a line such as `pitboard enroll personal --sign-in` for each account whose parked login it dropped or set aside. Run each line, or sign in from the app as [Sign in to an account again](/guides/sign-in-again) shows.
 
 [What Pitboard will not do](/concepts/limits#rules) says why a parked login never moves between computers.

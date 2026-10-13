@@ -1,7 +1,7 @@
-//! The engine behind Pitboard: parking and restoring a person's own Claude Code and Codex
-//! logins, and reading what each has left. It serves Pitboard's own front ends, the command
-//! line and the native apps, which reach it through [`service::Pitboard`] with an explicit
-//! [`context::Context`].
+//! The engine behind Pitboard: parking and restoring a person's own Claude Code, Codex and
+//! Claude Desktop logins, and reading what each Claude Code and Codex account has left. It
+//! serves Pitboard's own front ends, the command line and the native apps, which reach it
+//! through [`service::Pitboard`] with an explicit [`context::Context`].
 //!
 //! # What is supported
 //!
@@ -19,8 +19,7 @@
 //! later release, so those structs are `#[non_exhaustive]` too.
 //!
 //! What is deliberately not reachable: nothing outside this crate may write Pitboard's index.
-//! Every change goes through [`switch`], which records what it is about to do first and
-//! finishes an interrupted one before starting another.
+//! Every change goes through [`switch`], which records what it is about to do first.
 
 // Pitboard for Windows is being built, and reaches people only once the command line, the
 // app, their installers and their docs are done. Until then a Windows build of a release

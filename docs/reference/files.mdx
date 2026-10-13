@@ -140,7 +140,7 @@ Pitboard reads the list of processes to tell whether Claude is open:
 | `Contents/MacOS/Claude`, or inside `Contents/Frameworks/Claude Helper*.app`, in an app whose identifier Pitboard cannot read | Yes |
 | A `chrome-native-host` that Chrome started for Claude's browser extension | No |
 
-Each folder in `~/.pitboard/parks/` is a parked login, named as [Parked logins](/reference/files#parked-logins) says, or a folder set aside, named `pitboard-aside-<time>`:
+Each folder in `~/.pitboard/parks/` is a parked login, named as [Parked logins](/reference/files#parked-logins) says, or a folder set aside. A parked login set aside keeps its name. A folder made for what was in Claude's way is named `pitboard-aside-<time>`. `state.json` records which folders are set aside. Each folder holds:
 
 | Path in the folder | What it is |
 | --- | --- |
