@@ -19,6 +19,16 @@ On Linux, parked logins are files in `~/.pitboard/vault/`, at mode 0600 in a 070
 
 Of Pitboard's other files, only `signin/` holds a login, while a sign-in runs: see [The Pitboard directory](/reference/files#the-pitboard-directory).
 
+## When Pitboard renews a login in use
+
+Pitboard renews a login a tool may be using in three cases only:
+
+- [`pitboard stow`](/reference/recovery-commands#stow) renews one it puts away with an expired access token.
+- A change or a read renews Claude Code's login in use where it must [identify it](/concepts/switching#how-pitboard-knows-whose-login-it-is) and its access token has expired.
+- A warm-up of the account in use renews its login where the access token would lapse within 5 minutes.
+
+Each holds [Claude Code's renewal locks](/reference/files#claude-code-files) meanwhile, so no session spends the same refresh token. Pitboard never renews Codex's login in use.
+
 ## Where account windows keep their data
 
 Each [account window](/guides/account-windows) keeps its site's cookies, storage and caches, sign-in included, in a WebKit store of its own. WebKit keeps it in files under your `~/Library`, as a browser does. A renamed account keeps its store. [Account windows](/reference/files#account-windows) gives the paths.
@@ -63,8 +73,6 @@ A [warm-up](/guides/warm-up) is Claude Code's run, not Pitboard's: `claude -p` s
 The command line never checks for updates.
 
 GitHub redirects each release download to `release-assets.githubusercontent.com`, as measured on 12 October 2026.
-
-Pitboard renews a login a tool may be using in three cases. [`pitboard stow`](/reference/recovery-commands#stow) renews one it puts away with an expired access token. A change or a read renews Claude Code's login in use where it must [identify it](/concepts/switching#how-pitboard-knows-whose-login-it-is) and its access token has expired. A warm-up of the account in use renews its login where the access token would lapse within 5 minutes. All three hold [Claude Code's renewal locks](/reference/files#claude-code-files) meanwhile.
 
 Pitboard's own requests verify TLS against your system's trust store and time out after 5 seconds.
 

@@ -328,8 +328,8 @@ Opening Pitboard from Finder or Spotlight with no window open opens the Pitboard
 | --- | --- | --- | --- |
 | **work has no 5-hour limit left** | When the account in use runs out of a limit and another account of its tool has room, as [When an account runs out](/guides/switch#when-an-account-runs-out) says. Once for each limit and reset, even across restarts. | **personal has 58% of its own left.**, or **seat has no such limit.** for an account without that limit | **Switch**, which switches to `personal` |
 | **Switched Claude Code to personal** | After each switch the app makes by itself. | **work had used 96% of its 5-hour limit. Sessions already running follow within 33 seconds.** | None |
-| **Claude Code was not switched** | When a limit of the account in use reaches the share in **Switch when a limit reaches**, and Pitboard holds back. Once for each limit, reset and reason. | **work has used 96% of its 5-hour limit.**, then a reason from the first list that follows | None |
-| **Pitboard is not switching Claude Code** | When Pitboard cannot decide whether to switch. Once for each reason and what it names. | A reason from the second list | None |
+| **Claude Code was not switched** | When a limit of the account in use reaches the share in **Switch when a limit reaches**, and Pitboard holds back. Once for each limit, reset and reason. | **work has used 96% of its 5-hour limit.**, then a reason from [When it stays on the account](/reference/automatic-switching#when-it-stays-on-the-account) | None |
+| **Pitboard is not switching Claude Code** | When Pitboard cannot decide whether to switch. Once for each reason and what it names. | A reason from [When it decides nothing](/reference/automatic-switching#when-it-decides-nothing) | None |
 | **Pitboard could not switch Claude Code** | When an automatic switch fails. Once for each kind of error. | The error | None |
 | **Pitboard could not warm up an account** | When a warm-up the app made by itself came to nothing. Once for each error until a warm-up starts a period. | The error | None |
 | **A login was replaced outside Pitboard** | When a read finds that an account's only login ended outside Pitboard. A sign-in such as `/login` in Claude Code replaced it, or the account was signed out in Claude. Once for each account while reads find it, and once more after the app reopens. | The warning's message, which says what ended the login and how to sign in again, as the next table gives it | None |
@@ -341,27 +341,9 @@ Opening Pitboard from Finder or Spotlight with no window open opens the Pitboard
 
 While a login file sits behind the keychain, the second sentence of **Switched Claude Code to personal** reads **Sessions already running keep the account they are on until their login is next renewed, or until they are started again:** and names the file.
 
-The three that hold back or fail come only while **Switch Claude Code automatically** is on. They can come again after the app next switches. [When it holds back](/guides/automatic-switching#when-it-holds-back) says what each reason means and when it ends.
+The three that hold back or fail come only while **Switch Claude Code automatically** is on. They can come again after the app next switches. A notification starts its reason with a capital letter and ends it with a full stop.
 
 Only the run-out notification can have a subtitle. Clicking a notification itself does nothing. Notifications play no sound and set no badge. macOS asks whether to allow them the first time the app posts one.
-
-**Claude Code was not switched** ends with one of these reasons:
-
-- **No other Claude Code account has room below 95% in every limit.**
-- **No other Claude Code account has room below 95% in every limit, and there is no reading of personal from Anthropic yet.**
-- **This limit was switched away from once already, and is not again before it resets.**
-- **3 attempts to switch away from this limit failed, and none is made again before it resets.**
-- **The account was put in use less than 5 minutes ago.**
-- **Claude Code signs in another way, set by** `apiKeyHelper in /Users/me/.claude/settings.json`**, so a switch would change nothing its sessions use.**
-
-**Pitboard is not switching Claude Code** gives one of these:
-
-- **A switch was interrupted, and the next change you make finishes it.**
-- **Claude Code uses a custom OAuth endpoint, and Pitboard does not act on Claude Code then.**
-- **Claude Code has no login stored.**
-- **Claude Code has me@example.com's login stored, and that account is not enrolled.**
-- **Whose login Claude Code has stored could not be told (could not reach Anthropic).**
-- **There is no reading of work from Anthropic yet.**
 
 ## Keyboard shortcuts
 

@@ -72,28 +72,7 @@ If no account qualifies, nothing moves. Once the account runs out, the app offer
 
 ## When it holds back
 
-While one of these holds, Pitboard decides nothing, and the app posts **Pitboard is not switching Claude Code**.
-
-| Reason | Ends when |
-| --- | --- |
-| A switch was interrupted. | Your next change finishes it, or [`pitboard abandon`](/reference/recovery-commands#abandon) gives up on it. |
-| Claude Code uses [`CLAUDE_CODE_CUSTOM_OAUTH_URL`](/reference/files#environment-variables). | You unset it. |
-| Claude Code has no login stored. | You sign in. |
-| Claude Code has the login of an account you have not enrolled. | You enrol it. |
-| Pitboard cannot identify Claude Code's login. | A later try identifies it. |
-| Anthropic has given no reading of the account in use. | Pitboard's next read gets one. |
-
-Once a limit reaches the share, Pitboard stays on the account while one of these holds. The app posts **Claude Code was not switched** and `pitboard log` records `auto-stay`, once for each limit and its reset.
-
-| Reason | Ends when |
-| --- | --- |
-| No other account qualifies. | One does, or the limit resets. |
-| Pitboard already left this limit, and the account is back in use. | The limit resets. |
-| Three tries at this limit failed. | The limit resets. |
-| A switch, sign-in or enrolment put the account in use less than 5 minutes ago. | 5 minutes pass. |
-| Claude Code signs in another way, such as `apiKeyHelper`. | You remove that setting, which `pitboard doctor` names. |
-
-A failed try posts **Pitboard could not switch Claude Code**. The next try waits 1 minute, and each failure in a row doubles the wait, up to 15 minutes. A failure that may pass, such as Anthropic out of reach, does not count toward the three tries.
+When Pitboard stays on the account or cannot decide, the app posts a notification and `pitboard watch` prints the reason. [Automatic switching](/reference/automatic-switching) lists each reason and what ends it.
 
 A run that cannot read the keychain, such as `pitboard watch` over SSH, fails only its own tries. See [macOS says the keychain is locked](/troubleshooting#macos-says-the-keychain-is-locked).
 
