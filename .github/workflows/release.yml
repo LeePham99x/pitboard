@@ -7,6 +7,12 @@ on:
 permissions:
   contents: read
 
+# One release at a time, so two tags never push the tap at once. A running release is never
+# cancelled: a tag pushed meanwhile waits, and a third replaces the one waiting.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -16,6 +22,7 @@ jobs:
   # the manifest or has nothing written about it is a mistake, not a release.
   guard:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       version: ${{ steps.check.outputs.version }}
       base: ${{ steps.check.outputs.base }}
@@ -63,6 +70,7 @@ jobs:
           - target: aarch64-unknown-linux-musl
             os: ubuntu-24.04-arm
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -138,6 +146,7 @@ jobs:
   app:
     needs: guard
     runs-on: macos-latest
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -273,6 +282,7 @@ jobs:
   publish:
     needs: [guard, build, app]
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     # Required reviewers on this environment are what stops an unexpected tag walking into
     # a crates.io upload, which is the one step of a release nobody can undo. crates.io
     # matches the environment name as well as the repository and the workflow, so a run
@@ -445,6 +455,7 @@ jobs:
     needs: [guard, publish]
     if: needs.guard.outputs.prerelease == 'false'
     runs-on: macos-latest
+    timeout-minutes: 5
     permissions:
       contents: read
       attestations: read
@@ -507,6 +518,7 @@ jobs:
     needs: [guard, publish]
     if: needs.guard.outputs.prerelease == 'false'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     # HOMEBREW_TAP_TOKEN is a fine-grained token for datlechin/homebrew-tap alone, with
     # Contents read and write and nothing else beyond the Metadata read access GitHub
     # requires. It is the only credential in this release that reaches another repository,
@@ -575,6 +587,7 @@ jobs:
       matrix:
         os: [macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     steps:
       # The Linux runners come with Homebrew and leave it off PATH.
       - if: runner.os == 'Linux'
@@ -701,6 +714,7 @@ jobs:
       matrix:
         os: [macos-latest, macos-15-intel, ubuntu-latest, ubuntu-24.04-arm]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     permissions:
       contents: read
       attestations: read
