@@ -1,5 +1,6 @@
 //! A machine to run changes against: two accounts of one tool, stores in memory, services
-//! that answer from a script, and a clock that stands still.
+//! that answer from a script, a clock that stands still, and Claude Code's locks given up on
+//! at once.
 //!
 //! Shared by the tests that kill a change partway ([`super::crash`]), the tests that make
 //! one refuse ([`super::refusals`]), the tests of what a sign-in enrols ([`super::enroll`]),
@@ -212,7 +213,9 @@ pub(crate) fn machine(name: &str) -> Machine {
         .with_pitboard_home(root.join(".pitboard"))
         .with_memory_stores(Arc::clone(&mem))
         .with_scripted_api(Arc::clone(&api))
-        .with_clock(Arc::new(FixedClock::at(NOW)) as Arc<dyn Clock>);
+        .with_clock(Arc::new(FixedClock::at(NOW)) as Arc<dyn Clock>)
+        // A test holding one of Claude Code's locks lets go of it at a point, not after a while.
+        .with_lock_waiting(1, std::time::Duration::from_millis(1));
 
     // Claude Code's own files: the live credential, and the config a switch rewrites.
     let service = claude::live_service(&ctx);
@@ -870,20 +873,21 @@ pub(crate) fn write_target(m: &Machine) -> PathBuf {
 }
 
 /// Takes Claude Code's write lock at the moment it is called, as a session writing its
-/// credentials does, last touched `ago` before.
-pub(crate) fn takes_the_write_lock(
-    m: &Machine,
-    ago: std::time::Duration,
-) -> impl FnOnce() + 'static {
+/// credentials does.
+pub(crate) fn takes_the_write_lock(m: &Machine) -> impl FnOnce() + 'static {
     let writing = lock_dir(&write_target(m));
     move || {
         let parent = writing.parent().expect("the storage directory");
         std::fs::create_dir_all(parent).expect("the storage directory is made");
         std::fs::create_dir(&writing).expect("the write lock is free");
-        let touched = std::time::SystemTime::now() - ago;
-        crate::host::fs::touch_dir(Permit::for_a_test(), &writing, touched)
-            .expect("the write lock is touched");
     }
+}
+
+/// Lets go of Claude Code's write lock at the moment it is called, as a session that has
+/// written does.
+pub(crate) fn lets_go_of_the_write_lock(m: &Machine) -> impl FnOnce() + 'static {
+    let writing = lock_dir(&write_target(m));
+    move || std::fs::remove_dir(&writing).expect("the session lets go")
 }
 
 /// A session renewing the login `store` holds at the moment it is called, as Claude Code

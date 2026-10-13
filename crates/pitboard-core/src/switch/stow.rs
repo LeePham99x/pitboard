@@ -655,8 +655,9 @@ fn not_identified(path: &Path, error: &ProviderError) -> Error {
 #[cfg(test)]
 mod tests {
     use super::super::harness::{
-        Machine, NOW, Session, account, audit_lines, document, lapsed, lock_dir, machine, oauth,
-        owner, renews, renews_meanwhile, saves, state_file, takes_the_write_lock, write_target,
+        Machine, NOW, Session, account, audit_lines, document, lapsed, lets_go_of_the_write_lock,
+        lock_dir, machine, oauth, owner, renews, renews_meanwhile, saves, state_file,
+        takes_the_write_lock, write_target,
     };
     use super::super::settle;
     use super::*;
@@ -1537,12 +1538,8 @@ mod tests {
         let m = lapsed_login_left("stow-write-lock-before");
         let writing = lock_dir(&write_target(&m));
 
-        let refused = stow_while(
-            &m,
-            "stow.identified",
-            takes_the_write_lock(&m, std::time::Duration::ZERO),
-        )
-        .expect_err("Claude Code is writing");
+        let refused = stow_while(&m, "stow.identified", takes_the_write_lock(&m))
+            .expect_err("Claude Code is writing");
 
         assert_eq!(refused.code(), "switch_in_progress");
         assert!(
@@ -1568,7 +1565,7 @@ mod tests {
 
     /// Once the refresh token is spent, giving up on Claude Code's write lock would drop the
     /// only login left of that grant. So it is waited for longer than a change waits: here a
-    /// lock a killed session left 7 seconds ago, which nobody may take for 8 more.
+    /// session holds it until a change would have given up on it.
     #[test]
     #[cfg_attr(
         windows,
@@ -1577,13 +1574,13 @@ mod tests {
     fn a_write_lock_held_once_the_refresh_token_is_spent_is_waited_for() {
         let m = lapsed_login_left("stow-write-lock-after");
 
-        let (stowed, _) = stow_while(
-            &m,
-            "refresh.exchanged",
-            takes_the_write_lock(&m, std::time::Duration::from_secs(7)),
-        )
-        .expect("put away");
+        let (stowed, warnings) =
+            fault::meanwhile("refresh.waited", lets_go_of_the_write_lock(&m), || {
+                stow_while(&m, "refresh.exchanged", takes_the_write_lock(&m))
+            })
+            .expect("put away");
 
+        assert!(warnings.is_empty(), "saved under the lock: {warnings:?}");
         assert_eq!(
             stowed.kept,
             Kept::ParkedNow {

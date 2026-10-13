@@ -896,7 +896,7 @@ fn write_lock(
 ) -> Result<Option<lock::Guard>> {
     Ok(tool
         .write_lock(ctx)
-        .map(|dir| lock::acquire(permit, &dir, lock::WRITE))
+        .map(|dir| lock::acquire(permit, &dir, ctx.locks.write))
         .transpose()?)
 }
 

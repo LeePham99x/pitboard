@@ -1321,7 +1321,8 @@ impl World {
             .with_scripted_api(Arc::clone(&api))
             .with_scratch_claude(root.join("claude"))
             .with_awaited_every(Duration::from_millis(2))
-            .with_caller("app".into());
+            .with_caller("app".into())
+            .with_lock_waiting(2_000, Duration::from_millis(10));
         World {
             root,
             host,
@@ -1655,8 +1656,8 @@ impl World {
     /// Claude Code's write lock taken, as a session writing its login holds it, until what
     /// this returns is dropped: proper-lockfile's directory, `.storage-write.lock` in Claude
     /// Code's config directory, where pitboard-core's `Claude::write_lock` and
-    /// `lock::acquire` put it. A switch waits on it for about seven and a half seconds, then
-    /// refuses.
+    /// `lock::acquire` put it. A switch here waits on it until it is dropped, for as long as
+    /// a test waits for anything, then refuses.
     pub(super) fn claude_code_writing(&self) -> Writing {
         let held = self.root.join(".claude").join(".storage-write.lock");
         std::fs::create_dir_all(&held).expect("Claude Code's lock");
