@@ -2,7 +2,6 @@ import Accessibility
 import PitboardKit
 import SwiftUI
 
-/// The sheet `sheet` asks for, in the words the model says it in.
 struct AccountSheetView: View {
     let model: AppModel
     let sheet: Sheet
@@ -23,8 +22,6 @@ struct AccountSheetView: View {
     }
 }
 
-/// How every sheet is laid out: a title and what the sheet is for at the top, a grouped
-/// form, and its buttons at the bottom right, the default one last.
 struct SheetLayout<Content: View, Buttons: View>: View {
     let title: String
     let message: String

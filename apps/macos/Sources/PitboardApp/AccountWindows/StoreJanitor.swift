@@ -2,14 +2,9 @@ import Foundation
 import PitboardKit
 import WebKit
 
-/// The account windows' stores as WebKit has them: wipes one in place, and deletes the ones
-/// the model asks it to, trying a store WebKit still holds again a few times.
-///
-/// Which stores go, and when, is the model's: one this Pitboard directory recorded making,
-/// that a read which succeeded no longer derives from any enrolled account and that no other
-/// Pitboard directory still there recorded too, which it asks for in
-/// `AccountWindowsShown.deleting`. The model records a store before it says a window opens,
-/// so every store a window uses is one it can ask for.
+/// Which stores go, and when, is the model's, in `AccountWindowsShown.deleting`. The model
+/// records a store before it says a window opens, so every store a window uses is one it can
+/// ask for.
 @MainActor
 final class StoreJanitor {
     private let stores: any WebsiteDataStores
@@ -38,9 +33,8 @@ final class StoreJanitor {
             ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast)
     }
 
-    /// Deletes each store `asked` names that is not being deleted already, telling `told` of
-    /// each whether it went. One still in use is tried again a few times, then told as held,
-    /// for the model to ask for again after its next read.
+    /// A store still in use is tried again a few times, then told as held, for the model to
+    /// ask for again after its next read.
     func delete(
         _ asked: [StoreDeletion], told: @escaping @MainActor (UUID, Bool) -> Void
     ) {
@@ -56,8 +50,6 @@ final class StoreJanitor {
         }
     }
 
-    /// Deletes the store `id` names, trying again after each pause while WebKit still holds
-    /// it. Whether it went.
     private func delete(_ id: UUID) async -> Bool {
         var waits = Self.retries[...]
         while true {

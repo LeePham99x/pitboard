@@ -2,9 +2,6 @@ import AppKit
 import PitboardKit
 import SwiftUI
 
-/// What sits in the menu bar: Pitboard's mark, and the account in use with its tightest
-/// limit unless the settings say to show less.
-///
 /// The one view alive from launch to quit, so it is also what opens a window asked for away
 /// from any view: the main window whenever the model asks for it, from the menu, from a
 /// notification's button, or on the first launch ever, and an account's window from the

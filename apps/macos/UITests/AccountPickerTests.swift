@@ -1,14 +1,10 @@
 import XCTest
 
-/// A page shared from a browser, as the Share extension hands it over: a Pitboard link of the
-/// debug build, which opens the account picker and nothing else until somebody chooses.
 final class AccountPickerTests: XCTestCase {
     override func setUp() {
         continueAfterFailure = false
     }
 
-    /// A shared chatgpt.com link asks which Codex account opens it, and opens nothing until
-    /// one is chosen: then that account's window opens on the link.
     @MainActor
     func testASharedLinkAsksWhichAccountOpensIt() {
         let app = XCUIApplication.launched(.twoTools)
@@ -39,7 +35,6 @@ final class AccountPickerTests: XCTestCase {
         XCTAssertTrue(picker.waitForNonExistence(timeout: 5))
     }
 
-    /// A link of a site Pitboard does not open is refused in the picker, saying why.
     @MainActor
     func testALinkToAnotherSiteIsRefused() {
         let app = XCUIApplication.launched(.twoTools)
@@ -53,7 +48,6 @@ final class AccountPickerTests: XCTestCase {
         XCTAssertEqual(app.accountWindows.count, 0)
     }
 
-    /// Cancelling closes the picker and opens nothing.
     @MainActor
     func testCancellingOpensNothing() {
         let app = XCUIApplication.launched(.onlyOne)
@@ -66,7 +60,6 @@ final class AccountPickerTests: XCTestCase {
         XCTAssertEqual(app.accountWindows.count, 0)
     }
 
-    /// A link for a site no account opens offers to add one.
     @MainActor
     func testALinkForASiteWithNoAccountOffersToAddOne() {
         let app = XCUIApplication.launched(.onlyOne)

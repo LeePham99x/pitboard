@@ -9,11 +9,9 @@
         /// own, and the navigation policy is the same code in a fixture as in a live run.
         static let fixtureScheme = "pitboard-fixture"
 
-        /// A fixture's windows: a stand-in page for every address of every site and sign-in
-        /// host, stores that live in memory, downloads in the fixture's folder, and links to
-        /// anywhere else opened nowhere. Nothing reaches a site, and nothing is written under
-        /// `~/Library/WebKit` of whoever runs the tests. Their records are the fixture's
-        /// model's, in the fixture's folder.
+        /// Nothing reaches a site, and nothing is written under `~/Library/WebKit` of whoever
+        /// runs the tests: every page is a stand-in, stores live in memory, and a link to
+        /// anywhere else opens nowhere.
         static func fixture(
             folder: URL, openElsewhere: @escaping @MainActor (URL) -> Void = { _ in }
         ) -> WebEnvironment {
@@ -33,7 +31,6 @@
         }
     }
 
-    /// Stores that live in memory, one per identifier, gone when the app quits.
     @MainActor
     final class FixtureDataStores: WebsiteDataStores {
         private var stores: [UUID: WKWebsiteDataStore] = [:]
@@ -51,9 +48,8 @@
     }
 
     /// Answers every request on the fixture's scheme with the page `fixture_page` makes for
-    /// it from the site table, the same page the Windows app serves: each site's stand-in, a
-    /// sign-in stand-in for the hosts a site's sign-in goes to, which closes itself as a real
-    /// one does once it is done, and an artifact's frame.
+    /// it from the site table: each site's stand-in, a sign-in stand-in that closes itself
+    /// once done as a real one does, and an artifact's frame.
     final class FixturePages: NSObject, WKURLSchemeHandler {
         func webView(_ webView: WKWebView, start urlSchemeTask: any WKURLSchemeTask) {
             let url =

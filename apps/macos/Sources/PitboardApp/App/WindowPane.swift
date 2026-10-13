@@ -1,7 +1,7 @@
 import PitboardKit
 
-/// The panes of the main window, as the window keeps the one it shows and the model names
-/// the one it asks for.
+/// The model's `Pane`, with the `String` raw value `@SceneStorage` needs to keep the pane
+/// shown.
 enum WindowPane: String, CaseIterable, Identifiable {
     case accounts
     case activity
@@ -17,7 +17,6 @@ enum WindowPane: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The model's name for it.
     var pane: Pane {
         switch self {
         case .accounts: .accounts
@@ -26,8 +25,6 @@ enum WindowPane: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The pane to show once the window has been asked for by `request`: the one it wants,
-    /// or this one where it wants none.
     func after(_ request: WindowRequest) -> WindowPane {
         request.pane.map(WindowPane.init) ?? self
     }
@@ -60,20 +57,15 @@ enum WindowPane: String, CaseIterable, Identifiable {
 /// window is opened some other way, from the Window menu or the Dock icon's.
 @MainActor
 final class WindowRequests {
-    /// The serial of the last request the window was opened for.
     private var opened: UInt64 = 0
-    /// The serial of the last request whose pane was shown.
     private var shown: UInt64 = 0
 
-    /// Whether to open the window for `request`: once for each request.
     func opens(_ request: WindowRequest) -> Bool {
         guard request.serial > opened else { return false }
         opened = request.serial
         return true
     }
 
-    /// The pane to show for `request`, from `pane`: the one it wants, once, and `pane` for a
-    /// request that wants none or was answered already.
     func pane(for request: WindowRequest, from pane: WindowPane) -> WindowPane {
         guard request.serial > shown else { return pane }
         shown = request.serial

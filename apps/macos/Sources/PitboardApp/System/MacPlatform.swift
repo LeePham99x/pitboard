@@ -10,8 +10,8 @@ import PitboardKit
 
 // MARK: - Other apps
 
-/// A running copy of an app, as `NSRunningApplication` has it. A protocol so a test can stand
-/// in for an app: `forceTerminate` is here only so a test can see that nothing calls it.
+/// A protocol so a test can stand in for an app: `forceTerminate` is here only so a test can
+/// see that nothing calls it.
 protocol RunningApp: AnyObject {
     var bundleURL: URL? { get }
     var isTerminated: Bool { get }
@@ -39,8 +39,8 @@ final class MacAppControl: AppControl, @unchecked Sendable {
         self.open = open
     }
 
-    /// The apps running on this Mac, as macOS's own list of them has it. NSRunningApplication
-    /// says it may be used from any thread; an app is opened from the main one.
+    /// NSRunningApplication says it may be used from any thread; an app is opened from the
+    /// main one.
     static func live() -> MacAppControl {
         MacAppControl(
             copies: { NSRunningApplication.runningApplications(withBundleIdentifier: $0) },
@@ -111,8 +111,6 @@ final class MacNotifications: NSObject, Notifications, UNUserNotificationCenterD
         ])
     }
 
-    /// What the notification says, in the model's words, and the account its button
-    /// switches to, where it has one.
     static func content(of notice: RunOutNotice) -> UNNotificationContent {
         let content = UNMutableNotificationContent()
         content.title = notice.title
@@ -190,7 +188,6 @@ final class MacLocalTime: LocalTime {
             inSameDayAs: Date(timeIntervalSince1970: TimeInterval(second)))
     }
 
-    /// A date abbreviated and a time short, as a list of what happened when says it.
     func dateAndTime(epoch: Int64) throws -> String {
         Date(timeIntervalSince1970: TimeInterval(epoch))
             .formatted(style(date: .abbreviated, time: .shortened))

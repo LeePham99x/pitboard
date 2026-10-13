@@ -2,8 +2,6 @@ import Foundation
 import Observation
 import ServiceManagement
 
-/// Whether Pitboard opens when its person logs in.
-///
 /// A protocol so a UI test can turn the setting on and off without registering the test
 /// build as a login item of whoever runs the tests.
 @MainActor
@@ -11,7 +9,6 @@ protocol LoginItem: AnyObject {
     var state: LoginItemState { get }
     func register() throws
     func unregister() throws
-    /// Login Items in System Settings, where a login item waiting for approval is approved.
     func openSystemSettings()
 }
 
@@ -24,7 +21,6 @@ enum LoginItemState: Equatable, Sendable {
     case requiresApproval
 }
 
-/// This app, as macOS's own login items list has it.
 @MainActor
 final class MainAppLoginItem: LoginItem {
     init() {}
@@ -48,9 +44,7 @@ final class MainAppLoginItem: LoginItem {
 @Observable
 final class OpenAtLogin {
     @ObservationIgnored private let item: any LoginItem
-    /// Whether Pitboard opens at login, as macOS last said.
     private(set) var state: LoginItemState
-    /// Why opening at login could not be changed.
     private(set) var failed: String?
 
     init(_ item: any LoginItem) {
@@ -63,9 +57,6 @@ final class OpenAtLogin {
         state = item.state
     }
 
-    /// Registers or unregisters this app as a login item. A registration macOS wants
-    /// approved stays waiting until the person allows it in System Settings, which the
-    /// settings then offer to open.
     func set(_ wanted: Bool) {
         failed = nil
         do {

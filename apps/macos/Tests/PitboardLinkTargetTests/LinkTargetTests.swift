@@ -2,8 +2,6 @@ import Foundation
 import PitboardLinkTarget
 import Testing
 
-/// A bundle in a folder of its own, whose Info.plist declares `scheme` under the key, or
-/// nothing when it is nil. The folder is deleted when `body` returns.
 private func withBundle(declaring scheme: String?, _ body: (Bundle) throws -> Void) throws {
     let folder = FileManager.default.temporaryDirectory
         .appending(path: "PitboardLinkTargetTests-\(UUID().uuidString)")

@@ -2,7 +2,6 @@ import AppKit
 import PitboardKit
 import SwiftUI
 
-/// Every account, a section per tool, with what Pitboard has to say above them.
 struct AccountsPane: View {
     let model: AppModel
     let windows: AccountWindows
@@ -139,9 +138,6 @@ struct AccountsPane: View {
 
     // MARK: - What can be done to an account
 
-    /// The account's own menu: what the model offers to do to it, each held back where the
-    /// model says, then its windows, then the app's own Copy Email Address, and forgetting it
-    /// last, where the model offers that.
     @ViewBuilder private func menu(for item: AccountItem) -> some View {
         ForEach(item.offers, id: \.title) { offer in
             if let checked = offer.checked {
@@ -183,8 +179,6 @@ struct AccountsPane: View {
         }
     }
 
-    /// Forgetting the account, where the model offers it, as its menu does: the Delete key's
-    /// answer in the list.
     private func forget(_ item: AccountItem) {
         if let forget = item.forget, forget.enabled {
             send(forget.intent, askingFirst: forget.confirm)
@@ -200,14 +194,11 @@ struct AccountsPane: View {
     }
 }
 
-/// A question asked first, and what answering yes sends.
 private struct Asking: Equatable {
     let question: Question
     let intent: Intent
 }
 
-/// The one next thing to do on a machine that is not set up yet, above its accounts, with
-/// its symbol: a name for an account that has none, or a second account to switch to.
 private struct SetupTip: View {
     let step: SetupStep
     let footing: Footing

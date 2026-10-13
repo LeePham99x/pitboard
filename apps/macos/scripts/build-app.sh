@@ -1,7 +1,7 @@
 #!/bin/sh
 # Builds Pitboard.app, universal, from the Xcode project XcodeGen generates out of
-# project.yml and the core's XCFramework, with the command line inside it. This is the one way the app is built: here, in CI and in a
-# release.
+# project.yml and the core's XCFramework, with the command line inside it. This is the one
+# way the app is built: here, in CI and in a release.
 #
 # Signing: set SIGN_IDENTITY to a Developer ID Application identity to make a build others
 # can run; without it the app is signed ad-hoc, which is enough on the machine that built it.
@@ -56,7 +56,8 @@ xcodegen generate --spec apps/macos/project.yml --quiet
 # Unsigned, because the bundle is not finished: the command line, the Share extension's icon
 # and the man pages go in after this, and a signature covers what is inside it. Sparkle is
 # the version and revision the committed Package.resolved pins or the build stops, since the
-# app's bill of materials reads it from there. Packages are cloned under apps/macos/build, where the release finds Sparkle's tools.
+# app's bill of materials reads it from there. Packages are cloned under apps/macos/build,
+# where the release finds Sparkle's tools.
 xcodebuild -project apps/macos/Pitboard.xcodeproj -scheme Pitboard -configuration Release \
     -destination 'generic/platform=macOS' \
     -derivedDataPath apps/macos/build/DerivedData \
@@ -70,9 +71,8 @@ ditto apps/macos/build/DerivedData/Build/Products/Release/Pitboard.app "$app"
     echo "Xcode did not embed Sparkle.framework" >&2
     exit 1
 }
-# The Share extension, which hands a page's claude.ai or chatgpt.com link to the app, built
-# for both kinds of Mac like the app. The release claims pitboard://, which the extension
-# opens, and both read it from PitboardURLScheme; a debug build claims pitboard-debug://.
+# The Share extension is universal like the app, and a release names pitboard:// in every
+# place the app and the extension read it from.
 appex=$app/Contents/PlugIns/PitboardShare.appex
 [ -d "$appex" ] || {
     echo "Xcode did not embed PitboardShare.appex" >&2

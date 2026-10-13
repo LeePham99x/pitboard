@@ -3,10 +3,9 @@ import Foundation
 import PitboardKit
 import WebKit
 
-/// The dialogs a page asks for, as sheets on its window, titled with the site that asks, and
-/// as an embedded page's when a frame inside the page asks, so a frame cannot pass its words
-/// off as the site's own: the core's `dialogTitle`. A page with no window gets WebKit's own
-/// answer: an alert is dismissed, a question and a file chooser are cancelled.
+/// Titled with the site that asks, or as an embedded page's when a frame inside the page
+/// asks, so a frame cannot pass its words off as the site's own. A page with no window gets
+/// WebKit's own answer: an alert is dismissed, a question and a file chooser are cancelled.
 @MainActor
 enum PageDialogs {
     static func alert(_ message: String, from frame: WKFrameInfo, in window: NSWindow?) async {
@@ -52,8 +51,6 @@ enum PageDialogs {
         return await panel.beginSheetModal(for: window) == .OK ? panel.urls : nil
     }
 
-    /// Whether a download of `name` from `host` goes ahead, asked on `window`. With no
-    /// window to ask on, it does not.
     static func allowDownload(_ name: String, from host: String?, in window: NSWindow?) async
         -> Bool
     {

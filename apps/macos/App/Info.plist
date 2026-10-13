@@ -26,14 +26,12 @@
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
-	<!-- A menu bar app: no Dock icon, no window at launch. -->
+	<!-- Starts in the menu bar alone. AppPresence adds the Dock icon while a window is open. -->
 	<key>LSUIElement</key>
 	<true/>
 	<!-- A Pitboard link, pitboard://open?url=<a site's link>, which the Share extension
 	     opens, shows the account picker. Pitboard defines the scheme, so its role is Editor.
-	     The project sets the scheme per configuration: pitboard-debug in a debug build, so a
-	     debug build never answers a link meant for an installed copy. A release build from a
-	     branch claims pitboard like the installed copy, and is unregistered after building. -->
+	     project.yml sets the scheme per configuration. -->
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

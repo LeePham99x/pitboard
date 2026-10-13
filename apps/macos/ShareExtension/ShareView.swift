@@ -1,22 +1,17 @@
 import SwiftUI
 
-/// Where the share stands, which the extension's view shows.
 @MainActor
 @Observable
 final class ShareState {
     enum Phase: Equatable {
-        /// Handing the link to Pitboard.
         case opening
-        /// Not a link Pitboard opens, and why.
         case refused(String)
-        /// Pitboard could not be opened, and why.
         case failed(String)
     }
 
     var phase = Phase.opening
 }
 
-/// What the share sheet shows while Pitboard is handed the link, or why it was not.
 struct ShareView: View {
     let state: ShareState
     let done: () -> Void

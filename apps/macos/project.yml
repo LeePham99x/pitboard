@@ -1,8 +1,5 @@
-# The Xcode project, as XcodeGen generates it: `xcodegen generate` in this directory writes
-# Pitboard.xcodeproj, which is not committed apart from the package pins in its
-# Package.resolved. Everything the app does is in the Swift
-# package beside this file; the project only puts it together as an app, with Sparkle, the
-# Share extension and the UI tests.
+# `xcodegen generate` in this directory writes Pitboard.xcodeproj, which is not committed
+# apart from the package pins in its Package.resolved.
 name: Pitboard
 
 options:
@@ -145,9 +142,6 @@ targets:
       - target: PitboardShare
         embed: true
 
-  # Links PitboardShareBindings, pitboard-share-ffi's Swift, and PitboardLinkTarget alone: it
-  # is sandboxed, and has no business with the core, its bindings or anything else the app
-  # links.
   PitboardShare:
     type: app-extension
     platform: macOS

@@ -29,8 +29,6 @@ private func alphas(of image: NSImage, scale: Int) throws -> [[UInt8]] {
     #expect(MenuBarMark.image.size == NSSize(width: 16, height: 16))
 }
 
-/// At 1x the board is solid with its corners cut, the lit row is cut through it, the dim row
-/// shows at its alpha, and the pole hangs from the middle.
 @Test func theMenuBarMarkDrawsTheBoardAtOneX() throws {
     let alpha = try alphas(of: MenuBarMark.image, scale: 1)
     let dim = UInt8(MenuBarMark.dimAlpha * 255 + 0.5)

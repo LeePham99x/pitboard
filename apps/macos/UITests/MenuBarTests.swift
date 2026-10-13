@@ -1,12 +1,10 @@
 import XCTest
 
-/// The menu the menu bar item opens: the glance and the switch.
 final class MenuBarTests: XCTestCase {
     override func setUp() {
         continueAfterFailure = false
     }
 
-    /// Every account is an item under its tool, and the commands follow them.
     @MainActor
     func testTheMenuListsEveryAccountUnderItsTool() {
         let app = XCUIApplication.launched(.twoTools)
@@ -23,7 +21,6 @@ final class MenuBarTests: XCTestCase {
         }
     }
 
-    /// Choosing another account switches to it, and the window then shows it in use.
     @MainActor
     func testChoosingAnotherAccountSwitchesToIt() {
         let app = XCUIApplication.launched(.oneTool)
@@ -36,7 +33,6 @@ final class MenuBarTests: XCTestCase {
         XCTAssertTrue(row.staticTexts["In Use"].waitForExistence(timeout: 5))
     }
 
-    /// An account whose parked login expired opens the sheet that signs in to it again.
     @MainActor
     func testAnExpiredAccountOpensSigningInAgain() {
         let app = XCUIApplication.launched(.twoTools)
@@ -45,7 +41,6 @@ final class MenuBarTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Sign In to old Again"].waitForExistence(timeout: 5))
     }
 
-    /// Add Account opens the window with its sheet over it.
     @MainActor
     func testAddAccountOpensTheSheet() {
         let app = XCUIApplication.launched(.oneTool)
@@ -55,7 +50,6 @@ final class MenuBarTests: XCTestCase {
         XCTAssertTrue(app.textFields["sheet.name"].exists)
     }
 
-    /// Settings opens where macOS users look for it.
     @MainActor
     func testSettingsOpens() {
         let app = XCUIApplication.launched(.oneTool)
@@ -64,7 +58,6 @@ final class MenuBarTests: XCTestCase {
         XCTAssertTrue(app.windows["General"].waitForExistence(timeout: 5))
     }
 
-    /// A machine without Claude Code says so first, with where to learn how to install it.
     @MainActor
     func testAMachineWithoutClaudeCodeSaysSo() {
         let app = XCUIApplication.launched(.noClaudeCode)
@@ -72,9 +65,7 @@ final class MenuBarTests: XCTestCase {
         XCTAssertTrue(app.menuItem("Claude Code isn’t installed").waitForExistence(timeout: 5))
     }
 
-    /// A read that failed is one item in the menu, and choosing it opens the window, which
-    /// says why in the core's own words. The fixture's account list cannot be read, so
-    /// nothing is known to list, and the window says it could not read the accounts.
+    /// The fixture's account list cannot be read, so there is no account to list.
     @MainActor
     func testAFailedReadIsSaidInTheMenuAndInTheWindow() {
         let app = XCUIApplication.launched(.readFailure)
@@ -89,8 +80,8 @@ final class MenuBarTests: XCTestCase {
         XCTAssertFalse(app.accountRow("claude/work").exists)
     }
 
-    /// The menu's item for something to look at opens the window on the accounts, where it
-    /// is said, whichever pane the window was left on.
+    /// The window is left on another pane first: the notice's item opens it on the accounts
+    /// whichever pane it was on.
     @MainActor
     func testShowingANoticeOpensTheWindowOnTheAccounts() {
         let app = XCUIApplication.launched(.stuck)
@@ -107,7 +98,6 @@ final class MenuBarTests: XCTestCase {
         XCTAssertTrue(checks.waitForNonExistence(timeout: 5))
     }
 
-    /// Quit quits.
     @MainActor
     func testQuitQuits() {
         let app = XCUIApplication.launched(.oneTool)

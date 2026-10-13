@@ -2,7 +2,6 @@ import AppKit
 import SwiftUI
 import WebKit
 
-/// A page's web view in SwiftUI, or why the page is not shown after its load failed.
 struct PageContent: View {
     let page: Page
 
@@ -22,8 +21,6 @@ struct PageContent: View {
     }
 }
 
-/// A page's web view, hosted in SwiftUI with the system's find bar above it.
-///
 /// It only places the view. The page owns it and everything it does, so the view outlives a
 /// SwiftUI update that remakes this host, and the window's page is never loaded twice.
 private struct WebViewHost: NSViewRepresentable {
@@ -42,8 +39,6 @@ private struct WebViewHost: NSViewRepresentable {
     }
 }
 
-/// Holds a web view and the find bar above it, and answers Edit > Find for it.
-///
 /// WebKit finds text for a find bar but shows none itself: measured on macOS 27, a web view
 /// answers neither `performFindPanelAction:` nor `performTextFinderAction:`. An `NSTextFinder`
 /// with the web view as its client and this view as its bar's container shows the system's
@@ -68,7 +63,6 @@ final class WebContainer: NSView, @preconcurrency NSTextFinderBarContainer, NSMe
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("not made from a nib") }
 
-    /// Puts `webView` in place of the one shown, when the page's is another.
     func show(_ webView: WKWebView) {
         guard webView !== self.webView else { return }
         self.webView.removeFromSuperview()

@@ -1,14 +1,11 @@
 import XCTest
 
-/// An account's window on its site: claude.ai for a Claude Code account, chatgpt.com for a
-/// Codex one. In a fixture it loads a stand-in page, so nothing reaches either site.
+/// In a fixture an account's window loads a stand-in page, so nothing reaches either site.
 final class AccountWindowTests: XCTestCase {
     override func setUp() {
         continueAfterFailure = false
     }
 
-    /// A Claude Code account's window opens titled with its label, on the fixture's
-    /// stand-in claude.ai.
     @MainActor
     func testOpeningAClaudeAccountsWindowFromTheMenu() {
         let app = XCUIApplication.launched(.onlyOne)
@@ -20,7 +17,6 @@ final class AccountWindowTests: XCTestCase {
             page(of: window).text("==", "claude.ai stand-in").waitForExistence(timeout: 10))
     }
 
-    /// A site with several accounts offers them in a submenu, each site its own tool's.
     @MainActor
     func testEachSiteOffersItsOwnToolsAccounts() {
         let app = XCUIApplication.launched(.twoTools)
@@ -42,7 +38,6 @@ final class AccountWindowTests: XCTestCase {
         app.typeKey(.escape, modifierFlags: [])
     }
 
-    /// With no account there is no window to offer.
     @MainActor
     func testNoAccountOffersNoWindow() {
         let app = XCUIApplication.launched(.empty)
@@ -53,7 +48,6 @@ final class AccountWindowTests: XCTestCase {
         app.typeKey(.escape, modifierFlags: [])
     }
 
-    /// Opening an account's window again brings the one open forward: one window per account.
     @MainActor
     func testOpeningAWindowAgainBringsTheSameOneForward() {
         let app = openChatGPT()
@@ -65,9 +59,8 @@ final class AccountWindowTests: XCTestCase {
         XCTAssertEqual(app.accountWindows.count, 1)
     }
 
-    /// A sign-in link that asks for a new window opens a sign-in window of its own, which
-    /// closes itself once it is done, leaving the account's window as it was. WebKit asks
-    /// about such a link before it asks for the window, and refusing it there would open none.
+    /// WebKit asks about a sign-in link that wants a new window before it asks for the
+    /// window, and refusing it there would open none.
     @MainActor
     func testASignInLinkOpensASignInWindowThatClosesItself() {
         let app = openChatGPT()
@@ -82,7 +75,6 @@ final class AccountWindowTests: XCTestCase {
         XCTAssertTrue(page(of: window).text("==", "chatgpt.com stand-in").exists)
     }
 
-    /// A page's script opening a window for the sign-in opens a sign-in window too.
     @MainActor
     func testASignInScriptOpensASignInWindow() {
         let app = openChatGPT()
@@ -94,7 +86,6 @@ final class AccountWindowTests: XCTestCase {
         XCTAssertTrue(app.signInWindow.waitForNonExistence(timeout: 10))
     }
 
-    /// A sign-in window never outlives the account's window that opened it.
     @MainActor
     func testClosingTheAccountsWindowClosesItsSignInWindow() {
         let app = openChatGPT()
@@ -106,7 +97,6 @@ final class AccountWindowTests: XCTestCase {
         XCTAssertTrue(app.signInWindow.waitForNonExistence(timeout: 10))
     }
 
-    /// Google's sign-in is stopped in the window, which says so and stays on its page.
     @MainActor
     func testGoogleSignInIsStoppedInTheWindow() {
         let app = openChatGPT()
@@ -117,8 +107,6 @@ final class AccountWindowTests: XCTestCase {
         XCTAssertTrue(page(of: window).text("==", "chatgpt.com stand-in").exists)
     }
 
-    /// A file the site's own page downloads is saved without asking and listed in the
-    /// window's downloads.
     @MainActor
     func testASiteDownloadIsListedInTheWindow() {
         let app = openChatGPT()
@@ -136,7 +124,6 @@ final class AccountWindowTests: XCTestCase {
         waitForExpectations(timeout: 10)
     }
 
-    /// Edit > Find shows the system's find bar above the page.
     @MainActor
     func testFindShowsTheFindBar() {
         let app = openChatGPT()
@@ -146,8 +133,6 @@ final class AccountWindowTests: XCTestCase {
         XCTAssertTrue(window.searchFields.firstMatch.waitForExistence(timeout: 5))
     }
 
-    /// Removing a window's data asks first, and the window starts again at its site's home
-    /// saying how to sign in.
     @MainActor
     func testRemovingWebsiteDataAsksFirstAndStartsOver() {
         let app = openChatGPT()
@@ -174,7 +159,6 @@ final class AccountWindowTests: XCTestCase {
                 .waitForExistence(timeout: 10))
     }
 
-    /// An account's shortcut menu in the window opens its window on its site.
     @MainActor
     func testAnAccountsShortcutMenuOpensItsWindow() {
         let app = XCUIApplication.launched(.twoTools)
@@ -192,7 +176,6 @@ final class AccountWindowTests: XCTestCase {
         XCTAssertTrue(app.accountWindow("spare").waitForExistence(timeout: 10))
     }
 
-    /// The fixture with both tools, and `main`'s window open on the stand-in chatgpt.com.
     @MainActor
     private func openChatGPT() -> XCUIApplication {
         let app = XCUIApplication.launched(.twoTools)

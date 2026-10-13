@@ -3,14 +3,11 @@ import PitboardKit
 import SwiftUI
 import WebKit
 
-/// A sign-in window a page of an account's window opened, sharing the account's store.
-///
 /// An AppKit window rather than a SwiftUI scene: WebKit asks for the web view of a new
 /// window and must have it back before it returns, and a scene opens later.
 @MainActor
 final class PopupWindow: NSObject, NSWindowDelegate {
     let page: Page
-    /// Called once the window has closed, however it closed.
     var onClose: (() -> Void)?
 
     private let window: NSWindow
@@ -43,7 +40,7 @@ final class PopupWindow: NSObject, NSWindowDelegate {
         window.makeKeyAndOrderFront(nil)
     }
 
-    /// The window's identifier, which UI tests find a sign-in window by.
+    /// What UI tests find a sign-in window by.
     nonisolated static let identifier = "sign-in"
 
     func close() {
@@ -58,8 +55,7 @@ final class PopupWindow: NSObject, NSWindowDelegate {
     }
 }
 
-/// A sign-in window's page, titled with its page's title and the host it is on, so a person
-/// asked for a password can see whose page asks.
+/// Titled with the host it is on, so a person asked for a password can see whose page asks.
 private struct PopupView: View {
     let page: Page
 

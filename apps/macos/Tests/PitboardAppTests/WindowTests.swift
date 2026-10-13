@@ -3,13 +3,8 @@ import Testing
 
 @testable import PitboardApp
 
-// What the views decide for themselves: which pane the window opens on, what the menu bar
-// item shows of what the model says, and how each level and severity looks. Every sentence
-// they show is the model's.
+// Every sentence a view shows is the model's. These test what the views decide themselves.
 
-/// A request names the pane it wants, from whichever pane the window was left on, and
-/// leaves the window where it is when it wants none; the model's panes and the window's are
-/// the same three.
 @Test func aRequestNamesThePaneTheWindowShows() {
     for left in WindowPane.allCases {
         for wanted in WindowPane.allCases {
@@ -35,10 +30,9 @@ import Testing
     #expect(!requests.opens(WindowRequest(serial: 2, pane: nil)), "an older one")
 }
 
-/// The window shows the pane a request wants once: as it appears for the request, or as the
-/// serial moves while it is open. Opened again some other way, it stays on the pane it was
-/// left on rather than going back to the one an old request wanted. MainWindow asks this
-/// both ways.
+/// Opened again some other way, the window stays on the pane it was left on rather than
+/// going back to the one an old request wanted. MainWindow asks this both as the window
+/// appears and as the serial moves.
 @MainActor
 @Test func theWindowShowsThePaneItIsAskedForOnce() {
     let requests = WindowRequests()
@@ -52,9 +46,8 @@ import Testing
             == .machine)
 }
 
-/// The settings list what the menu bar can show in this order and by these names. The raw
-/// values are what the preference is stored as, so changing one would quietly reset what
-/// everybody chose. Each shows the form of the model's words it is named for.
+/// The raw values are what the preference is stored as, so changing one would quietly reset
+/// what everybody chose.
 @Test func theMenuBarChoicesKeepTheirNamesAndTheirStoredValues() {
     #expect(MenuBarShows.allCases == [.nameAndUsage, .usage, .icon])
     #expect(
@@ -65,9 +58,8 @@ import Testing
     #expect(MenuBarShows.allCases.map { $0.text(of: bar) } == ["work 42%", "42%", ""])
 }
 
-/// A check's standing and a notice's severity are shown as a shape and a colour, and said in
-/// the model's words. If two ever came to look the same, a broken check would read as a
-/// passing one and an error would pass for a note.
+/// If two ever came to look the same, a broken check would read as a passing one and an
+/// error would pass for a note.
 @Test func everyLevelAndSeverityLooksLikeItself() {
     let levels: [Level] = [.ok, .warn, .fail]
     #expect(Set(levels.map(\.symbol)).count == levels.count)
@@ -75,8 +67,8 @@ import Testing
     #expect(Set(severities.map(\.symbol)).count == severities.count)
 }
 
-/// A sheet the model puts up in place of another is told apart from it, so the window puts
-/// it up afresh, and the same sheet asked for again is the one already up.
+/// A sheet put up in place of another is told apart from it, so the window puts it up
+/// afresh.
 @Test func eachSheetIsToldApart() {
     let sheets: [Sheet] = [
         .add(provider: nil), .add(provider: "codex"),
