@@ -28,7 +28,7 @@ pub(super) fn describe(token: &Token) -> Value {
     let reading = elevation::reading(facts);
     let user = token.user_sid();
     json!({
-        "elevation_type": facts.elevation_type.map(|e| e.as_str()),
+        "elevation_type": facts.elevation_type.map(elevation::ElevationType::as_str),
         "token_is_elevated": facts.is_elevated,
         "user_is_service_account": facts.user_is_service,
         "integrity": facts.integrity_rid.map(integrity_word),

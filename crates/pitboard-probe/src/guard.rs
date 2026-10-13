@@ -285,7 +285,7 @@ fn normalise(path: &Path) -> Option<Normal> {
     } else if let Some(r) = text.strip_prefix(r"\\") {
         (true, r.to_string())
     } else {
-        (false, text.clone())
+        (false, text)
     };
 
     let folded: Vec<String> = rest
@@ -650,7 +650,7 @@ mod tests {
     fn ancestor(id: u32, below: &[&str]) -> Ancestor<u32> {
         Ancestor {
             id,
-            below: below.iter().map(|s| s.to_string()).collect(),
+            below: below.iter().map(ToString::to_string).collect(),
         }
     }
 

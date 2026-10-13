@@ -1936,7 +1936,7 @@ fn the_windows_records_are_kept_in_the_apps_own_directory() {
                     link_scheme: "pitboard".into(),
                     earlier: Some(EarlierWindowRecords {
                         stores: HashMap::from([(
-                            key.clone(),
+                            key,
                             vec![gone.to_uppercase(), work.to_uppercase()],
                         )]),
                         pages: HashMap::new(),
@@ -2070,7 +2070,7 @@ fn the_windows_records_are_not_written_where_pitboard_may_change_nothing() {
                     link_scheme: "pitboard".into(),
                     earlier: Some(EarlierWindowRecords {
                         stores: HashMap::from([(
-                            key.clone(),
+                            key,
                             vec![gone.to_uppercase(), work.to_uppercase()],
                         )]),
                         pages: HashMap::new(),

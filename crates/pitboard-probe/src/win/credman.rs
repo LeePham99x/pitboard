@@ -197,10 +197,10 @@ pub(super) fn item(action: ItemAction, name: &str, persist: Persist, blob_bytes:
             let mut blob = dummy(blob_bytes.min(2560));
             let mut user = ffi::wide("pitboard-probe-user");
             let mut comment = ffi::wide("pitboard-probe item");
-            let mut target_mut = target.clone();
+            let mut target = target;
             let cred = CREDENTIALW {
                 Type: CRED_TYPE_GENERIC,
-                TargetName: target_mut.as_mut_ptr(),
+                TargetName: target.as_mut_ptr(),
                 Comment: comment.as_mut_ptr(),
                 CredentialBlobSize: blob.len() as u32,
                 CredentialBlob: blob.as_mut_ptr(),

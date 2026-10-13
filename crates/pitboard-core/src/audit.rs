@@ -135,7 +135,7 @@ mod tests {
         std::fs::create_dir_all(&home).unwrap();
         let clock = Arc::new(FixedClock::at(1_760_000_000));
         let ctx = Context::new(home.clone())
-            .with_pitboard_home(home.clone())
+            .with_pitboard_home(home)
             .with_caller("cli".into())
             .with_clock(clock.clone());
 

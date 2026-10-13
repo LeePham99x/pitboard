@@ -2071,7 +2071,7 @@ mod tests {
             }
             .to_string(),
             Error::StateNamesUnknownTool {
-                path: path.clone(),
+                path,
                 tool: "gemini".into(),
             }
             .to_string(),

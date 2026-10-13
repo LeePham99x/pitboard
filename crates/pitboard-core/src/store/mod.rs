@@ -8,10 +8,8 @@ mod file;
 pub(crate) mod folder;
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) mod memory;
-// macOS parks in the login keychain, so there nothing outside the tests opens a vault of
-// files; Linux parks in one. Windows parks nowhere until W20 seals each park to the person,
-// in files of its own kind, so nothing opens this vault there either.
-#[cfg_attr(any(target_os = "macos", windows), allow(dead_code))]
+// Only Linux parks in files: macOS parks in the login keychain, and Windows nowhere yet.
+#[cfg(any(target_os = "linux", test))]
 pub(crate) mod vault;
 
 pub(crate) use file::PlainFile;
@@ -276,7 +274,7 @@ fn with_live<T>(live: &Live, run: impl FnOnce(&[&dyn RawStore]) -> T) -> T {
 /// demotes: see the note on `write_in`.
 pub(crate) fn resolve(live: &Live, service: &str) -> Result<Backend, Error> {
     with_live(live, |chain| {
-        Ok(resolve_in(chain, service)?.map_or(Backend::Absent, |b| b.kind()))
+        Ok(resolve_in(chain, service)?.map_or(Backend::Absent, RawStore::kind))
     })
 }
 

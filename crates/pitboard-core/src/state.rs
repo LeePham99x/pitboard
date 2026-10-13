@@ -187,6 +187,7 @@ pub enum Detail {
 
 /// Claude Code's own extras, for a caller that has already established it is holding a
 /// Claude account.
+#[derive(Debug)]
 pub struct ClaudeDetail<'a> {
     pub organization_uuid: &'a str,
     pub oauth_account: &'a Value,
@@ -1272,7 +1273,7 @@ mod tests {
             "active": "work",
             "discarded": []
         });
-        let mut document = written.clone();
+        let mut document = written;
         migrate(&mut document, std::path::Path::new("/tmp/state.json")).expect("still current");
         let state: State = serde_json::from_value(document).expect("still parses");
         assert_eq!(state.get(&claude("work")).unwrap().email, "a@b.c");
@@ -2349,7 +2350,7 @@ mod tests {
             }],
             "active": {}, "slot": {}, "discarded": []
         });
-        let mut document = written.clone();
+        let mut document = written;
         migrate(&mut document, std::path::Path::new("/tmp/state.json")).expect("current");
         let mut state: State = serde_json::from_value(document).expect("still parses");
         assert!(state.foreign.is_empty());

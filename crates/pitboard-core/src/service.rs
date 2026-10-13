@@ -855,6 +855,7 @@ impl Failed {
 
 pub type Changing<T> = std::result::Result<Done<T>, Failed>;
 
+#[derive(Debug)]
 pub struct Pitboard {
     ctx: Context,
 }
@@ -1596,7 +1597,7 @@ impl Pitboard {
         let permit = self.permitted()?;
         let key = self.named(permit, "warm-up", typed)?;
         let settled = self.settled_to_warm(permit, "warm-up", &key.typed())?;
-        self.warming(settled, switch::warm::Target::Account(key))
+        Self::warming(settled, switch::warm::Target::Account(key))
     }
 
     /// Warms up the first account turned on that is due, as [`crate::warm`] says, for a front
@@ -1616,7 +1617,7 @@ impl Pitboard {
             });
         }
         let settled = self.settled_to_warm(permit, "warm-up", "")?;
-        self.warming(settled, switch::warm::Target::Due)
+        Self::warming(settled, switch::warm::Target::Due)
     }
 
     /// What warming up would come to now, from files alone: what stands, with where each
@@ -1642,7 +1643,6 @@ impl Pitboard {
     }
 
     fn warming(
-        &self,
         (settled, mut warnings): (Settled, Vec<Warning>),
         target: switch::warm::Target,
     ) -> Changing<switch::warm::WarmUp> {
@@ -3450,11 +3450,8 @@ mod tests {
         );
         let pitboard = Pitboard::new(ctx);
         for refused in [
-            pitboard.sign_in("codex/new").err().expect("refused"),
-            pitboard
-                .sign_in_watched("codex/new")
-                .err()
-                .expect("refused"),
+            pitboard.sign_in("codex/new").expect_err("refused"),
+            pitboard.sign_in_watched("codex/new").expect_err("refused"),
         ] {
             assert_eq!(refused.error.code(), "live_store_unsupported");
             let said = refused.error.to_string();
@@ -3934,8 +3931,8 @@ mod tests {
                 };
 
                 refused(pitboard.permit().expect_err("the gate refuses"));
-                refused(pitboard.status_offline().err().expect("refused"));
-                refused(pitboard.status(false).err().expect("refused"));
+                refused(pitboard.status_offline().expect_err("refused"));
+                refused(pitboard.status(false).expect_err("refused"));
                 let before = (everything(&m), m.api.calls());
                 for (change, run) in CHANGES {
                     let failed = run(&pitboard, &m).unwrap_or_else(|| panic!("{at}: {change}"));

@@ -97,6 +97,7 @@ pub enum Outcome {
 /// Pitboard's state, held exclusively, with any interrupted switch already finished. Every
 /// command that changes state starts from one, so none acts on what a crash left behind,
 /// and it carries the [`Permit`] it was settled with, which is what lets the change write.
+#[derive(Debug)]
 pub struct Settled {
     _exclusive: std::fs::File,
     state: State,
@@ -472,8 +473,8 @@ pub fn switch(settled: Settled, key: &Key) -> Result<(Outcome, Vec<Warning>)> {
     };
     if target.owned_by(&outgoing.owner) {
         let lost = outgoing.lock_warning(key.provider);
-        return already_active(&ctx, permit, &mut state, tool, key, &target)
-            .map(|(outcome, warnings)| (outcome, lost.into_iter().chain(warnings).collect()));
+        let (outcome, warnings) = already_active(&ctx, permit, &mut state, tool, key, &target);
+        return Ok((outcome, lost.into_iter().chain(warnings).collect()));
     }
     let (switched, warnings) = switch_from(state, &ctx, permit, tool, key, outgoing)?;
     Ok((switched.into(), warnings))
@@ -497,8 +498,8 @@ pub fn update_config(settled: Settled, key: &Key) -> Result<(Outcome, Vec<Warnin
     match identify::now(&ctx, permit, &mut state, tool)? {
         identify::Live::Login(stored) if target.owned_by(&stored.owner) => {
             let lost = stored.lock_warning(key.provider);
-            already_active(&ctx, permit, &mut state, tool, key, &target)
-                .map(|(outcome, warnings)| (outcome, lost.into_iter().chain(warnings).collect()))
+            let (outcome, warnings) = already_active(&ctx, permit, &mut state, tool, key, &target);
+            Ok((outcome, lost.into_iter().chain(warnings).collect()))
         }
         _ => Err(Error::AccountNotInUse {
             tool: key.provider,
@@ -587,7 +588,7 @@ fn switch_from(
         label: to.clone(),
     })?;
     if !held.restorable_at(ctx.now()) {
-        return Err(Error::ParkedLoginExpired { label: to.clone() });
+        return Err(Error::ParkedLoginExpired { label: to });
     }
     let incoming = park::load(ctx, tool, key, &held)?;
     // Asked before the tool's lock is taken, like the outgoing question, so the round trip
@@ -773,7 +774,7 @@ fn switch_from(
     let outgoing_identity = provider::Identity {
         account_id: outgoing.account_uuid.clone(),
         email: outgoing.email.clone(),
-        group: Some(outgoing.organization_uuid.clone()).filter(|g| !g.is_empty()),
+        group: Some(outgoing.organization_uuid).filter(|g| !g.is_empty()),
     };
     let cache_warning = write_config(ctx, permit, &mut state, tool, &target, &outgoing_identity);
     fault::point("switch.config_updated");
@@ -825,7 +826,7 @@ fn already_active(
     tool: &'static dyn Provider,
     key: &Key,
     target: &Account,
-) -> Result<(Outcome, Vec<Warning>)> {
+) -> (Outcome, Vec<Warning>) {
     let which = key.provider;
     let naming = in_use::naming(which, &target.owner());
     let named = tool
@@ -838,13 +839,13 @@ fn already_active(
             Some(warning) => (false, vec![warning]),
         },
     };
-    Ok((
+    (
         Outcome::AlreadyActive {
             label: state.typed(key),
             config_updated,
         },
         warnings,
-    ))
+    )
 }
 
 /// Writes `target`, whose login `tool` has stored and is recorded as in use, into the
@@ -928,7 +929,8 @@ fn ready(
     // Checked before anything is parked or written, so a change that could never be written
     // changes nothing.
     let next = to_body(
-        tool.splice(&before, incoming)
+        &tool
+            .splice(&before, incoming)
             .map_err(|e| shape(which, e))?,
     );
     // Asked once. The answer is about the backend that would take this write, so a login
@@ -1114,8 +1116,8 @@ pub(super) fn shape(tool: ProviderId, error: provider::ProviderError) -> Error {
 }
 
 /// A spliced document as bytes to write.
-fn to_body(document: Value) -> String {
-    serde_json::to_string(&document).expect("a credential document stays serialisable")
+fn to_body(document: &Value) -> String {
+    serde_json::to_string(document).expect("a credential document stays serialisable")
 }
 
 /// Write the new login, and if that fails, leave the old one in place.

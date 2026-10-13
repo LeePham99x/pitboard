@@ -39,7 +39,7 @@ use crate::service::Permit;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::thread;
 use std::time::{Duration, SystemTime};
 
@@ -117,7 +117,7 @@ impl Guard {
 impl Drop for Guard {
     fn drop(&mut self) {
         let (flag, wake) = &*self.stop;
-        *flag.lock().unwrap_or_else(|e| e.into_inner()) = true;
+        *flag.lock().unwrap_or_else(PoisonError::into_inner) = true;
         wake.notify_all();
         if let Some(handle) = self.beat.take() {
             let _ = handle.join();
@@ -196,12 +196,12 @@ fn start(permit: Permit, path: PathBuf, timing: Timing) -> io::Result<Guard> {
         let (path, stop, compromised) = (path.clone(), Arc::clone(&stop), Arc::clone(&compromised));
         thread::spawn(move || {
             let (flag, wake) = &*stop;
-            let mut stopped = flag.lock().unwrap_or_else(|e| e.into_inner());
+            let mut stopped = flag.lock().unwrap_or_else(PoisonError::into_inner);
             loop {
                 // Checks the flag before waiting and after every wakeup, spurious or not.
                 let (next, _) = wake
                     .wait_timeout_while(stopped, timing.heartbeat, |stop| !*stop)
-                    .unwrap_or_else(|e| e.into_inner());
+                    .unwrap_or_else(PoisonError::into_inner);
                 stopped = next;
                 if *stopped {
                     return;

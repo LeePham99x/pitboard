@@ -20,6 +20,7 @@ use crate::service::Stored;
 use crate::state::{Key, Park, State};
 use crate::{home, park, store, switch, time, words};
 use serde_json::{Value, json};
+use std::fmt::Write as _;
 use std::path::PathBuf;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -29,6 +30,7 @@ pub enum Level {
     Fail,
 }
 
+#[derive(Debug)]
 pub struct Check {
     /// Stable, snake_case, safe for a program to branch on.
     pub code: &'static str,
@@ -428,7 +430,7 @@ pub fn gather(ctx: &Context) -> Facts {
             .filter(|p| std::fs::metadata(p).is_ok())
             .map(str::to_string),
         config_path: claude::config_file(ctx),
-        identity: identity.clone(),
+        identity,
         config,
         account: slot::account_name(ctx),
         default_slot: claude::is_default_slot(ctx),
@@ -1763,7 +1765,7 @@ fn judge_network(network: &NetworkFact) -> Check {
         )
     };
     for clause in exempting(proxy).iter().chain(&passed) {
-        detail.push_str(&format!("; {clause}"));
+        let _ = write!(detail, "; {clause}");
     }
     if fails {
         let (each, them) = if network.passed_over.is_empty() {
@@ -2732,6 +2734,7 @@ fn judge_desktop_build(facts: &DesktopFacts) -> Check {
 
 /// The checks, and where Claude Code's files were found, for a program to read rather than
 /// parse out of the checks' wording.
+#[derive(Debug)]
 pub struct Diagnosis {
     pub checks: Vec<Check>,
     pub environment: Value,

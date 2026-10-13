@@ -735,8 +735,8 @@ pub(crate) fn command(ctx: &Context, _: Permit, tool: ProviderId) -> std::proces
         // Each entry was read out of a search path, so they join again as they were; only
         // the program's own directory could hold the separator, and then it is left off.
         Some(dir) => std::env::join_paths(std::iter::once(dir.to_path_buf()).chain(entries))
-            .unwrap_or_else(|_| search.clone()),
-        None => search.clone(),
+            .unwrap_or(search),
+        None => search,
     };
     let mut command = std::process::Command::new(program);
     command.env("PATH", path);

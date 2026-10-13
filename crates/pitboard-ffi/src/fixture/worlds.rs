@@ -390,7 +390,7 @@ impl Machine {
         let owners = self
             .owners
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
         let Some(id) = owners.get(access) else {
             return;
@@ -450,7 +450,7 @@ impl Machine {
     fn usage(&self) -> MutexGuard<'_, HashMap<String, Vec<usage::Window>>> {
         self.usage
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// `person` has used `windows` of their limits: `(kind, percent, how long it runs, how
@@ -585,12 +585,12 @@ impl Machine {
         self.api.using(access, self.used_by(person));
         self.owners
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert(access.to_owned(), person.id.clone());
         #[cfg(test)]
         self.tokens
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .entry(person.id.clone())
             .or_default()
             .push(access.to_owned());
@@ -601,7 +601,7 @@ impl Machine {
     fn tokens_of(&self, person: &Person) -> Vec<String> {
         self.tokens
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .get(&person.id)
             .cloned()
             .unwrap_or_default()

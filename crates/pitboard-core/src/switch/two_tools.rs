@@ -115,9 +115,7 @@ fn the_same_label_on_two_tools_is_two_accounts() {
     assert!(state.get(&claude).unwrap().parked.is_none());
     assert_eq!(state.in_use(ProviderId::Claude), None);
     assert_eq!(
-        state
-            .account_in_use(ProviderId::Codex)
-            .map(|account| account.key()),
+        state.account_in_use(ProviderId::Codex).map(Account::key),
         Some(m.key("there"))
     );
 }
@@ -578,9 +576,7 @@ fn an_interrupted_switch_is_recovered_only_where_it_ran() {
     assert_eq!(died.unwrap_err(), "switch.park_recorded");
 
     let elsewhere = m.ctx.clone().with_codex_home("/somewhere/else".into());
-    let refused = settle(&elsewhere, Permit::for_a_test(), None)
-        .err()
-        .expect("refused elsewhere");
+    let refused = settle(&elsewhere, Permit::for_a_test(), None).expect_err("refused elsewhere");
     assert_eq!(refused.code(), "recovery_elsewhere");
     assert!(refused.to_string().contains("CODEX_HOME"), "{refused}");
 

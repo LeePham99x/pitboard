@@ -65,7 +65,7 @@ pub(super) fn windowless(scratch: &Path, newline: Newline, program: &[String]) -
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
     let image = if base.to_lowercase().ends_with(".exe") {
-        base.clone()
+        base
     } else {
         format!("{base}.exe")
     };

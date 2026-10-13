@@ -16,7 +16,7 @@ use crate::report::Report;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 
-use windows::Win32::Foundation::{VARIANT_FALSE, VARIANT_TRUE};
+use windows::Win32::Foundation::{VARIANT_BOOL, VARIANT_FALSE, VARIANT_TRUE};
 use windows::Win32::System::Com::{
     CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx,
 };
@@ -344,7 +344,7 @@ fn read(
             "action": "read",
             "task_present": true,
             "state": task.State().map(|s| s.0).ok(),
-            "enabled": task.Enabled().map(|b| b.as_bool()).ok(),
+            "enabled": task.Enabled().map(VARIANT_BOOL::as_bool).ok(),
             "last_task_result": task.LastTaskResult().ok().map(|r| format!("0x{:08x}", r as u32)),
             "last_run_time_ole_date": task.LastRunTime().ok(),
             "next_run_time_ole_date": task.NextRunTime().ok(),

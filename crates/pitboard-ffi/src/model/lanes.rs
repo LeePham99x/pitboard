@@ -397,7 +397,7 @@ impl SignIns {
         // Every change here is whole whenever the lock is let go.
         self.held
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// The sign-in `id` is starting, and `over` is how its thread is told whether to enrol.
@@ -499,7 +499,7 @@ impl SignIns {
             .wait_timeout_while(held, within, |held| {
                 held.running.values().any(|running| !running.stopped)
             })
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         drop(held);
         !waited.timed_out()
     }
@@ -553,7 +553,7 @@ impl Worker {
                 tools: core.installed(),
             },
             Job::Holding { qualified, then } => {
-                let holdings = core.holding(split(&qualified).0.to_owned());
+                let holdings = core.holding(split(&qualified).0);
                 Answer::Held {
                     question: holder(&holdings, self.apps.as_ref(), &qualified),
                     qualified,
@@ -572,7 +572,7 @@ impl Worker {
                 then,
             },
             Job::Switch { qualified, reopen } => Answer::Switched {
-                done: core.switch_to(qualified.clone()),
+                done: core.switch_to(&qualified),
                 qualified,
                 reopen,
             },
@@ -587,12 +587,12 @@ impl Worker {
                 done: core.warm_up(),
             },
             Job::WarmNow { qualified } => Answer::WarmedUp {
-                done: core.warm_now(qualified.clone()),
+                done: core.warm_now(&qualified),
                 asked: Some(qualified),
             },
             Job::SetWarm { qualified, on } => Answer::WarmSet {
                 done: core
-                    .warm_turn(qualified, on)
+                    .warm_turn(&qualified, on)
                     .and_then(|()| core.warm_overview()),
             },
             Job::SetWarmRange { from, to } => Answer::WarmSet {
@@ -627,7 +627,7 @@ impl Worker {
                 from,
                 reopen,
             } => Answer::Enrolled {
-                done: core.enroll_current(format!("{provider}/{name}")),
+                done: core.enroll_current(&format!("{provider}/{name}")),
                 provider,
                 name,
                 from,
@@ -639,17 +639,19 @@ impl Worker {
                 to,
                 from,
             } => Answer::Renamed {
-                done: core.rename(format!("{provider}/{label}"), to.clone()),
+                done: core.rename(&format!("{provider}/{label}"), &to),
                 provider,
                 label,
                 to,
                 from,
             },
             Job::Forget { qualified } => Answer::Forgot {
-                done: core.forget(qualified.clone()),
+                done: core.forget(&qualified),
                 qualified,
             },
-            Job::UpdateConfig { qualified } => Answer::ConfigUpdated(core.update_config(qualified)),
+            Job::UpdateConfig { qualified } => {
+                Answer::ConfigUpdated(core.update_config(&qualified))
+            }
             Job::LookLeft => Answer::LookedLeft(core.left_login()),
             Job::Stow { seen, from } => Answer::Stowed {
                 done: core.stow(&seen),
@@ -758,7 +760,7 @@ impl Worker {
             // itself whether it took the code.
             Job::PasteCode { id, code } => {
                 if let Some(session) = self.sign_ins.session(id) {
-                    let _ = session.paste(code);
+                    let _ = session.paste(&code);
                 }
                 Answer::Pasted
             }

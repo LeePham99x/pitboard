@@ -316,7 +316,7 @@ mod tests {
 
         let calm = window("weekly_all", 5.0, 3 * DAY, WEEK);
         assert_eq!(
-            lasts(&[session.clone(), calm], NOW, NOW),
+            lasts(&[session, calm], NOW, NOW),
             Some(Lasts::UntilReset { in_seconds: HOUR })
         );
 

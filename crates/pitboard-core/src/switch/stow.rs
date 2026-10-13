@@ -371,7 +371,7 @@ impl Stowing<'_> {
             Ok(Renewed::Saved(renewed)) => renewed,
             Ok(Renewed::Refused) => return Ok(None),
             Err(Stop::Changed) => return Err(self.changed()),
-            Err(Stop::Unrenewed(error)) => return Err(not_identified(&self.path, error)),
+            Err(Stop::Unrenewed(error)) => return Err(not_identified(&self.path, &error)),
             Err(Stop::Failed(error)) => return Err(error),
         };
         *held = contents(&renewed)?;
@@ -379,7 +379,7 @@ impl Stowing<'_> {
         let login = held.slice.clone().expect("a renewed login");
         tool.identify(self.ctx, &provider::Credential::new(TOOL, login))
             .map(|found| Some(Owner::from(found)))
-            .map_err(|error| not_identified(&self.path, error))
+            .map_err(|error| not_identified(&self.path, &error))
     }
 
     /// What putting away `owner`'s login comes to, where Claude Code has `stored`'s login
@@ -548,7 +548,7 @@ fn judge(
         Ok(found) => Ok(Whose::Owner(Owner::from(found))),
         // Expired earlier than its own expiry said, or with no access token at all.
         Err(ProviderError::Unauthorized | ProviderError::ShapeUnexpected { .. }) => Ok(untold()),
-        Err(error) => Err(not_identified(path, error)),
+        Err(error) => Err(not_identified(path, &error)),
     }
 }
 
@@ -644,10 +644,10 @@ fn not_enrolled(path: &Path, owner: &Owner) -> Error {
 }
 
 /// Why nobody could say whose the login in the file is.
-fn not_identified(path: &Path, error: ProviderError) -> Error {
+fn not_identified(path: &Path, error: &ProviderError) -> Error {
     Error::LeftLoginUnidentified {
         path: path.to_path_buf(),
-        cause: Cause::of_provider(&error),
+        cause: Cause::of_provider(error),
         detail: error.to_string(),
     }
 }

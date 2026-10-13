@@ -430,8 +430,8 @@ fn a_look_landing_after_updating_the_config_leaves_the_read_after_it() {
 /// left the menu bar blind to every switch typed in a terminal until the app quit.
 #[test]
 fn however_a_change_ends_it_gives_the_index_back_to_the_poll() {
-    let refused = || Err(refusal("refused", "it was refused", Vec::new()));
     type Ending = Box<dyn Fn(&mut Hand, &mut Machine)>;
+    let refused = || Err(refusal("refused", "it was refused", Vec::new()));
     let cases: Vec<(&str, Ending)> = vec![
         (
             "a refused rename",

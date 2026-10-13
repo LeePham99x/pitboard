@@ -716,9 +716,8 @@ pub(crate) fn look(ctx: &Context, state: &State, threshold: Threshold) -> Look {
         Err(why) => return Look::Stands(Box::new(Auto::NotWatching { why })),
     };
     match judge(ctx, state, account, &ledger, threshold, now) {
-        Judged::Switch(_) => Look::Act,
         Judged::Hold(hold) if ledger.said(&hold) => Look::Stands(Box::new(hold.skipped(state))),
-        Judged::Hold(_) => Look::Act,
+        Judged::Switch(_) | Judged::Hold(_) => Look::Act,
         Judged::Stands(stands) => Look::Stands(Box::new(stands)),
     }
 }

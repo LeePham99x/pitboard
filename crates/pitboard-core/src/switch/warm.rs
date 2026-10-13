@@ -55,7 +55,7 @@ pub(crate) enum Target {
 /// change of Claude Code's login warns of where its login in use was renewed.
 pub(crate) fn warm_up(settled: Settled, target: Target) -> Result<(WarmUp, Vec<Warning>)> {
     let Settled {
-        _exclusive,
+        _exclusive: exclusive,
         mut state,
         ctx,
         permit,
@@ -132,7 +132,7 @@ pub(crate) fn warm_up(settled: Settled, target: Target) -> Result<(WarmUp, Vec<W
     let home = run::home(ctx, ProviderId::Claude);
     let handed = hand_over(ctx, permit, &mut state, &key, &account, &home, now);
     // The tool runs for seconds; nothing else waits on Pitboard's lock meanwhile.
-    drop(_exclusive);
+    drop(exclusive);
     let came = handed.and_then(|handed| {
         let ran = run::run(ctx, handed.headless);
         let started = ran

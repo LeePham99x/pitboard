@@ -13,6 +13,7 @@ use crate::doctor::{Level, renewal_due};
 use crate::host::{Os, WINDOWS_FLOOR, token};
 use crate::pace::{Pace, Standing};
 use crate::usage::whole;
+use std::fmt::Write as _;
 
 const MINUTE: i64 = 60;
 const HOUR: i64 = 60 * MINUTE;
@@ -103,16 +104,17 @@ pub fn watching(
 ) -> String {
     let mut said = format!("Watching {account}");
     if let Some(used) = used {
-        said.push_str(&format!(": {used}"));
+        let _ = write!(said, ": {used}");
     }
     if let Some(as_of) = as_of {
-        said.push_str(&format!(", as of {as_of}"));
+        let _ = write!(said, ", as of {as_of}");
     }
     said.push('.');
     if let Some(until) = held_until {
-        said.push_str(&format!(
+        let _ = write!(
+            said,
             " Anthropic holds Pitboard off asking again until {until}."
-        ));
+        );
     }
     said
 }

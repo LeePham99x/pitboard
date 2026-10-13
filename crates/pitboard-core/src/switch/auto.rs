@@ -993,11 +993,7 @@ mod tests {
             "{:?}",
             failed.error
         );
-        assert_eq!(
-            m.live(),
-            Some(renewed.clone()),
-            "the renewed login is untouched"
-        );
+        assert_eq!(m.live(), Some(renewed), "the renewed login is untouched");
         assert_eq!(
             logged(&m),
             [(

@@ -185,6 +185,7 @@ impl Stale {
     }
 }
 
+#[derive(Debug)]
 pub struct Row {
     /// Which tool this account belongs to, or whose live login this row is.
     ///
@@ -265,6 +266,7 @@ impl Row {
     }
 }
 
+#[derive(Debug)]
 pub struct Report {
     pub now: i64,
     pub rows: Vec<Row>,

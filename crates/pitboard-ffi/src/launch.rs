@@ -536,14 +536,14 @@ impl SignInSession {
     }
 
     /// Types back the code the browser showed after signing in.
-    pub(crate) fn paste(&self, line: String) -> Result<(), PitboardError> {
+    pub(crate) fn paste(&self, line: &str) -> Result<(), PitboardError> {
         let mut held = self.watched.lock().map_err(|_| PitboardError::Failed {
             code: "sign_in_gone".into(),
             message: "this sign-in is no longer running".into(),
             warnings: Vec::new(),
         })?;
         match held.as_mut() {
-            Some(watched) => watched.paste(&line).map_err(PitboardError::from),
+            Some(watched) => watched.paste(line).map_err(PitboardError::from),
             None => Ok(()),
         }
     }
@@ -667,7 +667,7 @@ impl Kept {
         // A panic while making leaves nothing made, which the next ask makes again.
         self.held
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     fn value(&self) -> Arc<Made> {
@@ -873,8 +873,8 @@ impl AppCore {
         Ok(status_of(self.readable()?.core.status(fresh)?))
     }
 
-    pub(crate) fn switch_to(&self, label: String) -> Result<Switched, PitboardError> {
-        changed(self.core().core.switch_to(&label), |outcome, warnings| {
+    pub(crate) fn switch_to(&self, label: &str) -> Result<Switched, PitboardError> {
+        changed(self.core().core.switch_to(label), |outcome, warnings| {
             Switched {
                 outcome: match outcome {
                     switch::Outcome::Switched {
@@ -908,8 +908,8 @@ impl AppCore {
     /// Writes the account `label` names into its tool's config where that names another
     /// account, while it is in use, and refuses where it no longer is. Gives what it warned
     /// of.
-    pub(crate) fn update_config(&self, label: String) -> Result<Vec<Warning>, PitboardError> {
-        changed(self.core().core.update_config(&label), |_, warnings| {
+    pub(crate) fn update_config(&self, label: &str) -> Result<Vec<Warning>, PitboardError> {
+        changed(self.core().core.update_config(label), |_, warnings| {
             warnings
         })
     }
@@ -964,13 +964,13 @@ impl AppCore {
     }
 
     /// Warms up the account `qualified` names now, whatever the span of the day.
-    pub(crate) fn warm_now(&self, qualified: String) -> Result<WarmUp, PitboardError> {
-        changed(self.core().core.warm_now(&qualified), |warmed, _| warmed)
+    pub(crate) fn warm_now(&self, qualified: &str) -> Result<WarmUp, PitboardError> {
+        changed(self.core().core.warm_now(qualified), |warmed, _| warmed)
     }
 
     /// Warms up the account `qualified` names from now on, or stops.
-    pub(crate) fn warm_turn(&self, qualified: String, on: bool) -> Result<(), PitboardError> {
-        changed(self.core().core.warm_turn(&qualified, on), |_, _| ())
+    pub(crate) fn warm_turn(&self, qualified: &str, on: bool) -> Result<(), PitboardError> {
+        changed(self.core().core.warm_turn(qualified, on), |_, _| ())
     }
 
     /// Warms up from `from` to `to`, in minutes of the day, `to` up to 24:00. A span that
@@ -985,8 +985,8 @@ impl AppCore {
     }
 
     /// Enroll the account signed in now under `label`.
-    pub(crate) fn enroll_current(&self, label: String) -> Result<Enrolled, PitboardError> {
-        changed(self.core().core.enroll_current(&label), enrolled)
+    pub(crate) fn enroll_current(&self, label: &str) -> Result<Enrolled, PitboardError> {
+        changed(self.core().core.enroll_current(label), enrolled)
     }
 
     /// Starts the tool's own sign-in for a new account, watched rather than inherited. The
@@ -1008,12 +1008,12 @@ impl AppCore {
         }))
     }
 
-    pub(crate) fn forget(&self, label: String) -> Result<(), PitboardError> {
-        changed(self.core().core.forget(&label), |_, _| ())
+    pub(crate) fn forget(&self, label: &str) -> Result<(), PitboardError> {
+        changed(self.core().core.forget(label), |_, _| ())
     }
 
-    pub(crate) fn rename(&self, from: String, to: String) -> Result<(), PitboardError> {
-        changed(self.core().core.rename(&from, &to), |_, _| ())
+    pub(crate) fn rename(&self, from: &str, to: &str) -> Result<(), PitboardError> {
+        changed(self.core().core.rename(from, to), |_, _| ())
     }
 
     /// When Pitboard's account index last changed, in epoch milliseconds, or 0 when there is
@@ -1084,7 +1084,7 @@ impl AppCore {
 
     // Only what quitting that app puts right: a `codex` in a terminal is not waited for.
     pub(crate) fn holds_app(&self, provider: &str, app_id: &str) -> bool {
-        self.holding(provider.to_owned()).iter().any(
+        self.holding(provider).iter().any(
             |held| matches!(&held.remedy, Remedy::ReopenApp { app_id: app, .. } if app == app_id),
         )
     }
@@ -1176,11 +1176,11 @@ impl AppCore {
     /// a tool that follows a switch by itself, for a provider code nobody knows, and where
     /// nothing may be read here, where no switch is made either. Reads the process list and
     /// nothing else, so it answers at once.
-    pub(crate) fn holding(&self, provider: String) -> Vec<Holding> {
+    pub(crate) fn holding(&self, provider: &str) -> Vec<Holding> {
         let Ok(made) = self.readable() else {
             return Vec::new();
         };
-        ProviderId::parse(&provider)
+        ProviderId::parse(provider)
             .map(|which| {
                 made.core
                     .holding(which)
@@ -1417,7 +1417,7 @@ mod tests {
             assert_eq!((core.changed_at(), core.readings_changed_at()), (0, 0));
             assert!(core.log(500).is_empty());
             assert_eq!(core.schedule(), None, "not a schedule that is absent");
-            assert!(core.holding("codex".into()).is_empty());
+            assert!(core.holding("codex").is_empty());
             assert!(
                 !core.whole("desktop") && core.moving("desktop"),
                 "{variable}"
@@ -1619,7 +1619,7 @@ mod tests {
         );
         assert!(installed(&core).contains(&"codex".to_owned()));
         assert_eq!(core.core().search_path, None, "the shell could not be run");
-        let Err(PitboardError::Failed { code, .. }) = core.enroll_current("work".into()) else {
+        let Err(PitboardError::Failed { code, .. }) = core.enroll_current("work") else {
             panic!("a Claude Code account was enrolled under a custom OAuth endpoint");
         };
         assert_eq!(code, "custom_oauth_endpoint");

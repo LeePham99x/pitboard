@@ -320,7 +320,7 @@ fn moment(value: &Value) -> Option<i64> {
         .as_str()?
         .parse::<jiff::Timestamp>()
         .ok()
-        .map(|t| t.as_second())
+        .map(jiff::Timestamp::as_second)
 }
 
 #[cfg(test)]

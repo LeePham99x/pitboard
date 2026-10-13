@@ -1104,13 +1104,13 @@ fn a_mistyped_command_line_still_answers_in_json_when_asked() {
 fn the_status_line_names_the_account_in_use_and_the_others() {
     let env = two_accounts("statusline");
     let statusline = |session: serde_json::Value| {
+        use std::io::Write;
         let mut child = env
             .command(&["statusline"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
             .unwrap();
-        use std::io::Write;
         child
             .stdin
             .take()

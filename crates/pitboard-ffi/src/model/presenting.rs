@@ -596,7 +596,7 @@ fn the_menu_says_what_stands_in_an_accounts_way_before_its_limits() {
     let login = unplaced("codex", false);
     assert_eq!(
         Some(described(login.clone()).summary),
-        login.stale_explanation.clone()
+        login.stale_explanation
     );
     let unexplained = Account {
         stale_explanation: None,

@@ -531,7 +531,7 @@ mod tests {
         assert_ne!(now.service, before.service, "a renewal takes a new name");
         assert_eq!(
             m.mem.vault().services(),
-            vec![now.service.clone()],
+            vec![now.service],
             "the spent copy is deleted, not left behind"
         );
     }
@@ -623,7 +623,7 @@ mod tests {
                 .parked,
             Some(before.clone())
         );
-        assert_eq!(m.mem.vault().services(), vec![before.service.clone()]);
+        assert_eq!(m.mem.vault().services(), vec![before.service]);
     }
 
     /// The same login with the argument line allowed is renewed as usual.

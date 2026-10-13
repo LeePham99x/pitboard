@@ -45,11 +45,11 @@ pub(crate) fn once(pitboard: &Pitboard, threshold: Threshold) -> Report {
 /// no sooner than the core waits after as many failed attempts, as the app does.
 pub(crate) fn run(pitboard: &Pitboard, threshold: Threshold, as_json: bool) -> ExitCode {
     if let Err(refused) = pitboard.permit() {
-        return emit(Report::failed(Some("watch"), refused), as_json);
+        return emit(&Report::failed(Some("watch"), refused), as_json);
     }
     let warming = pitboard.warm_overview().ok();
     emit(
-        Report::done(
+        &Report::done(
             "watch",
             watching_json(threshold, warming.as_ref()),
             format!(
@@ -92,10 +92,10 @@ pub(crate) fn run(pitboard: &Pitboard, threshold: Threshold, as_json: bool) -> E
                 }
                 let say = |outcome| said(outcome, threshold, true);
                 if matches!(&outcome, Err(failed) if ends_watching(&failed.error)) {
-                    return emit(say(outcome), as_json);
+                    return emit(&say(outcome), as_json);
                 }
                 if let Some(report) = told.untold(outcome, say) {
-                    emit(report, as_json);
+                    emit(&report, as_json);
                 }
             }
             // Nothing a warm-up comes to ends watching: switching goes on, and the warm-up is
@@ -109,7 +109,7 @@ pub(crate) fn run(pitboard: &Pitboard, threshold: Threshold, as_json: bool) -> E
                     }
                 }
                 for report in warm_told.untold(outcome) {
-                    emit(report, as_json);
+                    emit(&report, as_json);
                 }
             }
         }
@@ -280,7 +280,7 @@ impl WarmTold {
                 vec![Report::done(
                     "watch",
                     json!({ "event": "warmed_up", "account": account, "until": until }),
-                    stamp(format!("{line}\n")),
+                    stamp(&format!("{line}\n")),
                 )]
             }
             WarmUp::Running { .. } | WarmUp::Nothing => Vec::new(),
@@ -299,7 +299,7 @@ impl WarmTold {
                     reports.push(Report::done(
                         "watch",
                         json!({ "event": "warm_up_halted", "reason": halt.code() }),
-                        stamp(format!("{}\n", crate::warm::halted_line(halt))),
+                        stamp(&format!("{}\n", crate::warm::halted_line(halt))),
                     ));
                 }
                 return reports;
@@ -329,7 +329,7 @@ impl WarmTold {
                     "reason": hold.code(),
                     "until": until,
                 }),
-                stamp(format!(
+                stamp(&format!(
                     "{} {}, so Pitboard is not warming it up for now.\n",
                     ui::paint(ui::BOLD, &choice.account),
                     words::warm_standing(&standing, moment)
@@ -345,12 +345,12 @@ impl WarmTold {
 fn said(outcome: Changing<Auto>, threshold: Threshold, stamped: bool) -> Report {
     crate::changed("watch", outcome, |value| {
         let (data, line) = event(value, threshold);
-        (data, if stamped { stamp(line) } else { line })
+        (data, if stamped { stamp(&line) } else { line })
     })
 }
 
 /// `line` after the local time.
-fn stamp(line: String) -> String {
+fn stamp(line: &str) -> String {
     format!(
         "{} {line}",
         ui::paint(ui::DIM, pitboard_core::time::local(epoch(), "%H:%M:%S"))

@@ -47,6 +47,7 @@
 use super::paths::Backend;
 use crate::context::Context;
 use crate::host::{Administered, Os};
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 /// The domain of Codex's managed preferences, and their two keys.
@@ -283,9 +284,11 @@ impl Store {
         if self.backend == Backend::Secrets {
             match self.secrets_by {
                 Some(layer) => {
-                    said.push_str(&format!(", with `{SECRETS}` in {}", self.place(layer)))
+                    let _ = write!(said, ", with `{SECRETS}` in {}", self.place(layer));
                 }
-                None => said.push_str(&format!(", with `{SECRETS}` on by default")),
+                None => {
+                    let _ = write!(said, ", with `{SECRETS}` on by default");
+                }
             }
         }
         said

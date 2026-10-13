@@ -289,7 +289,7 @@ impl Report {
     }
 }
 
-fn emit(report: Report, as_json: bool) -> ExitCode {
+fn emit(report: &Report, as_json: bool) -> ExitCode {
     if as_json {
         let (data, error) = match (&report.result, &report.failure) {
             (Ok(data), None) => (data.clone(), Value::Null),
@@ -1123,7 +1123,7 @@ fn parse() -> Result<Cli, ExitCode> {
         let wants_json = std::env::args_os().any(|arg| arg == "--json");
         if wants_json && e.use_stderr() {
             let message = e.render().to_string().trim().to_string();
-            emit(Report::failed(None, Error::Usage(message)), true)
+            emit(&Report::failed(None, Error::Usage(message)), true)
         } else {
             let _ = e.print();
             ExitCode::from(e.exit_code().clamp(0, 255) as u8)
@@ -1146,7 +1146,7 @@ fn main() -> ExitCode {
     if command.asks_whether_this_build_may_run()
         && let Err(refused) = pitboard_core::release::check()
     {
-        return emit(Report::failed(Some(command.name()), refused), cli.json);
+        return emit(&Report::failed(Some(command.name()), refused), cli.json);
     }
     let ctx = Context::from_env();
     // The schedule's job on Linux says so by the marker, rather than by what systemd passes.
@@ -1163,7 +1163,7 @@ fn main() -> ExitCode {
     if command.refuses_a_home_that_is_not_a_full_path()
         && let Err(refused) = pitboard.check_homes()
     {
-        return emit(Report::failed(Some(command.name()), refused), cli.json);
+        return emit(&Report::failed(Some(command.name()), refused), cli.json);
     }
     let report = match command {
         Command::Status { offline, fresh } => status(&pitboard, offline, fresh),
@@ -1256,7 +1256,7 @@ fn main() -> ExitCode {
             };
         }
     };
-    emit(report, cli.json)
+    emit(&report, cli.json)
 }
 
 #[cfg(test)]
@@ -1426,7 +1426,7 @@ mod tests {
         let question = left_question(&Left {
             path: path.clone(),
             seen: "0123456789abcdef".into(),
-            login: Foreseen::Kept(parked.clone()),
+            login: Foreseen::Kept(parked),
             dropped: vec!["mcpOAuth".into()],
         });
         assert_eq!(

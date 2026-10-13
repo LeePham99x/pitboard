@@ -171,13 +171,6 @@ fn advice_offers_what_can_still_be_used_after_every_read() {
             .limits(vec![window("session", percent).resets(Some(9_000))])
             .build()
     };
-    let mut model = Hand::new();
-    let mut machine = Machine::reading(Ok(status(vec![
-        spent(),
-        other("personal", 10.0, true),
-        other("side", 40.0, true),
-        other("extra", 50.0, true),
-    ])));
     fn offered(model: &Hand) -> Vec<(&str, Option<i64>)> {
         model
             .state
@@ -186,6 +179,13 @@ fn advice_offers_what_can_still_be_used_after_every_read() {
             .map(|advice| (advice.switch_to.as_str(), advice.left))
             .collect()
     }
+    let mut model = Hand::new();
+    let mut machine = Machine::reading(Ok(status(vec![
+        spent(),
+        other("personal", 10.0, true),
+        other("side", 40.0, true),
+        other("extra", 50.0, true),
+    ])));
     model.refresh(&mut machine);
     assert_eq!(offered(&model), [("claude/personal", Some(90))]);
 

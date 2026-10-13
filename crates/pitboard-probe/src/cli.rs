@@ -470,6 +470,7 @@ pub enum Newline {
 }
 
 /// What a run hands back.
+#[derive(Debug)]
 pub enum Outcome {
     /// A report, printed and, with --out, written.
     Report(Report),

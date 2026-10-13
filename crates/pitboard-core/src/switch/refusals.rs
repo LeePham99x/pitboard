@@ -327,7 +327,7 @@ fn using_the_account_in_use_writes_claude_codes_config_again() {
     assert_eq!(config_names_now(&m), "here");
     assert_eq!(m.live(), live, "no login moved");
     let backups = std::fs::read_dir(home::dir(&m.ctx).join("backups"))
-        .map(|entries| entries.count())
+        .map(Iterator::count)
         .unwrap_or_default();
     assert_eq!(backups, 1, "a copy of the config is kept first");
     assert_eq!(
