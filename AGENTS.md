@@ -1,112 +1,106 @@
 # AGENTS.md
 
-Pitboard is a Rust command line and a native macOS menu bar app that switch between a
-person's own Claude Code and Codex logins. It moves real OAuth logins, so a mistake here
-can sign someone out of a paid account. [CONTRIBUTING.md](CONTRIBUTING.md) is the full
-guide; this file is what an agent needs before it touches anything.
+Pitboard is a Rust command line and a native macOS menu bar app that switch Claude Code and
+Codex between a person's own accounts. It moves real OAuth logins, so a mistake here can sign
+someone out of a paid account. These rules apply to people too.
+[CONTRIBUTING.md](CONTRIBUTING.md) says how to set up, check and submit a change.
 
 ## Never
 
 - Never write to, overwrite or delete a keychain item that holds a real login, such as
-  `Claude Code-credentials`. Tests name their items after themselves and call
-  `common::guard_not_live` before the first write.
-- Never run `claude`, `codex login`, `codex logout` or `claude auth login` against a real
-  home: they replace or revoke the login stored there.
-- Never run a `pitboard` built from a branch, or the built app, against your real home.
-  Point `HOME`, `CODEX_HOME` and `CLAUDE_CONFIG_DIR` at a fresh directory first, and build
-  before you set them, since Cargo and rustup read `HOME` too.
-- Never write to `~/.claude`, `~/.claude.json`, `~/.codex` or `~/.pitboard` from a test
-  or a script.
+  `Claude Code-credentials`. A test names its items after itself and calls
+  `common::guard_not_live` before its first write.
+- Never run `claude`, `claude auth login`, `codex login` or `codex logout` against a real
+  home. They replace or revoke the login stored there.
+- Never run a `pitboard` built from a branch against your real home. Build first, then point
+  `HOME`, `PITBOARD_HOME`, `CLAUDE_CONFIG_DIR` and `CODEX_HOME` at a fresh directory, since
+  Cargo and rustup read `HOME` too.
+- Never start an app you built outside a fixture. Run a debug build's executable with
+  `PITBOARD_FIXTURE` and those four homes set, as
+  [Run the debug build](CONTRIBUTING.md#run-the-debug-build) shows. A release build reads no
+  fixture, so never start one you built.
+- Never start a built app with `open`, Finder, a link, the Share menu or `launchctl setenv`.
+  Launch Services passes on none of the variables, so the app starts on the real home.
+- From a test or a script, never write to `~/.claude`, `~/.claude.json`, `~/.codex` or
+  `~/.pitboard`. A test that writes gives every home a scratch directory, `CODEX_HOME`
+  included.
 - Never print a token. `pitboard doctor --json` hides them; raw files do not.
+- Never run the tests as root or under `sudo` on a machine that holds logins.
 - Tests never touch launchd, systemd, `/usr/local/bin`, `/Applications` or
   `~/Library/LaunchAgents`.
 - Never load claude.ai or chatgpt.com, or sign in to either, from a test, a script or a
-  branch build. A fixture's account windows load stand-in pages on `pitboard-fixture://`
-  and keep their data in memory. Never read, copy or delete anything under
-  `~/Library/WebKit/com.usepitboard.Pitboard`, where the account windows keep real
-  sign-ins.
-- Never open a `pitboard://` or `pitboard-debug://` link against a real home: it starts
-  whichever copy claims the scheme, with the real home. UI tests send `pitboard-debug://`
-  links only to a debug build they launched in a fixture.
+  branch build.
+- Never read, copy or delete anything under `~/Library/WebKit/com.usepitboard.Pitboard`,
+  where the account windows keep real sign-ins.
+- Never open a `pitboard://` or `pitboard-debug://` link against a real home. It starts
+  whichever copy claims the scheme, with the real home.
+- Never leave a local build of the app registered with macOS: a link or a share can then
+  start it on the real home. Unregister each copy you built, as
+  [Unregister a build](CONTRIBUTING.md#unregister-a-build) shows, and leave the one in
+  `/Applications` alone.
 - Never put an `install.sh`, a rule naming it or a catch-all fallback in `website/`. A zone
-  rule sends `/install.sh` to the latest release, and a site file there would change what
-  people pipe to `sh`. The site's guard fails a build that holds one.
-- Never leave a local build of the app registered with macOS. Its scheme and Share
-  extension stay registered after a build with Xcode, `xcodebuild` or `build-app.sh`:
-  `pitboard-debug://` and **Pitboard Debug** for a debug build, `pitboard://` and
-  **Pitboard** for a release. A link or a share can then start that branch build against
-  the real home. Unregister it with `pluginkit -r` on each `PitboardShare.appex`, then
-  `lsregister -u` on each `Pitboard.app`; [The app](CONTRIBUTING.md#the-app) has the
-  commands.
+  rule sends `/install.sh` to the newest release; a site file there would change what people
+  pipe to `sh`.
+- Never push a tag.
+- Never let `.github/workflows/rotation.yml` name a repository secret. Its rehearsal ships
+  bundles that update themselves, and must never reach the real key.
+- Never keep the update key and the Developer ID certificate in one place. With both lost,
+  no installed copy accepts another update.
 
 ### On Windows
 
-Pitboard for Windows is being built. [Windows](CONTRIBUTING.md#windows) says how to build
-and test it there.
+[Windows](CONTRIBUTING.md#windows) says how to build and test Pitboard there.
 
 - Never write to, overwrite or delete a Credential Manager item that holds a real login:
-  `Claude Code-credentials` and every `Claude Code-credentials-<hash>`, each piece of them
-  included, Codex's `cli|*` and `secrets|*` targets, and anything under
-  `Codex MCP Credentials`. Never use `cmdkey /delete`, `vaultcmd` or PowerShell's credential
-  modules on those names. Tests write only `pitboard-citest-*` items or the slot hashed from
-  their own folder, `common::guard_not_live` refuses the rest by pattern, and CI lists those
-  names after each Windows run and fails on any left.
+  `Claude Code-credentials`, every `Claude Code-credentials-<hash>` and each piece of them,
+  Codex's `cli|*` and `secrets|*` targets, and anything under `Codex MCP Credentials`.
+- Never use `cmdkey /delete`, `vaultcmd` or PowerShell's credential modules on those names.
+  Tests write only `pitboard-citest-*` items or the slot hashed from their own folder.
 - Never read, copy, rewrite or delete `%USERPROFILE%\.claude`, `%USERPROFILE%\.claude.json`,
   `%USERPROFILE%\.codex`, `%ProgramData%\OpenAI\Codex`, `C:\Program Files\ClaudeCode`, or
   the `%LOCALAPPDATA%\Pitboard` of an account that holds real logins.
 - Never run a `pitboard.exe` built from a branch on a Windows account that holds real
-  logins, and never put one on a `PATH`, in `%LOCALAPPDATA%\Programs`, in WinGet's Links or
-  behind a Scoop shim. A test or a script points `USERPROFILE`, `HOME`, `APPDATA`,
-  `LOCALAPPDATA`, an existing `CODEX_HOME`, `CLAUDE_CONFIG_DIR` and `PITBOARD_HOME` at fresh
-  folders, after building, since Cargo and rustup find their own homes through
+  logins. Never put one on a `PATH`, in `%LOCALAPPDATA%\Programs`, in WinGet's Links or
+  behind a Scoop shim.
+- Never run a test or a script there before pointing `USERPROFILE`, `HOME`, `APPDATA`,
+  `LOCALAPPDATA`, an existing `CODEX_HOME`, `CLAUDE_CONFIG_DIR` and `PITBOARD_HOME` at
+  fresh folders. Set them after building: Cargo and rustup find their homes through
   `USERPROFILE`.
-- Never weaken or get around the release gate in a build anybody installs: no release,
+- Never weaken or get around the release gate in a build anybody installs. No release,
   script or package passes `--cfg pitboard_unreleased_windows`, `test-support` or
-  `fixture`. A Windows build of a 0.x release answers only `--version`, `--help`,
-  `completions` and `manpage`, and changes nothing.
+  `fixture`.
 - Tests never touch Task Scheduler, the registry, the user `PATH` or DPAPI keys, and never
   run elevated on a machine that holds logins.
+- Never run `.github/scripts/test-as-standard-user.ps1` or `runner-facts.ps1` on a machine of
+  your own. They make a Windows account and change who holds which rights.
+- Never run `claude.exe` or `codex.exe` to read a fact. Read the build as bytes on a Mac or
+  Linux, as `pitboard-conformance` does.
+- Never measure a running tool on a Windows machine that holds logins. Use one kept for it,
+  with throwaway accounts and scratch homes.
+- Never register the probe's sparse package outside a throwaway account in the VM.
+  Unregister it and remove its certificate before reverting the snapshot.
 
 ## Check a change
 
-```sh
-cargo fmt --check
-cargo clippy --all-targets --locked
-cargo test --locked -- --skip writing_preserves_attributes
-cargo deny check
-cargo semver-checks --package pitboard-core
-```
-
-For the app, build the core's bindings once, with the fixtures its debug build, its UI tests
-and one of its unit tests launch into, then run its unit tests:
-
-```sh
-./apps/macos/scripts/build-xcframework.sh --fixture
-swift test --package-path apps/macos
-```
-
-For the site, run `npm ci`, `npm test` and `npm run build` in `website/`;
-[Website](CONTRIBUTING.md#website) has the rest.
-
-CI sets `RUSTFLAGS=-D warnings`. [Check a change](CONTRIBUTING.md#check-a-change) lists
-everything else CI runs, and [The app](CONTRIBUTING.md#the-app) covers the Xcode project,
-fixtures and UI tests.
+Before you push, run what [Check a change](CONTRIBUTING.md#check-a-change) lists, and the
+checks of each other section of CONTRIBUTING.md the change reaches.
 
 ## Rules
 
 - A behaviour change starts with a test that fails against the current code.
 - A claim about Claude Code or Codex needs a reading of a named build or an experiment,
-  recorded in the tool's register (`crates/pitboard-core/src/provider/*/assumptions.rs`),
-  a test or the commit message. [Tool registers](CONTRIBUTING.md#tool-registers) says how.
+  recorded in the tool's register, a test or the commit message.
+  [Tool registers](CONTRIBUTING.md#tool-registers) says how.
 - A change people would notice gets an entry under `## [Unreleased]` in
-  [CHANGELOG.md](CHANGELOG.md).
-- A change that breaks `pitboard-core`'s public API raises the minor version in
-  `Cargo.toml` in the same pull request, unless `main` is already ahead of the last release.
-- A commit subject is one present-tense sentence saying what Pitboard does after the
-  change, with no prefix. The body says why, and what was measured.
+  [CHANGELOG.md](CHANGELOG.md), as [Changelog](CONTRIBUTING.md#changelog) says.
+- A change that breaks `pitboard-core`'s public API raises the minor version in the same
+  pull request. When `Cargo.toml` already names a minor version past the last release, it
+  stays.
+- A commit subject is one present-tense sentence saying what Pitboard does after the change,
+  with no prefix. The body says why, and what was measured.
 
 ## Where things are
 
-- [ARCHITECTURE.md](ARCHITECTURE.md): the code map, invariants and measured facts.
-- [RELEASING.md](RELEASING.md): how a release is made. Do not push tags.
+- [ARCHITECTURE.md](ARCHITECTURE.md): the code map and the rules the code keeps.
+- [RELEASING.md](RELEASING.md): how a release is made.
 - `docs/`: the documentation site; [docs/AGENTS.md](docs/AGENTS.md) has its writing rules.
