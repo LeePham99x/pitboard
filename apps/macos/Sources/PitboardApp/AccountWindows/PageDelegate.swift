@@ -103,11 +103,11 @@ final class PageDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!)
     {
-        page?.loadStarted()
+        page?.loadProgressed()
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
-        page?.loadCommitted()
+        page?.loadProgressed()
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {

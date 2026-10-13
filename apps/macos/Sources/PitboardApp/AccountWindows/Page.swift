@@ -165,11 +165,7 @@ final class Page {
 
     // MARK: - What happened, as the page's delegate says
 
-    func loadStarted() {
-        failure = nil
-    }
-
-    func loadCommitted() {
+    func loadProgressed() {
         failure = nil
     }
 

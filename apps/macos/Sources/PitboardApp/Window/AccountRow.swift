@@ -62,7 +62,7 @@ struct AccountRow: View {
     }
 
     private var symbol: String {
-        if item.unplaced { return "exclamationmark.triangle" }
+        if item.unplaced { return Symbol.warning }
         if item.needsSignIn { return Symbol.signIn }
         return item.inUse ? "person.crop.circle.fill" : Symbol.account
     }

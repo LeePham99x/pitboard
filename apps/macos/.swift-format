@@ -1,6 +1,5 @@
 {
   "version": 1,
   "indentation": { "spaces": 4 },
-  "lineLength": 96,
-  "lineBreakBeforeEachArgument": false
+  "lineLength": 96
 }

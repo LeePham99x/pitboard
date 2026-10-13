@@ -12,15 +12,15 @@ import SwiftUI
 /// account picker's scene receives them.
 @MainActor
 public final class AppDelegate: NSObject, NSApplicationDelegate {
-    public let model: AppModel
-    public let windows: AccountWindows
-    public let openAtLogin: OpenAtLogin
-    public let commandLineLink: CommandLineLink
+    let model: AppModel
+    let windows: AccountWindows
+    let openAtLogin: OpenAtLogin
+    let commandLineLink: CommandLineLink
     /// Which of the model's requests for the main window the menu bar item and the window
     /// have answered.
     let windowRequests = WindowRequests()
     /// Where the app keeps its view preferences, which views read through `@AppStorage`.
-    public let defaults: UserDefaults
+    let defaults: UserDefaults
     private let quitting: @MainActor () -> Void
     private var watching: [NSObjectProtocol] = []
 

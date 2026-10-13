@@ -10,7 +10,7 @@ import SwiftUI
 /// root view, which appears when its window opens and disappears when it closes: measured on
 /// macOS 27, not when it is minimised or becomes a background tab.
 @MainActor
-public final class AppPresence {
+final class AppPresence {
     private var open: Set<UUID> = []
     private let apply: @MainActor (NSApplication.ActivationPolicy) -> Void
     private let bringForward: @MainActor () -> Void

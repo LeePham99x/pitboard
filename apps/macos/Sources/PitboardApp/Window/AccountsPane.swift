@@ -99,7 +99,7 @@ struct AccountsPane: View {
     private var list: some View {
         List(selection: $selection) {
             ForEach(model.notices, id: \.id) { notice in
-                NoticeRow(notice: notice, perform: perform)
+                NoticeRow(notice: notice) { send($0.intent, askingFirst: $0.confirm) }
                     .selectionDisabled()
             }
             if let step = model.setup {
@@ -148,11 +148,13 @@ struct AccountsPane: View {
                 // A check mark beside it, as a menu shows one setting that is on.
                 Toggle(
                     offer.title,
-                    isOn: Binding(get: { checked }, set: { _ in perform(offer) })
+                    isOn: Binding(
+                        get: { checked },
+                        set: { _ in send(offer.intent, askingFirst: offer.confirm) })
                 )
                 .disabled(!offer.enabled)
             } else {
-                Button(offer.title) { perform(offer) }
+                Button(offer.title) { send(offer.intent, askingFirst: offer.confirm) }
                     .disabled(!offer.enabled)
             }
         }
@@ -174,31 +176,26 @@ struct AccountsPane: View {
         }
         if let forget = item.forget {
             Divider()
-            Button(forget.title, role: .destructive) { perform(forget) }
-                .disabled(!forget.enabled)
+            Button(forget.title, role: .destructive) {
+                send(forget.intent, askingFirst: forget.confirm)
+            }
+            .disabled(!forget.enabled)
         }
     }
 
     /// Forgetting the account, where the model offers it, as its menu does: the Delete key's
     /// answer in the list.
     private func forget(_ item: AccountItem) {
-        if let forget = item.forget, forget.enabled { perform(forget) }
-    }
-
-    /// Asks the question an offer comes with first, where it has one, and otherwise sends it.
-    private func perform(_ offer: ItemOffer) {
-        if let question = offer.confirm {
-            asking = Asking(question: question, intent: offer.intent)
-        } else {
-            model.send(offer.intent)
+        if let forget = item.forget, forget.enabled {
+            send(forget.intent, askingFirst: forget.confirm)
         }
     }
 
-    private func perform(_ action: NoticeAction) {
-        if let question = action.confirm {
-            asking = Asking(question: question, intent: action.intent)
+    private func send(_ intent: Intent, askingFirst question: Question?) {
+        if let question {
+            asking = Asking(question: question, intent: intent)
         } else {
-            model.send(action.intent)
+            model.send(intent)
         }
     }
 }

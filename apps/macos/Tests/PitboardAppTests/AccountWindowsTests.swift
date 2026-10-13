@@ -310,7 +310,7 @@ private func settle(until done: () -> Bool) async {
         role: .window, configuration: WKWebViewConfiguration(), now: { now })
     page.contentEnded()
     #expect(page.failure == nil, "loaded again once")
-    page.loadCommitted()
+    page.loadProgressed()
     now += 5
     page.contentEnded()
     #expect(page.failure == "The page stopped working.")

@@ -9,17 +9,6 @@ import PitboardKit
 extension NavigationPolicy {
     /// Where a window of the site starts.
     var home: URL { URL(string: windowHome(policy: self))! }
-
-    /// `link` on the window's scheme: the link itself in a live run, and the fixture's
-    /// stand-in for it in a fixture, so a fixture's window never reaches the network.
-    func address(of link: SiteLink) -> URL {
-        URL(string: windowAddress(policy: self, link: link)) ?? home
-    }
-
-    /// Whether `url` is one of the site's own pages, the only kind a window keeps as its last.
-    func isSite(_ url: URL) -> Bool {
-        isSitePage(policy: self, url: url.absoluteString)
-    }
 }
 
 extension NavigationTarget {

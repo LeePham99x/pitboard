@@ -223,9 +223,6 @@ public final class AppModel {
 
     // MARK: - What the views ask of what is shown
 
-    /// Why the last read did not answer, in Pitboard's own words.
-    public var problem: String? { readFailure?.message }
-
     /// The row shown for the account with `id`.
     public func item(_ id: String) -> AccountItem? {
         sections.lazy.flatMap(\.accounts).first { $0.id == id }
