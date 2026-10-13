@@ -12,11 +12,14 @@ import WebKit
 @MainActor
 private final class PresenceLog {
     var said: [String] = []
+    var active = true
 
     func presence() -> AppPresence {
         AppPresence(
             apply: { self.said.append($0 == .regular ? "regular" : "accessory") },
             bringForward: { self.said.append("activate") },
+            reopen: { self.said.append("reopen") },
+            isActive: { self.active },
             settle: { await Task.yield() })
     }
 }
@@ -61,18 +64,15 @@ private final class PresenceLog {
 /// it asks Launch Services to open it instead.
 @MainActor
 @Test func aLinkFromOutsideBringsPitboardForwardFromTheBackground() {
-    var said: [String] = []
-    var active = false
-    let presence = AppPresence(
-        apply: { said.append($0 == .regular ? "regular" : "accessory") },
-        bringForward: { said.append("activate") }, reopen: { said.append("reopen") },
-        isActive: { active }, settle: {})
+    let log = PresenceLog()
+    log.active = false
+    let presence = log.presence()
     presence.comeForward()
-    #expect(said == ["regular", "reopen"])
-    said = []
-    active = true
+    #expect(log.said == ["regular", "reopen"])
+    log.said = []
+    log.active = true
     presence.comeForward()
-    #expect(said == ["regular", "activate"])
+    #expect(log.said == ["regular", "activate"])
 }
 
 /// Lets the presence's pending checks run.

@@ -221,6 +221,9 @@ They never make the model over this Mac. Most hand the app's model snapshots fro
 stand-in, and one starts a fixture's model to see the bindings carry a snapshot end to end;
 against a library built without fixtures it is skipped, and says so.
 
+A Swift warning fails the build, in the package and in the project, except in the generated
+bindings.
+
 The UI tests start the debug build, each in a fixture. A fixture is a machine in a known
 state, where nothing reaches the keychain, the network or your accounts. Run the UI tests
 from Xcode with **Product** > **Test**, or with:
