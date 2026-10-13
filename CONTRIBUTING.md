@@ -56,9 +56,8 @@ To work on the app, you need a Mac with Xcode, and its Swift must be 6.2 or late
    folder, in any spelling or piece, Codex's `cli|` and `secrets|` targets and anything
    under `Codex MCP Credentials`. A test writes only `pitboard-citest-*` names, the parks
    Pitboard names, and its own slot. A Codex test that writes points `CODEX_HOME` at a
-   scratch directory and never writes to `~/.codex`. The one ignored test that reads a real
-   `auth.json` only reads it. Nothing runs `codex login` or `codex logout` against a real
-   home, because both revoke the login stored there.
+   scratch directory and never writes to `~/.codex`. Nothing runs `codex login` or
+   `codex logout` against a real home, because both revoke the login stored there.
 
 4. Measure the tool, do not guess at it. Claude Code's behaviour here is undocumented,
    Codex's moves with its source, and both ship several times a week. A claim about either
