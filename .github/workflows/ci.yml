@@ -411,7 +411,7 @@ jobs:
 
   semver:
     # What pitboard-core's last version on crates.io promises. A change that breaks it needs
-    # the version in Cargo.toml raised, as RELEASING.md says, and fails here until it is.
+    # the version in Cargo.toml raised, as CONTRIBUTING.md says, and fails here until it is.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
