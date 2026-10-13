@@ -1514,7 +1514,7 @@ mod tests {
     #[cfg_attr(windows, ignore = "W14: Pitboard's own folder on Windows")]
     fn a_login_shell_too_slow_to_answer_is_asked_once_more_later() {
         let asks = Asks::default();
-        let core = AppCore::asking(
+        let mut core = AppCore::asking(
             {
                 let asks = asks.clone();
                 move || match asks.note() {
@@ -1522,7 +1522,7 @@ mod tests {
                     _ => (made(Some("/nowhere/codex"), None), false),
                 }
             },
-            Duration::from_millis(200),
+            Duration::from_secs(3600),
         );
         assert!(
             installed(&core).is_empty(),
@@ -1533,7 +1533,8 @@ mod tests {
             "and nothing more until the while is up"
         );
         assert_eq!(asks.count(), 1);
-        std::thread::sleep(Duration::from_millis(300));
+        // The while is up.
+        core.made.again_after = Duration::ZERO;
         assert_eq!(installed(&core), ["codex"]);
         assert_eq!(asks.count(), 2);
         assert_eq!(installed(&core), ["codex"]);

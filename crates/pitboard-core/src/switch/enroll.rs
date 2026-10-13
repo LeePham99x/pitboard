@@ -1023,7 +1023,7 @@ mod tests {
     use crate::switch::{Due, Outcome, renew_due, settle, switch};
     use crate::time::FixedClock;
     use std::sync::Arc;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     type Make = fn(&str) -> Machine;
     /// A machine of each tool: `here` signed in, `there` parked and ready.
@@ -1967,6 +1967,7 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_cancel_does_not_wait_on_a_tool_that_says_nothing() {
+        let patience = Duration::from_secs(20);
         let m = codex_machine("cancel");
         let (pending, _) = reserve_signin(
             &m.ctx,
@@ -1974,19 +1975,31 @@ mod tests {
             provider::document(ProviderId::Codex),
         )
         .expect("reserved");
-        let mut silent = std::process::Command::new("sleep");
-        silent.arg("30");
+        // Says its address, then nothing, and ends by itself only once `patience` is up.
+        let mut silent = std::process::Command::new("/bin/sh");
+        silent.args(["-c", "echo https://auth.openai.com/ >&2; exec sleep 30"]);
         let watched = watch(silent, pending).expect("started");
         let said = watched.said();
-        let reader = std::thread::spawn(move || said.next());
-        std::thread::sleep(Duration::from_millis(100));
+        let (heard, hears) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            while let Some(text) = said.next() {
+                let _ = heard.send(Some(text));
+            }
+            let _ = heard.send(None);
+        });
+        assert!(hears.recv_timeout(patience).expect("the address").is_some());
 
-        let asked = Instant::now();
-        watched.cancel();
-        assert_eq!(reader.join().expect("the reader"), None);
-        assert!(
-            asked.elapsed() < Duration::from_secs(10),
-            "the cancel waited on the tool"
+        let (cancelled, cancels) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            watched.cancel();
+            let _ = cancelled.send(());
+        });
+        cancels
+            .recv_timeout(patience)
+            .expect("the cancel did not wait on the tool");
+        assert_eq!(
+            hears.recv_timeout(patience).expect("the reading ended"),
+            None
         );
         reserve_signin(
             &m.ctx,
