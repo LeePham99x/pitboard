@@ -1,6 +1,17 @@
+import AppKit
 import PitboardKit
 import SwiftUI
 
+/// Adds an account, or signs in again to one whose parked login can no longer be used,
+/// through the tool's own sign-in, which the model runs.
+///
+/// Claude Code and Codex open the default browser themselves and finish through their own
+/// callback, so the sheet offers the address each prints: to open where no browser opened,
+/// or to copy into another browser or browser profile. The code field appears only for a
+/// tool that reads one, only once it asks, and again once Claude Code has refused the code
+/// typed back. Claude Desktop signs in inside Claude, and the sheet says each step of it.
+/// The sheet stays over the window while the browser or Claude is in front, which a menu
+/// could not: it closed the moment the browser came forward.
 struct SignInSheet: View {
     let model: AppModel
     let sheet: Sheet
@@ -14,6 +25,7 @@ struct SignInSheet: View {
     @FocusState private var nameFocused: Bool
     @FocusState private var codeFocused: Bool
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
 
     init(model: AppModel, sheet: Sheet) {
         self.model = model
@@ -119,17 +131,23 @@ struct SignInSheet: View {
     // MARK: - While it runs
 
     private func progress(_ signingIn: RunningSignIn, _ text: SigningInText) -> some View {
-        SheetLayout(title: text.title, message: text.message) {
-            Section {
-                LabeledContent {
-                    ProgressView().controlSize(.small)
-                } label: {
-                    Text(text.waiting)
-                }
-                if let url = signingIn.url.flatMap(URL.init(string:)) {
-                    LabeledContent("Browser didn’t open?") {
-                        Link("Open Sign-In Page", destination: url)
-                            .help(url.absoluteString)
+        let page = signingIn.url.flatMap(URL.init(string:))
+        return SheetLayout(title: text.title, message: text.message) {
+            if text.offersLink {
+                Section {
+                    LabeledContent("Sign-In Page") {
+                        HStack {
+                            Button("Copy Link") {
+                                if let page { NSPasteboard.general.copy(link: page) }
+                            }
+                            Button("Open") {
+                                if let page { openURL(page) }
+                            }
+                            .help(page?.absoluteString ?? "")
+                        }
+                        // Dimmed rather than left out until the tool prints the address, so
+                        // the sheet does not grow a moment after it opens.
+                        .disabled(page == nil)
                     }
                 }
             }
@@ -150,6 +168,12 @@ struct SignInSheet: View {
                     Text(text.codeNote).footnote()
                 }
             }
+        } status: {
+            // The message says what it waits for, so the spinner goes unlabelled, as the
+            // HIG asks of one on a Mac. VoiceOver still names it.
+            ProgressView()
+                .controlSize(.small)
+                .accessibilityLabel(text.waiting)
         } buttons: {
             Button(text.cancel.title, role: text.escapeCancels ? .cancel : nil) {
                 model.send(text.cancel.intent)
@@ -177,5 +201,18 @@ struct SignInSheet: View {
         guard !code.isEmpty else { return }
         model.send(.pasteCode(code: code))
         code = ""
+    }
+}
+
+extension NSPasteboard {
+    /// Puts `link` here in place of whatever was here, as an address for an app that reads
+    /// one and as text for a field that reads only text, such as a browser's address bar.
+    /// An `NSURL` written alone gives only the address.
+    func copy(link: URL) {
+        let item = NSPasteboardItem()
+        item.setString(link.absoluteString, forType: .URL)
+        item.setString(link.absoluteString, forType: .string)
+        clearContents()
+        writeObjects([item])
     }
 }

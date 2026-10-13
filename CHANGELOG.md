@@ -22,9 +22,12 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - `pitboard adopt` sets aside a Claude Desktop login parked on another Mac.
 - `pitboard uninstall` refuses while Claude is signed out and a Claude Desktop login is
   parked or set aside, since deleting them would leave no Claude Desktop login.
+- **Copy Link** in the sign-in dialog copies the sign-in page's address, to paste into
+  another browser or browser profile.
 
 ### Changed
 
+- **Open Sign-In Page** in the sign-in dialog is renamed **Open**.
 - The `pitboard` cask's caveats link
   [Upgrade from 0.3.0 or earlier](https://docs.usepitboard.com/install/upgrade-from-0-3-0) in
   place of the commands that remove 0.3.0's formula.

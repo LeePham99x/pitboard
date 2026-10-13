@@ -384,6 +384,7 @@ pub(crate) fn signing_in_text(seen: &Seen) -> Option<SigningInText> {
     let tool = seen.tool_name(&signing.provider);
     Some(SigningInText {
         waiting: "Waiting for your browser".into(),
+        offers_link: true,
         cancel: Choice {
             title: "Cancel".into(),
             intent: Intent::CancelSignIn,
@@ -458,6 +459,7 @@ fn in_app_signing_in_text(seen: &Seen, signing: &crate::model::state::SigningIn)
         code_note: String::new(),
         refused: None,
         waiting,
+        offers_link: false,
         cancel: Choice {
             title: if put_back.is_some() {
                 "Later"

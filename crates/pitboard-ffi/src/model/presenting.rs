@@ -2983,6 +2983,7 @@ fn a_sign_in_under_way_says_what_to_do_in_the_browser() {
     });
     let text = model.shown().signing_in_text.expect("what it says");
     assert_eq!(text.title, "Signing In to Claude Code");
+    assert!(text.offers_link, "a browser sign-in offers its page");
     assert_eq!(
         text.message,
         "Finish signing in as travel in your browser. This closes once Claude Code says \

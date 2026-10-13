@@ -36,8 +36,8 @@ const BETWEEN: Duration = Duration::from_millis(200);
 const BROWSER: Duration = Duration::from_millis(1_500);
 
 /// The address Claude Code's sign-in prints for a browser that did not open, in the shape the
-/// register records: the manual one, on claude.com. Nothing opens it: a UI test only sees
-/// that it is offered.
+/// register records: the manual one, on claude.com. Nothing opens it: a UI test only copies
+/// it.
 pub(crate) const CLAUDE_ADDRESS: &str =
     "https://claude.com/cai/oauth/authorize?code=true&state=pitboard-fixture";
 

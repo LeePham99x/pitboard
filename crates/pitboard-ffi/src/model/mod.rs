@@ -428,7 +428,8 @@ pub struct RunningSignIn {
     /// Everything the tool has said so far, as it said it.
     pub said: String,
     /// The address the tool printed for a person to open when the browser did not open by
-    /// itself, as printed, to make a link of. Read by the tool's own module.
+    /// itself, as printed, for the app to open or to copy into another browser. Read by the
+    /// tool's own module.
     pub url: Option<String>,
     /// Whether to offer a field for the code the browser shows, which the tool is waiting to
     /// have typed back. Read by the tool's own module.

@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 
 final class AccountsWindowTests: XCTestCase {
@@ -5,7 +6,9 @@ final class AccountsWindowTests: XCTestCase {
         continueAfterFailure = false
     }
 
-    /// The fixture's Claude Code takes a code as the real one does, `<code>#<state>`.
+    /// The fixture's Claude Code takes a code as the real one does, `<code>#<state>`. The
+    /// address it prints is copied for another browser, and Open is never clicked: it would
+    /// open that address in a real one.
     @MainActor
     func testAddingAClaudeCodeAccount() {
         let app = XCUIApplication.launched(.oneTool)
@@ -18,7 +21,12 @@ final class AccountsWindowTests: XCTestCase {
         app.buttons["Sign In"].click()
         let code = app.textFields["sheet.code"]
         XCTAssertTrue(code.waitForExistence(timeout: 10))
-        XCTAssertTrue(app.links["Open Sign-In Page"].exists)
+        let sheet = app.sheets.firstMatch
+        XCTAssertTrue(sheet.buttons["Open"].isEnabled)
+        sheet.buttons["Copy Link"].click()
+        XCTAssertEqual(
+            NSPasteboard.general.string(forType: .string),
+            "https://claude.com/cai/oauth/authorize?code=true&state=pitboard-fixture")
         code.click()
         code.typeText("fixture-code#state")
         app.buttons["Submit Code"].click()

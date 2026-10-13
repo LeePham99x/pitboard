@@ -1505,6 +1505,7 @@ fn the_app_is_opened_in_front_once_the_account_in_use_is_parked() {
         }));
     let page = page(&model);
     assert_eq!(page.waiting, "Waiting for Claude to quit");
+    assert!(!page.offers_link, "Claude has no page to offer");
     assert!(
         page.message
             .starts_with("In Claude, sign in to the account you’re adding.")

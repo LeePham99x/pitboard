@@ -473,8 +473,10 @@ pub struct SigningInText {
     pub code_note: String,
     /// Why the field is offered again: the tool refused the code typed back.
     pub refused: Option<String>,
-    // the line beside its spinner
+    // what VoiceOver calls its spinner
     pub waiting: String,
+    // whether it offers the sign-in page's address to copy or open: a sign-in in the browser
+    pub offers_link: bool,
     pub cancel: Choice,
     // whether Escape and closing the sheet are its cancel button
     pub escape_cancels: bool,
