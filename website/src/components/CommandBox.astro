@@ -4,17 +4,33 @@ import { plainText } from "../lib/changelog.ts";
 
 interface Props {
   command: Command;
+  wide?: boolean;
+  class?: string;
 }
-const { command } = Astro.props;
+const { command, wide = false, class: extra } = Astro.props;
 if (plainText(command.html) !== command.copy) {
   throw new Error(`the command shown is not the one copied: ${command.copy}`);
 }
+const text = "font-mono text-control font-medium max-sm:text-ui/5.5 max-xs:text-label/5.5";
 ---
 
-<div class="cmd">
-  <span class="cmd-p" aria-hidden="true">$</span
-  ><code class="cmd-code" set:html={command.html} /><button
-    class="cmd-copy"
+<div
+  class:list={[
+    "flex min-h-12 items-stretch rounded-sm bg-sunken",
+    { "max-w-[40em]": !wide },
+    extra,
+  ]}
+>
+  <span class:list={["flex-none py-3 pl-3.5 text-muted select-none", text]} aria-hidden="true"
+    >$</span
+  ><code
+    class:list={[
+      "min-w-0 flex-1 py-3 pr-2.5 pl-2.25 whitespace-normal text-strong [font-variant-ligatures:normal] wrap-anywhere",
+      text,
+    ]}
+    set:html={command.html}
+  /><button
+    class="min-w-16.5 flex-none cursor-pointer rounded-r-sm border-l border-grid px-3.5 font-mono text-label font-medium text-strong hover:bg-ink/7 focus-visible:-outline-offset-2 no-js:hidden max-sm:min-w-17 max-sm:px-3 max-xs:min-w-14.5 max-xs:px-2.5"
     type="button"
     data-copy={command.copy}
     aria-label="Copy the command"

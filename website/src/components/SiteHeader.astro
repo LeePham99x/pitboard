@@ -10,6 +10,10 @@ const { current, stars } = Astro.props;
 const here = (page: Props["current"]) => (current === page ? "page" : undefined);
 const ghLabel = stars === null ? "Pitboard on GitHub" : `Pitboard on GitHub, ${stars} stars`;
 const check = "M1.5 6.5 4.6 9.6 10.5 2.4";
+const link =
+  "font-mono text-ui font-medium text-fg no-underline hover:text-ink hover:underline hover:decoration-auto hover:decoration-current hover:underline-offset-6 aria-[current=page]:text-ink aria-[current=page]:underline aria-[current=page]:decoration-auto aria-[current=page]:decoration-current aria-[current=page]:underline-offset-6";
+const plink =
+  "flex items-center justify-between border-b border-grid py-3.5 font-mono text-note/6 font-medium text-strong no-underline aria-[current=page]:underline aria-[current=page]:decoration-auto aria-[current=page]:decoration-current aria-[current=page]:underline-offset-6";
 const themes = [
   ["system", "System"],
   ["light", "Light"],
@@ -17,24 +21,33 @@ const themes = [
 ];
 ---
 
-<header class="site-head">
-  <div class="wrap head-in">
-    <a class="home" href="/" aria-label="Pitboard home" aria-current={here("home")}><Lockup /></a>
-    <nav class="nav" aria-label="Site">
-      <a href={DOCS}>Docs</a>
-      <a href="/changelog" aria-current={here("changelog")}>Changelog</a>
-      <a href="/download" aria-current={here("download")}>Download</a>
-      <a class="gh" href={REPO} aria-label={ghLabel}
-        ><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+<header
+  class="sticky top-0 z-20 border-b border-transparent bg-page transition-[border-color] duration-150 ease-linear scrolled:border-grid no-js:border-grid"
+>
+  <div class="wrap flex h-16 items-center justify-between gap-4 max-md:h-14">
+    <a
+      class="flex items-center rounded-sm text-logo-word no-underline hover:text-accent-hover"
+      href="/"
+      aria-label="Pitboard home"
+      aria-current={here("home")}
+      ><Lockup class="mt-1 h-8.5 w-auto"
+    /></a>
+    <nav class="flex items-center gap-7 max-md:hidden" aria-label="Site">
+      <a class={link} href={DOCS}>Docs</a>
+      <a class={link} href="/changelog" aria-current={here("changelog")}>Changelog</a>
+      <a class={link} href="/download" aria-current={here("download")}>Download</a>
+      <a class:list={[link, "inline-flex items-center gap-2"]} href={REPO} aria-label={ghLabel}
+        ><svg class="size-4 fill-current" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
           <path
             d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
           ></path>
         </svg
-        ><span>GitHub</span>{stars !== null && <span class="stars">{stars}</span>}</a
+        ><span>GitHub</span
+        >{stars !== null && <span class="text-muted tabular-nums">{stars}</span>}</a
       >
-      <div class="theme">
+      <div class="relative no-js:hidden" id="theme">
         <button
-          class="icon-btn theme-btn"
+          class="grid size-8 cursor-pointer place-items-center rounded-sm border border-edge text-ink hover:bg-sunken"
           id="theme-btn"
           type="button"
           aria-haspopup="menu"
@@ -42,7 +55,12 @@ const themes = [
           aria-controls="theme-menu"
           aria-label="Theme: System"
         >
-          <svg class="i i-system" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <svg
+            class="hidden size-4 theme-system:block"
+            viewBox="0 0 16 16"
+            aria-hidden="true"
+            focusable="false"
+          >
             <circle
               cx="8"
               cy="8"
@@ -53,7 +71,12 @@ const themes = [
             ></circle>
             <path d="M8 1.75a6.25 6.25 0 0 1 0 12.5Z" fill="currentColor"></path>
           </svg
-          ><svg class="i i-light" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          ><svg
+            class="hidden size-4 theme-light:block"
+            viewBox="0 0 16 16"
+            aria-hidden="true"
+            focusable="false"
+          >
             <circle
               cx="8"
               cy="8"
@@ -69,7 +92,12 @@ const themes = [
               stroke-linecap="square"
             ></path>
           </svg
-          ><svg class="i i-dark" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          ><svg
+            class="hidden size-4 theme-dark:block"
+            viewBox="0 0 16 16"
+            aria-hidden="true"
+            focusable="false"
+          >
             <path
               d="M13.6 10.1A6 6 0 0 1 5.9 2.4a6 6 0 1 0 7.7 7.7Z"
               fill="none"
@@ -79,15 +107,27 @@ const themes = [
             ></path>
           </svg>
         </button>
-        <div class="theme-menu" id="theme-menu" role="menu" aria-label="Theme" hidden>
+        <div
+          class="absolute top-10 right-0 z-30 min-w-35 border border-rule bg-page p-1"
+          id="theme-menu"
+          role="menu"
+          aria-label="Theme"
+          hidden
+        >
           {themes.map(([v, name]) => <button
+            class="group flex w-full cursor-pointer items-center gap-2.5 rounded-sm px-2 py-1.5 text-left font-mono text-label font-medium text-fg hover:bg-sunken hover:text-ink focus-visible:bg-sunken focus-visible:text-ink focus-visible:-outline-offset-2 aria-checked:text-ink"
             type="button"
             role="menuitemradio"
             data-v={v}
             aria-checked={v === "system" ? "true" : "false"}
             tabindex="-1"
           >
-            <svg class="ck" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+            <svg
+              class="invisible size-3 group-aria-checked:visible"
+              viewBox="0 0 12 12"
+              aria-hidden="true"
+              focusable="false"
+            >
               <path
                 d={check}
                 fill="none"
@@ -101,20 +141,32 @@ const themes = [
         </div>
       </div>
     </nav>
-    <nav class="mnav-n" aria-label="Site">
-      <details class="mnav">
-        <summary>Menu</summary>
-        <div class="mnav-panel">
-          <a href={DOCS}>Docs</a>
-          <a href="/changelog" aria-current={here("changelog")}>Changelog</a>
-          <a href="/download" aria-current={here("download")}>Download</a>
-          <a href={REPO} aria-label={ghLabel}
-            >GitHub {stars !== null && <span class="stars">{stars}</span>}</a
+    <nav class="hidden max-md:block" aria-label="Site">
+      <details class="group" id="mnav">
+        <summary
+          class="flex h-9 cursor-pointer list-none items-center rounded-sm border border-edge px-3 font-mono text-ui font-medium text-ink group-open:border-ink group-open:bg-ink group-open:text-on-ink [&::-webkit-details-marker]:hidden"
+        >
+          Menu
+        </summary>
+        <div class="absolute inset-x-0 top-14 border-b border-rule bg-page px-(--gutter) pt-1 pb-5">
+          <a class={plink} href={DOCS}>Docs</a>
+          <a class={plink} href="/changelog" aria-current={here("changelog")}>Changelog</a>
+          <a class={plink} href="/download" aria-current={here("download")}>Download</a>
+          <a class={plink} href={REPO} aria-label={ghLabel}
+            >GitHub {stars !== null && <span class="text-muted tabular-nums">{stars}</span>}</a
           >
-          <div class="mnav-theme">
+          <div
+            class="flex items-center justify-between gap-3 pt-4 font-mono text-ui font-medium text-muted no-js:hidden"
+          >
             <span id="mnav-theme-l">Theme</span>
-            <div class="seg" role="group" aria-labelledby="mnav-theme-l">
+            <div
+              class="inline-flex gap-0.5 rounded-sm border border-edge p-0.5"
+              id="theme-seg"
+              role="group"
+              aria-labelledby="mnav-theme-l"
+            >
               {themes.map(([v, name]) => <button
+                class="cursor-pointer rounded-xs px-2.5 py-1.25 font-mono text-label font-medium text-fg aria-pressed:bg-ink aria-pressed:text-on-ink"
                 type="button"
                 data-v={v}
                 aria-pressed={v === "system" ? "true" : "false"}

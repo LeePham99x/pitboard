@@ -1,5 +1,6 @@
 ---
 // AccountRow.swift, UsageBar.swift, and NoticeRow.swift for the notice a switch leaves.
+import MacButton from "./MacButton.astro";
 import PitboardWindow from "./PitboardWindow.astro";
 import { clock, type Moment, type Tool } from "../../data/world.ts";
 import { isInUse, level, paceText, runsOutNote, standing, toolAccounts } from "../../lib/words.ts";
@@ -15,6 +16,10 @@ const tools: [Tool, string][] = [
 ];
 const capitalised = (s: string) => s[0].toUpperCase() + s.slice(1);
 const warm: Record<string, string> = { personal: `Warms up again at ${clock.warmsAgain}` };
+const fill = { g: "fill-win-green", y: "fill-win-orange", r: "fill-win-red" };
+const mark = { under: "fill-win-green", over: "fill-win-red" };
+const pace = { under: "text-win-green-text", over: "text-win-red-text", even: "" };
+const sub = "text-pt-12/15 text-win-sub";
 ---
 
 <PitboardWindow
@@ -22,70 +27,90 @@ const warm: Record<string, string> = { personal: `Warms up again at ${clock.warm
   title="Accounts"
   subtitle={`Updated ${clock.read}`}
   tools={["sf-refresh", "sf-plus"]}
-  panel={crop ? "p-crop" : "p-accounts"}
   crop={crop}
 >
-  {crop && <div class="nt">
-    <svg class="nt-sym">
+  {crop && <div class="flex items-start gap-6 pt-10 pb-8 inset-shadow-sep-b">
+    <svg class="mt-1 size-15 shrink-0 text-win-sub">
       <use href="#sf-info-fill" />
     </svg>
-    <span class="nt-text">
-      <b>Switched Claude Code to work</b>
-      <span class="nt-line">Claude Code sessions already open follow in 0:21</span>
+    <span class="flex-1">
+      <b class="block font-medium">Switched Claude Code to work</b>
+      <span class="text-pt-12/15 text-win-sub tabular-nums"
+        >Claude Code sessions already open follow in 0:21</span
+      >
     </span>
-    <svg class="nt-x">
+    <svg class="mt-3 size-11 shrink-0 text-win-sub">
       <use href="#sf-xmark" />
     </svg>
   </div>}
   {tools.map(([tool, name]) => (
     <>
-      <div class="ar-sec">{name}</div>
-      {toolAccounts(tool).map((a) => {
+      <div class="pt-10 pb-4 text-pt-11 font-bold text-win-sub">{name}</div>
+      {toolAccounts(tool).map((a, i) => {
         const on = isInUse(a, moment);
         const notes = [
           runsOutNote(a, moment) && capitalised(runsOutNote(a, moment)!),
           !on && a.parked && `Parked login good for ${a.parked.app}`,
           warm[a.label] && tool === "claude" ? warm[a.label] : null,
         ].filter(Boolean);
-        return <div class="ar">
-          <div class="ar-head">
-            <svg class:list={["ar-sym", { in: on }]}>
+        // a later row's rule starts under its name
+        const later = i > 0;
+        return <div class:list={["pt-7 pb-8", { "ml-32 inset-shadow-sep-t": later }]}>
+          <div class:list={["flex items-center gap-6", { "-ml-32": later }]}>
+            <svg class:list={["h-22 w-26 shrink-0", on ? "text-win-blue" : "text-win-sub"]}>
               <use href={on ? "#sf-person-fill" : "#sf-person"} />
             </svg>
-            <span class="ar-id">
-              <span class="ar-name">
+            <span class="min-w-0 flex-1">
+              <span class="flex items-center gap-6 font-medium">
                 {a.label}
-                <span class="ar-plan">{a.plan}</span>
+                <span class="rounded-pill bg-win-track px-6 text-pt-10/14 font-normal text-win-sub"
+                  >{a.plan}</span
+                >
               </span>
-              <span class="ar-mail">{a.email}</span>
+              <span class={sub}>{a.email}</span>
             </span>
             {on ? (
-              <span class="ar-end">
-                <svg class="ico">
+              <span class="flex items-center gap-3 text-pt-12 text-win-sub">
+                <svg class="size-12 shrink-0">
                   <use href="#sf-check" />
                 </svg>
                 In Use
               </span>
             ) : (
-              <span class="btn-mac">Use</span>
+              <MacButton>Use</MacButton>
             )}
           </div>
-          <div class="ar-lims">
+          <div
+            class:list={[
+              "mt-6 grid grid-cols-[auto_1fr_auto_auto_auto] items-center gap-x-6 gap-y-4 text-pt-12/15 tabular-nums",
+              { "ml-32": !later },
+            ]}
+          >
             {a.limits.map((l) => {
               const s = standing(l);
               return (
                 <>
-                  <span class="ar-k">{l.kind}</span>
-                  <svg class="gauge" viewBox="0 0 100 6" preserveAspectRatio="none">
-                    <rect class="t" width="100" height="6" rx="1.6" ry="3" />
+                  <span class="text-win-sub">{l.kind}</span>
+                  <svg
+                    class="h-6 w-full overflow-visible"
+                    viewBox="0 0 100 6"
+                    preserveAspectRatio="none"
+                  >
+                    <rect class="fill-win-track" width="100" height="6" rx="1.6" ry="3" />
                     {l.used > 0 && (
-                      <rect class={level(l.used)} width={l.used} height="6" rx="1.6" ry="3" />
+                      <rect class={fill[level(l.used)]} width={l.used} height="6" rx="1.6" ry="3" />
                     )}
                     {s !== null && s !== "even" && (
                       <>
-                        <rect class="cut" x={l.even! - 1.4} y="-3" width="2.8" height="12" />
                         <rect
-                          class={`m-${s}`}
+                          class="fill-win-bg"
+                          x={l.even! - 1.4}
+                          y="-3"
+                          width="2.8"
+                          height="12"
+                        />
+                        <rect
+                          class={mark[s]}
                           x={l.even! - 0.7}
                           y="-3"
                           width="1.4"
@@ -95,14 +120,14 @@ const warm: Record<string, string> = { personal: `Warms up again at ${clock.warm
                       </>
                     )}
                   </svg>
-                  <span class="ar-pct">{l.used}%</span>
-                  <span class="ar-reset">resets in {l.resets}</span>
-                  <span class:list={["ar-pace", s]}>{paceText(l)}</span>
+                  <span class="min-w-30 text-right">{l.used}%</span>
+                  <span class="min-w-92 text-right text-win-sub">resets in {l.resets}</span>
+                  <span class={s ? pace[s] : undefined}>{paceText(l)}</span>
                 </>
               );
             })}
           </div>
-          {notes.map((n) => <p class="ar-note">{n}</p>)}
+          {notes.map((n) => <p class:list={["mt-5", sub, { "ml-32": !later }]}>{n}</p>)}
         </div>;
       })}
     </>

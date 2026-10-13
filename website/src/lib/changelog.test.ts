@@ -73,7 +73,7 @@ test("skips Unreleased and keeps each version's sections in Keep a Changelog's o
     versions[0].sections.map((s) => s.id),
     ["v0.2.0-added", "v0.2.0-fixed", "v0.2.0-security"],
   );
-  assert.equal(versions[0].sections[0].html, '<ul class="cl-list"><li>A thing.</li></ul>');
+  assert.equal(versions[0].sections[0].html, "<ul><li>A thing.</li></ul>");
   assert.equal(compareBase(versions[0].link), "0.1.0");
   assert.equal(compareBase(versions[1].link), null);
 });
@@ -199,11 +199,11 @@ brew install datlechin/tap/pitboard
   );
   assert.equal(
     v.intro,
-    '<p>In the tap, <code>pitboard</code> is the command line\'s cask. Run:</p><pre class="cl-pre"><code><span>brew uninstall --formula pitboard</span><span># a comment line, not a heading</span><span>brew install datlechin/tap/pitboard</span></code></pre>',
+    "<p>In the tap, <code>pitboard</code> is the command line's cask. Run:</p><pre><code><span>brew uninstall --formula pitboard</span><span># a comment line, not a heading</span><span>brew install datlechin/tap/pitboard</span></code></pre>",
   );
   assert.equal(
     v.sections[0].html,
-    '<ul class="cl-list"><li><p><strong>Breaking:</strong> the parent.</p><ul class="cl-list"><li>A child with <code>code</code>.</li><li>Another child.</li></ul></li><li><p>Two paragraphs.</p><p>The second one.</p></li></ul>',
+    "<ul><li><p><strong>Breaking:</strong> the parent.</p><ul><li>A child with <code>code</code>.</li><li>Another child.</li></ul></li><li><p>Two paragraphs.</p><p>The second one.</p></li></ul>",
   );
 });
 

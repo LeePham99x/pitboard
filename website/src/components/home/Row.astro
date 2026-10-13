@@ -8,10 +8,17 @@ interface Props {
 const { id, title, flip = false } = Astro.props;
 ---
 
-<div class:list={["row", { flip }]} aria-labelledby={id} role="group">
-  <div class="row-text">
-    <h3 class="h3" id={id}>{title}</h3>
-    <div class="prose"><slot /></div>
+<div
+  class:list={[
+    "mt-14 grid items-center gap-x-12 max-xl:mt-12 max-xl:grid-cols-[minmax(0,1fr)]",
+    flip ? "grid-cols-[minmax(0,7fr)_minmax(0,5fr)]" : "grid-cols-[minmax(0,5fr)_minmax(0,7fr)]",
+  ]}
+  aria-labelledby={id}
+  role="group"
+>
+  <div class:list={{ "order-2 max-xl:order-none": flip }}>
+    <h3 class="text-h3 text-strong" id={id}>{title}</h3>
+    <div class="prose mt-3"><slot /></div>
   </div>
-  <div class="row-fig"><slot name="fig" /></div>
+  <div class="min-w-0 max-xl:mt-8"><slot name="fig" /></div>
 </div>

@@ -145,7 +145,6 @@ export function monthOf(iso: string): string {
   return `${MONTHS[m - 1]} ${y}`;
 }
 
-// The previous version a compare link starts from, or null when the link is a release tag.
 export function compareBase(link: string): string | null {
   const m = /\/compare\/v(\d+\.\d+\.\d+)\.\.\.v/.exec(link);
   return m ? m[1] : null;
@@ -293,7 +292,7 @@ function renderBlocks(bs: Block[]): string {
           .split("\n")
           .map((l) => `<span>${escapeHtml(l)}</span>`)
           .join("");
-        return `<pre class="cl-pre"><code>${spans}</code></pre>`;
+        return `<pre><code>${spans}</code></pre>`;
       }
       const lis = b.items.map((it) => {
         const first = it[0];
@@ -303,7 +302,7 @@ function renderBlocks(bs: Block[]): string {
         const rest = renderBlocks(lead ? it.slice(1) : it);
         return `<li>${lead && first.t === "p" ? renderInline(first.text) : ""}${rest}</li>`;
       });
-      return `<ul class="cl-list">${lis.join("")}</ul>`;
+      return `<ul>${lis.join("")}</ul>`;
     })
     .join("");
 }

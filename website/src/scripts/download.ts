@@ -10,6 +10,6 @@ const before =
   os === "linux"
     ? document.getElementById("app")
     : os === "windows"
-      ? document.querySelector(".dl-get")
+      ? document.getElementById("get")
       : null;
 if (first && before) before.parentNode?.insertBefore(first, before);

@@ -2,15 +2,20 @@
 // The kit's fills become classes, so the board and the wordmark follow the theme.
 import svg from "../assets/logo/lockup-color.svg?raw";
 
+interface Props {
+  class: string;
+}
+
 const viewBox = /viewBox="([^"]+)"/.exec(svg)?.[1];
 const paths = [...svg.matchAll(/<path d="([^"]+)" fill="([^"]+)"\/>/g)].map((m) => m[1]);
 if (!viewBox || paths.length !== 3)
   throw new Error("lockup-color.svg is not the kit's three paths");
 const [board, lit, word] = paths;
+const { class: size } = Astro.props;
 ---
 
-<svg class="lockup" viewBox={viewBox} aria-hidden="true" focusable="false">
-  <path class="lk-board" d={board}></path>
-  <path class="lk-lit" d={lit}></path>
-  <path class="lk-word" d={word}></path>
+<svg class={size} viewBox={viewBox} aria-hidden="true" focusable="false">
+  <path class="fill-current" d={board}></path>
+  <path class="fill-logo-lit" d={lit}></path>
+  <path class="fill-current" d={word}></path>
 </svg>

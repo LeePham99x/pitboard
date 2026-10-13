@@ -1,8 +1,8 @@
 // The rail marks the version being read: the last entry whose top has passed under the header.
-const entries = Array.from(document.querySelectorAll<HTMLElement>(".entry"));
-const box = document.querySelector<HTMLElement>(".rail-in");
+const entries = Array.from(document.querySelectorAll<HTMLElement>("article"));
+const box = document.getElementById("rail");
 const links = new Map<string, HTMLElement>();
-for (const a of document.querySelectorAll<HTMLElement>(".rail a[data-v]"))
+for (const a of document.querySelectorAll<HTMLElement>("#rail a[data-v]"))
   links.set(a.dataset.v!, a);
 
 // a rail taller than the window scrolls its marked version into view, without moving the page

@@ -2,18 +2,30 @@
 import { commands } from "../data/commands.ts";
 import { DOCS } from "../data/site.ts";
 import CommandBox from "./CommandBox.astro";
+import MacDownload from "./MacDownload.astro";
 
 interface Props {
   n: number;
   zipUrl: string;
+  class?: string;
 }
-const { n, zipUrl } = Astro.props;
+const { n, zipUrl, class: extra } = Astro.props;
+const tab =
+  "relative -mx-2 h-11 cursor-pointer px-2 font-mono text-control/5 font-semibold text-muted hover:text-ink focus-visible:-outline-offset-2 aria-selected:text-ink aria-selected:after:absolute aria-selected:after:inset-x-2 aria-selected:after:-bottom-px aria-selected:after:h-0.5 aria-selected:after:bg-ink";
+const panel = "js:col-start-1 js:row-start-1 js:min-w-0";
+const head = "hidden font-mono text-note/6 font-bold text-strong no-js:block";
+const note = "mt-4 max-w-measure text-note text-pretty text-muted";
+const lead = "mt-6 text-note text-fg";
 ---
 
-<div class="install">
-  <div class="tabs" role="tablist" aria-label="Install Pitboard">
+<div class={extra}>
+  <div
+    class="flex gap-7 border-b border-grid no-js:hidden"
+    role="tablist"
+    aria-label="Install Pitboard"
+  >
     <button
-      class="tab"
+      class={tab}
       role="tab"
       type="button"
       id={`tab-app-${n}`}
@@ -24,7 +36,7 @@ const { n, zipUrl } = Astro.props;
       App
     </button>
     <button
-      class="tab"
+      class={tab}
       role="tab"
       type="button"
       id={`tab-cli-${n}`}
@@ -36,42 +48,44 @@ const { n, zipUrl } = Astro.props;
       Command line
     </button>
   </div>
-  <div class="tabpanels">
+  <div class="grid pt-7">
     <div
-      class="tabpanel tp-app"
+      class:list={[panel, "surface-cli:invisible"]}
       role="tabpanel"
       id={`tp-app-${n}`}
       aria-labelledby={`tab-app-${n}`}
     >
-      <p class="tp-head">App</p>
-      <p class="note">The menu bar app needs macOS 14 or later and includes the command line.</p>
-      <a class="btn" href={zipUrl} data-download>Download for Mac</a>
-      <p class="cmd-lead">Or install it with Homebrew:</p>
-      <CommandBox command={commands.brewApp} />
-      <p class="note">
-        <span class="after">Move Pitboard to your Applications folder before you open it. </span
+      <p class={head}>App</p>
+      <p class={note}>The menu bar app needs macOS 14 or later and includes the command line.</p>
+      <MacDownload class="mt-4" href={zipUrl} after />
+      <p class={lead}>Or install it with Homebrew:</p>
+      <CommandBox class="mt-2" command={commands.brewApp} />
+      <p class={note}>
+        <span class="js:not-data-shown:hidden" data-after>Move Pitboard to your Applications folder
+          before you open it.
+        </span
         >Then <a href={`${DOCS}/guides/accounts`}>add your accounts</a>.
       </p>
     </div>
     <div
-      class="tabpanel tp-cli"
+      class:list={[panel, "surface-app:invisible no-js:mt-10"]}
       role="tabpanel"
       id={`tp-cli-${n}`}
       aria-labelledby={`tab-cli-${n}`}
     >
-      <p class="tp-head">Command line</p>
-      <CommandBox command={commands.installScript} />
-      <p class="note">
+      <p class={head}>Command line</p>
+      <CommandBox class="mt-4" command={commands.installScript} />
+      <p class={note}>
         The script puts <code>pitboard</code> in <code>~/.local/bin</code> and changes no shell
         profile.
       </p>
-      <p class="note">
+      <p class={note}>
         <a href={`${DOCS}/install/verify#check-the-install-script`}
           >Check the script before you run it</a
         >.
       </p>
-      <p class="note">See <a href="/download#other-ways">other ways to install</a>.</p>
-      <p class="note">Then <a href={`${DOCS}/guides/accounts`}>add your accounts</a>.</p>
+      <p class={note}>See <a href="/download#other-ways">other ways to install</a>.</p>
+      <p class={note}>Then <a href={`${DOCS}/guides/accounts`}>add your accounts</a>.</p>
     </div>
   </div>
 </div>

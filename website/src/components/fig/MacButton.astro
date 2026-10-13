@@ -1,0 +1,14 @@
+---
+interface Props {
+  default?: boolean;
+}
+const { default: main = false } = Astro.props;
+---
+
+<span
+  class:list={[
+    "inline-flex h-20 items-center rounded-pt-5 px-9 text-pt-13 whitespace-nowrap shadow-control",
+    main ? "bg-win-blue text-white" : "bg-win-btn",
+  ]}
+  ><slot
+/></span>

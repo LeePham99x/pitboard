@@ -37,7 +37,7 @@ const ogAlt =
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang="en" class="scroll-pt-20 overflow-x-clip">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -94,8 +94,12 @@ const ogAlt =
       />
     )}
   </head>
-  <body>
-    <a class="skip" href="#main">Skip to content</a>
+  <body class="overflow-x-clip bg-page text-body text-fg antialiased max-sm:text-body-sm">
+    <a
+      class="absolute -top-15 left-4 z-50 bg-ink px-3 py-2 font-mono text-ui font-semibold text-on-ink no-underline focus:top-3"
+      href="#main"
+      >Skip to content</a
+    >
     <slot name="defs" />
     <SiteHeader current={current} stars={stars} />
     <slot />

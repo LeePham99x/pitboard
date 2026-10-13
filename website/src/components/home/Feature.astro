@@ -6,14 +6,18 @@ interface Props {
 const { id, title } = Astro.props;
 ---
 
-<section class="feat" aria-labelledby={`${id}-title`} id={id}>
+<section class="pt-(--block-space)" aria-labelledby={`${id}-title`} id={id}>
   <div class="wrap">
-    <div class="feat-in">
-      <div class="feat-text">
-        <h2 class="h2" id={`${id}-title`}>{title}</h2>
-        <div class="prose"><slot /></div>
+    <div
+      class="grid grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start gap-x-12 border-t border-rule pt-(--block-in) max-xl:grid-cols-[minmax(0,1fr)]"
+    >
+      <div>
+        <h2 class="font-mono text-h2 text-balance text-strong max-sm:text-h2-sm" id={`${id}-title`}>
+          {title}
+        </h2>
+        <div class="prose mt-6"><slot /></div>
       </div>
-      <div class="feat-fig"><slot name="fig" /></div>
+      <div class="min-w-0 max-xl:mt-8"><slot name="fig" /></div>
     </div>
   </div>
 </section>

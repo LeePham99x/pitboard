@@ -1,0 +1,25 @@
+---
+// A question and its answer; `flush` lines the question up with the text around it.
+interface Props {
+  summary: string;
+  id?: string;
+  flush?: boolean;
+  class?: string;
+}
+const { summary, id, flush = false, class: extra } = Astro.props;
+---
+
+<details class:list={["group border-b border-grid", extra]} id={id}>
+  <summary
+    class:list={[
+      "relative block cursor-pointer list-none py-4.5 pr-12 text-body/[1.45] font-medium text-strong hover:text-ink hover:underline hover:decoration-1 hover:decoration-current hover:underline-offset-4 [&::-webkit-details-marker]:hidden",
+      "before:absolute before:top-1/2 before:right-1.5 before:h-[1.5px] before:w-3.5 before:bg-strong before:transition-transform before:duration-160 before:ease-out",
+      "after:absolute after:top-1/2 after:right-1.5 after:h-[1.5px] after:w-3.5 after:rotate-90 after:bg-strong after:transition-transform after:duration-160 after:ease-out group-open:after:rotate-0",
+      { "-ml-3 pl-3 focus-visible:-outline-offset-2": !flush },
+    ]}
+    set:html={summary}
+  />
+  <div class:list={["space-y-3 pb-6 [&_p]:max-w-measure [&_p]:text-pretty", { "pr-12": !flush }]}>
+    <slot />
+  </div>
+</details>
