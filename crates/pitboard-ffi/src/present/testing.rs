@@ -1,6 +1,5 @@
-//! What the presentation's tests share: accounts and limits as the core reports them, made
-//! the way the Swift tests' Fixtures.swift made them, and a person's clock that a test can
-//! read, in UTC.
+//! What the presentation's tests share: accounts and limits as the core reports them, and a
+//! person's clock that a test can read, in UTC.
 
 use crate::model::state::{Cadence, State};
 use crate::model::{LocalTime, PlatformError};

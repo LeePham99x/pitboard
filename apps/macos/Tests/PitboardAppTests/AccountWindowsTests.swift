@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import PitboardKit
+import PitboardTestSupport
 import Testing
 import WebKit
 
@@ -91,6 +92,10 @@ private func settled() async {
 // Which windows each account has, which open and close, what each shows first and which
 // stores go are the model's, tested in pitboard-ffi's `model/windowing.rs`.
 
+extension Site {
+    fileprivate static var chatGPT: Site { sitesFor(provider: "codex")[0] }
+}
+
 private let twoTools = [
     account("work", email: "dana@work.example", signedIn: true),
     account("personal", email: "dana@home.example"),
@@ -114,7 +119,7 @@ private func windows(
     let windows = AccountWindows(
         model: model, environment: environment,
         presence: AppPresence(apply: { _ in }, bringForward: {}, settle: {}))
-    model.apply(snapshot(1, status: status(accounts)))
+    model.apply(snapshot(1, status: status(accounts), windows: windowsShown(accounts)))
     return (windows, standIn)
 }
 

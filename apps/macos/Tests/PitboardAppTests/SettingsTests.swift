@@ -1,5 +1,6 @@
 import Foundation
 import PitboardKit
+import PitboardTestSupport
 import SwiftUI
 import Testing
 
@@ -133,39 +134,6 @@ private func settingsHeight(_ tab: SettingsView.Tab, warming: Int = 0) -> CGFloa
 }
 
 // MARK: - Linking the command line
-
-private struct StandInApp {
-    let root = FileManager.default.temporaryDirectory
-        .appendingPathComponent("pitboard-settings-\(UUID().uuidString)")
-    var helper: String {
-        root.appendingPathComponent("Pitboard.app/Contents/Helpers/pitboard").path
-    }
-    var link: String { root.appendingPathComponent("bin/pitboard").path }
-
-    init() throws {
-        try FileManager.default.createDirectory(
-            atPath: (helper as NSString).deletingLastPathComponent,
-            withIntermediateDirectories: true)
-        try Data("#!/bin/sh\n".utf8).write(to: URL(fileURLWithPath: helper))
-        try FileManager.default.setAttributes(
-            [.posixPermissions: 0o755], ofItemAtPath: helper)
-    }
-
-    func tool(_ execute: @escaping CommandLineTool.Runner) -> CommandLineTool {
-        CommandLineTool(helper: helper, link: link, execute: execute)
-    }
-
-    /// What the script run as an administrator does.
-    func makeLink() {
-        try? FileManager.default.createDirectory(
-            atPath: (link as NSString).deletingLastPathComponent,
-            withIntermediateDirectories: true)
-        try? FileManager.default.createSymbolicLink(
-            atPath: link, withDestinationPath: helper)
-    }
-
-    func remove() { try? FileManager.default.removeItem(at: root) }
-}
 
 /// Once the link is made the model is asked to look for the `pitboard` a terminal runs
 /// again, which is how the settings come to show this app's own on the `PATH`.
