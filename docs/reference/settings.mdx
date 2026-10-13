@@ -93,11 +93,11 @@ Each account's row shows where its warm-up stands while it is on. A line under t
 | **Renew parked logins daily** | Off |
 | **Renew Now** | A button |
 
+A note at the foot of the pane says what daily renewal does. Once a Claude Desktop account is enrolled, the note ends **A parked Claude Desktop login is never renewed.**
+
 ### Renew parked logins daily
 
 Turned on, it has launchd run `pitboard renew` once a day with the command line inside the app. That run renews due parked logins and nothing else. [Keep parked logins alive](/guides/renewal) says why.
-
-Once a Claude Desktop account is enrolled, the note under the setting ends **A parked Claude Desktop login is never renewed.**
 
 The setting is on whenever launchd has the job, including one `pitboard schedule install` made. It then shows **Runs** as **Every day**, and **Scheduled in** with the file that [Renewal schedule](/reference/files#renewal-schedule) names. A change that fails says why under the setting.
 

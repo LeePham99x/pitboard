@@ -1,6 +1,6 @@
 ---
 title: "Recovery commands"
-description: "`stow`, `abandon`, `repair` and `adopt` set things right after a locked-keychain sign-in, a crash, a restore or a move."
+description: "`stow`, `abandon`, `repair` and `adopt` set things right after a locked-keychain sign-in, a crash, a restore or a change of computer."
 ---
 
 None of these commands takes an argument. [JSON output](/reference/json-output#data-by-command) lists what each prints with `--json`.
@@ -85,11 +85,23 @@ In the app, **Put Away** on the notice **A login file is left behind the keychai
 
 ## `abandon`
 
-`pitboard abandon` deletes `~/.pitboard/journal.json`, the record of an [interrupted switch](/concepts/switching#interrupted-switches). It writes no login. Each tool keeps the login it has, and both accounts of the switch keep their parked logins.
+`pitboard abandon` ends what an interrupted change left waiting, and keeps every login.
 
-For OpenAI's Codex CLI, it also drops a parked login that copies the login in use. [Why Codex logins are moved, not copied](/concepts/switching#why-codex-logins-are-moved-not-copied) says why.
+| What waits | What `abandon` does |
+| --- | --- |
+| An [interrupted switch](/concepts/switching#interrupted-switches) of Claude Code or OpenAI's Codex CLI | Deletes `~/.pitboard/journal.json`, the switch's record, and writes no login. Each tool keeps the login it has, and both accounts of the switch keep their parked logins. |
+| An interrupted Claude Desktop move that Pitboard can settle | Settles it, and warns `interrupted_move_undone` or `interrupted_move_finished`. |
+| An interrupted Claude Desktop move that Pitboard cannot settle | Gives it up and keeps every folder. |
 
-While `CLAUDE_CODE_CUSTOM_OAUTH_URL` is set and a Claude Code switch is interrupted, `abandon` refuses with `custom_oauth_endpoint`, exit status 3. It then gives up nothing, not even a Claude Desktop move. With no Claude Code switch interrupted, the variable does not stop it.
+Giving up a Codex switch drops a parked login that copies the login in use. [Why Codex logins are moved, not copied](/concepts/switching#why-codex-logins-are-moved-not-copied) says why.
+
+Giving up a Claude Desktop move moves nothing in or out of Claude's data folder. Items of the account left there stay, and a later change sets them aside.
+
+A Claude Desktop move that `abandon` cannot give up still waits, and `abandon` refuses with the reason, such as `app_open`. Where giving it up would leave items beside another login in the data folder, the reason is `move_mixed`. Where `abandon` gave up a Claude Code or Codex switch first, it warns `move_not_given_up` with the reason instead.
+
+While `CLAUDE_CODE_CUSTOM_OAUTH_URL` is set and a Claude Code switch is interrupted, `abandon` refuses with `custom_oauth_endpoint`, exit status 3, and gives up nothing. With no Claude Code switch interrupted, the variable does not stop it.
+
+After an interrupted switch from `work` to `personal`:
 
 ```sh
 pitboard abandon
@@ -99,35 +111,49 @@ pitboard abandon
 Gave up on the interrupted switch from work to personal. 2 login(s) kept; nothing was deleted. Run `pitboard` to see who is signed in.
 ```
 
-With no interrupted switch, it prints `There is no interrupted switch to give up on.` and changes nothing.
+| Output | When |
+| --- | --- |
+| ``Pitboard gave up the move of `desktop/work`'s login and kept every folder: 1 parked, 1 set aside. Run `pitboard enroll desktop/<label>` for the account Claude shows, or `pitboard use desktop/<label>` where Claude is signed out.`` | It gave up a Claude Desktop move. The line follows that of a switch given up. |
+| `There is no interrupted switch to give up on.` | Nothing waited. It changes nothing. |
 
-For Claude Desktop, `abandon` gives up an interrupted move that Pitboard cannot settle, and keeps every folder. It settles a move first where it can, and warns `interrupted_move_undone` or `interrupted_move_finished` instead. Giving up moves nothing in or out of Claude's data folder: items of the account left there stay, and a later change sets them aside.
+The Claude Desktop line changes in two cases:
 
-```text
-Pitboard gave up the move of `desktop/work`'s login and kept every folder: 1 parked, 1 set aside. Run `pitboard enroll desktop/<label>` for the account Claude shows, or `pitboard use desktop/<label>` where Claude is signed out.
-```
+| Case | The line |
+| --- | --- |
+| The move was in another data folder, which `abandon` gives up without reading | Adds `The move was in /Users/dana/Library/Application Support/Claude, which this run did not read.` after its first sentence |
+| Items of the account stay in the data folder | Names them, as in `` `Session Storage` and `WebStorage` stay in Claude's folder. ``, and asks you to open Claude once and quit it with Command-Q before you run either command |
 
-Where items stay in the data folder, the line names them, as in `` `Session Storage` and `WebStorage` stay in Claude's folder ``, and asks you to open Claude once and quit it first. Where they would stay beside another login, `abandon` cannot give up the move (`move_mixed`).
-
-A Claude Desktop move that `abandon` cannot give up, such as while Claude is open, still waits. `abandon` then refuses with the reason. Where it gave up a Claude Code or Codex switch first, it warns `move_not_given_up` with the reason instead.
-
-[An interrupted switch cannot be finished](/troubleshooting/recovery#an-interrupted-switch-cannot-be-finished) says when to run it.
+[An interrupted switch cannot be finished](/troubleshooting/recovery#an-interrupted-switch-cannot-be-finished) and [A Claude Desktop move was interrupted](/troubleshooting/recovery#a-claude-desktop-move-was-interrupted) say when to run it.
 
 ## `repair`
 
 `pitboard repair` finds parked logins that Pitboard's account list does not name.
 
-On macOS, it lists keychain items whose names start with `pitboard-park-`. Listing reads only names, so macOS does not ask for permission. On Linux, it lists files in `~/.pitboard/vault/`. It adds the names in `~/.pitboard/pending`, then reads each one the account list does not name.
+| Parked logins | Where `repair` looks |
+| --- | --- |
+| Claude Code and Codex, on macOS | Keychain items whose names start with `pitboard-park-`. Listing reads only names, so macOS does not ask for permission. |
+| Claude Code and Codex, on Linux | Files in `~/.pitboard/vault/` |
+| Claude Desktop | Folders in `~/.pitboard/parks/` |
+
+It adds the names in `~/.pitboard/pending`, then reads each one the account list does not name.
 
 Pitboard writes a parked login's name to `pending` before creating it. Every switch, enrolment, `forget`, `rename`, `stow` and `uninstall` resolves the names on that list as it starts, without listing the keychain. A parked login is missing from both only after `~/.pitboard` is lost or restored from a backup. That is when `repair` is needed.
 
-Like `use`, it first finishes or undoes an interrupted switch, and stops if it cannot.
+| What waits | What `repair` does first |
+| --- | --- |
+| An interrupted switch | Finishes or undoes it, as `use` does. Stops if it cannot. |
+| An interrupted Claude Desktop move | Settles it, as a change does. Where it cannot, such as while Claude is open, it warns `move_not_settled` with why, and repairs the rest. |
+
+With no move waiting, `repair` reads nothing of Claude.
 
 It gives a parked login back to the enrolled account whose id is in its name when:
 
-- its refresh token has not expired
-- the account holds no parked login, or `pending` names this one and the account holds an older one
-- it is not a copy of the Codex login in use
+| Parked login | Given back when |
+| --- | --- |
+| Claude Code or Codex | Its refresh token has not expired. The account holds no parked login, or `pending` names this one and the account holds an older one. It is not a copy of the Codex login in use. |
+| Claude Desktop | The folder's manifest, keys and cookie store agree. The account holds no parked login and is not in use. |
+
+A Claude Desktop account whose parked login's folder is gone, as after `state.json` is restored from a backup, counts as holding none. `repair` gives back a folder set aside earlier on the same terms. It sets aside the folders no account can take, and deletes none that holds an item.
 
 | Output | When |
 | --- | --- |
@@ -135,19 +161,12 @@ It gives a parked login back to the enrolled account whose id is in its name whe
 | `Deleted 1 parked login(s) Pitboard wrote down here and nothing recorded.` | No account could take logins that `pending` names |
 | `1 parked login(s) here belong to no account Pitboard knows and were not written down by this one. Left alone: the keychain is shared by the whole machine, and they may be another Pitboard's.` | No account could take logins that `pending` does not name |
 | `1 could not be read this time and were left alone. Unlock the keychain and run this again.` | It could not read logins, as while the keychain is locked |
+| ``Set aside 1 folder(s) in /Users/you/.pitboard/parks that hold what no account here can take. Nothing was deleted; `pitboard doctor` lists them.`` | No account could take folders |
 | `Every parked login here is accounted for.` | It found nothing to do |
 
 On Linux, "keychain" in these lines means `~/.pitboard/vault/`, which no other Pitboard directory uses.
 
 While `CLAUDE_CODE_CUSTOM_OAUTH_URL` is set, `repair` refuses with `custom_oauth_endpoint`, exit status 3.
-
-It also accounts for the folders in `~/.pitboard/parks`. It gives a folder back to the enrolled account whose id is in its name. It does so only where the folder's manifest, keys and cookie store agree, and the account holds no parked login. Where the folder of the parked login an account holds is gone, as after `state.json` is restored from a backup, that account holds none. It sets aside the folders no account can take, and deletes none that holds an item.
-
-| Output | When |
-| --- | --- |
-| ``Set aside 1 folder(s) in /Users/you/.pitboard/parks that hold what no account here can take. Nothing was deleted; `pitboard doctor` lists them.`` | It set folders aside |
-
-With a Claude Desktop move waiting, `repair` settles it first, as a change does. Where it cannot, such as while Claude is open, it repairs the rest and warns `move_not_settled`, saying why. With no move waiting, it reads nothing of Claude.
 
 [Pitboard lost track of parked logins](/troubleshooting/recovery#pitboard-lost-track-of-parked-logins) says when to run it.
 
@@ -155,11 +174,20 @@ With a Claude Desktop move waiting, `repair` settles it first, as a change does.
 
 `pitboard adopt` takes over a Pitboard directory another computer wrote. Until you run it, commands that read the account list refuse that directory with `state_wrong_machine`.
 
-It keeps every account with its label, email and remembered usage. It drops every parked login without asking Anthropic or OpenAI whether it still works. Asking means renewing the login, and nobody has measured whether that ends the other computer's copy. [What Pitboard will not do](/concepts/limits#rules) says why a parked login never moves between computers.
+It keeps every account with its label, email and remembered usage. Each parked login goes one of three ways:
 
-It sets each Claude Desktop parked login aside instead of dropping it. Claude cannot read one parked on another Mac, where its key differs. `pitboard forget` of the account deletes it.
+| Parked login | What `adopt` does |
+| --- | --- |
+| Claude Code or Codex | Drops it, without asking Anthropic or OpenAI whether it still works |
+| Claude Desktop, parked on another Mac | Sets it aside. Claude cannot read it here, where its key differs. `pitboard forget` of the account deletes it. |
+| Claude Desktop, parked on this Mac | Keeps it for its account |
 
-It leaves an interrupted switch for the next change to finish or undo.
+Asking whether a login works means renewing it, and nobody has measured whether that ends the other computer's copy. [What Pitboard will not do](/concepts/limits#rules) says why a parked login never moves between computers.
+
+| What waits | What `adopt` does |
+| --- | --- |
+| An interrupted switch | Leaves it for the next change to finish or undo |
+| A Claude Desktop move or sign-in | Drops its record, and sets aside each folder it names that no account holds |
 
 ```sh
 pitboard adopt
@@ -172,7 +200,13 @@ Sign in to each again:
   pitboard enroll personal --sign-in
 ```
 
-With Claude Desktop logins set aside, a line before `Sign in to each again:` names them, such as ``Pitboard set aside the parked Claude Desktop logins of `desktop/work` and `desktop/home`.`` Each gets its own `pitboard enroll desktop/<label> --sign-in` line.
+Where it set Claude Desktop logins aside, a line before `Sign in to each again:` names them:
+
+```text
+Pitboard set aside the parked Claude Desktop logins of `desktop/work` and `desktop/home`. They were parked on another Mac, and Claude cannot read them here where its key differs. `pitboard forget` of an account deletes its own.
+```
+
+Each of those accounts then gets its own `pitboard enroll desktop/<label> --sign-in` line, after the lines of the logins dropped. The count of logins dropped leaves them out.
 
 If the directory is already this computer's, `adopt` prints `This Pitboard directory was already written on this computer.` and changes nothing.
 

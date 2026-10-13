@@ -1,11 +1,14 @@
 # Security policy
 
-Pitboard handles the OAuth refresh tokens of Claude Code and Codex, which grant full access
-to a paid account. A Codex parked login is Codex's whole `auth.json`, which can also hold an
-OpenAI API key. On macOS, Pitboard also moves Claude Desktop's login, Claude's own files with
-its claude.ai session cookie among them, into `~/.pitboard/parks` and back. The menu bar app
-also gives each Claude Code and Codex account a window on claude.ai or chatgpt.com, where
-WebKit keeps that site's sign-in. Its Share extension hands it a page from your browser.
+Pitboard handles logins that grant full access to a paid account. A Claude Code or Codex
+login holds an OAuth refresh token. A Codex parked login is Codex's whole `auth.json`, which
+can also hold an OpenAI API key. On macOS, a Claude Desktop login is Claude's own files, its
+claude.ai session cookie among them, and three keys of Claude's `config.json`. Pitboard
+moves them into `~/.pitboard/parks` and back.
+
+The menu bar app gives each Claude Code and Codex account a window on claude.ai or
+chatgpt.com, where WebKit keeps that site's sign-in. Its Share extension hands it a page from
+your browser.
 
 To report a vulnerability, follow [Report a vulnerability](#report-a-vulnerability), not a
 public issue. For where parked logins are kept and what leaves your machine, see
@@ -45,14 +48,25 @@ A report is in scope when Pitboard fails at one of these.
 - Pitboard does not file a login under the wrong account. It asks Anthropic which account a
   Claude Code login belongs to, because Claude Code's config can be a day out of date. A
   Codex login names its ChatGPT account and user in its ID token, so two people in one Team
-  or Business workspace are two accounts. Each parked login is bound to its refresh token's
-  fingerprint, and a mismatch is refused.
+  or Business workspace are two accounts. Each parked login is bound to the fingerprint of
+  its refresh token or session cookie, and a mismatch is refused.
+- Pitboard identifies a Claude Desktop login by its session cookie's fingerprint, recorded
+  when the account was enrolled or put in use. It asks claude.ai nothing. It files a session
+  it has not seen under the account Claude's `config.json` names in one case only. That
+  account must be in use and have nothing parked. No folder under `parks` may hold the same
+  session, and neither of Claude's token caches may hold what **Log out** leaves. The change
+  that parks such a session says so. Nothing is deleted on Claude's word. In any other
+  doubt, a change refuses and changes nothing. `pitboard enroll desktop/<label>` is the way
+  out: it files the session under a label you choose.
 - A switch interrupted by a crash is finished or undone. It records its intent before it
-  moves any login. The next command that changes something settles it first, and changes
-  nothing if it cannot tell what happened.
+  moves any login. The next command that changes something settles an interrupted Claude
+  Code or Codex switch first. The next change to Claude Desktop, `repair` or `uninstall`
+  settles an interrupted Claude Desktop move, with Claude closed. Where Pitboard cannot tell
+  what happened, it changes nothing. `pitboard abandon` then gives the switch or move up.
 - No parked login is left where nothing can find it. Pitboard writes down each name before
   writing a login into it. The next change returns any login a killed run left under such a
-  name to its account, or deletes it. An unreadable login is tried again later, and so is a
+  name to its account. A Claude Code or Codex login that no account takes is deleted, and a
+  Claude Desktop folder is set aside. An unreadable login is tried again later, and so is a
   failed delete. Temporary files a killed run left, which can hold a whole login, are
   removed by the next write to their directory.
 - Pitboard reports a locked or unreadable keychain as unreadable, never as empty. Taking it
@@ -80,20 +94,24 @@ A report is in scope when Pitboard fails at one of these.
 - Pitboard reads `auth.json` back after a Codex switch, because Codex takes no lock on it.
   A `codex` refreshing its token during a switch writes its old account's tokens under the
   incoming account's id. Pitboard refuses a login whose tokens and account id disagree.
-- Pitboard never copies a Claude Desktop login. It renames Claude's files into
-  `~/.pitboard/parks` and back, and moves three keys of Claude's `config.json` with them,
-  only while Claude is closed. `state.json` names both places before the first rename, and
-  Pitboard deletes nothing of Claude's in its data folder. Only `pitboard forget` and
-  `pitboard uninstall` delete a parked Claude Desktop login or a folder set aside.
-- A parked login stays on one machine, because a refresh token presented from a second
-  machine can end the login on both. Pitboard refuses a state directory in a cloud-synced
-  folder, or a state file written on another machine. `pitboard adopt` takes over such a
-  file, keeping the accounts, dropping their Claude Code and Codex parked logins and
-  setting aside their Claude Desktop ones.
+- Pitboard never copies a Claude Desktop login, and moves one only while Claude is closed.
+  It renames Claude's files into a folder under `~/.pitboard/parks` and back, and moves three
+  keys of Claude's `config.json` with them. `state.json` names both places before the first
+  rename. It reads no keychain item and decrypts nothing for Claude Desktop. In Claude's
+  data folder it deletes nothing of Claude's, only its own temporary files. Only
+  `pitboard forget` and `pitboard uninstall` delete a parked Claude Desktop login or a
+  folder set aside.
+- A parked login stays on one machine. A refresh token presented from a second machine can
+  end the login on both. A Claude Desktop parked login names the Mac it was parked on, and
+  Pitboard refuses to put it into Claude on another, where Claude's key differs. Pitboard
+  refuses a state directory in a cloud-synced folder, or a state file written on another
+  machine. `pitboard adopt` takes over such a file and keeps its accounts. It drops their
+  Claude Code and Codex parked logins, and sets aside each Claude Desktop one whose record
+  does not name this Mac.
 - Pitboard sends a login only to the service that issued it, verifies TLS against your
-  operating system's trust store and has no telemetry. `PITBOARD_API_BASE` redirects
-  requests for tests, and only to a loopback IP address, because the server that answers
-  decides which account a login is filed under.
+  operating system's trust store and has no telemetry. It sends no request for a Claude
+  Desktop account. `PITBOARD_API_BASE` redirects requests for tests, and only to a loopback
+  IP address, because the server that answers decides which account a login is filed under.
 - You can check that a download is unchanged. Every release attests each file it
   publishes: its tarballs, the app, their bills of materials, the install script,
   `SHA256SUMS` and, for a full release, the update feed, `appcast.xml`.
@@ -112,8 +130,7 @@ A report is in scope when Pitboard fails at one of these.
 - An account's window keeps its hands off the site's sign-in. The sign-in happens on the
   site's own pages, claude.ai's or chatgpt.com's, and WebKit keeps it in that account's
   store. Pitboard never reads, copies or changes what a site keeps there, adds no script
-  to a page, sets no user agent of its own and makes no web session from a Claude Code or
-  Codex login.
+  to a page, sets no user agent of its own and makes no web session from any tool's login.
 - A window stays on its site and the hosts its sign-in goes to. Any other web page opens in
   your default browser, and a link to another app is refused. Google's sign-in, which
   Google does not allow inside apps, is stopped rather than sent to the browser, where it
@@ -137,38 +154,40 @@ A report is in scope when Pitboard fails at one of these.
 - The Share extension is sandboxed, with no network, file or shared-group access. It reads
   the one link the browser shares, keeps nothing, and hands the link only to the app it
   came in.
-- Pitboard renews a parked login while its account is enrolled, so an account nobody
-  uses keeps a live refresh token. `pitboard doctor` warns about an account last switched
-  to 30 days ago or more, a Claude Code refresh token's life. It does not warn about one
-  enrolled with `--sign-in` and never switched to. `pitboard forget` deletes the login and
-  its record.
+- Pitboard renews a Claude Code or Codex parked login while its account is enrolled, so an
+  account nobody uses keeps a live refresh token. `pitboard doctor` warns about such an
+  account last switched to 30 days ago or more, a Claude Code refresh token's life. It does
+  not warn about one enrolled with `--sign-in` and never switched to. `pitboard forget`
+  deletes the login and its record.
 
 ## What Pitboard does not protect against
 
 - Another process running as your user, which can read what you can read. That includes
   each account window's sign-in, which WebKit keeps as ordinary files under
-  `~/Library/WebKit/com.usepitboard.Pitboard`, as a browser keeps its cookies.
+  `~/Library/WebKit/com.usepitboard.Pitboard`, as a browser keeps its cookies. A process
+  that can read Claude's keychain item, `Claude Safe Storage`, can read a parked Claude
+  Desktop login as it can Claude's own.
 - The sites' own pages, claude.ai's and chatgpt.com's and their sign-in pages. They run in
   WebKit as they would in Safari, with their own scripts and whatever they embed, such as
   an artifact. Pitboard decides only where a window goes.
 - A page a site opens in your browser. Anything you connect there goes to the account your
   browser is signed in to, which may not be the window's account. The window says so when
   the site opened the page without a click.
-- Another process running as you that can read Claude's keychain item,
-  `Claude Safe Storage`. It can read a parked Claude Desktop login as it can Claude's own.
 - Another user with administrator access to your computer.
-- A compromised Claude Code, Codex or dependency of Pitboard. CI checks every Rust
-  dependency for known advisories, licences and sources. A weekly job checks Sparkle, the
-  app's update framework, only for a newer release. Each release publishes a CycloneDX bill
-  of materials for each tarball and for the app, Sparkle included.
+- A compromised Claude Code, Codex, Claude Desktop or dependency of Pitboard. CI checks
+  every Rust dependency for known advisories, licences and sources. A weekly job checks
+  Sparkle, the app's update framework, only for a newer release. Each release publishes a
+  CycloneDX bill of materials for each tarball and for the app, Sparkle included.
 - Signing out inside a `codex` started before a switch. It still holds the outgoing
   account's tokens, so `/logout` there revokes the login Pitboard has parked. After a Codex
   switch, Pitboard counts the running `codex` processes and says to quit them instead.
 - Anyone who can already read your files. On Linux, parked logins are files in
-  `~/.pitboard/vault/`, each 0600, in a directory held at 0700. Those modes are all that
-  keep other users on the machine from reading them. A backup restore, `cp -r` or a umask
-  can change them without warning. `pitboard doctor` fails if anyone else has access to
-  Claude Code's login file, the vault or a file in it, and warns for Codex's `auth.json`.
+  `~/.pitboard/vault/`, each 0600, in a directory held at 0700. On macOS, a parked Claude
+  Desktop login is Claude's own files in a folder under `~/.pitboard/parks`, held at 0700.
+  Those modes are all that keep other users on the machine from reading them. A backup
+  restore, `cp -r` or a umask can change them without warning. `pitboard doctor` fails if
+  anyone else has access to Claude Code's login file, the vault, a file in it or
+  `~/.pitboard/parks`, and warns for Codex's `auth.json`.
 - A token still valid after Pitboard deletes it. Pitboard revokes no login, so a deleted
   parked login stays valid until it expires. Whether Anthropic accepts a revocation, and
   whether it would end the whole grant or only Pitboard's refresh chain, has not been

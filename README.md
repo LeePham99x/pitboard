@@ -1,7 +1,7 @@
 # Pitboard
 
-Switch between your own logins of Claude Code, Codex and, on macOS, Claude Desktop, and see what
-each Claude Code and Codex account has left.
+Switch between your own Claude Code, Codex and Claude Desktop logins, and see how much each
+Claude Code and Codex account has left.
 
 [![CI](https://github.com/datlechin/pitboard/actions/workflows/ci.yml/badge.svg)](https://github.com/datlechin/pitboard/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/pitboard.svg)](https://crates.io/crates/pitboard)
@@ -12,28 +12,31 @@ each Claude Code and Codex account has left.
   one in use and, under each account's name, its usage or that it needs signing in again"
   width="300">
 
-With two or more Claude or ChatGPT subscriptions, changing accounts in Claude Code or
-OpenAI's Codex CLI means a sign-out and a browser sign-in. Pitboard keeps the login of
-each account you are not using, called a parked login. A switch puts the chosen account's
-parked login where the tool reads it.
+With two or more Claude or ChatGPT subscriptions, changing accounts in Claude Code,
+OpenAI's Codex CLI or Claude Desktop means a sign-out and a sign-in. Pitboard keeps the
+login of each account you are not using, called a parked login. A switch puts the chosen
+account's parked login where the tool reads it.
 
 Only the account changes: your history, sessions, settings and projects stay where they are.
-A Claude Code session that is already open picks up a switch within about 33 seconds, or,
-while `~/.claude/.credentials.json` sits behind the keychain on macOS, when its login is next
-renewed. A running `codex` keeps the old account until you restart it.
+Each tool takes a switch in its own way:
 
-On macOS, Pitboard also switches Claude Desktop accounts while Claude is closed: it parks
-Claude's own files and asks claude.ai nothing. See
-[Use Pitboard with Claude Desktop](https://docs.usepitboard.com/guides/claude-desktop).
+- A Claude Code session that is already open picks up a switch within about 33 seconds. On
+  macOS, while `~/.claude/.credentials.json` sits behind the keychain, it picks up the switch
+  when its login is next renewed.
+- A running `codex` keeps the old account until you restart it.
+- Pitboard switches Claude Desktop on macOS only, while Claude is closed.
+  [Use Pitboard with Claude Desktop](https://docs.usepitboard.com/guides/claude-desktop)
+  has the steps.
 
-The menu bar app also gives each Claude Code and Codex account its own
+The menu bar app gives each Claude Code and Codex account its own
 [window on claude.ai or chatgpt.com](https://docs.usepitboard.com/guides/account-windows),
 signed in separately. It opens a page from your browser's Share menu as the account you
 choose.
 
 Pitboard sends a login only to the service that issued it: Anthropic for Claude Code, OpenAI
-for Codex. It has no server of its own and no telemetry, and parked logins stay on your
-computer. For every request, including the app's update check on GitHub, see
+for Codex. It sends no request for a Claude Desktop account. It has no server of its own and
+no telemetry, and parked logins stay on your computer. For every request, including the
+app's update check on GitHub, see
 [What leaves your machine](https://docs.usepitboard.com/security#what-leaves-your-machine).
 
 Pitboard is pre-release. macOS is tested. On Linux, Pitboard builds and its tests pass, but
@@ -107,16 +110,24 @@ its use compares with an even pace, and the account in use says which limit runs
     week  ████░░│░░░   40%  resets in 2d 4h   29% under pace
 ```
 
-For Codex, put `codex/` before each label: `pitboard enroll codex/personal`,
-`pitboard enroll codex/work --sign-in`, `pitboard use codex/work`. For Claude Desktop, quit
-Claude first and put `desktop/` before each label: `pitboard enroll desktop/personal`, then
-`pitboard enroll desktop/work --sign-in`, which waits while you sign in inside Claude and quit
-it, then `pitboard use desktop/personal`.
+Codex and Claude Desktop accounts take the same commands, with `codex/` or `desktop/` before
+each label:
+
+| Tool | Enrol the account in use | Add another | Switch |
+| --- | --- | --- | --- |
+| Codex | `pitboard enroll codex/personal` | `pitboard enroll codex/work --sign-in` | `pitboard use codex/work` |
+| Claude Desktop | `pitboard enroll desktop/personal` | `pitboard enroll desktop/work --sign-in` | `pitboard use desktop/personal` |
+
+Quit Claude before you enrol or switch a Claude Desktop account.
+`pitboard enroll desktop/work --sign-in` waits while you sign in inside Claude and quit it.
+It leaves `desktop/work` in use, so the switch goes back to `desktop/personal`.
 
 Do not add an account with Claude Code's `/login` or with `codex login`. Both replace the
 login in use without Pitboard parking it, so the account that was in use needs a browser
-sign-in again. `codex login` also revokes the login it replaces. Do not choose **Log out** in
-Claude either: it ends the login Claude holds at claude.ai, and Pitboard cannot bring it back.
+sign-in again. `codex login` also revokes the login it replaces.
+
+Do not choose **Log out** in Claude. It ends the login Claude holds at claude.ai, and
+Pitboard cannot bring it back.
 
 To switch in the menu bar app, click Pitboard's item in the menu bar, then choose the
 account. For each step and what it prints, see the

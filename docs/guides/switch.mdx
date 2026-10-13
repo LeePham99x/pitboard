@@ -31,13 +31,13 @@ A switch puts another account's [parked login](/concepts/switching#parked-logins
 
 ## What Pitboard checks first
 
-Pitboard moves nothing until these hold:
+Pitboard moves nothing until the account you switch to has a parked login, and the tool passes its own checks:
 
-- The tool is signed in to an enrolled account.
-- The account you switch to has a parked login.
-- Anthropic or OpenAI confirms over the network that the parked login works and is that account's.
-
-For Claude Desktop, Pitboard asks no service, and needs Claude closed instead: see [Switch accounts](/guides/claude-desktop#switch-accounts).
+| Tool | Before a switch |
+| --- | --- |
+| Claude Code | Claude Code is signed in to an enrolled account. Anthropic confirms over the network that the parked login works and is that account's. |
+| Codex | Codex is signed in to an enrolled account. OpenAI confirms over the network that the parked login works and is that account's. |
+| Claude Desktop | Claude is closed: [Switch accounts](/guides/claude-desktop#switch-accounts) shows how. Claude is signed in to an enrolled account, or signed out. Pitboard asks no service. |
 
 An expired or refused parked login needs a sign-in: see [Sign in to an account again](/guides/sign-in-again). [Error and warning codes](/reference/errors) lists every code.
 
@@ -45,11 +45,17 @@ An expired or refused parked login needs a sign-in: see [Sign in to an account a
 
 ## What happens to open sessions
 
-Open Claude Code sessions follow a switch within about 33 seconds, with no restart. In the app, the Pitboard window counts down those seconds. [Open sessions](/concepts/switching#open-sessions) says why.
+| Tool | After a switch |
+| --- | --- |
+| Claude Code | Open sessions follow within about 33 seconds, with no restart. In the app, the Pitboard window counts down those seconds. |
+| Codex | Nothing that runs Codex follows. Restart each, as [Restart what runs Codex](#restart-what-runs-codex) says. |
+| Claude Desktop | Claude is closed during a switch, and opens signed in to the account switched to. |
 
-On macOS, while a login file sits behind the keychain, open sessions follow only at their next renewal or restart. Put it away with `pitboard stow` or **Put Away** in the Pitboard window: see [Claude Code over SSH uses another account](/troubleshooting#claude-code-over-ssh-uses-another-account).
+[Open sessions](/concepts/switching#open-sessions) says why Claude Code follows and Codex does not.
 
-Codex never follows a switch: see [Open sessions](/concepts/switching#open-sessions). Restart what runs it:
+On macOS, while a login file sits behind the keychain, open Claude Code sessions follow only at their next renewal or restart. Put it away with `pitboard stow` or **Put Away** in the Pitboard window: see [Claude Code over SSH uses another account](/troubleshooting#claude-code-over-ssh-uses-another-account).
+
+### Restart what runs Codex
 
 | What runs Codex | What to do |
 | --- | --- |
@@ -73,10 +79,6 @@ After a Codex switch, Pitboard lists which of these still run. If it cannot read
 While the ChatGPT app is open, a Codex switch in the app asks first. **Quit ChatGPT and Switch** quits it, switches, then opens it again. **Cancel** switches nothing.
 
 If the ChatGPT app has not quit within 30 seconds, nothing changes. The command line never quits an app.
-
-### Switch while Claude is open
-
-While Claude is open, a Claude Desktop switch in the app asks first. **Quit Claude and Switch** quits Claude, switches, then opens Claude again behind the Pitboard window, signed in to the account. **Cancel** switches nothing. On the command line, quit Claude with Command-Q first, as [Switch accounts](/guides/claude-desktop#switch-accounts) shows.
 
 ## When an account runs out
 

@@ -5,15 +5,21 @@ description: "Renew parked logins daily or by hand, before they expire and need 
 
 ## Why parked logins expire
 
-A Claude Code [parked login](/concepts/switching#parked-logins) expires 30 days after its last renewal. `pitboard` shows the time left as `ready · good for 26d 4h`, and the app as **Parked login good for 26 more days**. Pitboard knows no expiry for a Codex parked login, so neither shows a time for it.
+How long a [parked login](/concepts/switching#parked-logins) lasts depends on its tool:
+
+| Tool | How long it lasts | `pitboard` shows | The app shows |
+| --- | --- | --- | --- |
+| Claude Code | 30 days after its last renewal | `ready · good for 26d 4h` | **Parked login good for 26 more days** |
+| Codex | Pitboard knows no expiry for it | `ready`, with no time | No time |
+| Claude Desktop | Until claude.ai ends the sign-in | `ready · sign-in may lapse in 25d 3h` | **Its sign-in may lapse in 25 days** |
+
+Pitboard never renews a Claude Desktop parked login. [Claude Desktop accounts](/concepts/limits#claude-desktop-accounts) says how far to trust its date.
 
 Pitboard renews parked logins only when it runs: `pitboard` in a terminal, the app while it is open, or daily renewal. After 30 days with none of them, every Claude Code parked login has expired. [`renew`](/reference/maintenance-commands#renew) says when each one is due.
 
 An expired parked login needs a browser sign-in: see [Sign in to an account again](/guides/sign-in-again).
 
-Pitboard never renews a parked Claude Desktop login: see [Claude Desktop accounts](/concepts/limits#claude-desktop-accounts).
-
-The login in use belongs to its tool, which renews it. [Rules](/concepts/limits#rules) names the two cases where Pitboard does.
+The login in use belongs to its tool, which renews it. [Rules](/concepts/limits#rules) names the cases where Pitboard does.
 
 ## Turn on daily renewal
 
@@ -94,6 +100,6 @@ For every line it can print, see [`renew`](/reference/maintenance-commands#renew
 
 ## Accounts you no longer use
 
-Pitboard keeps renewing a parked login for as long as its account stays enrolled. `pitboard doctor` warns about an account unused for 30 days or more.
+Pitboard keeps renewing a Claude Code or Codex parked login for as long as its account stays enrolled. `pitboard doctor` warns about such an account unused for 30 days or more.
 
 If you are not coming back to an account, forget it: see [Forget an account](/guides/accounts#forget-an-account).

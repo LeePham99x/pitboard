@@ -7,12 +7,12 @@ Commands follow the order of `pitboard --help`.
 
 | Command | What it does |
 | --- | --- |
-| [`status`](/reference/account-commands#status) | Show who is signed in and what each account has left |
+| [`status`](/reference/account-commands#status) | Show who is signed in, and what each Claude Code and Codex account has left |
 | [`enroll`](/reference/account-commands#enroll) | Add an account: the one signed in, or another with `--sign-in` |
 | [`use`](/reference/account-commands#use) | Switch a tool to an enrolled account |
 | [`forget`](/reference/account-commands#forget) | Forget an account and delete its parked login |
 | [`stow`](/reference/recovery-commands#stow) | Put away a login file behind the keychain |
-| [`abandon`](/reference/recovery-commands#abandon) | Give up on an interrupted switch, keeping every login |
+| [`abandon`](/reference/recovery-commands#abandon) | Give up on an interrupted switch or Claude Desktop move, keeping every login |
 | [`repair`](/reference/recovery-commands#repair) | Account for every parked login on this computer |
 | [`adopt`](/reference/recovery-commands#adopt) | Take over a Pitboard directory from another computer |
 | [`renew`](/reference/maintenance-commands#renew) | Renew every parked login that is due |
@@ -70,7 +70,14 @@ What a bare label, one with no prefix, means depends on the command:
 | `pitboard use`, `pitboard forget`, the first label of `pitboard rename` | Whichever tool has a `work`, refused if more than one does |
 | The second label of `pitboard rename` | `work` in the account's own tool |
 
-Pitboard writes a label the way a command takes it: `work` for Claude Code, `codex/work` for Codex, `desktop/work` for Claude Desktop, and `claude/work` where another tool has a `work` too.
+Pitboard writes a label the way a command takes it:
+
+| Account | Written |
+| --- | --- |
+| Claude Code's `work` | `work` |
+| Claude Code's `work`, where another tool has a `work` too | `claude/work` |
+| Codex's `work` | `codex/work` |
+| Claude Desktop's `work` | `desktop/work` |
 
 Against the enrolled accounts, a label fails with exit status 1:
 
@@ -90,7 +97,8 @@ Against the enrolled accounts, a label fails with exit status 1:
 | With `--json`, all of these as one line of JSON; for `watch`, one line per event | Standard output |
 | `--help` and `--version`, as text even with `--json` | Standard output |
 | The question before deleting | Standard error |
-| The `Opening` line and the tool's own sign-in text from `pitboard enroll --sign-in`, and the lines it prints while it waits for Claude | Standard error |
+| The `Opening` line and the tool's own sign-in text from a Claude Code or Codex `pitboard enroll --sign-in` | Standard error |
+| The lines a Claude Desktop `pitboard enroll --sign-in` prints while it waits for Claude | Standard error |
 
 Pitboard colours output to a terminal, and none to a file or a pipe. JSON output never has colour.
 
@@ -112,7 +120,7 @@ With nobody to ask, these answer as they do with `--yes`:
 - `pitboard forget` with a label that names no account. It fails with that label's error, such as `account_unknown`.
 - `pitboard forget` and `pitboard uninstall` as root or under `sudo`, and `pitboard stow` there once it finds a file to put away. Each fails with `elevated`.
 
-With nobody to ask, a refusal found only once the command runs shows only with `--yes`. Without it, the answer is `confirmation_needed`. Forgetting the account in use is one, with `cannot_forget_active_account`. `identity_unverifiable` and `custom_oauth_endpoint` are others.
+With nobody to ask, a refusal found only once the command runs shows only with `--yes`. Without it, the answer is `confirmation_needed`. Forgetting the account in use is one, with `cannot_forget_active_account`. `identity_unverifiable`, `custom_oauth_endpoint` and `app_open` are others.
 
 ## Exit codes
 

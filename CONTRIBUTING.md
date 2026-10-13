@@ -49,18 +49,21 @@ To work on the app, you need a Mac with Xcode, and its Swift must be 6.2 or late
    code in place, and the old code compiles. Read the region again right before changing
    it, and look at the diff after. An empty or surprisingly small diff is the symptom.
 
-3. Never write to a keychain item that holds a real login. Each test names its items after
-   itself and calls `common::guard_not_live` before the first write, which refuses by
-   pattern every name a real login may be kept under, in the keychain and in Windows'
-   Credential Manager: every Claude Code slot but the one hashed from the test's own
-   folder, in any spelling or piece, Codex's `cli|` and `secrets|` targets and anything
-   under `Codex MCP Credentials`. A test writes only `pitboard-citest-*` names, the parks
-   Pitboard names, and its own slot. A Codex test that writes points `CODEX_HOME` at a
-   scratch directory and never writes to `~/.codex`. Nothing runs `codex login` or
-   `codex logout` against a real home, because both revoke the login stored there.
+3. Never touch a real login. Each test names its keychain items after itself and calls
+   `common::guard_not_live` before the first write, which refuses by pattern every name a
+   real login may be kept under, in the keychain and in Windows' Credential Manager: every
+   Claude Code slot but the one hashed from the test's own folder, in any spelling or piece,
+   Codex's `cli|` and `secrets|` targets and anything under `Codex MCP Credentials`. A test
+   writes only `pitboard-citest-*` names, the parks Pitboard names, and its own slot. A
+   Codex test that writes points `CODEX_HOME` at a scratch directory and never writes to
+   `~/.codex`. Nothing runs `codex login` or `codex logout` against a real home, because
+   both revoke the login stored there. A Claude Desktop test works on a scratch data folder
+   named with `Context::with_scratch_claude` or `PITBOARD_TEST_CLAUDE_DESKTOP`, and a build
+   for tests cannot find the real one. Nothing starts or quits the real Claude.
 
 4. Measure the tool, do not guess at it. Claude Code's behaviour here is undocumented,
-   Codex's moves with its source, and both ship several times a week. A claim about either
+   Codex's moves with its source, and Claude Desktop documents none of the files Pitboard
+   moves. Claude Code and Codex ship several times a week. A claim about any of the three
    needs an experiment or a reading of a named build. It belongs in a test, the tool's
    register or the commit message. [Tool registers](#tool-registers) says how to add a
    fact, and [ARCHITECTURE.md](ARCHITECTURE.md#tool-registers) says what a register is.
@@ -141,6 +144,18 @@ home panics, unless it tests that lookup and keeps what
 `host::user::testing::reaching_the_real_home` returns while it does. Any other build for
 tests, such as the `pitboard` the integration tests run, gets no home from there, so a
 command run there without `HOME` is refused with `home_not_absolute`.
+
+No test reaches Claude's real data folder or a real Claude. A build for tests finds Claude
+Desktop only in a scratch folder a test names, with `Context::with_scratch_claude` or
+`PITBOARD_TEST_CLAUDE_DESKTOP`. Its `data` is the data folder, and a program counts as
+Claude running only inside its `Claude.app`. Without one, Claude Desktop is not there.
+Naming a folder through `..`, or one that is, holds or lies in the account's own
+`Library/Application Support` or a `Claude.app` under either `Applications`, panics. The
+integration tests name one in each test's own folder, and start the compiled stand-in under
+its `Claude.app` where a test needs Claude open. `pitboard-core`'s `desktop_testing.rs`
+writes a data folder as Claude leaves one. A core test of Claude Desktop's folder runs on
+macOS and Linux, and is ignored on Windows. An integration test of Claude Desktop returns
+at its start on Linux and Windows.
 
 The install script, `packaging/install.sh`, and `.github/scripts/fill-template.sh`, which
 fills it and the casks at release time, are POSIX `sh`. Check a change to either with:
@@ -258,18 +273,21 @@ a machine of its own: a home in the folder `pitboard-fixture` in the temporary d
 Anthropic and OpenAI answering from a script. Its accounts were put there by the core,
 signed in, enrolled, parked and switched, so a world shows what the core makes of it:
 `readFailure`'s reads fail because its account index is a file nobody may read, and
-`stuck`'s read says an interrupted switch is waiting. The Claude of `claudeDesktop` and
-`claudeDesktopOpen` is a stand-in that writes its data folder as 2.7032.0 does as it quits,
-and in `claudeDesktopOpen`, opened in front for a sign-in, signs in to a third account and
-quits. Each tool's sign-in is played as its register says it behaves, so the fixture's
-Claude Code, like the real one, refuses a code typed back that is not `<code>#<state>`: type
-one such as `fixture-code#state`. The app adds only what is macOS's own: a login item that
-registers nothing, and a link to the command line inside the fixture's stand-in app, made in
-the folder's `bin` with no password. Only a library built with the `fixture` feature has the
-worlds, which `build-xcframework.sh --fixture` builds; the bindings are the same either way.
-A debug build linked against a library without it stops at launch, saying how to build one
-with it. `build-app.sh` never passes it, and fails a build whose library or app holds a
-fixture.
+`stuck`'s read says an interrupted switch is waiting.
+
+Each tool's sign-in is played as its register says it behaves. The fixture's Claude Code,
+like the real one, refuses a code typed back that is not `<code>#<state>`: type one such as
+`fixture-code#state`. The Claude of `claudeDesktop` and `claudeDesktopOpen` is a stand-in
+that writes its data folder as 2.7032.0 does as it quits. In `claudeDesktopOpen` it is
+running, and once opened in front for a sign-in it signs in to a third account and quits.
+Those two worlds hold Claude Desktop only on macOS, where Pitboard supports it.
+
+The app adds only what is macOS's own: a login item that registers nothing, and a link to
+the command line inside the fixture's stand-in app, made in the folder's `bin` with no
+password. Only a library built with the `fixture` feature has the worlds, which
+`build-xcframework.sh --fixture` builds; the bindings are the same either way. A debug build
+linked against a library without it stops at launch, saying how to build one with it.
+`build-app.sh` never passes it, and fails a build whose library or app holds a fixture.
 
 Only the UI tests launch into that folder. The unit tests leave it alone: the C# and Swift
 tests of the bindings launch with `PitboardModel::fixture_in` into a temporary directory of
@@ -459,34 +477,33 @@ build of the tool and says which are still there:
 ```sh
 cargo run -p pitboard-conformance -- <claude binary>
 cargo run -p pitboard-conformance -- <codex binary> --provider codex
+cargo run -p pitboard-conformance -- /Applications/Claude.app/Contents/Resources/app.asar --provider desktop
 ```
 
 Add `--json` for a report a program can read. The checker exits 1 when a fact has moved: a
 literal it needs is gone, or one it rules out has turned up. It exits 2 when it cannot make
 sense of its arguments, read the file or tell its system.
 
-Point it at Claude Code's or Codex's native binary, not the npm wrapper, which carries no
-binary. The checker reads the binary's header to tell a macOS, Linux or Windows build
-apart, and reads each fact only from the systems its line in the register's `PER_SYSTEM`
-table reads it on. Claude Code's Linux and Windows builds have no keychain backend, so the
-keychain facts are read from its macOS build alone. `.github/workflows/conformance.yml`
-takes Claude Code's builds from the packages `@anthropic-ai/claude-code-<system>`, and
-Codex's from `vendor/` in `@openai/codex@<version>-<system>`, for `linux-x64`,
-`darwin-arm64`, `win32-x64` and `win32-arm64`.
+Claude Code and Codex are read from their native binaries, not the npm wrapper, which
+carries no binary. The checker reads the binary's header to tell a macOS, Linux or Windows
+build apart, and reads each fact only from the systems its line in the register's
+`PER_SYSTEM` table reads it on. Claude Code's Linux and Windows builds have no keychain
+backend, so the keychain facts are read from its macOS build alone.
+`.github/workflows/conformance.yml` takes Claude Code's builds from the packages
+`@anthropic-ai/claude-code-<system>`, and Codex's from `vendor/` in
+`@openai/codex@<version>-<system>`, for `linux-x64`, `darwin-arm64`, `win32-x64` and
+`win32-arm64`.
 
-Claude Desktop's register, `provider/desktop/assumptions.rs`, was read by hand from two
-builds: 2.19675.0, which the experiments ran, and 2.7032.0, whose `app.asar` was read and
-never run. Each entry says which. No conformance job reads it, since where Claude's builds
-are published is not recorded. Run the checker by hand on a Mac where Claude is installed.
-It reads Claude's bundle, not its data folder, and does not open Claude:
+Claude Desktop is read from the `app.asar` in Claude's bundle. An app's `app.asar` has no
+system of its own, and the checker reads Claude Desktop's for macOS, where its register
+reads every fact. In 2.7032.0, Claude's program, `Contents/MacOS/Claude`, holds only the
+bundle id of the register's literals, so the checker refuses it and exits 2. Run the
+checker by hand on a Mac where Claude is installed. It reads Claude's bundle, not its data
+folder, and does not open Claude.
 
-```sh
-cargo run -p pitboard-conformance -- /Applications/Claude.app/Contents/Resources/app.asar --provider desktop
-```
-
-An app's `app.asar` has no system of its own: Claude Desktop's is read for macOS, where its
-register reads every fact. In 2.7032.0, Claude's program, `Contents/MacOS/Claude`, holds
-only the bundle id of the register's literals. The checker refuses it and exits 2.
+No conformance job reads Claude Desktop, since where Claude's builds are published is not
+recorded. Its register was read by hand from two builds: 2.19675.0, which the experiments
+ran, and 2.7032.0, whose `app.asar` was read and never run. Each entry says which.
 
 To add a fact, add an `Assumption` to the tool's register:
 

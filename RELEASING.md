@@ -27,9 +27,10 @@ alone until Windows is released. No release builds anything for Windows while th
 version's major is 0, and nothing a release builds, scripts or packages passes
 `--cfg pitboard_unreleased_windows`, `test-support` or `fixture`.
 
-The first release with Claude Desktop waits until ARCHITECTURE.md's hand measurements M1 to
-M10 are recorded. Its account index is schema 8, which 0.12.0 refuses, so its notes say to
-update the command line and the app together.
+The first release with Claude Desktop waits until the hand measurements M1 to M10 in
+[ARCHITECTURE.md](ARCHITECTURE.md#claude-desktop) are recorded. Its account index is
+schema 8, which every earlier release refuses, so its notes say to update the command line
+and the app together.
 
 1. In CHANGELOG.md, add `## [<version>] - YYYY-MM-DD` directly under `## [Unreleased]`, so
    the entries there fall under the version. The guard looks for a line that starts

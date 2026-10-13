@@ -10,7 +10,7 @@ Removing the program alone leaves every parked login on the machine.
 `pitboard uninstall` turns off daily renewal, deletes every parked login this Pitboard wrote, then deletes `~/.pitboard`.
 
 <Warning>
-  `pitboard uninstall` cannot be undone. Each tool stays signed in to the account in use. Every other account needs a sign-in again: in a browser for Claude Code and OpenAI's Codex CLI, inside Claude for Claude Desktop.
+  `pitboard uninstall` cannot be undone. Each tool stays signed in to the account in use. Every other account needs a sign-in again before you can use it.
 </Warning>
 
 <Steps>
@@ -19,6 +19,9 @@ Removing the program alone leaves every parked login on the machine.
   </Step>
   <Step title="Remove the status line">
     If Claude Code's status line runs `pitboard statusline`, delete the `statusLine` field from `~/.claude/settings.json`, or the call from your own script. Each run recreates `~/.pitboard`.
+  </Step>
+  <Step title="Quit Claude">
+    If a Claude Desktop account is parked, quit Claude with Command-Q. `pitboard uninstall` refuses while Claude is open.
   </Step>
   <Step title="Delete the parked logins">
     ```sh
@@ -45,9 +48,9 @@ Turned off the daily renewal schedule.
 ~/.pitboard is gone. Remove Pitboard itself the way you installed it.
 ```
 
-If a parked login cannot be deleted, Pitboard keeps `~/.pitboard`. Run `pitboard uninstall` again.
+If a parked login or a folder set aside cannot be deleted, Pitboard keeps `~/.pitboard`. Run `pitboard uninstall` again.
 
-On macOS, deleting `~/.pitboard` by hand leaves the parked logins in the keychain, still valid. Nothing else names them, so `pitboard uninstall` cannot find them. If you already deleted it, delete the `pitboard-park-` items in Keychain Access.
+On macOS, deleting `~/.pitboard` by hand leaves the parked logins of Claude Code and OpenAI's Codex CLI in the keychain, still valid. Nothing else names them, so `pitboard uninstall` cannot find them. If you already deleted it, delete the `pitboard-park-` items in Keychain Access.
 
 If you set `PITBOARD_HOME`, or `pitboard uninstall` refuses or leaves parked logins, see [`uninstall`](/reference/maintenance-commands#uninstall).
 

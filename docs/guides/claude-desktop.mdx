@@ -4,12 +4,13 @@ sidebarTitle: "Claude Desktop"
 description: "Add Claude Desktop accounts, switch between them and sign in to one again, with Claude closed."
 ---
 
-A Claude Desktop label starts with `desktop/`, as in `desktop/work`. In the app, choose **Claude Desktop** as the tool and enter the name alone.
+Pitboard changes Claude's login only while Claude is closed. On the command line, quit Claude before each command on this page. In the app, Pitboard offers to quit Claude for you, and opens it again once the change is made.
 
 ## Before you add a Claude Desktop account
 
 - Pitboard switches Claude Desktop on macOS only.
-- Pitboard changes Claude's login only while Claude is closed. Quit Claude with Command-Q: closing its window leaves it running.
+- Quit Claude with Command-Q. Closing its window leaves it running.
+- A Claude Desktop label starts with `desktop/`, as in `desktop/work`. In the app, choose **Claude Desktop** as the tool and enter the name alone.
 - [Claude Desktop accounts](/concepts/limits#claude-desktop-accounts) says how these accounts differ from Claude Code's.
 
 <Warning>
@@ -18,17 +19,15 @@ A Claude Desktop label starts with `desktop/`, as in `desktop/work`. In the app,
 
 ## Add the account Claude is signed in to
 
-Open Claude and check which account it shows. Pitboard cannot ask claude.ai whose a login is.
+Open Claude, check which account it shows, then quit it. Pitboard cannot ask claude.ai whose a login is.
 
 <Tabs>
   <Tab title="App">
-    Click Pitboard's item in the menu bar, then choose **Add Account**. Choose **Claude Desktop** in the **Tool** pop-up menu, enter a name such as `work`, then click **Add Account**. If Claude is open, click **Quit Claude and Add**: Pitboard quits Claude, records the account and opens Claude again.
+    Click Pitboard's item in the menu bar, then choose **Add Account**. Choose **Claude Desktop** in the **Tool** pop-up menu, enter a name such as `work`, then click **Add Account**. If Claude is open, click **Quit Claude and Add**.
 
     If the dialog says Claude Desktop is not offered, open Claude once, then quit Pitboard and open it again. The app looks for Claude's data folder only when it opens.
   </Tab>
   <Tab title="Command line">
-    Quit Claude, then run:
-
     ```sh
     pitboard enroll desktop/work
     ```
@@ -40,11 +39,13 @@ Open Claude and check which account it shows. Pitboard cannot ask claude.ai whos
   </Tab>
 </Tabs>
 
-If Claude has not finished signing in, Pitboard enrols nothing. Open Claude, wait until it shows your chats, quit it, then try again. If Claude is signed out, add the account as the next section shows.
+If Claude has not finished signing in, Pitboard enrols nothing. Open Claude, wait until it shows your chats, quit it, then try again.
+
+If Claude is signed out, add the account as [Add another account](#add-another-account) shows.
 
 ## Add another account
 
-Pitboard parks the account in use, which leaves Claude signed out and signs nothing out at claude.ai. You sign in to the other account in Claude, and Pitboard adds it once Claude quits.
+Pitboard parks the account in use, which leaves Claude signed out and signs nothing out at claude.ai. You sign in to the other account inside Claude, and Pitboard adds it once Claude quits.
 
 <Tabs>
   <Tab title="App">
@@ -53,7 +54,7 @@ Pitboard parks the account in use, which leaves Claude signed out and signs noth
         Click Pitboard's item in the menu bar, then choose **Add Account**. Choose **Claude Desktop** in the **Tool** pop-up menu, then enter a name such as `travel`.
       </Step>
       <Step title="Park the account in use">
-        Click **Park work**, or **Start Sign-In** while Claude is signed out. If Claude is open, click **Quit Claude and Park work**: Pitboard quits Claude, parks `work` and opens Claude again.
+        Click **Park work**, or **Start Sign-In** while Claude is signed out. If Claude is open, Pitboard asks to quit it first: click **Quit Claude and Park work** or **Quit Claude and Start Sign-In**.
       </Step>
       <Step title="Sign in">
         Open Claude if it is closed, and sign in to the account you are adding. When it shows your chats, quit Claude with Command-Q. The dialog closes once Pitboard has added the account.
@@ -61,8 +62,6 @@ Pitboard parks the account in use, which leaves Claude signed out and signs noth
     </Steps>
   </Tab>
   <Tab title="Command line">
-    Quit Claude, then run:
-
     ```sh
     pitboard enroll desktop/travel --sign-in
     ```
@@ -88,13 +87,11 @@ Pitboard refuses to park an account it has not enrolled. Add that account first,
 
 <Tabs>
   <Tab title="App">
-    Click Pitboard's item in the menu bar, then choose the Claude Desktop account. If Claude is open, click **Quit Claude and Switch**: Pitboard quits Claude, switches, and opens Claude again behind the Pitboard window.
+    Click Pitboard's item in the menu bar, then choose the Claude Desktop account. If Claude is open, Pitboard asks first: click **Quit Claude and Switch**, or **Cancel** to switch nothing. Pitboard opens Claude again behind the Pitboard window.
 
     If Claude has not quit within 30 seconds, nothing changes.
   </Tab>
   <Tab title="Command line">
-    Quit Claude, then run:
-
     ```sh
     pitboard use desktop/home
     ```
@@ -103,16 +100,14 @@ Pitboard refuses to park an account it has not enrolled. Add that account first,
     Switched to desktop/home; desktop/work is parked.
     Claude opens signed in to it.
     ```
-
-    While Claude is open, `pitboard use` changes nothing and says `Claude is open`.
   </Tab>
 </Tabs>
 
-If an error says part of Claude is still running, see [Claude is open](/troubleshooting#claude-is-open).
+If Pitboard says Claude is open, or that part of it is still running, nothing has changed. [Claude is open](/troubleshooting#claude-is-open) says what to do.
 
 ## Sign in again
 
-Sign in again when an account shows **Needs signing in again** or `nothing parked`, or Claude asks you to sign in after a switch.
+Sign in again when an account shows **Needs signing in again** or `nothing parked`, or when Claude asks you to sign in after a switch. Pitboard parks the account in use first, as it does to add an account.
 
 <Tabs>
   <Tab title="App">
@@ -121,7 +116,7 @@ Sign in again when an account shows **Needs signing in again** or `nothing parke
         In the Pitboard window, Control-click `home` and choose **Sign In Again**.
       </Step>
       <Step title="Park the account in use">
-        Click **Park work**, or **Start Sign-In** while Claude is signed out. If Claude is open, click **Quit Claude and Park work**: Pitboard quits Claude, parks `work` and opens Claude again.
+        Click **Park work**, or **Start Sign-In** while Claude is signed out. If Claude is open, click **Quit Claude and Park work** or **Quit Claude and Start Sign-In**.
       </Step>
       <Step title="Sign in">
         Open Claude if it is closed, and sign in to `home`. When it shows your chats, quit Claude with Command-Q.
@@ -129,8 +124,6 @@ Sign in again when an account shows **Needs signing in again** or `nothing parke
     </Steps>
   </Tab>
   <Tab title="Command line">
-    Quit Claude, then run:
-
     ```sh
     pitboard enroll desktop/home --sign-in
     ```
@@ -145,24 +138,28 @@ Sign in again when an account shows **Needs signing in again** or `nothing parke
 
 Where the account had a parked login, Pitboard sets it aside and deletes nothing. If Claude is signed in to another account when it quits, Pitboard records nothing for `home` and says why.
 
-## Finish or undo an add
+## Finish or undo an add or a sign-in again
 
-An add left halfway keeps Claude signed out and the account in use parked, after a restart too. You leave one with Control-C on the command line, or **Later** in the app. The app then shows **Adding a Claude Desktop account isn't finished**.
+An add or a sign-in again left halfway keeps Claude signed out and the account in use parked, after a restart too. You leave one with Control-C on the command line, or **Later** in the app. The app then shows **Adding a Claude Desktop account isn't finished** or **Signing in to home again isn't finished**.
 
 <Tabs>
   <Tab title="App">
-    To finish, sign in to the account in Claude and quit Claude. Then click **Finish Adding** on the notice, and **Add the Account Claude Shows** in the dialog. To undo it, click **Put work Back**.
+    To finish, sign in to the account in Claude and quit Claude. Then click **Finish Adding** or **Finish Signing In** on the notice, then **Add the Account Claude Shows** or **Record as home** in the dialog.
+
+    To undo it, click **Put work Back**.
   </Tab>
   <Tab title="Command line">
-    To finish, sign in to the account in Claude, quit Claude, then run `pitboard enroll desktop/travel`. To undo it, run `pitboard use desktop/work`.
+    To finish, sign in to the account in Claude and quit Claude. Then run `pitboard enroll` with the label you were adding or signing in to, such as `pitboard enroll desktop/travel`.
+
+    To undo it, run `pitboard use desktop/work`.
   </Tab>
 </Tabs>
 
-Once Claude is signed in to the new account, the undo is refused. Finish the add instead.
+Once Claude is signed in to the account you are adding, the undo is refused. Finish the add instead.
 
 ## Give up an interrupted move
 
-Give up only when Pitboard says it cannot tell where an interrupted move stopped. [A Claude Desktop move was interrupted](/troubleshooting/recovery#a-claude-desktop-move-was-interrupted) says what comes first.
+Give up only when an error about an interrupted move says to. [A Claude Desktop move was interrupted](/troubleshooting/recovery#a-claude-desktop-move-was-interrupted) says what comes first.
 
 <Tabs>
   <Tab title="App">
@@ -178,5 +175,3 @@ Give up only when Pitboard says it cannot tell where an interrupted move stopped
     ```
   </Tab>
 </Tabs>
-
-Then open Claude, check which account it shows and quit it. Add that account, or switch to an account if Claude is signed out.

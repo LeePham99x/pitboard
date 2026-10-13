@@ -1,5 +1,5 @@
 ---
-title: "Recover after a crash, a restore or a move"
+title: "Recover after a crash, a restore or a change of computer"
 sidebarTitle: "Recovery"
 description: "Finish or give up on an interrupted switch, find lost parked logins and take over another computer's Pitboard directory."
 ---
@@ -10,7 +10,7 @@ Most fixes here run on the command line. If you have only the app, first [put th
 
 Every command that changes something stops with an error (`recovery_undetermined`) saying an earlier switch `was interrupted, and Pitboard cannot yet tell whether it finished`. The app shows the notice **An interrupted switch is waiting**. [Error and warning codes](/reference/errors#interrupted-switches) lists every place it shows.
 
-A switch stopped partway, for example in a crash or a power cut, and Pitboard cannot yet identify the tool's login. [How switching works](/concepts/switching#interrupted-switches) explains how the next change settles it.
+A Claude Code or Codex switch stopped partway, for example in a crash or a power cut, and Pitboard cannot yet identify the tool's login. [How switching works](/concepts/switching#interrupted-switches) explains how the next change settles it.
 
 Run the program the error names, `claude` or `codex`, once. Then try the change again. Pitboard finishes or undoes the interrupted switch first, and a warning says which.
 
@@ -28,18 +28,18 @@ If the error says the record of the switch `is damaged` (`recovery_record_corrup
 
 ## A Claude Desktop move was interrupted
 
-A crash, a power cut or Claude opened midway can stop a Claude Desktop move. Every read then warns `move_waiting`, and the app shows **An interrupted move is waiting**.
+Every read warns `move_waiting`, and the app shows the notice **An interrupted move is waiting**. A crash, a power cut or Claude opened midway stopped a Claude Desktop move.
 
 Keep Claude closed, then make any change to a Claude Desktop account, such as `pitboard use desktop/work`. Pitboard settles the move first, and a warning says how.
 
-If Pitboard cannot tell where the move stopped, the change stops with `recovery_undetermined`. Open Claude to see whether it is signed in, and to which account, then quit it:
+If the error says Pitboard `cannot tell where it stopped` (`recovery_undetermined`), open Claude to see whether it is signed in, and to which account. Then quit it with Command-Q:
 
 - Signed in: enrol the account Claude shows with `pitboard enroll desktop/<label>`.
 - Signed out: [give up the move](/guides/claude-desktop#give-up-an-interrupted-move), then switch to an account.
 
-If the error says Pitboard stopped while settling the move, keep Claude closed and run the change again. If it stops again, [give up the move](/guides/claude-desktop#give-up-an-interrupted-move).
+If the error says Pitboard `stopped while settling` the move, keep Claude closed and run the change again. If it stops again, give up the move.
 
-If the error says Claude kept its data in another folder (`recovery_elsewhere`), the move ran as another macOS user. Run Pitboard as that user, or give up the move.
+If the error says Claude `kept its data in` another folder (`recovery_elsewhere`), the move ran as another macOS user. Run Pitboard as that user, or give up the move.
 
 ## Pitboard lost track of parked logins
 
@@ -57,7 +57,7 @@ Gave personal back a parked login that nothing named.
 
 [`repair`](/reference/recovery-commands#repair) lists its other results.
 
-If `state.json` itself is lost, enrol each Claude Desktop account again: the one Claude is signed in to with `pitboard enroll desktop/<label>`, each other with `pitboard enroll desktop/<label> --sign-in`. `pitboard repair` sets their parked logins aside, and enrols nothing.
+If `state.json` itself is lost, `pitboard repair` sets each Claude Desktop parked login aside and enrols nothing. Enrol each Claude Desktop account again: the one Claude is signed in to with `pitboard enroll desktop/<label>`, each other with `pitboard enroll desktop/<label> --sign-in`.
 
 On macOS, every Pitboard directory shares the keychain, so a login `repair` gives back may be another directory's. `pitboard forget` and `pitboard uninstall` leave such a login in the keychain until you switch to its account or Pitboard renews it.
 
@@ -65,7 +65,7 @@ On macOS, every Pitboard directory shares the keychain, so a login `repair` give
 
 Migration Assistant or a backup can bring `~/.pitboard` from another computer. Pitboard refuses to use it. Commands stop with an error (`state_wrong_machine`) saying the account list `was written on another computer`. In the app, the **Accounts** pane shows **Couldn't Read Accounts** with the same message.
 
-Run `pitboard adopt`. It keeps your accounts and drops the parked logins they came with. It sets each Claude Desktop parked login aside instead.
+Run `pitboard adopt`. It keeps your accounts and drops the Claude Code and Codex parked logins they came with. It sets aside each Claude Desktop parked login made on another Mac.
 
 ```sh
 pitboard adopt

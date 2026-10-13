@@ -51,8 +51,8 @@ rendered page too.
 - Each fact has one home. Other pages link it with at most one clause of context.
 - Release history lives in CHANGELOG.md. Only `install/upgrade-from-0-3-0` and a section
   that applies to a past release name an older version.
-- A claim about Claude Code or Codex names the build it was read in ("read in 2.1.294")
-  on the page that owns the fact. Other pages link that page.
+- A claim about Claude Code, Codex or Claude Desktop names the build it was read in ("read
+  in 2.1.294") on the page that owns the fact. Other pages link that page.
 
 ## Exceptions
 
@@ -119,15 +119,15 @@ Use the first word, never the others.
 | --- | --- |
 | account | profile, user, identity |
 | in use | active, current, logged in |
-| login (noun) | credential, token, auth, session (session token only on security and reference pages; session cookie, for Claude Desktop, also on explanation pages) |
-| session cookie (claude.ai's cookie that holds a Claude Desktop login; security, reference and explanation pages only) | session token, sessionKey |
+| login (noun) | credential, token, auth, session (token only on security and reference pages) |
+| session cookie (claude.ai's cookie that holds a Claude Desktop login; only on security, reference and explanation pages) | session token, sessionKey |
 | parked login, park (verb) | stored, saved or cached login, backup |
 | set aside (a folder Pitboard keeps that no account holds as its park) | quarantined, backed up, moved to trash |
 | label | alias, profile name (app steps: "enter a name") |
 | tool (Claude Code, Codex or Claude Desktop) | provider, client, agent |
 | switch | swap, rotate, activate, change account |
 | sign in (verb), sign-in (noun) | log in, login (verb), authenticate |
-| **Log out** (Claude's own command, spelt as Claude spells it and bold as any UI label, named only to say not to use it) | sign out, Log Out (for Claude's command) |
+| **Log out** (Claude's own command, bold and spelt as Claude shows it, named only to say not to use it) | sign out, Log Out (for that command) |
 | enrol (prose), `enroll` (command) | register |
 | forget | delete or remove an account |
 | renew (a parked login, or a tool its own login) | refresh, rotate |
@@ -140,8 +140,8 @@ Use the first word, never the others.
 | the app, the menu bar app; the command line | Pitboard.app, the GUI; the CLI, the binary |
 | Pitboard's item in the menu bar; the Pitboard window; pane | status item, tray icon, panel, dashboard, tab |
 | shortcut menu; dialog; Settings | context menu; sheet, modal; Preferences |
-| Claude Code; Codex ("OpenAI's Codex CLI" on first mention); Claude Desktop | Claude (for Claude Code or for the tool Claude Desktop), Codex CLI |
-| Claude (the app a person opens and quits, in a sentence about Claude Desktop) | the Claude app, Claude.app, the desktop app |
+| Claude Code; Codex ("OpenAI's Codex CLI" on first mention); Claude Desktop | Claude (for Claude Code, or for Claude Desktop as a tool), Codex CLI |
+| Claude (Claude Desktop's app, as a person opens and quits it: "quit Claude") | the Claude app, Claude.app, the desktop app |
 | data folder (Claude's `~/Library/Application Support/Claude`) | profile, user data, support folder |
 | chatgpt.com (the site, an account's window on it); the ChatGPT app (OpenAI's desktop app) | ChatGPT (for the site or a window), ChatGPT window, ChatGPT website |
 

@@ -103,12 +103,13 @@ In the order of `pitboard --help`:
 | Command | `data` |
 | --- | --- |
 | `status` | See [Status data](/reference/json-output#status-data). |
-| `enroll` | `label` as typed, `provider` (`claude`, `codex` or `desktop`), `email`, empty for Claude Desktop, and `enrolled`: `current`, `signed_in`, `renewed` or `in_use`, as [`enroll`](/reference/account-commands#enroll) explains. |
+| `enroll` | `label` as typed, `provider` (`claude`, `codex` or `desktop`), `email`, and `enrolled`: `current`, `signed_in`, `renewed` or `in_use`, as [`enroll`](/reference/account-commands#enroll) explains. |
 | `use`, already in use | `to`, `changed` (`false`) and `config_updated`, `true` where Claude Code's config named another account and `use` wrote this one into it. |
-| `use`, after a switch | `from`, `to`, `provider`, `changed` (`true`), `parked_at` (when the login of `from` was parked), `adoption_ceiling_seconds` and `adoption`. `from` and `parked_at` are `null` for a Claude Desktop switch into a Claude that was signed out. |
-| `forget` | `label` and `email`, empty for Claude Desktop. |
+| `use`, after a switch | `from`, `to`, `provider`, `changed` (`true`), `parked_at` (when the login of `from` was parked), `adoption_ceiling_seconds` and `adoption`. |
+| `use`, into a Claude that was signed out | The same, with `from` and `parked_at` set to `null`. |
+| `forget` | `label` and `email`. |
 | `stow` | `stowed`, `false` when no login file sits behind the keychain. When `true`, also `path`, the file deleted, and `login`, what became of its login: a code from [`stow`](/reference/recovery-commands#stow). Then `account`, the label of the login's account or `null`, and `dropped`, the file's other keys. |
-| `abandon` | `abandoned`, `false` when no Claude Code or Codex switch was given up. When `true`, also `from`, `to` and `logins_kept`, a count. Then `moves_given_up`, one object per Claude Desktop move given up, or an empty array: `provider`, `label` as typed, the counts `parked` and `set_aside`, `left`, the items that stay in Claude's data folder, and `slot`, the data folder of a move made in another, or `null`. |
+| `abandon` | `abandoned`, `true` when it gave up a Claude Code or Codex switch, with `from`, `to` and `logins_kept`, a count. `moves_given_up`, one object per Claude Desktop move it gave up, as [Moves given up](/reference/json-output#moves-given-up) lists, or an empty array. |
 | `repair` | `given_back`, objects with `label` and `service`, the parked login's name. `deleted`, `strangers` and `unreadable`, lists of parked login names, as [`repair`](/reference/recovery-commands#repair) explains. `set_aside`, the names of the folders it set aside in `parks/`. |
 | `adopt` | `adopted`, `false` when the Pitboard directory was already this computer's. When `true`, also `accounts`, the labels kept, `logins_dropped`, the labels whose parked login was dropped, and `set_aside`, the labels whose Claude Desktop parked login was set aside. |
 | `renew` | `accounts`, one object per parked login that was due, with `label`, `provider` and `outcome`; and `renewed`, a count. `outcome` is `renewed`, `parked_login_refused`, `renewal_deferred` or an error code, as [`renew`](/reference/maintenance-commands#renew) explains. |
@@ -116,9 +117,9 @@ In the order of `pitboard --help`:
 | `schedule status` | `installed`. When `true`, also `path` and `every_seconds` (`86400`). Where Pitboard has no scheduler to write, also `supported` (`false`). |
 | `schedule uninstall` | `installed` (`false`) and `removed`, `false` when nothing was scheduled. |
 | `log` | `entries`, oldest first, each with `at`, `caller` (`cli`, `app` or `unknown`), `verb`, `subject` and `outcome`, as [`log`](/reference/maintenance-commands#log) explains. |
-| `uninstall` | The counts `parks_removed`, `parks_pending` (could not be deleted, or a renewal of Claude Code's login not saved yet) and `parks_left` (left because another Pitboard may own them), the booleans `home_removed` and `schedule_removed`, and `set_aside_removed`, how many folders set aside it deleted. |
-| `rename` | `from`, `to` and `email`, empty for Claude Desktop. |
-| `doctor` | `environment`, the paths and login stores Pitboard found and the version of OpenAI's Codex CLI. Its `desktop` holds `data_folder`, Claude's data folder or `null` where Pitboard leaves Claude Desktop alone, `present`, and `build`, Claude's version or `null`. `checks`, each with `code`, `name`, `level` (`ok`, `warn` or `fail`), `detail` and `advice`, as [`doctor`](/reference/maintenance-commands#doctor) lists. |
+| `uninstall` | The counts `parks_removed`, `parks_pending` (could not be deleted, or a renewal of Claude Code's login not saved yet), `parks_left` (left because another Pitboard may own them) and `set_aside_removed` (folders set aside it deleted), and the booleans `home_removed` and `schedule_removed`. |
+| `rename` | `from`, `to` and `email`. |
+| `doctor` | `environment`, the paths, login stores and versions Pitboard found, as [Doctor environment](/reference/json-output#doctor-environment) lists. `checks`, each with `code`, `name`, `level` (`ok`, `warn` or `fail`), `detail` and `advice`, as [`doctor`](/reference/maintenance-commands#doctor) lists. |
 | `statusline` | `line`, the status line without colour, as [`statusline`](/reference/integration-commands#statusline) describes. |
 | `warm` | `range`, with `from` and `to` as `HH:MM`; `halted`, `null`, or an object with `reason`, a `warm_up_halted` code from [Watch events](/reference/json-output#watch-events), where nothing can be warmed up here; and `accounts`, one object per Claude Code account with `label` and `on`. An account turned on also has `state`: `due`, `running`, `resting`, `waiting` or `held`, with `until` and `next_at` where they are known and, for `held`, `reason`, a code from [Watch events](/reference/json-output#watch-events). |
 | `warm on`, `warm off` | `label`, `on`, and `changed`, `false` when it was so already. |
@@ -127,7 +128,9 @@ In the order of `pitboard --help`:
 | `watch` | One envelope per event, as [Watch events](/reference/json-output#watch-events) lists. |
 | `completions`, `manpage` | `{}`, in the failure shape [The envelope](/reference/json-output#the-envelope) gives. |
 
-`adoption` says how sessions already running pick up a switch, as [Open sessions](/concepts/switching#open-sessions) explains:
+A Claude Desktop account has no email address, so `email` is empty wherever one of its accounts appears.
+
+`adoption` says how each tool takes up a switch, as [Open sessions](/concepts/switching#open-sessions) explains:
 
 | Case | `adoption` | `adoption_ceiling_seconds` |
 | --- | --- | --- |
@@ -135,6 +138,33 @@ In the order of `pitboard --help`:
 | Claude Code on macOS, while a login file sits behind the keychain | `{"follows":"renewal","path":"/Users/you/.claude/.credentials.json"}` | `null` |
 | Codex | `{"follows":"restart","program":"codex"}` | `null` |
 | Claude Desktop | `{"follows":"open","app":"Claude"}` | `null` |
+
+### Moves given up
+
+Each object in the `moves_given_up` of `abandon`:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `provider` | string | `desktop`. |
+| `label` | string | The account whose login was moving, as `pitboard use` takes it, such as `desktop/work`. |
+| `parked` | integer | `1` when the account holds a parked login afterwards, `0` otherwise. |
+| `set_aside` | integer | How many folders the give-up set aside. |
+| `left` | array of strings | The items that stay in Claude's data folder. |
+| `slot` | string or null | The data folder the move was made in, where it is not the one this run reads. `null` otherwise. |
+
+### Doctor environment
+
+The `environment` of `doctor`. It is `{}` where a variable naming a folder is empty or relative.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `config_file` | string | Claude Code's config file, such as `~/.claude.json`. |
+| `storage_dir` | string | The folder that holds Claude Code's login and locks, and picks its keychain item's name: `CLAUDE_SECURESTORAGE_CONFIG_DIR`, `CLAUDE_CONFIG_DIR` or `~/.claude`. |
+| `credential_service` | string | The keychain item that holds Claude Code's login on macOS, such as `Claude Code-credentials`. |
+| `credential_store` | string | Where Pitboard found Claude Code's login: `keychain`, `file`, `absent`, `unknown` or `unreadable`. |
+| `home` | string | The Pitboard directory. |
+| `codex` | object | `home`, Codex's folder, `~/.codex` or `CODEX_HOME`. `present`, whether that folder exists. `backend`, where Codex keeps its login: `file`, `keyring`, `auto`, `ephemeral`, `secrets` or `unknown`. `login_present`, whether `auth.json` exists, or `null` for any store but `file`. `version`, the version of OpenAI's Codex CLI, or `null`. |
+| `desktop` | object | `data_folder`, Claude's data folder, or `null` where Pitboard leaves Claude Desktop alone. `present`, whether that folder exists. `build`, the version of `/Applications/Claude.app`, or `null`. |
 
 ## Status data
 
@@ -144,21 +174,21 @@ In the order of `pitboard --help`:
 | `signed_in` | object or null | The Claude Code account in use: `account_uuid`, `email` and `organization_uuid`. With `--offline`, the account Anthropic last named for the login stored. |
 | `signed_in_error` | string or null | Why `signed_in` is `null`, such as `nothing is signed in` or `not asked`. |
 | `accounts` | array | One object per enrolled account, Claude Code's first, and the account in use first within each tool. A login in use that no account matches gets one too, and so does a login Pitboard could not read or use. |
-| `awaiting` | array | One object per sign-in inside Claude left halfway with an account parked for it, or empty: `provider`, `label`, the account it signs in to, `put_back`, the account parked for it, both as typed, `since`, and `again`, `true` for a sign-in again. |
+| `awaiting` | array | One object per sign-in inside Claude left halfway with an account parked for it, or empty. |
 
-For Codex, the account in use is the object in `accounts` with `provider` set to `codex` and `signed_in` set to `true`.
+For Codex and Claude Desktop, the account in use is the object in `accounts` with that `provider` and `signed_in` set to `true`.
 
 Each object in `accounts`:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `label` | string or null | The label without its tool, such as `work`. `null` for a login nobody enrolled. |
-| `email` | string | The account's email address. Empty when Pitboard could not identify the login, and on every Claude Desktop account. |
-| `account_uuid` | string | The account id, empty when Pitboard could not identify the login. For Claude Code, the Anthropic account UUID. One person's accounts in two organisations share it. For Claude Desktop, the account UUID Claude's settings named. |
-| `organization_uuid` | string or null | The Claude organisation of the login. `null` for Codex and Claude Desktop, and for a login Pitboard could not identify. |
+| `email` | string | The account's email address. Empty on a Claude Desktop account, and when Pitboard could not identify the login. |
+| `account_uuid` | string | The account id, empty when Pitboard could not identify the login. Claude Code: the Anthropic account UUID, which one person's accounts in two organisations share. Claude Desktop: the account UUID Claude's settings named. |
+| `organization_uuid` | string or null | The Claude organisation of a Claude Code login. `null` on any other tool's account, and for a login Pitboard could not identify. |
 | `signed_in` | boolean | `true` for the account its tool is using. |
 | `switchable` | boolean | `true` when `pitboard use` can switch to it: it is not in use, and the `refresh_expires_at` of its parked login has not passed. |
-| `parked` | object or null | The parked login's `parked_at`, `access_expires_at`, `refresh_expires_at` and `session_expires_at`, or `null` when nothing is parked. An expiry is `null` when unknown. `refresh_expires_at` is always `null` for Codex. For Claude Desktop, `session_expires_at` is the expiry its session cookie carries, and the other two are `null`. For the other tools, `session_expires_at` is `null`. |
+| `parked` | object or null | The parked login's `parked_at` and its expiries, as the next table lists, or `null` when nothing is parked. |
 | `lasts` | object or null | `seconds` and `why`. For the account in use, until its first limit runs out at its [pace](/concepts/usage#pace) (`why` is `filling`), or else until its first reset (`resets`). For any other account, until its first reset. `null` when no limit has a reset ahead. |
 | `usage` | object or null | The reading: `source`, `observed_at` (when it was taken) and `windows`. `null` when no usage is known. |
 | `stale` | string or null | Why the reading is not live, as [Stale codes](/reference/json-output#stale-codes) lists. |
@@ -166,6 +196,14 @@ Each object in `accounts`:
 | `qualified` | string or null | The label with its tool, such as `claude/work`. `null` for a login nobody enrolled. |
 | `plan` | string or null | The plan the account's login last said it is on, such as `Max 20x`, `Team 5x` or `Plus`. Pitboard records it when it enrols the account and each time it reads the account's login. `null` where no login Pitboard read said one. |
 | `read_at` | integer or null | On the Claude Desktop account in use, when Pitboard last read it in use. `null` on every other account. |
+
+Which expiries `parked` gives depends on the tool. A time is `null` where it is unknown.
+
+| Tool | `access_expires_at` | `refresh_expires_at` | `session_expires_at` |
+| --- | --- | --- | --- |
+| Claude Code | A time | A time | Always `null` |
+| Codex | A time | Always `null` | Always `null` |
+| Claude Desktop | Always `null` | Always `null` | The expiry its session cookie carries |
 
 `source` is `live` when Pitboard asked the service this time. It is `remembered` for the last reading Pitboard recorded, from the command line, the app or a Claude Code status line.
 
@@ -181,6 +219,16 @@ Each object in `windows` is one limit:
 | `severity` | string or null | Anthropic's own grade of the limit. `null` where it gives none, as for every Codex limit. |
 | `length_seconds` | integer | How long the limit's period runs, such as `18000`. Left out when unknown. |
 | `pace` | object or null | The limit's [pace](/concepts/usage#pace) as of `observed_at`. `expected` is the share an even pace would have used. `delta` is `percent` less `expected`, in percentage points. `standing` is `over`, `under` or `even` (within 5 points). Over pace adds `runs_out_in`, the seconds left until the limit runs out at its rate since its period began. `null` in a period's first 3%, for a limit used up, after its reset, and where its reset or length is unknown. |
+
+Each object in `awaiting`:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `provider` | string | `desktop`. |
+| `label` | string | The label an add enrols under, or the account signed in to again, in the form `pitboard use` takes, such as `desktop/travel`. |
+| `put_back` | string | The account parked for it, in the same form. |
+| `since` | integer | When the sign-in began. |
+| `again` | boolean | `true` for a sign-in again, `false` for an add. |
 
 ## Watch events
 
@@ -314,4 +362,4 @@ A switch prints this on one line:
 | `asked_recently` | Pitboard asked too recently for the limit to have moved one percentage point, so it did not ask again. |
 | `interrupted` | The request stopped before it had an answer. |
 | `not_asked` | Pitboard read the account without asking the service, as `pitboard status --offline` does. |
-| `no_usage` | A Claude Desktop account, whose usage Pitboard never reads. |
+| `no_usage` | The account is a Claude Desktop account. Pitboard reads no usage for one: see [Claude Desktop accounts](/concepts/limits#claude-desktop-accounts). |
