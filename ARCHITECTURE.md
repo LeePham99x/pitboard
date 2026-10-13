@@ -1429,15 +1429,14 @@ it is too unless Credential Manager is turned on, which W22 reads. The checker f
 fact each build was read for.
 
 `.github/workflows/conformance.yml` checks the newest builds of each tool against its
-register on Mondays and Thursdays, or a version given by hand. It reads four builds of each
-tool, `linux-x64`, `darwin-arm64`, `win32-x64` and `win32-arm64`, all on Linux. Its most
-recent run says which facts can still be read from each build it checked, and which have
-moved.
+register twice a week, or a version given by hand. It reads four builds of each tool,
+`linux-x64`, `darwin-arm64`, `win32-x64` and `win32-arm64`, all on Linux. Its most recent
+run says which facts can still be read from each build it checked, and which have moved.
 
 Adding a tool takes three things: a register read out of a named build, with its table, a
-module under `provider/` implementing `Provider`, and a conformance job. `ProviderId`,
-`ProviderId::ALL` and the matches in `provider::of`, `assumptions::of` and
-`assumptions::per_system` name every tool. The compiler and the tests then point at what an
+module under `provider/` implementing `Provider`, and an entry in `conformance.yml`'s
+matrix. `ProviderId`, `ProviderId::ALL` and the matches in `provider::of`,
+`assumptions::of` and `assumptions::per_system` name every tool. The compiler and the tests then point at what an
 added tool has to fill in.
 
 How to run the checker and add a fact is in
