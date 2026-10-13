@@ -289,7 +289,7 @@ When Codex's checks appear and Claude Code is absent, `doctor` leaves out `confi
   | `auth_source` | `what a session authenticates with` | Warns when Claude Code uses something other than its stored login, such as `ANTHROPIC_API_KEY` or `apiKeyHelper`. |
   | `asking` | `asking Anthropic` | Warns while Pitboard waits to ask about usage, after a service asked for less traffic or could not be reached. The name lists the services asked. |
   | `network` | `network` | Direct, or which proxy and which variable named it. Warns for a variable holding no proxy address Pitboard can read. Warns for a SOCKS proxy, which Pitboard does not use, where `NO_PROXY` leaves a host it calls. |
-  | `dormant_account` | `account <label>` | Only for a Claude Code account not switched to for 30 days or more. Always warns. |
+  | `dormant_account` | `account <label>` | Only for a Claude Code account not switched to for 30 days or more. An account enrolled with `--sign-in` and never switched to gets none. Always warns. |
   | `codex_backend` | `Codex login store` | Where Codex keeps its login. Pitboard switches only the file store, `auth.json`. |
   | `codex_auth_file` | `Codex login file` | File store only. `auth.json` exists, and only you can read it. |
   | `codex_login` | `Codex login` | File store only. The login in `auth.json` is a ChatGPT sign-in Pitboard can read. |
