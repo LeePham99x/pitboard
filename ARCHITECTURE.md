@@ -581,7 +581,9 @@ pages load, as a browser would.
   tap `datlechin/homebrew-tap`, with `tap_migrations.json` and the tap's README.
   `install.sh`, the install script, goes on the release.
 - `docs/`: the Mintlify source of docs.usepitboard.com.
-- `website/`: reserved for the usepitboard.com site, to be built with Astro; empty.
+- `website/`: the usepitboard.com site, built with Astro from `CHANGELOG.md` and the latest
+  GitHub release into static files for Cloudflare Workers. `scripts/guard.mjs` checks the
+  build; [CONTRIBUTING.md](CONTRIBUTING.md#website) has the commands.
 - `.github/`:
   - `workflows/ci.yml` checks every push to `main` and every pull request, and
     `workflows/release.yml` turns a `v` tag into a release.

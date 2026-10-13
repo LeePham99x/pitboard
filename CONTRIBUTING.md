@@ -185,6 +185,8 @@ CI also runs:
 - the workflows job: `actionlint` and `zizmor` on everything under `.github`,
   PSScriptAnalyzer on the PowerShell in `.github/scripts`, and a guard that fails when
   `.github/workflows/rotation.yml` names a repository secret
+- the website job, when a pull request changes `website/`, `CHANGELOG.md` or a docs file the
+  site reads: the checks [Website](#website) lists
 
 The `all-green` job waits for every other job and fails when any of them failed or was
 cancelled. It says in one place whether a run passed, so a job added to
@@ -546,6 +548,31 @@ Windows build. Then record what you found:
 `docs/` is the source of [docs.usepitboard.com](https://docs.usepitboard.com).
 [docs/README.md](docs/README.md) says how to preview, check and publish a change, and
 [docs/AGENTS.md](docs/AGENTS.md) holds the writing rules.
+
+## Website
+
+`website/` is the source of usepitboard.com: Astro and Tailwind CSS, built to static files that
+Cloudflare Workers serves. Its pages read `CHANGELOG.md` and the latest GitHub release at build
+time. It needs Node 24 or later. Check a change in `website/` with:
+
+```sh
+npm ci
+npx prettier --check .
+npm run check
+npm test
+npm run build
+```
+
+`npm run build` reads the release from GitHub, with `GITHUB_TOKEN` when it is set.
+`PITBOARD_SITE_OFFLINE=1` builds from the release recorded in `src/data/fixtures/` instead.
+After Astro, `scripts/csp.mjs` writes `dist/_headers` with a hash of each inline script, and
+`scripts/guard.mjs` fails the build on what the site must not ship: an `install.sh`, a style
+attribute, a page over its budget, a banned word from [docs/AGENTS.md](docs/AGENTS.md), a
+character neither font draws, a broken anchor, or two release versions. `npm run preview`
+serves the build.
+
+The newest version in CHANGELOG.md needs a line in `src/data/highlights.ts`, or the build
+fails; [RELEASING.md](RELEASING.md) adds it with the version heading.
 
 ## Changelog
 

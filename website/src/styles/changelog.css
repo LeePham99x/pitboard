@@ -1,0 +1,249 @@
+@layer theme, base, components, utilities;
+
+@layer components {
+  /* head stacked as on /download, then the rail beside the entries */
+  .cl {
+    display: grid;
+    grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+    column-gap: var(--gap);
+    padding-top: 56px;
+  }
+  .cl-h1 {
+    grid-column: 1 / -1;
+  }
+  /* the rail's first row sits on the baseline of the first version heading */
+  .rail {
+    grid-column: 1;
+    grid-row: 3;
+    padding-top: 176px;
+  }
+  .cl-main {
+    grid-column: 2;
+    grid-row: 3;
+    padding-top: 96px;
+    min-width: 0;
+    max-width: var(--measure);
+  }
+
+  /* 8 px inside the box that scrolls, so a focus ring is not clipped */
+  .rail-in {
+    position: sticky;
+    top: 96px;
+    max-height: calc(100vh - 128px);
+    overflow-y: auto;
+    scrollbar-width: thin;
+    margin: 0 -8px;
+    padding: 0 8px;
+  }
+  .rail a {
+    display: block;
+    width: fit-content;
+    margin: 0 -6px;
+    padding: 3px 6px;
+    font: 500 14px/24px var(--f-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+    text-decoration: none;
+  }
+  .rail a:hover {
+    color: var(--ink);
+    text-decoration: underline;
+    text-underline-offset: 4px;
+  }
+  .rail a[aria-current] {
+    color: var(--ink);
+    font-weight: 700;
+  }
+  .rail a:focus-visible {
+    outline-offset: -2px;
+  }
+
+  .cl-month {
+    font: 500 15px/24px var(--f-mono);
+    color: var(--text-muted);
+    margin-bottom: 16px;
+  }
+  .entry {
+    border-top: 1px solid var(--rule);
+    padding-top: 28px;
+  }
+  .entry + .entry,
+  .entry + .cl-month {
+    margin-top: 112px;
+  }
+  .entry-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 20px;
+    row-gap: 4px;
+  }
+  .entry-v {
+    font: 700 32px/40px var(--f-mono);
+    letter-spacing: -0.01em;
+    color: var(--text-strong);
+    font-variant-ligatures: none;
+  }
+  .entry-d {
+    font: 400 15px/24px var(--f-mono);
+    color: var(--text-muted);
+  }
+  .entry-intro {
+    margin-top: 24px;
+  }
+  .entry-intro > * + * {
+    margin-top: 16px;
+  }
+  .entry-intro > p {
+    text-wrap: pretty;
+  }
+
+  .cl-sec {
+    margin-top: 40px;
+  }
+  .cl-h3 {
+    font: 700 16px/24px var(--f-mono);
+    color: var(--text-strong);
+  }
+  .cl-body {
+    margin-top: 16px;
+  }
+  .cl-list > li {
+    text-wrap: pretty;
+  }
+  .cl-list > li + li {
+    margin-top: 20px;
+  }
+  .cl-list li > p + p,
+  .cl-list li > p + .cl-list,
+  .cl-list li > .cl-list + p {
+    margin-top: 12px;
+  }
+  .cl-list .cl-list {
+    margin-top: 12px;
+    padding-left: 24px;
+  }
+  .cl-list .cl-list > li + li {
+    margin-top: 12px;
+  }
+  .entry code {
+    color: var(--text);
+  }
+  .entry a code {
+    color: inherit;
+  }
+  .entry code.long {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .entry strong {
+    font-weight: 600;
+    color: var(--text-strong);
+  }
+  .cl-pre {
+    padding: 12px 14px;
+    background: var(--bg-sunken);
+    border-radius: 2px;
+    font: 500 15px/24px var(--f-mono);
+    white-space: pre-wrap;
+  }
+  .cl-pre code {
+    font-size: 1em;
+    white-space: inherit;
+  }
+  .cl-pre span {
+    display: block;
+    padding-left: 2ch;
+    text-indent: -2ch;
+    overflow-wrap: anywhere;
+  }
+
+  .entry-foot {
+    margin-top: 40px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px 28px;
+    font: 500 15px/24px var(--f-mono);
+  }
+  html:not(.js) .cl-copy {
+    display: none;
+  }
+
+  .cl-end {
+    margin-top: 112px;
+    border-top: 1px solid var(--rule);
+    padding-top: var(--block-in);
+  }
+
+  @media (max-width: 1023px) {
+    .cl {
+      grid-template-columns: minmax(0, 1fr);
+      padding-top: 48px;
+    }
+    .rail,
+    .cl-main {
+      grid-column: 1;
+      grid-row: auto;
+    }
+    .rail {
+      padding-top: 40px;
+      margin: 0 calc(-1 * var(--gutter));
+      border-bottom: 1px solid var(--grid);
+    }
+    /* the fade at the right edge says the row scrolls */
+    .rail-in {
+      position: static;
+      max-height: none;
+      overflow: auto hidden;
+      margin: 0;
+      padding: 0 48px 0 var(--gutter);
+      -webkit-mask-image: linear-gradient(to left, transparent, #000 48px);
+      mask-image: linear-gradient(to left, transparent, #000 48px);
+    }
+    .rail ul {
+      display: flex;
+      gap: 28px;
+      width: max-content;
+    }
+    .rail a {
+      padding: 10px 6px;
+      font-size: 15px;
+    }
+    .cl-main {
+      padding-top: 56px;
+    }
+  }
+  @media (max-width: 639px) {
+    .cl {
+      padding-top: 32px;
+    }
+    .entry + .entry,
+    .entry + .cl-month,
+    .cl-end {
+      margin-top: 80px;
+    }
+    .entry-v {
+      font-size: 24px;
+      line-height: 30px;
+    }
+    .cl-sec {
+      margin-top: 32px;
+    }
+    .cl-list > li + li {
+      margin-top: 18px;
+    }
+    .cl-list .cl-list {
+      padding-left: 16px;
+    }
+    .cl-pre {
+      padding: 10px 12px;
+      font-size: 13px;
+      line-height: 22px;
+    }
+    .entry-foot {
+      gap: 12px 24px;
+      font-size: 14px;
+    }
+  }
+}

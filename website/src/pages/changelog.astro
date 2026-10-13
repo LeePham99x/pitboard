@@ -1,0 +1,102 @@
+---
+import Base from "../layouts/Base.astro";
+import "../styles/changelog.css";
+import { compareBase, longDate, monthOf } from "../lib/changelog.ts";
+import { siteData } from "../lib/data.ts";
+import { REPO, SITE, SPONSOR } from "../data/site.ts";
+
+const { versions } = await siteData();
+const entries = versions.map((v, i) => {
+  const month = monthOf(v.date);
+  const from = compareBase(v.link);
+  return {
+    ...v,
+    id: `v${v.version}`,
+    month: i === 0 || monthOf(versions[i - 1].date) !== month ? month : null,
+    files: `${REPO}/releases/tag/v${v.version}`,
+    // a first release links its tag, which Files and checksums already does
+    other: from
+      ? { href: v.link, text: `Changes since ${from}` }
+      : v.link !== `${REPO}/releases/tag/v${v.version}`
+        ? { href: v.link, text: "Release" }
+        : null,
+  };
+});
+---
+
+<Base
+  title="Pitboard changelog"
+  description="What each Pitboard release added, changed and fixed, newest first."
+  current="changelog"
+  path="/changelog"
+>
+  <main id="main">
+    <div class="wrap cl">
+      <h1 class="h1 cl-h1">Changelog</h1>
+
+      <nav class="rail" aria-label="Versions">
+        <div class="rail-in">
+          <ul>
+            {entries.map((e) => <li>
+              <a href={`#${e.id}`} data-v={e.id}>
+                {e.version}
+              </a>
+            </li>)}
+          </ul>
+        </div>
+      </nav>
+
+      <div class="cl-main">
+        {entries.map((e) => (
+          <>
+            {e.month && <p class="cl-month">{e.month}</p>}
+            <article class="entry" id={e.id} aria-labelledby={`${e.id}-h`}>
+              <div class="entry-head">
+                <h2 class="entry-v" id={`${e.id}-h`}>
+                  {e.version}
+                </h2>
+                <time class="entry-d" datetime={e.date}>
+                  {longDate(e.date)}
+                </time>
+              </div>
+              {e.intro && <div class="entry-intro" data-source="changelog" set:html={e.intro} />}
+              {e.sections.map((s) => <div class="cl-sec">
+                <h3 class="cl-h3" id={s.id}>
+                  {s.kind}
+                </h3>
+                <div class="cl-body" data-source="changelog" set:html={s.html} />
+              </div>)}
+              <div class="entry-foot">
+                <a href={e.files}>Files and checksums</a>
+                {e.other && <a href={e.other.href}>{e.other.text}</a>}
+                <button
+                  class="btn-quiet cl-copy"
+                  type="button"
+                  id={`${e.id}-copy`}
+                  aria-labelledby={`${e.id}-copy ${e.id}-h`}
+                  data-copy={`${SITE}/changelog#${e.id}`}
+                >
+                  Copy link
+                </button>
+              </div>
+            </article>
+          </>
+        ))}
+
+        <div class="cl-end prose">
+          <p>
+            Follow releases with the <a href="/changelog/rss.xml">RSS feed</a>. Release candidates
+            are only on <a href={`${REPO}/releases`}>GitHub Releases</a>.
+          </p>
+          <p>
+            This page is built from
+            <a href={`${REPO}/blob/main/CHANGELOG.md`}><code>CHANGELOG.md</code></a>.
+          </p>
+          <p><a href={SPONSOR}>Sponsor Pitboard on GitHub</a>.</p>
+        </div>
+      </div>
+    </div>
+  </main>
+  <script>
+    import "../scripts/changelog.ts";
+  </script></Base>

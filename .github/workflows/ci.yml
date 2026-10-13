@@ -525,6 +525,50 @@ jobs:
             exit 1
           fi
 
+  # The usepitboard.com site in website/. It reads CHANGELOG.md and three docs files as well,
+  # so a pull request that changes none of them, nor website/, skips the steps and passes. The
+  # build reads the latest release from GitHub, writes the CSP and fails on any rule guard.mjs
+  # keeps.
+  website:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      # A pull request's checkout is its merge commit, whose first parent is the base.
+      - id: touched
+        working-directory: .
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != pull_request ] || ! git diff --quiet HEAD^1 HEAD -- \
+            website CHANGELOG.md docs/AGENTS.md docs/quickstart.mdx docs/guides/status-line.mdx \
+            .github/workflows/ci.yml; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "nothing the site reads changed"
+          fi
+      - if: steps.touched.outputs.run
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: website/.node-version
+          package-manager-cache: false
+      - if: steps.touched.outputs.run
+        run: npm ci
+      - if: steps.touched.outputs.run
+        run: npx prettier --check .
+      - if: steps.touched.outputs.run
+        run: npm run check
+      - if: steps.touched.outputs.run
+        run: npm test
+      - if: steps.touched.outputs.run
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: npm run build
+
   # The one check a merge on main needs. It fails when any job above failed or was cancelled,
   # and runs even then, since a required check that was skipped counts as passed. A job added
   # above goes in its needs.
@@ -543,6 +587,7 @@ jobs:
       - semver
       - deny
       - workflows
+      - website
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

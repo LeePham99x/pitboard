@@ -1,0 +1,45 @@
+---
+import { DOCS, REPO, SPONSOR } from "../data/site.ts";
+
+const columns = [
+  {
+    id: "foot-h-1",
+    title: "Pitboard",
+    links: [
+      ["/download", "Download"],
+      ["/changelog", "Changelog"],
+      [DOCS, "Docs"],
+      [`${DOCS}/security`, "Security and privacy"],
+    ],
+  },
+  {
+    id: "foot-h-2",
+    title: "Project",
+    links: [
+      [REPO, "GitHub"],
+      [`${REPO}/issues/new?template=bug.yml`, "Report a bug"],
+      [`${REPO}/security/advisories/new`, "Report a vulnerability"],
+      [SPONSOR, "Sponsor"],
+    ],
+  },
+];
+---
+
+<footer class="site-foot">
+  <div class="wrap">
+    <div class="foot-in">
+      <div class="foot-cols">
+        {columns.map((c) => <nav aria-labelledby={c.id}>
+          <p class="foot-h" id={c.id}>
+            {c.title}
+          </p>
+          <ul>
+            {c.links.map(([href, text]) => <li>
+              <a href={href}>{text}</a>
+            </li>)}
+          </ul>
+        </nav>)}
+      </div>
+    </div>
+  </div>
+</footer>

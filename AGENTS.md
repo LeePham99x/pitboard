@@ -36,6 +36,9 @@ is the full guide; this file is what an agent needs before it touches anything.
 - Never open a `pitboard://` or `pitboard-debug://` link against a real home: it starts
   whichever copy claims the scheme, with the real home. UI tests send `pitboard-debug://`
   links only to a debug build they launched in a fixture.
+- Never put an `install.sh`, a rule naming it or a catch-all fallback in `website/`. A zone
+  rule sends `/install.sh` to the latest release, and a site file there would change what
+  people pipe to `sh`. The site's guard fails a build that holds one.
 - Never leave a local build of the app registered with macOS. Its scheme and Share
   extension stay registered after a build with Xcode, `xcodebuild` or `build-app.sh`:
   `pitboard-debug://` and **Pitboard Debug** for a debug build, `pitboard://` and
@@ -89,6 +92,9 @@ and one of its unit tests launch into, then run its unit tests:
 ./apps/macos/scripts/build-xcframework.sh --fixture
 swift test --package-path apps/macos
 ```
+
+For the site, run `npm ci`, `npm test` and `npm run build` in `website/`;
+[Website](CONTRIBUTING.md#website) has the rest.
 
 CI sets `RUSTFLAGS=-D warnings`. [Check a change](CONTRIBUTING.md#check-a-change) lists
 everything else CI runs, and [The app](CONTRIBUTING.md#the-app) covers the Xcode project,

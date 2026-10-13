@@ -36,12 +36,14 @@ update the command line and the app together.
    `## [<version>]`.
 2. At the bottom of CHANGELOG.md, point `[Unreleased]` at `v<version>...HEAD`. Add a
    `[<version>]` line that compares the previous tag with `v<version>`.
-3. In `Cargo.toml`, check that `version` under `[workspace.package]` is the version and
+3. In `website/src/data/highlights.ts`, add the version's line for the site's Recent
+   releases, 60 characters at most. The site's build fails without it.
+4. In `Cargo.toml`, check that `version` under `[workspace.package]` is the version and
    that the `pitboard-core` line under `[workspace.dependencies]` says
    `version = "=<version>"`. Set both if not.
-4. Run `cargo update --workspace`, so `Cargo.lock` records the version. CI and the release
+5. Run `cargo update --workspace`, so `Cargo.lock` records the version. CI and the release
    build with `--locked`, which fails on a lock file that needs updating.
-5. Commit what changed to `main` as `Release <version>`. Both tags in the next section
+6. Commit what changed to `main` as `Release <version>`. Both tags in the next section
    go on this commit.
 
 Nothing in the Xcode project changes. `apps/macos/scripts/build-app.sh` takes the app's version
