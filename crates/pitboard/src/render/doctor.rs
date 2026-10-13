@@ -5,7 +5,7 @@ use pitboard_core::doctor::{self, Check, Diagnosis, Level};
 use pitboard_core::words;
 use serde_json::{Value, json};
 
-pub fn human(checks: &[Check]) -> String {
+pub(crate) fn human(checks: &[Check]) -> String {
     // Each section lines up on its own, so what one tool's checks are called can never move
     // a column of another's.
     let width_of = |section| {
@@ -61,7 +61,7 @@ pub fn human(checks: &[Check]) -> String {
 /// What the bug template promises: labels, codes, paths and times, and no email address,
 /// account identifier or login name. The human-readable report above is not touched; a
 /// person looking at their own machine should see their own account.
-pub fn json(diagnosis: &Diagnosis) -> Value {
+pub(crate) fn json(diagnosis: &Diagnosis) -> Value {
     let report = json!({
         "environment": diagnosis.environment,
         "checks": diagnosis.checks.iter().map(|c| json!({

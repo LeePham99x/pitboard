@@ -41,7 +41,7 @@ fn label(line: &StatusLine) -> String {
     }
 }
 
-pub fn human(line: &StatusLine) -> String {
+pub(crate) fn human(line: &StatusLine) -> String {
     let mut parts = vec![format!(
         "{} {}",
         label(line),

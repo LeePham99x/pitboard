@@ -57,6 +57,7 @@ fn unexpected(status: u16) -> ProviderError {
 /// The body is JSON rather than form-encoded, which is what Codex sends and is not what its
 /// own authorisation-code exchange sends. Getting that wrong is a 400 with nothing useful
 /// in it.
+#[cfg_attr(not(feature = "test-support"), allow(unreachable_pub))]
 #[derive(Debug, Clone)]
 pub struct Fresh {
     pub id_token: Option<String>,

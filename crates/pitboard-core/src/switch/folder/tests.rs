@@ -913,7 +913,7 @@ fn an_aside_set_aside_while_the_machine_could_not_be_read_is_given_back() {
     let homes = park_name(&HOME);
     let park = park_by_hand(&m, None, &homes, &HOME);
     let mut state = state::load(&m.ctx).expect("state");
-    state.aside.push(crate::state::Aside {
+    state.aside.push(state::Aside {
         name: homes.clone(),
         tool: ProviderId::Desktop,
         at: NOW,
@@ -990,7 +990,7 @@ fn repair_gives_an_account_its_park_back_where_the_one_recorded_is_gone() {
     // What an earlier `repair` left: the folder set aside under `home`.
     let (m, recorded, again) = restored("repair-restored-aside");
     let mut state = state_of(&m);
-    state.aside.push(crate::state::Aside {
+    state.aside.push(state::Aside {
         name: again.clone(),
         tool: ProviderId::Desktop,
         at: NOW,
@@ -1132,7 +1132,7 @@ fn forget_and_uninstall_delete_the_folders_they_are_asked_to() {
         (nobodys, None),
     ] {
         let kept = park_by_hand(&m, None, name, &STRANGER);
-        state.aside.push(crate::state::Aside {
+        state.aside.push(state::Aside {
             name: name.into(),
             tool: ProviderId::Desktop,
             at: NOW,
@@ -4154,7 +4154,7 @@ fn a_refusal_after_a_settled_move_says_all_it_did_first() {
     );
 }
 
-fn superseded(m: &Machine) -> std::path::PathBuf {
+fn superseded(m: &Machine) -> PathBuf {
     state_of(m)
         .aside
         .iter()

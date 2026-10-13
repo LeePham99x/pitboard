@@ -9,7 +9,7 @@
 //! in on this machine": each tool has a live login of its own or none, and a row is about
 //! exactly one of them.
 
-use crate::api::{self, ApiError, Owner};
+use crate::api::{ApiError, Owner};
 use crate::context::Context;
 use crate::error::Cause;
 use crate::in_use::{self, InUse};
@@ -504,7 +504,7 @@ impl Answered {
 }
 
 /// A provider's failure as the usage path has always classified one.
-fn to_api(error: crate::provider::ProviderError) -> ApiError {
+fn to_api(error: ProviderError) -> ApiError {
     use crate::provider::ProviderError as P;
     match error {
         P::Unauthorized => ApiError::Unauthorized,
@@ -569,21 +569,16 @@ fn ask_usage(
     // A park that is not the shape its own tool keeps was damaged at rest, which is a fact
     // about the vault and not about the service. Said as such rather than as an answer the
     // service gave.
-    if !signed_in
-        && matches!(
-            answer,
-            Err(crate::provider::ProviderError::ShapeUnexpected { .. })
-        )
-    {
+    if !signed_in && matches!(answer, Err(ProviderError::ShapeUnexpected { .. })) {
         return (Err(Stale::ParkUnreadable), None);
     }
     let answer = answer.map_err(to_api);
     let learned = match &answer {
         Ok(_) => Some(budget::Outcome::Answered),
-        Err(api::ApiError::RateLimited { retry_after }) => {
+        Err(ApiError::RateLimited { retry_after }) => {
             Some(budget::Outcome::RateLimited(*retry_after))
         }
-        Err(api::ApiError::Network(_) | api::ApiError::Unexpected { .. }) => {
+        Err(ApiError::Network(_) | ApiError::Unexpected { .. }) => {
             Some(budget::Outcome::Unreachable)
         }
         // A token that is refused, or an answer that is not understood, is not a reason to
@@ -899,12 +894,7 @@ pub(crate) fn ask(ctx: &Context, permit: Permit, state: &State, fresh: bool) -> 
 /// since. What the answers teach is recorded here, once, from one thread: every account's
 /// record lives in one file, so a thread each reading it, changing one entry and writing it
 /// back would erase what the others learned.
-pub(crate) fn report(
-    ctx: &Context,
-    permit: crate::service::Permit,
-    state: &State,
-    answers: Answers,
-) -> Report {
+pub(crate) fn report(ctx: &Context, permit: Permit, state: &State, answers: Answers) -> Report {
     let now = ctx.now();
     budget::record(ctx, permit, &answers.learned);
     let signed_in_default = answers
@@ -1648,8 +1638,8 @@ mod tests {
     /// the login somebody is using sends them looking for a park that is not there.
     #[test]
     fn a_refused_token_is_an_expired_session_when_it_is_the_one_signed_in() {
-        let api = crate::api::scripted::ScriptedApi::new();
-        api.token_trouble("t", crate::api::scripted::Trouble::Unauthorized);
+        let api = ScriptedApi::new();
+        api.token_trouble("t", Trouble::Unauthorized);
         let ctx = Context::new(std::path::PathBuf::from("/nowhere"))
             .with_pitboard_home(std::env::temp_dir().join("pitboard-status-refused"))
             .with_scripted_api(api);
@@ -2503,7 +2493,7 @@ mod tests {
         assert!(
             api.asked()
                 .iter()
-                .all(|asked| !matches!(asked, crate::api::scripted::Asked::Usage(t) if t.contains("acc-B"))),
+                .all(|asked| !matches!(asked, Question::Usage(t) if t.contains("acc-B"))),
             "and nothing was asked about it"
         );
         let offline = gather_offline(&ctx, &s);

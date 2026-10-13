@@ -459,10 +459,7 @@ pub(super) fn commit_leave(
     forget_left(ctx, permit, state, tool)?;
     let now = ctx.now();
     let park = folder_park(ctx, moving, now);
-    match state
-        .by_id(tool, &moving.id)
-        .map(crate::state::Account::key)
-    {
+    match state.by_id(tool, &moving.id).map(state::Account::key) {
         Some(key) => state.park(&key, park.clone()),
         // No account to hold it: kept, and `repair` gives it back once one is enrolled.
         None => state.aside.push(aside_of(
@@ -1015,7 +1012,7 @@ pub(super) fn commit_arrive(
     } else {
         state.discard(&moving.park, ParkKind::Folder);
     }
-    let owner = account.as_ref().map(crate::state::Account::owner);
+    let owner = account.as_ref().map(state::Account::owner);
     let in_use = InUse {
         named: owner
             .as_ref()

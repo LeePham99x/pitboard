@@ -118,7 +118,7 @@ fn provenance(usage: &Snapshot, now: i64) -> Option<String> {
     }
 }
 
-pub fn human(report: &Report) -> String {
+pub(crate) fn human(report: &Report) -> String {
     let now = report.now;
     if report.rows.is_empty() {
         // With nothing enrolled, only Claude Code was read.
@@ -352,7 +352,7 @@ fn window(limit: &Window, at: i64, now: i64) -> Value {
     value
 }
 
-pub fn json(report: &Report) -> Value {
+pub(crate) fn json(report: &Report) -> Value {
     json!({
         // Which slot this answer is about. Accounts and their parked logins belong to the
         // machine; who is signed in belongs to one credential slot, and CLAUDE_CONFIG_DIR

@@ -28,7 +28,7 @@ use windows::Win32::System::TaskScheduler::{
 use windows::Win32::System::Variant::VARIANT;
 use windows::core::{BSTR, Interface};
 
-pub struct Request<'a> {
+pub(super) struct Request<'a> {
     pub action: TaskAction,
     pub scratch: Option<&'a Path>,
     pub label: &'a str,
@@ -132,7 +132,7 @@ fn utc_in(minutes: u32) -> String {
     )
 }
 
-pub fn task(req: &Request) -> Report {
+pub(super) fn task(req: &Request) -> Report {
     let logon = logon_now();
     if !valid_label(req.label) {
         return Report::refused("task", logon, "--label takes up to 32 of a-z, 0-9 and -");
@@ -426,7 +426,13 @@ fn delete(
 
 /// Register a probe task that runs `exec` with `args`, run it, wait for `out` to appear, and
 /// delete it: E4's from-task scenario and the runbook's D2 and E3 in one call.
-pub fn run_once(label: &str, exec: TaskExec, args: &str, scratch: &Path, out: &Path) -> Value {
+pub(super) fn run_once(
+    label: &str,
+    exec: TaskExec,
+    args: &str,
+    scratch: &Path,
+    out: &Path,
+) -> Value {
     let req = Request {
         action: TaskAction::Register,
         scratch: Some(scratch),

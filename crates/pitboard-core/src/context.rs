@@ -292,7 +292,7 @@ pub struct Context {
     /// as `PATH`, behind the program's own directory where that is not on it. `None` is this
     /// process's own `PATH`: an app opened from Finder has almost nothing on it, so it
     /// passes the one the person's login shell would have.
-    pub(crate) search_path: Option<std::ffi::OsString>,
+    pub(crate) search_path: Option<OsString>,
     /// The scheduler's job this process runs as, where a test says. `None` is whatever the
     /// scheduler said when it started this process.
     pub(crate) scheduled_job: Option<String>,
@@ -527,7 +527,7 @@ impl Context {
     }
 
     /// Where a tool's program is looked for: the path given, or this process's `PATH`.
-    pub(crate) fn search_path(&self) -> std::ffi::OsString {
+    pub(crate) fn search_path(&self) -> OsString {
         self.search_path
             .clone()
             .or_else(|| std::env::var_os("PATH"))

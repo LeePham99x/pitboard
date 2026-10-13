@@ -1770,7 +1770,7 @@ impl World {
         self.index_written(|written| written - Duration::from_secs(seconds));
     }
 
-    fn index_written(&self, when: impl FnOnce(std::time::SystemTime) -> std::time::SystemTime) {
+    fn index_written(&self, when: impl FnOnce(SystemTime) -> SystemTime) {
         let index = self.root.join(".pitboard").join("state.json");
         let file = std::fs::File::options()
             .write(true)

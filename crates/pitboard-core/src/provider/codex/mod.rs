@@ -7,8 +7,8 @@
 //!
 //! Read from codex-cli 0.154.0, or the build an entry names, and dated in [`assumptions`].
 
-pub mod api;
-pub mod assumptions;
+pub(crate) mod api;
+pub(crate) mod assumptions;
 pub(crate) mod engine;
 pub(crate) mod holders;
 pub(crate) mod layers;

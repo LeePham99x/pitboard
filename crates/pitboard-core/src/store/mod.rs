@@ -7,7 +7,7 @@
 mod file;
 pub(crate) mod folder;
 #[cfg(any(test, feature = "test-support"))]
-pub mod memory;
+pub(crate) mod memory;
 // macOS parks in the login keychain, so there nothing outside the tests opens a vault of
 // files; Linux parks in one. Windows parks nowhere until W20 seals each park to the person,
 // in files of its own kind, so nothing opens this vault there either.
@@ -208,7 +208,7 @@ fn exists(path: &std::path::Path) -> Result<bool, Error> {
 /// Where parked logins live when there is no keychain to put them in: one file each, in
 /// Pitboard's own directory. Named here rather than in the backend so `doctor` can look at
 /// what is actually on the disk without the two spellings drifting apart.
-pub fn vault_dir(ctx: &Context) -> PathBuf {
+pub(crate) fn vault_dir(ctx: &Context) -> PathBuf {
     crate::home::dir(ctx).join("vault")
 }
 
@@ -217,7 +217,7 @@ pub fn vault_dir(ctx: &Context) -> PathBuf {
 /// Built by that tool's own module. Which backends can hold a login, and in what order, is
 /// a fact about the tool: Claude Code looks in the keychain and then in a plaintext file it
 /// demotes to, while Codex and Gemini have one file and nothing behind it.
-pub struct Live(Vec<Box<dyn RawStore>>);
+pub(crate) struct Live(Vec<Box<dyn RawStore>>);
 
 impl Live {
     pub(crate) fn of(backends: Vec<Box<dyn RawStore>>) -> Live {
@@ -274,7 +274,7 @@ fn with_live<T>(live: &Live, run: impl FnOnce(&[&dyn RawStore]) -> T) -> T {
 /// write fails for good, and deletes the keychain item when it does; from 2.1.281 a locked
 /// keychain whose item the process has seen is not failing for good. Pitboard never
 /// demotes: see the note on `write_in`.
-pub fn resolve(live: &Live, service: &str) -> Result<Backend, Error> {
+pub(crate) fn resolve(live: &Live, service: &str) -> Result<Backend, Error> {
     with_live(live, |chain| {
         Ok(resolve_in(chain, service)?.map_or(Backend::Absent, |b| b.kind()))
     })
@@ -303,7 +303,7 @@ fn behind_in<'a>(
 /// there, so a file is behind holding `{}`, nothing at all, or what cannot be read, as a file
 /// that is not text or that this user may not read: reading it then gives the error. `None`
 /// where the login in use is in the last backend, or nowhere.
-pub fn behind<'a>(live: &'a Live, service: &str) -> Result<Option<&'a dyn RawStore>, Error> {
+pub(crate) fn behind<'a>(live: &'a Live, service: &str) -> Result<Option<&'a dyn RawStore>, Error> {
     behind_in(&live.refs(), service)
 }
 
@@ -319,14 +319,14 @@ pub(crate) fn of_kind<'a>(live: &'a Live, kind: &str) -> Option<&'a dyn RawStore
         .find(|backend| backend.kind().name() == kind)
 }
 
-pub fn read_raw(live: &Live, service: &str) -> Result<Option<String>, Error> {
+pub(crate) fn read_raw(live: &Live, service: &str) -> Result<Option<String>, Error> {
     with_live(live, |chain| match resolve_in(chain, service)? {
         Some(backend) => backend.read(service),
         None => Ok(None),
     })
 }
 
-pub fn read(live: &Live, service: &str) -> Result<Option<Value>, Error> {
+pub(crate) fn read(live: &Live, service: &str) -> Result<Option<Value>, Error> {
     match read_raw(live, service)? {
         None => Ok(None),
         Some(raw) => serde_json::from_str(&raw)
@@ -338,15 +338,21 @@ pub fn read(live: &Live, service: &str) -> Result<Option<Value>, Error> {
 /// Write the live credential where it already lives. A failed keychain write is never
 /// answered by writing the plaintext file: that demotion is Claude Code's to make, and
 /// making it here would move the user's token somewhere weaker without saying so.
-pub fn write_raw(live: &Live, permit: Permit, service: &str, contents: &str) -> Result<(), Error> {
+pub(crate) fn write_raw(
+    live: &Live,
+    permit: Permit,
+    service: &str,
+    contents: &str,
+) -> Result<(), Error> {
     with_live(live, |chain| write_in(chain, permit, service, contents))
 }
 
+#[cfg_attr(not(feature = "test-support"), allow(unreachable_pub))]
 pub fn vault_read(ctx: &Context, service: &str) -> Result<Option<String>, Error> {
     vault(ctx).read(service)
 }
 
-pub fn vault_write(
+pub(crate) fn vault_write(
     ctx: &Context,
     permit: Permit,
     service: &str,
@@ -356,29 +362,29 @@ pub fn vault_write(
 }
 
 /// What writing `contents` into the vault would cost against its ceiling, where it has one.
-pub fn vault_cost(ctx: &Context, service: &str, contents: &str) -> Option<Cost> {
+pub(crate) fn vault_cost(ctx: &Context, service: &str, contents: &str) -> Option<Cost> {
     vault(ctx).cost(service, contents)
 }
 
-pub fn vault_delete(ctx: &Context, permit: Permit, service: &str) -> Result<(), Error> {
+pub(crate) fn vault_delete(ctx: &Context, permit: Permit, service: &str) -> Result<(), Error> {
     vault(ctx).delete(permit, service)
 }
 
 /// Every parked login on this machine, asked of the store rather than read out of
 /// Pitboard's own index. `None` where the store cannot be enumerated.
-pub fn vault_list(ctx: &Context) -> Result<Option<Vec<String>>, Error> {
+pub(crate) fn vault_list(ctx: &Context) -> Result<Option<Vec<String>>, Error> {
     vault(ctx).list()
 }
 
 /// Whether another `PITBOARD_HOME` could have parked a login where this one parks its own.
-pub fn vault_is_shared(ctx: &Context) -> bool {
+pub(crate) fn vault_is_shared(ctx: &Context) -> bool {
     ctx.host().vault_is_shared()
 }
 
 /// What writing the live credential would cost, asked of the backend that would take the
 /// write. A login living in the fallback file has no ceiling, and used to be told it had
 /// the keychain's.
-pub fn cost(live: &Live, service: &str, contents: &str) -> Option<Cost> {
+pub(crate) fn cost(live: &Live, service: &str, contents: &str) -> Option<Cost> {
     with_live(live, |chain| {
         resolve_in(chain, service)
             .ok()
@@ -389,7 +395,7 @@ pub fn cost(live: &Live, service: &str, contents: &str) -> Option<Cost> {
 }
 
 /// A handle for comparing and logging tokens without the secret leaving this process.
-pub fn fingerprint(secret: &str) -> String {
+pub(crate) fn fingerprint(secret: &str) -> String {
     use sha2::{Digest, Sha256};
     hex::encode(&Sha256::digest(secret.as_bytes())[..8])
 }

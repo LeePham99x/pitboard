@@ -76,7 +76,7 @@ fn synced_by(path: &Path) -> Option<String> {
     })
 }
 
-pub fn dir(ctx: &Context) -> PathBuf {
+pub(crate) fn dir(ctx: &Context) -> PathBuf {
     ctx.pitboard_home.clone()
 }
 
@@ -108,7 +108,7 @@ pub(crate) fn remove_retired(ctx: &Context, permit: Permit) {
     let _ = crate::host::fs::remove_dir(permit, &readings);
 }
 
-pub fn ensure(ctx: &Context, permit: Permit) -> io::Result<PathBuf> {
+pub(crate) fn ensure(ctx: &Context, permit: Permit) -> io::Result<PathBuf> {
     let path = dir(ctx);
     crate::host::fs::create_private_dir(permit, &path)?;
     Ok(path)
@@ -136,7 +136,7 @@ pub fn ensure(ctx: &Context, permit: Permit) -> io::Result<PathBuf> {
 ///
 /// The one gate every change passes asks this ([`crate::service::Permit`]), and so does
 /// every read of Pitboard's account list, so nothing is read or written under such a home.
-pub fn check_absolute(ctx: &Context) -> Result<()> {
+pub(crate) fn check_absolute(ctx: &Context) -> Result<()> {
     let homes: [(&'static str, Option<&Path>); 5] = [
         ("HOME", Some(ctx.home())),
         ("PITBOARD_HOME", Some(&ctx.pitboard_home)),
@@ -167,7 +167,7 @@ pub fn check_absolute(ctx: &Context) -> Result<()> {
 
 /// Refuses a Pitboard directory a sync client would copy to another machine, by the names
 /// in [`synced_by`], read off the path as the file system resolves it where it is there.
-pub fn check_location(path: &Path) -> Result<()> {
+pub(crate) fn check_location(path: &Path) -> Result<()> {
     let resolved = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
     match synced_by(&resolved) {
         Some(marker) => Err(Error::StateOnSyncedDrive {
@@ -216,19 +216,19 @@ mod tests {
         std::fs::write(readings.join("acc.ndjson"), "{}\n").expect("a reading");
         std::fs::write(dir(&ctx).join("usage.json"), "{}").expect("usage");
 
-        remove_retired(&ctx, crate::service::Permit::for_a_test());
+        remove_retired(&ctx, Permit::for_a_test());
         assert!(!readings.exists());
         assert!(
             dir(&ctx).join("usage.json").exists(),
             "only what is retired"
         );
-        remove_retired(&ctx, crate::service::Permit::for_a_test());
+        remove_retired(&ctx, Permit::for_a_test());
 
         std::fs::create_dir_all(&readings).expect("a readings folder");
         std::fs::write(readings.join("acc.ndjson"), "{}\n").expect("a reading");
         std::fs::write(readings.join("notes.txt"), "mine").expect("somebody's own");
         std::fs::write(readings.join("my data.ndjson"), "mine").expect("not an account id");
-        remove_retired(&ctx, crate::service::Permit::for_a_test());
+        remove_retired(&ctx, Permit::for_a_test());
         assert!(!readings.join("acc.ndjson").exists());
         assert!(readings.join("notes.txt").exists());
         assert!(readings.join("my data.ndjson").exists());

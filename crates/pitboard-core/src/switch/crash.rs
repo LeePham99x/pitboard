@@ -40,7 +40,7 @@ use std::sync::Arc;
     ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_switch_killed_at_any_step_recovers_to_something_whole() {
-    type Make = fn(&str) -> super::harness::Machine;
+    type Make = fn(&str) -> harness::Machine;
     let machines: [(&str, Make); 2] = [("claude", machine), ("codex", codex_machine)];
     for (tool, make) in machines {
         for point in POINTS {
@@ -84,10 +84,7 @@ fn a_switch_killed_with_nobody_to_ask_is_recovered_from_the_record() {
             .expect("nothing to recover yet")
             .0;
         let died = fault::killing(point, || {
-            switch(
-                settled,
-                &crate::state::Key::new(crate::provider::ProviderId::Claude, "there"),
-            )
+            switch(settled, &Key::new(ProviderId::Claude, "there"))
         });
         assert_eq!(died.unwrap_err(), point);
 
@@ -135,10 +132,7 @@ fn a_switch_whose_token_rotated_while_it_was_interrupted_still_needs_anthropic()
         .expect("nothing to recover yet")
         .0;
     let died = fault::killing("switch.park_recorded", || {
-        switch(
-            settled,
-            &crate::state::Key::new(crate::provider::ProviderId::Claude, "there"),
-        )
+        switch(settled, &Key::new(ProviderId::Claude, "there"))
     });
     assert_eq!(died.unwrap_err(), "switch.park_recorded");
 
@@ -184,31 +178,30 @@ fn a_switch_whose_token_rotated_while_it_was_interrupted_still_needs_anthropic()
 )]
 fn a_switch_between_two_organisations_is_settled_by_the_organisation_anthropic_names() {
     let m = machine("two-organisations-rotated");
-    let team = crate::api::Owner {
+    let team = api::Owner {
         account_uuid: "here".into(),
         email: "here@example.com".into(),
         organization_uuid: "org-team".into(),
     };
     m.api.owned_by("access-team-refresh", team.clone());
-    let mut state = crate::state::load(&m.ctx).expect("state");
-    let team_id = crate::state::new_id(crate::provider::ProviderId::Claude, &team);
-    let service =
-        crate::park::reserve(&m.ctx, Permit::for_a_test(), &team_id).expect("a free name");
-    let parked = crate::park::store_at(
+    let mut state = state::load(&m.ctx).expect("state");
+    let team_id = state::new_id(ProviderId::Claude, &team);
+    let service = park::reserve(&m.ctx, Permit::for_a_test(), &team_id).expect("a free name");
+    let parked = park::store_at(
         &m.ctx,
         Permit::for_a_test(),
-        crate::provider::document(crate::provider::ProviderId::Claude),
+        provider::document(ProviderId::Claude),
         &service,
-        &super::harness::oauth("team-refresh", 30),
+        &harness::oauth("team-refresh", 30),
     )
     .expect("parked");
     state.upsert(in_organisation("team", "here", "org-team", Some(parked)));
-    crate::state::save(&m.ctx, Permit::for_a_test(), &state).expect("saved");
+    state::save(&m.ctx, Permit::for_a_test(), &state).expect("saved");
 
     let settled = settle(&m.ctx, Permit::for_a_test(), None)
         .expect("nothing to recover yet")
         .0;
-    let to_team = crate::state::Key::new(crate::provider::ProviderId::Claude, "team");
+    let to_team = Key::new(ProviderId::Claude, "team");
     let died = fault::killing("switch.installed", || switch(settled, &to_team));
     assert_eq!(died.unwrap_err(), "switch.installed");
     let rotated = json!({"claudeAiOauth": {
@@ -224,7 +217,7 @@ fn a_switch_between_two_organisations_is_settled_by_the_organisation_anthropic_n
         recovered.is_some_and(|r| r.finished),
         "the switch had landed"
     );
-    let claude = crate::provider::ProviderId::Claude;
+    let claude = ProviderId::Claude;
     assert_eq!(
         settled
             .state
@@ -241,7 +234,7 @@ fn a_switch_between_two_organisations_is_settled_by_the_organisation_anthropic_n
 
 /// How a machine is left after a switch was killed, before anything reads it: what reading
 /// it asks, and the service it asks.
-type Leave = fn(&super::harness::Machine) -> (Context, Arc<ScriptedApi>);
+type Leave = fn(&harness::Machine) -> (Context, Arc<ScriptedApi>);
 
 /// Every way a machine is found after a switch was killed: as it was; signed out of the
 /// tool; with a login the tool renewed since, which matches neither side the record kept;
@@ -294,7 +287,7 @@ const AFTERWARDS: [(&str, Leave); 9] = [
 ];
 
 /// The copy the switch parked, where it reserved one, cannot be read.
-fn unreadable(m: &super::harness::Machine) {
+fn unreadable(m: &harness::Machine) {
     if let Some(park) = recorded(m, "park_service") {
         m.mem
             .vault()
@@ -303,7 +296,7 @@ fn unreadable(m: &super::harness::Machine) {
 }
 
 /// The machine with its service out of reach for every login it has held.
-fn unreachable(m: &super::harness::Machine) -> (Context, Arc<ScriptedApi>) {
+fn unreachable(m: &harness::Machine) -> (Context, Arc<ScriptedApi>) {
     let offline = ScriptedApi::new();
     for refresh in ["here-refresh", "there-refresh", "renewed-since"] {
         offline.token_trouble(&format!("access-{refresh}"), Trouble::Offline);
@@ -313,7 +306,7 @@ fn unreachable(m: &super::harness::Machine) -> (Context, Arc<ScriptedApi>) {
 }
 
 /// A field of the record of the interrupted switch, where there is one.
-fn recorded(m: &super::harness::Machine, field: &str) -> Option<String> {
+fn recorded(m: &harness::Machine, field: &str) -> Option<String> {
     let raw = std::fs::read_to_string(home::dir(&m.ctx).join("journal.json")).ok()?;
     let record: Value = serde_json::from_str(&raw).ok()?;
     record[field].as_str().map(str::to_owned)
@@ -326,7 +319,7 @@ type Everything = (
     Option<String>,
 );
 
-fn everything(m: &super::harness::Machine) -> Everything {
+fn everything(m: &harness::Machine) -> Everything {
     let mut files: Vec<(String, Vec<u8>)> = std::fs::read_dir(home::dir(&m.ctx))
         .expect("a Pitboard home")
         .map(|entry| {
@@ -364,7 +357,7 @@ fn everything(m: &super::harness::Machine) -> Everything {
     ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_read_says_a_switch_is_waiting_exactly_where_settling_it_is_refused() {
-    type Make = fn(&str) -> super::harness::Machine;
+    type Make = fn(&str) -> harness::Machine;
     let machines: [(&str, Make); 2] = [("claude", machine), ("codex", codex_machine)];
     for (tool, make) in machines {
         for point in POINTS {
@@ -423,19 +416,15 @@ fn enrolling_killed_between_the_write_and_the_record_leaves_nothing_unnamed() {
         let settled = settle(&m.ctx, Permit::for_a_test(), None)
             .expect("nothing to recover")
             .0;
-        let login = enroll::planted(
+        let login = planted(
             &m.ctx,
             Permit::for_a_test(),
-            crate::provider::document(ProviderId::Claude),
+            provider::document(ProviderId::Claude),
             document("third-refresh"),
         )
         .expect("a sign-in");
         let died = fault::killing(point, || {
-            enroll(
-                settled,
-                &crate::state::Key::new(crate::provider::ProviderId::Claude, "third"),
-                Some(login),
-            )
+            enroll(settled, &Key::new(ProviderId::Claude, "third"), Some(login))
         });
         assert_eq!(died.unwrap_err(), point);
 
@@ -453,7 +442,7 @@ fn enrolling_killed_between_the_write_and_the_record_leaves_nothing_unnamed() {
     ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn signing_in_again_killed_at_any_step_recovers_to_something_whole() {
-    type Make = fn(&str) -> super::harness::Machine;
+    type Make = fn(&str) -> harness::Machine;
     let machines: [(&str, Make); 2] = [("claude", machine), ("codex", codex_machine)];
     for (tool, make) in machines {
         for point in ["enroll.installed", "enroll.recorded"] {
@@ -476,7 +465,7 @@ fn signing_in_again_killed_at_any_step_recovers_to_something_whole() {
             hold(&m, &at);
             let live = m.live().expect("a login in use");
             assert_eq!(
-                crate::provider::document(m.which).fingerprint(&live),
+                provider::document(m.which).fingerprint(&live),
                 store::fingerprint("here-refresh-2"),
                 "{at}: the new login is the one in use"
             );
@@ -504,11 +493,8 @@ fn a_switch_whose_login_was_removed_again_does_not_report_a_switch() {
         .expect("nothing to recover yet")
         .0;
     m.mem.live().fault(&m.service, Fault::DeletedAfterWrite);
-    let failed = switch(
-        settled,
-        &crate::state::Key::new(crate::provider::ProviderId::Claude, "there"),
-    )
-    .expect_err("the login did not stay");
+    let failed = switch(settled, &Key::new(ProviderId::Claude, "there"))
+        .expect_err("the login did not stay");
     assert!(
         matches!(failed, Error::SwitchDidNotHold { .. }),
         "got {failed:?}"
@@ -519,10 +505,7 @@ fn a_switch_whose_login_was_removed_again_does_not_report_a_switch() {
     // was being installed. Neither may be thrown away over a write that did not hold.
     assert!(
         state
-            .get(&crate::state::Key::new(
-                crate::provider::ProviderId::Claude,
-                "here"
-            ))
+            .get(&Key::new(ProviderId::Claude, "here"))
             .expect("account")
             .parked
             .is_some(),
@@ -530,10 +513,7 @@ fn a_switch_whose_login_was_removed_again_does_not_report_a_switch() {
     );
     assert!(
         state
-            .get(&crate::state::Key::new(
-                crate::provider::ProviderId::Claude,
-                "there"
-            ))
+            .get(&Key::new(ProviderId::Claude, "there"))
             .expect("account")
             .parked
             .is_some(),
@@ -566,11 +546,8 @@ fn a_switch_that_cannot_read_the_store_back_keeps_every_copy_and_its_record() {
         .expect("nothing to recover yet")
         .0;
     m.mem.live().fault(&m.service, Fault::LocksOnWrite);
-    let failed = switch(
-        settled,
-        &crate::state::Key::new(crate::provider::ProviderId::Claude, "there"),
-    )
-    .expect_err("a keychain that locked partway");
+    let failed = switch(settled, &Key::new(ProviderId::Claude, "there"))
+        .expect_err("a keychain that locked partway");
     assert!(
         matches!(failed, Error::SwitchUnverified { .. }),
         "got {failed:?}"
@@ -614,10 +591,7 @@ fn renewing_killed_between_the_write_and_the_record_leaves_nothing_unnamed() {
     // The parked login is due: its access token has lapsed.
     let mut state = state::load(&m.ctx).expect("state");
     let park = state
-        .get(&crate::state::Key::new(
-            crate::provider::ProviderId::Claude,
-            "there",
-        ))
+        .get(&Key::new(ProviderId::Claude, "there"))
         .expect("account")
         .parked
         .clone()
@@ -633,9 +607,9 @@ fn renewing_killed_between_the_write_and_the_record_leaves_nothing_unnamed() {
         .to_string(),
     );
     state.park(
-        &crate::state::Key::new(crate::provider::ProviderId::Claude, "there"),
+        &Key::new(ProviderId::Claude, "there"),
         park::describe(
-            crate::provider::document(crate::provider::ProviderId::Claude),
+            provider::document(ProviderId::Claude),
             &park.service,
             NOW,
             &json!({
@@ -648,7 +622,7 @@ fn renewing_killed_between_the_write_and_the_record_leaves_nothing_unnamed() {
     state::save(&m.ctx, Permit::for_a_test(), &state).expect("saved");
     m.api.renews(
         "there-refresh",
-        crate::api::Renewed {
+        api::Renewed {
             access_token: "access-fresh".into(),
             refresh_token: Some("fresh".into()),
             expires_in: 3600,
@@ -659,7 +633,7 @@ fn renewing_killed_between_the_write_and_the_record_leaves_nothing_unnamed() {
     );
 
     let died = fault::killing("renew.park_stored", || {
-        renew::renew_parked(&m.ctx, Permit::for_a_test())
+        renew_parked(&m.ctx, Permit::for_a_test())
     });
     assert_eq!(died.unwrap_err(), "renew.park_stored");
 
@@ -670,15 +644,12 @@ fn renewing_killed_between_the_write_and_the_record_leaves_nothing_unnamed() {
     // answered; the copy written just before the kill is the only one that still works.
     let kept = state::load(&m.ctx)
         .expect("state")
-        .get(&crate::state::Key::new(
-            crate::provider::ProviderId::Claude,
-            "there",
-        ))
+        .get(&Key::new(ProviderId::Claude, "there"))
         .and_then(|a| a.parked.clone())
         .expect("`there` still holds a login");
     assert_eq!(
         kept.login,
-        crate::provider::claude::document::fingerprint_of(&json!({"refreshToken": "fresh"})),
+        provider::claude::document::fingerprint_of(&json!({"refreshToken": "fresh"})),
         "the fresh login is kept and the spent one dropped, not the other way round"
     );
     assert_eq!(m.mem.vault().services(), vec![kept.service]);
@@ -696,7 +667,7 @@ fn renewing_killed_between_the_write_and_the_record_leaves_nothing_unnamed() {
 fn a_renewal_that_cannot_record_its_answer_keeps_it_for_the_next_run() {
     use crate::host::fs::testing;
     let m = machine("renew-save-fails");
-    let key = crate::state::Key::new(crate::provider::ProviderId::Claude, "there");
+    let key = Key::new(ProviderId::Claude, "there");
     let mut state = state::load(&m.ctx).expect("state");
     let held = state.get(&key).unwrap().parked.clone().unwrap();
     let lapsed = json!({
@@ -709,7 +680,7 @@ fn a_renewal_that_cannot_record_its_answer_keeps_it_for_the_next_run() {
     state.park(
         &key,
         park::describe(
-            crate::provider::document(crate::provider::ProviderId::Claude),
+            provider::document(ProviderId::Claude),
             &held.service,
             NOW,
             &lapsed,
@@ -718,7 +689,7 @@ fn a_renewal_that_cannot_record_its_answer_keeps_it_for_the_next_run() {
     state::save(&m.ctx, Permit::for_a_test(), &state).expect("saved");
     m.api.renews(
         "there-refresh",
-        crate::api::Renewed {
+        api::Renewed {
             access_token: "access-fresh".into(),
             refresh_token: Some("fresh".into()),
             expires_in: 3600,
@@ -730,20 +701,20 @@ fn a_renewal_that_cannot_record_its_answer_keeps_it_for_the_next_run() {
 
     // Pitboard's home goes read-only once the fresh login is in the vault, so the record
     // of it cannot be written.
-    let home = crate::home::dir(&m.ctx);
+    let home = home::dir(&m.ctx);
     let locked = home.clone();
     let outcomes = fault::meanwhile(
         "renew.park_stored",
         move || {
             testing::deny_changes(&locked).expect("read-only");
         },
-        || renew::renew_parked(&m.ctx, Permit::for_a_test()),
+        || renew_parked(&m.ctx, Permit::for_a_test()),
     );
     testing::allow_changes(&home).expect("changeable again");
     assert!(
         outcomes
             .iter()
-            .any(|(_, r)| matches!(r, renew::Renewal::Failed(_))),
+            .any(|(_, r)| matches!(r, Renewal::Failed(_))),
         "the save failed, and says so"
     );
 
@@ -755,7 +726,7 @@ fn a_renewal_that_cannot_record_its_answer_keeps_it_for_the_next_run() {
         .expect("`there` still holds a login");
     assert_eq!(
         kept.login,
-        crate::provider::claude::document::fingerprint_of(&json!({"refreshToken": "fresh"})),
+        provider::claude::document::fingerprint_of(&json!({"refreshToken": "fresh"})),
     );
     hold(&m, "after a renewal that could not be recorded");
 }
@@ -774,10 +745,7 @@ fn forgetting_killed_after_the_record_still_deletes_the_park() {
         .0;
 
     let died = fault::killing("forget.recorded", || {
-        forget::forget(
-            settled,
-            &crate::state::Key::new(crate::provider::ProviderId::Claude, "there"),
-        )
+        forget(settled, &Key::new(ProviderId::Claude, "there"))
     });
     assert_eq!(died.unwrap_err(), "forget.recorded");
 

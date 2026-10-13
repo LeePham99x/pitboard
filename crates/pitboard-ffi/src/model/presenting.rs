@@ -647,7 +647,7 @@ fn an_account_with_nothing_measured_is_described_by_its_address() {
 #[test]
 fn limits_are_said_in_one_line_with_only_its_first_letter_capitalised() {
     let summary =
-        |limits: Vec<crate::Limit>| described(account(Some("work")).limits(limits).build()).summary;
+        |limits: Vec<Limit>| described(account(Some("work")).limits(limits).build()).summary;
     assert_eq!(
         summary(vec![window("weekly_all", 64.4), window("session", 12.0)]),
         "Weekly 64%, 5-hour 12%"

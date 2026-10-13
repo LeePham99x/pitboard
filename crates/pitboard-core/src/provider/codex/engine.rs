@@ -273,7 +273,7 @@ impl Provider for Codex {
         &self,
         ctx: &Context,
         dir: &std::path::Path,
-    ) -> Result<Option<String>, crate::store::Error> {
+    ) -> Result<Option<String>, store::Error> {
         let private = ctx
             .clone()
             .with_codex_home(dir.to_string_lossy().into_owned());

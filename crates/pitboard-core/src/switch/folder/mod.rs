@@ -215,9 +215,7 @@ fn looks_signed_out(state: &State, app: &dyn Folder, settings: &AppSettings) -> 
     if !emptied {
         return None;
     }
-    state
-        .account_of(app.id(), owner)
-        .map(crate::state::Account::key)
+    state.account_of(app.id(), owner).map(state::Account::key)
 }
 
 // The login the app holds, filed under `key`: the person's word for whose it is. Moves
@@ -341,7 +339,7 @@ fn enroll_as(
                         Some(&park.service) == aside.as_ref() || (a.is(key) && park.login != login)
                     })
                 })
-                .map(crate::state::Account::key)
+                .map(state::Account::key)
                 .collect()
         };
         for holder in superseded(&state) {

@@ -72,7 +72,7 @@ fn home() -> Option<PathBuf> {
     ffi::folder_local_app_data().map(|p| p.join("Pitboard"))
 }
 
-pub fn sparse(
+pub(super) fn sparse(
     action: SparseAction,
     tag: &str,
     scratch: Option<&Path>,

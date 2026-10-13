@@ -1575,7 +1575,7 @@ mod tests {
     /// warning it is: "ahead" reads as good news.
     #[test]
     fn a_pace_is_said_as_over_under_or_on() {
-        let pace = |delta: f64, standing| crate::pace::Pace {
+        let pace = |delta: f64, standing| Pace {
             expected: 40.0,
             delta,
             standing,

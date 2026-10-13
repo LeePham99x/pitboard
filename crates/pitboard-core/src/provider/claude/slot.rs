@@ -7,11 +7,12 @@ use sha2::{Digest, Sha256};
 use unicode_normalization::UnicodeNormalization;
 
 /// The service name used when no slot is selected.
+#[cfg_attr(not(feature = "test-support"), allow(unreachable_pub))]
 pub const LIVE_SERVICE: &str = "Claude Code-credentials";
 
 /// The credential file Claude Code falls back to where its keychain write fails, and the
 /// only store it has on Linux.
-pub const CRED_FILE: &str = ".credentials.json";
+pub(crate) const CRED_FILE: &str = ".credentials.json";
 
 /// Claude Code's fallback when no usable name can be found at all.
 const FALLBACK_ACCOUNT: &str = "claude-code-user";
@@ -22,7 +23,7 @@ const FALLBACK_ACCOUNT: &str = "claude-code-user";
 /// what it uses wherever the environment carries no `USER`: a launchd agent, a cron job, an
 /// app opened from Finder. Stopping at the literal there would send Pitboard to a different
 /// keychain item than the one Claude Code reads.
-pub fn account_name(ctx: &Context) -> String {
+pub(crate) fn account_name(ctx: &Context) -> String {
     let from_env = ctx.user.as_deref().filter(|u| !u.is_empty());
     match from_env
         .map(str::to_owned)
@@ -44,12 +45,14 @@ fn is_accepted_account(s: &str) -> bool {
 ///
 /// The path is hashed verbatim: no tilde expansion, no symlink resolution, no
 /// trailing-slash normalisation. A path that differs by one byte is a different slot.
+#[cfg_attr(not(feature = "test-support"), allow(unreachable_pub))]
 pub fn dir_hash(dir: &str) -> String {
     let normalised: String = dir.nfc().collect();
     hex::encode(&Sha256::digest(normalised.as_bytes())[..4])
 }
 
 /// The keychain service name for the slot selected by `dir`.
+#[cfg_attr(not(feature = "test-support"), allow(unreachable_pub))]
 pub fn service_for_dir(dir: &str) -> String {
     format!("{LIVE_SERVICE}-{}", dir_hash(dir))
 }

@@ -11,7 +11,7 @@ use serde_json::json;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-pub fn symlink(scratch: &Path) -> Report {
+pub(super) fn symlink(scratch: &Path) -> Report {
     let logon = logon_now();
     if let Some(reason) = ffi::refuse_write(scratch) {
         return Report::refused("symlink", logon, reason);
@@ -61,7 +61,7 @@ fn present(name: &str) -> bool {
         .is_ok_and(|s| s.success())
 }
 
-pub fn runner_facts(scratch: &Path) -> Report {
+pub(super) fn runner_facts(scratch: &Path) -> Report {
     let logon = logon_now();
     if let Some(reason) = ffi::refuse_write(scratch) {
         return Report::refused("runner-facts", logon, reason);

@@ -641,7 +641,7 @@ fn stow_with_nothing_left() {
 fn stow() {
     let env = two_accounts("contract-stow");
     let left = env.root.join(".credentials.json");
-    common::os::write_private(&left, &common::credential("refresh-a").to_string());
+    os::write_private(&left, &common::credential("refresh-a").to_string());
     let (value, code) = json(&env, &["stow"]);
     assert!(left.exists(), "the file is kept");
     contract!("stow_unconfirmed", value, code);

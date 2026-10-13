@@ -149,7 +149,7 @@ impl Adoption {
             }
             Adoption::Renewal { path } => format!(
                 "Sessions already running {}: {path} is there.",
-                pitboard_core::words::kept_until_renewed()
+                words::kept_until_renewed()
             ),
             Adoption::Restart { program } => {
                 format!("Restart any running `{program}` for this to take effect.")
@@ -430,20 +430,18 @@ fn status_of(done: service::Done<status::Report>) -> Status {
 }
 
 /// When sessions already running follow a switch, as the core says it for the tool.
-fn adoption_of(adoption: pitboard_core::provider::Adoption) -> Adoption {
+fn adoption_of(adoption: provider::Adoption) -> Adoption {
     match adoption {
-        pitboard_core::provider::Adoption::PollingWithin(seconds) => Adoption::Follows {
+        provider::Adoption::PollingWithin(seconds) => Adoption::Follows {
             within_seconds: seconds,
         },
-        pitboard_core::provider::Adoption::AtRenewal { file } => Adoption::Renewal {
+        provider::Adoption::AtRenewal { file } => Adoption::Renewal {
             path: file.display().to_string(),
         },
-        pitboard_core::provider::Adoption::RestartRequired { program, .. } => Adoption::Restart {
+        provider::Adoption::RestartRequired { program, .. } => Adoption::Restart {
             program: program.into(),
         },
-        pitboard_core::provider::Adoption::NextOpen { app } => {
-            Adoption::NextOpen { name: app.into() }
-        }
+        provider::Adoption::NextOpen { app } => Adoption::NextOpen { name: app.into() },
     }
 }
 
@@ -1182,7 +1180,7 @@ impl AppCore {
         let Ok(made) = self.readable() else {
             return Vec::new();
         };
-        pitboard_core::provider::ProviderId::parse(&provider)
+        ProviderId::parse(&provider)
             .map(|which| {
                 made.core
                     .holding(which)

@@ -1762,7 +1762,7 @@ mod tests {
                 // Where each tool stores the login of a sign-in into `dir`.
                 match Tool::of(which) {
                     Tool::Claude => host.live().plant(
-                        &crate::provider::claude::slot::service_for_dir(&dir.to_string_lossy()),
+                        &provider::claude::slot::service_for_dir(&dir.to_string_lossy()),
                         &document,
                     ),
                     Tool::Codex => host

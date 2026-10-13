@@ -1062,8 +1062,8 @@ fn two_switches_at_once_do_not_interleave() {
     let env = two_accounts("concurrent");
     let spawn = || {
         env.command(&["use", "beta"])
-            .stderr(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
+            .stderr(Stdio::piped())
+            .stdout(Stdio::piped())
             .spawn()
             .unwrap()
     };
@@ -1106,8 +1106,8 @@ fn the_status_line_names_the_account_in_use_and_the_others() {
     let statusline = |session: serde_json::Value| {
         let mut child = env
             .command(&["statusline"])
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
             .spawn()
             .unwrap();
         use std::io::Write;

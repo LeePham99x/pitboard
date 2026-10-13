@@ -23,7 +23,7 @@ fn path(ctx: &Context) -> PathBuf {
     home::dir(ctx).join("usage.json")
 }
 
-pub fn load(ctx: &Context) -> HashMap<String, Snapshot> {
+pub(crate) fn load(ctx: &Context) -> HashMap<String, Snapshot> {
     std::fs::read_to_string(path(ctx))
         .ok()
         .and_then(|raw| serde_json::from_str::<HashMap<String, Snapshot>>(&raw).ok())
@@ -41,7 +41,7 @@ pub fn load(ctx: &Context) -> HashMap<String, Snapshot> {
 /// For a front end to follow what the others record without asking anyone. Milliseconds
 /// rather than seconds, because sessions record moments apart, and the second of two
 /// changes within one second would otherwise go unseen until the next.
-pub fn changed_at(ctx: &Context) -> i64 {
+pub(crate) fn changed_at(ctx: &Context) -> i64 {
     std::fs::metadata(path(ctx))
         .and_then(|m| m.modified())
         .ok()
@@ -53,13 +53,13 @@ pub fn changed_at(ctx: &Context) -> i64 {
 
 /// Drop what was remembered for an account that is no longer enrolled. Nothing here is
 /// secret, but an account someone has dropped should leave no trace behind either.
-pub fn forget(ctx: &Context, permit: Permit, id: &str) {
+pub(crate) fn forget(ctx: &Context, permit: Permit, id: &str) {
     change(ctx, permit, |all| all.remove(id).is_some());
 }
 
 /// Answers about accounts, each recorded as that account's reading as
 /// [`crate::usage::answered`] folds it in.
-pub fn answered(ctx: &Context, permit: Permit, answers: &[(String, Snapshot)]) {
+pub(crate) fn answered(ctx: &Context, permit: Permit, answers: &[(String, Snapshot)]) {
     let now = ctx.now();
     change(ctx, permit, |all| {
         let mut changed = false;
@@ -79,7 +79,7 @@ pub fn answered(ctx: &Context, permit: Permit, answers: &[(String, Snapshot)]) {
 /// What a session on account `id` passed its status line, recorded where it moves a limit
 /// of that account's reading, as [`crate::usage::moved`] says. An account with no reading
 /// gets none from it.
-pub fn moved(ctx: &Context, permit: Permit, id: &str, passed: &[Window]) {
+pub(crate) fn moved(ctx: &Context, permit: Permit, id: &str, passed: &[Window]) {
     let now = ctx.now();
     change(ctx, permit, |all| {
         let Some(next) = all

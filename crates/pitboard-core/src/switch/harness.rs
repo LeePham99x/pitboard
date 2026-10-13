@@ -107,7 +107,7 @@ impl Machine {
 
     /// The live login, read the way the tool reads it.
     pub(crate) fn live(&self) -> Option<Value> {
-        crate::provider::document(self.which)
+        provider::document(self.which)
             .read_live(&self.ctx)
             .ok()
             .flatten()
@@ -116,7 +116,7 @@ impl Machine {
 
     /// Replace the live login, the way the tool itself would write it.
     pub(crate) fn sign_in(&self, document: &Value) {
-        let live = crate::provider::document(self.which)
+        let live = provider::document(self.which)
             .live(&self.ctx)
             .expect("a store to write to");
         store::write_raw(
@@ -134,22 +134,22 @@ impl Machine {
 
     /// From now on the live login's store misbehaves this way: the keychain item for Claude
     /// Code, the `auth.json` file for Codex.
-    pub(crate) fn fault_live(&self, fault: crate::store::memory::Fault) {
+    pub(crate) fn fault_live(&self, fault: store::memory::Fault) {
         let (store, service) = self.live_store();
         store.fault(&service, fault);
     }
 
     /// The store the live login is in, and its name there, for a test that has to fault it
     /// from inside a change.
-    pub(crate) fn live_store(&self) -> (Arc<crate::store::memory::MemoryStore>, String) {
-        let live = crate::provider::document(self.which)
+    pub(crate) fn live_store(&self) -> (Arc<store::memory::MemoryStore>, String) {
+        let live = provider::document(self.which)
             .live(&self.ctx)
             .expect("a live store");
         let store = match Tool::of(self.which) {
             Tool::Claude => Arc::clone(self.mem.live()),
             Tool::Codex => self
                 .mem
-                .file_at(crate::provider::codex::paths::auth_file(&self.ctx)),
+                .file_at(provider::codex::paths::auth_file(&self.ctx)),
         };
         (store, live.service)
     }
@@ -241,7 +241,7 @@ pub(crate) fn machine(name: &str) -> Machine {
     let parked = park::store_at(
         &ctx,
         Permit::for_a_test(),
-        crate::provider::document(crate::provider::ProviderId::Claude),
+        provider::document(crate::provider::ProviderId::Claude),
         &parked_service,
         &oauth("there-refresh", 30),
     )
@@ -309,7 +309,7 @@ pub(crate) fn audit_lines(m: &Machine, verb: &str) -> Vec<(String, String)> {
 
 /// `state.json` as it is on disk, with when it was last written.
 pub(crate) fn state_file(m: &Machine) -> (Vec<u8>, std::time::SystemTime) {
-    let path = crate::home::dir(&m.ctx).join("state.json");
+    let path = home::dir(&m.ctx).join("state.json");
     let written = std::fs::metadata(&path)
         .and_then(|meta| meta.modified())
         .expect("a state file");
@@ -328,7 +328,7 @@ pub(crate) fn codex_login(who: &str, refresh: &str) -> Value {
         "auth_mode": "chatgpt",
         "OPENAI_API_KEY": null,
         "tokens": {
-            "id_token": crate::provider::jwt::unsigned(&json!({
+            "id_token": provider::jwt::unsigned(&json!({
                 "email": format!("{who}@example.com"),
                 "exp": NOW + 3600,
                 OPENAI: {
@@ -353,7 +353,7 @@ pub(crate) fn codex_id(who: &str) -> String {
 
 /// The access token [`codex_login`] carries for this refresh token.
 pub(crate) fn codex_access(refresh: &str) -> String {
-    crate::provider::jwt::unsigned(&json!({"exp": NOW + 10 * 86_400, "for": refresh}))
+    provider::jwt::unsigned(&json!({"exp": NOW + 10 * 86_400, "for": refresh}))
 }
 
 /// `who`'s Codex account, as enrolling it from [`codex_login`] writes one: its ChatGPT
@@ -368,7 +368,7 @@ pub(crate) fn codex_account(label: &str, who: &str, parked: Option<Park>) -> Acc
         account_uuid: codex_id(who),
         email: format!("{who}@example.com"),
         parked,
-        detail: crate::state::Detail::Codex {
+        detail: state::Detail::Codex {
             workspace_id: Some(who.into()),
         },
     }
@@ -382,7 +382,7 @@ pub(crate) const STRANGER: crate::desktop_testing::Person = crate::desktop_testi
 };
 
 // Claude's data folder on a machine `desktop_machine` made.
-pub(crate) fn data(m: &Machine) -> std::path::PathBuf {
+pub(crate) fn data(m: &Machine) -> PathBuf {
     m.ctx_home().join("claude/data")
 }
 
@@ -393,11 +393,11 @@ pub(crate) fn settled(m: &Machine) -> Settled {
 }
 
 // Every entry under `root`, by its path from there, with each file's bytes.
-pub(crate) fn tree(root: &std::path::Path) -> Vec<(std::path::PathBuf, Option<Vec<u8>>)> {
+pub(crate) fn tree(root: &std::path::Path) -> Vec<(PathBuf, Option<Vec<u8>>)> {
     fn walk(
         root: &std::path::Path,
         dir: &std::path::Path,
-        out: &mut Vec<(std::path::PathBuf, Option<Vec<u8>>)>,
+        out: &mut Vec<(PathBuf, Option<Vec<u8>>)>,
     ) {
         let Ok(entries) = std::fs::read_dir(dir) else {
             return;
@@ -426,24 +426,19 @@ pub(crate) fn tree(root: &std::path::Path) -> Vec<(std::path::PathBuf, Option<Ve
     found
 }
 
-pub(crate) type Stat = (
-    std::path::PathBuf,
-    Option<u64>,
-    u64,
-    Option<std::time::SystemTime>,
-);
+pub(crate) type Stat = (PathBuf, Option<u64>, u64, Option<std::time::SystemTime>);
 
 pub(crate) type Snapshot = (
     Vec<u8>,
     Vec<u8>,
-    Vec<(std::path::PathBuf, Option<Vec<u8>>)>,
+    Vec<(PathBuf, Option<Vec<u8>>)>,
     Vec<String>,
     Vec<Stat>,
 );
 
 // Claude's folder and each entry under it, links not followed: inode, size and when changed.
 pub(crate) fn stats(root: &std::path::Path) -> Vec<Stat> {
-    let stat = |within: std::path::PathBuf| {
+    let stat = |within: PathBuf| {
         let found = std::fs::symlink_metadata(root.join(&within)).ok();
         let inode = crate::host::fs::testing::inode(&root.join(&within)).ok();
         let size = found.as_ref().map_or(0, std::fs::Metadata::len);
@@ -454,19 +449,19 @@ pub(crate) fn stats(root: &std::path::Path) -> Vec<Stat> {
             found.and_then(|kind| kind.modified().ok()),
         )
     };
-    let mut found = vec![stat(std::path::PathBuf::new())];
+    let mut found = vec![stat(PathBuf::new())];
     found.extend(tree(root).into_iter().map(|(within, _)| stat(within)));
     found
 }
 
 // What a refusal must leave as it was: the index, `pending`, Claude's folder and `parks`.
 pub(crate) fn snapshot(m: &Machine) -> Snapshot {
-    let home = crate::home::dir(&m.ctx);
+    let home = home::dir(&m.ctx);
     (
         std::fs::read(home.join("state.json")).unwrap_or_default(),
         std::fs::read(home.join("pending")).unwrap_or_default(),
         tree(&data(m)),
-        crate::store::folder::list(&m.ctx)
+        store::folder::list(&m.ctx)
             .expect("parks")
             .unwrap_or_default(),
         stats(&data(m)),
@@ -524,7 +519,7 @@ pub(crate) fn desktop_pair(name: &str) -> Machine {
     sign_in_inside(&m, "home", &HOME).expect("`home` added, `work` parked");
     let (settled, _) = settle(&m.ctx, Permit::for_a_test(), Some(ProviderId::Desktop))
         .expect("nothing to recover");
-    super::switch(settled, &m.key("work")).expect("back to `work`");
+    switch(settled, &m.key("work")).expect("back to `work`");
     m
 }
 
@@ -534,7 +529,7 @@ pub(crate) fn sign_in_inside(
     m: &Machine,
     label: &str,
     who: &crate::desktop_testing::Person,
-) -> Result<(super::Enrolled, Vec<crate::service::Warning>)> {
+) -> Result<(Enrolled, Vec<Warning>)> {
     let typed = format!("desktop/{label}");
     let pitboard = crate::service::Pitboard::new(m.ctx.clone());
     let watched = pitboard
@@ -595,16 +590,16 @@ pub(crate) fn whereabouts(m: &Machine, who: &crate::desktop_testing::Person) -> 
 }
 
 fn sessions(m: &Machine) -> Vec<(String, String)> {
-    let crate::provider::LoginKind::Folder(app) = crate::provider::of(m.which) else {
+    let LoginKind::Folder(app) = provider::of(m.which) else {
         return Vec::new();
     };
     let mut places = vec![("Claude".to_string(), m.root.join("claude/data/Cookies"))];
-    for name in crate::store::folder::list(&m.ctx)
+    for name in store::folder::list(&m.ctx)
         .ok()
         .flatten()
         .unwrap_or_default()
     {
-        let jar = crate::store::folder::item(&m.ctx, &name, app.items()[0]);
+        let jar = store::folder::item(&m.ctx, &name, app.items()[0]);
         places.push((name, jar));
     }
     places
@@ -618,7 +613,7 @@ fn sessions(m: &Machine) -> Vec<(String, String)> {
 // `pending` line for a folder the index names, and Claude's folder holding nobody, or one
 // account whole under its own name.
 pub(crate) fn rested(m: &Machine, after: &str) {
-    let crate::provider::LoginKind::Folder(app) = crate::provider::of(m.which) else {
+    let LoginKind::Folder(app) = provider::of(m.which) else {
         panic!("{after}: a folder tool");
     };
     // The next command's sweep, which drops each `pending` line the index has taken up.
@@ -661,12 +656,12 @@ pub(crate) fn rested(m: &Machine, after: &str) {
             .filter(|item| data.join(item).exists())
             .map(|item| (*item).to_string())
             .collect();
-        let listed = crate::store::folder::list(&m.ctx)
+        let listed = store::folder::list(&m.ctx)
             .ok()
             .flatten()
             .unwrap_or_default()
             .into_iter()
-            .filter_map(|name| crate::store::folder::manifest(&m.ctx, &name).ok().flatten())
+            .filter_map(|name| store::folder::manifest(&m.ctx, &name).ok().flatten())
             .any(|manifest| !left.is_empty() && manifest.left_in_folder == left);
         assert!(
             left.is_empty() && settings.account_keys(app).is_empty() || listed,
@@ -753,7 +748,7 @@ pub(crate) fn codex_machine(name: &str) -> Machine {
     let parked = park::store_at(
         &machine.ctx,
         Permit::for_a_test(),
-        crate::provider::document(ProviderId::Codex),
+        provider::document(ProviderId::Codex),
         &parked_service,
         &codex_login("there", "there-refresh"),
     )
@@ -782,11 +777,11 @@ pub(crate) fn record_in_use(ctx: &Context, state: &mut State, which: ProviderId,
     let here = state
         .get(&Key::new(which, "here"))
         .expect("`here` is enrolled");
-    let found = crate::in_use::InUse {
+    let found = InUse {
         owner: Some(here.owner()),
-        login: crate::provider::document(which).fingerprint(login),
+        login: provider::document(which).fingerprint(login),
         known_at: NOW,
-        named: crate::in_use::named(ctx, which),
+        named: in_use::named(ctx, which),
     };
     state.in_use.insert(which.code().to_string(), found);
 }
@@ -804,11 +799,11 @@ pub(crate) fn login_of(m: &Machine, who: &str, refresh: &str) -> Value {
 }
 
 /// A sign-in the tool finished as `who`, left where a finished one leaves its login.
-pub(crate) fn signed_in(m: &Machine, who: &str, refresh: &str) -> enroll::SignIn {
-    enroll::planted(
+pub(crate) fn signed_in(m: &Machine, who: &str, refresh: &str) -> SignIn {
+    planted(
         &m.ctx,
         Permit::for_a_test(),
-        crate::provider::document(m.which),
+        provider::document(m.which),
         login_of(m, who, refresh),
     )
     .expect("a sign-in")
@@ -820,7 +815,7 @@ pub(crate) fn renews(m: &Machine, refresh: &str, renewed: &str) {
         Tool::Claude => {
             m.api.renews(
                 refresh,
-                crate::api::Renewed {
+                api::Renewed {
                     access_token: format!("access-{renewed}"),
                     refresh_token: Some(renewed.into()),
                     expires_in: 3600,
@@ -833,7 +828,7 @@ pub(crate) fn renews(m: &Machine, refresh: &str, renewed: &str) {
         Tool::Codex => {
             m.api.codex_renews(
                 refresh,
-                crate::provider::codex::api::Fresh {
+                provider::codex::api::Fresh {
                     id_token: None,
                     access_token: Some(codex_access(renewed)),
                     refresh_token: Some(renewed.into()),
@@ -868,7 +863,7 @@ pub(crate) fn lock_dir(target: &std::path::Path) -> PathBuf {
 
 /// What Claude Code's write lock guards.
 pub(crate) fn write_target(m: &Machine) -> PathBuf {
-    crate::provider::document(ProviderId::Claude)
+    provider::document(ProviderId::Claude)
         .write_lock(&m.ctx)
         .expect("Claude Code takes one")
 }
@@ -899,7 +894,7 @@ pub(crate) fn takes_the_write_lock(
 /// of.
 pub(crate) fn renews_meanwhile(
     m: &Machine,
-    store: Arc<crate::store::memory::MemoryStore>,
+    store: Arc<store::memory::MemoryStore>,
     session: &std::rc::Rc<Session>,
 ) -> impl FnOnce() + 'static {
     let (service, api) = (m.service.clone(), Arc::clone(&m.api));
@@ -923,7 +918,7 @@ pub(crate) fn renews_meanwhile(
             .as_str()
             .expect("a refresh token")
             .to_string();
-        api.renew_trouble(&sent, crate::api::scripted::Trouble::InvalidGrant);
+        api.renew_trouble(&sent, api::scripted::Trouble::InvalidGrant);
         login["claudeAiOauth"]["refreshToken"] = json!(format!("{sent}-by-a-session"));
         login["claudeAiOauth"]["accessToken"] = json!(format!("access-{sent}-by-a-session"));
         login["claudeAiOauth"]["expiresAt"] = json!((NOW + 3600) * 1000);
@@ -939,7 +934,7 @@ pub(crate) fn renews_meanwhile(
 /// The session's save, held up by Claude Code's write lock, once that is let go of: only
 /// where `store` still holds the refresh token it sent, as Claude Code's save compares it, so
 /// nothing where that login has gone.
-pub(crate) fn saves(m: &Machine, store: &crate::store::memory::MemoryStore, session: &Session) {
+pub(crate) fn saves(m: &Machine, store: &store::memory::MemoryStore, session: &Session) {
     if session.saving.borrow().is_none() {
         return;
     }
@@ -947,7 +942,7 @@ pub(crate) fn saves(m: &Machine, store: &crate::store::memory::MemoryStore, sess
     let _ = std::fs::remove_dir(lock_dir(&claude::refresh_lock(&m.ctx)));
 }
 
-fn save(store: &crate::store::memory::MemoryStore, service: &str, session: &Session) {
+fn save(store: &store::memory::MemoryStore, service: &str, session: &Session) {
     let Some((sent, login)) = session.saving.borrow_mut().take() else {
         return;
     };
@@ -1005,7 +1000,7 @@ pub(crate) fn account(label: &str, uuid: &str, parked: Option<Park>) -> Account 
         account_uuid: uuid.into(),
         email: format!("{uuid}@example.com"),
         parked,
-        detail: crate::state::Detail::Claude {
+        detail: state::Detail::Claude {
             organization_uuid: format!("org-{uuid}"),
             oauth_account: json!({
                 "accountUuid": uuid,
@@ -1027,11 +1022,11 @@ pub(crate) fn in_organisation(label: &str, who: &str, org: &str, parked: Option<
         replaced_at: None,
         plan: None,
         label: label.into(),
-        id: crate::state::new_id(ProviderId::Claude, &owner),
+        id: state::new_id(ProviderId::Claude, &owner),
         account_uuid: owner.account_uuid,
         email: owner.email,
         parked,
-        detail: crate::state::Detail::Claude {
+        detail: state::Detail::Claude {
             organization_uuid: owner.organization_uuid,
             oauth_account: json!({"accountUuid": who, "organizationUuid": org}),
         },
@@ -1043,9 +1038,9 @@ pub(crate) fn in_organisation(label: &str, who: &str, org: &str, parked: Option<
 pub(crate) fn hold(m: &Machine, after: &str) {
     let state = state::load(&m.ctx)
         .unwrap_or_else(|e| panic!("{after}: the state file must still parse, got {e}"));
-    match crate::provider::of(m.which) {
-        crate::provider::LoginKind::Document(_) => {}
-        crate::provider::LoginKind::Folder(app) => {
+    match provider::of(m.which) {
+        LoginKind::Document(_) => {}
+        LoginKind::Folder(app) => {
             return hold_folder(m, after, &state, app, Holds::all());
         }
     }
@@ -1070,7 +1065,7 @@ pub(crate) fn hold(m: &Machine, after: &str) {
     // One refresh token, one place. A token in two places is a token one holder will rotate
     // past, which ends the login for the other; for a tool whose sign-out revokes what it
     // finds, it is a token the person's own next sign-out kills in both.
-    let tool = crate::provider::document(m.which);
+    let tool = provider::document(m.which);
     let mut seen: HashSet<String> = HashSet::new();
     let mut fingerprints = Vec::new();
     for service in m.mem.vault().services() {
@@ -1093,7 +1088,7 @@ pub(crate) fn hold(m: &Machine, after: &str) {
     // restored, or holding nothing and saying so, but never holding one that has expired.
     let live_uuid = live
         .and_then(|document| {
-            tool.identify(&m.ctx, &crate::provider::Credential::new(m.which, document))
+            tool.identify(&m.ctx, &provider::Credential::new(m.which, document))
                 .ok()
         })
         .map(|found| found.account_id);
@@ -1120,7 +1115,7 @@ pub(crate) fn hold(m: &Machine, after: &str) {
 pub(crate) fn hold_where_deleted(m: &Machine, after: &str) {
     let state = state::load(&m.ctx)
         .unwrap_or_else(|e| panic!("{after}: the state file must still parse, got {e}"));
-    let crate::provider::LoginKind::Folder(app) = crate::provider::of(m.which) else {
+    let LoginKind::Folder(app) = provider::of(m.which) else {
         panic!("{after}: a folder tool");
     };
     let holds = Holds {
@@ -1134,7 +1129,7 @@ pub(crate) fn hold_where_deleted(m: &Machine, after: &str) {
 pub(crate) fn hold_where_twice(m: &Machine, after: &str) {
     let state = state::load(&m.ctx)
         .unwrap_or_else(|e| panic!("{after}: the state file must still parse, got {e}"));
-    let crate::provider::LoginKind::Folder(app) = crate::provider::of(m.which) else {
+    let LoginKind::Folder(app) = provider::of(m.which) else {
         panic!("{after}: a folder tool");
     };
     let holds = Holds {
@@ -1171,11 +1166,11 @@ fn hold_folder(
     m: &Machine,
     after: &str,
     state: &State,
-    app: &'static dyn crate::provider::folder::Folder,
+    app: &'static dyn provider::folder::Folder,
     holds: Holds,
 ) {
     // Every folder under `parks` is named, and no folder's name reaches the vault.
-    let parks = crate::store::folder::list(&m.ctx)
+    let parks = store::folder::list(&m.ctx)
         .expect("parks listed")
         .unwrap_or_default();
     let pending = std::fs::read_to_string(home::dir(&m.ctx).join("pending")).unwrap_or_default();
@@ -1219,7 +1214,7 @@ fn hold_folder(
         {
             continue;
         }
-        let manifest = crate::store::folder::manifest(&m.ctx, &park.service)
+        let manifest = store::folder::manifest(&m.ctx, &park.service)
             .ok()
             .flatten()
             .unwrap_or_else(|| panic!("{after}: {} names a park with no manifest", account.label));
@@ -1228,7 +1223,7 @@ fn hold_folder(
             Some(park.login.as_str()),
             "{after}"
         );
-        let jar = crate::store::folder::item(&m.ctx, &park.service, app.items()[0]);
+        let jar = store::folder::item(&m.ctx, &park.service, app.items()[0]);
         let session = app.session(&m.ctx, &jar).expect("its jar reads");
         assert_eq!(
             session.map(|s| s.login),
@@ -1256,7 +1251,7 @@ fn hold_folder(
             let places = std::iter::once(data.join(&within)).chain(
                 parks
                     .iter()
-                    .map(|name| crate::store::folder::item(&m.ctx, name, store).join(file)),
+                    .map(|name| store::folder::item(&m.ctx, name, store).join(file)),
             );
             let found = places
                 .filter(|place| {

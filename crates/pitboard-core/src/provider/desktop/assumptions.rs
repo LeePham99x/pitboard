@@ -3,8 +3,8 @@
 use crate::assumptions::OnSystem::{NotRead, Read};
 use crate::assumptions::{Assumption, PerSystem};
 
-pub const VERIFIED_AGAINST: &str = "2.19675.0";
-pub const READ_FROM_THE_ARCHIVE: &str = "2.7032.0";
+pub(crate) const VERIFIED_AGAINST: &str = "2.19675.0";
+pub(crate) const READ_FROM_THE_ARCHIVE: &str = "2.7032.0";
 
 const NOT_HERE: &str =
     "Pitboard switches Claude Desktop accounts on macOS only, and nothing of it was read here";
@@ -18,7 +18,7 @@ const fn on_a_mac(name: &'static str, build: &'static str) -> PerSystem {
     }
 }
 
-pub const ASSUMPTIONS: &[Assumption] = &[
+pub(crate) const ASSUMPTIONS: &[Assumption] = &[
     Assumption {
         name: "desktop_app",
         fact: "Claude Desktop is `com.anthropic.claudefordesktop`. Its main program is \
@@ -389,7 +389,7 @@ pub const ASSUMPTIONS: &[Assumption] = &[
     },
 ];
 
-pub const PER_SYSTEM: &[PerSystem] = &[
+pub(crate) const PER_SYSTEM: &[PerSystem] = &[
     on_a_mac("desktop_app", VERIFIED_AGAINST),
     on_a_mac("desktop_native_host_is_chromes", VERIFIED_AGAINST),
     on_a_mac("desktop_data_folder", READ_FROM_THE_ARCHIVE),

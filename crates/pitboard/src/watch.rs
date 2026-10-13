@@ -36,14 +36,14 @@ const READ_EVERY: i64 = 300;
 /// Decides once from the usage Pitboard last measured, and says what it came to. Nobody is
 /// asked for usage; a decision under the lock may ask Anthropic whose login Claude Code has
 /// stored, as a switch does.
-pub fn once(pitboard: &Pitboard, threshold: Threshold) -> Report {
+pub(crate) fn once(pitboard: &Pitboard, threshold: Threshold) -> Report {
     said(pitboard.auto_switch(threshold), threshold, false)
 }
 
 /// Watches until it is stopped, saying the account it watches whenever its last line said
 /// something else, every switch, and each thing that stops one once. A refusal is asked again
 /// no sooner than the core waits after as many failed attempts, as the app does.
-pub fn run(pitboard: &Pitboard, threshold: Threshold, as_json: bool) -> ExitCode {
+pub(crate) fn run(pitboard: &Pitboard, threshold: Threshold, as_json: bool) -> ExitCode {
     if let Err(refused) = pitboard.permit() {
         return emit(Report::failed(Some("watch"), refused), as_json);
     }

@@ -931,11 +931,10 @@ pub(crate) fn load_any_machine(ctx: &Context) -> Result<(State, bool)> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok((State::default(), true)),
         Err(source) => return Err(Error::StateUnreadable { path, source }),
     };
-    let mut document: serde_json::Value =
-        serde_json::from_str(&raw).map_err(|source| Error::StateCorrupt {
-            path: path.clone(),
-            source,
-        })?;
+    let mut document: Value = serde_json::from_str(&raw).map_err(|source| Error::StateCorrupt {
+        path: path.clone(),
+        source,
+    })?;
     migrate(&mut document, &path)?;
     // An account of a tool this build does not know was written by a newer Pitboard, not
     // damaged. Said as such, because the advice for a corrupt file is to delete it, and
@@ -979,12 +978,12 @@ fn unknown_tool(document: &Value) -> Option<String> {
 /// The command line and the app carry their own copy of this crate and update by different
 /// routes, so on one machine an older Pitboard will meet a file a newer one wrote. Reading
 /// forwards is what this is for; reading backwards is not possible, and says so.
-fn migrate(document: &mut serde_json::Value, path: &std::path::Path) -> Result<()> {
+fn migrate(document: &mut Value, path: &std::path::Path) -> Result<()> {
     // Each bump adds a step after the ones before it, so a file two versions behind is
     // brought all the way forward in one read.
     let found = document
         .get("schema")
-        .and_then(serde_json::Value::as_u64)
+        .and_then(Value::as_u64)
         .unwrap_or_default();
     let found = u32::try_from(found).unwrap_or(u32::MAX);
     match found {
@@ -1027,8 +1026,8 @@ fn migrate(document: &mut serde_json::Value, path: &std::path::Path) -> Result<(
 /// schema 4 reads them. All that is missing is the tag. No keychain item and no vault file
 /// is touched, so a bug here is recoverable by fixing the code and reading again, never by
 /// somebody signing in from scratch.
-fn three_to_four(document: &mut serde_json::Value) {
-    let claude = serde_json::Value::from(ProviderId::Claude.code());
+fn three_to_four(document: &mut Value) {
+    let claude = Value::from(ProviderId::Claude.code());
     if let Some(accounts) = document.get_mut("accounts").and_then(Value::as_array_mut) {
         for account in accounts {
             if let Some(fields) = account.as_object_mut() {
@@ -1050,7 +1049,7 @@ fn three_to_four(document: &mut serde_json::Value) {
 /// one person in two organisations was one account. Schema 5 gives each account an id of
 /// its own, and an account already enrolled keeps the one everything is filed under, so
 /// no park, reading or window has to move.
-fn four_to_five(document: &mut serde_json::Value) {
+fn four_to_five(document: &mut Value) {
     if let Some(accounts) = document.get_mut("accounts").and_then(Value::as_array_mut) {
         for account in accounts {
             if let Some(fields) = account.as_object_mut()
@@ -1068,7 +1067,7 @@ fn four_to_five(document: &mut serde_json::Value) {
 /// each tool has stored, as its service said. A record brought forward is that account's,
 /// with no login and `known_at` 0: nothing established which login the store held. A label
 /// naming no account names nobody.
-fn five_to_six(document: &mut serde_json::Value) {
+fn five_to_six(document: &mut Value) {
     let accounts: Vec<Account> = document
         .get("accounts")
         .and_then(Value::as_array)
@@ -1105,13 +1104,13 @@ fn five_to_six(document: &mut serde_json::Value) {
 /// earlier Pitboard refuses the file: one would drop `renewing` at its next save, leaving the
 /// copy of the renewed login named by nothing, so the next renewal of that login, by this
 /// version or by 0.10.0's `stow`, would send the spent refresh token again.
-fn six_to_seven(document: &mut serde_json::Value) {
+fn six_to_seven(document: &mut Value) {
     document["schema"] = serde_json::json!(7);
 }
 
 // A bump: every earlier release reads `discarded` as names, and would call a file of typed
 // entries corrupt.
-fn seven_to_eight(document: &mut serde_json::Value) {
+fn seven_to_eight(document: &mut Value) {
     if let Some(discarded) = document.get_mut("discarded").and_then(Value::as_array_mut) {
         for entry in discarded {
             if let Value::String(service) = entry {
@@ -2016,7 +2015,7 @@ mod tests {
         Park {
             service: service.into(),
             parked_at: 100,
-            kind: crate::state::ParkKind::Vault,
+            kind: ParkKind::Vault,
             login: "f".into(),
             access_expires_at: Some(200),
             refresh_expires_at: Some(300),

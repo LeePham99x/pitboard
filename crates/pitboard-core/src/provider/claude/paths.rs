@@ -10,7 +10,7 @@ use std::path::PathBuf;
 /// `CLAUDE_CONFIG_DIR ?? ~/.claude`, as Claude Code 2.1.289 reads it: set, even empty, it
 /// is the directory, so an empty one is the empty path, which is refused before anything
 /// is read under it ([`crate::home::check_absolute`]).
-pub fn config_dir(ctx: &Context) -> PathBuf {
+pub(crate) fn config_dir(ctx: &Context) -> PathBuf {
     ctx.claude_config_dir
         .as_ref()
         .map(PathBuf::from)
@@ -20,7 +20,7 @@ pub fn config_dir(ctx: &Context) -> PathBuf {
 /// A legacy `<config dir>/.config.json` wins when present; otherwise
 /// `<$CLAUDE_CONFIG_DIR || $HOME>/.claude.json`, where an empty `CLAUDE_CONFIG_DIR` is the
 /// home. The differing base, and the differing reading of empty, are Claude Code's.
-pub fn config_file(ctx: &Context) -> PathBuf {
+pub(crate) fn config_file(ctx: &Context) -> PathBuf {
     let legacy = config_dir(ctx).join(".config.json");
     if legacy.is_file() {
         return legacy;
@@ -34,7 +34,7 @@ pub fn config_file(ctx: &Context) -> PathBuf {
 
 /// Where the `claude` that signs someone in actually is, if it is anywhere. A bare name is
 /// looked up on the context's search path the way a shell would.
-pub fn program(ctx: &Context) -> Option<PathBuf> {
+pub(crate) fn program(ctx: &Context) -> Option<PathBuf> {
     crate::provider::program_of(ctx, crate::provider::ProviderId::Claude)
 }
 
@@ -57,7 +57,7 @@ pub(crate) fn install_places(home: &std::path::Path) -> Vec<PathBuf> {
 /// name. An npm install has a `package.json` beside the resolved program. And a machine
 /// that has run Claude Code at all left `daemon.lock` behind, which records the version
 /// that wrote it.
-pub fn installed_version(ctx: &Context) -> Option<String> {
+pub(crate) fn installed_version(ctx: &Context) -> Option<String> {
     let resolved = program(ctx).and_then(|p| std::fs::canonicalize(p).ok());
     if let Some(path) = &resolved
         && let Some(name) = path.file_name().and_then(|n| n.to_str())
@@ -93,7 +93,7 @@ fn version_in_package_json(path: &std::path::Path) -> Option<String> {
 }
 
 /// The directory whose path string selects the credential slot.
-pub fn storage_dir(ctx: &Context) -> String {
+pub(crate) fn storage_dir(ctx: &Context) -> String {
     storage_dir_from(
         ctx.secure_storage_dir.as_deref(),
         &ctx.home,
@@ -104,13 +104,13 @@ pub fn storage_dir(ctx: &Context) -> String {
 /// What the lock a token refresh of the login takes first guards, as [`crate::lock::acquire`]
 /// takes it: `.oauth_refresh` in the storage directory, locked as `.oauth_refresh.lock`
 /// (the register's `refresh_lock`).
-pub fn refresh_lock(ctx: &Context) -> PathBuf {
+pub(crate) fn refresh_lock(ctx: &Context) -> PathBuf {
     PathBuf::from(storage_dir(ctx)).join(".oauth_refresh")
 }
 
 /// What the legacy lock a token refresh takes second guards: the storage directory itself,
 /// its links resolved where it is there, locked beside it.
-pub fn legacy_refresh_lock(ctx: &Context) -> PathBuf {
+pub(crate) fn legacy_refresh_lock(ctx: &Context) -> PathBuf {
     let dir = PathBuf::from(storage_dir(ctx));
     std::fs::canonicalize(&dir).unwrap_or(dir)
 }
@@ -128,7 +128,7 @@ fn storage_dir_from(secure: Option<&str>, home: &std::path::Path, config_dir: &s
 /// `CLAUDE_SECURESTORAGE_CONFIG_DIR` pins it even when `CLAUDE_CONFIG_DIR` is set, and
 /// without one, an empty `CLAUDE_CONFIG_DIR` names it, since Claude Code tests
 /// `!CLAUDE_CONFIG_DIR`.
-pub fn is_default_slot(ctx: &Context) -> bool {
+pub(crate) fn is_default_slot(ctx: &Context) -> bool {
     is_default_slot_from(
         ctx.secure_storage_dir.as_deref(),
         ctx.claude_config_dir.as_deref(),
@@ -143,6 +143,7 @@ fn is_default_slot_from(secure: Option<&str>, config_dir: Option<&str>) -> bool 
 }
 
 /// The keychain service this process would read.
+#[cfg_attr(not(feature = "test-support"), allow(unreachable_pub))]
 pub fn live_service(ctx: &Context) -> String {
     if is_default_slot(ctx) {
         slot::LIVE_SERVICE.to_string()
@@ -151,7 +152,7 @@ pub fn live_service(ctx: &Context) -> String {
     }
 }
 
-pub fn load_config(ctx: &Context) -> Result<Value> {
+pub(crate) fn load_config(ctx: &Context) -> Result<Value> {
     let path = config_file(ctx);
     let raw = std::fs::read_to_string(&path).map_err(|source| {
         if source.kind() == std::io::ErrorKind::NotFound {
@@ -181,7 +182,7 @@ pub struct Identity {
 
 /// The three organization fields are written by separate fetches, not by the profile save,
 /// so a config that has never made them is normal and they stay `None`.
-pub fn identity(config: &Value) -> Option<Identity> {
+pub(crate) fn identity(config: &Value) -> Option<Identity> {
     let o = config.get("oauthAccount")?.as_object()?;
     let s = |k: &str| o.get(k).and_then(Value::as_str).map(str::to_owned);
     Some(Identity {
@@ -203,7 +204,7 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W17: finding programs on Windows")]
     fn a_program_is_found_on_path_and_a_missing_one_is_not() {
-        let ctx = Context::new(std::path::PathBuf::from("/home/x"));
+        let ctx = Context::new(PathBuf::from("/home/x"));
         let found = program(&ctx.clone().with_claude_program("ls".into()))
             .expect("every machine that runs these tests has ls on PATH");
         assert!(found.ends_with("ls"), "{found:?}");
@@ -240,9 +241,9 @@ mod tests {
     /// one is refused before either is used.
     #[test]
     fn an_empty_config_dir_is_read_as_claude_code_reads_it() {
-        let ctx = Context::new(std::path::PathBuf::from("/nowhere/home"))
-            .with_claude_config_dir(String::new());
-        assert_eq!(config_dir(&ctx), std::path::PathBuf::new());
+        let ctx =
+            Context::new(PathBuf::from("/nowhere/home")).with_claude_config_dir(String::new());
+        assert_eq!(config_dir(&ctx), PathBuf::new());
         assert_eq!(
             config_file(&ctx),
             std::path::Path::new("/nowhere/home/.claude.json")

@@ -36,7 +36,7 @@ fn browsers() -> BTreeSet<u32> {
         .unwrap_or_default()
 }
 
-pub fn windowless(scratch: &Path, newline: Newline, program: &[String]) -> Report {
+pub(super) fn windowless(scratch: &Path, newline: Newline, program: &[String]) -> Report {
     let logon = logon_now();
     if let Some(reason) = ffi::refuse_write(scratch) {
         return Report::refused("windowless", logon, reason);

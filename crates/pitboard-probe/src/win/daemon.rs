@@ -96,7 +96,7 @@ fn find_named(dir: &Path, name: &str, depth: u32, out: &mut Vec<PathBuf>) {
     }
 }
 
-pub fn daemon(config_dir: &Path, pipe_key: Option<&Path>) -> Report {
+pub(super) fn daemon(config_dir: &Path, pipe_key: Option<&Path>) -> Report {
     let logon = logon_now();
     if !ffi::marker_present() {
         return Report::refused(

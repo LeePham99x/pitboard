@@ -369,10 +369,10 @@ fn desktop_facts(ctx: &Context, state: &State) -> Option<DesktopFacts> {
         unread: Vec::new(),
         known: None,
         signed_out: false,
-        parks_dir: crate::store::folder::parks_dir(ctx),
-        private: crate::host::fs::private_dir(&crate::store::folder::parks_dir(ctx)).ok(),
+        parks_dir: store::folder::parks_dir(ctx),
+        private: crate::host::fs::private_dir(&store::folder::parks_dir(ctx)).ok(),
         one_volume: root.as_ref().ok().and_then(|root| {
-            crate::host::fs::same_volume(root, &crate::store::folder::parks_dir(ctx)).ok()
+            crate::host::fs::same_volume(root, &store::folder::parks_dir(ctx)).ok()
         }),
         parked_here: state
             .accounts
@@ -380,7 +380,7 @@ fn desktop_facts(ctx: &Context, state: &State) -> Option<DesktopFacts> {
             .filter_map(|a| a.parked.as_ref())
             .filter(|park| park.kind == crate::state::ParkKind::Folder)
             .map(|park| {
-                let at = crate::store::folder::at(ctx, &park.service);
+                let at = store::folder::at(ctx, &park.service);
                 let folder = match std::fs::symlink_metadata(at) {
                     Ok(found) => Ok(found.is_dir()),
                     Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
@@ -584,7 +584,7 @@ fn parts_of(document: &Value) -> Vec<(String, usize)> {
 /// umask quietly changes. So it is looked at rather than assumed.
 fn loose_logins(ctx: &Context) -> Vec<(String, Access)> {
     let mut loose = Vec::new();
-    let mut look = |path: std::path::PathBuf| {
+    let mut look = |path: PathBuf| {
         if let Some(access) = crate::host::fs::access(&path)
             && access.shared
         {
@@ -595,7 +595,7 @@ fn loose_logins(ctx: &Context) -> Vec<(String, Access)> {
     let vault = store::vault_dir(ctx);
     look(vault.clone());
     if let Ok(entries) = std::fs::read_dir(&vault) {
-        let mut parks: Vec<std::path::PathBuf> = entries.flatten().map(|e| e.path()).collect();
+        let mut parks: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
         parks.sort();
         for park in parks {
             look(park);
@@ -756,8 +756,8 @@ fn running_codex(ctx: &Context) -> Option<Vec<crate::holder::Holding>> {
 fn elevated(os: Os, elevation: crate::host::Elevation) -> Option<Check> {
     let said = match elevation {
         crate::host::Elevation::Normal => return None,
-        crate::host::Elevation::Elevated { why } => crate::words::elevated(os, Some(why)),
-        crate::host::Elevation::Unknown => crate::words::elevated(os, None),
+        crate::host::Elevation::Elevated { why } => words::elevated(os, Some(why)),
+        crate::host::Elevation::Unknown => words::elevated(os, None),
     };
     Some(fail(
         "elevated",
@@ -773,8 +773,8 @@ fn elevated(os: Os, elevation: crate::host::Elevation) -> Option<Check> {
 fn too_old(floor: crate::host::Floor) -> Option<Check> {
     let said = match floor {
         crate::host::Floor::Met => return None,
-        crate::host::Floor::Below { build } => crate::words::too_old(Some(build)),
-        crate::host::Floor::Unknown => crate::words::too_old(None),
+        crate::host::Floor::Below { build } => words::too_old(Some(build)),
+        crate::host::Floor::Unknown => words::too_old(None),
     };
     Some(fail(
         "system_too_old",
@@ -2741,9 +2741,7 @@ pub struct Diagnosis {
 }
 
 pub fn run(ctx: &Context) -> Diagnosis {
-    if let Err(crate::error::Error::HomeNotAbsolute { variable, path }) =
-        crate::home::check_absolute(ctx)
-    {
+    if let Err(Error::HomeNotAbsolute { variable, path }) = home::check_absolute(ctx) {
         return unplaced(ctx, variable, &path);
     }
     let facts = gather(ctx);
@@ -3287,7 +3285,7 @@ mod tests {
     )]
     fn claude_desktops_facts_come_from_one_read_of_its_settings() {
         use crate::provider::folder::Sidecar;
-        let m = crate::switch::harness::desktop_machine("doctor-facts");
+        let m = switch::harness::desktop_machine("doctor-facts");
         let state = crate::state::load(&m.ctx).expect("state");
         let (facts, reads) =
             crate::fault::counting("settings.read", || desktop_facts(&m.ctx, &state));
@@ -3298,14 +3296,14 @@ mod tests {
         assert_eq!(known.doubt, None);
         assert_eq!(
             known.own_record.map(|owner| owner.account_uuid).as_deref(),
-            Some(crate::switch::harness::WORK.uuid)
+            Some(switch::harness::WORK.uuid)
         );
         assert!(!facts.signed_out);
 
         std::fs::remove_file(m.ctx_home().join("claude/data/config.json")).expect("removed");
         let facts = desktop_facts(&m.ctx, &state).expect("an account is enrolled");
         assert_eq!(facts.settings, Some(Ok((Sidecar::None, false))));
-        let checks = judge_desktop(&facts, &state, &[], crate::switch::harness::NOW);
+        let checks = judge_desktop(&facts, &state, &[], switch::harness::NOW);
         assert_eq!(
             said(&checks, "desktop_settings"),
             [(Level::Ok, "no config.json yet".into())]
@@ -3318,7 +3316,7 @@ mod tests {
         ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
     )]
     fn doctor_says_the_build_of_the_claude_installed() {
-        let m = crate::switch::harness::desktop_machine("doctor-build");
+        let m = switch::harness::desktop_machine("doctor-build");
         m.mem.app_at(
             std::path::Path::new("/Applications/Claude.app"),
             "2.31226.1",
@@ -3343,15 +3341,15 @@ mod tests {
         ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
     )]
     fn a_park_doctor_cannot_look_at_is_never_said_missing() {
-        let m = crate::switch::harness::desktop_pair("doctor-park-unread");
+        let m = switch::harness::desktop_pair("doctor-park-unread");
         let state = crate::state::load(&m.ctx).expect("state");
-        let parks_dir = crate::store::folder::parks_dir(&m.ctx);
+        let parks_dir = store::folder::parks_dir(&m.ctx);
         crate::host::fs::testing::deny_reading(&parks_dir).expect("parks shut");
         let facts = desktop_facts(&m.ctx, &state);
         crate::host::fs::testing::make_private(&parks_dir).expect("parks open again");
         let facts = facts.expect("an account is enrolled");
         let parks = park_facts(&m.ctx, &state);
-        let checks = judge_desktop(&facts, &state, &parks, crate::switch::harness::NOW);
+        let checks = judge_desktop(&facts, &state, &parks, switch::harness::NOW);
         let home = checks
             .iter()
             .find(|c| c.code == "desktop_parked_login" && c.name == "account desktop/home")
@@ -3375,7 +3373,7 @@ mod tests {
     )]
     fn a_data_folder_is_found_where_only_a_folder_set_aside_is_left() {
         use crate::state::{Aside, SetAside};
-        let m = crate::switch::harness::desktop_pair("doctor-aside-only");
+        let m = switch::harness::desktop_pair("doctor-aside-only");
         let mut state = crate::state::load(&m.ctx).expect("state");
         state
             .accounts
@@ -3390,7 +3388,7 @@ mod tests {
         });
         let facts = desktop_facts(&m.ctx, &state).expect("a folder set aside shows Claude Desktop");
         let parks = park_facts(&m.ctx, &state);
-        let checks = judge_desktop(&facts, &state, &parks, crate::switch::harness::NOW);
+        let checks = judge_desktop(&facts, &state, &parks, switch::harness::NOW);
         let folder = checks
             .iter()
             .find(|c| c.code == "desktop_data_folder")
@@ -3814,7 +3812,7 @@ mod tests {
             provider: ProviderId::Claude,
             last_used_at: None,
             label: label.into(),
-            name: crate::state::Key::new(ProviderId::Claude, label).typed(),
+            name: Key::new(ProviderId::Claude, label).typed(),
             active: false,
             park: Some(Park {
                 service: format!("pitboard-park-{label}-1"),
@@ -3833,7 +3831,7 @@ mod tests {
     fn codex_parked(label: &str, refresh_expires_at: Option<i64>) -> ParkFact {
         ParkFact {
             provider: ProviderId::Codex,
-            name: crate::state::Key::new(ProviderId::Codex, label).typed(),
+            name: Key::new(ProviderId::Codex, label).typed(),
             ..parked(label, refresh_expires_at)
         }
     }
@@ -3869,7 +3867,7 @@ mod tests {
             std::thread::current().id()
         ));
         let _ = std::fs::remove_dir_all(&root);
-        struct Scratch(std::path::PathBuf);
+        struct Scratch(PathBuf);
         impl Drop for Scratch {
             fn drop(&mut self) {
                 let _ = std::fs::remove_dir_all(&self.0);
@@ -4407,7 +4405,7 @@ mod tests {
         f.parks = vec![ParkFact {
             provider: ProviderId::Claude,
             label: "work".into(),
-            name: crate::state::Key::new(ProviderId::Claude, "work").typed(),
+            name: Key::new(ProviderId::Claude, "work").typed(),
             active: false,
             last_used_at: Some(f.now - 31 * 86_400),
             park: Some(Park {
@@ -4559,7 +4557,7 @@ mod tests {
             std::thread::current().id()
         ));
         let _ = std::fs::remove_dir_all(&root);
-        struct Scratch(std::path::PathBuf);
+        struct Scratch(PathBuf);
         impl Drop for Scratch {
             fn drop(&mut self) {
                 let _ = std::fs::remove_dir_all(&self.0);
@@ -4761,7 +4759,7 @@ mod tests {
             std::thread::current().id()
         ));
         let _ = std::fs::remove_dir_all(&root);
-        struct Scratch(std::path::PathBuf);
+        struct Scratch(PathBuf);
         impl Drop for Scratch {
             fn drop(&mut self) {
                 let _ = std::fs::remove_dir_all(&self.0);
@@ -4779,7 +4777,7 @@ mod tests {
                 .chain(proxy.map(|address| ("HTTPS_PROXY", address)))
                 .collect();
             Context::for_command_line(&env)
-                .with_memory_stores(std::sync::Arc::clone(&machine))
+                .with_memory_stores(Arc::clone(&machine))
                 .with_schedule_program(program.clone())
         };
         let gathered = |ctx: &Context| {
@@ -5154,7 +5152,7 @@ mod tests {
                 provider: ProviderId::Claude,
                 last_used_at: None,
                 label: "empty".into(),
-                name: crate::state::Key::new(ProviderId::Claude, "empty").typed(),
+                name: Key::new(ProviderId::Claude, "empty").typed(),
                 active: false,
                 park: None,
                 unreadable: None,
@@ -5163,7 +5161,7 @@ mod tests {
                 provider: ProviderId::Claude,
                 last_used_at: None,
                 label: "live".into(),
-                name: crate::state::Key::new(ProviderId::Claude, "live").typed(),
+                name: Key::new(ProviderId::Claude, "live").typed(),
                 active: true,
                 park: None,
                 unreadable: None,
@@ -5327,7 +5325,7 @@ mod tests {
         ));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).expect("a scratch home");
-        struct Scratch(std::path::PathBuf);
+        struct Scratch(PathBuf);
         impl Drop for Scratch {
             fn drop(&mut self) {
                 let _ = std::fs::remove_dir_all(&self.0);
@@ -5892,7 +5890,7 @@ mod tests {
             std::thread::current().id()
         ));
         let _ = std::fs::remove_dir_all(&root);
-        struct Scratch(std::path::PathBuf);
+        struct Scratch(PathBuf);
         impl Drop for Scratch {
             fn drop(&mut self) {
                 let _ = std::fs::remove_dir_all(&self.0);
@@ -6054,8 +6052,7 @@ mod tests {
                  MacOS/codex",
             ],
         );
-        let ctx =
-            Context::new(std::env::temp_dir()).with_memory_stores(std::sync::Arc::clone(&host));
+        let ctx = Context::new(std::env::temp_dir()).with_memory_stores(Arc::clone(&host));
         let seen = running_codex(&ctx).expect("readable");
         assert_eq!(
             seen.iter().map(|h| h.holder.kind).collect::<Vec<_>>(),
@@ -6128,7 +6125,7 @@ mod tests {
             std::thread::current().id()
         ));
         let _ = std::fs::remove_dir_all(&root);
-        struct Scratch(std::path::PathBuf);
+        struct Scratch(PathBuf);
         impl Drop for Scratch {
             fn drop(&mut self) {
                 let _ = std::fs::remove_dir_all(&self.0);
@@ -6282,7 +6279,7 @@ mod tests {
     fn a_machine_with_only_codex_is_not_judged_on_claude_code() {
         let mut facts = facts();
         facts.claude_present = false;
-        facts.config = Err(crate::error::Error::ClaudeConfigMissing {
+        facts.config = Err(Error::ClaudeConfigMissing {
             path: PathBuf::from("/nowhere/.claude.json"),
         });
         facts.codex.present = true;

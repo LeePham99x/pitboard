@@ -29,7 +29,7 @@ pub mod warm;
 pub use crate::pending::Reclaimed;
 pub use adopt::{Adopted, adopt};
 pub(crate) use auto::automatically;
-#[cfg(feature = "test-support")]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) use enroll::planted;
 pub use enroll::{Enrolled, Said, SignIn, Steps, WatchedSignIn, enroll};
 #[cfg(any(test, feature = "test-support"))]
@@ -117,7 +117,7 @@ pub struct GaveUp {
 // they name. Under a custom Claude Code endpoint only a Claude Code switch is refused.
 pub fn abandon(ctx: &Context, permit: Permit) -> Result<GaveUp> {
     // With no switch waiting the endpoint is not asked: it never stops an app's give-up.
-    if let Some(tool) = journal::interrupted_tool(ctx) {
+    if let Some(tool) = interrupted_tool(ctx) {
         refuse_custom_oauth(ctx, Some(tool))?;
     }
     let _exclusive = exclusive(ctx, permit)?;
@@ -170,7 +170,7 @@ fn refuse_custom_oauth(ctx: &Context, tool: Option<ProviderId>) -> Result<()> {
         return Ok(());
     }
     let claude = Some(ProviderId::Claude);
-    if tool.is_none() || tool == claude || journal::interrupted_tool(ctx) == claude {
+    if tool.is_none() || tool == claude || interrupted_tool(ctx) == claude {
         return Err(Error::CustomOauthEndpoint);
     }
     Ok(())
@@ -224,7 +224,7 @@ pub(crate) fn stuck(ctx: &Context, state: &State, asking: Asking) -> Option<Erro
     // Under a custom Claude Code endpoint no change comes to a Claude Code switch: each is
     // refused over the endpoint first, as settling it and giving up on it are. A Codex
     // switch is settled there, and given up on, as anywhere.
-    refuse_custom_oauth(ctx, journal::interrupted_tool(ctx)).ok()?;
+    refuse_custom_oauth(ctx, interrupted_tool(ctx)).ok()?;
     journal::refusal(ctx, state, asking)
 }
 
@@ -232,7 +232,7 @@ pub(crate) fn stuck(ctx: &Context, state: &State, asking: Asking) -> Option<Erro
 /// state does not name. `settle` already does this from Pitboard's own list of names on
 /// every change; this is the thorough version, for a machine whose list was lost with its
 /// state file, or written by a version that kept no list.
-pub fn repair(settled: Settled) -> Result<(pending::Reclaimed, Vec<Warning>)> {
+pub fn repair(settled: Settled) -> Result<(Reclaimed, Vec<Warning>)> {
     let Settled {
         _exclusive,
         mut state,
@@ -260,7 +260,7 @@ fn give_back_asides(
     ctx: &Context,
     permit: Permit,
     state: &mut State,
-    reclaimed: &mut pending::Reclaimed,
+    reclaimed: &mut Reclaimed,
 ) -> Result<()> {
     let folders = park::parks(ParkKind::Folder);
     let names: Vec<String> = state.aside.iter().map(|aside| aside.name.clone()).collect();

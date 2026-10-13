@@ -255,19 +255,19 @@ fn folder_tool(ctx: &Context, name: &str) -> ProviderId {
         .expect("a tool whose login is a folder")
 }
 
-pub fn service_name(id: &str, at_millis: i64) -> String {
+pub(crate) fn service_name(id: &str, at_millis: i64) -> String {
     format!("{PREFIX}{id}-{at_millis}")
 }
 
 /// A name Pitboard made, rather than one Claude Code did. Nothing deletes an item without
 /// this being true of its name.
-pub fn is_park_name(service: &str) -> bool {
+pub(crate) fn is_park_name(service: &str) -> bool {
     parts_of(service).is_some()
 }
 
 /// The account id and the moment a name carries. An account id contains dashes, so the
 /// moment is taken from the end.
-pub fn parts_of(service: &str) -> Option<(String, i64)> {
+pub(crate) fn parts_of(service: &str) -> Option<(String, i64)> {
     let rest = service.strip_prefix(PREFIX)?;
     let (id, millis) = rest.rsplit_once('-')?;
     let at_millis: i64 = millis.parse().ok()?;
@@ -276,7 +276,7 @@ pub fn parts_of(service: &str) -> Option<(String, i64)> {
 
 /// Claim a free name before writing to it, so the caller can record it first and recovery
 /// can find a park left by a run that died. Reusing a name would destroy the park there.
-pub fn reserve(ctx: &Context, permit: Permit, id: &str) -> Result<String> {
+pub(crate) fn reserve(ctx: &Context, permit: Permit, id: &str) -> Result<String> {
     let service = free_name(ctx, id)?;
     // Written down before anything is written into it, so a run killed between the two
     // leaves a name the next command can resolve rather than a login nothing on the machine
@@ -340,7 +340,7 @@ fn free_folder(
 /// four kilobytes before it is hex-encoded, so every Codex park is past the ceiling. Above
 /// it the write goes on the argument line, which is said, or is refused where
 /// `PITBOARD_NO_ARGV` forbids that, before anything has moved rather than halfway through.
-pub fn price(
+pub(crate) fn price(
     ctx: &Context,
     provider: ProviderId,
     label: &str,
@@ -371,7 +371,7 @@ pub fn price(
 /// A new park of `document`, a login of the account filed under `id`, which `label` names:
 /// what it costs is asked first, then a free name is reserved and written. The caller
 /// records it, and deletes it where that fails. What parking it warns of comes with it.
-pub fn keep(
+pub(crate) fn keep(
     ctx: &Context,
     permit: Permit,
     tool: &'static dyn Provider,
@@ -392,7 +392,7 @@ pub fn keep(
 }
 
 /// Write a login into a reserved name and prove it reads back.
-pub fn store_at(
+pub(crate) fn store_at(
     ctx: &Context,
     permit: Permit,
     tool: &'static dyn Provider,
@@ -412,7 +412,7 @@ pub fn store_at(
 }
 
 /// What the account index records about a login: nothing secret.
-pub fn describe(
+pub(crate) fn describe(
     tool: &'static dyn Provider,
     service: &str,
     parked_at: i64,
@@ -433,7 +433,12 @@ pub fn describe(
 }
 
 /// Takes the account so a failure names it, not an item the user has never seen.
-pub fn load(ctx: &Context, tool: &'static dyn Provider, key: &Key, park: &Park) -> Result<Value> {
+pub(crate) fn load(
+    ctx: &Context,
+    tool: &'static dyn Provider,
+    key: &Key,
+    park: &Park,
+) -> Result<Value> {
     let label = key.typed();
     let raw =
         store::vault_read(ctx, &park.service)?.ok_or_else(|| Error::ParkedCredentialMissing {
@@ -460,7 +465,7 @@ pub fn load(ctx: &Context, tool: &'static dyn Provider, key: &Key, park: &Park) 
 /// whose own sign-out revokes what it finds, keeping such a copy is keeping a token the
 /// person's next sign-out would end in both places; it is discarded instead. For a tool
 /// that tolerates a copy this is never true, and what was always done still is.
-pub fn is_live_twin(ctx: &Context, tool: &'static dyn Provider, document: &Value) -> bool {
+pub(crate) fn is_live_twin(ctx: &Context, tool: &'static dyn Provider, document: &Value) -> bool {
     if tool.park_semantics() != crate::provider::ParkSemantics::MoveOnly {
         return false;
     }
@@ -476,10 +481,10 @@ fn live_fingerprint(ctx: &Context, tool: &'static dyn Provider) -> Option<String
 }
 
 // One refresh token in two places, which a renewal would spend. A folder login is never copied.
-pub fn live_twins(ctx: &Context, state: &State) -> Vec<String> {
+pub(crate) fn live_twins(ctx: &Context, state: &State) -> Vec<String> {
     let mut twins = Vec::new();
     for &provider in ProviderId::ALL {
-        let held: Vec<&crate::state::Park> = state
+        let held: Vec<&Park> = state
             .accounts
             .iter()
             .filter(|a| a.provider() == provider)
@@ -507,7 +512,7 @@ pub fn live_twins(ctx: &Context, state: &State) -> Vec<String> {
 
 /// Delete every discarded item, keeping listed only those that resisted. Returns how many
 /// remain.
-pub fn purge(ctx: &Context, permit: Permit, state: &mut State) -> usize {
+pub(crate) fn purge(ctx: &Context, permit: Permit, state: &mut State) -> usize {
     state
         .discarded
         .retain(|dropped| parks(dropped.kind).remove(ctx, permit, dropped).is_err());
@@ -702,7 +707,7 @@ mod tests {
                     &work(),
                     &park
                 ),
-                Err(Error::Store(crate::store::Error::Unreadable(_)))
+                Err(Error::Store(store::Error::Unreadable(_)))
             ),
             "a store that could not answer must never read as an absent login"
         );

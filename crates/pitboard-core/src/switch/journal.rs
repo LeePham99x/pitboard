@@ -375,7 +375,7 @@ pub(super) fn abandon(
     } else if let Some(Some(document)) = read_park(ctx, &journal.park_service)
         && let Some(key) = state
             .by_id(journal.provider, &journal.from_id)
-            .map(crate::state::Account::key)
+            .map(Account::key)
     {
         state.park(
             &key,
@@ -624,7 +624,7 @@ mod tests {
     fn fingerprint(refresh: &str) -> String {
         let live =
             serde_json::json!({"claudeAiOauth": {"refreshToken": refresh, "accessToken": "a"}});
-        crate::provider::document(ProviderId::Claude).fingerprint(&live)
+        provider::document(ProviderId::Claude).fingerprint(&live)
     }
 
     /// The store holding the login fingerprinted `login`, with the tool's own record naming
@@ -664,7 +664,7 @@ mod tests {
             parked: parked.map(|s| Park {
                 service: s.into(),
                 parked_at: 1_699_000_000,
-                kind: crate::state::ParkKind::Vault,
+                kind: ParkKind::Vault,
                 login: "f".into(),
                 access_expires_at: None,
                 refresh_expires_at: None,
@@ -713,7 +713,7 @@ mod tests {
         for s in [before(), {
             let mut recorded = before();
             recorded.park(
-                &crate::state::Key::new(crate::provider::ProviderId::Claude, "from"),
+                &Key::new(ProviderId::Claude, "from"),
                 account("x", Some(PARK)).parked.unwrap(),
             );
             recorded
@@ -771,25 +771,17 @@ mod tests {
             Some((rotated.as_str(), NOW)),
             "the login the store holds, which Claude Code may have rotated since the install"
         );
-        let from = s
-            .get(&crate::state::Key::new(
-                crate::provider::ProviderId::Claude,
-                "from",
-            ))
-            .unwrap();
+        let from = s.get(&Key::new(ProviderId::Claude, "from")).unwrap();
         assert_eq!(from.parked.as_ref().unwrap().service, PARK);
         assert_eq!(
             from.replaced_at, None,
             "its login is parked, so nothing of it was lost"
         );
         assert!(
-            s.get(&crate::state::Key::new(
-                crate::provider::ProviderId::Claude,
-                "to"
-            ))
-            .unwrap()
-            .parked
-            .is_none(),
+            s.get(&Key::new(ProviderId::Claude, "to"))
+                .unwrap()
+                .parked
+                .is_none(),
             "the copy now live must never be offered again"
         );
         assert!(s.discarded.iter().any(|d| d.service == INCOMING));
@@ -816,7 +808,7 @@ mod tests {
     fn an_already_recorded_park_is_not_held_twice() {
         let mut s = before();
         s.park(
-            &crate::state::Key::new(crate::provider::ProviderId::Claude, "from"),
+            &Key::new(ProviderId::Claude, "from"),
             account("x", Some(PARK)).parked.unwrap(),
         );
         let repair = repair_for(

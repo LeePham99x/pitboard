@@ -39,14 +39,14 @@ pub struct Daemon {
 
 /// The daemon of this slot, where one has ever run. `None` means no `daemon.lock`, which is
 /// an ordinary state: a machine whose Claude Code has not started a daemon yet.
-pub fn read(ctx: &Context) -> Option<Daemon> {
+pub(crate) fn read(ctx: &Context) -> Option<Daemon> {
     parse(
         &std::fs::read_to_string(lock_path(ctx)).ok()?,
         crate::host::proc::may_be_running,
     )
 }
 
-pub fn lock_path(ctx: &Context) -> PathBuf {
+pub(crate) fn lock_path(ctx: &Context) -> PathBuf {
     claude::config_dir(ctx).join("daemon.lock")
 }
 
