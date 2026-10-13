@@ -36,6 +36,7 @@ final class PanesAndSettingsTests: XCTestCase {
     func testDailyRenewal() {
         let app = XCUIApplication.launched(.oneTool)
         app.openSettings()
+        app.toolbars.buttons["Renewal"].click()
         let renew = app.control("settings.renewDaily")
         XCTAssertTrue(renew.waitForExistence(timeout: 5))
         renew.click()
@@ -67,6 +68,7 @@ final class PanesAndSettingsTests: XCTestCase {
     func testSwitchingBeforeAnAccountRunsOut() {
         let app = XCUIApplication.launched(.oneTool)
         app.openSettings()
+        app.toolbars.buttons["Limits"].click()
         let toggle = app.control("settings.autoSwitch")
         let share = app.control("settings.autoSwitchAt")
         let standing = app.control("settings.autoSwitchStanding")
@@ -106,6 +108,7 @@ final class PanesAndSettingsTests: XCTestCase {
         XCTAssertTrue(warmed.waitForExistence(timeout: 30), "personal is warmed up")
 
         app.openSettings()
+        app.toolbars.buttons["Limits"].click()
         let personal = app.control("settings.warm.claude/personal")
         let work = app.control("settings.warm.claude/work")
         XCTAssertTrue(personal.waitForExistence(timeout: 5))
