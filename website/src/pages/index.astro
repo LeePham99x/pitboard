@@ -15,7 +15,7 @@ import Term from "../components/fig/Term.astro";
 import Feature from "../components/home/Feature.astro";
 import Row from "../components/home/Row.astro";
 import { sessions } from "../data/sessions.ts";
-import { DOCS, REPO, SITE } from "../data/site.ts";
+import { DOCS, REPO } from "../data/site.ts";
 import { longDate } from "../lib/changelog.ts";
 import { appZip } from "../lib/github.ts";
 import { highlight, siteData } from "../lib/data.ts";
@@ -67,7 +67,12 @@ const faq = [
 ];
 
 const jsonLd = [
-  { "@context": "https://schema.org", "@type": "WebSite", name: "Pitboard", url: `${SITE}/` },
+  {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: "Pitboard",
+    url: new URL("/", Astro.site).href,
+  },
   {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
@@ -77,7 +82,7 @@ const jsonLd = [
     softwareVersion: release.version,
     downloadUrl: zip.url,
     license: "https://www.apache.org/licenses/LICENSE-2.0",
-    url: `${SITE}/`,
+    url: new URL("/", Astro.site).href,
   },
 ];
 ---
@@ -434,7 +439,7 @@ const jsonLd = [
       <div class="wrap">
         <div class="block-in">
           <h2 class="h2" id="faq-title">Questions</h2>
-          <div class="qas">
+          <div>
             {faq.map((item) => <details class="qa">
               <summary set:html={item.q} />
               <div class="qa-a">
@@ -449,7 +454,7 @@ const jsonLd = [
       </div>
     </section>
 
-    <section class="block install-again" aria-labelledby="install-title">
+    <section class="block" aria-labelledby="install-title">
       <div class="wrap">
         <div class="block-in">
           <h2 class="h2" id="install-title">Install Pitboard</h2>

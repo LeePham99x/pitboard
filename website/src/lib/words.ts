@@ -1,4 +1,5 @@
-// The app's and the command line's words for world.ts, by crates/pitboard-core/src/words.rs and render/status.rs.
+// The app's and the command line's words for world.ts, by crates/pitboard-core/src/words.rs and
+// crates/pitboard/src/render/status.rs.
 
 import {
   accounts,
@@ -27,7 +28,7 @@ export function paceText(limit: Limit): string {
   return `${Math.round(Math.abs(limit.used - limit.even!))}% ${s} pace`;
 }
 
-// green under 70%, yellow (orange in the app) from 70%, red from 90%
+// the app draws "y" in orange
 export function level(used: number): "g" | "y" | "r" {
   return used >= 90 ? "r" : used >= 70 ? "y" : "g";
 }
@@ -40,7 +41,6 @@ export const toolAccounts = (tool: Tool) => accounts.filter((a) => a.tool === to
 
 export const menuTitle = (a: Account) => `${a.label} · ${a.plan}`;
 
-// The line under an account in the menu. Only the account in use says when a limit runs out.
 export function menuLine(a: Account, moment: Moment): string {
   const said = a.limits.map((l) => {
     const runs = isInUse(a, moment) && l.runsOut ? ` (runs out in ${l.runsOut})` : "";
@@ -68,7 +68,7 @@ const span = (cls: string, text: string) => (text ? `<span class="${cls}">${text
 const pad = (text: string, width: number) => text + " ".repeat(Math.max(0, width - text.length));
 
 // crates/pitboard/src/ui.rs `bar`; a run of cells is one span, so figures.css can draw it seamless.
-export function bar(limit: Limit): string {
+function bar(limit: Limit): string {
   const width = 10;
   const filled = Math.min(width, Math.max(0, Math.round((limit.used / 100) * width)));
   const cells = (from: number, to: number) => {
@@ -148,10 +148,3 @@ export function statusLine(moment: Moment): string {
     ...others.map((a) => `${span("dim", a.label)} ${shares(a, false)}`),
   ].join("  ");
 }
-
-export const plain = (html: string) =>
-  html
-    .replace(/<[^>]+>/g, "")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&");

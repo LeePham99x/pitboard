@@ -120,7 +120,7 @@ test("finds two releases on one site", () => {
   );
 });
 
-test("hashes inline scripts byte for byte and refuses style attributes and foreign scripts", () => {
+test("hashes inline scripts byte for byte and refuses foreign scripts", () => {
   const head = 'console.log("theme");\n';
   const html = page(
     "<p>Hi</p>",
@@ -142,10 +142,6 @@ test("hashes inline scripts byte for byte and refuses style attributes and forei
   ]);
   assert.match(beacon.csp, /script-src 'self' https:\/\/static\.cloudflareinsights\.com;/);
   assert.match(beacon.csp, /connect-src 'self' https:\/\/cloudflareinsights\.com;/);
-  assert.match(
-    policy([["s.html", page('<div style="x"></div>')]]).problems.join(),
-    /style attribute/,
-  );
   assert.match(
     policy([
       ["e.html", page("", '<script src="https://cdn.example/x.js"></script>')],

@@ -3,12 +3,12 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { sessions } from "./sessions.ts";
 import { account } from "./world.ts";
-import { menuLine, plain, statusLine, statusLines } from "../lib/words.ts";
+import { plainText } from "../lib/changelog.ts";
+import { menuLine, statusLine, statusLines } from "../lib/words.ts";
 
 const repo = (path: string) => readFileSync(new URL(`../../../${path}`, import.meta.url), "utf8");
 const docs = (path: string) => repo(`docs/${path}`);
 
-// The text block in `page` that starts with the line `first`, as many lines as `length`.
 function block(page: string, first: string, length: number): string[] {
   const lines = page.split("\n");
   const start = lines.findIndex((l) => l.trim() === first);
@@ -17,7 +17,7 @@ function block(page: string, first: string, length: number): string[] {
   return lines.slice(start, start + length).map((l) => l.slice(indent).trimEnd());
 }
 
-const text = (lines: string[]) => lines.map((l) => plain(l).trimEnd());
+const text = (lines: string[]) => lines.map((l) => plainText(l).trimEnd());
 
 // A Rust string literal as it reads once its line continuations are joined.
 const joined = (source: string) => source.replace(/\\\n\s*/g, "");
@@ -33,7 +33,7 @@ test("pitboard before the switch prints what Check what each account has left pr
 });
 
 test("the status line before the switch is the Status line guide's", () => {
-  assert.ok(docs("guides/status-line.mdx").includes(`\n${plain(statusLine("before"))}\n`));
+  assert.ok(docs("guides/status-line.mdx").includes(`\n${plainText(statusLine("before"))}\n`));
 });
 
 test("the menu says an account's limits as the usage guide does", () => {
