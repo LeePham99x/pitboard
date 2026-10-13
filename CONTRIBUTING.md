@@ -252,8 +252,8 @@ On Linux the library the tests load is `libpitboard_ffi.so`, and on Windows
 `pitboard_ffi.dll`. C# makes each field of a record a member of it, so a field may not share
 its record's name.
 
-One test starts a fixture's model, and is skipped against a library built without the
-`fixture` feature. To run it, build the library with
+The tests that start a fixture's model are skipped against a library built without the
+`fixture` feature. To run them, build the library with
 `cargo build --locked -p pitboard-ffi --features fixture` before `dotnet test`. The bindings
 need not be generated again.
 

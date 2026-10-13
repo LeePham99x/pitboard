@@ -236,6 +236,16 @@ private final class Utc: LocalTime {
     func dateAndTime(epoch: Int64) throws -> String { "\(epoch)" }
 }
 
+private final class NoOtherApps: AppControl {
+    func running(app: String) throws -> String? { nil }
+    func requestQuit(app: String) throws {}
+    func reopen(location: String, front: Bool) throws {}
+}
+
+private final class Unposted: Notifications {
+    func post(notice: RunOutNotice) throws {}
+}
+
 /// The bindings carry the model end to end: a fixture's model, the real core over a machine
 /// of its own that reaches nothing of this one, started from Swift, reads its accounts and
 /// tells a listener written in Swift, which hands them to the app's model on the main actor.
@@ -254,7 +264,7 @@ func aFixturesModelPublishesItsAccounts() async throws {
     let model = try AppModel.listening { listener in
         try PitboardModel.fixtureIn(
             name: "twoTools", temporaryDirectory: own.path, listener: listener,
-            localTime: Utc())
+            apps: NoOtherApps(), notifications: Unposted(), localTime: Utc())
     }
     #expect(model.status == nil, "nothing is read before it is started")
     model.send(.start)

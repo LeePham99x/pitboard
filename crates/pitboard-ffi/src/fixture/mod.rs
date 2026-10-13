@@ -10,7 +10,8 @@
 //! makes of it, and none of the core's rules is written twice. What the fixture plays is
 //! only what is outside the core: each tool's own sign-in, the person at the browser, the
 //! other apps on the machine, and the services. Nothing a world does reaches this machine's
-//! homes, keychain, scheduler or network, and it posts no notification.
+//! homes, keychain, scheduler or network, and the model `fixture` makes posts no
+//! notification.
 //!
 //! What is exported is the same in every build, so one set of generated bindings serves a
 //! library built with the `fixture` feature and one built without: `PitboardModel::fixture`,
@@ -18,7 +19,7 @@
 //! world is compiled at all, and each refuses, naming the feature, or answers that there is
 //! none.
 
-use crate::model::{LocalTime, ModelListener, PitboardModel};
+use crate::model::{AppControl, LocalTime, ModelListener, Notifications, PitboardModel};
 use std::sync::Arc;
 
 #[cfg(feature = "fixture")]
@@ -111,7 +112,8 @@ impl PitboardModel {
         {
             let world = worlds::World::named(&name)?;
             let folder = worlds::Folder::shared().map_err(failed)?;
-            worlds::launch(world, folder, listener, local_time).map_err(failed)
+            let launched = worlds::make(world, folder).map_err(failed)?;
+            Ok(launched.model(listener, local_time))
         }
         #[cfg(not(feature = "fixture"))]
         {
@@ -120,17 +122,22 @@ impl PitboardModel {
         }
     }
 
-    /// The same model of the fixture called `name`, with its machine the folder
-    /// `pitboard-fixture` in `temporary_directory` in place of this process's temporary
-    /// directory, emptied and made again as `fixture` makes its own, and left there: for a
-    /// test of an app's bindings, which then empties no debug build's fixture, nor that of
-    /// another run of the same tests. An app launching into a fixture calls `fixture`, whose
-    /// folder its own fixture code finds. Refused as `fixture` is.
+    /// The model of the fixture called `name`, for a test of an app's bindings, over the app's
+    /// own platform as `new` takes it: it asks `apps` about other apps and posts through
+    /// `notifications`, in place of the fixture's own apps and posting nothing. The world
+    /// still supplies the machine, and its process list follows what `apps` says runs, so in
+    /// `chatGPTOpen` the core sees ChatGPT running Codex's login until `apps` says it has
+    /// quit. The machine is the folder `pitboard-fixture` in `temporary_directory`, emptied
+    /// and made again as `fixture` makes its own, and left there, so a test empties no debug
+    /// build's fixture, nor that of another run of the same tests. An app launching into a
+    /// fixture calls `fixture`. Refused as `fixture` is.
     #[uniffi::constructor]
     pub fn fixture_in(
         name: String,
         temporary_directory: String,
         listener: Arc<dyn ModelListener>,
+        apps: Arc<dyn AppControl>,
+        notifications: Arc<dyn Notifications>,
         local_time: Arc<dyn LocalTime>,
     ) -> Result<Arc<Self>, FixtureError> {
         #[cfg(feature = "fixture")]
@@ -138,11 +145,20 @@ impl PitboardModel {
             let world = worlds::World::named(&name)?;
             let folder = worlds::Folder::within(std::path::Path::new(&temporary_directory))
                 .map_err(failed)?;
-            worlds::launch(world, folder, listener, local_time).map_err(failed)
+            let launched = worlds::make(world, folder).map_err(failed)?;
+            let apps = launched.apps.following(apps);
+            Ok(launched.model_over(listener, apps, notifications, local_time))
         }
         #[cfg(not(feature = "fixture"))]
         {
-            let _ = (name, temporary_directory, listener, local_time);
+            let _ = (
+                name,
+                temporary_directory,
+                listener,
+                apps,
+                notifications,
+                local_time,
+            );
             Err(unavailable())
         }
     }
@@ -172,6 +188,7 @@ fn failed(error: impl std::fmt::Display) -> FixtureError {
 #[cfg(all(test, not(feature = "fixture")))]
 mod without {
     use super::*;
+    use crate::model::testing::{Posted, StandInApps};
     use crate::model::{PlatformError, Snapshot};
 
     struct Unheard;
@@ -208,6 +225,8 @@ mod without {
             "twoTools".into(),
             directory.to_string_lossy().into_owned(),
             Arc::new(Unheard),
+            StandInApps::new(&[], true),
+            Arc::new(Posted::default()),
             Arc::new(crate::present::testing::Utc),
         );
         assert!(

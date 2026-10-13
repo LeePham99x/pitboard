@@ -63,7 +63,7 @@ mod stowing;
 #[cfg(test)]
 mod switching;
 #[cfg(test)]
-mod testing;
+pub(crate) mod testing;
 #[cfg(test)]
 mod threaded;
 #[cfg(test)]

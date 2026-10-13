@@ -98,6 +98,58 @@ impl FixtureApps {
         }
         turn
     }
+
+    fn stopped(&self, app: &str) {
+        let mut now = held(&self.held);
+        now.running.remove(app);
+        if app == CLAUDE {
+            now.claude_turns += 1;
+        }
+        drop(now);
+        match app {
+            CHATGPT => self.host.runs_at("codex", &[]),
+            CLAUDE => self.claude.quits(),
+            _ => {}
+        }
+    }
+
+    // The core waits for a quit app's processes to leave the process list, so with an app's
+    // own AppControl the list follows what that one says runs.
+    pub(crate) fn following(self: &Arc<Self>, apps: Arc<dyn AppControl>) -> Arc<dyn AppControl> {
+        Arc::new(Following {
+            apps,
+            machine: Arc::clone(self),
+        })
+    }
+}
+
+struct Following {
+    apps: Arc<dyn AppControl>,
+    machine: Arc<FixtureApps>,
+}
+
+impl AppControl for Following {
+    fn running(&self, app: String) -> Result<Option<String>, PlatformError> {
+        let found = self.apps.running(app.clone());
+        if let Ok(copy) = &found
+            && copy.is_some() != self.machine.is_running(&app)
+        {
+            if copy.is_some() {
+                self.machine.started(&app);
+            } else {
+                self.machine.stopped(&app);
+            }
+        }
+        found
+    }
+
+    fn request_quit(&self, app: String) -> Result<(), PlatformError> {
+        self.apps.request_quit(app)
+    }
+
+    fn reopen(&self, location: String, front: bool) -> Result<(), PlatformError> {
+        self.apps.reopen(location, front)
+    }
 }
 
 impl AppControl for FixtureApps {
@@ -108,18 +160,8 @@ impl AppControl for FixtureApps {
     /// Quits at once, as an app with no work in progress does, and its processes leave the
     /// process list with it.
     fn request_quit(&self, app: String) -> Result<(), PlatformError> {
-        let mut asked = held(&self.held);
-        asked.asked.push(format!("quit {app}"));
-        asked.running.remove(&app);
-        if app == CLAUDE {
-            asked.claude_turns += 1;
-        }
-        drop(asked);
-        match app.as_str() {
-            CHATGPT => self.host.runs_at("codex", &[]),
-            CLAUDE => self.claude.quits(),
-            _ => {}
-        }
+        held(&self.held).asked.push(format!("quit {app}"));
+        self.stopped(&app);
         Ok(())
     }
 

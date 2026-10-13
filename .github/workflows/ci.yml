@@ -369,7 +369,7 @@ jobs:
             --config crates/pitboard-ffi/uniffi.toml --no-format
           test -s apps/windows/Pitboard.Core/Generated/pitboard_ffi.cs
       # global.json, which pins the SDK and the test platform, is read from where dotnet runs.
-      # The test of a fixture's model is skipped here, against a library with no fixtures.
+      # The tests of a fixture's model are skipped here, against a library with no fixtures.
       - working-directory: apps/windows
         run: >
           dotnet test --solution Pitboard.slnx
@@ -391,8 +391,8 @@ jobs:
             --config crates/pitboard-ffi/uniffi.toml --no-format
           cmp apps/windows/Pitboard.Core/Generated/pitboard_ffi.cs \
             "$RUNNER_TEMP/fixture-bindings/pitboard_ffi.cs"
-      # Here the fixture's model is started, and tells a listener written in C# of its
-      # accounts from a thread of its own.
+      # Here the fixtures' models are started, and call the listener, AppControl,
+      # Notifications and LocalTime written in C# from threads of their own.
       - working-directory: apps/windows
         run: >
           dotnet test --solution Pitboard.slnx

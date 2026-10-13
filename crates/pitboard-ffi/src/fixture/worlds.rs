@@ -14,7 +14,8 @@ use super::tools::{Browser, Warmer};
 use crate::model::preferences::Preferences;
 use crate::model::state::Cadence;
 use crate::model::{
-    LocalTime, ModelListener, PitboardModel, Platform, WindowsLaunch, WindowsPlace,
+    AppControl, LocalTime, ModelListener, Notifications, PitboardModel, Platform, WindowsLaunch,
+    WindowsPlace,
 };
 use crate::{AppCore, Made};
 use pitboard_core::api::Owner;
@@ -736,17 +737,6 @@ pub(crate) struct Launched {
     pub(crate) machine: Arc<Machine>,
 }
 
-/// The model of `world`, made in `folder`, telling `listener` and saying clock times as
-/// `local_time` does.
-pub(crate) fn launch(
-    world: World,
-    folder: Folder,
-    listener: Arc<dyn ModelListener>,
-    local_time: Arc<dyn LocalTime>,
-) -> Result<Arc<PitboardModel>, Unmade> {
-    Ok(make(world, folder)?.model(listener, local_time))
-}
-
 impl Launched {
     /// The app's model over this world, as an app has it: at the app's own pace, with the
     /// world's apps, posting nothing.
@@ -755,12 +745,28 @@ impl Launched {
         listener: Arc<dyn ModelListener>,
         local_time: Arc<dyn LocalTime>,
     ) -> Arc<PitboardModel> {
+        self.model_over(
+            listener,
+            Arc::clone(&self.apps) as Arc<dyn AppControl>,
+            Arc::new(Unposted),
+            local_time,
+        )
+    }
+
+    /// The app's model over this world, asking `apps` and posting through `notifications`.
+    pub(crate) fn model_over(
+        &self,
+        listener: Arc<dyn ModelListener>,
+        apps: Arc<dyn AppControl>,
+        notifications: Arc<dyn Notifications>,
+        local_time: Arc<dyn LocalTime>,
+    ) -> Arc<PitboardModel> {
         PitboardModel::over(
             Arc::clone(&self.core),
             listener,
             Platform {
-                apps: Arc::clone(&self.apps) as Arc<dyn crate::model::AppControl>,
-                notifications: Arc::new(Unposted),
+                apps,
+                notifications,
                 local_time,
                 earlier: None,
                 windows: Some(WindowsPlace {
