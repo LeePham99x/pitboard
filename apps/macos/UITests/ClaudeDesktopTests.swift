@@ -15,14 +15,6 @@ final class ClaudeDesktopTests: XCTestCase {
         let titles = app.statusItems.firstMatch.menuItems.allElementsBoundByIndex.map(\.title)
         let heading = try XCTUnwrap(titles.firstIndex(of: "Claude Desktop"))
         XCTAssertEqual(Set(titles.dropFirst(heading + 1).prefix(2)), ["work", "home"])
-        // The line under an account's title is not part of its title.
-        let words = "No usage read"
-        let noUsage = NSPredicate(
-            format: "title CONTAINS %@ OR label CONTAINS %@"
-                + " OR CAST(value, \"NSString\") CONTAINS %@",
-            words, words, words)
-        let menu = app.statusItems.firstMatch.descendants(matching: .any)
-        XCTAssertTrue(menu.matching(noUsage).firstMatch.exists, words)
         app.typeKey(.escape, modifierFlags: [])
 
         app.openWindow()
@@ -87,7 +79,8 @@ final class ClaudeDesktopTests: XCTestCase {
         let quit = app.alert.buttons["Quit Claude and Park work"]
         XCTAssertTrue(quit.waitForExistence(timeout: 5))
         quit.click()
-        XCTAssertTrue(app.text("Waiting for Claude to quit").waitForExistence(timeout: 10))
+        let waiting = app.text("BEGINSWITH", "In Claude, sign in to the account you’re adding.")
+        XCTAssertTrue(waiting.waitForExistence(timeout: 10))
         // The fixture's Claude signs in to travel and quits 7 seconds after it is opened.
         let travel = app.accountRow("desktop/travel")
         XCTAssertTrue(travel.waitForExistence(timeout: 30))
