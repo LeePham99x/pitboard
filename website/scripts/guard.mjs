@@ -7,7 +7,7 @@ const DIST = new URL("../dist/", import.meta.url).pathname;
 const FONTS = new URL("../src/assets/fonts/", import.meta.url).pathname;
 const DOCS_RULES = new URL("../../docs/AGENTS.md", import.meta.url).pathname;
 
-export const BUDGETS = {
+const BUDGETS = {
   html: {
     "index.html": 30_000,
     "download.html": 30_000,
@@ -162,7 +162,7 @@ export function checkPage(name, html, rules) {
   return { problems, root, all };
 }
 
-export function checkLinks(pages) {
+function checkLinks(pages) {
   const problems = [];
   const ids = new Map(
     [...pages].map(([name, p]) => [name, new Set(p.all.map((e) => e.attrs.id).filter(Boolean))]),

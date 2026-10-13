@@ -628,6 +628,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
   - `workflows/windows-facts.yml`, started by hand, measures the Windows runners and builds
     the programs a VM session runs.
   - `actions/apple-keychain` imports the Developer ID certificate for every job that signs.
+  - `actions/rust` installs the toolchain and restores the Cargo cache for every job outside
+    `release.yml`, and `actions/windows-builds` makes the builds both Windows workflows start
+    from.
   - `scripts/` holds the EdDSA key and signature helpers, and the scripts that add Sparkle,
     the command line and the Share extension's library to the app's bill of materials.
     `fill-template.sh` writes a release's version and checksums into a `packaging/`
@@ -1642,27 +1645,25 @@ it is too unless Credential Manager is turned on, which W22 reads. The checker f
 fact each build was read for.
 
 On 12 October 2026 the checker was run by hand on the `app.asar` of an installed Claude
-Desktop 2.7032.0, and Claude was not run. The register's 19 facts that name literals hold
+Desktop 2.7032.0, without running Claude. The register's 19 facts that name literals hold
 there, and its other six are about behaviour. On 13 October it was run again with two more
 facts that name no literal, and the 19 still hold.
 
 `.github/workflows/conformance.yml` checks the newest builds of Claude Code and Codex against
-their registers on Mondays and Thursdays, or a version given by hand. It reads four builds of
-each, `linux-x64`, `darwin-arm64`, `win32-x64` and `win32-arm64`, all on Linux. Its most
-recent run says which facts can still be read from each build it checked, and which have
-moved. No job reads Claude Desktop's register, since where Claude's builds are published is
-not recorded. A person runs the checker on an installed copy instead.
+their registers twice a week, or a version given by hand. It reads four builds of each,
+`linux-x64`, `darwin-arm64`, `win32-x64` and `win32-arm64`, all on Linux. Its most recent run
+says which facts can still be read from each build it checked, and which have moved. No job
+reads Claude Desktop's register: where Claude's builds are published is not recorded, so a
+person runs the checker on an installed copy.
 
-Adding a tool takes three things. Its register is read out of a named build, with its table.
-Its module under `provider/` implements the trait for its kind of login. Later builds are
-checked against the register: by a conformance job where the tool's builds have a recorded
-source, and by hand where they have none. `Provider` is one JSON document in a store, with
-tokens its service renews. `Folder` is items of an app's data folder and keys of its
-settings file, moved whole while the app is closed. `provider::of` is the one place that
-says which kind a tool keeps. `ProviderId`, `ProviderId::ALL` and the matches in
-`provider::of`, `assumptions::of`, `assumptions::per_system` and
-`assumptions::archive_platform` name every tool. The compiler and the tests then point at
-what an added tool has to fill in.
+Adding a tool takes three things: a register read out of a named build, with its table; a
+module under `provider/` implementing `Provider` for a login kept as one JSON document in a
+store, or `Folder` for one kept as items of an app's data folder; and a check of later
+builds, an entry in `conformance.yml`'s matrix where the tool's builds have a recorded
+source. `provider::of` is the one place that says which kind a tool keeps. `ProviderId`,
+`ProviderId::ALL` and the matches in `provider::of`, `assumptions::of`,
+`assumptions::per_system` and `assumptions::archive_platform` name every tool. The compiler
+and the tests then point at what an added tool has to fill in.
 
 How to run the checker and add a fact is in
 [Tool registers in CONTRIBUTING.md](CONTRIBUTING.md#tool-registers).

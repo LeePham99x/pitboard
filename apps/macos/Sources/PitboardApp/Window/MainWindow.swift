@@ -1,13 +1,7 @@
 import PitboardKit
 import SwiftUI
 
-/// Pitboard's one window, beside the menu rather than instead of it.
-///
-/// The menu is the glance and the switch. This is where the things that need room go: each
-/// account with its limits drawn out and everything that can be done to it, what Pitboard
-/// has to say in full, everything it has changed, and what it finds about this Mac.
 struct MainWindow: View {
-    /// The scene's id, named once so the menu bar item and the scene cannot drift apart.
     static let id = "main"
 
     let model: AppModel

@@ -1,6 +1,6 @@
 import PitboardKit
 
-/// What the menu bar item shows beside its mark: the app's own setting.
+/// The app's own setting, not the model's.
 ///
 /// macOS hides menu bar items to make room, the widest first, and a notched display has
 /// little room to begin with. The name is what gets dropped first, and the mark alone is
@@ -20,7 +20,6 @@ enum MenuBarShows: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The words beside the mark, of the forms the model says the bar in.
     func text(of bar: MenuBarText) -> String {
         switch self {
         case .nameAndUsage: bar.nameAndUsage

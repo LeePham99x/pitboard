@@ -7,13 +7,9 @@ import UniformTypeIdentifiers
 /// **Pitboard** in the system Share menu: hands the page being shared to the app it came in,
 /// whose account picker asks which account's window opens it.
 ///
-/// Sandboxed, as an app extension must be, with no network, no files and no group shared with
-/// the app. It reads the one web address the host shares, checks it is a link of one of the
-/// sites, so sharing any other page never starts Pitboard, and opens a Pitboard link with the
-/// app it is inside. The check and the Pitboard link are Rust's, from pitboard-share-ffi,
-/// which is pitboard-sites and nothing of the core: the rule the app reads the link by. The
-/// app checks the link again all the same, since anything on the Mac can open a Pitboard
-/// link.
+/// Sandboxed, with no network, no files and no group shared with the app. The link check is
+/// pitboard-share-ffi's, the rule the app reads the link by. The app checks the link again,
+/// since anything on the Mac can open a Pitboard link.
 final class ShareViewController: NSViewController {
     private let state = ShareState()
     private var started = false
@@ -73,7 +69,6 @@ final class ShareViewController: NSViewController {
         }
     }
 
-    /// The first web address among what the host shares.
     private func sharedURL() async -> URL? {
         let items = extensionContext?.inputItems.compactMap { $0 as? NSExtensionItem } ?? []
         let providers = items.flatMap { $0.attachments ?? [] }

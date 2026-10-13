@@ -65,7 +65,6 @@ struct MachinePane: View {
     }
 }
 
-/// One check: whether it passed, what it looked at, and what to do when it did not.
 private struct CheckRow: View {
     let line: CheckLine
 

@@ -1,6 +1,6 @@
-export const OWNER_REPO = "datlechin/pitboard";
-const API = `https://api.github.com/repos/${OWNER_REPO}`;
-const WEB = `https://github.com/${OWNER_REPO}`;
+import { REPO, SLUG } from "../data/site.ts";
+
+const API = `https://api.github.com/repos/${SLUG}`;
 
 export interface Asset {
   name: string;
@@ -16,7 +16,7 @@ export interface Release {
   source: "api" | "fallback" | "fixture";
 }
 
-export interface Fixture {
+interface Fixture {
   release: unknown;
   sums: string;
 }
@@ -61,7 +61,7 @@ function versionOf(tag: string): string {
   return m[1];
 }
 
-export function fromApi(json: unknown, sumsText: string): Omit<Release, "source"> {
+function fromApi(json: unknown, sumsText: string): Omit<Release, "source"> {
   const r = json as ApiRelease;
   if (!r || typeof r.tag_name !== "string" || !Array.isArray(r.assets)) {
     throw new Error("the release answer has no tag or no files");
@@ -78,7 +78,7 @@ export function fromApi(json: unknown, sumsText: string): Omit<Release, "source"
     const sha256 = listed ?? digest;
     if (sha256 !== null && !/^[0-9a-f]{64}$/.test(sha256))
       throw new Error(`${a.name} has no SHA-256`);
-    if (a.browser_download_url !== `${WEB}/releases/download/${r.tag_name}/${a.name}`) {
+    if (a.browser_download_url !== `${REPO}/releases/download/${r.tag_name}/${a.name}`) {
       throw new Error(`${a.name} downloads from somewhere else: ${a.browser_download_url}`);
     }
     return { name: a.name, size: a.size, sha256, url: a.browser_download_url };
@@ -144,13 +144,13 @@ export async function readRelease(o: ReadOptions): Promise<Release> {
 
 // The signed URL a download redirects to is never logged or kept.
 async function fallback(f: typeof fetch, log: (line: string) => void): Promise<Release> {
-  const latest = await get(f, `${WEB}/releases/latest`, { method: "HEAD", redirect: "manual" });
+  const latest = await get(f, `${REPO}/releases/latest`, { method: "HEAD", redirect: "manual" });
   const where = latest.headers.get("location") ?? "";
   const m = /\/releases\/tag\/([^/?#]+)$/.exec(where);
   if (!m) throw new Error(`releases/latest answered ${latest.status} without a tag`);
   const tag = decodeURIComponent(m[1]);
   const version = versionOf(tag);
-  const base = `${WEB}/releases/download/${tag}`;
+  const base = `${REPO}/releases/download/${tag}`;
   const sumsRes = await get(f, `${base}/SHA256SUMS`);
   if (!sumsRes.ok) throw new Error(`SHA256SUMS answered ${sumsRes.status}`);
   const sumsText = await sumsRes.text();

@@ -2,9 +2,8 @@ import Foundation
 import PitboardApp
 import PitboardKit
 
-/// Where this program starts, before any of the app does. A renewal schedule an app up to
-/// 0.3.0 wrote starts this executable with `renew`, and `Launch` says why that has to reach
-/// the command line inside the bundle instead of the menu bar app.
+/// A renewal schedule an app up to 0.3.0 wrote starts this executable with `renew`, and
+/// `Launch` says why that has to reach the command line inside the bundle instead of the app.
 @main
 enum Main {
     @MainActor

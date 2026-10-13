@@ -1,8 +1,5 @@
-# The Xcode project, as XcodeGen generates it: `xcodegen generate` in this directory writes
-# Pitboard.xcodeproj, which is not committed apart from the package pins in its
-# Package.resolved. Everything the app does is in the Swift
-# package beside this file; the project only puts it together as an app, with Sparkle, the
-# Share extension and the UI tests.
+# `xcodegen generate` in this directory writes Pitboard.xcodeproj, which is not committed
+# apart from the package pins in its Package.resolved.
 name: Pitboard
 
 options:
@@ -10,8 +7,6 @@ options:
   settingPresets: none
   xcodeVersion: "27.1"
   projectFormat: xcode16_0
-  deploymentTarget:
-    macOS: "14.0"
   developmentLanguage: en
   useBaseInternationalization: true
   defaultSourceDirectoryType: syncedFolder
@@ -67,6 +62,17 @@ settings:
     MACOSX_DEPLOYMENT_TARGET: "14.0"
     MTL_FAST_MATH: YES
     SDKROOT: macosx
+    # What every target here shares.
+    PRODUCT_NAME: $(TARGET_NAME)
+    SWIFT_VERSION: "6.0"
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+    # Signed ad hoc here; a release is signed with the Developer ID by `scripts/build-app.sh`.
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_STYLE: Manual
+    DEVELOPMENT_TEAM: ""
+    # `scripts/build-app.sh` writes the release's version into the built app.
+    MARKETING_VERSION: 0.0.0
+    CURRENT_PROJECT_VERSION: 1
   configs:
     # A debug build answers its own scheme and has a Share menu entry of its own, so a
     # link or a share never reaches it in place of the release, or the release in its place.
@@ -100,19 +106,6 @@ packages:
     url: https://github.com/sparkle-project/Sparkle
     exactVersion: 2.10.0
 
-settingGroups:
-  # Signed ad hoc here; a release is signed with the Developer ID by `scripts/build-app.sh`.
-  signing:
-    CODE_SIGN_IDENTITY: "-"
-    CODE_SIGN_STYLE: Manual
-    DEVELOPMENT_TEAM: ""
-  version:
-    # `scripts/build-app.sh` writes the release's version into the built app.
-    MARKETING_VERSION: 0.0.0
-    CURRENT_PROJECT_VERSION: 1
-    PRODUCT_NAME: $(TARGET_NAME)
-    SWIFT_VERSION: "6.0"
-
 targets:
   Pitboard:
     type: application
@@ -120,7 +113,6 @@ targets:
     sources:
       - path: App
     settings:
-      groups: [signing, version]
       base:
         INFOPLIST_FILE: App/Info.plist
         ENABLE_HARDENED_RUNTIME: YES
@@ -128,7 +120,6 @@ targets:
         COMBINE_HIDPI_IMAGES: YES
         SWIFT_EMIT_LOC_STRINGS: YES
         LD_RUNPATH_SEARCH_PATHS: ["$(inherited)", "@executable_path/../Frameworks"]
-        SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
       configs:
         # The debug build's icon lights its row amber, so it is never mistaken for the release
         # in the Dock, in Login Items or beside it in Applications.
@@ -145,9 +136,6 @@ targets:
       - target: PitboardShare
         embed: true
 
-  # Links PitboardShareBindings, pitboard-share-ffi's Swift, and PitboardLinkTarget alone: it
-  # is sandboxed, and has no business with the core, its bindings or anything else the app
-  # links.
   PitboardShare:
     type: app-extension
     platform: macOS
@@ -155,7 +143,6 @@ targets:
       - path: ShareExtension
         excludes: [PitboardShare.entitlements]
     settings:
-      groups: [signing, version]
       base:
         INFOPLIST_FILE: ShareExtension/Info.plist
         CODE_SIGN_ENTITLEMENTS: ShareExtension/PitboardShare.entitlements
@@ -163,7 +150,6 @@ targets:
         ENABLE_HARDENED_RUNTIME: YES
         SKIP_INSTALL: YES
         SWIFT_EMIT_LOC_STRINGS: YES
-        SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
         LD_RUNPATH_SEARCH_PATHS:
           - "$(inherited)"
           - "@executable_path/../Frameworks"
@@ -185,13 +171,11 @@ targets:
     sources:
       - path: UITests
     settings:
-      groups: [signing, version]
       base:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.usepitboard.PitboardUITests
         SWIFT_EMIT_LOC_STRINGS: NO
         TEST_TARGET_NAME: Pitboard
-        SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
     dependencies:
       - target: Pitboard
 

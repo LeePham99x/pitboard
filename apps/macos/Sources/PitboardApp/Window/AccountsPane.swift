@@ -2,7 +2,6 @@ import AppKit
 import PitboardKit
 import SwiftUI
 
-/// Every account, a section per tool, with what Pitboard has to say above them.
 struct AccountsPane: View {
     let model: AppModel
     let windows: AccountWindows
@@ -99,7 +98,7 @@ struct AccountsPane: View {
     private var list: some View {
         List(selection: $selection) {
             ForEach(model.notices, id: \.id) { notice in
-                NoticeRow(notice: notice, perform: perform)
+                NoticeRow(notice: notice) { send($0.intent, askingFirst: $0.confirm) }
                     .selectionDisabled()
             }
             if let step = model.setup {
@@ -139,20 +138,19 @@ struct AccountsPane: View {
 
     // MARK: - What can be done to an account
 
-    /// The account's own menu: what the model offers to do to it, each held back where the
-    /// model says, then its windows, then the app's own Copy Email Address, and forgetting it
-    /// last, where the model offers that.
     @ViewBuilder private func menu(for item: AccountItem) -> some View {
         ForEach(item.offers, id: \.title) { offer in
             if let checked = offer.checked {
                 // A check mark beside it, as a menu shows one setting that is on.
                 Toggle(
                     offer.title,
-                    isOn: Binding(get: { checked }, set: { _ in perform(offer) })
+                    isOn: Binding(
+                        get: { checked },
+                        set: { _ in send(offer.intent, askingFirst: offer.confirm) })
                 )
                 .disabled(!offer.enabled)
             } else {
-                Button(offer.title) { perform(offer) }
+                Button(offer.title) { send(offer.intent, askingFirst: offer.confirm) }
                     .disabled(!offer.enabled)
             }
         }
@@ -174,43 +172,33 @@ struct AccountsPane: View {
         }
         if let forget = item.forget {
             Divider()
-            Button(forget.title, role: .destructive) { perform(forget) }
-                .disabled(!forget.enabled)
+            Button(forget.title, role: .destructive) {
+                send(forget.intent, askingFirst: forget.confirm)
+            }
+            .disabled(!forget.enabled)
         }
     }
 
-    /// Forgetting the account, where the model offers it, as its menu does: the Delete key's
-    /// answer in the list.
     private func forget(_ item: AccountItem) {
-        if let forget = item.forget, forget.enabled { perform(forget) }
-    }
-
-    /// Asks the question an offer comes with first, where it has one, and otherwise sends it.
-    private func perform(_ offer: ItemOffer) {
-        if let question = offer.confirm {
-            asking = Asking(question: question, intent: offer.intent)
-        } else {
-            model.send(offer.intent)
+        if let forget = item.forget, forget.enabled {
+            send(forget.intent, askingFirst: forget.confirm)
         }
     }
 
-    private func perform(_ action: NoticeAction) {
-        if let question = action.confirm {
-            asking = Asking(question: question, intent: action.intent)
+    private func send(_ intent: Intent, askingFirst question: Question?) {
+        if let question {
+            asking = Asking(question: question, intent: intent)
         } else {
-            model.send(action.intent)
+            model.send(intent)
         }
     }
 }
 
-/// A question asked first, and what answering yes sends.
 private struct Asking: Equatable {
     let question: Question
     let intent: Intent
 }
 
-/// The one next thing to do on a machine that is not set up yet, above its accounts, with
-/// its symbol: a name for an account that has none, or a second account to switch to.
 private struct SetupTip: View {
     let step: SetupStep
     let footing: Footing

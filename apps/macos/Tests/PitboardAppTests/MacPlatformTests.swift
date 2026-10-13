@@ -5,12 +5,11 @@ import UserNotifications
 
 @testable import PitboardApp
 
-// What the model asks of macOS through the traits it exports. How long an app is given to
-// quit, what a run-out notice says and when a clock time names its day are the model's,
-// tested in `pitboard-ffi`; these test what macOS is asked.
+// How long an app is given to quit, what a run-out notice says and when a clock time names
+// its day are the model's, tested in `pitboard-ffi`. These test what macOS is asked.
 
-/// A running copy of an app that keeps what it is asked, and quits when asked only if it
-/// would, as an app busy with work, or whose person said no, does not.
+/// Quits when asked only if it would: an app busy with work, or whose person said no, does
+/// not.
 private final class StandInApp: RunningApp {
     let bundleURL: URL?
     var isTerminated = false
@@ -35,9 +34,8 @@ private final class StandInApp: RunningApp {
     }
 }
 
-/// An app is asked to quit the way Command-Q asks it, every running copy of it, and never
-/// forced: one that declines is still running, and is asked again only when the model asks
-/// again. Where a copy runs from is what is opened again, and opening opens that.
+/// Every running copy is asked the way Command-Q asks. One that declines is still running,
+/// and is asked again only when the model asks again.
 @Test func anAppIsAskedToQuitAndNeverForced() throws {
     let busy = StandInApp(at: "/Applications/ChatGPT.app", quits: false)
     let other = StandInApp(at: "/Users/x/Applications/ChatGPT.app", quits: true)
@@ -92,8 +90,7 @@ private final class Opened: @unchecked Sendable {
     func keep(_ opening: Opening) { lock.withLock { kept.append(opening) } }
 }
 
-/// A clock time follows the person's 12 or 24 hours, which macOS keeps in their locale, and
-/// names its weekday where the model asks for it; a date and time is abbreviated and short.
+/// macOS keeps the person's 12 or 24 hours in their locale.
 @Test func theClockFollowsThe12Or24HourSetting() throws {
     let utc = TimeZone(identifier: "UTC")!
     // 14:05 UTC on Wednesday 14 January 2026.
@@ -114,8 +111,6 @@ private final class Opened: @unchecked Sendable {
     #expect(try !twentyFour.sameDay(first: at, second: at + 10 * 3600), "past midnight in UTC")
 }
 
-/// A run-out is posted in the model's words, in the category whose Switch button asks the
-/// model to switch to the account the notice names.
 @Test func aRunOutIsPostedWithTheAccountItsButtonSwitchesTo() {
     let content = MacNotifications.content(
         of: RunOutNotice(
@@ -129,8 +124,7 @@ private final class Opened: @unchecked Sendable {
     #expect(content.userInfo["label"] as? String == "claude/spare")
 }
 
-/// What Pitboard switched by itself is posted with nothing to switch to: no category, so no
-/// Switch button, and no account for one.
+/// No category, so no Switch button.
 @Test func aSwitchMadeByItselfIsPostedWithNoButton() {
     let content = MacNotifications.content(
         of: RunOutNotice(

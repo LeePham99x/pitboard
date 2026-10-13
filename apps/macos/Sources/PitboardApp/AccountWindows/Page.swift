@@ -3,10 +3,6 @@ import Foundation
 import PitboardKit
 import WebKit
 
-/// One web page in an account's store: an account window's own page, or a sign-in window
-/// one of its pages opened. It owns one `WKWebView` and says what the page is doing in
-/// observable properties, as SwiftUI's `WebPage` does.
-///
 /// `WebPage` itself cannot host an account window: measured on macOS 27, it opens no window
 /// for `window.open`, so a sign-in that opens one never starts, and the downloads it is asked
 /// for never reach disk. Keeping this page's shape close to `WebPage`'s is what makes moving
@@ -14,7 +10,6 @@ import WebKit
 @MainActor
 @Observable
 final class Page {
-    /// Whose page this is.
     let role: PageRole
     @ObservationIgnored let webView: WKWebView
 
@@ -26,22 +21,16 @@ final class Page {
     /// Why the page is not shown, after its last load failed. WebKit shows no error page of
     /// its own, so without this the window would stay blank.
     private(set) var failure: String?
-    /// The page zoom, in Safari's steps.
     private(set) var zoom = 1.0
 
-    /// What to load again after a failure: the page that failed.
     @ObservationIgnored private var failedURL: URL?
     /// When the page's content process last ended, so a page that keeps ending it says so
     /// rather than loading forever.
     @ObservationIgnored private var lastEnded: Date?
     @ObservationIgnored private let now: () -> Date
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
-    /// Waiting for the page's load to end, to leave it.
     @ObservationIgnored private var leaving: CheckedContinuation<Void, Never>?
 
-    /// A page for `configuration`, which says which store it keeps its data in. A sign-in
-    /// window's page must be made from the configuration WebKit hands over, which is a copy of
-    /// its opener's: that is what shares the account's store and keeps `window.opener`.
     init(
         role: PageRole, configuration: WKWebViewConfiguration,
         now: @escaping () -> Date = Date.init
@@ -61,7 +50,6 @@ final class Page {
         observe()
     }
 
-    /// The configuration of an account window's own page, on `store`.
     static func configuration(
         store: WKWebsiteDataStore, configure: (WKWebViewConfiguration) -> Void
     ) -> WKWebViewConfiguration {
@@ -115,7 +103,6 @@ final class Page {
     func goBack() { webView.goBack() }
     func goForward() { webView.goForward() }
 
-    /// Loads the page again, or after a failure the page that failed.
     func reload() {
         guard failure != nil else {
             webView.reload()
@@ -139,8 +126,8 @@ final class Page {
         if change == .actualSize { webView.magnification = 1 }
     }
 
-    /// Leaves the page for a blank one and waits, up to two seconds, until it has: the page's
-    /// own leaving, its hide and unload handlers, runs then, and not after what comes next.
+    /// Waits, up to two seconds, until the page has left for a blank one: its hide and unload
+    /// handlers run then, and not after what comes next.
     func leave() async {
         webView.stopLoading()
         webView.load(URLRequest(url: URL(string: "about:blank")!))
@@ -153,7 +140,6 @@ final class Page {
         }
     }
 
-    /// Stops everything the page is doing, for good: its window has closed.
     func close() {
         for observation in observations { observation.invalidate() }
         observations = []
@@ -165,11 +151,7 @@ final class Page {
 
     // MARK: - What happened, as the page's delegate says
 
-    func loadStarted() {
-        failure = nil
-    }
-
-    func loadCommitted() {
+    func loadProgressed() {
         failure = nil
     }
 
@@ -179,14 +161,11 @@ final class Page {
         leaving = nil
     }
 
-    /// The page at `url` did not load, for `reason`.
     func loadFailed(_ url: URL?, reason: String) {
         failedURL = url ?? self.url
         failure = reason
     }
 
-    /// The page's content process ended: it is loaded again, or says it stopped working,
-    /// as the core's `afterContentProcessEnded` decides from when it last ended.
     func contentEnded() {
         let ended = now()
         defer { lastEnded = ended }
@@ -211,8 +190,6 @@ final class Page {
         0.5, 0.75, 0.85, 1, 1.15, 1.25, 1.5, 1.75, 2, 2.5, 3,
     ]
 
-    /// The page zoom after `change` from `current`: the next of Safari's steps either way,
-    /// staying at the ends, or back to 100%.
     nonisolated static func zoom(from current: Double, toward change: ZoomChange) -> Double {
         let near = 0.001
         switch change {
@@ -257,7 +234,6 @@ final class PageWebView: WKWebView {
         menu.items.removeAll { !Self.keeps($0.identifier?.rawValue ?? "") }
     }
 
-    /// Whether the shortcut menu keeps the item WebKit identifies as `identifier`.
     nonisolated static func keeps(_ identifier: String) -> Bool {
         ![
             "WKMenuItemIdentifierDownloadLinkedFile", "WKMenuItemIdentifierDownloadImage",

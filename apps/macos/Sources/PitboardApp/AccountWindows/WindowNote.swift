@@ -1,8 +1,6 @@
 import Foundation
 import PitboardKit
 
-/// Something an account window has to say, in the bar above its page, until it is
-/// dismissed or the next one replaces it. What it says is the core's, `windowNote`.
 struct WindowNote: Equatable, Identifiable {
     let kind: WindowNoteKind
     let text: String

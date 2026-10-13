@@ -4,16 +4,7 @@ import PitboardKit
 @testable import PitboardApp
 
 extension Site {
-    /// The sites as the core declares them: what each test of a window's rules runs against.
-    static var claude: Site { sitesFor(provider: "claude")[0] }
     static var chatGPT: Site { sitesFor(provider: "codex")[0] }
-}
-
-extension SiteLink {
-    /// `text` checked as a link from outside, as the core checks one.
-    init(_ text: String) throws {
-        self = try siteLink(text: text)
-    }
 }
 
 /// An account as the core reports one. `label` nil is a login signed in and not enrolled.

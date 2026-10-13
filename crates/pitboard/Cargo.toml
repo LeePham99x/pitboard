@@ -1,6 +1,6 @@
 [package]
 name = "pitboard"
-description = "Park and restore your own logins of Claude Code, Codex and, on macOS, Claude Desktop, and see what each Claude Code and Codex account has left."
+description = "Switch Claude Code, Codex and Claude Desktop between your own accounts without signing out, and see what each Claude Code and Codex account has left."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,7 +8,7 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 readme = "../../README.md"
-keywords = ["cli", "keychain", "credentials", "macos", "linux"]
+keywords = ["claude-code", "codex", "cli", "macos", "linux"]
 categories = ["command-line-utilities"]
 
 # cargo-binstall fetches the release the workflow already builds instead of compiling the

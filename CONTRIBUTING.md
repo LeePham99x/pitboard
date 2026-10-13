@@ -1,228 +1,146 @@
 # Contributing
 
 One person maintains Pitboard. Everyone taking part follows the
-[code of conduct](CODE_OF_CONDUCT.md). Send a change as a pull request against `main`. CI
-runs on every pull request. To report a security problem, follow [SECURITY.md](SECURITY.md) instead
-of opening an issue. [ARCHITECTURE.md](ARCHITECTURE.md) describes how the code is organised
-and the measured facts it rests on. [RELEASING.md](RELEASING.md) describes how a release is
-made.
+[code of conduct](CODE_OF_CONDUCT.md). Send a change as a pull request against `main`. Report
+a security problem as [SECURITY.md](SECURITY.md) says, never in an issue.
+[ARCHITECTURE.md](ARCHITECTURE.md) maps the code, and [RELEASING.md](RELEASING.md) says how a
+release is made.
+
+Pitboard moves real logins. Before you run anything, read the
+[Never list in AGENTS.md](AGENTS.md#never): it applies to people as well as agents.
 
 ## Report a bug
 
-Open an issue with the **Something went wrong** form. It asks for what happened, the output
-of `pitboard doctor --json` and the versions you run. The last lines of
-`~/.pitboard/audit.log` are optional.
-
-`pitboard doctor --json` prints no token, email address or account identifier: each becomes
-a short digest. Paths under your home start with `~`. Plain `pitboard doctor` shows your own
-account, so read that one yourself and paste the JSON.
-
-Read audit lines before you paste them. A `reclaim` line with the outcome `discarded` names
-a parked login, and that name contains an account id.
+Open an issue with the **Something went wrong** form.
+[Report a problem](https://docs.usepitboard.com/troubleshooting#report-a-problem) says what
+to paste, and what to read before you paste it.
 
 ## Set up
 
-`rust-toolchain.toml` selects the stable Rust channel, with rustfmt and clippy. Run
-`rustup toolchain install` in the repository to install it. The oldest Rust the crates
-support is 1.91, the `rust-version` in `Cargo.toml`, and CI runs `cargo check` on the
-workspace with it.
+`rust-toolchain.toml` picks stable Rust with rustfmt and clippy. Run
+`rustup toolchain install` in the repository to install it. The crates build on Rust 1.91
+and later, the `rust-version` in `Cargo.toml`.
 
-Checking a change uses these tools as well:
-
-- `cargo-deny`, for `cargo deny check`.
-- `cargo-insta`, for `cargo insta review`.
-- `cargo-zigbuild` and Zig, to lint the Linux code from a Mac. Rust also needs the
-  `x86_64-unknown-linux-gnu` target for that.
-- `shellcheck` 0.11.0 or later and Python 3.9 or later, for the install script.
-
-To work on the app, you need a Mac with Xcode, and its Swift must be 6.2 or later, as
-`apps/macos/Package.swift` asks. Rust needs both Mac targets, as [The app](#the-app) shows.
+| Tool | For |
+| --- | --- |
+| `cargo-deny` | Dependencies, licences and advisories |
+| `cargo-semver-checks` | `pitboard-core`'s public API |
+| `cargo-insta` | Reviewing a changed `--json` snapshot |
+| `cargo-hack` | The Rust 1.91 floor |
+| `cargo-zigbuild`, Zig and Rust's `x86_64-unknown-linux-gnu` target | Linting the Linux code from a Mac |
+| `shellcheck` 0.11.0 or later, Python 3.9 or later | The install script |
+| Xcode with Swift 6.2 or later, XcodeGen | [The app](#the-app) |
+| .NET 10 SDK | [The C# bindings](#the-c-bindings) |
+| Node 24 or later | [Website](#website) |
 
 ## Rules
 
-1. Red before green. Before changing behaviour, write or find a test that fails against
-   the current code. Then watch that same test pass. A test that has never failed has
-   proved nothing. Pitboard once shipped one that passed whether the code under it worked
-   or not.
-
-2. Compiling is not evidence that an edit applied. An edit that did nothing leaves the old
-   code in place, and the old code compiles. Read the region again right before changing
-   it, and look at the diff after. An empty or surprisingly small diff is the symptom.
-
-3. Never touch a real login. Each test names its keychain items after itself and calls
-   `common::guard_not_live` before the first write, which refuses by pattern every name a
-   real login may be kept under, in the keychain and in Windows' Credential Manager: every
-   Claude Code slot but the one hashed from the test's own folder, in any spelling or piece,
-   Codex's `cli|` and `secrets|` targets and anything under `Codex MCP Credentials`. A test
-   writes only `pitboard-citest-*` names, the parks Pitboard names, and its own slot. A
-   Codex test that writes points `CODEX_HOME` at a scratch directory and never writes to
-   `~/.codex`. Nothing runs `codex login` or `codex logout` against a real home, because
-   both revoke the login stored there. A Claude Desktop test works on a scratch data folder
-   named with `Context::with_scratch_claude` or `PITBOARD_TEST_CLAUDE_DESKTOP`, and a build
-   for tests cannot find the real one. Nothing starts or quits the real Claude.
-
-4. Measure the tool, do not guess at it. Claude Code's behaviour here is undocumented,
-   Codex's moves with its source, and Claude Desktop documents none of the files Pitboard
-   moves. Claude Code and Codex ship several times a week. A claim about any of the three
-   needs an experiment or a reading of a named build. It belongs in a test, the tool's
-   register or the commit message. [Tool registers](#tool-registers) says how to add a
-   fact, and [ARCHITECTURE.md](ARCHITECTURE.md#tool-registers) says what a register is.
+1. Red before green. Before changing behaviour, write or find a test that fails against the
+   current code, then watch that same test pass. A test that has never failed proves
+   nothing. Pitboard once shipped one that passed whether the code under it worked or not.
+2. Read the diff. An edit that did nothing leaves the old code in place, and the old code
+   compiles. Read the region again right before changing it, and the diff after. An empty
+   or surprisingly small diff is the symptom.
+3. Measure the tool. Claude Code's behaviour here is undocumented, Codex's moves with its
+   source, and Claude Desktop documents none of the files Pitboard moves. Claude Code and
+   Codex ship several times a week. A claim about any of them needs an experiment or a
+   reading of a named build, recorded in a test, the tool's register or the commit message.
+   [Tool registers](#tool-registers) says how.
 
 ## Check a change
 
-CI runs these on every pull request. Run them before you push:
+CI runs these on every pull request with `RUSTFLAGS=-D warnings`, so a warning fails it. Run
+them before you push:
 
 ```sh
 cargo fmt --check
 cargo clippy --all-targets --locked
+cargo clippy -p pitboard-ffi --all-targets --locked --features fixture
 cargo test --locked -- --skip writing_preserves_attributes
-cargo deny check
+cargo test --locked -p pitboard-ffi --features fixture
+cargo deny --all-features check
+cargo semver-checks --package pitboard-core
 ```
 
-CI sets `RUSTFLAGS=-D warnings`, so any compiler or Clippy warning fails it.
+The `fixture` feature compiles the worlds the apps' debug builds launch into, so it gets a
+lint and a test run of its own.
 
-The skipped test, `writing_preserves_attributes_and_does_not_slow_later_reads`, exists only
-on macOS. It asserts a read-latency threshold, and other `security` calls running at the
-same time push reads over it. So on macOS, run it on its own:
+On macOS, run the skipped test alone. It asserts a read-latency threshold, and other
+`security` calls running at the same time push reads over it:
 
 ```sh
 cargo test --locked -p pitboard --test keychain_write_is_harmless writing_preserves_attributes
 ```
 
-Some code compiles only on Linux. CI lints it on Linux. To lint it from a Mac before you
-push, run:
+CI checks the workspace on Rust 1.91 too:
+
+```sh
+cargo hack check --rust-version --workspace-behavior=cargo --workspace --all-targets --locked
+```
+
+Only a Mac compiles `rusqlite`, so CI also checks `pitboard-core`, `pitboard` and
+`pitboard-ffi` on Rust 1.91 on a Mac.
+
+Some code compiles only on Linux. To lint it from a Mac:
 
 ```sh
 cargo-zigbuild clippy --target x86_64-unknown-linux-gnu --all-targets
 ```
 
-The fixtures, the worlds the apps' debug builds launch into, compile only with
-`pitboard-ffi`'s `fixture` feature, so their tests and their lints are run with it:
-
-```sh
-cargo test --locked -p pitboard-ffi --features fixture
-cargo clippy -p pitboard-ffi --all-targets --locked --features fixture
-```
-
-Every program a Rust test starts in place of `claude`, `codex` or any other tool is one compiled
-stand-in, the `pitboard` crate's example `stand-in`, which plays a script written beside it,
-the same on every system. `cargo test` with no target named, and `cargo test -p pitboard`,
-build it. Neither a test run alone with `--test` nor a run of `pitboard-ffi`'s tests does, so
-build it first, with the `--release` or `--target` the tests use:
+Every program a Rust test starts in place of `claude`, `codex` or another tool is one
+compiled stand-in, the `pitboard` crate's example `stand-in`. `cargo test` builds it. A test
+run alone with `--test`, or `pitboard-ffi`'s tests on their own, does not, so build it
+first, with the `--release` or `--target` the tests use:
 
 ```sh
 cargo build --locked -p pitboard --example stand-in
-cargo test --locked -p pitboard --test switch_round_trip
 ```
 
-A test that does not find it fails, and its message names that command.
+Unit tests run on `MemoryHost` and `Context::for_unit_test`, which reach no real home.
+Integration tests use the harness in `crates/pitboard/tests/common`.
 
-The readFailure world makes its account index unreadable with file modes, so its tests fail,
-saying why, where the user can read a file of mode `000`: as root, in a container running as
-root, or on a file system without Unix modes. So do two of the core's tests that make a
-folder read-only for a write to fail:
-`a_renewal_that_cannot_record_its_answer_keeps_it_for_the_next_run` and
-`a_schedule_that_cannot_be_taken_away_leaves_every_login_where_it_was`.
+A build for tests finds Claude Desktop only in a scratch folder a test names, with
+`Context::with_scratch_claude` or `PITBOARD_TEST_CLAUDE_DESKTOP`. Claude's data folder is
+its `data`, and a program counts as Claude only inside its `Claude.app`. A folder that is,
+holds or lies in the account's own `Library/Application Support` or a `Claude.app` under
+either `Applications` panics. So does one named through `..`. The harness names one in each
+test's own folder, and starts the stand-in under its `Claude.app` where a test needs Claude
+open. `pitboard_core::testing::desktop` writes a data folder as Claude leaves one.
 
-Pitboard changes nothing as root or under `sudo`, and a test that runs the real machine runs
-as whoever runs the tests. So `cargo test` run as root, as in a development container whose
-only user is root, fails most of the integration tests in `crates/pitboard/tests`, with
-`elevated`. Most set up their accounts by running `pitboard enroll`, and the output of
-`status`, `doctor` and the status line gains the `read_only` warning or the failing
-`elevated` check. On macOS `keychain_write_is_harmless` fails too. Three tests in
-`crates/pitboard-ffi/src/launch.rs`, which make the app's core on the real machine as the
-app does, fail with `elevated`. The other unit tests and the fixtures run on `MemoryHost`,
-which runs as the person unless a test says otherwise. Run the tests as a user of your own,
-never as root on a machine that holds logins. On Windows the same goes for an elevated
-terminal: [Windows](#windows) says how the tests run there.
+As root, under `sudo`, from an elevated terminal on Windows, or on a file system without Unix
+modes, some tests fail and say why.
 
-A unit test reaches no real home. `Context::for_unit_test` points every home, `HOME`,
-Pitboard's directory, Claude Code's config directory and Codex's, at one folder of that
-test's own under the temporary directory, which nothing makes; a test that writes makes
-a scratch home of its own. A unit test that asks the passwd database for the account's
-home panics, unless it tests that lookup and keeps what
-`host::user::testing::reaching_the_real_home` returns while it does. Any other build for
-tests, such as the `pitboard` the integration tests run, gets no home from there, so a
-command run there without `HOME` is refused with `home_not_absolute`.
+The snapshots in `crates/pitboard/tests/snapshots` pin the `--json` contract, which changes
+only on purpose. Review a changed one with `cargo insta review`, and say in the pull request
+why the contract moved.
 
-No test reaches Claude's real data folder or a real Claude. A build for tests finds Claude
-Desktop only in a scratch folder a test names, with `Context::with_scratch_claude` or
-`PITBOARD_TEST_CLAUDE_DESKTOP`. Its `data` is the data folder, and a program counts as
-Claude running only inside its `Claude.app`. Without one, Claude Desktop is not there.
-Naming a folder through `..`, or one that is, holds or lies in the account's own
-`Library/Application Support` or a `Claude.app` under either `Applications`, panics. The
-integration tests name one in each test's own folder, and start the compiled stand-in under
-its `Claude.app` where a test needs Claude open. `pitboard-core`'s `desktop_testing.rs`
-writes a data folder as Claude leaves one. A core test of Claude Desktop's folder runs on
-macOS and Linux, and is ignored on Windows. An integration test of Claude Desktop returns
-at its start on Linux and Windows.
-
-The install script, `packaging/install.sh`, and `.github/scripts/fill-template.sh`, which
-fills it and the casks at release time, are POSIX `sh`. Check a change to either with:
+For a change to the install script, `packaging/install.sh`, or to
+`.github/scripts/fill-template.sh`, which fills it at release time:
 
 ```sh
 shellcheck -s sh packaging/install.sh .github/scripts/fill-template.sh
 python3 .github/scripts/test-install.py
 ```
 
-The test fills the template from stub releases and runs it under each of `sh`, `dash`,
-`bash`, `zsh` and `busybox sh` it finds on `PATH`. Every run has a scratch home and no
-network: shims first on `PATH` play `curl`, `wget`, `uname`, `id` and `sysctl`.
-`TEST_INSTALL_SHELLS` names shells that must be found. CI sets it, so a shell missing from
-a runner fails the job.
+The test runs the script under each of `sh`, `dash`, `bash`, `zsh` and `busybox sh` it finds
+on `PATH`. `TEST_INSTALL_SHELLS` names the ones that must be found, as CI sets it.
 
-The snapshots in `crates/pitboard/tests/snapshots` pin the `--json` contract. A snapshot
-changes only when the contract changes on purpose. Review the difference with
-`cargo insta review`, and say in the pull request why the contract moved.
-
-CI also runs:
-
-- clippy and the tests on both macOS and Linux, and both again for `pitboard-ffi` with its
-  fixtures
-- `cargo hack check --rust-version`, which checks the workspace on the `rust-version` in
-  `Cargo.toml`, and again for `pitboard-ffi` with its fixtures, on Linux and on Windows
-- the Windows job, on x64 and ARM64: the release gate proved on a build made as a release is,
-  then clippy and the tests [Windows](#windows) lists
-- the app job, on `macos-26` with Xcode 26.6, the newest Xcode that image has: the core,
-  the command line and the bindings checked on Rust 1.91, since only a Mac compiles
-  `rusqlite`, then `swift format lint --strict`, `./apps/macos/scripts/build-app.sh`, a
-  check that the command line inside the app runs and holds both architectures, then
-  `./apps/macos/scripts/build-xcframework.sh --fixture`, `swift test` and the UI tests, each
-  of which fails on its own after two minutes. Xcode 27.1, which development uses, is only on
-  GitHub's preview `xcode-27` image.
-- the C# job: the core's C# bindings generated, compiled and called against the core on
-  Linux, as the Windows app will call them, then against the core built with its fixtures,
-  whose bindings must be the same and whose model a test starts
-- `cargo semver-checks` on `pitboard-core`, against its last version on crates.io
-- the install script job, on macOS and Linux: `shellcheck` 0.11.0 on Linux, then
-  `test-install.py` under every shell the job names for that system, with zsh and BusyBox
-  installed on Linux
-- the workflows job: `actionlint` and `zizmor` on everything under `.github`,
-  PSScriptAnalyzer on the PowerShell in `.github/scripts`, and a guard that fails when
-  `.github/workflows/rotation.yml` names a repository secret
-- the website job, when a pull request changes `website/`, `CHANGELOG.md` or a docs file the
-  site reads: the checks [Website](#website) lists
-
-The `all-green` job waits for every other job and fails when any of them failed or was
-cancelled. It says in one place whether a run passed, so a job added to
-`.github/workflows/ci.yml` goes in its `needs`. A leg of a matrix that fails leaves the
-other legs running. A push to a pull request cancels the run it replaces, and each job stops
-at a time limit set from its recent runs. Only a run on `main` saves the Rust cache; a pull
-request restores what `main` saved.
+The app, the C# bindings, Windows and the website have checks of their own, in their
+sections. CI's `all-green` check fails when any other job failed or was cancelled, and a pull
+request needs it to pass.
 
 ## The app
 
-The Swift package in `apps/macos/` links the core as `apps/macos/PitboardFFI.xcframework`, with
-bindings generated into `apps/macos/Sources/PitboardBindings`. The Share extension links
-`pitboard-share-ffi` instead, the check of a shared link and nothing of the core, as
-`apps/macos/PitboardShareFFI.xcframework` with bindings in
-`apps/macos/Sources/PitboardShareBindings`. None of these is committed. Build them before you
-open the project the first time, and again whenever the core or `pitboard-sites` changes. They
-are built for both kinds of Mac, so Rust needs both targets.
+Building the app takes a Mac with Xcode whose Swift is 6.2 or later, XcodeGen, and Rust's two
+Mac targets. `./apps/macos/scripts/build-app.sh` builds the release bundle the way CI and a
+release do.
 
-The Xcode project is generated from `apps/macos/project.yml` by
-[XcodeGen](https://github.com/yonaskolb/XcodeGen), and only its `Package.resolved` is
-committed. Change `project.yml`, never the project, and generate it again after you do:
+`build-xcframework.sh` builds the core and `pitboard-share-ffi` for both kinds of Mac, with
+their Swift bindings. None of that is committed. Run it before you open the project the first
+time, and again after a change to the Rust. The Xcode project is generated from
+`apps/macos/project.yml` by [XcodeGen](https://github.com/yonaskolb/XcodeGen), and only its
+`Package.resolved` is committed. Change `project.yml`, never the project, and generate it
+again:
 
 ```sh
 rustup target add aarch64-apple-darwin x86_64-apple-darwin
@@ -232,105 +150,20 @@ xcodegen generate --spec apps/macos/project.yml
 open apps/macos/Pitboard.xcodeproj
 ```
 
-The app shows what the core's model says and sends it what was asked: every rule is Rust's,
-in `crates/pitboard-ffi`, and the Swift is views and what only macOS can do. Everything the
-app does is in the package, and its tests run without starting the app:
+`--fixture` builds the core with the worlds a debug build launches into. A debug build linked
+against a core without them stops at launch and says how to build one.
+
+Everything the app does is in the Swift package, and its tests run without starting the app:
 
 ```sh
 swift test --package-path apps/macos
 ```
 
-They never make the model over this Mac. Most hand the app's model snapshots from a
-stand-in, and one starts a fixture's model to see the bindings carry a snapshot end to end;
-against a library built without fixtures it is skipped, and says so.
+One of them starts a fixture's model. Against a core built without `--fixture` it is skipped,
+and says so. A Swift warning fails the build, in the package and in the project, outside the
+generated bindings.
 
-A Swift warning fails the build, in the package and in the project, except in the generated
-bindings.
-
-The UI tests start the debug build, each in a fixture. A fixture is a machine in a known
-state, where nothing reaches the keychain, the network or your accounts. Run the UI tests
-from Xcode with **Product** > **Test**, or with:
-
-```sh
-xcodebuild test -project apps/macos/Pitboard.xcodeproj -scheme Pitboard -destination 'platform=macOS'
-```
-
-macOS asks for a password before a UI test can drive the app, unless the Mac allows
-Automation Mode without one. GitHub's macOS runners allow it. `automationmodetool` prints
-which applies to your Mac.
-
-The debug build's bundle identifier is `com.usepitboard.Pitboard.debug`, so it never shares
-preferences, a login item or notification permission with a copy you have installed. Run
-from Xcode, it reads this Mac's accounts, as that copy does. To run it in a fixture instead,
-add `PITBOARD_FIXTURE=twoTools` to the scheme's environment variables.
-
-The fixtures are Rust's, one set of worlds either app can launch into, in
-`crates/pitboard-ffi/src/fixture`: `twoTools`, `oneTool`, `empty`, `firstLaunch`,
-`noClaudeCode`, `unnamed`, `onlyOne`, `readFailure`, `stuck`, `chatGPTOpen`, `claudeDesktop`,
-`claudeDesktopOpen` and `warmUp`, as `fixture_names()` gives them. Each is the real core over
-a machine of its own: a home in the folder `pitboard-fixture` in the temporary directory,
-`TMPDIR` where it is set, the keychain, the process list and the scheduler in memory, and
-Anthropic and OpenAI answering from a script. Its accounts were put there by the core,
-signed in, enrolled, parked and switched, so a world shows what the core makes of it:
-`readFailure`'s reads fail because its account index is a file nobody may read, and
-`stuck`'s read says an interrupted switch is waiting.
-
-Each tool's sign-in is played as its register says it behaves. The fixture's Claude Code,
-like the real one, refuses a code typed back that is not `<code>#<state>`: type one such as
-`fixture-code#state`. The Claude of `claudeDesktop` and `claudeDesktopOpen` is a stand-in
-that writes its data folder as 2.7032.0 does as it quits. In `claudeDesktopOpen` it is
-running, and once opened in front for a sign-in it signs in to a third account and quits.
-Those two worlds hold Claude Desktop only on macOS, where Pitboard supports it.
-
-The app adds only what is macOS's own: a login item that registers nothing, and a link to
-the command line inside the fixture's stand-in app, made in the folder's `bin` with no
-password. Only a library built with the `fixture` feature has the worlds, which
-`build-xcframework.sh --fixture` builds; the bindings are the same either way. A debug build
-linked against a library without it stops at launch, saying how to build one with it.
-`build-app.sh` never passes it, and fails a build whose library or app holds a fixture.
-
-Only the UI tests launch into that folder. The unit tests leave it alone: the C# and Swift
-tests of the bindings launch with `PitboardModel::fixture_in` into a temporary directory of
-their own, which they remove, and the Rust test of `PitboardModel::fixture` runs again in a
-child given one, and launches into the folder there. So a debug build launched into a
-fixture keeps its world while `cargo test`, `swift test` or `dotnet test` runs, and several
-runs of each can go at once.
-
-In a fixture, an account's window loads a stand-in page for its site, such as
-`pitboard-fixture://claude.ai`, and each sign-in host has a stand-in on the same scheme. Its
-data stays in memory, its records are in the fixture's folder, and a link it would hand to
-macOS is recorded instead, so nothing reaches either site. Run without a fixture, the debug
-build loads the real sites, into stores of its own under
-`~/Library/WebKit/com.usepitboard.Pitboard.debug`, and keeps their records in
-`~/Library/Application Support/com.usepitboard.Pitboard.debug`.
-
-The unit tests load no page. What a window decides, its navigation policy, its stores and
-their records, its menus, the account picker and its downloads, is the core's, tested in
-Rust; the Swift tests cover what the app does with it. The UI tests cover what its pages
-do, in a fixture: sign-in windows, Google's sign-in being stopped, downloads, Find,
-**Remove Website Data** and links shared to the **Open Link** window.
-
-The debug build claims `pitboard-debug://` rather than `pitboard://`, and its Share
-extension shows as **Pitboard Debug**. So a debug build never answers a link or a share
-meant for an installed copy. A release build from `build-app.sh` claims `pitboard://` and
-shows as **Pitboard**, like the installed copy. Building the app registers its scheme and
-its Share extension with macOS, and they stay registered until you unregister them. After
-building the app locally, from Xcode, with `xcodebuild` or with `build-app.sh`, unregister
-each copy it built, and leave the one in `/Applications` alone:
-
-```sh
-lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
-"$lsregister" -dump | grep -E '^path:.*(Pitboard\.app|PitboardShare\.appex)'
-pluginkit -r <build>/Pitboard.app/Contents/PlugIns/PitboardShare.appex
-"$lsregister" -u <build>/Pitboard.app
-```
-
-The `-dump` line lists the copies macOS knows. `pluginkit -m | grep usepitboard` lists the
-Share extensions it still offers.
-
-`./apps/macos/scripts/build-app.sh` builds the release bundle the way CI and a release do.
-
-CI checks the format of the Swift written by hand, leaving out the generated bindings:
+CI checks the format of the Swift written by hand:
 
 ```sh
 swift format lint --strict --recursive --configuration apps/macos/.swift-format \
@@ -338,11 +171,73 @@ swift format lint --strict --recursive --configuration apps/macos/.swift-format 
   apps/macos/App apps/macos/ShareExtension apps/macos/UITests apps/macos/Tests apps/macos/scripts .github/scripts
 ```
 
+### Run the debug build
+
+A fixture is a machine in a known state, where nothing reaches the keychain, the network or
+your accounts. To run the debug build in one, start its executable with a fixture's name and
+scratch homes:
+
+```sh
+scratch=$(mktemp -d)
+env PITBOARD_FIXTURE=twoTools HOME="$scratch" PITBOARD_HOME="$scratch/.pitboard" \
+  CLAUDE_CONFIG_DIR="$scratch/.claude" CODEX_HOME="$scratch/.codex" \
+  <build>/Pitboard.app/Contents/MacOS/Pitboard
+```
+
+`<build>` is `Products/Debug` in the folder **Product** > **Show Build Folder in Finder**
+opens. To run it from Xcode, add the same variables to the scheme's Run environment in
+**Product** > **Scheme** > **Edit Scheme**. `xcodegen generate` writes the scheme again
+without them, so check them before each Run. [AGENTS.md](AGENTS.md#never) lists the ways it
+must never be started.
+
+`fixture_names()` lists the worlds, and a name that is none of them stops the launch and
+names them all. A fixture's Claude Code sign-in takes a code typed back as `<code>#<state>`,
+such as `fixture-code#state`. On macOS, `claudeDesktop` and `claudeDesktopOpen` hold Claude
+Desktop, with a stand-in Claude that is open in the second. Opened for a sign-in, it signs in
+to a third account and quits.
+
+The UI tests start the debug build, each in a fixture of its own. Run them from Xcode with
+**Product** > **Test**, or with:
+
+```sh
+xcodebuild test -project apps/macos/Pitboard.xcodeproj -scheme Pitboard -destination 'platform=macOS'
+```
+
+macOS asks for a password before a UI test can drive the app, unless the Mac allows
+Automation Mode without one. `automationmodetool` says which applies to your Mac.
+
+### Unregister a build
+
+A debug build keeps apart from a copy you installed. A release build you made claims what
+the installed copy claims:
+
+| | Debug build | Release build |
+| --- | --- | --- |
+| Bundle identifier | `com.usepitboard.Pitboard.debug` | `com.usepitboard.Pitboard` |
+| Link scheme | `pitboard-debug://` | `pitboard://` |
+| Share menu entry | **Pitboard Debug** | **Pitboard** |
+
+Building the app registers its link scheme and its Share extension with macOS, and both stay
+registered. After a build with Xcode, `xcodebuild` or `build-app.sh`, unregister each copy
+it made. `<build>` is the folder that holds the copy, such as `apps/macos/build` for
+`build-app.sh`. The first line lists every copy macOS knows; run it again afterwards to
+check:
+
+```sh
+lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+"$lsregister" -dump | grep -E '^path:.*(Pitboard\.app|PitboardShare\.appex)'
+pluginkit -r <build>/Pitboard.app/Contents/PlugIns/PitboardShare.appex
+"$lsregister" -u <build>/Pitboard.app/Contents/Frameworks/Sparkle.framework/Versions/*/Updater.app
+"$lsregister" -u <build>/Pitboard.app
+```
+
+`pluginkit -m | grep usepitboard` lists the Share extensions macOS still offers.
+
 ### The C# bindings
 
 The Windows app reaches the core through C# bindings, generated from `pitboard-ffi` like the
-Swift ones and not committed. They need the [.NET 10 SDK](https://dotnet.microsoft.com/download),
-and run on macOS and Linux as well as Windows, so they can be checked on any machine:
+Swift ones and not committed. They need the .NET 10 SDK and run on macOS and Linux as well
+as Windows:
 
 ```sh
 cargo build --locked -p pitboard-ffi
@@ -353,42 +248,31 @@ cd apps/windows
 dotnet test --solution Pitboard.slnx -p:PitboardNativeLibrary="$PWD/../../target/debug/libpitboard_ffi.dylib"
 ```
 
-The bindings are read from the static library, which keeps what the generator reads on
-every system; a release build strips it from the shared library on Linux. The shared
-library the tests load is `libpitboard_ffi.so` on Linux and `pitboard_ffi.dll` on Windows. A record
-field may not share its record's name, because C# makes each field a member of the record.
+On Linux the library the tests load is `libpitboard_ffi.so`, and on Windows
+`pitboard_ffi.dll`. C# makes each field of a record a member of it, so a field may not share
+its record's name.
 
-One test starts a fixture's model and waits for it to tell a listener written in C# of its
-accounts. Against a library built without the `fixture` feature it is skipped, and says so.
-To run it, build the library with `cargo build --locked -p pitboard-ffi --features fixture`
-before `dotnet test`; the bindings need not be generated again.
+One test starts a fixture's model, and is skipped against a library built without the
+`fixture` feature. To run it, build the library with
+`cargo build --locked -p pitboard-ffi --features fixture` before `dotnet test`. The bindings
+need not be generated again.
 
 ## Windows
 
-Pitboard for Windows is being built, a pull request at a time, and reaches people as 1.0.0.
-Until then a Windows build of a 0.x release compiles, answers only `--version`, `--help`,
-`completions` and `manpage`, refuses everything else with `windows_not_released`, and
-changes nothing. The gate is `pitboard_core::release`: the core asks it at the gate every
-change passes and wherever it reads the account list, the app's core before every read the
-model makes, and the command line before every other command. Only `x86_64-pc-windows-msvc`
-and `aarch64-pc-windows-msvc` compile.
+A Windows build of a 0.x release answers only `--version`, `--help`, `completions` and
+`manpage`, and changes nothing. The gate is `pitboard_core::release`. To work on Pitboard on
+Windows, open a build to it with `--cfg pitboard_unreleased_windows` in `RUSTFLAGS`, and with
+nothing else. `release.rs` says why that is a `cfg` and not a Cargo feature.
 
-A build for working on Pitboard on Windows is opened to it before its release with
-`--cfg pitboard_unreleased_windows` in `RUSTFLAGS`, and with nothing else. It is not a Cargo
-feature, because crates.io lists a published crate's features and anybody could turn one on
-with `cargo install`. No release, script or package ever passes it. The core's own unit
-tests are opened by `cfg(test)`. An opened build reaches the Windows face,
-`crates/pitboard-core/src/host/windows`. It reads this process's token and the build of
-Windows, and refuses every change from an elevated terminal (`elevated`) or on a build older
-than Windows 11 24H2's 26100 (`system_too_old`), which Windows Server 2025 shares. As the
-person, on 24H2 or later, a change passes that gate and meets the parts not built yet, which
-refuse through errors their callers already have: no file is made, no process listed and no
-store read.
+Working there takes:
 
-On Windows 11 24H2 or later, x64 or ARM64, with Rust's MSVC toolchain, and on ARM64 the
-clang ring compiles its C with there, follow [AGENTS.md](AGENTS.md#on-windows), then run, in
-PowerShell from a terminal that is not elevated (not Run as administrator), as a Windows
-account that holds no real login:
+- Windows 11 24H2 or Windows Server 2025, build 26100, or later. An older build refuses every
+  change with `system_too_old`.
+- x64 or ARM64, with Rust's MSVC toolchain. On ARM64, clang as well: ring compiles its C with
+  it there.
+
+Read the [Windows rules in AGENTS.md](AGENTS.md#on-windows) first. Then, as a Windows account
+that holds no real login, in PowerShell from a terminal that is not elevated:
 
 ```powershell
 $env:RUSTFLAGS = "-D warnings -C target-feature=+crt-static --cfg pitboard_unreleased_windows"
@@ -398,167 +282,80 @@ cargo test --locked
 cargo test --locked -p pitboard-ffi --features fixture
 ```
 
-`RUSTFLAGS` replaces every target's own rustflags, so it names the static C runtime the
-releases are built with. The whole suite runs on Windows. A test that cannot pass there
-until a later pull request says which, with `#[cfg_attr(windows, ignore = "W<n>: <what it
-waits on>")]`, and in no other way: no filter and no `--skip`, and libtest lists it as
-ignored with that reason. The tests run as the person: from an elevated terminal, or as an
-account whose every program runs elevated, as with User Account Control off, the face's
-`as_the_person_the_gate_lets_a_change_through` and `windows_refuses` fail, saying so.
+`RUSTFLAGS` replaces each target's own rustflags, so it names the static C runtime releases
+are built with.
 
-The integration tests' harness gives every command a test runs a scratch folder of the
-test's own for each folder of a person's account, `USERPROFILE`, `HOME`, `APPDATA` and
-`LOCALAPPDATA`, as for each tool's home, and a `PATH` of the test's own programs and
-Windows' own folders alone, so nothing installed is found. It refuses, here as on every
-system, a scratch folder that is, holds or lies in the account's real `.claude`,
-`.claude.json`, `.codex` or `%LOCALAPPDATA%\Pitboard`, compared in any case and through
-every link; the rest of the profile, where `%TEMP%` is, it allows. Every program it puts in
-place of a tool is the compiled stand-in, named with `.exe`.
+The whole suite runs on Windows. A test that cannot pass there until a later Windows pull
+request says so with `#[cfg_attr(windows, ignore = "W<n>: <what it waits on>")]`, and in no
+other way: no filter and no `--skip`.
 
 From a Mac or Linux, `cargo check --target x86_64-pc-windows-msvc` checks only
-`pitboard-sites` and `pitboard-share-ffi`: ring's build script compiles C against MSVC's
-headers. CI's `windows` job runs the commands above on `windows-2025` and `windows-11-arm`.
-First it checks that Rust there builds for that leg's own triple. Then it builds
-`pitboard.exe` the way a release is built, without the cfg, and checks that it is a program
-for that machine, that `--version` answers, that the program carries its C runtime, and that
-`status`, `use`, `renew` and `schedule install` each refuse with `windows_not_released` and
-leave every folder they are pointed at empty. `windows_refuses` runs against a build without
-the cfg as well, which refuses every one of its commands that way. `windows-msrv` checks the
-workspace there with Rust 1.91.
+`pitboard-sites` and `pitboard-share-ffi`, since ring compiles C against MSVC's headers.
 
-The job's own user is elevated on both images, in every program it starts, so CI runs every
-Windows test as a fresh standard user instead, through
-`.github/scripts/test-as-standard-user.ps1`. The script builds the tests as the job's user,
-makes a local standard user, grants it read and run on the workspace and the target folder,
-and starts each test program as it with its profile loaded and its own profile's variables,
-from a folder of its own, with the variables Cargo gives a test. Before the tests it checks
-that the machine-wide places a tool may take its settings from are absent, so the tests
-read only what they put there: Codex's `%ProgramData%\OpenAI\Codex`, which Codex's register
-names, pending W21, and Claude Code's `C:\Program Files\ClaudeCode` and policy keys, which
-W17 is to read from its Windows build and Claude Code's register does not record yet. After
-them it checks that nothing was left behind, and fails the step if anything was:
-`pitboard-probe credman-names --leak-check`, as the standard user, lists the names of the
-live login families' items and of `pitboard-citest-*` items in its Credential Manager,
-never a blob, and fails on any; no task is in Task Scheduler's `\Pitboard\`; the user's
-real `.claude`, `.claude.json`, `.codex` and `%LOCALAPPDATA%\Pitboard` do not exist; and
-nothing appeared among the job user's own. It takes the grants back and removes the user
-afterwards. Give it what `cargo test` takes, the probe it lists Credential Manager with,
-and what the test programs take:
+CI's `windows` job runs these commands on `windows-2025` and `windows-11-arm`, each test
+program as a fresh standard user through `.github/scripts/test-as-standard-user.ps1`. The job
+fails when a run leaves a login item, a scheduled task or a login folder behind. It also
+builds `pitboard.exe` as a release is built, and checks that it refuses and changes nothing.
 
-```powershell
-./.github/scripts/test-as-standard-user.ps1 -Cargo '--locked --workspace' `
-  -Probe target/debug/pitboard-probe.exe
-```
-
-It makes and removes a Windows account, grants it rights on folders and, where Developer
-Mode is off, changes who holds the symbolic-link right, so it is for CI's disposable runners
-only, never a machine of your own: it refuses to run anywhere but a GitHub-hosted runner, as
-`runner-facts.ps1` does. One step runs as the job's user on purpose: the opened `pitboard.exe`
-refuses `use` and `renew` there with `elevated`, in the words for an account whose every
-program runs elevated, and writes nothing.
-
-The runner facts are a measurement, not a check, so no pull request runs them.
-`.github/workflows/windows-facts.yml` runs `runner-facts.ps1` on both images and uploads the
-programs a VM session runs. Start it by hand:
-
-```sh
-gh workflow run windows-facts.yml
-```
+`gh workflow run windows-facts.yml` measures both runner images. No pull request runs it.
 
 ## Tool registers
 
-Each tool's register is `crates/pitboard-core/src/provider/<tool>/assumptions.rs`. What a
-register is for, when CI checks each one and what adding a tool takes are in
-[Tool registers in ARCHITECTURE.md](ARCHITECTURE.md#tool-registers).
+Each tool's register is `crates/pitboard-core/src/provider/<tool>/assumptions.rs`: what
+Pitboard relies on about that tool, each fact with the build it was read from.
+`crates/pitboard-core/src/assumptions.rs` says what each field holds.
 
-Each fact names the literals it can be read by. `pitboard-conformance` looks for them in a
-build of the tool and says which are still there:
+`pitboard-conformance` looks in a build of the tool for the literals each fact can be read by,
+and says which are still there:
 
 ```sh
 cargo run -p pitboard-conformance -- <claude binary>
 cargo run -p pitboard-conformance -- <codex binary> --provider codex
-cargo run -p pitboard-conformance -- /Applications/Claude.app/Contents/Resources/app.asar --provider desktop
+cargo run -p pitboard-conformance -- <app.asar> --provider desktop
 ```
 
-Add `--json` for a report a program can read. The checker exits 1 when a fact has moved: a
-literal it needs is gone, or one it rules out has turned up. It exits 2 when it cannot make
-sense of its arguments, read the file or tell its system.
+Point it at the tool's native binary, not the npm wrapper, which carries none.
+`npm pack @anthropic-ai/claude-code-<system>@<version>` holds `claude`, and
+`npm pack @openai/codex@<version>-<system>` holds `codex` under `vendor/`. `<system>` is one
+of `darwin-arm64`, `linux-x64`, `win32-x64` and `win32-arm64`.
 
-Claude Code and Codex are read from their native binaries, not the npm wrapper, which
-carries no binary. The checker reads the binary's header to tell a macOS, Linux or Windows
-build apart, and reads each fact only from the systems its line in the register's
-`PER_SYSTEM` table reads it on. Claude Code's Linux and Windows builds have no keychain
-backend, so the keychain facts are read from its macOS build alone.
-`.github/workflows/conformance.yml` takes Claude Code's builds from the packages
-`@anthropic-ai/claude-code-<system>`, and Codex's from `vendor/` in
-`@openai/codex@<version>-<system>`, for `linux-x64`, `darwin-arm64`, `win32-x64` and
-`win32-arm64`.
+Claude Desktop's register is read by hand from `Contents/Resources/app.asar` in Claude's
+bundle, on a Mac where Claude is installed. No conformance job reads it, since where its
+builds are published is not recorded. The checker reads the bundle, not the data folder, and
+never starts Claude.
 
-Claude Desktop is read from the `app.asar` in Claude's bundle. An app's `app.asar` has no
-system of its own, and the checker reads Claude Desktop's for macOS, where its register
-reads every fact. In 2.7032.0, Claude's program, `Contents/MacOS/Claude`, holds only the
-bundle id of the register's literals, so the checker refuses it and exits 2. Run the
-checker by hand on a Mac where Claude is installed. It reads Claude's bundle, not its data
-folder, and does not open Claude.
+The checker exits 1 when a fact has moved: a literal it needs is gone, or one the fact rules
+out has turned up. It exits 2 when it cannot make sense of its arguments, read the binary or
+tell its system. `--json` prints a report a program can read.
 
-No conformance job reads Claude Desktop, since where Claude's builds are published is not
-recorded. Its register was read by hand from two builds: 2.19675.0, which the experiments
-ran, and 2.7032.0, whose `app.asar` was read and never run. Each entry says which.
+To add a fact:
 
-To add a fact, add an `Assumption` to the tool's register:
+1. Add an `Assumption` to the tool's register.
+2. Give `probe` literals that only this fact explains. A literal already in the build for
+   another reason proves nothing. A fact about behaviour has no literal to find, so it gets
+   an empty `probe`, and a run reports it as not readable.
+3. Give the fact a line in the register's `PER_SYSTEM` table: `Read`, `NotRead` or `Pending`
+   for each of macOS, Linux and Windows. `OnSystem` says when each applies.
+4. Run the checker against the build you read the fact from. If you can, run it against an
+   older build that predates the fact too, and watch it go red.
 
-| Field | What it holds |
-| --- | --- |
-| `name` | A stable snake_case code |
-| `fact` | What Pitboard believes |
-| `read_from` | Where in the tool the fact was read, so it can be read again |
-| `verified_against` | The build it was read from, such as `2.1.284` |
-| `depends` | What in Pitboard stops being true if the fact moves |
-| `probe` | Literals that must be in a build for the fact to still be readable there |
-| `absent` | Literals whose arrival would disprove the fact |
-
-Then give it a line in the register's `PER_SYSTEM` table. The line says one of these for
-each of macOS, Linux and Windows:
-
-| On a system | When |
-| --- | --- |
-| `Read("<version>")` | You read the fact from that system's build of that version. The macOS and Linux readings name the build in `verified_against` |
-| `NotRead("<why>")` | The system has nothing the fact is about, such as a keychain, or its build carries a literal the fact rules out for another reason |
-| `Pending { by: &["W<n>"], reads: "<what>" }` | A later pull request of the Windows work reads it there. Say what that pull request reads |
-
-Pick literals specific to the fact. A literal already in the build for another reason
-proves nothing. A fact about behaviour has no literal to find. It gets an empty `probe`,
-and the run reports it as not readable.
-
-Run the checker against the build you read the fact from. If you can, run it against an
-older build that predates the fact too, and watch it go red.
-
-`cargo test` checks the registers themselves. Every name must be unique and snake_case.
-Every fact must say what it is, where it was read, which version and what depends on it.
-Every fact must have one line in its table, and a reading on macOS or Linux must name the
-build in `verified_against`. A pending reading must name a pull request from `W2` to `W27`.
-No fact that rules out `Bun.secrets` may be read on Windows.
+`cargo test` checks each register's shape and says what a fact lacks.
 
 ### Read a fact on Windows
 
-Read a Windows build as bytes, on a Mac or on Linux, as the checker does. Never run
-`claude.exe` or `codex.exe` to read one. Fetch the package with `npm pack`, as
-`conformance.yml` does, and find `claude.exe`, or `codex.exe` under `vendor/`. Claude
-Code's code is plain JavaScript inside its binary. Codex's is Rust, in its public source at
-the tag `rust-v<version>`; look there for code behind `cfg(windows)`.
-
-Read the code the fact is about, not only its literals, then run the checker on the
-Windows build. Then record what you found:
+Read a Windows build as bytes, on a Mac or on Linux, from the package `npm pack` fetches.
+Claude Code's code is plain JavaScript inside `claude.exe`. Codex's is Rust, in its public
+source at the tag `rust-v<version>`: look there for code behind `cfg(windows)`. Read the code
+the fact is about, not only its literals, then run the checker on the Windows build. Then:
 
 - If the Windows build does what the fact says, mark the fact `Read` on Windows, with the
   Windows build's version.
 - If it does something else, write the Windows behaviour as a fact of its own, named for
-  Windows, such as `credman_target`, and mark it `NotRead` on macOS and Linux. Mark the
-  first fact `NotRead` on Windows, and name the new fact in the reason. Never add a second
-  reading of the same fact.
-- If the fact can only be seen by running the tool, measure it on a Windows machine kept
-  for that, with throwaway accounts and scratch homes. Name the build and the date in the
-  fact.
+  Windows, such as `credman_target`, and mark it `NotRead` on macOS and Linux. Mark the first
+  fact `NotRead` on Windows, and name the new fact in the reason. Never add a second reading
+  of one fact.
+- If the fact can only be seen by running the tool, measure it as
+  [AGENTS.md](AGENTS.md#on-windows) allows. Name the build and the date in the fact.
 
 ## Documentation
 
@@ -568,9 +365,8 @@ Windows build. Then record what you found:
 
 ## Website
 
-`website/` is the source of usepitboard.com: Astro and Tailwind CSS, built to static files that
-Cloudflare Workers serves. Its pages read `CHANGELOG.md` and the latest GitHub release at build
-time. It needs Node 24 or later. Check a change in `website/` with:
+`website/` is the source of usepitboard.com: Astro and Tailwind CSS, built to static files
+that Cloudflare Workers serves. It needs Node 24 or later. Check a change in `website/` with:
 
 ```sh
 npm ci
@@ -580,16 +376,11 @@ npm test
 npm run build
 ```
 
-`npm run build` reads the release from GitHub, with `GITHUB_TOKEN` when it is set.
-`PITBOARD_SITE_OFFLINE=1` builds from the release recorded in `src/data/fixtures/` instead.
-After Astro, `scripts/csp.mjs` writes `dist/_headers` with a hash of each inline script, and
-`scripts/guard.mjs` fails the build on what the site must not ship: an `install.sh`, a style
-attribute, a page over its budget, a banned word from [docs/AGENTS.md](docs/AGENTS.md), a
-character neither font draws, a broken anchor, or two release versions. `npm run preview`
-serves the build.
-
-The newest version in CHANGELOG.md needs a line in `src/data/highlights.ts`, or the build
-fails; [RELEASING.md](RELEASING.md) adds it with the version heading.
+CI runs these when a change reaches `website/` or a file the site reads, such as
+`CHANGELOG.md` or a docs page. `npm run build` reads the newest GitHub release, with
+`GITHUB_TOKEN` when it is set. `PITBOARD_SITE_OFFLINE=1` builds from the release recorded in
+`src/data/fixtures/` instead. The build ends with `scripts/guard.mjs`, which fails on anything
+the site must not ship and says what. `npm run preview` serves the build.
 
 ## Changelog
 
@@ -598,34 +389,31 @@ under `## [Unreleased]`. The file follows
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
 
 - Put each entry under one of six types, in this order: `### Added`, `### Changed`,
-  `### Deprecated`, `### Removed`, `### Fixed`, `### Security`.
+  `### Deprecated`, `### Removed`, `### Fixed`, `### Security`. A security fix goes under
+  `### Security`.
 - Write one change per bullet, in one or two sentences: what changed for the person using
   Pitboard. How it works and what was measured go in the docs and the commit message.
 - Start an entry that breaks a script or a habit with `**Breaking:**`, and say what to do.
-- Put a security fix under `### Security`.
 - Make links inside an entry inline and absolute. A release's notes are cut from its
   section, without the link definitions at the end of the file.
 
-The maintainer adds the version heading when making a release, as
-[RELEASING.md](RELEASING.md) describes.
-
 ## Submit a change
 
-A pull request against `main` needs all of the following:
+A pull request against `main` needs all of these:
 
 - CI's `all-green` check passes.
-- A change in behaviour comes with a test that failed before the change, as
-  [Rules](#rules) asks.
+- A change in behaviour comes with a test that failed before it, as [Rules](#rules) asks.
 - A changed snapshot comes with the reason the `--json` contract moved.
-- A dependency you add comes with a reason, and `cargo deny check` passes. It checks
-  advisories, licences, bans and sources against `deny.toml`.
+- A dependency you add comes with a reason, and `cargo deny` passes against `deny.toml`.
 - `CHANGELOG.md` has an entry, if someone using Pitboard would notice the change.
+- `docs/` says what the code does, for anything the change makes it say differently.
 - A change that removes, renames or reshapes anything public in `pitboard-core` raises the
-  minor version in `Cargo.toml`, and the `=` version of `pitboard-core` beside it, unless
-  `main` is already ahead of the last release. Then run `cargo update --workspace`.
-  [Prepare a release](RELEASING.md#prepare-a-release) says why.
+  minor version in `Cargo.toml`: `version` under `[workspace.package]`, and the `=` version
+  of `pitboard-core` under `[workspace.dependencies]`. Then run `cargo update --workspace`.
+  CI's `semver` job fails until it is raised.
 
-Since 0.3.0, most commit subjects are one present-tense sentence saying what Pitboard does
-after the change, with no prefix. An example is "The man page sets out every command instead
-of naming pages that are not installed". The body says why, and what was measured, if
-anything was.
+When `Cargo.toml` already names a minor version past the last release, it stays.
+
+Each commit subject is one present-tense sentence saying what Pitboard does after the change,
+with no prefix, such as "The man page sets out every command instead of naming pages that
+are not installed". The body says why, and what was measured.

@@ -2,8 +2,6 @@ import AppKit
 import PitboardKit
 import SwiftUI
 
-/// The menu the menu bar item opens.
-///
 /// A menu and not a popover, as the platform asks of a menu bar item: it opens at once,
 /// closes predictably, reads well to VoiceOver, and works from the keyboard. It is the
 /// glance and the switch: which account is in use in each tool, what each has left, and
@@ -63,9 +61,6 @@ struct MenuBarContent: View {
 
     // MARK: - What needs attention
 
-    /// How to install Claude Code where no tool is here; advice to switch, and an add left
-    /// halfway, as items that act on it; anything else to know about, as one item that opens
-    /// the window where it is said in full; and an update that is ready.
     @ViewBuilder private var attention: some View {
         let notices = model.menuNotices
         let waiting = updates.available ? updates.waiting : nil
@@ -118,8 +113,6 @@ struct MenuBarContent: View {
 
     // MARK: - Accounts
 
-    /// A section per tool once there is more than one, headed with its name. The account in
-    /// use in each is checked, and choosing another does what pressing it means.
     @ViewBuilder private var accounts: some View {
         if let note = model.menuAccountsNote {
             Section {
@@ -143,8 +136,6 @@ struct MenuBarContent: View {
     }
 }
 
-/// One account in the menu: its name, what its limits stand at, and a check mark when it is
-/// the one in use. Choosing it does what pressing it means: switch, sign in again, or name.
 private struct AccountMenuItem: View {
     let item: AccountItem
     let perform: (Intent) -> Void
@@ -168,7 +159,6 @@ private struct AccountMenuItem: View {
     }
 }
 
-/// Addresses the app links to, named once.
 enum Links {
     static let documentation = URL(string: "https://docs.usepitboard.com")!
 }

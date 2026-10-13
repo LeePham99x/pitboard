@@ -25,6 +25,9 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The `pitboard` cask's caveats link
+  [Upgrade from 0.3.0 or earlier](https://docs.usepitboard.com/install/upgrade-from-0-3-0) in
+  place of the commands that remove 0.3.0's formula.
 - The account index is schema 8, which earlier versions cannot read. Update the command line
   and the app together.
 - `pitboard uninstall`'s question says the other accounts need signing in again, where it
@@ -515,48 +518,6 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.4.0] - 2026-09-25
 
-In the tap, `pitboard` is now the command line's cask, and the app's cask is `pitboard-app`.
-
-From the old formula, `brew update` warns that it did not install the cask that replaces it,
-and Pitboard stays at 0.3.0. The two commands it prints leave the formula in front of the
-cask, so uninstall the formula first:
-
-```sh
-brew uninstall --formula pitboard
-brew install datlechin/tap/pitboard
-```
-
-From the old app cask, `brew update` replaces the app with the command line, once. Your
-settings and `~/.pitboard` stay. To get the app back, with the command line inside it, run
-these in this order, before or after that `brew update`:
-
-```sh
-brew uninstall --cask pitboard
-brew uninstall --formula --force pitboard
-brew install --cask datlechin/tap/pitboard-app
-```
-
-Leave `--zap` out when you remove the old app cask. Its zap moves `~/.pitboard` to the
-Trash, and Homebrew runs the zap of the cask as it was installed, whatever the tap says by
-then.
-
-A copy of the app from a release updates itself as before and brings the command line with
-it.
-
-Daily renewal turned on in a 0.3.0 app renewed nothing. Once this release's app is in its
-place, that schedule renews through the command line inside the app, and opening the app
-points the schedule at it. A schedule that runs a `pitboard` no longer there, such as one
-turned on with the formula on Linux, stays broken: turn renewal off and on again in
-**Settings**, or run:
-
-```sh
-pitboard schedule uninstall
-pitboard schedule install
-```
-
-`pitboard doctor`, or **Settings** > **Advanced** > **Check this machine**, says whether
-yours needs it.
-
 ### Added
 
 - **Settings** > **Advanced** shows which `pitboard` a terminal runs, and **Install command
@@ -566,22 +527,36 @@ yours needs it.
 
 ### Changed
 
+- **Breaking:** In the tap, `pitboard` is the command line's cask, and the app's cask is
+  `pitboard-app`.
+  [Upgrade from 0.3.0 or earlier](https://docs.usepitboard.com/install/upgrade-from-0-3-0)
+  has the commands to move.
+- The app carries the command line inside it, so an update moves both. A copy of the app
+  from a release updates itself as before.
 - `brew install datlechin/tap/pitboard` installs the release's own command line as a cask,
   on macOS and Linux, without Rust or compiling.
-- **Breaking:** The app's cask is `pitboard-app`, and the app carries the command line
-  inside it, so an update moves both. Follow the steps above to move from the old app cask.
+- From the old formula, `brew update` warns that it did not install the cask, and Pitboard
+  stays at 0.3.0. The two commands it prints leave the formula in front of the cask, so
+  uninstall the formula first.
+- From the old app cask, `brew update` replaces the app with the command line, once. Your
+  settings and `~/.pitboard` stay.
+- Leave `--zap` out when you remove the old app cask. Its zap moves `~/.pitboard` to the
+  Trash, and Homebrew runs the zap of the cask as it was installed, whatever the tap says.
 - Releases no longer publish a source tarball. The source is on crates.io and in the tag.
 - In `pitboard-core`, `uninstall`'s report says whether the renewal schedule was removed,
   and it and `doctor::Facts` are `#[non_exhaustive]`.
 
 ### Fixed
 
-- Daily renewal turned on from the app renews parked logins, instead of starting a second
-  copy of the app every day.
+- Daily renewal turned on from the app renews parked logins through the command line inside
+  it, instead of starting a second copy of the app every day. Opening the app points a
+  0.3.0 schedule at that command line.
 - The app no longer turns daily renewal on from the temporary copy macOS runs before the app
   is in Applications.
-- `pitboard doctor` fails when the renewal schedule runs a `pitboard` that is gone or is an
-  app.
+- `pitboard doctor` fails, and **Settings** > **Advanced** > **Check this machine** says so,
+  when the renewal schedule runs a `pitboard` that is gone or is an app, such as the
+  formula's copy on Linux. Turn renewal off and on again in **Settings**, or run
+  `pitboard schedule uninstall` and then `pitboard schedule install`.
 - On Linux, a renewal schedule turned on from the command line keeps working after `brew
   upgrade`.
 - `pitboard uninstall` removes the renewal schedule first, as `schedule_removed` in

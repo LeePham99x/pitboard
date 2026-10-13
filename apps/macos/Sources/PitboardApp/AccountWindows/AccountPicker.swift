@@ -1,19 +1,15 @@
 import PitboardKit
 import SwiftUI
 
-/// Asks which account's window opens a link shared from another app, in the manner of Photos'
-/// Choose Library: a list, Cancel, and a default button named for what it does.
+/// Laid out as Photos' Choose Library is: a list, Cancel, and a default button named for what
+/// it does.
 ///
 /// Every link from outside waits here until somebody chooses, even with one account, so no
-/// page can open an account's window by sharing a link with Pitboard. What it shows, which
-/// account is chosen first and when Open answers are the model's, in
-/// `AccountWindowsShown.picker`.
+/// page can open an account's window by sharing a link with Pitboard.
 struct AccountPicker: View {
-    /// The scene's id, named once so the scene and the code that opens it cannot drift apart.
     static let id = "open-link"
 
     let windows: AccountWindows
-    /// The account somebody chose in the list, until another link arrives.
     @State private var chosen: UUID?
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
@@ -46,8 +42,7 @@ struct AccountPicker: View {
             if now == nil, before != nil {
                 dismissWindow()
             } else if now != nil {
-                // A link from another app: the picker comes to the front over it, with the
-                // choice made afresh for the new link.
+                // The link came from another app, which is in front.
                 chosen = nil
                 windows.presence.comeForward()
             }
@@ -134,13 +129,10 @@ struct AccountPicker: View {
         }
     }
 
-    /// The picker closed on the link waiting without a choice.
     private func dismiss() {
         if let arrival = picker?.arrival { windows.model.send(.dismissLink(arrival: arrival)) }
     }
 
-    /// Opens the link `picker` shows as the account whose window keeps `store`: the model
-    /// makes the link that window's page, and its window opens.
     private func openLink(_ picker: LinkPicker, as store: UUID) {
         guard case .choose(_, _, _, let accounts, _, _) = picker.shown,
             accounts.contains(where: { $0.id == store })
@@ -151,7 +143,6 @@ struct AccountPicker: View {
     }
 }
 
-/// The link waiting, on one line without its scheme, the whole of it in its help.
 private struct LinkLine: View {
     let text: String
     let url: String
@@ -168,8 +159,6 @@ private struct LinkLine: View {
     }
 }
 
-/// An account the link can open as: its label, and its email and whether its window is
-/// open, where the link replaces what the window shows.
 private struct AccountChoice: View {
     let account: PickerAccount
 

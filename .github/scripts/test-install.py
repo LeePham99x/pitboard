@@ -1069,6 +1069,13 @@ class FillTemplate(unittest.TestCase):
         app = (self.dir / "pitboard-app.rb").read_text()
         self.assertIn(f'sha256 "{self.hashes[f"Pitboard-v{VERSION}-macos.zip"]}"', app)
 
+    def test_the_command_line_cask_sends_an_old_install_to_a_docs_page_that_exists(self):
+        caveats = CASKS[0].read_text().split("caveats <<~EOS\n", 1)[1].split("  EOS\n", 1)[0]
+        self.assertNotIn("--formula", caveats)
+        pages = re.findall(r"https://docs\.usepitboard\.com/(\S+)", caveats)
+        self.assertEqual(pages, ["install/upgrade-from-0-3-0"])
+        self.assertTrue((REPO / "docs" / f"{pages[0]}.mdx").is_file())
+
     def test_the_install_script_fills_and_parses(self):
         out = self.dir / "install.sh"
         sums = self.write_sums(

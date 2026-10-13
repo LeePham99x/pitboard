@@ -1,13 +1,11 @@
 import XCTest
 
-/// The window's other panes, and the settings.
 final class PanesAndSettingsTests: XCTestCase {
     override func setUp() {
         continueAfterFailure = false
     }
 
-    /// Activity lists what Pitboard changed, newest first. The fixture's two switches are
-    /// newer than both its enrolments, so every switch is listed above every enrolment.
+    /// Newest first: the fixture's two switches are newer than both its enrolments.
     @MainActor
     func testActivityListsChanges() {
         let app = XCUIApplication.launched(.oneTool)
@@ -20,8 +18,8 @@ final class PanesAndSettingsTests: XCTestCase {
         XCTAssertLessThan(switched.frame.minY, enrolled.frame.minY, "newest first")
     }
 
-    /// This Mac shows every check and says what is worth looking at: in this fixture, the
-    /// parked login of personal, which lapses soon.
+    /// The one thing worth looking at in this fixture is personal's parked login, which
+    /// lapses soon.
     @MainActor
     func testThisMacShowsTheChecks() {
         let app = XCUIApplication.launched(.oneTool)
@@ -31,7 +29,6 @@ final class PanesAndSettingsTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["One thing is worth looking at."].exists)
     }
 
-    /// Daily renewal turns on, says when it runs, and Renew Now says what it did.
     @MainActor
     func testDailyRenewal() {
         let app = XCUIApplication.launched(.oneTool)
@@ -59,11 +56,8 @@ final class PanesAndSettingsTests: XCTestCase {
         XCTAssertEqual(toggle.value as? Int, 0)
     }
 
-    /// Switching Claude Code before an account runs out is off at first, and the share it
-    /// switches at cannot be changed while it is. Turned on, it says the share, 95%, which
-    /// its stepper raises a point, and under them what the core's look came to; turned off
-    /// again, it says nothing there. The model answers a change after the click, so each is
-    /// waited for on the stepper, which follows the switch.
+    /// The model answers a change after the click, so each is waited for on the stepper,
+    /// which follows the switch.
     @MainActor
     func testSwitchingBeforeAnAccountRunsOut() {
         let app = XCUIApplication.launched(.oneTool)
@@ -97,9 +91,8 @@ final class PanesAndSettingsTests: XCTestCase {
         XCTAssertTrue(standing.waitForNonExistence(timeout: 5))
     }
 
-    /// An account turned on for warm-ups whose five-hour period was not running is warmed
-    /// up as the app starts: its row says when it warms up again, the settings show it on
-    /// with the hours, and another account turned on there is on in its own menu too.
+    /// The fixture's personal is on for warm-ups with no five-hour period running, so it
+    /// warms up as the app starts.
     @MainActor
     func testWarmingUpAccounts() {
         let app = XCUIApplication.launched(.warmUp)
@@ -134,8 +127,8 @@ final class PanesAndSettingsTests: XCTestCase {
         return app.descendants(matching: .any).matching(named).firstMatch
     }
 
-    /// With no Pitboard found, the command line tab offers to link the one inside the app,
-    /// and then shows where the link is.
+    /// The fixture has no Pitboard of its own, so the tab offers to link the one inside the
+    /// app.
     @MainActor
     func testInstallingTheCommandLine() {
         let app = XCUIApplication.launched(.oneTool)

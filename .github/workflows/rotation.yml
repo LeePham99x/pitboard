@@ -15,11 +15,11 @@ name: Update key rehearsal
 # and refuses by leaving the signature out and exiting 0.
 #
 # It cannot touch anything real, by construction rather than by care. This file names no
-# repository secret, so no job it starts is given the update key or the certificate; the
-# keys it uses are made on the runner and go when the runner does; its feed is on the
-# loopback address, which no release can publish to; and its bundles carry an identifier
-# under a reserved domain. A step checks the secrets, the feed and the identifier before a
-# single byte is signed.
+# repository secret, so no job it starts is given the update key or the certificate, and
+# CI's workflows job fails a pull request that adds one; the keys it uses are made on the
+# runner and go when the runner does; its feed is on the loopback address, which no release
+# can publish to; and its bundles carry an identifier under a reserved domain. A step checks
+# the feed and the identifier before a single byte is signed.
 
 on:
   schedule:
@@ -39,15 +39,14 @@ env:
 jobs:
   ladder:
     runs-on: macos-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: rustup toolchain install
-      - run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: ./.github/actions/rust
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          targets: aarch64-apple-darwin x86_64-apple-darwin
 
       # Two keys that exist for the next twenty minutes. sign_update reads a private key as
       # the base64 of a 32 byte seed, which is what generate_keys -x exports, so these need
@@ -118,11 +117,6 @@ jobs:
               *) echo "$rung's feed is $feed, which is not on this runner" >&2; exit 1 ;;
             esac
           done
-          # The other half of it: a job that never asks for the real key cannot be handed it.
-          if grep -q 'secrets\.' .github/workflows/rotation.yml; then
-            echo "this workflow asks for a repository secret, so it can be given one" >&2
-            exit 1
-          fi
 
       # Rung one is the release that reaches a copy on the current key and leaves it
       # trusting the next one. generate_appcast refuses to sign a bundle whose SUPublicEDKey

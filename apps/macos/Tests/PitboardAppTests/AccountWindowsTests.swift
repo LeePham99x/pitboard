@@ -8,7 +8,6 @@ import WebKit
 
 // MARK: - The app's presence
 
-/// What a presence applied and did, in order.
 @MainActor
 private final class PresenceLog {
     var said: [String] = []
@@ -24,8 +23,6 @@ private final class PresenceLog {
     }
 }
 
-/// Pitboard is a regular app while any of its windows is open, and a menu bar app while
-/// none is.
 @MainActor
 @Test func pitboardIsRegularWhileAnyWindowIsOpen() async {
     let log = PresenceLog()
@@ -75,7 +72,6 @@ private final class PresenceLog {
     #expect(log.said == ["regular", "activate"])
 }
 
-/// Lets the presence's pending checks run.
 @MainActor
 private func settled() async {
     for _ in 0..<10 { await Task.yield() }
@@ -93,11 +89,8 @@ private func settled() async {
 // MARK: - Windows and their sessions
 
 // Which windows each account has, which open and close, what each shows first and which
-// stores go are the model's, tested in pitboard-ffi's `model/windowing.rs`. These are what
-// the app does with what it says, and what it tells it.
+// stores go are the model's, tested in pitboard-ffi's `model/windowing.rs`.
 
-/// The accounts of the fixture both tools are in, as a read lists them: Claude Code's work
-/// in use, personal, and old, Codex's main in use and spare.
 private let twoTools = [
     account("work", email: "dana@work.example", signedIn: true),
     account("personal", email: "dana@home.example"),
@@ -106,9 +99,8 @@ private let twoTools = [
     account("spare", of: "codex", email: "dana@home.example"),
 ]
 
-/// The account windows of `accounts`, read once through the app's model, on stand-in pages
-/// and with stores a test can see. The model is a stand-in that reads nothing and keeps what
-/// it is sent: a test hands the app's model each snapshot, as the Rust model would.
+/// The model is a stand-in that reads nothing and keeps what it is sent: a test hands the
+/// app's model each snapshot, as the Rust model would.
 @MainActor
 private func windows(
     _ accounts: [Account] = twoTools, stores: StandInStores = StandInStores()
@@ -131,8 +123,6 @@ private func account(_ label: String, in windows: AccountWindows) -> WindowAccou
     windows.accounts.first { $0.label == label }!
 }
 
-/// The window the model has open for `account`, loading `url` as its page `serial`, and
-/// saying `note` as it opens.
 private func opened(
     _ account: WindowAccount, _ url: String, serial: UInt64 = 1, note: WindowNoteKind? = nil
 ) -> OpenWindow {
@@ -143,14 +133,11 @@ private func opened(
             title: "Clear", intent: .clearDownloads(store: account.store), enabled: false))
 }
 
-/// Lets what the janitor started run.
 @MainActor
 private func settle(until done: () -> Bool) async {
     for _ in 0..<500 where !done() { await Task.yield() }
 }
 
-/// The windows are the model's accounts, each found by its store whichever case it is
-/// written in, as the window's scene keeps it.
 @MainActor
 @Test func theWindowsAreTheModelsAccounts() {
     let (windows, _) = windows()
@@ -168,8 +155,6 @@ private func settle(until done: () -> Bool) async {
         "a window's store read back from its scene, as UUID writes one")
 }
 
-/// What a window does is told to the model, which decides the rest: that it opened, the page
-/// it is on, and that it closed.
 @MainActor
 @Test func whatAWindowDoesIsToldToTheModel() {
     let (windows, standIn) = windows()
@@ -188,13 +173,6 @@ private func settle(until done: () -> Bool) async {
         ])
 }
 
-/// A window starts at the page the model says, says what the model says as it opens, and
-/// loads each page the model asks of it once, where Back returns to what it showed: a window
-/// per account.
-///
-/// AccountWindowsTests.swift's aWindowStartsAtItsLinkItsLastPageOrItsHome,
-/// aLinkForAnOpenWindowLoadsInIt and onlyAWindowsFirstOpeningSaysHowToSignIn, as they were at
-/// a3e5ce0, whose rules are the model's now.
 @MainActor
 @Test func aWindowLoadsWhatTheModelSaysOnce() {
     let (windows, _) = windows()
@@ -221,12 +199,6 @@ private func settle(until done: () -> Bool) async {
     windows.closed(main.id)
 }
 
-/// A window the model closes, once a read no longer lists its account, stops, and each store
-/// it asks for is deleted once, however many snapshots ask for it, and the model told how it
-/// went: deleted, or held where WebKit still held it after every try.
-///
-/// AccountWindowsTests.swift's forgettingAnAccountClosesItsWindowAndDeletesItsStore, as it
-/// was at a3e5ce0, whose decisions are the model's now.
 @MainActor
 @Test func whatTheModelClosesAndDeletesIsClosedAndDeletedOnce() async {
     let stores = StandInStores()
@@ -310,7 +282,7 @@ private func settle(until done: () -> Bool) async {
         role: .window, configuration: WKWebViewConfiguration(), now: { now })
     page.contentEnded()
     #expect(page.failure == nil, "loaded again once")
-    page.loadCommitted()
+    page.loadProgressed()
     now += 5
     page.contentEnded()
     #expect(page.failure == "The page stopped working.")

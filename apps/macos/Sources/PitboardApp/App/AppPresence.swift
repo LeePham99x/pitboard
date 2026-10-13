@@ -10,7 +10,7 @@ import SwiftUI
 /// root view, which appears when its window opens and disappears when it closes: measured on
 /// macOS 27, not when it is minimised or becomes a background tab.
 @MainActor
-public final class AppPresence {
+final class AppPresence {
     private var open: Set<UUID> = []
     private let apply: @MainActor (NSApplication.ActivationPolicy) -> Void
     private let bringForward: @MainActor () -> Void
@@ -34,7 +34,6 @@ public final class AppPresence {
         self.settle = settle
     }
 
-    /// The app itself.
     static func live() -> AppPresence {
         AppPresence(
             apply: { NSApp.setActivationPolicy($0) },
@@ -49,11 +48,10 @@ public final class AppPresence {
             settle: { try? await Task.sleep(for: .milliseconds(500)) })
     }
 
-    /// Whether any of the app's windows is open.
     var hasWindows: Bool { !open.isEmpty }
 
-    /// Brings Pitboard to the front to show a window it is about to open, as a regular app
-    /// first, so it comes forward with its Dock icon and its menus.
+    /// For a window about to open. Regular first, so Pitboard comes forward with its Dock
+    /// icon and its menus.
     func activate() {
         apply(.regular)
         bringForward()

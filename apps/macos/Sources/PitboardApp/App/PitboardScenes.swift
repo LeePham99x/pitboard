@@ -1,9 +1,6 @@
 import PitboardKit
 import SwiftUI
 
-/// Every scene the app has, for the app target's `App` to return: the menu bar item, the
-/// main window, each account's window, the account picker, and the settings.
-///
 /// The menu bar item comes first, which makes it the scene the app starts with: an app with
 /// no Dock icon opens no window at launch.
 public struct PitboardScenes: Scene {
@@ -26,18 +23,19 @@ public struct PitboardScenes: Scene {
     }
 
     public var body: some Scene {
+        scenes.defaultAppStorage(defaults)
+    }
+
+    @SceneBuilder private var scenes: some Scene {
         MenuBarExtra {
             MenuBarContent(model: model, windows: windows, updates: updates)
-                .defaultAppStorage(defaults)
         } label: {
             MenuBarLabel(model: model, windows: windows, requests: requests)
-                .defaultAppStorage(defaults)
         }
         .menuBarExtraStyle(.menu)
 
         Window("Pitboard", id: MainWindow.id) {
             MainWindow(model: model, windows: windows, requests: requests)
-                .defaultAppStorage(defaults)
         }
         .defaultSize(width: 760, height: 560)
         .commands {
@@ -54,14 +52,13 @@ public struct PitboardScenes: Scene {
             }
         }
 
-        AccountWindowScene(windows: windows, defaults: defaults)
+        AccountWindowScene(windows: windows)
 
         // A link the Share extension hands over, as a Pitboard link, comes here whatever
         // else is open, and only here: no other scene makes a window for one.
         Window("Open Link", id: AccountPicker.id) {
             AccountPicker(windows: windows)
                 .onOpenURL { windows.receive($0) }
-                .defaultAppStorage(defaults)
         }
         .handlesExternalEvents(matching: ["*"])
         .windowResizability(.contentSize)
@@ -73,7 +70,6 @@ public struct PitboardScenes: Scene {
                 model: model, openAtLogin: openAtLogin, commandLineLink: commandLineLink,
                 presence: windows.presence, updates: updates
             )
-            .defaultAppStorage(defaults)
         }
         // A taller pane grows the window downward, so it opens at the top of the screen,
         // where the tallest pane still clears the Dock.

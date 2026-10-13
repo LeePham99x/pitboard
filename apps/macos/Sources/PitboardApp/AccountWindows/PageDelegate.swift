@@ -3,10 +3,6 @@ import Foundation
 import PitboardKit
 import WebKit
 
-/// What one page of an account window asks WebKit's delegates, answered by the core's rules
-/// for the window: where each navigation goes, what is downloaded, which windows open, and
-/// the dialogs, file choosers and permissions a page asks for.
-///
 /// The same delegate serves an account window's own page and a sign-in window's, by the
 /// page's role, so a sign-in window says and refuses what the account window does.
 @MainActor
@@ -14,7 +10,6 @@ final class PageDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     private weak var session: WebSession?
     private weak var page: Page?
 
-    /// Makes this the delegate of `page`, a page of `session`'s window.
     func attach(to session: WebSession, page: Page) {
         self.session = session
         self.page = page
@@ -92,7 +87,6 @@ final class PageDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         session.download(download, ask: ask)
     }
 
-    /// What WebKit says about `response`, as the core's response rule reads it.
     private func facts(_ response: WKNavigationResponse) -> ResponseFacts {
         ResponseFacts(
             url: response.response.url?.absoluteString, mainFrame: response.isForMainFrame,
@@ -103,11 +97,11 @@ final class PageDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!)
     {
-        page?.loadStarted()
+        page?.loadProgressed()
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
-        page?.loadCommitted()
+        page?.loadProgressed()
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {

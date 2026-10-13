@@ -1,8 +1,6 @@
 import PitboardKit
 import SwiftUI
 
-/// One notice in the window: what it is, everything there is to say about it, and what can
-/// be done about it, each in the model's words.
 struct NoticeRow: View {
     let notice: PanelNotice
     let perform: (NoticeAction) -> Void

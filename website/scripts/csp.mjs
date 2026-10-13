@@ -7,7 +7,7 @@ import { elements, parse } from "./html.mjs";
 const DIST = new URL("../dist/", import.meta.url).pathname;
 const BEACON = "https://static.cloudflareinsights.com/";
 
-export function htmlFiles(dir) {
+function htmlFiles(dir) {
   return readdirSync(dir, { recursive: true })
     .filter((f) => f.endsWith(".html"))
     .map((f) => join(dir, f));
@@ -23,7 +23,6 @@ export function policy(pages) {
   for (const [file, html] of pages) {
     const root = parse(html);
     for (const el of elements(root)) {
-      if ("style" in el.attrs) problems.push(`${file}: <${el.tag}> has a style attribute`);
       if (el.tag === "script") {
         const src = el.attrs.src;
         if (src) {

@@ -27,8 +27,8 @@ const CONTRACT: u32 = 1;
 const ERROR: Style = AnsiColor::Red.on_default().bold();
 const WARNING: Style = AnsiColor::Yellow.on_default().bold();
 
-/// Park and restore your own logins of Claude Code, Codex and, on macOS, Claude Desktop, and see
-/// what each Claude Code and Codex account has left.
+/// Switch Claude Code, Codex and Claude Desktop between your own accounts without signing
+/// out, and see what each Claude Code and Codex account has left.
 #[derive(Parser)]
 #[command(name = "pitboard", version)]
 struct Cli {
@@ -1717,8 +1717,8 @@ mod tests {
         }
         assert!(help(Some("use")).contains("`desktop/work`"));
         assert!(help(None).contains(
-            "Park and restore your own logins of Claude Code, Codex and, on macOS, Claude \
-                 Desktop, and see what each Claude Code and Codex account has left"
+            "Switch Claude Code, Codex and Claude Desktop between your own accounts without \
+                 signing out, and see what each Claude Code and Codex account has left"
         ));
         assert!(
             help(Some("status")).contains("how much each Claude Code and Codex account has left")

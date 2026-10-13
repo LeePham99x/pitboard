@@ -11,7 +11,6 @@ import SwiftUI
 struct NameSheet: View {
     let model: AppModel
     let sheet: Sheet
-    /// What saving `name` asks of the model.
     let saving: (String) -> Intent
     @State private var name: String
     @FocusState private var focused: Bool

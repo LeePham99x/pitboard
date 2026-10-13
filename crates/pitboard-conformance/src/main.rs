@@ -1,43 +1,71 @@
+//! A shallow drift alarm: it reads the literals each fact in a tool's register is readable
+//! by out of a build of that tool and says which are still there. A literal being present
+//! does not prove the behaviour around it is unchanged; one disappearing proves something
+//! moved. A test against a running tool would need a real sign-in, so it cannot run
+//! unattended.
+//!
+//! A tool's builds for different systems carry different code, so the system is read from
+//! the binary's own header and a fact is read only from the builds its register's table
+//! reads it on. Read from the Linux build alone, Claude Code's keychain facts looked gone on
+//! every build from 2.1.278 on, while the one real change, in 2.1.281, showed only in the
+//! macOS build. Claude Desktop's facts are read from its app's archive, `app.asar`, which
+//! its register's table ties to macOS.
+
+use clap::Parser;
+use clap::builder::{PossibleValuesParser, TypedValueParser};
 use pitboard_core::assumptions::{self, Assumption, OnSystem, Platform, Reading};
 use pitboard_core::provider::ProviderId;
 use std::fmt::Write as _;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let (path, provider, as_json) = match parse(&args) {
-        Ok(parsed) => parsed,
-        Err(problem) => {
-            eprintln!("{problem}");
-            eprintln!(
-                "usage: pitboard-conformance <path to a build> [--provider {}] [--json]",
-                known().join("|")
-            );
-            return ExitCode::from(2);
-        }
-    };
+/// Check Pitboard's facts about Claude Code, Codex or Claude Desktop against a build of that
+/// tool.
+///
+/// Exits 1 when a fact has moved, and 2 when the arguments or the build cannot be read.
+#[derive(Parser, Debug, PartialEq)]
+#[command(name = "pitboard-conformance")]
+struct Args {
+    /// The tool's native binary, not its npm wrapper; for Claude Desktop, its app's
+    /// `Contents/Resources/app.asar`.
+    build: PathBuf,
+    /// The tool whose register the build is read against.
+    #[arg(long, default_value = ProviderId::Claude.code(), value_parser = provider())]
+    provider: ProviderId,
+    /// Print the report as JSON.
+    #[arg(long)]
+    json: bool,
+}
 
-    let bytes = match std::fs::read(&path) {
+fn provider() -> impl TypedValueParser<Value = ProviderId> {
+    PossibleValuesParser::new(ProviderId::ALL.iter().map(|p| p.code()))
+        .map(|code| ProviderId::parse(&code).expect("a code ProviderId::ALL gives"))
+}
+
+fn main() -> ExitCode {
+    let args = Args::parse();
+    let path = &args.build;
+    let bytes = match std::fs::read(path) {
         Ok(b) => b,
         Err(e) => {
-            eprintln!("cannot read {path}: {e}");
+            eprintln!("cannot read {}: {e}", path.display());
             return ExitCode::from(2);
         }
     };
-    let platform = match platform_of(&bytes, provider) {
+    let platform = match platform_of(&bytes, args.provider) {
         Ok(platform) => platform,
         Err(refused) => {
-            eprintln!("{}", refused.said(&path, provider));
+            eprintln!("{}", refused.said(path, args.provider));
             return ExitCode::from(2);
         }
     };
     let strings = assumptions::printable_runs(&bytes, 6);
-    let sorted = Sorted::of(provider, platform, &strings);
+    let sorted = Sorted::of(args.provider, platform, &strings);
 
-    if as_json {
-        println!("{}", json_report(&path, provider, platform, &sorted));
+    if args.json {
+        println!("{}", json_report(path, args.provider, platform, &sorted));
     } else {
-        print!("{}", text_report(&path, provider, platform, &sorted));
+        print!("{}", text_report(path, args.provider, platform, &sorted));
     }
 
     if sorted.moved().is_empty() {
@@ -54,9 +82,7 @@ fn main() -> ExitCode {
 /// its literals being absent here says nothing about it. What the register says of it
 /// instead is kept, so nothing is skipped without a reason.
 struct Sorted {
-    /// The facts read on this system, with what the build showed of each.
     readings: Vec<(&'static Assumption, Reading)>,
-    /// The facts not read on this system, with why.
     not_read: Vec<(&'static Assumption, &'static str)>,
     /// The facts whose reading on this system waits on the Windows work, with the pull
     /// requests that read them and what those read.
@@ -96,15 +122,14 @@ impl Sorted {
     }
 }
 
-/// The report `--json` prints.
 fn json_report(
-    path: &str,
+    path: &Path,
     provider: ProviderId,
     platform: Platform,
     sorted: &Sorted,
 ) -> serde_json::Value {
     serde_json::json!({
-        "build": path,
+        "build": path.display().to_string(),
         "platform": platform.code(),
         "verified_against": assumptions::verified_against(provider, platform),
         "assumptions": sorted.readings.iter().map(|(a, r)| serde_json::json!({
@@ -132,13 +157,13 @@ fn json_report(
     })
 }
 
-/// The report a person reads. Writing to a `String` cannot fail, so what `writeln!`
-/// returns is dropped.
-fn text_report(path: &str, provider: ProviderId, platform: Platform, sorted: &Sorted) -> String {
+// Writing to a String cannot fail, so what writeln! returns is dropped.
+fn text_report(path: &Path, provider: ProviderId, platform: Platform, sorted: &Sorted) -> String {
     let mut out = String::new();
     let _ = writeln!(
         out,
-        "{path}\na {} build; Pitboard's facts about {} were read from {}\n",
+        "{}\na {} build; Pitboard's facts about {} were read from {}\n",
+        path.display(),
         platform.code(),
         provider.code(),
         assumptions::verified_against(provider, platform)
@@ -237,20 +262,23 @@ enum Refused {
 }
 
 impl Refused {
-    fn said(self, path: &str, provider: ProviderId) -> String {
+    fn said(self, path: &Path, provider: ProviderId) -> String {
         match self {
             Refused::Archive => format!(
-                "{path} is an Electron app's archive, which {}'s register reads on no system",
+                "{} is an Electron app's archive, which {}'s register reads on no system",
+                path.display(),
                 provider.name()
             ),
             Refused::Program => format!(
-                "{path} is a program, and {}'s register is read from its app's archive, \
+                "{} is a program, and {}'s register is read from its app's archive, \
                  `Contents/Resources/app.asar`",
+                path.display(),
                 provider.name()
             ),
             Refused::Unknown => format!(
-                "{path} is not an ELF, a Mach-O, an x64 or ARM64 PE binary or an Electron app's \
-                 archive, so its system is unknown"
+                "{} is not an ELF, a Mach-O, an x64 or ARM64 PE binary or an Electron app's \
+                 archive, so its system is unknown",
+                path.display()
             ),
         }
     }
@@ -274,40 +302,10 @@ fn windows_machine(bytes: &[u8]) -> Option<Platform> {
     PE_MACHINES.contains(&machine).then_some(Platform::Windows)
 }
 
-/// Every tool with a register, as `--provider` takes it.
-fn known() -> Vec<&'static str> {
-    ProviderId::ALL.iter().map(|p| p.code()).collect()
-}
-
-/// The build to read, the tool whose register to read it against, and whether to answer in
-/// JSON. Flags go anywhere; the one argument that is not a flag or a flag's value is the
-/// build.
-fn parse(args: &[String]) -> Result<(String, ProviderId, bool), String> {
-    let mut path = None;
-    // what every run meant before there was a second tool
-    let mut provider = ProviderId::Claude;
-    let mut as_json = false;
-    let mut rest = args.iter();
-    while let Some(arg) = rest.next() {
-        match arg.as_str() {
-            "--json" => as_json = true,
-            "--provider" => {
-                let named = rest.next().ok_or("--provider needs a tool")?;
-                provider = ProviderId::parse(named)
-                    .ok_or_else(|| format!("--provider takes one of: {}", known().join(", ")))?;
-            }
-            flag if flag.starts_with("--") => return Err(format!("unknown flag {flag}")),
-            build if path.is_none() => path = Some(build.to_string()),
-            extra => return Err(format!("one build at a time, not also {extra}")),
-        }
-    }
-    let path = path.ok_or("no build to read")?;
-    Ok((path, provider, as_json))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::CommandFactory;
 
     /// The system comes from the binary itself, so a build cannot be checked against the
     /// wrong list of facts. Headers as the 2.1.284 packages have them.
@@ -439,11 +437,11 @@ mod tests {
             );
         }
         assert_eq!(
-            Refused::Archive.said("app.asar", ProviderId::Codex),
+            Refused::Archive.said(Path::new("app.asar"), ProviderId::Codex),
             "app.asar is an Electron app's archive, which Codex's register reads on no system"
         );
         assert_eq!(
-            Refused::Unknown.said("app.asar", ProviderId::Desktop),
+            Refused::Unknown.said(Path::new("app.asar"), ProviderId::Desktop),
             "app.asar is not an ELF, a Mach-O, an x64 or ARM64 PE binary or an Electron app's \
              archive, so its system is unknown"
         );
@@ -472,7 +470,7 @@ mod tests {
         );
         assert_eq!(
             Refused::Program.said(
-                "/Applications/Claude.app/Contents/MacOS/Claude",
+                Path::new("/Applications/Claude.app/Contents/MacOS/Claude"),
                 ProviderId::Desktop
             ),
             "/Applications/Claude.app/Contents/MacOS/Claude is a program, and Claude Desktop's \
@@ -581,7 +579,7 @@ mod tests {
         for &provider in ProviderId::ALL {
             for platform in SYSTEMS {
                 let sorted = Sorted::of(provider, platform, &every_probe(provider, platform));
-                let text = text_report("/b", provider, platform, &sorted);
+                let text = text_report(Path::new("/b"), provider, platform, &sorted);
                 let system = platform.code();
                 for (a, why) in &sorted.not_read {
                     let line = format!(
@@ -604,7 +602,12 @@ mod tests {
             }
         }
         let sorted = Sorted::of(ProviderId::Claude, Platform::Windows, "");
-        let text = text_report("claude.exe", ProviderId::Claude, Platform::Windows, &sorted);
+        let text = text_report(
+            Path::new("claude.exe"),
+            ProviderId::Claude,
+            Platform::Windows,
+            &sorted,
+        );
         assert!(text.starts_with(
             "claude.exe\na windows build; Pitboard's facts about claude were read from 2.1.289\n\n"
         ));
@@ -624,7 +627,7 @@ mod tests {
         for &provider in ProviderId::ALL {
             for platform in SYSTEMS {
                 let sorted = Sorted::of(provider, platform, "");
-                let report = json_report("/b", provider, platform, &sorted);
+                let report = json_report(Path::new("/b"), provider, platform, &sorted);
                 let listed = |key: &str| -> Vec<&str> {
                     report[key]
                         .as_array()
@@ -649,7 +652,12 @@ mod tests {
             }
         }
         let sorted = Sorted::of(ProviderId::Codex, Platform::Windows, "");
-        let report = json_report("codex.exe", ProviderId::Codex, Platform::Windows, &sorted);
+        let report = json_report(
+            Path::new("codex.exe"),
+            ProviderId::Codex,
+            Platform::Windows,
+            &sorted,
+        );
         assert_eq!(report["verified_against"], "0.160.0");
         assert!(
             report["pending_here"]
@@ -659,8 +667,13 @@ mod tests {
         );
     }
 
-    fn args(text: &str) -> Vec<String> {
-        text.split_whitespace().map(str::to_owned).collect()
+    fn parse(line: &str) -> Result<Args, clap::Error> {
+        Args::try_parse_from(std::iter::once("pitboard-conformance").chain(line.split_whitespace()))
+    }
+
+    #[test]
+    fn the_arguments_are_well_formed() {
+        Args::command().debug_assert();
     }
 
     /// The build was once taken as whatever came two places after `--provider`, so a flag
@@ -673,30 +686,40 @@ mod tests {
             "--json /b --provider codex",
         ] {
             assert_eq!(
-                parse(&args(line)).unwrap(),
-                ("/b".into(), ProviderId::Codex, true),
+                parse(line).unwrap(),
+                Args {
+                    build: "/b".into(),
+                    provider: ProviderId::Codex,
+                    json: true
+                },
                 "{line}"
             );
         }
         assert_eq!(
-            parse(&args("/b")).unwrap(),
-            ("/b".into(), ProviderId::Claude, false)
+            parse("/b").unwrap(),
+            Args {
+                build: "/b".into(),
+                provider: ProviderId::Claude,
+                json: false
+            }
         );
         assert_eq!(
-            parse(&args("--provider desktop /a/app.asar")).unwrap(),
-            ("/a/app.asar".into(), ProviderId::Desktop, false)
+            parse("--provider desktop /a/app.asar").unwrap(),
+            Args {
+                build: "/a/app.asar".into(),
+                provider: ProviderId::Desktop,
+                json: false
+            }
         );
     }
 
     #[test]
-    fn what_cannot_be_read_says_why() {
-        assert!(parse(&args("--provider")).is_err());
-        assert!(
-            parse(&args("/b --provider nothing"))
-                .unwrap_err()
-                .contains("codex")
-        );
-        assert!(parse(&args("--json")).is_err());
-        assert!(parse(&args("/a /b")).is_err());
+    fn what_cannot_be_read_says_why_and_exits_2() {
+        for line in ["--provider", "/b --provider nothing", "--json", "/a /b"] {
+            let refused = parse(line).unwrap_err();
+            assert_eq!(refused.exit_code(), 2, "{line}");
+        }
+        let unknown = parse("/b --provider nothing").unwrap_err().to_string();
+        assert!(unknown.contains("codex"), "{unknown}");
     }
 }

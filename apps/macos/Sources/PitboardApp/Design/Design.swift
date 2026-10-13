@@ -12,15 +12,13 @@ import SwiftUI
 ///   column of percentages does not shift as they change.
 /// - Colour: the system's semantic colours. Colour only ever repeats something a word or a
 ///   shape already says, because not everybody sees it.
-/// - Symbols: SF Symbols, one per meaning, named here.
+/// - Symbols: SF Symbols.
 /// - Space: the platform's default padding and spacing, and the few measures below where a
 ///   component lays itself out.
 enum Design {
-    /// Between a row's lines.
     static let lineSpacing: CGFloat = 2
     /// Between the groups inside a row: its name, its limits, its notes.
     static let rowSpacing: CGFloat = 6
-    /// Between a symbol and the text it leads.
     static let iconSpacing: CGFloat = 8
 }
 
@@ -55,8 +53,7 @@ extension PaceStanding {
     }
 }
 
-/// How pressing a notice is, as a shape and a colour. VoiceOver is told it in the model's
-/// word for it, `PanelNotice.spokenSeverity`.
+/// VoiceOver is told a notice's severity in the model's word, `PanelNotice.spokenSeverity`.
 extension Severity {
     var symbol: String {
         switch self {
@@ -75,9 +72,9 @@ extension Severity {
     }
 }
 
-/// How a check's standing is shown. The shapes differ as well as the colours, and VoiceOver
-/// is told the standing in the model's words, `CheckLine.spokenLevel`: a check that reads
-/// "state: fine" without saying whether it passed is the same as not running it.
+/// The shapes differ as well as the colours, and VoiceOver is told the standing in the
+/// model's words, `CheckLine.spokenLevel`: a check that reads "state: fine" without saying
+/// whether it passed is the same as not running it.
 extension Level {
     var symbol: String {
         switch self {
@@ -99,7 +96,6 @@ extension Level {
 /// The symbols that mean one thing each, wherever they appear.
 enum Symbol {
     static let account = "person.crop.circle"
-    static let accountInUse = "person.crop.circle.fill.badge.checkmark"
     static let accounts = "person.2"
     static let activity = "clock.arrow.circlepath"
     static let machine = "stethoscope"
@@ -107,14 +103,11 @@ enum Symbol {
     static let refresh = "arrow.clockwise"
     static let switchAccount = "arrow.left.arrow.right"
     static let signIn = "person.crop.circle.badge.exclamationmark"
-    static let rename = "pencil"
-    static let forget = "trash"
     static let update = "arrow.down.circle"
     static let terminal = "terminal"
     static let general = "gearshape"
     static let limits = "gauge.open.with.lines.needle.33percent"
     static let renewal = "calendar.badge.clock"
-    /// An account's window on its site.
     static let site = "globe"
     /// Back and forward in a window, which mirror for a language read right to left.
     static let back = "chevron.backward"
@@ -126,7 +119,6 @@ enum Symbol {
 }
 
 extension View {
-    /// Secondary text that wraps rather than truncating: what it says is the point.
     func explanatory() -> some View {
         font(.callout)
             .foregroundStyle(.secondary)

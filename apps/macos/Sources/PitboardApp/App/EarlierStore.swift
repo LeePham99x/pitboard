@@ -11,13 +11,9 @@ import PitboardKit
 /// that stops before the model wrote it hands them over again.
 struct EarlierStore {
     let defaults: UserDefaults
-    /// `app.json` in the Pitboard directory this launch serves.
     let appFile: URL
-    /// `windows.json` in the app's own folder.
     let windowsFile: URL
 
-    /// The store of this launch: the app's own defaults, `app.json` in the Pitboard directory
-    /// `environment` names, as the core reads it, and `windows.json` in `windowsDirectory`.
     init(defaults: UserDefaults, environment: [String: String], windowsDirectory: URL) {
         self.init(
             defaults: defaults,
@@ -32,8 +28,6 @@ struct EarlierStore {
         self.windowsFile = windowsFile
     }
 
-    /// What UserDefaults held, for `AppLaunch.earlierPreferences`: nil once `app.json` is
-    /// there, when the keys are taken out, and nil where none was ever set.
     func handOver() -> EarlierPreferences? {
         guard !forgetOnceKept() else { return nil }
         guard DefaultsKey.Earlier.all.contains(where: { defaults.object(forKey: $0) != nil })
@@ -46,10 +40,6 @@ struct EarlierStore {
                 forKey: DefaultsKey.Earlier.hideSecondAccountNudge))
     }
 
-    /// The account windows' records UserDefaults held, for `WindowsLaunch.earlier`, as the
-    /// app's `StoreRecord` and `PageRecord` wrote them: every Pitboard directory's, by its
-    /// standardised path, each store as `UUID.uuidString` writes it. Nil once `windows.json`
-    /// is there, when the keys are taken out, and nil where neither was ever set.
     func handOverWindows() -> EarlierWindowRecords? {
         guard !forgetWindowsOnceKept() else { return nil }
         let stores =
@@ -61,16 +51,13 @@ struct EarlierStore {
         return EarlierWindowRecords(stores: stores ?? [:], pages: pages ?? [:])
     }
 
-    /// Takes the preferences' keys out of UserDefaults where the model has kept what they
-    /// held in `app.json`, and says whether it had: at launch, and again as the app quits,
-    /// once the model has stopped.
+    /// Whether `app.json` is there, and so the keys are gone.
     @discardableResult
     func forgetOnceKept() -> Bool {
         forget(DefaultsKey.Earlier.all, onceThere: appFile)
     }
 
-    /// Takes the account windows' keys out of UserDefaults where the model has kept what
-    /// they held in `windows.json`, and says whether it had, as `forgetOnceKept` does.
+    /// As `forgetOnceKept`, for `windows.json`.
     @discardableResult
     func forgetWindowsOnceKept() -> Bool {
         forget(DefaultsKey.Earlier.windows, onceThere: windowsFile)

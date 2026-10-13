@@ -5,19 +5,15 @@ import Testing
 
 @testable import PitboardApp
 
-// What the settings do with macOS's own APIs, which the model does not: opening at login,
-// linking the command line with an administrator's password, and fitting the screen. Daily
-// renewal, Renew Now and which `pitboard` a terminal runs are the model's, tested in
+// Daily renewal, Renew Now and which `pitboard` a terminal runs are the model's, tested in
 // `pitboard-ffi`.
 
-/// A login item that answers the way macOS can: a registration may wait for approval or be
-/// refused, and the person may change it in System Settings while the app is running.
+/// Answers the way macOS can: a registration may wait for approval or be refused, and the
+/// person may change it in System Settings while the app is running.
 @MainActor
 private final class ScriptedLoginItem: LoginItem {
     var state: LoginItemState
-    /// Whether a registration waits for the person to allow it in System Settings.
     var needsApproval = false
-    /// What the next register or unregister is refused with, if anything.
     var refusing: Error?
     private(set) var settingsOpened = 0
 
@@ -59,8 +55,7 @@ private final class ScriptedLoginItem: LoginItem {
 }
 
 /// macOS can hold a new login item until the person allows it, and until then the app does
-/// not open at login. That is not a failure: the settings say it is waiting and offer
-/// System Settings, where it is allowed.
+/// not open at login. That is not a failure.
 @MainActor
 @Test func aLoginItemWaitingForApprovalSaysSo() {
     let item = ScriptedLoginItem()
@@ -78,8 +73,6 @@ private final class ScriptedLoginItem: LoginItem {
     #expect(openAtLogin.state == .enabled)
 }
 
-/// A refused change says why beside the switch, and the switch shows what macOS has rather
-/// than what was asked for. The next change that works puts the reason away.
 @MainActor
 @Test func aRefusedLoginItemSaysWhyAndShowsWhatMacOSHas() {
     let item = ScriptedLoginItem()
@@ -105,11 +98,10 @@ private final class ScriptedLoginItem: LoginItem {
 
 // MARK: - Fitting the screen
 
-/// How tall the settings ask to be on `tab`, with `warming` accounts listed for warm-ups.
 @MainActor
 private func settingsHeight(_ tab: SettingsView.Tab, warming: Int = 0) -> CGFloat {
     let defaults = TestDefaults()
-    defaults.set(tab.rawValue, forKey: "settingsTab")
+    defaults.set(tab.rawValue, forKey: DefaultsKey.settingsTab)
     let accounts = (0..<warming).map {
         WarmAccountShown(
             qualified: "claude/\($0)", title: "\($0)", plan: "Max 5x", on: false, standing: nil)
@@ -142,8 +134,6 @@ private func settingsHeight(_ tab: SettingsView.Tab, warming: Int = 0) -> CGFloa
 
 // MARK: - Linking the command line
 
-/// A stand-in app in a temporary directory with a command line inside it, and a `bin` for
-/// the link. Removed by `remove()`.
 private struct StandInApp {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent("pitboard-settings-\(UUID().uuidString)")
@@ -161,7 +151,6 @@ private struct StandInApp {
             [.posixPermissions: 0o755], ofItemAtPath: helper)
     }
 
-    /// This app's command line, linked by running `execute`.
     func tool(_ execute: @escaping CommandLineTool.Runner) -> CommandLineTool {
         CommandLineTool(helper: helper, link: link, execute: execute)
     }
@@ -178,9 +167,8 @@ private struct StandInApp {
     func remove() { try? FileManager.default.removeItem(at: root) }
 }
 
-/// The button says it is linking for as long as macOS's password prompt is up, and once the
-/// link is made the model is asked to look for the `pitboard` a terminal runs again, which
-/// is how the settings come to show this app's own on the `PATH`.
+/// Once the link is made the model is asked to look for the `pitboard` a terminal runs
+/// again, which is how the settings come to show this app's own on the `PATH`.
 @MainActor
 @Test func linkingSaysSoUntilThePasswordPromptIsAnswered() async throws {
     let app = try StandInApp()
@@ -208,10 +196,8 @@ private struct StandInApp {
     #expect(FileManager.default.fileExists(atPath: app.link))
 }
 
-/// Why a link could not be made is said beside the button, in AppleScript's words, and
-/// never as a failure in the window: the model is only asked to look again. A dismissed
-/// password prompt is somebody's answer, so it says nothing and puts away what the last try
-/// said. A copy with nothing to link says so without asking for a password.
+/// Said beside the button, never as a failure in the window: the model is only asked to look
+/// again. A copy with nothing to link says so without asking for a password.
 @MainActor
 @Test func aLinkThatFailedSaysWhyAndADismissedPromptSaysNothing() async throws {
     let app = try StandInApp()

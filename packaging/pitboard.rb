@@ -47,10 +47,11 @@ cask "pitboard" do
 
   url "https://github.com/datlechin/pitboard/releases/download/v#{version}/pitboard-v#{version}-#{arch}-#{os}.tar.gz"
   name "Pitboard"
-  desc "Park and restore your own Claude Code, Codex and Claude Desktop logins"
+  desc "Switch Claude Code, Codex and Claude Desktop between your own accounts"
   homepage "https://usepitboard.com/"
 
-  # The app carries this same command line and links it to the same place.
+  # The app carries this same command line and links it to the same place. Homebrew 7.0.6 has
+  # no conflicts_with formula:, so 0.3.0's formula cannot be named here.
   conflicts_with cask: "pitboard-app"
 
   binary "pitboard-v#{version}-#{arch}-#{os}/pitboard"
@@ -61,11 +62,11 @@ cask "pitboard" do
 
   caveats <<~EOS
     On macOS the menu bar app is the pitboard-app cask, and it includes this command line.
-    To switch to it, or to get back an app the old pitboard cask installed:
+    To switch to it:
       brew uninstall --cask pitboard
-      brew uninstall --formula --force pitboard
       brew install --cask datlechin/tap/pitboard-app
-    The second line removes 0.3.0's formula if it is still there, and does nothing if not.
+    If this replaced an app the old pitboard cask installed, see
+    https://docs.usepitboard.com/install/upgrade-from-0-3-0
 
     To remove Pitboard with the logins it parked, run `pitboard uninstall` before
     `brew uninstall`.

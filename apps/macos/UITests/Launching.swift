@@ -1,6 +1,5 @@
 import XCTest
 
-/// A machine in a known state, as the app's debug build knows it from `PITBOARD_FIXTURE`.
 /// Named as the core's fixtures are, which `fixture_names()` gives and the app's unit tests
 /// hold to this list.
 enum Fixture: String {
@@ -30,21 +29,18 @@ extension XCUIApplication {
         return app
     }
 
-    /// Opens the menu bar item's menu.
     func openMenu() {
         let item = statusItems.firstMatch
         XCTAssertTrue(item.waitForExistence(timeout: 10))
         item.click()
     }
 
-    /// Opens the main window from the menu, as a person does.
     func openWindow() {
         openMenu()
         menuItem("Open Pitboard").click()
         XCTAssertTrue(windows.firstMatch.waitForExistence(timeout: 5))
     }
 
-    /// Opens the settings from the menu.
     func openSettings() {
         openMenu()
         menuItem("Settings…").click()
@@ -60,8 +56,8 @@ extension XCUIApplication {
             .firstMatch
     }
 
-    /// The alert showing over the window. A button is looked for in it rather than in the
-    /// whole app, which has a Touch Bar with a Cancel of its own.
+    /// A button is looked for in the alert rather than in the whole app, which has a Touch
+    /// Bar with a Cancel of its own.
     var alert: XCUIElement {
         sheets["alert"]
     }
@@ -78,15 +74,12 @@ extension XCUIApplication {
         descendants(matching: .any)[identifier]
     }
 
-    /// An account's row in the window, by its label with its tool.
     func accountRow(_ qualified: String) -> XCUIElement {
         descendants(matching: .any)["account.\(qualified)"]
     }
 
-    /// An account's window on its site, by its title. macOS titles it with the account's
-    /// label and the page's title after it, "work – chatgpt.com stand-in", so it is looked
-    /// for among the windows holding an account window's view by a title that is the label or
-    /// starts with it.
+    /// macOS titles an account's window with the account's label, then a dash and the page's
+    /// title, so the title is the label or starts with it.
     func accountWindow(_ title: String) -> XCUIElement {
         windows.containing(.any, identifier: "account-window")
             .matching(
@@ -95,17 +88,14 @@ extension XCUIApplication {
             .firstMatch
     }
 
-    /// The account windows open.
     var accountWindows: XCUIElementQuery {
         windows.containing(.any, identifier: "account-window")
     }
 
-    /// The sign-in window an account's page opened, by its identifier.
     var signInWindow: XCUIElement {
         windows["sign-in"]
     }
 
-    /// The account picker a shared link opens.
     var picker: XCUIElement {
         windows.containing(.any, identifier: "account-picker").firstMatch
     }

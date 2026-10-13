@@ -1,0 +1,33 @@
+name: Rust
+description: >
+  Installs the toolchain rust-toolchain.toml names, with any targets asked for, and restores
+  the Cargo cache main saved.
+
+inputs:
+  targets:
+    description: Targets to add beside the host's, separated by spaces.
+    required: false
+    default: ""
+  cache:
+    description: "'false' leaves the Cargo cache out."
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        TARGETS: ${{ inputs.targets }}
+      run: |
+        rustup toolchain install
+        read -r -a targets <<< "$TARGETS"
+        if [ "${#targets[@]}" -gt 0 ]; then
+          rustup target add "${targets[@]}"
+        fi
+    # Only main saves a cache, and a pull request restores main's: the repository holds
+    # 10 GB of cache, and caches saved by pull requests pushed main's out.
+    - if: inputs.cache == 'true'
+      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      with:
+        save-if: ${{ github.ref == 'refs/heads/main' }}

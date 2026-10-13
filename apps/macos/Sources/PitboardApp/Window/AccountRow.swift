@@ -1,8 +1,6 @@
 import PitboardKit
 import SwiftUI
 
-/// One account in the window: its name and address, whether it is in use, each of its
-/// limits drawn out, and what is worth knowing about it, as the model describes it.
 struct AccountRow: View {
     let item: AccountItem
     let perform: (Intent) -> Void
@@ -62,14 +60,11 @@ struct AccountRow: View {
     }
 
     private var symbol: String {
-        if item.unplaced { return "exclamationmark.triangle" }
+        if item.unplaced { return Symbol.warning }
         if item.needsSignIn { return Symbol.signIn }
         return item.inUse ? "person.crop.circle.fill" : Symbol.account
     }
 
-    /// What is worth knowing beyond the limits: why it cannot be used, why its numbers are
-    /// not new, which limit of the account in use runs out first at its pace, how long a
-    /// parked login stays usable, and where its warm-up stands.
     private var notes: [String] {
         [item.problem, item.staleNote, item.pace, item.parkedNote, item.warmNote]
             .compactMap { $0 }

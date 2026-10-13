@@ -1,6 +1,6 @@
 ---
 title: "Introduction"
-description: "Pitboard switches Claude Code, Codex and Claude Desktop between your own accounts, and shows Claude Code and Codex usage."
+description: "Switch Claude Code, Codex and Claude Desktop between your own accounts without signing out, and see Claude Code and Codex usage."
 ---
 
 Without Pitboard, changing account in Claude Code, OpenAI's Codex CLI or Claude Desktop means signing out and signing in again.
@@ -13,7 +13,7 @@ Pitboard keeps the login of each account you are not using, called a [parked log
 
 [Open Claude Code sessions](/concepts/switching#open-sessions) follow a switch within about 33 seconds, with no restart. Anything that runs Codex keeps the old account until it starts again. Claude Desktop switches only while Claude is closed, and Claude opens signed in to the account switched to. [What happens to open sessions](/guides/switch#what-happens-to-open-sessions) says what each tool does.
 
-Pitboard finishes or undoes an [interrupted switch](/concepts/switching#interrupted-switches) before it makes any other change.
+Pitboard finishes or undoes an [interrupted switch](/concepts/switching#interrupted-switches) before it changes that tool's login again.
 
 Pitboard can also [switch Claude Code by itself](/guides/automatic-switching) before the account in use runs out. It is off until you turn it on.
 
