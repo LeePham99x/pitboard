@@ -59,13 +59,18 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/rust
-      - run: cargo test --locked -- --skip writing_preserves_attributes
+      - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
+        with:
+          tool: nextest@0.9.146
+      - run: cargo nextest run --locked --profile ci
       # The fixtures, each a world on the real core, which only a build with the feature has.
-      - run: cargo test --locked -p pitboard-ffi --features fixture
-      # Asserts a read-latency threshold that concurrent `security` calls can breach, so it
-      # runs alone. It exists only on macOS.
-      - if: runner.os == 'macOS'
-        run: cargo test --locked -p pitboard --test keychain_write_is_harmless writing_preserves_attributes
+      - run: cargo nextest run --locked --profile ci -p pitboard-ffi --features fixture
+      # Both runs write this report, and a step that fails is the last to run.
+      - if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: junit-${{ matrix.os }}
+          path: target/nextest/ci/junit.xml
 
   # The install script under each shell named here, against a stub release and with no network.
   install-script:
@@ -128,6 +133,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/rust
+      - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
+        with:
+          tool: nextest@0.9.146
       # Every test step below lists Credential Manager with the probe this builds, for the
       # leak check.
       - uses: ./.github/actions/windows-builds
@@ -210,6 +218,14 @@ jobs:
         run: >
           ./.github/scripts/test-as-standard-user.ps1 -Cargo '--locked -p pitboard-ffi --features fixture'
           -Probe target/debug/pitboard-probe.exe
+      # Each run writes its report under its target folder, and a step that fails is the last to run.
+      - if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: junit-${{ matrix.os }}
+          path: |
+            target/nextest/ci/junit.xml
+            target/gated/nextest/ci/junit.xml
       # Runs the opened pitboard.exe the workspace's tests built.
       - name: An opened build refuses a change as the elevated job user
         shell: pwsh
