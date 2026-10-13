@@ -128,6 +128,7 @@ targets:
         COMBINE_HIDPI_IMAGES: YES
         SWIFT_EMIT_LOC_STRINGS: YES
         LD_RUNPATH_SEARCH_PATHS: ["$(inherited)", "@executable_path/../Frameworks"]
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
       configs:
         # The debug build's icon lights its row amber, so it is never mistaken for the release
         # in the Dock, in Login Items or beside it in Applications.
@@ -162,6 +163,7 @@ targets:
         ENABLE_HARDENED_RUNTIME: YES
         SKIP_INSTALL: YES
         SWIFT_EMIT_LOC_STRINGS: YES
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
         LD_RUNPATH_SEARCH_PATHS:
           - "$(inherited)"
           - "@executable_path/../Frameworks"
@@ -189,6 +191,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.usepitboard.PitboardUITests
         SWIFT_EMIT_LOC_STRINGS: NO
         TEST_TARGET_NAME: Pitboard
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
     dependencies:
       - target: Pitboard
 

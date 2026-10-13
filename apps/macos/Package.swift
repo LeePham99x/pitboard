@@ -6,6 +6,10 @@ import PackageDescription
 // tests and the Share extension. The extension links PitboardShareBindings and
 // PitboardLinkTarget alone: it is sandboxed, and has no business with the core, its bindings
 // or anything else the app links.
+
+// Not on the generated bindings, whose warnings are UniFFI's.
+let handWritten: [SwiftSetting] = [.treatAllWarnings(as: .error)]
+
 let package = Package(
     name: "Pitboard",
     platforms: [.macOS(.v14)],
@@ -35,14 +39,34 @@ let package = Package(
             dependencies: ["PitboardShareFFI"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
-        .target(name: "PitboardKit", dependencies: ["PitboardBindings"]),
+        .target(
+            name: "PitboardKit",
+            dependencies: ["PitboardBindings"],
+            swiftSettings: handWritten
+        ),
         // Where a Pitboard link goes: the scheme each build declares, and the app a Share
         // extension is inside. Foundation only, so the app and its extension both link it,
         // and a test target may too.
-        .target(name: "PitboardLinkTarget"),
-        .target(name: "PitboardApp", dependencies: ["PitboardKit", "PitboardLinkTarget"]),
-        .testTarget(name: "PitboardKitTests", dependencies: ["PitboardKit"]),
-        .testTarget(name: "PitboardLinkTargetTests", dependencies: ["PitboardLinkTarget"]),
-        .testTarget(name: "PitboardAppTests", dependencies: ["PitboardApp"]),
+        .target(name: "PitboardLinkTarget", swiftSettings: handWritten),
+        .target(
+            name: "PitboardApp",
+            dependencies: ["PitboardKit", "PitboardLinkTarget"],
+            swiftSettings: handWritten
+        ),
+        .testTarget(
+            name: "PitboardKitTests",
+            dependencies: ["PitboardKit"],
+            swiftSettings: handWritten
+        ),
+        .testTarget(
+            name: "PitboardLinkTargetTests",
+            dependencies: ["PitboardLinkTarget"],
+            swiftSettings: handWritten
+        ),
+        .testTarget(
+            name: "PitboardAppTests",
+            dependencies: ["PitboardApp"],
+            swiftSettings: handWritten
+        ),
     ]
 )

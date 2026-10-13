@@ -1,29 +1,20 @@
 ---
 title: "Settings"
-description: "Look up each control in the General, Command Line and Updates tabs of the app's Settings."
+description: "Look up each control in the app's Settings, pane by pane."
 ---
 
-To open Settings, click Pitboard's item in the menu bar, then choose **Settings** (Command-Comma). It opens on the tab you used last.
+To open Settings, click Pitboard's item in the menu bar, then choose **Settings** (Command-Comma). It opens on the pane you used last.
 
 ## General
 
-| Control | Section | Default |
-| --- | --- | --- |
-| **Open Pitboard at login** | No heading | Off |
-| **Menu bar shows** | No heading | **Account and usage** |
-| **Switch Claude Code automatically** | **Before an account runs out** | Off |
-| **Switch when a limit reaches** | **Before an account runs out** | 95%, from 50% to 99% in steps of 1% |
-| **From** | **Warm up limits** | 06:00 |
-| **To** | **Warm up limits** | 22:00 |
-| A switch for each Claude Code account | **Warm up limits** | Off |
-| **Renew parked logins daily** | **While you're away** | Off |
-| **Renew Now** | **While you're away** | A button |
-
-The two switching settings are kept in `app.json`, as [The app](/reference/files#the-app) describes. Both stay dimmed until the app has read that file.
+| Control | Default |
+| --- | --- |
+| **Open Pitboard at login** | Off |
+| **Menu bar shows** | **Account and usage** |
 
 ### Open Pitboard at login
 
-Turned on, it adds Pitboard to macOS's login items. macOS may want your approval first, and Pitboard does not open at login until you give it. The tab then shows **macOS is waiting for you to allow Pitboard in Login Items.** and **Open Login Items Settings**.
+Turned on, it adds Pitboard to macOS's login items. macOS may want your approval first, and Pitboard does not open at login until you give it. The pane then shows **macOS is waiting for you to allow Pitboard in Login Items.** and **Open Login Items Settings**.
 
 If macOS refuses the change, its reason shows under the setting.
 
@@ -36,6 +27,18 @@ If macOS refuses the change, its reason shows under the setting.
 | **Icon only** | The Pitboard mark |
 
 [Menu bar item](/reference/app#menu-bar-item) says which account and which limit the percentage follows.
+
+## Limits
+
+| Control | Section | Default |
+| --- | --- | --- |
+| **Switch Claude Code automatically** | **Before an account runs out** | Off |
+| **Switch when a limit reaches** | **Before an account runs out** | 95%, from 50% to 99% in steps of 1% |
+| **From** | **Warm up limits** | 06:00 |
+| **To** | **Warm up limits** | 22:00 |
+| A switch for each Claude Code account | **Warm up limits** | Off |
+
+The two switching settings are kept in `app.json`, as [The app](/reference/files#the-app) describes. Both stay dimmed until the app has read that file.
 
 ### Switch Claude Code automatically
 
@@ -83,6 +86,13 @@ Each account's row shows where its warm-up stands while it is on. A line under t
 | Why the setting cannot be read, such as **Which accounts Pitboard warms up, at …, cannot be read** | `warm.json` cannot be read. |
 | **Pitboard is not warming up accounts:**, then the reason | Nothing can be warmed up here, for a reason in the second table of [When it holds back](/guides/warm-up#when-it-holds-back). |
 
+## Renewal
+
+| Control | Default |
+| --- | --- |
+| **Renew parked logins daily** | Off |
+| **Renew Now** | A button |
+
 ### Renew parked logins daily
 
 Turned on, it has launchd run `pitboard renew` once a day with the command line inside the app. That run renews due parked logins and nothing else. [Keep parked logins alive](/guides/renewal) says why.
@@ -91,7 +101,7 @@ The setting is on whenever launchd has the job, including one `pitboard schedule
 
 You cannot turn it on in three cases. You can always turn it off.
 
-| Case | The tab shows |
+| Case | The pane shows |
 | --- | --- |
 | macOS runs the app from a temporary copy | Dimmed, with a note that starts **Move Pitboard to your Applications folder first.** |
 | The app has no command line inside, as in a build run from Xcode | Dimmed, with **This copy of Pitboard has no command line inside it to run on a schedule.** |
@@ -114,14 +124,14 @@ Beside the button, **Renew every parked login that is due.** gives way to the re
 
 **Install Command Line Tool** shows only when Pitboard finds no `pitboard` and the app's own command line can run. After macOS asks for an administrator's password, it links `/usr/local/bin/pitboard` to `Pitboard.app/Contents/Helpers/pitboard`. It replaces a link already there.
 
-| Case | The tab shows |
+| Case | The pane shows |
 | --- | --- |
 | macOS runs the app from a temporary copy | No button, and a note that starts **Move Pitboard to your Applications folder first.** |
 | A file, not a link, is at `/usr/local/bin/pitboard` | `/usr/local/bin/pitboard` **is already there and is not a link, so it was kept.** |
 | You cancel the password prompt | Nothing |
 | Any other failure | The reason macOS gives, or **The link could not be made.** |
 
-A note at the foot of the tab points to [`status`](/reference/account-commands#status) for scripts and [`repair`](/reference/recovery-commands#repair).
+A note at the foot of the pane points to [`status`](/reference/account-commands#status) for scripts and [`repair`](/reference/recovery-commands#repair).
 
 ## Updates
 
@@ -132,6 +142,6 @@ A copy from a release download or the `pitboard-app` cask has these controls:
 | **Check for updates automatically** | On | Checks GitHub for a newer version once a day. |
 | **Download and install updates automatically** | Off | Downloads an update in the background and installs it when Pitboard quits. Dimmed while the daily check is off. |
 
-**Check Now** checks at once, in the updater's own window. Beside it, the tab names your version, such as **Pitboard 0.10.0**. Once a daily check finds a newer one, it reads **Pitboard 0.10.1 is ready to install.** and Pitboard's [Menu](/reference/app#menu) offers **Install Pitboard 0.10.1**. [What leaves your machine](/security#what-leaves-your-machine) lists what the check sends.
+**Check Now** checks at once, in the updater's own window. Beside it, the pane names your version, such as **Pitboard 0.10.0**. Once a daily check finds a newer one, it reads **Pitboard 0.10.1 is ready to install.** and Pitboard's [Menu](/reference/app#menu) offers **Install Pitboard 0.10.1**. [What leaves your machine](/security#what-leaves-your-machine) lists what the check sends.
 
-A copy built from source has no update key and cannot update itself. Its **Updates** tab shows only **Version** and a note saying so.
+A copy built from source has no update key and cannot update itself. Its **Updates** pane shows only **Version** and a note saying so.

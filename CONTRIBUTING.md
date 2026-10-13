@@ -56,9 +56,8 @@ To work on the app, you need a Mac with Xcode, and its Swift must be 6.2 or late
    folder, in any spelling or piece, Codex's `cli|` and `secrets|` targets and anything
    under `Codex MCP Credentials`. A test writes only `pitboard-citest-*` names, the parks
    Pitboard names, and its own slot. A Codex test that writes points `CODEX_HOME` at a
-   scratch directory and never writes to `~/.codex`. The one ignored test that reads a real
-   `auth.json` only reads it. Nothing runs `codex login` or `codex logout` against a real
-   home, because both revoke the login stored there.
+   scratch directory and never writes to `~/.codex`. Nothing runs `codex login` or
+   `codex logout` against a real home, because both revoke the login stored there.
 
 4. Measure the tool, do not guess at it. Claude Code's behaviour here is undocumented,
    Codex's moves with its source, and both ship several times a week. A claim about either
@@ -220,6 +219,9 @@ swift test --package-path apps/macos
 They never make the model over this Mac. Most hand the app's model snapshots from a
 stand-in, and one starts a fixture's model to see the bindings carry a snapshot end to end;
 against a library built without fixtures it is skipped, and says so.
+
+A Swift warning fails the build, in the package and in the project, except in the generated
+bindings.
 
 The UI tests start the debug build, each in a fixture. A fixture is a machine in a known
 state, where nothing reaches the keychain, the network or your accounts. Run the UI tests
