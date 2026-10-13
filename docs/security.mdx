@@ -3,7 +3,7 @@ title: "Security and privacy"
 description: "Pitboard keeps parked logins on your machine, sends them only to the service that issued them, and has no telemetry."
 ---
 
-Pitboard moves and stores the OAuth refresh tokens of Claude Code and OpenAI's Codex CLI. Each grants full access to a paid account. [SECURITY.md](https://github.com/datlechin/pitboard/blob/main/SECURITY.md) is the full policy.
+Pitboard moves and stores the OAuth refresh tokens of Claude Code and OpenAI's Codex CLI. Each grants full access to a paid account. [SECURITY.md](https://github.com/datlechin/pitboard/blob/main/SECURITY.md) lists what Pitboard protects against and how to report a vulnerability.
 
 ## Where parked logins are kept
 
@@ -80,43 +80,8 @@ Pitboard hands a login to `security` in hex on standard input, where `ps` cannot
 
 MCP server tokens can push a Claude Code login past that. Every Codex parked login is past it.
 
-Past it, Pitboard passes the login as an argument. Another process running as you could read it while the call lasts. A switch, a `--sign-in` enrolment or `pitboard stow` that does this says so. A renewal does not.
+Past it, Pitboard passes the login as an argument. Another process running as you could read it while the call lasts. A switch, a `--sign-in` enrolment or `pitboard stow` that does this says so. A renewal does not. `pitboard doctor` warns while Claude Code's login is that large.
 
 With `PITBOARD_NO_ARGV=1`, Pitboard refuses such a write. It then parks no Codex account, and leaves a parked login that size unrenewed.
 
 Opened from Finder or at login, the app lacks your shell's `PITBOARD_NO_ARGV`. A renewal schedule installed while it is set keeps it.
-
-## What Pitboard protects against
-
-- Pitboard identifies each login before moving it.
-- The next command that changes something finishes or undoes an interrupted switch: see [Interrupted switches](/concepts/switching#interrupted-switches).
-- No parked login goes untracked: Pitboard records its name before storing it and retries a failed delete.
-- A locked keychain reads as unreadable, never as empty.
-- Pitboard keeps no copy of a login in use.
-- Pitboard refuses a synced folder for its directory: a parked login belongs to one machine.
-- An account window stays on its site and sign-in pages, and sends other pages to your browser.
-- An account window stops Google's sign-in, which in your browser would sign in the browser.
-- WebKit quarantines every download from an account window: see [Downloads](/reference/account-windows#downloads).
-- Every release is attested: see [Verify a download](/install/verify).
-- The install script installs only a tarball that matches the checksum its release wrote into it.
-- The app installs an update signed with its update key.
-- A copy signed with a Developer ID also installs one signed by the same team.
-- The release workflow refuses to change the update key without a declared rotation.
-
-## What Pitboard does not protect against
-
-- Another process running as you, which can read each account window's data as it can a browser's.
-- The sites' own pages, which run in WebKit as they would in a browser.
-- Another user with administrator access to your computer.
-- Anyone who can already read your files.
-- A compromised Claude Code, Codex or library Pitboard uses.
-- A changed install script, which `sh` runs unchecked when it is piped in. Only its attestation shows where it came from: see [Check the install script](/install/verify#check-the-install-script).
-- Signing out in anything that ran Codex before a switch, which revokes the login Pitboard parked: see [What happens to open sessions](/guides/switch#what-happens-to-open-sessions).
-- An account you no longer use, whose parked login Pitboard keeps renewing: see [Accounts you no longer use](/guides/renewal#accounts-you-no-longer-use).
-- A deleted parked login, which stays valid until it expires. Pitboard revokes no login.
-
-CI checks Pitboard's Rust libraries for known advisories, and Sparkle, the app's updater, only for a newer release.
-
-## Report a vulnerability
-
-Use [Pitboard's private report form](https://github.com/datlechin/pitboard/security/advisories/new), not a public issue.
