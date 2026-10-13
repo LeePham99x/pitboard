@@ -164,13 +164,16 @@ CI also runs:
 
 - clippy and the tests on both macOS and Linux, and both again for `pitboard-ffi` with its
   fixtures
-- `cargo check --workspace --all-targets --locked` on Rust 1.91, and again for `pitboard-ffi`
-  with its fixtures, on Linux and on Windows
+- `cargo hack check --rust-version`, which checks the workspace on the `rust-version` in
+  `Cargo.toml`, and again for `pitboard-ffi` with its fixtures, on Linux and on Windows
 - the Windows job, on x64 and ARM64: the release gate proved on a build made as a release is,
   then clippy and the tests [Windows](#windows) lists
-- the app job: `swift format lint --strict`, `./apps/macos/scripts/build-app.sh`, a check that
-  the command line inside the app runs and holds both architectures, then
-  `./apps/macos/scripts/build-xcframework.sh --fixture`, `swift test` and the UI tests
+- the app job, on `macos-26` with Xcode 26.6, the newest Xcode that image has:
+  `swift format lint --strict`, `./apps/macos/scripts/build-app.sh`, a check that the
+  command line inside the app runs and holds both architectures, then
+  `./apps/macos/scripts/build-xcframework.sh --fixture`, `swift test` and the UI tests, each
+  of which fails on its own after two minutes. Xcode 27.1, which development uses, is only on
+  GitHub's preview `xcode-27` image.
 - the C# job: the core's C# bindings generated, compiled and called against the core on
   Linux, as the Windows app will call them, then against the core built with its fixtures,
   whose bindings must be the same and whose model a test starts
@@ -178,13 +181,16 @@ CI also runs:
 - the install script job, on macOS and Linux: `shellcheck` 0.11.0 on Linux, then
   `test-install.py` under every shell the job names for that system, with zsh and BusyBox
   installed on Linux
-- a guard that fails when `.github/workflows/rotation.yml` names a repository secret
+- the workflows job: `actionlint` and `zizmor` on everything under `.github`,
+  PSScriptAnalyzer on the PowerShell in `.github/scripts`, and a guard that fails when
+  `.github/workflows/rotation.yml` names a repository secret
 
 The `all-green` job waits for every other job and fails when any of them failed or was
 cancelled. It says in one place whether a run passed, so a job added to
 `.github/workflows/ci.yml` goes in its `needs`. A leg of a matrix that fails leaves the
 other legs running. A push to a pull request cancels the run it replaces, and each job stops
-at a time limit set from its recent runs.
+at a time limit set from its recent runs. Only a run on `main` saves the Rust cache; a pull
+request restores what `main` saved.
 
 ## The app
 
@@ -426,6 +432,14 @@ only, never a machine of your own: it refuses to run anywhere but a GitHub-hoste
 `runner-facts.ps1` does. One step runs as the job's user on purpose: the opened `pitboard.exe`
 refuses `use` and `renew` there with `elevated`, in the words for an account whose every
 program runs elevated, and writes nothing.
+
+The runner facts are a measurement, not a check, so no pull request runs them.
+`.github/workflows/windows-facts.yml` runs `runner-facts.ps1` on both images and uploads the
+programs a VM session runs. Start it by hand:
+
+```sh
+gh workflow run windows-facts.yml
+```
 
 ## Tool registers
 

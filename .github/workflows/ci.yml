@@ -41,7 +41,11 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install
+      # Only main saves a cache, and a pull request restores main's: the repository holds
+      # 10 GB of cache, and caches saved by pull requests pushed main's out.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo clippy --all-targets --locked
       # The fixtures, which only a build with the feature compiles.
       - run: cargo clippy -p pitboard-ffi --all-targets --locked --features fixture
@@ -59,6 +63,8 @@ jobs:
           persist-credentials: false
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo test --locked -- --skip writing_preserves_attributes
       # The fixtures, each a world on the real core, which only a build with the feature has.
       - run: cargo test --locked -p pitboard-ffi --features fixture
@@ -156,6 +162,8 @@ jobs:
           }
           exit 0
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       # What a release builds: no test-support and no cfg, so the release gate is closed. In a
       # folder of its own, so the lints and tests below keep theirs.
       - env:
@@ -271,40 +279,6 @@ jobs:
             if ($left.Count -ne 0) { throw "$folder holds $($left.Name -join ', ')" }
           }
           exit 0
-      # What the owner's VM session runs: the probe's four programs and the gated
-      # pitboard.exe a 0.x release is built as, which refuses everything. The VM fetches
-      # nothing itself, so the owner copies these in. Uploaded before the runner facts, so a
-      # runner-facts failure still leaves them.
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: vm-session-${{ matrix.triple }}
-          path: |
-            target/debug/pitboard-probe.exe
-            target/debug/pitboard-probe-detached.exe
-            target/debug/pitboard-probe-detached-asmv1.exe
-            target/debug/pitboard-probe-sparse.exe
-            target/gated/debug/pitboard.exe
-          if-no-files-found: error
-          retention-days: 30
-      # The runner facts W12, W13, W16 and W17 are decided from, as the job's user on this
-      # disposable runner: the probe's safe blocks, the machine's policies, an exFAT and a
-      # FAT32 VHD made with diskpart, and a throwaway standard user started with
-      # Start-Process -Credential, with Developer Mode and then the symbolic-link right given
-      # for one run each. The script says what it changes and undoes it, and fails the step
-      # when a probe report is missing or cannot be parsed.
-      - name: Runner facts
-        shell: pwsh
-        env:
-          TRIPLE: ${{ matrix.triple }}
-        run: >
-          ./.github/scripts/runner-facts.ps1 -Probe target/debug/pitboard-probe.exe
-          -Triple $env:TRIPLE -Out (Join-Path $env:RUNNER_TEMP 'runner-facts.json')
-      - if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: runner-facts-${{ matrix.triple }}
-          path: ${{ runner.temp }}/runner-facts.json
-          if-no-files-found: warn
 
   # The floor the manifests promise, on Windows. ring compiles C against the target's own
   # headers, so a Windows check needs a Windows C toolchain: the MSVC this image has, never
@@ -321,26 +295,36 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: |
-          floor=$(sed -n '/^\[workspace.package\]/,/^\[/s/^rust-version = "\(.*\)"/\1/p' Cargo.toml)
-          rustup toolchain install "$floor" --profile minimal
-          echo "FLOOR=$floor" >> "$GITHUB_ENV"
+      - uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
+        with:
+          tool: cargo-hack@0.6.45
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - run: cargo "+$FLOOR" check --workspace --all-targets --locked
-      - run: cargo "+$FLOOR" check -p pitboard-ffi --all-targets --locked --features fixture
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # --rust-version installs the rust-version in Cargo.toml and checks with it; the
+      # workspace behaviour keeps it one cargo check, not one per package.
+      - run: cargo hack check --rust-version --workspace-behavior=cargo --workspace --all-targets --locked
+      - run: cargo hack check --rust-version --workspace-behavior=cargo -p pitboard-ffi --all-targets --locked --features fixture
 
   apple:
-    runs-on: macos-latest
-    # A test waiting on a stand-in sign-in that never answers ignores its own time limit, and
-    # a stuck job otherwise holds a runner for six hours.
+    # The image and the Xcode are named, so a new one is a change made on purpose.
+    runs-on: macos-26
+    # Each UI test has its own allowance below; this stops a job stuck anywhere else.
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The newest Xcode on macos-26. Development uses 27.1, which GitHub has only on its
+      # preview xcode-27 image.
+      - run: |
+          sudo xcode-select --switch /Applications/Xcode_26.6.app
+          xcodebuild -version
       - run: rustup toolchain install
       - run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       # PitboardBindings and PitboardShareBindings are generated, so only what is written by
       # hand is checked.
       - run: >
@@ -371,7 +355,9 @@ jobs:
       # a fixture rather than on this runner's own accounts. A UI test needs Automation Mode,
       # which asks for a password unless the machine allows it without one. GitHub's macOS
       # images are built to allow it and check that they do, and a runner that did not
-      # would hang until the test timed out, so that is said first and plainly.
+      # would hang until the test timed out, so that is said first and plainly. Each test
+      # fails alone after two minutes, five times the slowest one's 22 s in CI, and the rest
+      # still run.
       - id: ui
         run: |
           mode=$(automationmodetool)
@@ -383,6 +369,7 @@ jobs:
           xcodebuild test -project apps/macos/Pitboard.xcodeproj -scheme Pitboard \
             -destination 'platform=macOS' -derivedDataPath apps/macos/build/UITestData \
             -clonedSourcePackagesDirPath apps/macos/build/SourcePackages \
+            -test-timeouts-enabled YES -default-test-execution-time-allowance 120 \
             -resultBundlePath "$RUNNER_TEMP/UITests.xcresult"
       # The result bundle has what the log cannot: a screenshot and the tree of elements at
       # the moment a test failed. Nobody needs it when they all pass.
@@ -392,7 +379,6 @@ jobs:
           name: UITests.xcresult
           path: ${{ runner.temp }}/UITests.xcresult
 
-  # The floor the manifests promise, built the way someone on an older toolchain builds it.
   csharp:
     # The Windows app reaches the core through these bindings. They are generated from the
     # core, compiled and called on every change, so a change C# cannot express, or bindings
@@ -408,6 +394,8 @@ jobs:
           persist-credentials: false
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: apps/windows/global.json
@@ -451,6 +439,7 @@ jobs:
           dotnet test --solution Pitboard.slnx
           -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/release/libpitboard_ffi.so"
 
+  # The floor the manifests promise, built the way someone on an older toolchain builds it.
   msrv:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -458,14 +447,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: |
-          floor=$(sed -n '/^\[workspace.package\]/,/^\[/s/^rust-version = "\(.*\)"/\1/p' Cargo.toml)
-          rustup toolchain install "$floor" --profile minimal
-          echo "FLOOR=$floor" >> "$GITHUB_ENV"
+      - uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
+        with:
+          tool: cargo-hack@0.6.45
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - run: cargo "+$FLOOR" check --workspace --all-targets --locked
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo hack check --rust-version --workspace-behavior=cargo --workspace --all-targets --locked
       # The fixtures, which only a build with the feature compiles.
-      - run: cargo "+$FLOOR" check -p pitboard-ffi --all-targets --locked --features fixture
+      - run: cargo hack check --rust-version --workspace-behavior=cargo -p pitboard-ffi --all-targets --locked --features fixture
 
   semver:
     # What pitboard-core's last version on crates.io promises. A change that breaks it needs
@@ -489,18 +479,41 @@ jobs:
           persist-credentials: false
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
 
-  # The update key rehearsal ships bundles that really do update themselves, so it must
-  # never be able to reach the real key, the real certificate or the real feed. A job that
-  # never asks for a repository secret cannot be handed one, and that is worth knowing on
-  # the pull request that changes it rather than the month after.
-  rehearsal:
+  # The workflows, actions and scripts in .github themselves.
+  workflows:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: |
+      - uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # 1.7.12
+        with:
+          args: -color
+      - uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
+        with:
+          tool: zizmor@1.30.1
+      # Offline, so a run fails only on what the repository holds. Informational findings
+      # suggest rewrites, not risks.
+      - run: zizmor --offline --min-severity low --config .github/zizmor.yml .
+      # The scripts' functions are their own helpers, not published cmdlets, so the naming and
+      # -WhatIf rules are left out. The plain-text password each gives the throwaway user it
+      # makes is random and never leaves the runner.
+      - name: PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Install-PSResource PSScriptAnalyzer -Version 1.25.0 -TrustRepository -Quiet
+          Import-Module PSScriptAnalyzer -RequiredVersion 1.25.0
+          $found = Invoke-ScriptAnalyzer -Path .github/scripts -Recurse -Severity Error, Warning `
+            -ExcludeRule PSUseSingularNouns, PSUseShouldProcessForStateChangingFunctions, PSAvoidUsingConvertToSecureStringWithPlainText
+          $found | Format-Table -AutoSize
+          if ($found) { exit 1 }
+      # The update key rehearsal ships bundles that really do update themselves, so it must
+      # never be able to reach the real key, the real certificate or the real feed. A job that
+      # never asks for a repository secret cannot be handed one, and that is worth knowing on
+      # the pull request that changes it rather than the month after.
+      - name: The update key rehearsal names no repository secret
+        run: |
           if grep -q 'secrets\.' .github/workflows/rotation.yml; then
             echo "the rehearsal asks for a repository secret, so it can be given one" >&2
             exit 1
@@ -523,7 +536,7 @@ jobs:
       - msrv
       - semver
       - deny
-      - rehearsal
+      - workflows
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

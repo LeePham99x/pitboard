@@ -492,7 +492,7 @@ pages load, as a browser would.
   Manager and process-image allowlists, the redactor, the logon and elevation naming, the
   PE reader), so that half is unit tested on every system. One subcommand per measurement
   the VM sessions and the runner facts need; `.github/scripts/runner-facts.ps1` runs the
-  safe ones on both Windows CI legs. Every writing subcommand refuses unless the account
+  safe ones in `windows-facts.yml`. Every writing subcommand refuses unless the account
   carries a throwaway marker, and refuses a scratch path that is relative or keeps a `..`,
   or that reaches a real login folder or file, in any spelling Windows opens or by the
   identity of a folder on the way; every file it is named carries the `pitboard-probe-`
@@ -561,12 +561,16 @@ pages load, as a browser would.
   - `actions/xcodegen` puts the pinned XcodeGen on `PATH` for every job that builds the
     app.
   - `workflows/rotation.yml` rehearses rotating the update key.
+  - `workflows/windows-facts.yml`, started by hand, measures the Windows runners and builds
+    the programs a VM session runs.
   - `actions/apple-keychain` imports the Developer ID certificate for every job that signs.
   - `scripts/` holds the EdDSA key and signature helpers, and the scripts that add Sparkle,
     the command line and the Share extension's library to the app's bill of materials.
     `fill-template.sh` writes a release's version and checksums into a `packaging/`
     template, and `test-install.py` tests it and the install script.
-  - `dependabot.yml` asks for weekly updates of Cargo dependencies and GitHub Actions.
+  - `dependabot.yml` asks for weekly updates of Cargo dependencies, GitHub Actions and the
+    .NET SDK in `apps/windows/global.json`.
+  - `zizmor.yml` configures the audit CI runs on the workflows.
 
 ## Invariants
 
