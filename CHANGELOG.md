@@ -44,6 +44,17 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   after it.
 - While `CLAUDE_CODE_CUSTOM_OAUTH_URL` is set, `pitboard abandon` refuses only where a Claude
   Code switch is interrupted.
+- In `pitboard-core`, `state::Park.refresh_fingerprint` is now `login`, `State.discarded`
+  holds `state::Dropped`, and `State::discard` takes a `state::ParkKind`. `State`, `Park`,
+  `status::Row`, `status::Report`, `service::Failed`, `switch::Reclaimed`,
+  `switch::Adopted`, `Error::LiveCredentialAbsent` and `Error::AlreadyEnrolled` gain fields,
+  and `switch::Outcome` and `provider::Adoption` gain variants. `switch::abandon` and
+  `Pitboard::abandon_recovery` return `switch::GaveUp`, `switch::repair` returns its
+  warnings too, and `Context::program_for` an `Option`. `ProviderId::cli` replaces
+  `program_variable` and `install_places`, and `ProviderId::home_variable`,
+  `ProviderId::login_command`, `switch::sign_in` and `switch::sign_in_watched` are gone.
+  `ProviderId::Desktop` and many other items are added.
+- The app ships without Sparkle's XPC services, which only a sandboxed app uses.
 - `pitboard-core` keeps public only what Pitboard's own front ends use. `autoswitch` and
   `warm` moved under `duty` and `pace` under `usage`, `provider::Owner` replaces `api::Owner`
   and `provider::Identity`, and `ProviderId::Desktop` is added for Claude Desktop.
