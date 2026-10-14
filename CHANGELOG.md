@@ -58,6 +58,14 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - `pitboard-core` keeps public only what Pitboard's own front ends use. `autoswitch` and
   `warm` moved under `duty` and `pace` under `usage`, `provider::Owner` replaces `api::Owner`
   and `provider::Identity`, and `ProviderId::Desktop` is added for Claude Desktop.
+- In `pitboard-core`, `statusline::Shares` holds a `statusline::Share` for each limit, which
+  tells a limit the account does not have from one with no reading.
+
+### Fixed
+
+- The [status line](https://docs.usepitboard.com/guides/status-line) shows a Team seat's
+  five-hour limit alone, where it printed `?` for the weekly limit for all models the seat
+  does not have.
 
 ## [0.13.0] - 2026-10-13
 

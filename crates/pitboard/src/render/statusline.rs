@@ -1,32 +1,40 @@
 //! `pitboard statusline` as the one line Claude Code draws.
 
 use crate::ui::{self, BOLD, DIM, paint};
-use pitboard_core::statusline::{Paces, Shares, StatusLine};
+use pitboard_core::statusline::{Paces, Share, Shares, StatusLine};
 use pitboard_core::usage::pace::Standing;
 use pitboard_core::usage::whole;
 use pitboard_core::words;
 
 /// A limit's share, and where its pace is said, a triangle for it: rising over pace,
-/// falling under, in the colours `pitboard status` says them in.
-fn share(share: Option<f64>, pace: Option<Standing>) -> String {
-    let Some(p) = share else {
-        return paint(DIM, "?");
+/// falling under, in the colours `pitboard status` says them in. `?` where no reading says,
+/// and nothing for a limit the account does not have.
+fn share(share: Share, pace: Option<Standing>) -> Option<String> {
+    let p = match share {
+        Share::Absent => return None,
+        Share::Unread => return Some(paint(DIM, "?")),
+        Share::Used(p) => p,
     };
     let mark = match pace {
         Some(standing @ Standing::Over { .. }) => paint(ui::pace(standing), "▲"),
         Some(standing @ Standing::Under) => paint(ui::pace(standing), "▼"),
         Some(Standing::Even) | None => String::new(),
     };
-    format!("{}{mark}", paint(ui::level(p), format!("{}%", whole(p))))
+    Some(format!(
+        "{}{mark}",
+        paint(ui::level(p), format!("{}%", whole(p)))
+    ))
 }
 
 fn shares(shares: Shares, pace: Paces) -> String {
-    format!(
-        "{}{}{}",
+    [
         share(shares.five_hour, pace.five_hour),
-        paint(DIM, "·"),
-        share(shares.weekly, pace.weekly)
-    )
+        share(shares.weekly, pace.weekly),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(&paint(DIM, "·"))
 }
 
 /// The session's account: `work?` where the line is not sure of it, `?` alone where it cannot
@@ -41,21 +49,27 @@ fn label(line: &StatusLine) -> String {
     }
 }
 
+fn named(label: String, shares: String) -> String {
+    if shares.is_empty() {
+        label
+    } else {
+        format!("{label} {shares}")
+    }
+}
+
 pub(crate) fn human(line: &StatusLine) -> String {
-    let mut parts = vec![format!(
-        "{} {}",
-        label(line),
-        shares(line.session, line.pace)
-    )];
+    let mut parts = vec![named(label(line), shares(line.session, line.pace))];
     for other in &line.others {
         let age = other
             .age
             .map(|seconds| paint(DIM, format!(" ({})", words::span(seconds))))
             .unwrap_or_default();
         parts.push(format!(
-            "{} {}{age}",
-            paint(DIM, &other.label),
-            shares(other.shares, Paces::default())
+            "{}{age}",
+            named(
+                paint(DIM, &other.label),
+                shares(other.shares, Paces::default())
+            )
         ));
     }
     parts.join("  ")
@@ -69,8 +83,8 @@ mod tests {
 
     fn shares(five_hour: f64, weekly: f64) -> Shares {
         Shares {
-            five_hour: Some(five_hour),
-            weekly: Some(weekly),
+            five_hour: Share::Used(five_hour),
+            weekly: Share::Used(weekly),
         }
     }
 
@@ -144,6 +158,43 @@ mod tests {
         };
         assert_eq!(plain(&human(&line(Some("work")))), "work? 3%·31%");
         assert_eq!(plain(&human(&line(None))), "? 3%·31%");
+    }
+
+    /// A limit an account does not have is left out, and `?` stays for one with no reading.
+    #[test]
+    fn a_limit_an_account_does_not_have_is_left_out() {
+        let seat = Shares {
+            five_hour: Share::Used(20.0),
+            weekly: Share::Absent,
+        };
+        let line = StatusLine {
+            current: Some("seat".into()),
+            sure: true,
+            session: seat,
+            pace: Paces {
+                five_hour: Some(Standing::Under),
+                weekly: None,
+            },
+            others: vec![
+                Entry {
+                    label: "other".into(),
+                    shares: Shares {
+                        five_hour: Share::Absent,
+                        weekly: Share::Absent,
+                    },
+                    age: None,
+                },
+                Entry {
+                    label: "unread".into(),
+                    shares: Shares {
+                        five_hour: Share::Used(5.0),
+                        weekly: Share::Unread,
+                    },
+                    age: None,
+                },
+            ],
+        };
+        assert_eq!(plain(&human(&line)), "seat 20%▼  other  unread 5%·?");
     }
 
     /// The account in use marks a limit over pace with a red rising triangle and one under

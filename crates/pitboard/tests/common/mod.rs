@@ -295,6 +295,30 @@ impl Env {
             .create();
     }
 
+    /// Make Anthropic answer as for a Team seat: a five-hour limit at 20% and one model's
+    /// weekly limit, every limit listed, and no weekly limit for all models.
+    pub(crate) fn team_seat_usage(&mut self) {
+        self.usage.remove();
+        self.usage = self
+            .server
+            .mock("GET", "/api/oauth/usage")
+            .with_status(200)
+            .with_body(
+                serde_json::json!({
+                    "five_hour": {"utilization": 20.0, "resets_at": "2099-01-01T10:00:00+00:00"},
+                    "limits": [
+                        {"kind": "session", "group": "session", "percent": 20,
+                         "resets_at": "2099-01-01T10:00:00+00:00", "scope": null},
+                        {"kind": "weekly_scoped", "group": "weekly", "percent": 10,
+                         "resets_at": "2099-01-05T02:00:00+00:00",
+                         "scope": {"model": {"id": null, "display_name": "Fable"}}},
+                    ],
+                })
+                .to_string(),
+            )
+            .create();
+    }
+
     // std's `Command` folds case on Windows: given `PATH` then `Path`, a child had one, `Path`.
     pub(crate) fn command(&self, args: &[&str]) -> Command {
         let mut c = Command::new(env!("CARGO_BIN_EXE_pitboard"));
