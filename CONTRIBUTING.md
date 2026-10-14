@@ -388,16 +388,28 @@ the site must not ship and says what. `npm run preview` serves the build.
 
 Record a change that someone using Pitboard would notice in [CHANGELOG.md](CHANGELOG.md),
 under `## [Unreleased]`. The file follows
-[Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
+[Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/), and
+[Common Changelog](https://common-changelog.org/) where Keep a Changelog sets no rule.
 
 - Put each entry under one of six types, in this order: `### Added`, `### Changed`,
   `### Deprecated`, `### Removed`, `### Fixed`, `### Security`. A security fix goes under
   `### Security`.
-- Write one change per bullet, in one or two sentences: what changed for the person using
-  Pitboard. How it works and what was measured go in the docs and the commit message.
-- Start an entry that breaks a script or a habit with `**Breaking:**`, and say what to do.
+- Write one change per bullet, as one present-tense sentence that says what Pitboard does
+  after the change and reads without its heading. How it works and what was measured go in
+  the docs and the commit message.
+- Start an entry that is not backward compatible with `**Breaking:**`, list it first in its
+  section, and say what to do in a second sentence. A removed or renamed command, flag, exit
+  code, error or warning code, or `--json` key or event is breaking, and so is a newly refused
+  input. A schema that older versions cannot read is not.
+- Before you remove a flag, a code, a `--json` key or a check, list it under `### Deprecated`
+  in an earlier release where you can.
+- A break in `pitboard-core`'s public API is one `**Breaking:**` line under `### Changed`,
+  linking the new version on docs.rs. An addition to it gets no entry.
+- Leave out tests, CI, the release pipeline, the repository's own documents, and refactors or
+  packaging with no visible effect.
 - Make links inside an entry inline and absolute. A release's notes are cut from its
-  section, without the link definitions at the end of the file.
+  section, without the link definitions at the end of the file, and the site's build refuses
+  reference-style links, tables, blockquotes and headings other than the six types.
 
 ## Submit a change
 
