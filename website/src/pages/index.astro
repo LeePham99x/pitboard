@@ -20,6 +20,7 @@ import { longDate } from "../lib/changelog.ts";
 import { appZip } from "../lib/github.ts";
 import { highlight, siteData } from "../lib/data.ts";
 import { tools } from "../data/world.ts";
+import spark from "../assets/logos/claude-spark.svg?url";
 
 const { versions, release } = await siteData();
 const zip = appZip(release);
@@ -30,6 +31,8 @@ const row = (v: (typeof recent)[number]) =>
   `<th class="${cell} pr-6 font-mono text-control font-semibold whitespace-nowrap max-sm:mr-3 max-sm:inline" scope="row"><a href="/changelog#v${v.version}">${v.version}</a></th><td class="${cell} pr-6 text-note/[1.5] whitespace-nowrap text-muted max-sm:inline">${longDate(v.date)}</td><td class="${cell} max-sm:mt-1 max-sm:block">${v.highlight}</td>`;
 const note = "mt-4 hidden max-w-measure text-note text-pretty text-muted";
 const guide = { claude: "claude-code", codex: "codex", desktop: "claude-desktop" };
+// each company's own file, unaltered; Claude Code and Claude Desktop share Claude's spark
+const mark: Record<string, string | undefined> = { claude: spark, desktop: spark };
 
 const faq = [
   {
@@ -115,9 +118,12 @@ const jsonLd = [
           <InstallTabs class="mt-10" n={1} zipUrl={zip.url} />
           <div class="mt-10 border-t border-grid pt-5 font-mono text-ui">
             <p class="text-muted">Works with</p>
-            <ul class="mt-2 flex flex-wrap gap-x-7 gap-y-1">
-              {tools.map(([tool, name]) => <li>
-                <a href={`${DOCS}/guides/${guide[tool]}`}>{name}</a>
+            <ul class="mt-3 flex flex-wrap items-end gap-x-9 gap-y-4">
+              {tools.map(([tool, name]) => <li class="flex items-end gap-x-1.5">
+                <a class="flex flex-col items-start gap-2.5" href={`${DOCS}/guides/${guide[tool]}`}>
+                  {mark[tool] && <img class="h-5 w-auto" src={mark[tool]} alt="" />}
+                  {name}
+                </a>
                 {tool === "desktop" && <span class="text-muted">on macOS</span>}
               </li>)}
             </ul>
