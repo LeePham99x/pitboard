@@ -55,6 +55,9 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   `ProviderId::login_command`, `switch::sign_in` and `switch::sign_in_watched` are gone.
   `ProviderId::Desktop` and many other items are added.
 - The app ships without Sparkle's XPC services, which only a sandboxed app uses.
+- `pitboard-core` keeps public only what Pitboard's own front ends use. `autoswitch` and
+  `warm` moved under `duty` and `pace` under `usage`, `provider::Owner` replaces `api::Owner`
+  and `provider::Identity`, and `ProviderId::Desktop` is added for Claude Desktop.
 
 ## [0.13.0] - 2026-10-13
 

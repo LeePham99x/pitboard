@@ -13,7 +13,7 @@ use serde_json::ser::{Formatter, Serializer};
 use std::io;
 
 /// `value` as one line of JSON in which every byte is ASCII.
-pub fn ascii(value: &Value) -> String {
+pub(crate) fn ascii(value: &Value) -> String {
     let mut written = Vec::new();
     value
         .serialize(&mut Serializer::with_formatter(&mut written, Ascii))

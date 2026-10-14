@@ -831,7 +831,7 @@ mod tests {
         }
         let claude_code_config = status(
             vec![account(Some("work")).signed_in().build()],
-            vec![crate::Warning {
+            vec![Warning {
                 provider: Some("claude".into()),
                 ..desktop_warning("config_names_another", "Claude Code’s config names home.")
             }],

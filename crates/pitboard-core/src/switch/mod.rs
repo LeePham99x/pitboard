@@ -4,7 +4,7 @@ mod adopt;
 mod auto;
 #[cfg(test)]
 mod crash;
-mod enroll;
+pub(crate) mod enroll;
 pub(crate) mod folder;
 #[cfg(test)]
 mod foreign;
@@ -27,31 +27,36 @@ mod uninstall;
 pub mod warm;
 
 pub use crate::pending::Reclaimed;
-pub use adopt::{Adopted, adopt};
+pub use adopt::Adopted;
+pub(crate) use adopt::adopt;
 pub(crate) use auto::automatically;
-#[cfg(feature = "test-support")]
+pub(crate) use enroll::enroll;
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) use enroll::planted;
-pub use enroll::{Enrolled, Said, SignIn, Steps, WatchedSignIn, enroll};
+pub use enroll::{Enrolled, Said, SignIn, Steps, WatchedSignIn};
 #[cfg(any(test, feature = "test-support"))]
 pub use enroll::{ScriptedSignIn, SignInScript};
 pub(crate) use enroll::{one_at_a_time, sign_in, sign_in_watched_as};
 pub use folder::awaited::WaitStep;
 pub use folder::{Ended, GivenUp, MoveSettled};
-pub use forget::forget;
-pub use journal::{Abandoned, Recovered, pending as interrupted};
-pub(crate) use journal::{Asking, interrupted_tool};
-pub use rename::rename;
-pub use renew::{Due, Renewal, renew_due, renew_parked};
+pub(crate) use forget::forget;
+pub use journal::{Abandoned, Recovered};
+pub(crate) use journal::{Asking, interrupted_tool, pending as interrupted};
+pub(crate) use rename::rename;
+pub use renew::Renewal;
+pub(crate) use renew::{Due, renew_due, renew_parked};
 pub(crate) use stow::find as left_login;
-pub use stow::{Foreseen, Kept, Left, Stowed, stow};
-pub use uninstall::{Removed, uninstall};
+pub(crate) use stow::stow;
+pub use stow::{Foreseen, Kept, Left, Stowed};
+pub use uninstall::Removed;
+pub(crate) use uninstall::uninstall;
 
 use crate::context::Context;
 use crate::error::{Error, Result};
 use crate::in_use::{self, InUse};
 use crate::service::{Permit, Warning};
 use crate::state::{Account, Key, Park, ParkKind, State};
-use crate::{api, fault, holder, home, lock, park, pending, state, store};
+use crate::{fault, holder, home, lock, park, pending, state, store};
 use journal::{Journal, clear_journal, reconcile, write_journal};
 use refresh::Refreshing;
 use serde_json::Value;
@@ -97,7 +102,8 @@ pub enum Outcome {
 /// Pitboard's state, held exclusively, with any interrupted switch already finished. Every
 /// command that changes state starts from one, so none acts on what a crash left behind,
 /// and it carries the [`Permit`] it was settled with, which is what lets the change write.
-pub struct Settled {
+#[derive(Debug)]
+pub(crate) struct Settled {
     _exclusive: std::fs::File,
     state: State,
     ctx: Context,
@@ -117,7 +123,7 @@ pub struct GaveUp {
 // they name. Under a custom Claude Code endpoint only a Claude Code switch is refused.
 pub fn abandon(ctx: &Context, permit: Permit) -> Result<GaveUp> {
     // With no switch waiting the endpoint is not asked: it never stops an app's give-up.
-    if let Some(tool) = journal::interrupted_tool(ctx) {
+    if let Some(tool) = interrupted_tool(ctx) {
         refuse_custom_oauth(ctx, Some(tool))?;
     }
     let _exclusive = exclusive(ctx, permit)?;
@@ -170,7 +176,7 @@ fn refuse_custom_oauth(ctx: &Context, tool: Option<ProviderId>) -> Result<()> {
         return Ok(());
     }
     let claude = Some(ProviderId::Claude);
-    if tool.is_none() || tool == claude || journal::interrupted_tool(ctx) == claude {
+    if tool.is_none() || tool == claude || interrupted_tool(ctx) == claude {
         return Err(Error::CustomOauthEndpoint);
     }
     Ok(())
@@ -180,7 +186,7 @@ fn refuse_custom_oauth(ctx: &Context, tool: Option<ProviderId>) -> Result<()> {
 /// or not the command that follows succeeds.
 ///
 /// `tool` is the tool the change that follows is about, where it is about one.
-pub fn settle(
+pub(crate) fn settle(
     ctx: &Context,
     permit: Permit,
     tool: Option<ProviderId>,
@@ -224,7 +230,7 @@ pub(crate) fn stuck(ctx: &Context, state: &State, asking: Asking) -> Option<Erro
     // Under a custom Claude Code endpoint no change comes to a Claude Code switch: each is
     // refused over the endpoint first, as settling it and giving up on it are. A Codex
     // switch is settled there, and given up on, as anywhere.
-    refuse_custom_oauth(ctx, journal::interrupted_tool(ctx)).ok()?;
+    refuse_custom_oauth(ctx, interrupted_tool(ctx)).ok()?;
     journal::refusal(ctx, state, asking)
 }
 
@@ -232,7 +238,7 @@ pub(crate) fn stuck(ctx: &Context, state: &State, asking: Asking) -> Option<Erro
 /// state does not name. `settle` already does this from Pitboard's own list of names on
 /// every change; this is the thorough version, for a machine whose list was lost with its
 /// state file, or written by a version that kept no list.
-pub fn repair(settled: Settled) -> Result<(pending::Reclaimed, Vec<Warning>)> {
+pub(crate) fn repair(settled: Settled) -> Result<(Reclaimed, Vec<Warning>)> {
     let Settled {
         _exclusive,
         mut state,
@@ -260,7 +266,7 @@ fn give_back_asides(
     ctx: &Context,
     permit: Permit,
     state: &mut State,
-    reclaimed: &mut pending::Reclaimed,
+    reclaimed: &mut Reclaimed,
 ) -> Result<()> {
     let folders = park::parks(ParkKind::Folder);
     let names: Vec<String> = state.aside.iter().map(|aside| aside.name.clone()).collect();
@@ -372,10 +378,9 @@ pub(super) fn identify_document(
     ctx: &Context,
     tool: &'static dyn Provider,
     document: &Value,
-) -> Result<api::Owner> {
+) -> Result<provider::Owner> {
     let credential = provider::Credential::new(tool.id(), document.clone());
     tool.identify(ctx, &credential)
-        .map(api::Owner::from)
         .map_err(|e| unidentified(tool.id(), e))
 }
 
@@ -449,7 +454,7 @@ fn read_stored(
     }
 }
 
-pub fn switch(settled: Settled, key: &Key) -> Result<(Outcome, Vec<Warning>)> {
+pub(crate) fn switch(settled: Settled, key: &Key) -> Result<(Outcome, Vec<Warning>)> {
     let tool = match provider::of(key.provider) {
         LoginKind::Document(tool) => tool,
         LoginKind::Folder(app) => return folder::switch(settled, key, app),
@@ -472,8 +477,8 @@ pub fn switch(settled: Settled, key: &Key) -> Result<(Outcome, Vec<Warning>)> {
     };
     if target.owned_by(&outgoing.owner) {
         let lost = outgoing.lock_warning(key.provider);
-        return already_active(&ctx, permit, &mut state, tool, key, &target)
-            .map(|(outcome, warnings)| (outcome, lost.into_iter().chain(warnings).collect()));
+        let (outcome, warnings) = already_active(&ctx, permit, &mut state, tool, key, &target);
+        return Ok((outcome, lost.into_iter().chain(warnings).collect()));
     }
     let (switched, warnings) = switch_from(state, &ctx, permit, tool, key, outgoing)?;
     Ok((switched.into(), warnings))
@@ -482,7 +487,7 @@ pub fn switch(settled: Settled, key: &Key) -> Result<(Outcome, Vec<Warning>)> {
 /// What [`switch`] does for the account in use, for a button drawn while it was: writes it
 /// into its tool's own record where that names another account. Refused, moving nothing,
 /// where another account's login is stored by then, which [`switch`] would switch back from.
-pub fn update_config(settled: Settled, key: &Key) -> Result<(Outcome, Vec<Warning>)> {
+pub(crate) fn update_config(settled: Settled, key: &Key) -> Result<(Outcome, Vec<Warning>)> {
     let tool = match provider::of(key.provider) {
         LoginKind::Document(tool) => tool,
         LoginKind::Folder(app) => return folder::confirm(settled, key, app),
@@ -497,8 +502,8 @@ pub fn update_config(settled: Settled, key: &Key) -> Result<(Outcome, Vec<Warnin
     match identify::now(&ctx, permit, &mut state, tool)? {
         identify::Live::Login(stored) if target.owned_by(&stored.owner) => {
             let lost = stored.lock_warning(key.provider);
-            already_active(&ctx, permit, &mut state, tool, key, &target)
-                .map(|(outcome, warnings)| (outcome, lost.into_iter().chain(warnings).collect()))
+            let (outcome, warnings) = already_active(&ctx, permit, &mut state, tool, key, &target);
+            Ok((outcome, lost.into_iter().chain(warnings).collect()))
         }
         _ => Err(Error::AccountNotInUse {
             tool: key.provider,
@@ -587,7 +592,7 @@ fn switch_from(
         label: to.clone(),
     })?;
     if !held.restorable_at(ctx.now()) {
-        return Err(Error::ParkedLoginExpired { label: to.clone() });
+        return Err(Error::ParkedLoginExpired { label: to });
     }
     let incoming = park::load(ctx, tool, key, &held)?;
     // Asked before the tool's lock is taken, like the outgoing question, so the round trip
@@ -770,12 +775,7 @@ fn switch_from(
     drop(guard);
     let lock_lost = lock_lost | Refreshing::let_go(refreshing) | renewal_lock_lost;
 
-    let outgoing_identity = provider::Identity {
-        account_id: outgoing.account_uuid.clone(),
-        email: outgoing.email.clone(),
-        group: Some(outgoing.organization_uuid.clone()).filter(|g| !g.is_empty()),
-    };
-    let cache_warning = write_config(ctx, permit, &mut state, tool, &target, &outgoing_identity);
+    let cache_warning = write_config(ctx, permit, &mut state, tool, &target, &outgoing);
     fault::point("switch.config_updated");
     let parks_pending = purge(ctx, permit, &mut state);
     clear_journal(ctx, permit);
@@ -825,12 +825,12 @@ fn already_active(
     tool: &'static dyn Provider,
     key: &Key,
     target: &Account,
-) -> Result<(Outcome, Vec<Warning>)> {
+) -> (Outcome, Vec<Warning>) {
     let which = key.provider;
     let naming = in_use::naming(which, &target.owner());
     let named = tool
         .own_record(ctx)
-        .filter(|named| Some(state::new_id(which, &api::Owner::from(named.clone()))) != naming);
+        .filter(|named| Some(state::new_id(which, named)) != naming);
     let (config_updated, warnings) = match named {
         None => (false, Vec::new()),
         Some(named) => match write_config(ctx, permit, state, tool, target, &named) {
@@ -838,13 +838,13 @@ fn already_active(
             Some(warning) => (false, vec![warning]),
         },
     };
-    Ok((
+    (
         Outcome::AlreadyActive {
             label: state.typed(key),
             config_updated,
         },
         warnings,
-    ))
+    )
 }
 
 /// Writes `target`, whose login `tool` has stored and is recorded as in use, into the
@@ -857,7 +857,7 @@ fn write_config(
     state: &mut State,
     tool: &'static dyn Provider,
     target: &Account,
-    named: &provider::Identity,
+    named: &provider::Owner,
 ) -> Option<Warning> {
     let which = tool.id();
     if let Err(error) = tool.after_switch(ctx, permit, target, named) {
@@ -911,7 +911,7 @@ fn ready(
     tool: &'static dyn Provider,
     live: &provider::LiveStore,
     first: &Value,
-    signed_in: &api::Owner,
+    signed_in: &provider::Owner,
     incoming: &Value,
     label: &str,
 ) -> Result<Readied> {
@@ -928,7 +928,8 @@ fn ready(
     // Checked before anything is parked or written, so a change that could never be written
     // changes nothing.
     let next = to_body(
-        tool.splice(&before, incoming)
+        &tool
+            .splice(&before, incoming)
             .map_err(|e| shape(which, e))?,
     );
     // Asked once. The answer is about the backend that would take this write, so a login
@@ -1042,7 +1043,7 @@ fn prove_incoming(
     let label = state.typed(key);
     if held.askable_at(ctx.now()) {
         let credential = provider::Credential::new(key.provider, incoming.clone());
-        match tool.verify(ctx, &credential).map(api::Owner::from) {
+        match tool.verify(ctx, &credential) {
             Ok(found) if target.owned_by(&found) => return Ok((held, incoming)),
             Ok(other) => {
                 return Err(Error::ParkedLoginBelongsElsewhere {
@@ -1114,8 +1115,8 @@ pub(super) fn shape(tool: ProviderId, error: provider::ProviderError) -> Error {
 }
 
 /// A spliced document as bytes to write.
-fn to_body(document: Value) -> String {
-    serde_json::to_string(&document).expect("a credential document stays serialisable")
+fn to_body(document: &Value) -> String {
+    serde_json::to_string(document).expect("a credential document stays serialisable")
 }
 
 /// Write the new login, and if that fails, leave the old one in place.

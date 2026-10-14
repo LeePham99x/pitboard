@@ -187,7 +187,7 @@ window loads its site, and whatever the site's pages load, as a browser would.
     is `Tries`, the attempts and the reasons said about one thing, and how a duty's record
     is read and written, only under `state.lock`. `mod.rs` holds `Look`, what a duty's look
     at its files came to. The automatic switch and the warm-up are its duties.
-  - `warm/`: warming up an account, starting its five-hour period as soon as the last one
+  - `duty/warm/`: warming up an account, starting its five-hour period as soon as the last one
     resets, for the Claude Code accounts somebody turned it on for. `mod.rs` holds the
     setting, `warm.json`: the accounts turned on, by id, and `Range`, the span of each day,
     in minutes of the clock's time zone (`Clock::zone`), which may run past midnight. It also
@@ -219,7 +219,7 @@ window loads its site, and whatever the site's pages load, as a browser would.
     usage (`status::ask_one`), again 20 seconds on where the first answer has no period
     running, which says whether a period started. It records that under the lock again, the
     next attempt waiting from then, and writes the `warm-up` line.
-  - `autoswitch.rs`: switching Claude Code by itself, for a front end somebody asked to: the
+  - `duty/autoswitch.rs`: switching Claude Code by itself, for a front end somebody asked to: the
     app with its setting on, or `pitboard watch`. `Threshold` is the share a limit switches
     at, 50 to 99, 95 unless chosen. `decide` is the rule, from the readings Anthropic gave
     that Pitboard already holds, `NoReading` where it gave none of the account in use. Every
@@ -289,14 +289,15 @@ window loads its site, and whatever the site's pages load, as a browser would.
     Pitboard puts it, under the app's home and where the system's package managers put
     programs. And the files an app keeps of its own in Pitboard's directory, `told.json` and
     `app.json`, written as the core writes its own and read by nothing of the core.
-  - `api.rs`: the requests to Anthropic, and the agent each context's requests go out on,
-    `api::agent`. The requests to OpenAI are in `provider/codex/api.rs`.
+  - `api.rs`: what every request shares, the agent each context's requests go out on,
+    `api::agent`. The requests to Anthropic are in `provider/claude/api.rs`, and those to
+    OpenAI in `provider/codex/api.rs`.
   - `proxy.rs`: the proxy those requests go through, read from the context's environment by
     the rules ureq 3.4.2 reads a process's with, the refusal of each request a SOCKS proxy
     would have carried (`proxy::Refusal`), what `doctor`'s `network` check says of it, and
     the variables a renewal schedule installed from that context is given. See
     [ureq's proxies](#ureqs-proxies).
-  - `pace.rs`: how a limit's use compared with an even use across its window when it was
+  - `usage/pace.rs`: how a limit's use compared with an even use across its window when it was
     read: the part of the window gone by then, how far the share used was from it, which
     side of a 5-point margin it was on, and for a limit over pace when it runs out at the
     window's own rate since it began, counted down to the moment it is told. A pace is its
@@ -307,7 +308,7 @@ window loads its site, and whatever the site's pages load, as a browser would.
     rate taken across fourteen days of readings in `readings/`, through every reset in
     them; `home::remove_retired` deletes the files that kept, and the folder where nothing
     else is in it.
-  - `usage.rs` and `readings.rs`: an account's usage, and `usage.json`, the one reading of
+  - `usage/mod.rs` and `usage/readings.rs`: an account's usage, and `usage.json`, the one reading of
     each account that every front end records into and shows. The service's answer about an
     account founds its reading and replaces what it gives (`usage::answered`), and a share a
     session moved after the answer was taken stands. Anthropic's answer lists every limit an

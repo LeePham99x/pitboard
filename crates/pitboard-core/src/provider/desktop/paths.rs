@@ -121,7 +121,7 @@ mod tests {
         );
         let link = base.join("link");
         let _ = std::fs::remove_file(&link);
-        crate::host::fs::testing::link_dir(&own, &link).unwrap();
+        host::fs::testing::link_dir(&own, &link).unwrap();
         assert!(
             real_for(Some(own.clone()), &link).is_ok(),
             "a link to it is it"
@@ -157,7 +157,7 @@ mod tests {
             "has a `Claude-3p` folder beside it, which a third-party deployment of Claude uses"
         );
         let link = base.join("Linked");
-        crate::host::fs::testing::link_dir(&root, &link).unwrap();
+        host::fs::testing::link_dir(&root, &link).unwrap();
         assert_eq!(refuses(&link), Some(Unfit::Link));
         assert_eq!(Unfit::Link.to_string(), "is a link");
         let _ = std::fs::remove_dir_all(&base);

@@ -3,49 +3,15 @@ import Testing
 
 @testable import PitboardApp
 
-/// Its name has a space and a quote in it, as a folder somebody made might.
-private struct Scratch {
-    let root: URL
-    var app: URL { root.appendingPathComponent("Fake.app") }
-    var helper: URL { app.appendingPathComponent("Contents/Helpers/pitboard") }
-
-    init() throws {
-        root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("pitboard's tool \(UUID().uuidString)")
-        try FileManager.default.createDirectory(
-            at: helper.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try program(at: helper)
-    }
-
-    func directory(_ name: String) throws -> String {
-        let made = root.appendingPathComponent(name)
-        try FileManager.default.createDirectory(at: made, withIntermediateDirectories: true)
-        return made.path
-    }
-
-    func program(at url: URL, runnable: Bool = true) throws {
-        try Data("#!/bin/sh\n".utf8).write(to: url)
-        try FileManager.default.setAttributes(
-            [.posixPermissions: runnable ? 0o755 : 0o644], ofItemAtPath: url.path)
-    }
-
-    func link(_ path: String, to destination: String) throws {
-        try FileManager.default.createSymbolicLink(
-            atPath: path, withDestinationPath: destination)
-    }
-
-    func remove() { try? FileManager.default.removeItem(at: root) }
-}
-
 /// Whether the app stays where it is, rather than running from the temporary copy macOS
 /// makes of one opened where it was downloaded, is the model's to say before it offers the
 /// link. The app is a stand-in the test makes, so the answer does not depend on whether the
 /// Mac running the tests has Pitboard installed.
 @Test func onlyTheCommandLineInsideAnAppIsLinked() throws {
-    let scratch = try Scratch()
-    defer { scratch.remove() }
-    let installed = CommandLineTool(bundle: scratch.app)
-    #expect(installed.helper == scratch.helper.path)
+    let app = try StandInApp()
+    defer { app.remove() }
+    let installed = CommandLineTool(bundle: app.bundle)
+    #expect(installed.helper == app.helper.path)
     #expect(installed.linkable)
 
     let gone = CommandLineTool(bundle: URL(fileURLWithPath: "/nowhere/at/all/Pitboard.app"))
@@ -61,16 +27,16 @@ private struct Scratch {
 /// command line would be is not one, though macOS lets this user search it, which
 /// `FileManager.isExecutableFile` took for running it.
 @Test func aLinkIsOfferedOnlyToACommandLineThisUserMayRun() throws {
-    let scratch = try Scratch()
-    defer { scratch.remove() }
-    try FileManager.default.removeItem(at: scratch.helper)
+    let app = try StandInApp()
+    defer { app.remove() }
+    try FileManager.default.removeItem(at: app.helper)
     try FileManager.default.createDirectory(
-        at: scratch.helper, withIntermediateDirectories: false)
-    #expect(!CommandLineTool(bundle: scratch.app).linkable, "a directory")
+        at: app.helper, withIntermediateDirectories: false)
+    #expect(!CommandLineTool(bundle: app.bundle).linkable, "a directory")
 
-    try FileManager.default.removeItem(at: scratch.helper)
-    try scratch.program(at: scratch.helper, runnable: false)
-    #expect(!CommandLineTool(bundle: scratch.app).linkable, "a file nobody may run")
+    try FileManager.default.removeItem(at: app.helper)
+    try app.program(at: app.helper, runnable: false)
+    #expect(!CommandLineTool(bundle: app.bundle).linkable, "a file nobody may run")
 }
 
 /// A path reaches the shell as it is: a quote cannot end the AppleScript string or the
@@ -102,11 +68,11 @@ private struct Scratch {
 /// otherwise read commands in.
 @MainActor
 @Test func theCommandMakesTheLink() throws {
-    let scratch = try Scratch()
-    defer { scratch.remove() }
-    let hostile = try scratch.directory(#"a "b" \ $(echo injected)"#)
+    let app = try StandInApp()
+    defer { app.remove() }
+    let hostile = try app.directory(#"a "b" \ $(echo injected)"#)
     let link = "\(hostile)/bin/pitboard"
-    let command = CommandLineTool.command(linking: scratch.helper.path, at: link)
+    let command = CommandLineTool.command(linking: app.helper.path, at: link)
 
     func run() throws {
         var error: NSDictionary?
@@ -114,24 +80,24 @@ private struct Scratch {
         #expect(error == nil, "\(String(describing: error))")
         #expect(
             try FileManager.default.destinationOfSymbolicLink(atPath: link)
-                == scratch.helper.path)
+                == app.helper.path)
     }
     try run()
     try FileManager.default.removeItem(atPath: link)
-    try scratch.link(link, to: "/Applications/Moved.app/Contents/Helpers/pitboard")
+    try app.symlink(link, to: "/Applications/Moved.app/Contents/Helpers/pitboard")
     try run()
 }
 
 /// Anything where the link goes that is not a link is somebody's own, such as a Pitboard
 /// they copied there, so it is kept and no script runs.
 @Test func somebodysOwnFileWhereTheLinkGoesIsKept() async throws {
-    let scratch = try Scratch()
-    defer { scratch.remove() }
-    let bin = try scratch.directory("bin")
+    let app = try StandInApp()
+    defer { app.remove() }
+    let bin = try app.directory("bin")
     let link = "\(bin)/pitboard"
     try Data("mine".utf8).write(to: URL(fileURLWithPath: link))
     let scripts = Scripts()
-    let tool = CommandLineTool(bundle: scratch.app, link: link, execute: scripts.run)
+    let tool = CommandLineTool(bundle: app.bundle, link: link, execute: scripts.run)
 
     #expect(
         await tool.install()
@@ -144,12 +110,12 @@ private struct Scratch {
 
     try FileManager.default.removeItem(atPath: link)
     #expect(await tool.install() == .linked, "nothing there")
-    try scratch.link(link, to: "/Applications/Moved.app/Contents/Helpers/pitboard")
+    try app.symlink(link, to: "/Applications/Moved.app/Contents/Helpers/pitboard")
     #expect(await tool.install() == .linked, "a link to a copy that has moved")
     try FileManager.default.removeItem(atPath: link)
-    try scratch.link(link, to: "\(bin)/../Fake.app/Contents/Helpers/pitboard")
+    try app.symlink(link, to: "\(bin)/../Pitboard.app/Contents/Helpers/pitboard")
     #expect(await tool.install() == .linked, "a link to a file that is there")
-    let script = CommandLineTool.script(linking: scratch.helper.path, at: link)
+    let script = CommandLineTool.script(linking: app.helper.path, at: link)
     #expect(scripts.ran == [script, script, script])
 
     let gone = CommandLineTool(

@@ -11,8 +11,9 @@
 
 use crate::doctor::{Level, renewal_due};
 use crate::host::{Os, WINDOWS_FLOOR, token};
-use crate::pace::{Pace, Standing};
+use crate::usage::pace::{Pace, Standing};
 use crate::usage::whole;
+use std::fmt::Write as _;
 
 const MINUTE: i64 = 60;
 const HOUR: i64 = 60 * MINUTE;
@@ -103,16 +104,17 @@ pub fn watching(
 ) -> String {
     let mut said = format!("Watching {account}");
     if let Some(used) = used {
-        said.push_str(&format!(": {used}"));
+        let _ = write!(said, ": {used}");
     }
     if let Some(as_of) = as_of {
-        said.push_str(&format!(", as of {as_of}"));
+        let _ = write!(said, ", as of {as_of}");
     }
     said.push('.');
     if let Some(until) = held_until {
-        said.push_str(&format!(
+        let _ = write!(
+            said,
             " Anthropic holds Pitboard off asking again until {until}."
-        ));
+        );
     }
     said
 }
@@ -121,10 +123,10 @@ pub fn watching(
 /// that says what to do about it where anything can be done. It names no command, and no
 /// time, which each front end says in its own way: the app says it too.
 pub fn not_switching(
-    why: &crate::autoswitch::Skip,
-    threshold: crate::autoswitch::Threshold,
+    why: &crate::duty::autoswitch::Skip,
+    threshold: crate::duty::autoswitch::Threshold,
 ) -> String {
-    use crate::autoswitch::{SETTLING_SECONDS, Skip};
+    use crate::duty::autoswitch::{SETTLING_SECONDS, Skip};
     use crate::duty::cadence::ATTEMPTS;
     match why {
         Skip::NoRoom { unread } => {
@@ -168,8 +170,8 @@ const CUSTOM_OAUTH: &str =
 /// Why Pitboard cannot judge whether to switch Claude Code by itself, as a clause that says
 /// what to do about it where anything can be done. It names no command, and no time, which
 /// each front end says in its own way.
-pub fn not_watching(why: &crate::autoswitch::Blind) -> String {
-    use crate::autoswitch::Blind;
+pub fn not_watching(why: &crate::duty::autoswitch::Blind) -> String {
+    use crate::duty::autoswitch::Blind;
     match why {
         Blind::SwitchInterrupted => INTERRUPTED.into(),
         Blind::CustomOauth => CUSTOM_OAUTH.into(),
@@ -187,8 +189,8 @@ pub fn not_watching(why: &crate::autoswitch::Blind) -> String {
 }
 
 /// Why Pitboard warms up no account on this machine for now, as a clause.
-pub fn not_warming(why: &crate::warm::Halt) -> String {
-    use crate::warm::Halt;
+pub fn not_warming(why: &crate::duty::warm::Halt) -> String {
+    use crate::duty::warm::Halt;
     match why {
         Halt::Unbuilt => "Pitboard does not warm up accounts on this system yet".into(),
         Halt::SwitchInterrupted => INTERRUPTED.into(),
@@ -202,8 +204,8 @@ pub fn not_warming(why: &crate::warm::Halt) -> String {
 }
 
 /// Why a warm-up started nothing, as a clause.
-pub fn warm_failed(why: &crate::warm::Failure) -> String {
-    use crate::warm::Failure;
+pub(crate) fn warm_failed(why: &crate::duty::warm::Failure) -> String {
+    use crate::duty::warm::Failure;
     match why {
         Failure::LimitReached => {
             "a limit of it is used up, and Anthropic refused the request".into()
@@ -221,8 +223,11 @@ pub fn warm_failed(why: &crate::warm::Failure) -> String {
 /// Where an account turned on for warm-ups stands, as what follows its name: "work warms up
 /// again at 22:50", "work has its weekly limit used up until Oct 15 03:00". Each moment is
 /// written as `moment` writes it, the command line's way or the app's.
-pub fn warm_standing(standing: &crate::warm::Standing, moment: &dyn Fn(i64) -> String) -> String {
-    use crate::warm::{Hold, Standing};
+pub fn warm_standing(
+    standing: &crate::duty::warm::Standing,
+    moment: &dyn Fn(i64) -> String,
+) -> String {
+    use crate::duty::warm::{Hold, Standing};
     match standing {
         Standing::Due => "warms up now".into(),
         Standing::Running {
@@ -563,7 +568,7 @@ pub fn renewal_note(due: usize, renewed: usize) -> String {
 
 /// A login as a message names it: by its email, and as another organisation's, or for
 /// Codex another workspace's, where the account it is told apart from has that email too.
-pub fn login(tool: crate::provider::ProviderId, email: &str, shares_email: bool) -> String {
+pub(crate) fn login(tool: crate::provider::ProviderId, email: &str, shares_email: bool) -> String {
     use crate::provider::ProviderId;
     let group = match tool {
         ProviderId::Claude => "organisation",
@@ -1335,7 +1340,7 @@ mod tests {
     /// so it names no command: the app gives up on an interrupted switch with a button.
     #[test]
     fn why_it_did_not_switch_names_no_command() {
-        use crate::autoswitch::{Blind, Skip, Threshold};
+        use crate::duty::autoswitch::{Blind, Skip, Threshold};
         for why in [
             Skip::NoRoom {
                 unread: vec!["spare".into()],
@@ -1575,12 +1580,12 @@ mod tests {
     /// warning it is: "ahead" reads as good news.
     #[test]
     fn a_pace_is_said_as_over_under_or_on() {
-        let pace = |delta: f64, standing| crate::pace::Pace {
+        let pace = |delta: f64, standing| Pace {
             expected: 40.0,
             delta,
             standing,
         };
-        use crate::pace::Standing;
+        use crate::usage::pace::Standing;
         assert_eq!(
             pace_column(&pace(27.4, Standing::Over { runs_out_in: 9_000 })),
             "27% over pace"

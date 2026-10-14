@@ -19,11 +19,6 @@ pub(super) fn output_within(
     input: &[u8],
     limit: Duration,
 ) -> io::Result<Output> {
-    let mut child = command
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
     fn drain<R: Read + Send + 'static>(pipe: Option<R>) -> thread::JoinHandle<Vec<u8>> {
         thread::spawn(move || {
             let mut bytes = Vec::new();
@@ -33,6 +28,11 @@ pub(super) fn output_within(
             bytes
         })
     }
+    let mut child = command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
     let stdout = drain(child.stdout.take());
     let stderr = drain(child.stderr.take());
     // Dropping stdin closes it, which is how a helper reading commands learns there are no

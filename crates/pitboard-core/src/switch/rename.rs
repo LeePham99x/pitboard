@@ -4,7 +4,7 @@ use super::{Result, Settled};
 use crate::state::{self, Key};
 
 /// Returns the account's email.
-pub fn rename(settled: Settled, from: &Key, to: &str) -> Result<String> {
+pub(crate) fn rename(settled: Settled, from: &Key, to: &str) -> Result<String> {
     let Settled {
         _exclusive,
         mut state,

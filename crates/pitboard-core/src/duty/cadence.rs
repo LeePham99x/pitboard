@@ -8,16 +8,16 @@ use std::time::Duration;
 /// How long after an attempt that came to nothing Pitboard tries again: long enough for a
 /// service that could not be reached, or a lock Claude Code held, to have come back. Twice
 /// as long after each attempt in a row that failed for a reason trying again may mend.
-pub const RETRY_SECONDS: i64 = 60;
+pub(crate) const RETRY_SECONDS: i64 = 60;
 
 /// The longest it waits between attempts, however long the outage: as long as a usage check
 /// waits on a service that cannot be reached at most (`budget`).
-pub const RETRY_MOST_SECONDS: i64 = 900;
+pub(crate) const RETRY_MOST_SECONDS: i64 = 900;
 
 /// Attempts at one thing before what it is about resets, of those that failed for a reason
 /// trying again will not mend: something refused this often for such a reason is not going
 /// to be done.
-pub const ATTEMPTS: u32 = 3;
+pub(crate) const ATTEMPTS: u32 = 3;
 
 /// How often a front end that acts by itself decides though nothing was written: an account
 /// put in use stops settling, and the wait after a failed attempt ends, with nobody writing
@@ -27,7 +27,7 @@ pub const DECIDE_EVERY_SECONDS: i64 = 30;
 /// How long to wait after `waits` failures in a row for a reason trying again may mend: of
 /// attempts, of asking whose login a tool has stored, or of a front end's refusals that came
 /// before anything could record them.
-pub fn retry_after(waits: u32) -> i64 {
+pub(crate) fn retry_after(waits: u32) -> i64 {
     (RETRY_SECONDS << waits.saturating_sub(1).min(4)).min(RETRY_MOST_SECONDS)
 }
 

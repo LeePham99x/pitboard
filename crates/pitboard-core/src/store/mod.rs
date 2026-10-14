@@ -7,11 +7,9 @@
 mod file;
 pub(crate) mod folder;
 #[cfg(any(test, feature = "test-support"))]
-pub mod memory;
-// macOS parks in the login keychain, so there nothing outside the tests opens a vault of
-// files; Linux parks in one. Windows parks nowhere until W20 seals each park to the person,
-// in files of its own kind, so nothing opens this vault there either.
-#[cfg_attr(any(target_os = "macos", windows), allow(dead_code))]
+pub(crate) mod memory;
+// Only Linux parks in files: macOS parks in the login keychain, and Windows nowhere yet.
+#[cfg(any(target_os = "linux", test))]
 pub(crate) mod vault;
 
 pub(crate) use file::PlainFile;
@@ -25,8 +23,8 @@ use std::path::PathBuf;
 /// Where a credential lives. `Keychain` occurs only where the machine has one: its host
 /// offers no other, so callers need no checks of their own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum Backend {
+pub(crate) enum Backend {
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Keychain,
     File,
     Absent,
@@ -37,7 +35,7 @@ pub enum Backend {
 }
 
 impl Backend {
-    pub fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             Backend::Keychain => "keychain",
             Backend::File => "file",
@@ -142,28 +140,28 @@ impl Error {
 /// login three times per switch, and meant every caller knowing that only one platform has
 /// a ceiling at all.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Cost {
+pub(crate) struct Cost {
     /// Bytes this document needs of the store's cheapest route.
-    pub needs: usize,
+    pub(crate) needs: usize,
     /// Bytes that route has.
-    pub limit: usize,
+    pub(crate) limit: usize,
     /// Whether the store has another route above the ceiling, and is allowed to use it.
-    pub second_route: bool,
+    pub(crate) second_route: bool,
 }
 
 impl Cost {
     /// Past the cheapest route.
-    pub fn over(self) -> bool {
+    pub(crate) fn over(self) -> bool {
         self.needs > self.limit
     }
 
     /// Past it, and written the more visible way rather than refused.
-    pub fn on_the_second_route(self) -> bool {
+    pub(crate) fn on_the_second_route(self) -> bool {
         self.over() && self.second_route
     }
 
     /// Past it with nothing left to try.
-    pub fn refused(self) -> bool {
+    pub(crate) fn refused(self) -> bool {
         self.over() && !self.second_route
     }
 }
@@ -208,7 +206,7 @@ fn exists(path: &std::path::Path) -> Result<bool, Error> {
 /// Where parked logins live when there is no keychain to put them in: one file each, in
 /// Pitboard's own directory. Named here rather than in the backend so `doctor` can look at
 /// what is actually on the disk without the two spellings drifting apart.
-pub fn vault_dir(ctx: &Context) -> PathBuf {
+pub(crate) fn vault_dir(ctx: &Context) -> PathBuf {
     crate::home::dir(ctx).join("vault")
 }
 
@@ -217,7 +215,7 @@ pub fn vault_dir(ctx: &Context) -> PathBuf {
 /// Built by that tool's own module. Which backends can hold a login, and in what order, is
 /// a fact about the tool: Claude Code looks in the keychain and then in a plaintext file it
 /// demotes to, while Codex and Gemini have one file and nothing behind it.
-pub struct Live(Vec<Box<dyn RawStore>>);
+pub(crate) struct Live(Vec<Box<dyn RawStore>>);
 
 impl Live {
     pub(crate) fn of(backends: Vec<Box<dyn RawStore>>) -> Live {
@@ -274,9 +272,9 @@ fn with_live<T>(live: &Live, run: impl FnOnce(&[&dyn RawStore]) -> T) -> T {
 /// write fails for good, and deletes the keychain item when it does; from 2.1.281 a locked
 /// keychain whose item the process has seen is not failing for good. Pitboard never
 /// demotes: see the note on `write_in`.
-pub fn resolve(live: &Live, service: &str) -> Result<Backend, Error> {
+pub(crate) fn resolve(live: &Live, service: &str) -> Result<Backend, Error> {
     with_live(live, |chain| {
-        Ok(resolve_in(chain, service)?.map_or(Backend::Absent, |b| b.kind()))
+        Ok(resolve_in(chain, service)?.map_or(Backend::Absent, RawStore::kind))
     })
 }
 
@@ -303,7 +301,7 @@ fn behind_in<'a>(
 /// there, so a file is behind holding `{}`, nothing at all, or what cannot be read, as a file
 /// that is not text or that this user may not read: reading it then gives the error. `None`
 /// where the login in use is in the last backend, or nowhere.
-pub fn behind<'a>(live: &'a Live, service: &str) -> Result<Option<&'a dyn RawStore>, Error> {
+pub(crate) fn behind<'a>(live: &'a Live, service: &str) -> Result<Option<&'a dyn RawStore>, Error> {
     behind_in(&live.refs(), service)
 }
 
@@ -319,14 +317,14 @@ pub(crate) fn of_kind<'a>(live: &'a Live, kind: &str) -> Option<&'a dyn RawStore
         .find(|backend| backend.kind().name() == kind)
 }
 
-pub fn read_raw(live: &Live, service: &str) -> Result<Option<String>, Error> {
+pub(crate) fn read_raw(live: &Live, service: &str) -> Result<Option<String>, Error> {
     with_live(live, |chain| match resolve_in(chain, service)? {
         Some(backend) => backend.read(service),
         None => Ok(None),
     })
 }
 
-pub fn read(live: &Live, service: &str) -> Result<Option<Value>, Error> {
+pub(crate) fn read(live: &Live, service: &str) -> Result<Option<Value>, Error> {
     match read_raw(live, service)? {
         None => Ok(None),
         Some(raw) => serde_json::from_str(&raw)
@@ -338,15 +336,21 @@ pub fn read(live: &Live, service: &str) -> Result<Option<Value>, Error> {
 /// Write the live credential where it already lives. A failed keychain write is never
 /// answered by writing the plaintext file: that demotion is Claude Code's to make, and
 /// making it here would move the user's token somewhere weaker without saying so.
-pub fn write_raw(live: &Live, permit: Permit, service: &str, contents: &str) -> Result<(), Error> {
+pub(crate) fn write_raw(
+    live: &Live,
+    permit: Permit,
+    service: &str,
+    contents: &str,
+) -> Result<(), Error> {
     with_live(live, |chain| write_in(chain, permit, service, contents))
 }
 
+#[cfg_attr(not(feature = "test-support"), allow(unreachable_pub))]
 pub fn vault_read(ctx: &Context, service: &str) -> Result<Option<String>, Error> {
     vault(ctx).read(service)
 }
 
-pub fn vault_write(
+pub(crate) fn vault_write(
     ctx: &Context,
     permit: Permit,
     service: &str,
@@ -356,29 +360,29 @@ pub fn vault_write(
 }
 
 /// What writing `contents` into the vault would cost against its ceiling, where it has one.
-pub fn vault_cost(ctx: &Context, service: &str, contents: &str) -> Option<Cost> {
+pub(crate) fn vault_cost(ctx: &Context, service: &str, contents: &str) -> Option<Cost> {
     vault(ctx).cost(service, contents)
 }
 
-pub fn vault_delete(ctx: &Context, permit: Permit, service: &str) -> Result<(), Error> {
+pub(crate) fn vault_delete(ctx: &Context, permit: Permit, service: &str) -> Result<(), Error> {
     vault(ctx).delete(permit, service)
 }
 
 /// Every parked login on this machine, asked of the store rather than read out of
 /// Pitboard's own index. `None` where the store cannot be enumerated.
-pub fn vault_list(ctx: &Context) -> Result<Option<Vec<String>>, Error> {
+pub(crate) fn vault_list(ctx: &Context) -> Result<Option<Vec<String>>, Error> {
     vault(ctx).list()
 }
 
 /// Whether another `PITBOARD_HOME` could have parked a login where this one parks its own.
-pub fn vault_is_shared(ctx: &Context) -> bool {
+pub(crate) fn vault_is_shared(ctx: &Context) -> bool {
     ctx.host().vault_is_shared()
 }
 
 /// What writing the live credential would cost, asked of the backend that would take the
 /// write. A login living in the fallback file has no ceiling, and used to be told it had
 /// the keychain's.
-pub fn cost(live: &Live, service: &str, contents: &str) -> Option<Cost> {
+pub(crate) fn cost(live: &Live, service: &str, contents: &str) -> Option<Cost> {
     with_live(live, |chain| {
         resolve_in(chain, service)
             .ok()
@@ -389,7 +393,7 @@ pub fn cost(live: &Live, service: &str, contents: &str) -> Option<Cost> {
 }
 
 /// A handle for comparing and logging tokens without the secret leaving this process.
-pub fn fingerprint(secret: &str) -> String {
+pub(crate) fn fingerprint(secret: &str) -> String {
     use sha2::{Digest, Sha256};
     hex::encode(&Sha256::digest(secret.as_bytes())[..8])
 }

@@ -12,7 +12,7 @@ use super::{Seen, words};
 use crate::model::machine::ScheduleFailure;
 use crate::model::state::AutoStanding;
 use crate::{AutoSwitched, FoundCommandLine, Level, Schedule};
-use pitboard_core::autoswitch::Threshold;
+use pitboard_core::duty::autoswitch::Threshold;
 
 /// What the app shows of this machine rather than its accounts. Not called `Machine`, the
 /// name the model's tests give the core they script.
@@ -251,7 +251,7 @@ pub(crate) fn machine(seen: &Seen) -> MachineShown {
 fn warm(seen: &Seen) -> WarmShown {
     let state = seen.state;
     let overview = state.warm.overview.as_ref();
-    let range = overview.map_or(pitboard_core::warm::Range::DEFAULT, |o| o.range);
+    let range = overview.map_or(pitboard_core::duty::warm::Range::DEFAULT, |o| o.range);
     let clock = |at| seen.clock(at);
     let accounts: Vec<WarmAccountShown> = overview
         .map(|overview| {

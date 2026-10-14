@@ -34,20 +34,20 @@ const WTS_ANY_SESSION: u32 = 0xFFFF_FFFE;
 const APPMODEL_ERROR_NO_PACKAGE: u32 = 15700;
 
 /// One process from a Toolhelp snapshot.
-pub struct Entry {
+pub(super) struct Entry {
     pub pid: u32,
     pub parent: u32,
     pub image: String,
 }
 
 /// Every process, from a Toolhelp snapshot.
-pub fn snapshot() -> Result<Vec<Entry>, u32> {
+pub(super) fn snapshot() -> Result<Vec<Entry>, u32> {
     // SAFETY: a process snapshot; th32ProcessID 0 means all processes.
     let snap = Owned::new(unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) })
         .ok_or_else(ffi::last_error)?;
     // SAFETY: PROCESSENTRY32W is plain data; all zeroes is valid, and dwSize is set below.
     let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
-    entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+    entry.dwSize = size_of::<PROCESSENTRY32W>() as u32;
     let mut out = Vec::new();
     // SAFETY: `snap` is valid; `entry` is sized.
     let mut more = unsafe { Process32FirstW(snap.raw(), &mut entry) };
@@ -64,7 +64,7 @@ pub fn snapshot() -> Result<Vec<Entry>, u32> {
 }
 
 /// A process opened for limited queries.
-pub fn open_query(pid: u32) -> Result<Owned, u32> {
+pub(super) fn open_query(pid: u32) -> Result<Owned, u32> {
     // SAFETY: OpenProcess with a limited-query right; the handle is owned by the result.
     Owned::new(unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) })
         .ok_or_else(ffi::last_error)
@@ -122,7 +122,7 @@ fn describe(pid: u32, own: Option<&str>, r: &crate::redact::Redactor) -> Value {
     }
 }
 
-pub fn processes(find: &[String]) -> Report {
+pub(super) fn processes(find: &[String]) -> Report {
     let logon = logon_now();
     if let Some(bad) = find.iter().find(|f| !images::is_tool_image(f)) {
         return Report::refused(

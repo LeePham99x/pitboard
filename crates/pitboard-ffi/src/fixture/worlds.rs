@@ -17,10 +17,10 @@ use crate::model::{
     LocalTime, ModelListener, PitboardModel, Platform, WindowsLaunch, WindowsPlace,
 };
 use crate::{AppCore, Made};
-use pitboard_core::api::Owner;
 use pitboard_core::app::AppFile;
 use pitboard_core::context::Context;
 use pitboard_core::host::{OS, Os};
+use pitboard_core::provider::Owner;
 use pitboard_core::provider::ProviderId;
 use pitboard_core::service;
 use pitboard_core::state::Key;
@@ -390,7 +390,7 @@ impl Machine {
         let owners = self
             .owners
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
         let Some(id) = owners.get(access) else {
             return;
@@ -450,7 +450,7 @@ impl Machine {
     fn usage(&self) -> MutexGuard<'_, HashMap<String, Vec<usage::Window>>> {
         self.usage
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// `person` has used `windows` of their limits: `(kind, percent, how long it runs, how
@@ -543,7 +543,7 @@ impl Machine {
                 self.answers_for(person, &renewed);
                 self.api.renews(
                     &refresh,
-                    pitboard_core::api::Renewed {
+                    pitboard_core::testing::Renewed {
                         access_token: renewed,
                         refresh_token: Some(format!("{refresh}-renewed")),
                         expires_in: DAY,
@@ -585,12 +585,12 @@ impl Machine {
         self.api.using(access, self.used_by(person));
         self.owners
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert(access.to_owned(), person.id.clone());
         #[cfg(test)]
         self.tokens
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .entry(person.id.clone())
             .or_default()
             .push(access.to_owned());
@@ -601,7 +601,7 @@ impl Machine {
     fn tokens_of(&self, person: &Person) -> Vec<String> {
         self.tokens
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .get(&person.id)
             .cloned()
             .unwrap_or_default()
@@ -942,7 +942,7 @@ fn seed(world: World, machine: &Machine) -> Result<(), Unmade> {
             let app = machine.front_end("app", DAY).1;
             app.warm_turn("personal", true)
                 .map_err(refused("turning on personal's warm-up"))?;
-            let all_day = pitboard_core::warm::Range::new(0, 24 * 60)
+            let all_day = pitboard_core::duty::warm::Range::new(0, 24 * 60)
                 .ok_or_else(|| Unmade("a day is not a span".into()))?;
             app.warm_range(all_day)
                 .map(drop)

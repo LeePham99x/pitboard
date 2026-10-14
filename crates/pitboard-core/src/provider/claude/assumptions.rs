@@ -14,12 +14,12 @@ use crate::assumptions::OnSystem::{NotRead, Pending, Read};
 use crate::assumptions::{Assumption, OnSystem, PerSystem};
 
 /// The build every entry below was read from on macOS and Linux, unless it says otherwise.
-pub const VERIFIED_AGAINST: &str = "2.1.284";
+pub(crate) const VERIFIED_AGAINST: &str = "2.1.284";
 
 /// The build the facts read on Windows were read from: `@anthropic-ai/claude-code-win32-x64`
 /// and `-win32-arm64` 2.1.289, both built from commit 736d26e, as that version's macOS and
 /// Linux builds are. Read as bytes on a Mac on 2026-10-06, and never run.
-pub const WINDOWS_VERIFIED_AGAINST: &str = "2.1.289";
+pub(crate) const WINDOWS_VERIFIED_AGAINST: &str = "2.1.289";
 
 /// The Linux build has no keychain backend, so a keychain fact read from it reports the
 /// keychain gone, as it did on every build from 2.1.278 on.
@@ -78,7 +78,7 @@ const fn warm_up(name: &'static str) -> PerSystem {
 /// Windows builds' code for each fact, and of every literal its entry probes for, which
 /// both Windows builds hold. Where Claude Code does something else on Windows, that is a
 /// fact of its own, read by the pull request named.
-pub const PER_SYSTEM: &[PerSystem] = &[
+pub(crate) const PER_SYSTEM: &[PerSystem] = &[
     PerSystem {
         name: "credential_service_name",
         macos: Read(VERIFIED_AGAINST),
@@ -250,7 +250,7 @@ pub const PER_SYSTEM: &[PerSystem] = &[
     warm_up("used_up_limit_refuses_every_request"),
 ];
 
-pub const ASSUMPTIONS: &[Assumption] = &[
+pub(crate) const ASSUMPTIONS: &[Assumption] = &[
     Assumption {
         name: "credential_service_name",
         fact: "the login lives in a keychain item named `Claude Code${OAUTH_FILE_SUFFIX}-credentials`, \
@@ -453,7 +453,7 @@ pub const ASSUMPTIONS: &[Assumption] = &[
                and a refresh answer without a refresh-token lifetime keeps the one it had",
         read_from: "the OAuth client id and the token refresh path",
         verified_against: VERIFIED_AGAINST,
-        depends: "api::CLIENT_ID and park::renewed, and the renewal `pitboard stow` makes of a \
+        depends: "provider::claude::api::CLIENT_ID and provider::claude::document::renewed, and the renewal `pitboard stow` makes of a \
                   login left in `.credentials.json` whose access token has expired",
         probe: &["9d1c250a-e61b-44d9-88ed-5944d1962f5e"],
         absent: &[],

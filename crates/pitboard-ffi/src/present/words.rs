@@ -9,10 +9,10 @@ use crate::model::state::in_its_app;
 use crate::{Level, Warning};
 use pitboard_core::error::{Error, LoginDoubt, Then};
 use pitboard_core::host::{Os, Private};
-use pitboard_core::pace::{Pace, Standing};
 use pitboard_core::provider::ProviderId;
 use pitboard_core::service::{Stored, Warning as CoreWarning};
 use pitboard_core::state::SetAside;
+use pitboard_core::usage::pace::{Pace, Standing};
 use pitboard_core::usage::whole;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -1186,7 +1186,7 @@ mod tests {
     /// pace, so VoiceOver hears what the mark on its bar shows.
     #[test]
     fn a_limit_with_a_pace_is_spoken_with_it() {
-        use pitboard_core::pace::{Pace, Standing};
+        use pitboard_core::usage::pace::{Pace, Standing};
         let pace = |delta: f64, standing| Pace {
             expected: 6.0,
             delta,
@@ -1215,7 +1215,7 @@ mod tests {
     /// for a limit over pace, when it runs out.
     #[test]
     fn a_bars_help_says_what_its_mark_means() {
-        use pitboard_core::pace::{Pace, Standing};
+        use pitboard_core::usage::pace::{Pace, Standing};
         assert_eq!(
             pace_help(&Pace {
                 expected: 5.95,

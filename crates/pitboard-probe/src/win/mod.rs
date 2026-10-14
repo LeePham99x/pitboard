@@ -290,7 +290,7 @@ fn auth_luid() -> Option<LUID> {
             token.raw(),
             TokenStatistics,
             (&mut stats as *mut TOKEN_STATISTICS).cast(),
-            std::mem::size_of::<TOKEN_STATISTICS>() as u32,
+            size_of::<TOKEN_STATISTICS>() as u32,
             &mut len,
         )
     };

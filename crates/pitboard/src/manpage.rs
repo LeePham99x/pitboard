@@ -9,7 +9,7 @@ use clap::{Arg, Command};
 use roff::{Inline, Roff, bold, italic, roman};
 use std::io::Write;
 
-pub fn render(mut cmd: Command, w: &mut dyn Write) -> std::io::Result<()> {
+pub(crate) fn render(mut cmd: Command, w: &mut dyn Write) -> std::io::Result<()> {
     cmd.build();
     let man = clap_mangen::Man::new(cmd.clone());
     man.render_title(w)?;

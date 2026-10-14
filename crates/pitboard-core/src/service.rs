@@ -2,9 +2,9 @@
 //! interrupted switch first and is recorded in the audit log, and what went wrong on the way
 //! is reported alongside the result, whether or not the change then succeeds.
 
-use crate::autoswitch::{Auto, Look, Threshold};
 use crate::context::Context;
 use crate::doctor::{self, Diagnosis};
+use crate::duty::autoswitch::{Auto, Look, Threshold};
 use crate::error::{Error, Result};
 use crate::holder::{self, capitalised};
 use crate::host::{Elevation, Floor};
@@ -12,7 +12,8 @@ use crate::in_use::{self, Doubt, InUse, Known};
 use crate::provider::{Held, LoginKind, Provider, ProviderId};
 use crate::state::{self, Account, Key, new_id};
 use crate::switch::{self, Enrolled, Outcome, Recovered, Renewal, Settled, SignIn};
-use crate::{audit, readings, schedule, status, statusline};
+use crate::usage::readings;
+use crate::{audit, schedule, status, statusline};
 use std::fmt;
 
 /// Proof that this process may change something on this machine, which only the one gate
@@ -120,13 +121,13 @@ pub enum Warning {
     /// `holding` is what was running, by kind, never empty.
     SessionsStillRunning {
         from: String,
-        holding: Vec<crate::holder::Holding>,
+        holding: Vec<holder::Holding>,
     },
     /// A sign-in put a new login in use in place of the old one of the same account, and
     /// sessions of a tool that never reads its login again were running with the old one.
     SessionsKeepTheOldLogin {
         label: String,
-        holding: Vec<crate::holder::Holding>,
+        holding: Vec<holder::Holding>,
     },
     /// A switch of a tool that never follows one on its own, where the process list could
     /// not be read: nobody can say whether anything of the tool started before it is still
@@ -691,7 +692,7 @@ impl Stored {
     pub(crate) fn of(
         state: &state::State,
         tool: ProviderId,
-        owner: Option<&crate::api::Owner>,
+        owner: Option<&crate::provider::Owner>,
     ) -> Stored {
         match owner {
             None => Stored::Nothing,
@@ -855,6 +856,7 @@ impl Failed {
 
 pub type Changing<T> = std::result::Result<Done<T>, Failed>;
 
+#[derive(Debug)]
 pub struct Pitboard {
     ctx: Context,
 }
@@ -1015,7 +1017,7 @@ impl Pitboard {
                         continue;
                     }
                     // No read learns whose an app's login is, so `found` names none.
-                    crate::switch::folder::read(&self.ctx, state, app)
+                    switch::folder::read(&self.ctx, state, app)
                 }
             };
             warnings.extend(in_doubt(state, tool, &known));
@@ -1098,7 +1100,7 @@ impl Pitboard {
     }
 
     /// Switches Claude Code by itself where a limit of the account in use has reached
-    /// `threshold` and another account has room, as [`crate::autoswitch`] says. For a front
+    /// `threshold` and another account has room, as [`crate::duty::autoswitch`] says. For a front
     /// end somebody asked to do that: the app with its setting on, or `pitboard watch`.
     ///
     /// Looks first from files alone ([`auto_look`]), so a look that finds nothing to do takes
@@ -1141,7 +1143,7 @@ impl Pitboard {
     /// [`auto_switch`]: Pitboard::auto_switch
     pub fn auto_look(&self, threshold: Threshold) -> Result<Look> {
         let state = state::load(&self.ctx)?;
-        Ok(crate::autoswitch::look(&self.ctx, &state, threshold))
+        Ok(crate::duty::autoswitch::look(&self.ctx, &state, threshold))
     }
 
     /// Which account somebody meant, as the key the engine looks accounts up by.
@@ -1318,7 +1320,7 @@ impl Pitboard {
     /// installed, or that the account could never be switched to afterwards.
     fn ready_to_sign_in(&self, driver: &'static dyn Provider) -> Result<()> {
         let tool = driver.id();
-        if tool == crate::provider::ProviderId::Claude && self.ctx.custom_oauth() {
+        if tool == ProviderId::Claude && self.ctx.custom_oauth() {
             return Err(Error::CustomOauthEndpoint);
         }
         state::load(&self.ctx)?;
@@ -1582,10 +1584,10 @@ impl Pitboard {
 
     /// Each Claude Code account, whether Pitboard warms it up, and within which span of each
     /// day, from Pitboard's files alone: no lock, and nobody asked.
-    pub fn warm_overview(&self) -> Result<crate::warm::Overview> {
+    pub fn warm_overview(&self) -> Result<crate::duty::warm::Overview> {
         let state = state::load(&self.ctx)?;
-        let setting = crate::warm::load(&self.ctx)?;
-        Ok(crate::warm::overview(&self.ctx, &state, &setting))
+        let setting = crate::duty::warm::load(&self.ctx)?;
+        Ok(crate::duty::warm::overview(&self.ctx, &state, &setting))
     }
 
     /// Warms up the account `typed` names now, whatever the span of the day and the attempts
@@ -1596,11 +1598,11 @@ impl Pitboard {
         let permit = self.permitted()?;
         let key = self.named(permit, "warm-up", typed)?;
         let settled = self.settled_to_warm(permit, "warm-up", &key.typed())?;
-        self.warming(settled, switch::warm::Target::Account(key))
+        Self::warming(settled, switch::warm::Target::Account(key))
     }
 
-    /// Warms up the first account turned on that is due, as [`crate::warm`] says, for a front
-    /// end somebody asked to: the app, or `pitboard watch`. [`Pitboard::warm_look`] says
+    /// Warms up the first account turned on that is due, as [`crate::duty::warm`] says, for a front
+    /// end somebody asked to: the app, or `pitboard watch`. `Pitboard::warm_look` says
     /// whether one may be, waiting on no lock.
     pub fn warm_up(&self) -> Changing<switch::warm::WarmUp> {
         let permit = self.permitted()?;
@@ -1616,15 +1618,15 @@ impl Pitboard {
             });
         }
         let settled = self.settled_to_warm(permit, "warm-up", "")?;
-        self.warming(settled, switch::warm::Target::Due)
+        Self::warming(settled, switch::warm::Target::Due)
     }
 
     /// What warming up would come to now, from files alone: what stands, with where each
     /// account turned on stands, or that only [`Pitboard::warm_up`] can say. Waits on no lock,
     /// reads no keychain and asks nobody, so a front end may look as often as it likes.
-    pub fn warm_look(&self) -> Result<crate::duty::Look<crate::warm::Overview>> {
+    pub(crate) fn warm_look(&self) -> Result<crate::duty::Look<crate::duty::warm::Overview>> {
         let state = state::load(&self.ctx)?;
-        crate::warm::look(&self.ctx, &state)
+        crate::duty::warm::look(&self.ctx, &state)
     }
 
     /// Settled for a warm-up, with an interrupted switch settling finished. Without what a
@@ -1642,7 +1644,6 @@ impl Pitboard {
     }
 
     fn warming(
-        &self,
         (settled, mut warnings): (Settled, Vec<Warning>),
         target: switch::warm::Target,
     ) -> Changing<switch::warm::WarmUp> {
@@ -1671,12 +1672,15 @@ impl Pitboard {
 
     /// Warms up within `range` of each day, recorded in the activity log as `warm-range` of
     /// the span.
-    pub fn warm_range(&self, range: crate::warm::Range) -> Changing<crate::warm::Range> {
+    pub fn warm_range(
+        &self,
+        range: crate::duty::warm::Range,
+    ) -> Changing<crate::duty::warm::Range> {
         let permit = self.permitted()?;
         let subject = format!(
             "{}-{}",
-            crate::warm::clock(range.from()),
-            crate::warm::clock(range.to())
+            crate::duty::warm::clock(range.from()),
+            crate::duty::warm::clock(range.to())
         );
         let settled = self.settled_to_warm(permit, "warm-range", &subject)?;
         self.change(permit, "warm-range", &subject, settled, |settled| {
@@ -1697,7 +1701,7 @@ impl Pitboard {
     }
 
     /// Puts away the login left in the file behind Claude Code's store, while the file still
-    /// holds what `seen` was taken of, as [`switch::stow`] says. Recorded in the audit log as
+    /// holds what `seen` was taken of, as `switch::stow` says. Recorded in the audit log as
     /// `stow`, of the account the login was found to be where it is enrolled, with what became
     /// of it, or with the error that stopped it. Settled with what a change of Claude Code's
     /// login warns of but the file, which is what it puts away.
@@ -1856,7 +1860,7 @@ impl Audited for switch::WatchedSignIn {}
 impl Audited for Enrolled {}
 impl Audited for String {}
 impl Audited for bool {}
-impl Audited for crate::warm::Range {}
+impl Audited for crate::duty::warm::Range {}
 
 impl Audited for switch::Stowed {
     fn audit_code(&self) -> &'static str {
@@ -1898,7 +1902,7 @@ mod tests {
         ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
     )]
     fn a_read_opens_no_jar_and_lists_no_process() {
-        let m = crate::switch::harness::desktop_machine("reads");
+        let m = switch::harness::desktop_machine("reads");
         let pitboard = Pitboard::new(m.ctx.clone());
         let (jars, listings) = (m.mem.jars_asked().len(), m.mem.listings());
         // Claude Code's own record, of nobody, is this first read's to make.
@@ -1922,7 +1926,7 @@ mod tests {
                 let settings = data.join("config.json");
                 let written = std::fs::read_to_string(&settings).expect("settings");
                 let renamed = written.replace(
-                    crate::switch::harness::WORK.uuid,
+                    switch::harness::WORK.uuid,
                     "0b7e2c44-2222-4d1f-8a35-91c0de77aa01",
                 );
                 std::fs::write(&settings, renamed).expect("renamed");
@@ -1949,7 +1953,7 @@ mod tests {
                 .find(|row| row.provider == ProviderId::Desktop)
                 .expect("a row");
             assert!(row.signed_in);
-            assert_eq!(row.read_at, Some(crate::switch::harness::NOW));
+            assert_eq!(row.read_at, Some(switch::harness::NOW));
         }
         for warnings in [&online.warnings, &offline.warnings] {
             assert!(
@@ -2033,14 +2037,14 @@ mod tests {
         ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
     )]
     fn forgetting_the_last_claude_desktop_account_stops_every_read_of_claude() {
-        let m = crate::switch::harness::desktop_machine("forgot-last");
+        let m = switch::harness::desktop_machine("forgot-last");
         let claude = m.claude();
         claude.opens();
         claude.logs_out();
         claude.quits();
         let pitboard = Pitboard::new(m.ctx.clone());
         pitboard.forget("desktop/work").expect("forgotten");
-        claude.signed_in_as(&crate::switch::harness::STRANGER);
+        claude.signed_in_as(&switch::harness::STRANGER);
         let state = state::load(&m.ctx).expect("state");
         assert!(state.accounts.is_empty());
         assert!(state.in_use(ProviderId::Desktop).is_some(), "{state:?}");
@@ -2075,7 +2079,7 @@ mod tests {
         ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
     )]
     fn what_claudes_settings_say_since_is_a_warning_of_every_read() {
-        let m = crate::switch::harness::desktop_machine("standing");
+        let m = switch::harness::desktop_machine("standing");
         let pitboard = Pitboard::new(m.ctx.clone());
         let settings = m.ctx_home().join("claude/data/config.json");
         let said = |pitboard: &Pitboard| -> Vec<String> {
@@ -2093,7 +2097,7 @@ mod tests {
         std::fs::write(
             &settings,
             written.replace(
-                crate::switch::harness::WORK.uuid,
+                switch::harness::WORK.uuid,
                 "0b7e2c44-2222-4d1f-8a35-91c0de77aa01",
             ),
         )
@@ -2136,7 +2140,7 @@ mod tests {
         ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
     )]
     fn what_stands_is_judged_from_one_read_of_claudes_settings() {
-        let m = crate::switch::harness::desktop_machine("one-read");
+        let m = switch::harness::desktop_machine("one-read");
         let pitboard = Pitboard::new(m.ctx.clone());
         let state = state::load(&m.ctx).expect("state");
         let (warnings, reads) =
@@ -2228,7 +2232,7 @@ mod tests {
             label: "desktop/work".into(),
         };
         let recovered = || {
-            Warning::Recovered(switch::Recovered {
+            Warning::Recovered(Recovered {
                 from: "home".into(),
                 to: "work".into(),
                 finished: true,
@@ -2268,7 +2272,7 @@ mod tests {
         ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
     )]
     fn what_holds_claude_desktops_login_is_said() {
-        let m = crate::switch::harness::desktop_machine("holding");
+        let m = switch::harness::desktop_machine("holding");
         let pitboard = Pitboard::new(m.ctx.clone());
         let claude = m.claude();
         assert!(pitboard.holding(ProviderId::Desktop).is_empty());
@@ -2294,8 +2298,8 @@ mod tests {
     )]
     fn a_desktop_row_says_no_usage_and_asks_nobody() {
         use crate::status::Stale;
-        let m = crate::switch::harness::desktop_machine("rows");
-        let now = crate::switch::harness::NOW;
+        let m = switch::harness::desktop_machine("rows");
+        let now = switch::harness::NOW;
         let mut state = state::load(&m.ctx).expect("state");
         let another = |label: &str, parked, replaced_at| Account {
             label: label.into(),
@@ -2442,7 +2446,7 @@ mod tests {
     /// it refuses.
     fn stuck_unless_asked(name: &str) -> Machine {
         let m = interrupted(machine, name);
-        m.sign_in(&crate::switch::harness::document("renewed-since"));
+        m.sign_in(&switch::harness::document("renewed-since"));
         m
     }
 
@@ -2491,7 +2495,7 @@ mod tests {
         let m = machine("switch-fallback-login");
         let left = plant_behind(
             &m,
-            &crate::switch::harness::document("left-by-a-sign-in").to_string(),
+            &switch::harness::document("left-by-a-sign-in").to_string(),
         );
         let switched = Pitboard::new(m.ctx.clone())
             .switch_to("there")
@@ -2550,7 +2554,7 @@ mod tests {
         let m = machine("read-fallback-login");
         let left = plant_behind(
             &m,
-            &crate::switch::harness::document("left-by-a-sign-in").to_string(),
+            &switch::harness::document("left-by-a-sign-in").to_string(),
         );
         let pitboard = Pitboard::new(m.ctx.clone());
 
@@ -3024,7 +3028,7 @@ mod tests {
 
         state.in_use.insert(
             ProviderId::Claude.code().into(),
-            crate::switch::identify::nobody(None, 1).expect("a store holding no login"),
+            switch::identify::nobody(None, 1).expect("a store holding no login"),
         );
         assert_eq!(
             said(&state),
@@ -3042,10 +3046,10 @@ mod tests {
             )]
         );
 
-        state.accounts[0].parked = Some(crate::state::Park {
+        state.accounts[0].parked = Some(state::Park {
             service: "pitboard-park-here-1".into(),
             parked_at: 1,
-            kind: crate::state::ParkKind::Vault,
+            kind: state::ParkKind::Vault,
             login: "f".into(),
             access_expires_at: None,
             refresh_expires_at: None,
@@ -3260,7 +3264,7 @@ mod tests {
     )]
     fn an_offline_read_names_the_account_anthropic_named_whatever_the_config_says() {
         let m = machine("offline-config-moved");
-        crate::switch::harness::config_names(&m, "there");
+        switch::harness::config_names(&m, "there");
 
         let read = Pitboard::new(m.ctx.clone())
             .status_offline()
@@ -3294,7 +3298,7 @@ mod tests {
         let here = state.get(&m.key("here")).expect("here").owner();
         state.in_use.insert(
             ProviderId::Claude.code().into(),
-            crate::in_use::InUse {
+            InUse {
                 owner: Some(here),
                 login: String::new(),
                 known_at: 0,
@@ -3302,7 +3306,7 @@ mod tests {
             },
         );
         state::save(&m.ctx, Permit::for_a_test(), &state).expect("saved");
-        crate::switch::harness::config_names(&m, "there");
+        switch::harness::config_names(&m, "there");
 
         let read = Pitboard::new(m.ctx.clone())
             .status_offline()
@@ -3335,7 +3339,7 @@ mod tests {
         let here = state.get(&m.key("here")).expect("here").owner();
         state.in_use.insert(
             ProviderId::Claude.code().into(),
-            crate::in_use::InUse {
+            InUse {
                 owner: Some(here),
                 login: String::new(),
                 known_at: 0,
@@ -3343,7 +3347,7 @@ mod tests {
             },
         );
         state::save(&m.ctx, Permit::for_a_test(), &state).expect("saved");
-        crate::switch::harness::config_names(&m, "here");
+        switch::harness::config_names(&m, "here");
 
         let read = Pitboard::new(m.ctx.clone())
             .status_offline()
@@ -3366,7 +3370,7 @@ mod tests {
     fn a_read_settles_it_and_says_the_config_names_another() {
         use crate::api::scripted::Asked;
         let m = machine("read-config-names-another");
-        crate::switch::harness::config_names(&m, "there");
+        switch::harness::config_names(&m, "there");
         let pitboard = Pitboard::new(m.ctx.clone());
         let names_another = "Claude Code's config names `there`, and the login Claude Code has \
                              stored is `here`'s, as Anthropic said. `/status` in Claude Code \
@@ -3405,10 +3409,7 @@ mod tests {
     #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn whose_a_codex_login_is_is_told_without_asking_anyone() {
         let m = interrupted(codex_machine, "codex-renewed-since");
-        m.sign_in(&crate::switch::harness::codex_login(
-            "here",
-            "renewed-since",
-        ));
+        m.sign_in(&switch::harness::codex_login("here", "renewed-since"));
         m.mem.vault().fault(
             &reserved(&m),
             crate::store::memory::Fault::Unreadable("locked".into()),
@@ -3453,11 +3454,8 @@ mod tests {
         );
         let pitboard = Pitboard::new(ctx);
         for refused in [
-            pitboard.sign_in("codex/new").err().expect("refused"),
-            pitboard
-                .sign_in_watched("codex/new")
-                .err()
-                .expect("refused"),
+            pitboard.sign_in("codex/new").expect_err("refused"),
+            pitboard.sign_in_watched("codex/new").expect_err("refused"),
         ] {
             assert_eq!(refused.error.code(), "live_store_unsupported");
             let said = refused.error.to_string();
@@ -3634,7 +3632,7 @@ mod tests {
         for (tool, make) in MACHINES {
             let m = make(&format!("not-installed-said-{tool}"));
             m.mem.vault().takes_on_stdin(64);
-            let login = crate::switch::harness::signed_in(&m, "here", "here-refresh-2");
+            let login = switch::harness::signed_in(&m, "here", "here-refresh-2");
             m.fault_live(crate::store::memory::Fault::DeletedAfterWrite);
 
             let failed = Pitboard::new(m.ctx.clone())
@@ -3772,7 +3770,7 @@ mod tests {
         }),
         ("uninstall", |p, _| p.uninstall().err()),
         ("auto_switch", |p, _| {
-            p.auto_switch(crate::autoswitch::Threshold::DEFAULT).err()
+            p.auto_switch(Threshold::DEFAULT).err()
         }),
     ];
 
@@ -3854,7 +3852,7 @@ mod tests {
 
                 let at = format!("{tool}, enroll_signed_in, {refused:?}");
                 let m = interrupted(make, &format!("gate-{tool}-enroll-signed-in"));
-                let login = crate::switch::harness::signed_in(&m, "new", "new-refresh");
+                let login = switch::harness::signed_in(&m, "new", "new-refresh");
                 refused.said_by(&m);
                 let before = everything(&m);
                 let failed = Pitboard::new(m.ctx.clone())
@@ -3937,8 +3935,8 @@ mod tests {
                 };
 
                 refused(pitboard.permit().expect_err("the gate refuses"));
-                refused(pitboard.status_offline().err().expect("refused"));
-                refused(pitboard.status(false).err().expect("refused"));
+                refused(pitboard.status_offline().expect_err("refused"));
+                refused(pitboard.status(false).expect_err("refused"));
                 let before = (everything(&m), m.api.calls());
                 for (change, run) in CHANGES {
                     let failed = run(&pitboard, &m).unwrap_or_else(|| panic!("{at}: {change}"));
@@ -3995,7 +3993,7 @@ mod tests {
                     .ctx
                     .clone()
                     .with_clock(Arc::new(crate::time::FixedClock::at(
-                        crate::switch::harness::NOW + 11 * 86_400,
+                        switch::harness::NOW + 11 * 86_400,
                     )));
                 let pitboard = Pitboard::new(later);
                 refused.said_by(&m);
@@ -4041,8 +4039,8 @@ mod tests {
         let session = serde_json::json!({
             "session_id": "a-session",
             "rate_limits": {
-                "five_hour": {"used_percentage": 40.0, "resets_at": crate::switch::harness::NOW + 3_600},
-                "seven_day": {"used_percentage": 20.0, "resets_at": crate::switch::harness::NOW + 86_400},
+                "five_hour": {"used_percentage": 40.0, "resets_at": switch::harness::NOW + 3_600},
+                "seven_day": {"used_percentage": 20.0, "resets_at": switch::harness::NOW + 86_400},
             },
         })
         .to_string();
@@ -4074,12 +4072,12 @@ mod tests {
             for refused in REFUSED {
                 let at = format!("{tool}, {refused:?}");
                 let m = make(&format!("gate-renew-{tool}"));
-                crate::switch::harness::renews(&m, "there-refresh", "there-refresh-2");
+                switch::harness::renews(&m, "there-refresh", "there-refresh-2");
                 let later = m
                     .ctx
                     .clone()
                     .with_clock(Arc::new(crate::time::FixedClock::at(
-                        crate::switch::harness::NOW + 11 * 86_400,
+                        switch::harness::NOW + 11 * 86_400,
                     )));
                 let pitboard = Pitboard::new(later);
                 refused.said_by(&m);

@@ -555,7 +555,7 @@ impl Run<'_> {
             .map(PathBuf::from)
     }
 
-    fn records(&mut self, at: &Path, variables: &[String], args: &[String]) -> io::Result<()> {
+    fn records(&self, at: &Path, variables: &[String], args: &[String]) -> io::Result<()> {
         let given: serde_json::Map<String, serde_json::Value> = variables
             .iter()
             .map(|name| {

@@ -19,8 +19,8 @@
 //! file that has nothing to do with the token, and a signature that looked sufficient after
 //! Claude and Codex would have been wrong.
 //!
-//! Three facts, as values rather than code paths: [`Adoption`], [`ParkSemantics`],
-//! [`Isolation`]. These are things the engine and the front ends must branch on, and a
+//! Three facts, as values rather than code paths: [`Adoption`], `ParkSemantics`,
+//! `Isolation`. These are things the engine and the front ends must branch on, and a
 //! value lets them branch on the fact instead of on the provider's name. Nothing anywhere
 //! should read `if provider == Claude`.
 //!
@@ -198,33 +198,37 @@ impl std::fmt::Display for ProviderId {
 /// say which shape it is, and a credential can never be handed to the wrong engine by
 /// accident. What is inside is that engine's business and nothing else's.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Credential {
-    pub provider: ProviderId,
-    pub raw: Value,
+pub(crate) struct Credential {
+    pub(crate) provider: ProviderId,
+    pub(crate) raw: Value,
 }
 
 impl Credential {
-    pub fn new(provider: ProviderId, raw: Value) -> Credential {
+    pub(crate) fn new(provider: ProviderId, raw: Value) -> Credential {
         Credential { provider, raw }
     }
 }
 
-/// Who a credential belongs to, as the tool's own service understands it.
+/// Whose a login is. Unlike a refresh-token fingerprint, it does not change when a tool
+/// rotates the token.
 ///
-/// How this is learned is deliberately not part of the answer. Claude Code's is a network
-/// call to Anthropic on every switch, because its local config can lag the credential by a
-/// day. Codex's is a local decode of the ID token it already holds. Gemini's is a local
-/// decode when the token carries one and a network call when it does not. The engine wants
-/// the answer, not the method.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Identity {
-    /// Stable for the life of the account. A UUID for Claude, a UUID for Codex's
-    /// `chatgpt_account_id`, Google's `sub` for Gemini.
-    pub account_id: String,
+/// How it is learned is not part of the answer: Claude Code's from Anthropic, since its
+/// config can lag the credential by a day, and Codex's from the ID token it holds.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Owner {
+    /// Anthropic's account uuid, or Codex's ChatGPT account joined with the person in it.
+    pub account_uuid: String,
     pub email: String,
-    /// Claude's organisation, Codex's ChatGPT workspace, Gemini's project. `None` where the
-    /// tool has no such concept or did not say, which is not the same as an empty one.
-    pub group: Option<String>,
+    /// Claude's organisation or Codex's ChatGPT account. Empty for an account outside an
+    /// organisation, as Anthropic reports one.
+    pub organization_uuid: String,
+}
+
+impl Owner {
+    /// Whether `other` is this login: the same account in the same organisation.
+    pub(crate) fn same_login(&self, other: &Owner) -> bool {
+        self.account_uuid == other.account_uuid && self.organization_uuid == other.organization_uuid
+    }
 }
 
 /// Why an answer about a login could not be had.
@@ -232,8 +236,7 @@ pub struct Identity {
 /// Every variant says whether asking again later could answer differently, because that is
 /// the difference between a switch that should wait and one that should stop.
 #[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
-pub enum ProviderError {
+pub(crate) enum ProviderError {
     #[error("the session has expired")]
     Unauthorized,
     /// `retry_after` is what the service said to wait, in seconds, where it said anything.
@@ -337,7 +340,7 @@ pub enum Held {
 /// copy left live while its twin sits in the vault is a token the person's own next login
 /// can kill in both places at once.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ParkSemantics {
+pub(crate) enum ParkSemantics {
     /// A park may be a copy; the live credential can keep working.
     CopyWhileLive,
     /// There must never be two usable copies of one account's credential at rest on this
@@ -355,7 +358,7 @@ pub enum ParkSemantics {
 /// are global constants which `GEMINI_CLI_HOME` does not namespace, so the "private"
 /// sign-in would write over the live login instead of beside it.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Isolation {
+pub(crate) enum Isolation {
     /// A home override fully isolates a sign-in from the live credential.
     Isolated,
     /// It does not, and here is what to tell the person.
@@ -364,11 +367,11 @@ pub enum Isolation {
 
 /// When a login stops working, in epoch seconds. `None` where the tool does not say.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Expiry {
+pub(crate) struct Expiry {
     /// Until then its usage can be asked without renewing it first.
-    pub access_expires_at: Option<i64>,
+    pub(crate) access_expires_at: Option<i64>,
     /// Until then it can be restored at all.
-    pub refresh_expires_at: Option<i64>,
+    pub(crate) refresh_expires_at: Option<i64>,
 }
 
 /// Where one tool keeps its live login: the backends it reads, in the order it reads them,
@@ -428,7 +431,7 @@ pub(crate) trait Provider: Send + Sync + std::fmt::Debug {
     }
 
     /// Whose credential this is.
-    fn identify(&self, ctx: &Context, credential: &Credential) -> Result<Identity, ProviderError>;
+    fn identify(&self, ctx: &Context, credential: &Credential) -> Result<Owner, ProviderError>;
 
     /// Whether [`Provider::identify`] answers from the credential alone, asking nobody.
     /// Where it does, whose a login is can be told by a read that sends no request, as
@@ -442,7 +445,7 @@ pub(crate) trait Provider: Send + Sync + std::fmt::Debug {
     /// is without anybody's agreement, and that is not enough before installing it: a login
     /// the service has stopped accepting would be switched to, read back, found present,
     /// and fail the next time the person ran the tool, with nothing parked to go back to.
-    fn verify(&self, ctx: &Context, credential: &Credential) -> Result<Identity, ProviderError> {
+    fn verify(&self, ctx: &Context, credential: &Credential) -> Result<Owner, ProviderError> {
         self.identify(ctx, credential)
     }
 
@@ -501,7 +504,7 @@ pub(crate) trait Provider: Send + Sync + std::fmt::Debug {
     /// a sign that something signed in, the words for a message, and what a switch to the
     /// account in use writes over: never whose a login is, which row is in use, whose a
     /// session's numbers are, or whether an account may be forgotten.
-    fn own_record(&self, ctx: &Context) -> Option<Identity>;
+    fn own_record(&self, ctx: &Context) -> Option<Owner>;
 
     /// Correct whatever this tool caches about who is signed in, now that `incoming`'s
     /// login is live and the tool still names `outgoing`: the account switched away from, or
@@ -515,7 +518,7 @@ pub(crate) trait Provider: Send + Sync + std::fmt::Debug {
         ctx: &Context,
         permit: Permit,
         incoming: &crate::state::Account,
-        outgoing: &Identity,
+        outgoing: &Owner,
     ) -> Result<(), crate::error::Error>;
 
     /// The tool's own program, where it is installed. A private sign-in runs it, so its
@@ -735,8 +738,8 @@ pub(crate) fn command(ctx: &Context, _: Permit, tool: ProviderId) -> std::proces
         // Each entry was read out of a search path, so they join again as they were; only
         // the program's own directory could hold the separator, and then it is left off.
         Some(dir) => std::env::join_paths(std::iter::once(dir.to_path_buf()).chain(entries))
-            .unwrap_or_else(|_| search.clone()),
-        None => search.clone(),
+            .unwrap_or(search),
+        None => search,
     };
     let mut command = std::process::Command::new(program);
     command.env("PATH", path);

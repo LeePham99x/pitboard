@@ -12,10 +12,10 @@
 
 use super::refresh::{self, Place, Progress, Refreshing, Renewed, Stop};
 use super::{Result, journal};
-use crate::api::Owner;
 use crate::context::Context;
 use crate::error::Error;
 use crate::in_use::{self, InUse};
+use crate::provider::Owner;
 use crate::provider::{self, LoginKind, Provider, ProviderError, ProviderId};
 use crate::service::Permit;
 use crate::state::{self, Account, Key, State};
@@ -72,9 +72,7 @@ pub(crate) fn whose(
     if let Some(found) = recorded(state, tool, document) {
         return Ok(found);
     }
-    let owner = tool
-        .identify(ctx, &provider::Credential::new(tool.id(), document.clone()))
-        .map(Owner::from)?;
+    let owner = tool.identify(ctx, &provider::Credential::new(tool.id(), document.clone()))?;
     Ok(Found {
         owner,
         login: tool.fingerprint(document),
@@ -226,7 +224,6 @@ fn renewed_under_the_lock(
                     .map_err(|e| failed(store::Error::Malformed(e.to_string()).into()))?;
                 let owner = tool
                     .identify(ctx, &provider::Credential::new(which, renewed.clone()))
-                    .map(Owner::from)
                     .map_err(Unrenewed::Asked)?;
                 let found = Found {
                     owner,
@@ -643,7 +640,7 @@ mod tests {
         let third = document("third-refresh");
         let before = state_file(&m);
 
-        crate::fault::meanwhile(
+        fault::meanwhile(
             "identify.recording",
             {
                 let (store, service) = m.live_store();
@@ -841,7 +838,7 @@ mod tests {
         let settled = super::super::settle(&m.ctx, Permit::for_a_test(), None)
             .expect("nothing to recover")
             .0;
-        let died = crate::fault::killing("switch.park_recorded", || {
+        let died = fault::killing("switch.park_recorded", || {
             super::super::switch(settled, &m.key("there"))
         });
         assert_eq!(died.unwrap_err(), "switch.park_recorded");
@@ -882,12 +879,7 @@ mod tests {
         .expect("named");
 
         assert_eq!(found.owner, owner("here"));
-        assert_eq!(
-            m.api.asked(),
-            [crate::api::scripted::Asked::Owner(
-                "access-here-refresh".into()
-            )]
-        );
+        assert_eq!(m.api.asked(), [Asked::Owner("access-here-refresh".into())]);
     }
 
     /// `here`'s login renewed since Anthropic last named it, and lapsed since, as Claude Code
@@ -924,7 +916,7 @@ mod tests {
     /// Killed once Anthropic has answered a renewal of `here`'s lapsed login, which spends
     /// the refresh token the keychain still holds.
     fn killed_once_answered(m: &Machine) {
-        let died = crate::fault::killing("refresh.exchanged", || told_now(m).map(|_| ()));
+        let died = fault::killing("refresh.exchanged", || told_now(m).map(|_| ()));
         assert_eq!(died.err().as_deref(), Some("refresh.exchanged"));
         m.api.renew_trouble("here-renewed", Trouble::InvalidGrant);
     }
@@ -1000,14 +992,14 @@ mod tests {
     )]
     fn a_lapsed_login_is_renewed_under_the_refresh_lock_and_named() {
         let m = lapsed_stored("identify-renews");
-        let refreshing = lock_dir(&crate::provider::claude::paths::refresh_lock(&m.ctx));
+        let refreshing = lock_dir(&provider::claude::paths::refresh_lock(&m.ctx));
         let held = Rc::new(Cell::new(false));
         let looked = {
             let (held, refreshing) = (Rc::clone(&held), refreshing.clone());
             move || held.set(refreshing.is_dir())
         };
 
-        let told = crate::fault::meanwhile("refresh.exchanged", looked, || told_now(&m));
+        let told = fault::meanwhile("refresh.exchanged", looked, || told_now(&m));
 
         assert_eq!(owner_told(told), owner("here"));
         assert!(held.get(), "renewed under Claude Code's refresh lock");
@@ -1027,7 +1019,7 @@ mod tests {
         let state = state::load(&m.ctx).expect("state");
         let recorded = state.in_use(ProviderId::Claude).expect("recorded");
         assert_eq!(recorded.owner, Some(owner("here")));
-        assert_eq!(recorded.login, crate::store::fingerprint("here-again"));
+        assert_eq!(recorded.login, store::fingerprint("here-again"));
         assert_eq!(state.renewing, []);
         assert!(crate::pending::outstanding(&m.ctx, Some(&state)).is_empty());
         hold(&m, "after a renewal");
@@ -1048,7 +1040,7 @@ mod tests {
         let session = Session::new();
         let keychain = Arc::clone(m.mem.live());
 
-        let told = crate::fault::meanwhile(
+        let told = fault::meanwhile(
             "identify.lapsed",
             renews_meanwhile(&m, Arc::clone(&keychain), &session),
             || told_now(&m),
@@ -1126,7 +1118,7 @@ mod tests {
     fn a_write_lock_held_once_the_refresh_token_is_spent_is_waited_for() {
         let m = lapsed_stored("identify-write-lock-after");
 
-        let told = crate::fault::meanwhile(
+        let told = fault::meanwhile(
             "refresh.exchanged",
             takes_the_write_lock(&m, std::time::Duration::from_secs(7)),
             || told_now(&m),
@@ -1153,7 +1145,7 @@ mod tests {
         ] {
             let m = lapsed_stored(&format!("identify-killed-{point}-{next}"));
 
-            let died = crate::fault::killing(point, || told_now(&m).map(|_| ()));
+            let died = fault::killing(point, || told_now(&m).map(|_| ()));
             assert_eq!(died.err().as_deref(), Some(point));
             m.api.renew_trouble("here-renewed", Trouble::InvalidGrant);
 
@@ -1220,7 +1212,7 @@ mod tests {
                 }
             };
 
-            let refused = crate::fault::meanwhile("refresh.exchanged", faulted, || told_now(&m))
+            let refused = fault::meanwhile("refresh.exchanged", faulted, || told_now(&m))
                 .err()
                 .expect("not saved");
 
@@ -1263,7 +1255,7 @@ mod tests {
             }
         };
 
-        let refused = crate::fault::meanwhile("identify.lapsed", lift, || told_now(&m))
+        let refused = fault::meanwhile("identify.lapsed", lift, || told_now(&m))
             .err()
             .expect("the copy cannot be saved");
 
@@ -1298,7 +1290,7 @@ mod tests {
             .clone()
             .with_claude_config_dir(dir.display().to_string());
         m.mem.live().plant(
-            &crate::provider::claude::paths::live_service(&other),
+            &provider::claude::paths::live_service(&other),
             &lapsed("other-renewed").to_string(),
         );
         renews(&m, "other-renewed", "other-again");
@@ -1365,7 +1357,7 @@ mod tests {
         assert_eq!(stored_refresh(&m).as_deref(), Some("here-renewed"));
         m.mem.vault().heal(&copy);
         pitboard.switch_to("there").expect("switched");
-        assert_eq!(parked(&m), Some(crate::store::fingerprint("here-again")));
+        assert_eq!(parked(&m), Some(store::fingerprint("here-again")));
         assert_eq!(m.mem.vault().peek(&copy), None);
         assert_eq!(renewals(&m), [Asked::Renew("here-renewed".into())]);
         hold(&m, "after a switch from a renewal saved late");
@@ -1384,10 +1376,9 @@ mod tests {
         let m = lapsed_stored("identify-locked-before-sending");
         let before = state_file(&m);
 
-        let refused =
-            crate::fault::meanwhile("refresh.checked", locks_the_keychain(&m), || told_now(&m))
-                .err()
-                .expect("the keychain is locked");
+        let refused = fault::meanwhile("refresh.checked", locks_the_keychain(&m), || told_now(&m))
+            .err()
+            .expect("the keychain is locked");
 
         assert_eq!(refused.code(), "credential_store_locked");
         assert_eq!(renewals(&m), []);
@@ -1439,7 +1430,7 @@ mod tests {
             move || keychain.fault(&service, Fault::Locked)
         };
 
-        let refused = crate::fault::meanwhile("refresh.exchanged", locks, || told_now(&m))
+        let refused = fault::meanwhile("refresh.exchanged", locks, || told_now(&m))
             .err()
             .expect("the keychain is locked");
 
@@ -1465,7 +1456,7 @@ mod tests {
     fn a_renewal_saved_without_the_write_lock_is_said() {
         let m = lapsed_stored("identify-lock-lost");
 
-        let done = crate::fault::meanwhile("refresh.exchanged", jams_the_write_lock(&m), || {
+        let done = fault::meanwhile("refresh.exchanged", jams_the_write_lock(&m), || {
             Pitboard::new(m.ctx.clone()).update_config("here")
         })
         .expect("in use");
@@ -1519,7 +1510,7 @@ mod tests {
         let state = state::load(&m.ctx).expect("state");
         assert_eq!(
             state.in_use(ProviderId::Claude).map(|r| r.login.clone()),
-            Some(crate::store::fingerprint("here-again"))
+            Some(store::fingerprint("here-again"))
         );
     }
 
@@ -1621,7 +1612,7 @@ mod tests {
     fn a_codex_login_is_told_by_its_claims_and_never_renewed() {
         let m = codex_machine("identify-codex-lapsed");
         let mut login = codex_login("here", "here-again");
-        login["tokens"]["access_token"] = serde_json::json!(crate::provider::jwt::unsigned(
+        login["tokens"]["access_token"] = serde_json::json!(provider::jwt::unsigned(
             &serde_json::json!({"exp": NOW - 60, "for": "here-again"})
         ));
         m.sign_in(&login);

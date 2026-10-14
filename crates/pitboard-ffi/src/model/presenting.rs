@@ -596,7 +596,7 @@ fn the_menu_says_what_stands_in_an_accounts_way_before_its_limits() {
     let login = unplaced("codex", false);
     assert_eq!(
         Some(described(login.clone()).summary),
-        login.stale_explanation.clone()
+        login.stale_explanation
     );
     let unexplained = Account {
         stale_explanation: None,
@@ -647,7 +647,7 @@ fn an_account_with_nothing_measured_is_described_by_its_address() {
 #[test]
 fn limits_are_said_in_one_line_with_only_its_first_letter_capitalised() {
     let summary =
-        |limits: Vec<crate::Limit>| described(account(Some("work")).limits(limits).build()).summary;
+        |limits: Vec<Limit>| described(account(Some("work")).limits(limits).build()).summary;
     assert_eq!(
         summary(vec![window("weekly_all", 64.4), window("session", 12.0)]),
         "Weekly 64%, 5-hour 12%"

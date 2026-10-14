@@ -8,9 +8,10 @@
 //! It also counts. How often Pitboard asks is a design question in its own right, and a
 //! test that can say "asked once, for two front ends" is how that stays true.
 
-use super::{Api, ApiError, Owner, Renewed};
 use crate::context::Context;
+use crate::provider::Owner;
 use crate::provider::ProviderError;
+use crate::provider::claude::api::{Api, ApiError, Renewed};
 use crate::provider::codex::api::{Fresh, OpenAi};
 use crate::service::Permit;
 use crate::usage::Snapshot;

@@ -3,22 +3,22 @@
 //!
 //! A program in the foreground, which stops with its terminal or with Ctrl-C. Nothing
 //! installs it and it starts nothing that outlives it: running it is the opt-in. What it
-//! decides, and what it never does, is [`pitboard_core::autoswitch`]'s and
-//! [`pitboard_core::warm`]'s.
+//! decides, and what it never does, is [`pitboard_core::duty::autoswitch`]'s and
+//! [`pitboard_core::duty::warm`]'s.
 //!
 //! It asks the services about every account as often as the app does, and looks at what the
 //! status lines and the other front ends record as often as the app looks, so it costs
 //! Anthropic no more than the app would.
 
 use crate::{Report, emit, followed, ui};
-use pitboard_core::autoswitch::{Auto, Blind, Look, Skip, Threshold};
+use pitboard_core::duty::autoswitch::{Auto, Blind, Look, Skip, Threshold};
 use pitboard_core::duty::cadence::{DECIDE_EVERY_SECONDS, Refusals};
+use pitboard_core::duty::warm::{Overview, Standing};
 use pitboard_core::error::{self, Error};
 use pitboard_core::provider::ProviderId;
 use pitboard_core::service::{Changing, Done, Failed, Pitboard};
 use pitboard_core::switch::warm::WarmUp;
 use pitboard_core::usage::Window;
-use pitboard_core::warm::{Overview, Standing};
 use pitboard_core::words;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
@@ -36,20 +36,20 @@ const READ_EVERY: i64 = 300;
 /// Decides once from the usage Pitboard last measured, and says what it came to. Nobody is
 /// asked for usage; a decision under the lock may ask Anthropic whose login Claude Code has
 /// stored, as a switch does.
-pub fn once(pitboard: &Pitboard, threshold: Threshold) -> Report {
+pub(crate) fn once(pitboard: &Pitboard, threshold: Threshold) -> Report {
     said(pitboard.auto_switch(threshold), threshold, false)
 }
 
 /// Watches until it is stopped, saying the account it watches whenever its last line said
 /// something else, every switch, and each thing that stops one once. A refusal is asked again
 /// no sooner than the core waits after as many failed attempts, as the app does.
-pub fn run(pitboard: &Pitboard, threshold: Threshold, as_json: bool) -> ExitCode {
+pub(crate) fn run(pitboard: &Pitboard, threshold: Threshold, as_json: bool) -> ExitCode {
     if let Err(refused) = pitboard.permit() {
-        return emit(Report::failed(Some("watch"), refused), as_json);
+        return emit(&Report::failed(Some("watch"), refused), as_json);
     }
     let warming = pitboard.warm_overview().ok();
     emit(
-        Report::done(
+        &Report::done(
             "watch",
             watching_json(threshold, warming.as_ref()),
             format!(
@@ -92,10 +92,10 @@ pub fn run(pitboard: &Pitboard, threshold: Threshold, as_json: bool) -> ExitCode
                 }
                 let say = |outcome| said(outcome, threshold, true);
                 if matches!(&outcome, Err(failed) if ends_watching(&failed.error)) {
-                    return emit(say(outcome), as_json);
+                    return emit(&say(outcome), as_json);
                 }
                 if let Some(report) = told.untold(outcome, say) {
-                    emit(report, as_json);
+                    emit(&report, as_json);
                 }
             }
             // Nothing a warm-up comes to ends watching: switching goes on, and the warm-up is
@@ -109,7 +109,7 @@ pub fn run(pitboard: &Pitboard, threshold: Threshold, as_json: bool) -> ExitCode
                     }
                 }
                 for report in warm_told.untold(outcome) {
-                    emit(report, as_json);
+                    emit(&report, as_json);
                 }
             }
         }
@@ -280,7 +280,7 @@ impl WarmTold {
                 vec![Report::done(
                     "watch",
                     json!({ "event": "warmed_up", "account": account, "until": until }),
-                    stamp(format!("{line}\n")),
+                    stamp(&format!("{line}\n")),
                 )]
             }
             WarmUp::Running { .. } | WarmUp::Nothing => Vec::new(),
@@ -299,7 +299,7 @@ impl WarmTold {
                     reports.push(Report::done(
                         "watch",
                         json!({ "event": "warm_up_halted", "reason": halt.code() }),
-                        stamp(format!("{}\n", crate::warm::halted_line(halt))),
+                        stamp(&format!("{}\n", crate::warm::halted_line(halt))),
                     ));
                 }
                 return reports;
@@ -329,7 +329,7 @@ impl WarmTold {
                     "reason": hold.code(),
                     "until": until,
                 }),
-                stamp(format!(
+                stamp(&format!(
                     "{} {}, so Pitboard is not warming it up for now.\n",
                     ui::paint(ui::BOLD, &choice.account),
                     words::warm_standing(&standing, moment)
@@ -345,12 +345,12 @@ impl WarmTold {
 fn said(outcome: Changing<Auto>, threshold: Threshold, stamped: bool) -> Report {
     crate::changed("watch", outcome, |value| {
         let (data, line) = event(value, threshold);
-        (data, if stamped { stamp(line) } else { line })
+        (data, if stamped { stamp(&line) } else { line })
     })
 }
 
 /// `line` after the local time.
-fn stamp(line: String) -> String {
+fn stamp(line: &str) -> String {
     format!(
         "{} {line}",
         ui::paint(ui::DIM, pitboard_core::time::local(epoch(), "%H:%M:%S"))
@@ -1010,7 +1010,7 @@ mod tests {
 
     mod warming {
         use super::*;
-        use pitboard_core::warm::{Choice, Halt, Hold, Range};
+        use pitboard_core::duty::warm::{Choice, Halt, Hold, Range};
 
         fn overview(halted: Option<Halt>, held: Option<Hold>) -> Overview {
             Overview {
@@ -1081,7 +1081,7 @@ mod tests {
                 Err(Failed {
                     error: Error::WarmUpFailed {
                         label: "work".into(),
-                        why: pitboard_core::warm::Failure::NotStarted,
+                        why: pitboard_core::duty::warm::Failure::NotStarted,
                     },
                     warnings: Vec::new(),
                     said_first: 0,

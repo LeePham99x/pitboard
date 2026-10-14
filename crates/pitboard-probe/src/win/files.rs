@@ -95,7 +95,7 @@ fn verbatim(path: &Path) -> Vec<u16> {
 /// Rename `src` over `dst` with `FileRenameInfoEx` and POSIX semantics. The buffer is laid
 /// out as std's own rename lays it: the name at `FileName`'s offset, its length in bytes
 /// without the NUL, and room for the NUL.
-pub fn rename_posix(src: &Path, dst: &Path) -> Result<(), u32> {
+pub(super) fn rename_posix(src: &Path, dst: &Path) -> Result<(), u32> {
     let h = open(
         src,
         DELETE,
@@ -106,7 +106,7 @@ pub fn rename_posix(src: &Path, dst: &Path) -> Result<(), u32> {
     let name = verbatim(dst);
     let offset = std::mem::offset_of!(FILE_RENAME_INFO, FileName);
     let name_bytes = name.len() * 2;
-    let size = (offset + name_bytes + 2).max(std::mem::size_of::<FILE_RENAME_INFO>());
+    let size = (offset + name_bytes + 2).max(size_of::<FILE_RENAME_INFO>());
     // u64s, so the buffer is aligned for FILE_RENAME_INFO.
     let mut buf = vec![0u64; size.div_ceil(8)];
     let info = buf.as_mut_ptr().cast::<FILE_RENAME_INFO>();
@@ -135,7 +135,7 @@ pub fn rename_posix(src: &Path, dst: &Path) -> Result<(), u32> {
 }
 
 /// `MoveFileExW(REPLACE_EXISTING | WRITE_THROUGH)`.
-pub fn rename_movefile(src: &Path, dst: &Path) -> Result<(), u32> {
+pub(super) fn rename_movefile(src: &Path, dst: &Path) -> Result<(), u32> {
     let s = ffi::wide(src);
     let d = ffi::wide(dst);
     // SAFETY: both strings are NUL-terminated.
@@ -162,7 +162,7 @@ fn rename(route: Route, src: &Path, dst: &Path) -> Result<(), u32> {
 
 // --- C3: the volume ----------------------------------------------------------------------
 
-pub fn volume(scratch: &Path) -> Report {
+pub(super) fn volume(scratch: &Path) -> Report {
     if let Err(r) = guarded("volume", scratch) {
         return r;
     }
@@ -373,7 +373,12 @@ fn read_once(target: &Path, share: u32, stats: &mut ReaderStats) {
     }
 }
 
-pub fn replace_loop(scratch: &Path, rounds: u32, lead_seconds: u64, reader: ReaderShare) -> Report {
+pub(super) fn replace_loop(
+    scratch: &Path,
+    rounds: u32,
+    lead_seconds: u64,
+    reader: ReaderShare,
+) -> Report {
     if let Err(r) = guarded("replace-loop", scratch) {
         return r;
     }
@@ -473,7 +478,7 @@ pub fn replace_loop(scratch: &Path, rounds: u32, lead_seconds: u64, reader: Read
     )
 }
 
-pub fn replace_reader(scratch: &Path, seconds: u64, share: ReaderShare) -> Report {
+pub(super) fn replace_reader(scratch: &Path, seconds: u64, share: ReaderShare) -> Report {
     if let Err(r) = guarded("replace-reader", scratch) {
         return r;
     }
@@ -505,7 +510,7 @@ pub fn replace_reader(scratch: &Path, seconds: u64, share: ReaderShare) -> Repor
 
 // --- C5: flushing a directory and mtime precision -----------------------------------------
 
-pub fn flush_dir(scratch: &Path) -> Report {
+pub(super) fn flush_dir(scratch: &Path) -> Report {
     if let Err(r) = guarded("flush-dir", scratch) {
         return r;
     }
@@ -567,7 +572,7 @@ fn mtime_precision(scratch: &Path) -> Value {
 const STALE_MS: u64 = 15_000;
 const HEARTBEAT_MS: u64 = 7_500;
 
-pub fn lock(scratch: &Path, mode: LockMode, seconds: u64) -> Report {
+pub(super) fn lock(scratch: &Path, mode: LockMode, seconds: u64) -> Report {
     if let Err(r) = guarded("lock", scratch) {
         return r;
     }
@@ -699,7 +704,12 @@ fn home_of(scratch: &Path) -> PathBuf {
     probe_file(scratch, "home")
 }
 
-pub fn lockfileex(scratch: &Path, mode: LfxMode, seconds: u64, share: ReaderShare) -> Report {
+pub(super) fn lockfileex(
+    scratch: &Path,
+    mode: LfxMode,
+    seconds: u64,
+    share: ReaderShare,
+) -> Report {
     if let Err(r) = guarded("lockfileex", scratch) {
         return r;
     }
@@ -866,7 +876,7 @@ fn remove_home_while_held(
 
 // --- G6: replace a file in a scratch folder --------------------------------------------------
 
-pub fn swap(scratch: &Path, target: &str, source: &str, route: Route) -> Report {
+pub(super) fn swap(scratch: &Path, target: &str, source: &str, route: Route) -> Report {
     let logon = logon_now();
     let (target_path, source_path) = match (
         ffi::scratch_file(scratch, target),

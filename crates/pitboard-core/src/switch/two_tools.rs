@@ -15,12 +15,12 @@ use crate::provider::codex::api::Fresh;
 use crate::provider::{Adoption, Credential};
 use crate::service::Permit;
 
-fn whose(m: &super::harness::Machine) -> Option<String> {
+fn whose(m: &harness::Machine) -> Option<String> {
     let live = m.live()?;
     provider::document(m.which)
         .identify(&m.ctx, &Credential::new(m.which, live))
         .ok()
-        .map(|found| found.account_id)
+        .map(|found| found.account_uuid)
 }
 
 /// The login moves: `there`'s goes live, `here`'s goes into the vault, and nothing of
@@ -78,7 +78,7 @@ fn a_codex_switch_moves_one_login_in_and_one_out() {
 #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
 fn a_codex_switch_leaves_claude_code_alone() {
     let m = codex_machine("claude-untouched");
-    let claude = crate::provider::claude::paths::live_service(&m.ctx);
+    let claude = provider::claude::paths::live_service(&m.ctx);
     m.mem
         .live()
         .plant(&claude, "{\"claudeAiOauth\":{\"refreshToken\":\"c\"}}");
@@ -101,7 +101,7 @@ fn a_codex_switch_leaves_claude_code_alone() {
 fn the_same_label_on_two_tools_is_two_accounts() {
     let m = codex_machine("same-label");
     let mut state = state::load(&m.ctx).expect("state");
-    state.upsert(super::harness::account("there", "claude-there", None));
+    state.upsert(harness::account("there", "claude-there", None));
     state::save(&m.ctx, Permit::for_a_test(), &state).expect("saved");
 
     let settled = settle(&m.ctx, Permit::for_a_test(), None)
@@ -115,9 +115,7 @@ fn the_same_label_on_two_tools_is_two_accounts() {
     assert!(state.get(&claude).unwrap().parked.is_none());
     assert_eq!(state.in_use(ProviderId::Claude), None);
     assert_eq!(
-        state
-            .account_in_use(ProviderId::Codex)
-            .map(|account| account.key()),
+        state.account_in_use(ProviderId::Codex).map(Account::key),
         Some(m.key("there"))
     );
 }
@@ -200,7 +198,7 @@ fn a_park_that_does_not_stick_leaves_the_live_login_in_place() {
     let m = codex_machine("park-lost");
     m.mem
         .vault()
-        .fault_all(crate::store::memory::Fault::DeletedAfterWrite);
+        .fault_all(store::memory::Fault::DeletedAfterWrite);
     let before = m.live();
 
     let settled = settle(&m.ctx, Permit::for_a_test(), None)
@@ -349,7 +347,7 @@ fn a_process_list_nobody_could_read_is_said_rather_than_taken_for_none() {
         "nothing is said to be running: {warnings:?}"
     );
 
-    let m = super::harness::machine("listless-claude");
+    let m = harness::machine("listless-claude");
     m.mem.without_a_process_list();
     let settled = settle(&m.ctx, Permit::for_a_test(), Some(ProviderId::Claude))
         .expect("nothing to recover")
@@ -407,7 +405,7 @@ fn a_custom_claude_endpoint_does_not_stop_a_codex_switch() {
 #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
 fn a_sign_in_is_enrolled_only_under_its_own_tool() {
     let m = codex_machine("wrong-tool");
-    let login = super::enroll::planted(
+    let login = planted(
         &m.ctx,
         Permit::for_a_test(),
         provider::document(ProviderId::Codex),
@@ -427,7 +425,7 @@ fn a_sign_in_is_enrolled_only_under_its_own_tool() {
 #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
 fn a_codex_sign_in_is_parked_as_a_codex_account() {
     let m = codex_machine("sign-in");
-    let login = super::enroll::planted(
+    let login = planted(
         &m.ctx,
         Permit::for_a_test(),
         provider::document(ProviderId::Codex),
@@ -459,7 +457,7 @@ fn abandoning_a_codex_switch_keeps_no_twin_of_the_live_login() {
     let settled = settle(&m.ctx, Permit::for_a_test(), None)
         .expect("nothing to recover")
         .0;
-    let died = crate::fault::killing("switch.park_recorded", || switch(settled, &m.key("there")));
+    let died = fault::killing("switch.park_recorded", || switch(settled, &m.key("there")));
     assert_eq!(died.unwrap_err(), "switch.park_recorded");
 
     abandon(&m.ctx, Permit::for_a_test()).expect("abandoned");
@@ -492,7 +490,7 @@ fn a_codex_refresh_during_a_switch_is_not_written_over() {
         .expect("nothing to recover")
         .0;
 
-    let refused = crate::fault::meanwhile(
+    let refused = fault::meanwhile(
         "switch.park_recorded",
         move || {
             let live = provider::document(ProviderId::Codex).live(&writer).unwrap();
@@ -537,7 +535,7 @@ fn another_sign_in_during_a_switch_keeps_the_outgoing_park() {
         .expect("nothing to recover")
         .0;
 
-    let refused = crate::fault::meanwhile(
+    let refused = fault::meanwhile(
         "switch.park_recorded",
         move || {
             let live = provider::document(ProviderId::Codex).live(&writer).unwrap();
@@ -574,13 +572,11 @@ fn an_interrupted_switch_is_recovered_only_where_it_ran() {
     let settled = settle(&m.ctx, Permit::for_a_test(), None)
         .expect("nothing to recover")
         .0;
-    let died = crate::fault::killing("switch.park_recorded", || switch(settled, &m.key("there")));
+    let died = fault::killing("switch.park_recorded", || switch(settled, &m.key("there")));
     assert_eq!(died.unwrap_err(), "switch.park_recorded");
 
     let elsewhere = m.ctx.clone().with_codex_home("/somewhere/else".into());
-    let refused = settle(&elsewhere, Permit::for_a_test(), None)
-        .err()
-        .expect("refused elsewhere");
+    let refused = settle(&elsewhere, Permit::for_a_test(), None).expect_err("refused elsewhere");
     assert_eq!(refused.code(), "recovery_elsewhere");
     assert!(refused.to_string().contains("CODEX_HOME"), "{refused}");
 

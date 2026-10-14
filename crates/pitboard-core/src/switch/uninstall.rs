@@ -10,6 +10,7 @@ use crate::{home, schedule, state};
 
 /// What was removed, for the report. It may say more in a later release, so it cannot be
 /// built outside this crate.
+#[derive(Debug)]
 #[non_exhaustive]
 pub struct Removed {
     // Parked logins deleted: from the keychain or the vault, or a folder under `parks`.
@@ -45,7 +46,7 @@ pub struct Removed {
 /// is not this Pitboard's to delete, so it is left, and does not keep the directory. A
 /// renewed login settling could not save yet is the only copy of that login, so it is
 /// neither deleted nor left unnamed: it keeps the directory too.
-pub fn uninstall(settled: Settled) -> Result<Removed> {
+pub(crate) fn uninstall(settled: Settled) -> Result<Removed> {
     let Settled {
         _exclusive,
         mut state,
@@ -195,13 +196,8 @@ mod tests {
             assert_eq!(state.accounts.len(), 2, "{:?}", m.which);
             let there = state.get(&m.key("there")).expect("`there` is enrolled");
             let park = there.parked.as_ref().expect("`there` is still parked");
-            crate::park::load(
-                &m.ctx,
-                crate::provider::document(m.which),
-                &m.key("there"),
-                park,
-            )
-            .expect("its parked login is kept");
+            crate::park::load(&m.ctx, provider::document(m.which), &m.key("there"), park)
+                .expect("its parked login is kept");
             assert!(home::dir(&m.ctx).is_dir());
             assert!(matches!(
                 schedule::status(&m.ctx),

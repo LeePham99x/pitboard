@@ -6,7 +6,7 @@
 //! knows that its login sits under `claudeAiOauth`, beside keys that belong to nobody's
 //! account.
 
-use crate::api;
+use super::api;
 use crate::store;
 use serde_json::{Value, json};
 

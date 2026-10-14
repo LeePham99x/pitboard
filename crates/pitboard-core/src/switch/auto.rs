@@ -11,13 +11,13 @@
 
 use super::{Settled, Switched, identify, switch_from};
 use crate::audit;
-use crate::autoswitch::{self, Auto, Blind, Judged, Ledger, Threshold};
+use crate::duty::autoswitch::{self, Auto, Blind, Judged, Ledger, Threshold};
 use crate::error::{Error, Result};
 use crate::provider::{self, ProviderId};
 use crate::service::Warning;
 
 /// Switches Claude Code where a limit of the account in use has reached `threshold` and
-/// another account has room, as [`crate::autoswitch`] says, and records what it came to.
+/// another account has room, as [`crate::duty::autoswitch`] says, and records what it came to.
 ///
 /// Whose login Claude Code has stored is told first. Where it cannot be, nothing is judged
 /// from what Pitboard last knew, which may be another account's: that is recorded once, as
@@ -224,7 +224,7 @@ mod tests {
     };
     use super::super::*;
     use crate::api::scripted::Trouble;
-    use crate::autoswitch::{Auto, Blind, Decision, Ledger, Look, Skip, Threshold, decide};
+    use crate::duty::autoswitch::{Auto, Blind, Decision, Ledger, Look, Skip, Threshold, decide};
     use crate::duty::cadence::{ATTEMPTS, RETRY_SECONDS};
     use crate::service::{Permit, Pitboard};
     use crate::store::memory::Fault;
@@ -234,7 +234,7 @@ mod tests {
 
     /// What Anthropic has just answered of `uuid`'s five-hour and weekly limits.
     fn measured(m: &Machine, uuid: &str, session: f64, weekly: f64) {
-        crate::readings::answered(
+        crate::usage::readings::answered(
             &m.ctx,
             Permit::for_a_test(),
             &[(uuid.to_owned(), answer(m, session, weekly))],
@@ -271,7 +271,7 @@ mod tests {
     /// What the look at the files alone comes to, where it ends there and takes no lock.
     fn stands(m: &Machine) -> Auto {
         let state = state::load(&m.ctx).expect("state");
-        match crate::autoswitch::look(&m.ctx, &state, Threshold::DEFAULT) {
+        match crate::duty::autoswitch::look(&m.ctx, &state, Threshold::DEFAULT) {
             Look::Stands(stands) => *stands,
             Look::Act => panic!("the look goes on to the lock"),
         }
@@ -287,7 +287,7 @@ mod tests {
 
     /// The reasons not to switch the audit log records, and of which account.
     fn stays(m: &Machine) -> Vec<(String, String)> {
-        super::super::harness::audit_lines(m, "auto-stay")
+        harness::audit_lines(m, "auto-stay")
     }
 
     fn live_refresh(m: &Machine) -> Option<String> {
@@ -327,10 +327,7 @@ mod tests {
             (from.as_str(), to.as_str(), limit.kind.as_str()),
             ("here", "there", "session")
         );
-        assert!(matches!(
-            adoption,
-            crate::provider::Adoption::PollingWithin(33)
-        ));
+        assert!(matches!(adoption, provider::Adoption::PollingWithin(33)));
         assert_eq!(live_refresh(&m).as_deref(), Some("there-refresh"));
         assert_eq!(
             logged(&m),
@@ -391,7 +388,7 @@ mod tests {
     )]
     fn with_a_file_behind_the_keychain_the_automatic_switch_switches_and_says_so() {
         let (m, _) = nearly_out("auto-file-behind", 96.0);
-        let file = crate::provider::claude::live::credential_file(&m.ctx);
+        let file = provider::claude::live::credential_file(&m.ctx);
         m.mem
             .file_at(file.clone())
             .plant(&m.service, &document("left-by-a-sign-in").to_string());
@@ -401,7 +398,7 @@ mod tests {
             panic!("a switch, not {:?}", done.value);
         };
         assert_eq!(to, "there");
-        assert_eq!(adoption, crate::provider::Adoption::AtRenewal { file });
+        assert_eq!(adoption, provider::Adoption::AtRenewal { file });
         assert_eq!(live_refresh(&m).as_deref(), Some("there-refresh"));
         assert_eq!(
             done.warnings
@@ -490,12 +487,12 @@ mod tests {
     )]
     fn a_rate_limit_hold_is_said_with_what_it_watches() {
         let (m, _) = nearly_out("auto-held", 60.0);
-        crate::budget::record(
+        crate::usage::budget::record(
             &m.ctx,
             Permit::for_a_test(),
             &[(
                 "here".into(),
-                crate::budget::Outcome::RateLimited(Some(3600)),
+                crate::usage::budget::Outcome::RateLimited(Some(3600)),
             )],
         );
         let looked = stands(&m);
@@ -567,7 +564,7 @@ mod tests {
             ],
             ..answer(&m, 97.0, 20.0)
         };
-        crate::readings::answered(
+        crate::usage::readings::answered(
             &m.ctx,
             Permit::for_a_test(),
             &[("here".to_owned(), a_second_off)],
@@ -598,7 +595,11 @@ mod tests {
                 ],
                 ..answer(&m, session, 20.0)
             };
-            crate::readings::answered(&m.ctx, Permit::for_a_test(), &[(uuid.to_owned(), answer)]);
+            crate::usage::readings::answered(
+                &m.ctx,
+                Permit::for_a_test(),
+                &[(uuid.to_owned(), answer)],
+            );
         };
         session_resets("there", 96.0, NOW + 7200);
         let reset = |looked: Auto| match looked {
@@ -632,7 +633,7 @@ mod tests {
             ..window(kind, percent)
         };
         for (uuid, session) in [("here", 97.0), ("there", 96.0)] {
-            crate::readings::answered(
+            crate::usage::readings::answered(
                 &m.ctx,
                 Permit::for_a_test(),
                 &[(
@@ -664,7 +665,7 @@ mod tests {
         clock.advance(1);
         let state = state::load(&m.ctx).expect("state");
         assert!(matches!(
-            crate::autoswitch::look(&m.ctx, &state, Threshold::DEFAULT),
+            crate::duty::autoswitch::look(&m.ctx, &state, Threshold::DEFAULT),
             Look::Act
         ));
         let looked = auto(&m).expect("a look").value;
@@ -700,7 +701,7 @@ mod tests {
         let (m, _) = nearly_out("auto-twice", 96.0);
         let state = state::load(&m.ctx).expect("state");
         for _ in 0..2 {
-            let looked = crate::autoswitch::look(&m.ctx, &state, Threshold::DEFAULT);
+            let looked = crate::duty::autoswitch::look(&m.ctx, &state, Threshold::DEFAULT);
             assert!(matches!(looked, Look::Act), "{looked:?}");
         }
         let rows = crate::status::gather_offline(&m.ctx, &state).rows;
@@ -759,11 +760,9 @@ mod tests {
         m.api
             .owned_by("access-elsewhere-refresh", owner("elsewhere"));
         let mut state = state::load(&m.ctx).expect("state");
-        state.accounts.push(super::super::harness::account(
-            "elsewhere",
-            "elsewhere",
-            None,
-        ));
+        state
+            .accounts
+            .push(harness::account("elsewhere", "elsewhere", None));
         state::save(&m.ctx, Permit::for_a_test(), &state).expect("saved");
         measured(&m, "elsewhere", 20.0, 20.0);
         m.sign_in(&elsewhere);
@@ -773,14 +772,10 @@ mod tests {
             Some("elsewhere")
         );
         assert_eq!(m.live(), Some(elsewhere), "the login in use stays in use");
-        assert_eq!(
-            crate::autoswitch::Ledger::load(&m.ctx),
-            crate::autoswitch::Ledger::default(),
-            "no attempt"
-        );
+        assert_eq!(Ledger::load(&m.ctx), Ledger::default(), "no attempt");
         assert!(!m.ctx_home().join(".pitboard/autoswitch.json").exists());
         assert_eq!(
-            super::super::harness::audit_lines(&m, "in-use"),
+            harness::audit_lines(&m, "in-use"),
             [
                 ("elsewhere".to_string(), "signed_in_outside".to_string()),
                 ("here".to_string(), "login_replaced".to_string()),
@@ -919,7 +914,7 @@ mod tests {
         for attempt in 0..ATTEMPTS {
             tried.attempt(&plan, NOW + i64::from(attempt) * RETRY_SECONDS);
         }
-        let spent = crate::autoswitch::Hold {
+        let spent = crate::duty::autoswitch::Hold {
             from: plan.from.clone(),
             from_id: plan.from_id.clone(),
             limit: plan.limit.clone(),
@@ -987,7 +982,7 @@ mod tests {
         let (m, clock) = nearly_out("auto-renewed-meanwhile", 96.0);
         let renewed = document("here-renewed");
         m.api.owned_by("access-here-renewed", owner("here"));
-        let failed = crate::fault::meanwhile(
+        let failed = fault::meanwhile(
             "switch.park_recorded",
             {
                 let (store, service) = m.live_store();
@@ -1002,11 +997,7 @@ mod tests {
             "{:?}",
             failed.error
         );
-        assert_eq!(
-            m.live(),
-            Some(renewed.clone()),
-            "the renewed login is untouched"
-        );
+        assert_eq!(m.live(), Some(renewed), "the renewed login is untouched");
         assert_eq!(
             logged(&m),
             [(
@@ -1085,17 +1076,15 @@ mod tests {
         let parked = park::store_at(
             &m.ctx,
             Permit::for_a_test(),
-            crate::provider::document(ProviderId::Claude),
+            provider::document(ProviderId::Claude),
             &parked,
-            &super::super::harness::oauth("other-refresh", 30),
+            &harness::oauth("other-refresh", 30),
         )
         .expect("parked");
         let mut state = state::load(&m.ctx).expect("state");
-        state.accounts.push(super::super::harness::account(
-            "other",
-            "other",
-            Some(parked),
-        ));
+        state
+            .accounts
+            .push(harness::account("other", "other", Some(parked)));
         state::save(&m.ctx, Permit::for_a_test(), &state).expect("saved");
         m.api.owned_by("access-other-refresh", owner("other"));
         measured(&m, "other", 40.0, 40.0);
@@ -1128,8 +1117,7 @@ mod tests {
         let settled = settle(&m.ctx, Permit::for_a_test(), None)
             .expect("settled")
             .0;
-        let died =
-            crate::fault::killing("switch.park_recorded", || switch(settled, &m.key("there")));
+        let died = fault::killing("switch.park_recorded", || switch(settled, &m.key("there")));
         assert_eq!(died.unwrap_err(), "switch.park_recorded");
         let journal =
             std::fs::read(m.ctx_home().join(".pitboard/journal.json")).expect("a journal");
@@ -1164,11 +1152,10 @@ mod tests {
         let settled = settle(&m.ctx, Permit::for_a_test(), None)
             .expect("settled")
             .0;
-        let died =
-            crate::fault::killing("switch.park_recorded", || switch(settled, &m.key("there")));
+        let died = fault::killing("switch.park_recorded", || switch(settled, &m.key("there")));
         assert_eq!(died.unwrap_err(), "switch.park_recorded");
         let state = state::load(&m.ctx).expect("state");
-        let look = || crate::autoswitch::look(&m.ctx, &state, Threshold::DEFAULT);
+        let look = || crate::duty::autoswitch::look(&m.ctx, &state, Threshold::DEFAULT);
         let lock = m.ctx_home().join(".pitboard/state.lock");
 
         let another_run = std::thread::scope(|scope| {
@@ -1182,7 +1169,7 @@ mod tests {
                 .expect("a run holding the lock")
         });
         assert!(matches!(look(), Look::Act), "{:?}", look());
-        assert!(lock.exists() && super::super::interrupted(&m.ctx));
+        assert!(lock.exists() && interrupted(&m.ctx));
 
         drop(another_run);
         assert!(
@@ -1313,8 +1300,8 @@ mod tests {
     )]
     fn a_lapsed_stored_login_is_renewed_to_tell_whose_it_is_and_the_switch_decided() {
         let (m, _) = nearly_out("auto-lapsed", 96.0);
-        m.sign_in(&super::super::harness::lapsed("here-renewed"));
-        super::super::harness::renews(&m, "here-renewed", "here-again");
+        m.sign_in(&harness::lapsed("here-renewed"));
+        harness::renews(&m, "here-renewed", "here-again");
         m.api.owned_by("access-here-again", owner("here"));
 
         let done = auto(&m).expect("a switch");
@@ -1330,7 +1317,7 @@ mod tests {
             .get(&m.key("here"))
             .and_then(|account| account.parked.clone())
             .expect("the login switched from is parked");
-        assert_eq!(parked.login, crate::store::fingerprint("here-again"));
+        assert_eq!(parked.login, store::fingerprint("here-again"));
         hold(&m, "after a switch from a renewed login");
     }
 
@@ -1441,7 +1428,7 @@ mod tests {
         let (m, _) = nearly_out("auto-signed-out", 96.0);
         m.sign_in(&serde_json::json!({"mcpOAuth": {"some-server": {"token": "unrelated"}}}));
         let path = m.ctx_home().join(".claude.json");
-        let mut config: serde_json::Value =
+        let mut config: Value =
             serde_json::from_str(&std::fs::read_to_string(&path).expect("a config")).expect("JSON");
         config
             .as_object_mut()

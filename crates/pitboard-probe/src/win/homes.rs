@@ -20,7 +20,7 @@ use windows_sys::Win32::UI::Shell::GetProfileType;
 const TAG_A: &str = "pitboard-probe-path-a";
 const TAG_B: &str = "pitboard-probe-path-b";
 
-pub fn homes(codex_home: Option<&Path>, claude_config_dir: Option<&Path>) -> Report {
+pub(super) fn homes(codex_home: Option<&Path>, claude_config_dir: Option<&Path>) -> Report {
     let logon = logon_now();
     let r = ffi::redactor();
     let red = |p: &Path| r.redact(&p.display().to_string());
@@ -141,7 +141,7 @@ fn hash_candidates(dir: &Path, r: &crate::redact::Redactor) -> Value {
 /// runbook read it beside this.
 fn os_build() -> Value {
     let mut info = OSVERSIONINFOW {
-        dwOSVersionInfoSize: std::mem::size_of::<OSVERSIONINFOW>() as u32,
+        dwOSVersionInfoSize: size_of::<OSVERSIONINFOW>() as u32,
         dwMajorVersion: 0,
         dwMinorVersion: 0,
         dwBuildNumber: 0,
@@ -215,7 +215,7 @@ fn tag_of(value: Option<OsString>) -> &'static str {
 /// The child B4 starts: which spellings it got, and which value each lookup returns. Keys
 /// never differ only in case (a report may not hold such keys), so the all-capitals `PATH`
 /// is `all_caps` and the title-case `Path` is `title_case`.
-pub fn env_child() -> Report {
+pub(super) fn env_child() -> Report {
     let logon = logon_now();
     let spellings: Vec<Value> = std::env::vars_os()
         .filter(|(k, _)| k.to_string_lossy().eq_ignore_ascii_case("path"))
@@ -234,7 +234,7 @@ pub fn env_child() -> Report {
 
 /// B4. `PATH` carries tag `a` and `Path` tag `b` wherever both are set, so a child's answer
 /// says which one it got.
-pub fn path_vars(scratch: &Path) -> Report {
+pub(super) fn path_vars(scratch: &Path) -> Report {
     let logon = logon_now();
     if let Some(reason) = ffi::refuse_write(scratch) {
         return Report::refused("path-vars", logon, reason);
@@ -286,7 +286,7 @@ pub fn path_vars(scratch: &Path) -> Report {
 
 /// This process's environment without any spelling of PATH, then `extra` in order, as a
 /// double-NUL-terminated UTF-16 block.
-fn env_block(extra: &[(&str, &std::path::PathBuf)]) -> Vec<u16> {
+fn env_block(extra: &[(&str, &PathBuf)]) -> Vec<u16> {
     let mut block = Vec::new();
     for (k, v) in std::env::vars_os() {
         if k.to_string_lossy().eq_ignore_ascii_case("path") {

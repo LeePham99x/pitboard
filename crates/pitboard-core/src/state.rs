@@ -5,10 +5,10 @@
 //! machine: presenting a refresh token another machine has since rotated ends the login on
 //! both.
 
-use crate::api::Owner;
 use crate::context::Context;
 use crate::error::{Error, Result};
 use crate::in_use::{Identified, InUse, Replaced};
+use crate::provider::Owner;
 use crate::provider::ProviderId;
 use crate::service::Permit;
 use crate::{atomic, home};
@@ -139,16 +139,16 @@ pub struct Park {
 /// A login of a tool's own that Pitboard renewed and has not saved where the tool keeps it
 /// yet, with the vault item holding a copy of the renewed login meanwhile.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct Renewing {
-    pub tool: ProviderId,
+pub(crate) struct Renewing {
+    pub(crate) tool: ProviderId,
     /// The tool's credential slot it is kept in.
-    pub slot: String,
+    pub(crate) slot: String,
     /// Which of the tool's stores keeps it, as [`crate::store::Backend::name`] names it.
-    pub store: String,
+    pub(crate) store: String,
     /// The fingerprint of the refresh token the renewal sent.
-    pub sent: String,
+    pub(crate) sent: String,
     /// The vault item holding the renewed login.
-    pub service: String,
+    pub(crate) service: String,
 }
 
 impl Park {
@@ -156,7 +156,7 @@ impl Park {
         self.refresh_expires_at.is_none_or(|at| at > now)
     }
 
-    pub fn askable_at(&self, now: i64) -> bool {
+    pub(crate) fn askable_at(&self, now: i64) -> bool {
         self.access_expires_at.is_none_or(|at| at > now)
     }
 }
@@ -169,8 +169,7 @@ impl Park {
 /// why a schema 3 account needs nothing moved to become a schema 4 one.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "provider", rename_all = "snake_case")]
-#[non_exhaustive]
-pub enum Detail {
+pub(crate) enum Detail {
     Claude {
         organization_uuid: String,
         /// Written into Claude Code's config on switching here. Only what Anthropic
@@ -187,9 +186,10 @@ pub enum Detail {
 
 /// Claude Code's own extras, for a caller that has already established it is holding a
 /// Claude account.
-pub struct ClaudeDetail<'a> {
-    pub organization_uuid: &'a str,
-    pub oauth_account: &'a Value,
+#[derive(Debug)]
+pub(crate) struct ClaudeDetail<'a> {
+    pub(crate) organization_uuid: &'a str,
+    pub(crate) oauth_account: &'a Value,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -227,7 +227,7 @@ pub struct Account {
     pub plan: Option<String>,
     /// Which tool's login this is, and whatever only that tool keeps.
     #[serde(flatten)]
-    pub detail: Detail,
+    pub(crate) detail: Detail,
 }
 
 /// One account, the way Pitboard tells accounts apart: which tool, and what it is called
@@ -279,11 +279,11 @@ impl std::fmt::Display for Key {
 }
 
 impl Account {
-    pub fn key(&self) -> Key {
+    pub(crate) fn key(&self) -> Key {
         Key::new(self.provider(), self.label.clone())
     }
 
-    pub fn is(&self, key: &Key) -> bool {
+    pub(crate) fn is(&self, key: &Key) -> bool {
         self.label == key.label && self.provider() == key.provider
     }
 
@@ -296,7 +296,7 @@ impl Account {
     }
 
     /// Whose login this account's is, as its tool's service names one.
-    pub fn owner(&self) -> Owner {
+    pub(crate) fn owner(&self) -> Owner {
         Owner {
             account_uuid: self.account_uuid.clone(),
             email: self.email.clone(),
@@ -311,7 +311,7 @@ impl Account {
     }
 
     /// Whether `owner`'s login is this account's.
-    pub fn owned_by(&self, owner: &Owner) -> bool {
+    pub(crate) fn owned_by(&self, owner: &Owner) -> bool {
         self.account_uuid == owner.account_uuid
             && match &self.detail {
                 // One person in two organisations holds two logins, each on its own plan.
@@ -326,7 +326,7 @@ impl Account {
     }
 
     /// Claude Code's extras, or `None` when this account belongs to another tool.
-    pub fn claude(&self) -> Option<ClaudeDetail<'_>> {
+    pub(crate) fn claude(&self) -> Option<ClaudeDetail<'_>> {
         match &self.detail {
             Detail::Claude {
                 organization_uuid,
@@ -342,23 +342,23 @@ impl Account {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct State {
-    pub schema: u32,
-    pub machine: String,
-    pub accounts: Vec<Account>,
+    pub(crate) schema: u32,
+    pub(crate) machine: String,
+    pub(crate) accounts: Vec<Account>,
     /// Whose login each tool has stored, as its service last said, by the tool's code: the
     /// record of the credential slot `slot` names for that tool.
     #[serde(default)]
-    pub in_use: BTreeMap<String, InUse>,
+    pub(crate) in_use: BTreeMap<String, InUse>,
     /// The credential slot each tool's `in_use` was recorded for. One state file serves
     /// every slot a machine uses, and a tool's own home variable changes which store is the
     /// live one, so a record made in one slot says nothing about another.
     #[serde(default)]
-    pub slot: BTreeMap<String, String>,
+    pub(crate) slot: BTreeMap<String, String>,
     /// The record of each other slot a tool was read in, by the tool's code and then the
     /// slot. [`load`] puts the slot it reads in place of the one `slot` names, so a read or a
     /// change in one slot keeps every other slot's record for when that slot is read again.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub other_slots: BTreeMap<String, BTreeMap<String, InUse>>,
+    pub(crate) other_slots: BTreeMap<String, BTreeMap<String, InUse>>,
     /// Parked items no account refers to any more. Listed in the same save that drops them
     /// and removed once deleted, so a delete that fails or is interrupted is retried.
     #[serde(default)]
@@ -370,18 +370,18 @@ pub struct State {
     /// Always empty where the vault is a directory inside this home, which nobody else
     /// parks in.
     #[serde(default)]
-    pub foreign: Vec<String>,
+    pub(crate) foreign: Vec<String>,
     /// Parked items that copy the login in a file behind a tool's store which is still
     /// there, each written down before the copy is. A put-away that stopped leaves the login
     /// in both, and a session that signs in with the file can renew it there, which spends
     /// the copy. So the next put-away never keeps one of these in place of what the file
     /// holds by then. Emptied once the file has gone.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub from_file: Vec<String>,
+    pub(crate) from_file: Vec<String>,
     /// Renewals of a tool's own login whose answer is not saved where the tool keeps it yet,
     /// each written down before the refresh token is sent. At most one per slot.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub renewing: Vec<Renewing>,
+    pub(crate) renewing: Vec<Renewing>,
     // by tool code
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub moving: BTreeMap<String, Moving>,
@@ -414,7 +414,7 @@ impl Default for State {
 
 impl State {
     /// Whose login `which` has stored, as its service last said.
-    pub fn in_use(&self, which: ProviderId) -> Option<&InUse> {
+    pub(crate) fn in_use(&self, which: ProviderId) -> Option<&InUse> {
         self.in_use.get(which.code())
     }
 
@@ -433,7 +433,7 @@ impl State {
     /// `at`, and the one before lost the login it had in use. With nothing parked for it and
     /// no other slot's record naming it, that was its only login, gone to a sign-in outside
     /// Pitboard: a switch parks the login it moves out first.
-    pub fn identified(&mut self, which: ProviderId, found: InUse, at: i64) -> Identified {
+    pub(crate) fn identified(&mut self, which: ProviderId, found: InUse, at: i64) -> Identified {
         let before = self.in_use.get(which.code());
         if before.is_some_and(|known| known.agrees(which, &found)) {
             return Identified {
@@ -515,7 +515,7 @@ impl State {
     ///
     /// What every message that tells somebody what to type uses, so the command it names
     /// is one that works on this machine.
-    pub fn typed(&self, key: &Key) -> String {
+    pub(crate) fn typed(&self, key: &Key) -> String {
         let shared = self
             .accounts
             .iter()
@@ -525,7 +525,7 @@ impl State {
 
     /// Every label this tool has enrolled, for a message that would otherwise send someone
     /// to another command to find out.
-    pub fn labels(&self, provider: ProviderId) -> crate::error::Enrolled {
+    pub(crate) fn labels(&self, provider: ProviderId) -> crate::error::Enrolled {
         crate::error::Enrolled(
             self.accounts
                 .iter()
@@ -570,12 +570,12 @@ impl State {
     ///
     /// Callers that took a name from a person should go through [`crate::label::resolve`]
     /// first, which knows what to do when two tools share a label.
-    pub fn get(&self, key: &Key) -> Option<&Account> {
+    pub(crate) fn get(&self, key: &Key) -> Option<&Account> {
         self.accounts.iter().find(|a| a.is(key))
     }
 
     /// This tool's account holding `owner`'s login.
-    pub fn account_of(&self, provider: ProviderId, owner: &Owner) -> Option<&Account> {
+    pub(crate) fn account_of(&self, provider: ProviderId, owner: &Owner) -> Option<&Account> {
         self.accounts
             .iter()
             .find(|a| a.provider() == provider && a.owned_by(owner))
@@ -583,13 +583,13 @@ impl State {
 
     /// What `owner`'s login is filed under: its account's id, or the one it would be
     /// enrolled with.
-    pub fn id_of(&self, provider: ProviderId, owner: &Owner) -> String {
+    pub(crate) fn id_of(&self, provider: ProviderId, owner: &Owner) -> String {
         self.account_of(provider, owner)
             .map_or_else(|| new_id(provider, owner), |a| a.id.clone())
     }
 
     /// This tool's account filed under `id`.
-    pub fn by_id(&self, provider: ProviderId, id: &str) -> Option<&Account> {
+    pub(crate) fn by_id(&self, provider: ProviderId, id: &str) -> Option<&Account> {
         self.accounts
             .iter()
             .find(|a| a.provider() == provider && a.id == id)
@@ -600,7 +600,7 @@ impl State {
     /// A park's name carries the account's id and not its tool, because names were fixed
     /// before there was a second tool and every item already on a machine is filed under
     /// one. The ids cannot collide in practice: each is built from its tool's UUIDs.
-    pub fn owner_of_park(&self, id: &str) -> Option<&Account> {
+    pub(crate) fn owner_of_park(&self, id: &str) -> Option<&Account> {
         self.accounts.iter().find(|a| a.id == id)
     }
 
@@ -673,7 +673,7 @@ impl State {
 
     /// Hold a park this home did not write, found in the store and given back. It is used
     /// like any other, and deleted only once it has been.
-    pub fn park_foreign(&mut self, key: &Key, park: Park) {
+    pub(crate) fn park_foreign(&mut self, key: &Key, park: Park) {
         let service = park.service.clone();
         self.park(key, park);
         if self.references(&service) && !self.is_foreign(&service) {
@@ -682,13 +682,13 @@ impl State {
     }
 
     /// Whether an account here holds `service` without this home having written it.
-    pub fn is_foreign(&self, service: &str) -> bool {
+    pub(crate) fn is_foreign(&self, service: &str) -> bool {
         self.foreign.iter().any(|listed| listed == service)
     }
 
     /// Take `service` as this home's own from now on, because this home has used it: a
     /// renewal presented its refresh token. Letting it go afterwards deletes it.
-    pub fn used_here(&mut self, service: &str) {
+    pub(crate) fn used_here(&mut self, service: &str) {
         self.foreign.retain(|listed| listed != service);
     }
 
@@ -716,7 +716,7 @@ impl State {
     /// `repair` gave back may be another Pitboard's parked login, which this one never
     /// used, and deleting it would end that account's session for somebody who never ran
     /// the command that did it.
-    pub fn release(&mut self, service: &str) {
+    pub(crate) fn release(&mut self, service: &str) {
         if self.is_foreign(service) {
             self.let_go(service);
         } else {
@@ -753,14 +753,14 @@ impl State {
         !std::mem::take(&mut self.from_file).is_empty()
     }
 
-    pub fn references(&self, service: &str) -> bool {
+    pub(crate) fn references(&self, service: &str) -> bool {
         self.accounts
             .iter()
             .any(|a| a.parked.as_ref().is_some_and(|p| p.service == service))
     }
 
     /// Add the account, or replace the one this tool already has under its label.
-    pub fn upsert(&mut self, account: Account) {
+    pub(crate) fn upsert(&mut self, account: Account) {
         match self.get_mut(&account.key()) {
             Some(existing) => *existing = account,
             None => self.accounts.push(account),
@@ -769,7 +769,7 @@ impl State {
 
     /// Enroll the account under `from` as `to` instead, inside the same tool. Only the
     /// label changes: parked logins are named by account, not by label.
-    pub fn relabel(&mut self, from: &Key, to: &str) -> Result<&Account> {
+    pub(crate) fn relabel(&mut self, from: &Key, to: &str) -> Result<&Account> {
         let target = Key::new(from.provider, to);
         if from.label != to
             && let Some(taken) = self.get(&target)
@@ -857,7 +857,7 @@ impl State {
 /// The id a login is enrolled with. Claude's joins the organisation, since Anthropic's
 /// account uuid is the person and each of their organisations is a login of its own. `_`
 /// is in neither uuid, and is safe in a park's name and a readings file.
-pub fn new_id(provider: ProviderId, owner: &Owner) -> String {
+pub(crate) fn new_id(provider: ProviderId, owner: &Owner) -> String {
     match provider {
         ProviderId::Claude => format!("{}_{}", owner.account_uuid, owner.organization_uuid),
         ProviderId::Codex => owner.account_uuid.clone(),
@@ -869,7 +869,7 @@ pub fn new_id(provider: ProviderId, owner: &Owner) -> String {
 pub(crate) const UNKNOWN_MACHINE: &str = "unknown";
 
 /// Hashed, so the raw platform identifier never lands in a file Pitboard writes.
-pub fn machine_id() -> String {
+pub(crate) fn machine_id() -> String {
     use sha2::{Digest, Sha256};
     match machine_uid::get() {
         Ok(raw) => hex::encode(Sha256::digest(raw.as_bytes())),
@@ -895,7 +895,7 @@ fn file(ctx: &Context) -> PathBuf {
 /// front end follows them with `readings::changed_at`, and takes only the numbers.
 /// Milliseconds rather than seconds, as there: a switch made in the second of the last write
 /// a front end saw would otherwise go unseen.
-pub fn changed_at(ctx: &Context) -> i64 {
+pub(crate) fn changed_at(ctx: &Context) -> i64 {
     std::fs::metadata(file(ctx))
         .and_then(|m| m.modified())
         .ok()
@@ -905,7 +905,7 @@ pub fn changed_at(ctx: &Context) -> i64 {
         })
 }
 
-pub fn load(ctx: &Context) -> Result<State> {
+pub(crate) fn load(ctx: &Context) -> Result<State> {
     let (state, here) = load_any_machine(ctx)?;
     if !here {
         return Err(Error::StateWrongMachine { path: file(ctx) });
@@ -931,11 +931,10 @@ pub(crate) fn load_any_machine(ctx: &Context) -> Result<(State, bool)> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok((State::default(), true)),
         Err(source) => return Err(Error::StateUnreadable { path, source }),
     };
-    let mut document: serde_json::Value =
-        serde_json::from_str(&raw).map_err(|source| Error::StateCorrupt {
-            path: path.clone(),
-            source,
-        })?;
+    let mut document: Value = serde_json::from_str(&raw).map_err(|source| Error::StateCorrupt {
+        path: path.clone(),
+        source,
+    })?;
     migrate(&mut document, &path)?;
     // An account of a tool this build does not know was written by a newer Pitboard, not
     // damaged. Said as such, because the advice for a corrupt file is to delete it, and
@@ -979,13 +978,14 @@ fn unknown_tool(document: &Value) -> Option<String> {
 /// The command line and the app carry their own copy of this crate and update by different
 /// routes, so on one machine an older Pitboard will meet a file a newer one wrote. Reading
 /// forwards is what this is for; reading backwards is not possible, and says so.
-fn migrate(document: &mut serde_json::Value, path: &std::path::Path) -> Result<()> {
+fn migrate(document: &mut Value, path: &std::path::Path) -> Result<()> {
     // Each bump adds a step after the ones before it, so a file two versions behind is
     // brought all the way forward in one read.
     let found = document
         .get("schema")
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or_default() as u32;
+        .and_then(Value::as_u64)
+        .unwrap_or_default();
+    let found = u32::try_from(found).unwrap_or(u32::MAX);
     match found {
         SCHEMA => Ok(()),
         3..SCHEMA => {
@@ -1026,8 +1026,8 @@ fn migrate(document: &mut serde_json::Value, path: &std::path::Path) -> Result<(
 /// schema 4 reads them. All that is missing is the tag. No keychain item and no vault file
 /// is touched, so a bug here is recoverable by fixing the code and reading again, never by
 /// somebody signing in from scratch.
-fn three_to_four(document: &mut serde_json::Value) {
-    let claude = serde_json::Value::from(ProviderId::Claude.code());
+fn three_to_four(document: &mut Value) {
+    let claude = Value::from(ProviderId::Claude.code());
     if let Some(accounts) = document.get_mut("accounts").and_then(Value::as_array_mut) {
         for account in accounts {
             if let Some(fields) = account.as_object_mut() {
@@ -1049,7 +1049,7 @@ fn three_to_four(document: &mut serde_json::Value) {
 /// one person in two organisations was one account. Schema 5 gives each account an id of
 /// its own, and an account already enrolled keeps the one everything is filed under, so
 /// no park, reading or window has to move.
-fn four_to_five(document: &mut serde_json::Value) {
+fn four_to_five(document: &mut Value) {
     if let Some(accounts) = document.get_mut("accounts").and_then(Value::as_array_mut) {
         for account in accounts {
             if let Some(fields) = account.as_object_mut()
@@ -1067,7 +1067,7 @@ fn four_to_five(document: &mut serde_json::Value) {
 /// each tool has stored, as its service said. A record brought forward is that account's,
 /// with no login and `known_at` 0: nothing established which login the store held. A label
 /// naming no account names nobody.
-fn five_to_six(document: &mut serde_json::Value) {
+fn five_to_six(document: &mut Value) {
     let accounts: Vec<Account> = document
         .get("accounts")
         .and_then(Value::as_array)
@@ -1104,13 +1104,13 @@ fn five_to_six(document: &mut serde_json::Value) {
 /// earlier Pitboard refuses the file: one would drop `renewing` at its next save, leaving the
 /// copy of the renewed login named by nothing, so the next renewal of that login, by this
 /// version or by 0.10.0's `stow`, would send the spent refresh token again.
-fn six_to_seven(document: &mut serde_json::Value) {
+fn six_to_seven(document: &mut Value) {
     document["schema"] = serde_json::json!(7);
 }
 
 // A bump: every earlier release reads `discarded` as names, and would call a file of typed
 // entries corrupt.
-fn seven_to_eight(document: &mut serde_json::Value) {
+fn seven_to_eight(document: &mut Value) {
     if let Some(discarded) = document.get_mut("discarded").and_then(Value::as_array_mut) {
         for entry in discarded {
             if let Value::String(service) = entry {
@@ -1272,7 +1272,7 @@ mod tests {
             "active": "work",
             "discarded": []
         });
-        let mut document = written.clone();
+        let mut document = written;
         migrate(&mut document, std::path::Path::new("/tmp/state.json")).expect("still current");
         let state: State = serde_json::from_value(document).expect("still parses");
         assert_eq!(state.get(&claude("work")).unwrap().email, "a@b.c");
@@ -1964,6 +1964,32 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_schema_number_too_large_to_hold_is_refused() {
+        let mut document = serde_json::json!({
+            "schema": (1_u64 << 32) + u64::from(SCHEMA),
+            "machine": machine_id(),
+            "accounts": []
+        });
+        let err = migrate(&mut document, std::path::Path::new("/tmp/state.json")).unwrap_err();
+        assert_eq!(err.code(), "state_from_newer_version");
+    }
+
+    #[test]
+    fn each_migration_step_stamps_the_schema_it_brings_a_file_to() {
+        for (from, step) in [
+            (3, three_to_four as fn(&mut Value)),
+            (4, four_to_five),
+            (5, five_to_six),
+            (6, six_to_seven),
+            (7, seven_to_eight),
+        ] {
+            let mut document = serde_json::json!({"schema": from, "accounts": []});
+            step(&mut document);
+            assert_eq!(document["schema"], from + 1, "the step from {from}");
+        }
+    }
+
     use super::*;
 
     fn claude(label: &str) -> Key {
@@ -1989,7 +2015,7 @@ mod tests {
         Park {
             service: service.into(),
             parked_at: 100,
-            kind: crate::state::ParkKind::Vault,
+            kind: ParkKind::Vault,
             login: "f".into(),
             access_expires_at: Some(200),
             refresh_expires_at: Some(300),
@@ -2323,7 +2349,7 @@ mod tests {
             }],
             "active": {}, "slot": {}, "discarded": []
         });
-        let mut document = written.clone();
+        let mut document = written;
         migrate(&mut document, std::path::Path::new("/tmp/state.json")).expect("current");
         let mut state: State = serde_json::from_value(document).expect("still parses");
         assert!(state.foreign.is_empty());

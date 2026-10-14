@@ -96,7 +96,7 @@ fn unseal(sealed: &[u8], service: &str) -> Result<Vec<u8>, u32> {
     }
 }
 
-pub fn dpapi(scratch: &Path, action: DpapiAction, file: &str) -> Report {
+pub(super) fn dpapi(scratch: &Path, action: DpapiAction, file: &str) -> Report {
     let logon = logon_now();
     // unseal only reads a file the probe sealed earlier, so it needs the scratch check and
     // not the marker: a restricted token (Codex's sandbox, D2b) may not see the profile's

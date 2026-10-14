@@ -20,7 +20,7 @@
 //! every front end alike.
 
 pub(crate) mod decide;
-pub mod run;
+pub(crate) mod run;
 
 pub use decide::{Hold, Standing};
 
@@ -81,7 +81,7 @@ impl Range {
     }
 
     /// `minute` of the day falls within it.
-    pub fn contains(self, minute: u16) -> bool {
+    pub(crate) fn contains(self, minute: u16) -> bool {
         if self.from < self.to {
             (self.from..self.to).contains(&minute)
         } else {
@@ -173,7 +173,7 @@ pub enum Failure {
 
 impl Failure {
     /// A stable code, for `--json` and for telling one apart from another.
-    pub fn code(&self) -> &'static str {
+    pub(crate) fn code(&self) -> &'static str {
         match self {
             Failure::LimitReached => "warm_up_limit_reached",
             Failure::LoginRefused => "warm_up_login_refused",
@@ -196,19 +196,19 @@ impl Failure {
 
 /// Which accounts Pitboard warms up, by account id, and within which span of each day.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Setting {
-    pub range: Range,
+pub(crate) struct Setting {
+    pub(crate) range: Range,
     accounts: BTreeSet<String>,
 }
 
 impl Setting {
     /// Whether the account with `id` is warmed up.
-    pub fn is_on(&self, id: &str) -> bool {
+    pub(crate) fn is_on(&self, id: &str) -> bool {
         self.accounts.contains(id)
     }
 
     /// Whether any account is.
-    pub fn any(&self) -> bool {
+    pub(crate) fn any(&self) -> bool {
         !self.accounts.is_empty()
     }
 
@@ -342,7 +342,7 @@ pub(crate) fn overview(ctx: &Context, state: &State, setting: &Setting) -> Overv
     let now = ctx.now();
     let zone = ctx.zone();
     let in_use = in_use(ctx, state);
-    let readings = crate::readings::load(ctx);
+    let readings = crate::usage::readings::load(ctx);
     let ledger = decide::Ledger::load(ctx);
     Overview {
         range: setting.range,
@@ -417,7 +417,7 @@ pub(crate) fn path(ctx: &Context) -> PathBuf {
 }
 
 /// What `warm.json` says: nobody, and the default span, where it is not there.
-pub fn load(ctx: &Context) -> Result<Setting> {
+pub(crate) fn load(ctx: &Context) -> Result<Setting> {
     let path = path(ctx);
     let raw = match std::fs::read_to_string(&path) {
         Ok(raw) => raw,

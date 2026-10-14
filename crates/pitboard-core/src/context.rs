@@ -10,9 +10,9 @@
     reason = "the one module that reads this process's environment"
 )]
 
-use crate::api::{Anthropic, Api};
 use crate::host::Host;
 use crate::provider::ProviderId;
+use crate::provider::claude::api::{Anthropic, Api};
 use crate::provider::codex::api::{Network as OpenAiNetwork, OpenAi};
 use crate::time::{Clock, SystemClock};
 use std::collections::HashMap;
@@ -110,7 +110,7 @@ impl Environment {
     /// database names it and Foundation finds it for an app. Set, even empty, it is what the
     /// person said, and an empty or relative one is refused where it is used
     /// ([`crate::home::check_absolute`]), never taken to be the folder Pitboard runs in.
-    pub fn home(&self) -> PathBuf {
+    pub(crate) fn home(&self) -> PathBuf {
         self.path("HOME")
             .map(PathBuf::from)
             .or_else(crate::host::user::home)
@@ -118,7 +118,7 @@ impl Environment {
     }
 
     /// Pitboard's own directory: `PITBOARD_HOME`, or the system's default for
-    /// [`Environment::home`], `.pitboard` there on macOS and Linux. The path as the
+    /// `Environment::home`, `.pitboard` there on macOS and Linux. The path as the
     /// environment gives it, with any `.`, `..` or trailing `/` it holds.
     pub fn pitboard_home(&self) -> PathBuf {
         self.path("PITBOARD_HOME")
@@ -292,7 +292,7 @@ pub struct Context {
     /// as `PATH`, behind the program's own directory where that is not on it. `None` is this
     /// process's own `PATH`: an app opened from Finder has almost nothing on it, so it
     /// passes the one the person's login shell would have.
-    pub(crate) search_path: Option<std::ffi::OsString>,
+    pub(crate) search_path: Option<OsString>,
     /// The scheduler's job this process runs as, where a test says. `None` is whatever the
     /// scheduler said when it started this process.
     pub(crate) scheduled_job: Option<String>,
@@ -329,7 +329,7 @@ pub struct Context {
     /// says. `None` in every real context, and in any build without `test-support` there is
     /// nothing here at all.
     #[cfg(any(test, feature = "test-support"))]
-    pub(crate) warm_script: Option<Arc<dyn crate::warm::run::WarmScript>>,
+    pub(crate) warm_script: Option<Arc<dyn crate::duty::warm::run::WarmScript>>,
 }
 
 fn programs(
@@ -377,9 +377,11 @@ impl Context {
     }
 
     /// Claude Code's defaults for a person whose home is `home`: `~/.pitboard`, `~/.claude`,
-    /// the default credential slot, `claude` looked up on `PATH`, and no proxy. An app starts
-    /// here and sets only what differs. Pitboard's own directory is the system's default for
-    /// `home`, the home handed in and never this account's own.
+    /// the default credential slot, `claude` looked up on `PATH`, and no proxy. Pitboard's own
+    /// directory is the system's default for `home`, the home handed in and never this
+    /// account's own.
+    #[cfg(any(test, feature = "test-support"))]
+    #[doc(hidden)]
     pub fn new(home: PathBuf) -> Context {
         Context {
             pitboard_home: crate::host::default_pitboard_home(&home),
@@ -438,6 +440,8 @@ impl Context {
     /// Claude Code keeps it: unset for its config file and its credential slot's name, but
     /// the empty path for its config dir, as the register's `config_file_location` says,
     /// which is refused as a home that is not a full path.
+    #[cfg(any(test, feature = "test-support"))]
+    #[doc(hidden)]
     pub fn with_claude_config_dir(mut self, dir: String) -> Context {
         self.claude_config_dir = Some(dir);
         self
@@ -445,20 +449,22 @@ impl Context {
 
     /// Empty is set, and pins the default slot, as Claude Code reads
     /// `CLAUDE_SECURESTORAGE_CONFIG_DIR`.
-    pub fn with_secure_storage_dir(mut self, dir: String) -> Context {
+    #[cfg(test)]
+    pub(crate) fn with_secure_storage_dir(mut self, dir: String) -> Context {
         self.secure_storage_dir = Some(dir);
         self
     }
 
-    /// The login name whose keychain account Claude Code stores under.
     /// Allows the argument-line write for a login too large for the stdin one.
+    #[cfg(any(test, feature = "test-support"))]
+    #[doc(hidden)]
     pub fn with_argv_fallback(mut self, allowed: bool) -> Context {
         self.argv_fallback = allowed;
         self
     }
 
     /// Whether a custom OAuth endpoint is configured, which moves Claude Code's login.
-    pub fn custom_oauth(&self) -> bool {
+    pub(crate) fn custom_oauth(&self) -> bool {
         self.custom_oauth
     }
 
@@ -468,33 +474,41 @@ impl Context {
     }
 
     /// Whether the argument-line write is allowed for an oversized login.
-    pub fn argv_fallback(&self) -> bool {
+    pub(crate) fn argv_fallback(&self) -> bool {
         self.argv_fallback
     }
 
     /// Environment variables that authenticate Claude Code some other way, if any.
-    pub fn overriding_auth(&self) -> &[String] {
+    pub(crate) fn overriding_auth(&self) -> &[String] {
         &self.overriding_auth
     }
 
     /// Names the front end in the audit log.
+    #[cfg(any(test, feature = "test-support"))]
+    #[doc(hidden)]
     pub fn with_caller(mut self, caller: String) -> Context {
         self.caller = caller;
         self
     }
 
+    #[cfg(any(test, feature = "test-support"))]
+    #[doc(hidden)]
     pub fn with_user(mut self, user: String) -> Context {
         self.user = Some(user);
         self
     }
 
     /// An app started from Finder does not see the shell's `PATH`, so it names `claude` itself.
+    #[cfg(any(test, feature = "test-support"))]
+    #[doc(hidden)]
     pub fn with_claude_program(mut self, program: PathBuf) -> Context {
         self.programs.insert(ProviderId::Claude, program);
         self
     }
 
     /// The same for `codex`.
+    #[cfg(any(test, feature = "test-support"))]
+    #[doc(hidden)]
     pub fn with_codex_program(mut self, program: PathBuf) -> Context {
         self.programs.insert(ProviderId::Codex, program);
         self
@@ -507,6 +521,8 @@ impl Context {
 
     /// An app is not a command line, so it names the one it comes with for the schedule to
     /// run.
+    #[cfg(any(test, feature = "test-support"))]
+    #[doc(hidden)]
     pub fn with_schedule_program(mut self, program: PathBuf) -> Context {
         self.schedule_program = Some(program);
         self
@@ -521,13 +537,15 @@ impl Context {
     /// own `PATH`. An app opened from Finder has only the system's directories there, so a
     /// tool installed through a version manager or an npm prefix is found only on the `PATH`
     /// the person's shell has, and a script it runs finds its interpreter only there.
+    #[cfg(any(test, feature = "test-support"))]
+    #[doc(hidden)]
     pub fn with_search_path(mut self, path: String) -> Context {
         self.search_path = Some(path.into());
         self
     }
 
     /// Where a tool's program is looked for: the path given, or this process's `PATH`.
-    pub(crate) fn search_path(&self) -> std::ffi::OsString {
+    pub(crate) fn search_path(&self) -> OsString {
         self.search_path
             .clone()
             .or_else(|| std::env::var_os("PATH"))
@@ -770,14 +788,17 @@ impl Context {
     /// why it is not part of the builder a front end uses.
     #[cfg(any(test, feature = "test-support"))]
     #[doc(hidden)]
-    pub fn with_sign_in_script(mut self, script: Arc<dyn crate::switch::SignInScript>) -> Context {
+    pub fn with_sign_in_script(
+        mut self,
+        script: Arc<dyn crate::switch::enroll::SignInScript>,
+    ) -> Context {
         self.sign_in_script = Some(script);
         self
     }
 
     /// Who plays each tool's own sign-in, where somebody said.
     #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn sign_in_script(&self) -> Option<&Arc<dyn crate::switch::SignInScript>> {
+    pub(crate) fn sign_in_script(&self) -> Option<&Arc<dyn crate::switch::enroll::SignInScript>> {
         self.sign_in_script.as_ref()
     }
 
@@ -785,14 +806,17 @@ impl Context {
     /// fixture that may start no program does this, and nothing else does.
     #[cfg(any(test, feature = "test-support"))]
     #[doc(hidden)]
-    pub fn with_warm_script(mut self, script: Arc<dyn crate::warm::run::WarmScript>) -> Context {
+    pub fn with_warm_script(
+        mut self,
+        script: Arc<dyn crate::duty::warm::run::WarmScript>,
+    ) -> Context {
         self.warm_script = Some(script);
         self
     }
 
     /// Who plays a warm-up's run, where somebody said.
     #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn warm_script(&self) -> Option<&Arc<dyn crate::warm::run::WarmScript>> {
+    pub(crate) fn warm_script(&self) -> Option<&Arc<dyn crate::duty::warm::run::WarmScript>> {
         self.warm_script.as_ref()
     }
 

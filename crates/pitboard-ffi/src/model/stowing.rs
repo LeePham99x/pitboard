@@ -7,7 +7,7 @@ use super::testing::{Hand, Machine, claude, refusal, warned, warning};
 use super::{Intent, Sheet};
 use crate::Held;
 use crate::present::Severity;
-use pitboard_core::api::Owner;
+use pitboard_core::provider::Owner;
 use pitboard_core::switch::{Foreseen, Kept, Left, Stowed};
 use std::path::PathBuf;
 

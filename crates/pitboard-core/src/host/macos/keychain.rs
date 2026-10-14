@@ -72,7 +72,7 @@ enum Presence {
     Failed(String),
 }
 
-fn classify(owner: Owner, code: Option<i32>, stdout: String, stderr: String) -> Presence {
+fn classify(owner: Owner, code: Option<i32>, stdout: &str, stderr: &str) -> Presence {
     match code {
         Some(0) if !stdout.trim().is_empty() => Presence::Present(stdout.trim_end().to_string()),
         Some(0) if owner == Owner::ClaudeCode => Presence::Absent,
@@ -112,8 +112,8 @@ fn run(args: &[&str], owner: Owner) -> Presence {
         Ok(out) => classify(
             owner,
             out.status.code(),
-            String::from_utf8_lossy(&out.stdout).into_owned(),
-            String::from_utf8_lossy(&out.stderr).into_owned(),
+            &String::from_utf8_lossy(&out.stdout),
+            &String::from_utf8_lossy(&out.stderr),
         ),
     }
 }
@@ -286,13 +286,13 @@ mod tests {
     fn claude_codes_absent_codes_are_absent_and_the_rest_abort() {
         for code in [0, ITEM_NOT_FOUND] {
             assert!(matches!(
-                classify(Owner::ClaudeCode, Some(code), String::new(), String::new()),
+                classify(Owner::ClaudeCode, Some(code), "", ""),
                 Presence::Absent
             ));
         }
         for code in [1, 37, 50, 128] {
             assert!(matches!(
-                classify(Owner::ClaudeCode, Some(code), String::new(), String::new()),
+                classify(Owner::ClaudeCode, Some(code), "", ""),
                 Presence::Failed(_)
             ));
         }
@@ -301,17 +301,12 @@ mod tests {
     #[test]
     fn our_own_items_only_accept_item_not_found_as_absent() {
         assert!(matches!(
-            classify(
-                Owner::Pitboard,
-                Some(ITEM_NOT_FOUND),
-                String::new(),
-                String::new()
-            ),
+            classify(Owner::Pitboard, Some(ITEM_NOT_FOUND), "", ""),
             Presence::Absent
         ));
         for code in [0, 37, 50] {
             assert!(matches!(
-                classify(Owner::Pitboard, Some(code), String::new(), String::new()),
+                classify(Owner::Pitboard, Some(code), "", ""),
                 Presence::Failed(_)
             ));
         }
@@ -326,8 +321,8 @@ mod tests {
                 classify(
                     owner,
                     Some(INTERACTION_NOT_ALLOWED),
-                    String::new(),
-                    "User interaction is not allowed.".into()
+                    "",
+                    "User interaction is not allowed."
                 ),
                 Presence::Locked
             ));
@@ -338,7 +333,7 @@ mod tests {
     #[test]
     fn a_signal_is_a_failure_not_an_absence() {
         assert!(matches!(
-            classify(Owner::ClaudeCode, None, String::new(), String::new()),
+            classify(Owner::ClaudeCode, None, "", ""),
             Presence::Failed(_)
         ));
     }

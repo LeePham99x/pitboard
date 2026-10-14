@@ -76,13 +76,13 @@ fn read_descriptor(path: &Path) -> Result<Descriptor, u32> {
 }
 
 /// A path's owner as a SID string, for comparing only.
-pub fn owner_sid(path: &Path) -> Result<String, u32> {
+pub(super) fn owner_sid(path: &Path) -> Result<String, u32> {
     let d = read_descriptor(path)?;
     ffi::sid_to_string(d.owner).ok_or_else(ffi::last_error)
 }
 
 /// A path's owner and every ACE of its DACL, each principal by relation.
-pub fn describe_access(path: &Path, own: Option<&str>) -> Value {
+pub(super) fn describe_access(path: &Path, own: Option<&str>) -> Value {
     if !path.exists() {
         return json!({ "exists": false });
     }
@@ -159,7 +159,7 @@ fn describe_dacl(dacl: *const ACL, own: Option<&str>, owner: Option<&str>) -> (V
     (Value::Array(out), shared)
 }
 
-pub fn acl(
+pub(super) fn acl(
     scratch: Option<&Path>,
     create: bool,
     keep: bool,
@@ -283,7 +283,7 @@ fn create_protected(scratch: &Path, own: Option<&str>, keep: bool) -> Result<Val
         return Err(format!("SDDL conversion failed: {}", ffi::last_error()));
     }
     let attrs = SECURITY_ATTRIBUTES {
-        nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
+        nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
         lpSecurityDescriptor: sd,
         bInheritHandle: 0,
     };

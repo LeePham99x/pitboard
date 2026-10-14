@@ -16,13 +16,13 @@ use crate::{
     Tool, Usage, Warning, found_command_line, tool,
 };
 use pitboard_core::app::AppContext;
-use pitboard_core::autoswitch::{Auto, Blind, Look, Skip, Threshold};
 use pitboard_core::context::Environment;
+use pitboard_core::duty::autoswitch::{Auto, Blind, Look, Skip, Threshold};
+use pitboard_core::duty::warm::{Overview, Range};
 use pitboard_core::provider::{self, ProviderId};
 use pitboard_core::service::{self, Changing};
 use pitboard_core::switch::warm::WarmUp;
 use pitboard_core::switch::{Left, Stowed};
-use pitboard_core::warm::{Overview, Range};
 use pitboard_core::{doctor, status, switch, usage, words};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -149,7 +149,7 @@ impl Adoption {
             }
             Adoption::Renewal { path } => format!(
                 "Sessions already running {}: {path} is there.",
-                pitboard_core::words::kept_until_renewed()
+                words::kept_until_renewed()
             ),
             Adoption::Restart { program } => {
                 format!("Restart any running `{program}` for this to take effect.")
@@ -430,20 +430,18 @@ fn status_of(done: service::Done<status::Report>) -> Status {
 }
 
 /// When sessions already running follow a switch, as the core says it for the tool.
-fn adoption_of(adoption: pitboard_core::provider::Adoption) -> Adoption {
+fn adoption_of(adoption: provider::Adoption) -> Adoption {
     match adoption {
-        pitboard_core::provider::Adoption::PollingWithin(seconds) => Adoption::Follows {
+        provider::Adoption::PollingWithin(seconds) => Adoption::Follows {
             within_seconds: seconds,
         },
-        pitboard_core::provider::Adoption::AtRenewal { file } => Adoption::Renewal {
+        provider::Adoption::AtRenewal { file } => Adoption::Renewal {
             path: file.display().to_string(),
         },
-        pitboard_core::provider::Adoption::RestartRequired { program, .. } => Adoption::Restart {
+        provider::Adoption::RestartRequired { program, .. } => Adoption::Restart {
             program: program.into(),
         },
-        pitboard_core::provider::Adoption::NextOpen { app } => {
-            Adoption::NextOpen { name: app.into() }
-        }
+        provider::Adoption::NextOpen { app } => Adoption::NextOpen { name: app.into() },
     }
 }
 
@@ -538,14 +536,14 @@ impl SignInSession {
     }
 
     /// Types back the code the browser showed after signing in.
-    pub(crate) fn paste(&self, line: String) -> Result<(), PitboardError> {
+    pub(crate) fn paste(&self, line: &str) -> Result<(), PitboardError> {
         let mut held = self.watched.lock().map_err(|_| PitboardError::Failed {
             code: "sign_in_gone".into(),
             message: "this sign-in is no longer running".into(),
             warnings: Vec::new(),
         })?;
         match held.as_mut() {
-            Some(watched) => watched.paste(&line).map_err(PitboardError::from),
+            Some(watched) => watched.paste(line).map_err(PitboardError::from),
             None => Ok(()),
         }
     }
@@ -669,7 +667,7 @@ impl Kept {
         // A panic while making leaves nothing made, which the next ask makes again.
         self.held
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     fn value(&self) -> Arc<Made> {
@@ -875,8 +873,8 @@ impl AppCore {
         Ok(status_of(self.readable()?.core.status(fresh)?))
     }
 
-    pub(crate) fn switch_to(&self, label: String) -> Result<Switched, PitboardError> {
-        changed(self.core().core.switch_to(&label), |outcome, warnings| {
+    pub(crate) fn switch_to(&self, label: &str) -> Result<Switched, PitboardError> {
+        changed(self.core().core.switch_to(label), |outcome, warnings| {
             Switched {
                 outcome: match outcome {
                     switch::Outcome::Switched {
@@ -910,8 +908,8 @@ impl AppCore {
     /// Writes the account `label` names into its tool's config where that names another
     /// account, while it is in use, and refuses where it no longer is. Gives what it warned
     /// of.
-    pub(crate) fn update_config(&self, label: String) -> Result<Vec<Warning>, PitboardError> {
-        changed(self.core().core.update_config(&label), |_, warnings| {
+    pub(crate) fn update_config(&self, label: &str) -> Result<Vec<Warning>, PitboardError> {
+        changed(self.core().core.update_config(label), |_, warnings| {
             warnings
         })
     }
@@ -966,13 +964,13 @@ impl AppCore {
     }
 
     /// Warms up the account `qualified` names now, whatever the span of the day.
-    pub(crate) fn warm_now(&self, qualified: String) -> Result<WarmUp, PitboardError> {
-        changed(self.core().core.warm_now(&qualified), |warmed, _| warmed)
+    pub(crate) fn warm_now(&self, qualified: &str) -> Result<WarmUp, PitboardError> {
+        changed(self.core().core.warm_now(qualified), |warmed, _| warmed)
     }
 
     /// Warms up the account `qualified` names from now on, or stops.
-    pub(crate) fn warm_turn(&self, qualified: String, on: bool) -> Result<(), PitboardError> {
-        changed(self.core().core.warm_turn(&qualified, on), |_, _| ())
+    pub(crate) fn warm_turn(&self, qualified: &str, on: bool) -> Result<(), PitboardError> {
+        changed(self.core().core.warm_turn(qualified, on), |_, _| ())
     }
 
     /// Warms up from `from` to `to`, in minutes of the day, `to` up to 24:00. A span that
@@ -987,8 +985,8 @@ impl AppCore {
     }
 
     /// Enroll the account signed in now under `label`.
-    pub(crate) fn enroll_current(&self, label: String) -> Result<Enrolled, PitboardError> {
-        changed(self.core().core.enroll_current(&label), enrolled)
+    pub(crate) fn enroll_current(&self, label: &str) -> Result<Enrolled, PitboardError> {
+        changed(self.core().core.enroll_current(label), enrolled)
     }
 
     /// Starts the tool's own sign-in for a new account, watched rather than inherited. The
@@ -1010,12 +1008,12 @@ impl AppCore {
         }))
     }
 
-    pub(crate) fn forget(&self, label: String) -> Result<(), PitboardError> {
-        changed(self.core().core.forget(&label), |_, _| ())
+    pub(crate) fn forget(&self, label: &str) -> Result<(), PitboardError> {
+        changed(self.core().core.forget(label), |_, _| ())
     }
 
-    pub(crate) fn rename(&self, from: String, to: String) -> Result<(), PitboardError> {
-        changed(self.core().core.rename(&from, &to), |_, _| ())
+    pub(crate) fn rename(&self, from: &str, to: &str) -> Result<(), PitboardError> {
+        changed(self.core().core.rename(from, to), |_, _| ())
     }
 
     /// When Pitboard's account index last changed, in epoch milliseconds, or 0 when there is
@@ -1086,7 +1084,7 @@ impl AppCore {
 
     // Only what quitting that app puts right: a `codex` in a terminal is not waited for.
     pub(crate) fn holds_app(&self, provider: &str, app_id: &str) -> bool {
-        self.holding(provider.to_owned()).iter().any(
+        self.holding(provider).iter().any(
             |held| matches!(&held.remedy, Remedy::ReopenApp { app_id: app, .. } if app == app_id),
         )
     }
@@ -1178,11 +1176,11 @@ impl AppCore {
     /// a tool that follows a switch by itself, for a provider code nobody knows, and where
     /// nothing may be read here, where no switch is made either. Reads the process list and
     /// nothing else, so it answers at once.
-    pub(crate) fn holding(&self, provider: String) -> Vec<Holding> {
+    pub(crate) fn holding(&self, provider: &str) -> Vec<Holding> {
         let Ok(made) = self.readable() else {
             return Vec::new();
         };
-        pitboard_core::provider::ProviderId::parse(&provider)
+        ProviderId::parse(provider)
             .map(|which| {
                 made.core
                     .holding(which)
@@ -1295,7 +1293,7 @@ mod tests {
     /// the app does not name, which would send the person to install the app again.
     #[test]
     fn the_app_schedules_nothing_where_pitboard_may_change_nothing() {
-        let host = pitboard_core::host::memory::MemoryHost::new();
+        let host = pitboard_core::testing::MemoryHost::new();
         host.runs_with(pitboard_core::host::Elevation::Elevated { why: "as root" });
         let core = AppCore::asking(
             move || {
@@ -1332,7 +1330,7 @@ mod tests {
         std::fs::write(&helper, "").expect("a command line");
         let app = |pitboard: PathBuf| {
             let (home, helper) = (home.clone(), helper.clone());
-            let host = pitboard_core::host::memory::MemoryHost::new();
+            let host = pitboard_core::testing::MemoryHost::new();
             AppCore::asking(
                 move || {
                     let mut made = made(None, Some(&helper));
@@ -1386,7 +1384,7 @@ mod tests {
             (full.clone(), "pitboard".into(), "PITBOARD_HOME"),
             (full.clone(), PathBuf::new(), "PITBOARD_HOME"),
         ] {
-            let host = pitboard_core::host::memory::MemoryHost::new();
+            let host = pitboard_core::testing::MemoryHost::new();
             let given = pitboard.clone();
             let core = AppCore::asking(
                 move || {
@@ -1419,7 +1417,7 @@ mod tests {
             assert_eq!((core.changed_at(), core.readings_changed_at()), (0, 0));
             assert!(core.log(500).is_empty());
             assert_eq!(core.schedule(), None, "not a schedule that is absent");
-            assert!(core.holding("codex".into()).is_empty());
+            assert!(core.holding("codex").is_empty());
             assert!(
                 !core.whole("desktop") && core.moving("desktop"),
                 "{variable}"
@@ -1621,7 +1619,7 @@ mod tests {
         );
         assert!(installed(&core).contains(&"codex".to_owned()));
         assert_eq!(core.core().search_path, None, "the shell could not be run");
-        let Err(PitboardError::Failed { code, .. }) = core.enroll_current("work".into()) else {
+        let Err(PitboardError::Failed { code, .. }) = core.enroll_current("work") else {
             panic!("a Claude Code account was enrolled under a custom OAuth endpoint");
         };
         assert_eq!(code, "custom_oauth_endpoint");

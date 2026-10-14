@@ -913,7 +913,7 @@ fn an_aside_set_aside_while_the_machine_could_not_be_read_is_given_back() {
     let homes = park_name(&HOME);
     let park = park_by_hand(&m, None, &homes, &HOME);
     let mut state = state::load(&m.ctx).expect("state");
-    state.aside.push(crate::state::Aside {
+    state.aside.push(state::Aside {
         name: homes.clone(),
         tool: ProviderId::Desktop,
         at: NOW,
@@ -990,7 +990,7 @@ fn repair_gives_an_account_its_park_back_where_the_one_recorded_is_gone() {
     // What an earlier `repair` left: the folder set aside under `home`.
     let (m, recorded, again) = restored("repair-restored-aside");
     let mut state = state_of(&m);
-    state.aside.push(crate::state::Aside {
+    state.aside.push(state::Aside {
         name: again.clone(),
         tool: ProviderId::Desktop,
         at: NOW,
@@ -1132,7 +1132,7 @@ fn forget_and_uninstall_delete_the_folders_they_are_asked_to() {
         (nobodys, None),
     ] {
         let kept = park_by_hand(&m, None, name, &STRANGER);
-        state.aside.push(crate::state::Aside {
+        state.aside.push(state::Aside {
             name: name.into(),
             tool: ProviderId::Desktop,
             at: NOW,
@@ -1635,8 +1635,7 @@ fn a_leave_is_refused_where_this_mac_cannot_be_identified() {
     let pitboard = crate::service::Pitboard::new(m.ctx.clone());
     let stopped = pitboard
         .sign_in_watched("desktop/travel")
-        .err()
-        .expect("refused")
+        .expect_err("refused")
         .error;
     assert_eq!(stopped.code(), "machine_unknown");
     unchanged(&m, &before, "nothing reserved, nothing moved");
@@ -1671,7 +1670,7 @@ fn nothing_is_set_aside_where_this_mac_cannot_be_identified() {
     claude.logs_out();
     claude.quits();
     let before = blind(&mut m);
-    let stopped = watched(&m, "travel").err().expect("refused");
+    let stopped = watched(&m, "travel").expect_err("refused");
     assert_eq!(stopped.code(), "machine_unknown");
     unchanged(&m, &before, "the start of a sign-in");
 
@@ -2250,7 +2249,7 @@ fn the_wait_ends_where_its_sign_in_was_settled_elsewhere() {
     claude.opens();
     said_until(&said, "Claude is open.");
     claude.crashes();
-    let ended = waiting.finish().err().expect("settled elsewhere");
+    let ended = waiting.finish().expect_err("settled elsewhere");
     assert_eq!(ended.code(), "sign_in_settled_elsewhere");
     assert_eq!(in_use(&m).as_deref(), Some("work"));
     // Nothing waits any more, so a second sign-in may start.
@@ -2265,7 +2264,7 @@ fn the_wait_ends_where_its_sign_in_was_settled_elsewhere() {
     let home = crate::home::dir(&m.ctx);
     std::fs::remove_dir_all(&home).expect("removed meanwhile");
     m.claude().crashes();
-    let ended = waiting.finish().err().expect("ended");
+    let ended = waiting.finish().expect_err("ended");
     assert_eq!(ended.code(), "sign_in_settled_elsewhere");
     assert!(!home.exists());
 }
@@ -2307,7 +2306,7 @@ fn the_wait_never_makes_a_home_uninstall_removed() {
     said_until(&waiting.said(), "Claude is open.");
     std::fs::remove_dir_all(&home).expect("uninstalled meanwhile");
     claude.crashes();
-    let ended = waiting.finish().err().expect("ended");
+    let ended = waiting.finish().expect_err("ended");
     assert_eq!(ended.code(), "sign_in_settled_elsewhere");
     assert!(!home.exists(), "no directory was made");
 }
@@ -3324,7 +3323,7 @@ fn uninstall_refuses_where_claude_is_signed_out_whatever_the_record_says() {
     watched(&m, "travel").expect("parked").cancel();
     recover(&m).expect("swept");
     let before = snapshot(&m);
-    let refused = uninstalled(&m).err().expect("refused");
+    let refused = uninstalled(&m).expect_err("refused");
     assert_eq!(refused.code(), "uninstall_would_strand");
     assert!(
         refused.to_string().contains("Run `pitboard use desktop/"),
@@ -3341,7 +3340,7 @@ fn uninstall_refuses_where_claude_is_signed_out_whatever_the_record_says() {
     recover(&m).expect("swept");
     let before = snapshot(&m);
     assert_eq!(
-        uninstalled(&m).err().expect("refused").code(),
+        uninstalled(&m).expect_err("refused").code(),
         "uninstall_would_strand"
     );
     unchanged(&m, &before, "logged out");
@@ -3353,7 +3352,7 @@ fn uninstall_refuses_where_claude_is_signed_out_whatever_the_record_says() {
     recover(&m).expect("swept");
     let before = snapshot(&m);
     assert_eq!(
-        uninstalled(&m).err().expect("refused").code(),
+        uninstalled(&m).expect_err("refused").code(),
         "sign_in_unfinished"
     );
     unchanged(&m, &before, "in doubt");
@@ -3364,7 +3363,7 @@ fn uninstall_refuses_where_claude_is_signed_out_whatever_the_record_says() {
     m.claude().opens();
     recover(&m).expect("swept");
     let before = snapshot(&m);
-    assert_eq!(uninstalled(&m).err().expect("refused").code(), "app_open");
+    assert_eq!(uninstalled(&m).expect_err("refused").code(), "app_open");
     unchanged(&m, &before, "Claude open");
 
     // Signed in to an account Pitboard knows: every park goes, and Claude keeps its login.
@@ -3400,8 +3399,7 @@ fn uninstall_refuses_where_a_login_is_only_set_aside_and_claude_is_signed_out() 
             .expect("settled")
             .0,
     )
-    .err()
-    .expect("refused");
+    .expect_err("refused");
 
     assert_eq!(refused.code(), "uninstall_would_strand");
     let folder = crate::store::folder::at(&m.ctx, &homes);
@@ -3990,7 +3988,7 @@ fn a_refusal_after_a_settled_move_says_it_settled() {
     let m = desktop_pair("settled-then-stranded");
     killed(&m, "leave.jar_out", "home");
     settled_then_refused(&m, "uninstall_would_strand", finished, |pitboard| {
-        pitboard.uninstall().err().expect("refused")
+        pitboard.uninstall().expect_err("refused")
     });
     assert!(crate::home::dir(&m.ctx).is_dir());
     assert!(state_of(&m).get(&m.key("work")).is_some());
@@ -4002,8 +4000,7 @@ fn a_refusal_after_a_settled_move_says_it_settled() {
     settled_then_refused(&m, "login_folder_unknown", finished, |pitboard| {
         pitboard
             .sign_in_watched("desktop/travel")
-            .err()
-            .expect("refused")
+            .expect_err("refused")
     });
 
     let m = desktop_pair("settled-then-signed-out");
@@ -4067,7 +4064,7 @@ fn a_failure_after_a_settled_move_still_says_it_settled() {
         .expect("where the scheduler keeps it");
     testing::deny_changes(&dir).expect("read-only");
     settled_then_refused(&m, "home_unwritable", undone, |pitboard| {
-        pitboard.uninstall().err().expect("refused")
+        pitboard.uninstall().expect_err("refused")
     });
     testing::allow_changes(&dir).expect("changeable again");
     assert!(crate::home::dir(&m.ctx).is_dir());
@@ -4154,7 +4151,7 @@ fn a_refusal_after_a_settled_move_says_all_it_did_first() {
     );
 }
 
-fn superseded(m: &Machine) -> std::path::PathBuf {
+fn superseded(m: &Machine) -> PathBuf {
     state_of(m)
         .aside
         .iter()
@@ -4288,19 +4285,19 @@ fn a_folder_move_waiting_does_not_stop_a_claude_code_switch() {
         state
     };
 
-    let ledger = crate::autoswitch::Ledger::load(&m.ctx);
+    let ledger = crate::duty::autoswitch::Ledger::load(&m.ctx);
     let judged = |state: &state::State| {
         let here = state
             .get(&Key::new(ProviderId::Claude, "here"))
             .expect("enrolled");
         format!(
             "{:?}",
-            crate::autoswitch::judge(
+            crate::duty::autoswitch::judge(
                 &m.ctx,
                 state,
                 here,
                 &ledger,
-                crate::autoswitch::Threshold::DEFAULT,
+                crate::duty::autoswitch::Threshold::DEFAULT,
                 NOW
             )
         )
@@ -4333,7 +4330,7 @@ fn a_folder_move_waiting_does_not_stop_a_claude_code_switch() {
     state::save(&m.ctx, Permit::for_a_test(), &due).expect("saved");
     m.api.renews(
         "here-refresh",
-        crate::api::Renewed {
+        crate::provider::claude::api::Renewed {
             access_token: "renewed-access".into(),
             refresh_token: Some("here-renewed".into()),
             expires_in: 3600,
@@ -4874,7 +4871,7 @@ fn the_wait_runs_on_its_own_thread_and_finish_joins_it() {
         crate::host::fs::lock_dir(&data(&m)).is_ok(),
         "the folder is free"
     );
-    let second = watched(&m, "another").err().expect("refused");
+    let second = watched(&m, "another").expect_err("refused");
     assert_eq!(second.code(), "sign_in_in_progress");
 
     claude.opens();
@@ -4908,7 +4905,7 @@ fn the_wait_runs_on_its_own_thread_and_finish_joins_it() {
     said_until(&said, "Claude is open.");
     m.mem.jar_unsettled(&data(&m).join("Cookies"));
     claude.quits();
-    let ended = waiting.finish().err().expect("the look refused");
+    let ended = waiting.finish().expect_err("the look refused");
     assert_eq!(ended.code(), "login_folder_unreadable", "{ended}");
 }
 
@@ -5066,7 +5063,7 @@ fn every_refusal_leaves_the_folder_and_the_index_as_they_were() {
                 claude.reports();
                 claude.quits();
             },
-            asked: |m| watched(m, "travel").err().expect("refused"),
+            asked: |m| watched(m, "travel").expect_err("refused"),
         },
         Refusal {
             code: "recovery_undetermined",
@@ -5105,7 +5102,7 @@ fn every_refusal_leaves_the_folder_and_the_index_as_they_were() {
             set_up: |m| killed(m, "leave.done", "home"),
             asked: |m| {
                 let settled = settle(&m.ctx, Permit::for_a_test(), None).expect("settled");
-                super::super::uninstall(settled.0).err().expect("refused")
+                super::super::uninstall(settled.0).expect_err("refused")
             },
         },
     ];

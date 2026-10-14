@@ -1,95 +1,12 @@
 import Foundation
 import Observation
 import PitboardKit
+import PitboardTestSupport
 import Testing
 
 // The app's model shows what the Rust model says. What the Rust model says, and when, is
 // tested in `pitboard-ffi`; these test the glue: which snapshot is shown, what is drawn
 // again, on which thread a snapshot arrives, and that the bindings carry one end to end.
-
-/// Stands in for the Rust model: hands out the snapshot a test gives it, and keeps every
-/// intent sent, so nothing a test does reaches a core.
-private final class StandInModel: PitboardModelProtocol, @unchecked Sendable {
-    // Unchecked because every read and write holds `lock`.
-    private let lock = NSLock()
-    private var first: Snapshot
-    private var intents: [Intent] = []
-    private var stops = 0
-
-    init(_ first: Snapshot) {
-        self.first = first
-    }
-
-    var sent: [Intent] { lock.withLock { intents } }
-    var stopped: Int { lock.withLock { stops } }
-
-    func send(intent: Intent) { lock.withLock { intents.append(intent) } }
-    func shutdown() { lock.withLock { stops += 1 } }
-    func snapshot() -> Snapshot { lock.withLock { first } }
-}
-
-/// The account windows of a model that has none open and nothing to say of them.
-private let noWindows = AccountWindowsShown(
-    accounts: [], menus: [], open: [],
-    waiting: WindowWaiting(windowTitle: "Account", shown: .reading(title: "Reading accounts…")),
-    closing: [], deleting: [], picker: nil, downloads: [])
-
-/// A snapshot with nothing in it but what a test says.
-private func snapshot(
-    _ revision: UInt64, status: Status? = nil, reading: Bool = false,
-    readFailure: ReadFailure? = nil,
-    window: WindowRequest = WindowRequest(serial: 0, pane: nil),
-    windows: AccountWindowsShown = noWindows
-) -> Snapshot {
-    Snapshot(
-        revision: revision, now: Int64(revision), reading: reading, updatedAt: nil,
-        status: status, warnings: [], readFailure: readFailure, stuck: false, installed: nil,
-        switchUnderWay: nil, quitQuestion: nil, lastSwitches: [], abandoned: nil, failure: nil,
-        windowRequest: window, signingIn: nil, sheet: nil, sheetFailure: nil,
-        menuBar: MenuBarText(nameAndUsage: "", usage: "", spoken: "Pitboard"), sections: [],
-        showsTools: false, notices: [],
-        menuNotices: MenuNotices(install: nil, switches: [], others: nil), footing: .ready,
-        setup: nil, accountsShown: .reading(title: "Reading accounts…"),
-        menuAccountsNote: nil, updatedMenu: "", updatedWindow: "", sheetText: nil,
-        signingInText: nil, stowText: nil, quitConfirmation: nil, failureAlert: nil,
-        machine: MachineShown(
-            schedule: ScheduleShown(
-                schedule: nil, on: false, changing: false, enabled: true, runs: nil,
-                scheduledIn: nil, note: nil, failed: nil),
-            renewal: RenewalShown(renewing: false, note: "", about: ""),
-            checks: ChecksShown(
-                lines: [], summary: nil, checking: false, checked: nil, waiting: nil),
-            activity: ActivityShown(lines: [], empty: nil),
-            commandLine: CommandLineShown(
-                found: nil, inTerminal: nil, updateNote: nil, offersLink: false,
-                cannotLink: nil),
-            autoSwitch: AutoSwitchShown(
-                on: false, at: 95, lowest: 50, highest: 99, enabled: true,
-                atLabel: "Switch when a limit reaches 95%", note: "", standing: nil),
-            warm: WarmShown(
-                from: 360, to: 1320, rangeLabel: "06:00 to 22:00", accounts: [], standing: nil,
-                note: "", enabled: false)),
-        accountWindows: windows)
-}
-
-/// Claude Code accounts read at `now`, the first signed in, each measured at `measured`
-/// where it was.
-private func status(_ labels: String..., now: Int64 = 0, measured: Int64? = nil) -> Status {
-    Status(
-        now: now,
-        accounts: labels.map { label in
-            Account(
-                id: "claude:\(label)", provider: "claude", label: label,
-                qualified: "claude/\(label)", unplaced: false, email: "\(label)@example.com",
-                accountId: label, signedIn: label == labels.first, switchable: true,
-                parked: nil,
-                usage: measured.map {
-                    Usage(source: .live, observedAt: $0, windows: [], listsEveryLimit: true)
-                },
-                stale: nil, staleExplanation: nil, plan: nil, readAt: nil)
-        },
-        warnings: [], awaiting: [])
-}
 
 /// Whether reading `part` of `model` is told of a change while `change` runs.
 @MainActor
@@ -173,10 +90,8 @@ private final class Told: @unchecked Sendable {
     let model = AppModel(model: StandInModel(snapshot(0)))
     var told: [AccountWindowsShown] = []
     model.accountWindowsChanged = { told.append($0) }
-    let deleting = AccountWindowsShown(
-        accounts: [], menus: [], open: [], waiting: noWindows.waiting, closing: [],
-        deleting: [StoreDeletion(store: "7e15c34f-69ec-55b4-9542-f1c1fe3d7085", ask: 1)],
-        picker: nil, downloads: [])
+    let deleting = windowsShown(
+        deleting: [StoreDeletion(store: "7e15c34f-69ec-55b4-9542-f1c1fe3d7085", ask: 1)])
 
     model.apply(snapshot(1, status: status("work")))
     #expect(told.isEmpty)
@@ -187,8 +102,8 @@ private final class Told: @unchecked Sendable {
     model.apply(snapshot(3, status: status("work")))
     #expect(told == [deleting], "dropped")
     model.apply(snapshot(4, status: status("work")))
-    #expect(told == [deleting, noWindows])
-    #expect(model.accountWindows == noWindows)
+    #expect(told == [deleting, windowsShown()])
+    #expect(model.accountWindows == windowsShown())
 }
 
 /// What a view asks for reaches the model as it was asked, at once, and the app quitting

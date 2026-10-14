@@ -32,7 +32,7 @@ const RT_MANIFEST: usize = 24;
 const CREATEPROCESS_MANIFEST_RESOURCE_ID: usize = 1;
 
 /// The manifest embedded in a program, as text.
-pub fn embedded_manifest(exe: &Path) -> Option<String> {
+pub(super) fn embedded_manifest(exe: &Path) -> Option<String> {
     let w = ffi::wide(exe);
     // SAFETY: `w` is NUL-terminated; the module is mapped as data only and freed below.
     let module = unsafe {
@@ -90,7 +90,7 @@ fn manifest_facts(exe: &Path, expected: crate::console::Spelling) -> Value {
     }
 }
 
-pub fn console(scratch: &Path, with_task: bool) -> Report {
+pub(super) fn console(scratch: &Path, with_task: bool) -> Report {
     let logon = logon_now();
     if let Some(reason) = ffi::refuse_write(scratch) {
         return Report::refused("console", logon, reason);
@@ -213,7 +213,7 @@ fn via_launcher(launcher: &Path, exe: &Path, launcher_flags: u32, out: &Path) ->
 /// starts only one of the variants' programs beside this one, with one of the flags the
 /// block uses, and hands the child an absolute `pitboard-probe-*` report file (which the
 /// child's own guard checks again); anything else exits 2 without starting anything.
-pub fn console_launch(exe: &Path, flags: u32, child_out: &Path) -> Outcome {
+pub(super) fn console_launch(exe: &Path, flags: u32, child_out: &Path) -> Outcome {
     let beside_this = |p: &Path| {
         Variant::ALL.iter().any(|v| {
             let sibling = sibling_exe(v.bin_name());
@@ -244,7 +244,7 @@ pub fn console_launch(exe: &Path, flags: u32, child_out: &Path) -> Outcome {
 }
 
 /// What a console variant finds when it starts.
-pub fn console_child() -> Report {
+pub(super) fn console_child() -> Report {
     let logon = logon_now();
     // SAFETY: GetConsoleWindow has no preconditions.
     let hwnd = unsafe { GetConsoleWindow() };

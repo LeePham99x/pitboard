@@ -8,8 +8,8 @@ use super::testing::{Hand, Machine, Refusal, refusal, status};
 use super::{Intent, RunOutNotice};
 use crate::Account;
 use crate::present::testing::{LimitExt, account, window};
+use pitboard_core::duty::warm::{Choice, Halt, Overview, Range, Standing};
 use pitboard_core::switch::warm::WarmUp;
-use pitboard_core::warm::{Choice, Halt, Overview, Range, Standing};
 use std::time::Duration;
 
 /// Two hours after the moment the hand's clock starts at, 10:00 in UTC on the same day.
@@ -231,7 +231,10 @@ fn a_failure_is_said_until_the_core_says_where_each_account_stands() {
             .standing
             .is_some_and(|said| said.starts_with("The last warm-up came to nothing: "))
     );
-    let held = overview(true, Standing::Held(pitboard_core::warm::Hold::NoReading));
+    let held = overview(
+        true,
+        Standing::Held(pitboard_core::duty::warm::Hold::NoReading),
+    );
     machine.warm = Some(held.clone());
     machine.warming = Ok(WarmUp::Stands(Box::new(held)));
     model.later(Duration::from_secs(60));

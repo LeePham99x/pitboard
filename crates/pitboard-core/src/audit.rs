@@ -17,7 +17,7 @@ fn path(ctx: &Context) -> PathBuf {
 
 /// A failure to audit never fails the operation it describes. A change refused at the gate
 /// every change passes is not recorded: recording it would be a change.
-pub fn record(ctx: &Context, permit: Permit, verb: &str, subject: &str, outcome: &str) {
+pub(crate) fn record(ctx: &Context, permit: Permit, verb: &str, subject: &str, outcome: &str) {
     let _ = append(
         ctx,
         permit,
@@ -135,7 +135,7 @@ mod tests {
         std::fs::create_dir_all(&home).unwrap();
         let clock = Arc::new(FixedClock::at(1_760_000_000));
         let ctx = Context::new(home.clone())
-            .with_pitboard_home(home.clone())
+            .with_pitboard_home(home)
             .with_caller("cli".into())
             .with_clock(clock.clone());
 

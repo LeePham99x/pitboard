@@ -21,11 +21,11 @@ use crate::usage::Window;
 /// How many points either side of an even pace still count as even: close enough that the
 /// difference is noise early in a five-hour window, and far enough that a limit really
 /// running ahead is said.
-pub const MARGIN: f64 = 5.0;
+pub(crate) const MARGIN: f64 = 5.0;
 
 /// The part of a window that has to have gone by before its pace means anything. A few
 /// minutes into a five-hour window one request is a large share of the time gone by.
-pub const TOO_EARLY: f64 = 0.03;
+pub(crate) const TOO_EARLY: f64 = 0.03;
 
 /// How a limit's use compared with an even pace when it was read.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
@@ -40,13 +40,13 @@ pub struct Pace {
     pub standing: Standing,
 }
 
-/// Which side of an even pace a limit is on, beyond [`MARGIN`].
+/// Which side of an even pace a limit is on, beyond `MARGIN`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "standing", rename_all = "snake_case")]
 pub enum Standing {
     /// Slower than even: at its own rate the limit lasts until it resets.
     Under,
-    /// Within [`MARGIN`] of even.
+    /// Within `MARGIN` of even.
     Even,
     /// Faster than even: at its own rate the limit runs out this many seconds from the
     /// moment this is told, before it resets.
@@ -59,7 +59,7 @@ pub enum Standing {
 ///
 /// `None` where it means nothing: a window whose length or reset is not known, one that
 /// has reset since, or that cannot have begun when it was read, one used up, which its
-/// share says already, and one read less than [`TOO_EARLY`] in.
+/// share says already, and one read less than `TOO_EARLY` in.
 pub fn of(
     used: f64,
     resets_at: Option<i64>,
@@ -143,7 +143,7 @@ impl Lasts<'_> {
 /// How long an account in use with `windows`, read at `at`, lasts as of `now`: until the
 /// first of them to run out at its pace does, or where none does, until the first of them
 /// resets. `None` where no window says when it resets.
-pub fn lasts(windows: &[Window], at: i64, now: i64) -> Option<Lasts<'_>> {
+pub(crate) fn lasts(windows: &[Window], at: i64, now: i64) -> Option<Lasts<'_>> {
     let paced = windows.iter().map(|w| (w, w.pace(at, now)));
     if let Some((limit, in_seconds)) = first_to_run_out(paced) {
         return Some(Lasts::RunsOut { limit, in_seconds });
@@ -153,7 +153,7 @@ pub fn lasts(windows: &[Window], at: i64, now: i64) -> Option<Lasts<'_>> {
 
 /// How long an account not in use with `windows` lasts as of `now`: until the first of them
 /// resets, since nothing of it is being used. `None` where no window says when it resets.
-pub fn until_reset(windows: &[Window], now: i64) -> Option<Lasts<'_>> {
+pub(crate) fn until_reset(windows: &[Window], now: i64) -> Option<Lasts<'_>> {
     windows
         .iter()
         .filter_map(|w| w.resets_at.map(|at| at - now))
@@ -316,7 +316,7 @@ mod tests {
 
         let calm = window("weekly_all", 5.0, 3 * DAY, WEEK);
         assert_eq!(
-            lasts(&[session.clone(), calm], NOW, NOW),
+            lasts(&[session, calm], NOW, NOW),
             Some(Lasts::UntilReset { in_seconds: HOUR })
         );
 

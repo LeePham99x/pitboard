@@ -9,7 +9,7 @@
 //!
 //! The gate is decided from three things fixed when the core is compiled: the system it is
 //! for, the version's major number, and whether the build was opened to Windows before its
-//! release, which only a build for working on Pitboard is ([`OPENED`]). Version 1, including
+//! release, which only a build for working on Pitboard is (`OPENED`). Version 1, including
 //! `1.0.0-beta.N`, opens it, so the first beta is the first Windows build that runs.
 //!
 //! Every change asks it before anything else, in the one gate every change passes
@@ -31,14 +31,14 @@ use crate::host::{OS, Os};
 /// build a Windows Pitboard that is half written. Nor does `test-support` open it, for the
 /// same reason: it is a feature of the published crate too. A `cfg` comes from whoever runs
 /// the compiler, as a change to the source would, and no index offers one.
-pub const OPENED: bool = cfg!(any(test, pitboard_unreleased_windows));
+pub(crate) const OPENED: bool = cfg!(any(test, pitboard_unreleased_windows));
 
 /// This build's version, as Cargo gives it.
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// What the gate decides of a build.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Decision {
+pub(crate) enum Decision {
     /// It may do what it is asked.
     Runs,
     /// It is a Windows build of a release before Pitboard for Windows is released, and does
@@ -49,7 +49,7 @@ pub enum Decision {
 /// What the gate decides of a build for `os`, of `version`, opened to Windows before its
 /// release or not ([`OPENED`]). A version whose major number cannot be read is taken for a
 /// 0.x one, which refuses on Windows.
-pub fn decision(os: Os, version: &str, opened: bool) -> Decision {
+pub(crate) fn decision(os: Os, version: &str, opened: bool) -> Decision {
     let major = version
         .split('.')
         .next()

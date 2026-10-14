@@ -33,7 +33,7 @@ mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(any(test, feature = "test-support"))]
-pub mod memory;
+pub(crate) mod memory;
 pub(crate) mod program;
 pub(crate) mod token;
 #[cfg(unix)]
@@ -66,12 +66,12 @@ pub const OS: Os = os::OS;
 
 /// The only program trusted to read Claude Code's keychain item. Named here so the backend
 /// that runs it and the doctor check that looks for it cannot drift apart.
-pub const SECURITY: &str = "/usr/bin/security";
+pub(crate) const SECURITY: &str = "/usr/bin/security";
 
 impl Os {
     /// The program Pitboard reaches the system's own store of secrets through, where it goes
     /// through one rather than calling the system directly.
-    pub fn secrets_tool(self) -> Option<&'static str> {
+    pub(crate) fn secrets_tool(self) -> Option<&'static str> {
         match self {
             Os::MacOs => Some(SECURITY),
             // Credential Manager is called directly, through Windows' own API.
@@ -83,7 +83,7 @@ impl Os {
     /// `None` where Pitboard cannot say one yet: on Windows, where a file is private through
     /// its access control list, W15 says the command along with who may read a file, and
     /// until then nothing asks, since the Windows face cannot tell who may.
-    pub fn make_private_command(self, kind: Kind, paths: &[&str]) -> Option<String> {
+    pub(crate) fn make_private_command(self, kind: Kind, paths: &[&str]) -> Option<String> {
         match self {
             Os::MacOs | Os::Linux => {
                 let mode = match kind {
@@ -106,7 +106,7 @@ impl Os {
     /// folders of other cloud storage, under Privacy & Security's Files & Folders. Linux
     /// asks nothing. Which folders Windows asks about, if any, is W17's to say, with where an
     /// app finds a program there; until then none is passed over.
-    pub fn guarded_folders(self) -> &'static [&'static str] {
+    pub(crate) fn guarded_folders(self) -> &'static [&'static str] {
         match self {
             Os::MacOs => &[
                 "Desktop",
@@ -128,7 +128,7 @@ impl Os {
     /// both among npm's places. Nothing on Linux looks, since no app runs there and the
     /// command line has a shell's `PATH`, so none is said for it. Where winget, Scoop and npm
     /// put programs on Windows is W17's to read; until then none is looked in.
-    pub fn package_bins(self) -> &'static [&'static str] {
+    pub(crate) fn package_bins(self) -> &'static [&'static str] {
         match self {
             Os::MacOs => &["/opt/homebrew/bin", "/usr/local/bin"],
             Os::Linux | Os::Windows => &[],
@@ -154,7 +154,7 @@ impl Os {
     /// `build-app.sh` puts it, and anything that is not an app bundle, such as a test or a
     /// build directory, has none. No app runs on Linux. Where the Windows app carries its
     /// own is the app's to say, which it does not yet.
-    pub fn app_command_line(self, app: &Path) -> Option<PathBuf> {
+    pub(crate) fn app_command_line(self, app: &Path) -> Option<PathBuf> {
         match self {
             Os::MacOs => (app.extension() == Some("app".as_ref()))
                 .then(|| app.join("Contents/Helpers/pitboard")),
@@ -333,12 +333,12 @@ pub(crate) fn login_path(env: &Environment) -> LoginPath {
 
 /// Who besides a file's owner can reach it, as the system says.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Access {
+pub(crate) struct Access {
     /// Whether anybody but the owner can read or change it.
-    pub shared: bool,
+    pub(crate) shared: bool,
     /// What the system says about it, for a person to read: `mode 600` where access is a
     /// mode.
-    pub described: String,
+    pub(crate) described: String,
 }
 
 // What a folder Pitboard keeps logins in is, as `fs::private_dir` finds it.
@@ -354,7 +354,7 @@ pub enum Private {
 
 /// What a person makes private with the command [`Os::make_private_command`] gives.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Kind {
+pub(crate) enum Kind {
     Directory,
     File,
     /// Directories and files alike.
@@ -384,7 +384,7 @@ pub enum Floor {
 }
 
 // Windows 11 24H2's build, which Windows Server 2025 shares.
-pub const WINDOWS_FLOOR: u32 = 26100;
+pub(crate) const WINDOWS_FLOOR: u32 = 26100;
 
 #[cfg(any(windows, test))]
 pub(crate) fn windows_floor(version: Option<(u32, u32, u32)>) -> Floor {
@@ -399,12 +399,12 @@ pub(crate) fn windows_floor(version: Option<(u32, u32, u32)>) -> Floor {
 
 /// One process this user is running, and where its program runs from.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Process {
-    pub pid: u32,
+pub(crate) struct Process {
+    pub(crate) pid: u32,
     /// The program's path where the system says one, or its bare name where it does not.
     /// macOS gives what the program was started as, which is its full path when whatever
     /// started it named one; Linux gives the file it runs, where this user may read that.
-    pub path: PathBuf,
+    pub(crate) path: PathBuf,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

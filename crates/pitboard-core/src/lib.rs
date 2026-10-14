@@ -7,8 +7,8 @@
 //!
 //! This crate is published because the `pitboard` binary depends on it, not because it was
 //! designed for other programs to build on. The supported interface is [`service::Pitboard`],
-//! [`context::Context`], and the types those two return. Everything else is reachable so the
-//! front ends in this repository can reach it, and may change in any release.
+//! [`context::Context`], and the types those two return. Everything else public is what the
+//! front ends in this repository use, and may change in any release.
 //!
 //! What a version promises, for the part that is supported: a code is a name, and names are
 //! kept. Adding an error, warning or check code is not a breaking change, which is why every
@@ -45,12 +45,10 @@ compile_error!(
      `host/`, saying where its stores, processes and scheduler are."
 );
 
-pub mod api;
+pub(crate) mod api;
 pub mod app;
 pub mod assumptions;
 pub mod audit;
-pub mod autoswitch;
-pub mod budget;
 pub mod context;
 // The Claude Desktop the tests play, reached as `testing::desktop`.
 #[cfg(any(test, feature = "test-support"))]
@@ -59,22 +57,20 @@ pub mod desktop_testing;
 pub mod doctor;
 pub mod duty;
 pub mod error;
-pub mod in_use;
+pub(crate) mod in_use;
 pub mod label;
-pub mod pace;
 pub mod provider;
 pub mod redact;
 pub mod release;
 pub mod schedule;
 pub mod service;
-pub mod settings;
+pub(crate) mod settings;
 pub mod state;
 pub mod status;
 pub mod statusline;
 pub mod switch;
 pub mod time;
 pub mod usage;
-pub mod warm;
 pub mod words;
 
 pub(crate) mod atomic;
@@ -86,7 +82,6 @@ pub(crate) mod lock;
 pub(crate) mod park;
 pub(crate) mod pending;
 pub(crate) mod proxy;
-pub(crate) mod readings;
 pub(crate) mod sessions;
 /// The program the tests start in place of a tool, reached as `testing::stand_in`. Its own
 /// tests run with the core's.
@@ -102,11 +97,14 @@ pub(crate) mod store;
 pub mod testing {
     pub use crate::api::scripted::{Answer, Asked, ScriptedApi, Trouble};
     pub use crate::desktop_testing as desktop;
+    pub use crate::duty::warm::run::{Started, WarmScript};
+    pub use crate::host::Ran;
     /// What a test or a fixture does to a file's access, or to make a link, which only this
     /// system's face says how to do: the integration tests and the apps' fixtures do it here,
     /// as the core's own tests do.
     pub use crate::host::fs::testing as fs;
     pub use crate::host::memory::MemoryHost;
+    pub use crate::provider::claude::api::Renewed;
     pub use crate::provider::claude::paths::live_service;
     pub use crate::provider::claude::slot::{LIVE_SERVICE, dir_hash, service_for_dir};
     /// The program the integration tests, the model's tests and the fixtures' tests start in
@@ -114,9 +112,8 @@ pub mod testing {
     pub use crate::stand_in;
     pub use crate::store::memory::{Fault, MemoryStore};
     pub use crate::store::vault_read;
-    pub use crate::switch::{ScriptedSignIn, SignInScript};
+    pub use crate::switch::enroll::{ScriptedSignIn, SignInScript};
     pub use crate::time::{Clock, FixedClock};
-    pub use crate::warm::run::{Ran, Started, WarmScript};
 
     /// Every variable Pitboard reads from its environment, by name, which a test withholds
     /// from every command it runs unless it means to pass one on.

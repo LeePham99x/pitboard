@@ -327,8 +327,8 @@ fn server(proxy: &ureq::Proxy) -> String {
 /// Every address Pitboard sends a request to: Anthropic's two and OpenAI's two.
 pub(crate) fn called() -> [&'static str; 4] {
     [
-        crate::api::BASE,
-        crate::api::AUTH_BASE,
+        crate::provider::claude::api::BASE,
+        crate::provider::claude::api::AUTH_BASE,
         crate::provider::codex::api::TOKEN_URL,
         crate::provider::codex::api::USAGE_BASE,
     ]
@@ -873,7 +873,7 @@ mod tests {
                 Err(failing_with(variable)),
                 "{scheme}"
             );
-            let asked = crate::api::owner(&ctx, "a-token").expect_err("refused");
+            let asked = crate::provider::claude::api::owner(&ctx, "a-token").expect_err("refused");
             assert_eq!(
                 (asked.to_string(), crate::error::Cause::of(&asked).code()),
                 (
