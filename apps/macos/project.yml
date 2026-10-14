@@ -76,6 +76,8 @@ settings:
   configs:
     # A debug build answers its own scheme and has a Share menu entry of its own, so a
     # link or a share never reaches it in place of the release, or the release in its place.
+    # Its icon lights its row amber, so it is never mistaken for the release in the Dock, in
+    # Login Items, in the Share menu or beside it in Applications.
     Debug:
       DEBUG_INFORMATION_FORMAT: dwarf
       ENABLE_TESTABILITY: YES
@@ -88,6 +90,7 @@ settings:
       SWIFT_OPTIMIZATION_LEVEL: -Onone
       PITBOARD_SHARE_NAME: Pitboard Debug
       PITBOARD_URL_SCHEME: pitboard-debug
+      ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon-Debug
     Release:
       DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
       ENABLE_NS_ASSERTIONS: NO
@@ -95,6 +98,7 @@ settings:
       SWIFT_COMPILATION_MODE: wholemodule
       PITBOARD_SHARE_NAME: Pitboard
       PITBOARD_URL_SCHEME: pitboard
+      ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
 
 packages:
   Pitboard:
@@ -121,14 +125,10 @@ targets:
         SWIFT_EMIT_LOC_STRINGS: YES
         LD_RUNPATH_SEARCH_PATHS: ["$(inherited)", "@executable_path/../Frameworks"]
       configs:
-        # The debug build's icon lights its row amber, so it is never mistaken for the release
-        # in the Dock, in Login Items or beside it in Applications.
         Debug:
           PRODUCT_BUNDLE_IDENTIFIER: com.usepitboard.Pitboard.debug
-          ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon-Debug
         Release:
           PRODUCT_BUNDLE_IDENTIFIER: com.usepitboard.Pitboard
-          ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     dependencies:
       - package: Pitboard
         product: PitboardApp
@@ -142,6 +142,9 @@ targets:
     sources:
       - path: ShareExtension
         excludes: [PitboardShare.entitlements]
+      # The Share menu shows the extension's own icon, which is the app's.
+      - path: App
+        includes: ["*.icon"]
     settings:
       base:
         INFOPLIST_FILE: ShareExtension/Info.plist
