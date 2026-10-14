@@ -23,6 +23,7 @@ and later, the `rust-version` in `Cargo.toml`.
 
 | Tool | For |
 | --- | --- |
+| `cargo-nextest` | The tests |
 | `cargo-deny` | Dependencies, licences and advisories |
 | `cargo-semver-checks` | `pitboard-core`'s public API |
 | `cargo-insta` | Reviewing a changed `--json` snapshot |
@@ -56,21 +57,14 @@ them before you push:
 cargo fmt --check
 cargo clippy --all-targets --locked
 cargo clippy -p pitboard-ffi --all-targets --locked --features fixture
-cargo test --locked -- --skip writing_preserves_attributes
-cargo test --locked -p pitboard-ffi --features fixture
+cargo nextest run --locked
+cargo nextest run --locked -p pitboard-ffi --features fixture
 cargo deny --all-features check
 cargo semver-checks --package pitboard-core
 ```
 
 The `fixture` feature compiles the worlds the apps' debug builds launch into, so it gets a
 lint and a test run of its own.
-
-On macOS, run the skipped test alone. It asserts a read-latency threshold, and other
-`security` calls running at the same time push reads over it:
-
-```sh
-cargo test --locked -p pitboard --test keychain_write_is_harmless writing_preserves_attributes
-```
 
 CI checks the workspace on Rust 1.91 too:
 
@@ -88,9 +82,9 @@ cargo-zigbuild clippy --target x86_64-unknown-linux-gnu --all-targets
 ```
 
 Every program a Rust test starts in place of `claude`, `codex` or another tool is one
-compiled stand-in, the `pitboard` crate's example `stand-in`. `cargo test` builds it. A test
-run alone with `--test`, or `pitboard-ffi`'s tests on their own, does not, so build it
-first, with the `--release` or `--target` the tests use:
+compiled stand-in, the `pitboard` crate's example `stand-in`. `cargo nextest run` builds
+it. A test run alone with `--test`, or `pitboard-ffi`'s tests on their own, does not, so
+build it first, with the `--release` or `--target` the tests use:
 
 ```sh
 cargo build --locked -p pitboard --example stand-in
@@ -286,8 +280,8 @@ that holds no real login, in PowerShell from a terminal that is not elevated:
 $env:RUSTFLAGS = "-D warnings -C target-feature=+crt-static --cfg pitboard_unreleased_windows"
 cargo clippy --workspace --all-targets --locked
 cargo clippy -p pitboard-ffi --all-targets --locked --features fixture
-cargo test --locked
-cargo test --locked -p pitboard-ffi --features fixture
+cargo nextest run --locked
+cargo nextest run --locked -p pitboard-ffi --features fixture
 ```
 
 `RUSTFLAGS` replaces each target's own rustflags, so it names the static C runtime releases
@@ -300,10 +294,10 @@ other way: no filter and no `--skip`.
 From a Mac or Linux, `cargo check --target x86_64-pc-windows-msvc` checks only
 `pitboard-sites` and `pitboard-share-ffi`, since ring compiles C against MSVC's headers.
 
-CI's `windows` job runs these commands on `windows-2025` and `windows-11-arm`, each test
-program as a fresh standard user through `.github/scripts/test-as-standard-user.ps1`. The job
-fails when a run leaves a login item, a scheduled task or a login folder behind. It also
-builds `pitboard.exe` as a release is built, and checks that it refuses and changes nothing.
+CI's `windows` job runs these commands on `windows-2025` and `windows-11-arm`, the tests as
+a fresh standard user through `.github/scripts/test-as-standard-user.ps1`. The job fails when
+a run leaves a login item, a scheduled task or a login folder behind. It also builds
+`pitboard.exe` as a release is built, and checks that it refuses and changes nothing.
 
 `gh workflow run windows-facts.yml` measures both runner images. No pull request runs it.
 

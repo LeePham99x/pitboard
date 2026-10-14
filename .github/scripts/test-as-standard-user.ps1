@@ -1,11 +1,10 @@
-# The job's user is elevated in every program it starts, so each test program runs as a fresh
-# standard user. Doctests need the toolchain, which that user cannot reach, and are not run.
+# The job's user is elevated in every program it starts, so nextest runs the tests as a fresh
+# standard user, from the test programs and metadata the job's user built.
 param(
+    # Cargo's options for the build, as `cargo nextest list` takes them.
     [Parameter(Mandatory)] [string] $Cargo,
     # Built already, inside the workspace the user is granted read and run on.
-    [Parameter(Mandatory)] [string] $Probe,
-    # What goes after `--` on cargo test's command line: test name filters, or '--skip <name>'.
-    [string] $Pass = ''
+    [Parameter(Mandatory)] [string] $Probe
 )
 $ErrorActionPreference = 'Stop'
 
@@ -52,24 +51,16 @@ $jobPlaces = @(Get-LoginPlaces $env:USERPROFILE $env:LOCALAPPDATA)
 $jobPlacesBefore = @($jobPlaces | Where-Object { Test-Path -LiteralPath $_ })
 Write-Output "Of the job user's own login places, $($jobPlacesBefore.Count) of $($jobPlaces.Count) are there before the tests run."
 
-# Start-Process joins its arguments with spaces and quotes nothing.
-$passed = @('--color=never'; Split-Words $Pass)
-foreach ($word in $passed) {
-    if ($word -match '["\s]') { throw "a test program's argument may hold no space or quote: $word" }
-}
-
 # Built as the job's user: Cargo and rustup are in its profile, which a standard user cannot open.
-$built = & cargo test --no-run --message-format=json-render-diagnostics @(Split-Words $Cargo)
-if ($LASTEXITCODE -ne 0) { throw "cargo test --no-run $Cargo failed" }
-$tests = @(
-    $built | Where-Object { $_.StartsWith('{') } | ForEach-Object { $_ | ConvertFrom-Json } |
-        Where-Object { $_.reason -eq 'compiler-artifact' -and $_.executable -and $_.profile.test } |
-        Sort-Object -Property executable -Unique
-)
-if ($tests.Count -eq 0) { throw "cargo test --no-run $Cargo built no test program" }
-$metadata = & cargo metadata --format-version 1 --no-deps --locked
+# Given both metadata files, nextest runs what was built without them.
+$binaries = & cargo nextest list --list-type binaries-only --message-format json @(Split-Words $Cargo)
+if ($LASTEXITCODE -ne 0) { throw "cargo nextest list $Cargo failed" }
+$cargoMetadata = & cargo metadata --format-version 1 --locked
 if ($LASTEXITCODE -ne 0) { throw 'cargo metadata failed' }
-$metadata = ($metadata | Out-String) | ConvertFrom-Json
+$metadata = ($cargoMetadata | Out-String) | ConvertFrom-Json
+$nextest = (Get-Command -Name cargo-nextest -CommandType Application).Source
+# Where the ci profile writes its report.
+$store = Join-Path $metadata.target_directory 'nextest'
 $workspace = $metadata.workspace_root
 $readable = @($workspace)
 if (-not $metadata.target_directory.StartsWith($workspace + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
@@ -162,6 +153,15 @@ try {
         $granted.Add($folder)
         Set-UserRights $folder 'RX'
     }
+    New-Item -ItemType Directory -Force -Path $store | Out-Null
+    $granted.Add($store)
+    Set-UserRights $store 'M'
+    $userNextest = Join-Path $runDir (Split-Path -Leaf $nextest)
+    Copy-Item -LiteralPath $nextest -Destination $userNextest
+    $binariesFile = Join-Path $runDir 'binaries-metadata.json'
+    $binaries | Set-Content -Path $binariesFile
+    $cargoMetadataFile = Join-Path $runDir 'cargo-metadata.json'
+    $cargoMetadata | Set-Content -Path $cargoMetadataFile
 
     $devKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock'
     $developerMode = (Get-ItemProperty -Path $devKey -ErrorAction SilentlyContinue).AllowDevelopmentWithoutDevLicense -eq 1
@@ -197,22 +197,11 @@ try {
         if ($temp.Exit -ne 0) { Show-Run $temp; throw "the standard user could not make its temporary folder" }
     }
 
-    $i = 0
-    foreach ($test in $tests) {
-        $i++
-        $environment = $userEnv.Clone()
-        $environment.CARGO_MANIFEST_DIR = Split-Path -Parent $test.manifest_path
-        $environment.CARGO_MANIFEST_PATH = $test.manifest_path
-        $what = "$($test.target.name) ($($test.target.kind -join ', '))"
-        $run = Start-AsUser $test.executable $passed $runDir $environment ('{0:D2}-{1}' -f $i, $test.target.name)
-        $summary = @(Select-String -Path $run.Out -Pattern '^test result: (\w+)\.' | ForEach-Object { $_.Matches[0].Groups[1].Value })
-        # The summary too, so a lost exit code cannot pass a failing program.
-        $ok = $run.Exit -eq 0 -and $summary.Count -gt 0 -and $summary[-1] -eq 'ok'
-        Write-Output "::group::$what as a standard user: $(if ($ok) { 'passed' } else { 'FAILED' })"
-        Show-Run $run
-        Write-Output '::endgroup::'
-        if (-not $ok) { $failed.Add("$what exited $($run.Exit), its last result $(if ($summary) { $summary[-1] } else { 'missing' })") }
-    }
+    # Start-Process joins its arguments with spaces and quotes nothing, and none of these holds one.
+    $arguments = @('nextest', 'run', '--profile', 'ci', '--binaries-metadata', $binariesFile, '--cargo-metadata', $cargoMetadataFile)
+    $run = Start-AsUser $userNextest $arguments $runDir $userEnv 'nextest'
+    Show-Run $run
+    if ($run.Exit -ne 0) { $failed.Add("nextest exited $($run.Exit)") }
 
     $leaked = [System.Collections.Generic.List[string]]::new()
     $leaks = Start-AsUser $probePath @('credman-names', '--leak-check') $runDir $userEnv 'leak-check'
@@ -255,5 +244,5 @@ try {
 if ($failed.Count -gt 0) {
     throw "as a standard user: $($failed -join '; ')"
 }
-Write-Output "$($tests.Count) test programs passed as a standard user."
+Write-Output 'The tests passed as a standard user.'
 exit 0
