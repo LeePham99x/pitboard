@@ -91,20 +91,21 @@
           "reference/files",
           "reference/app",
           "reference/account-windows",
-          "reference/settings"
+          "reference/settings",
+          "reference/automatic-switching"
         ]
       }
     ],
     "global": {
       "anchors": [
         {
-          "anchor": "Releases",
-          "href": "https://github.com/datlechin/pitboard/releases",
-          "icon": "tag"
+          "anchor": "Download",
+          "href": "https://usepitboard.com/download",
+          "icon": "download"
         },
         {
           "anchor": "Changelog",
-          "href": "https://github.com/datlechin/pitboard/blob/main/CHANGELOG.md",
+          "href": "https://usepitboard.com/changelog",
           "icon": "scroll-text"
         }
       ]

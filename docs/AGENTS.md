@@ -1,25 +1,15 @@
 # Writing Pitboard's documentation
 
-This folder is the Mintlify source of docs.usepitboard.com. Pages are MDX with YAML
-frontmatter. `docs.json` holds navigation and settings.
+These are the writing rules for docs.usepitboard.com. [README.md](README.md) says where files
+go and how to preview, check and publish a change.
 
-Merging to `main` publishes the site, and readers run the tagged release, so the facts come
-from the code at that release. Where a Markdown file in the repository disagrees with the
-code, the code wins. Release procedures, design notes and unreleased behaviour are not site
-content; they live in `RELEASING.md`, `ARCHITECTURE.md` and the code.
+Readers run the tagged release, so the facts come from the code at that release. Where a
+Markdown file in the repository disagrees with the code, the code wins. Release procedures,
+design notes and unreleased behaviour are not site content; they live in `RELEASING.md`,
+`ARCHITECTURE.md` and the code.
 
-## Before you commit
-
-Run these in `docs/`. All three must pass:
-
-```sh
-mint validate
-mint broken-links --check-anchors --check-redirects
-mint a11y
-```
-
-Preview with `mint dev`. The checks miss the silent failures listed under "MDX", so read the
-rendered page too.
+Run [the checks](README.md#check) before each commit, then read the page in
+[the preview](README.md#preview): the checks miss the silent failures listed under "MDX".
 
 ## Pages
 
@@ -35,11 +25,9 @@ rendered page too.
 - The first sentence says what the page does or what is true, and never restates the
   description, which Mintlify shows under the title. Stop when the content stops; at most
   one closing line that links to the next page.
-- Add a new page to `navigation` in `docs.json`, path without extension.
 - Link root-relative without extension: `[Switch accounts](/guides/switch)`. Link text
   names the destination. Never `here` or a bare URL.
-- Images go in `images/`, referenced as `/images/name.png`, inside `<Frame>`, always with
-  alt text that says what the image shows.
+- Put each image inside `<Frame>`, with alt text that says what the image shows.
 
 ## Page types
 

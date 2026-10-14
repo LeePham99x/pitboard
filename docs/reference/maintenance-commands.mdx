@@ -121,7 +121,7 @@ The log is `~/.pitboard/audit.log`, and holds no email address. Past 256 KiB, Pi
 | `use` | A switch you make, or **Update Claude Code's Config** in the app. | The label | `ok`. `already_active` when the account was in use. `config_updated` when it was, and Pitboard wrote it into Claude Code's config. |
 | `auto-switch` | Pitboard switches Claude Code by itself, or such a switch fails. | The label switched to, or none if it failed before one was chosen | `ok`, or the error code |
 | `auto-stay` | Pitboard could not identify whose login Claude Code has stored. One line per try. | The account last known in use, or none | `not_identified` |
-| `auto-stay` | A limit of the account in use reached the share, and Pitboard held back. One line per limit and reset. | The account in use | `no_room`, `already_switched`, `attempts_spent`, `settling` or `auth_overridden`, as [When it holds back](/guides/automatic-switching#when-it-holds-back) describes |
+| `auto-stay` | A limit of the account in use reached the share, and Pitboard held back. One line per limit and reset. | The account in use | A code from [When it stays on the account](/reference/automatic-switching#when-it-stays-on-the-account) |
 | `in-use` | A read or a change finds the tool signed in outside Pitboard. | The account it finds signed in, or none if it is not enrolled | `signed_in_outside` |
 | `in-use` | The same, for a sign-out outside Pitboard. | None | `signed_out_outside` |
 | `in-use` | The same, for an account whose only login was replaced. | That account | `login_replaced` |

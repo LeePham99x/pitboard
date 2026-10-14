@@ -36,15 +36,20 @@ mint a11y
   **Use Pitboard**, and in that group in `docs.json`. `index`, `quickstart`, `install`,
   `troubleshooting` and `security` sit at the top.
 - Images go in `images/` and are referenced as `/images/name.png`.
-- The site icons, `favicon.svg` and `favicon-dark.svg`, and the header logos in `logo/` are
-  Pitboard's mark, the board the app's icon and `MenuBarMark.swift` draw. Nothing
-  regenerates them, so change them together.
 - `.mintignore` lists the files Mintlify must not publish, such as `AGENTS.md`.
 
+Pitboard's mark is the board the app's icon and `MenuBarMark.swift` draw. Nothing regenerates
+its copies, so change them together:
+
+- `favicon.svg`, `favicon-dark.svg` and `logo/` in this folder: the site icons and header logos.
+- `website/public/`: `favicon.svg`, `favicon.ico`, `apple-touch-icon.png`, the `icon-*.png`
+  files and `og.png`.
+- `website/src/assets/logo/`: the lockup in the site's header and the mark in its drawn menu bar.
+
 A page that moves needs a redirect in `docs.json`, so links from outside the site keep
-working. Markdown files in the repository, such as `README.md`, `SECURITY.md` and
-`packaging/tap-README.md`, link pages by path. The README's copies on crates.io and in
-release tarballs keep their links.
+working. Markdown files in the repository, such as `README.md`, `SECURITY.md`, `CHANGELOG.md`
+and `packaging/tap-README.md`, and the pages in `website/` link pages by path. The README's
+copies on crates.io and in release tarballs keep their links.
 
 A redirect maps only a path, so a heading those files link, such as
 `security#what-leaves-your-machine`, keeps its text. The app's **Pitboard Help** item and

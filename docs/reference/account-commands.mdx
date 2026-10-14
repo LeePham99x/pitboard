@@ -408,35 +408,27 @@ On standard output, each line but the first starts with the local time, such as 
 | `Watching Claude Code. Pitboard switches to another of your accounts once a limit of the one in use reaches 95%. Stop with Ctrl-C.` | It starts. With an account turned on for warm-ups, the first sentence ends `, and warms up personal from 06:00 to 22:00.` |
 | `Watching work: 62% of its 5-hour limit, as of 14:00.` | No limit of the account in use has reached the share. The line names its fullest limit that has not reset. While Anthropic holds Pitboard off asking about the account, it ends `Anthropic holds Pitboard off asking again until 15:28.` |
 | `Switched Claude Code from work to personal: work has used 96% of its 5-hour limit. Claude Code sessions already running follow within 33 seconds.` | It switched. The last sentence is the second line `use` prints. |
-| `work has used 97% of its 5-hour limit, and no other Claude Code account has room below 95% in every limit.` | No other account qualifies. Where Anthropic has given no reading of one that could, the line ends `in every limit, and there is no reading of personal from Anthropic yet.` |
+| `work has used 97% of its 5-hour limit, and no other Claude Code account has room below 95% in every limit.` | No other account qualifies: `no_room`. |
 | `work has used 96% of its 5-hour limit. Pitboard tries again at 14:03.` | A try came to nothing, and Pitboard waits before the next. |
-| `work has used 96% of its 5-hour limit. Pitboard is not switching: <reason>.` | It stays on the account, for a reason in the first list. |
-| `Pitboard is not switching Claude Code: <reason>.` | It cannot decide whether to switch, for a reason in the second list. |
+| `work has used 96% of its 5-hour limit. Pitboard is not switching: <reason>.` | It stays on the account, for a reason in [When it stays on the account](/reference/automatic-switching#when-it-stays-on-the-account) other than `no_room`. |
+| `Pitboard is not switching Claude Code: <reason>.` | It cannot decide whether to switch, for a reason in [When it decides nothing](/reference/automatic-switching#when-it-decides-nothing). |
 | `Warmed up personal: its 5-hour period runs until 22:50.` | It warmed up an account. |
 | `personal has its weekly limit used up until Oct 15 03:00, so Pitboard is not warming it up for now.` | An account turned on is held back, for a reason in the first table of [When it holds back](/guides/warm-up#when-it-holds-back). |
 | `Pitboard is not warming up accounts: <reason>.` | Nothing can be warmed up here, for a reason in the second table there. |
 
 A limit of one model is named with its model, as in `97% of its weekly Opus limit`.
 
-`<reason>` after `Pitboard is not switching:` is one of:
+Three reasons end the line in their own way:
 
-- `this limit was switched away from once already, and is not again before it resets`
-- `3 attempts to switch away from this limit failed, and none is made again before it resets`
-- `the account was put in use less than 5 minutes ago`, followed by `It decides again at 14:07.`
-- `Claude Code signs in another way, set by ANTHROPIC_API_KEY in the environment, so a switch would change nothing its sessions use`, naming each setting and where it is set
-
-`<reason>` after `Pitboard is not switching Claude Code:` is one of:
-
-- `` a switch was interrupted, and the next change you make finishes it, or give up on it with `pitboard abandon` ``
-- `Claude Code uses a custom OAuth endpoint, and Pitboard does not act on Claude Code then`
-- `Claude Code has no login stored`
-- `Claude Code has me@example.com's login stored, and that account is not enrolled`
-- `whose login Claude Code has stored could not be told (could not reach Anthropic: no route to host). It asks again at 14:03`
-- `there is no reading of work from Anthropic yet`
+| Reason | The line ends |
+| --- | --- |
+| `settling` | `It decides again at 14:07.` |
+| `not_identified` | `It asks again at 14:03.` |
+| `switch_interrupted` | `` or give up on it with `pitboard abandon`. `` |
 
 `watch` names the account it watches whenever its last line said something else. Until the next switch, it prints each reason, wait and error code once. A warning also comes once, on standard error, with the line of the decision that found it.
 
-A switch or a warm-up that fails prints its error on standard error, as `pitboard use` would, and `watch` goes on. [When it holds back](/guides/automatic-switching#when-it-holds-back) says what ends each reason and how long Pitboard waits after a failure.
+A switch or a warm-up that fails prints its error on standard error, as `pitboard use` would, and `watch` goes on. [Automatic switching](/reference/automatic-switching) says what ends each reason and how long Pitboard waits after a failure.
 
 `watch` ends with the error's exit status when it runs as root or under `sudo` (`elevated`). It also ends on an error in [The Pitboard directory](/reference/errors#the-pitboard-directory) while deciding whether to switch. No warm-up error ends it.
 

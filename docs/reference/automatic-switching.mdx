@@ -1,0 +1,41 @@
+---
+title: "Automatic switching"
+description: "Each reason the automatic switch stays on an account or decides nothing, with its text, its code and what ends it."
+---
+
+The app and `pitboard watch` give each reason in the same words. The app shows it in a [notification](/reference/app#notifications) and under the share in [Settings](/reference/settings#switch-claude-code-automatically). `pitboard watch` prints it in [its lines](/reference/account-commands#watch), and with `--json` gives the code in [`reason`](/reference/json-output#watch-events).
+
+## When it stays on the account
+
+Once a limit of the account in use reaches the share, Pitboard stays on the account while one of these holds. `pitboard log` records `auto-stay` with the code, once for each limit and its reset.
+
+| Code | Text | Ends when |
+| --- | --- | --- |
+| `no_room` | `no other Claude Code account has room below 95% in every limit` | Another account [qualifies](/guides/automatic-switching#which-account-it-switches-to), or the limit resets. |
+| `already_switched` | `this limit was switched away from once already, and is not again before it resets` | The limit resets. |
+| `attempts_spent` | `3 attempts to switch away from this limit failed, and none is made again before it resets` | The limit resets. |
+| `settling` | `the account was put in use less than 5 minutes ago` | 5 minutes pass. |
+| `auth_overridden` | `Claude Code signs in another way, set by ANTHROPIC_API_KEY in the environment, so a switch would change nothing its sessions use` | You remove that setting, which `pitboard doctor` also names. |
+
+Where Anthropic has given no reading of an account that could qualify, `no_room` ends `, and there is no reading of personal from Anthropic yet`.
+
+`settling` counts from the switch, sign-in or enrolment that put the account in use.
+
+In JSON, `no_room` is an event of its own. The other codes are the `reason` of a `skipped` event.
+
+## When it decides nothing
+
+While one of these holds, Pitboard does not decide whether to switch.
+
+| Code | Text | Ends when |
+| --- | --- | --- |
+| `switch_interrupted` | `a switch was interrupted, and the next change you make finishes it` | Your next change finishes it, or [`pitboard abandon`](/reference/recovery-commands#abandon) gives up on it. |
+| `custom_oauth_endpoint` | `Claude Code uses a custom OAuth endpoint, and Pitboard does not act on Claude Code then` | You unset [`CLAUDE_CODE_CUSTOM_OAUTH_URL`](/reference/files#custom-oauth-endpoint). |
+| `nothing_signed_in` | `Claude Code has no login stored` | You sign in. |
+| `not_enrolled` | `Claude Code has me@example.com's login stored, and that account is not enrolled` | You enrol it. |
+| `not_identified` | `whose login Claude Code has stored could not be told (could not reach Anthropic)` | A later try identifies it. |
+| `no_reading` | `there is no reading of work from Anthropic yet` | Pitboard's next read gets one. |
+
+## When a try fails
+
+The next try waits 1 minute, and each failure in a row doubles the wait, up to 15 minutes. A failure that may pass, such as Anthropic out of reach, does not count toward `attempts_spent`.
