@@ -1,5 +1,5 @@
-import { clock, type Moment } from "./world.ts";
-import { statusLines } from "../lib/words.ts";
+import { clock, tools, type Moment } from "./world.ts";
+import { statusHeading, statusLines } from "../lib/words.ts";
 
 export interface Session {
   title: string;
@@ -11,13 +11,11 @@ function status(moment: Moment): Session {
   return {
     title: "pitboard",
     command: "pitboard",
-    output: [
-      "<b>Claude Code</b>",
-      ...statusLines("claude", moment),
-      "",
-      "<b>Codex</b>",
-      ...statusLines("codex", moment),
-    ],
+    output: tools.flatMap(([tool], i) => [
+      ...(i > 0 ? [""] : []),
+      statusHeading(tool),
+      ...statusLines(tool, moment),
+    ]),
   };
 }
 
@@ -30,6 +28,14 @@ export const sessions = {
     output: [
       "Switched to <b>work</b>; <b>personal</b> is parked.",
       "Claude Code sessions already running follow within 33 seconds.",
+    ],
+  },
+  useDesktop: {
+    title: "pitboard use desktop/home",
+    command: "pitboard use desktop/home",
+    output: [
+      "Switched to <b>desktop/home</b>; <b>desktop/office</b> is parked.",
+      "Claude opens signed in to it.",
     ],
   },
   watch: {
@@ -49,30 +55,13 @@ export const sessions = {
       `  <b>work    </b>  <span class="dim">off</span>`,
     ],
   },
-  schedule: {
-    title: "pitboard schedule install",
-    command: "pitboard schedule install",
-    output: [
-      "Parked logins will be renewed daily.",
-      "/Users/me/Library/LaunchAgents/com.datlechin.pitboard.renew.plist",
-      "",
-      "It renews your own parked logins and does nothing else: it never switches account and never asks Anthropic for usage.",
-    ],
-  },
-  json: {
-    title: "pitboard rename wrong right --json",
-    command: "pitboard rename wrong right --json",
-    output: [
-      `{"v":1,"command":"rename","ok":true,"data":{"from":"wrong","to":"right","email":"me@example.com"},"warnings":[],"error":null}`,
-    ],
-  },
   log: {
     title: "pitboard log",
     command: "pitboard log -n 4",
     output: [
-      ["2026-10-10T09:14:03+07:00", "enroll ", "personal"],
       ["2026-10-10T09:16:52+07:00", "enroll ", "work"],
       [`2026-10-13T${clock.warmed}:04+07:00`, "warm-up", "personal"],
+      [`2026-10-13T${clock.desktopSwitched}:12+07:00`, "use    ", "desktop/home"],
       [`2026-10-13T${clock.switched}:31+07:00`, "use    ", "work"],
     ].map(
       ([at, verb, subject]) =>

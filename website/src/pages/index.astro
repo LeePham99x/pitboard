@@ -19,6 +19,7 @@ import { DOCS, REPO } from "../data/site.ts";
 import { longDate } from "../lib/changelog.ts";
 import { appZip } from "../lib/github.ts";
 import { highlight, siteData } from "../lib/data.ts";
+import { tools } from "../data/world.ts";
 import { statusLine } from "../lib/words.ts";
 
 const { versions, release } = await siteData();
@@ -29,11 +30,12 @@ const cell = "border-b border-grid py-3.5 text-left align-baseline max-sm:border
 const row = (v: (typeof recent)[number]) =>
   `<th class="${cell} pr-6 font-mono text-control font-semibold whitespace-nowrap max-sm:mr-3 max-sm:inline" scope="row"><a href="/changelog#v${v.version}">${v.version}</a></th><td class="${cell} pr-6 text-note/[1.5] whitespace-nowrap text-muted max-sm:inline">${longDate(v.date)}</td><td class="${cell} max-sm:mt-1 max-sm:block">${v.highlight}</td>`;
 const note = "mt-4 hidden max-w-measure text-note text-pretty text-muted";
+const guide = { claude: "claude-code", codex: "codex", desktop: "claude-desktop" };
 
 const faq = [
   {
     q: "What does Pitboard work with?",
-    a: "Claude Code signed in to a Claude account, and OpenAI's Codex CLI signed in with ChatGPT, its login in <code>auth.json</code>. Pitboard does not support API keys, third-party providers or Gemini CLI.",
+    a: "Claude Code signed in to a Claude account, OpenAI's Codex CLI signed in with ChatGPT, and Claude Desktop on macOS. Pitboard does not support API keys, third-party providers or Gemini CLI.",
     link: [
       `${DOCS}/concepts/limits#tools-and-sign-ins-pitboard-does-not-support`,
       "Tools and sign-ins Pitboard does not support",
@@ -61,8 +63,13 @@ const faq = [
   },
   {
     q: "What happens if I uninstall it?",
-    a: "<code>pitboard uninstall</code> turns off daily renewal and deletes every parked login, then <code>~/.pitboard</code>. Each tool stays signed in to its account in use, and every other account needs a browser sign-in.",
+    a: "<code>pitboard uninstall</code> turns off daily renewal and deletes every parked login, then <code>~/.pitboard</code>. Each tool stays signed in to its account in use, and every other account needs signing in again.",
     link: [`${DOCS}/install/remove#delete-parked-logins-first`, "Delete parked logins first"],
+  },
+  {
+    q: "Can I script it?",
+    a: "Yes. With <code>--json</code>, every command prints one line of JSON, with a stable code for each error.",
+    link: [`${DOCS}/reference/json-output#the-envelope`, "The envelope"],
   },
   {
     q: "Is Pitboard made by Anthropic or OpenAI?",
@@ -93,8 +100,8 @@ const jsonLd = [
 ---
 
 <Base
-  title="Pitboard: switch between your Claude Code and Codex accounts"
-  description="Switch Claude Code and Codex between your own accounts without signing out, and see what each one has left."
+  title="Pitboard: switch AI coding tools between your accounts"
+  description="Switch your AI coding tools between your own accounts without signing out, and see what each account has left."
   current="home"
   path="/"
   jsonLd={jsonLd}
@@ -108,7 +115,7 @@ const jsonLd = [
         <div class="pt-6">
           <h1 class="font-mono text-h1 text-strong max-sm:text-h1-sm" id="hero-title">Pitboard</h1>
           <p class="mt-4 max-w-lead text-lead text-pretty text-fg max-sm:text-lead-sm">
-            Switch Claude Code and OpenAI's Codex CLI between your accounts without signing out.
+            Switch your AI coding tools between your own accounts without signing out.
           </p>
           <p class:list={[note, "os-linux:block"]}>
             On Linux, Pitboard has not been run with real logins.
@@ -118,6 +125,15 @@ const jsonLd = [
           </p>
           <p class:list={[note, "os-mobile:block"]}>Pitboard runs on a Mac or a Linux computer.</p>
           <InstallTabs class="mt-10" n={1} zipUrl={zip.url} />
+          <div class="mt-10 border-t border-grid pt-5 font-mono text-ui">
+            <p class="text-muted">Works with</p>
+            <ul class="mt-2 flex flex-wrap gap-x-7 gap-y-1">
+              {tools.map(([tool, name]) => <li>
+                <a href={`${DOCS}/guides/${guide[tool]}`}>{name}</a>
+                {tool === "desktop" && <span class="text-muted">on macOS</span>}
+              </li>)}
+            </ul>
+          </div>
         </div>
         <Figure
           class="mt-8.75 max-xl:mt-8"
@@ -125,12 +141,12 @@ const jsonLd = [
           app={{
             caption: "Switching accounts in Pitboard's menu.",
             describe:
-              "Pitboard's menu open from the menu bar. Claude Code has personal and work, with personal in use; Codex has main and spare, with main in use. Each account shows its plan and how much of each limit it has used. The pointer chooses work, the check mark moves to work and the menu bar shows work 40%. Then the status line of the Claude Code session behind the menu puts work first.",
+              "Pitboard's menu open from the menu bar. Claude Code has personal, in use, and work; Codex has main, in use, and spare; Claude Desktop has home, in use, and office. Each Claude Code and Codex account shows its plan and how much of each limit it has used, and each Claude Desktop account reads No usage read. The pointer chooses work and the menu closes; the menu bar shows work 40%. The pointer opens the menu again, with work first and in use. Then the status line of the Claude Code session behind the menu puts work first.",
           }}
           cli={{
             caption: "The same accounts in a terminal.",
             describe:
-              "<code>pitboard</code> in a terminal lists the Claude Code accounts work, in use, and personal, then the Codex accounts main, in use, and spare. Each limit has a bar, how much is used, when it resets and its pace.",
+              "<code>pitboard</code> in a terminal lists the Claude Code accounts work, in use, and personal, then the Codex accounts main, in use, and spare. Each limit has a bar, how much is used, when it resets and its pace. Then Claude Desktop, whose usage Pitboard does not read: home, in use, read 2h 05m ago, and office, whose sign-in may lapse in 25 days 3 hours.",
           }}
         >
           <Desk demo />
@@ -138,28 +154,30 @@ const jsonLd = [
         </Figure>
       </div>
     </section>
-
     <Feature id="switch" title="Switch without signing out">
       <p>
         Choose an account in the menu, or run <code>pitboard use work</code>. History, settings and
         projects stay where they are.
       </p>
-      <p>Pitboard keeps the login of each account not in use, called a parked login.</p>
+      <p>
+        Pitboard keeps the login of each account not in use, called a parked login.
+        <a href={`${DOCS}/guides/renewal`}>Daily renewal</a> keeps Claude Code's parked logins from
+        expiring, whether the app is open or not.
+      </p>
       <p>
         <a href={`${DOCS}/guides/switch#what-happens-to-open-sessions`}
           >Claude Code sessions already open follow the switch</a
-        >. Restart anything that runs Codex, the ChatGPT app included.
+        >. Restart anything that runs Codex; the app offers to quit the ChatGPT app and open it
+        again.
       </p>
       <p>
-        <a href={`${DOCS}/guides/accounts#add-another-account`}>Adding an account</a> opens the
-        tool's own sign-in, and the account in use stays signed in. Each organisation your Anthropic
-        account belongs to counts as a separate account.
+        <a href={`${DOCS}/guides/accounts#add-another-account`}
+          >Adding a Claude Code or Codex account</a
+        >
+        opens the tool's own sign-in, and the account in use stays signed in. Each organisation your
+        Anthropic account belongs to counts as a separate account.
       </p>
-      <p>
-        While the ChatGPT app is open, the menu bar app
-        <a href={`${DOCS}/guides/switch#switch-while-the-chatgpt-app-is-open`}>offers to quit it</a
-        >, switch Codex and open it again.
-      </p>
+      <p><b>Sign In Again</b> does the same for a parked login that stopped working.</p>
       <Figure
         slot="fig"
         app={{
@@ -177,9 +195,44 @@ const jsonLd = [
         <Term slot="cli" session={sessions.use} />
       </Figure>
     </Feature>
+    <Feature id="desktop" title="Claude Desktop">
+      <p>
+        On macOS, Pitboard switches <a href={`${DOCS}/guides/claude-desktop`}>Claude Desktop</a>
+        between your accounts too, from the menu or with <code>pitboard use desktop/home</code>.
+      </p>
+      <p>
+        It changes Claude's login only while Claude is closed. The app offers to quit Claude,
+        switches, and opens it again.
+      </p>
+      <p>
+        Pitboard
+        <a href={`${DOCS}/concepts/claude-desktop#what-pitboard-does-not-do-for-claude-desktop`}
+          >reads no usage for Claude Desktop</a
+        >. It never switches Claude Desktop by itself and never renews its parked logins.
+      </p>
+      <Figure
+        slot="fig"
+        app={{
+          caption: "Claude Desktop in the Pitboard window.",
+          describe:
+            "The Claude Desktop section of the Accounts pane. home is in use: Read 2h 05m ago, with Claude closed. office has a Use button: Its sign-in may lapse in 25 days.",
+        }}
+        cli={{
+          caption: "Switching Claude Desktop from a terminal.",
+          describe:
+            "<code>pitboard use desktop/home</code> prints: Switched to desktop/home; desktop/office is parked. Claude opens signed in to it.",
+        }}
+      >
+        <Accounts moment="after" only="desktop" />
+        <Term slot="cli" session={sessions.useDesktop} />
+      </Figure>
+    </Feature>
 
     <Feature id="usage" title="What each account has left">
-      <p>Pitboard shows every limit of every account: how much is used and when it resets.</p>
+      <p>
+        Pitboard shows every limit of every Claude Code and Codex account: how much is used and when
+        it resets.
+      </p>
       <p>
         A mark on each bar shows where <a href={`${DOCS}/concepts/usage#pace`}>an even pace</a>
         would have reached. For the account in use, Pitboard says which limit runs out first.
@@ -202,12 +255,12 @@ const jsonLd = [
         app={{
           caption: "The Pitboard window.",
           describe:
-            "The Accounts pane of the Pitboard window. personal is in use, with its weekly limit at 73% and 55% over pace, and the line: Weekly limit runs out in 11h 05m at this pace. work's parked login is good for 26 more days. Codex's main and spare follow.",
+            "The Accounts pane of the Pitboard window. personal is in use, with its weekly limit at 73% and 55% over pace, and the line: Weekly limit runs out in 11h 05m at this pace. work's parked login is good for 26 more days. Codex's main and spare follow, then Claude Desktop's home and office.",
         }}
         cli={{
           caption: "The same accounts in a terminal.",
           describe:
-            "<code>pitboard</code> lists the Claude Code accounts personal, in use, with its weekly limit running out in 11 hours 5 minutes at this pace, and work, ready, its parked login good for 26 days 4 hours. Then the Codex accounts main, in use, and spare.",
+            "<code>pitboard</code> lists the Claude Code accounts personal, in use, with its weekly limit running out in 11 hours 5 minutes at this pace, and work, ready, its parked login good for 26 days 4 hours. Then the Codex accounts main, in use, and spare, and the Claude Desktop accounts home and office.",
         }}
       >
         <Accounts moment="before" />
@@ -330,68 +383,6 @@ const jsonLd = [
       </Figure>
     </Feature>
 
-    <Feature id="renewal" title="Keep parked logins alive">
-      <p>
-        A Claude Code parked login expires unless Pitboard renews it.
-        <a href={`${DOCS}/guides/renewal`}>Daily renewal</a> renews every parked login that is due,
-        once a day, whether the app is open or not.
-      </p>
-      <p>
-        When a parked login stops working,
-        <a href={`${DOCS}/guides/sign-in-again`}><b>Sign In Again</b></a> gets a fresh one, and the
-        account in use stays signed in.
-      </p>
-      <p>
-        Pitboard notices a
-        <a href={`${DOCS}/troubleshooting#an-account-reads-login-replaced-outside-pitboard`}
-          >login replaced outside Pitboard</a
-        >, by <code>/login</code> or <code>codex login</code>, and names the command that fixes it.
-      </p>
-      <Figure
-        slot="fig"
-        app={{
-          caption: "Daily renewal in Settings.",
-          describe:
-            "The Renewal pane of Pitboard's Settings: Renew parked logins daily is on, runs every day, scheduled in a LaunchAgent. A button renews every parked login that is due.",
-        }}
-        cli={{
-          caption: "The same from a terminal.",
-          describe:
-            "<code>pitboard schedule install</code> prints: Parked logins will be renewed daily, the LaunchAgent's path, and that it never switches account and never asks Anthropic for usage.",
-        }}
-      >
-        <Settings show="renewal" />
-        <Term slot="cli" session={sessions.schedule} />
-      </Figure>
-    </Feature>
-
-    <Feature id="cli" title="The command line">
-      <p>
-        <a href={`${DOCS}/reference/commands`}>The command line</a> enrols accounts, switches,
-        renews and reads usage, on macOS and Linux.
-      </p>
-      <p>
-        Every command takes <code>--json</code> and answers with
-        <a href={`${DOCS}/reference/json-output#the-envelope`}>one envelope</a>, with a stable code
-        for each error.
-      </p>
-      <p>
-        <a href={`${DOCS}/reference/account-commands#watch`}><code>pitboard watch</code></a> runs
-        the automatic switch and warm-ups in a terminal.
-      </p>
-      <p>Account windows and the offer to switch when an account runs out are in the app only.</p>
-      <Figure
-        slot="fig"
-        app={{
-          caption: "A command with <code>--json</code>.",
-          describe:
-            "<code>pitboard rename wrong right --json</code> prints the envelope on one line, with ok true and the data from wrong, to right and the email address.",
-        }}
-      >
-        <Term session={sessions.json} />
-      </Figure>
-    </Feature>
-
     <Feature id="security" title="Security and privacy">
       <p>
         Pitboard has no server of its own and no telemetry. The docs
@@ -399,11 +390,12 @@ const jsonLd = [
       </p>
       <p>
         <a href={`${DOCS}/security#where-parked-logins-are-kept`}>Parked logins</a> stay in your
-        keychain on macOS and in files on Linux. A login goes only to the service that issued it.
+        keychain on macOS and in files on Linux, and a Claude Desktop one in a folder only you can
+        open. A login goes only to the service that issued it.
       </p>
       <p>
-        <a href={`${DOCS}/concepts/switching#what-a-switch-does`}>A switch</a> first checks whose
-        login is in use and that the next one still works.
+        A Claude Code or Codex <a href={`${DOCS}/concepts/switching#what-a-switch-does`}>switch</a>
+        first checks whose login is in use and that the next one still works.
       </p>
       <p>
         <b>This Mac</b> and <code>pitboard doctor</code> check what Pitboard relies on.
@@ -420,12 +412,12 @@ const jsonLd = [
         app={{
           caption: "The Activity pane.",
           describe:
-            "The Activity pane of the Pitboard window lists the switch to work and a warm-up of personal, both asked by the Pitboard app, and the enrolment of work and personal from the command line, each Done.",
+            "The Activity pane of the Pitboard window lists the switch to work, the switch to desktop/home and a warm-up of personal, all asked by the Pitboard app, and the enrolment of work from the command line, each Done.",
         }}
         cli={{
           caption: "The same from a terminal.",
           describe:
-            "<code>pitboard log</code> lists the enrolment of personal and work, a warm-up of personal and the switch to work, each ok.",
+            "<code>pitboard log</code> lists the enrolment of work, a warm-up of personal, the switch to desktop/home and the switch to work, each ok.",
         }}
       >
         <Activity />

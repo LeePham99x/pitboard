@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { sessions } from "./sessions.ts";
 import { account } from "./world.ts";
 import { plainText } from "../lib/changelog.ts";
-import { menuLine, statusLine, statusLines } from "../lib/words.ts";
+import { listed, menuLine, statusHeading, statusLine, statusLines } from "../lib/words.ts";
 
 const repo = (path: string) => readFileSync(new URL(`../../../${path}`, import.meta.url), "utf8");
 const docs = (path: string) => repo(`docs/${path}`);
@@ -45,20 +45,6 @@ test("pitboard use work prints what the Quickstart prints", () => {
   assert.deepEqual(ours, block(docs("quickstart.mdx"), ours[0], ours.length));
 });
 
-test("pitboard schedule install prints what Daily renewal prints", () => {
-  const ours = text(sessions.schedule.output);
-  assert.deepEqual(ours, block(docs("guides/renewal.mdx"), ours[0], ours.length));
-});
-
-test("the JSON envelope is the one JSON output shows", () => {
-  const page = docs("reference/json-output.mdx");
-  const shown = page.slice(
-    page.indexOf("```json") + 7,
-    page.indexOf("```", page.indexOf("```json") + 7),
-  );
-  assert.deepEqual(JSON.parse(sessions.json.output[0]), JSON.parse(shown));
-});
-
 test("pitboard watch starts with the line the command line writes", () => {
   const source = joined(repo("crates/pitboard/src/watch.rs"));
   assert.ok(source.includes("limit of the one in use reaches {}%{}. Stop with Ctrl-C."));
@@ -89,8 +75,48 @@ test("pitboard warm lists accounts as the warm-up guide does", () => {
 });
 
 test("pitboard log writes lines in the shape log shows", () => {
-  const shape = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+07:00  [\w-]+\s+\w+  ok$/;
+  const shape = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+07:00  [\w-]+\s+[\w/]+  ok$/;
   for (const line of text(sessions.log.output)) assert.match(line, shape);
   const page = docs("reference/maintenance-commands.mdx");
   assert.ok(page.split("\n").filter((l) => shape.test(l)).length >= 3);
+});
+
+test("pitboard heads Claude Desktop's accounts as Account commands does", () => {
+  assert.ok(
+    docs("reference/account-commands.mdx").includes(`\`${plainText(statusHeading("desktop"))}\``),
+  );
+});
+
+test("a Claude Desktop row ends as Account status says it does", () => {
+  const page = docs("reference/account-status.mdx");
+  for (const line of text(statusLines("desktop", "after"))) {
+    const said = line.slice(line.search(/(signed in|ready)/));
+    assert.ok(page.includes(`\`${said}\``), said);
+  }
+});
+
+test("the menu says a Claude Desktop account has no usage read, as Account status does", () => {
+  const [inUse] = listed("desktop", "after");
+  assert.ok(
+    docs("reference/account-status.mdx").includes(`**${menuLine(inUse, "after")}** in the menu`),
+  );
+});
+
+test("pitboard use desktop/home prints what Claude Desktop's guide prints", () => {
+  const ours = text(sessions.useDesktop.output);
+  const theirs = block(
+    docs("guides/claude-desktop.mdx"),
+    "Switched to desktop/home; desktop/work is parked.",
+    2,
+  );
+  const named = (lines: string[]) =>
+    lines.map((l) => l.replace(/desktop\/\w+/g, "desktop/<label>"));
+  assert.deepEqual(named(ours), named(theirs));
+});
+
+test("every listing gives the account in use first", () => {
+  for (const moment of ["before", "after"] as const) {
+    const [first] = listed("claude", moment);
+    assert.equal(first.label, moment === "before" ? "personal" : "work");
+  }
 });

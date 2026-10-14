@@ -1,0 +1,40 @@
+---
+title: "Use Pitboard with Claude Code"
+sidebarTitle: "Claude Code"
+description: "Check what Claude Code needs before you add an account, add Claude Code accounts and see how they differ."
+---
+
+Pitboard switches Claude Code on macOS and Linux. A switch puts another account's [parked login](/concepts/switching#parked-logins) where Claude Code reads its login.
+
+## Before you add a Claude Code account
+
+A variable such as `ANTHROPIC_API_KEY`, or `apiKeyHelper` in Claude Code's settings, makes Claude Code ignore the login Pitboard switches. Changes to Claude Code accounts still go ahead, with the warning `auth_overridden`. [Variables that override the login](/reference/files#variables-that-override-the-login) lists them all. To check, run:
+
+```sh
+pitboard doctor
+```
+
+The `what a session authenticates with` line warns and names the setting when Claude Code signs in another way.
+
+While `CLAUDE_CODE_CUSTOM_OAUTH_URL` is set, Pitboard refuses every change to Claude Code accounts with `custom_oauth_endpoint`. [Custom OAuth endpoint](/reference/files#custom-oauth-endpoint) says why.
+
+## Add Claude Code accounts
+
+Add each one as [Add another account](/guides/accounts#add-another-account) shows. In the app, choose **Claude Code** if the dialog has a **Tool** pop-up menu.
+
+A label with no prefix enrols a Claude Code account: `pitboard enroll work --sign-in` adds one. `pitboard enroll personal` enrols the account Claude Code is signed in to, as [Add the account you are signed in to](/guides/accounts#add-the-account-you-are-signed-in-to) shows. Where another tool also has a `work`, other commands need `claude/work`: see [Labels](/reference/commands#labels).
+
+Do not add an account with Claude Code's `/login`, as [Add another account](/guides/accounts#add-another-account) warns.
+
+If Pitboard says `claude` is not on this machine, see [Pitboard cannot find Claude Code](/troubleshooting/accounts#pitboard-cannot-find-claude-code).
+
+## How Claude Code accounts differ
+
+- Open Claude Code sessions follow a switch with no restart. [How open sessions follow a switch](/concepts/open-sessions) says how soon, and what can pin them.
+- Pitboard switches only Claude Code by itself: see [Switch before an account runs out](/guides/automatic-switching).
+- Pitboard warms up only Claude Code accounts: see [Warm up accounts](/guides/warm-up).
+- `pitboard statusline` shows each Claude Code account's usage in Claude Code's status line: see [Show usage in Claude Code's status line](/guides/status-line).
+- Pitboard asks Anthropic to identify a Claude Code login: see [How Pitboard knows whose login it is](/concepts/identity).
+- `/status` in Claude Code can name another account than Pitboard shows: see [Claude Code shows another account than Pitboard](/troubleshooting/accounts#claude-code-shows-another-account-than-pitboard).
+- A parked Claude Code login expires if Pitboard does not run to renew it: see [Keep parked logins alive](/guides/renewal).
+- In the app, a Claude Code account's [account window](/guides/account-windows) opens claude.ai.

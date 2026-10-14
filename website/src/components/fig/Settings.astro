@@ -1,12 +1,11 @@
 ---
-// One section of a Settings pane, in LimitsSettings.swift's and RenewalSettings.swift's words.
+// One section of the Limits pane, in LimitsSettings.swift's words.
 import Lights from "./Lights.astro";
-import MacButton from "./MacButton.astro";
 import Switch from "./Switch.astro";
 import { clock } from "../../data/world.ts";
 
 interface Props {
-  show: "switch" | "warm" | "renewal";
+  show: "switch" | "warm";
 }
 const { show } = Astro.props;
 const tabs = [
@@ -16,9 +15,7 @@ const tabs = [
   ["commandLine", "Command Line", "sf-term"],
   ["updates", "Updates", "sf-down"],
 ];
-const pane = show === "renewal" ? "renewal" : "limits";
-const title = show === "renewal" ? "Renewal" : "Limits";
-const heights = { switch: "min-h-380", warm: "min-h-450", renewal: "min-h-390" } as const;
+const heights = { switch: "min-h-380", warm: "min-h-450" } as const;
 const group = "rounded-pt-8 bg-win-bg shadow-group *:not-first:inset-shadow-sep-t";
 const row = "flex min-h-36 items-center gap-12 px-10 py-6";
 const label = "min-w-0 flex-1";
@@ -42,11 +39,11 @@ const stepper = [
   <div class="relative w-500 overflow-hidden rounded-pt-12 bg-win-bg text-win-text shadow-window">
     <div class="relative flex justify-center gap-2 bg-win-side pt-30 pb-6 inset-shadow-sep-b">
       <Lights window />
-      <span class="absolute inset-x-0 top-7 text-center font-bold">{title}</span>
+      <span class="absolute inset-x-0 top-7 text-center font-bold">Limits</span>
       {tabs.map(([id, name, icon]) => <span
         class:list={[
           "flex min-w-62 flex-col items-center gap-2 rounded-pt-6 px-4 pt-4 pb-3 text-pt-11/13",
-          id === pane ? "bg-win-pick text-win-blue" : "text-win-sub",
+          id === "limits" ? "bg-win-pick text-win-blue" : "text-win-sub",
         ]}
       >
         <svg class="size-22 shrink-0">
@@ -115,36 +112,6 @@ const stepper = [
             resets, within these hours, while the app is open, so it resets as early as it can.
             Claude Code sends one short request with that account's own login. Pitboard warms up
             Claude Code accounts only, and none with a limit used up.
-          </p>
-        </>
-      )}
-      {show === "renewal" && (
-        <>
-          <div class={group}>
-            <div class={row}>
-              <span class={label}>Renew parked logins daily</span>
-              <Switch on />
-            </div>
-            <div class={row}>
-              <span class={label}>Runs</span>
-              <span class="whitespace-nowrap text-win-sub">Every day</span>
-            </div>
-            <div class={row}>
-              <span class={label}>Scheduled in</span>
-              <span class="whitespace-nowrap text-win-sub"
-                >/Users/me/Library/La…pitboard.renew.plist</span
-              >
-            </div>
-            <div class={row}>
-              <span class={label}>Renew every parked login that is due.</span>
-              <MacButton>Renew Now</MacButton>
-            </div>
-          </div>
-          <p class={foot}>
-            A parked login is renewed whenever Pitboard runs, and otherwise not, so one you leave
-            alone for weeks expires and needs a browser sign-in. Daily renewal hands that to your
-            Mac’s own scheduler. It renews your parked logins and does nothing else: it never
-            switches account and never asks for usage.
           </p>
         </>
       )}
