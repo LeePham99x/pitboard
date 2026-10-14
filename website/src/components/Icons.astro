@@ -1,7 +1,7 @@
 ---
 import template from "../assets/logo/template.svg?raw";
 
-const paths = [...template.matchAll(/<path d="([^"]+)"[^>]*?(fill-opacity="[^"]+")?\/>/g)];
+const paths = [...template.matchAll(/<path\b[^>]*?\sd="([^"]+)"/g)];
 if (paths.length !== 2) throw new Error("template.svg is not the kit's two paths");
 const [board, dim] = paths.map((m) => m[1]);
 const dimOpacity = /fill-opacity="([^"]+)"/.exec(template)?.[1] ?? "0.35";
