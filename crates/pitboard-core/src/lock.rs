@@ -43,13 +43,17 @@ use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::thread;
 use std::time::{Duration, SystemTime};
 
-/// How a lock is kept: how long it goes untouched before anybody may take it as abandoned,
-/// and how often its holder touches it meanwhile, as Claude Code passes both for each of its
-/// own.
+/// How a lock is kept and waited for, as Claude Code passes both for each of its own: how
+/// long it goes untouched before anybody may take it as abandoned, how often its holder
+/// touches it meanwhile, and how many times more one somebody holds is asked for, the first
+/// after `backoff` and each after twice the wait before it, up to `most`.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Timing {
     stale: Duration,
     heartbeat: Duration,
+    retries: u32,
+    backoff: Duration,
+    most: Duration,
 }
 
 /// Claude Code's write lock, `.storage-write`, around every write of its login (the
@@ -57,20 +61,48 @@ pub(crate) struct Timing {
 pub(crate) const WRITE: Timing = Timing {
     stale: Duration::from_millis(15_000),
     heartbeat: Duration::from_millis(7_500),
+    retries: 10,
+    backoff: Duration::from_millis(100),
+    most: Duration::from_millis(1_000),
 };
 
 /// Claude Code's refresh lock, `.oauth_refresh.lock` and the legacy one beside it, around a
 /// refresh of its login (the register's `refresh_lock`). Claude Code takes one over before
 /// it is stale only from a holder its owner record proves gone, and Pitboard writes none, so
-/// it waits on Pitboard's.
+/// it waits on Pitboard's. Asked for as the write lock is.
 pub(crate) const REFRESH: Timing = Timing {
     stale: Duration::from_millis(60_000),
     heartbeat: Duration::from_millis(5_000),
+    ..WRITE
 };
 
-const RETRIES: u32 = 10;
-const MIN_BACKOFF: Duration = Duration::from_millis(100);
-const MAX_BACKOFF: Duration = Duration::from_millis(1_000);
+impl Timing {
+    /// The same lock, asked for `retries` times more, `every` apart.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn asked(self, retries: u32, every: Duration) -> Timing {
+        Timing {
+            retries,
+            backoff: every,
+            most: every,
+            ..self
+        }
+    }
+}
+
+/// Claude Code's two locks, kept and waited for as a context takes them.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Locks {
+    pub(crate) write: Timing,
+    pub(crate) refresh: Timing,
+}
+
+impl Locks {
+    /// As Claude Code keeps and waits for each, which every real context does.
+    pub(crate) const CLAUDE_CODE: Locks = Locks {
+        write: WRITE,
+        refresh: REFRESH,
+    };
+}
 
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -152,16 +184,16 @@ fn touch(permit: Permit, path: &Path, at: SystemTime) -> io::Result<SystemTime> 
     mtime(path)
 }
 
-/// Take the lock guarding `target`, kept as `timing` says, waiting up to about seven and a
-/// half seconds.
+/// Take the lock guarding `target`, kept and waited for as `timing` says: about seven and a
+/// half seconds for one of Claude Code's.
 pub(crate) fn acquire(permit: Permit, target: &Path, timing: Timing) -> Result<Guard, LockError> {
     let path = PathBuf::from(format!("{}.lock", target.display()));
     if let Some(parent) = path.parent() {
         crate::host::fs::create_dir_all(permit, parent).map_err(LockError::Io)?;
     }
 
-    let mut backoff = MIN_BACKOFF;
-    for attempt in 0..=RETRIES {
+    let mut backoff = timing.backoff;
+    for attempt in 0..=timing.retries {
         match crate::host::fs::create_dir(permit, &path) {
             Ok(()) => return start(permit, path, timing).map_err(LockError::Io),
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
@@ -172,9 +204,9 @@ pub(crate) fn acquire(permit: Permit, target: &Path, timing: Timing) -> Result<G
             }
             Err(e) => return Err(LockError::Io(e)),
         }
-        if attempt < RETRIES {
+        if attempt < timing.retries {
             thread::sleep(backoff);
-            backoff = (backoff * 2).min(MAX_BACKOFF);
+            backoff = (backoff * 2).min(timing.most);
         }
     }
     Err(LockError::Busy)
@@ -239,6 +271,42 @@ fn start(permit: Permit, path: PathBuf, timing: Timing) -> io::Result<Guard> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::mpsc;
+    use std::time::Instant;
+
+    /// As long as a test waits for another thread, however slow the machine running it.
+    const PATIENCE: Duration = Duration::from_secs(20);
+
+    /// Claude Code's write lock, touched every millisecond, and asked for twice more a
+    /// millisecond apart.
+    const QUICK: Timing = Timing {
+        heartbeat: Duration::from_millis(1),
+        retries: 2,
+        backoff: Duration::from_millis(1),
+        most: Duration::from_millis(1),
+        ..WRITE
+    };
+
+    /// Waits for `guard`'s heartbeat to end, which it does by itself only once the lock has
+    /// stopped being the guard's.
+    fn heartbeat_ends(guard: &mut Guard) {
+        let beat = guard.beat.take().expect("a heartbeat");
+        let (ended, ends) = mpsc::channel();
+        thread::spawn(move || {
+            let _ = beat.join();
+            let _ = ended.send(());
+        });
+        ends.recv_timeout(PATIENCE).expect("the heartbeat ended");
+    }
+
+    /// Waits until `done`, looking every millisecond.
+    fn until(what: &str, done: impl Fn() -> bool) {
+        let started = Instant::now();
+        while !done() {
+            assert!(started.elapsed() < PATIENCE, "never {what}");
+            thread::sleep(Duration::from_millis(1));
+        }
+    }
 
     /// Backdate a lock so only a live heartbeat could rescue it.
     fn age_past_staleness(lock: &Path) {
@@ -278,10 +346,10 @@ mod tests {
     )]
     fn refuses_while_another_holder_is_alive() {
         let (_dir, t) = scratch();
-        let _held = acquire(Permit::for_a_test(), &t, WRITE).expect("first acquire");
+        let _held = acquire(Permit::for_a_test(), &t, QUICK).expect("first acquire");
         // The holder heartbeats, so this must exhaust its retries rather than steal it.
         assert!(matches!(
-            acquire(Permit::for_a_test(), &t, WRITE),
+            acquire(Permit::for_a_test(), &t, QUICK),
             Err(LockError::Busy)
         ));
     }
@@ -322,6 +390,7 @@ mod tests {
         assert!(!abandoned(&lock, REFRESH));
     }
 
+    /// Releasing wakes the heartbeat rather than waiting out its interval, here an hour.
     #[test]
     #[cfg_attr(
         windows,
@@ -329,17 +398,22 @@ mod tests {
     )]
     fn releasing_is_immediate() {
         let (_dir, t) = scratch();
-        let started = std::time::Instant::now();
-        drop(acquire(Permit::for_a_test(), &t, WRITE).unwrap());
-        assert!(
-            started.elapsed() < Duration::from_millis(250),
-            "release took {:?}",
-            started.elapsed()
-        );
+        let hourly = Timing {
+            heartbeat: Duration::from_secs(3600),
+            ..WRITE
+        };
+        let held = acquire(Permit::for_a_test(), &t, hourly).unwrap();
+        let (released, done) = mpsc::channel();
+        thread::spawn(move || {
+            drop(held);
+            let _ = released.send(());
+        });
+        done.recv_timeout(PATIENCE)
+            .expect("released without waiting out the heartbeat");
         assert!(!PathBuf::from(format!("{}.lock", t.display())).exists());
     }
 
-    /// Aged past staleness first, so only a live heartbeat can bring it back.
+    /// The heartbeat touches the lock again and again, and finds it its own each time.
     #[test]
     #[cfg_attr(
         windows,
@@ -347,17 +421,17 @@ mod tests {
     )]
     fn the_heartbeat_keeps_a_held_lock_young() {
         let (_dir, t) = scratch();
-        let g = acquire(Permit::for_a_test(), &t, WRITE).unwrap();
+        let g = acquire(Permit::for_a_test(), &t, QUICK).unwrap();
         let lock = PathBuf::from(format!("{}.lock", t.display()));
-        let when_taken = mtime(&lock).unwrap();
 
-        thread::sleep(WRITE.heartbeat + Duration::from_millis(400));
+        for _ in 0..2 {
+            let touched = mtime(&lock).unwrap();
+            until("touched by the heartbeat", || {
+                mtime(&lock).unwrap() != touched
+            });
+        }
 
-        assert!(
-            mtime(&lock).unwrap() > when_taken,
-            "the heartbeat never touched the lock"
-        );
-        assert!(age(&lock).unwrap() < WRITE.stale);
+        assert!(age(&lock).unwrap() < QUICK.stale);
         assert!(!g.compromised(), "nobody else touched it");
     }
 
@@ -373,13 +447,18 @@ mod tests {
     )]
     fn a_lock_somebody_else_touched_is_never_ours_again() {
         let (_dir, t) = scratch();
-        let g = acquire(Permit::for_a_test(), &t, WRITE).unwrap();
+        let mut g = acquire(Permit::for_a_test(), &t, QUICK).unwrap();
         let lock = PathBuf::from(format!("{}.lock", t.display()));
 
-        // What reclaiming it looks like from here: the directory's mtime is somebody else's.
-        age_past_staleness(&lock);
+        {
+            // The heartbeat looks and touches only while it holds this, so the mtime set here
+            // cannot fall between its look and its touch.
+            let _between_beats = g.stop.0.lock().unwrap();
+            // What reclaiming it looks like from here: the directory's mtime is somebody else's.
+            age_past_staleness(&lock);
+        }
 
-        thread::sleep(WRITE.heartbeat + Duration::from_millis(400));
+        heartbeat_ends(&mut g);
         assert!(
             g.compromised(),
             "a lock whose mtime this guard did not set is not this guard's"
@@ -401,11 +480,11 @@ mod tests {
     )]
     fn a_lock_that_vanished_is_not_quietly_remade() {
         let (_dir, t) = scratch();
-        let g = acquire(Permit::for_a_test(), &t, WRITE).unwrap();
+        let mut g = acquire(Permit::for_a_test(), &t, QUICK).unwrap();
         let lock = PathBuf::from(format!("{}.lock", t.display()));
         std::fs::remove_dir(&lock).unwrap();
 
-        thread::sleep(WRITE.heartbeat + Duration::from_millis(400));
+        heartbeat_ends(&mut g);
         assert!(g.compromised());
         assert!(!lock.exists(), "the heartbeat did not put it back");
     }

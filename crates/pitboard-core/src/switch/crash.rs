@@ -29,43 +29,73 @@ use crate::store::memory::Fault;
 use serde_json::json;
 use std::sync::Arc;
 
+type Make = fn(&str) -> harness::Machine;
+
+/// One test of `check` for each tool and each step a switch can be killed at, named
+/// `<tool>_<step>`.
+macro_rules! each_tool_and_step {
+    ($check:ident) => {
+        each_tool_and_step!(
+            $check;
+            claude_journal_written: machine, "switch.journal_written";
+            claude_park_stored: machine, "switch.park_stored";
+            claude_park_recorded: machine, "switch.park_recorded";
+            claude_installed: machine, "switch.installed";
+            claude_recorded: machine, "switch.recorded";
+            claude_config_updated: machine, "switch.config_updated";
+            codex_journal_written: codex_machine, "switch.journal_written";
+            codex_park_stored: codex_machine, "switch.park_stored";
+            codex_park_recorded: codex_machine, "switch.park_recorded";
+            codex_installed: codex_machine, "switch.installed";
+            codex_recorded: codex_machine, "switch.recorded";
+            codex_config_updated: codex_machine, "switch.config_updated";
+        );
+    };
+    ($check:ident; $($case:ident: $make:ident, $point:literal;)*) => {
+        const _: () = assert!([$($point),*].len() == 2 * POINTS.len());
+        $(
+            #[test]
+            #[cfg_attr(
+                windows,
+                ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+            )]
+            fn $case() {
+                $check(stringify!($case), $make, $point);
+            }
+        )*
+    };
+}
+
 /// Kill a switch at every durable step, recover, and check. Then recover again, because a
 /// recovery that only works once leaves a machine nobody can fix.
 ///
 /// For every tool, through the same invariants: what must be true after a crash is a fact
 /// about parking a login, and a tool whose park may never be a copy is exactly the one
 /// where getting it wrong costs most.
-#[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
-fn a_switch_killed_at_any_step_recovers_to_something_whole() {
-    type Make = fn(&str) -> harness::Machine;
-    let machines: [(&str, Make); 2] = [("claude", machine), ("codex", codex_machine)];
-    for (tool, make) in machines {
-        for point in POINTS {
-            let m = make(&point.replace('.', "-"));
+mod a_switch_killed_at_any_step_recovers_to_something_whole {
+    use super::*;
 
-            let settled = settle(&m.ctx, Permit::for_a_test(), None)
-                .expect("nothing to recover yet")
-                .0;
-            let died = fault::killing(point, || switch(settled, &m.key("there")));
-            assert_eq!(
-                died.unwrap_err(),
-                point,
-                "{tool}: the switch must reach {point} on this machine, or the case proves \
-                 nothing"
-            );
+    each_tool_and_step!(recovers_whole);
+}
 
-            let at = format!("{tool}, {point}");
-            recover(&m).unwrap_or_else(|e| panic!("{at}: recovery refused: {e}"));
-            hold(&m, &at);
+fn recovers_whole(at: &str, make: Make, point: &'static str) {
+    let m = make(&point.replace('.', "-"));
 
-            recover(&m).unwrap_or_else(|e| panic!("{at}: the second recovery refused: {e}"));
-            hold(&m, &format!("{at}, recovered twice"));
-        }
-    }
+    let settled = settle(&m.ctx, Permit::for_a_test(), None)
+        .expect("nothing to recover yet")
+        .0;
+    let died = fault::killing(point, || switch(settled, &m.key("there")));
+    assert_eq!(
+        died.unwrap_err(),
+        point,
+        "{at}: the switch must reach {point} on this machine, or the case proves nothing"
+    );
+
+    recover(&m).unwrap_or_else(|e| panic!("{at}: recovery refused: {e}"));
+    hold(&m, at);
+
+    recover(&m).unwrap_or_else(|e| panic!("{at}: the second recovery refused: {e}"));
+    hold(&m, &format!("{at}, recovered twice"));
 }
 
 /// The same kills, with Anthropic unreachable afterwards. Recovery decides what an
@@ -352,51 +382,46 @@ fn everything(m: &harness::Machine) -> Everything {
 ///
 /// A read that asks nobody says the same wherever the record and the logins tell it, and
 /// nothing where only the service could: never something else, and never with a request.
-#[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
-fn a_read_says_a_switch_is_waiting_exactly_where_settling_it_is_refused() {
-    type Make = fn(&str) -> harness::Machine;
-    let machines: [(&str, Make); 2] = [("claude", machine), ("codex", codex_machine)];
-    for (tool, make) in machines {
-        for point in POINTS {
-            for (left, leave) in AFTERWARDS {
-                let at = format!("{tool}, {point}, {left}");
-                let m = make(&format!(
-                    "read-{}-{}",
-                    point.replace('.', "-"),
-                    left.replace(' ', "-")
-                ));
-                let settled = settle(&m.ctx, Permit::for_a_test(), None)
-                    .expect("nothing to recover yet")
-                    .0;
-                let died = fault::killing(point, || switch(settled, &m.key("there")));
-                assert_eq!(died.unwrap_err(), point, "{at}");
-                let (ctx, api) = leave(&m);
-                let state = state::load(&ctx).expect("an account list");
-                let before = everything(&m);
+mod a_read_says_a_switch_is_waiting_exactly_where_settling_it_is_refused {
+    use super::*;
 
-                let asked = stuck(&ctx, &state, Asking::Service).map(|e| e.to_string());
-                let calls = api.calls();
-                let unasked = stuck(&ctx, &state, Asking::Nobody).map(|e| e.to_string());
+    each_tool_and_step!(reads_as_settling_refuses);
+}
 
-                assert_eq!(api.calls(), calls, "{at}: asking nobody asks nobody");
-                assert_eq!(everything(&m), before, "{at}: a read changes nothing");
-                let refused = match settle(&ctx, Permit::for_a_test(), None) {
-                    Err(e) if e.code() == "recovery_undetermined" => Some(e.to_string()),
-                    _ => None,
-                };
-                assert_eq!(asked, refused, "{at}");
-                assert!(
-                    unasked.is_none() || unasked == asked,
-                    "{at}: {unasked:?} where a read that asks says {asked:?}"
-                );
-                if m.which == ProviderId::Codex {
-                    assert_eq!(unasked, asked, "{at}: a Codex login names its account");
-                }
-            }
+fn reads_as_settling_refuses(case: &str, make: Make, point: &'static str) {
+    for (left, leave) in AFTERWARDS {
+        let at = format!("{case}, {left}");
+        let m = make(&format!(
+            "read-{}-{}",
+            point.replace('.', "-"),
+            left.replace(' ', "-")
+        ));
+        let settled = settle(&m.ctx, Permit::for_a_test(), None)
+            .expect("nothing to recover yet")
+            .0;
+        let died = fault::killing(point, || switch(settled, &m.key("there")));
+        assert_eq!(died.unwrap_err(), point, "{at}");
+        let (ctx, api) = leave(&m);
+        let state = state::load(&ctx).expect("an account list");
+        let before = everything(&m);
+
+        let asked = stuck(&ctx, &state, Asking::Service).map(|e| e.to_string());
+        let calls = api.calls();
+        let unasked = stuck(&ctx, &state, Asking::Nobody).map(|e| e.to_string());
+
+        assert_eq!(api.calls(), calls, "{at}: asking nobody asks nobody");
+        assert_eq!(everything(&m), before, "{at}: a read changes nothing");
+        let refused = match settle(&ctx, Permit::for_a_test(), None) {
+            Err(e) if e.code() == "recovery_undetermined" => Some(e.to_string()),
+            _ => None,
+        };
+        assert_eq!(asked, refused, "{at}");
+        assert!(
+            unasked.is_none() || unasked == asked,
+            "{at}: {unasked:?} where a read that asks says {asked:?}"
+        );
+        if m.which == ProviderId::Codex {
+            assert_eq!(unasked, asked, "{at}: a Codex login names its account");
         }
     }
 }
@@ -443,7 +468,6 @@ fn enrolling_killed_between_the_write_and_the_record_leaves_nothing_unnamed() {
     ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn signing_in_again_killed_at_any_step_recovers_to_something_whole() {
-    type Make = fn(&str) -> harness::Machine;
     let machines: [(&str, Make); 2] = [("claude", machine), ("codex", codex_machine)];
     for (tool, make) in machines {
         for point in ["enroll.installed", "enroll.recorded"] {

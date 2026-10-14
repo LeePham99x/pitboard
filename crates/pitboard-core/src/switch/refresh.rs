@@ -53,8 +53,8 @@ impl Refreshing {
         let Some((own, legacy)) = tool.refresh_lock(ctx) else {
             return Ok(None);
         };
-        let own = lock::acquire(permit, &own, lock::REFRESH)?;
-        let legacy = match lock::acquire(permit, &legacy, lock::REFRESH) {
+        let own = lock::acquire(permit, &own, ctx.locks.refresh)?;
+        let legacy = match lock::acquire(permit, &legacy, ctx.locks.refresh) {
             Ok(legacy) => Some(legacy),
             Err(lock::LockError::Io(_)) => None,
             Err(busy) => return Err(busy.into()),
@@ -317,7 +317,7 @@ fn write_lock_to_save(
     for _ in 0..SAVE_ROUNDS {
         match write_lock(ctx, permit, tool) {
             Ok(writing) => return writing,
-            Err(Error::Lock(lock::LockError::Busy)) => {}
+            Err(Error::Lock(lock::LockError::Busy)) => fault::point("refresh.waited"),
             Err(_) => break,
         }
     }

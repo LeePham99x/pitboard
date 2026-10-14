@@ -44,7 +44,7 @@ impl Watching {
     }
 
     /// The next envelope it prints: it decides within 2 seconds of a change to the account
-    /// index, and at least every 30 seconds.
+    /// index or the readings, and at least every 30 seconds.
     fn printed(&self) -> Value {
         let line = self
             .lines
@@ -234,6 +234,8 @@ fn a_warning_is_printed_though_the_line_it_comes_with_was_printed_before() {
     let mut config = env.config();
     config["oauthAccount"]["accountUuid"] = json!(env.uuid('b'));
     std::fs::write(env.root.join(".claude.json"), config.to_string()).unwrap();
+    // As another front end recording readings does, which `watch` decides on at its next look.
+    env.edit_readings(|_| {});
 
     let printed = watch.printed();
     assert_eq!(

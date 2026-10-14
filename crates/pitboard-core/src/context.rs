@@ -307,6 +307,9 @@ pub struct Context {
     /// Where the time comes from. The machine's clock in every real context; a test puts
     /// its own here to reach the judgements that only happen at a particular moment.
     pub(crate) clock: Arc<dyn Clock>,
+    /// How Claude Code's locks are kept and waited for: as Claude Code does in every real
+    /// context.
+    pub(crate) locks: crate::lock::Locks,
     /// The machine: its stores, its processes, its scheduler. This build's host in every
     /// real context.
     pub(crate) host: Arc<dyn Host>,
@@ -405,6 +408,7 @@ impl Context {
             marked_as_scheduled: false,
             sudo: false,
             clock: Arc::new(SystemClock),
+            locks: crate::lock::Locks::CLAUDE_CODE,
             host: crate::host::current(),
             api: Arc::new(Anthropic),
             openai: Arc::new(OpenAiNetwork),
@@ -732,6 +736,7 @@ impl Context {
             marked_as_scheduled: false,
             sudo: env.set("SUDO_UID"),
             clock: Arc::new(SystemClock),
+            locks: crate::lock::Locks::CLAUDE_CODE,
             host: crate::host::current(),
             api: Arc::new(Anthropic),
             openai: Arc::new(OpenAiNetwork),
@@ -779,6 +784,19 @@ impl Context {
     #[doc(hidden)]
     pub fn with_clock(mut self, clock: Arc<dyn Clock>) -> Context {
         self.clock = clock;
+        self
+    }
+
+    /// Ask for a lock of Claude Code's somebody holds `retries` times more, `every` apart,
+    /// rather than as Claude Code does. Only the tests do this: one that holds a lock lets go
+    /// of it at a moment of its own, not after a while.
+    #[cfg(any(test, feature = "test-support"))]
+    #[doc(hidden)]
+    pub fn with_lock_waiting(mut self, retries: u32, every: std::time::Duration) -> Context {
+        self.locks = crate::lock::Locks {
+            write: self.locks.write.asked(retries, every),
+            refresh: self.locks.refresh.asked(retries, every),
+        };
         self
     }
 

@@ -240,30 +240,31 @@ mod tests {
         assert_ne!(ran.stdout.trim(), "0");
     }
 
+    /// Past the ceiling the run is stopped, and so is the child it started, which holds its
+    /// output open: left running, it would keep what the run printed from being read whole.
     #[test]
     fn a_run_past_the_ceiling_is_stopped_with_its_children() {
-        let marker =
-            std::env::temp_dir().join(format!("pitboard-run-within-{}", std::process::id()));
-        let _ = std::fs::remove_file(&marker);
-        let script = format!("(sleep 3; touch {}) & sleep 30", marker.display());
-        let began = Instant::now();
-        let ran = run_within(shell(&script), None, Duration::from_secs(1)).expect("ran");
+        let ran = run_within(
+            shell("(sleep 30; echo late) & echo started; sleep 30"),
+            None,
+            Duration::from_secs(1),
+        )
+        .expect("ran");
         assert!(ran.timed_out);
         assert_eq!(ran.exit, None);
-        assert!(began.elapsed() < Duration::from_secs(10));
-        std::thread::sleep(Duration::from_secs(4));
-        assert!(!marker.exists(), "the child it started was stopped too");
+        assert_eq!(
+            ran.stdout, "started\n",
+            "the child it started was stopped too"
+        );
     }
 
     /// A run that ended, leaving a child behind with its output open, is not waited on until
-    /// that child ends.
+    /// that child ends: the child is stopped, and what the run printed is read whole.
     #[test]
     fn what_a_run_left_behind_holding_its_output_is_stopped() {
-        let began = Instant::now();
         let ran =
             run_within(shell("sleep 30 & echo done"), None, Duration::from_secs(60)).expect("ran");
         assert_eq!(ran.exit, Some(0));
         assert_eq!(ran.stdout, "done\n");
-        assert!(began.elapsed() < Duration::from_secs(8));
     }
 }

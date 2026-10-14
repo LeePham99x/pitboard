@@ -15,8 +15,8 @@
 //! In any build that is not a test this is an empty inline function. There is no feature to
 //! set wrongly and nothing to strip from a release: `cfg(test)` cannot be on in one.
 
-/// A durable step just finished. In a test that armed this name, the run dies here; in one
-/// that hung something on it, that runs here first.
+/// A durable step just finished, or a wait came to nothing. In a test that armed this name,
+/// the run dies here; in one that hung something on it, that runs here first.
 #[cfg(test)]
 pub(crate) fn point(name: &'static str) {
     TRAIL.with(|trail| {
@@ -33,10 +33,8 @@ pub(crate) fn point(name: &'static str) {
     });
     let hung = MEANWHILE.with(|meanwhile| {
         let mut meanwhile = meanwhile.borrow_mut();
-        match meanwhile.as_ref() {
-            Some((at, _)) if at == name => meanwhile.take().map(|(_, run)| run),
-            _ => None,
-        }
+        let at = meanwhile.iter().position(|(at, _)| at == name)?;
+        Some(meanwhile.remove(at).1)
     });
     if let Some(run) = hung {
         run();
@@ -62,18 +60,32 @@ pub(crate) fn point(name: &'static str) {
 ///
 /// A kill tests what is left when a run stops. This tests what a run does when the world
 /// moves under it: a tool that takes no lock can rewrite its own login between two steps
-/// of a switch, and the switch has to notice rather than write over it.
+/// of a switch, and the switch has to notice rather than write over it. Called inside
+/// another's `change`, each runs at its own point.
 #[cfg(test)]
 pub(crate) fn meanwhile<T>(
     name: &'static str,
     elsewhere: impl FnOnce() + 'static,
     change: impl FnOnce() -> T,
 ) -> T {
-    MEANWHILE
-        .with(|meanwhile| *meanwhile.borrow_mut() = Some((name.to_string(), Box::new(elsewhere))));
-    let outcome = change();
-    MEANWHILE.with(|meanwhile| *meanwhile.borrow_mut() = None);
-    outcome
+    MEANWHILE.with(|meanwhile| {
+        meanwhile
+            .borrow_mut()
+            .push((name.to_string(), Box::new(elsewhere)));
+    });
+    let _hung = Hung(name);
+    change()
+}
+
+// Takes down what `meanwhile` hung on its point however the change ends, a kill included.
+#[cfg(test)]
+struct Hung(&'static str);
+
+#[cfg(test)]
+impl Drop for Hung {
+    fn drop(&mut self) {
+        MEANWHILE.with(|meanwhile| meanwhile.borrow_mut().retain(|(at, _)| at != self.0));
+    }
 }
 
 // How many times `change` reached `name`, with what it returned.
@@ -230,8 +242,8 @@ type Elsewhere = Box<dyn FnOnce()>;
 thread_local! {
     static ARMED: std::cell::RefCell<Option<(String, usize)>> =
         const { std::cell::RefCell::new(None) };
-    static MEANWHILE: std::cell::RefCell<Option<(String, Elsewhere)>> =
-        const { std::cell::RefCell::new(None) };
+    static MEANWHILE: std::cell::RefCell<Vec<(String, Elsewhere)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
     static COUNTED: std::cell::RefCell<Option<(String, usize)>> =
         const { std::cell::RefCell::new(None) };
     static FAILING: std::cell::RefCell<Option<Failing>> = const { std::cell::RefCell::new(None) };

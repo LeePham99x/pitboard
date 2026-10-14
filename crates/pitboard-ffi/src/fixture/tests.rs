@@ -3,7 +3,7 @@
 //! of the model an app launches into it. Where the real core answers otherwise than the
 //! Swift fixture did, the test says so and holds what the core does.
 
-use super::apps::{CHATGPT, CLAUDE, QUITS_AFTER, SIGNS_IN_AFTER};
+use super::apps::{CHATGPT, CLAUDE};
 use super::pages;
 use super::tools::{CLAUDE_ADDRESS, CLAUDE_REFUSES, CODEX_ADDRESS};
 use super::worlds::{Folder, Launched, World, make, out_of_reach};
@@ -1460,7 +1460,7 @@ fn a_claude_pitboard_quits_before_anybody_signs_in_writes_nothing_after() {
         .expect("work parked");
     apps.reopen(copy, true).expect("opened for the sign-in");
     apps.request_quit(CLAUDE.into()).expect("asked to quit");
-    std::thread::sleep(SIGNS_IN_AFTER + QUITS_AFTER + Duration::from_secs(1));
+    apps.played();
     assert!(!launched.machine.claude.holds_a_session());
     assert!(!launched.apps.is_running(CLAUDE));
     session.cancel();

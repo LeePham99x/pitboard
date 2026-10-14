@@ -614,9 +614,9 @@ mod tests {
     use super::super::Settled;
     use super::super::harness::{
         Machine, NOW, Session, audit_lines, codex_id, codex_login, codex_machine, config_names,
-        document, hold, lapsed, lock_dir, login_of, machine, oauth, owner, record_in_use, recover,
-        renews, renews_meanwhile, saves, signed_in_outside, state_file, takes_the_write_lock,
-        window, write_target,
+        document, hold, lapsed, lets_go_of_the_write_lock, lock_dir, login_of, machine, oauth,
+        owner, record_in_use, recover, renews, renews_meanwhile, saves, signed_in_outside,
+        state_file, takes_the_write_lock, window, write_target,
     };
     use super::*;
     use crate::api::scripted::{Asked, Trouble};
@@ -1107,9 +1107,8 @@ mod tests {
     }
 
     /// The exchange spends the refresh token sent, so once Anthropic has answered, Claude
-    /// Code's write lock is waited for longer than a change waits: here a lock a killed
-    /// session left 7 seconds ago, which nobody may take for 8 more. The renewed login is
-    /// saved all the same.
+    /// Code's write lock is waited for longer than a change waits: here a session holds it
+    /// until a change would have given up on it. The renewed login is saved all the same.
     #[test]
     #[cfg_attr(
         windows,
@@ -1118,13 +1117,17 @@ mod tests {
     fn a_write_lock_held_once_the_refresh_token_is_spent_is_waited_for() {
         let m = lapsed_stored("identify-write-lock-after");
 
-        let told = fault::meanwhile(
-            "refresh.exchanged",
-            takes_the_write_lock(&m, std::time::Duration::from_secs(7)),
-            || told_now(&m),
-        );
+        let told = fault::meanwhile("refresh.waited", lets_go_of_the_write_lock(&m), || {
+            fault::meanwhile("refresh.exchanged", takes_the_write_lock(&m), || {
+                told_now(&m)
+            })
+        });
 
-        assert_eq!(owner_told(told), owner("here"));
+        let Live::Login(login) = told.expect("told") else {
+            panic!("a login is stored");
+        };
+        assert_eq!(login.owner, owner("here"));
+        assert!(!login.lock_lost, "saved under the lock");
         assert_eq!(stored_refresh(&m).as_deref(), Some("here-again"));
     }
 

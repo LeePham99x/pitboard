@@ -3686,15 +3686,22 @@ mod tests {
         On(Floor),
     }
 
+    const AS_ROOT: Refused = Refused::As(Elevation::Elevated { why: "as root" });
+    const WITH_SUDO: Refused = Refused::As(Elevation::Elevated { why: "with sudo" });
+    const SERVICE_ACCOUNT: Refused = Refused::As(Elevation::Elevated {
+        why: crate::host::token::AS_A_SERVICE_ACCOUNT,
+    });
+    const ELEVATION_UNKNOWN: Refused = Refused::As(Elevation::Unknown);
+    const BELOW_THE_FLOOR: Refused = Refused::On(Floor::Below { build: 22631 });
+    const FLOOR_UNKNOWN: Refused = Refused::On(Floor::Unknown);
+
     const REFUSED: [Refused; 6] = [
-        Refused::As(Elevation::Elevated { why: "as root" }),
-        Refused::As(Elevation::Elevated { why: "with sudo" }),
-        Refused::As(Elevation::Elevated {
-            why: crate::host::token::AS_A_SERVICE_ACCOUNT,
-        }),
-        Refused::As(Elevation::Unknown),
-        Refused::On(Floor::Below { build: 22631 }),
-        Refused::On(Floor::Unknown),
+        AS_ROOT,
+        WITH_SUDO,
+        SERVICE_ACCOUNT,
+        ELEVATION_UNKNOWN,
+        BELOW_THE_FLOOR,
+        FLOOR_UNKNOWN,
     ];
 
     impl Refused {
@@ -3821,47 +3828,75 @@ mod tests {
     /// runs might never read or replace it again. Every change is refused now, at one gate,
     /// before it reads, locks or records anything, and leaves the machine byte for byte as it
     /// was, the audit log included. The machine has an interrupted switch waiting, which every
-    /// change that settles would otherwise finish, and asks nobody.
-    #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
-    fn every_change_is_refused_where_pitboard_may_change_nothing_and_changes_nothing() {
-        for (tool, make) in MACHINES {
-            for refused in REFUSED {
-                for (change, run) in CHANGES {
-                    let at = format!("{tool}, {change}, {refused:?}");
-                    let m = interrupted(make, &format!("gate-{tool}-{change}"));
-                    refused.said_by(&m);
-                    let (before, asked) = (everything(&m), m.api.calls());
+    /// change that settles would otherwise finish, and asks nobody. One test for each tool
+    /// and each way Pitboard may change nothing, named `<tool>_<way>`.
+    mod every_change_is_refused_where_pitboard_may_change_nothing_and_changes_nothing {
+        use super::*;
 
-                    let failed = run(&Pitboard::new(m.ctx.clone()), &m)
-                        .unwrap_or_else(|| panic!("{at}: refused"));
-
-                    assert_eq!(
-                        failed.error.code(),
-                        refused.code(),
-                        "{at}: {}",
-                        failed.error
-                    );
-                    assert!(failed.warnings.is_empty(), "{at}: {:?}", failed.warnings);
-                    assert!(everything(&m) == before, "{at}: nothing changes");
-                    assert_eq!(m.api.calls(), asked, "{at}: nobody is asked");
-                }
-
-                let at = format!("{tool}, enroll_signed_in, {refused:?}");
-                let m = interrupted(make, &format!("gate-{tool}-enroll-signed-in"));
-                let login = switch::harness::signed_in(&m, "new", "new-refresh");
-                refused.said_by(&m);
-                let before = everything(&m);
-                let failed = Pitboard::new(m.ctx.clone())
-                    .enroll_signed_in(&m.key("new").typed(), login)
-                    .expect_err("refused");
-                assert_eq!(failed.error.code(), refused.code(), "{at}");
-                assert!(everything(&m) == before, "{at}: nothing changes");
-            }
+        macro_rules! cases {
+            ($($case:ident: $make:ident, $refused:ident;)*) => {
+                const _: () =
+                    assert!([$(stringify!($case)),*].len() == MACHINES.len() * REFUSED.len());
+                $(
+                    #[test]
+                    #[cfg_attr(
+                        windows,
+                        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+                    )]
+                    fn $case() {
+                        every_change_is_refused(stringify!($case), $make, $refused);
+                    }
+                )*
+            };
         }
+
+        cases! {
+            claude_as_root: machine, AS_ROOT;
+            claude_with_sudo: machine, WITH_SUDO;
+            claude_as_a_service_account: machine, SERVICE_ACCOUNT;
+            claude_elevation_unknown: machine, ELEVATION_UNKNOWN;
+            claude_below_the_floor: machine, BELOW_THE_FLOOR;
+            claude_floor_unknown: machine, FLOOR_UNKNOWN;
+            codex_as_root: codex_machine, AS_ROOT;
+            codex_with_sudo: codex_machine, WITH_SUDO;
+            codex_as_a_service_account: codex_machine, SERVICE_ACCOUNT;
+            codex_elevation_unknown: codex_machine, ELEVATION_UNKNOWN;
+            codex_below_the_floor: codex_machine, BELOW_THE_FLOOR;
+            codex_floor_unknown: codex_machine, FLOOR_UNKNOWN;
+        }
+    }
+
+    fn every_change_is_refused(case: &str, make: Make, refused: Refused) {
+        for (change, run) in CHANGES {
+            let at = format!("{case}, {change}");
+            let m = interrupted(make, &format!("gate-{case}-{change}"));
+            refused.said_by(&m);
+            let (before, asked) = (everything(&m), m.api.calls());
+
+            let failed =
+                run(&Pitboard::new(m.ctx.clone()), &m).unwrap_or_else(|| panic!("{at}: refused"));
+
+            assert_eq!(
+                failed.error.code(),
+                refused.code(),
+                "{at}: {}",
+                failed.error
+            );
+            assert!(failed.warnings.is_empty(), "{at}: {:?}", failed.warnings);
+            assert!(everything(&m) == before, "{at}: nothing changes");
+            assert_eq!(m.api.calls(), asked, "{at}: nobody is asked");
+        }
+
+        let at = format!("{case}, enroll_signed_in");
+        let m = interrupted(make, &format!("gate-{case}-enroll-signed-in"));
+        let login = switch::harness::signed_in(&m, "new", "new-refresh");
+        refused.said_by(&m);
+        let before = everything(&m);
+        let failed = Pitboard::new(m.ctx.clone())
+            .enroll_signed_in(&m.key("new").typed(), login)
+            .expect_err("refused");
+        assert_eq!(failed.error.code(), refused.code(), "{at}");
+        assert!(everything(&m) == before, "{at}: nothing changes");
     }
 
     #[test]

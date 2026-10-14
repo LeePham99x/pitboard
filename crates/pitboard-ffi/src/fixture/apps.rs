@@ -5,7 +5,8 @@ use crate::model::{AppControl, Notifications, PlatformError, RunOutNotice};
 use pitboard_core::testing::MemoryHost;
 use pitboard_core::testing::desktop::FakeClaude;
 use std::collections::BTreeSet;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::thread::JoinHandle;
 use std::time::Duration;
 
 /// ChatGPT, as the core's holder detection names it: its bundle id.
@@ -20,8 +21,8 @@ const CHATGPT_CODEX: &str =
     "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex";
 
 // Long enough for a UI test to see the waiting page under CI's load.
-pub(super) const SIGNS_IN_AFTER: Duration = Duration::from_secs(5);
-pub(super) const QUITS_AFTER: Duration = Duration::from_secs(2);
+const SIGNS_IN_AFTER: Duration = Duration::from_secs(5);
+const QUITS_AFTER: Duration = Duration::from_secs(2);
 
 /// The apps running on a fixture's machine. The core sees ChatGPT's `codex` in the machine's
 /// process list while it runs, and the model quits and opens it through this, so the two
@@ -31,7 +32,10 @@ pub(crate) struct FixtureApps {
     host: Arc<MemoryHost>,
     // played over the fixture's machine, writing its data folder as 2.7032.0 does as it quits
     claude: Arc<FakeClaude>,
-    held: Arc<Mutex<Held>>,
+    // told whenever an app opens or quits
+    held: Arc<(Mutex<Held>, Condvar)>,
+    // each sign-in played in Claude
+    played: Mutex<Vec<JoinHandle<()>>>,
 }
 
 #[derive(Default)]
@@ -59,6 +63,7 @@ impl FixtureApps {
             host,
             claude,
             held: Arc::default(),
+            played: Mutex::default(),
         });
         for app in running {
             apps.started(app);
@@ -69,12 +74,21 @@ impl FixtureApps {
     /// Every app asked to quit and every app opened, in order.
     #[cfg(test)]
     pub(crate) fn asked(&self) -> Vec<String> {
-        held(&self.held).asked.clone()
+        held(&self.held.0).asked.clone()
+    }
+
+    // Waits for every sign-in played in Claude to have come to its end.
+    #[cfg(test)]
+    pub(crate) fn played(&self) {
+        let played = std::mem::take(&mut *self.played.lock().expect("the played sign-ins"));
+        for sign_in in played {
+            sign_in.join().expect("a played sign-in");
+        }
     }
 
     /// Whether `app` is running.
     pub(crate) fn is_running(&self, app: &str) -> bool {
-        held(&self.held).running.contains(app)
+        held(&self.held.0).running.contains(app)
     }
 
     /// Where an app of the fixture's is, which is nowhere on the machine running it.
@@ -84,13 +98,14 @@ impl FixtureApps {
 
     // The turn Claude is on once this has run.
     fn started(&self, app: &str) -> u64 {
-        let mut now = held(&self.held);
+        let mut now = held(&self.held.0);
         now.running.insert(app.to_owned());
         if app == CLAUDE {
             now.claude_turns += 1;
         }
         let turn = now.claude_turns;
         drop(now);
+        self.held.1.notify_all();
         match app {
             CHATGPT => self.host.runs_at("codex", &[CHATGPT_CODEX, CHATGPT_CODEX]),
             CLAUDE => self.claude.opens(),
@@ -100,12 +115,13 @@ impl FixtureApps {
     }
 
     fn stopped(&self, app: &str) {
-        let mut now = held(&self.held);
+        let mut now = held(&self.held.0);
         now.running.remove(app);
         if app == CLAUDE {
             now.claude_turns += 1;
         }
         drop(now);
+        self.held.1.notify_all();
         match app {
             CHATGPT => self.host.runs_at("codex", &[]),
             CLAUDE => self.claude.quits(),
@@ -160,7 +176,7 @@ impl AppControl for FixtureApps {
     /// Quits at once, as an app with no work in progress does, and its processes leave the
     /// process list with it.
     fn request_quit(&self, app: String) -> Result<(), PlatformError> {
-        held(&self.held).asked.push(format!("quit {app}"));
+        held(&self.held.0).asked.push(format!("quit {app}"));
         self.stopped(&app);
         Ok(())
     }
@@ -173,7 +189,7 @@ impl AppControl for FixtureApps {
             .unwrap_or(&location)
             .to_owned();
         let opened = if front { "open-front" } else { "open" };
-        held(&self.held).asked.push(format!("{opened} {app}"));
+        held(&self.held.0).asked.push(format!("{opened} {app}"));
         let signs_in = app == CLAUDE && front && !self.claude.holds_a_session();
         let turn = self.started(&app);
         if signs_in {
@@ -182,25 +198,33 @@ impl AppControl for FixtureApps {
                 pitboard_core::testing::desktop::TRAVEL,
                 Arc::clone(&self.held),
             );
-            // Held throughout, so Pitboard's quit or open comes before or after each step.
-            let still = move |now: &Held| now.claude_turns == turn && now.running.contains(CLAUDE);
-            std::thread::spawn(move || {
-                std::thread::sleep(SIGNS_IN_AFTER);
-                let now = held(&apps);
-                if !still(&now) {
+            // Held throughout, so Pitboard's quit or open comes before or after each step, and
+            // a person who sees Claude quit or open again meanwhile goes no further.
+            let still =
+                move |now: &mut Held| now.claude_turns == turn && now.running.contains(CLAUDE);
+            let played = std::thread::spawn(move || {
+                let (lock, turned) = &*apps;
+                let (mut now, _) = turned
+                    .wait_timeout_while(held(lock), SIGNS_IN_AFTER, still)
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                if !still(&mut now) {
                     return;
                 }
                 claude.signs_in(&who);
                 claude.reports();
-                drop(now);
-                std::thread::sleep(QUITS_AFTER);
-                let mut now = held(&apps);
-                if still(&now) {
+                let (mut now, _) = turned
+                    .wait_timeout_while(now, QUITS_AFTER, still)
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                if still(&mut now) {
                     now.running.remove(CLAUDE);
                     now.claude_turns += 1;
                     claude.quits();
                 }
             });
+            self.played
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push(played);
         }
         Ok(())
     }
