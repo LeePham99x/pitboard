@@ -53,7 +53,7 @@ If the dialog says **Codex is not offered: Pitboard did not find codex on this M
 
 - Nothing that runs Codex follows a switch. Start each again as [What happens to open sessions](/guides/switch#what-happens-to-open-sessions) says.
 - Pitboard never switches Codex by itself. [Switch before an account runs out](/guides/automatic-switching) is for Claude Code only.
-- Pitboard identifies a Codex login from the login itself, without asking OpenAI. See [How Pitboard knows whose login it is](/concepts/switching#how-pitboard-knows-whose-login-it-is).
+- Pitboard identifies a Codex login from the login itself, without asking OpenAI. See [How Pitboard knows whose login it is](/concepts/identity).
 - A switch still asks OpenAI whether the parked login works, by reading that account's usage. The read spends none of its limits: see [Where the numbers come from](/concepts/usage#where-the-numbers-come-from).
 - A parked Codex login shows `ready` with no `good for` time, because Codex states no lifetime for its login (read in 0.154.0).
 - On macOS, Pitboard passes every parked Codex login to `security` as an argument: see [Large logins on macOS](/security#large-logins-on-macos).

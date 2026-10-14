@@ -1,0 +1,29 @@
+---
+title: "How open sessions follow a switch"
+sidebarTitle: "Open sessions"
+description: "How long an open Claude Code session keeps the account it is leaving, what can pin it, and why Codex never follows."
+---
+
+## Claude Code
+
+An open Claude Code session follows a switch within about 33 seconds, with no restart. It caches its login for 30 seconds, plus 3 for its next read. On one Mac with Claude Code 2.1.278, switches made 8, 20 and 28 seconds into a session took effect 32.3 to 33.5 seconds in.
+
+Until then the session uses the account it is leaving. As read in 2.1.294, its `/status` already names the account switched to, from the rewritten config. `/usage` and every request still use the login it holds.
+
+As read in 2.1.284, sessions and the daemon that renews their login read it again under the write lock before writing. None can write the previous account back.
+
+Not known: whether a request under way during a switch finishes, and what Claude Code does at a limit.
+
+## A login file behind the keychain
+
+As read in Claude Code 2.1.294, a `/login` on macOS while the keychain is locked, as over SSH, writes the login to `~/.claude/.credentials.json`. No switch removes that file. A session that cannot read the keychain signs in with it.
+
+Any file there pins open sessions: a login, `{}` or a file Pitboard cannot read. As read in 2.1.294 and not measured, a pinned session keeps its login until it renews it, 5 minutes before expiry, or restarts. Sessions started later use the account switched to.
+
+A switch then says so in place of the 33 seconds. Other changes and reads warn with `fallback_login`. `pitboard status --offline` does not look for the file. [Claude Code over SSH uses another account](/troubleshooting#claude-code-over-ssh-uses-another-account) has the fix.
+
+As read in 2.1.294, a session open while the keychain is locked keeps its login and follows no switch. One started then signs in with the login file, or is signed out without one.
+
+## Codex
+
+As read in Codex 0.154.0, everything that runs Codex holds its login in memory until it stops. None follows a switch, so Pitboard never switches Codex by itself. [What happens to open sessions](/guides/switch#what-happens-to-open-sessions) says what to restart.

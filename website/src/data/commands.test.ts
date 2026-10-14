@@ -4,7 +4,9 @@ import { test } from "node:test";
 import { attestCommand, commands } from "./commands.ts";
 
 const repo = (path: string) => readFileSync(new URL(`../../../${path}`, import.meta.url), "utf8");
-const pages = repo("docs/install.mdx") + repo("docs/install/verify.mdx");
+const pages = ["install", "install/other-ways", "install/verify"]
+  .map((page) => repo(`docs/${page}.mdx`))
+  .join("\n");
 
 test("each install command is one the install pages give", () => {
   for (const [name, command] of Object.entries(commands)) {

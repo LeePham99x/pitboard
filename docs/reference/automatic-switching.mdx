@@ -1,9 +1,33 @@
 ---
 title: "Automatic switching"
-description: "Each reason the automatic switch stays on an account or decides nothing, with its text, its code and what ends it."
+description: "Which account the automatic switch picks, and each reason it stays or decides nothing, with its text, its code and what ends it."
 ---
 
-The app and `pitboard watch` give each reason in the same words. The app shows it in a [notification](/reference/app#notifications) and under the share in [Settings](/reference/settings#switch-claude-code-automatically). `pitboard watch` prints it in [its lines](/reference/account-commands#watch), and with `--json` gives the code in [`reason`](/reference/json-output#watch-events).
+The app and `pitboard watch` pick an account by the same rules, and give each reason in the same words. The app shows it in a [notification](/reference/app#notifications) and under the share in [Settings](/reference/settings#switch-claude-code-automatically). `pitboard watch` prints it in [its lines](/reference/account-commands#watch), and with `--json` gives the code in [`reason`](/reference/json-output#watch-events).
+
+## Which account it switches to
+
+Pitboard watches every limit of the account in use, a model's weekly limit included. A limit counts at the whole percentage Pitboard shows, so 94.5% reaches 95%.
+
+Once a limit reaches the share, Pitboard looks for another enrolled Claude Code account that:
+
+- Has a parked login that has not expired.
+- Has a reading from Anthropic.
+- Has used less than the share of every limit it has.
+
+Of those, Pitboard picks by these rules, in order:
+
+1. An account without a weekly limit for all models goes first, such as a Team seat. What it leaves unused is lost at each five-hour reset.
+2. Then the most room in the limit at the share. An account without that limit counts as having used none of it.
+3. On a tie, the account least full in its other limits.
+
+A limit past its reset time counts as reset.
+
+A reading may leave a limit out when Anthropic answers without its list of limits, or Pitboard cannot read the answer whole. Such a reading qualifies only with the five-hour and weekly limits, and with a model's weekly limit when that one is at the share. Pitboard counts it as having a weekly limit for all models.
+
+When several limits are at the share, Pitboard acts on the fullest one it has not already left or given up on.
+
+The app's offer once an account runs out follows the same rules at 100%.
 
 ## When it stays on the account
 
@@ -11,7 +35,7 @@ Once a limit of the account in use reaches the share, Pitboard stays on the acco
 
 | Code | Text | Ends when |
 | --- | --- | --- |
-| `no_room` | `no other Claude Code account has room below 95% in every limit` | Another account [qualifies](/guides/automatic-switching#which-account-it-switches-to), or the limit resets. |
+| `no_room` | `no other Claude Code account has room below 95% in every limit` | Another account [qualifies](#which-account-it-switches-to), or the limit resets. |
 | `already_switched` | `this limit was switched away from once already, and is not again before it resets` | The limit resets. |
 | `attempts_spent` | `3 attempts to switch away from this limit failed, and none is made again before it resets` | The limit resets. |
 | `settling` | `the account was put in use less than 5 minutes ago` | 5 minutes pass. |
@@ -38,4 +62,4 @@ While one of these holds, Pitboard does not decide whether to switch.
 
 ## When a try fails
 
-The next try waits 1 minute, and each failure in a row doubles the wait, up to 15 minutes. A failure that may pass, such as Anthropic out of reach, does not count toward `attempts_spent`.
+Pitboard records each try in `autoswitch.json` before anything moves, so a try stopped partway still counts. The next try waits 1 minute, and each failure in a row doubles the wait, up to 15 minutes. A failure that may pass, such as Anthropic out of reach, does not count toward `attempts_spent`.

@@ -55,9 +55,11 @@ It ignores the hours. It starts nothing while the account's five-hour period is 
 
 ## What a warm-up sends
 
-Claude Code sends one request on its smallest model, with no tools, from a folder of its own in the Pitboard directory. Pitboard hands it the account's access token and nothing else. Measured with Claude Code 2.1.296, the request costs about 3,100 tokens of the plan.
+`claude -p` sends Anthropic one message on Claude Code's smallest model, with no tools, and fetches what Claude Code fetches as it starts, such as the account's profile and policy limits. Measured with Claude Code 2.1.296, the request costs about 3,100 tokens of the plan.
 
-[What leaves your machine](/security#what-leaves-your-machine) lists it with every other request.
+Pitboard starts it from a folder of its own in the Pitboard directory, with `PATH`, your user name and any proxy variables from its own environment and nothing else. It hands Claude Code the account's access token on a pipe, never a refresh token, so the run cannot renew or spend a login. As read in 2.1.296, Claude Code keeps that token in no store.
+
+[What leaves your machine](/security#what-leaves-your-machine) lists Pitboard's own requests.
 
 ## When it holds back
 

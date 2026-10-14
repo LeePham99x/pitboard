@@ -30,13 +30,13 @@ For OpenAI's Codex CLI, check [Before you enrol a Codex account](/guides/codex#b
   </Tab>
 </Tabs>
 
-Enrolling this account parks nothing. Pitboard parks its login the first time you switch away, as [Parked logins](/concepts/switching#parked-logins) explains.
+Enrolling it parks nothing: Pitboard parks its login the first time you switch away, as [Parked logins](/concepts/switching#parked-logins) explains.
 
 Enrolling a Claude Code login that Pitboard has not identified before needs the network, to ask Anthropic which account it is.
 
 ## Add another account
 
-Pitboard runs the tool's own sign-in in a private directory. The account in use stays signed in.
+Pitboard runs the tool's own sign-in in a private directory, so the account in use stays signed in.
 
 <Tabs>
   <Tab title="App">
@@ -77,7 +77,7 @@ If the browser signs in to an account already enrolled under another label, Pitb
 Pitboard counts each organisation your Anthropic account belongs to as a separate account. Enrol each under its own label, and sign in to that organisation in the browser. Your personal ChatGPT plan and each workspace you belong to are separate Codex accounts in the same way.
 
 <Warning>
-  Do not add an account with Claude Code's `/login` or with `codex login`. Each replaces the login in use without Pitboard parking it first. The account that was in use then needs a browser sign-in. `codex login` also revokes the login it replaces: see [Why Codex logins are moved, not copied](/concepts/switching#why-codex-logins-are-moved-not-copied).
+  Do not add an account with Claude Code's `/login` or with `codex login`. Each replaces the login in use without Pitboard parking it first, so the account that was in use needs a browser sign-in. `codex login` also revokes the login it replaces: see [Why Codex logins are moved, not copied](/concepts/switching#why-codex-logins-are-moved-not-copied).
 </Warning>
 
 ## Choose a label

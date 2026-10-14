@@ -1,0 +1,26 @@
+---
+title: "How account windows keep their data"
+sidebarTitle: "Account window data"
+description: "Each account window keeps its site's data in a store of its own, which Pitboard never reads and deletes only after your change."
+---
+
+Each [account window](/guides/account-windows) keeps its site's cookies, storage and caches, sign-in included, in a WebKit store of its own. WebKit keeps it in files under your `~/Library`, as a browser does. [Account windows](/reference/files#account-windows) gives the paths.
+
+## What Pitboard does with a store
+
+Pitboard never reads or copies what a site keeps there, and adds no script to a page. It never signs a window in with a Claude Code or Codex login.
+
+The app records each store and each window's last page in `windows.json`, a file only you can read. It makes a store when the account's window first opens. A renamed account keeps its store.
+
+## When a store is deleted
+
+- **File** > **Remove Website Data** wipes the store and signs the window out on this Mac only.
+- Forgetting the account deletes its store at the app's next successful read of the accounts.
+
+The app deletes a store only when its own Pitboard directory recorded it and no other existing one did. A copy run with another `HOME` or `PITBOARD_HOME` therefore signs no other copy's windows out. While the app cannot read `windows.json`, it deletes no store.
+
+## Links shared from a browser
+
+Pitboard's Share extension takes the one web address a browser shares and checks that it is a claude.ai or chatgpt.com page. It hands the address to its app as a [Pitboard link](/reference/account-windows#pitboard-links) and keeps nothing. It is sandboxed, with no network, file or shared-folder access.
+
+The app checks the link again and opens nothing until you choose an account. It refuses the sites' sign-in links, since one would sign the window in as whoever it belongs to. [Refused links](/reference/account-windows#refused-links) lists them.

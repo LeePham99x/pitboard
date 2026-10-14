@@ -35,25 +35,22 @@ Pitboard moves nothing until the account you switch to has a parked login, and t
 
 | Tool | Before a switch |
 | --- | --- |
-| Claude Code | Claude Code is signed in to an enrolled account. Anthropic confirms over the network that the parked login works and is that account's. |
-| Codex | Codex is signed in to an enrolled account. OpenAI confirms over the network that the parked login works and is that account's. |
-| Claude Desktop | Claude is closed: [Switch accounts](/guides/claude-desktop#switch-accounts) shows how. Claude is signed in to an enrolled account, or signed out. Pitboard asks no service. |
+| Claude Code, Codex | The tool is signed in to an enrolled account. Anthropic or OpenAI confirms over the network that the parked login works and is that account's. |
+| Claude Desktop | Claude is closed, as [Switch accounts](/guides/claude-desktop#switch-accounts) shows, and signed in to an enrolled account or signed out. Pitboard asks no service. |
 
-An expired or refused parked login needs a sign-in: see [Sign in to an account again](/guides/sign-in-again). [Error and warning codes](/reference/errors) lists every code.
-
-`pitboard use` with the account in use moves no login. It only corrects Claude Code's config when that names another account.
+An expired or refused parked login needs a [sign-in again](/guides/sign-in-again). [Error and warning codes](/reference/errors) lists every code. `pitboard use` with the account in use moves no login: it only corrects Claude Code's config when that names another account.
 
 ## What happens to open sessions
 
 | Tool | After a switch |
 | --- | --- |
-| Claude Code | Open sessions follow within about 33 seconds, with no restart. In the app, the Pitboard window counts down those seconds. |
-| Codex | Nothing that runs Codex follows. Restart each, as [Restart what runs Codex](#restart-what-runs-codex) says. |
-| Claude Desktop | Claude is closed during a switch, and opens signed in to the account switched to. |
+| Claude Code | Open sessions follow within about 33 seconds, with no restart. The Pitboard window counts down. |
+| Codex | Nothing that runs Codex follows. Restart each, as below. |
+| Claude Desktop | Claude opens signed in to the account switched to. |
 
-[Open sessions](/concepts/switching#open-sessions) says why Claude Code follows and Codex does not.
+[How open sessions follow a switch](/concepts/open-sessions) says why.
 
-On macOS, while a login file sits behind the keychain, open Claude Code sessions follow only at their next renewal or restart. Put it away with `pitboard stow` or **Put Away** in the Pitboard window: see [Claude Code over SSH uses another account](/troubleshooting#claude-code-over-ssh-uses-another-account).
+On macOS, while a login file sits behind the keychain, open Claude Code sessions follow only at their next renewal or restart. Put it away as [Claude Code over SSH uses another account](/troubleshooting#claude-code-over-ssh-uses-another-account) says.
 
 ### Restart what runs Codex
 
@@ -69,7 +66,7 @@ Read in the ChatGPT app 26.928.31416 and Codex 0.159.3. The editor row is not me
 After a Codex switch, Pitboard lists which of these still run. If it cannot read the process list, it warns with `sessions_unknown`.
 
 <Warning>
-  Do not sign out in anything that ran Codex before the switch. That includes `/logout` in a `codex` session and **Log Out** in the ChatGPT app. Each holds the parked login, and signing out revokes it at OpenAI. See [Why Codex logins are moved, not copied](/concepts/switching#why-codex-logins-are-moved-not-copied).
+  Do not sign out in anything that ran Codex before the switch, such as `/logout` in a `codex` session or **Log Out** in the ChatGPT app. Each holds the parked login, and signing out revokes it at OpenAI: see [Why Codex logins are moved, not copied](/concepts/switching#why-codex-logins-are-moved-not-copied).
 
   If you did, Control-click the old account in the Pitboard window and choose **Sign In Again**, or run `pitboard enroll codex/personal --sign-in`.
 </Warning>
@@ -82,12 +79,8 @@ If the ChatGPT app has not quit within 30 seconds, nothing changes. The command 
 
 ## When an account runs out
 
-When the account in use runs out of a limit, the app offers another account of the same tool, under 100% in every limit. [Which account it switches to](/guides/automatic-switching#which-account-it-switches-to) gives the rule.
+When the account in use runs out of a limit, the app offers another account of the same tool, under 100% in every limit, by the rules in [Which account it switches to](/reference/automatic-switching#which-account-it-switches-to). If no account has room, it offers nothing. The command line offers no switch.
 
-The offer comes as a notification titled **work has no 5-hour limit left**, which says **personal has 58% of its own left.** Its **Switch** button switches to `personal`.
+The offer is a notification, and **Switch to personal** in Pitboard's menu and window with or without notifications. [Notifications](/reference/app#notifications) shows its words.
 
-Pitboard's menu and window show it as **Switch to personal**, with or without notifications.
-
-Each offer comes once per limit and reset, even across restarts. If no account has room, it offers nothing. The command line offers no switch.
-
-Pitboard can also switch Claude Code by itself: see [Switch before an account runs out](/guides/automatic-switching).
+Pitboard can also [switch Claude Code by itself](/guides/automatic-switching) before an account runs out.

@@ -4,23 +4,17 @@ sidebarTitle: "Account windows"
 description: "Open claude.ai or chatgpt.com as each account in a window of its own, and send pages there from your browser."
 ---
 
-Each window keeps its own website data, so your accounts stay signed in side by side. A Claude Code account's window is on claude.ai, a Codex account's on chatgpt.com. [Where account windows keep their data](/security#where-account-windows-keep-their-data) says where it is and when Pitboard deletes it.
+Each window keeps its own website data, so your accounts stay signed in side by side. A Claude Code account's window is on claude.ai, a Codex account's on chatgpt.com. [How account windows keep their data](/concepts/account-windows) says where it is and when Pitboard deletes it.
 
 ## Open an account window
 
 In Pitboard's menu in the menu bar, choose **Open claude.ai as work**. When the site has several accounts, choose **Open claude.ai**, then the account. In the Pitboard window, Control-click an account and choose **Open claude.ai** or **Open chatgpt.com**.
 
-A window's title is its account's label. Renaming the account keeps the window signed in.
-
-Links to other sites open in your default browser. Anything you connect there goes to the account your browser is signed in to.
-
-[Account windows](/reference/account-windows#account-windows) lists every place a window opens from, and [Downloads](/reference/account-windows#downloads) where it saves files.
+A window's title is its account's label. Links to other sites open in your default browser, and anything you connect there goes to the account your browser is signed in to. [Account windows](/reference/account-windows#account-windows) lists every place a window opens from, and [Downloads](/reference/account-windows#downloads) where it saves files.
 
 ## Sign in
 
-The first time Pitboard opens an account's window, a note at its top names the email address to sign in with and the steps.
-
-Google's sign-in does not work. Google does not allow it inside apps, so the window stops it.
+The first time Pitboard opens an account's window, a note at its top names the email address to sign in with and the steps. Google's sign-in does not work: Google does not allow it inside apps, so the window stops it.
 
 ### claude.ai
 
@@ -38,9 +32,7 @@ Google's sign-in does not work. Google does not allow it inside apps, so the win
 
 ### chatgpt.com
 
-Enter the account's email address, then its password or the code chatgpt.com emails you. Or click **Continue with Microsoft** or **Continue with Apple**.
-
-Passkeys do not work. macOS offers them to a web page only in an app it lets act as a browser.
+Enter the account's email address, then its password or the code chatgpt.com emails you. Or click **Continue with Microsoft** or **Continue with Apple**. Passkeys do not work: macOS offers them to a web page only in an app it lets act as a browser.
 
 ## What a window cannot do
 
@@ -65,7 +57,7 @@ Passkeys do not work. macOS offers them to a web page only in an app it lets act
   </Step>
 </Steps>
 
-Pitboard refuses a page on another site with **Can't Open This Link**. It refuses a site's sign-in link too, which would sign the window in as whoever the link belongs to. [Refused links](/reference/account-windows#refused-links) lists every case.
+Pitboard refuses a page on another site, and a site's sign-in link, with **Can't Open This Link**. [Refused links](/reference/account-windows#refused-links) lists every case.
 
 With no account on the page's site, the **Open Link** window shows **No claude.ai Account**. Click **Add Account**, and the link waits there until you choose the account you added.
 
@@ -73,8 +65,6 @@ If **Pitboard** is not in the Share menu, see [Pitboard is missing from the Shar
 
 ## Sign a window out
 
-Bring the account's window to the front, choose **File** > **Remove Website Data**, then click **Remove**. Pitboard deletes the cookies and everything else the site keeps in that window. The window starts again at the site's home page, with the sign-in note.
+Bring the account's window to the front, choose **File** > **Remove Website Data**, then click **Remove**. The window starts again at the site's home page, with the sign-in note. The site is not told, so the account stays signed in on your other devices and browsers.
 
-The site is not told, so the account stays signed in on your other devices and browsers.
-
-Forgetting the account, in the app or with `pitboard forget`, deletes its window's data too.
+[Forgetting the account](/guides/accounts#forget-an-account) deletes its window's data too.
