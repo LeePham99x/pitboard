@@ -1,5 +1,5 @@
 ---
-// One section of the Limits pane, in LimitsSettings.swift's words.
+// The top of the Limits pane, in LimitsSettings.swift's words; each height cuts the window 8 points below its first group.
 import Lights from "./Lights.astro";
 import Switch from "./Switch.astro";
 import { clock } from "../../data/world.ts";
@@ -15,13 +15,12 @@ const tabs = [
   ["commandLine", "Command Line", "sf-term"],
   ["updates", "Updates", "sf-down"],
 ];
-const heights = { switch: "min-h-380", warm: "min-h-450" } as const;
+const heights = { switch: "h-257", warm: "h-336" } as const;
 const group = "rounded-pt-8 bg-win-bg shadow-group *:not-first:inset-shadow-sep-t";
 const row = "flex min-h-36 items-center gap-12 px-10 py-6";
 const label = "min-w-0 flex-1";
 const small = "block text-pt-12/15 text-win-sub";
 const head = "px-10 pb-6 font-bold";
-const foot = "px-10 pt-6 text-pt-12/15 text-win-sub";
 const control = "rounded-pt-5 bg-win-btn shadow-control";
 // two arrows, each a 7 by 4 point fill clipped to a triangle
 const stepper = [
@@ -31,12 +30,10 @@ const stepper = [
 ];
 ---
 
-<div
-  class:list={["desk flex items-center justify-center py-20", heights[show]]}
-  aria-hidden="true"
-  data-output
->
-  <div class="relative w-500 overflow-hidden rounded-pt-12 bg-win-bg text-win-text shadow-window">
+<div class:list={["desk", heights[show]]} aria-hidden="true" data-output>
+  <div
+    class="absolute top-24 left-1/2 w-500 -translate-x-1/2 overflow-hidden rounded-pt-12 bg-win-bg text-win-text shadow-window"
+  >
     <div class="relative flex justify-center gap-2 bg-win-side pt-30 pb-6 inset-shadow-sep-b">
       <Lights window />
       <span class="absolute inset-x-0 top-7 text-center font-bold">Limits</span>
@@ -71,12 +68,6 @@ const stepper = [
               >
             </div>
           </div>
-          <p class={foot}>
-            Pitboard switches Claude Code to another of your accounts with room below 95% in every
-            limit, once a limit of the one in use reaches 95%, while the app is open. Sessions
-            already running follow within about 33 seconds. It never switches back by itself, and
-            never switches Codex: a running codex keeps its account until restarted.
-          </p>
         </>
       )}
       {show === "warm" && (
@@ -107,12 +98,6 @@ const stepper = [
               >
             </div>
           </div>
-          <p class={foot}>
-            Pitboard starts the five-hour period of each account turned on as soon as the last one
-            resets, within these hours, while the app is open, so it resets as early as it can.
-            Claude Code sends one short request with that account's own login. Pitboard warms up
-            Claude Code accounts only, and none with a limit used up.
-          </p>
         </>
       )}
     </div>
