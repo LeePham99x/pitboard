@@ -1,8 +1,8 @@
 //! `pitboard statusline` as the one line Claude Code draws.
 
 use crate::ui::{self, BOLD, DIM, paint};
-use pitboard_core::pace::Standing;
 use pitboard_core::statusline::{Paces, Shares, StatusLine};
+use pitboard_core::usage::pace::Standing;
 use pitboard_core::usage::whole;
 use pitboard_core::words;
 
@@ -41,7 +41,7 @@ fn label(line: &StatusLine) -> String {
     }
 }
 
-pub fn human(line: &StatusLine) -> String {
+pub(crate) fn human(line: &StatusLine) -> String {
     let mut parts = vec![format!(
         "{} {}",
         label(line),

@@ -16,7 +16,7 @@ use crate::state::{self, Key};
 /// account Pitboard last recorded in use is refused with why, and so is any account with
 /// nothing parked, which may be the one whose login is stored; one with a parked login the
 /// record does not name is not in use.
-pub fn forget(settled: Settled, key: &Key) -> Result<(String, Vec<Warning>)> {
+pub(crate) fn forget(settled: Settled, key: &Key) -> Result<(String, Vec<Warning>)> {
     let Settled {
         _exclusive,
         mut state,
@@ -64,9 +64,9 @@ pub fn forget(settled: Settled, key: &Key) -> Result<(String, Vec<Warning>)> {
         return Err(unsaved.after(said));
     }
     crate::fault::point("forget.recorded");
-    crate::readings::forget(&ctx, permit, &account.id);
-    crate::budget::forget(&ctx, permit, &account.id);
-    crate::warm::forget(&ctx, permit, &account.id);
+    crate::usage::readings::forget(&ctx, permit, &account.id);
+    crate::usage::budget::forget(&ctx, permit, &account.id);
+    crate::duty::warm::forget(&ctx, permit, &account.id);
     let pending = purge(&ctx, permit, &mut state);
     Ok((
         account.email,
@@ -93,7 +93,7 @@ mod tests {
         let m = machine(name);
         let mut state = state::load(&m.ctx).expect("state");
         state.upsert(in_organisation("team", "here", "org-team", None));
-        let login = crate::provider::document(m.which).fingerprint(&document("here-refresh"));
+        let login = provider::document(m.which).fingerprint(&document("here-refresh"));
         let named = InUse::of(state.get(&m.key(recorded)).expect("enrolled"), &login, NOW);
         state.identified(m.which, named, NOW);
         state::save(&m.ctx, Permit::for_a_test(), &state).expect("saved");

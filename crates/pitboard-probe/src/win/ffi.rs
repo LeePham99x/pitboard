@@ -602,7 +602,7 @@ impl Token {
                 self.handle,
                 TokenElevation,
                 (&mut info as *mut TOKEN_ELEVATION).cast(),
-                std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+                size_of::<TOKEN_ELEVATION>() as u32,
                 &mut len,
             )
         };
@@ -619,7 +619,7 @@ impl Token {
                 self.handle,
                 TokenElevationType,
                 (&mut ty as *mut i32).cast(),
-                std::mem::size_of::<i32>() as u32,
+                size_of::<i32>() as u32,
                 &mut len,
             )
         };
@@ -786,7 +786,7 @@ pub fn spawn(
     }
     line.push(0);
     let si = STARTUPINFOW {
-        cb: std::mem::size_of::<STARTUPINFOW>() as u32,
+        cb: size_of::<STARTUPINFOW>() as u32,
         ..Default::default()
     };
     let mut pi = PROCESS_INFORMATION::default();

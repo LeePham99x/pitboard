@@ -9,17 +9,19 @@
 //! in on this machine": each tool has a live login of its own or none, and a row is about
 //! exactly one of them.
 
-use crate::api::{self, ApiError, Owner};
 use crate::context::Context;
 use crate::error::Cause;
 use crate::in_use::{self, InUse};
+use crate::park;
+use crate::provider::Owner;
+use crate::provider::claude::api::ApiError;
 use crate::provider::claude::paths as claude;
 use crate::provider::{LoginKind, Provider, ProviderError, ProviderId};
 use crate::service::Permit;
 use crate::state::{Key, Park, State};
 use crate::switch::identify;
 use crate::usage::{Snapshot, Source};
-use crate::{budget, park, readings};
+use crate::usage::{budget, readings};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 
@@ -109,20 +111,12 @@ impl Stale {
         }
     }
 
-    /// What is worth a word, in the default tool's words.
-    ///
-    /// For a caller holding a code and nothing else. A row knows its own tool, and
-    /// [`Row::explanation`] says it in that tool's words.
-    pub fn explanation(self) -> Option<&'static str> {
-        self.explanation_for(crate::label::DEFAULT)
-    }
-
     /// Only what is worth a word: a parked login going quiet is how parking works.
     ///
     /// Named for the tool the row belongs to. "Anthropic could not be reached" said about a
     /// Codex account sends somebody to check the wrong service, and "`claude` renews it"
     /// said about a Codex session names a program that has nothing to do with it.
-    pub fn explanation_for(self, provider: ProviderId) -> Option<&'static str> {
+    pub(crate) fn explanation_for(self, provider: ProviderId) -> Option<&'static str> {
         // A sentence per tool rather than one assembled at run time, so every word a person
         // reads is here to be read, and Claude Code's are exactly what they always were.
         let per_tool = |claude: &'static str, codex: &'static str| match provider {
@@ -185,6 +179,7 @@ impl Stale {
     }
 }
 
+#[derive(Debug)]
 pub struct Row {
     /// Which tool this account belongs to, or whose live login this row is.
     ///
@@ -218,12 +213,12 @@ impl Row {
     /// whole tool exists to answer is which account to use next, and a share alone does not
     /// answer it. 73% of a weekly limit is plenty on Saturday and a warning on Monday. An
     /// account not in use is not being used, so it lasts until its first reset.
-    pub fn lasts(&self, now: i64) -> Option<crate::pace::Lasts<'_>> {
+    pub fn lasts(&self, now: i64) -> Option<crate::usage::pace::Lasts<'_>> {
         let usage = self.usage.as_ref()?;
         if self.signed_in {
-            crate::pace::lasts(&usage.windows, usage.observed_at.unwrap_or(now), now)
+            crate::usage::pace::lasts(&usage.windows, usage.observed_at.unwrap_or(now), now)
         } else {
-            crate::pace::until_reset(&usage.windows, now)
+            crate::usage::pace::until_reset(&usage.windows, now)
         }
     }
 
@@ -265,6 +260,7 @@ impl Row {
     }
 }
 
+#[derive(Debug)]
 pub struct Report {
     pub now: i64,
     pub rows: Vec<Row>,
@@ -428,7 +424,7 @@ pub(crate) fn shown(state: &State, which: ProviderId) -> bool {
 /// Codex login's own claims ([`in_use::known`]). Not from Claude Code's config, which a
 /// Claude Code process started or signed in on another login can rewrite with its own
 /// account.
-pub fn gather_offline(ctx: &Context, state: &State) -> Report {
+pub(crate) fn gather_offline(ctx: &Context, state: &State) -> Report {
     let known: BTreeMap<ProviderId, Option<Owner>> = tools(state)
         .into_iter()
         .map(|which| (which, in_use::known(ctx, state, which).owner().cloned()))
@@ -504,7 +500,7 @@ impl Answered {
 }
 
 /// A provider's failure as the usage path has always classified one.
-fn to_api(error: crate::provider::ProviderError) -> ApiError {
+fn to_api(error: ProviderError) -> ApiError {
     use crate::provider::ProviderError as P;
     match error {
         P::Unauthorized => ApiError::Unauthorized,
@@ -569,21 +565,16 @@ fn ask_usage(
     // A park that is not the shape its own tool keeps was damaged at rest, which is a fact
     // about the vault and not about the service. Said as such rather than as an answer the
     // service gave.
-    if !signed_in
-        && matches!(
-            answer,
-            Err(crate::provider::ProviderError::ShapeUnexpected { .. })
-        )
-    {
+    if !signed_in && matches!(answer, Err(ProviderError::ShapeUnexpected { .. })) {
         return (Err(Stale::ParkUnreadable), None);
     }
     let answer = answer.map_err(to_api);
     let learned = match &answer {
         Ok(_) => Some(budget::Outcome::Answered),
-        Err(api::ApiError::RateLimited { retry_after }) => {
+        Err(ApiError::RateLimited { retry_after }) => {
             Some(budget::Outcome::RateLimited(*retry_after))
         }
-        Err(api::ApiError::Network(_) | api::ApiError::Unexpected { .. }) => {
+        Err(ApiError::Network(_) | ApiError::Unexpected { .. }) => {
             Some(budget::Outcome::Unreachable)
         }
         // A token that is refused, or an answer that is not understood, is not a reason to
@@ -663,8 +654,7 @@ fn ask_live(
                         &crate::provider::Credential::new(which, document.clone()),
                     )
                 })
-                .and_then(Result::ok)
-                .map(Owner::from);
+                .and_then(Result::ok);
             return Answered::learning_nothing(LiveLogin {
                 signed_in: Some(Err(unusable.to_string())),
                 known: claimed,
@@ -899,12 +889,7 @@ pub(crate) fn ask(ctx: &Context, permit: Permit, state: &State, fresh: bool) -> 
 /// since. What the answers teach is recorded here, once, from one thread: every account's
 /// record lives in one file, so a thread each reading it, changing one entry and writing it
 /// back would erase what the others learned.
-pub(crate) fn report(
-    ctx: &Context,
-    permit: crate::service::Permit,
-    state: &State,
-    answers: Answers,
-) -> Report {
+pub(crate) fn report(ctx: &Context, permit: Permit, state: &State, answers: Answers) -> Report {
     let now = ctx.now();
     budget::record(ctx, permit, &answers.learned);
     let signed_in_default = answers
@@ -1322,7 +1307,7 @@ mod tests {
     /// their parked login is finished.
     #[test]
     fn anthropics_failures_are_told_apart() {
-        use crate::api::ApiError;
+        use crate::provider::claude::api::ApiError;
         let parked = |e: &ApiError| Stale::of(e, false);
         assert_eq!(
             parked(&ApiError::Unexpected { status: 503 }),
@@ -1648,8 +1633,8 @@ mod tests {
     /// the login somebody is using sends them looking for a park that is not there.
     #[test]
     fn a_refused_token_is_an_expired_session_when_it_is_the_one_signed_in() {
-        let api = crate::api::scripted::ScriptedApi::new();
-        api.token_trouble("t", crate::api::scripted::Trouble::Unauthorized);
+        let api = ScriptedApi::new();
+        api.token_trouble("t", Trouble::Unauthorized);
         let ctx = Context::new(std::path::PathBuf::from("/nowhere"))
             .with_pitboard_home(std::env::temp_dir().join("pitboard-status-refused"))
             .with_scripted_api(api);
@@ -1804,11 +1789,6 @@ mod tests {
                 stale.explanation_for(ProviderId::Claude),
                 before(stale),
                 "{stale:?}"
-            );
-            assert_eq!(
-                stale.explanation(),
-                stale.explanation_for(ProviderId::Claude),
-                "a caller with only a code gets the default tool's words"
             );
         }
     }
@@ -2503,7 +2483,7 @@ mod tests {
         assert!(
             api.asked()
                 .iter()
-                .all(|asked| !matches!(asked, crate::api::scripted::Asked::Usage(t) if t.contains("acc-B"))),
+                .all(|asked| !matches!(asked, Question::Usage(t) if t.contains("acc-B"))),
             "and nothing was asked about it"
         );
         let offline = gather_offline(&ctx, &s);
@@ -2540,9 +2520,13 @@ mod tests {
             .parks
             .iter()
             .filter(|p| p.active)
-            .map(|p| p.label.as_str())
+            .map(|p| p.name.as_str())
             .collect();
-        assert_eq!(active, ["b"], "doctor reads the same machine the same way");
+        assert_eq!(
+            active,
+            ["codex/b"],
+            "doctor reads the same machine the same way"
+        );
     }
 
     /// Only nothing at all is nobody. A Claude Code document with no account in it is what

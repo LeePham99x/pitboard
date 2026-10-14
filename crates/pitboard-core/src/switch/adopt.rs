@@ -39,7 +39,7 @@ pub struct Adopted {
 
 /// Take over this Pitboard directory. `None` when it was already this machine's, which is
 /// the ordinary case and not an error: running it when there is nothing to do says so.
-pub fn adopt(ctx: &Context, permit: Permit) -> Result<Option<Adopted>> {
+pub(crate) fn adopt(ctx: &Context, permit: Permit) -> Result<Option<Adopted>> {
     let _exclusive = exclusive(ctx, permit)?;
     let (mut state, here) = state::load_any_machine(ctx)?;
     if here {
@@ -192,7 +192,7 @@ mod tests {
                 oauth_account: json!({"accountUuid": "acc"}),
             },
             parked: Some(crate::park::describe(
-                crate::provider::document(crate::provider::ProviderId::Claude),
+                crate::provider::document(ProviderId::Claude),
                 service,
                 NOW,
                 &oauth(),
@@ -436,10 +436,7 @@ mod tests {
 
         let state = state::load(&ctx).expect("now it is this machine's");
         let account = state
-            .get(&crate::state::Key::new(
-                crate::provider::ProviderId::Claude,
-                "work",
-            ))
+            .get(&state::Key::new(ProviderId::Claude, "work"))
             .expect("the account is kept");
         assert_eq!(account.email, "me@example.com");
         assert_eq!(account.account_uuid, "acc");

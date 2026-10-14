@@ -30,23 +30,24 @@
 //!   account there is is chosen again, which may be the one it left;
 //! - switch away from one limit of an account twice before that limit resets. Somebody who
 //!   put it back in use meant to;
-//! - switch away from an account within [`SETTLING_SECONDS`] of its being put in use, by
+//! - switch away from an account within `SETTLING_SECONDS` of its being put in use, by
 //!   anyone;
-//! - try more than [`ATTEMPTS`](crate::duty::cadence::ATTEMPTS) times for one limit before it resets, counting only the
+//! - try more than `ATTEMPTS` times for one limit before it resets, counting only the
 //!   attempts that failed for a reason trying again will not mend. One that might, such as
 //!   Anthropic out of reach, is tried again later each time, up to
-//!   [`crate::duty::cadence::RETRY_MOST_SECONDS`].
+//!   `cadence::RETRY_MOST_SECONDS`.
 
-use crate::api::Owner;
 use crate::context::Context;
 use crate::duty::cadence::retry_after;
 use crate::duty::ledger::{self, Tries};
+use crate::provider::Owner;
 use crate::provider::ProviderId;
 use crate::service::Permit;
 use crate::state::{Account, Key, State};
 use crate::status::Row;
+use crate::usage::budget;
 use crate::usage::{self, Snapshot, Window, same_reset};
-use crate::{budget, home, in_use};
+use crate::{home, in_use};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -104,19 +105,19 @@ impl Default for Threshold {
 /// once before anything could switch away from it again. A switch that turned out to land
 /// on an account fuller than its last reading said is then corrected, and two switches are
 /// never made from one look at the numbers.
-pub const SETTLING_SECONDS: i64 = 300;
+pub(crate) const SETTLING_SECONDS: i64 = 300;
 
 /// What Pitboard switches by itself, as it decided from what it knows.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Plan {
+pub(crate) struct Plan {
     /// The account in use, and its id, under which what was tried for its limits is kept.
-    pub from: Key,
-    pub from_id: String,
+    pub(crate) from: Key,
+    pub(crate) from_id: String,
     /// The account to switch to.
-    pub to: Key,
+    pub(crate) to: Key,
     /// The limit of `from` that reached the share, as last read, of the window the ledger
     /// keeps it under.
-    pub limit: Window,
+    pub(crate) limit: Window,
 }
 
 /// A limit of the account in use at the share that Pitboard does not switch away from, and
@@ -234,10 +235,10 @@ pub enum Skip {
     /// Pitboard switched away from this limit once already before it resets, and the account
     /// was put back in use since.
     AlreadyLeft,
-    /// [`ATTEMPTS`](crate::duty::cadence::ATTEMPTS) attempts at switching away from this limit came to nothing for a reason
+    /// `ATTEMPTS` attempts at switching away from this limit came to nothing for a reason
     /// trying again will not mend, and none is made again before it resets.
     GaveUp,
-    /// The account was put in use less than [`SETTLING_SECONDS`] ago, and is not switched
+    /// The account was put in use less than `SETTLING_SECONDS` ago, and is not switched
     /// away from before `until`, in epoch seconds.
     Settling { until: i64 },
     /// Claude Code authenticates some other way, set by these, so a switch would change
@@ -716,9 +717,8 @@ pub(crate) fn look(ctx: &Context, state: &State, threshold: Threshold) -> Look {
         Err(why) => return Look::Stands(Box::new(Auto::NotWatching { why })),
     };
     match judge(ctx, state, account, &ledger, threshold, now) {
-        Judged::Switch(_) => Look::Act,
         Judged::Hold(hold) if ledger.said(&hold) => Look::Stands(Box::new(hold.skipped(state))),
-        Judged::Hold(_) => Look::Act,
+        Judged::Switch(_) | Judged::Hold(_) => Look::Act,
         Judged::Stands(stands) => Look::Stands(Box::new(stands)),
     }
 }

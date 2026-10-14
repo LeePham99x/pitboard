@@ -48,7 +48,7 @@ impl Renewal {
 
 /// Why a parked login is being renewed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Due {
+pub(crate) enum Due {
     /// What a reading needs: a park whose access token has lapsed cannot be asked about.
     /// This is the one `status` does, and it is the read path's own requirement rather
     /// than a job it does on the side.
@@ -79,12 +79,12 @@ impl Due {
 /// Renew every parked login whose access token has expired or is about to. Nothing is done
 /// while another Pitboard run holds the lock or a switch waits to be finished: a renewal
 /// replaces the refresh token, and nothing may install the old copy meanwhile.
-pub fn renew_parked(ctx: &Context, permit: Permit) -> Vec<(Key, Renewal)> {
+pub(crate) fn renew_parked(ctx: &Context, permit: Permit) -> Vec<(Key, Renewal)> {
     renew_due(ctx, permit, Due::ToBeAsked)
 }
 
 /// The same, for whichever reason.
-pub fn renew_due(ctx: &Context, permit: Permit, due: Due) -> Vec<(Key, Renewal)> {
+pub(crate) fn renew_due(ctx: &Context, permit: Permit, due: Due) -> Vec<(Key, Renewal)> {
     let Some(_exclusive) = try_exclusive(ctx, permit) else {
         return Vec::new();
     };
@@ -313,9 +313,9 @@ fn apply(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::Renewed;
     use crate::api::scripted::{Asked as Question, ScriptedApi, Trouble};
     use crate::host::memory::MemoryHost;
+    use crate::provider::claude::api::Renewed;
     use crate::state::Account;
     use crate::store::memory::Fault;
     use crate::time::FixedClock;
@@ -531,7 +531,7 @@ mod tests {
         assert_ne!(now.service, before.service, "a renewal takes a new name");
         assert_eq!(
             m.mem.vault().services(),
-            vec![now.service.clone()],
+            vec![now.service],
             "the spent copy is deleted, not left behind"
         );
     }
@@ -623,7 +623,7 @@ mod tests {
                 .parked,
             Some(before.clone())
         );
-        assert_eq!(m.mem.vault().services(), vec![before.service.clone()]);
+        assert_eq!(m.mem.vault().services(), vec![before.service]);
     }
 
     /// The same login with the argument line allowed is renewed as usual.

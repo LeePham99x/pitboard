@@ -24,9 +24,9 @@
 
 use super::refresh::{self, Place, Progress, Refreshing, Renewed, Stop};
 use super::{Settled, identify, live_store, purge, read_stored, shape, write_lock};
-use crate::api::Owner;
 use crate::context::Context;
 use crate::error::{Cause, Error, Partway, Result};
+use crate::provider::Owner;
 use crate::provider::claude::live;
 use crate::provider::{self, ProviderError, ProviderId};
 use crate::service::{Permit, Warning};
@@ -195,7 +195,7 @@ pub(crate) fn find(ctx: &Context, state: &State) -> Result<Option<Left>> {
 /// before a renewal to find it free, so no network round trip holds up its writes. The file,
 /// and the login stored where the file goes because of it, are read again under it as the
 /// file goes, since a `/logout` that gave up waiting writes with no lock held.
-pub fn stow(settled: Settled, seen: &str) -> Result<(Stowed, Vec<Warning>)> {
+pub(crate) fn stow(settled: Settled, seen: &str) -> Result<(Stowed, Vec<Warning>)> {
     let Settled {
         _exclusive,
         mut state,
@@ -371,15 +371,15 @@ impl Stowing<'_> {
             Ok(Renewed::Saved(renewed)) => renewed,
             Ok(Renewed::Refused) => return Ok(None),
             Err(Stop::Changed) => return Err(self.changed()),
-            Err(Stop::Unrenewed(error)) => return Err(not_identified(&self.path, error)),
+            Err(Stop::Unrenewed(error)) => return Err(not_identified(&self.path, &error)),
             Err(Stop::Failed(error)) => return Err(error),
         };
         *held = contents(&renewed)?;
         *raw = renewed;
         let login = held.slice.clone().expect("a renewed login");
         tool.identify(self.ctx, &provider::Credential::new(TOOL, login))
-            .map(|found| Some(Owner::from(found)))
-            .map_err(|error| not_identified(&self.path, error))
+            .map(Some)
+            .map_err(|error| not_identified(&self.path, &error))
     }
 
     /// What putting away `owner`'s login comes to, where Claude Code has `stored`'s login
@@ -545,10 +545,10 @@ fn judge(
         return Ok(untold());
     }
     match tool.identify(ctx, &provider::Credential::new(TOOL, slice.clone())) {
-        Ok(found) => Ok(Whose::Owner(Owner::from(found))),
+        Ok(found) => Ok(Whose::Owner(found)),
         // Expired earlier than its own expiry said, or with no access token at all.
         Err(ProviderError::Unauthorized | ProviderError::ShapeUnexpected { .. }) => Ok(untold()),
-        Err(error) => Err(not_identified(path, error)),
+        Err(error) => Err(not_identified(path, &error)),
     }
 }
 
@@ -644,10 +644,10 @@ fn not_enrolled(path: &Path, owner: &Owner) -> Error {
 }
 
 /// Why nobody could say whose the login in the file is.
-fn not_identified(path: &Path, error: ProviderError) -> Error {
+fn not_identified(path: &Path, error: &ProviderError) -> Error {
     Error::LeftLoginUnidentified {
         path: path.to_path_buf(),
-        cause: Cause::of_provider(&error),
+        cause: Cause::of_provider(error),
         detail: error.to_string(),
     }
 }
@@ -671,7 +671,7 @@ mod tests {
         left_file(m).plant(&m.service, &contents.to_string());
     }
 
-    fn left_file(m: &Machine) -> std::sync::Arc<crate::store::memory::MemoryStore> {
+    fn left_file(m: &Machine) -> std::sync::Arc<store::memory::MemoryStore> {
         m.mem.file_at(live::credential_file(&m.ctx))
     }
 
@@ -715,7 +715,7 @@ mod tests {
         elsewhere: impl FnOnce() + 'static,
     ) -> Result<(Stowed, Vec<Warning>)> {
         let seen = found(m).seen;
-        crate::fault::meanwhile(point, elsewhere, || stow_seen(m, &seen))
+        fault::meanwhile(point, elsewhere, || stow_seen(m, &seen))
     }
 
     /// Plants `contents` in the file at the moment it is called, as Claude Code writes it.
@@ -1006,7 +1006,7 @@ mod tests {
         let m = machine("stow-park-kept-renewed");
         m.api.renews(
             "there-again",
-            crate::api::Renewed {
+            provider::claude::api::Renewed {
                 access_token: "access-there-renewed".into(),
                 refresh_token: Some("there-renewed".into()),
                 expires_in: 28_800,
@@ -1085,7 +1085,7 @@ mod tests {
             .owned_by("access-elsewhere-refresh", owner("elsewhere"));
         leave(&m, &document("elsewhere-refresh"));
         let seen = found(&m).seen;
-        let died = crate::fault::killing("stow.park_stored", || stow_seen(&m, &seen));
+        let died = fault::killing("stow.park_stored", || stow_seen(&m, &seen));
         assert_eq!(died.unwrap_err(), "stow.park_stored");
         assert_eq!(parked_fingerprint(&m, "elsewhere"), None);
 
@@ -1276,7 +1276,7 @@ mod tests {
         let state = state::load(&m.ctx).expect("state");
         let looked = find(&m.ctx, &state).expect_err("nobody to ask");
         assert_eq!(looked.code(), "left_login_unidentified");
-        assert_eq!(looked.cause(), Some(crate::error::Cause::Unreachable));
+        assert_eq!(looked.cause(), Some(Cause::Unreachable));
         let seen = store::fingerprint(&left_file(&m).peek(&m.service).expect("there"));
         let refused = stow_seen(&m, &seen).expect_err("nobody to ask");
         assert_eq!(refused.code(), "left_login_unidentified");
@@ -1849,7 +1849,7 @@ mod tests {
             leave(&m, &lapsed("left-refresh"));
             let seen = found(&m).seen;
 
-            let died = crate::fault::killing(point, || stow_seen(&m, &seen));
+            let died = fault::killing(point, || stow_seen(&m, &seen));
             assert_eq!(died.unwrap_err(), point);
 
             let renewed = Some(fingerprint("left-renewed"));
@@ -1887,7 +1887,7 @@ mod tests {
         let m = lapsed_login_left("stow-killed-after-the-exchange");
         let seen = found(&m).seen;
 
-        let died = crate::fault::killing("refresh.exchanged", || stow_seen(&m, &seen));
+        let died = fault::killing("refresh.exchanged", || stow_seen(&m, &seen));
         assert_eq!(died.unwrap_err(), "refresh.exchanged");
         m.api.renew_trouble("left-refresh", Trouble::InvalidGrant);
         assert_eq!(in_the_file(&m), Some(fingerprint("left-refresh")));
@@ -1931,7 +1931,7 @@ mod tests {
     fn a_renewal_left_unsaved_is_saved_before_the_file_is_put_away() {
         let m = lapsed_login_left("stow-left-unsaved");
         let seen = found(&m).seen;
-        let died = crate::fault::killing("refresh.exchanged", || stow_seen(&m, &seen));
+        let died = fault::killing("refresh.exchanged", || stow_seen(&m, &seen));
         assert_eq!(died.unwrap_err(), "refresh.exchanged");
         m.api.renew_trouble("left-refresh", Trouble::InvalidGrant);
         let (file, service) = (left_file(&m), m.service.clone());
@@ -2070,13 +2070,12 @@ mod tests {
             leave(&m, &document("elsewhere-refresh"));
             let seen = found(&m).seen;
             if stop == "killed" {
-                let died = crate::fault::killing("stow.kept", || stow_seen(&m, &seen));
+                let died = fault::killing("stow.kept", || stow_seen(&m, &seen));
                 assert_eq!(died.unwrap_err(), "stow.kept");
             } else {
-                let refused = crate::fault::meanwhile("stow.kept", locks_the_keychain(&m), || {
-                    stow_seen(&m, &seen)
-                })
-                .expect_err("the keychain is locked");
+                let refused =
+                    fault::meanwhile("stow.kept", locks_the_keychain(&m), || stow_seen(&m, &seen))
+                        .expect_err("the keychain is locked");
                 assert_eq!(refused.code(), "credential_store_locked");
                 m.mem.live().heal(&m.service);
             }
@@ -2176,7 +2175,7 @@ mod tests {
             );
             assert_eq!(in_the_file(&m), None, "{point}");
             assert!(
-                !lock_dir(&crate::provider::claude::paths::refresh_lock(&m.ctx)).exists(),
+                !lock_dir(&provider::claude::paths::refresh_lock(&m.ctx)).exists(),
                 "{point}: the refresh lock is let go of"
             );
         }

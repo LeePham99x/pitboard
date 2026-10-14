@@ -60,7 +60,7 @@ fn belongs_to(value: &Value, outgoing: &[&str]) -> bool {
 /// Returns the keys it dropped. Pitboard is editing the file that holds a person's whole
 /// Claude Code life and deciding what to remove from it by a shape rule, so what it
 /// actually removed is worth writing down rather than inferring later from a backup.
-pub fn splice_identity(
+pub(crate) fn splice_identity(
     config: &mut Value,
     oauth_account: &Value,
     outgoing: &[&str],
@@ -90,7 +90,7 @@ fn backups_dir(ctx: &Context) -> PathBuf {
 
 /// Claude Code keeps a backup ring of its own, but churns through it in minutes, so it
 /// cannot be relied on to still hold a pre-switch copy.
-pub fn backup(ctx: &Context, permit: Permit, path: &Path) -> Result<PathBuf> {
+pub(crate) fn backup(ctx: &Context, permit: Permit, path: &Path) -> Result<PathBuf> {
     let fail = |source| Error::ConfigBackupFailed {
         path: path.to_path_buf(),
         source,
@@ -143,7 +143,7 @@ const ATTEMPTS: usize = 4;
 /// the bytes it parsed are still the bytes on disk and start again from the new ones when
 /// they are not. That narrows the window from a whole edit to a read and a rename; it does
 /// not close it, and nothing here claims otherwise.
-pub fn update(
+pub(crate) fn update(
     ctx: &Context,
     permit: Permit,
     path: &Path,

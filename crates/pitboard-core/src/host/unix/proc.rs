@@ -155,7 +155,7 @@ mod tests {
     fn this_process_is_running_and_one_that_exited_is_not() {
         assert!(may_be_running(std::process::id()));
         let exited = {
-            let mut child = std::process::Command::new("true").spawn().unwrap();
+            let mut child = Command::new("true").spawn().unwrap();
             let pid = child.id();
             child.wait().unwrap();
             pid

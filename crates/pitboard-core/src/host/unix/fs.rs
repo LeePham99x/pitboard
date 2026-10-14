@@ -217,7 +217,7 @@ pub(crate) fn lock_dir(path: &Path) -> io::Result<File> {
 }
 
 /// Who besides its owner can reach `path`. `None` where it cannot be looked at.
-pub fn access(path: &Path) -> Option<Access> {
+pub(crate) fn access(path: &Path) -> Option<Access> {
     let mode = std::fs::metadata(path).ok()?.permissions().mode() & 0o777;
     Some(Access {
         // Group and other, read, write or search. Anything there is somebody who is not
@@ -237,6 +237,7 @@ pub fn access(path: &Path) -> Option<Access> {
 /// Each says what went wrong rather than panicking, since a fixture is made in an app as well
 /// as in a test, and an app that cannot make one says so.
 #[cfg(any(test, feature = "test-support"))]
+#[cfg_attr(not(feature = "test-support"), allow(unreachable_pub))]
 pub mod testing {
     use std::io;
     use std::os::unix::fs::PermissionsExt;

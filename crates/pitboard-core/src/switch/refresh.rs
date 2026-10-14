@@ -194,7 +194,7 @@ pub(super) fn renew(
     // it wrote may have landed, and the copy may hold the only renewed login.
     let copied = copy.as_ref().is_some_and(|copy| {
         !matches!(
-            store::vault_write(ctx, permit, copy, &to_body(fresh.clone())),
+            store::vault_write(ctx, permit, copy, &to_body(&fresh)),
             Err(store::Error::Write(_))
         )
     });
@@ -341,7 +341,7 @@ fn save(
         .map(|now| live::document_in(&now))
         .filter(|now| tool.fingerprint(now) == sent)
         .ok_or(Stop::Changed)?;
-    let renewed = to_body(tool.splice(&now, fresh).map_err(|e| shape(tool.id(), e))?);
+    let renewed = to_body(&tool.splice(&now, fresh).map_err(|e| shape(tool.id(), e))?);
     match place.store.write(permit, place.service, &renewed) {
         // Nothing landed, so once more: nothing else holds the renewed login.
         Err(store::Error::Write(_)) => place.store.write(permit, place.service, &renewed)?,
@@ -366,7 +366,7 @@ fn reserve(
 ) -> Result<Option<String>, Stop> {
     let service = park::free_name(ctx, COPY)?;
     // A renewed login is this one with new tokens of the same length.
-    if store::vault_cost(ctx, &service, &to_body(login.clone())).is_some_and(store::Cost::over) {
+    if store::vault_cost(ctx, &service, &to_body(login)).is_some_and(store::Cost::over) {
         return Ok(None);
     }
     state.renewing.push(Renewing {

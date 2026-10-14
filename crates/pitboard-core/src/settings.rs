@@ -41,11 +41,11 @@ pub(crate) const OVERRIDING_ENV: [&str; 9] = [
 
 /// One reason a session would not use the login Pitboard moves.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Override {
+pub(crate) struct Override {
     /// What said so: a path, or "the environment".
-    pub layer: String,
+    pub(crate) layer: String,
     /// The setting or variable that did it.
-    pub key: String,
+    pub(crate) key: String,
 }
 
 impl std::fmt::Display for Override {
@@ -144,7 +144,7 @@ fn overrides_in(path: &std::path::Path) -> Vec<Override> {
 ///
 /// Read from files as well as from this process's environment, because a `CLAUDE_CODE_CUSTOM_OAUTH_URL`
 /// in a settings file is just as real and the app could not see the environment one.
-pub fn custom_oauth(ctx: &Context) -> bool {
+pub(crate) fn custom_oauth(ctx: &Context) -> bool {
     if ctx.custom_oauth() {
         return true;
     }
@@ -170,7 +170,7 @@ pub fn custom_oauth(ctx: &Context) -> bool {
 /// Every reason a session started here would authenticate as something other than the login
 /// Pitboard moves. Empty means a switch changes what a session sees, which is the answer
 /// Pitboard needs before it moves anything.
-pub fn overrides(ctx: &Context) -> Vec<Override> {
+pub(crate) fn overrides(ctx: &Context) -> Vec<Override> {
     let mut found: Vec<Override> = managed_files()
         .iter()
         .chain(std::iter::once(

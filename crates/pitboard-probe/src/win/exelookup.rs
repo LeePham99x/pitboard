@@ -15,7 +15,7 @@ use std::process::{Command, Stdio};
 
 const HOST: &str = "pitboard-probe-lookup-host.exe";
 
-pub fn exe_lookup(scratch: &Path, name: &str) -> Report {
+pub(super) fn exe_lookup(scratch: &Path, name: &str) -> Report {
     let logon = logon_now();
     if !is_probe_name(name) {
         return Report::refused(
@@ -114,7 +114,7 @@ pub fn exe_lookup(scratch: &Path, name: &str) -> Report {
 /// The host: look `name` up as std's Command does, run it, and say which stand-in answered.
 /// It takes only a probe name and the probe's own child-path folder, as `exe-lookup` does,
 /// so it can never start a real program by a bare name.
-pub fn host(name: &str, child_path: Option<&Path>) -> Outcome {
+pub(super) fn host(name: &str, child_path: Option<&Path>) -> Outcome {
     if !is_probe_name(name) || child_path.is_some_and(|p| !is_child_path_folder(p)) {
         return Outcome::Line(
             json!({
@@ -154,7 +154,7 @@ pub fn host(name: &str, child_path: Option<&Path>) -> Outcome {
 }
 
 /// A stand-in: name the folder it sits in.
-pub fn whoami() -> Outcome {
+pub(super) fn whoami() -> Outcome {
     let folder: Option<PathBuf> = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(Path::to_path_buf));

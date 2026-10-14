@@ -8,28 +8,28 @@
 //! not read the store takes the account in use from it ([`known`]). What the tool's own
 //! record names is only a sign that something signed in since.
 
-use crate::api::Owner;
 use crate::context::Context;
+use crate::provider::Owner;
 use crate::provider::{self, LoginKind, ProviderId};
 use crate::state::{Key, State, new_id};
 use serde::{Deserialize, Serialize};
 
 /// Whose login one tool has stored, and which login that was.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct InUse {
+pub(crate) struct InUse {
     /// Whose login the store held, as the service said. `None`: it held none.
-    pub owner: Option<Owner>,
+    pub(crate) owner: Option<Owner>,
     /// The fingerprint of that login's refresh token, as [`provider::Provider::fingerprint`]
     /// gives it. Empty where the store held none, or where nothing established which login
     /// it was.
-    pub login: String,
+    pub(crate) login: String,
     /// When whose `login` is was established, in epoch seconds. 0: never, on a record
     /// brought forward from the account last switched to.
-    pub known_at: i64,
+    pub(crate) known_at: i64,
     /// The account the tool's own record named when this was checked against the store, by
     /// the id [`new_id`] gives its login. `None` for a tool whose login names its own
     /// account, which keeps no record apart from it, and where the record named nobody.
-    pub named: Option<String>,
+    pub(crate) named: Option<String>,
 }
 
 impl InUse {
@@ -43,45 +43,45 @@ impl InUse {
 
     /// The owner's account, by the id [`new_id`] gives its login, which is how each tool
     /// tells its logins apart. `None` where the store held none.
-    pub fn account(&self, which: ProviderId) -> Option<String> {
+    pub(crate) fn account(&self, which: ProviderId) -> Option<String> {
         self.owner.as_ref().map(|owner| new_id(which, owner))
     }
 }
 
 /// What recording whose login a tool has stored came to.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Identified {
+pub(crate) struct Identified {
     /// The record changed, and is saved with the state.
-    pub changed: bool,
+    pub(crate) changed: bool,
     /// The account whose only login it replaced, where it replaced one.
-    pub replaced: Option<Replaced>,
+    pub(crate) replaced: Option<Replaced>,
 }
 
 /// An account whose only login is gone: its tool's store held that login with nothing parked
 /// for the account and no other slot's record naming it, and its service then named another
 /// account's login there, or none.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Replaced {
-    pub key: Key,
+pub(crate) struct Replaced {
+    pub(crate) key: Key,
 }
 
 /// What is known of whose login one tool has stored, from files alone: no keychain, and no
 /// request.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Known {
+pub(crate) struct Known {
     /// Whose login the store held, as last established. `None` where nothing is: nothing was
     /// ever recorded, or the login is there and is no one account's.
-    pub last: Option<InUse>,
+    pub(crate) last: Option<InUse>,
     /// Why the store may hold another login than `last` says, where it may.
-    pub doubt: Option<Doubt>,
+    pub(crate) doubt: Option<Doubt>,
     /// The account the tool's own record names now ([`names`]), where `last.named` is what
     /// it named when `last` was checked against the store.
-    pub own_record: Option<Owner>,
+    pub(crate) own_record: Option<Owner>,
 }
 
 /// Why what was last established of a tool's store may not be what it holds now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Doubt {
+pub(crate) enum Doubt {
     /// Nobody has asked: there is no record, or one brought forward from schema 5.
     NeverEstablished,
     /// The tool's own record names another account than when the record was checked
@@ -94,7 +94,7 @@ pub enum Doubt {
 
 impl Known {
     /// Whose login the store holds, as last established.
-    pub fn owner(&self) -> Option<&Owner> {
+    pub(crate) fn owner(&self) -> Option<&Owner> {
         self.last.as_ref()?.owner.as_ref()
     }
 
@@ -136,7 +136,7 @@ pub(crate) fn known(ctx: &Context, state: &State, which: ProviderId) -> Known {
         },
         Ok(None) => found(None, String::new()),
         Ok(Some(credential)) => match tool.identify(ctx, &credential) {
-            Ok(owner) => found(Some(Owner::from(owner)), tool.fingerprint(&credential.raw)),
+            Ok(owner) => found(Some(owner), tool.fingerprint(&credential.raw)),
             Err(_) => Known {
                 last: None,
                 doubt: None,
@@ -176,7 +176,7 @@ pub(crate) fn judged_by(
 // The account `which`'s own record names now: for a folder tool, its settings' name key.
 pub(crate) fn names(ctx: &Context, which: ProviderId) -> Option<Owner> {
     match provider::of(which) {
-        LoginKind::Document(tool) => tool.own_record(ctx).map(Owner::from),
+        LoginKind::Document(tool) => tool.own_record(ctx),
         LoginKind::Folder(app) => {
             let root = app.root(ctx).ok()?;
             Some(named_only(app.settings(&root).ok()?.named(app)?))

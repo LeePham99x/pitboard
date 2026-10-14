@@ -11,12 +11,12 @@ use crate::assumptions::OnSystem::{NotRead, Pending, Read};
 use crate::assumptions::{Assumption, PerSystem};
 
 /// The build every entry below was read from on macOS and Linux, unless it names its own.
-pub const VERIFIED_AGAINST: &str = "0.154.0";
+pub(crate) const VERIFIED_AGAINST: &str = "0.154.0";
 
 /// The build the facts read on Windows were read from: `@openai/codex@0.160.0-win32-x64` and
 /// `0.160.0-win32-arm64`, read as bytes on a Mac, the x64 one on 2026-10-04 and the arm64
 /// one on 2026-10-06, and never run, with the source at tag `rust-v0.160.0`.
-pub const WINDOWS_VERIFIED_AGAINST: &str = "0.160.0";
+pub(crate) const WINDOWS_VERIFIED_AGAINST: &str = "0.160.0";
 
 /// A fact read on macOS and Linux from the build its entry names, and on Windows from
 /// [`WINDOWS_VERIFIED_AGAINST`]: the code each is about has no part that differs on
@@ -57,7 +57,7 @@ const fn later_on_windows(
 /// and the keychain stores. They stay read on Linux, since the code that stands on them,
 /// `holders` and the refusal of a keychain store, runs there as it does on macOS. A Linux
 /// reading of each of its own is no part of the Windows work.
-pub const PER_SYSTEM: &[PerSystem] = &[
+pub(crate) const PER_SYSTEM: &[PerSystem] = &[
     later_on_windows(
         "codex_login_location",
         "0.160.0",
@@ -136,7 +136,7 @@ pub const PER_SYSTEM: &[PerSystem] = &[
     everywhere("codex_login_takes_a_store_override", "0.160.0"),
 ];
 
-pub const ASSUMPTIONS: &[Assumption] = &[
+pub(crate) const ASSUMPTIONS: &[Assumption] = &[
     Assumption {
         name: "codex_login_location",
         fact: "the login is `$CODEX_HOME/auth.json`, default `~/.codex/auth.json`, mode 0600, \

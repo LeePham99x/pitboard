@@ -68,7 +68,7 @@ fn lapsed(m: &Machine, who: &str, refresh: &str) -> Value {
     match Tool::of(m.which) {
         Tool::Claude => document["expiresAt"] = json!((NOW - 60) * 1000),
         Tool::Codex => {
-            document["tokens"]["access_token"] = json!(crate::provider::jwt::unsigned(
+            document["tokens"]["access_token"] = json!(provider::jwt::unsigned(
                 &json!({"exp": NOW - 60, "for": refresh})
             ));
         }
@@ -315,7 +315,7 @@ fn a_park_repair_gave_back_is_deleted_once_a_killed_renewal_spends_it() {
         renews(&m, "away-elsewhere", "away-renewed");
         assert_eq!(repair_here(&m).given_back.len(), 1);
 
-        let died = crate::fault::killing("renew.park_stored", || {
+        let died = fault::killing("renew.park_stored", || {
             renew_due(&m.ctx, Permit::for_a_test(), Due::ToBeAsked)
         });
         assert_eq!(died.unwrap_err(), "renew.park_stored", "{:?}", m.which);
@@ -338,7 +338,7 @@ fn a_park_repair_gave_back_is_deleted_once_a_killed_renewal_spends_it() {
             "{:?}: spent here, so deleted here",
             m.which
         );
-        super::harness::hold(&m, &format!("{:?}, after a killed renewal", m.which));
+        harness::hold(&m, &format!("{:?}, after a killed renewal", m.which));
     }
 }
 
@@ -458,7 +458,7 @@ fn a_park_found_in_a_vault_of_this_homes_own_is_this_pitboards() {
             "{:?}: replaced, and this Pitboard's, so deleted",
             m.which
         );
-        super::harness::hold(&m, &format!("{:?}, after the switch away", m.which));
+        harness::hold(&m, &format!("{:?}, after the switch away", m.which));
 
         let m = make("found-uninstalled");
         m.mem.vault_of_its_own();

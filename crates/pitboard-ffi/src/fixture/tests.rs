@@ -97,7 +97,7 @@ fn sign_in_to_the_end(core: &AppCore, label: &str) -> Result<Enrolled, PitboardE
     let session = core.sign_in(label.into())?;
     while let Some(line) = session.next_line() {
         if line.contains("Paste code") {
-            session.paste(CODE.into())?;
+            session.paste(CODE)?;
         }
     }
     session.finish()
@@ -295,7 +295,7 @@ fn a_switch_moves_who_is_in_use_within_its_own_tool() {
     let launched = made(World::TwoTools);
     let core = &launched.core;
 
-    let claude = core.switch_to("claude/personal".into()).expect("a switch");
+    let claude = core.switch_to("claude/personal").expect("a switch");
     assert!(
         matches!(
             claude.outcome,
@@ -319,7 +319,7 @@ fn a_switch_moves_who_is_in_use_within_its_own_tool() {
             )
     );
 
-    let codex = core.switch_to("codex/spare".into()).expect("a switch");
+    let codex = core.switch_to("codex/spare").expect("a switch");
     assert_eq!(
         codex.outcome,
         Switch::Switched {
@@ -342,14 +342,14 @@ fn a_switch_moves_who_is_in_use_within_its_own_tool() {
     );
 
     assert_eq!(
-        core.switch_to("claude/personal".into())
+        core.switch_to("claude/personal")
             .expect("already in use")
             .outcome,
         Switch::AlreadyActive {
             label: "personal".into()
         }
     );
-    assert!(refusal(core.switch_to("claude/nobody".into())).is_some());
+    assert!(refusal(core.switch_to("claude/nobody")).is_some());
     assert_eq!(in_use(&read(core)), ["claude/personal", "codex/spare"]);
 }
 
@@ -367,12 +367,12 @@ fn an_expired_parked_login_stays_unusable_across_switches() {
     let launched = made(World::TwoTools);
     let core = &launched.core;
     assert_eq!(
-        refusal(core.switch_to("claude/old".into())).as_deref(),
+        refusal(core.switch_to("claude/old")).as_deref(),
         Some("parked_login_expired")
     );
     assert_eq!(in_use(&read(core)), ["claude/work", "codex/main"]);
 
-    core.switch_to("claude/personal".into()).expect("a switch");
+    core.switch_to("claude/personal").expect("a switch");
     assert_eq!(
         described(&read(core)),
         [
@@ -401,7 +401,7 @@ fn a_switch_names_the_accounts_as_the_core_types_them() {
         let launched = made(World::TwoTools);
         let core = &launched.core;
         assert_eq!(
-            core.switch_to("codex/main".into())
+            core.switch_to("codex/main")
                 .expect("already in use")
                 .outcome,
             Switch::AlreadyActive {
@@ -409,9 +409,7 @@ fn a_switch_names_the_accounts_as_the_core_types_them() {
             }
         );
         assert_eq!(
-            core.switch_to("claude/personal".into())
-                .expect("a switch")
-                .outcome,
+            core.switch_to("claude/personal").expect("a switch").outcome,
             Switch::Switched {
                 provider: "claude".into(),
                 from: "work".into(),
@@ -459,7 +457,7 @@ fn the_login_signed_in_now_is_named_with_a_name_not_taken() {
     let core = &launched.core;
     sign_in_to_the_end(core, "claude/personal").expect("signed in");
     assert_eq!(
-        refusal(core.enroll_current("personal".into())).as_deref(),
+        refusal(core.enroll_current("personal")).as_deref(),
         Some("label_taken")
     );
     assert_eq!(
@@ -468,7 +466,7 @@ fn the_login_signed_in_now_is_named_with_a_name_not_taken() {
     );
 
     assert_eq!(
-        core.enroll_current("work".into()).expect("named"),
+        core.enroll_current("work").expect("named"),
         Enrolled {
             email: "dana@work.example".into(),
             outcome: EnrolledAs::Current,
@@ -479,7 +477,7 @@ fn the_login_signed_in_now_is_named_with_a_name_not_taken() {
         described(&read(core)),
         ["claude/work, in use", "claude/personal"]
     );
-    assert!(refusal(core.enroll_current("home".into())).is_some());
+    assert!(refusal(core.enroll_current("home")).is_some());
 }
 
 /// The account in use cannot be forgotten, since its login is the one the tool is using.
@@ -495,12 +493,12 @@ fn only_an_account_not_in_use_is_forgotten() {
     let launched = made(World::TwoTools);
     let core = &launched.core;
     assert_eq!(
-        refusal(core.forget("claude/work".into())).as_deref(),
+        refusal(core.forget("claude/work")).as_deref(),
         Some("cannot_forget_active_account")
     );
-    assert!(refusal(core.forget("claude/nobody".into())).is_some());
+    assert!(refusal(core.forget("claude/nobody")).is_some());
 
-    core.forget("codex/spare".into()).expect("forgotten");
+    core.forget("codex/spare").expect("forgotten");
     assert_eq!(
         described(&read(core)),
         [
@@ -525,12 +523,11 @@ fn a_rename_needs_a_name_its_tool_has_not_given() {
     let launched = made(World::TwoTools);
     let core = &launched.core;
     assert_eq!(
-        refusal(core.rename("claude/personal".into(), "old".into())).as_deref(),
+        refusal(core.rename("claude/personal", "old")).as_deref(),
         Some("label_taken")
     );
 
-    core.rename("claude/personal".into(), "main".into())
-        .expect("renamed");
+    core.rename("claude/personal", "main").expect("renamed");
     assert_eq!(
         described(&read(core)),
         [
@@ -575,7 +572,7 @@ fn a_claude_code_sign_in_waits_for_the_code_and_then_parks_the_account() {
         let session = Arc::clone(&session);
         std::thread::spawn(move || {
             std::thread::sleep(Duration::from_millis(300));
-            session.paste(CODE.into())
+            session.paste(CODE)
         })
     };
     assert_eq!(session.next_line(), None);
@@ -613,7 +610,7 @@ fn claude_code_refuses_a_code_without_both_halves_and_reads_another() {
     let launched = made(World::OneTool);
     let core = &launched.core;
     let session = core.sign_in("claude/travel".into()).expect("started");
-    session.paste("fixture-code".into()).expect("typed back");
+    session.paste("fixture-code").expect("typed back");
     let mut said = String::new();
     while let Some(line) = session.next_line() {
         said.push_str(&line);
@@ -626,7 +623,7 @@ fn claude_code_refuses_a_code_without_both_halves_and_reads_another() {
         "{said:?}"
     );
     for refused in ["#state", "fixture-code#", "  fixture-code  "] {
-        session.paste(refused.into()).expect("typed back");
+        session.paste(refused).expect("typed back");
         assert_eq!(
             session.next_line().as_deref(),
             Some(CLAUDE_REFUSES),
@@ -634,7 +631,7 @@ fn claude_code_refuses_a_code_without_both_halves_and_reads_another() {
         );
     }
     session
-        .paste(" fixture-code#any state at all ".into())
+        .paste(" fixture-code#any state at all ")
         .expect("typed back");
     assert_eq!(session.next_line(), None);
     assert_eq!(
@@ -862,7 +859,7 @@ fn giving_up_on_the_interrupted_switch_happens_once() {
             .collect::<Vec<_>>(),
         ["recovery_undetermined"]
     );
-    match core.switch_to("claude/personal".into()) {
+    match core.switch_to("claude/personal") {
         Err(PitboardError::Failed { code, message, .. }) => {
             assert_eq!(code, "recovery_undetermined");
             assert_eq!(
@@ -895,7 +892,7 @@ fn giving_up_on_the_interrupted_switch_happens_once() {
     );
     assert_eq!(after.warnings, Vec::new(), "nothing is waiting any more");
     assert_ne!(
-        refusal(core.switch_to("claude/personal".into())).as_deref(),
+        refusal(core.switch_to("claude/personal")).as_deref(),
         Some("recovery_undetermined"),
         "nothing is waiting any more"
     );
@@ -936,10 +933,9 @@ fn the_log_records_changes_newest_last_as_they_are_typed() {
         ]
     );
 
-    core.switch_to("claude/personal".into()).expect("a switch");
-    core.switch_to("codex/spare".into()).expect("a switch");
-    core.rename("claude/work".into(), "office".into())
-        .expect("renamed");
+    core.switch_to("claude/personal").expect("a switch");
+    core.switch_to("codex/spare").expect("a switch");
+    core.rename("claude/work", "office").expect("renamed");
     let log = core.log(500);
     assert_eq!(
         log[history.len()..]
@@ -1036,7 +1032,7 @@ fn every_launch_starts_where_the_last_one_did() {
         );
         // What a launch leaves behind: a switch, what it told, preferences of its own, and
         // anything else in its folder.
-        core.switch_to("claude/personal".into()).ok();
+        core.switch_to("claude/personal").ok();
         core.keep_app_file(AppFile::Told, r#"{"claude/work/session/":7200}"#)
             .expect("told");
         core.keep_app_file(
@@ -1201,13 +1197,13 @@ fn the_chatgpt_fixture_is_quit_for_a_codex_switch_and_opened_again() {
     let launched = made(World::ChatGptOpen);
     let core = &launched.core;
     assert_eq!(
-        core.holding("codex".into())
+        core.holding("codex")
             .iter()
             .map(|held| held.kind.as_str())
             .collect::<Vec<_>>(),
         ["chatgpt_app"]
     );
-    assert!(core.holding("claude".into()).is_empty());
+    assert!(core.holding("claude").is_empty());
 
     let (model, told) = started(&launched);
     model.send(Intent::SwitchTo {
@@ -1244,7 +1240,7 @@ fn claude_is_quit_for_a_switch_and_opened_again_behind() {
     let launched = made(World::ClaudeDesktopOpen);
     let core = &launched.core;
     assert_eq!(
-        core.holding("desktop".into())
+        core.holding("desktop")
             .iter()
             .map(|held| held.kind.as_str())
             .collect::<Vec<_>>(),
@@ -1597,9 +1593,9 @@ fn chatgpt_leaves_the_process_list_as_it_quits() {
         .expect("running");
     apps.request_quit(CHATGPT.into()).expect("asked to quit");
     assert_eq!(apps.running(CHATGPT.into()).expect("asked"), None);
-    assert!(core.holding("codex".into()).is_empty());
+    assert!(core.holding("codex").is_empty());
     apps.reopen(copy, false).expect("opened");
-    assert_eq!(core.holding("codex".into()).len(), 1);
+    assert_eq!(core.holding("codex").len(), 1);
     assert!(
         !made(World::TwoTools).apps.is_running(CHATGPT),
         "only chatGPTOpen has it open"

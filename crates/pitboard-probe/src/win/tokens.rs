@@ -23,12 +23,12 @@ use windows_sys::Win32::System::Threading::{
 };
 
 /// What Pitboard reads from a token, with every principal named by relation.
-pub fn describe(token: &Token) -> Value {
+pub(super) fn describe(token: &Token) -> Value {
     let facts = token.facts();
     let reading = elevation::reading(facts);
     let user = token.user_sid();
     json!({
-        "elevation_type": facts.elevation_type.map(|e| e.as_str()),
+        "elevation_type": facts.elevation_type.map(elevation::ElevationType::as_str),
         "token_is_elevated": facts.is_elevated,
         "user_is_service_account": facts.user_is_service,
         "integrity": facts.integrity_rid.map(integrity_word),
@@ -40,7 +40,7 @@ pub fn describe(token: &Token) -> Value {
     })
 }
 
-pub fn tokens(scratch: Option<&Path>) -> Report {
+pub(super) fn tokens(scratch: Option<&Path>) -> Report {
     let logon = logon_now();
     let token = match Token::current() {
         Ok(t) => t,
@@ -120,7 +120,7 @@ fn safer_token() -> Result<Token, String> {
     Ok(Token::owned(out))
 }
 
-pub fn safer(spawn: bool, scratch: Option<&Path>) -> Report {
+pub(super) fn safer(spawn: bool, scratch: Option<&Path>) -> Report {
     let logon = logon_now();
     let token = match safer_token() {
         Ok(t) => t,

@@ -120,7 +120,7 @@ pub(crate) fn file_id(_path: &Path) -> Option<(u64, u64)> {
 
 /// Who besides its owner can reach `path`: nobody can tell until W15 reads its access
 /// control list.
-pub fn access(_path: &Path) -> Option<Access> {
+pub(crate) fn access(_path: &Path) -> Option<Access> {
     None
 }
 
@@ -129,6 +129,7 @@ pub fn access(_path: &Path) -> Option<Access> {
 /// Until then each says it cannot, as an app that cannot make a fixture says so, but for
 /// making a file runnable.
 #[cfg(any(test, feature = "test-support"))]
+#[cfg_attr(not(feature = "test-support"), allow(unreachable_pub))]
 pub mod testing {
     use std::io;
     use std::path::Path;

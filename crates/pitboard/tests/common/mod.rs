@@ -10,7 +10,7 @@
 // does not use one of these helpers would otherwise warn about it.
 #![allow(dead_code)]
 
-pub mod os;
+pub(crate) mod os;
 
 use os::Kept;
 use pitboard_core::context::Environment;
@@ -21,7 +21,7 @@ use pitboard_core::testing::stand_in::{self, Script, Step};
 /// Put a program at `path` that plays `script`: the compiled stand-in, the same on every
 /// system, which `pitboard_core::testing::stand_in` says how to write a script for. A test
 /// run alone, which builds no example, is told how to build it.
-pub fn put_stand_in(path: &Path, script: &Script) {
+pub(crate) fn put_stand_in(path: &Path, script: &Script) {
     stand_in::install(path, script)
         .unwrap_or_else(|e| panic!("no stand-in at {}: {e}", path.display()));
 }
@@ -29,7 +29,7 @@ pub fn put_stand_in(path: &Path, script: &Script) {
 /// The variables Pitboard reads that no test takes from whoever runs it, from the core's own
 /// list of what it reads, so a variable added there is withheld here too.
 // An inherited `PITBOARD_CLAUDE` would have a sign-in run the real `claude` on the real home.
-pub fn withheld() -> impl Iterator<Item = &'static str> {
+pub(crate) fn withheld() -> impl Iterator<Item = &'static str> {
     pitboard_core::testing::variables().filter(|name| !os::passed_on().contains(name))
 }
 
@@ -39,8 +39,8 @@ pub fn withheld() -> impl Iterator<Item = &'static str> {
     clippy::disallowed_methods,
     reason = "the tests' own environment, from which this withholds what Pitboard reads"
 )]
-pub fn ctx() -> pitboard_core::context::Context {
-    let passed: pitboard_core::context::Environment = std::env::vars_os()
+pub(crate) fn ctx() -> pitboard_core::context::Context {
+    let passed: Environment = std::env::vars_os()
         .filter(|(name, _)| !withheld().any(|kept| is(name, kept)))
         .collect();
     pitboard_core::context::Context::for_command_line(&passed)
@@ -51,18 +51,18 @@ fn is(name: &std::ffi::OsStr, variable: &str) -> bool {
         .is_some_and(|name| os::same_variable(name, variable))
 }
 
-pub fn started_in() -> pitboard_core::context::Context {
+pub(crate) fn started_in() -> pitboard_core::context::Context {
     pitboard_core::context::Context::for_command_line(&Environment::of_this_process())
 }
 
-pub fn real_slots() -> [String; 2] {
+pub(crate) fn real_slots() -> [String; 2] {
     [
         pitboard_core::testing::LIVE_SERVICE.to_owned(),
         pitboard_core::testing::live_service(&started_in()),
     ]
 }
 
-pub fn refuse_a_real_login_place(scratch: &Path) {
+pub(crate) fn refuse_a_real_login_place(scratch: &Path) {
     let places = pitboard_core::testing::real_login_places(&started_in())
         .unwrap_or_else(|why| panic!("{why}, so no test can tell its folder from a real login's"));
     if let Some(place) = places.iter().find(|place| lies_in(scratch, place)) {
@@ -75,7 +75,7 @@ pub fn refuse_a_real_login_place(scratch: &Path) {
 }
 
 // By pattern, never by hashing real homes: how Codex spells its home on Windows is unmeasured.
-pub fn guard_not_live(name: &str) {
+pub(crate) fn guard_not_live(name: &str) {
     if let Some(why) = refusal(name, None) {
         panic!("{why}");
     }
@@ -119,7 +119,7 @@ use std::time::{Duration, Instant};
 
 const SECURITY: &str = "/usr/bin/security";
 
-pub struct Env {
+pub(crate) struct Env {
     pub root: PathBuf,
     pub service: String,
     name: String,
@@ -133,7 +133,7 @@ pub struct Env {
 }
 
 /// alpha signed in and enrolled, beta enrolled by signing in privately.
-pub fn two_accounts(name: &str) -> Env {
+pub(crate) fn two_accounts(name: &str) -> Env {
     let mut env = Env::new(name);
     let (a, o, b, p) = (env.uuid('a'), env.uuid('o'), env.uuid('b'), env.uuid('p'));
     env.sign_in(&a, "a@example.com", &o, "refresh-a");
@@ -146,7 +146,7 @@ pub fn two_accounts(name: &str) -> Env {
 
 /// Distinct per test and per role. Park item names contain the account id and every test
 /// shares one keychain, so two tests must never derive the same id.
-pub fn uuid_for(test: &str, who: char) -> String {
+pub(crate) fn uuid_for(test: &str, who: char) -> String {
     format!(
         "{}-{who}111-4111-8111-111111111111",
         pitboard_core::testing::dir_hash(test)
@@ -157,7 +157,7 @@ pub fn uuid_for(test: &str, who: char) -> String {
     clippy::disallowed_methods,
     reason = "who runs the tests, whose keychain account a command is given as USER"
 )]
-pub fn account() -> String {
+pub(crate) fn account() -> String {
     std::env::var("USER").unwrap_or_else(|_| "claude-code-user".into())
 }
 
@@ -165,7 +165,7 @@ static TAKEN: std::sync::Mutex<std::collections::BTreeSet<String>> =
     std::sync::Mutex::new(std::collections::BTreeSet::new());
 
 impl Env {
-    pub fn new(name: &str) -> Env {
+    pub(crate) fn new(name: &str) -> Env {
         let fresh = TAKEN.lock().unwrap().insert(name.to_owned());
         assert!(fresh, "another Env in this process is named {name:?}");
         let root = std::env::temp_dir().join(format!("pitboard-e2e-{}-{name}", std::process::id()));
@@ -210,7 +210,7 @@ impl Env {
     /// How often is a design question in this project rather than an accident, so it is
     /// worth a test. The expectation has to be set when the mock is made, so this replaces
     /// the one the environment started with.
-    pub fn expect_usage_requests(&mut self, expected: usize) {
+    pub(crate) fn expect_usage_requests(&mut self, expected: usize) {
         self.usage.remove();
         self.usage = self
             .server
@@ -228,14 +228,14 @@ impl Env {
     }
 
     /// Check what `expect_usage_requests` asked for.
-    pub fn assert_usage_requests(&self) {
+    pub(crate) fn assert_usage_requests(&self) {
         self.usage.assert();
     }
 
     /// A stand-in for `claude` that records how it was started, at the first path, and what
     /// it was handed on descriptor 3 and standard input, at the second, then answers as print
     /// mode does when a request is answered.
-    pub fn install_fake_claude_print(&self) -> (PathBuf, PathBuf) {
+    pub(crate) fn install_fake_claude_print(&self) -> (PathBuf, PathBuf) {
         let bin = self.root.join("bin");
         std::fs::create_dir_all(&bin).unwrap();
         let started = self.root.join("claude-started.json");
@@ -269,10 +269,9 @@ impl Env {
     /// Make Anthropic answer what every Claude Code account has left with its limits listed:
     /// its five-hour period running until `five_hour_resets_in` seconds from now, or not
     /// running where that is `None`, at 0%, and its weekly limit at 40% for a day more.
-    pub fn claude_usage(&mut self, five_hour_resets_in: Option<i64>) {
+    pub(crate) fn claude_usage(&mut self, five_hour_resets_in: Option<i64>) {
         let at = |seconds: i64| {
-            let when =
-                std::time::SystemTime::now() + std::time::Duration::from_secs(seconds as u64);
+            let when = std::time::SystemTime::now() + Duration::from_secs(seconds as u64);
             let epoch = when
                 .duration_since(std::time::UNIX_EPOCH)
                 .expect("after 1970")
@@ -297,7 +296,7 @@ impl Env {
     }
 
     // std's `Command` folds case on Windows: given `PATH` then `Path`, a child had one, `Path`.
-    pub fn command(&self, args: &[&str]) -> Command {
+    pub(crate) fn command(&self, args: &[&str]) -> Command {
         let mut c = Command::new(env!("CARGO_BIN_EXE_pitboard"));
         for name in withheld() {
             c.env_remove(name);
@@ -332,7 +331,7 @@ impl Env {
         clippy::disallowed_methods,
         reason = "the tests' own environment, from which this withholds what Pitboard reads"
     )]
-    pub fn context(&self) -> pitboard_core::context::Context {
+    pub(crate) fn context(&self) -> pitboard_core::context::Context {
         let kept = std::env::vars_os().filter(|(name, _)| !withheld().any(|kept| is(name, kept)));
         let given = self
             .given()
@@ -342,25 +341,25 @@ impl Env {
         pitboard_core::context::Context::for_command_line(&env)
     }
 
-    pub fn guard(&self, name: &str) {
+    pub(crate) fn guard(&self, name: &str) {
         if let Some(why) = refusal(name, Some(&self.service)) {
             panic!("{why}");
         }
     }
 
     /// This test's own `CODEX_HOME`, created because Codex requires the directory to exist.
-    pub fn codex_home(&self) -> PathBuf {
+    pub(crate) fn codex_home(&self) -> PathBuf {
         let dir = self.root.join("codex");
         let _ = std::fs::create_dir_all(&dir);
         dir
     }
 
-    pub fn run(&self, args: &[&str]) -> (String, String, i32) {
+    pub(crate) fn run(&self, args: &[&str]) -> (String, String, i32) {
         self.run_with(args, &[])
     }
 
     /// `run`, with `vars` set besides, over what the harness sets or withholds.
-    pub fn run_with(&self, args: &[&str], vars: &[(&str, &str)]) -> (String, String, i32) {
+    pub(crate) fn run_with(&self, args: &[&str], vars: &[(&str, &str)]) -> (String, String, i32) {
         let mut command = self.command(args);
         for (name, value) in vars {
             command.env(name, value);
@@ -375,13 +374,13 @@ impl Env {
 
     /// Where the stand-in for Anthropic listens, as `host:port`, which is what a proxy is
     /// asked to connect to for a request to it.
-    pub fn api_address(&self) -> String {
+    pub(crate) fn api_address(&self) -> String {
         self.server.host_with_port()
     }
 
     /// Enroll another account through `--sign-in`, the way a user would, with a stand-in
     /// for `claude auth login` that stores a login for the private directory it is given.
-    pub fn enroll_by_signing_in(
+    pub(crate) fn enroll_by_signing_in(
         &mut self,
         label: &str,
         uuid: &str,
@@ -396,7 +395,7 @@ impl Env {
     }
 
     /// `enroll_by_signing_in`, asking for the JSON envelope.
-    pub fn enroll_by_signing_in_json(
+    pub(crate) fn enroll_by_signing_in_json(
         &mut self,
         label: &str,
         uuid: &str,
@@ -413,14 +412,14 @@ impl Env {
     /// Stand in for `claude auth login`: stores `credential` where Claude Code keeps the
     /// login of whichever `CLAUDE_CONFIG_DIR` it is run with, the private directory Pitboard
     /// makes for a sign-in, and does nothing else. Started any other way, it refuses.
-    pub fn install_fake_claude(&self, credential: &str) {
+    pub(crate) fn install_fake_claude(&self, credential: &str) {
         self.put_fake_claude(credential, None);
     }
 
     /// `install_fake_claude`, whose sign-in waits for a line on its standard input before it
     /// stores the login, as a person takes a while in the browser. Where its input ends
     /// first, it stores nothing.
-    pub fn install_fake_claude_held(&self, credential: &str) {
+    pub(crate) fn install_fake_claude_held(&self, credential: &str) {
         self.put_fake_claude(credential, Some(Step::WaitsForALine));
     }
 
@@ -462,7 +461,7 @@ impl Env {
     /// Park a login where the binary under test will look for it: the keychain where
     /// Pitboard parks there, and otherwise this test's own Pitboard home, never the
     /// machine's.
-    pub fn write_park(&self, service: &str, contents: &str) {
+    pub(crate) fn write_park(&self, service: &str, contents: &str) {
         guard_not_live(service);
         match os::parked_login() {
             Kept::InKeychain | Kept::Sealed => {
@@ -479,7 +478,7 @@ impl Env {
         }
     }
 
-    pub fn is_parked(&self, service: &str) -> bool {
+    pub(crate) fn is_parked(&self, service: &str) -> bool {
         match os::parked_login() {
             Kept::InKeychain | Kept::Sealed => {
                 pitboard_core::testing::vault_read(&self.context(), service)
@@ -501,7 +500,7 @@ impl Env {
     /// `repair`'s own behaviour and correct, so the test that meant to see a refusal saw a
     /// switch. Never caught, because CI's Linux leg was being cancelled by a lint failure
     /// before it got this far.
-    pub fn delete_park(&self, service: &str) {
+    pub(crate) fn delete_park(&self, service: &str) {
         guard_not_live(service);
         match os::parked_login() {
             Kept::InKeychain | Kept::Sealed => {
@@ -516,7 +515,7 @@ impl Env {
 
     /// Claude Code signed out behind Pitboard's back: its login is gone from where it keeps
     /// it, and nothing else changed.
-    pub fn sign_out(&self) {
+    pub(crate) fn sign_out(&self) {
         self.guard(&self.service);
         match os::claude_code_login() {
             Kept::InKeychain => {
@@ -531,7 +530,7 @@ impl Env {
 
     /// Make the fake token endpoint answer a renewal of `refresh`. The caller keeps the mock
     /// alive and asserts it was asked exactly once.
-    pub fn answers_renewal(
+    pub(crate) fn answers_renewal(
         &mut self,
         refresh: &str,
         status: usize,
@@ -551,7 +550,7 @@ impl Env {
     }
 
     /// Make the fake Anthropic answer as it does for an expired session.
-    pub fn expire(&mut self, access_token: &str) {
+    pub(crate) fn expire(&mut self, access_token: &str) {
         let mock = self
             .server
             .mock("GET", "/api/oauth/profile")
@@ -564,7 +563,7 @@ impl Env {
 
     /// Anthropic answers, badly. The switch that cannot identify the signed-in account
     /// must say so in a way a program can act on, rather than as one code and a sentence.
-    pub fn profile_trouble(&mut self, status: usize) {
+    pub(crate) fn profile_trouble(&mut self, status: usize) {
         let mock = self
             .server
             .mock("GET", "/api/oauth/profile")
@@ -575,7 +574,7 @@ impl Env {
     }
 
     /// Teach the fake Anthropic who a token belongs to.
-    pub fn owns(&mut self, access_token: &str, uuid: &str, email: &str, org: &str) {
+    pub(crate) fn owns(&mut self, access_token: &str, uuid: &str, email: &str, org: &str) {
         let mock = self
             .server
             .mock("GET", "/api/oauth/profile")
@@ -592,7 +591,7 @@ impl Env {
         self.mocks.push(mock);
     }
 
-    pub fn sign_in(&mut self, uuid: &str, email: &str, org: &str, refresh: &str) {
+    pub(crate) fn sign_in(&mut self, uuid: &str, email: &str, org: &str, refresh: &str) {
         let credential = credential(refresh);
         self.write_live(&credential.to_string());
         self.owns(&format!("access-{refresh}"), uuid, email, org);
@@ -608,14 +607,14 @@ impl Env {
         std::fs::write(self.root.join(".claude.json"), config.to_string()).unwrap();
     }
 
-    pub fn uuid(&self, who: char) -> String {
+    pub(crate) fn uuid(&self, who: char) -> String {
         uuid_for(&self.name, who)
     }
 
     /// Sign Codex in to `account` the way `codex login` leaves it: an `auth.json` in this
     /// test's own `CODEX_HOME`, mode 0600, whose ID token names the account. The token is
     /// signed by nothing, and nothing in Pitboard checks a signature: it reads the claims.
-    pub fn sign_in_codex(&self, account: &str, email: &str, refresh: &str) {
+    pub(crate) fn sign_in_codex(&self, account: &str, email: &str, refresh: &str) {
         let login = codex_login(account, email, refresh);
         os::write_private(&self.codex_home().join("auth.json"), &login.to_string());
     }
@@ -624,7 +623,7 @@ impl Env {
     /// the private directory Pitboard makes for a sign-in, and does nothing else. Every
     /// test that runs a Codex sign-in installs this first, because the harness keeps the
     /// real `PATH` behind its own `bin`, and the real `codex login` must never run here.
-    pub fn install_fake_codex_login(&self, login: &serde_json::Value) {
+    pub(crate) fn install_fake_codex_login(&self, login: &serde_json::Value) {
         let bin = self.root.join("bin");
         std::fs::create_dir_all(&bin).unwrap();
         let program = bin.join(os::program("codex"));
@@ -634,7 +633,7 @@ impl Env {
 
     /// `install_fake_codex_login` laid out the way npm installs Codex, in a prefix of this
     /// test's own that no `PATH` has. Returns the program as found.
-    pub fn install_fake_npm_codex_login(&self, login: &serde_json::Value) -> PathBuf {
+    pub(crate) fn install_fake_npm_codex_login(&self, login: &serde_json::Value) -> PathBuf {
         let prefix = self.root.join("npm");
         let script = serde_json::to_string(&fake_codex_login(login)).expect("a script");
         let script = format!("#!/usr/bin/env fakenode\n{script}\n");
@@ -679,14 +678,14 @@ impl Env {
     }
 
     /// The live Codex login, as this test's `CODEX_HOME` holds it.
-    pub fn codex_live(&self) -> serde_json::Value {
+    pub(crate) fn codex_live(&self) -> serde_json::Value {
         let raw = std::fs::read_to_string(self.codex_home().join("auth.json")).unwrap();
         serde_json::from_str(&raw).unwrap()
     }
 
     /// Sign Codex in with an API key rather than an account, the way `codex login
     /// --with-api-key` leaves it. The key is made up.
-    pub fn sign_in_codex_with_an_api_key(&self) {
+    pub(crate) fn sign_in_codex_with_an_api_key(&self) {
         let login = serde_json::json!({
             "auth_mode": "apikey",
             "OPENAI_API_KEY": "sk-not-a-real-key",
@@ -700,7 +699,7 @@ impl Env {
     /// The `PATH` a test runs with ends with the real one on macOS and Linux, and the real
     /// standalone install lives inside the developer's own `~/.codex`, which no test may go
     /// near. Running it fails loudly: nothing that only asks which version it is ever runs it.
-    pub fn install_fake_codex(&self, version: &str) {
+    pub(crate) fn install_fake_codex(&self, version: &str) {
         let installed = self
             .root
             .join("codex-install/releases")
@@ -721,7 +720,7 @@ impl Env {
 
     /// Make the fake OpenAI answer what a Codex login has left: a five-hour window and a
     /// weekly one, in the shape its usage endpoint answers with.
-    pub fn codex_usage(&mut self, five_hour: f64, weekly: f64) {
+    pub(crate) fn codex_usage(&mut self, five_hour: f64, weekly: f64) {
         let window = |percent: f64, seconds: i64, reset_at: i64| {
             serde_json::json!({
                 "used_percent": percent,
@@ -763,7 +762,7 @@ impl Env {
     /// argument line, because Pitboard itself refuses to and that refusal is what some of
     /// these tests are about. The item is this test's own, guarded like every other write
     /// here.
-    pub fn replace_live(&self, credential: &serde_json::Value) {
+    pub(crate) fn replace_live(&self, credential: &serde_json::Value) {
         let body = credential.to_string();
         match os::claude_code_login() {
             Kept::InKeychain => {}
@@ -809,7 +808,7 @@ impl Env {
         }
     }
 
-    pub fn live(&self) -> serde_json::Value {
+    pub(crate) fn live(&self) -> serde_json::Value {
         let raw = match os::claude_code_login() {
             Kept::InKeychain => pitboard_core::testing::vault_read(&self.context(), &self.service)
                 .unwrap()
@@ -820,19 +819,19 @@ impl Env {
         serde_json::from_str(&raw).unwrap()
     }
 
-    pub fn config(&self) -> serde_json::Value {
+    pub(crate) fn config(&self) -> serde_json::Value {
         let raw = std::fs::read_to_string(self.root.join(".claude.json")).unwrap();
         serde_json::from_str(&raw).unwrap()
     }
 
-    pub fn state(&self) -> serde_json::Value {
+    pub(crate) fn state(&self) -> serde_json::Value {
         let raw = std::fs::read_to_string(self.root.join("pitboard/state.json")).unwrap();
         serde_json::from_str(&raw).unwrap()
     }
 
     /// The label of `tool`'s account whose login Pitboard last recorded `tool`'s store
     /// holding.
-    pub fn in_use(&self, tool: &str) -> Option<String> {
+    pub(crate) fn in_use(&self, tool: &str) -> Option<String> {
         let state: pitboard_core::state::State = serde_json::from_value(self.state()).unwrap();
         let which = pitboard_core::provider::ProviderId::parse(tool).unwrap();
         state
@@ -842,7 +841,7 @@ impl Env {
 
     /// What Claude Code's `label` is filed under: its parked logins, its readings and a
     /// switch's record name it by this.
-    pub fn account_id(&self, label: &str) -> String {
+    pub(crate) fn account_id(&self, label: &str) -> String {
         self.state()["accounts"]
             .as_array()
             .and_then(|accounts| {
@@ -856,7 +855,7 @@ impl Env {
     }
 
     /// Change the account index the way only time or another tool would.
-    pub fn edit_state(&self, edit: impl FnOnce(&mut serde_json::Value)) {
+    pub(crate) fn edit_state(&self, edit: impl FnOnce(&mut serde_json::Value)) {
         let mut state = self.state();
         edit(&mut state);
         std::fs::write(self.root.join("pitboard/state.json"), state.to_string()).unwrap();
@@ -865,7 +864,7 @@ impl Env {
     /// What Anthropic last answered of each Claude Code account's five-hour and weekly limits,
     /// by label, written where and as every front end records an answer. Each limit resets an
     /// hour and a day from now.
-    pub fn measured(&self, shares: &[(&str, f64, f64)]) {
+    pub(crate) fn measured(&self, shares: &[(&str, f64, f64)]) {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .expect("after 1970")
@@ -904,7 +903,7 @@ impl Env {
     }
 
     /// Change the readings by account id, as a later answer from Anthropic would.
-    pub fn edit_readings(&self, edit: impl FnOnce(&mut serde_json::Value)) {
+    pub(crate) fn edit_readings(&self, edit: impl FnOnce(&mut serde_json::Value)) {
         let path = self.root.join("pitboard/usage.json");
         let mut readings: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
@@ -914,7 +913,7 @@ impl Env {
 
     /// Every account was last put in use an hour ago. Enrolling the account signed in puts
     /// it in use, and Pitboard switches nothing away from an account for five minutes after.
-    pub fn an_hour_on(&self) {
+    pub(crate) fn an_hour_on(&self) {
         self.edit_state(|state| {
             for account in state["accounts"].as_array_mut().expect("accounts") {
                 if let Some(at) = account["last_used_at"].as_i64() {
@@ -925,7 +924,7 @@ impl Env {
     }
 
     /// The item holding an account's parked login, if it has one.
-    pub fn parked_service(&self, label: &str) -> Option<String> {
+    pub(crate) fn parked_service(&self, label: &str) -> Option<String> {
         self.state()["accounts"]
             .as_array()?
             .iter()
@@ -936,37 +935,37 @@ impl Env {
 }
 
 // Claude Desktop accounts, each a session of its own, as a test's Claude signs in to them.
-pub const WORK: Person = Person {
+pub(crate) const WORK: Person = Person {
     uuid: "6f1c0a52-1111-4a6e-9d0b-2f6c1a9e7b10",
     session: "work-session",
 };
-pub const HOME: Person = Person {
+pub(crate) const HOME: Person = Person {
     uuid: "b2aa91c4-3333-4c7a-a1d2-5e8f0c21d4e5",
     session: "home-session",
 };
-pub const TRAVEL: Person = Person {
+pub(crate) const TRAVEL: Person = Person {
     uuid: "c3bb02d5-5555-4d8b-b2e3-6f9a1d32e5f6",
     session: "travel-session",
 };
 
 impl Env {
     // This test's own Claude: its data folder `data` and its app `Claude.app`, never the real ones.
-    pub fn claude_desktop(&self) -> PathBuf {
+    pub(crate) fn claude_desktop(&self) -> PathBuf {
         self.root.join("claude")
     }
 
     // Claude closed and signed in to `who`, as it leaves its folder, with a SQLite jar.
-    pub fn plant_desktop(&self, who: &Person) {
+    pub(crate) fn plant_desktop(&self, who: &Person) {
         desktop::plant(&self.claude_desktop().join("data"), who, JarAs::Sqlite);
     }
 
     // What Claude writes as it quits signed in to `who`, over whatever its folder holds.
-    pub fn claude_signs_in(&self, who: &Person) {
+    pub(crate) fn claude_signs_in(&self, who: &Person) {
         desktop::sign_in_on_disk(&self.claude_desktop().join("data"), who, JarAs::Sqlite);
     }
 
     // The stand-in under this test's own `Claude.app`, which `ps` lists there as Claude.
-    pub fn open_claude(&self) -> RunningClaude {
+    pub(crate) fn open_claude(&self) -> RunningClaude {
         let program = self
             .claude_desktop()
             .join("Claude.app/Contents/MacOS/Claude");
@@ -989,7 +988,7 @@ impl Env {
     }
 
     // `pitboard <args>` left running, its standard error read a line at a time.
-    pub fn running(&self, args: &[&str]) -> Running {
+    pub(crate) fn running(&self, args: &[&str]) -> Running {
         let mut running = self
             .command(args)
             .stdin(Stdio::null())
@@ -1014,7 +1013,11 @@ impl Env {
     }
 
     // A whole sign-in inside Claude: Claude opened once Pitboard waits, `who` signed in, quit.
-    pub fn sign_in_inside_claude(&self, args: &[&str], who: &Person) -> (String, String, i32) {
+    pub(crate) fn sign_in_inside_claude(
+        &self,
+        args: &[&str],
+        who: &Person,
+    ) -> (String, String, i32) {
         let mut signing_in = self.running(args);
         signing_in.until("Waiting for Claude to quit");
         let claude = self.open_claude();
@@ -1025,7 +1028,7 @@ impl Env {
     }
 
     // `desktop/work` in use and `desktop/home` parked, by a real enrolment, sign-in and switch.
-    pub fn desktop_accounts(&self) {
+    pub(crate) fn desktop_accounts(&self) {
         self.plant_desktop(&WORK);
         let (_, err, code) = self.run(&["enroll", "desktop/work"]);
         assert_eq!(code, 0, "enroll desktop/work: {err}");
@@ -1038,7 +1041,7 @@ impl Env {
 }
 
 // Killed and reaped on drop, panic or not: CI waits on a process a test leaves behind.
-pub struct RunningClaude(std::process::Child);
+pub(crate) struct RunningClaude(std::process::Child);
 
 impl Drop for RunningClaude {
     fn drop(&mut self) {
@@ -1048,7 +1051,7 @@ impl Drop for RunningClaude {
 }
 
 // Killed and reaped on drop, as `RunningClaude` is.
-pub struct Running {
+pub(crate) struct Running {
     running: std::process::Child,
     lines: mpsc::Receiver<String>,
     said: Vec<String>,
@@ -1056,7 +1059,7 @@ pub struct Running {
 
 impl Running {
     // Every line said so far, once one starting with `line` has been, within a minute.
-    pub fn until(&mut self, line: &str) -> Vec<String> {
+    pub(crate) fn until(&mut self, line: &str) -> Vec<String> {
         loop {
             let next = self
                 .lines
@@ -1071,7 +1074,7 @@ impl Running {
     }
 
     // What it printed and its exit status, once it has ended, within a minute.
-    pub fn finish(mut self) -> (String, String, i32) {
+    pub(crate) fn finish(mut self) -> (String, String, i32) {
         let deadline = Instant::now() + Duration::from_secs(60);
         // Its standard error closes as it exits, and nothing it starts keeps it.
         loop {
@@ -1186,7 +1189,7 @@ impl Drop for Env {
 
 /// A Codex login the way `codex login` writes one, for `account`: an ID token naming it,
 /// signed by nothing, and nothing in Pitboard checks a signature: it reads the claims.
-pub fn codex_login(account: &str, email: &str, refresh: &str) -> serde_json::Value {
+pub(crate) fn codex_login(account: &str, email: &str, refresh: &str) -> serde_json::Value {
     let claims = serde_json::json!({
         "email": email,
         "https://api.openai.com/auth": {
@@ -1288,7 +1291,7 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-pub fn credential(refresh: &str) -> serde_json::Value {
+pub(crate) fn credential(refresh: &str) -> serde_json::Value {
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()

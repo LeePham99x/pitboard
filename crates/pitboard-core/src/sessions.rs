@@ -79,7 +79,7 @@ pub(crate) fn exchange(ctx: &Context, permit: Permit, id: &str, run: &Run) -> Op
     {
         return Some(seen.run);
     }
-    let _held = crate::readings::exclusive(ctx, permit)?;
+    let _held = crate::usage::readings::exclusive(ctx, permit)?;
     let mut all = load(ctx);
     let before = all.remove(id).map(|seen| seen.run);
     all.retain(|_, seen| now - seen.seen_at < FORGET_AFTER);

@@ -12,15 +12,15 @@ use super::{Result, Settled, identify, renew};
 use crate::audit;
 use crate::context::Context;
 use crate::duty::ledger::Tries;
+use crate::duty::warm::decide::{self, Ledger, Standing};
+use crate::duty::warm::run;
+use crate::duty::warm::{self, Failure, Range};
 use crate::error::Error;
 use crate::provider::ProviderId;
 use crate::provider::{self, claude};
 use crate::service::Permit;
 use crate::service::Warning;
 use crate::state::Key;
-use crate::warm::decide::{self, Ledger, Standing};
-use crate::warm::run;
-use crate::warm::{self, Failure, Range};
 use crate::{park, status};
 use serde_json::Value;
 
@@ -50,12 +50,12 @@ pub(crate) enum Target {
     Account(Key),
 }
 
-/// Warms up `target`, as [`crate::warm`] says when, and records what it came to in the
+/// Warms up `target`, as [`crate::duty::warm`] says when, and records what it came to in the
 /// activity log as `warm-up` of the account, with `ok` or why it started nothing. With what a
 /// change of Claude Code's login warns of where its login in use was renewed.
 pub(crate) fn warm_up(settled: Settled, target: Target) -> Result<(WarmUp, Vec<Warning>)> {
     let Settled {
-        _exclusive,
+        _exclusive: exclusive,
         mut state,
         ctx,
         permit,
@@ -132,7 +132,7 @@ pub(crate) fn warm_up(settled: Settled, target: Target) -> Result<(WarmUp, Vec<W
     let home = run::home(ctx, ProviderId::Claude);
     let handed = hand_over(ctx, permit, &mut state, &key, &account, &home, now);
     // The tool runs for seconds; nothing else waits on Pitboard's lock meanwhile.
-    drop(_exclusive);
+    drop(exclusive);
     let came = handed.and_then(|handed| {
         let ran = run::run(ctx, handed.headless);
         let started = ran
@@ -354,7 +354,7 @@ impl RunLock {
 }
 
 /// Warms up `key`'s account, or stops. Whether that changed anything.
-pub fn turn(settled: Settled, key: &Key, on: bool) -> Result<bool> {
+pub(crate) fn turn(settled: Settled, key: &Key, on: bool) -> Result<bool> {
     let Settled {
         _exclusive,
         state,
@@ -380,7 +380,7 @@ pub fn turn(settled: Settled, key: &Key, on: bool) -> Result<bool> {
 }
 
 /// Warms up within `range` of each day.
-pub fn range(settled: Settled, range: Range) -> Result<Range> {
+pub(crate) fn range(settled: Settled, range: Range) -> Result<Range> {
     let Settled {
         _exclusive,
         ctx,
@@ -398,10 +398,10 @@ pub fn range(settled: Settled, range: Range) -> Result<Range> {
 #[cfg(test)]
 mod tests {
     use super::super::harness::{audit_lines, codex_account, machine};
+    use crate::duty::warm::{self, Range};
     use crate::error::Error;
     use crate::service::{Permit, Pitboard};
     use crate::state;
-    use crate::warm::{self, Range};
 
     #[test]
     #[cfg_attr(
@@ -577,11 +577,11 @@ mod tests {
         };
         use super::super::WarmUp;
         use crate::duty::Look;
+        use crate::duty::warm::run::{Ran, Started, WarmScript};
+        use crate::duty::warm::{Range, Standing};
         use crate::service::{Permit, Pitboard};
         use crate::time::{Clock, FixedClock};
         use crate::usage::{Snapshot, Source, Window};
-        use crate::warm::run::{Ran, Started, WarmScript};
-        use crate::warm::{Range, Standing};
         use jiff::tz::TimeZone;
         use std::sync::{Arc, Mutex};
 
@@ -637,7 +637,7 @@ mod tests {
 
         /// Pitboard's reading of `id`: its five-hour period not running, with `weekly` used.
         fn idle(m: &Machine, id: &str, weekly: f64) {
-            crate::readings::answered(
+            crate::usage::readings::answered(
                 &m.ctx,
                 Permit::for_a_test(),
                 &[(id.to_owned(), reading(None, weekly))],
@@ -821,7 +821,7 @@ mod tests {
             m.api.using("access-there-refresh", reading(None, 100.0));
             let refused = warmed(&m).expect_err("refused");
             assert_eq!(refused.error.code(), "warm_up_limit_reached");
-            let ledger = crate::warm::decide::Ledger::load(&m.ctx);
+            let ledger = crate::duty::warm::decide::Ledger::load(&m.ctx);
             let tries = &ledger.get("there").expect("kept").tries;
             assert_eq!((tries.attempts, tries.waits), (0, 1));
             assert_eq!(
@@ -839,7 +839,7 @@ mod tests {
             assert!(
                 matches!(
                     there.standing,
-                    Some(Standing::Held(crate::warm::Hold::LimitUsedUp { .. }))
+                    Some(Standing::Held(crate::duty::warm::Hold::LimitUsedUp { .. }))
                 ),
                 "the reading after it says so: {:?}",
                 there.standing
@@ -854,7 +854,7 @@ mod tests {
             m.api.using("access-there-refresh", reading(None, 20.0));
             let refused = warmed(&m).expect_err("refused");
             assert_eq!(refused.error.code(), "warm_up_not_started");
-            let ledger = crate::warm::decide::Ledger::load(&m.ctx);
+            let ledger = crate::duty::warm::decide::Ledger::load(&m.ctx);
             assert_eq!(ledger.get("there").expect("kept").tries.attempts, 1);
         }
 
@@ -863,7 +863,7 @@ mod tests {
         fn asked_for_now_a_running_period_is_said_and_a_held_one_refused() {
             let (m, script) = warming("warm-now", 0, ANSWERED);
             let pitboard = Pitboard::new(m.ctx.clone());
-            crate::readings::answered(
+            crate::usage::readings::answered(
                 &m.ctx,
                 Permit::for_a_test(),
                 &[("there".to_owned(), reading(Some(NOW + HOUR), 20.0))],
@@ -989,7 +989,7 @@ mod tests {
             idle(&m, "there", 20.0);
             let refused = warmed(&m).expect_err("refused");
             assert_eq!(refused.error.code(), "warm_up_timed_out");
-            let ledger = crate::warm::decide::Ledger::load(&m.ctx);
+            let ledger = crate::duty::warm::decide::Ledger::load(&m.ctx);
             let tries = &ledger.get("there").expect("kept").tries;
             assert_eq!((tries.attempts, tries.waits), (0, 1));
             assert!(matches!(
@@ -1009,7 +1009,7 @@ mod tests {
             idle(&m, "there", 20.0);
             let refused = warmed(&m).expect_err("refused");
             assert_eq!(refused.error.code(), "warm_up_login_refused");
-            let ledger = crate::warm::decide::Ledger::load(&m.ctx);
+            let ledger = crate::duty::warm::decide::Ledger::load(&m.ctx);
             assert_eq!(ledger.get("there").expect("kept").tries.attempts, 1);
             assert_eq!(
                 audit_lines(&m, "warm-up"),
@@ -1037,7 +1037,7 @@ mod tests {
 
             let refused = warmed(&m).expect_err("refused");
             assert!(script.runs().is_empty());
-            let ledger = crate::warm::decide::Ledger::load(&m.ctx);
+            let ledger = crate::duty::warm::decide::Ledger::load(&m.ctx);
             let tries = &ledger.get("there").expect("kept").tries;
             assert_eq!(
                 (tries.attempts, tries.waits),
@@ -1060,7 +1060,7 @@ mod tests {
             let refused = warmed(&m).expect_err("refused");
             assert_eq!(refused.error.code(), "warm_up_in_progress");
             assert!(
-                crate::warm::decide::Ledger::load(&m.ctx)
+                crate::duty::warm::decide::Ledger::load(&m.ctx)
                     .get("there")
                     .is_none()
             );
@@ -1120,7 +1120,10 @@ mod tests {
             pitboard.warm_turn("there", true).expect("turned on");
             idle(&m, "there", 20.0);
             let overview = pitboard.warm_overview().expect("an overview");
-            assert_eq!(overview.halted, Some(crate::warm::Halt::ProgramMissing));
+            assert_eq!(
+                overview.halted,
+                Some(crate::duty::warm::Halt::ProgramMissing)
+            );
             assert!(matches!(pitboard.warm_look(), Ok(Look::Stands(_))));
             let refused = pitboard.warm_now("there").expect_err("refused");
             assert_eq!(refused.error.code(), "claude_not_found");

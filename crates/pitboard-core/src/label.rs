@@ -18,19 +18,11 @@ pub const SEPARATOR: char = '/';
 
 /// What somebody typed, before it is looked up.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Spec<'a> {
+pub(crate) enum Spec<'a> {
     /// `work`: whichever provider has it, if only one does.
     Bare(&'a str),
     /// `codex/work`: this provider's, and no other's.
     Qualified(ProviderId, &'a str),
-}
-
-impl Spec<'_> {
-    pub fn label(&self) -> &str {
-        match self {
-            Spec::Bare(label) | Spec::Qualified(_, label) => label,
-        }
-    }
 }
 
 /// Read `provider/label`, or a bare label.
@@ -38,7 +30,7 @@ impl Spec<'_> {
 /// A prefix that is not a provider is an error rather than a label containing a slash,
 /// because the alternative is `pitboard use codx/work` quietly looking for an account
 /// literally called `codx/work` and reporting it missing.
-pub fn parse(typed: &str) -> Result<Spec<'_>> {
+pub(crate) fn parse(typed: &str) -> Result<Spec<'_>> {
     match typed.split_once(SEPARATOR) {
         None => Ok(Spec::Bare(typed)),
         Some((prefix, label)) => match ProviderId::parse(prefix) {
@@ -61,7 +53,7 @@ pub fn parse(typed: &str) -> Result<Spec<'_>> {
 /// the Claude Code account literally labelled `team/a` when no tool is called `team`, and
 /// when one is and has no such account. Otherwise the app, which passes the label it was
 /// given, could neither switch to it nor forget it.
-pub fn resolve<'a>(state: &'a State, typed: &str) -> Result<&'a Account> {
+pub(crate) fn resolve<'a>(state: &'a State, typed: &str) -> Result<&'a Account> {
     let literal = || state.accounts.iter().find(|a| a.label == typed);
     let spec = match parse(typed) {
         Ok(spec) => spec,
@@ -107,7 +99,7 @@ pub fn resolve<'a>(state: &'a State, typed: &str) -> Result<&'a Account> {
 }
 
 /// `claude/work`, as a person would type it back.
-pub fn qualify(account: &Account) -> String {
+pub(crate) fn qualify(account: &Account) -> String {
     account.key().qualified()
 }
 
@@ -154,7 +146,7 @@ pub const DEFAULT: ProviderId = ProviderId::Claude;
 
 /// Read `[provider/]label` as a name for an account that does not exist yet.
 ///
-/// Unlike [`resolve`], nothing is enrolled yet to disambiguate against, so a bare name
+/// Unlike `resolve`, nothing is enrolled yet to disambiguate against, so a bare name
 /// cannot mean "whichever tool has it". It means [`DEFAULT`].
 pub fn choose(typed: &str) -> std::result::Result<Chosen, String> {
     let (provider, label) = match typed.split_once(SEPARATOR) {

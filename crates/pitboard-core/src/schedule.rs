@@ -51,11 +51,12 @@ fn scheduler(ctx: &Context) -> Option<&dyn Scheduler> {
 }
 
 /// Where the schedule lives on this machine, or `None` where there is no scheduler.
-pub fn path(ctx: &Context) -> Option<PathBuf> {
+#[cfg(test)]
+pub(crate) fn path(ctx: &Context) -> Option<PathBuf> {
     scheduler(ctx).map(|s| s.location(ctx))
 }
 
-pub fn status(ctx: &Context) -> Installed {
+pub(crate) fn status(ctx: &Context) -> Installed {
     match scheduler(ctx) {
         None => Installed::Unsupported,
         Some(s) if s.installed(ctx) => Installed::Yes {
@@ -169,7 +170,7 @@ pub fn in_a_temporary_copy(program: &Path) -> bool {
 /// The Pitboard the installed schedule runs, read back from what `install` wrote. `None`
 /// where nothing is installed, and where what is there does not name one the way `install`
 /// writes it.
-pub fn installed_program(ctx: &Context) -> Option<PathBuf> {
+pub(crate) fn installed_program(ctx: &Context) -> Option<PathBuf> {
     scheduler(ctx)?.program(ctx)
 }
 
@@ -224,7 +225,7 @@ pub(crate) fn installed_proxies(ctx: &Context) -> Option<crate::proxy::Proxies> 
 /// `PITBOARD_HOME` names another directory would leave that directory's parked logins to
 /// run out while seeming to keep them alive. `uninstall` and `repair` are not refused for
 /// it, so a schedule can always be taken away.
-pub fn install(ctx: &Context, permit: Permit) -> Result<PathBuf> {
+pub(crate) fn install(ctx: &Context, permit: Permit) -> Result<PathBuf> {
     if !serves(ctx) {
         return Err(Error::ScheduleNotDefaultHome {
             home: crate::home::dir(ctx),
@@ -258,7 +259,7 @@ pub fn install(ctx: &Context, permit: Permit) -> Result<PathBuf> {
 /// started with the system's environment, which names no proxy a shell set, and a repair is
 /// no reason to change where the schedule's requests go. An app of 0.3.0 or earlier, whose
 /// schedules alone are repaired, wrote none.
-pub fn repair(ctx: &Context, permit: Permit) -> Result<bool> {
+pub(crate) fn repair(ctx: &Context, permit: Permit) -> Result<bool> {
     if scheduler(ctx).is_none() || started_this_run(ctx) {
         return Ok(false);
     }
@@ -311,7 +312,7 @@ fn put(
 }
 
 /// Take it away. `false` when there was nothing installed.
-pub fn uninstall(ctx: &Context, permit: Permit) -> Result<bool> {
+pub(crate) fn uninstall(ctx: &Context, permit: Permit) -> Result<bool> {
     let Some(scheduler) = scheduler(ctx) else {
         return Err(Error::ScheduleUnsupported);
     };

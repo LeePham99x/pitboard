@@ -39,7 +39,7 @@ use crate::service::Permit;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::thread;
 use std::time::{Duration, SystemTime};
 
@@ -47,14 +47,14 @@ use std::time::{Duration, SystemTime};
 /// and how often its holder touches it meanwhile, as Claude Code passes both for each of its
 /// own.
 #[derive(Debug, Clone, Copy)]
-pub struct Timing {
+pub(crate) struct Timing {
     stale: Duration,
     heartbeat: Duration,
 }
 
 /// Claude Code's write lock, `.storage-write`, around every write of its login (the
 /// register's `write_lock`): proper-lockfile touches it at half its staleness.
-pub const WRITE: Timing = Timing {
+pub(crate) const WRITE: Timing = Timing {
     stale: Duration::from_millis(15_000),
     heartbeat: Duration::from_millis(7_500),
 };
@@ -63,7 +63,7 @@ pub const WRITE: Timing = Timing {
 /// refresh of its login (the register's `refresh_lock`). Claude Code takes one over before
 /// it is stale only from a holder its owner record proves gone, and Pitboard writes none, so
 /// it waits on Pitboard's.
-pub const REFRESH: Timing = Timing {
+pub(crate) const REFRESH: Timing = Timing {
     stale: Duration::from_millis(60_000),
     heartbeat: Duration::from_millis(5_000),
 };
@@ -95,7 +95,7 @@ impl LockError {
     }
 }
 
-pub struct Guard {
+pub(crate) struct Guard {
     path: PathBuf,
     /// What lets the heartbeat touch the lock and its release remove it.
     permit: Permit,
@@ -109,7 +109,7 @@ impl Guard {
     /// Whether this lock stopped being ours while we held it. A caller that has written
     /// something must not report success on a compromised lock: for the span between the
     /// two, Claude Code believed it held the lock too.
-    pub fn compromised(&self) -> bool {
+    pub(crate) fn compromised(&self) -> bool {
         self.compromised.load(Ordering::Acquire)
     }
 }
@@ -117,7 +117,7 @@ impl Guard {
 impl Drop for Guard {
     fn drop(&mut self) {
         let (flag, wake) = &*self.stop;
-        *flag.lock().unwrap_or_else(|e| e.into_inner()) = true;
+        *flag.lock().unwrap_or_else(PoisonError::into_inner) = true;
         wake.notify_all();
         if let Some(handle) = self.beat.take() {
             let _ = handle.join();
@@ -154,7 +154,7 @@ fn touch(permit: Permit, path: &Path, at: SystemTime) -> io::Result<SystemTime> 
 
 /// Take the lock guarding `target`, kept as `timing` says, waiting up to about seven and a
 /// half seconds.
-pub fn acquire(permit: Permit, target: &Path, timing: Timing) -> Result<Guard, LockError> {
+pub(crate) fn acquire(permit: Permit, target: &Path, timing: Timing) -> Result<Guard, LockError> {
     let path = PathBuf::from(format!("{}.lock", target.display()));
     if let Some(parent) = path.parent() {
         crate::host::fs::create_dir_all(permit, parent).map_err(LockError::Io)?;
@@ -196,12 +196,12 @@ fn start(permit: Permit, path: PathBuf, timing: Timing) -> io::Result<Guard> {
         let (path, stop, compromised) = (path.clone(), Arc::clone(&stop), Arc::clone(&compromised));
         thread::spawn(move || {
             let (flag, wake) = &*stop;
-            let mut stopped = flag.lock().unwrap_or_else(|e| e.into_inner());
+            let mut stopped = flag.lock().unwrap_or_else(PoisonError::into_inner);
             loop {
                 // Checks the flag before waiting and after every wakeup, spurious or not.
                 let (next, _) = wake
                     .wait_timeout_while(stopped, timing.heartbeat, |stop| !*stop)
-                    .unwrap_or_else(|e| e.into_inner());
+                    .unwrap_or_else(PoisonError::into_inner);
                 stopped = next;
                 if *stopped {
                     return;

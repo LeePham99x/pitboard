@@ -3,37 +3,37 @@
 //! terminal, or when `NO_COLOR` asks it to.
 
 use anstyle::{AnsiColor, Style};
-use pitboard_core::pace::{Pace, Standing};
+use pitboard_core::usage::pace::{Pace, Standing};
 use pitboard_core::words::{self, UsageLevel};
 use std::fmt::Display;
 use unicode_width::UnicodeWidthStr;
 
-pub const BOLD: Style = Style::new().bold();
-pub const DIM: Style = Style::new().dimmed();
-pub const GOOD: Style = AnsiColor::Green.on_default();
-pub const WARN: Style = AnsiColor::Yellow.on_default();
-pub const BAD: Style = AnsiColor::Red.on_default();
+pub(crate) const BOLD: Style = Style::new().bold();
+pub(crate) const DIM: Style = Style::new().dimmed();
+pub(crate) const GOOD: Style = AnsiColor::Green.on_default();
+pub(crate) const WARN: Style = AnsiColor::Yellow.on_default();
+pub(crate) const BAD: Style = AnsiColor::Red.on_default();
 
-pub fn paint(style: Style, text: impl Display) -> String {
+pub(crate) fn paint(style: Style, text: impl Display) -> String {
     format!("{style}{text}{style:#}")
 }
 
 /// Left-aligned in `width` columns of a terminal, which is not the same as characters: an
 /// accented letter can be one column and a CJK one is two. Pad before painting: escape
 /// codes take no columns at all.
-pub fn pad(text: &str, width: usize) -> String {
+pub(crate) fn pad(text: &str, width: usize) -> String {
     let shown = UnicodeWidthStr::width(text);
     format!("{text}{}", " ".repeat(width.saturating_sub(shown)))
 }
 
 /// What a terminal gives this text, for working out a column width.
-pub fn columns(text: &str) -> usize {
+pub(crate) fn columns(text: &str) -> usize {
     UnicodeWidthStr::width(text)
 }
 
 /// How alarming a share of a limit is: the colour of its level, which changes where the
 /// app's tint does.
-pub fn level(percent: f64) -> Style {
+pub(crate) fn level(percent: f64) -> Style {
     match words::usage_level(percent) {
         UsageLevel::Plenty => GOOD,
         UsageLevel::Low => WARN,
@@ -43,7 +43,7 @@ pub fn level(percent: f64) -> Style {
 
 /// The colour a pace is said in: red over, green under, and dim at an even pace, which
 /// is nothing to act on.
-pub fn pace(standing: Standing) -> Style {
+pub(crate) fn pace(standing: Standing) -> Style {
     match standing {
         Standing::Over { .. } => BAD,
         Standing::Under => GOOD,
@@ -54,7 +54,7 @@ pub fn pace(standing: Standing) -> Style {
 /// A limit's bar: the share used, in the colour of how much that is, and a mark in the cell
 /// where an even use would be by now, in the colour of its pace. No mark at an even pace,
 /// nor where the pace means nothing.
-pub fn bar(percent: f64, pace: Option<&Pace>, width: usize) -> String {
+pub(crate) fn bar(percent: f64, pace: Option<&Pace>, width: usize) -> String {
     let filled = ((percent / 100.0) * width as f64)
         .round()
         .clamp(0.0, width as f64) as usize;

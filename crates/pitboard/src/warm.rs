@@ -1,18 +1,18 @@
 //! `pitboard warm`: which accounts Pitboard warms up, and when. What a warm-up is, and what it
-//! never does, is [`pitboard_core::warm`]'s.
+//! never does, is [`pitboard_core::duty::warm`]'s.
 
 use crate::ui::{BOLD, DIM, columns, pad, paint};
 use crate::watch::epoch;
 use crate::{Report, changed};
 use clap::Subcommand;
+use pitboard_core::duty::warm::{self, Halt, Overview, Range, Standing};
 use pitboard_core::service::Pitboard;
 use pitboard_core::switch::warm::WarmUp;
-use pitboard_core::warm::{self, Halt, Overview, Range, Standing};
 use pitboard_core::words;
 use serde_json::{Value, json};
 
 #[derive(Subcommand)]
-pub enum WarmCommand {
+pub(crate) enum WarmCommand {
     /// Start an account's five-hour period now, whatever the span, through one short request
     /// Claude Code makes with that account's login
     Now {
@@ -41,7 +41,7 @@ pub enum WarmCommand {
     },
 }
 
-pub fn run(pitboard: &Pitboard, what: Option<&WarmCommand>) -> Report {
+pub(crate) fn run(pitboard: &Pitboard, what: Option<&WarmCommand>) -> Report {
     match what {
         None => overview(pitboard),
         Some(WarmCommand::Now { label }) => now(pitboard, label),

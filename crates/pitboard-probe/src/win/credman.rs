@@ -86,7 +86,7 @@ fn describe(cred: &CREDENTIALW, details: bool, r: &crate::redact::Redactor) -> V
     v
 }
 
-pub fn names(leak_check: bool, config_dirs: &[PathBuf]) -> Report {
+pub(super) fn names(leak_check: bool, config_dirs: &[PathBuf]) -> Report {
     let logon = logon_now();
     let details = ffi::marker_present();
     let r = ffi::redactor();
@@ -175,7 +175,7 @@ fn dummy(n: u32) -> Vec<u8> {
     (0..n).map(|i| (i % 251) as u8).collect()
 }
 
-pub fn item(action: ItemAction, name: &str, persist: Persist, blob_bytes: u32) -> Report {
+pub(super) fn item(action: ItemAction, name: &str, persist: Persist, blob_bytes: u32) -> Report {
     let logon = logon_now();
     if !names::is_probe_item_name(name) {
         return Report::refused(
@@ -197,10 +197,10 @@ pub fn item(action: ItemAction, name: &str, persist: Persist, blob_bytes: u32) -
             let mut blob = dummy(blob_bytes.min(2560));
             let mut user = ffi::wide("pitboard-probe-user");
             let mut comment = ffi::wide("pitboard-probe item");
-            let mut target_mut = target.clone();
+            let mut target = target;
             let cred = CREDENTIALW {
                 Type: CRED_TYPE_GENERIC,
-                TargetName: target_mut.as_mut_ptr(),
+                TargetName: target.as_mut_ptr(),
                 Comment: comment.as_mut_ptr(),
                 CredentialBlobSize: blob.len() as u32,
                 CredentialBlob: blob.as_mut_ptr(),

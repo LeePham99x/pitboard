@@ -73,7 +73,7 @@ fn guarded(block: &'static str, scratch: &Path) -> Result<(), Report> {
     })
 }
 
-pub fn job(scratch: &Path, chain: Chain, rounds: u32) -> Report {
+pub(super) fn job(scratch: &Path, chain: Chain, rounds: u32) -> Report {
     if let Err(r) = guarded("job", scratch) {
         return r;
     }
@@ -192,7 +192,7 @@ pub fn job(scratch: &Path, chain: Chain, rounds: u32) -> Report {
 const NOT_THE_PROBES: u8 = 3;
 
 /// The leaf: whether this process is in the named job, as its exit code.
-pub fn job_leaf(job_name: &str) -> Outcome {
+pub(super) fn job_leaf(job_name: &str) -> Outcome {
     if !guard::is_probe_object_name(job_name) {
         return Outcome::Code(NOT_THE_PROBES);
     }
@@ -210,7 +210,7 @@ pub fn job_leaf(job_name: &str) -> Outcome {
 }
 
 /// The middle of the exe chain: start the leaf and pass its answer on.
-pub fn job_mid(job_name: &str) -> Outcome {
+pub(super) fn job_mid(job_name: &str) -> Outcome {
     if !guard::is_probe_object_name(job_name) {
         return Outcome::Code(NOT_THE_PROBES);
     }
@@ -232,7 +232,7 @@ pub fn job_mid(job_name: &str) -> Outcome {
 /// F2's opener: once in the named job, open the page with the default browser. It opens
 /// only the probe's own stand-in page, by an absolute path, so the shell's "open" can never
 /// start a program or reach a site; and only in a job the probe named.
-pub fn job_open_page(page: &Path, job_name: &str, linger_seconds: u64) -> Outcome {
+pub(super) fn job_open_page(page: &Path, job_name: &str, linger_seconds: u64) -> Outcome {
     let is_standin = page
         .file_name()
         .and_then(|n| n.to_str())
@@ -300,7 +300,7 @@ fn alive(pid: u32) -> bool {
 fn job_pids(job: &Owned) -> Vec<u32> {
     // Room for 256 pids after the list's two counts.
     let mut buf = vec![0usize; 2 + 256];
-    let size = (buf.len() * std::mem::size_of::<usize>()) as u32;
+    let size = (buf.len() * size_of::<usize>()) as u32;
     // SAFETY: `buf` holds `size` bytes, aligned for JOBOBJECT_BASIC_PROCESS_ID_LIST.
     let ok = unsafe {
         QueryInformationJobObject(
@@ -324,7 +324,7 @@ fn job_pids(job: &Owned) -> Vec<u32> {
         .collect()
 }
 
-pub fn job_browser(scratch: &Path, end: JobEnd, wait_seconds: u64) -> Report {
+pub(super) fn job_browser(scratch: &Path, end: JobEnd, wait_seconds: u64) -> Report {
     if let Err(r) = guarded("job-browser", scratch) {
         return r;
     }

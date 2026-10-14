@@ -903,7 +903,7 @@ fn lock(shown: &Mutex<Snapshot>) -> MutexGuard<'_, Snapshot> {
     // worth showing.
     shown
         .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// The model's two clocks: `Instant` for the timers, which on macOS is `CLOCK_UPTIME_RAW` and

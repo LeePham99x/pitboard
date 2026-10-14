@@ -4,7 +4,7 @@
 //! as `AppLaunch::earlier_preferences`: where the file is there, it wins.
 
 use super::EarlierPreferences;
-use pitboard_core::autoswitch::Threshold;
+use pitboard_core::duty::autoswitch::Threshold;
 use pitboard_core::provider::ProviderId;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;

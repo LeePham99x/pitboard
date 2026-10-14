@@ -10,7 +10,7 @@ use std::io::{self, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-pub enum Perms {
+pub(crate) enum Perms {
     /// Private to its owner, whatever the umask and whatever is already there.
     Secret,
     /// Exactly the access the file at the path has now, tighter or looser than private.
@@ -18,7 +18,7 @@ pub enum Perms {
     MatchExisting,
 }
 
-pub fn write(permit: Permit, path: &Path, contents: &[u8], perms: Perms) -> io::Result<()> {
+pub(crate) fn write(permit: Permit, path: &Path, contents: &[u8], perms: Perms) -> io::Result<()> {
     write_at(permit, path, contents, perms, "atomic.temp_written")
 }
 

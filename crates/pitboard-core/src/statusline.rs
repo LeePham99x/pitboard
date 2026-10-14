@@ -32,10 +32,10 @@
 
 use crate::context::Context;
 use crate::in_use::Known;
-use crate::pace::Standing;
 use crate::provider::ProviderId;
 use crate::sessions::{Limit, Run};
 use crate::state::{Account, State};
+use crate::usage::pace::Standing;
 use crate::usage::{Snapshot, Window};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
@@ -331,7 +331,11 @@ fn moved_since(run: &Run, before: Option<&Run>) -> Vec<Window> {
 /// Without a `permit`, which a run as root or under sudo is not given, it writes nothing:
 /// the session's last run is read and this one is not kept, and nothing is filed. The line
 /// is drawn the same way from the files as they are.
-pub fn read(ctx: &Context, permit: Option<crate::service::Permit>, input: &str) -> StatusLine {
+pub(crate) fn read(
+    ctx: &Context,
+    permit: Option<crate::service::Permit>,
+    input: &str,
+) -> StatusLine {
     let input: Value = serde_json::from_str(input).unwrap_or(Value::Null);
     let state = crate::state::load(ctx).unwrap_or_default();
     // Whose login Claude Code has stored, as Anthropic last said, and whether its config has
@@ -339,7 +343,7 @@ pub fn read(ctx: &Context, permit: Option<crate::service::Permit>, input: &str) 
     // message.
     let in_use = crate::in_use::known(ctx, &state, ProviderId::Claude);
     let now = ctx.now();
-    let remembered = crate::readings::load(ctx);
+    let remembered = crate::usage::readings::load(ctx);
     let run = run_of(&input);
     let before = input
         .get("session_id")
@@ -354,7 +358,7 @@ pub fn read(ctx: &Context, permit: Option<crate::service::Permit>, input: &str) 
     if let (Some(permit), Whose::Proven(account)) = (permit, &whose)
         && !moved.is_empty()
     {
-        crate::readings::moved(ctx, permit, &account.id, &moved);
+        crate::usage::readings::moved(ctx, permit, &account.id, &moved);
     }
     line(&state, &in_use, &remembered, &whose, &passed, &moved, now)
 }
@@ -362,8 +366,8 @@ pub fn read(ctx: &Context, permit: Option<crate::service::Permit>, input: &str) 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::Owner;
     use crate::in_use::InUse;
+    use crate::provider::Owner;
     use crate::service::Permit;
     use crate::time::{Clock, FixedClock};
     use crate::usage::{Source, Window};
@@ -602,7 +606,7 @@ mod tests {
     }
 
     fn recorded_for(ctx: &Context, label: &str) -> Option<Snapshot> {
-        crate::readings::load(ctx).remove(&format!("{label}-uuid"))
+        crate::usage::readings::load(ctx).remove(&format!("{label}-uuid"))
     }
 
     /// What Claude Code passes a session on a plan whose sessions pass the five-hour limit
@@ -824,7 +828,7 @@ mod tests {
     fn the_sessions_numbers_are_recorded_when_they_are_newer() {
         let (ctx, _scratch) = machine("records");
         crate::state::save(&ctx, Permit::for_a_test(), &state()).expect("an account index");
-        crate::readings::answered(
+        crate::usage::readings::answered(
             &ctx,
             Permit::for_a_test(),
             &[("work-uuid".into(), reading(22.0, 6.0, NOW - 60, NOW + 600))],
@@ -856,7 +860,7 @@ mod tests {
         let mut answered = reading(22.0, 6.0, NOW - 60, NOW + 600);
         answered.windows[0].severity = Some("normal".into());
         answered.windows[0].is_active = true;
-        crate::readings::answered(
+        crate::usage::readings::answered(
             &ctx,
             Permit::for_a_test(),
             &[("work-uuid".into(), answered)],
@@ -891,7 +895,7 @@ mod tests {
     fn a_session_holding_a_forgotten_accounts_numbers_is_not_recorded_as_the_one_in_use() {
         let (ctx, _scratch) = machine("forgotten");
         crate::state::save(&ctx, Permit::for_a_test(), &state()).expect("an account index");
-        crate::readings::answered(
+        crate::usage::readings::answered(
             &ctx,
             Permit::for_a_test(),
             &[
@@ -917,7 +921,7 @@ mod tests {
         let mut accounts = crate::state::load(&ctx).expect("an account index");
         accounts.accounts.retain(|a| a.label != "personal");
         crate::state::save(&ctx, Permit::for_a_test(), &accounts).expect("an account index");
-        crate::readings::forget(&ctx, Permit::for_a_test(), "personal-uuid");
+        crate::usage::readings::forget(&ctx, Permit::for_a_test(), "personal-uuid");
 
         let forgotten = run(
             &ctx,
@@ -942,7 +946,11 @@ mod tests {
         let (ctx, _scratch) = machine("first");
         crate::state::save(&ctx, Permit::for_a_test(), &state()).expect("an account index");
         let works = timed((10.0, NOW + 2 * HOUR), (30.0, NOW + 3 * DAY), NOW - 60);
-        crate::readings::answered(&ctx, Permit::for_a_test(), &[("work-uuid".into(), works)]);
+        crate::usage::readings::answered(
+            &ctx,
+            Permit::for_a_test(),
+            &[("work-uuid".into(), works)],
+        );
 
         let first = run(
             &ctx,
@@ -988,7 +996,7 @@ mod tests {
         for _ in 0..2 {
             assert_eq!(run(&ctx, "pane", &numbers).session, shares(12.0, 31.0));
         }
-        assert!(crate::readings::load(&ctx).is_empty());
+        assert!(crate::usage::readings::load(&ctx).is_empty());
     }
 
     /// A `/login` in Claude Code rewrites its config at once, and a session takes as long to
@@ -1003,7 +1011,7 @@ mod tests {
     fn a_response_from_the_account_before_a_login_is_known_by_its_windows() {
         let (ctx, _scratch) = machine("login");
         crate::state::save(&ctx, Permit::for_a_test(), &state()).expect("an account index");
-        crate::readings::answered(
+        crate::usage::readings::answered(
             &ctx,
             Permit::for_a_test(),
             &[
@@ -1048,7 +1056,11 @@ mod tests {
         let (ctx, _scratch) = machine("passed");
         crate::state::save(&ctx, Permit::for_a_test(), &state()).expect("an account index");
         let works = timed((50.0, NOW - 60), (30.0, NOW + 3 * DAY), NOW - HOUR);
-        crate::readings::answered(&ctx, Permit::for_a_test(), &[("work-uuid".into(), works)]);
+        crate::usage::readings::answered(
+            &ctx,
+            Permit::for_a_test(),
+            &[("work-uuid".into(), works)],
+        );
         open(&ctx, "pane");
         run(
             &ctx,
@@ -1074,8 +1086,12 @@ mod tests {
         let (ctx, _scratch) = machine("reset");
         crate::state::save(&ctx, Permit::for_a_test(), &state()).expect("an account index");
         let works = timed((40.0, NOW - 10), (30.0, NOW + 3 * DAY), NOW - HOUR);
-        crate::readings::answered(&ctx, Permit::for_a_test(), &[("work-uuid".into(), works)]);
-        let floor = crate::budget::floor_for(Some(&recorded(&ctx)));
+        crate::usage::readings::answered(
+            &ctx,
+            Permit::for_a_test(),
+            &[("work-uuid".into(), works)],
+        );
+        let floor = crate::usage::budget::floor_for(Some(&recorded(&ctx)));
         run(
             &at(&ctx, NOW - 60),
             "pane",
@@ -1098,7 +1114,10 @@ mod tests {
             .expect("work's numbers");
         let kinds: Vec<&str> = row.windows.iter().map(|w| w.kind.as_str()).collect();
         assert_eq!(kinds, ["session", "weekly_all"], "the row is kept");
-        assert_eq!(crate::budget::floor_for(Some(&recorded(&ctx))), floor);
+        assert_eq!(
+            crate::usage::budget::floor_for(Some(&recorded(&ctx))),
+            floor
+        );
     }
 
     /// A session goes on with the login it holds after a switch: for up to half a minute, or
@@ -1115,7 +1134,7 @@ mod tests {
         let (ctx, _scratch) = machine("before-a-switch");
         crate::state::save(&ctx, Permit::for_a_test(), &state()).expect("an account index");
         let personals = timed((50.0, NOW + 4 * HOUR), (60.0, NOW + 5 * DAY), NOW - 60);
-        crate::readings::answered(
+        crate::usage::readings::answered(
             &ctx,
             Permit::for_a_test(),
             &[
@@ -1179,10 +1198,10 @@ mod tests {
         assert_eq!(unread.current.as_deref(), Some("work"));
         assert!(!unread.sure);
         assert_eq!(unread.session, shares(97.0, 80.0));
-        assert!(crate::readings::load(&ctx).is_empty());
+        assert!(crate::usage::readings::load(&ctx).is_empty());
 
         let works = timed((10.0, NOW + 2 * HOUR), (30.0, NOW + 3 * DAY), NOW - 60);
-        crate::readings::answered(
+        crate::usage::readings::answered(
             &ctx,
             Permit::for_a_test(),
             &[("work-uuid".into(), works.clone())],
@@ -1196,7 +1215,7 @@ mod tests {
         assert!(!elsewhere.sure);
         assert_eq!(elsewhere.session, shares(98.0, 81.0));
         assert_eq!(
-            crate::readings::load(&ctx),
+            crate::usage::readings::load(&ctx),
             HashMap::from([("work-uuid".to_string(), works)])
         );
     }
@@ -1215,7 +1234,7 @@ mod tests {
         let (ctx, _scratch) = machine("guest");
         crate::state::save(&ctx, Permit::for_a_test(), &state()).expect("an account index");
         let works = timed((10.0, NOW + 2 * HOUR), (30.0, NOW + 3 * DAY), NOW - 60);
-        crate::readings::answered(
+        crate::usage::readings::answered(
             &ctx,
             Permit::for_a_test(),
             &[("work-uuid".into(), works.clone())],
@@ -1237,7 +1256,7 @@ mod tests {
         );
         assert_eq!(shown.session, shares(3.0, 31.0));
         assert_eq!(
-            crate::readings::load(&ctx),
+            crate::usage::readings::load(&ctx),
             HashMap::from([("work-uuid".to_string(), works)])
         );
 
@@ -1264,7 +1283,7 @@ mod tests {
     fn a_new_five_hour_window_is_taken_on_the_weekly_windows_word() {
         let (ctx, _scratch) = machine("next");
         crate::state::save(&ctx, Permit::for_a_test(), &state()).expect("an account index");
-        crate::readings::answered(
+        crate::usage::readings::answered(
             &ctx,
             Permit::for_a_test(),
             &[
@@ -1315,7 +1334,7 @@ mod tests {
         crate::state::save(&ctx, Permit::for_a_test(), &state()).expect("an account index");
         let works = timed((20.0, NOW + 2 * HOUR), (30.0, NOW + 3 * DAY), NOW - 60);
         let personals = timed((50.0, NOW + 2 * HOUR + 30), (60.0, NOW + 5 * DAY), NOW - 60);
-        crate::readings::answered(
+        crate::usage::readings::answered(
             &ctx,
             Permit::for_a_test(),
             &[
@@ -1328,7 +1347,7 @@ mod tests {
         let either = run(&ctx, "pane", &five_hour_alone(56.0, NOW + 2 * HOUR));
         assert!(!either.sure);
         assert_eq!(
-            crate::readings::load(&ctx),
+            crate::usage::readings::load(&ctx),
             HashMap::from([
                 ("work-uuid".to_string(), works),
                 ("personal-uuid".to_string(), personals),
@@ -1376,7 +1395,7 @@ mod tests {
             lists_every_limit: true,
             source: Source::Remembered,
         };
-        crate::readings::answered(
+        crate::usage::readings::answered(
             &ctx,
             Permit::for_a_test(),
             &[("work-uuid".into(), seats.clone())],

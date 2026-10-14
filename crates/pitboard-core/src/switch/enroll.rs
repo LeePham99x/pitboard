@@ -1,8 +1,8 @@
 use super::folder::awaited::{Wait, WaitStep};
 use super::{Error, Readied, Result, Settled, identify, identify_document, purge};
-use crate::api::Owner;
 use crate::context::Context;
 use crate::in_use::{self, InUse};
+use crate::provider::Owner;
 use crate::provider::folder::Folder;
 use crate::provider::{self, LoginKind, Provider, ProviderId};
 use crate::service::{Permit, Warning};
@@ -37,6 +37,15 @@ pub struct SignIn {
     /// The lock on `signin.lock` that makes this the one sign-in at a time, let go of as this
     /// is dropped.
     one_at_a_time: File,
+}
+
+// Without the context and the reservation, which say nothing of the sign-in itself.
+impl std::fmt::Debug for SignIn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SignIn")
+            .field("provider", &self.provider)
+            .finish_non_exhaustive()
+    }
 }
 
 // A program's sign-in as its enrolment reads it.
@@ -222,7 +231,7 @@ pub(crate) fn sign_in(
         .sign_in(ctx, permit, &dir)
         .stdout(std::io::stderr())
         .status()
-        .map_err(|e| started(tool.id(), e))?
+        .map_err(|e| started(tool.id(), &e))?
         .success();
     if !finished {
         return Err(Error::SignInIncomplete);
@@ -231,7 +240,7 @@ pub(crate) fn sign_in(
     Ok(pending)
 }
 
-fn started(which: ProviderId, e: std::io::Error) -> Error {
+fn started(which: ProviderId, e: &std::io::Error) -> Error {
     match e.kind() {
         std::io::ErrorKind::NotFound => Error::ProgramNotFound { tool: which },
         _ => Error::SignInIncomplete,
@@ -305,7 +314,7 @@ pub trait SignInScript: Send + Sync + std::fmt::Debug {
 
 /// One sign-in a `SignInScript` started, as its program would be driven.
 #[cfg(any(test, feature = "test-support"))]
-pub trait ScriptedSignIn: Send {
+pub trait ScriptedSignIn: Send + Sync {
     /// A line typed back. False where nothing reads it any more, as a closed stdin is.
     fn typed(&mut self, line: &str) -> bool;
     /// Waits for it to end, and says whether it ended signed in, with the login stored in its
@@ -321,7 +330,7 @@ pub trait ScriptedSignIn: Send {
 /// nothing until the browser is done. A reader that held the sign-in while it waited held
 /// up a paste or a cancel for as long, so what it says is its own handle, and stopping the
 /// tool is what ends the reading.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Said(std::sync::Arc<std::sync::Mutex<std::sync::mpsc::Receiver<String>>>);
 
 impl Said {
@@ -338,6 +347,14 @@ impl Said {
         wait: std::time::Duration,
     ) -> std::result::Result<String, std::sync::mpsc::RecvTimeoutError> {
         self.0.lock().expect("one reader").recv_timeout(wait)
+    }
+}
+
+impl std::fmt::Debug for WatchedSignIn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WatchedSignIn")
+            .field("pending", &self.pending)
+            .finish_non_exhaustive()
     }
 }
 
@@ -470,7 +487,7 @@ fn start_watched(
     // Only a script playing the tool is told whom the sign-in is for.
     let _ = label;
     let command = tool.sign_in(ctx, permit, &dir);
-    watch(command, pending).map_err(|e| started(which, e))
+    watch(command, pending).map_err(|e| started(which, &e))
 }
 
 /// Runs `command` with its output piped, as the sign-in `pending` reserved.
@@ -525,7 +542,7 @@ enum Readable {
 
 /// Enroll the account signed in to `which` now, or with `signed_in`, the one a sign-in just
 /// produced.
-pub fn enroll(
+pub(crate) fn enroll(
     settled: Settled,
     key: &Key,
     signed_in: Option<SignIn>,
@@ -1762,7 +1779,7 @@ mod tests {
                 // Where each tool stores the login of a sign-in into `dir`.
                 match Tool::of(which) {
                     Tool::Claude => host.live().plant(
-                        &crate::provider::claude::slot::service_for_dir(&dir.to_string_lossy()),
+                        &provider::claude::slot::service_for_dir(&dir.to_string_lossy()),
                         &document,
                     ),
                     Tool::Codex => host

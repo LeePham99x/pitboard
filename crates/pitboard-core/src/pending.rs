@@ -66,7 +66,7 @@ fn store_list(ctx: &Context, permit: Permit, names: &[(ParkKind, String)]) -> Re
 
 /// Write a name down before anything is written into it. A name here that never receives a
 /// login costs one line and is dropped by the next sweep.
-pub fn reserve(ctx: &Context, permit: Permit, service: &str) -> Result<()> {
+pub(crate) fn reserve(ctx: &Context, permit: Permit, service: &str) -> Result<()> {
     write_down(ctx, permit, (ParkKind::Vault, service.to_string()))
 }
 
@@ -124,7 +124,7 @@ impl Reclaimed {
 /// Runs in every `settle`, after the journal has had its say, so a switch's own park is
 /// already accounted for by then. It reads Pitboard's own list rather than asking the
 /// store, because it is on the path of every change and a keychain dump is not free.
-pub fn sweep(ctx: &Context, permit: Permit, state: &mut State) -> Result<Reclaimed> {
+pub(crate) fn sweep(ctx: &Context, permit: Permit, state: &mut State) -> Result<Reclaimed> {
     let ours = read(ctx);
     resolve(ctx, permit, state, ours.clone(), &ours)
 }
@@ -133,7 +133,7 @@ pub fn sweep(ctx: &Context, permit: Permit, state: &mut State) -> Result<Reclaim
 /// This is what finds a login whose name was lost with the list, or written by a version
 /// that had no list. `pitboard repair` runs it; nothing else does, because on macOS it
 /// dumps the keychain.
-pub fn reclaim(ctx: &Context, permit: Permit, state: &mut State) -> Result<Reclaimed> {
+pub(crate) fn reclaim(ctx: &Context, permit: Permit, state: &mut State) -> Result<Reclaimed> {
     let ours = read(ctx);
     let mut names = Vec::new();
     for kind in park::EVERY_KIND {
@@ -333,9 +333,8 @@ fn adopt(
     if !park.restorable_at(ctx.now()) {
         return None;
     }
-    let replaces_an_older_copy = |held: &crate::state::Park| {
-        written_here && held.login != park.login && park.parked_at >= held.parked_at
-    };
+    let replaces_an_older_copy =
+        |held: &Park| written_here && held.login != park.login && park.parked_at >= held.parked_at;
     if account
         .parked
         .as_ref()
@@ -370,7 +369,7 @@ fn release(ctx: &Context, permit: Permit, state: &mut State, service: &str) {
 
 /// Forget everything listed, without touching the vault. Only `uninstall` does this, once
 /// it has deleted what the names refer to.
-pub fn clear(ctx: &Context, permit: Permit) {
+pub(crate) fn clear(ctx: &Context, permit: Permit) {
     let _ = crate::host::fs::remove_file(permit, &path(ctx));
 }
 
@@ -378,7 +377,7 @@ pub fn clear(ctx: &Context, permit: Permit) {
 /// in `state`. A change records its park in `state.json` once the login is written, and the
 /// name stays on the list until the next change's sweep drops it; until then it is
 /// accounted for, not outstanding. Where the state could not be read, every name is.
-pub fn outstanding(ctx: &Context, state: Option<&State>) -> Vec<String> {
+pub(crate) fn outstanding(ctx: &Context, state: Option<&State>) -> Vec<String> {
     read(ctx)
         .into_iter()
         .map(|(_, service)| service)
@@ -391,14 +390,15 @@ mod tests {
     use super::*;
     use crate::host::memory::MemoryHost;
     use crate::provider::ProviderId;
+    use crate::store;
     use crate::time::{Clock, FixedClock};
     use serde_json::json;
     use std::sync::Arc;
 
     const NOW: i64 = 1_760_000_000;
 
-    fn work() -> crate::state::Key {
-        crate::state::Key::new(ProviderId::Claude, "work")
+    fn work() -> Key {
+        Key::new(ProviderId::Claude, "work")
     }
 
     fn machine(name: &str) -> (Context, Arc<MemoryHost>, PathBuf) {
@@ -503,7 +503,7 @@ mod tests {
     fn a_folder_name_in_pending_is_never_asked_of_the_vault() {
         let (ctx, mem, root) = machine("folder-line");
         let (gone, unread) = ("pitboard-park-desktop_a-1", "pitboard-aside-2");
-        let folder = crate::store::folder::at(&ctx, unread);
+        let folder = store::folder::at(&ctx, unread);
         std::fs::create_dir_all(folder.join("items")).unwrap();
         std::fs::write(folder.join("items/Cookies"), b"a jar").unwrap();
         std::fs::write(folder.join("manifest.json"), b"not json").unwrap();
@@ -548,7 +548,7 @@ mod tests {
         );
         reserve(&ctx, Permit::for_a_test(), vault).expect("reserved");
         mem.vault().plant(vault, &oauth("r").to_string());
-        let kept = crate::store::folder::at(&ctx, folder);
+        let kept = store::folder::at(&ctx, folder);
         std::fs::create_dir_all(kept.join("items")).unwrap();
         std::fs::write(kept.join("items/Cookies"), b"a jar").unwrap();
         let mut listed = std::fs::read_to_string(path(&ctx)).unwrap();
@@ -595,7 +595,7 @@ mod tests {
         );
         reserve(&ctx, Permit::for_a_test(), vault).expect("reserved");
         mem.vault().plant(vault, &oauth("r").to_string());
-        let kept = crate::store::folder::at(&ctx, folder);
+        let kept = store::folder::at(&ctx, folder);
         std::fs::create_dir_all(kept.join("items")).unwrap();
         std::fs::write(kept.join("items/Cookies"), b"a jar").unwrap();
         let mut listed = std::fs::read_to_string(path(&ctx)).unwrap();
@@ -646,10 +646,7 @@ mod tests {
         );
 
         let park = state
-            .get(&crate::state::Key::new(
-                crate::provider::ProviderId::Claude,
-                "work",
-            ))
+            .get(&Key::new(ProviderId::Claude, "work"))
             .expect("account")
             .parked
             .clone()
@@ -780,7 +777,7 @@ mod tests {
         mem.vault().plant(service, &oauth("r").to_string());
         mem.vault().fault(
             service,
-            crate::store::memory::Fault::Unreadable("the keychain is locked".into()),
+            store::memory::Fault::Unreadable("the keychain is locked".into()),
         );
 
         let mut state = State::default();
@@ -829,10 +826,7 @@ mod tests {
         assert_eq!(reclaimed.given_back[0].0, "work");
         assert_eq!(
             state
-                .get(&crate::state::Key::new(
-                    crate::provider::ProviderId::Claude,
-                    "work"
-                ))
+                .get(&Key::new(ProviderId::Claude, "work"))
                 .expect("account")
                 .parked
                 .as_ref()

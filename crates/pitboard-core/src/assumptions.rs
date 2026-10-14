@@ -18,7 +18,7 @@
 //! This is a register, not a check. Naming a fact does not verify it, and the list says so
 //! by dating every entry.
 //!
-//! Beside its facts, each register keeps a table, [`PerSystem`], that says of every fact on
+//! Beside its facts, each register keeps a table, `PerSystem`, that says of every fact on
 //! every system whether it was read there and from which build, why it is not read there,
 //! or which pull request of the Windows work reads it there. A fact that behaves
 //! differently on one system is a fact of its own for that system, never a second reading
@@ -80,17 +80,17 @@ pub enum OnSystem {
 /// One fact's line in the table beside its register: what the register says of it on each
 /// system. A field for each system, so no fact can be left out on one or said twice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PerSystem {
+pub(crate) struct PerSystem {
     /// The fact's name in the register.
-    pub name: &'static str,
-    pub macos: OnSystem,
-    pub linux: OnSystem,
-    pub windows: OnSystem,
+    pub(crate) name: &'static str,
+    pub(crate) macos: OnSystem,
+    pub(crate) linux: OnSystem,
+    pub(crate) windows: OnSystem,
 }
 
 impl PerSystem {
     /// What this line says on one system.
-    pub fn on(&self, platform: Platform) -> OnSystem {
+    pub(crate) fn on(&self, platform: Platform) -> OnSystem {
         match platform {
             Platform::MacOs => self.macos,
             Platform::Linux => self.linux,
@@ -120,7 +120,7 @@ pub struct Assumption {
     ///
     /// These are a cheap and shallow check. A literal being present does not prove the
     /// behaviour around it is unchanged; a literal disappearing does prove something moved.
-    /// Read from the builds [`read_on`] names, and only from those.
+    /// Read from the builds `read_on` names, and only from those.
     pub probe: &'static [&'static str],
     /// Literals whose *arrival* would disprove the fact.
     ///
@@ -151,7 +151,7 @@ pub fn of(provider: ProviderId) -> &'static [Assumption] {
 /// Each register says this beside its facts rather than in them: `Assumption` can be
 /// written as a literal outside this crate, and a field added to it would break every such
 /// literal.
-pub fn per_system(provider: ProviderId) -> &'static [PerSystem] {
+pub(crate) fn per_system(provider: ProviderId) -> &'static [PerSystem] {
     match provider {
         ProviderId::Claude => crate::provider::claude::assumptions::PER_SYSTEM,
         ProviderId::Codex => crate::provider::codex::assumptions::PER_SYSTEM,
@@ -190,7 +190,8 @@ pub fn verified_on(provider: ProviderId, name: &str, platform: Platform) -> Opti
 
 /// Every fact whose reading on a system waits on a pull request still to come, with that
 /// system. The Windows work is done when this is empty.
-pub fn pending() -> Vec<(ProviderId, &'static str, Platform)> {
+#[cfg(test)]
+pub(crate) fn pending() -> Vec<(ProviderId, &'static str, Platform)> {
     ProviderId::ALL
         .iter()
         .flat_map(|&provider| {
@@ -234,12 +235,14 @@ pub fn archive_platform(provider: ProviderId) -> Option<Platform> {
 ///
 /// A provider whose register is missing from here is one nothing checks, and nothing would
 /// say so, which is the same failure the registers exist to prevent.
-pub fn all() -> Vec<&'static Assumption> {
+#[cfg(test)]
+pub(crate) fn all() -> Vec<&'static Assumption> {
     ProviderId::ALL.iter().flat_map(|&p| of(p)).collect()
 }
 
 /// The assumption of that name, for a check or a probe that wants to speak about one.
-pub fn named(name: &str) -> Option<&'static Assumption> {
+#[cfg(test)]
+pub(crate) fn named(name: &str) -> Option<&'static Assumption> {
     all().into_iter().find(|a| a.name == name)
 }
 

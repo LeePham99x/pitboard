@@ -102,8 +102,8 @@ pub enum Cause {
 }
 
 impl Cause {
-    pub fn of(error: &crate::api::ApiError) -> Cause {
-        use crate::api::ApiError;
+    pub(crate) fn of(error: &crate::provider::claude::api::ApiError) -> Cause {
+        use crate::provider::claude::api::ApiError;
         match error {
             ApiError::Unauthorized => Cause::TokenExpired,
             ApiError::RateLimited { .. } => Cause::RateLimited,
@@ -115,7 +115,7 @@ impl Cause {
     }
 
     /// The same question asked of a provider rather than of Anthropic directly.
-    pub fn of_provider(error: &crate::provider::ProviderError) -> Cause {
+    pub(crate) fn of_provider(error: &crate::provider::ProviderError) -> Cause {
         use crate::provider::ProviderError as P;
         match error {
             P::Unauthorized => Cause::TokenExpired,
@@ -249,7 +249,7 @@ pub enum Error {
     #[error("`{label}` was not warmed up: {}.", crate::words::warm_failed(.why))]
     WarmUpFailed {
         label: String,
-        why: crate::warm::Failure,
+        why: crate::duty::warm::Failure,
     },
 
     #[error("`{label}` {why}, so it is not warmed up now.")]
@@ -260,7 +260,7 @@ pub enum Error {
     },
 
     #[error("Pitboard warms up no account now: {}.", crate::words::not_warming(.halt))]
-    WarmUpHalted { halt: crate::warm::Halt },
+    WarmUpHalted { halt: crate::duty::warm::Halt },
 
     #[error("another Pitboard is warming up an account. Try again in a minute.")]
     WarmUpInProgress,
@@ -2071,7 +2071,7 @@ mod tests {
             }
             .to_string(),
             Error::StateNamesUnknownTool {
-                path: path.clone(),
+                path,
                 tool: "gemini".into(),
             }
             .to_string(),
