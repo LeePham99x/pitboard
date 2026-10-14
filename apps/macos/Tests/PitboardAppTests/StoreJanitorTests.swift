@@ -1,46 +1,14 @@
 import Foundation
 import PitboardKit
 import Testing
-import WebKit
 
 @testable import PitboardApp
 
 // Which stores go, and when, is the model's, tested in pitboard-ffi's `model/windowing.rs`
 // and `account_windows/records.rs`.
 
-private struct InUse: Error {}
-
-/// Each refuses its deletion as many times as a test says, as a store a window or WebKit's
-/// network process still holds does.
 @MainActor
-final class StandInStores: WebsiteDataStores {
-    var refusals: [UUID: Int] = [:]
-    private(set) var made: [UUID] = []
-    private(set) var removed: [UUID] = []
-    private(set) var attempts: [UUID: Int] = [:]
-    private var stores: [UUID: WKWebsiteDataStore] = [:]
-
-    func store(for id: UUID) -> WKWebsiteDataStore {
-        made.append(id)
-        if let store = stores[id] { return store }
-        let store = WKWebsiteDataStore.nonPersistent()
-        stores[id] = store
-        return store
-    }
-
-    func remove(_ id: UUID) async throws {
-        attempts[id, default: 0] += 1
-        if let left = refusals[id], left > 0 {
-            refusals[id] = left - 1
-            throw InUse()
-        }
-        stores[id] = nil
-        removed.append(id)
-    }
-}
-
-@MainActor
-final class Pauses {
+private final class Pauses {
     private(set) var asked: [Duration] = []
     func pause(_ duration: Duration) async { asked.append(duration) }
 }

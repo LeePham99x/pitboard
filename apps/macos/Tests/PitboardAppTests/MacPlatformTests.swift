@@ -10,7 +10,7 @@ import UserNotifications
 
 /// Quits when asked only if it would: an app busy with work, or whose person said no, does
 /// not.
-private final class StandInApp: RunningApp {
+private final class StandInRunningApp: RunningApp {
     let bundleURL: URL?
     var isTerminated = false
     let quits: Bool
@@ -37,8 +37,8 @@ private final class StandInApp: RunningApp {
 /// Every running copy is asked the way Command-Q asks. One that declines is still running,
 /// and is asked again only when the model asks again.
 @Test func anAppIsAskedToQuitAndNeverForced() throws {
-    let busy = StandInApp(at: "/Applications/ChatGPT.app", quits: false)
-    let other = StandInApp(at: "/Users/x/Applications/ChatGPT.app", quits: true)
+    let busy = StandInRunningApp(at: "/Applications/ChatGPT.app", quits: false)
+    let other = StandInRunningApp(at: "/Users/x/Applications/ChatGPT.app", quits: true)
     let opened = Opened()
     let apps = MacAppControl(
         copies: { $0 == "com.openai.codex" ? [busy, other] : [] },

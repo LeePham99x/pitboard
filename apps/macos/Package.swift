@@ -47,9 +47,16 @@ let package = Package(
             dependencies: ["PitboardKit", "PitboardLinkTarget"],
             swiftSettings: handWritten
         ),
+        // Only test targets depend on it.
+        .target(
+            name: "PitboardTestSupport",
+            dependencies: ["PitboardKit"],
+            path: "Tests/PitboardTestSupport",
+            swiftSettings: handWritten
+        ),
         .testTarget(
             name: "PitboardKitTests",
-            dependencies: ["PitboardKit"],
+            dependencies: ["PitboardKit", "PitboardTestSupport"],
             swiftSettings: handWritten
         ),
         .testTarget(
@@ -59,7 +66,7 @@ let package = Package(
         ),
         .testTarget(
             name: "PitboardAppTests",
-            dependencies: ["PitboardApp"],
+            dependencies: ["PitboardApp", "PitboardTestSupport"],
             swiftSettings: handWritten
         ),
     ]
