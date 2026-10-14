@@ -4,6 +4,7 @@
 import {
   accounts,
   inUse,
+  tools,
   type Account,
   type Limit,
   type Moment,
@@ -39,9 +40,14 @@ export const isInUse = (a: Account, moment: Moment) => inUse[moment][a.tool] ===
 
 export const toolAccounts = (tool: Tool) => accounts.filter((a) => a.tool === tool);
 
-export const menuTitle = (a: Account) => `${a.label} · ${a.plan}`;
+// As every listing gives a tool's accounts: the one in use first (status.rs `assemble`).
+export const listed = (tool: Tool, moment: Moment) =>
+  [...toolAccounts(tool)].sort((a, b) => Number(isInUse(b, moment)) - Number(isInUse(a, moment)));
+
+export const menuTitle = (a: Account) => (a.plan ? `${a.label} · ${a.plan}` : a.label);
 
 export function menuLine(a: Account, moment: Moment): string {
+  if (a.limits.length === 0) return "No usage read";
   const said = a.limits.map((l) => {
     const runs = isInUse(a, moment) && l.runsOut ? ` (runs out in ${l.runsOut})` : "";
     return `${sentenceName[l.kind]} ${l.used}%${runs}`;
@@ -86,28 +92,42 @@ function bar(limit: Limit): string {
   return cells(0, at) + span(s === "over" ? "r" : "g", "│") + cells(at + 1, width);
 }
 
-// `pitboard` for one tool's accounts, the account in use first, as one HTML string a line.
+// A tool's heading in `pitboard`, with what is true of all its accounts said once on it.
+export function statusHeading(tool: Tool): string {
+  const name = `<b>${tools.find(([t]) => t === tool)![1]}</b>`;
+  return tool === "desktop"
+    ? `${name}${span("dim", " · Pitboard reads no usage for Claude Desktop")}`
+    : name;
+}
+
+function standingText(a: Account, on: boolean): string {
+  if (on)
+    return a.read
+      ? `${span("g", "signed in")} ${span("dim", `· read ${a.read} ago`)}`
+      : span("g", "signed in");
+  const until = a.parked
+    ? `good for ${a.parked.cli}`
+    : a.lapses
+      ? `sign-in may lapse in ${a.lapses.cli}`
+      : null;
+  return until ? `${span("g", "ready")} ${span("dim", `· ${until}`)}` : span("g", "ready");
+}
+
+// `pitboard` for one tool's accounts, one HTML string a line, usage lines only where it is read.
 export function statusLines(tool: Tool, moment: Moment): string[] {
-  const rows = [...toolAccounts(tool)].sort(
-    (a, b) => Number(isInUse(b, moment)) - Number(isInUse(a, moment)),
-  );
+  const rows = listed(tool, moment);
   const labelWidth = Math.max(...accounts.map((a) => a.label.length));
   const emailWidth = Math.max(...accounts.map((a) => a.email.length));
-  const planWidth = Math.max(...accounts.map((a) => a.plan.length));
+  const planWidth = Math.max(...accounts.map((a) => a.plan?.length ?? 0));
   const resetsWidth = Math.max(
     ...accounts.flatMap((a) => a.limits.map((l) => `resets in ${l.resets}`.length)),
   );
   const lines: string[] = [];
   rows.forEach((a, i) => {
-    if (i > 0) lines.push("");
+    if (i > 0 && a.limits.length > 0) lines.push("");
     const on = isInUse(a, moment);
-    const standingText = on
-      ? span("g", "signed in")
-      : a.parked
-        ? `${span("g", "ready")} ${span("dim", `· good for ${a.parked.cli}`)}`
-        : span("g", "ready");
     lines.push(
-      `${on ? span("g", "●") : span("dim", "○")} <b>${pad(a.label, labelWidth)}</b>  ${span("dim", pad(a.email, emailWidth))}  ${span("dim", pad(a.plan, planWidth))}  ${standingText}`,
+      `${on ? span("g", "●") : span("dim", "○")} <b>${pad(a.label, labelWidth)}</b>  ${span("dim", pad(a.email, emailWidth))}  ${span("dim", pad(a.plan ?? "", planWidth))}  ${standingText(a, on)}`,
     );
     for (const l of a.limits) {
       const resets = `resets in ${l.resets}`;

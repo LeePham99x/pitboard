@@ -1,28 +1,17 @@
 ---
-// MenuBarContent.swift's menu over a Claude Code session. With `demo`, site.ts plays the switch.
+// MenuBarContent.swift's menu over a Claude Code session; with `demo`, site.ts plays a switch.
 import MenuBar from "./MenuBar.astro";
 import MenuItem from "./MenuItem.astro";
 import Terminal from "./Terminal.astro";
 import { session } from "../../data/desk.ts";
-import { clock, type Tool } from "../../data/world.ts";
-import {
-  isInUse,
-  menuBarTitle,
-  menuLine,
-  menuTitle,
-  statusLine,
-  toolAccounts,
-} from "../../lib/words.ts";
+import { clock, tools, type Moment } from "../../data/world.ts";
+import { isInUse, listed, menuBarTitle, menuLine, menuTitle, statusLine } from "../../lib/words.ts";
 
 interface Props {
   demo?: boolean;
 }
 const { demo = false } = Astro.props;
-
-const tools: [Tool, string][] = [
-  ["claude", "Claude Code"],
-  ["codex", "Codex"],
-];
+const moments: Moment[] = demo ? ["before", "after"] : ["after"];
 const actions: ({ title: string; sub?: string; keys?: string; more?: boolean } | null)[] = [
   { title: "Add Account…", keys: "⌘N" },
   { title: "Refresh", sub: `Updated ${clock.read}`, keys: "⌘R" },
@@ -55,8 +44,8 @@ const rule =
   "bg-linear-to-b from-tw-rule to-tw-rule bg-size-[100%_1px] bg-position-[0_50%] bg-no-repeat";
 ---
 
-<div class="desk h-556" id={demo ? "demo" : undefined} aria-hidden="true" data-output>
-  <Terminal title="claude" class="top-44 bottom-14 left-14 w-416">
+<div class="desk h-668" id={demo ? "demo" : undefined} aria-hidden="true" data-output>
+  <Terminal title="claude" class="top-156 bottom-14 left-14 w-416">
     {session.map((line) => (
       <div set:html={line} />
     ))}
@@ -72,54 +61,56 @@ const rule =
   </Terminal>
   <MenuBar clock={clock.menuBar}>
     <div class="relative">
-      <MenuItem on>
+      <MenuItem on class="demo-shut:bg-transparent">
         <svg class="size-16 shrink-0"><use href="#pb-template"></use></svg>
         <span set:html={either(menuBarTitle("before"), menuBarTitle("after"))} />
       </MenuItem>
       <div
-        class="absolute top-26 left-0 w-max rounded-pt-10 bg-mn-bg py-5 whitespace-nowrap text-mn-text normal-nums shadow-menu backdrop-blur-xl backdrop-saturate-180"
+        class="absolute top-26 left-0 w-max rounded-pt-10 bg-mn-bg py-5 whitespace-nowrap text-mn-text normal-nums shadow-menu backdrop-blur-xl backdrop-saturate-180 transition-opacity duration-200 demo-shut:opacity-0"
       >
-        {tools.map(([tool, name], i) => (
-          <>
-            {i > 0 && <div class={sep} />}
-            <div class="pt-4.5 pr-18 pb-4 pl-30 text-pt-11 font-bold text-mn-dim">{name}</div>
-            {toolAccounts(tool).map((a) => {
-              const pick = demo && a.label === "work" && tool === "claude";
-              return <div
-                class:list={[
-                  row,
-                  "pt-3",
-                  {
-                    "bg-mn-hl text-white demo-moving:bg-transparent demo-moving:text-inherit": pick,
-                  },
-                ]}
-              >
-                <svg
+        {moments.map((moment) => <div
+          class:list={[
+            { "hidden demo-before:block": demo && moment === "before" },
+            { "demo-before:hidden": demo && moment === "after" },
+          ]}
+        >
+          {tools.map(([tool, name], i) => (
+            <>
+              {i > 0 && <div class={sep} />}
+              <div class="pt-4.5 pr-18 pb-4 pl-30 text-pt-11 font-bold text-mn-dim">{name}</div>
+              {listed(tool, moment).map((a) => {
+                const pick = demo && moment === "before" && tool === "claude" && a.label === "work";
+                return <div
                   class:list={[
-                    "absolute top-1/2 left-7 -mt-6 size-12 shrink-0 transition-opacity duration-200 ease-out",
-                    isInUse(a, "after") ? "opacity-100" : "opacity-0",
+                    row,
+                    "pt-3",
                     {
-                      "demo-before:opacity-100": demo && isInUse(a, "before"),
-                      "demo-before:opacity-0": pick,
+                      "bg-mn-hl text-white demo-moving:bg-transparent demo-moving:text-inherit":
+                        pick,
                     },
                   ]}
                 >
-                  <use href="#sf-check" />
-                </svg>
-                <span class="flex-1">
-                  <span class="block">{menuTitle(a)}</span>
-                  <span
-                    class:list={[
-                      "block text-pt-11/15",
-                      pick ? "text-inherit demo-moving:text-mn-sub" : "text-mn-sub",
-                    ]}
-                    set:html={either(menuLine(a, "before"), menuLine(a, "after"))}
-                  />
-                </span>
-              </div>;
-            })}
-          </>
-        ))}
+                  {isInUse(a, moment) && <svg
+                    class="absolute top-1/2 left-7 -mt-6 size-12 shrink-0"
+                  >
+                    <use href="#sf-check" />
+                  </svg>}
+                  <span class="flex-1">
+                    <span class="block">{menuTitle(a)}</span>
+                    <span
+                      class:list={[
+                        "block text-pt-11/15",
+                        pick ? "text-inherit demo-moving:text-mn-sub" : "text-mn-sub",
+                      ]}
+                    >
+                      {menuLine(a, moment)}
+                    </span>
+                  </span>
+                </div>;
+              })}
+            </>
+          ))}
+        </div>)}
         <div class={sep}></div>
         {actions.map((a) =>
           a === null ? (
@@ -148,7 +139,7 @@ const rule =
     </div>
   </MenuBar>
   {demo && <svg
-    class="pointer-events-none absolute top-83 left-372 z-3 h-21 w-14 origin-[1px_1px] transition-transform duration-800 ease-out demo-start:-translate-x-125 demo-start:-translate-y-60 demo-pick:scale-86 demo-pick:duration-100"
+    class="pointer-events-none absolute top-12 left-300 z-3 h-21 w-14 origin-[1px_1px] transition-transform duration-800 ease-out demo-start:-translate-x-53 demo-start:translate-y-40 demo-row:translate-x-72 demo-row:translate-y-100 demo-pick:scale-86 demo-pick:duration-100"
     viewBox="0 0 17 25"
   >
     <path

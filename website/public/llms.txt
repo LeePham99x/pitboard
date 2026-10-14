@@ -1,6 +1,8 @@
 # Pitboard
 
-> Switch Claude Code and OpenAI's Codex CLI between accounts without signing out.
+> Switch your AI coding tools between your own accounts without signing out.
+
+Pitboard works with Claude Code and OpenAI's Codex CLI on macOS and Linux, and with Claude Desktop on macOS.
 
 Install the command line on macOS or Linux:
 

@@ -1,5 +1,5 @@
 ---
-// As MainWindow.swift lays it out. A `crop` desk shows the window's top only.
+// As MainWindow.swift lays it out; a `crop` desk shows the window's top, a `fit` one all of it.
 import Lights from "./Lights.astro";
 
 interface Props {
@@ -8,8 +8,9 @@ interface Props {
   subtitle?: string;
   tools: string[];
   crop?: boolean;
+  fit?: boolean;
 }
-const { pane, title, subtitle, tools, crop = false } = Astro.props;
+const { pane, title, subtitle, tools, crop = false, fit = false } = Astro.props;
 const panes = [
   ["accounts", "Accounts", "sf-people"],
   ["activity", "Activity", "sf-clock"],
@@ -22,7 +23,7 @@ const log = pane === "activity";
   class:list={[
     "desk",
     crop ? "h-356" : "flex items-center justify-center py-20",
-    { "min-h-540": pane === "accounts" && !crop, "min-h-250": log },
+    { "min-h-540": pane === "accounts" && !crop && !fit, "min-h-250": log },
   ]}
   aria-hidden="true"
   data-output

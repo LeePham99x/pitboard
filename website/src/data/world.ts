@@ -1,6 +1,13 @@
 // Each plan has the limits Pitboard measured it with (ARCHITECTURE.md, "Anthropic's usage answer").
 
-export type Tool = "claude" | "codex";
+export type Tool = "claude" | "codex" | "desktop";
+
+// In the order every listing gives the tools (ProviderId::ALL).
+export const tools: [Tool, string][] = [
+  ["claude", "Claude Code"],
+  ["codex", "Codex"],
+  ["desktop", "Claude Desktop"],
+];
 
 export interface Limit {
   kind: "5h" | "week";
@@ -13,10 +20,14 @@ export interface Limit {
 export interface Account {
   tool: Tool;
   label: string;
+  // none for Claude Desktop: Pitboard cannot ask claude.ai whose its login is
   email: string;
-  plan: string;
+  plan: string | null;
   limits: Limit[];
   parked?: { cli: string; app: string };
+  // Claude Desktop's notes, as reference/account-status gives them
+  read?: string;
+  lapses?: { cli: string; app: string };
 }
 
 export const accounts: Account[] = [
@@ -59,12 +70,28 @@ export const accounts: Account[] = [
     plan: "Plus",
     limits: [{ kind: "5h", used: 0, even: null, resets: "5h 00m" }],
   },
+  {
+    tool: "desktop",
+    label: "home",
+    email: "",
+    plan: null,
+    limits: [],
+    read: "2h 05m",
+  },
+  {
+    tool: "desktop",
+    label: "office",
+    email: "",
+    plan: null,
+    limits: [],
+    lapses: { cli: "25d 3h", app: "25 days" },
+  },
 ];
 
 export type Moment = "before" | "after";
 export const inUse: Record<Moment, Record<Tool, string>> = {
-  before: { claude: "personal", codex: "main" },
-  after: { claude: "work", codex: "main" },
+  before: { claude: "personal", codex: "main", desktop: "home" },
+  after: { claude: "work", codex: "main", desktop: "home" },
 };
 
 // A five-hour period starts and resets on a ten-minute mark (concepts/usage#when-a-period-starts).
@@ -72,6 +99,8 @@ export const clock = {
   menuBar: "Tue 13 Oct 20:51",
   read: "20:50",
   switched: "20:49",
+  // Claude Desktop to home, read then: 2h 05m before the menu bar's clock
+  desktopSwitched: "18:46",
   warmed: "17:00",
   warmsAgain: "22:00",
   // when personal, left in use, runs out of its weekly limit

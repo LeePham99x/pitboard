@@ -271,8 +271,9 @@ function demo() {
       [500, "move"],
       [1400, "hl"],
       [1900, "pick"],
-      [2100, "sw"],
-      [3100, null],
+      [2100, "shut"],
+      [2900, "reach"],
+      [3800, null],
     ];
     for (const [at, state] of steps) {
       setTimeout(() => {
