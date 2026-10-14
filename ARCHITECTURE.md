@@ -514,8 +514,11 @@ window loads its site, and whatever the site's pages load, as a browser would.
     account window loads on `pitboard-fixture://`, from the site table. `mod.rs` holds what
     every build exports of them, the same in each: `PitboardModel::fixture`,
     `PitboardModel::fixture_in`, `fixture_names` and `fixture_page`, which without the
-    feature refuse, naming it, or name none. `tests.rs` is the macOS app's former
-    `FixtureTests.swift` ported, and what each UI test reads in its world.
+    feature refuse, naming it, or name none. `fixture` makes its model over the fixture's
+    apps and notifications; `fixture_in`, for a test of an app's bindings, over the
+    `AppControl` and `Notifications` it is handed, as `new` takes them. `tests.rs` is the
+    macOS app's former `FixtureTests.swift` ported, and what each UI test reads in its
+    world.
 - `crates/pitboard-sites`: the sites an account's window opens, and what a link from outside
   may be. A leaf, with no I/O and nothing of the core, whose one dependency is `url`, for
   IDNA alone.
@@ -1104,9 +1107,10 @@ window loads its site, and whatever the site's pages load, as a browser would.
   as a fixture's, in `PitboardKitTests`, started from Swift; every other Swift test hands
   `AppModel` snapshots from a stand-in for `PitboardModelProtocol`, which keeps what it is
   sent. So the launch, a listener, an `AppControl`, `Notifications`, a `LocalTime`, a first
-  snapshot and `Intent::Start` cross the bindings in a test, and the library calls a
-  listener written in C# or Swift, from a thread of its own, against a library built with
-  the `fixture` feature. Every `AppControl` a test hands the model is a stand-in that records
+  snapshot and `Intent::Start` cross the bindings in a test. Against a library built with
+  the `fixture` feature, the library calls a listener written in C# or Swift from a thread
+  of its own, and an `AppControl`, `Notifications` and `LocalTime` written in C#, which a
+  test hands `fixture_in`. Every `AppControl` a test hands the model is a stand-in that records
   what it was asked, never one that reaches a real app, and its `Notifications` keeps what
   it is given and posts nothing. A test that signs in runs the compiled stand-in as
   `claude`, in its scratch home, and plants the login it would have stored in
@@ -2900,6 +2904,14 @@ Nothing here ran on Windows.
   `AppControl`, `Notifications` and `LocalTime`. Its error is an exception named for it,
   `PlatformException`, whose variant the app throws. An `Option<String>` it gives back is a
   `string?`.
+- Each call the bindings write for a trait catches a `PlatformException` and hands Rust its
+  variant, and catches any other exception and hands Rust its message, which
+  `From<UnexpectedUniFFICallbackError>` makes `PlatformError::Failed`. So nothing an app's
+  code throws goes past Rust. Read in the generated `AppControl` calls.
+  `ModelTests.APlatformExceptionFromTheAppsAppControlStopsTheSwitch` measured the first on
+  13 October 2026, in CI on Linux with the .NET SDK 10.0.401 and the release library built
+  with the `fixture` feature: `RequestQuit` throwing `PlatformException.Failed` stopped the
+  switch as an error from `request_quit` does, and `Running` was not asked again.
 - A record holds a list as an array, and a C# record compares arrays by reference, so two
   snapshots read alike are not equal. `ModelTests.ASnapshotCarriesWhatWasRead` measures it.
   Two records C# makes with an empty collection expression, `[]`, for each list do compare

@@ -2,43 +2,16 @@ using System.Globalization;
 
 namespace Pitboard.Core.Tests;
 
-/// <summary>
-/// The app model's types, as the Windows app will hold them. One test makes a model and takes
-/// its first snapshot without starting it: a model reads nothing until it is sent an intent,
-/// and this one is given a fresh folder for every home it could read all the same. So the
-/// launch, the listener, AppControl, Notifications, LocalTime and the snapshot cross the
-/// library there. The library calls a listener written in C# from a fixture's model, which
-/// may be started since it reads no machine, against a library built with the `fixture`
-/// feature; against one built without, that test is skipped and says why. What the model
-/// does is the Rust tests' to prove.
-///
-/// Loading the library compares the checksum of every export, the model's constructor and
-/// methods, the listener's one method and each of AppControl's among them, and hands the
-/// library each trait's table of calls. The rest proves the records, the intents, the
-/// listener and AppControl have the shape the app's code is written against.
-/// </summary>
 [TestClass]
 public sealed class ModelTests
 {
     private const long At = 1_800_000_000;
 
-    /// <summary>
-    /// What an app's listener does: keeps each snapshot it is told of, and refuses one it
-    /// cannot take in the one way the model takes a refusal.
-    /// </summary>
     private sealed class Keeping : ModelListener
     {
         public List<Snapshot> Told { get; } = [];
 
-        public void Changed(Snapshot snapshot)
-        {
-            if (snapshot.Revision == 0)
-            {
-                throw new PlatformException.Failed("the first snapshot is the app's to take");
-            }
-
-            Told.Add(snapshot);
-        }
+        public void Changed(Snapshot snapshot) => Told.Add(snapshot);
     }
 
     /// <summary>
@@ -58,24 +31,50 @@ public sealed class ModelTests
             At(epoch).ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
     }
 
-    /// <summary>
-    /// What an app's Notifications does: posts what it is given, and throws what its system
-    /// refuses as the one exception the model takes from it.
-    /// </summary>
     private sealed class Posting : Notifications
     {
-        public List<RunOutNotice> Posted { get; } = [];
+        public Calls<RunOutNotice> Posted { get; } = new();
 
-        public bool Allowed { get; set; } = true;
+        public void Post(RunOutNotice notice) => Posted.Add(notice);
+    }
 
-        public void Post(RunOutNotice notice)
+    // Rust calls the app's interfaces on threads of its own, so a test waits for a call.
+    private sealed class Calls<T>
+    {
+        private readonly List<T> _calls = [];
+
+        public T[] All
         {
-            if (!Allowed)
+            get
             {
-                throw new PlatformException.Failed("notifications are not allowed");
+                lock (_calls)
+                {
+                    return [.. _calls];
+                }
             }
+        }
 
-            Posted.Add(notice);
+        public void Add(T call)
+        {
+            lock (_calls)
+            {
+                _calls.Add(call);
+                Monitor.PulseAll(_calls);
+            }
+        }
+
+        public T[] Until(int count, TimeSpan patience)
+        {
+            var until = DateTime.UtcNow + patience;
+            lock (_calls)
+            {
+                for (var left = patience; _calls.Count < count && left > TimeSpan.Zero; left = until - DateTime.UtcNow)
+                {
+                    Monitor.Wait(_calls, left);
+                }
+
+                return [.. _calls];
+            }
         }
     }
 
@@ -139,31 +138,47 @@ public sealed class ModelTests
             From: 360, To: 1320, RangeLabel: "06:00 to 22:00", Accounts: [], Standing: null, Note: "",
             Enabled: false));
 
-    /// <summary>
-    /// What an app's AppControl does: says what runs, asks an app to quit, opens one again,
-    /// and throws what its system refuses as the one exception the model takes from it.
-    /// </summary>
+    // ChatGPT, open, as the fixture chatGPTOpen's process list has it.
     private sealed class StandInApps : AppControl
     {
-        public HashSet<string> Open { get; } = ["OpenAI.ChatGPT"];
+        public const string ChatGpt = "com.openai.codex";
 
-        public List<string> Asked { get; } = [];
+        public const string ChatGptCopy = "/Applications/ChatGPT.app";
 
-        public string? Running(string app) =>
-            Open.Contains(app) ? $@"C:\Program Files\{app}\{app}.exe" : null;
+        private bool _chatGptOpen = true;
+
+        public Calls<string> Asked { get; } = new();
+
+        public bool RefusesToQuit { get; init; }
+
+        public string? Running(string app)
+        {
+            Asked.Add($"running {app}");
+            return app == ChatGpt && _chatGptOpen ? ChatGptCopy : null;
+        }
 
         public void RequestQuit(string app)
         {
-            if (!Open.Remove(app))
+            Asked.Add($"quit {app}");
+            if (RefusesToQuit)
             {
-                throw new PlatformException.Failed($"{app} is not running");
+                throw new PlatformException.Failed($"{app} would not quit");
             }
 
-            Asked.Add($"quit {app}");
+            if (app == ChatGpt)
+            {
+                _chatGptOpen = false;
+            }
         }
 
-        public void Reopen(string location, bool front) =>
+        public void Reopen(string location, bool front)
+        {
             Asked.Add(front ? $"open-front {location}" : $"open {location}");
+            if (location == ChatGptCopy)
+            {
+                _chatGptOpen = true;
+            }
+        }
     }
 
     [TestMethod]
@@ -219,8 +234,8 @@ public sealed class ModelTests
             Assert.IsNull(first.Machine.CommandLine.Found);
             Assert.AreEqual(0UL, model.Snapshot().Revision);
             Assert.IsEmpty(keeping.Told);
-            Assert.IsEmpty(apps.Asked);
-            Assert.IsEmpty(posting.Posted);
+            Assert.IsEmpty(apps.Asked.All);
+            Assert.IsEmpty(posting.Posted.All);
             Assert.IsEmpty(Directory.EnumerateFileSystemEntries(home));
         }
         finally
@@ -505,29 +520,6 @@ public sealed class ModelTests
     }
 
     /// <summary>
-    /// AppControl is an interface the app implements over its system's own apps, by an app id
-    /// of one string, and what its system refuses it throws as the one exception the model
-    /// takes from it.
-    /// </summary>
-    [TestMethod]
-    public void AppControlIsAnInterfaceTheAppImplements()
-    {
-        var stand = new StandInApps();
-        AppControl apps = stand;
-
-        var copy = apps.Running("OpenAI.ChatGPT");
-        apps.RequestQuit("OpenAI.ChatGPT");
-        apps.Reopen(copy!, false);
-        var refused = Assert.ThrowsExactly<PlatformException.Failed>(() => apps.RequestQuit("OpenAI.ChatGPT"));
-
-        Assert.AreEqual(@"C:\Program Files\OpenAI.ChatGPT\OpenAI.ChatGPT.exe", copy);
-        Assert.IsNull(apps.Running("OpenAI.ChatGPT"));
-        CollectionAssert.AreEqual(
-            new[] { "quit OpenAI.ChatGPT", $"open {copy}" }, stand.Asked);
-        Assert.AreEqual("OpenAI.ChatGPT is not running", refused.reason);
-    }
-
-    /// <summary>
     /// A snapshot carries the accounts as the core's records do, and what went wrong as a
     /// record of its own. Its lists are arrays, which a C# record compares by reference: two
     /// snapshots read alike are not equal, so the app goes by the revision and syncs each list
@@ -545,23 +537,6 @@ public sealed class ModelTests
         Assert.AreEqual("unreachable", failed.ReadFailure?.Code);
         Assert.AreEqual(snapshot.Revision, failed.Revision);
         Assert.AreNotEqual(Read(3), Read(3));
-    }
-
-    /// <summary>
-    /// The listener is an interface the app implements, and what it cannot take in it throws
-    /// as the one exception the model takes from it.
-    /// </summary>
-    [TestMethod]
-    public void AListenerIsAnInterfaceTheAppImplements()
-    {
-        var keeping = new Keeping();
-        ModelListener listener = keeping;
-
-        listener.Changed(Read(1));
-        var refused = Assert.ThrowsExactly<PlatformException.Failed>(() => listener.Changed(Read(0)));
-
-        Assert.AreEqual(1UL, keeping.Told.Single().Revision);
-        Assert.AreEqual("the first snapshot is the app's to take", refused.reason);
     }
 
     /// <summary>
@@ -792,22 +767,6 @@ public sealed class ModelTests
     }
 
     /// <summary>
-    /// LocalTime is an interface the app implements over its system's own clock, which the
-    /// model asks for each clock time it says.
-    /// </summary>
-    [TestMethod]
-    public void LocalTimeIsAnInterfaceTheAppImplements()
-    {
-        LocalTime clock = new InUtc();
-
-        Assert.AreEqual("08:00", clock.Clock(At, false));
-        Assert.AreEqual("Fri 08:00", clock.Clock(At, true));
-        Assert.IsTrue(clock.SameDay(At, At + 3_600));
-        Assert.IsFalse(clock.SameDay(At, At + 86_400));
-        Assert.AreEqual("2027-01-15 08:00", clock.DateAndTime(At));
-    }
-
-    /// <summary>
     /// A sheet's Save is offered by the library's own rule, which the model saves by: a name
     /// without the white space around it, and in a rename one the account does not have.
     /// </summary>
@@ -818,32 +777,6 @@ public sealed class ModelTests
         Assert.IsNull(PitboardFfiMethods.NameToSave(new Sheet.Name("claude", "a@example.com"), " \n"));
         Assert.IsNull(PitboardFfiMethods.NameToSave(new Sheet.Rename("claude", "work"), " work "));
         Assert.AreEqual("work", PitboardFfiMethods.NameToSave(new Sheet.SignInAgain("codex", "work"), ""));
-    }
-
-    /// <summary>
-    /// Notifications is an interface the app implements over its system's own, which the
-    /// model posts each run-out through once, with the account its Switch button switches
-    /// to, and a refusal is the one exception the model takes from it.
-    /// </summary>
-    [TestMethod]
-    public void NotificationsIsAnInterfaceTheAppImplements()
-    {
-        var posting = new Posting();
-        Notifications notifications = posting;
-        var ranOut = new RunOutNotice(
-            Id: "claude/work/session/-7200", Title: "work has no 5-hour limit left", Subtitle: null,
-            Body: "spare has 80% of its own left.", SwitchTo: "claude/spare");
-
-        notifications.Post(ranOut);
-        posting.Allowed = false;
-        var refused = Assert.ThrowsExactly<PlatformException.Failed>(() => notifications.Post(ranOut));
-
-        Assert.AreEqual(ranOut, posting.Posted.Single());
-        var switchTo = posting.Posted[0].SwitchTo;
-        Assert.IsNotNull(switchTo);
-        Assert.AreEqual<Intent>(new Intent.SwitchTo("claude/spare"), new Intent.SwitchTo(switchTo));
-        Assert.IsNull(posting.Posted[0].Subtitle);
-        Assert.AreEqual("notifications are not allowed", refused.reason);
     }
 
     /// <summary>
@@ -940,46 +873,54 @@ public sealed class ModelTests
         Assert.IsEmpty(listener.Told);
     }
 
-    /// <summary>
-    /// A fixture's model, made by name from a library built with the `fixture` feature, is
-    /// started, reads the accounts of its world on the real core, and tells a listener
-    /// written here of them from another thread than the test's, and not one of .NET's thread
-    /// pool: the call crosses from Rust into C# on a thread of the library's. It reads
-    /// nothing of this machine, so it may be started. It launches into a temporary directory
-    /// of its own, which it removes once it is done, rather than the one an app's fixture is
-    /// kept in, so it empties neither the world of an app launched into a fixture nor that of
-    /// another run of these tests, as the Swift test of the same does. Against a library built
-    /// without the feature there is no fixture, and the test says so rather than failing.
-    /// </summary>
-    [TestMethod]
-    public void AFixturesModelStartsAndTellsAListenerOfItsAccounts()
+    private static readonly TimeSpan Patience = TimeSpan.FromSeconds(30);
+
+    // Each test's own, so none empties the fixture of a debug build or of another run.
+    private readonly string _own = Path.Combine(Path.GetTempPath(), $"pitboard-bindings-{Guid.NewGuid():N}");
+
+    [TestCleanup]
+    public void RemoveTheFixture()
+    {
+        if (Directory.Exists(_own))
+        {
+            Directory.Delete(_own, recursive: true);
+        }
+    }
+
+    private static void NeedsFixtures()
     {
         if (PitboardFfiMethods.FixtureNames().Length == 0)
         {
             Assert.Inconclusive(NoFixtures);
         }
+    }
 
-        var waiting = new Waiting();
-        var own = Path.Combine(Path.GetTempPath(), $"pitboard-bindings-{Guid.NewGuid():N}");
-        Snapshot? read;
-        try
-        {
-            using var model = PitboardModel.FixtureIn("oneTool", own, waiting, new InUtc());
-            model.Send(new Intent.Start());
-            read = waiting.Until(
-                snapshot => snapshot is { Reading: false, UpdatedAt: not null, Status.Accounts.Length: > 0 },
-                TimeSpan.FromSeconds(30));
-            model.Shutdown();
-        }
-        finally
-        {
-            if (Directory.Exists(own))
-            {
-                Directory.Delete(own, recursive: true);
-            }
-        }
+    private static bool ReadIn(Snapshot snapshot) =>
+        snapshot is { Reading: false, UpdatedAt: not null, Status.Accounts.Length: > 0 };
 
+    private static bool Uses(Snapshot snapshot, string qualified) =>
+        snapshot is { SwitchUnderWay: null, Status: { } status }
+        && status.Accounts.Any(account => account.SignedIn && account.Qualified == qualified);
+
+    private static Snapshot Start(PitboardModel model, Waiting waiting)
+    {
+        model.Send(new Intent.Start());
+        var read = waiting.Until(ReadIn, Patience);
         Assert.IsNotNull(read, "the fixture's model told of no accounts read");
+        return read;
+    }
+
+    [TestMethod]
+    public void AFixturesModelStartsAndTellsAListenerOfItsAccounts()
+    {
+        NeedsFixtures();
+        var waiting = new Waiting();
+        var clock = new InUtc();
+        using var model = PitboardModel.FixtureIn("oneTool", _own, waiting, new StandInApps(), new Posting(), clock);
+
+        var read = Start(model, waiting);
+        model.Shutdown();
+
         CollectionAssert.AreEqual(
             OneToolsAccounts, read.Status!.Accounts.Select(account => account.Qualified).ToArray());
         Assert.IsTrue(read.Status.Accounts[0].SignedIn);
@@ -987,5 +928,89 @@ public sealed class ModelTests
         Assert.IsNotNull(waiting.TellingThread);
         Assert.AreNotEqual(Environment.CurrentManagedThreadId, waiting.TellingThread);
         Assert.IsFalse(waiting.ToldOnThePool, "told on a thread of .NET's thread pool");
+        var readAt = read.UpdatedAt!.Value;
+        Assert.AreEqual($"Updated {clock.Clock(readAt, !clock.SameDay(readAt, read.Now))}", read.UpdatedMenu);
+    }
+
+    [TestMethod]
+    public void ACodexSwitchAsksTheAppsAppControlToQuitChatGptAndOpenItAgain()
+    {
+        NeedsFixtures();
+        var waiting = new Waiting();
+        var apps = new StandInApps();
+        using var model = PitboardModel.FixtureIn("chatGPTOpen", _own, waiting, apps, new Posting(), new InUtc());
+        Start(model, waiting);
+
+        model.Send(new Intent.SwitchTo("codex/spare"));
+        var asked = waiting.Until(snapshot => snapshot.QuitQuestion is not null, Patience);
+        Assert.IsNotNull(asked, "never asked about quitting ChatGPT");
+        Assert.AreEqual(new QuitQuestion("codex/spare", StandInApps.ChatGpt, "ChatGPT"), asked.QuitQuestion);
+        model.Send(new Intent.QuitAndSwitch("codex/spare"));
+        var switched = waiting.Until(snapshot => Uses(snapshot, "codex/spare"), Patience);
+        var calls = apps.Asked.Until(5, Patience);
+        model.Shutdown();
+
+        Assert.IsNotNull(switched, "the switch was never read back");
+        string[] walked =
+        [
+            $"running {StandInApps.ChatGpt}", $"running {StandInApps.ChatGpt}", $"quit {StandInApps.ChatGpt}",
+            $"running {StandInApps.ChatGpt}", $"open {StandInApps.ChatGptCopy}",
+        ];
+        CollectionAssert.AreEqual(walked, calls);
+    }
+
+    [TestMethod]
+    public void APlatformExceptionFromTheAppsAppControlStopsTheSwitch()
+    {
+        NeedsFixtures();
+        var waiting = new Waiting();
+        var apps = new StandInApps { RefusesToQuit = true };
+        using var model = PitboardModel.FixtureIn("chatGPTOpen", _own, waiting, apps, new Posting(), new InUtc());
+        Start(model, waiting);
+
+        model.Send(new Intent.SwitchTo("codex/spare"));
+        Assert.IsNotNull(waiting.Until(snapshot => snapshot.QuitQuestion is not null, Patience));
+        model.Send(new Intent.QuitAndSwitch("codex/spare"));
+        var stopped = waiting.Until(snapshot => snapshot.Failure is not null, Patience);
+        model.Shutdown();
+
+        Assert.IsNotNull(stopped, "the switch never stopped");
+        var failure = stopped.Failure!;
+        Assert.AreEqual("Couldn’t switch to spare", failure.Title);
+        Assert.AreEqual("ChatGPT is still open, so nothing has changed. Quit it, then switch again.", failure.Message);
+        Assert.IsNull(failure.Code);
+        Assert.IsTrue(Uses(stopped, "codex/main"));
+        // Taken as a success, the quit would have been followed by a wait on Running.
+        string[] refused = [$"running {StandInApps.ChatGpt}", $"running {StandInApps.ChatGpt}", $"quit {StandInApps.ChatGpt}"];
+        CollectionAssert.AreEqual(refused, apps.Asked.All);
+    }
+
+    [TestMethod]
+    public void ARunOutIsPostedThroughTheAppsNotifications()
+    {
+        NeedsFixtures();
+        var waiting = new Waiting();
+        var posting = new Posting();
+        using var model = PitboardModel.FixtureIn("oneTool", _own, waiting, new StandInApps(), posting, new InUtc());
+        Start(model, waiting);
+
+        model.Send(new Intent.SwitchTo("claude/personal"));
+        var switched = waiting.Until(snapshot => Uses(snapshot, "claude/personal"), Patience);
+        var posted = posting.Posted.Until(1, Patience);
+        model.Shutdown();
+
+        Assert.IsNotNull(switched, "the switch was never read back");
+        var resetsAt = switched.Status!.Accounts
+            .Single(account => account.Qualified == "claude/personal")
+            .Usage!.Windows.Single(limit => limit.Kind == "session")
+            .ResetsAt!.Value;
+        RunOutNotice[] ranOut =
+        [
+            new(
+                Id: $"claude/personal/session/-{resetsAt.ToString(CultureInfo.InvariantCulture)}",
+                Title: "personal has no 5-hour limit left", Subtitle: null, Body: "work has 58% of its own left.",
+                SwitchTo: "claude/work"),
+        ];
+        CollectionAssert.AreEqual(ranOut, posted);
     }
 }

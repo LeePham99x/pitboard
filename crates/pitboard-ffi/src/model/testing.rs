@@ -252,7 +252,7 @@ type OnQuit = Box<dyn Fn(&str) + Send>;
 
 /// Other apps, as a test says they are, and nothing on the machine running the tests: this
 /// machine may have ChatGPT open. Records every app asked to quit and every app opened.
-pub(super) struct StandInApps {
+pub(crate) struct StandInApps {
     running: Mutex<BTreeSet<String>>,
     /// Whether an app asked to quit does. One busy with work, or whose person said no, does
     /// not.
@@ -270,7 +270,7 @@ pub(super) struct StandInApps {
 }
 
 impl StandInApps {
-    pub(super) fn new(running: &[&str], quits: bool) -> Arc<StandInApps> {
+    pub(crate) fn new(running: &[&str], quits: bool) -> Arc<StandInApps> {
         Arc::new(StandInApps {
             running: Mutex::new(running.iter().map(|&id| id.to_owned()).collect()),
             quits: AtomicBool::new(quits),
@@ -285,26 +285,26 @@ impl StandInApps {
     }
 
     /// From now on an app that quits does `then` too, with its id.
-    pub(super) fn on_quit(&self, then: impl Fn(&str) + Send + 'static) {
+    pub(crate) fn on_quit(&self, then: impl Fn(&str) + Send + 'static) {
         *self.on_quit.lock().expect("a test's own lock") = Some(Box::new(then));
     }
 
     /// Where a test's app is, which is nowhere on the machine running it.
-    pub(super) fn copy_of(app: &str) -> String {
+    pub(crate) fn copy_of(app: &str) -> String {
         format!("/stand-in/{app}.app")
     }
 
     /// Every app asked to quit and every app opened, in order: "quit com.openai.codex".
-    pub(super) fn asked(&self) -> Vec<String> {
+    pub(crate) fn asked(&self) -> Vec<String> {
         self.asked.lock().expect("a test's own lock").clone()
     }
 
-    pub(super) fn set_running(&self, apps: &[&str]) {
+    pub(crate) fn set_running(&self, apps: &[&str]) {
         *self.running.lock().expect("a test's own lock") =
             apps.iter().map(|&id| id.to_owned()).collect();
     }
 
-    pub(super) fn is_running(&self, app: &str) -> bool {
+    pub(crate) fn is_running(&self, app: &str) -> bool {
         self.running
             .lock()
             .expect("a test's own lock")
@@ -312,26 +312,26 @@ impl StandInApps {
     }
 
     /// How many times it was asked whether an app runs.
-    pub(super) fn running_calls(&self) -> usize {
+    pub(crate) fn running_calls(&self) -> usize {
         self.running_calls.load(Ordering::SeqCst)
     }
 
     /// From now on asking whether an app runs throws, as an app's own code can.
-    pub(super) fn fail_running(&self, fails: bool) {
+    pub(crate) fn fail_running(&self, fails: bool) {
         self.fail_running.store(fails, Ordering::SeqCst);
     }
 
-    pub(super) fn fail_quit(&self, fails: bool) {
+    pub(crate) fn fail_quit(&self, fails: bool) {
         self.fail_quit.store(fails, Ordering::SeqCst);
     }
 
-    pub(super) fn fail_open(&self, fails: bool) {
+    pub(crate) fn fail_open(&self, fails: bool) {
         self.fail_open.store(fails, Ordering::SeqCst);
     }
 
     /// Holds every call of `running` from now on until the returned sender is dropped,
     /// telling the returned receiver as each arrives.
-    pub(super) fn hold_running(&self) -> (Receiver<()>, Sender<()>) {
+    pub(crate) fn hold_running(&self) -> (Receiver<()>, Sender<()>) {
         let (arrived, arrivals) = channel();
         let (release, held) = channel();
         *self.hold.lock().expect("a test's own lock") = Some((arrived, held));
@@ -397,12 +397,12 @@ impl AppControl for StandInApps {
 /// The system's notifications, as a test has them: every notification posted is kept, and
 /// none reaches the machine running the tests.
 #[derive(Default)]
-pub(super) struct Posted {
+pub(crate) struct Posted {
     posted: Mutex<Vec<RunOutNotice>>,
 }
 
 impl Posted {
-    pub(super) fn posted(&self) -> Vec<RunOutNotice> {
+    pub(crate) fn posted(&self) -> Vec<RunOutNotice> {
         self.posted.lock().expect("a test's own lock").clone()
     }
 }

@@ -7,7 +7,11 @@ use super::apps::{CHATGPT, CLAUDE, QUITS_AFTER, SIGNS_IN_AFTER};
 use super::pages;
 use super::tools::{CLAUDE_ADDRESS, CLAUDE_REFUSES, CODEX_ADDRESS};
 use super::worlds::{Folder, Launched, World, make, out_of_reach};
-use crate::model::{Intent, ModelListener, Pane, PitboardModel, PlatformError, Sheet, Snapshot};
+use crate::model::testing::{Posted, StandInApps};
+use crate::model::{
+    AppControl, Intent, LocalTime, ModelListener, Notifications, Pane, PitboardModel,
+    PlatformError, QuitQuestion, RunOutNotice, Sheet, Snapshot,
+};
 use crate::present::testing::Utc;
 use crate::present::{AccountsShown, Footing};
 use crate::{
@@ -2687,6 +2691,8 @@ fn an_exported_fixture_in_a_directory_of_its_own_is_made_there() {
         "oneTool".into(),
         own.path().to_string_lossy().into_owned(),
         Arc::clone(&listener) as Arc<dyn ModelListener>,
+        StandInApps::new(&[], true),
+        Arc::new(Posted::default()),
         Arc::new(Utc),
     )
     .expect("a fixture");
@@ -2698,6 +2704,177 @@ fn an_exported_fixture_in_a_directory_of_its_own_is_made_there() {
         described(shown.status.as_ref().expect("read")),
         ["claude/work, in use", "claude/personal"]
     );
+    let read_at = shown.updated_at.expect("read");
+    let today = Utc.same_day(read_at, shown.now).expect("a day");
+    assert_eq!(
+        shown.updated_menu,
+        format!("Updated {}", Utc.clock(read_at, !today).expect("a time"))
+    );
     model.shutdown();
     assert!(made.is_dir(), "left there, as an app's is");
+}
+
+// The platform a test of an app's bindings hands `fixture_in`. ModelTests.cs crosses the same
+// flows from C#: one failing there and not here points at the bindings.
+
+fn started_in(
+    own: &Folder,
+    world: World,
+    apps: &Arc<StandInApps>,
+    posted: &Arc<Posted>,
+) -> (Arc<PitboardModel>, Arc<Told>) {
+    let told = Arc::new(Told::default());
+    let model = PitboardModel::fixture_in(
+        world.name().into(),
+        own.path().to_string_lossy().into_owned(),
+        Arc::clone(&told) as Arc<dyn ModelListener>,
+        Arc::clone(apps) as Arc<dyn AppControl>,
+        Arc::clone(posted) as Arc<dyn Notifications>,
+        Arc::new(Utc),
+    )
+    .expect("a fixture");
+    model.send(Intent::Start);
+    told.until("the accounts read", read_in);
+    (model, told)
+}
+
+// Reopening an app and posting run on lanes of their own, which nothing in a snapshot follows.
+fn eventually(what: &str, done: impl Fn() -> bool) {
+    let started = Instant::now();
+    while !done() {
+        assert!(started.elapsed() < PATIENCE, "never {what}");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn uses(snapshot: &Snapshot, qualified: &str) -> bool {
+    snapshot.switch_under_way.is_none()
+        && snapshot
+            .status
+            .as_ref()
+            .is_some_and(|status| in_use(status).iter().any(|used| used == qualified))
+}
+
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+)]
+fn a_codex_switch_quits_and_reopens_chatgpt_through_the_apps_fixture_in_is_given() {
+    let own = Folder::own("given-apps").expect("a folder");
+    let apps = StandInApps::new(&[CHATGPT], true);
+    let (model, told) = started_in(
+        &own,
+        World::ChatGptOpen,
+        &apps,
+        &Arc::new(Posted::default()),
+    );
+
+    model.send(Intent::SwitchTo {
+        qualified: "codex/spare".into(),
+    });
+    let asked = told.until("the quit question", |snapshot| {
+        snapshot.quit_question.is_some()
+    });
+    assert_eq!(
+        asked.quit_question,
+        Some(QuitQuestion {
+            qualified: "codex/spare".into(),
+            app_id: CHATGPT.into(),
+            name: "ChatGPT".into(),
+        })
+    );
+    assert_eq!(apps.running_calls(), 1);
+    model.send(Intent::QuitAndSwitch {
+        qualified: "codex/spare".into(),
+    });
+    told.until("the switch, read back", |snapshot| {
+        uses(snapshot, "codex/spare")
+    });
+    eventually("opened ChatGPT again", || apps.asked().len() == 2);
+    assert_eq!(
+        apps.asked(),
+        [format!("quit {CHATGPT}"), format!("open {CHATGPT}")]
+    );
+    assert_eq!(apps.running_calls(), 3);
+    model.shutdown();
+}
+
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+)]
+fn a_refusal_to_quit_from_the_apps_fixture_in_is_given_stops_the_switch() {
+    let own = Folder::own("refusing-apps").expect("a folder");
+    let apps = StandInApps::new(&[CHATGPT], true);
+    apps.fail_quit(true);
+    let (model, told) = started_in(
+        &own,
+        World::ChatGptOpen,
+        &apps,
+        &Arc::new(Posted::default()),
+    );
+
+    model.send(Intent::SwitchTo {
+        qualified: "codex/spare".into(),
+    });
+    told.until("the quit question", |snapshot| {
+        snapshot.quit_question.is_some()
+    });
+    model.send(Intent::QuitAndSwitch {
+        qualified: "codex/spare".into(),
+    });
+    let refused = told.until("the switch stopped", |snapshot| snapshot.failure.is_some());
+    let failure = refused.failure.as_ref().expect("stopped");
+    assert_eq!(failure.title, "Couldn’t switch to spare");
+    assert_eq!(
+        failure.message,
+        "ChatGPT is still open, so nothing has changed. Quit it, then switch again."
+    );
+    assert_eq!(failure.code, None);
+    assert!(uses(&refused, "codex/main"));
+    assert!(apps.asked().is_empty(), "{:?}", apps.asked());
+    assert_eq!(apps.running_calls(), 2);
+    model.shutdown();
+}
+
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+)]
+fn a_run_out_is_posted_through_the_notifications_fixture_in_is_given() {
+    let own = Folder::own("given-notifications").expect("a folder");
+    let posted = Arc::new(Posted::default());
+    let (model, told) = started_in(&own, World::OneTool, &StandInApps::new(&[], true), &posted);
+
+    model.send(Intent::SwitchTo {
+        qualified: "claude/personal".into(),
+    });
+    let switched = told.until("the switch, read back", |snapshot| {
+        uses(snapshot, "claude/personal")
+    });
+    eventually("posted the run-out", || !posted.posted().is_empty());
+    let resets_at = switched
+        .status
+        .iter()
+        .flat_map(|status| &status.accounts)
+        .filter(|account| account.qualified.as_deref() == Some("claude/personal"))
+        .flat_map(|account| &account.usage)
+        .flat_map(|usage| &usage.windows)
+        .find(|limit| limit.kind == "session")
+        .and_then(|limit| limit.resets_at)
+        .expect("personal's 5-hour limit resets");
+    assert_eq!(
+        posted.posted(),
+        [RunOutNotice {
+            id: format!("claude/personal/session/-{resets_at}"),
+            title: "personal has no 5-hour limit left".into(),
+            subtitle: None,
+            body: "work has 58% of its own left.".into(),
+            switch_to: Some("claude/work".into()),
+        }]
+    );
+    model.shutdown();
 }
