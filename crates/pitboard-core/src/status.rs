@@ -1454,8 +1454,8 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn the_login_in_use_says_its_own_plan() {
-        let home = scratch("plan");
-        let (ctx, _mem, api) = machine(&home.0, Some("work-uuid"));
+        let home = tempfile::tempdir().expect("a scratch home");
+        let (ctx, _mem, api) = machine(home.path(), Some("work-uuid"));
         api.owned_by("access-w", owner("work-uuid"))
             .using("access-w", reading(10.0, Source::Live));
 
@@ -1493,8 +1493,8 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn offline_each_row_shows_the_plan_its_account_last_recorded() {
-        let home = scratch("offline-plan");
-        let (ctx, _mem, _api) = machine(&home.0, Some("alpha-uuid"));
+        let home = tempfile::tempdir().expect("a scratch home");
+        let (ctx, _mem, _api) = machine(home.path(), Some("alpha-uuid"));
         let mut s = state(&["alpha"]);
         s.accounts[0].plan = Some("Max 20x".into());
         s.accounts.push(Account {
@@ -1512,8 +1512,8 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn a_park_of_the_oauth_block_alone_says_its_plan_to_a_read() {
-        let home = scratch("bare-park-plan");
-        let (ctx, _mem, _api) = machine(&home.0, None);
+        let home = tempfile::tempdir().expect("a scratch home");
+        let (ctx, _mem, _api) = machine(home.path(), None);
         let mut s = state(&["alpha", "beta"]);
         let service = park::reserve(&ctx, Permit::for_a_test(), "beta-uuid").expect("a name");
         let block = json!({
@@ -1551,8 +1551,8 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn a_login_nobody_could_name_says_its_plan_for_nobody() {
-        let home = scratch("unnamed-plan");
-        let (ctx, mem, api) = machine(&home.0, Some("alpha-uuid"));
+        let home = tempfile::tempdir().expect("a scratch home");
+        let (ctx, mem, api) = machine(home.path(), Some("alpha-uuid"));
         api.token_trouble("access-x", Trouble::Offline);
         mem.live().plant(
             &claude::live_service(&ctx),
@@ -1585,8 +1585,8 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn a_login_nobody_enrolled_says_its_plan() {
-        let home = scratch("unenrolled-plan");
-        let (ctx, mem, api) = machine(&home.0, Some("stranger-uuid"));
+        let home = tempfile::tempdir().expect("a scratch home");
+        let (ctx, mem, api) = machine(home.path(), Some("stranger-uuid"));
         api.owned_by("access-s", owner("stranger-uuid"));
         mem.live().plant(
             &claude::live_service(&ctx),
@@ -1615,8 +1615,8 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn a_lapsed_park_shows_the_plan_its_account_last_recorded() {
-        let home = scratch("lapsed-plan");
-        let (ctx, _mem, _api) = machine(&home.0, None);
+        let home = tempfile::tempdir().expect("a scratch home");
+        let (ctx, _mem, _api) = machine(home.path(), None);
         let mut s = state(&["alpha"]);
         s.accounts[0].plan = Some("Max 5x".into());
         assert!(!s.accounts[0].parked.as_ref().unwrap().askable_at(NOW));
@@ -2043,8 +2043,8 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn a_document_holding_no_account_is_nothing_signed_in_and_nobody_is_asked() {
-        let home = scratch("logged-out");
-        let (ctx, _mem, api) = machine(&home.0, None);
+        let home = tempfile::tempdir().expect("a scratch home");
+        let (ctx, _mem, api) = machine(home.path(), None);
         let logged_out = json!({"mcpOAuth": {"some-server": {"token": "unrelated"}}});
         let answered = ask_live(
             &ctx,
@@ -2073,8 +2073,8 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn a_login_that_cannot_be_read_is_said_rather_than_read_as_nobody_signed_in() {
-        let home = scratch("unreadable");
-        let (ctx, mem, api) = machine(&home.0, Some("alpha-uuid"));
+        let home = tempfile::tempdir().expect("a scratch home");
+        let (ctx, mem, api) = machine(home.path(), Some("alpha-uuid"));
         let service = claude::live_service(&ctx);
         mem.live().plant(
             &service,
@@ -2117,8 +2117,8 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn the_account_last_recorded_in_use_is_not_sent_to_sign_in_while_the_login_cannot_be_read() {
-        let home = scratch("unreadable-recorded");
-        let (ctx, mem, api) = machine(&home.0, Some("alpha-uuid"));
+        let home = tempfile::tempdir().expect("a scratch home");
+        let (ctx, mem, api) = machine(home.path(), Some("alpha-uuid"));
         let service = claude::live_service(&ctx);
         mem.live().plant(
             &service,
@@ -2220,8 +2220,8 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn a_login_nobody_could_name_this_time_is_not_asked_about_usage() {
-        let home = scratch("unnamed");
-        let (ctx, _mem, api) = machine(&home.0, Some("acc-x"));
+        let home = tempfile::tempdir().expect("a scratch home");
+        let (ctx, _mem, api) = machine(home.path(), Some("acc-x"));
         api.token_trouble("access-x", Trouble::Offline);
 
         let answered = ask_live(
@@ -2246,8 +2246,8 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn offline_every_tool_names_its_own_signed_in_account() {
-        let home = scratch("offline");
-        let (ctx, _mem, api) = machine(&home.0, Some("alpha-uuid"));
+        let home = tempfile::tempdir().expect("a scratch home");
+        let (ctx, _mem, api) = machine(home.path(), Some("alpha-uuid"));
         let codex = crate::provider::document(ProviderId::Codex)
             .live(&ctx)
             .expect("Codex keeps its login in a file here");
@@ -2306,8 +2306,8 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn offline_a_login_nobody_enrolled_has_its_row() {
-        let home = scratch("offline-unenrolled");
-        let (ctx, _mem, api) = machine(&home.0, Some("alpha-uuid"));
+        let home = tempfile::tempdir().expect("a scratch home");
+        let (ctx, _mem, api) = machine(home.path(), Some("alpha-uuid"));
         let mut s = state(&["alpha"]);
         let stranger = InUse {
             owner: Some(owner("stranger-uuid")),
@@ -2399,8 +2399,8 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_codex_login_that_mixes_two_accounts_is_said_rather_than_read_as_nobody() {
-        let home = scratch("mixed");
-        let (ctx, _mem, api) = machine(&home.0, None);
+        let home = tempfile::tempdir().expect("a scratch home");
+        let (ctx, _mem, api) = machine(home.path(), None);
         plant_codex(&ctx, &codex_login("acc-A", "acc-B"));
         let s = codex_a_parked_b_in_use();
 
@@ -2440,8 +2440,8 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_codex_login_with_an_api_key_is_said_and_pinned_on_no_account() {
-        let home = scratch("api-key");
-        let (ctx, _mem, api) = machine(&home.0, None);
+        let home = tempfile::tempdir().expect("a scratch home");
+        let (ctx, _mem, api) = machine(home.path(), None);
         plant_codex(
             &ctx,
             &json!({"auth_mode": "apikey", "OPENAI_API_KEY": "sk-not-a-real-key"}).to_string(),
@@ -2470,8 +2470,8 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_tool_with_nothing_enrolled_is_neither_read_nor_asked() {
-        let home = scratch("not-opted-in");
-        let (ctx, _mem, api) = machine(&home.0, None);
+        let home = tempfile::tempdir().expect("a scratch home");
+        let (ctx, _mem, api) = machine(home.path(), None);
         plant_codex(&ctx, &codex_login("acc-B", "acc-B"));
         let s = State::default();
 
@@ -2497,8 +2497,8 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_codex_login_caught_half_written_still_names_the_account_in_use() {
-        let home = scratch("half-written");
-        let (ctx, _mem, api) = machine(&home.0, None);
+        let home = tempfile::tempdir().expect("a scratch home");
+        let (ctx, _mem, api) = machine(home.path(), None);
         let whole = codex_login("acc-B", "acc-B");
         plant_codex(&ctx, &whole[..whole.len() / 2]);
         let s = codex_a_parked_b_in_use();
@@ -2535,8 +2535,8 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn only_a_document_holding_no_login_is_nobody_signed_in() {
-        let home = scratch("shapes");
-        let (ctx, _mem, api) = machine(&home.0, Some("alpha-uuid"));
+        let home = tempfile::tempdir().expect("a scratch home");
+        let (ctx, _mem, api) = machine(home.path(), Some("alpha-uuid"));
         let mut beta_in_use = state(&["alpha", "beta"]);
         let beta = InUse::of(&beta_in_use.accounts[1], "beta-refresh", NOW);
         beta_in_use.identified(ProviderId::Claude, beta, NOW);
@@ -2650,26 +2650,6 @@ mod tests {
         row.label = Some("work".into());
         row.stale = Some(Stale::LoginUnreadable);
         assert!(!row.unplaced(), "an account");
-    }
-
-    /// A home of this test's own, removed when the test is done with it.
-    struct Scratch(std::path::PathBuf);
-
-    impl Drop for Scratch {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-
-    fn scratch(name: &str) -> Scratch {
-        let root = std::env::temp_dir().join(format!(
-            "pitboard-status-{name}-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).expect("a scratch home");
-        Scratch(root)
     }
 
     /// A machine of this test's own: stores in memory, services from a script, a clock

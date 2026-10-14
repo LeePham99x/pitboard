@@ -134,25 +134,14 @@ mod tests {
     const NOW: i64 = 1_789_935_000;
     const RESETS: i64 = NOW + 3_600;
 
-    struct Scratch(PathBuf);
-    impl Drop for Scratch {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-
-    fn machine(name: &str) -> (Context, Scratch) {
-        let root = std::env::temp_dir().join(format!(
-            "pitboard-readings-{name}-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&root);
+    fn machine() -> (Context, tempfile::TempDir) {
+        let scratch = tempfile::tempdir().expect("a scratch home");
+        let root = scratch.path().to_path_buf();
         let ctx = Context::new(root.clone())
-            .with_pitboard_home(root.clone())
+            .with_pitboard_home(root)
             .with_clock(Arc::new(FixedClock::at(NOW)) as Arc<dyn Clock>);
         home::ensure(&ctx, Permit::for_a_test()).expect("a home");
-        (ctx, Scratch(root))
+        (ctx, scratch)
     }
 
     fn window(kind: &str, percent: f64) -> Window {
@@ -207,7 +196,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn a_reading_0_9_0_wrote_under_the_wrong_account_is_gone_at_the_first_answer() {
-        let (ctx, _scratch) = machine("from-0-9-0");
+        let (ctx, _scratch) = machine();
         std::fs::write(
             path(&ctx),
             serde_json::json!({"work": {
@@ -246,7 +235,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn each_answer_is_recorded_by_whether_it_lists_every_limit() {
-        let (ctx, _scratch) = machine("by-service");
+        let (ctx, _scratch) = machine();
         let given = |kinds: &[&str], at: i64, lists_every_limit: bool| Snapshot {
             windows: kinds.iter().map(|kind| window(kind, 30.0)).collect(),
             observed_at: Some(at),
@@ -290,7 +279,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn a_session_never_moves_a_reading_back_whoever_writes_last() {
-        let (ctx, _scratch) = machine("backwards");
+        let (ctx, _scratch) = machine();
         answered(
             &ctx,
             Permit::for_a_test(),
@@ -319,7 +308,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn a_session_founds_no_reading() {
-        let (ctx, _scratch) = machine("founds");
+        let (ctx, _scratch) = machine();
         passes(&ctx, "five_hour", 22.0);
         assert!(load(&ctx).is_empty());
         assert!(!path(&ctx).exists());
@@ -333,7 +322,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn a_reading_that_changes_nothing_leaves_the_file_alone() {
-        let (ctx, _scratch) = machine("unchanged");
+        let (ctx, _scratch) = machine();
         let answers = [
             ("work".into(), answer("session", 22.0, NOW - 60)),
             ("personal".into(), answer("session", 3.0, NOW - 60)),
@@ -357,7 +346,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn a_banked_reset_is_recorded_by_the_next_answer_and_followed_by_sessions() {
-        let (ctx, _scratch) = machine("banked");
+        let (ctx, _scratch) = machine();
         let weekly = |ctx: &Context| load(ctx)["work"].windows[0].percent;
         answered(
             &ctx,
@@ -388,7 +377,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn a_window_past_its_reset_is_recorded_reset_once() {
-        let (ctx, _scratch) = machine("reset");
+        let (ctx, _scratch) = machine();
         let mut full = answer("session", 100.0, NOW - 7_200);
         full.windows[0].resets_at = Some(NOW - 3_600);
         answered(&ctx, Permit::for_a_test(), &[("parked".into(), full)]);

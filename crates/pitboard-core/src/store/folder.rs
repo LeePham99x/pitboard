@@ -348,9 +348,9 @@ mod tests {
         ignore = "Claude Desktop is macOS only: Windows refuses the folder's file calls"
     )]
     fn a_parks_folder_others_can_reach_is_refused_and_its_mode_kept() {
-        let (s, ctx) = scratch("ready");
+        let (s, ctx) = scratch();
         let permit = Permit::for_a_test();
-        let root = s.0.join("data");
+        let root = s.path().join("data");
         std::fs::create_dir_all(&root).unwrap();
         ready(&ctx, permit, &root).expect("made where missing");
         let parks = parks_dir(&ctx);
@@ -378,8 +378,8 @@ mod tests {
         ignore = "Claude Desktop is macOS only: Windows refuses the folder's file calls"
     )]
     fn a_park_on_another_volume_is_refused() {
-        let (s, ctx) = scratch("volume");
-        let root = s.0.join("data");
+        let (s, ctx) = scratch();
+        let root = s.path().join("data");
         std::fs::create_dir_all(&root).unwrap();
         ready(&ctx, Permit::for_a_test(), &root).expect("one scratch folder is one volume");
         let parks = parks_dir(&ctx).to_string_lossy().into_owned();
@@ -401,7 +401,7 @@ mod tests {
         ignore = "Claude Desktop is macOS only: Windows refuses the folder's file calls"
     )]
     fn a_folder_is_made_once_and_a_move_never_lands_on_anything() {
-        let (s, ctx) = scratch("make");
+        let (s, ctx) = scratch();
         let permit = Permit::for_a_test();
         let folder = make(&ctx, permit, "pitboard-aside-1").expect("made");
         assert!(testing::is_private(&folder).unwrap());
@@ -412,7 +412,7 @@ mod tests {
         );
         assert!(make(&ctx, permit, "not-a-park").is_err());
 
-        let from = s.0.join("Cookies");
+        let from = s.path().join("Cookies");
         std::fs::write(&from, b"jar").unwrap();
         let to = item(&ctx, "pitboard-aside-1", "Cookies");
         assert_eq!(move_in(permit, &from, &to).unwrap(), Moved::Synced);
@@ -432,24 +432,11 @@ mod tests {
         assert_eq!(std::fs::read(&to).unwrap(), b"another");
     }
 
-    struct Scratch(PathBuf);
-
-    impl Drop for Scratch {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-
-    fn scratch(name: &str) -> (Scratch, Context) {
-        let root = std::env::temp_dir().join(format!(
-            "pitboard-store-folder-{name}-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).expect("a scratch folder");
+    fn scratch() -> (tempfile::TempDir, Context) {
+        let scratch = tempfile::tempdir().expect("a scratch folder");
+        let root = scratch.path();
         let ctx = Context::new(root.join("home")).with_pitboard_home(root.join("pitboard"));
-        (Scratch(root), ctx)
+        (scratch, ctx)
     }
 
     fn private(path: &Path) {
@@ -465,12 +452,12 @@ mod tests {
         ignore = "Claude Desktop is macOS only: Windows makes and removes no folder"
     )]
     fn delete_never_leaves_parks() {
-        let (s, ctx) = scratch("delete");
+        let (s, ctx) = scratch();
         let permit = Permit::for_a_test();
         let parks = parks_dir(&ctx);
         private(parks.parent().unwrap());
         private(&parks);
-        let outside = s.0.join("outside");
+        let outside = s.path().join("outside");
         std::fs::create_dir_all(outside.join(PARK)).unwrap();
         std::fs::write(outside.join("keep"), b"keep").unwrap();
 
@@ -521,8 +508,8 @@ mod tests {
         assert!(parks.join("other").is_dir());
         delete(&ctx, permit, PARK).unwrap();
 
-        let (_s2, elsewhere) = scratch("delete-link");
-        let real = s.0.join("real-parks");
+        let (_s2, elsewhere) = scratch();
+        let real = s.path().join("real-parks");
         std::fs::create_dir_all(real.join(PARK)).unwrap();
         private(&crate::home::dir(&elsewhere));
         testing::link_dir(&real, &parks_dir(&elsewhere)).unwrap();
@@ -536,7 +523,7 @@ mod tests {
         ignore = "Claude Desktop is macOS only: Windows makes and removes no folder"
     )]
     fn remove_emptied_keeps_a_folder_that_holds_an_item() {
-        let (_s, ctx) = scratch("keeps");
+        let (_s, ctx) = scratch();
         let folder = at(&ctx, PARK);
         std::fs::create_dir_all(folder.join("items/IndexedDB")).unwrap();
         std::fs::write(folder.join("items/IndexedDB/x"), b"x").unwrap();
@@ -560,7 +547,7 @@ mod tests {
         ignore = "Claude Desktop is macOS only: Windows makes and removes no folder"
     )]
     fn remove_emptied_takes_empty_directories_and_a_temporary() {
-        let (_s, ctx) = scratch("emptied");
+        let (_s, ctx) = scratch();
         let folder = at(&ctx, PARK);
         std::fs::create_dir_all(folder.join("items/IndexedDB/https_claude.ai_0.indexeddb.leveldb"))
             .unwrap();
@@ -575,7 +562,7 @@ mod tests {
 
     #[test]
     fn a_manifest_of_a_newer_version_is_refused() {
-        let (_s, ctx) = scratch("manifest");
+        let (_s, ctx) = scratch();
         let folder = at(&ctx, PARK);
         std::fs::create_dir_all(&folder).unwrap();
         assert_eq!(manifest(&ctx, PARK), Ok(None));

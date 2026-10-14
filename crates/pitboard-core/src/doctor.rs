@@ -3857,19 +3857,8 @@ mod tests {
     fn a_world_readable_park_is_found_on_the_disk() {
         use crate::host::fs::testing;
 
-        let root = std::env::temp_dir().join(format!(
-            "pitboard-doctor-modes-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&root);
-        struct Scratch(PathBuf);
-        impl Drop for Scratch {
-            fn drop(&mut self) {
-                let _ = std::fs::remove_dir_all(&self.0);
-            }
-        }
-        let _guard = Scratch(root.clone());
+        let scratch = tempfile::tempdir().expect("a scratch home");
+        let root = scratch.path().to_path_buf();
 
         let ctx = Context::new(root.clone()).with_pitboard_home(root.join(".pitboard"));
         let vault = store::vault_dir(&ctx);
@@ -4543,20 +4532,8 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn a_schedule_whose_pitboard_is_gone_is_found_on_the_disk() {
-        let root = std::env::temp_dir().join(format!(
-            "pitboard-doctor-schedule-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&root);
-        struct Scratch(PathBuf);
-        impl Drop for Scratch {
-            fn drop(&mut self) {
-                let _ = std::fs::remove_dir_all(&self.0);
-            }
-        }
-        let _guard = Scratch(root.clone());
-        std::fs::create_dir_all(&root).expect("a scratch home");
+        let scratch = tempfile::tempdir().expect("a scratch home");
+        let root = scratch.path().to_path_buf();
 
         let program = root.join("bin/pitboard");
         let ctx = Context::new(root.clone())
@@ -4745,19 +4722,8 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn the_schedules_proxy_is_read_from_what_install_wrote() {
-        let root = std::env::temp_dir().join(format!(
-            "pitboard-doctor-schedule-proxy-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&root);
-        struct Scratch(PathBuf);
-        impl Drop for Scratch {
-            fn drop(&mut self) {
-                let _ = std::fs::remove_dir_all(&self.0);
-            }
-        }
-        let _guard = Scratch(root.clone());
+        let scratch = tempfile::tempdir().expect("a scratch home");
+        let root = scratch.path().to_path_buf();
         let program = root.join("bin/pitboard");
         std::fs::create_dir_all(root.join("bin")).expect("a bin");
         std::fs::write(&program, "").expect("a Pitboard");
@@ -5308,20 +5274,8 @@ mod tests {
     fn an_account_is_active_by_its_own_tools_record() {
         use crate::host::memory::MemoryHost;
 
-        let root = std::env::temp_dir().join(format!(
-            "pitboard-doctor-active-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).expect("a scratch home");
-        struct Scratch(PathBuf);
-        impl Drop for Scratch {
-            fn drop(&mut self) {
-                let _ = std::fs::remove_dir_all(&self.0);
-            }
-        }
-        let _guard = Scratch(root.clone());
+        let scratch = tempfile::tempdir().expect("a scratch home");
+        let root = scratch.path().to_path_buf();
         let ctx = Context::new(root.clone())
             .with_pitboard_home(root.join(".pitboard"))
             .with_codex_home(root.join("codex").to_string_lossy().into())
@@ -5874,19 +5828,8 @@ mod tests {
     fn a_version_is_read_out_of_each_way_codex_is_installed() {
         use crate::host::fs::testing;
 
-        let root = std::env::temp_dir().join(format!(
-            "pitboard-doctor-codex-version-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&root);
-        struct Scratch(PathBuf);
-        impl Drop for Scratch {
-            fn drop(&mut self) {
-                let _ = std::fs::remove_dir_all(&self.0);
-            }
-        }
-        let _guard = Scratch(root.clone());
+        let scratch = tempfile::tempdir().expect("a scratch home");
+        let root = scratch.path().to_path_buf();
         let place = |at: &str| {
             let path = root.join(at);
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -6109,19 +6052,8 @@ mod tests {
     fn codex_facts_are_read_off_the_disk() {
         use crate::host::fs::testing;
 
-        let root = std::env::temp_dir().join(format!(
-            "pitboard-doctor-codex-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&root);
-        struct Scratch(PathBuf);
-        impl Drop for Scratch {
-            fn drop(&mut self) {
-                let _ = std::fs::remove_dir_all(&self.0);
-            }
-        }
-        let _guard = Scratch(root.clone());
+        let scratch = tempfile::tempdir().expect("a scratch home");
+        let root = scratch.path().to_path_buf();
         let home = root.join("codex");
         // A `codex` of this test's own. Looked up on `PATH`, it would be this machine's, and
         // the standalone installer keeps that inside the real `~/.codex`.

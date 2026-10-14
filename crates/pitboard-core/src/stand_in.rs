@@ -624,28 +624,6 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
-    /// A folder of the test's own, empty, which goes with it.
-    struct Scratch(PathBuf);
-
-    impl Scratch {
-        fn new(name: &str) -> Scratch {
-            let dir = std::env::temp_dir().join(format!(
-                "pitboard-stand-in-{name}-{}-{:?}",
-                std::process::id(),
-                std::thread::current().id()
-            ));
-            let _ = std::fs::remove_dir_all(&dir);
-            std::fs::create_dir_all(&dir).expect("a scratch folder");
-            Scratch(dir)
-        }
-    }
-
-    impl Drop for Scratch {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-
     /// What a stand-in played in this process came to: the code it exits with, and what it
     /// wrote to each stream.
     #[derive(Debug)]
@@ -738,8 +716,8 @@ mod tests {
     /// a stand-in for `claude auth login` started any other way does nothing.
     #[test]
     fn other_arguments_are_refused_before_any_step() {
-        let scratch = Scratch::new("refused");
-        let pid = scratch.0.join("pid");
+        let scratch = tempfile::tempdir().expect("a scratch folder");
+        let pid = scratch.path().join("pid");
         let script = plays(
             Some(&["auth", "login"]),
             vec![
@@ -760,7 +738,7 @@ mod tests {
             format!("{}\n", std::process::id()),
             "written whole, with nothing left beside it"
         );
-        let left: Vec<_> = std::fs::read_dir(&scratch.0)
+        let left: Vec<_> = std::fs::read_dir(scratch.path())
             .expect("the scratch folder")
             .map(|entry| entry.expect("an entry").file_name())
             .collect();
@@ -802,7 +780,7 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn a_login_is_written_where_the_environment_says_and_nowhere_else() {
-        let scratch = Scratch::new("login");
+        let scratch = tempfile::tempdir().expect("a scratch folder");
         let script = plays(
             None,
             vec![Step::WritesLogin {
@@ -811,9 +789,9 @@ mod tests {
                 contents: "{\"tokens\":{}}\n".into(),
             }],
         );
-        let written = play(&script, &[], "", &[("CODEX_HOME", &scratch.0)]);
+        let written = play(&script, &[], "", &[("CODEX_HOME", scratch.path())]);
         assert_eq!(written.code, 0, "{}", written.errors);
-        let login = scratch.0.join("auth.json");
+        let login = scratch.path().join("auth.json");
         assert_eq!(
             std::fs::read_to_string(&login).expect("written"),
             "{\"tokens\":{}}\n"
@@ -864,8 +842,8 @@ mod tests {
     /// and every line typed so far is written down whole.
     #[test]
     fn a_code_without_both_halves_is_refused_and_the_next_one_read() {
-        let scratch = Scratch::new("codes");
-        let typed = scratch.0.join("typed");
+        let scratch = tempfile::tempdir().expect("a scratch folder");
+        let typed = scratch.path().join("typed");
         let script = plays(
             None,
             vec![Step::ReadsCodes {
@@ -900,8 +878,8 @@ mod tests {
     /// How it was started is added to a file, a line at a time.
     #[test]
     fn how_it_was_started_is_recorded() {
-        let scratch = Scratch::new("records");
-        let at = scratch.0.join("ran");
+        let scratch = tempfile::tempdir().expect("a scratch folder");
+        let at = scratch.path().join("ran");
         let script = plays(
             None,
             vec![
@@ -938,8 +916,8 @@ mod tests {
     /// with the arguments after it, as `node` runs npm's `codex.js`.
     #[test]
     fn an_interpreter_plays_the_script_it_is_given() {
-        let scratch = Scratch::new("interprets");
-        let file = scratch.0.join("codex.js");
+        let scratch = tempfile::tempdir().expect("a scratch folder");
+        let file = scratch.path().join("codex.js");
         let script = plays(Some(&["login"]), vec![Step::Warns("Logged in\n".into())]);
         std::fs::write(
             &file,
@@ -963,12 +941,12 @@ mod tests {
     /// a lock is one nobody else can lock.
     #[test]
     fn a_port_and_a_file_are_held_until_it_exits() {
-        let scratch = Scratch::new("holds");
+        let scratch = tempfile::tempdir().expect("a scratch folder");
         let free = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
             .and_then(|listener| listener.local_addr())
             .expect("a free port")
             .port();
-        let at = scratch.0.join("held");
+        let at = scratch.path().join("held");
         let mut held = Vec::new();
         let (mut output, mut errors) = (Vec::new(), Vec::new());
         let mut run = Run {
@@ -1002,16 +980,16 @@ mod tests {
     /// it, with where it looked; once it is built it is found there.
     #[test]
     fn a_stand_in_not_built_is_refused_with_the_command_that_builds_it() {
-        let scratch = Scratch::new("built");
+        let scratch = tempfile::tempdir().expect("a scratch folder");
         let test = scratch
-            .0
+            .path()
             .join("debug")
             .join("deps")
             .join("switch_round_trip-0123456789abcdef");
         let missing = built_for(&test).expect_err("nothing is built");
         let said = missing.to_string();
         let at = scratch
-            .0
+            .path()
             .join("debug")
             .join("examples")
             .join(format!("stand-in{}", std::env::consts::EXE_SUFFIX));

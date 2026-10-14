@@ -533,29 +533,15 @@ mod tests {
         )
     }
 
-    /// A home of this test's own, removed when the test is done with it.
-    struct Scratch(std::path::PathBuf);
-
-    impl Drop for Scratch {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-
     /// A machine whose Claude Code config names `work-uuid` as signed in.
-    fn machine(name: &str) -> (Context, Scratch) {
-        let root = std::env::temp_dir().join(format!(
-            "pitboard-statusline-{name}-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).expect("a scratch home");
-        let ctx = Context::new(root.clone())
+    fn machine() -> (Context, tempfile::TempDir) {
+        let scratch = tempfile::tempdir().expect("a scratch home");
+        let root = scratch.path();
+        let ctx = Context::new(root.to_path_buf())
             .with_pitboard_home(root.join(".pitboard"))
             .with_clock(Arc::new(FixedClock::at(NOW)) as Arc<dyn Clock>);
         sign_in(&ctx, "work");
-        (ctx, Scratch(root))
+        (ctx, scratch)
     }
 
     /// The same machine at another time.
@@ -810,7 +796,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn the_account_in_use_is_the_one_anthropic_last_named() {
-        let (ctx, _scratch) = machine("organisations");
+        let (ctx, _scratch) = machine();
         let mut accounts = state();
         accounts.upsert(Account {
             last_used_at: None,
@@ -850,7 +836,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn the_sessions_numbers_are_recorded_when_they_are_newer() {
-        let (ctx, _scratch) = machine("records");
+        let (ctx, _scratch) = machine();
         crate::state::save(&ctx, Permit::for_a_test(), &state()).expect("an account index");
         crate::usage::readings::answered(
             &ctx,
@@ -879,7 +865,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn a_session_moves_the_numbers_and_leaves_what_only_anthropic_says() {
-        let (ctx, _scratch) = machine("leaves");
+        let (ctx, _scratch) = machine();
         crate::state::save(&ctx, Permit::for_a_test(), &state()).expect("an account index");
         let mut answered = reading(22.0, 6.0, NOW - 60, NOW + 600);
         answered.windows[0].severity = Some("normal".into());
@@ -917,7 +903,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn a_session_holding_a_forgotten_accounts_numbers_is_not_recorded_as_the_one_in_use() {
-        let (ctx, _scratch) = machine("forgotten");
+        let (ctx, _scratch) = machine();
         crate::state::save(&ctx, Permit::for_a_test(), &state()).expect("an account index");
         crate::usage::readings::answered(
             &ctx,
@@ -967,7 +953,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn a_session_seen_for_the_first_time_offers_nothing_until_its_next_response() {
-        let (ctx, _scratch) = machine("first");
+        let (ctx, _scratch) = machine();
         crate::state::save(&ctx, Permit::for_a_test(), &state()).expect("an account index");
         let works = timed((10.0, NOW + 2 * HOUR), (30.0, NOW + 3 * DAY), NOW - 60);
         crate::usage::readings::answered(
@@ -1008,7 +994,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn a_session_on_an_account_pitboard_has_not_read_shows_its_own_numbers() {
-        let (ctx, _scratch) = machine("unread");
+        let (ctx, _scratch) = machine();
         crate::state::save(&ctx, Permit::for_a_test(), &state()).expect("an account index");
         let numbers = passed((12.0, NOW + 2 * HOUR), (31.0, NOW + 3 * DAY));
         assert_eq!(
@@ -1033,7 +1019,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn a_response_from_the_account_before_a_login_is_known_by_its_windows() {
-        let (ctx, _scratch) = machine("login");
+        let (ctx, _scratch) = machine();
         crate::state::save(&ctx, Permit::for_a_test(), &state()).expect("an account index");
         crate::usage::readings::answered(
             &ctx,
@@ -1077,7 +1063,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn a_window_past_its_reset_is_not_recorded() {
-        let (ctx, _scratch) = machine("passed");
+        let (ctx, _scratch) = machine();
         crate::state::save(&ctx, Permit::for_a_test(), &state()).expect("an account index");
         let works = timed((50.0, NOW - 60), (30.0, NOW + 3 * DAY), NOW - HOUR);
         crate::usage::readings::answered(
@@ -1107,7 +1093,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn a_window_that_resets_stays_in_the_reading_with_nothing_used() {
-        let (ctx, _scratch) = machine("reset");
+        let (ctx, _scratch) = machine();
         crate::state::save(&ctx, Permit::for_a_test(), &state()).expect("an account index");
         let works = timed((40.0, NOW - 10), (30.0, NOW + 3 * DAY), NOW - HOUR);
         crate::usage::readings::answered(
@@ -1155,7 +1141,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn a_session_still_on_the_account_before_a_switch_goes_on_recording_it() {
-        let (ctx, _scratch) = machine("before-a-switch");
+        let (ctx, _scratch) = machine();
         crate::state::save(&ctx, Permit::for_a_test(), &state()).expect("an account index");
         let personals = timed((50.0, NOW + 4 * HOUR), (60.0, NOW + 5 * DAY), NOW - 60);
         crate::usage::readings::answered(
@@ -1210,7 +1196,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn a_window_no_account_holds_is_shown_for_the_session_and_filed_nowhere() {
-        let (ctx, _scratch) = machine("nobodys");
+        let (ctx, _scratch) = machine();
         crate::state::save(&ctx, Permit::for_a_test(), &state()).expect("an account index");
         using(&at(&ctx, NOW - HOUR), "work");
         open(&ctx, "pane");
@@ -1255,7 +1241,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn a_session_on_a_login_nobody_enrolled_stays_unenrolled() {
-        let (ctx, _scratch) = machine("guest");
+        let (ctx, _scratch) = machine();
         crate::state::save(&ctx, Permit::for_a_test(), &state()).expect("an account index");
         let works = timed((10.0, NOW + 2 * HOUR), (30.0, NOW + 3 * DAY), NOW - 60);
         crate::usage::readings::answered(
@@ -1305,7 +1291,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn a_new_five_hour_window_is_taken_on_the_weekly_windows_word() {
-        let (ctx, _scratch) = machine("next");
+        let (ctx, _scratch) = machine();
         crate::state::save(&ctx, Permit::for_a_test(), &state()).expect("an account index");
         crate::usage::readings::answered(
             &ctx,
@@ -1354,7 +1340,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn two_accounts_holding_one_window_file_nothing() {
-        let (ctx, _scratch) = machine("coincident");
+        let (ctx, _scratch) = machine();
         crate::state::save(&ctx, Permit::for_a_test(), &state()).expect("an account index");
         let works = timed((20.0, NOW + 2 * HOUR), (30.0, NOW + 3 * DAY), NOW - 60);
         let personals = timed((50.0, NOW + 2 * HOUR + 30), (60.0, NOW + 5 * DAY), NOW - 60);
@@ -1422,7 +1408,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn a_session_passing_a_limit_an_account_does_not_have_is_not_on_it() {
-        let (ctx, _scratch) = machine("seat");
+        let (ctx, _scratch) = machine();
         crate::state::save(&ctx, Permit::for_a_test(), &state()).expect("an account index");
         let limit = |kind: &str, scope: Option<&str>, percent: f64, resets_at: i64| Window {
             kind: kind.into(),
@@ -1481,7 +1467,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn a_reading_an_older_pitboard_wrote_is_matched_against_nothing() {
-        let (ctx, _scratch) = machine("older");
+        let (ctx, _scratch) = machine();
         crate::state::save(&ctx, Permit::for_a_test(), &state()).expect("an account index");
         let mut older = timed((10.0, NOW + 2 * HOUR), (30.0, NOW + 3 * DAY), NOW - 60);
         older.answered_at = None;
@@ -1515,7 +1501,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn the_label_is_marked_while_the_config_has_moved_since_the_last_answer() {
-        let (ctx, _scratch) = machine("config-moved");
+        let (ctx, _scratch) = machine();
         crate::state::save(&ctx, Permit::for_a_test(), &state()).expect("an account index");
         using(&ctx, "work");
         let settled = run(&ctx, "pane", &json!({}));

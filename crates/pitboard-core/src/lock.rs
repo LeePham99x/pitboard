@@ -250,18 +250,16 @@ mod tests {
         .unwrap();
     }
 
-    fn scratch(name: &str) -> PathBuf {
-        let p =
-            std::env::temp_dir().join(format!("pitboard-lock-test-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&p);
-        std::fs::create_dir_all(&p).unwrap();
-        p.join("target")
+    fn scratch() -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        (dir, target)
     }
 
     #[test]
     #[cfg_attr(windows, ignore = "W16: Pitboard's locks on Windows")]
     fn acquires_and_releases() {
-        let t = scratch("basic");
+        let (_dir, t) = scratch();
         let lock = t.with_extension("").parent().unwrap().join("target.lock");
         {
             let _g = acquire(Permit::for_a_test(), &t, WRITE).expect("should acquire");
@@ -279,7 +277,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn refuses_while_another_holder_is_alive() {
-        let t = scratch("busy");
+        let (_dir, t) = scratch();
         let _held = acquire(Permit::for_a_test(), &t, WRITE).expect("first acquire");
         // The holder heartbeats, so this must exhaust its retries rather than steal it.
         assert!(matches!(
@@ -294,7 +292,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn reclaims_a_lock_left_behind_by_a_dead_process() {
-        let t = scratch("stale");
+        let (_dir, t) = scratch();
         let lock = PathBuf::from(format!("{}.lock", t.display()));
         std::fs::create_dir_all(&lock).unwrap();
         age_past_staleness(&lock);
@@ -310,7 +308,8 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn a_refresh_lock_is_abandoned_only_once_claude_code_would_take_it() {
-        let lock = scratch("refresh").with_extension("lock");
+        let (_dir, t) = scratch();
+        let lock = t.with_extension("lock");
         std::fs::create_dir_all(&lock).unwrap();
         touch(
             Permit::for_a_test(),
@@ -329,7 +328,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn releasing_is_immediate() {
-        let t = scratch("release");
+        let (_dir, t) = scratch();
         let started = std::time::Instant::now();
         drop(acquire(Permit::for_a_test(), &t, WRITE).unwrap());
         assert!(
@@ -347,7 +346,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn the_heartbeat_keeps_a_held_lock_young() {
-        let t = scratch("beat");
+        let (_dir, t) = scratch();
         let g = acquire(Permit::for_a_test(), &t, WRITE).unwrap();
         let lock = PathBuf::from(format!("{}.lock", t.display()));
         let when_taken = mtime(&lock).unwrap();
@@ -373,7 +372,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn a_lock_somebody_else_touched_is_never_ours_again() {
-        let t = scratch("compromised");
+        let (_dir, t) = scratch();
         let g = acquire(Permit::for_a_test(), &t, WRITE).unwrap();
         let lock = PathBuf::from(format!("{}.lock", t.display()));
 
@@ -391,7 +390,6 @@ mod tests {
             lock.exists(),
             "and releasing it must not take away the lock that now belongs to somebody else"
         );
-        let _ = std::fs::remove_dir(&lock);
     }
 
     /// A lock directory that vanished is gone whoever removed it, and renewing it would
@@ -402,7 +400,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn a_lock_that_vanished_is_not_quietly_remade() {
-        let t = scratch("vanished");
+        let (_dir, t) = scratch();
         let g = acquire(Permit::for_a_test(), &t, WRITE).unwrap();
         let lock = PathBuf::from(format!("{}.lock", t.display()));
         std::fs::remove_dir(&lock).unwrap();
@@ -421,7 +419,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn what_the_filesystem_stored_is_what_gets_remembered() {
-        let t = scratch("granularity");
+        let (_dir, t) = scratch();
         let _g = acquire(Permit::for_a_test(), &t, WRITE).unwrap();
         let lock = PathBuf::from(format!("{}.lock", t.display()));
 

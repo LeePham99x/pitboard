@@ -331,28 +331,28 @@ mod tests {
 
     /// A home of the test's own, gone when the test is, on a machine whose scheduler asks
     /// nobody: its files are written in that home, and launchd or systemd is never told.
-    struct Scratch(PathBuf, Arc<MemoryHost>);
+    struct Scratch(tempfile::TempDir, Arc<MemoryHost>);
 
     impl Scratch {
-        fn new(name: &str) -> Scratch {
-            let root = std::env::temp_dir().join(format!(
-                "pitboard-schedule-{name}-{}-{:?}",
-                std::process::id(),
-                std::thread::current().id()
-            ));
-            let _ = std::fs::remove_dir_all(&root);
-            std::fs::create_dir_all(&root).expect("a scratch home");
-            Scratch(root, MemoryHost::new())
+        fn new() -> Scratch {
+            Scratch(
+                tempfile::tempdir().expect("a scratch home"),
+                MemoryHost::new(),
+            )
+        }
+
+        fn path(&self) -> &Path {
+            self.0.path()
         }
 
         fn ctx(&self) -> Context {
-            Context::new(self.0.clone()).with_memory_stores(Arc::clone(&self.1))
+            Context::new(self.path().to_path_buf()).with_memory_stores(Arc::clone(&self.1))
         }
 
         /// A context read from an environment whose home is this one and that sets `vars`
         /// besides, as the command line's is read, on the same machine in memory.
         fn read(&self, vars: &[(&str, &str)]) -> Context {
-            let home = self.0.to_string_lossy().into_owned();
+            let home = self.path().to_string_lossy().into_owned();
             let env: crate::context::Environment = [("HOME", home.as_str())]
                 .iter()
                 .chain(vars)
@@ -374,12 +374,6 @@ mod tests {
             .collect()
     }
 
-    impl Drop for Scratch {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-
     /// Put a program at `path`, for a schedule to name.
     fn a_program_at(path: &Path) {
         std::fs::create_dir_all(path.parent().expect("a directory")).expect("its directory");
@@ -390,8 +384,8 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn a_schedule_the_scheduler_will_not_start_is_not_left_on_disk() {
-        let home = Scratch::new("refused");
-        let program = home.0.join("bin/pitboard");
+        let home = Scratch::new();
+        let program = home.path().join("bin/pitboard");
         a_program_at(&program);
         let ctx = home.ctx().with_schedule_program(program);
 
@@ -408,13 +402,13 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn a_repair_the_scheduler_will_not_start_leaves_the_schedule_as_it_was() {
-        let home = Scratch::new("repair-refused");
-        std::fs::create_dir_all(home.0.join(".pitboard")).expect("a Pitboard home");
+        let home = Scratch::new();
+        std::fs::create_dir_all(home.path().join(".pitboard")).expect("a Pitboard home");
         let app = home
-            .0
+            .path()
             .join("Applications/Pitboard.app/Contents/MacOS/Pitboard");
         let bundled = home
-            .0
+            .path()
             .join("Applications/Pitboard.app/Contents/Helpers/pitboard");
         a_program_at(&app);
         a_program_at(&bundled);
@@ -440,7 +434,7 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn nothing_is_installed_on_a_machine_where_nothing_was_installed() {
-        let home = Scratch::new("none");
+        let home = Scratch::new();
         let ctx = home.ctx();
         assert_eq!(status(&ctx), Installed::No);
         assert_eq!(installed_program(&ctx), None);
@@ -449,9 +443,9 @@ mod tests {
     /// A machine with no scheduler Pitboard knows says so, and writes nothing.
     #[test]
     fn a_machine_with_no_scheduler_says_so() {
-        let home = Scratch::new("unsupported");
+        let home = Scratch::new();
         home.1.without_a_scheduler();
-        let program = home.0.join("bin/pitboard");
+        let program = home.path().join("bin/pitboard");
         a_program_at(&program);
         let ctx = home.ctx().with_schedule_program(program);
         assert_eq!(status(&ctx), Installed::Unsupported);
@@ -473,7 +467,7 @@ mod tests {
 
     #[test]
     fn the_schedule_runs_the_pitboard_the_context_names_and_otherwise_this_one() {
-        let home = Scratch::new("program");
+        let home = Scratch::new();
         let ctx = home.ctx();
         let scheduled = program(&ctx).expect("this program");
         let running = std::env::current_exe().expect("this test's own program");
@@ -483,7 +477,7 @@ mod tests {
             "the command line schedules itself"
         );
         let bundled = home
-            .0
+            .path()
             .join("Applications/Pitboard.app/Contents/Helpers/pitboard");
         a_program_at(&bundled);
         assert_eq!(
@@ -500,10 +494,10 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn a_named_pitboard_that_will_not_be_there_is_refused() {
-        let home = Scratch::new("refused");
+        let home = Scratch::new();
         let ctx = home.ctx();
 
-        let missing = home.0.join("Pitboard.app/Contents/Helpers/pitboard");
+        let missing = home.path().join("Pitboard.app/Contents/Helpers/pitboard");
         let refused = install(
             &ctx.clone().with_schedule_program(missing.clone()),
             Permit::for_a_test(),
@@ -516,7 +510,7 @@ mod tests {
         );
 
         let temporary = home
-            .0
+            .path()
             .join("AppTranslocation/6A1C/d/Pitboard.app/Contents/Helpers/pitboard");
         a_program_at(&temporary);
         let refused = install(
@@ -569,9 +563,9 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn an_installed_schedule_says_which_pitboard_it_runs() {
-        let home = Scratch::new("installed");
+        let home = Scratch::new();
         let bundled = home
-            .0
+            .path()
             .join("Tools&Apps/Pitboard.app/Contents/Helpers/pitboard");
         a_program_at(&bundled);
         let ctx = home.ctx().with_schedule_program(bundled.clone());
@@ -592,13 +586,13 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn a_schedule_that_runs_an_app_is_pointed_at_its_command_line() {
-        let home = Scratch::new("repair");
-        std::fs::create_dir_all(home.0.join(".pitboard")).expect("a Pitboard home");
+        let home = Scratch::new();
+        std::fs::create_dir_all(home.path().join(".pitboard")).expect("a Pitboard home");
         let app = home
-            .0
+            .path()
             .join("Applications/Pitboard.app/Contents/MacOS/Pitboard");
         let bundled = home
-            .0
+            .path()
             .join("Applications/Pitboard.app/Contents/Helpers/pitboard");
         a_program_at(&app);
         a_program_at(&bundled);
@@ -619,7 +613,7 @@ mod tests {
             !repair(&ctx, Permit::for_a_test()).expect("nothing to do"),
             "no command line named"
         );
-        let gone = home.0.join("Old.app/Contents/Helpers/pitboard");
+        let gone = home.path().join("Old.app/Contents/Helpers/pitboard");
         assert!(
             !repair(
                 &ctx.clone().with_schedule_program(gone),
@@ -630,7 +624,9 @@ mod tests {
         );
         assert!(
             !repair(
-                &the_app.clone().with_pitboard_home(home.0.join("elsewhere")),
+                &the_app
+                    .clone()
+                    .with_pitboard_home(home.path().join("elsewhere")),
                 Permit::for_a_test()
             )
             .expect("nothing to do"),
@@ -659,7 +655,7 @@ mod tests {
         )
         .expect("the app again");
         let temporary = home
-            .0
+            .path()
             .join("AppTranslocation/6A1C/d/Pitboard.app/Contents/Helpers/pitboard");
         a_program_at(&temporary);
         assert!(
@@ -678,13 +674,13 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn a_process_another_job_started_still_repairs() {
-        let home = Scratch::new("another-job");
-        std::fs::create_dir_all(home.0.join(".pitboard")).expect("a Pitboard home");
+        let home = Scratch::new();
+        std::fs::create_dir_all(home.path().join(".pitboard")).expect("a Pitboard home");
         let app = home
-            .0
+            .path()
             .join("Applications/Pitboard.app/Contents/MacOS/Pitboard");
         let bundled = home
-            .0
+            .path()
             .join("Applications/Pitboard.app/Contents/Helpers/pitboard");
         a_program_at(&app);
         a_program_at(&bundled);
@@ -707,7 +703,7 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn a_schedule_pitboard_did_not_write_names_no_program() {
-        let home = Scratch::new("foreign");
+        let home = Scratch::new();
         let ctx = home.ctx();
         let installed = path(&ctx).expect("a scheduler here");
         std::fs::create_dir_all(installed.parent().expect("its directory")).expect("made");
@@ -750,13 +746,13 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn a_schedule_is_installed_only_where_pitboard_home_is_the_default_home() {
-        let home = Scratch::new("default-home");
-        std::fs::create_dir_all(home.0.join(".pitboard")).expect("a Pitboard home");
-        let program = home.0.join("bin/pitboard");
+        let home = Scratch::new();
+        std::fs::create_dir_all(home.path().join(".pitboard")).expect("a Pitboard home");
+        let program = home.path().join("bin/pitboard");
         a_program_at(&program);
         let ctx = home.ctx().with_schedule_program(program);
-        let default = home.0.join(".pitboard");
-        let elsewhere = home.0.join("elsewhere");
+        let default = home.path().join(".pitboard");
+        let elsewhere = home.path().join("elsewhere");
         let another = ctx.clone().with_pitboard_home(elsewhere.clone());
 
         home.1.refuse_next_start();
@@ -800,9 +796,9 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn a_schedule_is_given_the_proxy_variables_of_whoever_installs_it() {
-        let home = Scratch::new("proxy-install");
-        std::fs::create_dir_all(home.0.join(".pitboard")).expect("a Pitboard home");
-        let program = home.0.join("bin/pitboard");
+        let home = Scratch::new();
+        std::fs::create_dir_all(home.path().join(".pitboard")).expect("a Pitboard home");
+        let program = home.path().join("bin/pitboard");
         a_program_at(&program);
         let proxied = home
             .read(&[
@@ -854,13 +850,13 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn a_repair_writes_the_proxy_the_schedules_file_gives_and_never_the_apps() {
-        let home = Scratch::new("proxy-repair");
-        std::fs::create_dir_all(home.0.join(".pitboard")).expect("a Pitboard home");
+        let home = Scratch::new();
+        std::fs::create_dir_all(home.path().join(".pitboard")).expect("a Pitboard home");
         let app = home
-            .0
+            .path()
             .join("Applications/Pitboard.app/Contents/MacOS/Pitboard");
         let bundled = home
-            .0
+            .path()
             .join("Applications/Pitboard.app/Contents/Helpers/pitboard");
         a_program_at(&app);
         a_program_at(&bundled);

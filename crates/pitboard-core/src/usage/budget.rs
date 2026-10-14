@@ -294,26 +294,15 @@ mod tests {
 
     const NOW: i64 = 1_760_000_000;
 
-    struct Scratch(PathBuf);
-    impl Drop for Scratch {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-
-    fn machine(name: &str) -> (Context, Arc<FixedClock>, Scratch) {
-        let root = std::env::temp_dir().join(format!(
-            "pitboard-budget-{name}-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&root);
+    fn machine() -> (Context, Arc<FixedClock>, tempfile::TempDir) {
+        let scratch = tempfile::tempdir().expect("a scratch home");
+        let root = scratch.path().to_path_buf();
         let clock = Arc::new(FixedClock::at(NOW));
         let ctx = Context::new(root.clone())
-            .with_pitboard_home(root.clone())
+            .with_pitboard_home(root)
             .with_clock(Arc::clone(&clock) as Arc<dyn Clock>);
         home::ensure(&ctx, Permit::for_a_test()).expect("a home");
-        (ctx, clock, Scratch(root))
+        (ctx, clock, scratch)
     }
 
     fn reading(kinds: &[&str]) -> Snapshot {
@@ -380,7 +369,7 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn an_account_nobody_has_asked_about_is_asked_about() {
-        let (ctx, _clock, _s) = machine("first");
+        let (ctx, _clock, _s) = machine();
         assert_eq!(may_ask(&ctx, "acc", None, false), None);
     }
 
@@ -390,7 +379,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn asking_again_inside_the_floor_serves_what_is_already_known() {
-        let (ctx, clock, _s) = machine("floor");
+        let (ctx, clock, _s) = machine();
         let five_hour = reading(&["five_hour"]);
         record(
             &ctx,
@@ -414,7 +403,7 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn asking_for_it_goes_past_the_floor() {
-        let (ctx, _clock, _s) = machine("forced");
+        let (ctx, _clock, _s) = machine();
         record(
             &ctx,
             Permit::for_a_test(),
@@ -434,7 +423,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn asking_for_it_keeps_a_wait_the_service_asked_for() {
-        let (ctx, clock, _s) = machine("forced-rate-limited");
+        let (ctx, clock, _s) = machine();
         record(
             &ctx,
             Permit::for_a_test(),
@@ -453,7 +442,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn asking_for_it_tries_an_unreachable_service_again() {
-        let (ctx, _clock, _s) = machine("forced-unreachable");
+        let (ctx, _clock, _s) = machine();
         record(
             &ctx,
             Permit::for_a_test(),
@@ -472,7 +461,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn an_unreachable_service_is_not_called_rate_limiting() {
-        let (ctx, _clock, _s) = machine("never-answered");
+        let (ctx, _clock, _s) = machine();
         record(
             &ctx,
             Permit::for_a_test(),
@@ -486,7 +475,7 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn a_wait_an_older_pitboard_recorded_is_told_by_its_length() {
-        let (ctx, _clock, _s) = machine("older");
+        let (ctx, _clock, _s) = machine();
         let written = format!(
             r#"{{"asked":{{"answered_at":{a},"held_until":{h},"refusals":1}},"short":{{"answered_at":{a},"held_until":{s},"refusals":1}}}}"#,
             a = NOW - 10,
@@ -506,7 +495,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn a_retry_after_is_taken_at_its_word() {
-        let (ctx, clock, _s) = machine("retry-after");
+        let (ctx, clock, _s) = machine();
         record(
             &ctx,
             Permit::for_a_test(),
@@ -526,7 +515,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn refusals_in_a_row_wait_longer_each_time_up_to_a_cap() {
-        let (ctx, clock, _s) = machine("doubling");
+        let (ctx, clock, _s) = machine();
         let waits: Vec<i64> = (0..8)
             .map(|_| {
                 record(
@@ -554,7 +543,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn an_answer_clears_a_wait_and_starts_the_floor_again() {
-        let (ctx, _clock, _s) = machine("cleared");
+        let (ctx, _clock, _s) = machine();
         record(
             &ctx,
             Permit::for_a_test(),
@@ -574,7 +563,7 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn what_is_known_about_an_account_goes_when_the_account_does() {
-        let (ctx, _clock, _s) = machine("forget");
+        let (ctx, _clock, _s) = machine();
         record(
             &ctx,
             Permit::for_a_test(),

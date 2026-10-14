@@ -175,26 +175,23 @@ pub(crate) fn write_jar(path: &Path, cookies: &[Cookie]) -> io::Result<()> {
 mod tests {
     use super::*;
 
-    struct Scratch(PathBuf);
+    struct Scratch(tempfile::TempDir);
 
     impl Scratch {
-        fn new(name: &str) -> Scratch {
-            let root = std::env::temp_dir().join(format!(
-                "pitboard-jar-{name}-{}-{:?}",
-                std::process::id(),
-                std::thread::current().id()
-            ));
-            let _ = std::fs::remove_dir_all(&root);
-            std::fs::create_dir_all(&root).expect("a scratch folder");
-            Scratch(root)
+        fn new() -> Scratch {
+            Scratch(tempfile::tempdir().expect("a scratch folder"))
+        }
+
+        fn path(&self) -> &Path {
+            self.0.path()
         }
 
         fn jar(&self) -> PathBuf {
-            self.0.join("Cookies")
+            self.path().join("Cookies")
         }
 
         fn listing(&self) -> Vec<(String, u64)> {
-            let mut found: Vec<(String, u64)> = std::fs::read_dir(&self.0)
+            let mut found: Vec<(String, u64)> = std::fs::read_dir(self.path())
                 .expect("a listing")
                 .flatten()
                 .map(|entry| {
@@ -204,12 +201,6 @@ mod tests {
                 .collect();
             found.sort();
             found
-        }
-    }
-
-    impl Drop for Scratch {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
         }
     }
 
@@ -228,7 +219,7 @@ mod tests {
 
     #[test]
     fn a_jar_reads_its_session_rows_and_leaves_its_folder_as_it_was() {
-        let scratch = Scratch::new("one");
+        let scratch = Scratch::new();
         write_jar(
             &scratch.jar(),
             &[
@@ -265,7 +256,7 @@ mod tests {
 
     #[test]
     fn a_jar_with_no_session_reads_empty_and_none_is_absent() {
-        let scratch = Scratch::new("none");
+        let scratch = Scratch::new();
         assert!(matches!(
             cookies(&scratch.jar(), HOSTS, NAMES),
             Err(JarError::Absent)
@@ -278,15 +269,15 @@ mod tests {
 
     #[test]
     fn a_hot_journal_or_a_log_is_unsettled_and_never_opened() {
-        let scratch = Scratch::new("hot");
+        let scratch = Scratch::new();
         write_jar(&scratch.jar(), &[session(".claude.ai", "sessionKey")]).expect("a jar");
-        std::fs::write(scratch.0.join("Cookies-journal"), b"a write").expect("a journal");
+        std::fs::write(scratch.path().join("Cookies-journal"), b"a write").expect("a journal");
         assert!(matches!(
             cookies(&scratch.jar(), HOSTS, NAMES),
             Err(JarError::Unsettled(_))
         ));
-        std::fs::write(scratch.0.join("Cookies-journal"), b"").expect("emptied");
-        std::fs::write(scratch.0.join("Cookies-wal"), b"").expect("a log");
+        std::fs::write(scratch.path().join("Cookies-journal"), b"").expect("emptied");
+        std::fs::write(scratch.path().join("Cookies-wal"), b"").expect("a log");
         assert!(matches!(
             cookies(&scratch.jar(), HOSTS, NAMES),
             Err(JarError::Unsettled(_))
@@ -295,7 +286,7 @@ mod tests {
 
     #[test]
     fn a_missing_column_or_table_or_a_file_that_is_no_database_is_unknown() {
-        let scratch = Scratch::new("unknown");
+        let scratch = Scratch::new();
         let connection = Connection::open(scratch.jar()).expect("a database");
         connection
             .execute_batch(
@@ -309,7 +300,7 @@ mod tests {
             cookies(&scratch.jar(), HOSTS, NAMES),
             Err(JarError::Unknown(_))
         ));
-        let other = scratch.0.join("Other");
+        let other = scratch.path().join("Other");
         Connection::open(&other)
             .and_then(|c| c.execute_batch("CREATE TABLE cookies(x);"))
             .expect("no meta");
@@ -317,7 +308,7 @@ mod tests {
             cookies(&other, HOSTS, NAMES),
             Err(JarError::Unknown(_))
         ));
-        let text = scratch.0.join("Text");
+        let text = scratch.path().join("Text");
         std::fs::write(&text, vec![b'x'; 4096]).expect("not a database");
         assert!(matches!(
             cookies(&text, HOSTS, NAMES),

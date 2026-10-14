@@ -119,25 +119,10 @@ mod tests {
     use crate::desktop_testing::write_stand_in_jar;
     use crate::host::memory::MemoryHost;
 
-    struct Scratch(std::path::PathBuf);
-
-    impl Drop for Scratch {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-
-    fn scratch(name: &str) -> (Scratch, Context, std::sync::Arc<MemoryHost>) {
-        let root = std::env::temp_dir().join(format!(
-            "pitboard-desktop-jar-{name}-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).expect("a scratch folder");
+    fn scratch() -> (tempfile::TempDir, Context, std::sync::Arc<MemoryHost>) {
         let host = MemoryHost::new();
         let ctx = Context::for_unit_test().with_memory_stores(host.clone());
-        (Scratch(root), ctx, host)
+        (tempfile::tempdir().expect("a scratch folder"), ctx, host)
     }
 
     fn cookie(host: &str, name: &str, stored: &[u8]) -> Cookie {
@@ -150,8 +135,12 @@ mod tests {
         }
     }
 
-    fn read(scratch: &Scratch, ctx: &Context, rows: &[Cookie]) -> Result<Option<SignedIn>, Unread> {
-        let jar = scratch.0.join("Cookies");
+    fn read(
+        scratch: &tempfile::TempDir,
+        ctx: &Context,
+        rows: &[Cookie],
+    ) -> Result<Option<SignedIn>, Unread> {
+        let jar = scratch.path().join("Cookies");
         write_stand_in_jar(&jar, 24, rows);
         session(ctx, &jar)
     }
@@ -168,7 +157,7 @@ mod tests {
 
     #[test]
     fn the_session_is_sessionkey_for_claude_ai_fingerprinted_as_stored() {
-        let (scratch, ctx, _) = scratch("one");
+        let (scratch, ctx, _) = scratch();
         let found = read(
             &scratch,
             &ctx,
@@ -196,7 +185,7 @@ mod tests {
 
     #[test]
     fn signed_out_needs_none_of_the_five_names() {
-        let (scratch, ctx, _) = scratch("names");
+        let (scratch, ctx, _) = scratch();
         for name in SESSION_NAMES {
             if name == "sessionKey" {
                 continue;
@@ -217,7 +206,7 @@ mod tests {
 
     #[test]
     fn a_session_cookie_under_another_host_is_never_signed_out() {
-        let (scratch, ctx, _) = scratch("host");
+        let (scratch, ctx, _) = scratch();
         let what = format_refusal(read(
             &scratch,
             &ctx,
@@ -228,7 +217,7 @@ mod tests {
 
     #[test]
     fn a_value_not_v10_two_rows_or_a_newer_store_is_another_format() {
-        let (scratch, ctx, _) = scratch("format");
+        let (scratch, ctx, _) = scratch();
         let what = format_refusal(read(
             &scratch,
             &ctx,
@@ -240,14 +229,14 @@ mod tests {
             cookie(".claude.ai", "sessionKey", b"v10b"),
         ];
         assert!(format_refusal(read(&scratch, &ctx, &twice)).contains("two"));
-        let jar = scratch.0.join("Cookies");
+        let jar = scratch.path().join("Cookies");
         write_stand_in_jar(&jar, 25, &[]);
         assert!(format_refusal(session(&ctx, &jar)).contains("cannot read"));
     }
 
     #[test]
     fn a_session_key_for_each_host_is_another_format() {
-        let (scratch, ctx, _) = scratch("two-hosts");
+        let (scratch, ctx, _) = scratch();
         let two = [
             cookie(".claude.ai", "sessionKey", b"v10a"),
             cookie("claude.ai", "sessionKey", b"v10b"),
@@ -258,7 +247,7 @@ mod tests {
             "{what}"
         );
         // Below version 24 one session on both hosts is one value, and it refuses too.
-        let jar = scratch.0.join("Cookies");
+        let jar = scratch.path().join("Cookies");
         let one = [
             cookie("claude.ai", "sessionKey", b"v10a"),
             cookie(".claude.ai", "sessionKey", b"v10a"),
@@ -270,13 +259,17 @@ mod tests {
 
     #[test]
     fn a_jar_that_cannot_be_read_is_never_signed_out() {
-        let (scratch, ctx, host) = scratch("unread");
-        let jar = scratch.0.join("Cookies");
+        let (scratch, ctx, host) = scratch();
+        let jar = scratch.path().join("Cookies");
         write_stand_in_jar(&jar, 24, &[]);
         host.jar_unsettled(&jar);
         assert!(matches!(session(&ctx, &jar), Err(Unread::Unreadable(_))));
         assert_eq!(host.jars_asked().as_slice(), std::slice::from_ref(&jar));
-        assert!(session(&ctx, &scratch.0.join("Missing")).unwrap().is_none());
+        assert!(
+            session(&ctx, &scratch.path().join("Missing"))
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]

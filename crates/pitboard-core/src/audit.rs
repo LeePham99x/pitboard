@@ -107,9 +107,9 @@ mod tests {
     fn a_line_from_before_the_caller_column_still_reads() {
         let four = "2026-09-22T01:00:00+07:00\tuse\twork\tok";
         let five = "2026-09-22T01:01:00+07:00\tapp\tuse\tpersonal\tok";
-        let home = tempdir("audit-shapes");
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().to_path_buf();
         let ctx = Context::new(home.clone()).with_pitboard_home(home.clone());
-        std::fs::create_dir_all(&home).unwrap();
         std::fs::write(home.join("audit.log"), format!("{four}\n{five}\n")).unwrap();
 
         let entries = read(&ctx, 10);
@@ -131,8 +131,8 @@ mod tests {
         use crate::time::FixedClock;
         use std::sync::Arc;
 
-        let home = tempdir("audit-clock");
-        std::fs::create_dir_all(&home).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().to_path_buf();
         let clock = Arc::new(FixedClock::at(1_760_000_000));
         let ctx = Context::new(home.clone())
             .with_pitboard_home(home)
@@ -152,12 +152,6 @@ mod tests {
             stamp(1_760_003_600),
             "an hour later, because we said so"
         );
-    }
-
-    fn tempdir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("pitboard-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        dir
     }
 
     #[test]

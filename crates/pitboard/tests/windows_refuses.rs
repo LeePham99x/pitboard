@@ -13,7 +13,7 @@
 
 use serde_json::Value;
 use std::io::{BufRead, BufReader};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Child, Command, Output, Stdio};
 use std::time::Duration;
 
@@ -61,23 +61,12 @@ const READS: [&[&str]; 5] = [
     &["log"],
 ];
 
-/// The scratch folders, taken away with everything in them once the test is done.
-struct Scratch(PathBuf);
-
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
-}
-
-fn scratch() -> Scratch {
-    let root =
-        std::env::temp_dir().join(format!("pitboard-windows-refuses-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&root);
+fn scratch() -> tempfile::TempDir {
+    let scratch = tempfile::tempdir().expect("a scratch folder");
     for folder in FOLDERS {
-        std::fs::create_dir_all(root.join(folder)).expect("a scratch folder");
+        std::fs::create_dir_all(scratch.path().join(folder)).expect("a scratch folder");
     }
-    Scratch(root)
+    scratch
 }
 
 /// `pitboard <args>`, with nothing Pitboard reads taken from whoever runs the test, every
@@ -145,7 +134,7 @@ fn watching(root: &Path) -> Value {
 #[test]
 fn a_windows_build_answers_what_it_may_and_changes_nothing() {
     let scratch = scratch();
-    let root = &scratch.0;
+    let root = scratch.path();
 
     let version = pitboard(root, &["--version"]);
     assert!(version.status.success(), "{version:?}");

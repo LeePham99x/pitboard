@@ -173,25 +173,9 @@ impl<'de> serde::Deserialize<'de> for Pairs {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
-    struct Scratch(PathBuf);
-
-    impl Drop for Scratch {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-
-    fn scratch(name: &str) -> Scratch {
-        let root = std::env::temp_dir().join(format!(
-            "pitboard-desktop-settings-{name}-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).expect("a scratch folder");
-        Scratch(root)
+    fn scratch() -> tempfile::TempDir {
+        tempfile::tempdir().expect("a scratch folder")
     }
 
     const LIVE: &str = "{\n\t\"locale\": \"en-US\",\n\t\"oauth:tokenCache\": \"djEwAAAA\",\n\t\"lastKnownAccountUuid\": \"11111111-1111-1111-1111-111111111111\",\n\t\"userThemeMode\": \"dark\"\n}";
@@ -206,12 +190,12 @@ mod tests {
 
     #[test]
     fn a_settings_file_is_read_in_order_with_each_value_as_it_was() {
-        let root = scratch("order");
-        let read = read(&root.0, "lastKnownAccountUuid").expect("no file is an empty store");
+        let root = scratch();
+        let read = read(root.path(), "lastKnownAccountUuid").expect("no file is an empty store");
         assert!(read.body.is_empty());
         assert_eq!(read.file, None);
-        std::fs::write(root.0.join(FILE), LIVE).unwrap();
-        let read = read_again(&root.0);
+        std::fs::write(root.path().join(FILE), LIVE).unwrap();
+        let read = read_again(root.path());
         assert_eq!(
             keys(&read),
             [
@@ -259,12 +243,12 @@ mod tests {
     )]
     fn a_splice_touches_only_three_keys() {
         use crate::provider::folder::Keys;
-        let s = scratch("splice");
-        let file = s.0.join(FILE);
+        let s = scratch();
+        let file = s.path().join(FILE);
         std::fs::write(&file, LIVE).unwrap();
         crate::host::fs::testing::open_to_others(&file).unwrap();
 
-        put(&s.0, &Keys::none()).unwrap();
+        put(s.path(), &Keys::none()).unwrap();
         assert_eq!(
             std::fs::read_to_string(&file).unwrap(),
             "{\n\t\"locale\": \"en-US\",\n\t\"userThemeMode\": \"dark\"\n}",
@@ -278,7 +262,7 @@ mod tests {
         let keys = desktop_keys(
             r#"{"lastKnownAccountUuid": "22222222-2222-2222-2222-222222222222", "oauth:tokenCache":   "djEw"}"#,
         );
-        put(&s.0, &keys).unwrap();
+        put(s.path(), &keys).unwrap();
         assert_eq!(
             std::fs::read_to_string(&file).unwrap(),
             "{\n\t\"locale\": \"en-US\",\n\t\"userThemeMode\": \"dark\",\n\t\"oauth:tokenCache\": \"djEw\",\n\t\"lastKnownAccountUuid\": \"22222222-2222-2222-2222-222222222222\"\n}",
@@ -286,12 +270,12 @@ mod tests {
         );
 
         // A file changed since it was read is refused, not written over.
-        let stale = read_again(&s.0);
+        let stale = read_again(s.path());
         std::fs::write(&file, "{\"locale\": \"fr-FR\"}").unwrap();
         use crate::provider::folder::Folder;
         let refused = super::super::Desktop.write_settings(
             crate::service::Permit::for_a_test(),
-            &s.0,
+            s.path(),
             &stale,
             &Keys::none(),
         );
@@ -303,7 +287,7 @@ mod tests {
 
         // No file yet: one is written.
         std::fs::remove_file(&file).unwrap();
-        put(&s.0, &keys).unwrap();
+        put(s.path(), &keys).unwrap();
         assert!(std::fs::read_to_string(&file).unwrap().contains("djEw"));
     }
 
@@ -314,26 +298,29 @@ mod tests {
     )]
     fn a_settings_write_deletes_nothing_of_claudes() {
         use crate::provider::folder::Keys;
-        let s = scratch("sidecar-stays");
-        std::fs::write(s.0.join(FILE), LIVE).unwrap();
+        let s = scratch();
+        std::fs::write(s.path().join(FILE), LIVE).unwrap();
         let pending = "{\n\t\"locale\": \"de-DE\",\n\t\"oauth:tokenCache\": \"djEwAAAA\"\n}";
         let left = sidecar(pending, &digest(LIVE.as_bytes()));
-        std::fs::write(s.0.join(SIDECAR), &left).unwrap();
-        assert_eq!(read_again(&s.0).sidecar, Sidecar::Valid);
+        std::fs::write(s.path().join(SIDECAR), &left).unwrap();
+        assert_eq!(read_again(s.path()).sidecar, Sidecar::Valid);
 
-        put(&s.0, &Keys::none()).unwrap();
+        put(s.path(), &Keys::none()).unwrap();
         assert_eq!(
-            std::fs::read_to_string(s.0.join(FILE)).unwrap(),
+            std::fs::read_to_string(s.path().join(FILE)).unwrap(),
             "{\n\t\"locale\": \"de-DE\"\n}",
             "the write Claude left is the settings Pitboard writes"
         );
-        assert_eq!(std::fs::read_to_string(s.0.join(SIDECAR)).unwrap(), left);
         assert_eq!(
-            read_again(&s.0).sidecar,
+            std::fs::read_to_string(s.path().join(SIDECAR)).unwrap(),
+            left
+        );
+        assert_eq!(
+            read_again(s.path()).sidecar,
             Sidecar::Stale,
             "which Claude drops"
         );
-        let names: Vec<_> = std::fs::read_dir(&s.0)
+        let names: Vec<_> = std::fs::read_dir(s.path())
             .unwrap()
             .map(|entry| entry.unwrap().file_name())
             .collect();
@@ -342,25 +329,28 @@ mod tests {
 
     #[test]
     fn a_broken_file_or_a_key_named_twice_is_refused_and_left_as_it_was() {
-        let root = scratch("broken");
-        std::fs::write(root.0.join(FILE), "{\"a\": ").unwrap();
-        let (what, then) = refusal(&root.0);
+        let root = scratch();
+        std::fs::write(root.path().join(FILE), "{\"a\": ").unwrap();
+        let (what, then) = refusal(root.path());
         assert!(what.contains("not valid JSON"), "{what}");
         assert_eq!(then, Then::CopyAside);
-        std::fs::write(root.0.join(FILE), "[1]").unwrap();
-        assert_eq!(refusal(&root.0).1, Then::CopyAside);
-        assert_eq!(std::fs::read_to_string(root.0.join(FILE)).unwrap(), "[1]");
+        std::fs::write(root.path().join(FILE), "[1]").unwrap();
+        assert_eq!(refusal(root.path()).1, Then::CopyAside);
+        assert_eq!(
+            std::fs::read_to_string(root.path().join(FILE)).unwrap(),
+            "[1]"
+        );
     }
 
     #[test]
     fn a_settings_file_naming_a_key_twice_is_refused() {
-        let root = scratch("twice");
+        let root = scratch();
         std::fs::write(
-            root.0.join(FILE),
+            root.path().join(FILE),
             "{\"lastKnownAccountUuid\": \"a\", \"lastKnownAccountUuid\": \"b\"}",
         )
         .unwrap();
-        let (what, then) = refusal(&root.0);
+        let (what, then) = refusal(root.path());
         assert!(
             what.contains("names `lastKnownAccountUuid` twice"),
             "{what}"
@@ -370,7 +360,7 @@ mod tests {
 
     #[test]
     fn a_name_that_is_not_an_account_id_is_refused_and_an_empty_one_names_nobody() {
-        let root = scratch("name");
+        let root = scratch();
         let named = |name: &str| format!("{{\"lastKnownAccountUuid\": {name}}}");
         let longest = "a".repeat(64);
         for odd in [
@@ -383,8 +373,8 @@ mod tests {
             "\"a_b\"".to_string(),
             format!("\"{longest}a\""),
         ] {
-            std::fs::write(root.0.join(FILE), named(&odd)).unwrap();
-            let (what, then) = refusal(&root.0);
+            std::fs::write(root.path().join(FILE), named(&odd)).unwrap();
+            let (what, then) = refusal(root.path());
             assert!(
                 what.contains("whose `lastKnownAccountUuid` is not an account id"),
                 "{odd}: {what}"
@@ -392,15 +382,15 @@ mod tests {
             assert_eq!(then, Then::OpenAndQuit, "{odd}");
         }
         // A valid sidecar is the store, so its name is the one judged.
-        std::fs::write(root.0.join(FILE), LIVE).unwrap();
+        std::fs::write(root.path().join(FILE), LIVE).unwrap();
         let written = named("\"../x\"");
         std::fs::write(
-            root.0.join(SIDECAR),
+            root.path().join(SIDECAR),
             sidecar(&written, &digest(LIVE.as_bytes())),
         )
         .unwrap();
-        assert!(refusal(&root.0).0.contains("is not an account id"));
-        std::fs::remove_file(root.0.join(SIDECAR)).unwrap();
+        assert!(refusal(root.path()).0.contains("is not an account id"));
+        std::fs::remove_file(root.path().join(SIDECAR)).unwrap();
 
         let uuid = "11111111-1111-1111-1111-111111111111";
         for (taken, names) in [
@@ -408,8 +398,8 @@ mod tests {
             (uuid.to_string(), Some(uuid)),
             (longest.clone(), Some(longest.as_str())),
         ] {
-            std::fs::write(root.0.join(FILE), named(&format!("\"{taken}\""))).unwrap();
-            let read = read_again(&root.0);
+            std::fs::write(root.path().join(FILE), named(&format!("\"{taken}\""))).unwrap();
+            let read = read_again(root.path());
             assert_eq!(keys(&read), ["lastKnownAccountUuid"], "{taken}");
             assert_eq!(
                 read.named(&super::super::Desktop).as_deref(),
@@ -421,42 +411,42 @@ mod tests {
 
     #[test]
     fn a_valid_sidecar_is_the_settings_and_a_stale_one_is_ignored() {
-        let root = scratch("sidecar");
-        std::fs::write(root.0.join(FILE), LIVE).unwrap();
+        let root = scratch();
+        std::fs::write(root.path().join(FILE), LIVE).unwrap();
         let written = "{\n\t\"locale\": \"fr-FR\"\n}";
         std::fs::write(
-            root.0.join(SIDECAR),
+            root.path().join(SIDECAR),
             sidecar(written, &digest(LIVE.as_bytes())),
         )
         .unwrap();
-        let read = read_again(&root.0);
+        let read = read_again(root.path());
         assert_eq!(read.sidecar, Sidecar::Valid);
         assert_eq!(keys(&read), ["locale"]);
         assert_eq!(read.file.as_deref(), Some(digest(LIVE.as_bytes()).as_str()));
 
-        std::fs::write(root.0.join(SIDECAR), sidecar(written, &"0".repeat(64))).unwrap();
-        let read = read_again(&root.0);
+        std::fs::write(root.path().join(SIDECAR), sidecar(written, &"0".repeat(64))).unwrap();
+        let read = read_again(root.path());
         assert_eq!(read.sidecar, Sidecar::Stale);
         assert_eq!(keys(&read).len(), 4, "the file is the store");
 
-        std::fs::remove_file(root.0.join(FILE)).unwrap();
-        std::fs::write(root.0.join(SIDECAR), sidecar(written, "-")).unwrap();
-        let read = read_again(&root.0);
+        std::fs::remove_file(root.path().join(FILE)).unwrap();
+        std::fs::write(root.path().join(SIDECAR), sidecar(written, "-")).unwrap();
+        let read = read_again(root.path());
         assert_eq!((read.sidecar, read.file), (Sidecar::Valid, None));
 
         std::fs::write(
-            root.0.join(SIDECAR),
+            root.path().join(SIDECAR),
             format!("{} - .\n{written}", "1".repeat(64)),
         )
         .unwrap();
-        assert_eq!(read_again(&root.0).sidecar, Sidecar::Stale, "torn");
-        assert!(root.0.join(SIDECAR).exists(), "never removed");
+        assert_eq!(read_again(root.path()).sidecar, Sidecar::Stale, "torn");
+        assert!(root.path().join(SIDECAR).exists(), "never removed");
     }
 
     #[test]
     fn a_sidecar_pitboard_cannot_read_refuses() {
-        let root = scratch("unreadable");
-        std::fs::write(root.0.join(FILE), LIVE).unwrap();
+        let root = scratch();
+        std::fs::write(root.path().join(FILE), LIVE).unwrap();
         for written in [
             "no header line".to_string(),
             "a b c\n{}".to_string(),
@@ -464,8 +454,8 @@ mod tests {
             format!("{} - .  \n{{}}", "a".repeat(64)),
             sidecar("not json", "-").replace(" - ", &format!(" {} ", digest(LIVE.as_bytes()))),
         ] {
-            std::fs::write(root.0.join(SIDECAR), &written).unwrap();
-            let (what, then) = refusal(&root.0);
+            std::fs::write(root.path().join(SIDECAR), &written).unwrap();
+            let (what, then) = refusal(root.path());
             assert!(what.contains("config.json.journal"), "{written:?}: {what}");
             assert_eq!(then, Then::OpenAndQuit);
         }

@@ -205,29 +205,17 @@ mod tests {
     use crate::time::{Clock, FixedClock};
     use std::sync::Arc;
 
-    struct Scratch(PathBuf);
-    impl Drop for Scratch {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-
-    fn scratch(name: &str) -> (Context, PathBuf, Scratch) {
-        let root = std::env::temp_dir().join(format!(
-            "pitboard-config-{name}-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).expect("a scratch home");
-        let ctx = Context::new(root.clone())
+    fn scratch() -> (Context, PathBuf, tempfile::TempDir) {
+        let scratch = tempfile::tempdir().expect("a scratch home");
+        let root = scratch.path();
+        let ctx = Context::new(root.to_path_buf())
             .with_pitboard_home(root.join(".pitboard"))
             .with_clock(Arc::new(FixedClock::at(1_760_000_000)) as Arc<dyn Clock>);
         home::ensure(&ctx, Permit::for_a_test())
             .expect("a Pitboard home, which is where the record goes");
         let path = root.join(".claude.json");
         std::fs::write(&path, serde_json::json!({"numStartups": 1}).to_string()).expect("a config");
-        (ctx, path, Scratch(root))
+        (ctx, path, scratch)
     }
 
     /// Measured against a running session on 22 September 2026: this file is rewritten
@@ -237,7 +225,7 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn a_write_that_would_lose_what_claude_code_just_wrote_does_not_happen() {
-        let (ctx, path, _s) = scratch("lost-update");
+        let (ctx, path, _s) = scratch();
         let interfering = std::cell::Cell::new(0);
 
         let outcome = update(&ctx, Permit::for_a_test(), &path, |config| {
@@ -272,7 +260,7 @@ mod tests {
         ignore = "W16: Pitboard writing, replacing and removing files on Windows"
     )]
     fn a_quiet_file_is_written_once_and_what_was_dropped_is_recorded() {
-        let (ctx, path, _s) = scratch("quiet");
+        let (ctx, path, _s) = scratch();
         std::fs::write(
             &path,
             serde_json::json!({
