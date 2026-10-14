@@ -9,7 +9,8 @@ and see what each Claude Code and Codex account has left.
 
 <img src="https://raw.githubusercontent.com/datlechin/pitboard/main/.github/media/menu.png"
   alt="The Pitboard menu, listing Claude Code and Codex accounts, with a check mark on each
-  one in use and, under each account's name, its usage or that it needs signing in again"
+  one in use, the plan after each Codex account's name and, under each account's name, its
+  usage or that it needs signing in again"
   width="300">
 
 Pitboard keeps the login of each account you are not using, called a parked login. A switch

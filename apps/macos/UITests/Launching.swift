@@ -18,17 +18,26 @@ enum Fixture: String {
     case warmUp
 }
 
-@MainActor
-extension XCUIApplication {
+/// Every UI test case: a test stops at its first failure, and starts the app only here.
+class FixtureTestCase: XCTestCase {
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        continueAfterFailure = false
+    }
+
     /// The app, started into `fixture`: nothing it does reaches the keychain, the network,
     /// launchd, the login items or an administrator's password.
-    static func launched(_ fixture: Fixture) -> XCUIApplication {
+    @MainActor
+    func launch(_ fixture: Fixture) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["PITBOARD_FIXTURE"] = fixture.rawValue
         app.launch()
         return app
     }
+}
 
+@MainActor
+extension XCUIApplication {
     func openMenu() {
         let item = statusItems.firstMatch
         XCTAssertTrue(item.waitForExistence(timeout: 10))
@@ -127,5 +136,13 @@ extension XCUIElement {
     func text(_ comparison: String, _ words: String) -> XCUIElement {
         let format = "CAST(value, \"NSString\") \(comparison) %@ OR label \(comparison) %@"
         return staticTexts.matching(NSPredicate(format: format, words, words)).firstMatch
+    }
+
+    /// Waits for what `wait(for:toEqual:timeout:)` cannot compare, such as `value`, which is
+    /// `Any?`, or a label holding more than the words.
+    func wait(until format: String, timeout: TimeInterval) -> Bool {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: format), object: self)
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
     }
 }

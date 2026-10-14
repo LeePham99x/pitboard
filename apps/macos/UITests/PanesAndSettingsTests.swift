@@ -1,14 +1,10 @@
 import XCTest
 
-final class PanesAndSettingsTests: XCTestCase {
-    override func setUp() {
-        continueAfterFailure = false
-    }
-
+final class PanesAndSettingsTests: FixtureTestCase {
     /// Newest first: the fixture's two switches are newer than both its enrolments.
     @MainActor
     func testActivityListsChanges() {
-        let app = XCUIApplication.launched(.oneTool)
+        let app = launch(.oneTool)
         app.openWindow()
         app.descendants(matching: .any)["sidebar.activity"].click()
         let switched = app.text("Switch")
@@ -22,7 +18,7 @@ final class PanesAndSettingsTests: XCTestCase {
     /// lapses soon.
     @MainActor
     func testThisMacShowsTheChecks() {
-        let app = XCUIApplication.launched(.oneTool)
+        let app = launch(.oneTool)
         app.openWindow()
         app.descendants(matching: .any)["sidebar.machine"].click()
         XCTAssertTrue(app.staticTexts["account personal"].waitForExistence(timeout: 5))
@@ -31,7 +27,7 @@ final class PanesAndSettingsTests: XCTestCase {
 
     @MainActor
     func testDailyRenewal() {
-        let app = XCUIApplication.launched(.oneTool)
+        let app = launch(.oneTool)
         app.openSettings()
         app.toolbars.buttons["Renewal"].click()
         let renew = app.control("settings.renewDaily")
@@ -45,22 +41,21 @@ final class PanesAndSettingsTests: XCTestCase {
     /// Opening at login turns on and off without registering the test build.
     @MainActor
     func testOpenAtLogin() {
-        let app = XCUIApplication.launched(.oneTool)
+        let app = launch(.oneTool)
         app.openSettings()
         let toggle = app.control("settings.openAtLogin")
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
         XCTAssertEqual(toggle.value as? Int, 0)
         toggle.click()
-        XCTAssertEqual(toggle.value as? Int, 1)
+        XCTAssertTrue(toggle.wait(until: "value == 1", timeout: 5))
         toggle.click()
-        XCTAssertEqual(toggle.value as? Int, 0)
+        XCTAssertTrue(toggle.wait(until: "value == 0", timeout: 5))
     }
 
-    /// The model answers a change after the click, so each is waited for on the stepper,
-    /// which follows the switch.
+    /// The model answers a change after the click, so each read after one waits.
     @MainActor
     func testSwitchingBeforeAnAccountRunsOut() {
-        let app = XCUIApplication.launched(.oneTool)
+        let app = launch(.oneTool)
         app.openSettings()
         app.toolbars.buttons["Limits"].click()
         let toggle = app.control("settings.autoSwitch")
@@ -75,8 +70,8 @@ final class PanesAndSettingsTests: XCTestCase {
         XCTAssertFalse(standing.exists, "nothing said while it is off")
 
         toggle.click()
+        XCTAssertTrue(toggle.wait(until: "value == 1", timeout: 5))
         XCTAssertTrue(share.wait(for: \.isEnabled, toEqual: true, timeout: 5))
-        XCTAssertEqual(toggle.value as? Int, 1)
         XCTAssertTrue(says(app, "Switch when a limit reaches 95%").waitForExistence(timeout: 5))
         XCTAssertTrue(standing.waitForExistence(timeout: 5), "what the look came to")
 
@@ -86,8 +81,8 @@ final class PanesAndSettingsTests: XCTestCase {
         XCTAssertTrue(says(app, "Switch when a limit reaches 96%").waitForExistence(timeout: 5))
 
         toggle.click()
+        XCTAssertTrue(toggle.wait(until: "value == 0", timeout: 5))
         XCTAssertTrue(share.wait(for: \.isEnabled, toEqual: false, timeout: 5))
-        XCTAssertEqual(toggle.value as? Int, 0)
         XCTAssertTrue(standing.waitForNonExistence(timeout: 5))
     }
 
@@ -95,7 +90,7 @@ final class PanesAndSettingsTests: XCTestCase {
     /// warms up as the app starts.
     @MainActor
     func testWarmingUpAccounts() {
-        let app = XCUIApplication.launched(.warmUp)
+        let app = launch(.warmUp)
         app.openWindow()
         let warmed = app.text("BEGINSWITH", "Warms up again at ")
         XCTAssertTrue(warmed.waitForExistence(timeout: 30), "personal is warmed up")
@@ -111,11 +106,8 @@ final class PanesAndSettingsTests: XCTestCase {
         XCTAssertTrue(app.control("settings.warmFrom").exists)
         XCTAssertTrue(app.control("settings.warmStanding").waitForExistence(timeout: 5))
 
-        // The model answers once the core has kept it, so the switch is waited for.
         work.click()
-        let on = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "value == 1"), object: work)
-        XCTAssertEqual(XCTWaiter.wait(for: [on], timeout: 5), .completed)
+        XCTAssertTrue(work.wait(until: "value == 1", timeout: 5))
     }
 
     /// What names the share a limit is switched at, as `words`: a text beside the stepper,
@@ -131,7 +123,7 @@ final class PanesAndSettingsTests: XCTestCase {
     /// app.
     @MainActor
     func testInstallingTheCommandLine() {
-        let app = XCUIApplication.launched(.oneTool)
+        let app = launch(.oneTool)
         app.openSettings()
         app.toolbars.buttons["Command Line"].click()
         let install = app.buttons["Install Command Line Tool…"]
@@ -144,7 +136,7 @@ final class PanesAndSettingsTests: XCTestCase {
     /// A debug build carries no update key, and the Updates tab says so.
     @MainActor
     func testUpdatesSayWhenTheBuildCannotUpdate() {
-        let app = XCUIApplication.launched(.oneTool)
+        let app = launch(.oneTool)
         app.openSettings()
         app.toolbars.buttons["Updates"].click()
         let prefix = "This copy of Pitboard can"

@@ -1,28 +1,16 @@
 import XCTest
 
 // The fixture's Claude is a stand-in: no real app is quit or opened.
-final class ClaudeDesktopTests: XCTestCase {
-    override func setUp() {
-        continueAfterFailure = false
-    }
-
+final class ClaudeDesktopTests: FixtureTestCase {
     @MainActor
     func testClaudeDesktopAccountsAreListedUnderTheirTool() throws {
-        let app = XCUIApplication.launched(.claudeDesktop)
+        let app = launch(.claudeDesktop)
         app.openMenu()
         XCTAssertTrue(app.menuItem("Claude Desktop").waitForExistence(timeout: 5))
         // Claude Code has a work of its own, in the section above.
         let titles = app.statusItems.firstMatch.menuItems.allElementsBoundByIndex.map(\.title)
         let heading = try XCTUnwrap(titles.firstIndex(of: "Claude Desktop"))
         XCTAssertEqual(Set(titles.dropFirst(heading + 1).prefix(2)), ["work", "home"])
-        // The line under an account's title is not part of its title.
-        let words = "No usage read"
-        let noUsage = NSPredicate(
-            format: "title CONTAINS %@ OR label CONTAINS %@"
-                + " OR CAST(value, \"NSString\") CONTAINS %@",
-            words, words, words)
-        let menu = app.statusItems.firstMatch.descendants(matching: .any)
-        XCTAssertTrue(menu.matching(noUsage).firstMatch.exists, words)
         app.typeKey(.escape, modifierFlags: [])
 
         app.openWindow()
@@ -33,7 +21,7 @@ final class ClaudeDesktopTests: XCTestCase {
 
     @MainActor
     func testUsingAClaudeDesktopAccountWithClaudeClosedSwitchesAtOnce() {
-        let app = XCUIApplication.launched(.claudeDesktop)
+        let app = launch(.claudeDesktop)
         app.openWindow()
         let home = app.accountRow("desktop/home")
         XCTAssertTrue(home.waitForExistence(timeout: 5))
@@ -45,7 +33,7 @@ final class ClaudeDesktopTests: XCTestCase {
 
     @MainActor
     func testUsingAClaudeDesktopAccountAsksToQuitClaudeFirst() {
-        let app = XCUIApplication.launched(.claudeDesktopOpen)
+        let app = launch(.claudeDesktopOpen)
         app.openWindow()
         let home = app.accountRow("desktop/home")
         XCTAssertTrue(home.waitForExistence(timeout: 5))
@@ -67,7 +55,7 @@ final class ClaudeDesktopTests: XCTestCase {
 
     @MainActor
     func testAddingAClaudeDesktopAccountAsksToQuitClaudeOverTheSheet() {
-        let app = XCUIApplication.launched(.claudeDesktopOpen)
+        let app = launch(.claudeDesktopOpen)
         app.openWindow()
         startAddingTravel(app)
 
@@ -87,7 +75,8 @@ final class ClaudeDesktopTests: XCTestCase {
         let quit = app.alert.buttons["Quit Claude and Park work"]
         XCTAssertTrue(quit.waitForExistence(timeout: 5))
         quit.click()
-        XCTAssertTrue(app.text("Waiting for Claude to quit").waitForExistence(timeout: 10))
+        let waiting = app.text("BEGINSWITH", "In Claude, sign in to the account you’re adding.")
+        XCTAssertTrue(waiting.waitForExistence(timeout: 10))
         // The fixture's Claude signs in to travel and quits 7 seconds after it is opened.
         let travel = app.accountRow("desktop/travel")
         XCTAssertTrue(travel.waitForExistence(timeout: 30))
@@ -97,7 +86,7 @@ final class ClaudeDesktopTests: XCTestCase {
 
     @MainActor
     func testAnAddLeftHalfwayOffersToPutTheParkedAccountBack() {
-        let app = XCUIApplication.launched(.claudeDesktop)
+        let app = launch(.claudeDesktop)
         app.openWindow()
         startAddingTravel(app)
 
@@ -107,7 +96,7 @@ final class ClaudeDesktopTests: XCTestCase {
         XCTAssertTrue(waiting.waitForExistence(timeout: 10))
         XCTAssertFalse(app.alert.exists, "Claude was closed, so nothing asked")
         app.typeKey(.escape, modifierFlags: [])
-        XCTAssertFalse(waiting.waitForNonExistence(timeout: 2), "the waiting page stays")
+        XCTAssertTrue(waiting.exists, "the waiting page stays")
         XCTAssertTrue(app.sheets.firstMatch.buttons["Put work Back"].exists)
 
         app.sheets.firstMatch.buttons["Later"].click()

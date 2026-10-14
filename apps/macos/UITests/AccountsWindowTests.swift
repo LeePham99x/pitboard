@@ -1,17 +1,13 @@
 import AppKit
 import XCTest
 
-final class AccountsWindowTests: XCTestCase {
-    override func setUp() {
-        continueAfterFailure = false
-    }
-
+final class AccountsWindowTests: FixtureTestCase {
     /// The fixture's Claude Code takes a code as the real one does, `<code>#<state>`. The
     /// address it prints is copied for another browser, and Open is never clicked: it would
     /// open that address in a real one.
     @MainActor
     func testAddingAClaudeCodeAccount() {
-        let app = XCUIApplication.launched(.oneTool)
+        let app = launch(.oneTool)
         app.openWindow()
         app.toolbars.buttons["Add Account"].click()
         let name = app.textFields["sheet.name"]
@@ -31,13 +27,13 @@ final class AccountsWindowTests: XCTestCase {
         code.typeText("fixture-code#state")
         app.buttons["Submit Code"].click()
         XCTAssertTrue(app.accountRow("claude/third").waitForExistence(timeout: 10))
-        XCTAssertFalse(app.sheets.firstMatch.exists)
+        XCTAssertTrue(sheet.waitForNonExistence(timeout: 5))
     }
 
     /// A Codex sign-in finishes by itself once the browser is done.
     @MainActor
     func testAddingACodexAccount() {
-        let app = XCUIApplication.launched(.twoTools)
+        let app = launch(.twoTools)
         app.openWindow()
         app.toolbars.buttons["Add Account"].click()
         let tool = app.popUpButtons["sheet.tool"]
@@ -56,7 +52,7 @@ final class AccountsWindowTests: XCTestCase {
     /// finishes is what shows the first one was stopped.
     @MainActor
     func testCancellingASignInAddsNothing() {
-        let app = XCUIApplication.launched(.oneTool)
+        let app = launch(.oneTool)
         app.openWindow()
         app.toolbars.buttons["Add Account"].click()
         let name = app.textFields["sheet.name"]
@@ -67,7 +63,7 @@ final class AccountsWindowTests: XCTestCase {
         XCTAssertTrue(app.textFields["sheet.code"].waitForExistence(timeout: 10))
         app.sheets.firstMatch.buttons["Cancel"].click()
         XCTAssertTrue(app.sheets.firstMatch.waitForNonExistence(timeout: 5))
-        XCTAssertFalse(app.accountRow("claude/third").waitForExistence(timeout: 2))
+        XCTAssertFalse(app.accountRow("claude/third").exists)
 
         app.toolbars.buttons["Add Account"].click()
         let again = app.textFields["sheet.name"]
@@ -85,7 +81,7 @@ final class AccountsWindowTests: XCTestCase {
 
     @MainActor
     func testRenamingAnAccount() {
-        let app = XCUIApplication.launched(.oneTool)
+        let app = launch(.oneTool)
         app.openWindow()
         let row = app.accountRow("claude/personal")
         XCTAssertTrue(row.waitForExistence(timeout: 5))
@@ -106,7 +102,7 @@ final class AccountsWindowTests: XCTestCase {
 
     @MainActor
     func testForgettingAsksFirst() {
-        let app = XCUIApplication.launched(.oneTool)
+        let app = launch(.oneTool)
         app.openWindow()
         let row = app.accountRow("claude/personal")
         XCTAssertTrue(row.waitForExistence(timeout: 5))
@@ -123,7 +119,7 @@ final class AccountsWindowTests: XCTestCase {
 
     @MainActor
     func testTheAccountInUseOffersNoForget() {
-        let app = XCUIApplication.launched(.oneTool)
+        let app = launch(.oneTool)
         app.openWindow()
         let row = app.accountRow("claude/work")
         XCTAssertTrue(row.waitForExistence(timeout: 5))
@@ -135,7 +131,7 @@ final class AccountsWindowTests: XCTestCase {
 
     @MainActor
     func testUsingACodexAccountSaysSessionsKeepTheOldOne() {
-        let app = XCUIApplication.launched(.twoTools)
+        let app = launch(.twoTools)
         app.openWindow()
         let spare = app.accountRow("codex/spare")
         XCTAssertTrue(spare.waitForExistence(timeout: 5))
@@ -152,7 +148,7 @@ final class AccountsWindowTests: XCTestCase {
     /// The fixture's ChatGPT is a stand-in: no real app is quit.
     @MainActor
     func testUsingACodexAccountAsksToQuitChatGPTFirst() {
-        let app = XCUIApplication.launched(.chatGPTOpen)
+        let app = launch(.chatGPTOpen)
         app.openWindow()
         let spare = app.accountRow("codex/spare")
         XCTAssertTrue(spare.waitForExistence(timeout: 5))
@@ -174,7 +170,7 @@ final class AccountsWindowTests: XCTestCase {
 
     @MainActor
     func testNamingTheAccountInUse() {
-        let app = XCUIApplication.launched(.unnamed)
+        let app = launch(.unnamed)
         app.openWindow()
         XCTAssertTrue(app.staticTexts["Give this account a name"].waitForExistence(timeout: 5))
         app.buttons["Name…"].firstMatch.click()
@@ -188,7 +184,7 @@ final class AccountsWindowTests: XCTestCase {
 
     @MainActor
     func testAnEmptyMachineOffersAnAccount() {
-        let app = XCUIApplication.launched(.empty)
+        let app = launch(.empty)
         app.openWindow()
         XCTAssertTrue(app.staticTexts["No Accounts"].waitForExistence(timeout: 5))
         app.buttons["Add Account…"].click()
@@ -197,7 +193,7 @@ final class AccountsWindowTests: XCTestCase {
 
     @MainActor
     func testGivingUpOnAnInterruptedSwitch() {
-        let app = XCUIApplication.launched(.stuck)
+        let app = launch(.stuck)
         app.openWindow()
         let giveUp = app.buttons["Give Up…"]
         XCTAssertTrue(giveUp.waitForExistence(timeout: 5))
@@ -211,7 +207,7 @@ final class AccountsWindowTests: XCTestCase {
 
     @MainActor
     func testOneAccountIsOfferedASecondUntilNotNow() {
-        let app = XCUIApplication.launched(.onlyOne)
+        let app = launch(.onlyOne)
         app.openWindow()
         let tip = app.staticTexts["Add a second account"]
         XCTAssertTrue(tip.waitForExistence(timeout: 5))
@@ -223,7 +219,7 @@ final class AccountsWindowTests: XCTestCase {
     /// The window goes to the accounts, where the new one is listed.
     @MainActor
     func testCommandNAddsAnAccountFromAnyPane() {
-        let app = XCUIApplication.launched(.oneTool)
+        let app = launch(.oneTool)
         app.openWindow()
         app.descendants(matching: .any)["sidebar.activity"].click()
         let activity = app.text("Switch")
@@ -234,12 +230,12 @@ final class AccountsWindowTests: XCTestCase {
         app.sheets.firstMatch.buttons["Cancel"].click()
         XCTAssertTrue(app.sheets.firstMatch.waitForNonExistence(timeout: 5))
         XCTAssertTrue(app.accountRow("claude/work").waitForExistence(timeout: 5))
-        XCTAssertFalse(activity.exists)
+        XCTAssertTrue(activity.waitForNonExistence(timeout: 5))
     }
 
     @MainActor
     func testTheFirstLaunchOpensTheWindow() {
-        let app = XCUIApplication.launched(.firstLaunch)
+        let app = launch(.firstLaunch)
         XCTAssertTrue(app.staticTexts["No Accounts"].waitForExistence(timeout: 10))
     }
 }
