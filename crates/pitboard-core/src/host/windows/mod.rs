@@ -230,16 +230,12 @@ mod tests {
         }
         assert!(host().listing().is_err());
         assert!(matches!(
-            host().cookies(
-                std::path::Path::new("C:/x/Cookies"),
-                &["claude.ai"],
-                &["sessionKey"]
-            ),
+            host().cookies(Path::new("C:/x/Cookies"), &["claude.ai"], &["sessionKey"]),
             Err(JarError::Unsupported)
         ));
-        assert_eq!(host().app_version(std::path::Path::new("C:/x")), None);
-        assert!(super::proc::may_be_running(std::process::id()));
-        assert!(super::proc::may_be_running(u32::MAX));
+        assert_eq!(host().app_version(Path::new("C:/x")), None);
+        assert!(proc::may_be_running(std::process::id()));
+        assert!(proc::may_be_running(u32::MAX));
     }
 
     /// There is no scheduler, on this machine or on one in memory.
@@ -290,7 +286,7 @@ mod tests {
         unsupported(fs::move_new(permit, &dir, &dir.join("x")));
         unsupported(fs::flush_dir(&dir));
         unsupported(fs::same_volume(&dir, &dir).map(drop));
-        unsupported(super::write_jar(&dir.join("Cookies"), &[]));
+        unsupported(write_jar(&dir.join("Cookies"), &[]));
         assert!(!dir.exists(), "nothing was made");
         assert_eq!(fs::access(&std::env::temp_dir()), None);
         assert!(!proc::can_run(&std::env::current_exe().expect("this test")));

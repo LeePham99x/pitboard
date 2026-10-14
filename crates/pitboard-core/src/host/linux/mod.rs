@@ -145,7 +145,7 @@ fn started_as(
 ) -> PathBuf {
     let resolved = std::fs::canonicalize(&running).ok();
     argv0
-        .and_then(|named| super::program::find(std::path::Path::new(named), search))
+        .and_then(|named| super::program::find(Path::new(named), search))
         .filter(|found| resolved.is_some() && std::fs::canonicalize(found).ok() == resolved)
         .unwrap_or(running)
 }
@@ -177,7 +177,7 @@ mod tests {
             std::thread::current().id()
         ));
         let _ = std::fs::remove_dir_all(&home);
-        let runnable = |path: &std::path::Path| {
+        let runnable = |path: &Path| {
             std::fs::create_dir_all(path.parent().unwrap()).expect("its directory");
             std::fs::write(path, "").expect("a program");
             fs::testing::make_runnable(path).expect("runnable");
@@ -191,15 +191,15 @@ mod tests {
         let another = home.join("elsewhere/pitboard");
         runnable(&another);
 
-        let started = |argv0: Option<&std::path::Path>, search: &std::path::Path| {
+        let started = |argv0: Option<&Path>, search: &Path| {
             started_as(
-                argv0.map(std::path::Path::as_os_str),
+                argv0.map(Path::as_os_str),
                 search.as_os_str(),
                 running.clone(),
             )
         };
-        let name = std::path::Path::new("pitboard");
-        let nowhere = std::path::Path::new("");
+        let name = Path::new("pitboard");
+        let nowhere = Path::new("");
         assert_eq!(started(Some(name), &bin), link, "a name found on PATH");
         assert_eq!(started(Some(&link), nowhere), link, "a path");
         assert_eq!(
