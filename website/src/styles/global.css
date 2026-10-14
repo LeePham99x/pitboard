@@ -11,6 +11,17 @@
 @custom-variant theme-system (&:where(:root:not([data-theme]) *));
 @custom-variant theme-light (&:where([data-theme="light"] *));
 @custom-variant theme-dark (&:where([data-theme="dark"] *));
+/* the scheme in effect: the toggle's choice, or the system's when there is none */
+@custom-variant scheme-dark {
+  &:where([data-theme="dark"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme]) *) {
+      @slot;
+    }
+  }
+}
 /* the menu demo site.ts plays: start, move, hl and pick before the switch, shut and reach after it */
 @custom-variant demo (&:where([data-demo] *));
 @custom-variant demo-start (&:where([data-demo="start"] *));
