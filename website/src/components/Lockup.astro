@@ -7,7 +7,7 @@ interface Props {
 }
 
 const viewBox = /viewBox="([^"]+)"/.exec(svg)?.[1];
-const paths = [...svg.matchAll(/<path d="([^"]+)" fill="([^"]+)"\/>/g)].map((m) => m[1]);
+const paths = [...svg.matchAll(/<path\b[^>]*?\sd="([^"]+)"/g)].map((m) => m[1]);
 if (!viewBox || paths.length !== 3)
   throw new Error("lockup-color.svg is not the kit's three paths");
 const [board, lit, word] = paths;
