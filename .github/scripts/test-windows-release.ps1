@@ -83,17 +83,24 @@ function New-Zip([string] $Zip, [Collections.Specialized.OrderedDictionary] $Ent
     }
 }
 
-# bottom 0.14.9's release is immutable, and its btm.exe is signed by SignPath Foundation. Nothing in
-# it runs here, and no certificate is made or trusted.
+# bottom 0.14.9's release is immutable, and the btm.exe in its x64 and its ARM64 zip is signed by
+# SignPath Foundation. Each runner reads the other machine's program too, as windows-sign reads
+# both on windows-2025. Nothing in them runs here, and no certificate is made or trusted.
 $verify = Join-Path $PSScriptRoot 'verify-windows-signatures.ps1'
 $signPath = 'CN=SignPath Foundation, O=SignPath Foundation, L=Lewes, S=Delaware, C=US'
+$pinned = [ordered]@{
+    'bottom_x86_64-pc-windows-msvc.zip' = '01660721B0FDC72B191F2B27B78DC9A3087AEB7B3FAD4A890C53870089D6B500'
+    'bottom_aarch64-pc-windows-msvc.zip' = 'FABE9FC4850D12917150295900119EAA5455724658D1D709E013CACDC0390349'
+}
+foreach ($name in $pinned.Keys) {
+    $file = Join-Path $work $name
+    $url = "https://github.com/ClementTsang/bottom/releases/download/0.14.9/$name"
+    Invoke-WebRequest -Uri $url -OutFile $file -MaximumRetryCount 5 -RetryIntervalSec 10
+    if ((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne $pinned[$name]) { throw "$url is not the zip read on 15 October 2026" }
+    & $verify -Path $file -Mode signed -Subject $signPath
+}
+Write-Output 'ok: programs for x64 and ARM64 that SignPath Foundation signed pass as signed by it'
 $bottom = Join-Path $work 'bottom_x86_64-pc-windows-msvc.zip'
-$url = 'https://github.com/ClementTsang/bottom/releases/download/0.14.9/bottom_x86_64-pc-windows-msvc.zip'
-Invoke-WebRequest -Uri $url -OutFile $bottom -MaximumRetryCount 5 -RetryIntervalSec 10
-$pinned = '01660721B0FDC72B191F2B27B78DC9A3087AEB7B3FAD4A890C53870089D6B500'
-if ((Get-FileHash -LiteralPath $bottom -Algorithm SHA256).Hash -ne $pinned) { throw "$url is not the zip read on 15 October 2026" }
-& $verify -Path $bottom -Mode signed -Subject $signPath
-Write-Output 'ok: a program SignPath Foundation signed passes as signed by it'
 
 $against = @{ Path = $bottom; Mode = 'signed'; Subject = 'CN=Pitboard' }
 Assert-Refused 'a signed program checked against another subject' $against "not 'CN=Pitboard'" $verify
