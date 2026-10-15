@@ -62,7 +62,10 @@ jobs:
             200)
               curl -fsSL -A "pitboard release" -o "$RUNNER_TEMP/core.crate" \
                 "https://static.crates.io/crates/pitboard-core/pitboard-core-$core.crate"
-              sh .github/scripts/core-unchanged.sh "$RUNNER_TEMP/core.crate" crates/pitboard-core
+              rustup toolchain install
+              cargo package -p pitboard-core --no-verify --locked
+              sh .github/scripts/core-unchanged.sh "$RUNNER_TEMP/core.crate" \
+                "target/package/pitboard-core-$core.crate"
               ;;
             404) ;;
             *)

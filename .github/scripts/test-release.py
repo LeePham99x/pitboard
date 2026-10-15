@@ -13,6 +13,18 @@ RELEASE_KIND = REPO / ".github" / "scripts" / "release-kind.sh"
 BUILD_NUMBER = REPO / "apps" / "macos" / "scripts" / "build-number.sh"
 KEYS = ["version", "base", "kind", "prerelease", "windows", "crates", "latest"]
 NOT_A_TAG = "is not a release tag: vX.Y.Z, vX.Y.Z-rcN or vX.Y.Z-beta.N"
+NORMALIZED = """[package]
+name = "pitboard-core"
+version = "0.15.0"
+
+[dependencies.ureq]
+version = "3"
+features = [
+    "rustls-no-provider",
+    "platform-verifier",
+]
+default-features = false
+"""
 NO_BUILD_NUMBER = (
     "has no build number: it takes X.Y.Z or X.Y.Z-beta.N, with Y and Z at most 99 and N from 1 "
     "to 98"
@@ -26,42 +38,48 @@ def run(*args):
 class CoreUnchanged(unittest.TestCase):
     def setUp(self):
         self.work = Path(tempfile.mkdtemp())
-        self.core = self.work / "core"
-        (self.core / "src" / "host").mkdir(parents=True)
-        (self.core / "src" / "lib.rs").write_text("pub mod host;\n")
-        (self.core / "src" / "host" / "mod.rs").write_text("pub fn os() {}\n")
-        (self.core / "Cargo.toml").write_text(
-            '[package]\nname = "pitboard-core"\nversion = "0.15.0"\n'
-        )
-        (self.core / "README.md").write_text("Pitboard\n")
 
     def tearDown(self):
         shutil.rmtree(self.work)
 
-    def crate(self, changes=None, top="pitboard-core-0.15.0"):
+    def crate(self, name, changes=None, top="pitboard-core-0.15.0"):
         files = {
             "src/lib.rs": "pub mod host;\n",
             "src/host/mod.rs": "pub fn os() {}\n",
-            "Cargo.toml.orig": (self.core / "Cargo.toml").read_text(),
-            "Cargo.toml": "# normalized by cargo\n",
+            "Cargo.toml.orig": (
+                '[package]\nname = "pitboard-core"\nversion = "0.15.0"\n\n'
+                "[dependencies]\nureq.workspace = true\n"
+            ),
+            "Cargo.toml": NORMALIZED,
             "Cargo.lock": "version = 4\n",
-            "README.md": "An older README\n",
+            "README.md": "Pitboard\n",
             ".cargo_vcs_info.json": '{"git": {"sha1": "af8cdf19"}}\n',
         }
         files.update(changes or {})
-        path = self.work / f"{top}.crate"
+        path = self.work / f"{name}.crate"
         with tarfile.open(path, "w:gz") as tar:
-            for name, text in files.items():
+            for file, text in files.items():
                 if text is None:
                     continue
                 data = text.encode()
-                info = tarfile.TarInfo(f"{top}/{name}")
+                info = tarfile.TarInfo(f"{top}/{file}")
                 info.size = len(data)
                 tar.addfile(info, io.BytesIO(data))
         return path
 
-    def test_the_same_source_and_manifest_pass(self):
-        done = run(CORE_UNCHANGED, self.crate(), self.core)
+    def compared(self, published, packaged=None):
+        return run(CORE_UNCHANGED, published, packaged or self.crate("packaged"))
+
+    def test_the_same_source_and_manifests_pass(self):
+        published = self.crate(
+            "published",
+            {
+                "Cargo.lock": "version = 3\n",
+                "README.md": "An older README\n",
+                ".cargo_vcs_info.json": '{"git": {"sha1": "22722731"}}\n',
+            },
+        )
+        done = self.compared(published)
         self.assertEqual(done.returncode, 0, done.stderr)
 
     def test_a_change_without_a_new_version_is_refused(self):
@@ -70,13 +88,15 @@ class CoreUnchanged(unittest.TestCase):
             {"src/host/mod.rs": None},
             {"src/extra.rs": "\n"},
             {"Cargo.toml.orig": '[package]\nname = "pitboard-core"\nversion.workspace = true\n'},
+            # Only the root's [workspace.dependencies] moved: ureq lost a feature.
+            {"Cargo.toml": NORMALIZED.replace('    "platform-verifier",\n', "")},
         ):
             with self.subTest(changes=list(changes)):
-                done = run(CORE_UNCHANGED, self.crate(changes), self.core)
+                done = self.compared(self.crate("published", changes))
                 self.assertEqual(done.returncode, 1)
                 self.assertIn(
-                    f"pitboard-core-0.15.0 on crates.io is not what {self.core} holds: "
-                    f"raise the version in {self.core}/Cargo.toml",
+                    "pitboard-core-0.15.0 on crates.io is not what this tree packages: raise the "
+                    "version in crates/pitboard-core/Cargo.toml",
                     done.stderr,
                 )
 
@@ -84,14 +104,16 @@ class CoreUnchanged(unittest.TestCase):
         empty = self.work / "empty.crate"
         with tarfile.open(empty, "w:gz"):
             pass
-        for crate in (empty, self.crate({"Cargo.toml.orig": None})):
-            with self.subTest(crate=crate.name):
-                done = run(CORE_UNCHANGED, crate, self.core)
+        unnamed = self.crate("unnamed", {"Cargo.toml.orig": None})
+        pairs = ((empty, None), (unnamed, None), (self.crate("published"), empty))
+        for published, packaged in pairs:
+            with self.subTest(published=published.name, packaged=packaged and packaged.name):
+                done = self.compared(published, packaged)
                 self.assertEqual(done.returncode, 1)
                 self.assertIn("is not one crate", done.stderr)
 
     def test_it_takes_two_arguments(self):
-        done = run(CORE_UNCHANGED, self.crate())
+        done = run(CORE_UNCHANGED, self.crate("published"))
         self.assertEqual(done.returncode, 2)
         self.assertIn("usage:", done.stderr)
 

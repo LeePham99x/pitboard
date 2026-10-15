@@ -27,9 +27,10 @@ The first release with Claude Desktop waits until the hand measurements M1 to M1
 4. For a full release, add a line for the version in `website/src/data/highlights.ts`, 60
    characters at most. The site's build fails without it. A beta has none.
 5. In `Cargo.toml`, set `version` under `[workspace.package]`. `pitboard-core` has a
-   version of its own: if `crates/pitboard-core` changed since that version reached
-   crates.io, raise it in `crates/pitboard-core/Cargo.toml`, as a patch, or as the minor an
-   API break has already raised there ([Submit a change](CONTRIBUTING.md#submit-a-change)).
+   version of its own: if `crates/pitboard-core`, or what it takes from the root
+   `Cargo.toml`, changed since that version reached crates.io, raise it in
+   `crates/pitboard-core/Cargo.toml`, as a patch, or as the minor an API break has already
+   raised there ([Submit a change](CONTRIBUTING.md#submit-a-change)).
    Put it on the `pitboard-core` line under `[workspace.dependencies]` as
    `version = "=<core version>"`. Run `cargo update --workspace`: CI and the release build
    with `--locked`.
