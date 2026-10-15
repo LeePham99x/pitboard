@@ -18,6 +18,12 @@ public static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+#if DEBUG
+        // An exception in a DispatcherQueue callback fails Pitboard fast in CoreMessagingXP.dll and reaches no
+        // handler, so a Debug build says each exception as it is thrown, for the UI tests to show.
+        AppDomain.CurrentDomain.FirstChanceException += (_, thrown) =>
+            Console.Error.WriteLine($"{thrown.Exception.GetType()}: {thrown.Exception.Message}");
+#endif
         WinRT.ComWrappersSupport.InitializeComWrappers();
         Shell.Name(Running);
         var environment = Environment.GetEnvironmentVariables().Cast<DictionaryEntry>()

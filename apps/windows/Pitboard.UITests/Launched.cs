@@ -89,18 +89,23 @@ internal sealed class Launched : IDisposable
     // A WinUI app that fails fast exits 0xC000027B and leaves only what it wrote to its standard error.
     private string State()
     {
-        if (!Process.HasExited)
+        string state;
+        if (Process.HasExited)
+        {
+            Process.WaitForExit();
+            state = $"it exited 0x{Process.ExitCode:X8}";
+        }
+        else
         {
             var titles = FlaUI.Core.Application.Attach(Process).GetAllTopLevelWindows(Automation)
                 .Select(window => $"'{window.Title}'")
                 .ToArray();
-            return titles.Length == 0 ? "it is running, with no window" : $"it is running, with {string.Join(", ", titles)}";
+            state = titles.Length == 0 ? "it is running, with no window" : $"it is running, with {string.Join(", ", titles)}";
         }
 
-        Process.WaitForExit();
         lock (_said)
         {
-            return $"it exited 0x{Process.ExitCode:X8}, saying: {_said.ToString().Trim()}";
+            return $"{state}, saying: {_said.ToString().Trim()}";
         }
     }
 

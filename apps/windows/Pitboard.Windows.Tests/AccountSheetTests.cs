@@ -1,6 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.VisualStudio.TestTools.UnitTesting.AppContainer;
 using Pitboard.Core;
 using Pitboard.Views;
@@ -259,8 +260,9 @@ public sealed class AccountSheetTests
         public bool Visible(string automationId) =>
             Views.Visible<TextBox>(Sheet).Any(found => AutomationProperties.GetAutomationId(found) == automationId);
 
-        // The dialog's own buttons, its template's parts.
-        public Button Part(string name) => Views.Descendants(Sheet).OfType<Button>().Single(button => button.Name == name);
+        // The dialog's own buttons, its template's parts. The sheet's InfoBars have a CloseButton of their own.
+        public Button Part(string name) =>
+            Views.Descendants(Sheet).OfType<Button>().Single(button => button.Name == name && !InInfoBar(button));
 
         public async Task Type(string automationId, string text)
         {
@@ -277,6 +279,19 @@ public sealed class AccountSheetTests
         {
             Sheets.Dispose();
             await Views.Until(() => Dialogs.Open is null, "the sheet stayed up after its test");
+        }
+
+        private bool InInfoBar(DependencyObject element)
+        {
+            for (var parent = VisualTreeHelper.GetParent(element); parent is not null && parent != Sheet; parent = VisualTreeHelper.GetParent(parent))
+            {
+                if (parent is InfoBar)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 }

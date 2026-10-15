@@ -128,7 +128,12 @@ public sealed partial class SettingsPane : UserControl
             warm.Accounts,
             account => account.Qualified,
             shown => ((WarmRow)shown).Qualified,
-            account => new WarmRow(account.Qualified, explanatory, OnWarmTurned),
+            account =>
+            {
+                var row = new WarmRow(account.Qualified, explanatory, OnWarmTurned);
+                row.Show(account, warm.Enabled);
+                return row;
+            },
             (shown, account) => ((WarmRow)shown).Show(account, warm.Enabled));
         WarmNote.Text = warm.Note;
     }
