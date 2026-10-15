@@ -95,6 +95,15 @@ async function get(f: typeof fetch, url: string, init: RequestInit = {}): Promis
   return f(url, { ...init, signal: AbortSignal.timeout(20_000) });
 }
 
+function apiHeaders(token?: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    accept: "application/vnd.github+json",
+    "x-github-api-version": "2022-11-28",
+  };
+  if (token) headers.authorization = `Bearer ${token}`;
+  return headers;
+}
+
 export async function readRelease(o: ReadOptions): Promise<Release> {
   const log = o.log ?? (() => {});
   if (o.fixture) {
@@ -102,15 +111,9 @@ export async function readRelease(o: ReadOptions): Promise<Release> {
     return { ...fromApi(o.fixture.release, o.fixture.sums), source: "fixture" };
   }
   log(`release: token set: ${o.token ? "yes" : "no"}`);
-  const headers: Record<string, string> = {
-    accept: "application/vnd.github+json",
-    "x-github-api-version": "2022-11-28",
-  };
-  if (o.token) headers.authorization = `Bearer ${o.token}`;
-
   let res: Response | null = null;
   try {
-    res = await get(o.fetch, `${API}/releases/latest`, { headers });
+    res = await get(o.fetch, `${API}/releases/latest`, { headers: apiHeaders(o.token) });
   } catch (e) {
     log(`release: api unreachable: ${(e as Error).message}`);
   }
@@ -168,6 +171,34 @@ async function fallback(f: typeof fetch, log: (line: string) => void): Promise<R
   }
   log(`release: ${tag} from the release pages, ${assets.length} files`);
   return { version, tag, assets, source: "fallback" };
+}
+
+export interface PublishedOptions {
+  fetch: typeof fetch;
+  token?: string;
+  // what an offline build takes as published
+  fixture?: string[];
+  log?: (line: string) => void;
+}
+
+// GitHub answers 404 for the tag of a release that is not published.
+export async function readPublished(o: PublishedOptions, versions: string[]): Promise<Set<string>> {
+  const fixture = o.fixture;
+  if (fixture) return new Set(versions.filter((v) => fixture.includes(v)));
+  const log = o.log ?? (() => {});
+  const headers = apiHeaders(o.token);
+  const published = new Set<string>();
+  for (const version of versions) {
+    const tag = `v${version}`;
+    const res = await get(o.fetch, `${API}/releases/tags/${tag}`, { headers });
+    log(`release ${tag}: api ${res.status}`);
+    if (res.status === 404) continue;
+    if (!res.ok) throw new Error(`GitHub answered ${res.status} for the release ${tag}`);
+    const r = (await res.json()) as ApiRelease;
+    if (r.tag_name !== tag) throw new Error(`GitHub answered ${r.tag_name} for the release ${tag}`);
+    if (!r.draft) published.add(version);
+  }
+  return published;
 }
 
 export async function readStars(o: Omit<ReadOptions, "fixture"> & { offline?: boolean }) {

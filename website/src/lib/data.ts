@@ -1,15 +1,11 @@
 import changelogText from "../../../CHANGELOG.md?raw";
+import fixtureBetas from "../data/fixtures/published-betas.json";
 import fixtureRelease from "../data/fixtures/release-latest.json";
 import fixtureSums from "../data/fixtures/SHA256SUMS?raw";
 import { highlights } from "../data/highlights.ts";
-import {
-  compareVersions,
-  parseChangelog,
-  plainText,
-  renderInline,
-  type Version,
-} from "./changelog.ts";
-import { readRelease, readStars, type Release } from "./github.ts";
+import { parseChangelog, plainText, renderInline, type Version } from "./changelog.ts";
+import { readPublished, readRelease, readStars, type Release } from "./github.ts";
+import { ahead, newestFull, shown } from "./shown.ts";
 
 export interface SiteData {
   versions: Version[];
@@ -33,7 +29,8 @@ async function load(): Promise<SiteData> {
   const log = (line: string) => console.log(`[site] ${line}`);
   const all = parseChangelog(changelogText);
   // the release commit fails here, not the pull requests after the release is out
-  if (all[0]) highlight(all[0].version);
+  const newest = newestFull(all);
+  if (newest) highlight(newest.version);
   const release = await readRelease({
     fetch,
     token,
@@ -44,7 +41,11 @@ async function load(): Promise<SiteData> {
   const latest = all.find((v) => v.version === release.version);
   if (!latest) throw new Error(`CHANGELOG.md has no section for ${release.version}`);
   // a version written up before its release is published stays off the site
-  const versions = all.filter((v) => compareVersions(v.version, release.version) <= 0);
+  const published = await readPublished(
+    { fetch, token, fixture: offline ? fixtureBetas : undefined, log },
+    ahead(all, release.version),
+  );
+  const versions = shown(all, release.version, published);
   const stars = await readStars({ fetch, token, offline, log });
   return { versions, release, latest, stars };
 }

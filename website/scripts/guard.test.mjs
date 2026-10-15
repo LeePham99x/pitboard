@@ -91,6 +91,25 @@ test("needs the metadata every page carries", () => {
   }
 });
 
+test("compares the downloads with the newest full release on /changelog", () => {
+  const download = (v) =>
+    `<a href="https://github.com/datlechin/pitboard/releases/download/v${v}/Pitboard-v${v}-macos.zip">Mac</a>`;
+  const changelog = (...versions) =>
+    checkPage(
+      "changelog.html",
+      page(versions.map((v) => `<article id="v${v}"><h2>${v}</h2></article>`).join("")),
+      rules,
+    );
+  const pages = (...versions) =>
+    new Map([
+      ["download.html", checkPage("download.html", page(download("0.15.0")), rules)],
+      ["changelog.html", changelog(...versions)],
+    ]);
+  assert.deepEqual(checkVersions(pages("1.0.0-beta.2", "1.0.0-beta.1", "0.15.0")), []);
+  assert.equal(checkVersions(pages("1.0.0-beta.1", "0.14.0")).length, 1);
+  assert.equal(checkVersions(pages("0.16.0", "0.15.0")).length, 1);
+});
+
 test("finds two releases on one site", () => {
   const one = (v) =>
     checkPage(
