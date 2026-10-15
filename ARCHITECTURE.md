@@ -2611,6 +2611,10 @@ treated, and only the macOS build shows it. The run reads both builds since.
   Windows looks in that `.local\bin`, `%APPDATA%\npm`, `%LOCALAPPDATA%\Microsoft\WinGet\Links`
   and `%USERPROFILE%\scoop\shims`, after the registry's `Path`, each only where its
   variable is set.
+- Read on 15 October 2026 from the win32-x64 and win32-arm64 builds of 2.1.300
+  (`windows_version_resource`): `claude.exe` carries a version resource whose product
+  version is `2.1.300.0`. So doctor reads the release there on Windows, once npm's
+  `claude.cmd` is followed to the program it starts, and never runs `claude --version`.
 - Read on 6 October 2026 from the macOS, Linux and Windows builds of 2.1.289, whose code
   here is the same: the config dir is `CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude")`,
   normalised to NFC, and the config file's base is `CLAUDE_CONFIG_DIR || homedir()`. So an
@@ -2851,6 +2855,10 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
   that is unset or white space, a junction to its `current\bin`. npm's `codex.cmd` starts
   `bin\codex.js`, which runs the platform package's `vendor\<target>\bin\codex.exe`.
   winget's is a nested portable `codex-<target>.exe`, linked in its `Links` as `codex`.
+- Read on 15 October 2026 from the win32 builds of 0.162.1 (`codex_windows_version`):
+  `codex.exe` has no version resource. The package it runs from, npm's vendored one or a
+  standalone release, holds `codex-package.json` beside its `bin`, whose `version` doctor
+  reads.
 
 ### Claude Desktop
 

@@ -294,7 +294,7 @@ pub(crate) fn floor() -> Floor {
 }
 
 // Not GetVersionEx, which answers what the manifest asks for, nor the registry's ProductName.
-fn version() -> Option<(u32, u32, u32)> {
+pub(crate) fn version() -> Option<(u32, u32, u32)> {
     let mut info = OSVERSIONINFOW {
         dwOSVersionInfoSize: size_of::<OSVERSIONINFOW>() as u32,
         ..OSVERSIONINFOW::default()

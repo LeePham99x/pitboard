@@ -123,6 +123,12 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         linux: NotRead("where Linux's installers put `codex` is codex_install_places'"),
         windows: Read("0.162.1"),
     },
+    PerSystem {
+        name: "codex_windows_version",
+        macos: NotRead("a macOS install names its version in its path or its package.json"),
+        linux: NotRead("a Linux install names its version in its path or its package.json"),
+        windows: Read("0.162.1"),
+    },
     later_on_windows(
         "codex_login_is_driveable",
         VERIFIED_AGAINST,
@@ -403,6 +409,20 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         absent: &[],
     },
     Assumption {
+        name: "codex_windows_version",
+        fact: "on Windows `codex.exe` carries no version resource at all. The package it runs \
+               from, npm's vendored one or a standalone release, holds `codex-package.json` \
+               beside its `bin`, `{layoutVersion, version, target, variant: \"codex\", \
+               entrypoint: \"bin/codex.exe\"}`, whose `version` is the release",
+        read_from: "the win32-x64 and win32-arm64 builds of 0.162.1, which have no resource \
+                    directory, their packages' `codex-package.json`, and the build's own check \
+                    of a local package, read on 2026-10-15",
+        verified_against: "0.162.1",
+        depends: "doctor's codex_version, which reads the release there on Windows",
+        probe: &["codex-package.json"],
+        absent: &[],
+    },
+    Assumption {
         name: "codex_login_is_driveable",
         fact: "`codex login` revokes whatever login is stored in its home before signing in, \
                opens the browser itself, prints the address to stderr for when it cannot, \
@@ -599,6 +619,7 @@ mod tests {
                 "codex_identity_is_the_person",
                 "codex_refusal_is_invalid_grant",
                 "codex_windows_install_places",
+                "codex_windows_version",
                 "codex_login_prints_its_address",
                 "codex_login_takes_a_store_override",
             ]
@@ -608,7 +629,11 @@ mod tests {
     // The conformance run checks a build of each system for them.
     #[test]
     fn macos_and_linux_read_every_fact() {
-        let windows = ["codex_windows_home", "codex_windows_install_places"];
+        let windows = [
+            "codex_windows_home",
+            "codex_windows_install_places",
+            "codex_windows_version",
+        ];
         for line in PER_SYSTEM.iter().filter(|l| !windows.contains(&l.name)) {
             assert!(matches!(line.on(Platform::MacOs), Read(_)), "{}", line.name);
             assert_eq!(

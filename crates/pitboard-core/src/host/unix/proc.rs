@@ -147,6 +147,11 @@ pub(crate) fn can_run(path: &Path) -> bool {
     executable && std::fs::metadata(path).is_ok_and(|found| found.is_file())
 }
 
+// Only a Windows program carries a version resource.
+pub(crate) fn product_version(_path: &Path) -> Option<[u16; 4]> {
+    None
+}
+
 #[cfg(test)]
 #[allow(
     clippy::disallowed_methods,

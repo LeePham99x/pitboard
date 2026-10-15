@@ -67,6 +67,49 @@ fn reparse_tag(path: &Path) -> Option<u32> {
         .then_some(info.ReparseTag)
 }
 
+// The four parts of the product version in `path`'s version resource, read and never run.
+pub(crate) fn product_version(path: &Path) -> Option<[u16; 4]> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetFileVersionInfoSizeW, GetFileVersionInfoW, VS_FIXEDFILEINFO, VerQueryValueW,
+    };
+    let name: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
+    let mut ignored = 0u32;
+    // SAFETY: a NUL-terminated name, and a u32 of this frame for the handle it ignores.
+    let size = unsafe { GetFileVersionInfoSizeW(name.as_ptr(), &raw mut ignored) };
+    if size == 0 {
+        return None;
+    }
+    let mut block = vec![0u8; size as usize];
+    // SAFETY: a NUL-terminated name, and a buffer of the size it asked for.
+    if unsafe { GetFileVersionInfoW(name.as_ptr(), 0, size, block.as_mut_ptr().cast()) } == 0 {
+        return None;
+    }
+    let root: Vec<u16> = "\\".encode_utf16().chain([0]).collect();
+    let mut fixed: *mut core::ffi::c_void = std::ptr::null_mut();
+    let mut length = 0u32;
+    // SAFETY: the block GetFileVersionInfoW filled, which the answer points into.
+    let found = unsafe {
+        VerQueryValueW(
+            block.as_ptr().cast(),
+            root.as_ptr(),
+            &raw mut fixed,
+            &raw mut length,
+        )
+    };
+    if found == 0 || fixed.is_null() || (length as usize) < size_of::<VS_FIXEDFILEINFO>() {
+        return None;
+    }
+    // SAFETY: a VS_FIXEDFILEINFO inside `block`, which is still alive.
+    let info = unsafe { fixed.cast::<VS_FIXEDFILEINFO>().read_unaligned() };
+    (info.dwSignature == 0xFEEF_04BD).then_some([
+        (info.dwProductVersionMS >> 16) as u16,
+        info.dwProductVersionMS as u16,
+        (info.dwProductVersionLS >> 16) as u16,
+        info.dwProductVersionLS as u16,
+    ])
+}
+
 /// Runs no program: a warm-up, the only run with a ceiling, stops on Windows before it
 /// starts one.
 pub(crate) fn run_within(
@@ -243,6 +286,31 @@ mod tests {
         };
         assert_ne!(set, 0, "{}", std::io::Error::last_os_error());
         at.to_path_buf()
+    }
+
+    /// `cmd.exe`'s version resource names Windows 10.0 and a build from the floor up to the
+    /// one running: an enablement update, as 26200 is over 26100, may leave it behind.
+    #[test]
+    fn cmd_exe_carries_the_build_of_the_windows_it_ships_in() {
+        let cmd = std::env::var_os("SystemRoot")
+            .map(|windows| PathBuf::from(windows).join(r"System32\cmd.exe"))
+            .expect("SystemRoot");
+        let [major, minor, build, revision] = product_version(&cmd).expect("its version resource");
+        let (_, _, running) = crate::host::windows::user::version().expect("RtlGetVersion");
+        println!("cmd.exe {major}.{minor}.{build}.{revision} on build {running}");
+        assert_eq!((major, minor), (10, 0));
+        assert!(
+            (crate::host::WINDOWS_FLOOR..=running).contains(&u32::from(build)),
+            "{build} on {running}"
+        );
+        assert_eq!(
+            product_version(&std::env::temp_dir()),
+            None,
+            "a folder has none"
+        );
+        let script = scratch("versions").join("plain.cmd");
+        std::fs::write(&script, "@echo off").expect("a script");
+        assert_eq!(product_version(&script), None, "nor has a script");
     }
 
     #[test]

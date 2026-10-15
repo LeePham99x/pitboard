@@ -64,30 +64,45 @@ pub(crate) fn install_places(env: &Environment) -> Vec<PathBuf> {
         .collect()
 }
 
-/// Which Claude Code is installed here, read off disk and never by running it.
-///
-/// Running `claude --version` would be the obvious way and is the wrong one: it starts the
-/// program Pitboard is trying to describe, which starts a daemon, which writes. Three
-/// layouts cover how it is installed. The native installer puts the build at
-/// `<...>/versions/<version>` and points a symlink at it, so the version is the file's own
-/// name. An npm install has a `package.json` beside the resolved program. And a machine
-/// that has run Claude Code at all left `daemon.lock` behind, which records the version
-/// that wrote it.
+// Which Claude Code is installed here, read off disk and never by running it: `claude
+// --version` starts the program being described, which starts a daemon, which writes. On
+// Windows `claude.exe` names its release in its version resource, after npm's `claude.cmd`
+// is followed to the program it starts (`windows_version_resource`). Elsewhere the native
+// installer's link leads to `<...>/versions/<version>`, and an npm install has a
+// `package.json` beside the program or above it. A machine that has run Claude Code at all
+// has `daemon.lock`, which records the version that wrote it.
 pub(crate) fn installed_version(ctx: &Context) -> Option<String> {
-    let resolved = program(ctx).and_then(|p| std::fs::canonicalize(p).ok());
+    let found =
+        program(ctx).map(|found| crate::host::program::npm_shim_target(&found).unwrap_or(found));
+    if let Some(release) = found
+        .as_deref()
+        .and_then(crate::host::proc::product_version)
+        .and_then(release_of)
+    {
+        return Some(release);
+    }
+    let resolved = found.and_then(|p| std::fs::canonicalize(p).ok());
     if let Some(path) = &resolved
         && let Some(name) = path.file_name().and_then(|n| n.to_str())
         && looks_like_a_version(name)
     {
         return Some(name.to_string());
     }
+    // Its parent, not `..`, which a canonical Windows path, `\\?\` and all, does not undo.
     if let Some(dir) = resolved.as_ref().and_then(|p| p.parent())
-        && let Some(version) = version_in_package_json(&dir.join("package.json"))
-            .or_else(|| version_in_package_json(&dir.join("../package.json")))
+        && let Some(version) = [Some(dir), dir.parent()]
+            .into_iter()
+            .flatten()
+            .find_map(|dir| version_in_package_json(&dir.join("package.json")))
     {
         return Some(version);
     }
     daemon::read(ctx).and_then(|d| d.version)
+}
+
+// `2.1.300.0` is release 2.1.300; another fourth part names no release of Claude Code's.
+fn release_of([major, minor, patch, fourth]: [u16; 4]) -> Option<String> {
+    (fourth == 0).then(|| format!("{major}.{minor}.{patch}"))
 }
 
 fn looks_like_a_version(name: &str) -> bool {
@@ -266,6 +281,43 @@ mod tests {
             program(&ctx.with_claude_program("/nowhere/at/all/claude".into())),
             None
         );
+    }
+
+    #[test]
+    fn a_version_resource_names_the_release_it_ends_in_zero() {
+        assert_eq!(release_of([2, 1, 300, 0]).as_deref(), Some("2.1.300"));
+        assert_eq!(release_of([10, 0, 26100, 1]), None);
+    }
+
+    /// npm's `claude.cmd` is followed to the program it starts, and the version read beside
+    /// that, where its version resource says none: the package's own `package.json`.
+    #[test]
+    fn npms_shim_is_followed_to_the_program_it_starts() {
+        let prefix = tempfile::tempdir().expect("a scratch npm prefix");
+        let package = prefix
+            .path()
+            .join("node_modules")
+            .join("@anthropic-ai")
+            .join("claude-code");
+        std::fs::create_dir_all(package.join("bin")).expect("its bin");
+        std::fs::write(package.join("bin").join("claude.exe"), "").expect("a program");
+        crate::host::fs::testing::make_runnable(&package.join("bin").join("claude.exe"))
+            .expect("runnable");
+        std::fs::write(
+            package.join("package.json"),
+            r#"{"name": "@anthropic-ai/claude-code", "version": "9.9.7"}"#,
+        )
+        .expect("its package.json");
+        let shim = prefix.path().join("claude.cmd");
+        std::fs::write(
+            &shim,
+            "@ECHO off\r\nCALL :find_dp0\r\n\
+             \"%dp0%\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe\"   %*\r\n",
+        )
+        .expect("a shim");
+        crate::host::fs::testing::make_runnable(&shim).expect("runnable");
+        let ctx = Context::new(prefix.path().to_path_buf()).with_claude_program(shim);
+        assert_eq!(installed_version(&ctx).as_deref(), Some("9.9.7"));
     }
 
     #[test]

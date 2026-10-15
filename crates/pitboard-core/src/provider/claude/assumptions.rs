@@ -277,6 +277,12 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         linux: NotRead("where Linux's installers put `claude` is install_places'"),
         windows: Read("2.1.300"),
     },
+    PerSystem {
+        name: "windows_version_resource",
+        macos: NotRead("a macOS program carries no version resource"),
+        linux: NotRead("a Linux program carries no version resource"),
+        windows: Read("2.1.300"),
+    },
     warm_up("headless_token_descriptor"),
     warm_up("headless_print_mode"),
     warm_up("headless_result"),
@@ -983,6 +989,18 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         absent: &[],
     },
     Assumption {
+        name: "windows_version_resource",
+        fact: "on Windows `claude.exe` carries a version resource whose product version, fixed \
+               and as text, is the release with a fourth part of 0, `2.1.300.0` for 2.1.300, \
+               with the product name `Claude Code`",
+        read_from: "the version resource of the win32-x64 and win32-arm64 builds of 2.1.300, \
+                    read as bytes on 2026-10-15",
+        verified_against: "2.1.300",
+        depends: "claude::paths::installed_version, which reads the release there on Windows",
+        probe: &[],
+        absent: &[],
+    },
+    Assumption {
         name: "headless_token_descriptor",
         fact: "where `CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR` names a descriptor, Claude Code \
                reads an OAuth access token from it, an inherited pipe until a newline or its \
@@ -1120,6 +1138,7 @@ mod tests {
                 "windows_home_folder",
                 "windows_open_sharing",
                 "windows_install_layout",
+                "windows_version_resource",
             ]
         );
         for name in [

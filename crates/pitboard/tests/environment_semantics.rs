@@ -5,6 +5,7 @@
 
 mod common;
 
+use pitboard_core::host::{OS, Os};
 use pitboard_core::testing::stand_in::{self, Script};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -114,19 +115,48 @@ fn an_empty_config_dir_is_refused() {
 /// `PITBOARD_CLAUDE` and `PITBOARD_CODEX` name the program the command line runs for each
 /// tool, as they name the app's, wherever its `PATH` would find another or none. Neither is
 /// ever run: doctor reads which build each is off the path it resolves to, which is where
-/// each tool's installer puts the version.
+/// each tool's installer puts the version. On Windows Claude Code's is named by npm's
+/// `claude.cmd`, which is followed to the program it starts, and read from the package
+/// beside it, since the stand-in carries no version resource.
 #[test]
-#[cfg_attr(windows, ignore = "W17: finding programs on Windows")]
 fn a_program_the_environment_names_is_the_one_the_command_line_runs() {
     let (_scratch, home) = scratch();
-    let claude = home.join("elsewhere/claude/versions/9.9.9");
-    let codex = home.join("elsewhere/codex/releases/9.9.8-aarch64-apple-darwin/bin/codex");
-    for program in [&claude, &codex] {
+    let put = |program: &Path| {
         std::fs::create_dir_all(program.parent().expect("its directory")).unwrap();
         let never = Script::refusing("a test's stand-in, never meant to run\n");
         stand_in::install(program, &never)
             .unwrap_or_else(|e| panic!("no stand-in at {}: {e}", program.display()));
-    }
+    };
+    let elsewhere = home.join("elsewhere");
+    let (claude, codex) = match OS {
+        Os::MacOs | Os::Linux => {
+            let claude = elsewhere.join("claude/versions/9.9.9");
+            let codex = elsewhere.join("codex/releases/9.9.8-aarch64-apple-darwin/bin/codex");
+            put(&claude);
+            put(&codex);
+            (claude, codex)
+        }
+        Os::Windows => {
+            let npm = elsewhere.join("npm");
+            let package = npm.join(r"node_modules\@anthropic-ai\claude-code");
+            put(&package.join(r"bin\claude.exe"));
+            std::fs::write(
+                package.join("package.json"),
+                r#"{"name": "@anthropic-ai/claude-code", "version": "9.9.9"}"#,
+            )
+            .unwrap();
+            let shim = npm.join("claude.cmd");
+            std::fs::write(
+                &shim,
+                "@ECHO off\r\n\"%dp0%\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe\"   %*\r\n",
+            )
+            .unwrap();
+            let codex =
+                elsewhere.join(r"codex\releases\9.9.8-x86_64-pc-windows-msvc\bin\codex.exe");
+            put(&codex);
+            (shim, codex)
+        }
+    };
 
     let named = doctor(
         &home,

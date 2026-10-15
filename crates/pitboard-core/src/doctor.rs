@@ -716,16 +716,18 @@ fn codex_login(ctx: &Context) -> Result<Option<CodexLogin>, CodexLoginTrouble> {
     }))
 }
 
-/// Which Codex `program` is, read off the path it resolves to and never by running it.
-///
-/// Running `codex --version` would start the program this is trying to describe. Each way
-/// Codex is installed puts the version within two directories of the program it resolves
-/// to, and only there is looked at: the standalone installer's
-/// `releases/0.154.0-<target>/bin/codex`, Homebrew's `Caskroom/codex/0.154.0/`, and npm's
-/// `@openai/codex/package.json` beside the `bin` it runs from. Directory names are read
-/// before any file is opened, so a standalone install inside `~/.codex` is named without
-/// reading anything in it, and nothing further up the path is ever read.
+// Which Codex `program` is, read off the path it resolves to and never by running it, as
+// `codex --version` would start what is being described. Each way Codex is installed puts the
+// version within two folders of the program it resolves to, and only there is looked: the
+// standalone installer's `releases/0.154.0-<target>/bin/codex`, Homebrew's
+// `Caskroom/codex/0.154.0/`, npm's `@openai/codex/package.json` beside the `bin` it runs from,
+// which npm's `codex.cmd` leads to on Windows, and the `codex-package.json` of a package's
+// vendored build, since `codex.exe` carries no version resource (`codex_windows_version`).
+// Folder names are read before any file is opened, so a standalone install inside `~/.codex`
+// is named without reading anything in it.
 fn codex_version(program: &std::path::Path) -> Option<String> {
+    let program =
+        crate::host::program::npm_shim_target(program).unwrap_or_else(|| program.to_path_buf());
     let resolved = std::fs::canonicalize(program).ok()?;
     let near: Vec<&std::path::Path> = resolved.ancestors().skip(1).take(2).collect();
     near.iter()
@@ -737,8 +739,10 @@ fn codex_version(program: &std::path::Path) -> Option<String> {
                 .map(str::to_owned)
         })
         .or_else(|| {
-            near.iter()
-                .find_map(|dir| codex_package_version(&dir.join("package.json")))
+            near.iter().find_map(|dir| {
+                codex_package_version(&dir.join("package.json"))
+                    .or_else(|| codex_layout_version(&dir.join("codex-package.json")))
+            })
         })
 }
 
@@ -753,6 +757,14 @@ fn looks_like_a_version(name: &str) -> bool {
 fn codex_package_version(path: &std::path::Path) -> Option<String> {
     let json: Value = serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
     if json.get("name")?.as_str()? != "@openai/codex" {
+        return None;
+    }
+    Some(json.get("version")?.as_str()?.to_string())
+}
+
+fn codex_layout_version(path: &std::path::Path) -> Option<String> {
+    let json: Value = serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
+    if json.get("variant")?.as_str()? != "codex" {
         return None;
     }
     Some(json.get("version")?.as_str()?.to_string())
@@ -2924,9 +2936,14 @@ fn desktop_environment(ctx: &Context, facts: &Facts) -> Value {
     })
 }
 
+// Claude Desktop is macOS's alone, so no other system is asked for its build.
 fn desktop_build(ctx: &Context) -> Option<String> {
-    ctx.host()
-        .app_version(std::path::Path::new("/Applications/Claude.app"))
+    match ctx.os {
+        Os::MacOs => ctx
+            .host()
+            .app_version(std::path::Path::new("/Applications/Claude.app")),
+        Os::Linux | Os::Windows => None,
+    }
 }
 
 /// What doctor says where a home the environment names is empty or relative
@@ -6147,6 +6164,67 @@ mod tests {
         )
         .unwrap();
         assert_eq!(codex_version(&shim), None);
+    }
+
+    /// On Windows npm's `codex.cmd` leads to the package's `bin/codex.js`, and a package's
+    /// own `codex.exe`, which carries no version resource, sits in a `bin` beside its
+    /// `codex-package.json` (0.162.1).
+    #[test]
+    fn a_version_is_read_where_codex_is_installed_on_windows() {
+        let scratch = tempfile::tempdir().expect("a scratch home");
+        let root = scratch.path().to_path_buf();
+        let place = |at: &str| {
+            let path = root.join(at);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, "").unwrap();
+            path
+        };
+        let layout = |version: &str, variant: &str| {
+            format!(
+                r#"{{"layoutVersion": 1, "version": "{version}", "target": "x86_64-pc-windows-msvc", "variant": "{variant}", "entrypoint": "bin/codex.exe"}}"#
+            )
+        };
+
+        let vendored = place("codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe");
+        let package = root.join("codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-package.json");
+        std::fs::write(&package, layout("0.162.1", "codex")).unwrap();
+        assert_eq!(codex_version(&vendored).as_deref(), Some("0.162.1"));
+        std::fs::write(&package, layout("0.162.1", "something-else")).unwrap();
+        assert_eq!(codex_version(&vendored), None, "only Codex's own package");
+
+        place("npm/node_modules/@openai/codex/bin/codex.js");
+        std::fs::write(
+            root.join("npm/node_modules/@openai/codex/package.json"),
+            r#"{"name": "@openai/codex", "version": "0.161.0"}"#,
+        )
+        .unwrap();
+        let shim = root.join("npm/codex.cmd");
+        std::fs::write(
+            &shim,
+            "@ECHO off\r\nIF EXIST \"%dp0%\\node.exe\" (\r\n  SET \"_prog=%dp0%\\node.exe\"\r\n)\r\n\
+             \"%_prog%\"  \"%dp0%\\node_modules\\@openai\\codex\\bin\\codex.js\" %*\r\n",
+        )
+        .unwrap();
+        assert_eq!(codex_version(&shim).as_deref(), Some("0.161.0"));
+    }
+
+    // Claude Desktop is macOS's alone: no other system is asked for its build.
+    #[test]
+    fn only_macos_is_asked_for_claude_desktops_build() {
+        let memory = crate::host::memory::MemoryHost::new();
+        memory.app_at(std::path::Path::new("/Applications/Claude.app"), "2.7032.0");
+        for (os, build) in [
+            (Os::MacOs, Some("2.7032.0")),
+            (Os::Linux, None),
+            (Os::Windows, None),
+        ] {
+            let env = crate::context::Environment::on(
+                os,
+                [("HOME", "/nowhere"), ("USERPROFILE", "/nowhere")],
+            );
+            let ctx = Context::for_command_line(&env).with_memory_stores(memory.clone());
+            assert_eq!(desktop_build(&ctx).as_deref(), build, "{os:?}");
+        }
     }
 
     #[test]

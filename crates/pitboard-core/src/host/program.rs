@@ -130,7 +130,34 @@ pub(crate) fn find_among(
         .find(|candidate| runnable(candidate))
 }
 
+// The program an npm `.cmd` shim at `shim` starts, read and never run: the last file it names
+// under `%dp0%`, its own folder, after the `node.exe` it would run a script with.
+pub(crate) fn npm_shim_target(shim: &Path) -> Option<PathBuf> {
+    let is_cmd = shim
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("cmd"));
+    if !is_cmd {
+        return None;
+    }
+    const FROM_ITS_FOLDER: &str = "\"%dp0%\\";
+    let text = std::fs::read_to_string(shim).ok()?;
+    let named = text
+        .match_indices(FROM_ITS_FOLDER)
+        .filter_map(|(at, _)| {
+            let rest = &text[at + FROM_ITS_FOLDER.len()..];
+            Some(&rest[..rest.find('"')?])
+        })
+        .last()?;
+    let mut target = shim.parent()?.to_path_buf();
+    target.extend(named.split('\\').filter(|part| !part.is_empty()));
+    Some(target)
+}
+
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test sets up its scratch files as npm would"
+)]
 mod tests {
     use super::*;
 
@@ -273,5 +300,59 @@ mod tests {
         ] {
             assert!(!runnable_on_windows(Path::new(not)), "{not}");
         }
+    }
+
+    // As npm's cmd-shim writes one for a native program and for a script.
+    #[test]
+    fn an_npm_shim_names_the_program_it_starts() {
+        let dir = tempfile::tempdir().expect("a scratch npm prefix");
+        let native = dir.path().join("claude.cmd");
+        std::fs::write(
+            &native,
+            "@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\n\
+             SETLOCAL\r\nCALL :find_dp0\r\n\
+             \"%dp0%\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe\"   %*\r\n",
+        )
+        .expect("a shim");
+        let script = dir.path().join("codex.CMD");
+        std::fs::write(
+            &script,
+            "@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\n\
+             SETLOCAL\r\nCALL :find_dp0\r\n\r\nIF EXIST \"%dp0%\\node.exe\" (\r\n  \
+             SET \"_prog=%dp0%\\node.exe\"\r\n) ELSE (\r\n  SET \"_prog=node\"\r\n  \
+             SET PATHEXT=%PATHEXT:;.JS;=;%\r\n)\r\n\r\nendLocal & goto #_undefined_# 2>NUL || \
+             title %COMSPEC% & \"%_prog%\"  \"%dp0%\\node_modules\\@openai\\codex\\bin\\codex.js\" %*\r\n",
+        )
+        .expect("a shim");
+        let under = |parts: &[&str]| {
+            let mut path = dir.path().to_path_buf();
+            path.extend(parts);
+            path
+        };
+        assert_eq!(
+            npm_shim_target(&native),
+            Some(under(&[
+                "node_modules",
+                "@anthropic-ai",
+                "claude-code",
+                "bin",
+                "claude.exe"
+            ]))
+        );
+        assert_eq!(
+            npm_shim_target(&script),
+            Some(under(&[
+                "node_modules",
+                "@openai",
+                "codex",
+                "bin",
+                "codex.js"
+            ]))
+        );
+        let plain = dir.path().join("other.cmd");
+        std::fs::write(&plain, "@echo off\r\necho hi\r\n").expect("a script");
+        assert_eq!(npm_shim_target(&plain), None);
+        assert_eq!(npm_shim_target(&dir.path().join("absent.cmd")), None);
+        assert_eq!(npm_shim_target(&dir.path().join("claude.exe")), None);
     }
 }
