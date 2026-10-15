@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="Pitboard.Views.MachinePane"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:core="using:Pitboard.Core">
+  <UserControl.Resources>
+    <Style x:Key="Ok" TargetType="FontIcon">
+      <Setter Property="Foreground" Value="{ThemeResource SystemFillColorSuccessBrush}" />
+    </Style>
+    <Style x:Key="Warn" TargetType="FontIcon">
+      <Setter Property="Foreground" Value="{ThemeResource SystemFillColorCautionBrush}" />
+    </Style>
+    <Style x:Key="Fail" TargetType="FontIcon">
+      <Setter Property="Foreground" Value="{ThemeResource SystemFillColorCriticalBrush}" />
+    </Style>
+  </UserControl.Resources>
+  <Grid RowSpacing="4">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+    <CommandBar
+        HorizontalAlignment="Right"
+        Background="Transparent"
+        DefaultLabelPosition="Right"
+        OverflowButtonVisibility="Collapsed">
+      <AppBarButton
+          x:Name="CheckAgain"
+          Label="Check Again"
+          ToolTipService.ToolTip="Make every check again"
+          AutomationProperties.AutomationId="machine.check"
+          Click="OnCheckAgain">
+        <AppBarButton.Icon>
+          <SymbolIcon Symbol="Refresh" />
+        </AppBarButton.Icon>
+        <AppBarButton.KeyboardAccelerators>
+          <KeyboardAccelerator Key="F5" />
+          <KeyboardAccelerator Key="R" Modifiers="Control" />
+        </AppBarButton.KeyboardAccelerators>
+      </AppBarButton>
+    </CommandBar>
+    <Grid x:Name="Heading" Grid.Row="1" Padding="16,0,12,0" ColumnSpacing="12">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+      <TextBlock x:Name="Summary" Style="{StaticResource BodyStrongTextBlockStyle}" />
+      <ProgressRing x:Name="Checking" Grid.Column="1" Width="16" Height="16" IsActive="False" AutomationProperties.Name="Checking" />
+      <TextBlock
+          x:Name="Checked"
+          Grid.Column="1"
+          VerticalAlignment="Center"
+          Style="{StaticResource CaptionTextBlockStyle}"
+          Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+    </Grid>
+    <ListView
+        x:Name="Lines"
+        Grid.Row="2"
+        SelectionMode="None"
+        AutomationProperties.AutomationId="checks"
+        AutomationProperties.Name="Checks"
+        ContainerContentChanging="OnContainerContentChanging">
+      <ListView.ItemContainerStyle>
+        <Style TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
+          <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        </Style>
+      </ListView.ItemContainerStyle>
+      <ListView.ItemTemplate>
+        <DataTemplate x:DataType="core:CheckLine">
+          <Grid Padding="0,8" ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <FontIcon x:Name="LevelMark" Margin="0,2,0,0" VerticalAlignment="Top" FontSize="16" />
+            <StackPanel Grid.Column="1" Spacing="2">
+              <TextBlock Text="{x:Bind Name}" Style="{StaticResource BodyTextBlockStyle}" />
+              <TextBlock
+                  x:Name="AdviceText"
+                  Text="{x:Bind Advice}"
+                  Style="{StaticResource CaptionTextBlockStyle}"
+                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+            <TextBlock
+                Grid.Column="2"
+                MaxWidth="320"
+                Text="{x:Bind Detail}"
+                Style="{StaticResource BodyTextBlockStyle}"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                TextAlignment="Right"
+                IsTextSelectionEnabled="True" />
+          </Grid>
+        </DataTemplate>
+      </ListView.ItemTemplate>
+    </ListView>
+    <StackPanel
+        x:Name="Waiting"
+        Grid.Row="1"
+        Grid.RowSpan="2"
+        HorizontalAlignment="Center"
+        VerticalAlignment="Center"
+        Spacing="12"
+        Visibility="Collapsed">
+      <ProgressRing x:Name="WaitingRing" IsActive="False" />
+      <TextBlock x:Name="WaitingText" HorizontalAlignment="Center" Style="{StaticResource BodyTextBlockStyle}" />
+    </StackPanel>
+  </Grid>
+</UserControl>

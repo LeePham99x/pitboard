@@ -11,7 +11,11 @@
       x:Name="Navigation"
       AutomationProperties.AutomationId="navigation"
       IsBackButtonVisible="Collapsed"
+      KeyboardAcceleratorPlacementMode="Hidden"
       SelectionChanged="OnSelectionChanged">
+    <NavigationView.KeyboardAccelerators>
+      <KeyboardAccelerator Key="N" Modifiers="Control" Invoked="OnAddAccount" />
+    </NavigationView.KeyboardAccelerators>
     <NavigationView.MenuItems>
       <NavigationViewItem Content="Accounts" Tag="Accounts" AutomationProperties.AutomationId="pane.accounts">
         <NavigationViewItem.Icon>

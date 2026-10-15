@@ -96,9 +96,14 @@ public partial class App : Application
 
     private void ShowWindow()
     {
+        if (_model is null)
+        {
+            return;
+        }
+
         if (_window is null)
         {
-            var window = new MainWindow();
+            var window = new MainWindow(_model);
             window.Closed += (_, _) => _window = null;
             _window = window;
         }

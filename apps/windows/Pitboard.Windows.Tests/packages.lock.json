@@ -245,6 +245,14 @@
       "pitboard.core": {
         "type": "Project"
       },
+      "pitboard.views": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.WindowsAppSDK": "[2.5.1, )",
+          "Pitboard.Core": "[1.0.0, )",
+          "Pitboard.Windows": "[1.0.0, )"
+        }
+      },
       "pitboard.windows": {
         "type": "Project",
         "dependencies": {

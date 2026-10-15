@@ -13,7 +13,7 @@ public sealed class AppModel : INotifyPropertyChanged
         typeof(Snapshot).GetProperties(BindingFlags.Public | BindingFlags.Instance);
 
     private readonly Dictionary<string, object?> _parts = [];
-    private readonly PitboardModel? _model;
+    private readonly IPitboardModel? _model;
 
     public AppModel(Snapshot first)
     {
@@ -23,7 +23,7 @@ public sealed class AppModel : INotifyPropertyChanged
         }
     }
 
-    private AppModel(PitboardModel model)
+    public AppModel(IPitboardModel model)
         : this(model.Snapshot())
     {
         _model = model;
@@ -32,7 +32,7 @@ public sealed class AppModel : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
 
     // The queue runs nothing it was handed before this returns, so Deliver is set before any snapshot.
-    public static AppModel Listening(DispatcherQueue queue, Func<ModelListener, PitboardModel> make)
+    public static AppModel Listening(DispatcherQueue queue, Func<ModelListener, IPitboardModel> make)
     {
         var listening = new ModelListening(queue);
         var app = new AppModel(make(listening));
