@@ -2105,6 +2105,15 @@ Accounts and tokens:
   that window (run 38797997319). So the test of the first launch is inconclusive where the
   window in front before the launch keeps the foreground, and no test there gives Pitboard
   real input.
+- FlaUI.UIA3 5.0.0, run as that user, finds that user's WinUI elements by AutomationId and
+  selects a NavigationView item through its SelectionItem pattern (CF2,
+  `LifecycleTests.AWinUIElementIsFoundAndInvokedByItsAutomationId`, run 38804714545).
+- The self-contained Debug app, started by that user, has its window up 1194 ms after the
+  start on windows-11-arm (CF5, run 38804714545). Both images hold the Windows App Runtime
+  2.5.1.0 package for some user, so that the app needs none is not measured here.
+- The WinUI projects build in Debug and publish in Release for win-arm64 on windows-11-arm,
+  XAML compiler included, so each architecture is built where it runs (CF6, runs
+  38782142541 and 38804714545).
 - Developer Mode is on, and that user makes file and directory symbolic links as it is. It
   makes them with the symbolic-link right granted too, but Developer Mode was on for that run
   as well, so the right alone is not measured.
@@ -2349,6 +2358,7 @@ on 15 October 2026. W27 reviews the list.
 | A MenuFlyout with `ShouldConstrainToRootBounds` false draws whole outside the window it opens from | [ShouldConstrainToRootBounds](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.controls.primitives.flyoutbase.shouldconstraintorootbounds) | No runner opens the menu from the icon; the session's step A2 opens it and looks at it. |
 | A `Run` value under HKCU starts its program as that person signs in, with no promise how soon | [Run and RunOnce registry keys](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys) | No runner signs in again, and no test writes the `Run` key; the session's step A6 signs in with it on. |
 | Settings > Apps > Startup lists a program a `Run` value starts and turns it off | [Configure startup applications in Windows](https://support.microsoft.com/en-us/windows/configure-startup-applications-in-windows-115a420a-0bff-4a6f-90e0-1934c844e473) | Only a person uses that page: the session's step A6 turns Pitboard off there and records what the app's switch then shows. |
+| A self-contained unpackaged app runs without the Windows App Runtime's packages | [Deploy self-contained apps](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/self-contained-deploy/deploy-self-contained-apps) | Both images hold the 2.5.1.0 package (run 38804714545); the session's step A5 records `Get-AppxPackage *WindowsAppRuntime*` on a clean PC. |
 | A self-contained unpackaged app registers for app notifications without the Singleton package | [Deploy self-contained apps](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/self-contained-deploy/deploy-self-contained-apps#dependencies-on-additional-msix-packages) | No runner runs a Release build that registers; the session posts through the app at its step 8 and through `Pitboard.Probe` at its step A5. |
 | A notification with the tag of one Windows still shows takes its place | [ToastNotification.Tag](https://learn.microsoft.com/en-us/uwp/api/windows.ui.notifications.toastnotification.tag) | The same; `Pitboard.Probe` posts twice at the session's step A5. |
 | A click on a notification starts the app again once it called `Unregister` and quit | [AppNotificationManager.Register](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.windows.appnotifications.appnotificationmanager.register) | Only a person clicks a notification: the session's step A5. |
@@ -3405,6 +3415,9 @@ Microsoft's documentation.
   the STA thread, as Microsoft's [App instancing](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/applifecycle/applifecycle-instancing)
   does it, to a copy that runs and to one that is starting, on both images (`LifecycleTests`,
   run 38795330950).
+- Under `DispatcherShutdownMode.OnExplicitShutdown`, closing the main window leaves
+  Pitboard.exe running ([DispatcherShutdownMode](https://learn.microsoft.com/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.application.dispatchershutdownmode)),
+  on both images (`LifecycleTests.ClosingTheWindowLeavesPitboardRunning`, run 38804714545).
 - Rust's `std::env::temp_dir` (Rust 1.98.1, `library/std/src/sys/paths/windows.rs`) and
   .NET's `Path.GetTempPath` (dotnet/runtime v10.0.13, `Path.Windows.cs`) both ask
   `GetTempPath2W`, .NET falling back to `GetTempPathW` where it is missing. So the app finds
