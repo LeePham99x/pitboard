@@ -380,6 +380,10 @@ pub(crate) fn vault_is_shared(ctx: &Context) -> bool {
     ctx.host().vault_is_shared()
 }
 
+pub(crate) fn vault_kind(ctx: &Context) -> Backend {
+    vault(ctx).kind()
+}
+
 /// What writing the live credential would cost, asked of the backend that would take the
 /// write. A login living in the fallback file has no ceiling, and used to be told it had
 /// the keychain's.

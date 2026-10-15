@@ -1334,7 +1334,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
   not what it reads (`codex-rs/windows-sandbox-rs/src/token.rs`), and whether that token
   opens a park is runner-facts row RF-D2b's, not run yet. A park copied to another PC opens
   there only for the same person with a roaming profile, which carries the key, and
-  Pitboard's home is never in a roaming profile's roaming part.
+  Pitboard's home is never in a roaming profile's roaming part. `doctor` says parks are
+  sealed, leaves them out of the logins others can read, and makes two or more that all fail
+  to open, as after a reset, one finding.
 - Pitboard takes Claude Code's write lock, the same way Claude Code takes it, before writing
   Claude Code's login. It writes the login where it already lives. A switch takes Claude
   Code's refresh lock before that, as a renewal does (the register's `refresh_lock`), and

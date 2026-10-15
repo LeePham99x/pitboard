@@ -56,6 +56,7 @@ pub(crate) struct Facts {
     pub(crate) default_slot: bool,
     pub(crate) storage_dir: String,
     pub(crate) backend: Result<store::Backend, store::Error>,
+    pub(crate) vault: store::Backend,
     pub(crate) credential_file: PathBuf,
     pub(crate) credential: Result<Option<Value>, store::Error>,
     /// What the live login costs against the store's ceiling, where there is one.
@@ -442,6 +443,7 @@ pub(crate) fn gather(ctx: &Context) -> Facts {
         default_slot: claude::is_default_slot(ctx),
         storage_dir: claude::storage_dir(ctx),
         backend: store::resolve(&claude_live::chain(ctx), &service),
+        vault: store::vault_kind(ctx),
         credential_file: claude_live::credential_file(ctx),
         credential_cost: store::read_raw(&claude_live::chain(ctx), &service)
             .ok()
@@ -607,6 +609,10 @@ fn loose_logins(ctx: &Context) -> Vec<(String, Kind, Access)> {
         }
     };
     look(claude_live::credential_file(ctx));
+    // Only this Windows account opens a sealed park, whoever can read the file.
+    if store::vault_kind(ctx) == store::Backend::SealedFile {
+        return loose;
+    }
     let vault = store::vault_dir(ctx);
     look(vault.clone());
     if let Ok(entries) = std::fs::read_dir(&vault) {
@@ -1172,6 +1178,9 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
         )
     });
 
+    let lost = lost_parks(facts);
+    checks.extend(judge_vault(facts, &lost));
+
     checks.push(match &facts.state {
         Ok(state) => ok(
             "state",
@@ -1199,15 +1208,18 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
     });
     // Claude Code's accounts here; every other tool's go in its own section, so a program
     // reading codes can tell them apart and Claude Code's column is Claude Code's alone.
+    let judged = |p: &&ParkFact| !lost.iter().any(|gone| std::ptr::eq(*gone, *p));
     let claude_parks: Vec<&ParkFact> = facts
         .parks
         .iter()
         .filter(|p| p.provider == ProviderId::Claude)
+        .filter(judged)
         .collect();
     let codex_parks: Vec<&ParkFact> = facts
         .parks
         .iter()
         .filter(|p| p.provider == ProviderId::Codex)
+        .filter(judged)
         .collect();
     checks.extend(claude_parks.iter().map(|p| judge_park(p, facts.now)));
     if let Some(refusal) = &facts.stuck {
@@ -1651,6 +1663,60 @@ pub(crate) const RENEW_WITHIN: i64 = 3 * 86_400;
 /// access token has lapsed, which `switch::renew` decides.
 pub fn renewal_due(refresh_expires_at: i64, now: i64) -> bool {
     (1..RENEW_WITHIN).contains(&(refresh_expires_at - now))
+}
+
+// Every park lost at once, as after an administrator resets the password, is one finding.
+fn judge_vault(facts: &Facts, lost: &[&ParkFact]) -> Option<Check> {
+    if facts.vault != store::Backend::SealedFile {
+        return None;
+    }
+    if lost.is_empty() {
+        return Some(ok(
+            "vault",
+            "parked logins",
+            "sealed to this Windows account, not plain text",
+        ));
+    }
+    let again: Vec<String> = lost
+        .iter()
+        .map(|p| format!("pitboard enroll {} --sign-in", p.typed()))
+        .collect();
+    Some(fail(
+        "vault",
+        "parked logins",
+        format!(
+            "none of the {} parked logins opens for this Windows account",
+            lost.len()
+        ),
+        format!(
+            "An administrator's reset of your Windows password, or a profile restored on \
+             another PC, leaves them sealed with a key this account no longer has. Sign in to \
+             each again{}",
+            running(&again)
+        ),
+    ))
+}
+
+// Two parks or more in a sealed vault, and none of them usable.
+fn lost_parks(facts: &Facts) -> Vec<&ParkFact> {
+    let parked: Vec<&ParkFact> = facts
+        .parks
+        .iter()
+        .filter(|p| {
+            p.park
+                .as_ref()
+                .is_some_and(|park| park.kind == crate::state::ParkKind::Vault)
+        })
+        .collect();
+    let all = parked.len() >= 2
+        && parked
+            .iter()
+            .all(|p| matches!(p.unreadable, Some(Unreadable::Broken(_))));
+    if facts.vault == store::Backend::SealedFile && all {
+        parked
+    } else {
+        Vec::new()
+    }
 }
 
 fn judge_park(fact: &ParkFact, now: i64) -> Check {
@@ -3805,6 +3871,7 @@ mod tests {
             default_slot: true,
             storage_dir: "/home/x/.claude".into(),
             backend: Ok(store::Backend::Keychain),
+            vault: store::Backend::Keychain,
             credential_file: PathBuf::from("/home/x/.claude/.credentials.json"),
             credential: Ok(Some(json!({"claudeAiOauth": {
                 "refreshToken": "r",
@@ -4069,11 +4136,7 @@ mod tests {
         assert!(healthy(&checks));
     }
 
-    /// What the check above is given, read off a real disk.
-    ///
-    /// Everything else here hands `evaluate` its facts, so nothing until now had ever
-    /// looked at a file's mode. A gatherer that returns an empty list whatever the disk
-    /// says would pass every one of those tests.
+    // Read off a real disk: a gatherer that found nothing would pass every facts test.
     #[test]
     fn a_world_readable_park_is_found_on_the_disk() {
         use crate::host::fs::testing;
@@ -4081,7 +4144,9 @@ mod tests {
         let scratch = tempfile::tempdir().expect("a scratch home");
         let root = scratch.path().to_path_buf();
 
-        let ctx = Context::new(root.clone()).with_pitboard_home(root.join(".pitboard"));
+        let ctx = Context::new(root.clone())
+            .with_pitboard_home(root.join(".pitboard"))
+            .with_memory_stores(crate::host::memory::MemoryHost::new());
         let vault = store::vault_dir(&ctx);
         crate::host::fs::create_private_dir(Permit::for_a_test(), &vault).expect("a vault");
         assert!(
@@ -4108,6 +4173,22 @@ mod tests {
             .find(|(path, ..)| *path == vault.display().to_string())
             .expect("the vault");
         assert_eq!(folder.1, Kind::Directory, "{found:?}");
+    }
+
+    #[test]
+    fn a_sealed_park_others_can_read_is_no_login_on_disk() {
+        let scratch = tempfile::tempdir().expect("a scratch home");
+        let root = scratch.path().to_path_buf();
+        let ctx = Context::new(root.clone())
+            .with_pitboard_home(root.join(".pitboard"))
+            .with_memory_stores(crate::host::memory::MemoryHost::sealed());
+        let vault = store::vault_dir(&ctx);
+        crate::host::fs::create_private_dir(Permit::for_a_test(), &vault).expect("a vault");
+        let park = vault.join("pitboard-park-x.json");
+        std::fs::write(&park, "sealed").expect("a park");
+        crate::host::fs::testing::open_to_others(&park).expect("opened to others");
+        crate::host::fs::testing::open_to_others(&vault).expect("opened to others");
+        assert_eq!(loose_logins(&ctx), Vec::new());
     }
 
     /// On a machine with no keychain every parked login is a plaintext OAuth token in a
@@ -5401,6 +5482,75 @@ mod tests {
         assert_eq!(
             named(&checks, "account gone").detail,
             format!("its parked login expired {}", time::moment(NOW - 1, NOW))
+        );
+    }
+
+    #[test]
+    fn parks_sealed_to_the_account_are_said_so_and_all_lost_at_once_is_one_finding() {
+        let mut f = facts();
+        f.parks = vec![
+            parked("work", None),
+            codex_parked("home", None),
+            ParkFact {
+                park: None,
+                ..parked("empty", None)
+            },
+        ];
+        assert!(evaluate(&f).iter().all(|c| c.code != "vault"), "a keychain");
+
+        f.vault = store::Backend::SealedFile;
+        let checks = evaluate(&f);
+        let vault = check(&checks, "vault");
+        assert_eq!(
+            (vault.level, vault.name.as_str(), vault.detail.as_str()),
+            (
+                Level::Ok,
+                "parked logins",
+                "sealed to this Windows account, not plain text"
+            )
+        );
+
+        let lost = Some(Unreadable::Broken(
+            "it does not open for this account".into(),
+        ));
+        f.parks[0].unreadable = lost.clone();
+        let checks = evaluate(&f);
+        assert_eq!(check(&checks, "vault").level, Level::Ok, "one of two");
+        assert_eq!(named(&checks, "account work").level, Level::Fail);
+        assert!(
+            named(&checks, "account work")
+                .advice
+                .contains("pitboard enroll work --sign-in")
+        );
+
+        f.parks[1].unreadable = lost;
+        let checks = evaluate(&f);
+        let vault = check(&checks, "vault");
+        assert_eq!(vault.level, Level::Fail);
+        assert_eq!(
+            vault.detail,
+            "none of the 2 parked logins opens for this Windows account"
+        );
+        assert!(
+            vault.advice.ends_with(
+                "Sign in to each again: `pitboard enroll work --sign-in` and \
+                 `pitboard enroll codex/home --sign-in`."
+            ),
+            "{}",
+            vault.advice
+        );
+        for code in ["parked_login", "codex_parked_login"] {
+            assert!(
+                checks
+                    .iter()
+                    .all(|c| c.code != code || c.level != Level::Fail),
+                "{code} is in the one finding"
+            );
+        }
+        assert_eq!(
+            named(&checks, "account empty").level,
+            Level::Warn,
+            "nothing parked"
         );
     }
 
