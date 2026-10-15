@@ -61,7 +61,7 @@ public sealed class IconMenuTests
         Assert.AreEqual(
             "Claude Code isn’t installed | Switch Claude Code to personal | An interrupted switch is waiting | - "
             + "| # Claude Code | (x) work | ( ) personal | - | # Codex | (x) main | - "
-            + "| Add Account… | Refresh | - | Open Pitboard | Settings | - | Pitboard Help | Exit",
+            + "| Add account… | Refresh | - | Open Pitboard | Settings | - | Pitboard help | Exit",
             Said(entries));
     }
 
@@ -83,7 +83,7 @@ public sealed class IconMenuTests
         });
 
         Assert.AreEqual(
-            "(x) work | - | Add Account… | Refresh | - | Open Pitboard | Settings | - | Pitboard Help | Exit",
+            "(x) work | - | Add account… | Refresh | - | Open Pitboard | Settings | - | Pitboard help | Exit",
             Said(IconMenu.Entries(model, new NoUpdates())));
     }
 
@@ -98,7 +98,7 @@ public sealed class IconMenuTests
 
         var entries = IconMenu.Entries(model, new NoUpdates());
 
-        Assert.StartsWith("> Couldn’t read usage | - | Add Account…", Said(entries));
+        Assert.StartsWith("> Couldn’t read usage | - | Add account…", Said(entries));
         Assert.IsEmpty(entries.OfType<IconMenuEntry.Account>());
     }
 
@@ -207,7 +207,7 @@ public sealed class IconMenuTests
         var entries = IconMenu.Entries(TwoTools(), new StandInUpdates(waiting: null));
 
         Assert.AreEqual(new IconCommand.CheckForUpdates(), Command(entries, "Check for updates").Does);
-        Assert.Contains("Open Pitboard | Settings | Check for Updates | -", Said(entries));
+        Assert.Contains("Open Pitboard | Settings | Check for updates | -", Said(entries));
     }
 
     [TestMethod]

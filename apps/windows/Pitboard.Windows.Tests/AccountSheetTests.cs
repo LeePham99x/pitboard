@@ -151,7 +151,7 @@ public sealed class AccountSheetTests
         up.App.Apply(signingIn with { Revision = 2, SigningIn = Items.Running("claude", Address, wantsCode: true) });
         await Views.Until(() => up.Visible("sheet.code"), "no code field once the tool asked");
         Assert.AreEqual("Submit code", up.Sheet.PrimaryButtonText);
-        Assert.IsFalse(up.Sheet.IsPrimaryButtonEnabled, "Submit Code with no code");
+        Assert.IsFalse(up.Sheet.IsPrimaryButtonEnabled, "Submit code with no code");
         await up.Type("sheet.code", "fixture-code#state");
         Views.Press(up.Part("PrimaryButton"));
 

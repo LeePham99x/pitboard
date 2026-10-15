@@ -56,7 +56,7 @@ public sealed class IconMenuFlyoutTests
 
         Assert.AreEqual(
             "An interrupted switch is waiting | - | Claude Code | (x) work | ( ) personal | - | Codex | (x) main | - "
-            + "| Add Account… | Refresh | - | Open Pitboard | Settings | - | Pitboard Help | Exit",
+            + "| Add account… | Refresh | - | Open Pitboard | Settings | - | Pitboard help | Exit",
             Said(menu));
     }
 
