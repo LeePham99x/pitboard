@@ -181,6 +181,22 @@ function Show-Run($Run) {
     Write-Output "::$token::"
 }
 
+# A program that fails fast, as WinUI does on an exception nothing handled, prints nothing of it. Windows
+# Error Reporting's events name the module and the code.
+function Show-Crashes([datetime] $Since) {
+    $filter = @{ LogName = 'Application'; ProviderName = 'Application Error', '.NET Runtime'; StartTime = $Since }
+    $crashes = @(Get-WinEvent -FilterHashtable $filter -ErrorAction SilentlyContinue | Sort-Object TimeCreated)
+    if ($crashes.Count -eq 0) { return }
+    Write-Output "::group::The Application log's crashes since the tests started: $($crashes.Count)"
+    $token = [guid]::NewGuid().ToString('N')
+    Write-Output "::stop-commands::$token"
+    foreach ($crash in $crashes) {
+        Write-Output "$($crash.TimeCreated.ToString('HH:mm:ss')) $($crash.ProviderName) $($crash.Id): $($crash.Message)"
+    }
+    Write-Output "::$token::"
+    Write-Output '::endgroup::'
+}
+
 # SIDs are compared and written back, never printed.
 function Get-SymlinkHolders {
     $export = Join-Path $logs 'rights.inf'
@@ -286,6 +302,7 @@ try {
         if ($temp.Exit -ne 0) { Show-Run $temp; throw "the standard user could not make its temporary folder" }
     }
 
+    $testsStarted = Get-Date
     # Start-Process joins its arguments with spaces and quotes nothing, and none of these holds one.
     if ($Cargo) {
         $arguments = @('nextest', 'run', '--profile', 'ci', '--binaries-metadata', $binariesFile, '--cargo-metadata', $cargoMetadataFile)
@@ -302,6 +319,7 @@ try {
         Write-Output '::endgroup::'
         if ($run.Exit -ne 0) { $failed.Add("$($programs[$i]) exited $($run.Exit)") }
     }
+    if ($failed.Count -gt 0) { Show-Crashes $testsStarted }
     if ($Exe) {
         $exeEnv = $userEnv.Clone()
         foreach ($folder in 'USERPROFILE', 'HOME', 'APPDATA', 'LOCALAPPDATA', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'PITBOARD_HOME') {
