@@ -119,6 +119,15 @@ python3 .github/scripts/test-install.py
 The test runs the script under each of `sh`, `dash`, `bash`, `zsh` and `busybox sh` it finds
 on `PATH`. `TEST_INSTALL_SHELLS` names the ones that must be found, as CI sets it.
 
+For a change to the release's scripts, `release-kind.sh` and `core-unchanged.sh` in
+`.github/scripts`, or `apps/macos/scripts/build-number.sh`:
+
+```sh
+shellcheck -s sh .github/scripts/release-kind.sh .github/scripts/core-unchanged.sh \
+  apps/macos/scripts/build-number.sh
+python3 .github/scripts/test-release.py
+```
+
 The app, the C# bindings, Windows and the website have checks of their own, in their
 sections. CI's `all-green` check fails when any other job failed or was cancelled, and a pull
 request needs it to pass.
@@ -251,8 +260,19 @@ dotnet test --solution Pitboard.slnx -p:PitboardNativeLibrary="$PWD/../../target
 ```
 
 On Linux the library the tests load is `libpitboard_ffi.so`, and on Windows
-`pitboard_ffi.dll`. C# makes each field of a record a member of it, so a field may not share
-its record's name.
+`pitboard_ffi.dll`. There the generator reads `pitboard_ffi.dll` or `pitboard_ffi.lib`, which
+give the same file; `pitboard_ffi.dll.lib` gives none. A Windows library built with
+`--cfg pitboard_unreleased_windows` takes `-p:PitboardNativeLibraryOpened=true` as well, or the
+test of what a 0.x release refuses fails. C# makes each field of a record a member of it, so a
+field may not share its record's name.
+
+On Windows, run the tests as [Windows](#windows) says: as a Windows account that holds no real
+login, with the homes [AGENTS.md](AGENTS.md#on-windows) names at fresh folders. A C# test that
+cannot pass there until a later Windows pull request says so in its Rust counterpart's words:
+
+```csharp
+[OSCondition(ConditionMode.Exclude, OperatingSystems.Windows, IgnoreMessage = "W<n>: <what it waits on>")]
+```
 
 The tests that start a fixture's model are skipped against a library built without the
 `fixture` feature. To run them, build the library with
@@ -287,9 +307,9 @@ cargo nextest run --locked -p pitboard-ffi --features fixture
 `RUSTFLAGS` replaces each target's own rustflags, so it names the static C runtime releases
 are built with.
 
-The whole suite runs on Windows. A test that cannot pass there until a later Windows pull
-request says so with `#[cfg_attr(windows, ignore = "W<n>: <what it waits on>")]`, and in no
-other way: no filter and no `--skip`.
+The whole suite runs on Windows. A Rust test that cannot pass there until a later Windows
+pull request says so with `#[cfg_attr(windows, ignore = "W<n>: <what it waits on>")]`, and in
+no other way: no filter and no `--skip`.
 
 From a Mac or Linux, `cargo check --target x86_64-pc-windows-msvc` checks only
 `pitboard-sites` and `pitboard-share-ffi`, since ring compiles C against MSVC's headers.
@@ -297,9 +317,15 @@ From a Mac or Linux, `cargo check --target x86_64-pc-windows-msvc` checks only
 CI's `windows` job runs these commands on `windows-2025` and `windows-11-arm`, the tests as
 a fresh standard user through `.github/scripts/test-as-standard-user.ps1`. The job fails when
 a run leaves a login item, a scheduled task or a login folder behind. It also builds
-`pitboard.exe` as a release is built, and checks that it refuses and changes nothing.
+`pitboard.exe` as a release is built, and checks that it refuses and changes nothing. The
+`csharp-windows` job builds `pitboard_ffi.dll` that way and opened with its fixtures, checks
+that the bindings generated from each are the Linux job's byte for byte, and runs the C# tests
+against each the same way.
 
-`gh workflow run windows-facts.yml` measures both runner images. No pull request runs it.
+`gh workflow run windows-facts.yml --ref <branch>` measures both runner images with
+`pitboard-probe` and `.github/scripts/runner-facts.ps1`. No pull request runs it on its own:
+one that changes the probe, its helpers or the script dispatches it on its branch and names
+the run. `ARCHITECTURE.md` records what it measured.
 
 ## Tool registers
 
@@ -422,11 +448,13 @@ A pull request against `main` needs all of these:
 - `CHANGELOG.md` has an entry, if someone using Pitboard would notice the change.
 - `docs/` says what the code does, for anything the change makes it say differently.
 - A change that removes, renames or reshapes anything public in `pitboard-core` raises the
-  minor version in `Cargo.toml`: `version` under `[workspace.package]`, and the `=` version
-  of `pitboard-core` under `[workspace.dependencies]`. Then run `cargo update --workspace`.
-  CI's `semver` job fails until it is raised.
+  core's minor version, which is its own and not Pitboard's: `version` in
+  `crates/pitboard-core/Cargo.toml`, and the `=` version of `pitboard-core` under
+  `[workspace.dependencies]` in `Cargo.toml`. Then run `cargo update --workspace`. CI's
+  `semver` job fails until it is raised.
 
-When `Cargo.toml` already names a minor version past the last release, it stays.
+When `crates/pitboard-core/Cargo.toml` already names a minor version past the core's last
+release, it stays.
 
 Each commit subject is one present-tense sentence saying what Pitboard does after the change,
 with no prefix, such as "The man page sets out every command instead of naming pages that

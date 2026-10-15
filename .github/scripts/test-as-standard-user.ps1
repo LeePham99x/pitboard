@@ -1,12 +1,20 @@
-# The job's user is elevated in every program it starts, so nextest runs the tests as a fresh
-# standard user, from the test programs and metadata the job's user built.
+# The job's user is elevated in every program it starts, so the tests run as a fresh standard
+# user: nextest's, from the test programs and metadata the job's user built, and test programs
+# that need nothing from the job user's profile, each run as it is.
 param(
     # Cargo's options for the build, as `cargo nextest list` takes them.
-    [Parameter(Mandatory)] [string] $Cargo,
+    [string] $Cargo,
+    # Self-contained test programs, such as a published Microsoft.Testing.Platform one, inside
+    # the workspace.
+    [string[]] $Dotnet,
     # Built already, inside the workspace the user is granted read and run on.
     [Parameter(Mandatory)] [string] $Probe
 )
 $ErrorActionPreference = 'Stop'
+
+if (-not $Cargo -and -not $Dotnet) {
+    throw 'nothing to run: give -Cargo, -Dotnet or both'
+}
 
 # A GitHub-hosted runner is thrown away after the job.
 if (-not ($env:GITHUB_ACTIONS -eq 'true' -and $env:RUNNER_ENVIRONMENT -eq 'github-hosted')) {
@@ -51,21 +59,33 @@ $jobPlaces = @(Get-LoginPlaces $env:USERPROFILE $env:LOCALAPPDATA)
 $jobPlacesBefore = @($jobPlaces | Where-Object { Test-Path -LiteralPath $_ })
 Write-Output "Of the job user's own login places, $($jobPlacesBefore.Count) of $($jobPlaces.Count) are there before the tests run."
 
-# Built as the job's user: Cargo and rustup are in its profile, which a standard user cannot open.
-# Given both metadata files, nextest runs what was built without them.
-$binaries = & cargo nextest list --list-type binaries-only --message-format json @(Split-Words $Cargo)
-if ($LASTEXITCODE -ne 0) { throw "cargo nextest list $Cargo failed" }
-$cargoMetadata = & cargo metadata --format-version 1 --locked
-if ($LASTEXITCODE -ne 0) { throw 'cargo metadata failed' }
-$metadata = ($cargoMetadata | Out-String) | ConvertFrom-Json
-$nextest = (Get-Command -Name cargo-nextest -CommandType Application).Source
-# Where the ci profile writes its report.
-$store = Join-Path $metadata.target_directory 'nextest'
-$workspace = $metadata.workspace_root
-$readable = @($workspace)
-if (-not $metadata.target_directory.StartsWith($workspace + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
-    $readable += $metadata.target_directory
+function Test-Inside([string] $Path, [string] $Folder) {
+    $Path.StartsWith($Folder.TrimEnd('\') + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)
 }
+
+$workspace = (Resolve-Path -LiteralPath $env:GITHUB_WORKSPACE).Path
+$readable = @($workspace)
+if ($Cargo) {
+    # Built as the job's user: Cargo and rustup are in its profile, which a standard user cannot
+    # open. Given both metadata files, nextest runs what was built without them.
+    $binaries = & cargo nextest list --list-type binaries-only --message-format json @(Split-Words $Cargo)
+    if ($LASTEXITCODE -ne 0) { throw "cargo nextest list $Cargo failed" }
+    $cargoMetadata = & cargo metadata --format-version 1 --locked
+    if ($LASTEXITCODE -ne 0) { throw 'cargo metadata failed' }
+    $metadata = ($cargoMetadata | Out-String) | ConvertFrom-Json
+    $nextest = (Get-Command -Name cargo-nextest -CommandType Application).Source
+    # Where the ci profile writes its report.
+    $store = Join-Path $metadata.target_directory 'nextest'
+    if (-not (Test-Inside $metadata.target_directory $workspace)) {
+        $readable += $metadata.target_directory
+    }
+}
+$programs = @(foreach ($program in $Dotnet) {
+    if (-not (Test-Path -LiteralPath $program -PathType Leaf)) { throw "no test program at $program to run: build it first" }
+    $path = (Resolve-Path -LiteralPath $program).Path
+    if (-not (Test-Inside $path $workspace)) { throw "$path is not inside the workspace, $workspace" }
+    $path
+})
 
 $name = 'pbtest' + (Get-Random -Minimum 10000 -Maximum 99999)
 $secure = ConvertTo-SecureString -String ([guid]::NewGuid().ToString('N') + 'Aa1!') -AsPlainText -Force
@@ -153,15 +173,17 @@ try {
         $granted.Add($folder)
         Set-UserRights $folder 'RX'
     }
-    New-Item -ItemType Directory -Force -Path $store | Out-Null
-    $granted.Add($store)
-    Set-UserRights $store 'M'
-    $userNextest = Join-Path $runDir (Split-Path -Leaf $nextest)
-    Copy-Item -LiteralPath $nextest -Destination $userNextest
-    $binariesFile = Join-Path $runDir 'binaries-metadata.json'
-    $binaries | Set-Content -Path $binariesFile
-    $cargoMetadataFile = Join-Path $runDir 'cargo-metadata.json'
-    $cargoMetadata | Set-Content -Path $cargoMetadataFile
+    if ($Cargo) {
+        New-Item -ItemType Directory -Force -Path $store | Out-Null
+        $granted.Add($store)
+        Set-UserRights $store 'M'
+        $userNextest = Join-Path $runDir (Split-Path -Leaf $nextest)
+        Copy-Item -LiteralPath $nextest -Destination $userNextest
+        $binariesFile = Join-Path $runDir 'binaries-metadata.json'
+        $binaries | Set-Content -Path $binariesFile
+        $cargoMetadataFile = Join-Path $runDir 'cargo-metadata.json'
+        $cargoMetadata | Set-Content -Path $cargoMetadataFile
+    }
 
     $devKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock'
     $developerMode = (Get-ItemProperty -Path $devKey -ErrorAction SilentlyContinue).AllowDevelopmentWithoutDevLicense -eq 1
@@ -198,10 +220,21 @@ try {
     }
 
     # Start-Process joins its arguments with spaces and quotes nothing, and none of these holds one.
-    $arguments = @('nextest', 'run', '--profile', 'ci', '--binaries-metadata', $binariesFile, '--cargo-metadata', $cargoMetadataFile)
-    $run = Start-AsUser $userNextest $arguments $runDir $userEnv 'nextest'
-    Show-Run $run
-    if ($run.Exit -ne 0) { $failed.Add("nextest exited $($run.Exit)") }
+    if ($Cargo) {
+        $arguments = @('nextest', 'run', '--profile', 'ci', '--binaries-metadata', $binariesFile, '--cargo-metadata', $cargoMetadataFile)
+        $run = Start-AsUser $userNextest $arguments $runDir $userEnv 'nextest'
+        Show-Run $run
+        if ($run.Exit -ne 0) { $failed.Add("nextest exited $($run.Exit)") }
+    }
+    for ($i = 0; $i -lt $programs.Count; $i++) {
+        # Otherwise Microsoft.Testing.Platform's results go beside the program, where the user may only read.
+        $arguments = @('--results-directory', (Join-Path $runDir "results-$i"))
+        $run = Start-AsUser $programs[$i] $arguments $runDir $userEnv "dotnet-$i"
+        Write-Output "::group::$($programs[$i]), as the standard user: $(if ($run.Exit -eq 0) { 'passed' } else { "exited $($run.Exit)" })"
+        Show-Run $run
+        Write-Output '::endgroup::'
+        if ($run.Exit -ne 0) { $failed.Add("$($programs[$i]) exited $($run.Exit)") }
+    }
 
     $leaked = [System.Collections.Generic.List[string]]::new()
     $leaks = Start-AsUser $probePath @('credman-names', '--leak-check') $runDir $userEnv 'leak-check'

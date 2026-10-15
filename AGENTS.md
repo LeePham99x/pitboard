@@ -51,6 +51,8 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
   rule sends `/install.sh` to the newest release; a site file there would change what people
   pipe to `sh`.
 - Never push a tag.
+- Never mark a release latest by hand, or reuse or move an rc or beta tag. The release
+  workflow decides latest.
 - Never let `.github/workflows/rotation.yml` name a repository secret. Its rehearsal ships
   bundles that update themselves, and must never reach the real key.
 - Never keep the update key and the Developer ID certificate in one place. With both lost,
@@ -68,6 +70,9 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
 - Never read, copy, rewrite or delete `%USERPROFILE%\.claude`, `%USERPROFILE%\.claude.json`,
   `%USERPROFILE%\.codex`, `%ProgramData%\OpenAI\Codex`, `C:\Program Files\ClaudeCode`, or
   the `%LOCALAPPDATA%\Pitboard` of an account that holds real logins.
+- Never read, list or write `%APPDATA%\Claude`, `%APPDATA%\Claude-3p` or
+  `%LOCALAPPDATA%\AnthropicClaude` from a test, a script or the probe. Claude Desktop keeps
+  its sign-in there, and Pitboard leaves it alone on Windows.
 - Never run a `pitboard.exe` built from a branch on a Windows account that holds real
   logins. Never put one on a `PATH`, in `%LOCALAPPDATA%\Programs`, in WinGet's Links or
   behind a Scoop shim.
@@ -81,7 +86,22 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
 - Tests never touch Task Scheduler, the registry, the user `PATH` or DPAPI keys, and never
   run elevated on a machine that holds logins.
 - Never run `.github/scripts/test-as-standard-user.ps1` or `runner-facts.ps1` on a machine of
-  your own. They make a Windows account and change who holds which rights.
+  your own. They make Windows accounts and change who holds which rights.
+- `runner-facts.ps1`, only through `windows-facts.yml` on a GitHub-hosted runner, is the one
+  script that may make accounts and change their passwords, register tasks, write the job
+  user's `HKCU\Environment`, seal with DPAPI, mount volumes, share a folder, start OpenSSH
+  Server and install Bun. It undoes each in a `finally`. Never copy one of those changes into
+  a script meant for a person's machine.
+- `windows-facts.yml` stays `workflow_dispatch` only, names no secret, and uploads only the
+  probe's redacted reports. No workflow uploads an opened `pitboard.exe`: the repository is
+  public, so anyone signed in to GitHub can download an artifact.
+- Bun and `proper-lockfile` reach a runner only from Bun's release zip, checked against the
+  SHA-256 `windows-facts.yml` pins or is given with the version, and from the committed
+  `bun.lock` with install scripts off.
+- A row that writes a `pitboard-citest-*` Credential Manager item, through `Bun.secrets` or
+  otherwise, runs only on a runner and deletes the item by name in the same row. Each
+  throwaway user runs `credman-names --leak-check` before its password changes or it is
+  removed.
 - Never run `claude.exe` or `codex.exe` to read a fact. Read the build as bytes on a Mac or
   Linux, as `pitboard-conformance` does.
 - Never measure a running tool on a Windows machine that holds logins. Use one kept for it,
@@ -102,9 +122,9 @@ checks of each other section of CONTRIBUTING.md the change reaches.
   [Tool registers](CONTRIBUTING.md#tool-registers) says how.
 - A change people would notice gets an entry under `## [Unreleased]` in
   [CHANGELOG.md](CHANGELOG.md), as [Changelog](CONTRIBUTING.md#changelog) says.
-- A change that breaks `pitboard-core`'s public API raises the minor version in the same
-  pull request. When `Cargo.toml` already names a minor version past the last release, it
-  stays.
+- A change that breaks `pitboard-core`'s public API raises the core's own minor version in
+  the same pull request. When `crates/pitboard-core/Cargo.toml` already names a minor
+  version past the core's last release, it stays.
 - A commit subject is one present-tense sentence saying what Pitboard does after the change,
   with no prefix. The body says why, and what was measured.
 

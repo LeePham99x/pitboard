@@ -24,8 +24,9 @@ use windows_sys::Win32::System::RemoteDesktop::{
     WTSEnumerateProcessesExW, WTSFreeMemoryExW, WTSTypeProcessInfoLevel1,
 };
 use windows_sys::Win32::System::Threading::{
-    GetCurrentProcessId, OpenProcess, OpenProcessToken, PROCESS_NAME_WIN32,
-    PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
+    GetCurrentProcess, GetCurrentProcessId, GetProcessInformation, IsWow64Process2, OpenProcess,
+    OpenProcessToken, PROCESS_MACHINE_INFORMATION, PROCESS_NAME_WIN32,
+    PROCESS_QUERY_LIMITED_INFORMATION, ProcessMachineTypeInfo, QueryFullProcessImageNameW,
 };
 
 /// `WTS_ANY_SESSION` (wtsapi32.h). windows-sys does not carry it; `0xFFFF_FFFF` is
@@ -100,6 +101,32 @@ fn token_user(h: HANDLE) -> Option<String> {
     Token::owned(t).user_sid()
 }
 
+// The machine the process's image is built for, which an x64 program emulated on ARM64 keeps.
+pub(super) fn machine_of(h: HANDLE) -> Option<u16> {
+    let mut info = PROCESS_MACHINE_INFORMATION::default();
+    // SAFETY: `h` is open for limited queries; `info` is sized for this class.
+    let ok = unsafe {
+        GetProcessInformation(
+            h,
+            ProcessMachineTypeInfo,
+            (&mut info as *mut PROCESS_MACHINE_INFORMATION).cast(),
+            size_of::<PROCESS_MACHINE_INFORMATION>() as u32,
+        )
+    };
+    (ok != 0).then_some(info.ProcessMachine)
+}
+
+fn native_machine() -> Option<u16> {
+    let (mut process, mut native) = (0u16, 0u16);
+    // SAFETY: a pseudo-handle for this process; both out-params are valid.
+    let ok = unsafe { IsWow64Process2(GetCurrentProcess(), &mut process, &mut native) };
+    (ok != 0).then_some(native)
+}
+
+fn machine_value(m: Option<u16>) -> Value {
+    m.map_or(Value::Null, |m| json!(crate::pe::machine_name(m)))
+}
+
 fn session_of(pid: u32) -> Option<u32> {
     let mut s = 0u32;
     // SAFETY: a valid out-param.
@@ -113,6 +140,7 @@ fn describe(pid: u32, own: Option<&str>, r: &crate::redact::Redactor) -> Value {
             let user = token_user(h.raw());
             json!({
                 "image_path": image_path(h.raw()).map(|p| r.redact(&p)),
+                "machine": machine_value(machine_of(h.raw())),
                 "package_family": package_family(h.raw()),
                 "same_user": user.as_deref().zip(own).map(|(u, o)| u == o),
                 "token_readable": user.is_some(),
@@ -195,6 +223,9 @@ pub(super) fn processes(find: &[String]) -> Report {
         }
     };
 
+    // SAFETY: a pseudo-handle for this process.
+    let own_machine = machine_value(machine_of(unsafe { GetCurrentProcess() }));
+
     // Toolhelp, every session.
     let toolhelp = match snapshot() {
         Err(code) => json!({ "ok": false, "error": code }),
@@ -232,8 +263,28 @@ pub(super) fn processes(find: &[String]) -> Report {
         logon,
         json!({
             "current_session": current_session,
+            "this_process_machine": own_machine,
+            "native_machine": machine_value(native_machine()),
             "wts_any_session": wts,
             "toolhelp": toolhelp,
         }),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_probe_reports_its_own_native_machine() {
+        let want = if cfg!(target_arch = "aarch64") {
+            "arm64"
+        } else {
+            "x64"
+        };
+        // SAFETY: a pseudo-handle for this process.
+        let own = machine_of(unsafe { GetCurrentProcess() });
+        assert_eq!(own.map(crate::pe::machine_name), Some(want));
+        assert_eq!(native_machine().map(crate::pe::machine_name), Some(want));
+    }
 }

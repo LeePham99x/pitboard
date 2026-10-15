@@ -17,19 +17,24 @@ pub(crate) fn config_dir(ctx: &Context) -> PathBuf {
         .unwrap_or_else(|| ctx.home.join(".claude"))
 }
 
-/// A legacy `<config dir>/.config.json` wins when present; otherwise
-/// `<$CLAUDE_CONFIG_DIR || $HOME>/.claude.json`, where an empty `CLAUDE_CONFIG_DIR` is the
-/// home. The differing base, and the differing reading of empty, are Claude Code's.
+// As Claude Code chooses it: the register's `config_file_location`.
 pub(crate) fn config_file(ctx: &Context) -> PathBuf {
-    let legacy = config_dir(ctx).join(".config.json");
-    if legacy.is_file() {
-        return legacy;
-    }
-    ctx.claude_config_dir
+    let file = ctx
+        .claude_config_dir
         .as_deref()
         .filter(|dir| !dir.is_empty())
         .map_or_else(|| ctx.home.clone(), PathBuf::from)
-        .join(".claude.json")
+        .join(".claude.json");
+    let legacy = config_dir(ctx).join(".config.json");
+    match std::fs::metadata(&legacy) {
+        Ok(meta)
+            if meta.is_file()
+                && (meta.len() > 0 || (!meta.permissions().readonly() && !file.exists())) =>
+        {
+            legacy
+        }
+        _ => file,
+    }
 }
 
 /// Where the `claude` that signs someone in actually is, if it is anywhere. A bare name is
@@ -245,6 +250,46 @@ mod tests {
             std::path::Path::new("/nowhere/home/.claude.json")
         );
         assert!(is_default_slot(&ctx));
+    }
+
+    fn scratch_home() -> (tempfile::TempDir, Context, PathBuf) {
+        let home = tempfile::tempdir().expect("a scratch home");
+        std::fs::create_dir(home.path().join(".claude")).expect("a config dir");
+        let ctx = Context::new(home.path().to_path_buf());
+        let legacy = home.path().join(".claude/.config.json");
+        (home, ctx, legacy)
+    }
+
+    #[test]
+    fn an_empty_config_json_gives_way_to_claude_json() {
+        let (home, ctx, legacy) = scratch_home();
+        std::fs::write(&legacy, "").unwrap();
+        std::fs::write(home.path().join(".claude.json"), "{}").unwrap();
+        assert_eq!(config_file(&ctx), home.path().join(".claude.json"));
+    }
+
+    #[test]
+    fn an_empty_config_json_is_taken_only_while_writable_and_claude_json_is_missing() {
+        let (home, ctx, legacy) = scratch_home();
+        std::fs::write(&legacy, "").unwrap();
+        assert_eq!(config_file(&ctx), legacy);
+
+        let mut read_only = std::fs::metadata(&legacy).unwrap().permissions();
+        read_only.set_readonly(true);
+        std::fs::set_permissions(&legacy, read_only).unwrap();
+        assert_eq!(config_file(&ctx), home.path().join(".claude.json"));
+    }
+
+    #[test]
+    fn a_config_json_wins_when_it_is_a_file_that_holds_anything() {
+        let (home, ctx, legacy) = scratch_home();
+        std::fs::write(home.path().join(".claude.json"), "{}").unwrap();
+        std::fs::write(&legacy, "{}").unwrap();
+        assert_eq!(config_file(&ctx), legacy);
+
+        std::fs::remove_file(&legacy).unwrap();
+        std::fs::create_dir(&legacy).unwrap();
+        assert_eq!(config_file(&ctx), home.path().join(".claude.json"));
     }
 
     /// Claude Code: `if (n !== undefined) return (n || join(homedir(), ".claude"))`. The

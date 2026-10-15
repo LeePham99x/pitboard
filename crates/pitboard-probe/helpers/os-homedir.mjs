@@ -44,6 +44,7 @@ console.log(
       os_homedir: redact(home),
       os_homedir_is_the_account_profile: home.toLowerCase() === profile.toLowerCase(),
       os_homedir_follows_USERPROFILE: home === process.env.USERPROFILE,
+      userinfo_homedir_follows_USERPROFILE: profile === process.env.USERPROFILE,
       os_homedir_is_nfc: home === home.normalize("NFC"),
       env: Object.fromEntries(
         [

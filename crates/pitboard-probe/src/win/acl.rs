@@ -165,11 +165,33 @@ pub(super) fn acl(
     keep: bool,
     open: Option<&Path>,
     remove: Option<&Path>,
+    describe: Option<&Path>,
 ) -> Report {
     let logon = logon_now();
     let own = Token::current().ok().and_then(|t| t.user_sid());
     let own = own.as_deref();
     let mut data = json!({});
+
+    // Reads one descriptor and changes nothing, so the scratch check is enough.
+    if let Some(file) = describe {
+        let Some(scratch) = scratch else {
+            return Report::refused("acl", logon, "--describe needs --scratch");
+        };
+        if create || open.is_some() || remove.is_some() {
+            return Report::refused("acl", logon, "--describe goes alone");
+        }
+        return match probe_file_in(file, scratch) {
+            Ok(()) => Report::ok(
+                "acl",
+                logon,
+                json!({
+                    "described": file.file_name().map(|n| n.to_string_lossy().into_owned()),
+                    "access": describe_access(file, own),
+                }),
+            ),
+            Err(reason) => Report::refused("acl", logon, reason),
+        };
+    }
 
     // H7: --open alone only opens a probe file in a scratch folder, and changes nothing, so
     // it needs the scratch check and not the marker, which a restricted token such as Codex's
@@ -248,15 +270,11 @@ pub(super) fn acl(
     Report::ok("acl", logon, data)
 }
 
-/// Whether `file` is one `--open` and `--remove` may take: a `pitboard-probe-*` file inside
-/// `scratch`, both passing the scratch check.
 fn probe_file_in(file: &Path, scratch: &Path) -> Result<(), String> {
-    let is_probe_file = file
-        .file_name()
-        .and_then(|n| n.to_str())
-        .is_some_and(crate::guard::is_probe_file_name);
-    if !is_probe_file || !ffi::lies_in(file, scratch) {
-        return Err("--open and --remove take a pitboard-probe-* file under --scratch".into());
+    if !crate::guard::probe_file_lies_in(file, scratch) {
+        return Err(
+            "--open, --remove and --describe take a pitboard-probe-* file under --scratch".into(),
+        );
     }
     ffi::scratch_check(scratch)?;
     ffi::scratch_check(file)

@@ -113,6 +113,18 @@ fn read_cstr(b: &[u8], off: usize) -> String {
         .collect()
 }
 
+pub fn machine_name(machine: u16) -> &'static str {
+    match machine {
+        0x8664 => "x64",
+        0xAA64 => "arm64",
+        0xA641 => "arm64ec",
+        0x014C => "x86",
+        0x01C4 => "arm",
+        0 => "unknown",
+        _ => "other",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -198,5 +210,15 @@ mod tests {
             dlls.iter().any(|d| d.eq_ignore_ascii_case("kernel32.dll")),
             "{dlls:?}"
         );
+    }
+
+    #[test]
+    fn a_machine_is_named_by_its_image_file_constant() {
+        assert_eq!(machine_name(0x8664), "x64");
+        assert_eq!(machine_name(0xAA64), "arm64");
+        assert_eq!(machine_name(0xA641), "arm64ec");
+        assert_eq!(machine_name(0x014C), "x86");
+        assert_eq!(machine_name(0), "unknown");
+        assert_eq!(machine_name(0x1234), "other");
     }
 }

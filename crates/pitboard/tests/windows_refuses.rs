@@ -148,6 +148,7 @@ fn a_windows_build_answers_what_it_may_and_changes_nothing() {
         assert!(!output.stdout.is_empty(), "{answers:?}");
     }
 
+    pitboard_core::release::set_version(env!("CARGO_PKG_VERSION"));
     let opened = pitboard_core::release::check().is_ok();
     for change in CHANGES {
         if opened && change == WATCH {

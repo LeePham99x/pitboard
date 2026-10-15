@@ -176,7 +176,7 @@ pub(super) fn daemon(config_dir: &Path, pipe_key: Option<&Path>) -> Report {
     };
     let mut keys = Vec::new();
     match pipe_key {
-        Some(p) if ffi::lies_in(p, config_dir) => keys.push(p.to_path_buf()),
+        Some(p) if crate::guard::lies_in(p, config_dir) => keys.push(p.to_path_buf()),
         Some(_) => return Report::refused("daemon", logon, "--pipe-key must lie in --config-dir"),
         None => find_named(config_dir, "pipe.key", 3, &mut keys),
     }

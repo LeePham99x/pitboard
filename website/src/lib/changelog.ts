@@ -11,6 +11,7 @@ interface Section {
 
 export interface Version {
   version: string;
+  prerelease: boolean;
   date: string;
   intro: string | null;
   sections: Section[];
@@ -32,9 +33,10 @@ const MONTHS = [
   "December",
 ];
 
-// release.yml's guard accepts any line starting "## [<version>]", so every such line either
+// release.yml's guard accepts any line starting "## [<version>] - ", so every such line either
 // parses here or fails the build; none is dropped quietly.
-const VERSION_HEADING = /^## \[(\d+\.\d+\.\d+)\] - (\d{4}-\d{2}-\d{2})\s*$/;
+const VERSION_HEADING =
+  /^## \[(\d+\.\d+\.\d+(?:-beta\.(?:[1-9]|[1-8]\d|9[0-8]))?)\] - (\d{4}-\d{2}-\d{2})\s*$/;
 const LINK_DEFINITION = /^\[([^\]]+)\]:\s*(\S+)\s*$/;
 
 export function parseChangelog(text: string): Version[] {
@@ -66,8 +68,14 @@ export function parseChangelog(text: string): Version[] {
         continue;
       }
       const m = VERSION_HEADING.exec(line);
-      if (!m) throw new Error(`a version heading needs "## [x.y.z] - YYYY-MM-DD": ${line}`);
+      if (!m) {
+        throw new Error(
+          `a version heading needs "## [x.y.z] - YYYY-MM-DD" or "## [x.y.z-beta.n] - YYYY-MM-DD": ${line}`,
+        );
+      }
       const [, version, date] = m;
+      if (version.startsWith("0.") && version.includes("-"))
+        throw new Error(`${version} is a beta of a 0.x release, which release.yml refuses`);
       if (!validDate(date)) throw new Error(`${version} has no real date: ${date}`);
       if (raw.some((r) => r.version === version)) throw new Error(`${version} is listed twice`);
       current = { version, date, intro: [], sections: new Map() };
@@ -114,7 +122,14 @@ export function parseChangelog(text: string): Version[] {
       return { kind, id: `v${r.version}-${kind.toLowerCase()}`, html };
     });
     if (!sections.length && !intro) throw new Error(`${r.version} says nothing`);
-    return { version: r.version, date: r.date, intro: intro || null, sections, link };
+    return {
+      version: r.version,
+      prerelease: r.version.includes("-"),
+      date: r.date,
+      intro: intro || null,
+      sections,
+      link,
+    };
   });
 }
 
@@ -128,10 +143,15 @@ function validDate(s: string): boolean {
   return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d;
 }
 
+// SemVer's order for x.y.z and x.y.z-beta.n: a beta sits below its release.
 export function compareVersions(a: string, b: string): number {
-  const x = a.split(".").map(Number);
-  const y = b.split(".").map(Number);
-  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] - y[i];
+  const parts = (v: string) => {
+    const [release, beta] = v.split("-beta.");
+    return [...release.split(".").map(Number), beta === undefined ? Infinity : Number(beta)];
+  };
+  const x = parts(a);
+  const y = parts(b);
+  for (let i = 0; i < 4; i++) if (x[i] !== y[i]) return x[i] < y[i] ? -1 : 1;
   return 0;
 }
 
@@ -146,7 +166,7 @@ export function monthOf(iso: string): string {
 }
 
 export function compareBase(link: string): string | null {
-  const m = /\/compare\/v(\d+\.\d+\.\d+)\.\.\.v/.exec(link);
+  const m = /\/compare\/v(\d+\.\d+\.\d+(?:-beta\.\d+)?)\.\.\.v/.exec(link);
   return m ? m[1] : null;
 }
 

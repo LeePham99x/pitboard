@@ -781,6 +781,8 @@ impl Launched {
 
 /// `world`, made in `folder`, and the app's core over it.
 pub(crate) fn make(world: World, folder: Folder) -> Result<Launched, Unmade> {
+    // Seeding passes the release gate before the AppCore below names the version.
+    pitboard_core::release::set_version(env!("CARGO_PKG_VERSION"));
     let machine = Arc::new(Machine::new(folder)?);
     install(&machine, world.installed())?;
     seed(world, &machine)?;

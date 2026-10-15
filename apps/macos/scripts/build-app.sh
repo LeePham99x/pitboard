@@ -22,8 +22,7 @@ FEED=https://github.com/datlechin/pitboard/releases/latest/download/appcast.xml
 app=apps/macos/build/Pitboard.app
 # Sparkle decides what is newer by CFBundleVersion, so it counts up with the version
 # rather than staying at whatever the project says.
-rest=${version#*.}
-build=$((${version%%.*} * 10000 + ${rest%%.*} * 100 + ${rest#*.}))
+build=$(./apps/macos/scripts/build-number.sh "$version")
 
 # This clears apps/macos/build and makes it again, so nothing from a previous build survives.
 # Never with --fixture: a fixture is a world for a debug build and the UI tests to launch

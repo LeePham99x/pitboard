@@ -198,9 +198,10 @@ export function checkVersions(pages) {
       if (m) seen.add(m[1]);
     }
   }
+  // a published beta goes above the release /download offers
   const newest = pages
     .get("changelog.html")
-    ?.all.find((e) => e.tag === "article")
+    ?.all.find((e) => e.tag === "article" && /^v\d+\.\d+\.\d+$/.test(e.attrs.id ?? ""))
     ?.attrs.id?.slice(1);
   if (seen.size !== 1)
     problems.push(`download links name ${seen.size} versions: ${[...seen].join(", ")}`);

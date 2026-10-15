@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Reflection;
+using System.Text.RegularExpressions;
 
 namespace Pitboard.Core.Tests;
 
@@ -14,10 +16,6 @@ public sealed class ModelTests
         public void Changed(Snapshot snapshot) => Told.Add(snapshot);
     }
 
-    /// <summary>
-    /// What an app's LocalTime does: says a moment as the person's clock does, here in UTC
-    /// and 24 hours, and whether two moments fall on one of their days.
-    /// </summary>
     private sealed class InUtc : LocalTime
     {
         private static DateTimeOffset At(long epoch) => DateTimeOffset.FromUnixTimeSeconds(epoch);
@@ -108,17 +106,11 @@ public sealed class ModelTests
             AccountWindows: NoWindows());
     }
 
-    /// <summary>
-    /// The account windows of a model that has none open and nothing to say of them.
-    /// </summary>
     private static AccountWindowsShown NoWindows() => new(
         Accounts: [], Menus: [], Open: [],
         Waiting: new WindowWaiting(WindowTitle: "Account", Shown: new WaitingShown.Reading(Title: "Reading accounts…")),
         Closing: [], Deleting: [], Picker: null, Downloads: []);
 
-    /// <summary>
-    /// What a model shows of the machine before anything about it has been read.
-    /// </summary>
     private static MachineShown Unread() => new(
         Schedule: new ScheduleShown(
             Schedule: null, On: false, Changing: false, Enabled: true, Runs: null, ScheduledIn: null, Note: null,
@@ -190,11 +182,7 @@ public sealed class ModelTests
         Assert.AreEqual("home", PitboardFfiMethods.NameToSave(new Sheet.Name("claude", "a@example.com"), " home "));
     }
 
-    /// <summary>
-    /// A model made from what the app was started with answers its first snapshot at once,
-    /// before anything is read, and stops when told to. Every home it could read is a folder
-    /// of its own, and it is never started, so nothing on this machine is read.
-    /// </summary>
+    // Never started, so nothing on this machine is read.
     [TestMethod]
     public void AModelAnswersItsFirstSnapshotBeforeItReadsAnything()
     {
@@ -244,10 +232,6 @@ public sealed class ModelTests
         }
     }
 
-    /// <summary>
-    /// An intent is a variant an app sends, with what it carries, and two of the same are
-    /// equal.
-    /// </summary>
     [TestMethod]
     public void AnIntentIsAVariantWithWhatItCarries()
     {
@@ -259,12 +243,6 @@ public sealed class ModelTests
         Assert.AreEqual(1, intents.OfType<Intent.Start>().Count());
     }
 
-    /// <summary>
-    /// A switch is asked for by the account's label with its tool, and so is the answer that
-    /// lets Pitboard quit the app the question names, which says which question it answers;
-    /// what a switch said is put away by its tool, and keeping the app open and giving up
-    /// carry nothing.
-    /// </summary>
     [TestMethod]
     public void AnIntentToSwitchCarriesWhatItIsAbout()
     {
@@ -307,11 +285,6 @@ public sealed class ModelTests
         Assert.IsFalse(awaiting.Again);
     }
 
-    /// <summary>
-    /// A snapshot carries what a switch said as records of their own: the switch under way and
-    /// the question about quitting the app that holds its login, what each tool's last switch
-    /// said, what giving up kept, a numbered failure, and the window asked for on a pane.
-    /// </summary>
     [TestMethod]
     public void ASnapshotCarriesWhatASwitchSaid()
     {
@@ -345,10 +318,6 @@ public sealed class ModelTests
         Assert.AreEqual(new RestartNeeded("codex", "personal"), switched.Restart);
     }
 
-    /// <summary>
-    /// A sign-in is asked for by the tool and the name, a code is typed back as text, and
-    /// cancelling and closing a sheet carry nothing.
-    /// </summary>
     [TestMethod]
     public void AnIntentToSignInCarriesWhatItIsAbout()
     {
@@ -368,14 +337,7 @@ public sealed class ModelTests
         Assert.AreEqual(1, intents.OfType<Intent.CancelSignIn>().Count());
     }
 
-    /// <summary>
-    /// The account windows cross as the Windows app's WebView2 code will hold them: where the
-    /// records are kept and what the earlier store held, a window open with the page it loads
-    /// and the button that clears its downloads, what a window waiting for its page says, a
-    /// store to delete by its ask, the picker's accounts and whether Open answers, a download
-    /// by its state, the question before quitting for as many downloads as the app has under
-    /// way, and what the app says back. What each means is the Rust tests' to prove.
-    /// </summary>
+    // The Rust tests prove what each means; this proves they cross.
     [TestMethod]
     public void TheAccountWindowsCrossAsAWindowsAppWillHoldThem()
     {
@@ -462,11 +424,7 @@ public sealed class ModelTests
         Assert.IsInstanceOfType<DownloadEnd.Failed>(intents.OfType<Intent.DownloadEnded>().Single().End);
     }
 
-    /// <summary>
-    /// A sheet is a variant with what it is about, and two of the same are equal, which decides
-    /// whether a sheet put up keeps what went wrong in the one up: the same one does, another
-    /// does not.
-    /// </summary>
+    // Equality decides whether a sheet put up keeps what went wrong in the one up.
     [TestMethod]
     public void ASheetIsAVariantWithWhatItIsAbout()
     {
@@ -483,11 +441,6 @@ public sealed class ModelTests
         Assert.AreNotEqual<Sheet>(new Sheet.Rename("claude", "work"), sheets[3]);
     }
 
-    /// <summary>
-    /// A snapshot carries a sign-in under way, with what its tool said, the address to open and
-    /// whether a code is wanted, and refused; the sheet over the window, and what went wrong in
-    /// it; and what a sign-in to the account in use said, as its tool's last switch.
-    /// </summary>
     [TestMethod]
     public void ASnapshotCarriesASignInAndItsSheet()
     {
@@ -519,12 +472,6 @@ public sealed class ModelTests
         Assert.IsNull(Read(5).SigningIn);
     }
 
-    /// <summary>
-    /// A snapshot carries the accounts as the core's records do, and what went wrong as a
-    /// record of its own. Its lists are arrays, which a C# record compares by reference: two
-    /// snapshots read alike are not equal, so the app goes by the revision and syncs each list
-    /// by its rows' ids.
-    /// </summary>
     [TestMethod]
     public void ASnapshotCarriesWhatWasRead()
     {
@@ -536,14 +483,10 @@ public sealed class ModelTests
         Assert.AreEqual("Claude Code", snapshot.Installed?[0].Name);
         Assert.AreEqual("unreachable", failed.ReadFailure?.Code);
         Assert.AreEqual(snapshot.Revision, failed.Revision);
+        // Lists are arrays, which a record compares by reference, so the app goes by the revision.
         Assert.AreNotEqual(Read(3), Read(3));
     }
 
-    /// <summary>
-    /// What the app was started with goes in as it was given: the environment, the folder the
-    /// app is in, and its preferences as an earlier store held them, which an app with none
-    /// leaves out.
-    /// </summary>
     [TestMethod]
     public void TheAppsLaunchIsItsEnvironmentAndWhereItIs()
     {
@@ -562,11 +505,6 @@ public sealed class ModelTests
         Assert.IsTrue(moved.EarlierPreferences?.HasBeenSeen);
     }
 
-    /// <summary>
-    /// The window is asked for by an intent, on a pane or none, and a failure it said is put
-    /// away by one; naming, renaming, forgetting and declining a second account carry what
-    /// they are about.
-    /// </summary>
     [TestMethod]
     public void AnIntentForTheWindowOrAnAccountCarriesWhatItIsAbout()
     {
@@ -588,15 +526,6 @@ public sealed class ModelTests
         Assert.AreEqual("codex", intents.OfType<Intent.DeclineSecondAccount>().Single().Provider);
     }
 
-    /// <summary>
-    /// A snapshot says what the menu bar, the menu and the window show as records of their
-    /// own: an account's row with its limits, what pressing it sends, and what its own menu
-    /// offers, held back where it cannot be chosen, with the windows it opens and the question
-    /// asked before it is forgotten; a notice with what can be done about it and the question
-    /// asked first, what the menu says of the notices, the footing and the step it asks for,
-    /// and what the pane shows in place of a list, each button with whether it can be pressed.
-    /// What pressing something sends is an Intent, which the app sends as it is.
-    /// </summary>
     [TestMethod]
     public void ASnapshotSaysWhatTheMenuAndTheWindowShow()
     {
@@ -682,11 +611,6 @@ public sealed class ModelTests
         Assert.AreEqual("work 42%", snapshot.MenuBar.NameAndUsage);
     }
 
-    /// <summary>
-    /// What is about the machine is asked for by intents: a pane shown, the schedule read and
-    /// turned on or off, a renewal now, and the command line looked for, each carrying what it
-    /// is about, and two of the same equal.
-    /// </summary>
     [TestMethod]
     public void AnIntentAboutTheMachineCarriesWhatItIsAbout()
     {
@@ -707,15 +631,6 @@ public sealed class ModelTests
         Assert.AreEqual(1, intents.OfType<Intent.LookForCommandLine>().Count());
     }
 
-    /// <summary>
-    /// A snapshot says what is known of the machine as records of its own: daily renewal with
-    /// the core's schedule, Renew Now's note, doctor's checks with their place in the list,
-    /// each level and its spoken word, each change in the activity log with its place in the
-    /// list and what stands in for the list when empty, and the command line a terminal runs,
-    /// the core's own record of which it found. Two records made with `[]` for each list
-    /// compare equal, since every `[]` of one type is the same empty array: comparing those
-    /// says nothing of lists.
-    /// </summary>
     [TestMethod]
     public void ASnapshotSaysWhatIsKnownOfTheMachine()
     {
@@ -766,10 +681,6 @@ public sealed class ModelTests
         Assert.AreSame(Unread().Checks.Lines, Unread().Checks.Lines);
     }
 
-    /// <summary>
-    /// A sheet's Save is offered by the library's own rule, which the model saves by: a name
-    /// without the white space around it, and in a rename one the account does not have.
-    /// </summary>
     [TestMethod]
     public void ANameIsSavedAsTheSheetOffersIt()
     {
@@ -779,17 +690,12 @@ public sealed class ModelTests
         Assert.AreEqual("work", PitboardFfiMethods.NameToSave(new Sheet.SignInAgain("codex", "work"), ""));
     }
 
-    /// <summary>
-    /// What an app's listener does with a model that runs: keeps each snapshot it is told of,
-    /// and the thread it was told on, and lets a test wait for one.
-    /// </summary>
     private sealed class Waiting : ModelListener
     {
         private readonly List<Snapshot> _told = [];
 
         public int? TellingThread { get; private set; }
 
-        /// <summary>Whether it was told on a thread of .NET's thread pool.</summary>
         public bool? ToldOnThePool { get; private set; }
 
         public void Changed(Snapshot snapshot)
@@ -803,8 +709,6 @@ public sealed class ModelTests
             }
         }
 
-        /// <summary>The first snapshot told that <paramref name="done"/> takes, or null once
-        /// <paramref name="patience"/> has passed without one.</summary>
         public Snapshot? Until(Func<Snapshot, bool> done, TimeSpan patience)
         {
             var until = DateTime.UtcNow + patience;
@@ -825,24 +729,13 @@ public sealed class ModelTests
         }
     }
 
-    /// <summary>
-    /// What a library built without the `fixture` feature, as every one an app ships is, says
-    /// of a test that needs a fixture.
-    /// </summary>
     private const string NoFixtures =
         "This library was built without the `fixture` feature, so it has no fixture to start. " +
         "Build it with `cargo build -p pitboard-ffi --features fixture` and pass that to " +
         "PitboardNativeLibrary to run this test.";
 
-    /// <summary>The accounts of the fixture <c>oneTool</c>, the one in use first.</summary>
     private static readonly string[] OneToolsAccounts = ["claude/work", "claude/personal"];
 
-    /// <summary>
-    /// The fixtures are named by the library, in the order a debug build reads them, and a
-    /// name that is none of them is refused saying which there are; a library built without
-    /// them names none, and refuses a fixture and its stand-in pages, naming the feature that
-    /// has them. Neither refusal makes a model or a folder.
-    /// </summary>
     [TestMethod]
     public void AFixtureIsNamedOrRefusedWithWhy()
     {
@@ -911,6 +804,9 @@ public sealed class ModelTests
     }
 
     [TestMethod]
+    [OSCondition(
+        ConditionMode.Exclude, OperatingSystems.Windows,
+        IgnoreMessage = "W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void AFixturesModelStartsAndTellsAListenerOfItsAccounts()
     {
         NeedsFixtures();
@@ -933,6 +829,9 @@ public sealed class ModelTests
     }
 
     [TestMethod]
+    [OSCondition(
+        ConditionMode.Exclude, OperatingSystems.Windows,
+        IgnoreMessage = "W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void ACodexSwitchAsksTheAppsAppControlToQuitChatGptAndOpenItAgain()
     {
         NeedsFixtures();
@@ -960,6 +859,9 @@ public sealed class ModelTests
     }
 
     [TestMethod]
+    [OSCondition(
+        ConditionMode.Exclude, OperatingSystems.Windows,
+        IgnoreMessage = "W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void APlatformExceptionFromTheAppsAppControlStopsTheSwitch()
     {
         NeedsFixtures();
@@ -986,6 +888,9 @@ public sealed class ModelTests
     }
 
     [TestMethod]
+    [OSCondition(
+        ConditionMode.Exclude, OperatingSystems.Windows,
+        IgnoreMessage = "W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void ARunOutIsPostedThroughTheAppsNotifications()
     {
         NeedsFixtures();
@@ -1012,5 +917,83 @@ public sealed class ModelTests
                 SwitchTo: "claude/work"),
         ];
         CollectionAssert.AreEqual(ranOut, posted);
+    }
+
+    private static bool LibraryIsOpened =>
+        typeof(ModelTests).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .Any(metadata => metadata is { Key: "PitboardNativeLibraryOpened", Value: "true" });
+
+    // The version the gate reads, from Cargo.toml rather than the library under test.
+    private static int ProductMajor()
+    {
+        for (var folder = new DirectoryInfo(AppContext.BaseDirectory); folder is not null; folder = folder.Parent)
+        {
+            var manifest = Path.Combine(folder.FullName, "Cargo.toml");
+            var version = File.Exists(manifest)
+                ? Regex.Match(File.ReadAllText(manifest), @"^\[workspace\.package\]$[^\[]*?^version = ""(\d+)\.", RegexOptions.Multiline)
+                : Match.Empty;
+            if (version.Success)
+            {
+                return int.Parse(version.Groups[1].Value, CultureInfo.InvariantCulture);
+            }
+        }
+
+        throw new InvalidOperationException($"no workspace Cargo.toml above {AppContext.BaseDirectory}");
+    }
+
+    [TestMethod]
+    [OSCondition(OperatingSystems.Windows)]
+    public void AWindowsModelReadsNothingUntilPitboardForWindowsIsReleased()
+    {
+        if (LibraryIsOpened)
+        {
+            Assert.Inconclusive(
+                "This library was built with `--cfg pitboard_unreleased_windows`, which opens it to Windows. " +
+                "Pass one built as a release is to PitboardNativeLibrary, without PitboardNativeLibraryOpened, to run this test.");
+        }
+
+        var root = Directory.CreateTempSubdirectory("pitboard-gate-").FullName;
+        try
+        {
+            string[] homes = ["USERPROFILE", "HOME", "APPDATA", "LOCALAPPDATA", "CODEX_HOME", "CLAUDE_CONFIG_DIR", "PITBOARD_HOME"];
+            var environment = homes.ToDictionary(
+                home => home, home => Directory.CreateDirectory(Path.Combine(root, home)).FullName);
+            var waiting = new Waiting();
+            using var model = new PitboardModel(
+                new AppLaunch(environment, null), waiting, new StandInApps(), new Posting(), new InUtc());
+
+            model.Send(new Intent.Start());
+            var read = waiting.Until(
+                snapshot => snapshot.ReadFailure is not null || snapshot is { Reading: false, UpdatedAt: not null },
+                Patience);
+            model.Shutdown();
+
+            Assert.IsNotNull(read, "the model told of no read");
+            if (ProductMajor() == 0)
+            {
+                Assert.AreEqual(
+                    "windows_not_released", read.ReadFailure?.Code,
+                    "A library built with `--cfg pitboard_unreleased_windows` takes PitboardNativeLibraryOpened=true.");
+                // Shutdown waits for the actor alone, so a lane may still write after it.
+                var settled = DateTime.UtcNow + TimeSpan.FromSeconds(2);
+                do
+                {
+                    foreach (var home in environment.Values)
+                    {
+                        Assert.IsEmpty(Directory.EnumerateFileSystemEntries(home), home);
+                    }
+
+                    Thread.Sleep(50);
+                } while (DateTime.UtcNow < settled);
+            }
+            else
+            {
+                Assert.IsNull(read.ReadFailure, read.ReadFailure?.Message);
+            }
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 }

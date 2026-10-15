@@ -72,7 +72,7 @@ jobs:
           name: junit-${{ matrix.os }}
           path: target/nextest/ci/junit.xml
 
-  # The install script under each shell named here, against a stub release and with no network.
+  # The install script under each shell named here, with no network, and the release's scripts.
   install-script:
     strategy:
       fail-fast: false
@@ -99,10 +99,14 @@ jobs:
         with:
           tool: shellcheck@0.11.0
       - if: runner.os == 'Linux'
-        run: shellcheck -s sh packaging/install.sh .github/scripts/fill-template.sh
+        run: >
+          shellcheck -s sh packaging/install.sh .github/scripts/fill-template.sh
+          .github/scripts/core-unchanged.sh .github/scripts/release-kind.sh
+          apps/macos/scripts/build-number.sh
       - env:
           TEST_INSTALL_SHELLS: ${{ matrix.shells }}
         run: python3 .github/scripts/test-install.py
+      - run: python3 .github/scripts/test-release.py
 
   # Windows, where the core compiles and refuses whatever is not built yet. Each image is
   # named, never windows-latest, so a new image is a change made on purpose.
@@ -384,6 +388,13 @@ jobs:
             --out-dir apps/windows/Pitboard.Core/Generated \
             --config crates/pitboard-ffi/uniffi.toml --no-format
           test -s apps/windows/Pitboard.Core/Generated/pitboard_ffi.cs
+      # For csharp-windows, which generates its own and compares, so one file serves every system.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: csharp-bindings
+          path: apps/windows/Pitboard.Core/Generated/pitboard_ffi.cs
+          if-no-files-found: error
+          retention-days: 7
       # global.json, which pins the SDK and the test platform, is read from where dotnet runs.
       # The tests of a fixture's model are skipped here, against a library with no fixtures.
       - working-directory: apps/windows
@@ -394,11 +405,7 @@ jobs:
       # Its bindings must be the very ones generated without them, which is what lets one
       # set serve both, and the library without them must hold none of a fixture's text.
       - run: |
-          if LC_ALL=C grep -a -q -e 'A Pitboard fixture page' -e 'dana@work.example' \
-            -e 'PITBOARD_TEST_CLAUDE_DESKTOP' target/release/libpitboard_ffi.so; then
-            echo "a library built without the fixture feature holds a fixture" >&2
-            exit 1
-          fi
+          sh .github/scripts/no-fixture-text.sh target/release/libpitboard_ffi.so
           cargo build --locked --release -p pitboard-ffi --features fixture
           mkdir -p "$RUNNER_TEMP/fixture-bindings"
           cargo run --locked --release -p uniffi-bindgen-csharp -- \
@@ -413,6 +420,104 @@ jobs:
         run: >
           dotnet test --solution Pitboard.slnx
           -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/release/libpitboard_ffi.so"
+
+  # The bindings on Windows, against pitboard_ffi.dll as a 0.x release builds it and opened with
+  # its fixtures, on each image the windows job names. Both test programs are published
+  # self-contained by the job's user and run as a fresh standard user, as the windows job's
+  # tests are.
+  csharp-windows:
+    needs: csharp
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            triple: x86_64-pc-windows-msvc
+            runtime: win-x64
+          - os: windows-11-arm
+            triple: aarch64-pc-windows-msvc
+            runtime: win-arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      # As the windows job has them, for the opened library and the leak check's probe.
+      RUSTFLAGS: -D warnings -C target-feature=+crt-static --cfg pitboard_unreleased_windows
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      DOTNET_NOLOGO: 1
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/rust
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: apps/windows/global.json
+      - uses: ./.github/actions/windows-builds
+        with:
+          triple: ${{ matrix.triple }}
+          gated-pitboard: 'false'
+      # No fixture feature and no cfg, so the release gate is closed, and none of a fixture's
+      # text is in it.
+      - name: pitboard_ffi.dll as a 0.x release builds it
+        env:
+          RUSTFLAGS: -D warnings -C target-feature=+crt-static
+          CARGO_TARGET_DIR: target/gated
+        run: |
+          cargo build --locked --release -p pitboard-ffi
+          sh .github/scripts/no-fixture-text.sh target/gated/release/pitboard_ffi.dll
+      - name: pitboard_ffi.dll opened, with its fixtures
+        run: cargo build --locked --release -p pitboard-ffi --features fixture
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: csharp-bindings
+          path: ${{ runner.temp }}/linux-bindings
+      # Read from each DLL itself: unlike Linux's shared library, it keeps the exports the
+      # generator reads through the release profile's strip. The generator is built beside the
+      # gated library.
+      - name: Both libraries' bindings are Linux's, byte for byte
+        env:
+          RUSTFLAGS: -D warnings -C target-feature=+crt-static
+          CARGO_TARGET_DIR: target/gated
+          LINUX: ${{ runner.temp }}/linux-bindings/pitboard_ffi.cs
+          OPENED: ${{ runner.temp }}/opened-bindings
+        run: |
+          mkdir -p apps/windows/Pitboard.Core/Generated "$OPENED"
+          cargo run --locked --release -p uniffi-bindgen-csharp -- \
+            --library target/gated/release/pitboard_ffi.dll \
+            --out-dir apps/windows/Pitboard.Core/Generated \
+            --config crates/pitboard-ffi/uniffi.toml --no-format
+          cargo run --locked --release -p uniffi-bindgen-csharp -- \
+            --library target/release/pitboard_ffi.dll --out-dir "$OPENED" \
+            --config crates/pitboard-ffi/uniffi.toml --no-format
+          cmp "$LINUX" apps/windows/Pitboard.Core/Generated/pitboard_ffi.cs
+          cmp "$LINUX" "$OPENED/pitboard_ffi.cs"
+      # Published by the job's user, whose profile holds the SDK and the NuGet packages, into
+      # the workspace the standard user is granted read and run on. The opened program passes
+      # its tests with the gated library too, so each is compared with the library it was given.
+      - name: The tests as a program of their own for each library
+        working-directory: apps/windows
+        env:
+          RUNTIME: ${{ matrix.runtime }}
+        run: |
+          dotnet publish Pitboard.Core.Tests -c Release -r "$RUNTIME" --self-contained \
+            -o "$GITHUB_WORKSPACE/target/csharp/gated" \
+            -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/gated/release/pitboard_ffi.dll"
+          dotnet publish Pitboard.Core.Tests -c Release -r "$RUNTIME" --self-contained \
+            -o "$GITHUB_WORKSPACE/target/csharp/opened" \
+            -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/release/pitboard_ffi.dll" \
+            -p:PitboardNativeLibraryOpened=true
+          cd "$GITHUB_WORKSPACE"
+          cmp target/gated/release/pitboard_ffi.dll target/csharp/gated/pitboard_ffi.dll
+          cmp target/release/pitboard_ffi.dll target/csharp/opened/pitboard_ffi.dll
+      - name: The C# tests, as a standard user
+        shell: pwsh
+        run: >
+          ./.github/scripts/test-as-standard-user.ps1
+          -Dotnet target/csharp/gated/Pitboard.Core.Tests.exe, target/csharp/opened/Pitboard.Core.Tests.exe
+          -Probe target/debug/pitboard-probe.exe
 
   # The floor the manifests promise, built the way someone on an older toolchain builds it.
   msrv:
@@ -431,8 +536,8 @@ jobs:
       - run: cargo hack check --rust-version --workspace-behavior=cargo -p pitboard-ffi --all-targets --locked --features fixture
 
   semver:
-    # What pitboard-core's last version on crates.io promises. A change that breaks it needs
-    # the version in Cargo.toml raised, as CONTRIBUTING.md says, and fails here until it is.
+    # A pitboard-core API break fails here until crates/pitboard-core/Cargo.toml raises the
+    # core's version.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -548,6 +653,7 @@ jobs:
       - windows-msrv
       - apple
       - csharp
+      - csharp-windows
       - msrv
       - semver
       - deny

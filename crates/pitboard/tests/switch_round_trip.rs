@@ -255,6 +255,19 @@ fn a_stale_config_cannot_make_a_switch_file_the_credential_under_the_wrong_accou
     );
 }
 
+#[test]
+#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
+fn a_switch_writes_claude_json_beside_an_empty_config_json() {
+    let env = two_accounts("emptylegacy");
+    std::fs::write(env.root.join(".config.json"), "").unwrap();
+
+    let (_, err, code) = env.run(&["use", "beta"]);
+
+    assert_eq!(code, 0, "{err}");
+    assert_eq!(env.config()["oauthAccount"]["accountUuid"], env.uuid('b'));
+    assert_eq!(std::fs::read(env.root.join(".config.json")).unwrap(), b"");
+}
+
 /// Claude Code's config can name another account than the one whose login it has stored, as
 /// a Claude Code process started on another login leaves it. Using the account in use writes
 /// that account there again and moves no login.

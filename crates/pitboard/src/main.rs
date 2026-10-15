@@ -1132,6 +1132,7 @@ fn parse() -> Result<Cli, ExitCode> {
 }
 
 fn main() -> ExitCode {
+    pitboard_core::release::set_version(env!("CARGO_PKG_VERSION"));
     let cli = match parse() {
         Ok(cli) => cli,
         Err(exit) => return exit,
