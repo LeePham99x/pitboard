@@ -30,8 +30,8 @@ use windows_sys::Win32::System::SystemInformation::{
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 use windows_sys::Win32::System::WindowsProgramming::GetUserNameW;
 use windows_sys::Win32::UI::Shell::{
-    FOLDERID_LocalAppData, FOLDERID_Profile, FOLDERID_ProgramData, GetUserProfileDirectoryW,
-    KF_FLAG_DONT_VERIFY, SHGetKnownFolderPath,
+    FOLDERID_LocalAppData, FOLDERID_Profile, FOLDERID_ProgramData, FOLDERID_RoamingAppData,
+    GetUserProfileDirectoryW, KF_FLAG_DONT_VERIFY, SHGetKnownFolderPath,
 };
 use windows_sys::core::{GUID, PWSTR};
 
@@ -144,6 +144,10 @@ pub fn folder_program_data() -> Option<PathBuf> {
     known_folder(&FOLDERID_ProgramData)
 }
 
+pub fn folder_roaming_app_data() -> Option<PathBuf> {
+    known_folder(&FOLDERID_RoamingAppData)
+}
+
 /// `GetUserProfileDirectoryW` of `token`: the profile folder Windows keeps for its user.
 pub fn user_profile_directory(token: &Token) -> Result<PathBuf, u32> {
     let mut buf = vec![0u16; 1024];
@@ -175,13 +179,11 @@ fn folder_token() -> Result<Token, u32> {
     }
 }
 
-/// The profile and local app data folders Windows names for this account, by every route
-/// the guard asks: `FOLDERID_Profile` and `FOLDERID_LocalAppData` with the token and without
-/// one, and `GetUserProfileDirectoryW`. Each failure is kept, by route and code, for the
-/// refusal; no path is.
+// Each failure is kept, by route and code, for the refusal; no path is.
 struct WindowsFolders {
     profiles: Vec<PathBuf>,
     local_app_data: Vec<PathBuf>,
+    roaming_app_data: Vec<PathBuf>,
     failures: Vec<String>,
 }
 
@@ -189,6 +191,7 @@ fn windows_folders() -> WindowsFolders {
     let mut f = WindowsFolders {
         profiles: Vec::new(),
         local_app_data: Vec::new(),
+        roaming_app_data: Vec::new(),
         failures: Vec::new(),
     };
     let hex = |hr: i32| format!("0x{:08x}", hr as u32);
@@ -210,6 +213,9 @@ fn windows_folders() -> WindowsFolders {
                     .failures
                     .push(format!("FOLDERID_LocalAppData with the token {}", hex(hr))),
             }
+            if let Ok(p) = configured_folder(&FOLDERID_RoamingAppData, token.raw()) {
+                f.roaming_app_data.push(p);
+            }
         }
         Err(code) => f.failures.push(format!("the process token {code}")),
     }
@@ -223,17 +229,19 @@ fn windows_folders() -> WindowsFolders {
             .failures
             .push(format!("FOLDERID_LocalAppData {}", hex(hr))),
     }
+    if let Ok(p) = configured_folder(&FOLDERID_RoamingAppData, std::ptr::null_mut()) {
+        f.roaming_app_data.push(p);
+    }
     f
 }
 
-/// Every place this account's real logins may be, for the guard: what Windows names (see
-/// [`windows_folders`]) and, when they are absolute, `%USERPROFILE%` and `%LOCALAPPDATA%`,
-/// which a tool started from here follows. Refuses only when Windows names no profile, or no
-/// local app data, by any route: then the guard cannot know where the logins are.
+// Refuses only when Windows names no profile, or no local app data, by any route: then the
+// guard cannot know where the logins are. Roaming app data is a profile folder by default.
 pub fn real_profile() -> Result<RealProfile, String> {
     let WindowsFolders {
         mut profiles,
         mut local_app_data,
+        mut roaming_app_data,
         failures,
     } = windows_folders();
     if profiles.is_empty() || local_app_data.is_empty() {
@@ -245,6 +253,7 @@ pub fn real_profile() -> Result<RealProfile, String> {
     for (var, into) in [
         ("USERPROFILE", &mut profiles),
         ("LOCALAPPDATA", &mut local_app_data),
+        ("APPDATA", &mut roaming_app_data),
     ] {
         if let Some(v) = std::env::var_os(var) {
             let p = PathBuf::from(v);
@@ -256,6 +265,7 @@ pub fn real_profile() -> Result<RealProfile, String> {
     Ok(RealProfile {
         profiles,
         local_app_data,
+        roaming_app_data,
     })
 }
 
@@ -343,8 +353,9 @@ pub fn scratch_check(path: &Path) -> Result<(), String> {
         if !guard::scratch_is_safe(form, &roots) {
             return Err(
                 "the scratch path names an administrative or hidden share, or lies (in some \
-                 spelling) in a real login folder or file (.claude, .claude.json, .codex or \
-                 %LOCALAPPDATA%\\Pitboard); refusing"
+                 spelling) in a real login folder or file (.claude, .claude.json, .codex, \
+                 %LOCALAPPDATA%\\Pitboard, %APPDATA%\\Claude, %APPDATA%\\Claude-3p or \
+                 %LOCALAPPDATA%\\AnthropicClaude); refusing"
                     .into(),
             );
         }
@@ -475,15 +486,6 @@ pub fn scratch_file_to_read(scratch: &Path, name: &str) -> Result<PathBuf, Strin
     let path = scratch.join(name);
     scratch_check(&path)?;
     Ok(path)
-}
-
-/// Whether `file` lies inside `scratch`, deeper than `scratch` itself, both absolute as given
-/// with no `..`.
-pub fn lies_in(file: &Path, scratch: &Path) -> bool {
-    guard::is_absolute_without_parent(file)
-        && guard::is_absolute_without_parent(scratch)
-        && guard::is_within(file, scratch)
-        && !guard::is_within(scratch, file)
 }
 
 /// The 8.3 short form of an existing path, when the volume keeps one.
@@ -848,6 +850,7 @@ mod tests {
     fn the_scratch_check_sees_through_spellings_of_the_real_login_folders() {
         let profile = folder_profile().expect("the profile folder");
         let lad = folder_local_app_data().expect("the local app data folder");
+        let roaming = folder_roaming_app_data().expect("the roaming app data folder");
         // The profile without its drive, for the administrative share's spellings.
         let tail = profile.display().to_string()[3..].to_string();
         for bad in [
@@ -856,6 +859,10 @@ mod tests {
             profile.join(".claude.json"),
             profile.join(".codex").join("y"),
             lad.join("Pitboard").join("z"),
+            roaming.join("Claude").join("x"),
+            roaming.join("Claude-3p"),
+            lad.join("AnthropicClaude").join("y"),
+            PathBuf::from(format!("{}.", roaming.join("Claude").display())),
             PathBuf::from(format!(r"\\?\{}", profile.join(".claude").display())),
             PathBuf::from(format!("{}.", profile.join(".claude").display())),
             PathBuf::from(format!("{} ", profile.join(".codex").display())),

@@ -8,7 +8,7 @@
 use super::ffi::{self, Owned};
 use super::processes::{open_query, snapshot};
 use super::{io_code, logon_now};
-use crate::cli::{Chain, JobEnd, Outcome};
+use crate::cli::{BrowserOpen, Chain, JobEnd, JobStart, Outcome};
 use crate::report::Report;
 use crate::{guard, images};
 use serde_json::json;
@@ -20,21 +20,29 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use windows_sys::Win32::Foundation::HANDLE;
+use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+    CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next,
+};
 use windows_sys::Win32::System::JobObjects::{
     AssignProcessToJobObject, CreateJobObjectW, IsProcessInJob, JOBOBJECT_BASIC_PROCESS_ID_LIST,
     JobObjectBasicProcessIdList, OpenJobObjectW, QueryInformationJobObject, TerminateJobObject,
 };
 use windows_sys::Win32::System::SystemServices::JOB_OBJECT_QUERY;
 use windows_sys::Win32::System::Threading::{
-    CREATE_NO_WINDOW, GetCurrentProcess, GetExitCodeProcess, OpenProcess, PROCESS_TERMINATE,
-    TerminateProcess,
+    CREATE_BREAKAWAY_FROM_JOB, CREATE_NO_WINDOW, CREATE_SUSPENDED, GetCurrentProcess,
+    GetExitCodeProcess, OpenProcess, OpenThread, PROCESS_TERMINATE, ResumeThread,
+    THREAD_SUSPEND_RESUME, TerminateProcess,
 };
-use windows_sys::Win32::UI::Shell::ShellExecuteW;
+use windows_sys::Win32::UI::Shell::{
+    ASSOCF_IS_PROTOCOL, ASSOCSTR_COMMAND, AssocQueryStringW, ShellExecuteW,
+};
 use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
 const IN_JOB: u8 = 10;
 const NOT_IN_JOB: u8 = 11;
 const NO_JOB: u8 = 12;
+const BREAKAWAY_REFUSED: u8 = 14;
+const NOT_A_BROWSER: u8 = 4;
 const STILL_ACTIVE: u32 = 259;
 
 fn create_job(name: &str) -> Result<Owned, u32> {
@@ -73,7 +81,38 @@ fn guarded(block: &'static str, scratch: &Path) -> Result<(), Report> {
     })
 }
 
-pub(super) fn job(scratch: &Path, chain: Chain, rounds: u32) -> Report {
+// W19's route: the one thread a suspended child has, found by a Toolhelp thread snapshot.
+fn resume_only_thread(pid: u32) -> Result<(), String> {
+    // SAFETY: a thread snapshot of every process; owned below.
+    let snap = Owned::new(unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) })
+        .ok_or_else(|| format!("snapshot {}", ffi::last_error()))?;
+    // SAFETY: THREADENTRY32 is plain data; all zeroes is valid, and dwSize is set below.
+    let mut entry: THREADENTRY32 = unsafe { std::mem::zeroed() };
+    entry.dwSize = size_of::<THREADENTRY32>() as u32;
+    let mut threads = Vec::new();
+    // SAFETY: `snap` is valid; `entry` is sized.
+    let mut more = unsafe { Thread32First(snap.raw(), &mut entry) };
+    while more != 0 {
+        if entry.th32OwnerProcessID == pid {
+            threads.push(entry.th32ThreadID);
+        }
+        // SAFETY: `snap` and `entry` remain valid.
+        more = unsafe { Thread32Next(snap.raw(), &mut entry) };
+    }
+    let [thread] = threads[..] else {
+        return Err(format!("{} threads", threads.len()));
+    };
+    // SAFETY: OpenThread for resume; the handle is owned below.
+    let h = Owned::new(unsafe { OpenThread(THREAD_SUSPEND_RESUME, 0, thread) })
+        .ok_or_else(|| format!("open {}", ffi::last_error()))?;
+    // SAFETY: an open thread handle with suspend-resume rights.
+    if unsafe { ResumeThread(h.raw()) } == u32::MAX {
+        return Err(format!("resume {}", ffi::last_error()));
+    }
+    Ok(())
+}
+
+pub(super) fn job(scratch: &Path, chain: Chain, rounds: u32, start: JobStart) -> Report {
     if let Err(r) = guarded("job", scratch) {
         return r;
     }
@@ -123,13 +162,24 @@ pub(super) fn job(scratch: &Path, chain: Chain, rounds: u32) -> Report {
 
     let mut codes: BTreeMap<String, u32> = BTreeMap::new();
     let (mut assign_failed, mut in_job_n, mut escaped, mut unknown) = (0u32, 0u32, 0u32, 0u32);
+    let (mut breakaway_refused, mut resume_failed) = (0u32, 0u32);
     let mut assign_errors: BTreeMap<u32, u32> = BTreeMap::new();
+    let mut resume_errors: BTreeMap<String, u32> = BTreeMap::new();
+    let flags = match start {
+        JobStart::Running => CREATE_NO_WINDOW,
+        JobStart::Suspended => CREATE_NO_WINDOW | CREATE_SUSPENDED,
+    };
     let started = Instant::now();
     for _ in 0..rounds {
         let mut cmd = match chain {
             Chain::Exe => {
                 let mut c = Command::new(&probe);
                 c.args(["job-mid", "--job-name", &name]);
+                c
+            }
+            Chain::ExeBreakaway => {
+                let mut c = Command::new(&probe);
+                c.args(["job-mid", "--job-name", &name, "--breakaway"]);
                 c
             }
             Chain::CmdNodeExe => {
@@ -146,7 +196,7 @@ pub(super) fn job(scratch: &Path, chain: Chain, rounds: u32) -> Report {
         cmd.stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .creation_flags(CREATE_NO_WINDOW);
+            .creation_flags(flags);
         let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
@@ -160,11 +210,19 @@ pub(super) fn job(scratch: &Path, chain: Chain, rounds: u32) -> Report {
             assign_failed += 1;
             *assign_errors.entry(code).or_default() += 1;
         }
+        if start == JobStart::Suspended
+            && let Err(e) = resume_only_thread(child.id())
+        {
+            resume_failed += 1;
+            *resume_errors.entry(e).or_default() += 1;
+            let _ = child.kill();
+        }
         let code = child.wait().ok().and_then(|s| s.code());
         *codes.entry(format!("{code:?}")).or_default() += 1;
         match code {
             Some(c) if c == i32::from(IN_JOB) => in_job_n += 1,
             Some(c) if c == i32::from(NOT_IN_JOB) => escaped += 1,
+            Some(c) if c == i32::from(BREAKAWAY_REFUSED) => breakaway_refused += 1,
             _ => unknown += 1,
         }
     }
@@ -175,6 +233,7 @@ pub(super) fn job(scratch: &Path, chain: Chain, rounds: u32) -> Report {
         logon_now(),
         json!({
             "chain": format!("{chain:?}"),
+            "start": format!("{start:?}"),
             "rounds": rounds,
             "this_process_already_in_a_job": parent_in_a_job,
             "assign_failed": assign_failed,
@@ -182,6 +241,9 @@ pub(super) fn job(scratch: &Path, chain: Chain, rounds: u32) -> Report {
             "leaf_in_the_job": in_job_n,
             "leaf_escaped": escaped,
             "leaf_unknown": unknown,
+            "breakaway_refused": breakaway_refused,
+            "resume_failed": resume_failed,
+            "resume_errors": resume_errors,
             "exit_codes": codes,
             "elapsed_ms": started.elapsed().as_millis() as u64,
         }),
@@ -209,30 +271,78 @@ pub(super) fn job_leaf(job_name: &str) -> Outcome {
     }
 }
 
-/// The middle of the exe chain: start the leaf and pass its answer on.
-pub(super) fn job_mid(job_name: &str) -> Outcome {
+pub(super) fn job_mid(job_name: &str, breakaway: bool) -> Outcome {
     if !guard::is_probe_object_name(job_name) {
         return Outcome::Code(NOT_THE_PROBES);
     }
     let probe = std::env::current_exe().unwrap_or_default();
-    let status = Command::new(probe)
-        .args(["job-leaf", "--job-name", job_name])
+    let mut leaf = Command::new(probe);
+    leaf.args(["job-leaf", "--job-name", job_name])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    if breakaway {
+        leaf.creation_flags(CREATE_BREAKAWAY_FROM_JOB);
+    }
+    match leaf.status() {
+        Ok(s) => Outcome::Code(s.code().map_or(13, |c| c.clamp(0, 255) as u8)),
+        Err(e) if breakaway && e.raw_os_error() == Some(5) => Outcome::Code(BREAKAWAY_REFUSED),
+        Err(_) => Outcome::Code(13),
+    }
+}
+
+fn http_open_command() -> Option<String> {
+    let http = ffi::wide("http");
+    let mut buf = vec![0u16; 1024];
+    let mut len = buf.len() as u32;
+    // SAFETY: `http` is NUL-terminated; `buf` holds `len` units; no extra string.
+    let hr = unsafe {
+        AssocQueryStringW(
+            ASSOCF_IS_PROTOCOL,
+            ASSOCSTR_COMMAND,
+            http.as_ptr(),
+            std::ptr::null(),
+            buf.as_mut_ptr(),
+            &mut len,
+        )
+    };
+    (hr == 0).then(|| ffi::from_wide_buf(&buf))
+}
+
+// Codex's route through webbrowser 1.2.4: the association's program, started by std, so it
+// is a child of this process and inside its job.
+fn open_by_association(page: &Path) -> u8 {
+    let Some(cmdline) = http_open_command() else {
+        return 1;
+    };
+    let url = crate::assoc::file_url(&page.display().to_string());
+    let args = crate::assoc::command_args(&cmdline, &url);
+    let Some((program, rest)) = args.split_first() else {
+        return 1;
+    };
+    let is_browser = Path::new(program)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(images::is_browser_image);
+    if !is_browser {
+        return NOT_A_BROWSER;
+    }
+    let spawned = Command::new(program)
+        .args(rest)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .status();
-    Outcome::Code(
-        status
-            .ok()
-            .and_then(|s| s.code())
-            .map_or(13, |c| c.clamp(0, 255) as u8),
-    )
+        .spawn();
+    u8::from(spawned.is_err())
 }
 
-/// F2's opener: once in the named job, open the page with the default browser. It opens
-/// only the probe's own stand-in page, by an absolute path, so the shell's "open" can never
-/// start a program or reach a site; and only in a job the probe named.
-pub(super) fn job_open_page(page: &Path, job_name: &str, linger_seconds: u64) -> Outcome {
+// Only the probe's stand-in page, by an absolute path, opened by the shell or a browser alone.
+pub(super) fn job_open_page(
+    page: &Path,
+    job_name: &str,
+    linger_seconds: u64,
+    open: BrowserOpen,
+) -> Outcome {
     let is_standin = page
         .file_name()
         .and_then(|n| n.to_str())
@@ -261,21 +371,34 @@ pub(super) fn job_open_page(page: &Path, job_name: &str, linger_seconds: u64) ->
         }
         std::thread::sleep(Duration::from_millis(20));
     }
-    let verb = ffi::wide("open");
-    let file = ffi::wide(page);
-    // SAFETY: both strings are NUL-terminated; the other pointers may be null.
-    let r = unsafe {
-        ShellExecuteW(
-            std::ptr::null_mut(),
-            verb.as_ptr(),
-            file.as_ptr(),
-            std::ptr::null(),
-            std::ptr::null(),
-            SW_SHOWNORMAL,
-        )
+    let code = match open {
+        BrowserOpen::Assoc => open_by_association(page),
+        BrowserOpen::Shell => {
+            let verb = ffi::wide("open");
+            let file = ffi::wide(page);
+            // SAFETY: both strings are NUL-terminated; the other pointers may be null.
+            let r = unsafe {
+                ShellExecuteW(
+                    std::ptr::null_mut(),
+                    verb.as_ptr(),
+                    file.as_ptr(),
+                    std::ptr::null(),
+                    std::ptr::null(),
+                    SW_SHOWNORMAL,
+                )
+            };
+            u8::from(r as usize <= 32)
+        }
     };
     std::thread::sleep(Duration::from_secs(linger_seconds));
-    Outcome::Code(if r as usize > 32 { 0 } else { 1 })
+    Outcome::Code(code)
+}
+
+fn open_flag(open: BrowserOpen) -> &'static str {
+    match open {
+        BrowserOpen::Shell => "shell",
+        BrowserOpen::Assoc => "assoc",
+    }
 }
 
 fn browsers() -> BTreeSet<u32> {
@@ -324,7 +447,12 @@ fn job_pids(job: &Owned) -> Vec<u32> {
         .collect()
 }
 
-pub(super) fn job_browser(scratch: &Path, end: JobEnd, wait_seconds: u64) -> Report {
+pub(super) fn job_browser(
+    scratch: &Path,
+    end: JobEnd,
+    wait_seconds: u64,
+    open: BrowserOpen,
+) -> Report {
     if let Err(r) = guarded("job-browser", scratch) {
         return r;
     }
@@ -355,6 +483,7 @@ pub(super) fn job_browser(scratch: &Path, end: JobEnd, wait_seconds: u64) -> Rep
         .arg("--page")
         .arg(&page)
         .args(["--job-name", &name, "--linger-seconds", &linger.to_string()])
+        .args(["--open", open_flag(open)])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -418,6 +547,12 @@ pub(super) fn job_browser(scratch: &Path, end: JobEnd, wait_seconds: u64) -> Rep
         logon_now(),
         json!({
             "end": format!("{end:?}"),
+            "open": open_flag(open),
+            "association_program": http_open_command()
+                .map(|c| crate::assoc::command_args(&c, "u"))
+                .and_then(|a| a.first().cloned())
+                .and_then(|p| Path::new(&p).file_name().map(|n| n.to_string_lossy().into_owned()))
+                .map(|n| images::reportable(&n).to_string()),
             "opener_assigned": assigned.is_ok(),
             "opener_exit": opener_exit,
             "browsers_running_before": before.len(),

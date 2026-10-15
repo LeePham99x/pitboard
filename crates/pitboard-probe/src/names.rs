@@ -3,6 +3,10 @@ pub use pitboard_core::provider::names::Family;
 
 pub const CITEST_PREFIX: &str = "pitboard-citest-";
 
+// Bun.secrets names its target `<service>/<name>`; Claude Code's pieces add `#<n>`, `#m`, `#p`.
+pub const CITEST_BUN_SERVICE: &str = "pitboard-citest-bun";
+pub const CITEST_BUN_NAME: &str = "claude-code-user";
+
 // One CredEnumerateW each, so no other application's item is ever loaded into the probe.
 pub const ENUMERATION_FILTERS: [&str; 5] = [
     "Claude Code*",
@@ -54,6 +58,43 @@ pub fn is_probe_item_name(name: &str) -> bool {
         && name.starts_with(PROBE_PREFIX)
         && name.bytes().all(|b| b.is_ascii_graphic())
         && classify(name) == Kind::Probe
+}
+
+pub fn is_citest_bun_item_name(target: &str) -> bool {
+    let Some(rest) = target
+        .strip_prefix(CITEST_BUN_SERVICE)
+        .and_then(|r| r.strip_prefix('/'))
+        .and_then(|r| r.strip_prefix(CITEST_BUN_NAME))
+    else {
+        return false;
+    };
+    match rest.strip_prefix('#') {
+        None => rest.is_empty(),
+        Some(piece) => {
+            matches!(piece, "m" | "p")
+                || (!piece.is_empty()
+                    && piece.len() <= 3
+                    && piece.bytes().all(|b| b.is_ascii_digit()))
+        }
+    }
+}
+
+pub fn blob_encoding(blob: &[u8]) -> &'static str {
+    if blob.is_empty() {
+        "empty"
+    } else if blob.len().is_multiple_of(2)
+        && blob
+            .chunks(2)
+            .all(|c| c[1] == 0 && c[0].is_ascii() && c[0] != 0)
+    {
+        "utf16le_ascii"
+    } else if blob.iter().all(|b| b.is_ascii() && *b != 0) {
+        "ascii"
+    } else if std::str::from_utf8(blob).is_ok() {
+        "utf8"
+    } else {
+        "binary"
+    }
 }
 
 #[cfg(test)]
@@ -132,5 +173,39 @@ mod tests {
         ] {
             assert!(!is_probe_item_name(bad), "{bad}");
         }
+    }
+
+    #[test]
+    fn only_the_bun_rows_items_and_their_pieces_are_citest_bun_names() {
+        for ok in [
+            "pitboard-citest-bun/claude-code-user",
+            "pitboard-citest-bun/claude-code-user#0",
+            "pitboard-citest-bun/claude-code-user#255",
+            "pitboard-citest-bun/claude-code-user#m",
+            "pitboard-citest-bun/claude-code-user#p",
+        ] {
+            assert!(is_citest_bun_item_name(ok), "{ok}");
+            assert_eq!(classify(ok), Kind::CiTest);
+        }
+        for bad in [
+            "Claude Code-credentials/claude-code-user",
+            "pitboard-citest-bun/other",
+            "pitboard-citest-bun/claude-code-user#",
+            "pitboard-citest-bun/claude-code-user#1000",
+            "pitboard-citest-bun/claude-code-user#x",
+            "pitboard-citest-bunx/claude-code-user",
+            "pitboard-citest-bun\\claude-code-user",
+        ] {
+            assert!(!is_citest_bun_item_name(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_blob_is_described_by_its_encoding_alone() {
+        assert_eq!(blob_encoding(b""), "empty");
+        assert_eq!(blob_encoding(b"abc1"), "ascii");
+        assert_eq!(blob_encoding(&[b'a', 0, b'b', 0]), "utf16le_ascii");
+        assert_eq!(blob_encoding("Đạt".as_bytes()), "utf8");
+        assert_eq!(blob_encoding(&[0xff, 0xfe, 0x00]), "binary");
     }
 }

@@ -557,17 +557,18 @@ window loads its site, and whatever the site's pages load, as a browser would.
   cross-platform half (the command line, the report shape, the write guard, the Credential
   Manager and process-image allowlists, the redactor, the logon and elevation naming, the
   PE reader), so that half is unit tested on every system. One subcommand per measurement
-  the VM sessions and the runner facts need; `.github/scripts/runner-facts.ps1` runs the
-  safe ones in `windows-facts.yml`. Every writing subcommand refuses unless the account
-  carries a throwaway marker, and refuses a scratch path that is relative or keeps a `..`,
-  or that reaches a real login folder or file, in any spelling Windows opens or by the
+  the runner facts need; `.github/scripts/runner-facts.ps1` runs them in `windows-facts.yml`.
+  Every writing subcommand refuses unless the account carries a throwaway marker, and
+  refuses a scratch path that is relative or keeps a `..`, or that reaches a real login
+  folder or file or Claude Desktop's folders, in any spelling Windows opens or by the
   identity of a folder on the way; every file it is named carries the `pitboard-probe-`
   prefix. `credman-names` asks Credential Manager only for the live login families' and
   `pitboard-*` prefixes and never reads a blob out. Reports name principals by their
   relation to the token rather than by SID, print paths with the profile folder and the
   account name replaced, and never hold two keys that differ only in case, which
-  PowerShell's `ConvertFrom-Json` refuses. `helpers/` holds the Bun and Node scripts, and
-  `sparse/` the sparse-package manifests, script and steps, that the owner runs in the VM.
+  PowerShell's `ConvertFrom-Json` refuses. `helpers/` holds the Bun and Node scripts the
+  runner facts run beside it, and `sparse/` the sparse-package manifests, script and steps
+  the owner runs in the VM.
 - `apps/`: the native apps, one directory for each system.
 - `apps/windows/`: the Windows app. `Pitboard.Core` is the core's C# bindings as an
   assembly of their own, generated into `Generated/` and not committed, and
@@ -633,8 +634,7 @@ window loads its site, and whatever the site's pages load, as a browser would.
   - `actions/xcodegen` puts the pinned XcodeGen on `PATH` for every job that builds the
     app.
   - `workflows/rotation.yml` rehearses rotating the update key.
-  - `workflows/windows-facts.yml`, started by hand, measures the Windows runners and builds
-    the programs a VM session runs.
+  - `workflows/windows-facts.yml`, started by hand, measures the Windows runners.
   - `actions/apple-keychain` imports the Developer ID certificate for every job that signs.
   - `actions/rust` installs the toolchain and restores the Cargo cache for every job outside
     `release.yml`, and `actions/windows-builds` makes the builds both Windows workflows start
@@ -1938,45 +1938,211 @@ a scratch item.
 ### Windows
 
 Measured on GitHub's runners only, by `pitboard-probe` and `.github/scripts/runner-facts.ps1`
-in CI run 37673429917 on 8 October 2026: windows-2025 (Windows Server 2025 Datacenter, 24H2,
-build 26100, UBR 33438) and windows-11-arm (build 26200, UBR 9457, 25H2). The VM session's
-block A1, every other kind of token, and A2, the build against `winver`, are not measured
-yet. Until they are, the Windows face reads a token as Microsoft documents it, and these are
-the only tokens it has been seen to read.
+in `windows-facts.yml` run 38693947329 on 15 October 2026, unless a line names another run.
+Every run met the same images: windows-2025 (Windows Server 2025 Datacenter, 24H2, build
+26100, UBR 33438) and windows-11-arm (build 26200, UBR 9457, 25H2). The script runs the
+probe as the job's user and as three throwaway users it makes: a standard user, a standard
+user whose name is not ASCII, and a member of Administrators. Its Bun is 1.4.3, the one
+Claude Code 2.1.300 embeds, with proper-lockfile 4.1.2. A fact holds on both images unless it
+names one. Until the session measures a real PC, the Windows face reads a token as Microsoft
+documents it, and these are the only tokens it has been seen to read.
+
+Accounts and tokens:
 
 - The job's user has a token whose `TokenElevationType` is the default one, a token that is
-  not split, and that is elevated, at high integrity, on both images. Files it makes are
-  owned by Administrators. So every program the job starts is elevated, and Pitboard reads
-  it as `token::IN_EVERY_PROGRAM`.
+  not split, and that is elevated, at high integrity. Files it makes are owned by
+  Administrators. So every program the job starts is elevated, and Pitboard reads it as
+  `token::IN_EVERY_PROGRAM`.
 - A Safer normal-user token computed from the job's token, with `SaferComputeTokenFromLevel`
   at `SAFER_LEVELID_NORMALUSER`, is elevated still, at high integrity, and so is a program
   started with it. It cannot stand in for a person on the runners.
+- UAC is on: `EnableLUA` is 1 and `ConsentPromptBehaviorAdmin` 0. A member of
+  Administrators started with `Start-Process -Credential -LoadUserProfile` gets the limited
+  token of a split pair, not elevated, at medium integrity, and owns the files it makes.
 - A local standard user made in the job, and started with `Start-Process -Credential
-  -LoadUserProfile`, its output sent to files, runs an unsigned program on both images,
-  exiting 0, never 0xC0000142. Its token is the default type, not elevated, at medium
-  integrity, so Pitboard reads it as the person. Started without `-Environment`, the
-  program gets the job user's variables; in the earlier run 37660991344 that left the
-  user's local app data naming the job user's folder, which it cannot open, and
-  `SHGetKnownFolderPath` failed. Given its own profile's `USERPROFILE`, `HOMEDRIVE`,
-  `HOMEPATH`, `APPDATA`, `LOCALAPPDATA`, `TEMP`, `TMP` and `USERNAME`, every known folder
-  reads as its own. It can read and run what the job built in the workspace. This is how CI
-  runs every Windows test, through `.github/scripts/test-as-standard-user.ps1`.
-- Developer Mode is on on both images, and that user makes file and directory symbolic
-  links as it is. It makes them with the symbolic-link right granted too, but Developer
-  Mode was still on for that run, so the right alone is not measured; the script grants it
-  only where Developer Mode is off, as Microsoft documents the right.
+  -LoadUserProfile`, its output sent to files, runs an unsigned program, exiting 0, never
+  0xC0000142. Its token is the default type, not elevated, at medium integrity, so Pitboard
+  reads it as the person. Started without `-Environment`, the program gets the job user's
+  variables; in run 37660991344 that left the user's local app data naming the job user's
+  folder, which it cannot open, and `SHGetKnownFolderPath` failed. Given its own profile's
+  `USERPROFILE`, `HOMEDRIVE`, `HOMEPATH`, `APPDATA`, `LOCALAPPDATA`, `TEMP`, `TMP` and
+  `USERNAME`, every known folder reads as its own. It can read and run what the job built in
+  the workspace. This is how CI runs every Windows test, through
+  `.github/scripts/test-as-standard-user.ps1`.
+- That user's programs run in the job user's session, 2, and start inside a job already.
+- Developer Mode is on, and that user makes file and directory symbolic links as it is. It
+  makes them with the symbolic-link right granted too, but Developer Mode was on for that run
+  as well, so the right alone is not measured.
 - `RtlGetVersion` gives 10.0.26100 and 10.0.26200, the builds the registry's `CurrentBuild`
   gives. The registry's `ProductName` says `Windows 10 Enterprise` on windows-11-arm, so
   Pitboard never reads which Windows this is from it.
+
+Homes and variables:
+
+- `GetProfileType` gives flags 0, a local profile, for every user.
+- `FOLDERID_Profile` and `FOLDERID_LocalAppData` ignore `USERPROFILE` and `HOME`, and local
+  app data is the profile's `AppData\Local`. `std::env::home_dir` follows `USERPROFILE` and
+  ignores `HOME`.
+- `os.homedir()` follows `USERPROFILE` in Node (22.23.3 on windows-2025, 24.21.0 on
+  windows-11-arm) and in Bun. Bun's `os.userInfo().homedir` follows it too. Node's keeps the
+  account's profile.
+- Git for Windows' `bash.exe -c` hands a program it starts `HOME` set to the profile, as a
+  Windows path.
+- A program gets only `Path`, and a child std's `Command` starts gets one `Path`. A raw
+  environment block holding both `PATH` and `Path` hands both to the child, and `var_os`
+  returns the first in block order for either spelling (run 38418961905).
+- std's `Command` given a bare name runs the program beside the running one before one on the
+  parent's `PATH`, and a `PATH` set for the child wins over both. The working folder is never
+  searched, and a `.cmd` on `PATH` is never found by a bare name (run 38418961905).
+- A task Task Scheduler starts gets this `PATHEXT`:
+  `.COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC`. The runner's own programs carry
+  `.CPL` after it, and pass it on to theirs.
+- A value `setx` writes into the job user's `HKCU\Environment` reaches a task started after
+  it.
+- A profile folder whose name is not ASCII, such as one holding `Đ` and `ạ` (10 UTF-16
+  units, 13 UTF-8 bytes, NFC), has an ASCII 8.3 alias holding `~`, and so has the `Temp`
+  inside it.
+
+Who may read a login:
+
+- A profile folder is owned by SYSTEM, with a protected DACL granting SYSTEM,
+  Administrators, the user and an app container SID. Its `AppData\Local`, the `Temp` there and
+  a folder the user makes in it are the user's, inheriting SYSTEM, Administrators and the
+  user. Nobody else can reach their data.
+- A file Bun writes with mode 0o600 and then `chmod`s to 0o600, as Claude Code 2.1.300
+  writes `.credentials.json`, keeps only the DACL it inherits. Bun reports its mode as 0o666.
+- A file made with a protected DACL granting the user, SYSTEM and Administrators is owned by
+  the user who made it, standard or limited administrator, and the elevated job user can
+  read, write and delete it.
+
+Replacing a file:
+
+- NTFS and ReFS report `FILE_SUPPORTS_POSIX_UNLINK_RENAME`. There the POSIX rename works over
+  a target held open sharing delete and fails 32 over one held without. `MoveFileExW` fails
+  5 whenever the target is held. The ReFS volume is plain on windows-2025 and a Dev Drive
+  on windows-11-arm.
+- exFAT and FAT32 lack the flag, and the POSIX rename fails 87 there. `MoveFileExW` works
+  over a target nobody holds and fails 5 over a held one (run 38418961905).
+- An SMB loopback share mapped as a drive reports NTFS, a remote drive and no POSIX flag,
+  and renames as exFAT does.
+- 10000 POSIX renames beside a probe reader and a Bun reader that share delete, Bun holding
+  each open 50 ms, needed no retry: about 13 s on NTFS on both images, and 2000 took 1.4 s
+  on ReFS. No reader saw a torn or empty file.
+- Beside readers that reopen the file without a pause, one not sharing delete,
+  `MoveFileExW` fails 5 most of the time. In 180 s it replaced the file 154 times on
+  windows-2025, 30 rounds running out of 50 retries, and 2439 times on windows-11-arm, in up
+  to 33 attempts. No reader saw a torn or empty file.
+
+Flushing and times:
+
+- A standard user can flush a folder opened for generic write with `FlushFileBuffers` on
+  NTFS and ReFS, as the job user can on exFAT and FAT32. A handle opened for write
+  attributes alone fails 5. On the SMB share the flush fails 1.
+- NTFS, ReFS and the SMB share keep mtimes in 100 ns steps, exFAT and FAT32 in whole seconds
+  (run 38418961905).
+
+Locks:
+
+- proper-lockfile 4.1.2 under Bun and the probe's lock see each other's lock with both of
+  Claude Code's timings: held at every one of 25 checks, never stale. Its heartbeat was at
+  most 7.5 s old with the write lock and 5 s old with the refresh lock.
+- With another process holding `LockFileEx` on `state.lock`, opening it sharing everything
+  works and `ReadFile` fails 33. Opening it sharing read alone fails 32.
+- On NTFS and ReFS, `remove_dir_all` removes a home while another process holds its
+  `state.lock`. On exFAT and FAT32 it fails 145 and leaves the home, and works once the
+  holder exits (run 38418961905).
+
+DPAPI:
+
+- `CryptProtectData` with the vault's flags seals in about 0.2 ms and unseals in 0.15 ms on
+  windows-2025, 0.27 and 0.2 ms on windows-11-arm. A process's first seal takes 7 ms and
+  1.3 ms.
+- After the user changes its own password through ADSI, a program started with the new
+  password unseals what was sealed before.
+- After an administrator resets the password, nothing sealed before unseals: 0x8009000B.
+- A task with the job user's interactive token, in its session, unseals what the job user
+  sealed.
+
+Tasks:
+
+- A plain console program started by a task, or with no console to inherit, gets a visible
+  console window. Built with either spelling of the detached `consoleAllocationPolicy`, it
+  gets none there, and still attaches to a parent's console (run 38418961905).
+- A standard user can make `\Pitboard\` and register a task with an interactive token there
+  or in the root. With no signed-in session of its own, the task never starts: its last
+  result is 0x00041303.
+- The job user's task in either folder runs, with last result 0.
+
+Processes and jobs:
+
+- As a standard user, WTS (any session) and Toolhelp name another user's `codex.exe` in the
+  same session, with its image path.
+- `GetProcessInformation(ProcessMachineTypeInfo)` reports an x64 program emulated on
+  windows-11-arm as x64. `IsWow64Process2` gives the native machine.
+- A process a standard user starts is in a job already, and a job of its own still takes its
+  children. Every leaf of 1000 probe, probe, probe chains and 1000 cmd, node, probe
+  chains stayed in it, assigned right after its start or started suspended and resumed.
+  `CREATE_BREAKAWAY_FROM_JOB` failed with 5 all 200 times.
+- `GetModuleFileNameW` and `current_exe` give the path a program was started by, through a
+  file symbolic link, a junction or a hard link. Canonicalizing resolves the link and the
+  junction, not the hard link.
+- Edge, opened on a local page by `ShellExecuteW` or by the http association's command from
+  a process in a job, runs all its 8 to 10 processes inside that job. `TerminateJobObject`
+  ends them all. Ending only the probe's processes, or letting the opener exit, leaves Edge
+  running.
+
+Credential Manager:
+
+- `Bun.secrets.set`, called as Claude Code 2.1.300 calls it, writes a generic item named
+  `<service>/<name>`, with the name as its user name, enterprise persistence, no comment and
+  no attributes, and the value's UTF-8 bytes as its blob.
+- As the job's user, in an interactive logon, `credman-names` lists the prefixes of every
+  live login family and `pitboard-*` without an error, and finds no item. As the fresh
+  standard user, after each Windows test run, it does the same and finds nothing (run
+  37762408901).
+
+A network logon, by key through sshd as the standard user on windows-2025:
+
+- It is logon type 3, in session 0.
+- `CredWriteW`, `CredReadW`, `CredDeleteW` and `CredEnumerateW` fail 1312, and
+  `CryptProtectData` fails 5.
+- WTS and Toolhelp name the same user's `codex.exe` in session 2.
+
+The images:
+
 - Defender's real-time protection is off on windows-2025 and on, with behaviour monitoring
   and tamper protection, on windows-11-arm. winget is on windows-2025 alone, and Scoop on
   neither.
-- As the job's user, in an interactive logon, `credman-names` lists the prefixes of every
-  live login family and `pitboard-*` without an error, and finds no item, on both images.
-  As the fresh standard user, after each Windows test run, it does the same and finds
-  nothing, on both images (run 37762408901). Neither image holds Codex's
-  `%ProgramData%\OpenAI\Codex`, Claude Code's `C:\Program Files\ClaudeCode` or its
-  policy keys.
+- diskpart formats ReFS on windows-2025. On windows-11-arm, `Format-Volume -DevDrive` makes a
+  trusted Dev Drive with Defender's filter attached.
+- The Server service runs, and `New-SmbShare` serves a folder to `\\localhost`.
+- windows-2025 runs OpenSSH Server, whose `AllowGroups` turned the standard user away until
+  it joined OpenSSH Users (run 38691271016). windows-11-arm has none, and
+  `Add-WindowsCapability` did not install it within 10 minutes (run 38685119129).
+- Neither image holds Codex's `%ProgramData%\OpenAI\Codex`, Claude Code's
+  `C:\Program Files\ClaudeCode` or its policy keys.
+
+### Documented, not measured
+
+Windows facts Pitboard stands on that Microsoft documents and nothing has measured yet, read
+on 15 October 2026. W27 reviews the list.
+
+| Fact | Source | Why not measured |
+|---|---|---|
+| `GetProfileType` reports `PT_ROAMING` for a roaming profile | [GetProfileType](https://learn.microsoft.com/en-us/windows/win32/api/userenv/nf-userenv-getprofiletype) | The runners have local profiles only. |
+| `CfGetSyncRootInfoByPath` finds a sync root such as OneDrive's | [CfGetSyncRootInfoByPath](https://learn.microsoft.com/en-us/windows/win32/api/cfapi/nf-cfapi-cfgetsyncrootinfobypath) | No sync provider runs on the runners. |
+| `FILE_ID_INFO` names a file uniquely on its volume | [FILE_ID_INFO](https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_id_info) | No row reads it. |
+| An explicit ACE for the user decides what a UAC-filtered token can do with a file | [How DACLs control access](https://learn.microsoft.com/en-us/windows/win32/secauthz/how-dacls-control-access-to-an-object) | The limited token opened only a file it made. |
+| `VerQueryValueW` reads a program's version resource | [VerQueryValueW](https://learn.microsoft.com/en-us/windows/win32/api/winver/nf-winver-verqueryvaluew) | No row reads one. |
+| A running program sees a variable changed in the registry only after `WM_SETTINGCHANGE` | [Environment variables](https://learn.microsoft.com/en-us/windows/win32/procthread/environment-variables) | Only a task started after `setx` was measured. |
+| WTS lists another session's processes to Administrators only | [WTSEnumerateProcessesExW](https://learn.microsoft.com/en-us/windows/win32/api/wtsapi32/nf-wtsapi32-wtsenumerateprocessesexw) | Every throwaway user ran in the job user's session. |
+| `GetProcessTimes` gives a process's creation time | [GetProcessTimes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesstimes) | No row reads it. |
+| A generic credential's blob holds at most 2560 bytes | [CREDENTIALW](https://learn.microsoft.com/en-us/windows/win32/api/wincred/ns-wincred-credentialw) | The largest blob written was a 2400-byte piece. |
+| Reserved device names, and trailing dots and spaces, in a file name | [Naming files](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file) | No row makes such a name. |
+| `lpReserved2` is reserved for the C runtime | [STARTUPINFOW](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/ns-processthreadsapi-startupinfow) | WF-b measures the hand-over through it. |
+| `longPathAware` in a manifest lifts the 260-character limit | [Application manifests](https://learn.microsoft.com/en-us/windows/win32/sbscs/application-manifests) | No row uses a long path. |
+| `StartWhenAvailable` runs a start that was missed | [StartWhenAvailable](https://learn.microsoft.com/en-us/windows/win32/taskschd/tasksettings-startwhenavailable) | A runner never sleeps through a trigger. |
+| WSL 2's processes run in a utility VM | [Comparing WSL versions](https://learn.microsoft.com/en-us/windows/wsl/compare-versions) | No runner has WSL. |
 
 ### One sign-in at a time
 

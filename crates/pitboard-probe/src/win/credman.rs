@@ -177,11 +177,13 @@ fn dummy(n: u32) -> Vec<u8> {
 
 pub(super) fn item(action: ItemAction, name: &str, persist: Persist, blob_bytes: u32) -> Report {
     let logon = logon_now();
-    if !names::is_probe_item_name(name) {
+    let bun_item = names::is_citest_bun_item_name(name);
+    if !(names::is_probe_item_name(name) || (bun_item && action != ItemAction::Write)) {
         return Report::refused(
             "credman-item",
             logon,
-            "--name must be a pitboard-probe-* target",
+            "--name must be a pitboard-probe-* target, or a pitboard-citest-bun/claude-code-user \
+             item of the Bun row to read or delete",
         );
     }
     if !ffi::marker_present() {
@@ -226,13 +228,21 @@ pub(super) fn item(action: ItemAction, name: &str, persist: Persist, blob_bytes:
                 // SAFETY: on success `out` is a valid item; its blob is compared, not kept.
                 let v = unsafe {
                     let cred = &*out;
-                    let blob = std::slice::from_raw_parts(
-                        cred.CredentialBlob,
-                        cred.CredentialBlobSize as usize,
-                    );
-                    let matches = blob == dummy(cred.CredentialBlobSize).as_slice();
+                    let blob: &[u8] = if cred.CredentialBlob.is_null() {
+                        &[]
+                    } else {
+                        std::slice::from_raw_parts(
+                            cred.CredentialBlob,
+                            cred.CredentialBlobSize as usize,
+                        )
+                    };
                     let mut v = describe(cred, true, &ffi::redactor());
-                    v["blob_is_the_dummy"] = json!(matches);
+                    if bun_item {
+                        v["blob_encoding"] = json!(names::blob_encoding(blob));
+                    } else {
+                        v["blob_is_the_dummy"] =
+                            json!(blob == dummy(cred.CredentialBlobSize).as_slice());
+                    }
                     v
                 };
                 // SAFETY: `out` was allocated by CredReadW.

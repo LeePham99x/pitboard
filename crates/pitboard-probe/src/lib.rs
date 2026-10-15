@@ -19,7 +19,8 @@
 //!   marker the owner creates, and refuses a scratch path that is relative or keeps a `..`
 //!   (nothing is resolved against the working folder), or that is, in any spelling or by
 //!   the identity of a folder it passes through, the real profile's `.claude`,
-//!   `.claude.json`, `.codex` or `%LOCALAPPDATA%\Pitboard` or inside one ([`guard`]);
+//!   `.claude.json`, `.codex`, `%LOCALAPPDATA%\Pitboard` or Claude Desktop's folders, or
+//!   inside one ([`guard`]);
 //! - it writes, reads or deletes only Credential Manager items, tasks, registry keys and
 //!   files it made itself under a `pitboard-probe-*` name or in a scratch folder it was
 //!   given, and every file it is named (`--out`, `dpapi --file`, `swap`) carries that
@@ -39,6 +40,7 @@
 // apply here.
 #![allow(clippy::disallowed_methods)]
 
+pub mod assoc;
 pub mod cli;
 pub mod console;
 pub mod elevation;

@@ -1,27 +1,44 @@
 name: Windows runner facts
 
 # A measurement, not a check: what an image does can change with no commit, and no pull
-# request can fix that. Run it by hand when a fact is wanted, such as after a Windows image
-# changes.
+# request can fix that. Run it by hand on a branch when a fact is wanted, such as after a
+# Windows image changes or a pull request changes the probe or runner-facts.ps1.
 
 on:
   workflow_dispatch:
+    inputs:
+      bun-version:
+        description: The Bun the helpers run under, the one the newest Claude Code embeds.
+        default: 1.4.3
+      bun-sha256-x64:
+        description: bun-windows-x64.zip's SHA-256, for a Bun other than the pinned one.
+        default: ""
+      bun-sha256-aarch64:
+        description: bun-windows-aarch64.zip's SHA-256, for a Bun other than the pinned one.
+        default: ""
 
 permissions:
   contents: read
 
 jobs:
   facts:
+    name: facts (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
         include:
+          # The SHA-256 of Bun 1.4.3's zip for each, read from that release's SHASUMS256.txt
+          # and checked against the zip itself on 2026-10-15.
           - os: windows-2025
             triple: x86_64-pc-windows-msvc
+            bun-zip: bun-windows-x64.zip
+            bun-sha256: 0bf84e808552beea67bf1202a287a35c6c825d837b287b3f8e9dd513dba35d3d
           - os: windows-11-arm
             triple: aarch64-pc-windows-msvc
+            bun-zip: bun-windows-aarch64.zip
+            bun-sha256: 5e8f142ef722cbc9f67dc068a166e46ee72be8307b38cac7186589d2face668f
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       RUSTFLAGS: -D warnings -C target-feature=+crt-static --cfg pitboard_unreleased_windows
     defaults:
@@ -31,9 +48,37 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # Which Bun runs, and the SHA-256 its zip must have, before anything is built.
+      - name: Bun's version and checksum
+        id: bun
+        env:
+          VERSION: ${{ inputs.bun-version }}
+          PINNED: ${{ matrix.bun-sha256 }}
+          GIVEN_X64: ${{ inputs.bun-sha256-x64 }}
+          GIVEN_AARCH64: ${{ inputs.bun-sha256-aarch64 }}
+          TRIPLE: ${{ matrix.triple }}
+        run: |
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "bun-version must be three numbers, such as 1.4.3" >&2
+            exit 1
+          fi
+          if [ "$VERSION" = 1.4.3 ]; then
+            sha="$PINNED"
+          elif [ "$TRIPLE" = x86_64-pc-windows-msvc ]; then
+            sha="$GIVEN_X64"
+          else
+            sha="$GIVEN_AARCH64"
+          fi
+          if ! [[ "$sha" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "Bun $VERSION is not the pinned one, so give its zip's SHA-256 for this system" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "sha256=$sha" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/rust
         with:
           cache: false
+          targets: ${{ matrix.os == 'windows-11-arm' && 'x86_64-pc-windows-msvc' || '' }}
       # ring compiles its C with clang on ARM64 Windows, and nothing else.
       - if: runner.arch == 'ARM64'
         run: clang --version
@@ -52,32 +97,28 @@ jobs:
       - uses: ./.github/actions/windows-builds
         with:
           triple: ${{ matrix.triple }}
-      # What the owner's VM session runs. The VM fetches nothing itself, so the owner copies
-      # these in. Uploaded before the runner facts, so a runner-facts failure still leaves them.
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: vm-session-${{ matrix.triple }}
-          path: |
-            target/debug/pitboard-probe.exe
-            target/debug/pitboard-probe-detached.exe
-            target/debug/pitboard-probe-detached-asmv1.exe
-            target/debug/pitboard-probe-sparse.exe
-            target/gated/debug/pitboard.exe
-          if-no-files-found: error
-          retention-days: 30
-      # The runner facts W12, W13, W16 and W17 are decided from, as the job's user on this
-      # disposable runner: the probe's safe blocks, the machine's policies, an exFAT and a
-      # FAT32 VHD made with diskpart, and a throwaway standard user started with
-      # Start-Process -Credential, with Developer Mode and then the symbolic-link right given
-      # for one run each. The script says what it changes and undoes it, and fails the step
-      # when a probe report is missing or cannot be parsed.
+      # An x64 probe for RF-H1, which windows-11-arm runs under emulation. A failed build only
+      # leaves that one process out.
+      - name: An x64 probe
+        if: matrix.os == 'windows-11-arm'
+        continue-on-error: true
+        run: cargo build --locked -p pitboard-probe --target x86_64-pc-windows-msvc
+      # The runner facts, as the job's user and as throwaway users the script makes on this
+      # disposable runner. runner-facts.ps1 says what it changes, and undoes each change.
       - name: Runner facts
         shell: pwsh
         env:
           TRIPLE: ${{ matrix.triple }}
-        run: >
-          ./.github/scripts/runner-facts.ps1 -Probe target/debug/pitboard-probe.exe
-          -Triple $env:TRIPLE -Out (Join-Path $env:RUNNER_TEMP 'runner-facts.json')
+          BUN_VERSION: ${{ steps.bun.outputs.version }}
+          BUN_ZIP: ${{ matrix.bun-zip }}
+          BUN_SHA256: ${{ steps.bun.outputs.sha256 }}
+        run: |
+          $x64 = 'target/x86_64-pc-windows-msvc/debug/pitboard-probe.exe'
+          ./.github/scripts/runner-facts.ps1 -Probe target/debug/pitboard-probe.exe `
+            -ProbeX64 $(if ($env:TRIPLE -ne 'x86_64-pc-windows-msvc' -and (Test-Path $x64)) { (Resolve-Path $x64).Path } else { '' }) `
+            -Triple $env:TRIPLE -Out (Join-Path $env:RUNNER_TEMP 'runner-facts.json') `
+            -Helpers crates/pitboard-probe/helpers `
+            -BunVersion $env:BUN_VERSION -BunZip $env:BUN_ZIP -BunSha256 $env:BUN_SHA256
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

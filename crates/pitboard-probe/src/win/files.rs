@@ -7,7 +7,7 @@
 use super::ffi::{self, Owned};
 use super::{io_code, logon_now, take_child_report};
 use crate::PROBE_PREFIX;
-use crate::cli::{LfxMode, LockMode, ReaderShare, Route};
+use crate::cli::{LfxMode, LockMode, LockTiming, ReaderShare, Route};
 use crate::replace::{self, Budget, Disposition, ReadCheck};
 use crate::report::Report;
 use serde_json::{Value, json};
@@ -378,6 +378,8 @@ pub(super) fn replace_loop(
     rounds: u32,
     lead_seconds: u64,
     reader: ReaderShare,
+    route: Route,
+    seconds: u64,
 ) -> Report {
     if let Err(r) = guarded("replace-loop", scratch) {
         return r;
@@ -417,7 +419,12 @@ pub(super) fn replace_loop(
     let mut max_attempts = 0u32;
     let pid = std::process::id();
     let started = Instant::now();
+    let mut stopped_early = false;
     for round in 1..=rounds {
+        if seconds > 0 && started.elapsed() >= Duration::from_secs(seconds) {
+            stopped_early = true;
+            break;
+        }
         let tmp = probe_file(scratch, &format!("replace-tmp-{pid}-{round}"));
         if std::fs::write(&tmp, replace::record(round)).is_err() {
             failures += 1;
@@ -425,7 +432,7 @@ pub(super) fn replace_loop(
         }
         let mut attempt = 0u32;
         loop {
-            let err = rename_movefile(&tmp, &target).err();
+            let err = rename(route, &tmp, &target).err();
             if let Some(code) = err {
                 *errors.entry(code).or_default() += 1;
             }
@@ -466,6 +473,8 @@ pub(super) fn replace_loop(
         logon_now(),
         json!({
             "rounds": rounds,
+            "route": format!("{route:?}"),
+            "stopped_at_the_time_bound": stopped_early,
             "done": done_rounds,
             "retries": retries,
             "failures": failures,
@@ -569,20 +578,18 @@ fn mtime_precision(scratch: &Path) -> Value {
 
 // --- C5: proper-lockfile's lock ---------------------------------------------------------------
 
-const STALE_MS: u64 = 15_000;
-const HEARTBEAT_MS: u64 = 7_500;
-
-pub(super) fn lock(scratch: &Path, mode: LockMode, seconds: u64) -> Report {
+pub(super) fn lock(scratch: &Path, mode: LockMode, seconds: u64, timing: LockTiming) -> Report {
     if let Err(r) = guarded("lock", scratch) {
         return r;
     }
+    let (stale_ms, heartbeat_ms) = (timing.stale_ms(), timing.heartbeat_ms());
     let target = probe_file(scratch, "locktarget");
     if !target.exists() {
         let _ = std::fs::write(&target, b"x");
     }
     let lockdir = probe_file(scratch, "locktarget.lock");
     let deadline = Instant::now() + Duration::from_secs(seconds);
-    let data = match mode {
+    let mut data = match mode {
         LockMode::Hold => {
             if let Err(e) = std::fs::create_dir(&lockdir) {
                 return Report::ok(
@@ -595,7 +602,7 @@ pub(super) fn lock(scratch: &Path, mode: LockMode, seconds: u64) -> Report {
             let (mut beats, mut lost, mut changed_by_other) = (0u32, false, false);
             let mut last_set: Option<u64> = None;
             while Instant::now() < deadline {
-                std::thread::sleep(Duration::from_millis(HEARTBEAT_MS).min(
+                std::thread::sleep(Duration::from_millis(heartbeat_ms).min(
                     deadline.saturating_duration_since(Instant::now()) + Duration::from_millis(1),
                 ));
                 if !lockdir.is_dir() {
@@ -641,7 +648,7 @@ pub(super) fn lock(scratch: &Path, mode: LockMode, seconds: u64) -> Report {
                         held += 1;
                         if let Some(age) = mtime_ms(&lockdir).map(|m| now_ms().saturating_sub(m)) {
                             max_age = max_age.max(age);
-                            if age > STALE_MS {
+                            if age > stale_ms {
                                 stale += 1;
                             }
                         }
@@ -659,6 +666,9 @@ pub(super) fn lock(scratch: &Path, mode: LockMode, seconds: u64) -> Report {
             })
         }
     };
+    data["timing"] = json!(format!("{timing:?}").to_lowercase());
+    data["stale_ms"] = json!(stale_ms);
+    data["heartbeat_ms"] = json!(heartbeat_ms);
     Report::ok("lock", logon_now(), data)
 }
 
