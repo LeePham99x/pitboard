@@ -44,7 +44,7 @@ def installers(text):
 
 def release_lines(path):
     lines = {}
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         match = re.fullmatch(r"([0-9a-f]{64}) [ *](.+)", line)
         if not match:
             raise Refused(f"{path} has a line that is not a SHA-256 and a name: {line}")
@@ -60,7 +60,7 @@ def check(folder, sums):
     if len(manifests) != 1:
         raise Refused(f"{folder} holds {len(manifests)} installer manifests, not 1")
     released = release_lines(sums)
-    for number, installer in enumerate(installers(manifests[0].read_text()), 1):
+    for number, installer in enumerate(installers(manifests[0].read_text(encoding="utf-8")), 1):
         for key in ("InstallerUrl", "InstallerSha256"):
             if not installer.get(key):
                 raise Refused(f"installer {number} has no {key}")

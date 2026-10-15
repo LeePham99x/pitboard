@@ -417,9 +417,20 @@ class WingetHashes(unittest.TestCase):
             for arch, name in self.ZIPS.items()
         ]
 
+    # A read that leaves the encoding to the locale fails: on windows-2025 that is cp1252, which
+    # cannot decode every UTF-8 manifest komac writes.
     def checked(self, folder):
         return subprocess.run(
-            [sys.executable, str(WINGET_HASHES), str(folder), str(self.sums)],
+            [
+                sys.executable,
+                "-X",
+                "warn_default_encoding",
+                "-W",
+                "error::EncodingWarning",
+                str(WINGET_HASHES),
+                str(folder),
+                str(self.sums),
+            ],
             capture_output=True,
             text=True,
         )
