@@ -181,9 +181,9 @@ internal sealed class Launched : IDisposable
     public static IEnumerable<string> Lines(AutomationElement scope) =>
         scope.FindAllDescendants(found => found.ByControlType(FlaUI.Core.Definitions.ControlType.Text)).Select(text => text.Name);
 
-    public static void Dismiss(Window box) =>
-        box.FindFirstDescendant(found => found.ByControlType(FlaUI.Core.Definitions.ControlType.Button))!
-            .AsButton().Invoke();
+    // As its title bar's Close does. OK pressed through UI Automation is a BM_CLICK, which may fail on a box that
+    // is not active, and failed with E_UNEXPECTED on windows-2025 (runs 38782142541 and 38789385677).
+    public static void Dismiss(Window box) => box.Patterns.Window.Pattern.Close();
 
     private AutomationElement? Look(Func<ConditionFactory, ConditionBase> condition) =>
         FlaUI.Core.Application.Attach(Process).GetAllTopLevelWindows(Automation)
