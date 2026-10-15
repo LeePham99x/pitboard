@@ -282,9 +282,10 @@ The tests that start a fixture's model are skipped against a library built witho
 need not be generated again.
 
 Each project restores only the packages its `packages.lock.json` pins, at the versions
-`Directory.Packages.props` names. After changing a package, run `dotnet restore --force-evaluate`
-on both solutions, with `-p:EnableWindowsTargeting=true` on macOS and Linux, and commit the lock
-files. The build fails on the style rules in `apps/windows/.editorconfig`, and CI checks the
+`Directory.Packages.props` names, with the exact .NET SDK `global.json` names: `Pitboard.Core`'s
+lock file holds that SDK's trimming analyzers. After changing a package or the SDK, run
+`dotnet restore --force-evaluate` on both solutions, with `-p:EnableWindowsTargeting=true` on
+macOS and Linux, and commit the lock files. The build fails on the style rules in `apps/windows/.editorconfig`, and CI checks the
 layout with `dotnet format whitespace --folder --verify-no-changes apps/windows`.
 
 ## Windows
