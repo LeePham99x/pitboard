@@ -52,7 +52,8 @@ public sealed class DownloadTests
             var (from, asked) = (webs.Sent.Count, window.Questions.Count);
             events.Clear();
 
-            await page.ExecuteScriptAsync($"{script}; 0");
+            // In a block of its own: a const a script declares at the top stays declared for the next script.
+            await page.ExecuteScriptAsync($"{{ {script} }} 0");
 
             // Every kind is tried, so one run measures each.
             try
@@ -194,7 +195,9 @@ public sealed class DownloadTests
 
         Assert.IsNull(webs.Downloads.QuitQuestion);
         Assert.HasCount(2, webs.Sent.OfType<Intent.DownloadEnded>());
-        Assert.IsFalse(File.Exists(webs.Sent.OfType<Intent.DownloadSaving>().Last().File));
+        // On windows-11-arm the file was still there as the download said it stopped (run 38822700418).
+        var file = webs.Sent.OfType<Intent.DownloadSaving>().Last().File;
+        await Webs.Until(() => !File.Exists(file), "the stopped download left its file");
     }
 
     // A window closed while it asks answers no, and the closed page takes its download with it.
@@ -258,6 +261,7 @@ public sealed class DownloadTests
         page.NavigationCompleted += (_, args) => events.Add($"NavigationCompleted {args.IsSuccess} {args.WebErrorStatus}");
         page.FrameNavigationCompleted += (_, args) => events.Add($"FrameNavigationCompleted {args.IsSuccess} {args.WebErrorStatus}");
         page.DownloadStarting += (_, args) => events.Add($"DownloadStarting {args.DownloadOperation.Uri}");
+        page.LaunchingExternalUriScheme += (_, args) => events.Add($"LaunchingExternalUriScheme {args.Uri}");
         return events;
     }
 
