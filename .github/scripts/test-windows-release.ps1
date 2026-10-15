@@ -6,15 +6,20 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 
+# A GitHub-hosted runner is thrown away after the job.
+if (-not ($env:GITHUB_ACTIONS -eq 'true' -and $env:RUNNER_ENVIRONMENT -eq 'github-hosted')) {
+    throw 'test-windows-release.ps1 runs only on a GitHub-hosted runner: it runs the pitboard.exe it is given'
+}
+
 $package = Join-Path $PSScriptRoot 'package-windows.ps1'
 $check = Join-Path $PSScriptRoot 'check-windows-build.ps1'
 $exePath = (Resolve-Path -LiteralPath $Exe).Path
 $work = Join-Path $env:RUNNER_TEMP "test-windows-release-$([guid]::NewGuid().ToString('N'))"
 New-Item -ItemType Directory -Path $work | Out-Null
 
-function Assert-Refused([string] $Case, [hashtable] $Given, [string] $Expected) {
+function Assert-Refused([string] $Case, [hashtable] $Given, [string] $Expected, [string] $ScriptPath = $check) {
     try {
-        & $check @Given | Out-Null
+        & $ScriptPath @Given | Out-Null
     } catch {
         if ($_.Exception.Message -notmatch $Expected) {
             throw "$Case`: refused for another reason: $($_.Exception.Message)"
@@ -22,7 +27,17 @@ function Assert-Refused([string] $Case, [hashtable] $Given, [string] $Expected) 
         Write-Output "ok: $Case"
         return
     }
-    throw "$Case`: check-windows-build.ps1 let it through"
+    throw "$Case`: $(Split-Path -Leaf $ScriptPath) let it through"
+}
+
+$runner = $env:RUNNER_ENVIRONMENT
+try {
+    $env:RUNNER_ENVIRONMENT = 'self-hosted'
+    $off = @{ Exe = $exePath; Version = '1.2.3'; Triple = $Triple; Out = (Join-Path $work 'off') }
+    Assert-Refused 'packing off a GitHub-hosted runner' $off 'runs only on a GitHub-hosted runner' $package
+    Assert-Refused 'checking off a GitHub-hosted runner' @{ Exe = $exePath; Triple = $Triple } 'runs only on a GitHub-hosted runner'
+} finally {
+    $env:RUNNER_ENVIRONMENT = $runner
 }
 
 $top = "pitboard-v1.2.3-beta.4-$Triple"
