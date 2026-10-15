@@ -454,17 +454,24 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                space, a junction to `current\\bin`, which it puts on the user `Path`. A global \
                npm install's `codex.cmd` in its prefix, `%APPDATA%\\npm` by default, starts \
                `bin/codex.js`, which runs `vendor/<target>/bin/codex.exe` of the platform's \
-               package, beside `codex-package.json`. winget's `OpenAI.Codex` is a zip whose \
+               package, beside `codex-package.json`. It finds that package as Node finds one \
+               from its own `bin`, else uses its own `vendor`, and starts the program with its \
+               arguments and every variable it was given, `CODEX_MANAGED_PACKAGE_ROOT` set to \
+               its own package's folder and `CODEX_MANAGED_BY_NPM` to `1`, where no other \
+               package manager's files are found, the other `CODEX_MANAGED_BY_` ones removed. \
+               winget's `OpenAI.Codex` is a zip whose \
                nested portable `codex-<target>.exe` is linked in winget's `Links` as `codex`",
         read_from: "scripts/install/install.ps1 at tag rust-v0.162.1; `bin/codex.js` of \
                     `@openai/codex@0.162.1`, and its win32-x64 and win32-arm64 packages; the \
                     installer manifest of `OpenAI.Codex` 0.161.0, the newest in \
-                    microsoft/winget-pkgs; read on 2026-10-15. `Programs\\OpenAI\\Codex` is in \
-                    install.ps1 alone, so the build is probed for the package's own file",
+                    microsoft/winget-pkgs; read on 2026-10-15, and `bin/codex.js` again on \
+                    2026-10-16. `Programs\\OpenAI\\Codex` is in install.ps1 alone, so the build \
+                    is probed for the package's own file and the variable the launcher sets",
         verified_against: "0.162.1",
         depends: "codex::paths::install_places and host::Os::package_bins, where an app looks \
-                  for `codex.exe` after the registry's `Path`",
-        probe: &["codex-package.json"],
+                  for `codex.exe` after the registry's `Path`, and codex::paths::npm_native, \
+                  which a sign-in starts in place of npm's `codex.cmd`",
+        probe: &["codex-package.json", "CODEX_MANAGED_PACKAGE_ROOT"],
         absent: &[],
     },
     Assumption {

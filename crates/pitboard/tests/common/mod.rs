@@ -693,6 +693,32 @@ impl Env {
                     &target.iter().fold(prefix.clone(), |at, part| at.join(part)),
                     &script,
                 );
+                // The platform's package npm installs beside it, whose program a sign-in starts.
+                let (platform, triple) = if cfg!(target_arch = "aarch64") {
+                    ("codex-win32-arm64", "aarch64-pc-windows-msvc")
+                } else {
+                    ("codex-win32-x64", "x86_64-pc-windows-msvc")
+                };
+                let package = [
+                    "node_modules",
+                    "@openai",
+                    "codex",
+                    "node_modules",
+                    "@openai",
+                ]
+                .iter()
+                .fold(prefix.clone(), |at, part| at.join(part))
+                .join(platform);
+                std::fs::create_dir_all(&package).unwrap();
+                std::fs::write(package.join("package.json"), "{}").unwrap();
+                put_stand_in(
+                    &package
+                        .join("vendor")
+                        .join(triple)
+                        .join("bin")
+                        .join("codex.exe"),
+                    &fake_codex_login(login),
+                );
                 let program = prefix.join("codex.cmd");
                 write(&program, &npm_shim("fakenode", &target.join("\\")));
                 program

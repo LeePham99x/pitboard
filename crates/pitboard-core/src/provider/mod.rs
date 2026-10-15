@@ -757,9 +757,37 @@ pub(crate) fn command(
             .unwrap_or(search),
         None => search,
     };
-    let mut command = std::process::Command::new(program);
+    let (started, set) = behind_npms_shim(tool, &program).unwrap_or((program, Vec::new()));
+    let mut command = std::process::Command::new(started);
     command.env("PATH", path);
+    for (name, value) in set {
+        match value {
+            Some(value) => command.env(name, value),
+            None => command.env_remove(name),
+        };
+    }
     Ok(command)
+}
+
+// A variable a launcher sets, or with `None` takes away.
+pub(crate) type Launched = Vec<(&'static str, Option<std::ffi::OsString>)>;
+
+// Started by its `cmd.exe`, a tool asks "Terminate batch job (Y/N)?" on a Ctrl+C.
+fn behind_npms_shim(
+    tool: ProviderId,
+    shim: &std::path::Path,
+) -> Option<(std::path::PathBuf, Launched)> {
+    let target = crate::host::program::npm_shim_target(shim)?;
+    let a_program = target
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("exe"));
+    if a_program {
+        return crate::host::proc::can_run(&target).then(|| (target, Vec::new()));
+    }
+    match tool {
+        ProviderId::Codex => codex::paths::npm_native(&target),
+        ProviderId::Claude | ProviderId::Desktop => None,
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1148,6 +1176,161 @@ mod tests {
                 }
             }
         }
+    }
+
+    // As npm's cmd-shim 9.0.2 writes one for a program, and for a script `node` runs.
+    fn npm_shim(at: &std::path::Path, target: &str, interpreted: bool) {
+        let run = if interpreted {
+            format!(
+                "\r\nIF EXIST \"%dp0%\\node.exe\" (\r\n  SET \"_prog=%dp0%\\node.exe\"\r\n) ELSE (\r\n  \
+                 SET \"_prog=node\"\r\n)\r\n\r\nendLocal & goto #_undefined_# 2>NUL || title \
+                 %COMSPEC% & set PATHEXT=%PATHEXT:;.JS;=;% & \"%_prog%\"  \"%dp0%\\{target}\" %*\r\n"
+            )
+        } else {
+            format!("\"%dp0%\\{target}\"   %*\r\n")
+        };
+        std::fs::write(
+            at,
+            format!(
+                "@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\n\
+                 SETLOCAL\r\nCALL :find_dp0\r\n{run}"
+            ),
+        )
+        .expect("a shim");
+        crate::host::fs::testing::make_runnable(at).expect("runnable");
+    }
+
+    fn a_program_at(at: &std::path::Path) -> std::path::PathBuf {
+        std::fs::create_dir_all(at.parent().expect("its folder")).expect("a folder");
+        std::fs::write(at, "").expect("a program");
+        crate::host::fs::testing::make_runnable(at).expect("runnable");
+        at.to_path_buf()
+    }
+
+    fn under(root: &std::path::Path, parts: &[&str]) -> std::path::PathBuf {
+        parts
+            .iter()
+            .fold(root.to_path_buf(), |at, part| at.join(part))
+    }
+
+    // npm's own `codex.cmd` and `claude.cmd`, as `npm install -g` leaves them on Windows.
+    #[test]
+    fn behind_npms_shim_a_sign_in_starts_the_program_the_shim_would() {
+        let prefix = Prefix::new("npm-shim");
+        let npm = prefix.0.join("npm");
+        let claude = a_program_at(&under(
+            &npm,
+            &[
+                "node_modules",
+                "@anthropic-ai",
+                "claude-code",
+                "bin",
+                "claude.exe",
+            ],
+        ));
+        npm_shim(
+            &npm.join("claude.cmd"),
+            r"node_modules\@anthropic-ai\claude-code\bin\claude.exe",
+            false,
+        );
+        let package = under(&npm, &["node_modules", "@openai", "codex"]);
+        a_program_at(&package.join("bin").join("codex.js"));
+        let platform = under(&package, &["node_modules", "@openai", "codex-win32-x64"]);
+        let codex = a_program_at(&under(
+            &platform,
+            &["vendor", "x86_64-pc-windows-msvc", "bin", "codex.exe"],
+        ));
+        std::fs::write(platform.join("package.json"), "{}").expect("its package.json");
+        npm_shim(
+            &npm.join("codex.cmd"),
+            r"node_modules\@openai\codex\bin\codex.js",
+            true,
+        );
+        let search = joined(&[&prefix.nowhere()]);
+        let ctx = Context::new(std::path::PathBuf::from("/nowhere"))
+            .with_claude_program(npm.join("claude.cmd"))
+            .with_codex_program(npm.join("codex.cmd"))
+            .with_search_path(search.to_string_lossy().into_owned());
+        let dir = std::path::Path::new("/tmp/pitboard-signin-scratch");
+        let on_path = joined(&[&npm, &prefix.nowhere()]);
+        for (tool, native) in [(ProviderId::Claude, &claude), (ProviderId::Codex, &codex)] {
+            let command = document(tool)
+                .sign_in(&ctx, Permit::for_a_test(), dir)
+                .expect("found");
+            assert_eq!(command.get_program(), native.as_os_str(), "{tool}");
+            assert_eq!(
+                env_of(&command, "PATH"),
+                Some(on_path.as_os_str()),
+                "{tool}"
+            );
+        }
+        let command = codex_sign_in(&ctx, dir);
+        let root = crate::host::without_verbatim_prefix(
+            std::fs::canonicalize(&package).expect("the package's folder"),
+        );
+        assert_eq!(
+            env_of(&command, "CODEX_MANAGED_PACKAGE_ROOT"),
+            Some(root.as_os_str())
+        );
+        assert_eq!(
+            env_of(&command, "CODEX_MANAGED_BY_NPM"),
+            Some(std::ffi::OsStr::new("1"))
+        );
+        for other in [
+            "CODEX_MANAGED_BY_BUN",
+            "CODEX_MANAGED_BY_PNPM",
+            "CODEX_MANAGED_BY_VITE_PLUS",
+        ] {
+            assert!(
+                command
+                    .get_envs()
+                    .any(|(key, value)| key == other && value.is_none()),
+                "{other} removed"
+            );
+        }
+    }
+
+    // Where the platform's package sits beside Codex's, or is missing, or the shim is not npm's.
+    #[test]
+    fn behind_any_other_cmd_a_sign_in_starts_the_cmd() {
+        let prefix = Prefix::new("npm-hoisted");
+        let npm = prefix.0.join("npm");
+        let package = under(&npm, &["node_modules", "@openai", "codex"]);
+        a_program_at(&package.join("bin").join("codex.js"));
+        npm_shim(
+            &npm.join("codex.cmd"),
+            r"node_modules\@openai\codex\bin\codex.js",
+            true,
+        );
+        let ctx = Context::new(std::path::PathBuf::from("/nowhere"))
+            .with_codex_program(npm.join("codex.cmd"))
+            .with_search_path(prefix.nowhere().to_string_lossy().into_owned());
+        let dir = std::path::Path::new("/tmp/pitboard-signin-scratch");
+        assert_eq!(
+            codex_sign_in(&ctx, dir).get_program(),
+            npm.join("codex.cmd").as_os_str(),
+            "no codex.exe for it to start"
+        );
+
+        let hoisted = under(&npm, &["node_modules", "@openai", "codex-win32-arm64"]);
+        let codex = a_program_at(&under(
+            &hoisted,
+            &["vendor", "aarch64-pc-windows-msvc", "bin", "codex.exe"],
+        ));
+        std::fs::write(hoisted.join("package.json"), "{}").expect("its package.json");
+        assert_eq!(codex_sign_in(&ctx, dir).get_program(), codex.as_os_str());
+
+        let own = a_program_at(&npm.join("other").join("codex.cmd"));
+        std::fs::write(&own, "@echo off\r\n\"%~dp0codex.exe\" %*\r\n").expect("a script");
+        a_program_at(&npm.join("other").join("codex.exe"));
+        let ctx = ctx.with_codex_program(own.clone());
+        assert_eq!(codex_sign_in(&ctx, dir).get_program(), own.as_os_str());
+    }
+
+    fn codex_sign_in(ctx: &Context, dir: &std::path::Path) -> std::process::Command {
+        document(ProviderId::Codex)
+            .sign_in(ctx, Permit::for_a_test(), dir)
+            .expect("found")
     }
 
     /// The address to open is the first `https` one. Codex prints its loopback address

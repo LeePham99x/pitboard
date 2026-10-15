@@ -253,11 +253,7 @@ fn a_codex_sign_in_without_codex_says_so_first() {
 /// Driven through the library, the way the app drives it: the command line looks for a
 /// program on its own `PATH`, where its directory always is.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W19: a sign-in started through npm's codex.cmd, whose interpreter is in no \
-              folder of the search path"
-)]
+#[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
 fn an_npm_installed_codex_signs_in_from_a_path_without_its_directory() {
     let env = Env::new("codex-npm");
     let program = env.install_fake_npm_codex_login(&codex_login(

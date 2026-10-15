@@ -55,7 +55,10 @@ window loads its site, and whatever the site's pages load, as a browser would.
       which store Codex keeps its login in from every layer of configuration Codex reads
       outside a project, in Codex's order, for a switch and for a sign-in.
       `provider/printed.rs` reads what a tool printed as a terminal does: the text it shows,
-      and where each hyperlink goes.
+      and where each hyperlink goes. Behind npm's `.cmd` shim, `provider::command` starts
+      the program the shim would: the `claude.exe` it names, or the `codex.exe` its
+      `codex.js` starts, with what that sets, and the `.cmd` itself only where neither is
+      there.
     - Claude Desktop keeps items of Claude's data folder and keys of its settings file, and
       `desktop` implements the `Folder` trait in `provider/folder.rs`. Its files say where
       the data folder is (`paths.rs`), which first-level entries are an account's
@@ -2889,6 +2892,11 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
   that is unset or white space, a junction to its `current\bin`. npm's `codex.cmd` starts
   `bin\codex.js`, which runs the platform package's `vendor\<target>\bin\codex.exe`.
   winget's is a nested portable `codex-<target>.exe`, linked in its `Links` as `codex`.
+- Read on 16 October 2026 from `bin/codex.js` of `@openai/codex@0.162.1`: it finds the
+  platform's package as Node finds one from its own `bin`, else uses its own `vendor`, and
+  starts `codex.exe` with its arguments and its variables, `CODEX_MANAGED_PACKAGE_ROOT`
+  set to its package's folder and `CODEX_MANAGED_BY_NPM` to `1`. So a sign-in starts that
+  `codex.exe` with the same, and no `cmd.exe` or `node.exe` runs.
 - Read on 15 October 2026 from the win32 builds of 0.162.1 (`codex_windows_version`):
   `codex.exe` has no version resource. The package it runs from, npm's vendored one or a
   standalone release, holds `codex-package.json` beside its `bin`, whose `version` doctor
