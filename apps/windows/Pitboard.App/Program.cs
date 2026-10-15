@@ -21,8 +21,7 @@ public static class Program
 #if DEBUG
         // An exception in a DispatcherQueue callback fails Pitboard fast in CoreMessagingXP.dll and reaches no
         // handler, so a Debug build says each exception as it is thrown, for the UI tests to show.
-        AppDomain.CurrentDomain.FirstChanceException += (_, thrown) =>
-            Console.Error.WriteLine($"{thrown.Exception.GetType()}: {thrown.Exception.Message}");
+        AppDomain.CurrentDomain.FirstChanceException += (_, thrown) => Console.Error.WriteLine(Thrown(thrown.Exception));
 #endif
         WinRT.ComWrappersSupport.InitializeComWrappers();
         Shell.Name(Running);
@@ -72,4 +71,17 @@ public static class Program
         });
         return 0;
     }
+
+#if DEBUG
+    // C#/WinRT keeps WinUI's own words, such as the XAML file it could not read, apart from the message.
+    private static string Thrown(Exception exception)
+    {
+        var at = new System.Diagnostics.StackTrace(false).GetFrames()
+            .Select(frame => frame.GetMethod())
+            .FirstOrDefault(method => method?.DeclaringType is { Namespace: { } space } type
+                && space.StartsWith("Pitboard", StringComparison.Ordinal)
+                && !(type.FullName ?? "").StartsWith(typeof(Program).FullName!, StringComparison.Ordinal));
+        return $"{exception.GetType()}: {exception.Message} {exception.Data["RestrictedDescription"]} in {at?.DeclaringType?.Name}.{at?.Name}";
+    }
+#endif
 }
