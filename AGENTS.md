@@ -93,6 +93,21 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
 - Never run a `pitboard.exe` built from a branch on a Windows account that holds real
   logins. Never put one on a `PATH`, in `%LOCALAPPDATA%\Programs`, in WinGet's Links or
   behind a Scoop shim, but as `runner-facts.ps1` does on a runner, below.
+- Never start a `Pitboard.exe` you built on a Windows account that holds real logins. Run the
+  Debug build's executable directly with `PITBOARD_FIXTURE`, and `USERPROFILE`, `HOME`,
+  `APPDATA`, `LOCALAPPDATA`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME` and `PITBOARD_HOME` at fresh
+  folders, set after building, as [Run the Windows debug build](CONTRIBUTING.md#run-the-windows-debug-build)
+  shows. A Release build reads no fixture: only CI's UI tests start one, in scratch homes.
+- Never start a built `Pitboard.exe` or `PitboardShare.exe` from Explorer, Start, a shortcut,
+  `start`, `Invoke-Item`, a notification, the share sheet or a `pitboard://` or
+  `pitboard-debug://` link, on any account but the session machine's throwaway ones. Each
+  passes the account's own variables, and so its real homes.
+- Never let a test, a fixture or a Debug build register with Windows: no
+  `AppNotificationManager.Register`, no HKCU `Run`, `Environment` or `Software\Classes` value,
+  no package and no certificate in a store. Only a Release build installed by an MSI
+  registers, and `Pitboard.Probe` on the session machine.
+- Never run the app's UI tests on a machine of your own: they move the mouse and type into
+  whatever has focus. They run on CI's runners as a fresh standard user.
 - Never run a test or a script there before pointing `USERPROFILE`, `HOME`, `APPDATA`,
   `LOCALAPPDATA`, an existing `CODEX_HOME`, `CLAUDE_CONFIG_DIR` and `PITBOARD_HOME` at
   fresh folders. Set them after building: Cargo and rustup find their homes through

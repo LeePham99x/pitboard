@@ -1,0 +1,381 @@
+using System.ComponentModel;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
+using Pitboard.Core;
+using Pitboard.Windows;
+using Windows.ApplicationModel.DataTransfer;
+using Windows.System;
+
+namespace Pitboard.Views;
+
+// The model's sheet over the main window: adding an account, the sign-in under way, a name, or putting a login away.
+public sealed partial class AccountSheet : ContentDialog, IDisposable
+{
+    private static readonly HashSet<string> Parts =
+    [
+        nameof(AppModel.Sheet), nameof(AppModel.SheetText), nameof(AppModel.SigningIn), nameof(AppModel.SigningInText),
+        nameof(AppModel.StowText), nameof(AppModel.SheetFailure), nameof(AppModel.FailureAlert),
+        nameof(AppModel.QuitConfirmation), nameof(AppModel.QuitQuestion),
+    ];
+
+    private readonly AppModel _model;
+    private readonly Action<Uri> _open;
+    private readonly CancellationTokenSource _withdrawn = new();
+    private SheetPage? _page;
+    private string _tool = "";
+    private bool _filled;
+    private SheetTool[]? _tools;
+    private string[]? _lines;
+    private ulong? _failureShown;
+    private string? _announced;
+
+    public AccountSheet(AppModel model, string key, Action<Uri> open)
+    {
+        _model = model;
+        _open = open;
+        Key = key;
+        InitializeComponent();
+        AlertSpace.Content = new AlertBar(model);
+        model.PropertyChanged += OnModelChanged;
+        Show();
+    }
+
+    public string Key { get; }
+
+    public CancellationToken Withdrawn => _withdrawn.Token;
+
+    // The model has let it go, or put up another: it goes however it is asked to.
+    public void Withdraw() => _withdrawn.Cancel();
+
+    // What closing it tells the model, once it has gone.
+    public IReadOnlyList<Intent> Dismissed() => _page?.Closed() ?? [new Intent.CloseSheet()];
+
+    public void Dispose()
+    {
+        _model.PropertyChanged -= OnModelChanged;
+        _withdrawn.Dispose();
+    }
+
+    private void OnModelChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName is { } part && Parts.Contains(part))
+        {
+            Show();
+        }
+    }
+
+    // Another sheet's words never reach this one, and one on its way out keeps what it showed.
+    private void Show()
+    {
+        if (_model.Sheet is not { } sheet || SheetPage.Key(sheet) != Key || SheetPage.Of(_model, _page) is not { } page)
+        {
+            return;
+        }
+
+        var entered = page.GetType() != _page?.GetType();
+        _page = page;
+        // Each part is shown or hidden once, so a field being typed in keeps its focus through a snapshot.
+        var form = page as SheetPage.Form;
+        var signingIn = page as SheetPage.SigningIn;
+        var stowing = page as SheetPage.Stowing;
+        var asked = signingIn is { SignIn.WantsCode: true } && CodePart.Visibility == Visibility.Collapsed;
+        ToolPicker.Visibility = Look.Shown(form is { Text.Tools.Length: > 0 });
+        AccountField.Visibility = Look.Shown(form is { Text.Account: not null });
+        NameField.Visibility = Look.Shown(page is SheetPage.Naming || form is { Text.Account: null });
+        Working.Visibility = Look.Shown((form?.Text.Progress ?? stowing?.Text.Looking) is not null);
+        Lines.Visibility = Look.Shown(stowing is { Text.Lines.Length: > 0 });
+        Link.Visibility = Look.Shown(signingIn is { Text.OffersLink: true });
+        CodePart.Visibility = Look.Shown(signingIn is { SignIn.WantsCode: true });
+        NotOffered.Visibility = Look.Shown(form is { Text.NotOffered: not null });
+        Waiting.IsActive = signingIn is not null;
+        Waiting.Visibility = Look.Shown(signingIn is not null);
+        if (form is not null)
+        {
+            ShowForm(form);
+        }
+        else if (page is SheetPage.Naming naming)
+        {
+            ShowNaming(naming, entered);
+        }
+        else if (signingIn is not null)
+        {
+            ShowSigningIn(signingIn);
+        }
+        else if (stowing is not null)
+        {
+            ShowStowing(stowing);
+        }
+
+        // Appears once the tool asks, with the code on the clipboard to paste.
+        if (asked)
+        {
+            DispatcherQueue.TryEnqueue(() => CodeField.Focus(FocusState.Programmatic));
+        }
+
+        ShowFailure(_model.SheetFailure);
+        AlertSpace.Margin = new Thickness(0, 0, 0, WindowAlert.Of(_model) is null ? 0 : 12);
+        CloseButtonText = signingIn?.Text.Cancel.Title ?? "Cancel";
+        if (page.Closable)
+        {
+            ClearValue(CloseButtonStyleProperty);
+        }
+        else
+        {
+            CloseButtonStyle = (Style)Resources["HeldBack"];
+        }
+
+        Enable();
+    }
+
+    private void ShowForm(SheetPage.Form form)
+    {
+        var text = form.Text;
+        // The form's fields start from the model once, and keep what was typed when a sign-in that failed comes back to it.
+        if (!_filled)
+        {
+            _filled = true;
+            _tool = text.Tool;
+            NameField.Text = text.Name;
+        }
+
+        Title = text.Title;
+        if (!Structural.Equal(_tools, text.Tools))
+        {
+            _tools = text.Tools;
+            ToolPicker.Items.Clear();
+            foreach (var tool in text.Tools)
+            {
+                ToolPicker.Items.Add(new ComboBoxItem { Content = tool.Name, Tag = tool.Code });
+            }
+
+            ToolPicker.SelectedIndex = Array.FindIndex(text.Tools, tool => tool.Code == _tool);
+        }
+
+        ToolPicker.IsEnabled = !text.Saving;
+        AccountField.Text = text.Account ?? "";
+        NameField.PlaceholderText = text.Prompt;
+        NameField.IsEnabled = !text.Saving;
+        WorkingText.Text = text.Progress ?? "";
+        NotOffered.Text = text.NotOffered ?? "";
+        Message.Text = form.Message(_tool);
+        PrimaryButtonText = form.Confirm(_tool);
+        SecondaryButtonText = "";
+        DefaultButton = ContentDialogButton.Primary;
+    }
+
+    private void ShowNaming(SheetPage.Naming naming, bool entered)
+    {
+        var text = naming.Text;
+        if (entered)
+        {
+            NameField.Text = text.Name;
+        }
+
+        Title = text.Title;
+        Message.Text = text.Message;
+        NameField.PlaceholderText = text.Prompt;
+        NameField.IsEnabled = !text.Saving;
+        PrimaryButtonText = text.Confirm;
+        SecondaryButtonText = "";
+        DefaultButton = ContentDialogButton.Primary;
+    }
+
+    private void ShowSigningIn(SheetPage.SigningIn signingIn)
+    {
+        var (running, text) = (signingIn.SignIn, signingIn.Text);
+        Title = text.Title;
+        Message.Text = text.Message;
+        // The message says what it waits for, so the ring goes unlabelled on screen; Narrator still names it.
+        AutomationProperties.SetName(Waiting, text.Waiting);
+        // Dimmed rather than left out until the tool prints the address, so the sheet does not grow a moment after it opens.
+        CopyLink.IsEnabled = signingIn.Page is not null;
+        OpenLink.IsEnabled = signingIn.Page is not null;
+        ToolTipService.SetToolTip(OpenLink, running.Url);
+        Refused.Text = text.Refused ?? "";
+        Refused.Visibility = Look.Shown(text.Refused is not null);
+        CodeNote.Text = text.CodeNote;
+        PrimaryButtonText = running.WantsCode ? "Submit Code" : "";
+        SecondaryButtonText = text.Undo?.Title ?? "";
+        DefaultButton = running.WantsCode ? ContentDialogButton.Primary : ContentDialogButton.None;
+        Announce(text.Announce);
+    }
+
+    private void ShowStowing(SheetPage.Stowing stowing)
+    {
+        var text = stowing.Text;
+        Title = text.Title;
+        Message.Text = text.Message;
+        WorkingText.Text = text.Looking ?? "";
+        if (!Structural.Equal(_lines, text.Lines))
+        {
+            _lines = text.Lines;
+            Lines.Children.Clear();
+            foreach (var line in text.Lines)
+            {
+                Lines.Children.Add(new TextBlock { Text = line, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
+            }
+        }
+
+        PrimaryButtonText = text.Confirm;
+        SecondaryButtonText = "";
+        DefaultButton = ContentDialogButton.Primary;
+    }
+
+    // The InfoBar announces itself as it opens; a failure after another, with the bar already open, is said here.
+    private void ShowFailure(Failure? failure)
+    {
+        var said = failure is not null && FailureBar.IsOpen && failure.Id != _failureShown;
+        _failureShown = failure?.Id;
+        if (failure is null)
+        {
+            FailureBar.IsOpen = false;
+            FailureBar.Margin = new Thickness(0);
+            return;
+        }
+
+        FailureBar.Title = failure.Title;
+        FailureBar.Message = failure.Message;
+        Warnings.Children.Clear();
+        foreach (var warning in failure.Warnings)
+        {
+            Warnings.Children.Add(new TextBlock { Text = warning.Message, TextWrapping = TextWrapping.Wrap });
+        }
+
+        Warnings.Visibility = Look.Shown(failure.Warnings.Length > 0);
+        FailureBar.Margin = new Thickness(0, 12, 0, 0);
+        FailureBar.IsOpen = true;
+        if (said)
+        {
+            Say(FailureBar, $"{failure.Title}. {failure.Message}");
+        }
+    }
+
+    private void Enable()
+    {
+        IsPrimaryButtonEnabled = _page switch
+        {
+            SheetPage.Form form => form.Start(_tool, NameField.Text) is not null,
+            SheetPage.Naming naming => naming.Save(NameField.Text) is not null,
+            SheetPage.SigningIn signingIn => signingIn.Submit(CodeField.Text) is not null,
+            SheetPage.Stowing stowing => stowing.PutAway() is not null,
+            _ => false,
+        };
+        IsSecondaryButtonEnabled = _page is SheetPage.SigningIn { Text.Undo.Enabled: true };
+    }
+
+    // What appears by itself is not read by Narrator, so the sheet says it.
+    private void Announce(string? said)
+    {
+        if (said is not null && said != _announced)
+        {
+            Say(Message, said);
+        }
+
+        _announced = said;
+    }
+
+    private static void Say(UIElement from, string said) =>
+        (FrameworkElementAutomationPeer.FromElement(from) ?? FrameworkElementAutomationPeer.CreatePeerForElement(from))
+            ?.RaiseNotificationEvent(
+                AutomationNotificationKind.Other, AutomationNotificationProcessing.ImportantMostRecent, said, "sheet");
+
+    private void OnToolChanged(object sender, SelectionChangedEventArgs args)
+    {
+        if (ToolPicker.SelectedItem is ComboBoxItem { Tag: string tool } && _page is SheetPage.Form form)
+        {
+            _tool = tool;
+            Message.Text = form.Message(tool);
+            PrimaryButtonText = form.Confirm(tool);
+            Enable();
+        }
+    }
+
+    private void OnNameChanged(object sender, TextChangedEventArgs args) => Enable();
+
+    private void OnCodeChanged(object sender, TextChangedEventArgs args) => Enable();
+
+    // The model closes the sheet once it is done, so the dialog stays up meanwhile, saying what went wrong if anything does.
+    private void OnPrimaryButtonClick(ContentDialog sender, ContentDialogButtonClickEventArgs args)
+    {
+        args.Cancel = true;
+        var intent = _page switch
+        {
+            SheetPage.Form form => form.Start(_tool, NameField.Text),
+            SheetPage.Naming naming => naming.Save(NameField.Text),
+            SheetPage.SigningIn signingIn => signingIn.Submit(CodeField.Text),
+            SheetPage.Stowing stowing => stowing.PutAway(),
+            _ => null,
+        };
+        if (intent is null)
+        {
+            return;
+        }
+
+        _model.Send(intent);
+        if (intent is Intent.PasteCode)
+        {
+            CodeField.Text = "";
+        }
+    }
+
+    private void OnSecondaryButtonClick(ContentDialog sender, ContentDialogButtonClickEventArgs args)
+    {
+        args.Cancel = true;
+        if (_page is SheetPage.SigningIn { Text.Undo: { Enabled: true } undo })
+        {
+            _model.Send(undo.Intent);
+        }
+    }
+
+    private void OnClosing(ContentDialog sender, ContentDialogClosingEventArgs args)
+    {
+        if (!_withdrawn.IsCancellationRequested && _page is { Closable: false })
+        {
+            args.Cancel = true;
+        }
+    }
+
+    // Esc presses the close button, which a sign-in waiting on its app keeps for a click.
+    private void OnPreviewKeyDown(object sender, KeyRoutedEventArgs args)
+    {
+        if (args.Key == VirtualKey.Escape && _page is { EscapeCloses: false })
+        {
+            args.Handled = true;
+        }
+    }
+
+    private void OnOpened(ContentDialog sender, ContentDialogOpenedEventArgs args)
+    {
+        if (NameField.Visibility == Visibility.Visible && NameField.IsEnabled)
+        {
+            NameField.Focus(FocusState.Programmatic);
+        }
+        else if (CodePart.Visibility == Visibility.Visible)
+        {
+            CodeField.Focus(FocusState.Programmatic);
+        }
+    }
+
+    // As printed, as an address for an app that reads one and as text for a field that reads only text, such as a browser's address bar.
+    private void OnCopyLink(object sender, RoutedEventArgs args)
+    {
+        if (_page is SheetPage.SigningIn { SignIn.Url: { } printed, Page: { } page })
+        {
+            var package = new DataPackage();
+            package.SetText(printed);
+            package.SetWebLink(page);
+            Clipboard.SetContent(package);
+        }
+    }
+
+    private void OnOpenLink(object sender, RoutedEventArgs args)
+    {
+        if (_page is SheetPage.SigningIn { Page: { } page })
+        {
+            _open(page);
+        }
+    }
+}

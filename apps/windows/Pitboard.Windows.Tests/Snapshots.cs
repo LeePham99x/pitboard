@@ -1,0 +1,62 @@
+using Pitboard.Core;
+
+namespace Pitboard.Windows.Tests;
+
+// Each call makes every list anew, as the bindings do for every snapshot told.
+internal static class Snapshots
+{
+    private const long At = 1_800_000_000;
+
+    public static Snapshot Read(ulong revision)
+    {
+        var work = new Account(
+            Id: "claude:work", Provider: "claude", Label: "work", Qualified: "claude/work",
+            Unplaced: false, Email: "work@example.com", AccountId: "work", SignedIn: true,
+            Switchable: false, Parked: null,
+            Usage: new Usage(
+                Source.Live, At,
+                [new Limit("session", 18_000, null, 42.0, At + 3_600, null, true)],
+                ListsEveryLimit: true),
+            Stale: null, StaleExplanation: null, Plan: null, ReadAt: null);
+        return new Snapshot(
+            Revision: revision, Now: At, Reading: false, UpdatedAt: At,
+            Status: new Status(At, [work], [], []), Warnings: [], ReadFailure: null, Stuck: false,
+            Installed: [new Tool(Code: "claude", Name: "Claude Code", Program: "claude", Service: "Anthropic")],
+            SwitchUnderWay: null, QuitQuestion: null,
+            LastSwitches: [], Abandoned: null, Failure: null,
+            WindowRequest: new WindowRequest(Serial: 0, Pane: null),
+            SigningIn: null, Sheet: null, SheetFailure: null,
+            MenuBar: new MenuBarText(NameAndUsage: "work 42%", Usage: "42%", Spoken: "Pitboard, work 42%"),
+            Sections: [], ShowsTools: false, Notices: [],
+            MenuNotices: new MenuNotices(Install: null, Switches: [], Others: null),
+            Footing: new Footing.OnlyOne(Provider: "claude", Label: "work"), Setup: null,
+            AccountsShown: new AccountsShown.List(), MenuAccountsNote: null,
+            UpdatedMenu: "Updated 08:00", UpdatedWindow: "Updated 08:00", SheetText: null,
+            SigningInText: null, StowText: null, QuitConfirmation: null, FailureAlert: null,
+            Machine: Unread(),
+            AccountWindows: new AccountWindowsShown(
+                Accounts: [], Menus: [], Open: [],
+                Waiting: new WindowWaiting(
+                    WindowTitle: "Account", Shown: new WaitingShown.Reading(Title: "Reading accounts…")),
+                Closing: [], Deleting: [], Picker: null, Downloads: []));
+    }
+
+    private static MachineShown Unread() => new(
+        Schedule: new ScheduleShown(
+            Schedule: null, On: false, Changing: false, Enabled: true, Runs: null, ScheduledIn: null, Note: null,
+            Failed: null),
+        Renewal: new RenewalShown(
+            Renewing: false, Note: "Renew every parked login that is due.",
+            About: "A parked login is renewed whenever Pitboard runs, and otherwise not."),
+        Checks: new ChecksShown(Lines: [], Summary: null, Checking: false, Checked: null, Waiting: "Checking this PC…"),
+        Activity: new ActivityShown(
+            Lines: [], Empty: new EmptyList(Title: "No Activity", Detail: "Pitboard lists every change it makes here.")),
+        CommandLine: new CommandLineShown(
+            Found: null, InTerminal: null, UpdateNote: null, OffersLink: false, CannotLink: null),
+        AutoSwitch: new AutoSwitchShown(
+            On: false, At: 95, Lowest: 50, Highest: 99, Enabled: true,
+            AtLabel: "Switch when a limit reaches 95%", Note: "", Standing: null),
+        Warm: new WarmShown(
+            From: 360, To: 1320, RangeLabel: "06:00 to 22:00", Accounts: [], Standing: null, Note: "",
+            Enabled: false));
+}

@@ -1,0 +1,95 @@
+using Microsoft.UI.Text;
+using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
+using Microsoft.UI.Xaml.Controls;
+using Pitboard.Windows;
+
+namespace Pitboard.Views;
+
+// The notification-area icon's menu. It opens from a window one pixel wide, so it draws outside it.
+public static class IconMenuFlyout
+{
+    public static MenuFlyout For(IReadOnlyList<IconMenuEntry> entries, Action<IconCommand> chosen)
+    {
+        var menu = new MenuFlyout { ShouldConstrainToRootBounds = false };
+        foreach (var entry in entries)
+        {
+            menu.Items.Add(Item(entry, chosen));
+        }
+
+        return menu;
+    }
+
+    private static MenuFlyoutItemBase Item(IconMenuEntry entry, Action<IconCommand> chosen)
+    {
+        switch (entry)
+        {
+            case IconMenuEntry.Label label:
+                // A menu has no heading of its own, so a tool's name is an item nobody can choose.
+                var line = new MenuFlyoutItem { Text = label.Text, IsEnabled = false };
+                if (label.Heading)
+                {
+                    AutomationProperties.SetHeadingLevel(line, AutomationHeadingLevel.Level1);
+                }
+
+                return line;
+            case IconMenuEntry.Account account:
+                var radio = new RadioMenuFlyoutItem
+                {
+                    Text = account.Text,
+                    GroupName = account.Group,
+                    IsChecked = account.InUse,
+                    IsEnabled = account.Enabled,
+                };
+                return Described(radio, account.Detail, account.Does, chosen);
+            case IconMenuEntry.Command command:
+                var item = new MenuFlyoutItem { Text = command.Text, IsEnabled = command.Enabled };
+                if (command.Mark is { } mark)
+                {
+                    item.Icon = new FontIcon { Glyph = Glyph(mark) };
+                }
+
+                if (command.Shortcut is { } shortcut)
+                {
+                    item.KeyboardAcceleratorTextOverride = shortcut;
+                }
+
+                if (command.Default)
+                {
+                    item.FontWeight = FontWeights.SemiBold;
+                }
+
+                return Described(item, command.Detail, command.Does, chosen);
+            case IconMenuEntry.Separator:
+                return new MenuFlyoutSeparator();
+            default:
+                throw new ArgumentOutOfRangeException(nameof(entry), entry, "an entry the menu cannot show");
+        }
+    }
+
+    private static MenuFlyoutItem Described(MenuFlyoutItem item, string? detail, IconCommand? does, Action<IconCommand> chosen)
+    {
+        if (detail is not null)
+        {
+            ToolTipService.SetToolTip(item, detail);
+            AutomationProperties.SetHelpText(item, detail);
+        }
+
+        if (does is not null)
+        {
+            item.Click += (_, _) => chosen(does);
+        }
+
+        return item;
+    }
+
+    private static string Glyph(IconMark mark) => mark switch
+    {
+        IconMark.Help => Glyphs.Help,
+        IconMark.Switch => Glyphs.Switch,
+        IconMark.Update => Glyphs.Update,
+        IconMark.Info => Glyphs.Info,
+        IconMark.Warning => Glyphs.Warning,
+        _ => Glyphs.Problem,
+    };
+}

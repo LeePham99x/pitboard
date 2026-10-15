@@ -756,7 +756,7 @@ public sealed class ModelTests
         [
             "twoTools", "oneTool", "empty", "firstLaunch", "noClaudeCode", "unnamed", "onlyOne",
             "readFailure", "stuck", "chatGPTOpen", "claudeDesktop", "claudeDesktopOpen",
-            "warmUp",
+            "warmUp", "leftInFile",
         ];
         CollectionAssert.AreEqual(ordered, names);
         var unknown = Assert.ThrowsExactly<FixtureException.Unknown>(

@@ -1,0 +1,33 @@
+using Pitboard.Core;
+
+namespace Pitboard.Windows;
+
+// As the macOS app's: a request answered is not answered again when the window opens another way.
+public sealed class WindowRequests
+{
+    private ulong _opened;
+    private ulong _shown;
+
+    public bool Opens(WindowRequest request)
+    {
+        if (request.Serial <= _opened)
+        {
+            return false;
+        }
+
+        _opened = request.Serial;
+        return true;
+    }
+
+    // Null is the settings page, which no request asks for.
+    public Pane? PaneFor(WindowRequest request, Pane? pane)
+    {
+        if (request.Serial <= _shown)
+        {
+            return pane;
+        }
+
+        _shown = request.Serial;
+        return request.Pane ?? pane;
+    }
+}

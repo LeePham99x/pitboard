@@ -1,0 +1,36 @@
+<Project Sdk="MSTest.Sdk">
+  <!-- A WinUI app that is its own test host, so a [UITestMethod] runs on its UI thread. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.26100.0</SupportedOSPlatformVersion>
+    <TargetPlatformMinVersion>10.0.26100.0</TargetPlatformMinVersion>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Platforms>x64;ARM64</Platforms>
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <EnableMsixTooling>false</EnableMsixTooling>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <Page Remove="UnitTestApp.xaml" />
+    <ApplicationDefinition Include="UnitTestApp.xaml" />
+    <ProjectCapability Include="TestContainer" />
+  </ItemGroup>
+  <ItemGroup>
+    <Manifest Include="$(ApplicationManifest)" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Pitboard.Core/Pitboard.Core.csproj" />
+    <ProjectReference Include="../Pitboard.Views/Pitboard.Views.csproj" />
+    <ProjectReference Include="../Pitboard.Windows/Pitboard.Windows.csproj" />
+  </ItemGroup>
+  <!-- The core the sheets ask whether a name can be saved: pitboard_ffi.dll, passed as PitboardNativeLibrary. -->
+  <ItemGroup Condition="'$(PitboardNativeLibrary)' != ''">
+    <None Include="$(PitboardNativeLibrary)" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+</Project>

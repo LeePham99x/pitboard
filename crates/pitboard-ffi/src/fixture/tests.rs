@@ -116,6 +116,8 @@ fn sign_in_to_the_end(core: &AppCore, label: &str) -> Result<Enrolled, PitboardE
 /// so there is nothing known to fall back on. stuck's read warns that an interrupted switch
 /// is waiting, as the Swift fixture's has since the core's read said so, and its offline
 /// read says nothing of it, since only Anthropic could say whose Claude Code's login is.
+/// leftInFile's read warns of the login left in a file, which a read that asks nobody does
+/// not look at.
 ///
 /// FixtureTests.swift's eachFixtureStartsWhereItsTestsExpect.
 #[test]
@@ -144,7 +146,9 @@ fn each_fixture_starts_where_its_tests_expect() {
                 "codex/main, in use",
                 "codex/spare",
             ],
-            World::OneTool | World::Stuck | World::WarmUp => vec![work, "claude/personal"],
+            World::OneTool | World::Stuck | World::WarmUp | World::LeftInFile => {
+                vec![work, "claude/personal"]
+            }
             World::OnlyOne => vec![work],
             World::Unnamed => vec!["dana@work.example, in use"],
             World::Empty | World::FirstLaunch | World::NoClaudeCode => Vec::new(),
@@ -170,10 +174,10 @@ fn each_fixture_starts_where_its_tests_expect() {
                 .iter()
                 .map(|warning| warning.code.as_str())
                 .collect();
-            let expected: &[&str] = if world == World::Stuck {
-                &["recovery_undetermined"]
-            } else {
-                &[]
+            let expected: &[&str] = match world {
+                World::Stuck => &["recovery_undetermined"],
+                World::LeftInFile => &["fallback_login"],
+                _ => &[],
             };
             assert_eq!(warned, expected, "{}", world.name());
             assert!(
@@ -238,6 +242,7 @@ fn the_ui_tests_name_every_fixture_as_the_app_does() {
             "claudeDesktop",
             "claudeDesktopOpen",
             "warmUp",
+            "leftInFile",
         ]
     );
 }
@@ -1722,6 +1727,48 @@ fn the_login_in_use_is_offered_a_name() {
                     .any(|account| account.qualified.as_deref() == Some("claude/work"))
             })
     });
+    model.shutdown();
+}
+
+/// The login left in a file behind Claude Code's store is put away from the sheet its notice
+/// opens, as the Windows app's stow UI test drives it: the sheet says whose login it is once
+/// it has looked, and Put Away keeps it for personal and deletes the file, which a notice then
+/// says.
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+)]
+fn the_login_left_in_a_file_is_put_away_from_its_sheet() {
+    let launched = made(World::LeftInFile);
+    let (model, told) = started(&launched);
+    told.until("the file said, with Put Away…", |snapshot| {
+        actions_of(snapshot, "warning/fallback_login/") == ["Put Away…"]
+    });
+
+    model.send(Intent::PresentSheet { sheet: Sheet::Stow });
+    let looked = told.until("the look", |snapshot| {
+        snapshot
+            .stow_text
+            .as_ref()
+            .is_some_and(|text| text.can_confirm)
+    });
+    let lines = looked.stow_text.map(|text| text.lines).unwrap_or_default();
+    assert!(
+        lines.iter().any(|line| line.contains("personal")),
+        "{lines:?}"
+    );
+    model.send(Intent::Stow);
+
+    told.until("put away, and said", |snapshot| {
+        snapshot.sheet.is_none() && snapshot.notices.iter().any(|notice| notice.id == "stowed")
+    });
+    assert!(
+        read(&launched.core)
+            .warnings
+            .iter()
+            .all(|warning| warning.code != "fallback_login")
+    );
     model.shutdown();
 }
 

@@ -1,0 +1,8 @@
+SHGetKnownFolderPath
+FOLDERID_Profile
+KNOWN_FOLDER_FLAG
+CoTaskMemFree
+SetCurrentProcessExplicitAppUserModelID
+OpenProcess
+GetPackageFullName
+WIN32_ERROR

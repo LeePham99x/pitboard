@@ -529,7 +529,7 @@ window loads its site, and whatever the site's pages load, as a browser would.
   - `fixture/` holds the fixtures, the worlds a debug build of either app and its UI tests
     launch into by name, as the macOS app's debug build and UI tests do. Only the `fixture`
     feature compiles them, and it enables `pitboard-core`'s `test-support`. `worlds.rs`
-    makes each of the thirteen on the real core: a home in the fixture's own folder in the
+    makes each of the fourteen on the real core: a home in the fixture's own folder in the
     temporary directory, `MemoryHost` and `ScriptedApi`, and every account put there by the
     core as a person would have, signed in, enrolled, parked and switched on a clock set to
     when it happened. `claudeDesktop` and `claudeDesktopOpen` hold Claude Desktop only where
@@ -601,7 +601,60 @@ window loads its site, and whatever the site's pages load, as a browser would.
 - `apps/`: the native apps, one directory for each system.
 - `apps/windows/`: the Windows app. `Pitboard.Core` is the core's C# bindings as an
   assembly of their own, generated into `Generated/` and not committed, and
-  `Pitboard.Core.Tests` calls the core through them.
+  `Pitboard.Core.Tests` calls the core through them; `Pitboard.slnx` holds the two, which
+  build on every system. `Pitboard.Windows.slnx` adds the app, which builds on Windows only:
+  - `Pitboard.Windows` is the glue, with no XAML. `AppModel` holds the `PitboardModel` and
+    its newest snapshot, a property for each part, by the macOS `AppModel`'s rules; it
+    compares a part's arrays by what they hold (`Structural`), and `ModelListening` hands it
+    each snapshot on the app's `DispatcherQueue`. `WindowsLocalTime` is the person's clock.
+    `Identity` names everything a build is known by, Debug or Release. `Launching` decides a
+    launch before WinUI starts: the arguments, then `launch_refusal`, then the
+    single-instance key. `HiddenWindow` hears the session's end, the system's broadcasts,
+    `WM_CLOSE` and the icon's clicks, which `IconEvent` reads, and `Shell` is the known
+    folder, the AppUserModelID, the app's icon and the refusal's message box. `NotifyIcon`
+    keeps the icon in the notification area through `INotificationArea`, which
+    `ShellNotificationArea` sends to `Shell_NotifyIconW` and tests replace, and `IconMenu`
+    lists what the icon's menu offers, in the macOS menu's order. `WindowsNotifications`
+    posts the model's notifications through `IAppNotifications`, which
+    `SystemAppNotifications` sends to `AppNotificationManager` and tests replace; only a
+    Release build registers, and a click comes back as the intent the Switch button or the
+    notification itself asks for. `NoUpdates` is the updater of a build that cannot update.
+    `StartAtSignIn` is the settings' start at sign-in over an `IStartupItem`: `RunValue`,
+    which writes the `Run` value through `IRunKey`, sent to the registry by `RegistryRunKey`
+    and replaced in tests, refuses in a Debug build, and a fixture gets
+    `FixtureStartupItem`. `SettingsPage` is what the settings page says and sends beyond the
+    model's words. `Keyed` keeps a shown row while the model lists it, so `ShownAccount`
+    keeps its selection across snapshots. `WindowAlert` is the failure or quit question in
+    front of the window, `SheetPage` what the sheet over it shows and sends, and `Countdown`
+    a notice's timer.
+  - `Pitboard.Views` is the main window's panes, a WinUI library so the test app shows them
+    as `Pitboard.exe` does. `AccountsPane` lists the accounts under their notices and setup
+    step, each an `AccountRow` with an `AccountMenu`; `ActivityPane` and `MachinePane` are
+    the log and this PC's checks. A notice is a `NoticeBar`, an InfoBar. `DialogHost` shows
+    the window's ContentDialogs one at a time, and `WindowAlerts` puts the model's alerts in
+    one, or leaves them to the sheet's `AlertBar` while a sheet is up. `WindowSheets` puts
+    the model's sheet up as an `AccountSheet`, a ContentDialog that adds an account, follows
+    its sign-in, names, renames or puts away a login left in a file, and tells the model
+    when somebody closes it. `IconMenuFlyout` is the icon's menu as a MenuFlyout.
+    `SettingsPane` is the settings page, in the macOS Settings' sections, each warm-up account
+    a `WarmRow`.
+  - `Pitboard.App` is `Pitboard.exe`, unpackaged and self-contained, carrying the icon that
+    `Icon/make-ico.py` writes from the drawings beside it. `Program.Main` decides the
+    launch, and `App` makes the model, over this PC or in a Debug build started with
+    `PITBOARD_FIXTURE` a fixture's, keeps the icon, registers for notifications, opens the
+    main window when the model asks, and stops the model and unregisters as the session ends
+    or on Exit. `MenuHost` is the pixel of a window the icon's menu opens from. `MainWindow`
+    shows a pane for each of the model's `Pane`s and its settings page, and takes Ctrl+N and
+    Ctrl+comma from any of them.
+  - `Pitboard.Windows.Tests` is a WinUI app that hosts its own tests, the views' among them
+    over snapshots made in C#, and `Pitboard.UITests` drives the built app with FlaUI.
+    Neither registers anything with Windows, but for the notification-area icon of its own
+    that `NotificationAreaTests` adds and removes by a GUID wherever Explorer takes the
+    user's icons, which no runner does.
+  - `Pitboard.Probe` is never shipped. The session machine runs it to measure the app's
+    adapters by hand: it posts a notification through `WindowsNotifications` under an
+    AppUserModelID of its own, waits for its Switch, unregisters, and names a process's
+    package. It refuses to run in an account without `pitboard-probe`'s throwaway marker.
 - `apps/macos/`: the menu bar app, which shows what `pitboard-ffi`'s model says and sends it
   what was asked. The Swift package holds it as libraries its tests load without starting
   it. `PitboardKit` is the bindings and `AppModel.swift`: `AppModel`, which holds the
@@ -683,7 +736,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     metadata in `crates/pitboard/Cargo.toml`. `package-windows.ps1` zips
     a Windows build, `check-windows-build.ps1` checks one, `verify-windows-signatures.ps1`
     checks the signature of every program a Windows release hands on, and
-    `test-windows-release.ps1` tests all three.
+    `test-windows-release.ps1` tests all three. `check-windows-app.ps1` checks the Windows app's
+    Release build.
   - `dependabot.yml` asks for weekly updates of Cargo dependencies, GitHub Actions and the
     .NET SDK in `apps/windows/global.json`.
   - `zizmor.yml` configures the audit CI runs on the workflows.
@@ -2039,6 +2093,10 @@ Accounts and tokens:
   the workspace. This is how CI runs every Windows test, through
   `.github/scripts/test-as-standard-user.ps1`.
 - That user's programs run in the job user's session, 2, and start inside a job already.
+- Explorer, the job user's, takes no notification-area icon of that user's: `NIM_ADD` fails
+  for an icon named by its window and id and for one named by a GUID (CI run 38753437460).
+  So the UI tests that click Pitboard's icon, `NotificationAreaTests` and `MenuBarTests`, run
+  only where Explorer takes it, and the session's step A2 clicks it.
 - Developer Mode is on, and that user makes file and directory symbolic links as it is. It
   makes them with the symbolic-link right granted too, but Developer Mode was on for that run
   as well, so the right alone is not measured.
@@ -2276,6 +2334,17 @@ on 15 October 2026. W27 reviews the list.
 | Moderators label a portable archive `Portable-Archive`, a blocking issue | [Validation failure guide](https://github.com/microsoft/winget-pkgs/blob/master/doc/ValidationFailureGuide.md) | No manifest has been submitted. |
 | winget puts a portable package's install folder on `PATH`, not a link in Links, for a standard user without Developer Mode | [winget-pkgs FAQ](https://github.com/microsoft/winget-pkgs/blob/master/doc/FAQ.md) | Both images have Developer Mode on, and the job's user is an administrator. A standard user's install is the session's. |
 | Since winget 1.29, an MSI wins over a portable installer whatever the manifest's order | [winget-cli 1.29.380](https://github.com/microsoft/winget-cli/releases/tag/v1.29.380) | windows-2025's winget is 1.11.510, and no runner installs from winget's sources. |
+| A broadcast, such as `WM_ENDSESSION`, reaches a top-level window that is never shown, and no message-only window | [Message-only windows](https://learn.microsoft.com/en-us/windows/win32/winmsg/window-features#message-only-windows) | A runner's session never ends while a job runs; CF9 sends one. |
+| A second instance redirects its launch off the STA thread, which waits without blocking COM | [App instancing](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/applifecycle/applifecycle-instancing) | No test starts a second copy until APP-12's links. |
+| A new notification-area icon goes to the overflow, where only the person promotes it | [Notifications and the notification area](https://learn.microsoft.com/en-us/windows/win32/shell/notification-area) | No runner's Explorer takes the test user's icon; the session's step A2 records where it starts. |
+| A notification icon's menu closes on a click elsewhere only when its window was made the foreground window first | [TrackPopupMenu](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-trackpopupmenu) | Only a person clicks elsewhere: the session's step A2. |
+| A GUID icon is tied to the path of the exe that added it, unless both are signed by one company | [NOTIFYICONDATAW](https://learn.microsoft.com/en-us/windows/win32/api/shellapi/ns-shellapi-notifyicondataw) | No Release build runs from two paths on a runner; the 1.0 session's P4 upgrades one. |
+| A MenuFlyout with `ShouldConstrainToRootBounds` false draws whole outside the window it opens from | [ShouldConstrainToRootBounds](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.controls.primitives.flyoutbase.shouldconstraintorootbounds) | No runner opens the menu from the icon; the session's step A2 opens it and looks at it. |
+| A `Run` value under HKCU starts its program as that person signs in, with no promise how soon | [Run and RunOnce registry keys](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys) | No runner signs in again, and no test writes the `Run` key; the session's step A6 signs in with it on. |
+| Settings > Apps > Startup lists a program a `Run` value starts and turns it off | [Configure startup applications in Windows](https://support.microsoft.com/en-us/windows/configure-startup-applications-in-windows-115a420a-0bff-4a6f-90e0-1934c844e473) | Only a person uses that page: the session's step A6 turns Pitboard off there and records what the app's switch then shows. |
+| A self-contained unpackaged app registers for app notifications without the Singleton package | [Deploy self-contained apps](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/self-contained-deploy/deploy-self-contained-apps#dependencies-on-additional-msix-packages) | No runner runs a Release build that registers; the session posts through the app at its step 8 and through `Pitboard.Probe` at its step A5. |
+| A notification with the tag of one Windows still shows takes its place | [ToastNotification.Tag](https://learn.microsoft.com/en-us/uwp/api/windows.ui.notifications.toastnotification.tag) | The same; `Pitboard.Probe` posts twice at the session's step A5. |
+| A click on a notification starts the app again once it called `Unregister` and quit | [AppNotificationManager.Register](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.windows.appnotifications.appnotificationmanager.register) | Only a person clicks a notification: the session's step A5. |
 
 ### One sign-in at a time
 
@@ -3301,6 +3370,166 @@ its own date.
   attached through `WindowAlerts` to whichever is in front.
   `testAddingAClaudeDesktopAccountAsksToQuitClaudeOverTheSheet` holds it.
 
+### What the Windows app's glue rests on
+
+Read on 15 October 2026, in the sources of the builds the app is made with and in
+Microsoft's documentation.
+
+- `Environment.GetFolderPath(SpecialFolder.LocalApplicationData)` asks
+  `SHGetKnownFolderPath(FOLDERID_LocalAppData)`, and only where that fails, as on Nano
+  Server, returns `LOCALAPPDATA` (dotnet/runtime v10.0.13,
+  `System.Private.CoreLib/src/System/Environment.Win32.cs`). So `Shell.LocalAppData` asks
+  `SHGetKnownFolderPath` itself, and no variable moves the app's data folder.
+  `ShellTests` holds it on Windows.
+- An unpackaged process's `AppInstance.FindOrRegisterForKey` holds a key as the named mutex
+  `<module>_<key>_Mutex`, with every backslash in the key made an underscore, where
+  `<module>` is `App` and a hash of the lowercased path of the process's executable (Windows
+  App SDK v2.5.1, commit 13160d54, `dev/AppLifecycle/AppInstance.cpp` `TrySetKey` and
+  `Association.cpp` `ComputeAppId`). So a key is shared only by copies of one executable: a
+  Debug build and a Release in other folders never meet, and the fixture's folder in a Debug
+  build's key keeps two fixtures of one build apart. `RedirectActivationToAsync` queues the
+  launch for the running copy from a background thread and calls `AllowSetForegroundWindow`
+  for it, so the running copy may bring its window forward.
+- Rust's `std::env::temp_dir` (Rust 1.98.1, `library/std/src/sys/paths/windows.rs`) and
+  .NET's `Path.GetTempPath` (dotnet/runtime v10.0.13, `Path.Windows.cs`) both ask
+  `GetTempPath2W`, .NET falling back to `GetTempPathW` where it is missing. So the app finds
+  a fixture's folder, `pitboard-fixture`, where the core makes it.
+- One ContentDialog shows per thread at a time, and opening a second throws, even in another
+  window ([ContentDialog](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.controls.contentdialog),
+  updated 28 July 2026). So `DialogHost` queues the main window's dialogs, and while a sheet
+  is up `WindowAlerts` leaves the failure alert and the quit question to the sheet's
+  `AlertBar`, an InfoBar, where the macOS app shows them over the sheet.
+  `DialogHostTests.OnlyOneContentDialogShowsAtATime` holds it on the runners.
+- A sheet is a ContentDialog, which Microsoft's guidance gives for a question that asks for
+  input, with its "do it" actions as the primary and secondary buttons and a safe close
+  button that Esc presses ([Dialog controls](https://learn.microsoft.com/windows/apps/design/controls/dialogs-and-flyouts/dialogs),
+  updated 15 July 2026). The tool is a ComboBox starting on the tool the sheet is about, as
+  the radio button guidance has a combo box show the option recommended
+  ([Radio buttons](https://learn.microsoft.com/windows/apps/design/controls/radio-button),
+  updated 25 June 2026), and a sign-in waits under an indeterminate ProgressRing, the control
+  that guidance names for "Signing in..."
+  ([Progress controls](https://learn.microsoft.com/windows/apps/design/controls/progress-controls),
+  updated 8 July 2026).
+- Read in microsoft-ui-xaml at `winui3/release/2.5.1`, the WinUI of Windows App SDK 2.5.1.
+  `ContentDialog_Partial.cpp`: Esc clicks the close button where it is enabled and
+  otherwise hides the dialog through a `Closing` it may cancel; Enter clicks the default
+  button where it is enabled; the first focusable element of the content takes focus as the
+  dialog opens; a dialog made in code, outside the live tree, is put whole in its popup.
+  `KeyboardInputProcessor.cpp` raises `PreviewKeyDown` and `KeyDown` with one event
+  argument, so a `PreviewKeyDown` handled on the dialog keeps Esc from its close button.
+  `InfoBar.cpp` announces an InfoBar as it opens only through an automation peer it has
+  already. So `AccountSheet` cancels each button's click and leaves closing to the model,
+  dims its close button through `CloseButtonStyle` while nothing may close it, keeps Esc
+  from a sign-in that waits on its app, and keeps its failure's InfoBar in the tree while it
+  is closed. `AccountSheetTests` holds what runs without a person on the runners.
+- WinUI 2.3.9's `Themes/generic.xaml`, in the Windows App SDK 2.5.1 package: the InfoBar's
+  close button is the template part `CloseButton`, which `NoticeBarTests` presses, and a
+  `ListViewItem` is padded `16,0,12,0`, which the Activity pane's column headers and This
+  PC's summary repeat so they line up with the rows under them.
+- `Shell_NotifyIconW` and `NOTIFYICONDATAW` (Microsoft Learn, updated 1 July 2025 and 20
+  November 2024): `NIM_SETVERSION` follows every `NIM_ADD`; under `NOTIFYICON_VERSION_4` the
+  event is `lParam`'s low word and the point `wParam`'s two words, the icon's upper-left
+  corner when the keyboard sent it; the standard tooltip shows only with `NIF_SHOWTIP`;
+  `szTip` holds 128 UTF-16 units with its null; and a GUID is tied to the path of the exe
+  that added it. Microsoft's NotificationIcon sample in Windows-classic-samples reads
+  `WM_CONTEXTMENU`'s point from `wParam`, makes its window the foreground window before its
+  menu, and asks for Common Controls 6 to call `LoadIconMetric`. So `NotifyIcon` cuts the
+  tooltip to 127 units, names its icon by a GUID in the Release build alone and falls back
+  to its window when Explorer refuses the GUID, and `IconEvent` reads the point as signed.
+  `NotifyIconTests` and `IconEventTests` hold them, and `HiddenWindowTests` the icon's
+  return on `TaskbarCreated`.
+- The notification area guidance (updated 15 April 2025) has a right click bring up a normal
+  shortcut menu and a left click show what the person expects, the program window among
+  them, and prefers the standard tooltip. The Windows 7 menu guidance (updated 26 July 2026)
+  names Exit, puts no ellipsis on About, Help or Settings, shows a context menu's default
+  command in bold, and lets a program keep title-style capitalization rather than mix
+  styles, as the model's strings are. So the icon's menu says Exit, bolds Open Pitboard,
+  and keeps the macOS menu's words otherwise.
+- Read in microsoft-ui-xaml at `winui3/release/2.5.1`: a light-dismiss popup hides its
+  flyout when its window is deactivated (`Popup_Partial.cpp`), so `MenuHost` is made the
+  foreground window before the menu opens; a `MenuFlyoutItem` raises `Click` before it closes
+  its menu, and shows `KeyboardAcceleratorTextOverride` while a keyboard is present
+  (`MenuFlyoutItem_Partial.cpp`), so a choice runs once the menu has closed and the menu says
+  the window's shortcuts; a `RadioMenuFlyoutItem` is a `ToggleMenuFlyoutItem` inside that
+  undoes an uncheck by choosing (`RadioMenuFlyoutItem.cpp`); and NavigationView names its
+  settings item `SettingsItem` (`NavigationView.cpp`), which the UI tests select.
+  `OverlappedPresenter.CreateForContextMenu` keeps a border (Microsoft Learn, updated 28 July
+  2026), which `MenuHost` turns off.
+- The .NET SDK 10.0.401 numbers an `ApplicationIcon` 32512, `IDI_APPLICATION`'s number, and
+  copies it into the apphost on any system (dotnet/runtime v10.0.13,
+  `src/installer/managed/Microsoft.NET.HostModel/AppHost/HostWriter.cs`): `llvm-readobj
+  --coff-resources` on a win-x64 build made on macOS lists `GROUP_ICON` 32512 with eight
+  `ICON` entries in the exe. So `Shell.AppIcon` loads 32512 from `Pitboard.exe`.
+- Microsoft's app icon guidance (updated 14 July and 5 August 2026) asks for a transparent
+  icon drawn straight on, half of it at 3:1 against light and dark backgrounds, at 16, 24,
+  32, 48 and 256 px at least, and the notification area draws it at 16 px at 100% up to 64
+  px at 400%. So `Pitboard.ico` holds 16, 20, 24, 32, 40, 48, 64 and 256 px of the macOS
+  icon's board, untilted and unplated, whose grey rim, pole and dim row hold 3:1 against
+  both #202020 and #f3f3f3: at each size 50% or more of it does against the first and 81%
+  or more against the second.
+- Microsoft's app settings guidance (updated 25 June 2026) puts settings behind
+  NavigationView's own settings item, in one scrollable column about 1,000 px wide under
+  BodyStrong headers, of cards with a header, a description and the control on the right,
+  sub-options under an expander, and About at the bottom in an expander with the app's name
+  and version, links and legal lines. It names the Windows Community Toolkit's SettingsCard
+  and SettingsExpander. `SettingsPane` draws the card with WinUI's own resources at the
+  Toolkit's values (`SettingsCard.xaml`: 68 px high at least, 16 px padding,
+  `CardBackgroundFillColorDefaultBrush`, `CardStrokeColorDefaultBrush`,
+  `ControlCornerRadius`), the resources an Expander's header already uses (WinUI 2.3.9's
+  `Themes/generic.xaml`), so the app takes no package for it. A change takes effect at once,
+  through a toggle switch for on and off (Toggle switches, updated 21 September 2026), and a
+  control that cannot change says why in its card.
+- Run and RunOnce registry keys (updated 21 February 2026): a value under the person's `Run`
+  key is a command line of at most 260 characters that Windows starts at each of their
+  sign-ins, with no promise how soon, and a program started from the key should not write
+  to it while it runs. So `RunValue` writes `"<path>\Pitboard.exe"`, quoted for a path with a
+  space, refuses a longer one, and writes only when somebody turns the switch, never as
+  Pitboard starts. It never reads what Settings > Apps > Startup keeps, which has no
+  documented layout; Microsoft's support article on startup apps sends people there to turn
+  one off, and the switch's caption says so. `RunValueTests` hold it.
+- Read in microsoft-ui-xaml at `winui3/release/2.5.1`: a ToggleSwitch raises `Toggled`
+  whenever `IsOn` changes (`ToggleSwitch_Partial.cpp`), a NumberBox raises `ValueChanged` on
+  any change of `Value`, NaN for cleared text (`NumberBox.cpp`), and a TimePicker raises
+  `SelectedTimeChanged` within the setter, with its clock the person's own through
+  `DateTimeFormatter` unless set (`TimePicker_Partial.cpp`). So `SettingsPane` sends nothing
+  while it sets its controls to what the model says, which
+  `SettingsPaneTests.ShowingWhatTheModelSaysSendsNothing` holds, shows the share again after
+  a cleared box, and leaves the warm-up pickers on the person's 12- or 24-hour clock.
+- Read in the Windows App SDK at v2.5.1 (commit 13160d54), `dev/AppNotifications` and
+  `dev/AppLifecycle`. `IsSupported` refuses only an elevated process. For an unpackaged
+  process the manager takes the explicit AppUserModelID, and where none is set its
+  constructor writes a key of its own under HKCU. `Register(displayName, iconUri)` writes
+  `DisplayName`, `IconUri` and `CustomActivator` under
+  `HKCU\Software\Classes\AppUserModelId\<id>` and a `LocalServer32` that starts the exe with
+  `----AppNotificationActivated:`, takes the icon as a local `.bmp`, `.ico`, `.jpg` or
+  `.png` file, and in a self-contained app leaves out the Singleton package's long-running
+  process. A click on a running copy that listened before it registered raises
+  `NotificationInvoked`. In a copy COM starts for a click, `Activate` keeps the arguments
+  for `GetActivatedEventArgs`, which reports an `AppNotification` activation once `Register`
+  has run, and raises no `NotificationInvoked` for them. `Unregister` revokes the class
+  object alone; `UnregisterAll` deletes the keys, and first makes the AppUserModelId key as
+  it looks for the class. The builder escapes `%`, `;` and `=` in an argument as
+  `DecodeArguments` reads them back. So a Debug build never asks for the manager,
+  `Shell.Name` sets the AppUserModelID first, `WindowsNotifications` checks `IsSupported`,
+  listens, registers and then reads the launch, `Launching` drops a second copy started for
+  a click, which has no arguments to hand over, `Pitboard.ico` ships beside `Pitboard.exe`,
+  and `Pitboard.Probe` calls `UnregisterAll` only after a `Register`.
+  `WindowsNotificationsTests` and `LaunchingTests` hold them.
+- The app notifications quickstart (updated 10 September 2026) listens, registers and then
+  calls `GetActivatedEventArgs`, and says a cold start reports `Launch` with its arguments
+  in `NotificationInvoked`, where the source above reports `AppNotification`; the app takes
+  a click from either. The `Register` reference (updated 28 July 2026) asks for `Unregister`
+  before the app ends, so a later click starts it again, and says the manager needs the
+  Singleton package; the self-contained deployment guide (updated 2 October 2026) says app
+  notifications do not, and has an API that may be missing checked with `IsSupported`.
+  `ToastNotification.Tag` (updated 23 August 2026) holds 64 characters, and a warm-up's
+  notice id carries its message, so the tag is the id's SHA-256 in hex. The app notification
+  content guidance (updated 17 July 2026) gives a notification three text elements at most,
+  the first its title, and keeps attribution text for a source; the UX guidance (updated 21
+  April 2026) has a click on a notification open its context. So a notification says its
+  title, its tool and its body, as the macOS one does, with Switch as its button, and a
+  click on it opens the window on Accounts.
+
 ### The model's timers
 
 Read on 5 October 2026 in Rust 1.98.1's standard library and in the macOS SDK of Xcode 27.1,
@@ -3398,6 +3627,10 @@ Measured on 6 October 2026 on macOS 27.0, with `pitboard-ffi` built for
   - A read lists the account in use first, and the read of what is known lists only
     enrolled accounts, so a login nobody has named is listed once the first read has asked
     its service whose it is.
+- leftInFile, which the Swift fixture never had, leaves a login of personal's in
+  `.credentials.json` behind Claude Code's store. Its read warns `fallback_login` with the
+  notice's Put Away…, the read of what is known says nothing of it, and Put Away keeps the
+  login for personal and deletes the file.
 - stuck shows the notice offering Give Up… as the app starts, as the Swift fixture did, now
   from the core's own read: a read says an interrupted switch is waiting wherever the next
   change would be refused over it, as a warning with the refusal's code,
