@@ -221,11 +221,37 @@ internal sealed class Launched : IDisposable
             }
         }
 
+        // WebView2's browser process outlives Pitboard for a moment, holding the fixture's user data folder, which the
+        // next launch's fixture empties first.
+        if (_fixture is not null)
+        {
+            Retry.WhileFalse(
+                () => Emptied(Path.Combine(Path.GetTempPath(), "pitboard-fixture", "WebView2")),
+                Shortly, TimeSpan.FromMilliseconds(250));
+        }
+
         Process.Dispose();
         Automation.Dispose();
         if (_ownsHomes)
         {
             _root.Delete(recursive: true);
+        }
+    }
+
+    private static bool Emptied(string folder)
+    {
+        try
+        {
+            if (Directory.Exists(folder))
+            {
+                Directory.Delete(folder, recursive: true);
+            }
+
+            return true;
+        }
+        catch (Exception held) when (held is IOException or UnauthorizedAccessException)
+        {
+            return false;
         }
     }
 }
