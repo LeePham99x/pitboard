@@ -47,13 +47,9 @@ jobs:
             --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' \
             > "$RUNNER_TEMP/published"
           sh .github/scripts/release-kind.sh "$GITHUB_REF_NAME" "$manifest" \
-            "$RUNNER_TEMP/published" "$SIGNER" > "$RUNNER_TEMP/kind"
+            "$RUNNER_TEMP/published" "$SIGNER" "$SUBJECT" > "$RUNNER_TEMP/kind"
           version=$(sed -n 's/^version=//p' "$RUNNER_TEMP/kind")
           kind=$(sed -n 's/^kind=//p' "$RUNNER_TEMP/kind")
-          if grep -qx 'signed=true' "$RUNNER_TEMP/kind" && [ -z "$SUBJECT" ]; then
-            echo "WINDOWS_SIGNER is $SIGNER, and WINDOWS_SIGNER_SUBJECT names no subject to check" >&2
-            exit 1
-          fi
           # An rc has no section of its own.
           if [ "$kind" != rc ] && ! awk -v heading="## [$version] - " \
             'index($0, heading) == 1 { found = 1 } END { exit !found }' CHANGELOG.md; then

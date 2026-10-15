@@ -29,6 +29,7 @@ NO_SIGNER = (
     "Pitboard for Windows has no signer yet, and a release candidate or final release is never "
     "unsigned."
 )
+SIGNPATH = "CN=SignPath Foundation, O=SignPath Foundation, L=Lewes, S=Delaware, C=US"
 NORMALIZED = """[package]
 name = "pitboard-core"
 version = "0.15.0"
@@ -141,21 +142,23 @@ class ReleaseKind(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.work)
 
-    def kind(self, tag, manifest, published=(), signer="signpath"):
+    def kind(self, tag, manifest, published=(), signer="signpath", subject=SIGNPATH):
         listed = self.work / "published"
         listed.write_text("".join(f"{line}\n" for line in published))
-        return run(RELEASE_KIND, tag, manifest, listed, signer)
+        return run(RELEASE_KIND, tag, manifest, listed, signer, subject)
 
-    def outputs(self, tag, manifest, published=(), signer="signpath"):
-        done = self.kind(tag, manifest, published, signer)
+    def outputs(self, tag, manifest, published=(), signer="signpath", subject=SIGNPATH):
+        done = self.kind(tag, manifest, published, signer, subject)
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(done.stderr, "")
         pairs = [line.split("=", 1) for line in done.stdout.splitlines()]
         self.assertEqual([key for key, _ in pairs], KEYS)
         return dict(pairs)
 
-    def assertRefused(self, tag, manifest, message, published=(), signer="signpath"):
-        done = self.kind(tag, manifest, published, signer)
+    def assertRefused(
+        self, tag, manifest, message, published=(), signer="signpath", subject=SIGNPATH
+    ):
+        done = self.kind(tag, manifest, published, signer, subject)
         self.assertEqual(done.returncode, 1, done.stdout)
         self.assertEqual(done.stdout, "")
         self.assertIn(message, done.stderr)
@@ -204,6 +207,30 @@ class ReleaseKind(unittest.TestCase):
         for tag, manifest in (("v1.0.0-rc1", "1.0.0"), ("v1.0.0", "1.0.0"), ("v2.3.4", "2.3.4")):
             with self.subTest(tag=tag):
                 self.assertRefused(tag, manifest, NO_SIGNER, signer="")
+
+    def test_a_signed_release_needs_the_subject_its_signer_signs_as(self):
+        for tag, manifest in (
+            ("v1.0.0-beta.2", "1.0.0-beta.2"),
+            ("v1.0.0-rc1", "1.0.0"),
+            ("v1.0.0", "1.0.0"),
+        ):
+            with self.subTest(tag=tag):
+                self.assertRefused(
+                    tag,
+                    manifest,
+                    "WINDOWS_SIGNER is signpath, and WINDOWS_SIGNER_SUBJECT names no subject to "
+                    "check",
+                    subject="",
+                )
+        # Nothing is signed, so there is no subject to check.
+        for tag, manifest, signer in (
+            ("v1.0.0-beta.1", "1.0.0-beta.1", ""),
+            ("v0.15.0", "0.15.0", "signpath"),
+        ):
+            with self.subTest(tag=tag, signer=signer):
+                self.assertEqual(
+                    self.outputs(tag, manifest, signer=signer, subject="")["signed"], "false"
+                )
 
     def test_only_a_full_release_nothing_published_outranks_is_latest(self):
         cases = [
@@ -270,10 +297,10 @@ class ReleaseKind(unittest.TestCase):
             ["v1.0.0", "nightly"],
         )
 
-    def test_it_takes_four_arguments(self):
+    def test_it_takes_five_arguments(self):
         listed = self.work / "published"
         listed.write_text("")
-        for args in (("v1.0.0", "1.0.0", listed), ("v1.0.0", "1.0.0", listed, "", "x")):
+        for args in (("v1.0.0", "1.0.0", listed, ""), ("v1.0.0", "1.0.0", listed, "", "", "x")):
             with self.subTest(count=len(args)):
                 done = run(RELEASE_KIND, *args)
                 self.assertEqual(done.returncode, 2)
