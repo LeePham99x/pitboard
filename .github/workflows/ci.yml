@@ -621,6 +621,7 @@ jobs:
             -o "$out/tests" -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/release/pitboard_ffi.dll"
           dotnet publish Pitboard.UITests -c Debug -r "$RUNTIME" --self-contained -o "$out/uitests" \
             -p:PitboardAppDebug="$out/debug/Pitboard.exe" -p:PitboardAppRelease="$out/release/Pitboard.exe"
+          dotnet publish Pitboard.Probe -c Release -r "$RUNTIME" -p:Platform="$PLATFORM" -o "$out/probe"
           cd "$GITHUB_WORKSPACE"
           cmp target/release/pitboard_ffi.dll target/windows-app/debug/pitboard_ffi.dll
           cmp target/release/pitboard_ffi.dll target/windows-app/tests/pitboard_ffi.dll
@@ -650,6 +651,18 @@ jobs:
         run: |
           & target/windows-app/uitests/Pitboard.UITests.exe --results-directory (Join-Path $env:RUNNER_TEMP 'elevated')
           exit $LASTEXITCODE
+      # Pitboard.Probe registers with Windows, so it runs only in an account its owner marked throwaway.
+      - name: The probe refuses an account without the throwaway marker
+        shell: pwsh
+        run: |
+          $said = & target/windows-app/probe/Pitboard.Probe.exe notify 2>&1 | Out-String
+          $exit = $LASTEXITCODE
+          Write-Output $said
+          if ($exit -ne 2 -or -not $said.Contains('pitboard-probe-throwaway.marker')) {
+            throw "Pitboard.Probe exited $exit in an account without the marker"
+          }
+          if (Test-Path -LiteralPath 'HKCU:\Software\Classes\AppUserModelId\Pitboard.Probe') { throw 'Pitboard.Probe registered' }
+          exit 0
 
   # The floor the manifests promise, built the way someone on an older toolchain builds it.
   msrv:
