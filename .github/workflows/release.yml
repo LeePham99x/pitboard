@@ -257,16 +257,19 @@ jobs:
           if ($zips.Count -ne 2) { throw "windows-sign has $($zips.Count) zips to hand on, not 2" }
           ./.github/scripts/verify-windows-signatures.ps1 -Path $zips -Mode $mode -Subject $env:SUBJECT `
             -Built (Join-Path $env:RUNNER_TEMP 'unsigned')
+      # Overwritten, so a windows-sign job run again can hand both over again.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dist-windows-x86_64-pc-windows-msvc
           path: ${{ runner.temp }}/dist/*-x86_64-pc-windows-msvc.zip
           if-no-files-found: error
+          overwrite: true
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dist-windows-aarch64-pc-windows-msvc
           path: ${{ runner.temp }}/dist/*-aarch64-pc-windows-msvc.zip
           if-no-files-found: error
+          overwrite: true
 
   # The menu bar app, signed and notarised when the Apple secrets are set; without them it
   # is still built and released, ad-hoc signed, which Gatekeeper warns about on first
