@@ -7,6 +7,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Pitboard reads and writes Claude Code's `~/.claude.json` where an empty `.config.json` sits
+  in Claude Code's config directory, as Claude Code does.
+
 ## [0.14.0] - 2026-10-14
 
 ### Added

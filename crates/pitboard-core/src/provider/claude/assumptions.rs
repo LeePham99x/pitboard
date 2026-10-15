@@ -129,7 +129,12 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
          `.credentials.json` on Windows, and windows_credman_cache (W23): how long it keeps a \
          login read from Credential Manager",
     ),
-    everywhere("config_file_location", "2.1.289"),
+    PerSystem {
+        name: "config_file_location",
+        macos: Read("2.1.300"),
+        linux: Read("2.1.300"),
+        windows: Read("2.1.300"),
+    },
     everywhere("oauth_client", VERIFIED_AGAINST),
     later_on_windows(
         "supervisor_daemon",
@@ -430,18 +435,22 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
     },
     Assumption {
         name: "config_file_location",
-        fact: "a legacy `<config dir>/.config.json` wins when present; otherwise \
-               `<$CLAUDE_CONFIG_DIR or the home folder>/.claude<suffix>.json`. The two read \
-               `CLAUDE_CONFIG_DIR` differently: the file's base is `CLAUDE_CONFIG_DIR || \
-               homedir()`, so an empty value is the home folder, while the config dir is \
+        fact: "a legacy `<config dir>/.config.json` wins where it is a file, links followed, \
+               that is not empty, or is empty and not read-only while the other file is \
+               missing; the other file is `<$CLAUDE_CONFIG_DIR or the home \
+               folder>/.claude<suffix>.json`. The two read `CLAUDE_CONFIG_DIR` differently: \
+               the other file's base is `CLAUDE_CONFIG_DIR || homedir()`, so an empty value is \
+               the home folder, while the config dir is \
                `(CLAUDE_CONFIG_DIR ?? join(homedir(), \".claude\")).normalize(\"NFC\")`, so an \
                empty value makes it the empty path and `.config.json` is looked for in the \
                working directory",
         read_from: "the config path resolution, and the config dir the secure storage module \
                     shares",
-        // Read on 2026-10-06 from the macOS, Linux and Windows builds of 2.1.289, x64 and
-        // arm64, whose code for both paths is the same.
-        verified_against: "2.1.289",
+        // Read on 2026-10-15 from the darwin-arm64, linux-x64, win32-x64 and win32-arm64 builds
+        // of 2.1.299 and 2.1.300, whose code for both paths is the same. 2.1.296 took
+        // `.config.json` whenever that path existed. Bun 1.4.3's stat on Windows gives a
+        // read-only file mode 0o444 and any other 0o666.
+        verified_against: "2.1.300",
         depends: "claude::config_file and claude::config_dir, which read CLAUDE_CONFIG_DIR \
                   the two ways, and home::check_absolute, which refuses an empty one",
         probe: &[".config.json", "CLAUDE_CONFIG_DIR"],
