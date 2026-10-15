@@ -47,6 +47,7 @@ public sealed class BindingsTests
     }
 
     [TestMethod]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows, IgnoreMessage = "W17: finding programs on Windows")]
     public void TheAppAsksTheCoreWhereThingsAreAndWhatRuns()
     {
         var environment = new Dictionary<string, string> { ["HOME"] = "/home/x" };

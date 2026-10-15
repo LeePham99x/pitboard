@@ -804,6 +804,9 @@ public sealed class ModelTests
     }
 
     [TestMethod]
+    [OSCondition(
+        ConditionMode.Exclude, OperatingSystems.Windows,
+        IgnoreMessage = "W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void AFixturesModelStartsAndTellsAListenerOfItsAccounts()
     {
         NeedsFixtures();
@@ -826,6 +829,9 @@ public sealed class ModelTests
     }
 
     [TestMethod]
+    [OSCondition(
+        ConditionMode.Exclude, OperatingSystems.Windows,
+        IgnoreMessage = "W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void ACodexSwitchAsksTheAppsAppControlToQuitChatGptAndOpenItAgain()
     {
         NeedsFixtures();
@@ -853,6 +859,9 @@ public sealed class ModelTests
     }
 
     [TestMethod]
+    [OSCondition(
+        ConditionMode.Exclude, OperatingSystems.Windows,
+        IgnoreMessage = "W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void APlatformExceptionFromTheAppsAppControlStopsTheSwitch()
     {
         NeedsFixtures();
@@ -879,6 +888,9 @@ public sealed class ModelTests
     }
 
     [TestMethod]
+    [OSCondition(
+        ConditionMode.Exclude, OperatingSystems.Windows,
+        IgnoreMessage = "W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void ARunOutIsPostedThroughTheAppsNotifications()
     {
         NeedsFixtures();
