@@ -47,7 +47,8 @@ impl From<pitboard_core::error::Error> for PitboardError {
     fn from(error: pitboard_core::error::Error) -> Self {
         PitboardError::Failed {
             code: error.code().to_string(),
-            message: in_app_refusal(&error).unwrap_or_else(|| error.to_string()),
+            message: in_app_refusal(pitboard_core::host::OS, &error)
+                .unwrap_or_else(|| error.to_string()),
             warnings: Vec::new(),
         }
     }
@@ -57,7 +58,8 @@ impl From<service::Failed> for PitboardError {
     fn from(failed: service::Failed) -> Self {
         PitboardError::Failed {
             code: failed.error.code().to_string(),
-            message: in_app_refusal(&failed.error).unwrap_or_else(|| failed.error.to_string()),
+            message: in_app_refusal(pitboard_core::host::OS, &failed.error)
+                .unwrap_or_else(|| failed.error.to_string()),
             warnings: warnings(&failed.warnings),
         }
     }
@@ -68,7 +70,7 @@ fn warnings(found: &[service::Warning]) -> Vec<Warning> {
         .iter()
         .map(|w| Warning {
             code: w.code().to_string(),
-            message: in_app_warning(w).unwrap_or_else(|| w.to_string()),
+            message: in_app_warning(pitboard_core::host::OS, w).unwrap_or_else(|| w.to_string()),
             provider: w.tool().map(|tool| tool.code().into()),
             account: match w {
                 service::Warning::LoginReplaced { tool, id, .. } => Some(account_id(*tool, id)),
