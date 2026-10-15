@@ -38,13 +38,7 @@ public static class Program
         AppInstance? running = null;
         var handovers = new Handovers();
         // Connected before the key is held: a launch handed over while Pitboard starts would reach no handler.
-        AppInstance.GetCurrent().Activated += (_, _) =>
-        {
-#if DEBUG
-            Console.Error.WriteLine("A second launch handed over");
-#endif
-            handovers.Arrived();
-        };
+        AppInstance.GetCurrent().Activated += (_, _) => handovers.Arrived();
         var start = Launching.Decide(
             args,
             () => refusal = PitboardFfiMethods.LaunchRefusal(environment),
