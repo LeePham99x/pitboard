@@ -1,9 +1,7 @@
 # The job's user is elevated in every program it starts, so the tests run as a fresh standard
 # user: nextest's, from the test programs and metadata the job's user built, and test programs
-# that need nothing from the job user's profile, each run as it is. A WinUI test program, whose
-# windows fail for that user in the job user's session, runs as the job's user inside the same
-# leak check. With -Exe, the user runs one program in scratch homes, and each run comes back as
-# an object.
+# that need nothing from the job user's profile, each run as it is. With -Exe, the user runs
+# one program in scratch homes, and each run comes back as an object.
 # Bound strictly, so a misspelt option fails rather than lands in $args.
 [CmdletBinding()]
 param(
@@ -12,8 +10,6 @@ param(
     # Self-contained test programs, such as a published Microsoft.Testing.Platform one, inside
     # the workspace.
     [string[]] $Dotnet,
-    # Such programs to run as the job's user.
-    [string[]] $JobDotnet,
     [string] $Exe,
     # Its argument lines, run in turn; an empty one runs it with none.
     [string[]] $Commands = @(''),
@@ -25,10 +21,10 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 
-if (-not $Cargo -and -not $Dotnet -and -not $JobDotnet -and -not $Exe) {
-    throw 'nothing to run: give -Cargo, -Dotnet, -JobDotnet, -Exe or a mix'
+if (-not $Cargo -and -not $Dotnet -and -not $Exe) {
+    throw 'nothing to run: give -Cargo, -Dotnet, -Exe or a mix'
 }
-if (-not $Probe -and ($Cargo -or $Dotnet -or $JobDotnet)) {
+if (-not $Probe -and ($Cargo -or $Dotnet)) {
     throw 'the tests need -Probe for the leak check'
 }
 
@@ -140,14 +136,12 @@ if ($Cargo) {
         $readable += $metadata.target_directory
     }
 }
-function Resolve-TestProgram([string] $Program) {
-    if (-not (Test-Path -LiteralPath $Program -PathType Leaf)) { throw "no test program at $Program to run: build it first" }
-    $path = (Resolve-Path -LiteralPath $Program).Path
+$programs = @(foreach ($program in $Dotnet) {
+    if (-not (Test-Path -LiteralPath $program -PathType Leaf)) { throw "no test program at $program to run: build it first" }
+    $path = (Resolve-Path -LiteralPath $program).Path
     if (-not (Test-Inside $path $workspace)) { throw "$path is not inside the workspace, $workspace" }
     $path
-}
-$programs = @(foreach ($program in $Dotnet) { Resolve-TestProgram $program })
-$jobPrograms = @(foreach ($program in $JobDotnet) { Resolve-TestProgram $program })
+})
 
 $name = 'pbtest' + (Get-Random -Minimum 10000 -Maximum 99999)
 $secure = ConvertTo-SecureString -String ([guid]::NewGuid().ToString('N') + 'Aa1!') -AsPlainText -Force
@@ -157,22 +151,18 @@ New-Item -ItemType Directory -Force -Path $logs | Out-Null
 # At the drive root, as runner-facts.ps1 ran it: a folder it cannot open fails with ERROR_DIRECTORY.
 $runDir = Join-Path "$env:SystemDrive\" "pitboard-test-as-$name"
 
-function Start-AsUser([string] $Program, [string[]] $Arguments, [string] $In, [hashtable] $Environment, [string] $Label, [switch] $JobUser) {
+function Start-AsUser([string] $Program, [string[]] $Arguments, [string] $In, [hashtable] $Environment, [string] $Label) {
     $out = Join-Path $logs "$Label.out.txt"
     $err = Join-Path $logs "$Label.err.txt"
     $start = @{
         FilePath = $Program
+        Credential = $cred
+        LoadUserProfile = $true
         WorkingDirectory = $In
         Wait = $true
         PassThru = $true
         RedirectStandardOutput = $out
         RedirectStandardError = $err
-    }
-    if ($JobUser) {
-        $start.NoNewWindow = $true
-    } else {
-        $start.Credential = $cred
-        $start.LoadUserProfile = $true
     }
     if ($Arguments) { $start.ArgumentList = $Arguments }
     if ($Environment) { $start.Environment = $Environment }
@@ -329,14 +319,6 @@ try {
         Write-Output '::endgroup::'
         if ($run.Exit -ne 0) { $failed.Add("$($programs[$i]) exited $($run.Exit)") }
     }
-    for ($i = 0; $i -lt $jobPrograms.Count; $i++) {
-        $arguments = @('--results-directory', (Join-Path $runDir "job-results-$i"))
-        $run = Start-AsUser $jobPrograms[$i] $arguments $runDir $null "job-dotnet-$i" -JobUser
-        Write-Output "::group::$($jobPrograms[$i]), as the job's user: $(if ($run.Exit -eq 0) { 'passed' } else { "exited $($run.Exit)" })"
-        Show-Run $run
-        Write-Output '::endgroup::'
-        if ($run.Exit -ne 0) { $failed.Add("$($jobPrograms[$i]) exited $($run.Exit) as the job's user") }
-    }
     if ($failed.Count -gt 0) { Show-Crashes $testsStarted }
     if ($Exe) {
         $exeEnv = $userEnv.Clone()
@@ -424,5 +406,4 @@ if ($failed.Count -gt 0) {
     throw "as a standard user: $($failed -join '; ')"
 }
 if ($Cargo -or $Dotnet) { Write-Output 'The tests passed as a standard user.' }
-if ($JobDotnet) { Write-Output "The tests passed as the job's user." }
 exit 0

@@ -7,7 +7,6 @@ namespace Pitboard.UITests;
 // The macOS PanesAndSettingsTests that are about Settings, on the window's settings page.
 [TestClass]
 [Elevated(ConditionMode.Exclude)]
-[OwnSession]
 public sealed class SettingsTests
 {
     private static readonly TimeSpan Shortly = TimeSpan.FromSeconds(10);

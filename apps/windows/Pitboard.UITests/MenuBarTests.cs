@@ -6,7 +6,6 @@ namespace Pitboard.UITests;
 // The macOS menu bar item's tests, through the notification-area icon's menu.
 [TestClass]
 [Elevated(ConditionMode.Exclude)]
-[OwnSession]
 [ExplorerTakesIcons]
 public sealed class MenuBarTests
 {

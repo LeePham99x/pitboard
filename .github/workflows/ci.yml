@@ -637,15 +637,13 @@ jobs:
         run: >
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command
           "Get-AppxPackage -AllUsers -Name 'Microsoft.WindowsAppRuntime*' | Format-Table Name, Version, Architecture -AutoSize"
-      # Each UI test starts a Pitboard.exe in homes of its own and drives it as a standard user. In the job
-      # user's session a WinUI window fails for that user (CF1), so the WinUI tests run as the job user,
-      # and the UI tests of the window skip, as those of the icon do, which Explorer refuses (CF3).
-      - name: The app's tests, as a standard user and the WinUI tests as the job user
+      # Each UI test starts a Pitboard.exe in homes of its own and drives it as that user (CF1, CF2). The
+      # job user's Explorer takes no icon of that user's (CF3), so the tests of the icon skip.
+      - name: The app's tests, as a standard user
         shell: pwsh
         run: >
           ./.github/scripts/test-as-standard-user.ps1
-          -Dotnet target/windows-app/uitests/Pitboard.UITests.exe
-          -JobDotnet target/windows-app/tests/Pitboard.Windows.Tests.exe
+          -Dotnet target/windows-app/tests/Pitboard.Windows.Tests.exe, target/windows-app/uitests/Pitboard.UITests.exe
           -Probe target/debug/pitboard-probe.exe
       # The job's user is elevated, so of the UI tests only the elevated launch's runs.
       - name: An elevated launch refuses and writes nothing, as the job user

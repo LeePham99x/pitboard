@@ -50,7 +50,6 @@ public sealed class NotificationAreaTests
     }
 
     [TestMethod]
-    [OwnSession]
     public void PitboardsIconOpensTheWindowAndTheMenu()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "firstLaunch");
