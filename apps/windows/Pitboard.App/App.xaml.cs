@@ -66,7 +66,13 @@ public partial class App : Application
     }
 
     // A second launch, which brings the window forward.
-    public void Reopened() => ShowWindow();
+    public void Reopened()
+    {
+#if DEBUG
+        Console.Error.WriteLine($"Reopened, with the model {(_model is null ? "not yet made" : "made")}");
+#endif
+        ShowWindow();
+    }
 
     private AppModel? Model(DispatcherQueue queue, Notifications notifications)
     {

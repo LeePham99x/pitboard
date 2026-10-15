@@ -62,7 +62,13 @@ public static class Program
         App? app = null;
         DispatcherQueue? queue = null;
         // Raised on a thread of its own.
-        AppInstance.GetCurrent().Activated += (_, _) => queue?.TryEnqueue(() => app?.Reopened());
+        AppInstance.GetCurrent().Activated += (_, _) =>
+        {
+#if DEBUG
+            Console.Error.WriteLine($"A second launch handed over, with the queue {(queue is null ? "not yet made" : "made")}");
+#endif
+            queue?.TryEnqueue(() => app?.Reopened());
+        };
         Application.Start(_ =>
         {
             queue = DispatcherQueue.GetForCurrentThread();
