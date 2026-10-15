@@ -110,7 +110,7 @@ window loads its site, and whatever the site's pages load, as a browser would.
     0.x release may not, unless it was compiled with `--cfg pitboard_unreleased_windows`,
     which CI's Windows jobs set and no release does; macOS and Linux always may. The
     version is Pitboard's, which the command line and the app's library name with
-    `set_version`, not the core's own.
+    `set_version`, not the core's own. Every request's User-Agent names it too.
   - `home.rs`: Pitboard's own directory, and what every home must be before anything is
     read or written under it: a full path (`check_absolute`), and, for Pitboard's own, not
     in a folder that syncs (`check_location`). That is told by the text it always refused,

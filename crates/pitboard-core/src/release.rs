@@ -42,6 +42,10 @@ pub fn version() -> Option<&'static str> {
     VERSION.get().copied()
 }
 
+pub(crate) fn pitboard_version() -> &'static str {
+    VERSION.get().copied().unwrap_or(env!("CARGO_PKG_VERSION"))
+}
+
 /// What the gate decides of a build.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Decision {
@@ -143,12 +147,44 @@ mod tests {
         assert_eq!(refused.exit_code(), 1);
     }
 
+    fn user_agent_sent() -> String {
+        use std::io::{BufRead, BufReader, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a port on loopback");
+        let url = format!("http://{}/", listener.local_addr().expect("its address"));
+        let host = std::thread::spawn(move || {
+            let (mut client, _) = listener.accept().expect("a request");
+            let head = BufReader::new(client.try_clone().expect("a second handle"));
+            let agent = head
+                .lines()
+                .map_while(std::result::Result::ok)
+                .take_while(|line| !line.is_empty())
+                .find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("user-agent")
+                        .then(|| value.trim().to_owned())
+                });
+            let _ = client.write_all(
+                b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            );
+            agent
+        });
+        let ctx = crate::context::Context::for_unit_test();
+        crate::api::agent(&ctx).get(&url).call().expect("an answer");
+        host.join().expect("the host").expect("a User-Agent")
+    }
+
+    // The version is set once per process, so this is the one test that sets it.
     #[test]
-    fn the_gate_reads_the_version_the_front_end_names() {
+    fn the_gate_and_every_request_read_the_version_the_front_end_names() {
         assert_eq!(decided(Os::Windows, false), Decision::NotReleased);
+        assert_eq!(
+            user_agent_sent(),
+            concat!("pitboard/", env!("CARGO_PKG_VERSION"))
+        );
         set_version("1.0.0-beta.1");
         set_version("0.15.0");
         assert_eq!(version(), Some("1.0.0-beta.1"));
         assert_eq!(decided(Os::Windows, false), Decision::Runs);
+        assert_eq!(user_agent_sent(), "pitboard/1.0.0-beta.1");
     }
 }

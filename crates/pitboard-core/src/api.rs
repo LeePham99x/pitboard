@@ -98,7 +98,7 @@ pub(crate) fn made(ctx: &Context, resolver: impl ureq::unversioned::resolver::Re
         )
         .timeout_global(Some(TIMEOUT))
         .http_status_as_error(false)
-        .user_agent(concat!("pitboard/", env!("CARGO_PKG_VERSION")));
+        .user_agent(format!("pitboard/{}", crate::release::pitboard_version()));
     if let Some(refusal) = ctx.proxy.refusal() {
         config = config.middleware(refusal).max_redirects(0);
     }
