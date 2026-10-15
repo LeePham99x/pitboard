@@ -2458,6 +2458,7 @@ mod tests {
 
     // An existing account's name keeps it, and a rename gives a new one by the rules all the same.
     #[test]
+    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_rename_to_a_name_another_tool_has_follows_the_rules_for_a_new_one() {
         let m = codex_machine("rename-one-word");
         let mut state = state::load(&m.ctx).expect("state");
