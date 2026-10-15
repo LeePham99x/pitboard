@@ -2146,8 +2146,7 @@ fn proxy_named(proxy: &ProxyFact) -> String {
     }
 }
 
-/// How to write the schedule again. There is an app only on macOS until the Windows app
-/// ships.
+/// How to write the schedule again.
 fn again(os: Os) -> &'static str {
     if has_app(os) {
         "Turn daily renewal off and on again: in the app's Settings, or with \
@@ -2158,12 +2157,11 @@ fn again(os: Os) -> &'static str {
     }
 }
 
-/// Whether Pitboard has an app for `os`, with a Settings window of its own. The Windows app
-/// is still to be written, and says so here once it has its Settings.
+/// Whether Pitboard has an app for `os`, with Settings of its own.
 fn has_app(os: Os) -> bool {
     match os {
-        Os::MacOs => true,
-        Os::Linux | Os::Windows => false,
+        Os::MacOs | Os::Windows => true,
+        Os::Linux => false,
     }
 }
 
@@ -4739,11 +4737,14 @@ mod tests {
     /// there is one.
     #[test]
     fn a_broken_schedule_is_written_again_by_whatever_this_machine_has() {
-        let mac = again(Os::MacOs);
-        assert!(
-            mac.contains("the app's Settings") && mac.contains("pitboard schedule install"),
-            "{mac}"
-        );
+        for os in [Os::MacOs, Os::Windows] {
+            let with_app = again(os);
+            assert!(
+                with_app.contains("the app's Settings")
+                    && with_app.contains("pitboard schedule install"),
+                "{os:?}: {with_app}"
+            );
+        }
         let linux = again(Os::Linux);
         assert!(linux.contains("pitboard schedule install"), "{linux}");
         assert!(!linux.contains("app"), "there is no app here: {linux}");
