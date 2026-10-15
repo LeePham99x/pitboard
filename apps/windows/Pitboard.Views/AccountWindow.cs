@@ -111,6 +111,8 @@ public sealed partial class AccountWindow : Window, ISessionWindow
         }
     }
 
+    public Task<bool> Confirm(Question question) => _dialogs.Confirm(question);
+
     public void Bring()
     {
         if (AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized } presenter)

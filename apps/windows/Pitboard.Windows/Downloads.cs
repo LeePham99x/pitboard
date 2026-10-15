@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Microsoft.Web.WebView2.Core;
 using Pitboard.Core;
 
@@ -10,6 +11,13 @@ public sealed class Downloads(string folder, Action<Intent> send)
 {
     private readonly List<Running> _live = [];
 
+    // Counted here rather than from a snapshot: a download started a moment before Quit is under way before the
+    // snapshot that lists it.
+    public Question? QuitQuestion => PitboardFfiMethods.DownloadsQuitQuestion((uint)_live.Count);
+
+    // The stores of the windows whose downloads are under way, the newest first.
+    public IEnumerable<string> Stores => _live.Select(running => running.Store).Reverse();
+
     // Holds WebView2 until it is answered, so nothing is saved before the person says yes.
     public async Task Start(
         string store, CoreWebView2DownloadStartingEventArgs args, bool ask, Func<AlertText, Task<bool>> allow)
@@ -19,7 +27,7 @@ public sealed class Downloads(string folder, Action<Intent> send)
         {
             var operation = args.DownloadOperation;
             var name = Path.GetFileName(args.ResultFilePath);
-            var running = new Running(Guid.NewGuid().ToString());
+            var running = new Running(Guid.NewGuid().ToString(), store, operation);
             _live.Add(running);
             send(new Intent.DownloadStarted(running.Id, store, name));
             if (ask && !await allow(PitboardFfiMethods.DownloadQuestion(name, PitboardFfiMethods.DownloadHost(operation.Uri))))
@@ -38,6 +46,24 @@ public sealed class Downloads(string folder, Action<Intent> send)
         finally
         {
             deferral.Complete();
+        }
+    }
+
+    // Quitting stops every download, and none resumes.
+    public void StopAll()
+    {
+        foreach (var running in _live.ToArray())
+        {
+            try
+            {
+                running.Operation.Cancel();
+            }
+            catch (COMException)
+            {
+                // Its browser process has gone, and the download with it.
+            }
+
+            End(running, new DownloadEnd.Cancelled());
         }
     }
 
@@ -65,9 +91,13 @@ public sealed class Downloads(string folder, Action<Intent> send)
         }
     }
 
-    private sealed class Running(string id)
+    private sealed class Running(string id, string store, CoreWebView2DownloadOperation operation)
     {
         public string Id => id;
+
+        public string Store => store;
+
+        public CoreWebView2DownloadOperation Operation => operation;
 
         public string? File { get; set; }
     }

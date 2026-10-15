@@ -50,6 +50,28 @@ internal sealed class AccountWindows
         window.Activate();
     }
 
+    // Asked over the window of an account whose download is under way, or another account window: a download runs in
+    // the browser process of the windows' pages, which exits once the last one closes.
+    public async Task<bool> MayQuit()
+    {
+        if (_downloads.QuitQuestion is not { } question)
+        {
+            return true;
+        }
+
+        var window = _downloads.Stores.Select(store => _open.GetValueOrDefault(store))
+            .FirstOrDefault(open => open is not null) ?? _open.Values.FirstOrDefault();
+        if (window is null)
+        {
+            return true;
+        }
+
+        window.Bring();
+        return await window.Confirm(question);
+    }
+
+    public void StopDownloads() => _downloads.StopAll();
+
     public void Follow(AccountWindowsShown shown)
     {
         foreach (var store in shown.Closing)

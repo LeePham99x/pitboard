@@ -53,7 +53,7 @@ public partial class App : Application
         _model = model;
         _startAtSignIn = StartAtSignIn.For(_start, Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "Pitboard.exe"));
         model.PropertyChanged += OnModelChanged;
-        _hidden = new HiddenWindow(sessionEnding: EndSession, closing: Quit, icon: OnIcon, taskbarCreated: () => _icon?.Readd());
+        _hidden = new HiddenWindow(sessionEnding: EndSession, closing: End, icon: OnIcon, taskbarCreated: () => _icon?.Readd());
         _icon = new NotifyIcon(new ShellNotificationArea(), _hidden.Handle, Shell.AppIcon(), _start.Identity.IconGuid);
         _icon.Show(model.MenuBar.Spoken);
         _accountWindows = new AccountWindows(model, Web(), _hidden.Handle);
@@ -202,8 +202,18 @@ public partial class App : Application
         _notifications?.Stop();
     }
 
-    private void Quit()
+    // Quitting stops every download still running, so it asks first, as the macOS app does.
+    private async void Quit()
     {
+        if (_accountWindows is null || await _accountWindows.MayQuit())
+        {
+            End();
+        }
+    }
+
+    private void End()
+    {
+        _accountWindows?.StopDownloads();
         EndSession();
         Exit();
     }

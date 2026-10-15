@@ -150,6 +150,52 @@ public sealed class DownloadTests
         Assert.AreEqual(Path.GetFileName(operation.ResultFilePath), Path.GetFileName(file));
     }
 
+    // Quitting stops every download, so the question counts each one under way, a paused one too, and the model hears of
+    // each end once. WebView2 pauses a download as interrupted, cancelled by the person, and able to resume.
+    [UITestMethod]
+    public async Task TheQuitQuestionAsksWhileADownloadIsUnderWay()
+    {
+        using var site = new StandInSite();
+        await using var webs = await Webs.Make(WebEnvironment.FixtureScheme);
+        var window = new StandInWindow(webs, answer: true);
+        var page = await Open(webs, window);
+        var operations = new List<CoreWebView2DownloadOperation>();
+        page.DownloadStarting += (_, args) => operations.Add(args.DownloadOperation);
+        Assert.IsNull(webs.Downloads.QuitQuestion);
+
+        await Stall(webs, page, site, "paused.bin");
+        var paused = operations.Single();
+        paused.Pause();
+        await Webs.Until(() => paused.State == CoreWebView2DownloadState.Interrupted, "the download did not pause");
+        Console.WriteLine($"CF7: a paused download is {paused.State}, {paused.InterruptReason}, can resume: {paused.CanResume}");
+        Assert.AreEqual("A download is in progress. Quit anyway?", webs.Downloads.QuitQuestion?.Title);
+        CollectionAssert.AreEqual(new[] { Main.Store }, webs.Downloads.Stores.ToArray());
+
+        paused.Cancel();
+        await Webs.Until(() => webs.Sent.OfType<Intent.DownloadEnded>().Any(), "the model did not hear the download stopped");
+        Assert.IsInstanceOfType<DownloadEnd.Cancelled>(webs.Sent.OfType<Intent.DownloadEnded>().Single().End);
+        Assert.IsNull(webs.Downloads.QuitQuestion);
+
+        await Stall(webs, page, site, "stopped.bin");
+        var stopped = new TaskCompletionSource();
+        operations.Last().StateChanged += (_, _) => stopped.TrySetResult();
+        webs.Downloads.StopAll();
+        await stopped.Task.WaitAsync(Webs.Patience);
+
+        Assert.IsNull(webs.Downloads.QuitQuestion);
+        Assert.HasCount(2, webs.Sent.OfType<Intent.DownloadEnded>());
+        Assert.IsFalse(File.Exists(webs.Sent.OfType<Intent.DownloadSaving>().Last().File));
+    }
+
+    // A download from another host's frame that never finishes, once it is saving.
+    private static async Task Stall(Webs webs, CoreWebView2 page, StandInSite site, string name)
+    {
+        var from = webs.Sent.Count;
+        await page.ExecuteScriptAsync(
+            $"document.body.insertAdjacentHTML('beforeend', '<iframe src=\"{site.Address($"/stalled/{name}")}\"></iframe>'); 0");
+        await Webs.Until(() => webs.Sent.Skip(from).OfType<Intent.DownloadSaving>().Any(), $"{name} did not start saving");
+    }
+
     // The account's window at the fixture's chatgpt.com, which gives one profile a second download without asking.
     private static async Task<CoreWebView2> Open(Webs webs, StandInWindow window)
     {
