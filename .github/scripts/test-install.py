@@ -19,6 +19,7 @@ REPO = Path(__file__).resolve().parents[2]
 TEMPLATE = REPO / "packaging" / "install.sh"
 FILL = REPO / ".github" / "scripts" / "fill-template.sh"
 CASKS = (REPO / "packaging" / "pitboard.rb", REPO / "packaging" / "pitboard-app.rb")
+SCOOP = REPO / "packaging" / "scoop" / "pitboard.json"
 VERSION = "9.8.7"
 DOWNLOADS = "https://github.com/datlechin/pitboard/releases/download/"
 UNAME = {
@@ -28,6 +29,7 @@ UNAME = {
     "x86_64-unknown-linux-musl": ("Linux", "x86_64"),
 }
 TARGETS = tuple(UNAME)
+WINDOWS_TARGETS = {"64bit": "x86_64-pc-windows-msvc", "arm64": "aarch64-pc-windows-msvc"}
 LINUX = UNAME["x86_64-unknown-linux-musl"]
 MAC = UNAME["aarch64-apple-darwin"]
 INSTALLED = {
@@ -1029,9 +1031,11 @@ class FillTemplate(unittest.TestCase):
     def setUpClass(cls):
         cls.dir = WORK / "fill"
         cls.dir.mkdir()
-        cls.names = [f"pitboard-v{VERSION}-{t}.tar.gz" for t in TARGETS] + [
-            f"Pitboard-v{VERSION}-macos.zip"
-        ]
+        cls.names = (
+            [f"pitboard-v{VERSION}-{t}.tar.gz" for t in TARGETS]
+            + [f"pitboard-v{VERSION}-{t}.zip" for t in WINDOWS_TARGETS.values()]
+            + [f"Pitboard-v{VERSION}-macos.zip"]
+        )
         cls.hashes = {name: hashlib.sha256(name.encode()).hexdigest() for name in cls.names}
         cls.sums = cls.write_sums("SHA256SUMS", [f"{h}  {n}" for n, h in cls.hashes.items()])
 
@@ -1091,6 +1095,40 @@ class FillTemplate(unittest.TestCase):
             digest = self.hashes[f"pitboard-v{VERSION}-{target}.tar.gz"]
             self.assertIn(f'\n{name}="{digest}"\n', text)
         self.assertEqual(subprocess.run(["sh", "-n", str(out)]).returncode, 0)
+
+    def test_the_scoop_manifest_fills_and_parses(self):
+        out = self.dir / "pitboard.json"
+        done = fill(SCOOP, out, self.sums)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        manifest = json.loads(out.read_text())
+        self.assertEqual(manifest["version"], VERSION)
+        self.assertEqual(manifest["license"], "Apache-2.0")
+        self.assertEqual(manifest["bin"], "pitboard.exe")
+        # The release is the bucket's only writer, as it is the tap's.
+        self.assertNotIn("checkver", manifest)
+        self.assertNotIn("autoupdate", manifest)
+        self.assertEqual(set(manifest["architecture"]), set(WINDOWS_TARGETS))
+        for arch, target in WINDOWS_TARGETS.items():
+            with self.subTest(arch=arch):
+                name = f"pitboard-v{VERSION}-{target}"
+                self.assertEqual(
+                    manifest["architecture"][arch],
+                    {
+                        "url": f"{DOWNLOADS}v{VERSION}/{name}.zip",
+                        "hash": self.hashes[f"{name}.zip"],
+                        "extract_dir": name,
+                    },
+                )
+
+    def test_the_scoop_manifest_needs_both_zips(self):
+        for target in WINDOWS_TARGETS.values():
+            missing = f"pitboard-v{VERSION}-{target}.zip"
+            with self.subTest(missing=missing):
+                sums = self.write_sums(
+                    "no-zip", [f"{h}  {n}" for n, h in self.hashes.items() if n != missing]
+                )
+                message = f"SHA256SUMS does not have exactly one line for {missing}:"
+                self.assertFails(SCOOP, message, sums)
 
     def test_a_missing_line_fails(self):
         missing = f"pitboard-v{VERSION}-x86_64-apple-darwin.tar.gz"

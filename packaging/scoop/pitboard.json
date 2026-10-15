@@ -1,0 +1,20 @@
+{
+    "##": "Written by Pitboard's release from packaging/scoop/pitboard.json in datlechin/pitboard. An edit made here is replaced at the next release.",
+    "version": "@VERSION@",
+    "description": "Switch Claude Code and Codex between your own accounts",
+    "homepage": "https://usepitboard.com/",
+    "license": "Apache-2.0",
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/datlechin/pitboard/releases/download/v@VERSION@/pitboard-v@VERSION@-x86_64-pc-windows-msvc.zip",
+            "hash": "@SHA256_X86_64_PC_WINDOWS_MSVC@",
+            "extract_dir": "pitboard-v@VERSION@-x86_64-pc-windows-msvc"
+        },
+        "arm64": {
+            "url": "https://github.com/datlechin/pitboard/releases/download/v@VERSION@/pitboard-v@VERSION@-aarch64-pc-windows-msvc.zip",
+            "hash": "@SHA256_AARCH64_PC_WINDOWS_MSVC@",
+            "extract_dir": "pitboard-v@VERSION@-aarch64-pc-windows-msvc"
+        }
+    },
+    "bin": "pitboard.exe"
+}
