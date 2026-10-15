@@ -133,7 +133,8 @@ pub fn run(command: &Command, out: Option<&Path>) -> Outcome {
             chain,
             rounds,
             start,
-        } => job::job(scratch, *chain, *rounds, *start),
+            allow_breakaway,
+        } => job::job(scratch, *chain, *rounds, *start, *allow_breakaway),
         C::JobBrowser {
             scratch,
             end,

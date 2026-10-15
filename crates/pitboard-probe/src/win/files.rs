@@ -666,7 +666,7 @@ pub(super) fn lock(scratch: &Path, mode: LockMode, seconds: u64, timing: LockTim
             })
         }
     };
-    data["timing"] = json!(format!("{timing:?}").to_lowercase());
+    data["timing"] = json!(format!("{timing:?}"));
     data["stale_ms"] = json!(stale_ms);
     data["heartbeat_ms"] = json!(heartbeat_ms);
     Report::ok("lock", logon_now(), data)

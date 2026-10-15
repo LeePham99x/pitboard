@@ -222,6 +222,9 @@ pub enum Command {
         rounds: u32,
         #[arg(long, value_enum, default_value_t = JobStart::Running)]
         start: JobStart,
+        /// Let the job's processes break away: JOB_OBJECT_LIMIT_BREAKAWAY_OK.
+        #[arg(long)]
+        allow_breakaway: bool,
     },
     /// F2: open a local stand-in page from a process in a Job Object, then end the job one
     /// way, and see whether the browser was in it and survived.
@@ -836,6 +839,25 @@ mod tests {
             cli.command,
             Command::Job {
                 start: JobStart::Running,
+                allow_breakaway: false,
+                ..
+            }
+        ));
+        let cli = Cli::try_parse_from([
+            "pitboard-probe",
+            "job",
+            "--scratch",
+            r"C:\s",
+            "--chain",
+            "exe-breakaway",
+            "--allow-breakaway",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Job {
+                chain: Chain::ExeBreakaway,
+                allow_breakaway: true,
                 ..
             }
         ));
