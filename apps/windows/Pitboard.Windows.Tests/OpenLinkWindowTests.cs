@@ -55,10 +55,12 @@ public sealed class OpenLinkWindowTests
         try
         {
             window.Follow(Choose(3, armed: false));
+            // The list makes its second row on a later layout pass.
+            await Views.Until(
+                () => Views.Texts(window.Content).Contains("spare@example.com, window open"), "the second account was not listed");
             var texts = Views.Texts(window.Content);
             Assert.Contains("Open this chatgpt.com link as:", texts);
             Assert.Contains("chatgpt.com/c/shared", texts);
-            Assert.Contains("spare@example.com, window open", texts);
             Assert.AreEqual("main", Selected(window), "the account the model prefers");
             Assert.IsFalse(Views.Button(window.Content, "Open").IsEnabled, "Open answers before the link is armed");
 
