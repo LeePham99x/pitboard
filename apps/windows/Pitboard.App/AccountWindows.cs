@@ -4,8 +4,8 @@ using Pitboard.Windows;
 
 namespace Pitboard.App;
 
-// WebView2's side of the account windows. What they show, and which stores go, is the model's: this tells it what the
-// windows and their downloads did, and does what it says.
+// WebView2's side of the account windows, and the Open Link window. What they show, and which stores go, is the model's:
+// this tells it what the windows and their downloads did, and does what it says.
 internal sealed class AccountWindows
 {
     private readonly AppModel _model;
@@ -13,6 +13,7 @@ internal sealed class AccountWindows
     private readonly Downloads _downloads;
     private readonly StoreJanitor _janitor;
     private readonly Dictionary<string, AccountWindow> _open = new(StringComparer.OrdinalIgnoreCase);
+    private OpenLinkWindow? _picker;
 
     // The janitor's pages are made in the hidden window, which lives as long as Pitboard.
     public AccountWindows(AppModel model, WebEnvironment web, nint hidden)
@@ -90,5 +91,38 @@ internal sealed class AccountWindows
         _janitor.Delete(
             shown.Deleting,
             (store, deleted) => _model.Send(deleted ? new Intent.StoreDeleted(store) : new Intent.StoreHeld(store)));
+        FollowLink(shown.Picker);
+    }
+
+    // Each link that arrives brings the window forward, since the app that handed it over is in front; it goes once
+    // no link waits.
+    private void FollowLink(LinkPicker? picker)
+    {
+        if (picker is null)
+        {
+            _picker?.Withdraw();
+            return;
+        }
+
+        var arrived = _picker?.Arrival != picker.Arrival;
+        if (_picker is null)
+        {
+            // A fixture's Open in Browser opens nothing, as its pages send nothing elsewhere.
+            var window = new OpenLinkWindow(_model.Send, Open, _web.OpenElsewhere);
+            window.Closed += (_, _) =>
+            {
+                if (ReferenceEquals(_picker, window))
+                {
+                    _picker = null;
+                }
+            };
+            _picker = window;
+        }
+
+        _picker.Follow(picker);
+        if (arrived)
+        {
+            _picker.Bring();
+        }
     }
 }
