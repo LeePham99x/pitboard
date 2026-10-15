@@ -162,7 +162,13 @@ function Start-AsUser([string] $Program, [string[]] $Arguments, [string] $In, [h
     }
     if ($Arguments) { $start.ArgumentList = $Arguments }
     if ($Environment) { $start.Environment = $Environment }
-    $process = Start-Process @start
+    try {
+        $process = Start-Process @start
+    } catch {
+        # Out-Host, as the caller would take the lines for its result.
+        Show-LogonFailures $userMade | Out-Host
+        throw
+    }
     [pscustomobject]@{ Exit = $process.ExitCode; Out = $out; Err = $err }
 }
 
@@ -191,6 +197,32 @@ function Show-Crashes([datetime] $Since) {
     }
     Write-Output "::$token::"
     Write-Output '::endgroup::'
+}
+
+# What the Security log says failed to log the standard user on or locked it out: the event, the
+# account that tried, the logon type, the process and the status. Never a SID.
+function Show-LogonFailures([datetime] $Since) {
+    try {
+        $filter = @{ LogName = 'Security'; Id = 4625, 4648, 4740; StartTime = $Since }
+        $entries = @(Get-WinEvent -FilterHashtable $filter -ErrorAction SilentlyContinue |
+            Where-Object { $_.Properties.Value -contains $name } | Sort-Object TimeCreated)
+        Write-Output "::group::The Security log's failed logons, explicit logons and lockouts of the standard user: $($entries.Count)"
+        $token = [guid]::NewGuid().ToString('N')
+        Write-Output "::stop-commands::$token"
+        foreach ($entry in $entries) {
+            $v = $entry.Properties.Value
+            $said = switch ($entry.Id) {
+                4625 { "by $($v[1]), logon type $($v[10]), $("$($v[11])".Trim())/$($v[12]), status $('0x{0:X8}' -f $v[7]) $('0x{0:X8}' -f $v[9]), process $($v[18]), from $($v[19])" }
+                4648 { "by $($v[1]), to $($v[8]) $($v[9]), process $($v[11]), from $($v[12])" }
+                4740 { "by $($v[4]), from $($v[1])" }
+            }
+            Write-Output "$($entry.TimeCreated.ToString('HH:mm:ss.fff')) $($entry.Id): $said"
+        }
+        Write-Output "::$token::"
+        Write-Output '::endgroup::'
+    } catch {
+        Write-Output "The Security log could not be read: $($_.Exception.Message)"
+    }
 }
 
 # SIDs are compared and written back, never printed.
@@ -235,6 +267,7 @@ function Invoke-Diskpart([string] $Doing, [string[]] $Commands) {
     if ($LASTEXITCODE -ne 0) { throw "diskpart could not $Doing the exFAT volume (exit $LASTEXITCODE): $said" }
 }
 
+$userMade = Get-Date
 $user = New-LocalUser -Name $name -Password $secure -AccountNeverExpires -PasswordNeverExpires
 $sid = $user.SID.Value
 $holders = $null
@@ -334,7 +367,10 @@ try {
         Write-Output '::endgroup::'
         if ($run.Exit -ne 0) { $failed.Add("$($programs[$i]) exited $($run.Exit)") }
     }
-    if ($failed.Count -gt 0) { Show-Crashes $testsStarted }
+    if ($failed.Count -gt 0) {
+        Show-Crashes $testsStarted
+        Show-LogonFailures $userMade
+    }
     if ($Exe) {
         $exeEnv = $userEnv.Clone()
         foreach ($folder in 'USERPROFILE', 'HOME', 'APPDATA', 'LOCALAPPDATA', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'PITBOARD_HOME') {
