@@ -72,7 +72,7 @@ internal sealed class Launched : IDisposable
     // A second launch once Pitboard runs, as from Start, which the running copy answers with its window.
     public Window OpenWindow()
     {
-        if (!Retry.WhileFalse(() => NotificationArea.HiddenWindows(Process).Any(), Patience, TimeSpan.FromMilliseconds(250)).Result)
+        if (!Retry.WhileFalse(() => HiddenWindows.Of(Process).Any(), Patience, TimeSpan.FromMilliseconds(250)).Result)
         {
             throw new AssertFailedException($"Pitboard did not start within {Patience}: {State()}");
         }
@@ -152,19 +152,6 @@ internal sealed class Launched : IDisposable
     public bool Enables(string name) =>
         Retry.WhileFalse(() => Look(found => found.ByName(name))?.IsEnabled == true, Shortly, TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
 
-    // Pitboard's icon, in Explorer's notification area.
-    public AutomationElement Icon() =>
-        NotificationArea.Icon(Automation) ?? throw new AssertFailedException($"Pitboard's icon is not in the notification area within {Shortly}");
-
-    // The icon's menu, from a right click.
-    public void OpenMenu()
-    {
-        Icon().RightClick();
-        Find(found => found.ByName("Open Pitboard"), "menu");
-    }
-
-    public void Choose(string item) => Named(item).Click();
-
     public void Select(string pane) =>
         Find(found => found.ByAutomationId(pane), pane).Patterns.SelectionItem.Pattern.Select();
 
@@ -215,7 +202,7 @@ internal sealed class Launched : IDisposable
     {
         if (!Process.HasExited)
         {
-            NotificationArea.AskToEnd(Process);
+            HiddenWindows.AskToEnd(Process);
             if (!Process.WaitForExit(Shortly))
             {
                 Process.Kill(entireProcessTree: true);

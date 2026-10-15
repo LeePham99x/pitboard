@@ -649,9 +649,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     Ctrl+comma from any of them.
   - `Pitboard.Windows.Tests` is a WinUI app that hosts its own tests, the views' among them
     over snapshots made in C#, and `Pitboard.UITests` drives the built app with FlaUI.
-    Neither registers anything with Windows, but for the notification-area icon of its own
-    that `NotificationAreaTests` adds and removes by a GUID wherever Explorer takes the
-    user's icons, which no runner does.
+    Neither registers anything with Windows. The icon's menu is held by the view tests,
+    `IconMenuTests` and `IconMenuFlyoutTests`, and the click on the icon by the session's
+    step A2.
   - `Pitboard.Probe` is never shipped. The session machine runs it to measure the app's
     adapters by hand: it posts a notification through `WindowsNotifications` under an
     AppUserModelID of its own, waits for its Switch, unregisters, and names a process's
@@ -2095,8 +2095,8 @@ Accounts and tokens:
 - That user's programs run in the job user's session, 2, and start inside a job already.
 - Explorer, the job user's, takes no notification-area icon of that user's: `NIM_ADD` fails
   for an icon named by its window and id and for one named by a GUID (CI run 38753437460).
-  So the UI tests that click Pitboard's icon, `NotificationAreaTests` and `MenuBarTests`, run
-  only where Explorer takes it, and the session's step A2 clicks it.
+  So no UI test clicks Pitboard's icon: the view tests hold its menu, and the session's step
+  A2 clicks it.
 - A window of that user's program comes to the front and takes a click on windows-2025. On
   windows-11-arm a full-screen `Microsoft account` window, a `Windows.UI.Core.CoreWindow` of
   `WWAHost` in the job user's session, holds the foreground, and Windows keeps it there for a
