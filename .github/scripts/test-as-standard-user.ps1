@@ -76,11 +76,18 @@ function Get-LoginPlaces([string] $ProfileDir, [string] $LocalData) {
     )
 }
 
-# What only an installed Release registers, under the job user's HKCU: its link schemes, the
-# start at sign-in and the command line on the user PATH.
+# The AppUserModelIDs AppNotificationManager.Register keeps a key for: the app's two builds and
+# Pitboard.Probe's.
+$notifiers = 'Pitboard.Pitboard', 'Pitboard.Pitboard.Debug', 'Pitboard.Probe'
+
+# What only an installed Release registers, under the job user's HKCU: its link schemes, its
+# notifications, the start at sign-in and the command line on the user PATH.
 function Get-JobRegistrations {
     foreach ($scheme in 'pitboard', 'pitboard-debug') {
         if (Test-Path -LiteralPath "HKCU:\Software\Classes\$scheme") { "HKCU\Software\Classes\$scheme" }
+    }
+    foreach ($aumid in $notifiers) {
+        if (Test-Path -LiteralPath "HKCU:\Software\Classes\AppUserModelId\$aumid") { "HKCU\Software\Classes\AppUserModelId\$aumid" }
     }
     $run = Get-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'Pitboard' -ErrorAction SilentlyContinue
     if ($null -ne $run) { 'the Run value Pitboard' }
@@ -341,6 +348,9 @@ try {
         'HKCU\Software\Classes\pitboard' = @('query', 'HKCU\Software\Classes\pitboard')
         'HKCU\Software\Classes\pitboard-debug' = @('query', 'HKCU\Software\Classes\pitboard-debug')
         'the Run value Pitboard' = @('query', 'HKCU\Software\Microsoft\Windows\CurrentVersion\Run', '/v', 'Pitboard')
+    }
+    foreach ($aumid in $notifiers) {
+        $userKeys["HKCU\Software\Classes\AppUserModelId\$aumid"] = @('query', "HKCU\Software\Classes\AppUserModelId\$aumid")
     }
     $i = 0
     foreach ($key in $userKeys.Keys) {
