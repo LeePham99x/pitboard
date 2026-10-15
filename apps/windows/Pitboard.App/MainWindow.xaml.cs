@@ -75,12 +75,6 @@ public sealed partial class MainWindow : Window
             ? Navigation.MenuItems.OfType<NavigationViewItem>().First(item => item.Tag as string == shown.ToString())
             : Navigation.SettingsItem;
 
-    public void ShowAbout()
-    {
-        Select(null);
-        _settings.ShowAbout();
-    }
-
     public void Show()
     {
         if (AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized } presenter)

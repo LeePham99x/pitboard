@@ -310,7 +310,7 @@ public sealed class SettingsPaneTests
         var opened = new List<Uri>();
         var pane = await Shown(new AppModel(new StandInModel(Snapshots.Read(1))), version: "1.2.3", open: opened.Add);
 
-        pane.ShowAbout();
+        Views.Element<Expander>(pane, "settings.about").IsExpanded = true;
         await Views.Until(() => Views.Visible<HyperlinkButton>(pane).Any(), "About did not open");
 
         Assert.Contains("1.2.3", Views.Texts(pane));

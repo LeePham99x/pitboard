@@ -3480,17 +3480,18 @@ Microsoft's documentation.
   return on `TaskbarCreated`.
 - The notification area guidance (updated 15 April 2025) has a right click bring up a normal
   shortcut menu and a left click show what the person expects, the program window among
-  them, and prefers the standard tooltip. The Windows 7 menu guidance (updated 26 July 2026)
-  names Exit, puts no ellipsis on About, Help or Settings, shows a context menu's default
-  command in bold, and lets a program keep title-style capitalization rather than mix
-  styles, as the model's strings are. So the icon's menu says Exit, bolds Open Pitboard,
-  and keeps the macOS menu's words otherwise.
+  them, and prefers the standard tooltip. Its Windows 7 page (updated 11 March 2025) gives
+  the icon's menu no About command where the program has a window. The Windows 7 menu
+  guidance (updated 26 July 2026) names Exit, puts no ellipsis on Help or Settings, shows a
+  context menu's default command in bold and no shortcut keys, and lets a program keep
+  title-style capitalization rather than mix styles, as the model's strings are. So the
+  icon's menu says Exit, bolds Open Pitboard, shows no shortcuts, leaves About to the
+  settings page, and keeps the macOS menu's words otherwise.
 - Read in microsoft-ui-xaml at `winui3/release/2.5.1`: a light-dismiss popup hides its
   flyout when its window is deactivated (`Popup_Partial.cpp`), so `MenuHost` is made the
   foreground window before the menu opens; a `MenuFlyoutItem` raises `Click` before it closes
-  its menu, and shows `KeyboardAcceleratorTextOverride` while a keyboard is present
-  (`MenuFlyoutItem_Partial.cpp`), so a choice runs once the menu has closed and the menu says
-  the window's shortcuts; a `RadioMenuFlyoutItem` is a `ToggleMenuFlyoutItem` inside that
+  its menu (`MenuFlyoutItem_Partial.cpp`), so a choice runs once the menu has closed; a
+  `RadioMenuFlyoutItem` is a `ToggleMenuFlyoutItem` inside that
   undoes an uncheck by choosing (`RadioMenuFlyoutItem.cpp`); and NavigationView names its
   settings item `SettingsItem` (`NavigationView.cpp`), which the UI tests select.
   `OverlappedPresenter.CreateForContextMenu` keeps a border (Microsoft Learn, updated 28 July

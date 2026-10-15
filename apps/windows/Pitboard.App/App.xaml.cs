@@ -165,11 +165,6 @@ public partial class App : Application
                 ShowWindow();
                 _window?.Select(null);
                 break;
-            // About is a section of the settings page, as Microsoft's settings guidance places it.
-            case IconCommand.ShowAbout:
-                ShowWindow();
-                _window?.ShowAbout();
-                break;
             case IconCommand.CheckForUpdates:
                 _updates.Check();
                 break;

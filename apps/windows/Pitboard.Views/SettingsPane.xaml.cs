@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
@@ -44,13 +43,6 @@ public sealed partial class SettingsPane : UserControl
             _startAtSignIn.Changed -= OnStartAtSignInChanged;
         };
         Show();
-    }
-
-    // The menu's About opens the page on it.
-    public void ShowAbout()
-    {
-        About.IsExpanded = true;
-        DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () => About.StartBringIntoView());
     }
 
     // Every visit: a terminal can change the schedule and the command line, and another program the Run key.

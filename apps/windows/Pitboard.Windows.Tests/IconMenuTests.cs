@@ -61,7 +61,7 @@ public sealed class IconMenuTests
         Assert.AreEqual(
             "Claude Code isn’t installed | Switch Claude Code to personal | An interrupted switch is waiting | - "
             + "| # Claude Code | (x) work | ( ) personal | - | # Codex | (x) main | - "
-            + "| Add Account… | Refresh | - | Open Pitboard | Settings | - | About Pitboard | Pitboard Help | Exit",
+            + "| Add Account… | Refresh | - | Open Pitboard | Settings | - | Pitboard Help | Exit",
             Said(entries));
     }
 
@@ -83,7 +83,7 @@ public sealed class IconMenuTests
         });
 
         Assert.AreEqual(
-            "(x) work | - | Add Account… | Refresh | - | Open Pitboard | Settings | - | About Pitboard | Pitboard Help | Exit",
+            "(x) work | - | Add Account… | Refresh | - | Open Pitboard | Settings | - | Pitboard Help | Exit",
             Said(IconMenu.Entries(model, new NoUpdates())));
     }
 
@@ -187,21 +187,8 @@ public sealed class IconMenuTests
         Assert.AreEqual(new IconCommand.Send(new Intent.Refresh(Asked: true)), Command(entries, "Refresh").Does);
         Assert.AreEqual(new IconCommand.Send(new Intent.ShowWindow(Pane: null)), Command(entries, "Open Pitboard").Does);
         Assert.AreEqual(new IconCommand.ShowSettings(), Command(entries, "Settings").Does);
-        Assert.AreEqual(new IconCommand.ShowAbout(), Command(entries, "About Pitboard").Does);
         Assert.AreEqual(new IconCommand.OpenLink("https://docs.usepitboard.com"), Command(entries, "Pitboard Help").Does);
         Assert.AreEqual(new IconCommand.Quit(), Command(entries, "Exit").Does);
-    }
-
-    // The window takes these keys; the menu says them.
-    [TestMethod]
-    public void TheMenuSaysTheWindowsShortcuts()
-    {
-        var entries = IconMenu.Entries(TwoTools(), new NoUpdates());
-
-        Assert.AreEqual("Ctrl+N", Command(entries, "Add Account…").Shortcut);
-        Assert.AreEqual("Ctrl+R", Command(entries, "Refresh").Shortcut);
-        Assert.AreEqual("Ctrl+,", Command(entries, "Settings").Shortcut);
-        Assert.IsNull(Command(entries, "Exit").Shortcut);
     }
 
     [TestMethod]
