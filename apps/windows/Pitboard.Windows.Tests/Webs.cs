@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Microsoft.Web.WebView2.Core;
 using Pitboard.Core;
 using Windows.Foundation;
@@ -8,7 +9,7 @@ namespace Pitboard.Windows.Tests;
 // WebView2 in the test app's window, as the app makes it: a user data folder of the test's own, one browser process
 // over it, and a page per profile name. Pages a test sends elsewhere are kept, and opened nowhere; downloads are saved in
 // the test's own folder, and what they tell the model is kept.
-internal sealed class Webs : IAsyncDisposable
+internal sealed partial class Webs : IAsyncDisposable
 {
     public static readonly TimeSpan Patience = TimeSpan.FromSeconds(60);
 
@@ -45,7 +46,24 @@ internal sealed class Webs : IAsyncDisposable
         var web = new WebEnvironment(
             scheme, Path.Combine(folder.FullName, "WebView2"), Path.Combine(folder.FullName, "Downloads"), devTools: false,
             elsewhere.Add);
-        return new Webs(folder, web, await web.Made().WaitAsync(Patience), elsewhere);
+        var asking = Asking();
+        try
+        {
+            return new Webs(folder, web, await web.Made().WaitAsync(Patience), elsewhere);
+        }
+        catch (COMException failed)
+        {
+            throw new AssertFailedException($"WebView2 made no environment, asked from {asking}: {failed.Message}", failed);
+        }
+    }
+
+    // What WebView2's loader checks of the thread that asks: a single-threaded apartment, APTTYPE 0 or 3.
+    private static string Asking()
+    {
+        var read = CoGetApartmentType(out var type, out var qualifier);
+        var apartment = read == 0 ? $"APTTYPE {type}, qualifier {qualifier}" : $"CoGetApartmentType 0x{read:X8}";
+        return $"{apartment}, .NET's {Thread.CurrentThread.GetApartmentState()}, "
+            + $"the window's thread {UnitTestApp.Window!.DispatcherQueue.HasThreadAccess}";
     }
 
     // A page in the profile named, which has loaded nothing and answers to nothing of the app's yet.
@@ -121,7 +139,7 @@ internal sealed class Webs : IAsyncDisposable
             {
                 controller.Close();
             }
-            catch (Exception closed) when (closed is System.Runtime.InteropServices.COMException or InvalidOperationException)
+            catch (Exception closed) when (closed is COMException or InvalidOperationException)
             {
             }
         }
@@ -139,4 +157,7 @@ internal sealed class Webs : IAsyncDisposable
         {
         }
     }
+
+    [LibraryImport("ole32.dll")]
+    private static partial int CoGetApartmentType(out int type, out int qualifier);
 }
