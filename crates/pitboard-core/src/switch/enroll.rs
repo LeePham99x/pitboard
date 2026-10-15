@@ -229,8 +229,7 @@ pub(crate) fn sign_in(
     // What the tool prints goes to stderr, so `--json` output stays one JSON line.
     let finished = tool
         .sign_in(ctx, permit, &dir)
-        .stdout(std::io::stderr())
-        .status()
+        .and_then(|mut command| command.stdout(std::io::stderr()).status())
         .map_err(|e| started(tool.id(), &e))?
         .success();
     if !finished {
@@ -486,8 +485,9 @@ fn start_watched(
     }
     // Only a script playing the tool is told whom the sign-in is for.
     let _ = label;
-    let command = tool.sign_in(ctx, permit, &dir);
-    watch(command, pending).map_err(|e| started(which, &e))
+    tool.sign_in(ctx, permit, &dir)
+        .and_then(|command| watch(command, pending))
+        .map_err(|e| started(which, &e))
 }
 
 /// Runs `command` with its output piped, as the sign-in `pending` reserved.

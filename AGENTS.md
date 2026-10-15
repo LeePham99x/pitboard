@@ -116,8 +116,8 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
 - Never weaken or get around the release gate in a build anybody installs. No release,
   script or package passes `--cfg pitboard_unreleased_windows`, `test-support` or
   `fixture`.
-- Tests never touch Task Scheduler, the registry, the user `PATH` or DPAPI keys, and never
-  run elevated on a machine that holds logins.
+- Tests never write the registry, the user `PATH` or a Task Scheduler task, never touch DPAPI
+  keys, and never run elevated on a machine that holds logins. They may read the registry.
 - Never weaken a machine that holds real logins to make a test pass: no Defender exclusion,
   no UAC change, no access change to a real profile, and no Developer Mode or symbolic-link
   right for the tests' links. Those are for CI's runners and a machine kept for testing.

@@ -446,21 +446,30 @@ mod tests {
     /// whether a path is a program, cross the bindings as the core reads them, so the app has
     /// no rule of its own for any of them.
     #[test]
-    #[cfg_attr(windows, ignore = "W17: finding programs on Windows")]
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "where Windows is, as it names it"
+    )]
     fn the_app_asks_the_core_where_things_are_and_what_runs() {
+        use pitboard_core::host::OS;
         let environment = |pairs: &[(&str, &str)]| -> HashMap<String, String> {
             pairs
                 .iter()
                 .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
                 .collect()
         };
+        let (home, directory) = match OS {
+            Os::MacOs | Os::Linux => ("/Users/x", "/Users/x/.pitboard"),
+            Os::Windows => (r"C:\Users\x", r"C:\Users\x\AppData\Local\Pitboard"),
+        };
         assert_eq!(
-            pitboard_directory(environment(&[("HOME", "/Users/x")])),
-            "/Users/x/.pitboard"
+            pitboard_directory(environment(&[("HOME", home), ("USERPROFILE", home)])),
+            directory
         );
         assert_eq!(
             pitboard_directory(environment(&[
-                ("HOME", "/Users/x"),
+                ("HOME", home),
+                ("USERPROFILE", home),
                 ("PITBOARD_HOME", "/elsewhere/./p/")
             ])),
             "/elsewhere/./p/"
@@ -470,8 +479,18 @@ mod tests {
             None,
             "not an app"
         );
-        assert!(can_run("/bin/sh".into()));
-        assert!(!can_run("/bin".into()), "a directory is not a program");
+        let (program, folder) = match OS {
+            Os::MacOs | Os::Linux => (PathBuf::from("/bin/sh"), PathBuf::from("/bin")),
+            Os::Windows => {
+                let system = std::env::var_os("SystemRoot")
+                    .map(|windows| PathBuf::from(windows).join("System32"))
+                    .expect("SystemRoot");
+                (system.join("cmd.exe"), system)
+            }
+        };
+        let text = |path: &PathBuf| path.to_string_lossy().into_owned();
+        assert!(can_run(text(&program)));
+        assert!(!can_run(text(&folder)), "a directory is not a program");
         assert!(!can_run("/nowhere/at/all".into()));
     }
 

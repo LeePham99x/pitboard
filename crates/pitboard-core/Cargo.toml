@@ -38,6 +38,7 @@ core-foundation-sys.workspace = true
 rusqlite.workspace = true
 
 [target.'cfg(windows)'.dependencies]
+windows-registry.workspace = true
 windows-sys = { workspace = true, features = [
     "Wdk_System_SystemServices",
     "Win32_Foundation",
@@ -46,6 +47,7 @@ windows-sys = { workspace = true, features = [
     "Win32_Storage_CloudFilters",
     "Win32_Storage_FileSystem",
     "Win32_System_Com",
+    "Win32_System_Environment",
     "Win32_System_GroupPolicy",
     "Win32_System_IO",
     "Win32_System_Ioctl",

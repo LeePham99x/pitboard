@@ -108,12 +108,21 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
     ),
     everywhere("codex_identity_is_the_person", VERIFIED_AGAINST),
     everywhere("codex_refusal_is_invalid_grant", VERIFIED_AGAINST),
-    later_on_windows(
-        "codex_install_places",
-        "0.159.2",
-        &["W17"],
-        "where Codex's installers put `codex.exe` on Windows",
-    ),
+    PerSystem {
+        name: "codex_install_places",
+        macos: Read("0.159.2"),
+        linux: Read("0.159.2"),
+        windows: NotRead(
+            "install.ps1, npm and winget put `codex.exe` elsewhere on Windows, which \
+             codex_windows_install_places reads",
+        ),
+    },
+    PerSystem {
+        name: "codex_windows_install_places",
+        macos: NotRead("where macOS's installers put `codex` is codex_install_places'"),
+        linux: NotRead("where Linux's installers put `codex` is codex_install_places'"),
+        windows: Read("0.162.1"),
+    },
     later_on_windows(
         "codex_login_is_driveable",
         VERIFIED_AGAINST,
@@ -372,6 +381,28 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         absent: &[],
     },
     Assumption {
+        name: "codex_windows_install_places",
+        fact: "on Windows install.ps1 keeps each release in `<CODEX_HOME or \
+               %USERPROFILE%\\.codex>\\packages\\standalone\\releases\\<version>-<target>`, \
+               points `current` at it by a junction, and makes `CODEX_INSTALL_DIR`, or \
+               `%LOCALAPPDATA%\\Programs\\OpenAI\\Codex\\bin` where that is unset or white \
+               space, a junction to `current\\bin`, which it puts on the user `Path`. A global \
+               npm install's `codex.cmd` in its prefix, `%APPDATA%\\npm` by default, starts \
+               `bin/codex.js`, which runs `vendor/<target>/bin/codex.exe` of the platform's \
+               package, beside `codex-package.json`. winget's `OpenAI.Codex` is a zip whose \
+               nested portable `codex-<target>.exe` is linked in winget's `Links` as `codex`",
+        read_from: "scripts/install/install.ps1 at tag rust-v0.162.1; `bin/codex.js` of \
+                    `@openai/codex@0.162.1`, and its win32-x64 and win32-arm64 packages; the \
+                    installer manifest of `OpenAI.Codex` 0.161.0, the newest in \
+                    microsoft/winget-pkgs; read on 2026-10-15. `Programs\\OpenAI\\Codex` is in \
+                    install.ps1 alone, so the build is probed for the package's own file",
+        verified_against: "0.162.1",
+        depends: "codex::paths::install_places and host::Os::package_bins, where an app looks \
+                  for `codex.exe` after the registry's `Path`",
+        probe: &["codex-package.json"],
+        absent: &[],
+    },
+    Assumption {
         name: "codex_login_is_driveable",
         fact: "`codex login` revokes whatever login is stored in its home before signing in, \
                opens the browser itself, prints the address to stderr for when it cannot, \
@@ -567,6 +598,7 @@ mod tests {
                 "codex_windows_home",
                 "codex_identity_is_the_person",
                 "codex_refusal_is_invalid_grant",
+                "codex_windows_install_places",
                 "codex_login_prints_its_address",
                 "codex_login_takes_a_store_override",
             ]
@@ -576,7 +608,8 @@ mod tests {
     // The conformance run checks a build of each system for them.
     #[test]
     fn macos_and_linux_read_every_fact() {
-        for line in PER_SYSTEM.iter().filter(|l| l.name != "codex_windows_home") {
+        let windows = ["codex_windows_home", "codex_windows_install_places"];
+        for line in PER_SYSTEM.iter().filter(|l| !windows.contains(&l.name)) {
             assert!(matches!(line.on(Platform::MacOs), Read(_)), "{}", line.name);
             assert_eq!(
                 matches!(line.on(Platform::Linux), Read(_)),

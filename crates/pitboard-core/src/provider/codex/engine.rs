@@ -263,13 +263,13 @@ impl Provider for Codex {
         ctx: &Context,
         permit: Permit,
         dir: &std::path::Path,
-    ) -> std::process::Command {
-        let mut command = crate::provider::command(ctx, permit, ProviderId::Codex);
+    ) -> std::io::Result<std::process::Command> {
+        let mut command = crate::provider::command(ctx, permit, ProviderId::Codex)?;
         command
             .args(["-c", super::layers::FILE_STORE, "login"])
             .env("CODEX_HOME", dir)
             .current_dir(dir);
-        command
+        Ok(command)
     }
 
     fn read_signin(
@@ -589,10 +589,14 @@ mod tests {
     #[test]
     fn a_sign_in_is_codex_login_in_the_private_directory() {
         let dir = std::path::Path::new("/tmp/pitboard-signin-scratch");
-        let ctx = Context::new(std::path::PathBuf::from("/nowhere"))
-            .with_codex_program(std::path::PathBuf::from("/opt/codex/bin/codex"));
-        let command = Codex.sign_in(&ctx, Permit::for_a_test(), dir);
-        assert_eq!(command.get_program(), "/opt/codex/bin/codex");
+        // Never run: a program that is there on every system.
+        let codex = std::env::current_exe().expect("this test");
+        let ctx =
+            Context::new(std::path::PathBuf::from("/nowhere")).with_codex_program(codex.clone());
+        let command = Codex
+            .sign_in(&ctx, Permit::for_a_test(), dir)
+            .expect("found");
+        assert_eq!(command.get_program(), codex.as_os_str());
         assert_eq!(
             command.get_args().collect::<Vec<_>>(),
             ["-c", "cli_auth_credentials_store=\"file\"", "login"]

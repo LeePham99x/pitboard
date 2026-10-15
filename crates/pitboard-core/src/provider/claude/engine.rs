@@ -205,13 +205,13 @@ impl Provider for Claude {
         ctx: &Context,
         permit: Permit,
         dir: &std::path::Path,
-    ) -> std::process::Command {
-        let mut command = crate::provider::command(ctx, permit, ProviderId::Claude);
+    ) -> std::io::Result<std::process::Command> {
+        let mut command = crate::provider::command(ctx, permit, ProviderId::Claude)?;
         command
             .args(["auth", "login"])
             .env("CLAUDE_CONFIG_DIR", dir)
             .env_remove("CLAUDE_SECURESTORAGE_CONFIG_DIR");
-        command
+        Ok(command)
     }
 
     fn read_signin(

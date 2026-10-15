@@ -164,13 +164,15 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
     },
     everywhere("sign_in_output", "2.1.289"),
     everywhere("sign_in_takes_another_code", "2.1.289"),
-    later_on_windows(
-        "install_places",
-        "2.1.289",
-        &["W17"],
-        "windows_install_layout: where the native installer and npm put `claude.exe` on \
-         Windows",
-    ),
+    PerSystem {
+        name: "install_places",
+        macos: Read("2.1.289"),
+        linux: Read("2.1.289"),
+        windows: NotRead(
+            "the native installer, npm and winget put `claude.exe` elsewhere on Windows, which \
+             windows_install_layout reads",
+        ),
+    },
     later_on_windows(
         "plaintext_credential_mode",
         VERIFIED_AGAINST,
@@ -267,6 +269,12 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         name: "windows_open_sharing",
         macos: NotRead("a rename lands over a file open on macOS whatever opened it"),
         linux: NotRead("a rename lands over a file open on Linux whatever opened it"),
+        windows: Read("2.1.300"),
+    },
+    PerSystem {
+        name: "windows_install_layout",
+        macos: NotRead("where macOS's installers put `claude` is install_places'"),
+        linux: NotRead("where Linux's installers put `claude` is install_places'"),
         windows: Read("2.1.300"),
     },
     warm_up("headless_token_descriptor"),
@@ -953,6 +961,28 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         absent: &[],
     },
     Assumption {
+        name: "windows_install_layout",
+        fact: "on Windows the native installer keeps its launcher as a copy, `claude.exe` in \
+               `(HOME ?? homedir())\\.local\\bin`, put in place by a rename once its checksum \
+               matches, and each version in `claude\\versions` of `XDG_DATA_HOME`, else of \
+               `<home>\\.local\\share`. A global npm install's program is `bin/claude.exe`, which npm's \
+               cmd-shim starts as it is from `claude.cmd` in its prefix, `%APPDATA%\\npm` by \
+               default, and which postinstall links or copies from \
+               `@anthropic-ai/claude-code-win32-<arch>/claude.exe`; without that it is a stub \
+               that prints how to install. winget's `Anthropic.ClaudeCode` is the bare \
+               portable `claude.exe`, linked in winget's `Links`",
+        read_from: "the native installer's paths, its launcher's update and its `claude.exe` on \
+                    win32, in the win32-x64 and win32-arm64 builds; `install.cjs` and \
+                    `package.json` of `@anthropic-ai/claude-code@2.1.300`; the installer \
+                    manifest of `Anthropic.ClaudeCode` 2.1.292, the newest in \
+                    microsoft/winget-pkgs; read on 2026-10-15",
+        verified_against: "2.1.300",
+        depends: "claude::paths::install_places and host::Os::package_bins, where an app looks \
+                  for `claude.exe` after the registry's `Path`",
+        probe: &["Refusing to install a launcher copy of "],
+        absent: &[],
+    },
+    Assumption {
         name: "headless_token_descriptor",
         fact: "where `CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR` names a descriptor, Claude Code \
                reads an OAuth access token from it, an inherited pipe until a newline or its \
@@ -1089,6 +1119,7 @@ mod tests {
                 "login_carries_its_plan",
                 "windows_home_folder",
                 "windows_open_sharing",
+                "windows_install_layout",
             ]
         );
         for name in [

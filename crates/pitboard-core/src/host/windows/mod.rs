@@ -10,8 +10,7 @@
 //!   person);
 //! - no process list (W18), so a switch says nobody can tell what still runs a tool, and
 //!   every process may still be running;
-//! - no scheduler (W25);
-//! - no program found (W17), and no `PATH` of a login shell, which Windows does not have.
+//! - no scheduler (W25).
 //!
 //! Each tool's own live chain refuses on Windows in its provider's code, not here: which
 //! store a tool keeps its login in is the tool's to say (W21, W22, W23).
@@ -46,11 +45,65 @@ pub(super) fn awake() -> std::time::Duration {
     super::from_interrupt_time(units)
 }
 
-/// Windows has no login shell whose startup files build a `PATH`: a program's environment
-/// comes from the registry, through whatever started it. Which `PATH` an app reads tools on
-/// is W17's to say; until then nobody can tell.
+// Windows has no login shell: a program started now is given the machine's `Path` and then
+// the person's, from the registry, which an app started before a change has not been given.
+// Never a PowerShell profile's. A build for tests reads none but in its own test.
 pub(super) fn login_path(_env: &Environment) -> LoginPath {
-    LoginPath::Unknown
+    if cfg!(any(test, feature = "test-support")) {
+        return LoginPath::Unknown;
+    }
+    registry_path()
+}
+
+fn registry_path() -> LoginPath {
+    use windows_registry::{CURRENT_USER, LOCAL_MACHINE};
+    let parts: Vec<String> = [
+        (
+            LOCAL_MACHINE,
+            r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+        ),
+        (CURRENT_USER, "Environment"),
+    ]
+    .into_iter()
+    .filter_map(|(hive, key)| expanded(hive.open(key).ok()?, "Path"))
+    .filter(|part| !part.is_empty())
+    .collect();
+    if parts.is_empty() {
+        return LoginPath::Unknown;
+    }
+    LoginPath::Said(parts.join(";"))
+}
+
+// A `REG_SZ`, or a `REG_EXPAND_SZ` expanded as this process's environment expands it.
+fn expanded(key: windows_registry::Key, name: &str) -> Option<String> {
+    use windows_registry::Type;
+    let kind = key.get_type(name).ok()?;
+    if !matches!(kind, Type::String | Type::ExpandString) {
+        return None;
+    }
+    let text = key.get_hstring(name).ok()?;
+    if kind == Type::String {
+        return Some(text.to_string_lossy());
+    }
+    let unexpanded: Vec<u16> = text.iter().copied().chain([0]).collect();
+    let mut out = vec![0u16; 1024];
+    loop {
+        // SAFETY: a NUL-terminated string, and a buffer of the length given.
+        let needed = unsafe {
+            windows_sys::Win32::System::Environment::ExpandEnvironmentStringsW(
+                unexpanded.as_ptr(),
+                out.as_mut_ptr(),
+                out.len() as u32,
+            )
+        } as usize;
+        if needed == 0 {
+            return None;
+        }
+        if needed <= out.len() {
+            return Some(String::from_utf16_lossy(&out[..needed - 1]));
+        }
+        out.resize(needed, 0);
+    }
 }
 
 #[derive(Debug)]
@@ -137,7 +190,7 @@ pub(super) fn host() -> Arc<dyn Host> {
 }
 
 /// The path this program was started by, as Windows says it. Whether a link or a shim
-/// started it is W17's to read.
+/// started it is W25's to read.
 pub(super) fn current_program() -> std::io::Result<PathBuf> {
     std::env::current_exe()
 }
@@ -278,9 +331,9 @@ mod tests {
         assert!(crate::service::gate(&ctx).is_ok());
     }
 
-    // Claude Desktop's folders are never moved here, and no program is found until W17.
+    // Claude Desktop's folders are never moved here.
     #[test]
-    fn no_apps_folder_is_moved_and_no_program_found() {
+    fn no_apps_folder_is_moved() {
         let dir = std::env::temp_dir().join(format!("pitboard-windows-{}", std::process::id()));
         let permit = crate::service::Permit::for_a_test();
         let unsupported = |made: std::io::Result<()>| {
@@ -295,8 +348,29 @@ mod tests {
         unsupported(fs::same_volume(&dir, &dir).map(drop));
         unsupported(write_jar(&dir.join("Cookies"), &[]));
         assert!(!dir.exists(), "nothing was made");
-        assert!(!proc::can_run(&std::env::current_exe().expect("this test")));
-        assert_eq!(login_path(&Environment::default()), LoginPath::Unknown);
         assert_eq!(user::login_name(), None);
+    }
+
+    /// A build for tests reads no machine's `Path`. Read here, read only, it is the machine's
+    /// and then the person's, each `REG_EXPAND_SZ` expanded, so the `%SystemRoot%\System32`
+    /// the machine's holds is Windows' own folder.
+    #[test]
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "where Windows is, as it names it"
+    )]
+    fn the_path_a_program_started_now_gets_is_read_from_the_registry() {
+        assert_eq!(login_path(&Environment::default()), LoginPath::Unknown);
+        let LoginPath::Said(path) = registry_path() else {
+            panic!("every Windows has a Path");
+        };
+        let system = std::env::var_os("SystemRoot")
+            .map(|windows| PathBuf::from(windows).join("System32"))
+            .expect("SystemRoot");
+        assert!(
+            std::env::split_paths(&path)
+                .any(|dir| crate::host::same_path_in_any_case(&dir, &system)),
+            "{path}"
+        );
     }
 }

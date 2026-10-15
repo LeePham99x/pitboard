@@ -1,7 +1,8 @@
 //! Where Claude Code keeps things, and who it currently thinks is signed in. Read-only.
 
-use crate::context::Context;
+use crate::context::{Context, Environment};
 use crate::error::{Error, Result};
+use crate::host::Os;
 use crate::provider::claude::daemon;
 use crate::provider::claude::slot;
 use serde_json::Value;
@@ -43,13 +44,23 @@ pub(crate) fn program(ctx: &Context) -> Option<PathBuf> {
     crate::provider::program_of(ctx, crate::provider::ProviderId::Claude)
 }
 
-/// Where Claude Code's installers put `claude`, in the order an app looks there after the
-/// login shell's `PATH`: the native installer's launcher in `~/.local/bin`, then where the
-/// system's package managers put it, which is where its Homebrew cask goes, and a global npm
-/// install where Homebrew or nodejs.org installed Node (`install_places` in the register).
-pub(crate) fn install_places(home: &std::path::Path) -> Vec<PathBuf> {
-    std::iter::once(home.join(".local/bin"))
-        .chain(crate::host::OS.package_bins().iter().map(PathBuf::from))
+// Where Claude Code's installers put `claude`, in the order an app looks there after the
+// login shell's `PATH`: the native installer's launcher in the home's `.local/bin`, then where
+// the system's package managers put it, its Homebrew cask, a global npm install and on
+// Windows winget's and Scoop's. The launcher's home on Windows is `HOME ?? USERPROFILE`, as
+// Claude Code reads it there, and none where both are unset (`install_places` and
+// `windows_install_layout` in the register).
+pub(crate) fn install_places(env: &Environment) -> Vec<PathBuf> {
+    let home = match env.os() {
+        Os::MacOs | Os::Linux => Some(env.home()),
+        Os::Windows => env
+            .path("HOME")
+            .or_else(|| env.path("USERPROFILE"))
+            .map(PathBuf::from),
+    };
+    home.map(|home| home.join(".local").join("bin"))
+        .into_iter()
+        .chain(env.os().package_bins(env))
         .collect()
 }
 
@@ -233,12 +244,15 @@ mod tests {
     /// A bare name is looked up the way a shell looks it up, so Pitboard and the person's
     /// own shell disagree about whether Claude Code is installed only if PATH differs.
     #[test]
-    #[cfg_attr(windows, ignore = "W17: finding programs on Windows")]
     fn a_program_is_found_on_path_and_a_missing_one_is_not() {
         let ctx = Context::new(PathBuf::from("/home/x"));
-        let found = program(&ctx.clone().with_claude_program("ls".into()))
-            .expect("every machine that runs these tests has ls on PATH");
-        assert!(found.ends_with("ls"), "{found:?}");
+        let (everywhere, file) = match crate::host::OS {
+            Os::MacOs | Os::Linux => ("ls", "ls"),
+            Os::Windows => ("cmd", "cmd.exe"),
+        };
+        let found = program(&ctx.clone().with_claude_program(everywhere.into()))
+            .expect("every machine that runs these tests has it on PATH");
+        assert!(found.ends_with(file), "{found:?}");
         assert!(found.is_absolute(), "a shell would get an absolute path");
         assert!(std::fs::metadata(&found).is_ok());
         assert_eq!(

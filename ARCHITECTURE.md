@@ -89,21 +89,26 @@ window loads its site, and whatever the site's pages load, as a browser would.
     there, the one way an item of a Claude Desktop login moves. `fs::testing`, in a build
     for tests, is how a test or a fixture sets a file's access or makes a link; other crates
     reach it as `pitboard_core::testing::fs`. `program.rs` finds a program the way the
-    system's launcher does. `mod.rs` chooses the system, once: `macos/` (the keychain
+    system's launcher does: on Windows each folder is tried with the extensions of `PATHEXT`
+    in its order, kept to `.exe`, `.bat` and `.cmd`, and a bare name is never handed to std's
+    `Command`, which would look beside Pitboard first. `mod.rs` chooses the system, once: `macos/` (the keychain
     through `security`, `ps`, a cookie jar through the system's SQLite in `sqlite.rs`, a
     bundle's `Info.plist` in `bundle.rs`, launchd) or `linux/` (`/proc`, systemd), each with
     what `unix/` holds for both, or `windows/`. Linux and Windows refuse Claude Desktop's
     data folder before anything else is asked, so neither face lists processes with their
     parents or reads a cookie jar. `windows/` is the face that refuses whatever of Windows
     is not built yet: no store of secrets, a vault of `store::Backend::Unknown` whose every
-    call cannot be read, no process list, no scheduler, none of the four calls that move
-    Claude Desktop's data folder, and no program found. What it does read is this process's
-    token, through windows-sys (`windows/user.rs`), which `token.rs` makes an `Elevation` of
-    and whose `TokenUser` is the person's SID, the account's own folders
-    (`GetUserProfileDirectoryW`, `FOLDERID_Profile`, `FOLDERID_LocalAppData` and the profile
-    type), which a build for tests answers nothing from, and the build `RtlGetVersion`
-    gives, which `host::windows_floor` holds against 26100, the build of Windows 11 24H2 and
-    Windows Server 2025. `windows/fs.rs` makes each private file and folder with a security
+    call cannot be read, no process list, no scheduler, and none of the four calls that move
+    Claude Desktop's data folder. It finds programs as a Windows shell does, an app execution
+    alias in a `WindowsApps` folder by its reparse tag, and reads the `Path` a program
+    started now is given from the registry, the machine's and then the person's, which a
+    build for tests reads in its own test alone. It also reads this process's token, through
+    windows-sys (`windows/user.rs`), which `token.rs` makes an `Elevation` of and whose
+    `TokenUser` is the person's SID, the account's own folders (`GetUserProfileDirectoryW`,
+    `FOLDERID_Profile`, `FOLDERID_LocalAppData` and the profile type), which a build for
+    tests answers nothing from, and the build `RtlGetVersion` gives, which
+    `host::windows_floor` holds against 26100, the build of Windows 11 24H2 and Windows
+    Server 2025. `windows/fs.rs` makes each private file and folder with a security
     descriptor from SDDL: owned by the person's SID, with a protected access list granting
     the person, SYSTEM and Administrators alone, which a folder passes on to what is made in
     it. A folder already there keeps its own list. `fs::access` reads a path's list, and
@@ -310,12 +315,14 @@ window loads its site, and whatever the site's pages load, as a browser would.
     find the program daily renewal runs. On Windows a name is one in any case, and the
     first of two spellings wins, as Windows hands a program its variables.
   - `app.rs`: what an app finds for itself that a command typed at a prompt is given: where
-    to look for each tool's program, on the login shell's `PATH` and then where the tool's
-    installers put it, which the core looks in each time it is asked, and the `pitboard` a
-    terminal would run, there and then where each way of installing Pitboard puts it, under
-    the app's home and where the system's package managers put programs. And the files an
-    app keeps of its own in Pitboard's directory, `told.json` and `app.json`, written as the
-    core writes its own and read by nothing of the core.
+    to look for each tool's program, on the login shell's `PATH`, or on Windows the
+    registry's, and then where the tool's installers put it, which the core looks in each
+    time it is asked, and the `pitboard` a terminal would run, there and then where each way
+    of installing Pitboard puts it, under the app's home or on Windows beside the app, and
+    where the system's package managers put programs, which Windows names by variables:
+    npm's `%APPDATA%\npm`, winget's `Links` and Scoop's `shims`. And the files an app keeps of
+    its own in Pitboard's directory, `told.json` and `app.json`, written as the core writes
+    its own and read by nothing of the core.
   - `api.rs`: what every request shares, the agent each context's requests go out on,
     `api::agent`. The requests to Anthropic are in `provider/claude/api.rs`, and those to
     OpenAI in `provider/codex/api.rs`.
@@ -750,7 +757,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
   for every front end. The command line passes its own through `Context::from_env`. An app
   passes the one it was started with through `AppContext::discover`, which also asks the
   person's login shell for `PATH`, because an app the system started has none of a
-  shell's.
+  shell's. On Windows it reads the registry's `Path` instead, which a program already
+  running was not given after a change.
 - Three variables are also read straight from the process. `PATH` is read when a context
   made with `Context::new` was given no search path (`context.rs`), and on Linux to find
   the program daily renewal runs (`host/linux`). `NO_COLOR` is read by the status line
@@ -2593,6 +2601,16 @@ treated, and only the macOS build shows it. The run reads both builds since.
   Homebrew cask's by a path through a Homebrew `Caskroom`. So an app with no shell's `PATH`
   looks in `~/.local/bin`, `/opt/homebrew/bin` and `/usr/local/bin`, after the login
   shell's.
+- Read on 15 October 2026 from the win32-x64 and win32-arm64 builds of 2.1.300, the npm
+  package of that version and winget's manifest of 2.1.292
+  (`windows_install_layout`): on Windows the native installer keeps its launcher as a
+  copy, `claude.exe` in the `.local\bin` of `HOME`, else of `os.homedir()`, put in place
+  by a rename once its checksum matches. npm's `claude.cmd` starts the package's
+  `bin\claude.exe` as it is, which postinstall links or copies from the platform's
+  package. winget's is the bare portable `claude.exe`, linked in its `Links`. So an app on
+  Windows looks in that `.local\bin`, `%APPDATA%\npm`, `%LOCALAPPDATA%\Microsoft\WinGet\Links`
+  and `%USERPROFILE%\scoop\shims`, after the registry's `Path`, each only where its
+  variable is set.
 - Read on 6 October 2026 from the macOS, Linux and Windows builds of 2.1.289, whose code
   here is the same: the config dir is `CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude")`,
   normalised to NFC, and the config file's base is `CLAUDE_CONFIG_DIR || homedir()`. So an
@@ -2827,6 +2845,12 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
   Mac had left that link, read on 5 October 2026. Its macOS and Linux binaries name
   `npm install -g @openai/codex` and `brew upgrade --cask codex` as the other ways it is
   kept up to date. 0.154.0 names those too, but not the standalone package layout.
+- Read on 15 October 2026 from install.ps1 at tag `rust-v0.162.1`, the npm packages of
+  0.162.1 and winget's manifest of 0.161.0 (`codex_windows_install_places`): on Windows
+  install.ps1 makes `CODEX_INSTALL_DIR`, or `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin` where
+  that is unset or white space, a junction to its `current\bin`. npm's `codex.cmd` starts
+  `bin\codex.js`, which runs the platform package's `vendor\<target>\bin\codex.exe`.
+  winget's is a nested portable `codex-<target>.exe`, linked in its `Links` as `codex`.
 
 ### Claude Desktop
 

@@ -1397,21 +1397,28 @@ impl World {
     }
 
     /// An app on this machine with a command line inside it, in the scratch home, which a
-    /// schedule runs and a link would reach, as `build-app.sh` puts one in a copy of the app.
-    /// Where it is.
-    #[cfg(unix)]
+    /// schedule runs and a link would reach, as `build-app.sh` puts one in a copy of the app,
+    /// or the Windows app's installer in the `bin` beside `Pitboard.exe`. Where it is.
     pub(super) fn app_with_a_command_line(&mut self) -> PathBuf {
         self.app_with_a_command_line_in("")
     }
 
     /// The same, with the app in `dir` of the scratch home: under `AppTranslocation/…`, the
     /// temporary copy macOS runs an app from where it was downloaded.
-    #[cfg(unix)]
     pub(super) fn app_with_a_command_line_in(&mut self, dir: &str) -> PathBuf {
-        let helper = self
-            .root
-            .join(dir)
-            .join("Pitboard.app/Contents/Helpers/pitboard");
+        use pitboard_core::host::{OS, Os};
+        let helper = match OS {
+            Os::MacOs | Os::Linux => self
+                .root
+                .join(dir)
+                .join("Pitboard.app/Contents/Helpers/pitboard"),
+            Os::Windows => self
+                .root
+                .join(dir)
+                .join("Pitboard")
+                .join("bin")
+                .join("pitboard.exe"),
+        };
         a_program_at(&helper);
         self.ctx = self.ctx.clone().with_schedule_program(helper.clone());
         self.helper = Some(helper.clone());
@@ -1421,7 +1428,6 @@ impl World {
     /// Where the app looks for the `pitboard` a terminal would run, after the login shell's
     /// `PATH`: `places`, and nothing of this machine's. For the test that makes an app with a
     /// command line inside it, as its own helpers are.
-    #[cfg(unix)]
     pub(super) fn looks_for_pitboard_in(
         &mut self,
         places: Vec<PathBuf>,
@@ -1957,7 +1963,6 @@ fn whether_the_stand_in_runs_is_answered_once_it_has_written_its_process_id() {
 
 /// A program at `path` that anybody may run, with the directories it needs: the compiled
 /// stand-in, there to be found, which refuses to do anything were it run.
-#[cfg(unix)]
 pub(super) fn a_program_at(path: &std::path::Path) {
     use pitboard_core::testing::stand_in::{self, Script};
     let dir = path.parent().expect("a program's directory");

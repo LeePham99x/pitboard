@@ -129,8 +129,7 @@ impl Os {
     ///
     /// macOS asks for the Desktop, Documents and Downloads folders, iCloud Drive and the
     /// folders of other cloud storage, under Privacy & Security's Files & Folders. Linux
-    /// asks nothing. Which folders Windows asks about, if any, is W17's to say, with where an
-    /// app finds a program there; until then none is passed over.
+    /// and Windows ask nothing before an app reads a folder.
     pub(crate) fn guarded_folders(self) -> &'static [&'static str] {
         match self {
             Os::MacOs => &[
@@ -144,19 +143,27 @@ impl Os {
         }
     }
 
-    /// Where the system's package managers put the programs they install, for an app that
-    /// has no shell's `PATH` to find one on, after each tool's own installer's place.
-    ///
-    /// On a Mac, Homebrew's `bin` on Apple silicon and on Intel. npm's global `bin` is one of
-    /// them where Homebrew installed Node, and `/usr/local/bin` where nodejs.org's installer
-    /// did, so a global npm install of a tool is found there too: Claude Code 2.1.289 lists
-    /// both among npm's places. Nothing on Linux looks, since no app runs there and the
-    /// command line has a shell's `PATH`, so none is said for it. Where winget, Scoop and npm
-    /// put programs on Windows is W17's to read; until then none is looked in.
-    pub(crate) fn package_bins(self) -> &'static [&'static str] {
+    // Where the system's package managers put programs, for an app with no shell's `PATH`,
+    // after each tool's own installer's place. On a Mac, Homebrew's `bin` on Apple silicon and
+    // on Intel, which is npm's global `bin` too where Homebrew or nodejs.org installed Node
+    // (Claude Code 2.1.289 lists both). None on Linux, where no app runs. On Windows npm's
+    // global prefix, winget's links and Scoop's shims, each from the variable that names it.
+    pub(crate) fn package_bins(self, env: &Environment) -> Vec<PathBuf> {
         match self {
-            Os::MacOs => &["/opt/homebrew/bin", "/usr/local/bin"],
-            Os::Linux | Os::Windows => &[],
+            Os::MacOs => vec!["/opt/homebrew/bin".into(), "/usr/local/bin".into()],
+            Os::Linux => Vec::new(),
+            Os::Windows => [
+                ("APPDATA", &["npm"][..]),
+                ("LOCALAPPDATA", &["Microsoft", "WinGet", "Links"]),
+                ("USERPROFILE", &["scoop", "shims"]),
+            ]
+            .into_iter()
+            .filter_map(|(variable, below)| {
+                let mut place = env.named_folder(variable)?;
+                place.extend(below);
+                Some(place)
+            })
+            .collect(),
         }
     }
 
@@ -210,16 +217,21 @@ impl Os {
         }
     }
 
-    /// The command line an app at `app` comes with, which is what its renewal schedule runs:
-    /// the app itself is not one. A Mac app carries it at `Contents/Helpers/pitboard`, where
-    /// `build-app.sh` puts it, and anything that is not an app bundle, such as a test or a
-    /// build directory, has none. No app runs on Linux. Where the Windows app carries its
-    /// own is the app's to say, which it does not yet.
+    // The command line an app at `app` comes with, which its renewal schedule runs; none for
+    // anything that is not an app, such as a test or a build folder. A Mac app carries it at
+    // `Contents/Helpers/pitboard`, where `build-app.sh` puts it. The Windows app is
+    // `<install>\Pitboard.exe` and its command line `<install>\bin\pitboard.exe`, never beside
+    // it, since NTFS takes the two names for one. No app runs on Linux.
     pub(crate) fn app_command_line(self, app: &Path) -> Option<PathBuf> {
         match self {
             Os::MacOs => (app.extension() == Some("app".as_ref()))
                 .then(|| app.join("Contents/Helpers/pitboard")),
-            Os::Linux | Os::Windows => None,
+            Os::Linux => None,
+            Os::Windows => app
+                .file_name()
+                .filter(|name| name.eq_ignore_ascii_case("Pitboard.exe"))
+                .and_then(|_| app.parent())
+                .map(|install| install.join("bin").join("pitboard.exe")),
         }
     }
 }
@@ -429,8 +441,8 @@ pub(crate) fn upper_one_for_one(c: char) -> char {
     windows,
     allow(
         dead_code,
-        reason = "only a login shell says or is late, and Windows has none; W17 says which \
-                  `PATH` an app finds programs on there"
+        reason = "only a login shell is late, and Windows has none: its `Path` is read from \
+                  the registry"
     )
 )]
 pub(crate) enum LoginPath {
@@ -446,8 +458,8 @@ pub(crate) enum LoginPath {
 
 /// The `PATH` the person's own terminal has, which an app the system started does not: asked
 /// of their login shell where the system has one, which can take seconds, so never on an
-/// app's main thread. Windows has no login shell, and says nothing until W17 reads which
-/// `PATH` an app finds programs on there.
+/// app's main thread. Windows has no login shell: there it is the `Path` a program started
+/// now is given, read from the registry.
 pub(crate) fn login_path(env: &Environment) -> LoginPath {
     os::login_path(env)
 }

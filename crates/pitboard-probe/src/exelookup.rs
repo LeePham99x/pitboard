@@ -1,7 +1,6 @@
 //! Block F3 and the runner facts' `exe-lookup`: which file `std::process::Command` starts
-//! for a bare program name. W17 decides from it whether Pitboard may ever start a tool by a
-//! bare name; the question is whether a `claude.exe` beside `pitboard.exe` wins over the one
-//! on `PATH`.
+//! for a bare program name. A `claude.exe` beside `pitboard.exe` wins over the one on `PATH`,
+//! so Pitboard never starts a tool by a bare name on Windows.
 //!
 //! The measurement sets up stand-ins of one probe-named program in four places (beside the
 //! program that does the lookup, in a folder on the parent's `PATH`, in a folder on a

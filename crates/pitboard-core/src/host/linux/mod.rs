@@ -146,7 +146,9 @@ fn started_as(
 ) -> PathBuf {
     let resolved = std::fs::canonicalize(&running).ok();
     argv0
-        .and_then(|named| super::program::find(Path::new(named), search))
+        .and_then(|named| {
+            super::program::find(Path::new(named), search, &super::program::Lookup::here())
+        })
         .filter(|found| resolved.is_some() && std::fs::canonicalize(found).ok() == resolved)
         .unwrap_or(running)
 }
