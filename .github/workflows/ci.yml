@@ -174,37 +174,13 @@ jobs:
           -Probe target/debug/pitboard-probe.exe
       - run: cargo clippy --workspace --all-targets --locked
       - run: cargo clippy -p pitboard-ffi --all-targets --locked --features fixture
-      # Pitboard replaces a file on exFAT through MoveFileExW: a test does so on this volume,
-      # which only the job's user may make.
-      - name: An exFAT volume for the tests
-        id: exfat
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $vhd = Join-Path $env:RUNNER_TEMP 'pitboard-exfat.vhdx'
-          $letter = [char[]](68..90) | Where-Object { -not (Test-Path -Path "$($_):\") } | Select-Object -Last 1
-          $made = Join-Path $env:RUNNER_TEMP 'pitboard-exfat.txt'
-          @(
-            "create vdisk file=`"$vhd`" maximum=256 type=expandable",
-            "select vdisk file=`"$vhd`"",
-            'attach vdisk',
-            'create partition primary',
-            'format fs=exfat quick label=PBTEST',
-            "assign letter=$letter"
-          ) | Set-Content -Path $made -Encoding ascii
-          $said = diskpart /s $made | Out-String
-          if ($LASTEXITCODE -ne 0) { throw "diskpart could not make the exFAT volume (exit $LASTEXITCODE): $said" }
-          $folder = "$($letter):\pitboard-test"
-          New-Item -ItemType Directory -Force -Path $folder | Out-Null
-          "folder=$folder" >> $env:GITHUB_OUTPUT
       # No filter and no --skip: a test that waits for a later pull request says so in its attribute.
+      # -ExFat mounts the volume a test replaces a file on through MoveFileExW.
       - name: The workspace's tests, as a standard user
         shell: pwsh
-        env:
-          EXFAT: ${{ steps.exfat.outputs.folder }}
         run: >
           ./.github/scripts/test-as-standard-user.ps1 -Cargo '--locked --workspace'
-          -Probe target/debug/pitboard-probe.exe -Volume $env:EXFAT
+          -Probe target/debug/pitboard-probe.exe -ExFat
       - name: pitboard-ffi with its fixtures, as a standard user
         shell: pwsh
         run: >

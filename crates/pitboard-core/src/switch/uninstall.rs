@@ -25,7 +25,7 @@ pub struct Removed {
     pub left: usize,
     // Folders set aside, deleted with every parked login.
     pub set_aside: usize,
-    /// Whether ~/.pitboard itself is gone.
+    // Whether Pitboard's directory is gone.
     pub home_removed: bool,
     // What another program still held in Pitboard's directory, by path, so it stayed.
     pub home_kept_by: Vec<std::path::PathBuf>,
@@ -160,14 +160,11 @@ fn remove_schedule(ctx: &Context, permit: Permit) -> Result<bool> {
 // run's own `state.lock` is let go of first: on exFAT and FAT32 a file held open keeps its
 // folder (RF-C6x).
 fn remove_home(ctx: &Context, permit: Permit, exclusive: std::fs::File) -> Home {
-    let dir = home::dir(ctx);
-    let warming_up = std::fs::File::open(dir.join("warm.lock"))
-        .is_ok_and(|lock| matches!(lock.try_lock(), Err(std::fs::TryLockError::WouldBlock)));
-    if warming_up {
+    if super::warm::RunLock::is_held(ctx) {
         return Home::WarmingUp;
     }
     drop(exclusive);
-    match home::remove_all(permit, &dir) {
+    match home::remove_all(permit, &home::dir(ctx)) {
         Ok(()) => Home::Removed,
         Err(kept) => Home::Kept(kept.left),
     }

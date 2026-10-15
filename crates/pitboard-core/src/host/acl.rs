@@ -151,19 +151,33 @@ pub(crate) fn is_private(protected: bool, aces: &[Ace], you: &str, folder: bool)
         })
 }
 
-// One `icacls` a path, as it takes one. Inheritance goes only beside the grants: alone, it can
-// leave an empty list, which shuts the owner out too. What the path inherits goes, and a grant
-// someone gave another account on the path itself stays.
-pub(crate) fn icacls(folder: bool, path: &str, sid: &str) -> String {
+// `/reset` takes away a grant someone gave another account on the path itself. Inheritance
+// goes only beside the grants: alone, it can leave an empty list, which shuts the owner out too.
+pub(crate) fn icacls(folder: bool, path: &str, sid: &str) -> [String; 2] {
+    let path = quoted(path);
     // A folder's grants pass on to what it holds; on a file they would grant nothing.
     let rights = if folder { "(OI)(CI)F" } else { "F" };
     let grant = |who: &str| format!("\"*{who}:{rights}\"");
-    format!(
-        "icacls \"{path}\" /inheritance:r /grant:r {} {} {}",
-        grant(SYSTEM),
-        grant(ADMINISTRATORS),
-        grant(sid)
-    )
+    [
+        format!("icacls {path} /reset"),
+        format!(
+            "icacls {path} /inheritance:r /grant:r {} {} {}",
+            grant(SYSTEM),
+            grant(ADMINISTRATORS),
+            grant(sid)
+        ),
+    ]
+}
+
+// To the C runtime that splits icacls's arguments `\"` is a quote, so a trailing separator
+// goes, and a drive's root keeps its own, doubled.
+fn quoted(path: &str) -> String {
+    let path = path.trim_end_matches(['\\', '/']);
+    if path.is_empty() || path.ends_with(':') {
+        format!("\"{path}\\\\\"")
+    } else {
+        format!("\"{path}\"")
+    }
 }
 
 #[cfg(test)]
@@ -339,19 +353,44 @@ mod tests {
     }
 
     #[test]
-    fn the_icacls_line_quotes_the_path_and_takes_inheritance_away_only_with_the_grants() {
+    fn the_icacls_lines_reset_the_path_then_take_inheritance_away_only_with_the_grants() {
         let path = r"C:\Users\Đạt Ng\.codex\auth.json";
         assert_eq!(
             icacls(false, path, YOU),
-            format!(
-                r#"icacls "{path}" /inheritance:r /grant:r "*S-1-5-18:F" "*S-1-5-32-544:F" "*{YOU}:F""#
-            )
+            [
+                format!(r#"icacls "{path}" /reset"#),
+                format!(
+                    r#"icacls "{path}" /inheritance:r /grant:r "*S-1-5-18:F" "*S-1-5-32-544:F" "*{YOU}:F""#
+                )
+            ]
         );
         assert_eq!(
             icacls(true, r"C:\x y", YOU),
-            format!(
-                r#"icacls "C:\x y" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "*{YOU}:(OI)(CI)F""#
-            )
+            [
+                r#"icacls "C:\x y" /reset"#.to_owned(),
+                format!(
+                    r#"icacls "C:\x y" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "*{YOU}:(OI)(CI)F""#
+                )
+            ]
         );
+    }
+
+    #[test]
+    fn a_trailing_separator_never_escapes_the_closing_quote() {
+        for (given, said) in [
+            (r"C:\b c\", r#""C:\b c""#),
+            (r"C:\b c\\", r#""C:\b c""#),
+            ("C:/b c/", r#""C:/b c""#),
+            (r"\\server\share\pb\", r#""\\server\share\pb""#),
+            (r"C:\", r#""C:\\""#),
+            ("C:", r#""C:\\""#),
+        ] {
+            let [reset, grant] = icacls(true, given, YOU);
+            assert_eq!(reset, format!("icacls {said} /reset"), "{given}");
+            assert!(
+                grant.starts_with(&format!("icacls {said} /inheritance:r ")),
+                "{given}"
+            );
+        }
     }
 }

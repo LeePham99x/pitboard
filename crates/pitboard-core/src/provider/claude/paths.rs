@@ -113,9 +113,7 @@ pub(crate) fn refresh_lock(ctx: &Context) -> PathBuf {
     PathBuf::from(storage_dir(ctx)).join(".oauth_refresh")
 }
 
-/// What the legacy lock a token refresh takes second guards: the storage directory itself,
-/// its links resolved where it is there, locked beside it. Spelled as Bun's realpath spells
-/// it, without the `\\?\` Windows' own gives (`windows_home_folder` in the register).
+// The second lock a refresh takes, on the storage directory as Bun's realpath spells it.
 pub(crate) fn legacy_refresh_lock(ctx: &Context) -> PathBuf {
     let dir = PathBuf::from(storage_dir(ctx));
     std::fs::canonicalize(&dir).map_or(dir, crate::host::without_verbatim_prefix)

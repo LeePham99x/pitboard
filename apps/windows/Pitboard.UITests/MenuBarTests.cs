@@ -81,7 +81,6 @@ public sealed class MenuBarTests
     }
 
     [TestMethod]
-    [Ignore(Pending.W16)]
     public void AMachineWithoutClaudeCodeSaysSo()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "noClaudeCode");

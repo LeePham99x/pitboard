@@ -547,9 +547,7 @@ mod tests {
     use super::*;
     use crate::assumptions::Platform;
 
-    /// The facts the Windows builds of 0.160.0 were read for, by name, and the home 0.162.1's
-    /// were. The rest are about where Codex keeps things, what runs it and how it is
-    /// installed, which the Windows work reads for Windows on its own.
+    // The rest the Windows work reads for Windows on its own.
     #[test]
     fn windows_reads_the_facts_its_build_was_read_for() {
         let read: Vec<&str> = PER_SYSTEM
@@ -575,9 +573,7 @@ mod tests {
         );
     }
 
-    /// Every fact is read on macOS, and on Linux, as the register said of each before it had
-    /// a table, but the managed preferences, which Linux has none of, and the Windows home.
-    /// The conformance run checks a build of each system for them.
+    // The conformance run checks a build of each system for them.
     #[test]
     fn macos_and_linux_read_every_fact() {
         for line in PER_SYSTEM.iter().filter(|l| l.name != "codex_windows_home") {

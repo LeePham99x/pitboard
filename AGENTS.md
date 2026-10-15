@@ -109,8 +109,9 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
 - Never run the app's UI tests on a machine of your own: they move the mouse and type into
   whatever has focus. They run on CI's runners as a fresh standard user.
 - Never run a test or a script there before pointing `USERPROFILE`, `HOME`, `APPDATA`,
-  `LOCALAPPDATA`, an existing `CODEX_HOME`, `CLAUDE_CONFIG_DIR` and `PITBOARD_HOME` at
-  fresh folders. Set them after building: Cargo and rustup find their homes through
+  `LOCALAPPDATA`, `CODEX_HOME`, `CLAUDE_CONFIG_DIR` and `PITBOARD_HOME` at fresh folders.
+  With `CODEX_HOME` unset, Codex's home is `.codex` in the known folder Profile, whatever
+  `USERPROFILE` says. Set them after building: Cargo and rustup find their homes through
   `USERPROFILE`.
 - Never weaken or get around the release gate in a build anybody installs. No release,
   script or package passes `--cfg pitboard_unreleased_windows`, `test-support` or
@@ -125,7 +126,9 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
   own. They run the builds they are given, make Windows accounts and change who holds which
   rights.
 - `test-as-standard-user.ps1`, also when `check-windows-build.ps1` runs it, makes one test user
-  and may grant it the symbolic-link right. Beside that, only `runner-facts.ps1`, only through
+  and may grant it the symbolic-link right. With `-ExFat`, which only `ci.yml`'s `windows` job
+  passes, it also mounts one exFAT VHD under `RUNNER_TEMP` and detaches it in its `finally`.
+  Beside that, only `runner-facts.ps1`, only through
   `windows-facts.yml` on a GitHub-hosted runner, may make Windows accounts, put one in
   Administrators or OpenSSH Users, change their passwords, turn on Developer Mode, grant the
   symbolic-link right, register tasks, write the job user's `HKCU\Environment`, mount volumes,

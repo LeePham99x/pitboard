@@ -276,15 +276,8 @@ pub(crate) enum ProviderError {
     /// document the machine also keeps other things in. Not a malformed login: none.
     #[error("nothing is signed in")]
     NoLogin { provider: ProviderId },
-    #[error(
-        "CODEX_HOME is {}, which is no folder, so Codex does not start. Make that folder, or \
-         unset CODEX_HOME",
-        path.display()
-    )]
-    HomeMissing {
-        provider: ProviderId,
-        path: std::path::PathBuf,
-    },
+    #[error("{}", crate::error::codex_home_missing(path))]
+    CodexHomeMissing { path: std::path::PathBuf },
 }
 
 /// When a session that is already running picks a switch up.

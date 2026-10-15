@@ -76,16 +76,7 @@ pub(crate) fn status(ctx: &Context) -> Installed {
 /// job in `XPC_SERVICE_NAME`, so the LaunchAgent runs plain `renew`.
 pub const SCHEDULED_RUN: [&str; 2] = ["renew", "--scheduled"];
 
-/// Whether the schedule is this context's to look after.
-///
-/// The schedule always renews the default home, `~/.pitboard`
-/// ([`crate::host::Os::default_pitboard_home`]), whatever `PITBOARD_HOME` its job is given
-/// ([`for_its_run`]). A Pitboard pointed at another home has none of its own: the one there
-/// is belongs to the default home, and [`install`] refuses to put one there from it.
-///
-/// The two are compared as paths, as written, so `~/.pitboard/` is the default home, while
-/// a link to it is another directory, and so is the same directory spelled in another case,
-/// but on Windows, whose paths are one in any case.
+// The schedule renews the default home alone, whatever `PITBOARD_HOME` its job is given.
 pub(crate) fn serves(ctx: &Context) -> bool {
     ctx.os
         .same_path(&crate::home::dir(ctx), &ctx.default_pitboard_home())

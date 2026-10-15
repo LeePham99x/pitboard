@@ -16,13 +16,7 @@ pub(crate) fn login_name() -> Option<String> {
     None
 }
 
-/// This account's own home, where the environment names none: `GetUserProfileDirectoryW`,
-/// where libuv's `uv_os_homedir` looks once `USERPROFILE` is unset.
-///
-/// Never in a build for tests, unless a unit test says through
-/// [`testing::reaching_the_real_home`] that this lookup is what it tests, so a test that
-/// gives no home of its own reaches nothing real, and Pitboard refuses the empty home that
-/// leaves as a home that is not a full path.
+// Where libuv's `uv_os_homedir` looks once `USERPROFILE` is unset.
 pub(crate) fn home() -> Option<PathBuf> {
     real_lookups().then(profile_directory).flatten()
 }
@@ -105,14 +99,13 @@ fn path_of(wide: &[u16]) -> PathBuf {
     PathBuf::from(std::ffi::OsString::from_wide(&wide[..len]))
 }
 
-/// Whether `path` is this account's own home, as `FOLDERID_Profile` and
-/// `GetUserProfileDirectoryW` name it, for a build for tests to refuse to run as the daily
-/// renewal schedule there. Compared as the file system resolves each where it is there, in
-/// any case, so a spelling with `\\?\` or a short name is the home too.
+// Resolved first, so a spelling with `\\?\` or a short name is the home too.
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn is_the_accounts_own_home(path: &std::path::Path) -> bool {
     let resolved = |p: &std::path::Path| {
-        crate::host::plain(&std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf()))
+        crate::host::without_verbatim_prefix(
+            std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf()),
+        )
     };
     [
         known_folder(&windows_sys::Win32::UI::Shell::FOLDERID_Profile),
@@ -311,7 +304,7 @@ fn version() -> Option<(u32, u32, u32)> {
     (status == 0).then_some((info.dwMajorVersion, info.dwMinorVersion, info.dwBuildNumber))
 }
 
-/// The one way a unit test reaches this account's real home.
+// The one way a unit test reaches this account's real home.
 #[cfg(test)]
 pub(crate) mod testing {
     use std::cell::Cell;
@@ -320,15 +313,12 @@ pub(crate) mod testing {
         static REACHES: Cell<bool> = const { Cell::new(false) };
     }
 
-    /// While what this returns is kept, [`super::home`] and the other lookups of this
-    /// account's own folders answer this thread's test: for a test of the lookups
-    /// themselves, or of what reads them where the environment names no home.
+    // For this thread's test, while what it returns is kept.
     pub(crate) fn reaching_the_real_home() -> Reaching {
         REACHES.with(|reaches| reaches.set(true));
         Reaching(())
     }
 
-    /// What [`reaching_the_real_home`] returns.
     pub(crate) struct Reaching(());
 
     impl Drop for Reaching {

@@ -106,8 +106,8 @@ impl Drop for Helper {
     }
 }
 
-// A folder on an exFAT volume, which keeps no POSIX rename and no access list. CI's Windows job
-// mounts one and names it in PITBOARD_TEST_VOLUME, as CONTRIBUTING.md says.
+// A folder on an exFAT volume, which keeps no POSIX rename and no access list. On CI,
+// test-as-standard-user.ps1's -ExFat mounts one and names it in PITBOARD_TEST_VOLUME.
 #[cfg(windows)]
 #[allow(
     clippy::disallowed_methods,

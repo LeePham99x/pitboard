@@ -328,15 +328,19 @@ fn not_due(label: String, hold: &warm::Hold, now: i64) -> Error {
     }
 }
 
-/// One warm-up's run at a time on this machine, held for as long as it runs, by whichever
-/// front end started it: two runs would share the tool's private home.
-struct RunLock {
+// One warm-up's run at a time on this machine, held for as long as it runs, by whichever
+// front end started it: two runs would share the tool's private home.
+pub(super) struct RunLock {
     _lock: std::fs::File,
 }
 
 impl RunLock {
+    fn path(ctx: &Context) -> std::path::PathBuf {
+        crate::home::dir(ctx).join("warm.lock")
+    }
+
     fn claim(ctx: &Context, permit: Permit) -> Result<RunLock> {
-        let path = crate::home::dir(ctx).join("warm.lock");
+        let path = RunLock::path(ctx);
         let file = crate::host::fs::open_private_lock(permit, &path).map_err(|source| {
             Error::HomeUnwritable {
                 path: path.clone(),
@@ -350,6 +354,11 @@ impl RunLock {
                 Err(Error::HomeUnwritable { path, source })
             }
         }
+    }
+
+    pub(super) fn is_held(ctx: &Context) -> bool {
+        std::fs::File::open(RunLock::path(ctx))
+            .is_ok_and(|lock| matches!(lock.try_lock(), Err(std::fs::TryLockError::WouldBlock)))
     }
 }
 
