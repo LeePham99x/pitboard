@@ -37,7 +37,10 @@ fn destination(os: Os, folder: &Path, suggested: &str, taken: impl Fn(&Path) -> 
         "" | "/" => "Download",
         name => name,
     };
-    let (base, extension) = split_extension(name);
+    let (base, extension) = match os {
+        Os::MacOs | Os::Linux => split_extension(name),
+        Os::Windows => split_as_chromium(name),
+    };
     (1u64..)
         .map(|nth| folder.join(numbered(os, name, base, extension, nth)))
         .find(|candidate| !taken(candidate))
@@ -57,10 +60,8 @@ fn numbered(os: Os, name: &str, base: &str, extension: Option<&str>, nth: u64) -
             Some(extension) => format!("{base} {nth}.{extension}"),
             None => format!("{base} {nth}"),
         },
-        // As Explorer numbers one, as the owner decided: `report (1).pdf`, then
-        // `report (2).pdf`. The name is split as everywhere else here; how WebView2 and
-        // Explorer split a name with two extensions, such as `archive.tar.gz`, is the
-        // Windows app's to measure.
+        // In brackets from one, as the owner decided: `report (1).pdf`, then `report (2).pdf`,
+        // and `archive (1).tar.gz`, as WebView2 numbers a download.
         Os::Windows => {
             let copy = nth - 1;
             match extension {
@@ -86,6 +87,31 @@ fn same_file(os: Os, one: &Path, other: &Path) -> bool {
         }
         Os::Windows => pitboard_core::host::same_path_in_any_case(one, other),
     }
+}
+
+// As `FilePath::Extension` splits a download's name for WebView2 to number it, read in
+// Chromium 155.0.8059.87's `base/files/file_path.cc`.
+fn split_as_chromium(name: &str) -> (&str, Option<&str>) {
+    const COMPRESSED: [&str; 9] = ["bz", "bz2", "gz", "lz", "lzma", "lzo", "xz", "z", "zst"];
+    if matches!(name, "." | "..") {
+        return (name, None);
+    }
+    let Some(last) = name.rfind('.') else {
+        return (name, None);
+    };
+    let dot = match name[..last].rfind('.') {
+        Some(before) if name[before + 1..].eq_ignore_ascii_case("user.js") => before,
+        Some(before)
+            if (2..=5).contains(&(last - before))
+                && COMPRESSED
+                    .iter()
+                    .any(|suffix| name[last + 1..].eq_ignore_ascii_case(suffix)) =>
+        {
+            before
+        }
+        _ => last,
+    };
+    (&name[..dot], Some(&name[dot + 1..]))
 }
 
 /// The last part of `path` as `NSString.lastPathComponent` reads it: slashes at the end are
@@ -252,6 +278,31 @@ mod tests {
         );
         assert_eq!(on_windows("notes", &["notes"]), Path::new("/d/notes (1)"));
         assert_eq!(on_windows("", &["Download"]), Path::new("/d/Download (1)"));
+    }
+
+    // A compressor's extension keeps one of up to four characters before it.
+    #[test]
+    fn windows_splits_a_name_as_webview2_does() {
+        for (suggested, second) in [
+            ("archive.tar.gz", "archive (1).tar.gz"),
+            ("photo.TAR.GZ", "photo (1).TAR.GZ"),
+            ("notes.txt.zst", "notes (1).txt.zst"),
+            ("a.b.lzma", "a (1).b.lzma"),
+            ("script.user.js", "script (1).user.js"),
+            ("dump.sql5.gz", "dump (1).sql5.gz"),
+            ("dump.mysql.gz", "dump.mysql (1).gz"),
+            ("a..gz", "a. (1).gz"),
+            ("archive.tar.zip", "archive.tar (1).zip"),
+            ("a.b c", "a (1).b c"),
+            ("name.", "name (1)."),
+            (".hidden", " (1).hidden"),
+            ("..", ".. (1)"),
+        ] {
+            let name = destination(Os::Windows, Path::new("/d"), suggested, |candidate| {
+                candidate == Path::new("/d").join(suggested)
+            });
+            assert_eq!(name, Path::new("/d").join(second), "{suggested:?}");
+        }
     }
 
     /// Windows takes names in any case for one file, so `Report.PDF` and `report.pdf` are one,
