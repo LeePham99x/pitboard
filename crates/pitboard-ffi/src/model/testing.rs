@@ -50,6 +50,13 @@ pub(super) use crate::present::testing::{
 // Claude's bundle id, which is how the core's holder detection names it.
 pub(super) const CLAUDE: &str = "com.anthropic.claudefordesktop";
 
+// Where the system these tests run on has a person quit what is left of an app.
+pub(super) const MONITOR: &str = if cfg!(windows) {
+    "Task Manager"
+} else {
+    "Activity Monitor"
+};
+
 // Claude running with a login in memory, as the core's holder detection reports it.
 pub(super) fn claude_holding() -> Holding {
     Holding {
@@ -817,6 +824,7 @@ impl Machine {
                     Duration::ZERO,
                     Duration::ZERO,
                     || self.lingers,
+                    pitboard_core::host::awake,
                 ),
                 question,
                 then,

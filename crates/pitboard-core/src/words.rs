@@ -725,7 +725,7 @@ fn move_left(why: &crate::error::Error, command: &str) -> Option<(String, String
         ),
         Error::AppOpen { app, still } => (
             format!("{} from {app} is still running", listed(still.clone())),
-            wait_for_still(&again),
+            wait_for_still(crate::host::OS, &again),
         ),
         Error::AppStateUnknown { app, why } => (
             format!("it could not tell whether {app} is open ({why})"),
@@ -842,8 +842,13 @@ pub(crate) fn elsewhere_way_out(tool: crate::provider::ProviderId) -> String {
     )
 }
 
-pub(crate) fn wait_for_still(then: &str) -> String {
-    format!("Wait until it ends, or quit it in Activity Monitor, then {then}.")
+pub fn wait_for_still(os: Os, then: &str) -> String {
+    let monitor = match os {
+        // No app that keeps a tool's login runs on Linux.
+        Os::MacOs | Os::Linux => "Activity Monitor",
+        Os::Windows => "Task Manager",
+    };
+    format!("Wait until it ends, or quit it in {monitor}, then {then}.")
 }
 
 pub(crate) fn mixed_way_out(label: &str) -> String {
@@ -1172,6 +1177,20 @@ pub fn listed(mut items: Vec<String>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn what_is_left_of_an_app_is_quit_where_the_system_quits_it() {
+        assert_eq!(
+            wait_for_still(Os::Windows, "run this again"),
+            "Wait until it ends, or quit it in Task Manager, then run this again."
+        );
+        for os in [Os::MacOs, Os::Linux] {
+            assert_eq!(
+                wait_for_still(os, "run this again"),
+                "Wait until it ends, or quit it in Activity Monitor, then run this again."
+            );
+        }
+    }
 
     #[test]
     fn claude_desktops_words_hedge_what_nobody_measured() {

@@ -7,12 +7,14 @@
 //! the links from outside (`sites.rs`), the account windows' rules (`account_windows`),
 //! `name_to_save` and `downloads_quit_question` of `present`, the fixtures' `fixture_names`
 //! and `fixture_page`, and three free functions the macOS app asks of its bundle and its
-//! environment, `app_command_line`, `can_run` and `pitboard_directory`. The snapshot carries
-//! what an app shows of the accounts and the machine, such as a limit's names or how long an
-//! account lasts, made by `present` and the model, so no free function says it again. The
-//! free functions answer at once from what they are given, apart from `can_run`, which asks
-//! the file system about one path, and `download_destination`, which asks it whether each
-//! name it tries is taken. Timestamps are epoch seconds.
+//! environment, `app_command_line`, `can_run` and `pitboard_directory`, and the Windows app's
+//! `windows_records_key` and `launch_refusal`. The snapshot carries what an app shows of the
+//! accounts and the machine, such as a limit's names or how long an account lasts, made by
+//! `present` and the model, so no free function says it again. The free functions answer at
+//! once from what they are given, apart from `can_run`, which asks the file system about one
+//! path, `launch_refusal`, which asks the system how this process runs, and
+//! `download_destination`, which asks the file system whether each name it tries is taken.
+//! Timestamps are epoch seconds.
 //!
 //! The model and what it presents came from the macOS app's Swift. Where a comment here
 //! names a Swift file the app no longer has, such as `AppModel.swift`, `MachineModel.swift`
@@ -23,7 +25,7 @@
 //! `LinkInbox.swift`, `StoreJanitor.swift`'s sweep or `AccountPickerTests.swift`, means it as
 //! it was at commit a3e5ce0, where the comment says so.
 
-use pitboard_core::context::Environment;
+use pitboard_core::context::{Context, Environment};
 use pitboard_core::host::Os;
 use pitboard_core::provider::ProviderId;
 use pitboard_core::{doctor, switch, words};
@@ -171,6 +173,20 @@ pub fn can_run(path: String) -> bool {
 pub fn pitboard_directory(environment: HashMap<String, String>) -> String {
     let environment: Environment = environment.into_iter().collect();
     environment.pitboard_home().to_string_lossy().into_owned()
+}
+
+// What stops the Windows app before it makes a model, which then shows this alone.
+#[uniffi::export]
+pub fn launch_refusal(environment: HashMap<String, String>) -> Option<ReadFailure> {
+    let environment: Environment = environment.into_iter().collect();
+    // The gate writes nothing, so no caller is named for the audit log.
+    launch::refusal(Context::for_command_line(&environment))
+}
+
+// `WindowsLaunch::key` in the Windows app: the Pitboard directory as Windows compares paths.
+#[uniffi::export]
+pub fn windows_records_key(directory: String) -> String {
+    pitboard_core::host::path_key_in_any_case(&directory)
 }
 
 /// Something to know about that did not stop the operation.
@@ -456,5 +472,47 @@ mod tests {
         assert!(can_run("/bin/sh".into()));
         assert!(!can_run("/bin".into()), "a directory is not a program");
         assert!(!can_run("/nowhere/at/all".into()));
+    }
+
+    // Every system, as the release gate opens each build the tests run.
+    #[test]
+    fn the_app_asks_the_core_whether_it_may_start() {
+        let scratch = std::env::temp_dir().join(format!(
+            "pitboard-may-start-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let environment = |pitboard: &str| -> HashMap<String, String> {
+            HashMap::from([
+                ("HOME".into(), scratch.to_string_lossy().into_owned()),
+                ("PITBOARD_HOME".into(), pitboard.into()),
+            ])
+        };
+        let full = scratch.join(".pitboard");
+        assert_eq!(launch_refusal(environment(&full.to_string_lossy())), None);
+        assert_eq!(
+            pitboard_core::release::version(),
+            Some(env!("CARGO_PKG_VERSION")),
+            "named to the release gate first"
+        );
+        let relative = launch_refusal(environment("pitboard")).expect("refused");
+        assert_eq!(relative.code, "home_not_absolute");
+        assert!(
+            relative.message.starts_with("PITBOARD_HOME"),
+            "{relative:?}"
+        );
+        assert!(!scratch.exists(), "nothing is made");
+    }
+
+    #[test]
+    fn the_windows_app_keys_its_records_by_its_directory_in_any_case() {
+        assert_eq!(
+            windows_records_key(r"c:\users\x\appdata\local\pitboard\".into()),
+            windows_records_key(r"\\?\C:\Users\X\AppData\Local\Pitboard".into())
+        );
+        assert_eq!(
+            windows_records_key("C:/Users/X/AppData/Local/Pitboard".into()),
+            r"C:\USERS\X\APPDATA\LOCAL\PITBOARD"
+        );
     }
 }

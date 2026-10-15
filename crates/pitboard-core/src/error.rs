@@ -1261,7 +1261,7 @@ fn app_open(app: &str, still: &[String]) -> String {
         "{app} has quit, and {} from it is still running, and Pitboard changes {app}'s login \
          only while all of it is closed. {} Nothing has changed.",
         crate::words::listed(still.to_vec()),
-        crate::words::wait_for_still("run this again")
+        crate::words::wait_for_still(crate::host::OS, "run this again")
     )
 }
 

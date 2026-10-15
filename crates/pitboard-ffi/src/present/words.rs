@@ -557,10 +557,10 @@ pub(crate) fn still_open(app: &str, again: &str) -> String {
     format!("{app} is still open, so nothing has changed. Quit it, then {again}.")
 }
 
-pub(crate) fn part_still_running(app: &str, again: &str) -> String {
+pub(crate) fn part_still_running(os: Os, app: &str, again: &str) -> String {
     format!(
-        "Part of {app} is still running after it quit, so nothing has changed. Wait until it \
-         ends, or quit it in Activity Monitor, then {again}."
+        "Part of {app} is still running after it quit, so nothing has changed. {}",
+        pitboard_core::words::wait_for_still(os, again)
     )
 }
 
@@ -1141,6 +1141,20 @@ pub(crate) fn in_app_given_up(given_up: &pitboard_core::switch::GivenUp) -> Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn what_is_left_of_an_app_that_quit_is_quit_in_task_manager_on_windows() {
+        assert_eq!(
+            part_still_running(Os::Windows, "ChatGPT", "switch again"),
+            "Part of ChatGPT is still running after it quit, so nothing has changed. Wait until \
+             it ends, or quit it in Task Manager, then switch again."
+        );
+        assert_eq!(
+            part_still_running(Os::MacOs, "ChatGPT", "switch again"),
+            "Part of ChatGPT is still running after it quit, so nothing has changed. Wait until \
+             it ends, or quit it in Activity Monitor, then switch again."
+        );
+    }
 
     /// A phrase that starts a line starts with a capital, and nothing else about it changes:
     /// a figure first stays as it is, and so does a phrase already capitalised.

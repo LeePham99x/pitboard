@@ -56,4 +56,13 @@ public sealed class BindingsTests
         Assert.IsNull(PitboardFfiMethods.AppCommandLine("/home/x/pitboard"));
         Assert.IsFalse(PitboardFfiMethods.CanRun("/nowhere/at/all"));
     }
+
+    [TestMethod]
+    public void TheWindowsAppKeysItsRecordsByItsDirectoryInAnyCase()
+    {
+        var key = PitboardFfiMethods.WindowsRecordsKey(@"c:\users\x\appdata\local\pitboard\");
+
+        Assert.AreEqual(@"C:\USERS\X\APPDATA\LOCAL\PITBOARD", key);
+        Assert.AreEqual(key, PitboardFfiMethods.WindowsRecordsKey(@"\\?\C:\Users\X\AppData\Local\Pitboard"));
+    }
 }

@@ -10,9 +10,9 @@ use super::lanes::Lane;
 use super::state::{After, Answer, Job};
 use super::switching::a_read_that_started_before;
 use super::testing::{
-    CLAUDE, Hand, Machine, StandInApps, a_look_or_a_read, any_read, awaiting, claude, claude_code,
-    claude_desktop, codex, codex_account, desktop_account, desktop_machine, desktop_warning,
-    enrolled_as, installed_ask, refusal, status, still_running, switched, warning,
+    CLAUDE, Hand, MONITOR, Machine, StandInApps, a_look_or_a_read, any_read, awaiting, claude,
+    claude_code, claude_desktop, codex, codex_account, desktop_account, desktop_machine,
+    desktop_warning, enrolled_as, installed_ask, refusal, status, still_running, switched, warning,
 };
 use super::{Intent, Pane, QuitQuestion, RestartNeeded, RunningSignIn, Sheet, WindowRequest};
 use crate::EnrolledAs;
@@ -1665,12 +1665,14 @@ fn a_park_cancelled_in_flight_and_asked_again_keeps_each_hold_its_own() {
 // Claude's quit failing each way: (quits, lingers, lost, what is said, what the apps were asked).
 pub(super) fn quits_failed() -> [(bool, bool, bool, String, Vec<String>); 3] {
     let still_open = "Claude is still open, so nothing has changed. Quit it, then try again.";
-    let lingering = "Part of Claude is still running after it quit, so nothing has changed. Wait \
-                     until it ends, or quit it in Activity Monitor, then try again.";
+    let lingering = format!(
+        "Part of Claude is still running after it quit, so nothing has changed. Wait until it \
+         ends, or quit it in {MONITOR}, then try again."
+    );
     let (quit, open) = (format!("quit {CLAUDE}"), format!("open {CLAUDE}"));
     [
         (false, false, false, still_open.into(), vec![quit.clone()]),
-        (true, true, false, lingering.into(), vec![quit, open]),
+        (true, true, false, lingering, vec![quit, open]),
         (true, false, true, still_open.into(), Vec::new()),
     ]
 }

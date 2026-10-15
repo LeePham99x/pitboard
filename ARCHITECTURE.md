@@ -105,7 +105,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     `host::Os`. A fact that differs by system is a `match` on `host::OS`, such as the
     folders macOS asks about before an app may look in them, or `default_pitboard_home`,
     where Pitboard keeps its files for a home when `PITBOARD_HOME` names nowhere else.
-    `same_path_in_any_case` is how Windows compares paths, for the core and the apps alike.
+    `same_path_in_any_case` is how Windows compares paths, for the core and the apps alike,
+    and `path_key_in_any_case` one text per path compared so. `awake` is the time the
+    machine has been awake, which the app's timers count.
   - `release.rs`: whether this build may do anything on its system. A Windows build of a
     0.x release may not, unless it was compiled with `--cfg pitboard_unreleased_windows`,
     which CI's Windows jobs set and no release does; macOS and Linux always may. The
@@ -401,11 +403,15 @@ window loads its site, and whatever the site's pages load, as a browser would.
     it draws: `app_command_line`, for the command line inside its bundle, as it starts and
     as it links that one; `can_run`, whether that one runs, as it links it; and
     `pitboard_directory`, for where `app.json` is and the key the account windows' records
-    are kept under, as it starts. The snapshot carries what an app shows of the tools, a
-    sign-in, the command line a terminal runs, a limit and its pace, a parked login, a
-    renewal run and doctor's checks, made by `present/` and the model's lanes, so no free
-    function says it again. The helpers `present/` makes it with here, `tools`,
-    `usage_level`, `renewal_note` and `doctor_summary`, are the crate's own.
+    are kept under, as it starts. The Windows app calls two more as it starts:
+    `launch_refusal`, what the gate every change passes refuses once it has named the app's
+    version to the release gate, the release gate first, then an elevated process, a
+    Windows build below 26100 and a home that is not a full path, which it shows in place
+    of a model; and `windows_records_key`, its records' key. The snapshot carries what an
+    app shows of the tools, a sign-in, the command line a terminal runs, a limit and its
+    pace, a parked login, a renewal run and doctor's checks, made by `present/` and the
+    model's lanes, so no free function says it again. The helpers `present/` makes it with
+    here, `tools`, `usage_level`, `renewal_note` and `doctor_summary`, are the crate's own.
   - `launch.rs` is the core the model's lanes call, `AppCore`, which nothing exports. It is
     made from the `AppLaunch` the app was started with, read as `AppContext::discover`
     reads it, the first time a lane needs it, and made once more a while after a login
@@ -892,10 +898,11 @@ window loads its site, and whatever the site's pages load, as a browser would.
   `download_destination`, which asks the file system whether each name it tries is taken;
   `app_command_line`, which only joins paths; `can_run`, which asks the file system about
   one path; `pitboard_directory`, which reads the environment it is given and, without
-  `HOME`, this account's passwd entry; and `fixture_names` and `fixture_page`, which read
-  only what they are given. `PitboardModel::fixture` and `PitboardModel::fixture_in` make
-  the fixture's world in its folder before they answer, files in a temporary directory and
-  nothing slower.
+  `HOME`, this account's passwd entry; `windows_records_key`, which reads only what it is
+  given; `launch_refusal`, which asks the system whether this process is elevated and which
+  build it runs on; and `fixture_names` and `fixture_page`, which read only what they are
+  given. `PitboardModel::fixture` and `PitboardModel::fixture_in` make the fixture's world
+  in its folder before they answer, files in a temporary directory and nothing slower.
 - What a snapshot says is made by `present`, which reads the state and the moment and asks
   nothing of anyone but the app's `LocalTime`, for each clock time and whether a moment is
   on another day than now, and for each date and time of the activity log. Where that cannot
@@ -1154,7 +1161,11 @@ window loads its site, and whatever the site's pages load, as a browser would.
   before it offers to link the command line. The account windows' records are kept
   under Pitboard's directory standardised as Foundation standardises a file URL, as the
   app kept them before the core said where it is: the app works that key out in
-  `WebEnvironment.recordKey` alone and hands it to the model as `WindowsLaunch::key`.
+  `WebEnvironment.recordKey` alone and hands it to the model as `WindowsLaunch::key`. The
+  Windows app asks the core for its key, `windows_records_key`: the directory as Windows
+  compares paths, with `/` read as `\`, `.` and `..` taken out, no `\\?\` and no trailing
+  separator, and each name in upper case one for one. It reads no file, so a short name or a
+  link keys apart, as a symlink does on macOS.
 - The macOS app's `AppModel` shows only a snapshot newer than the one it shows, so one that
   arrives late never puts back what a newer one replaced, and assigns each part only where
   it differs. `ModelListening` hands each snapshot to the main queue, which runs them in the
@@ -1828,7 +1839,7 @@ rests on are under [WebKit and SwiftUI](#webkit-and-swiftui) and
   a time, and holds it recorded until the app answers `StoreDeleted`, when it goes from the
   records, or `StoreHeld`, when the next read asks again with a new number. An app deletes
   each ask once, however many snapshots list it, and a window of a store being deleted
-  waits until the app has answered.
+  waits until the app has answered `StoreDeleted`.
 - A store that another Pitboard directory recorded too is never deleted while that
   directory exists. The same account enrolled in both derives the same store, so deleting
   it would sign the other directory's window out. Forgetting the account in one removes
@@ -1897,9 +1908,11 @@ Windows app cannot answer `StoreDeleted` when it asks for a deletion, as the mac
 once `remove(forIdentifier:)` returns: it answers `StoreHeld` while the folder is still
 there, which keeps the store recorded and has the next read ask again, and `StoreDeleted`
 once the folder has gone. A window of an account enrolled again meanwhile would fail to
-make its profile, which the model's rule of a window waiting while its store is deleted
-covers only while the ask is open, so the Windows app has to keep such a window from
-making its profile until the folder has gone.
+make its profile, so the model holds a store answered `StoreHeld` until `StoreDeleted`
+comes: it asks for it again after every read, enrolled again or not, opens no window of it,
+and lists it in `AccountWindowsShown.held`, whose menu item says why with
+`WindowNoteKind::StoreHeld`. Read again for WebView2 1.0.4258.31 on 15 October 2026,
+unchanged.
 
 ## Measured facts
 
@@ -2150,6 +2163,8 @@ on 15 October 2026. W27 reviews the list.
 | `longPathAware` in a manifest lifts the 260-character limit | [Application manifests](https://learn.microsoft.com/en-us/windows/win32/sbscs/application-manifests) | No row uses a long path. |
 | `StartWhenAvailable` runs a start that was missed | [StartWhenAvailable](https://learn.microsoft.com/en-us/windows/win32/taskschd/tasksettings-startwhenavailable) | A runner never sleeps through a trigger. |
 | WSL 2's processes run in a utility VM | [Comparing WSL versions](https://learn.microsoft.com/en-us/windows/wsl/compare-versions) | No runner has WSL. |
+| `QueryUnbiasedInterruptTimePrecise` leaves out sleep and hibernation, which `QueryPerformanceCounter` counts | [QueryUnbiasedInterruptTimePrecise](https://learn.microsoft.com/en-us/windows/win32/api/realtimeapiset/nf-realtimeapiset-queryunbiasedinterrupttimeprecise), [Acquiring high-resolution time stamps](https://learn.microsoft.com/en-us/windows/win32/sysinfo/acquiring-high-resolution-time-stamps) | A runner never sleeps. |
+| A deleted WebView2 profile's folder goes as the browser process exits, and its name is refused with `ERROR_DELETE_PENDING` until then | [CoreWebView2Profile.Delete](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/winrt/microsoft_web_webview2_core/corewebview2profile#delete) | No row runs WebView2 yet. |
 
 ### One sign-in at a time
 
@@ -3180,25 +3195,35 @@ its own date.
 Read on 5 October 2026 in Rust 1.98.1's standard library and in the macOS SDK of Xcode 27.1,
 with Swift 6.4.
 
-- `std::time::Instant` reads `CLOCK_UPTIME_RAW` on Apple's systems, which macOS's
-  `clock_gettime(3)` says does not increment while the system is asleep. The model's timers
-  run on it, so on macOS they count only the time the machine is awake.
+- The model's timers run on `pitboard_core::host::awake`, the time the machine has been
+  awake. On macOS and Linux that is `std::time::Instant`, which reads `CLOCK_UPTIME_RAW` on
+  Apple's systems, which macOS's `clock_gettime(3)` says does not increment while the system
+  is asleep, and `CLOCK_MONOTONIC` on Linux, which "does not count time that the system is
+  suspended" (Linux man-pages 6.19, `clock_gettime(2)`, read 15 October 2026).
 - The Swift model's loops slept with `Task.sleep(for:)`, whose clock is `.continuous` unless
   it is given another, and `ContinuousClock` does not stop while the system is asleep. After
   a long sleep its five-minute read came as the machine woke, where the model's comes up to
   five minutes of waking time later. An app sends `Intent::Woke` as the machine wakes, which
   reads at once: the macOS app sends it on `NSWorkspace.didWakeNotification`, where the
   Swift model read.
-- The 30 seconds an app is given to quit run on `Instant` too, where the Swift model's ran
+- The 30 seconds an app is given to quit run on time awake too, where the Swift model's ran
   on `ContinuousClock`: a machine put to sleep while an app is asked to quit gives it its
   30 seconds of waking time, where the Swift gave it none once the machine woke.
 - The look whether to switch Claude Code by itself every 30 seconds, and the wait after a
-  refused switch, run on `Instant` too, so they count waking time. After a sleep the read
+  refused switch, run on time awake too, so they count waking time. After a sleep the read
   that `Intent::Woke` asks for is followed by a look at once where it lands, and one that
   fails, as before the network is back, leaves the next look to its timer. A refusal's
   wait goes on where it stopped.
-- On Linux the standard library reads `CLOCK_MONOTONIC`, and on Windows
-  `QueryPerformanceCounter`. How either counts a sleep was not read.
+- On Windows the standard library's `Instant` reads `QueryPerformanceCounter` (Rust 1.98.1's
+  `library/std/src/sys/time/windows.rs`), which Microsoft documents as counting "the time
+  when the machine was in a sleep state such as standby, hibernate, or connected standby"
+  ([Acquiring high-resolution time stamps](https://learn.microsoft.com/windows/win32/sysinfo/acquiring-high-resolution-time-stamps)).
+  There the timers read `QueryUnbiasedInterruptTimePrecise`, whose count "does not include
+  time the system spends in sleep or hibernation", in units of 100 nanoseconds
+  ([QueryUnbiasedInterruptTimePrecise](https://learn.microsoft.com/windows/win32/api/realtimeapiset/nf-realtimeapiset-queryunbiasedinterrupttimeprecise)),
+  read 15 October 2026. With `Instant` there, an app asked to quit just before a sleep would
+  have had its 30 seconds used up by the time the machine woke. Microsoft's contract: no
+  machine has been put to sleep during a quit yet.
 
 ### The fixtures
 

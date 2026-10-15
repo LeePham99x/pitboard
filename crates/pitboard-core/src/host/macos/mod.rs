@@ -8,6 +8,7 @@ mod preferences;
 mod ps;
 mod sqlite;
 
+pub(super) use super::unix::awake;
 pub(crate) use super::unix::{fs, proc, user};
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use sqlite::write_jar;
