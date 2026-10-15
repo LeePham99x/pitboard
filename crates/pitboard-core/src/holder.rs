@@ -89,7 +89,7 @@ impl AppId {
         }
     }
 
-    // An app stays open after its last window closes.
+    // A Mac app stays open after its last window closes.
     fn reopen(self, name: &str) -> String {
         match self {
             AppId::MacBundle(_) => format!("quit {name} with Command-Q and open it again"),

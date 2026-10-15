@@ -5,11 +5,11 @@ use crate::host::Listed;
 use crate::host::owner::{self, Owner, Told};
 use std::collections::HashMap;
 use std::os::windows::fs::OpenOptionsExt;
-use std::os::windows::io::AsRawHandle;
+use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::path::{Path, PathBuf};
 use windows_sys::Win32::Foundation::{
-    CloseHandle, ERROR_INSUFFICIENT_BUFFER, ERROR_INVALID_PARAMETER, ERROR_SUCCESS, FILETIME,
-    HANDLE, INVALID_HANDLE_VALUE, WAIT_OBJECT_0,
+    ERROR_INSUFFICIENT_BUFFER, ERROR_INVALID_PARAMETER, ERROR_SUCCESS, FILETIME,
+    INVALID_HANDLE_VALUE, WAIT_OBJECT_0,
 };
 use windows_sys::Win32::Storage::FileSystem::{
     FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO, FILE_EXECUTE,
@@ -35,28 +35,18 @@ use windows_sys::Win32::System::Threading::{
 // wtsapi32.h's, which windows-sys does not carry.
 const WTS_ANY_SESSION: u32 = 0xFFFF_FFFE;
 
-pub(super) struct Handle(pub(super) HANDLE);
-
-impl Drop for Handle {
-    fn drop(&mut self) {
-        // SAFETY: a handle Windows gave this process, closed this once.
-        unsafe {
-            CloseHandle(self.0);
-        }
-    }
-}
-
 enum Open {
-    Handle(Handle),
+    Handle(OwnedHandle),
     Refused,
     Gone,
 }
 
 fn open(pid: u32, access: u32) -> Open {
-    // SAFETY: plain values; a handle that comes back is closed by `Handle`.
+    // SAFETY: plain values.
     let handle = unsafe { OpenProcess(access, 0, pid) };
     if !handle.is_null() {
-        return Open::Handle(Handle(handle));
+        // SAFETY: a non-null process handle this process now owns, closed by `OwnedHandle`.
+        return Open::Handle(unsafe { OwnedHandle::from_raw_handle(handle) });
     }
     match std::io::Error::last_os_error().raw_os_error() {
         Some(code) if code == ERROR_INVALID_PARAMETER as i32 => Open::Gone,
@@ -69,7 +59,7 @@ pub(crate) fn may_be_running(pid: u32) -> bool {
     match open(pid, PROCESS_SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION) {
         Open::Handle(process) => {
             // SAFETY: an open handle with SYNCHRONIZE, waited on for no time at all.
-            unsafe { WaitForSingleObject(process.0, 0) != WAIT_OBJECT_0 }
+            unsafe { WaitForSingleObject(process.as_raw_handle(), 0) != WAIT_OBJECT_0 }
         }
         Open::Refused => true,
         Open::Gone => false,
@@ -84,8 +74,15 @@ pub(crate) fn started(pid: u32) -> Option<u64> {
     let (mut created, mut exited) = (FILETIME::default(), FILETIME::default());
     let (mut kernel, mut user) = (FILETIME::default(), FILETIME::default());
     // SAFETY: an open handle, and four FILETIMEs of this frame.
-    let read =
-        unsafe { GetProcessTimes(process.0, &mut created, &mut exited, &mut kernel, &mut user) };
+    let read = unsafe {
+        GetProcessTimes(
+            process.as_raw_handle(),
+            &mut created,
+            &mut exited,
+            &mut kernel,
+            &mut user,
+        )
+    };
     (read != 0)
         .then(|| (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime))
 }
@@ -98,16 +95,23 @@ pub(crate) fn listing() -> Result<Vec<Listed>, String> {
     let mut sessions: HashMap<u32, bool> = HashMap::new();
     let mut found = Vec::new();
     for (pid, parent, name) in all {
-        let said = listed.get(&pid);
+        let listing = match &listed {
+            None => owner::Listing::Unanswered,
+            Some(map) => match map.get(&pid) {
+                Some((session, sid)) => owner::Listing::Listed {
+                    session: *session,
+                    sid: sid.as_deref(),
+                },
+                None => owner::Listing::Unlisted,
+            },
+        };
         let owner = owner::owner(
             &own,
-            said.and_then(|(_, sid)| sid.as_deref()),
-            || {
-                said.is_some_and(|&(session, _)| {
-                    *sessions
-                        .entry(session)
-                        .or_insert_with(|| session_user(session).is_some_and(|its| its != own))
-                })
+            listing,
+            |session| {
+                *sessions
+                    .entry(session)
+                    .or_insert_with(|| session_user(session).is_some_and(|its| its != own))
             },
             || token_owner(pid),
         );
@@ -146,14 +150,20 @@ pub(super) fn snapshot() -> std::io::Result<Vec<(u32, u32, String)>> {
     if snap == INVALID_HANDLE_VALUE {
         return Err(std::io::Error::last_os_error());
     }
-    let snap = Handle(snap);
+    // SAFETY: a valid snapshot handle this process now owns, closed by `OwnedHandle`.
+    let snap = unsafe { OwnedHandle::from_raw_handle(snap) };
     let mut entry = PROCESSENTRY32W {
         dwSize: size_of::<PROCESSENTRY32W>() as u32,
         ..PROCESSENTRY32W::default()
     };
     let mut all = Vec::new();
+    // A snapshot always holds System and this process, so a failed first walk is an error, not
+    // an empty machine.
     // SAFETY: an open snapshot, and an entry whose size it carries.
-    let mut more = unsafe { Process32FirstW(snap.0, &mut entry) } != 0;
+    let mut more = unsafe { Process32FirstW(snap.as_raw_handle(), &mut entry) } != 0;
+    if !more {
+        return Err(std::io::Error::last_os_error());
+    }
     while more {
         let length = entry
             .szExeFile
@@ -166,13 +176,15 @@ pub(super) fn snapshot() -> std::io::Result<Vec<(u32, u32, String)>> {
             String::from_utf16_lossy(&entry.szExeFile[..length]),
         ));
         // SAFETY: as above.
-        more = unsafe { Process32NextW(snap.0, &mut entry) } != 0;
+        more = unsafe { Process32NextW(snap.as_raw_handle(), &mut entry) } != 0;
     }
     Ok(all)
 }
 
-// Each process's session, and its user's SID where WTS gives one.
-fn listed_by_wts() -> HashMap<u32, (u32, Option<String>)> {
+// Each process's session, and its user's SID where WTS gives one, or `None` when WTS did not
+// answer: a process this call then does not list is told apart from one in another user's
+// session, which WTS shows administrators alone.
+fn listed_by_wts() -> Option<HashMap<u32, (u32, Option<String>)>> {
     let (mut level, mut count) = (1u32, 0u32);
     let mut info: windows_sys::core::PWSTR = std::ptr::null_mut();
     // SAFETY: level 1 answers WTS_PROCESS_INFO_EXW, in memory freed below.
@@ -186,7 +198,7 @@ fn listed_by_wts() -> HashMap<u32, (u32, Option<String>)> {
         )
     };
     if listed == 0 || info.is_null() {
-        return HashMap::new();
+        return None;
     }
     let entries = info.cast::<WTS_PROCESS_INFO_EXW>();
     let told = (0..count as usize)
@@ -203,7 +215,7 @@ fn listed_by_wts() -> HashMap<u32, (u32, Option<String>)> {
     unsafe {
         WTSFreeMemoryExW(WTSTypeProcessInfoLevel1, info.cast(), count);
     }
-    told
+    Some(told)
 }
 
 fn session_user(session: u32) -> Option<String> {
@@ -239,21 +251,21 @@ fn session_text(session: u32, class: WTS_INFO_CLASS) -> Option<String> {
 fn token_owner(pid: u32) -> Told {
     match open(pid, PROCESS_QUERY_LIMITED_INFORMATION) {
         Open::Handle(process) => {
-            super::user::token_user(process.0).map_or(Told::Refused, Told::User)
+            super::user::token_user(process.as_raw_handle()).map_or(Told::Refused, Told::User)
         }
         Open::Refused => Told::Refused,
         Open::Gone => Told::Gone,
     }
 }
 
-pub(super) fn image(process: &Handle) -> Option<PathBuf> {
+pub(super) fn image(process: &OwnedHandle) -> Option<PathBuf> {
     let mut buffer = vec![0u16; 1024];
     loop {
         let mut length = buffer.len() as u32;
         // SAFETY: an open handle, and a buffer of the length given.
         let read = unsafe {
             QueryFullProcessImageNameW(
-                process.0,
+                process.as_raw_handle(),
                 PROCESS_NAME_WIN32,
                 buffer.as_mut_ptr(),
                 &mut length,
@@ -273,15 +285,18 @@ pub(super) fn image(process: &Handle) -> Option<PathBuf> {
     }
 }
 
-fn package_family(process: &Handle) -> Option<String> {
+fn package_family(process: &OwnedHandle) -> Option<String> {
     let mut buffer = vec![0u16; 128];
     let mut length = buffer.len() as u32;
     // SAFETY: an open handle, and a buffer of the length given.
-    let mut said = unsafe { GetPackageFamilyName(process.0, &mut length, buffer.as_mut_ptr()) };
+    let mut said =
+        unsafe { GetPackageFamilyName(process.as_raw_handle(), &mut length, buffer.as_mut_ptr()) };
     if said == ERROR_INSUFFICIENT_BUFFER {
         buffer.resize(length as usize, 0);
         // SAFETY: as above, with the length it asked for.
-        said = unsafe { GetPackageFamilyName(process.0, &mut length, buffer.as_mut_ptr()) };
+        said = unsafe {
+            GetPackageFamilyName(process.as_raw_handle(), &mut length, buffer.as_mut_ptr())
+        };
     }
     // APPMODEL_ERROR_NO_PACKAGE outside a package.
     (said == ERROR_SUCCESS)
@@ -376,6 +391,77 @@ pub(crate) fn product_version(path: &Path) -> Option<[u16; 4]> {
         (info.dwProductVersionLS >> 16) as u16,
         info.dwProductVersionLS as u16,
     ])
+}
+
+// The ProductName string in a file's version resource, so a shim's own x.y.z.0 version is not
+// taken for Claude Code's.
+pub(crate) fn product_name(path: &Path) -> Option<String> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW,
+    };
+    let name: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
+    let mut ignored = 0u32;
+    // SAFETY: a NUL-terminated name, and a u32 of this frame for the handle it ignores.
+    let size = unsafe { GetFileVersionInfoSizeW(name.as_ptr(), &raw mut ignored) };
+    if size == 0 {
+        return None;
+    }
+    let mut block = vec![0u8; size as usize];
+    // SAFETY: a NUL-terminated name, and a buffer of the size it asked for.
+    if unsafe { GetFileVersionInfoW(name.as_ptr(), 0, size, block.as_mut_ptr().cast()) } == 0 {
+        return None;
+    }
+    let translation: Vec<u16> = r"\VarFileInfo\Translation"
+        .encode_utf16()
+        .chain([0])
+        .collect();
+    let mut ptr: *mut core::ffi::c_void = std::ptr::null_mut();
+    let mut length = 0u32;
+    // SAFETY: the block GetFileVersionInfoW filled, which the answer points into.
+    let found = unsafe {
+        VerQueryValueW(
+            block.as_ptr().cast(),
+            translation.as_ptr(),
+            &raw mut ptr,
+            &raw mut length,
+        )
+    };
+    if found == 0 || ptr.is_null() || (length as usize) < 4 {
+        return None;
+    }
+    // SAFETY: the first language and code page, two u16 inside `block`.
+    let (lang, codepage) = unsafe {
+        (
+            ptr.cast::<u16>().read_unaligned(),
+            ptr.cast::<u16>().add(1).read_unaligned(),
+        )
+    };
+    let sub: Vec<u16> = format!("\\StringFileInfo\\{lang:04x}{codepage:04x}\\ProductName")
+        .encode_utf16()
+        .chain([0])
+        .collect();
+    let mut value: *mut core::ffi::c_void = std::ptr::null_mut();
+    let mut units = 0u32;
+    // SAFETY: the same block; the answer points into it.
+    let got = unsafe {
+        VerQueryValueW(
+            block.as_ptr().cast(),
+            sub.as_ptr(),
+            &raw mut value,
+            &raw mut units,
+        )
+    };
+    if got == 0 || value.is_null() || units == 0 {
+        return None;
+    }
+    // SAFETY: `units` UTF-16 code units inside `block`.
+    let name = unsafe { std::slice::from_raw_parts(value.cast::<u16>(), units as usize) };
+    Some(
+        String::from_utf16_lossy(name)
+            .trim_end_matches('\0')
+            .to_string(),
+    )
 }
 
 /// Runs no program: a warm-up, the only run with a ceiling, stops on Windows before it
@@ -501,6 +587,15 @@ mod tests {
         for alias in &aliases {
             assert!(can_run(alias), "{}", alias.display());
         }
+        // A green run must have read a real alias, not looped zero times. A GitHub-hosted
+        // runner's account has the inbox aliases; if the account running this has none, run
+        // this test once as a user whose profile does, in a ci.yml step of its own.
+        let hosted = std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true")
+            && std::env::var("RUNNER_ENVIRONMENT").as_deref() == Ok("github-hosted");
+        assert!(
+            !hosted || !aliases.is_empty(),
+            "no app execution alias was read from this account's WindowsApps"
+        );
         println!(
             "{} of this account's own aliases read as programs",
             aliases.len()
@@ -571,19 +666,25 @@ mod tests {
         let script = scratch("versions").join("plain.cmd");
         std::fs::write(&script, "@echo off").expect("a script");
         assert_eq!(product_version(&script), None, "nor has a script");
+        // cmd.exe's version resource names Windows, not Claude Code, so a `claude.exe` that was
+        // really a copy of it would fail installed_version's product-name check.
+        let product = product_name(&cmd).expect("its product name");
+        println!("cmd.exe ProductName: {product}");
+        assert_ne!(product, "Claude Code");
+        assert!(
+            product.to_ascii_lowercase().contains("windows"),
+            "{product}"
+        );
     }
 
-    // System's, whose token a standard user is not expected to read.
+    // System's, whose token a standard user cannot read: OpenProcess is refused, and even an
+    // opened handle's TOKEN_QUERY would be, so pid 4 reads unknown, not absent or this user's.
     #[test]
-    fn pid_4_is_running_and_never_absent_or_this_users() {
+    fn pid_4_is_running_and_reads_unknown() {
         assert!(may_be_running(4));
         let told = token_owner(4);
         println!("pid 4's token: {told:?}");
-        assert_ne!(told, Told::Gone);
-        assert_ne!(
-            told,
-            Told::User(crate::host::windows::user::sid().expect("this user"))
-        );
+        assert_eq!(told, Told::Refused);
     }
 
     #[test]

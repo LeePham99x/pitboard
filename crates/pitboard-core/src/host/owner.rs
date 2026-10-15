@@ -1,6 +1,5 @@
 // Whose a process is on Windows, decided on every system from what Windows said of it.
 
-#[cfg(any(windows, test))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Told {
     User(String),
@@ -8,7 +7,6 @@ pub(crate) enum Told {
     Gone,
 }
 
-#[cfg(any(windows, test))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Owner {
     Own,
@@ -17,18 +15,36 @@ pub(crate) enum Owner {
     Unread,
 }
 
-// WTS's SID first, then the session's user, so another user's process is never opened.
-#[cfg(any(windows, test))]
+// What WTS said of a Toolhelp process: it did not answer at all, it answered but did not list
+// the process, or it listed it with its session and its owner's SID where it gave one.
+pub(crate) enum Listing<'a> {
+    Unanswered,
+    Unlisted,
+    Listed { session: u32, sid: Option<&'a str> },
+}
+
+// WTS first: a SID it gave decides, and a process it answered for but did not list is another
+// user's (WTSEnumerateProcessesExW shows another user's processes to administrators only) or
+// gone since the snapshot, so it is Other and never opened. The token is read only where WTS
+// did not answer, or listed the process without a SID, and then another user's session is
+// passed over unopened too.
 pub(crate) fn owner(
     own: &str,
-    listed: Option<&str>,
-    anothers_session: impl FnOnce() -> bool,
+    listing: Listing,
+    anothers_session: impl FnOnce(u32) -> bool,
     token: impl FnOnce() -> Told,
 ) -> Owner {
-    if let Some(sid) = listed {
-        return if sid == own { Owner::Own } else { Owner::Other };
-    }
-    if anothers_session() {
+    let session = match listing {
+        Listing::Listed { sid: Some(sid), .. } => {
+            return if sid == own { Owner::Own } else { Owner::Other };
+        }
+        Listing::Listed { session, sid: None } => Some(session),
+        Listing::Unlisted => return Owner::Other,
+        Listing::Unanswered => None,
+    };
+    if let Some(session) = session
+        && anothers_session(session)
+    {
         return Owner::Other;
     }
     match token() {
@@ -45,7 +61,7 @@ mod tests {
     const OWN: &str = "S-1-5-21-1-2-3-1001";
     const OTHER: &str = "S-1-5-21-1-2-3-1002";
 
-    fn unasked() -> bool {
+    fn unasked(_: u32) -> bool {
         panic!("the session was asked about")
     }
 
@@ -55,27 +71,55 @@ mod tests {
 
     #[test]
     fn a_sid_listed_with_the_process_decides_without_opening_it() {
-        assert_eq!(owner(OWN, Some(OWN), unasked, unopened), Owner::Own);
-        assert_eq!(owner(OWN, Some(OTHER), unasked, unopened), Owner::Other);
+        let own = Listing::Listed {
+            session: 1,
+            sid: Some(OWN),
+        };
+        let other = Listing::Listed {
+            session: 1,
+            sid: Some(OTHER),
+        };
+        assert_eq!(owner(OWN, own, unasked, unopened), Owner::Own);
+        assert_eq!(owner(OWN, other, unasked, unopened), Owner::Other);
     }
 
+    // WTS answered but did not list it: another user's session, or gone since the snapshot.
     #[test]
-    fn another_users_process_is_ignored_and_never_opened() {
-        assert_eq!(owner(OWN, None, || true, unopened), Owner::Other);
+    fn an_unlisted_process_with_a_wts_answer_is_other_and_never_opened() {
         assert_eq!(
-            owner(OWN, None, || false, || Told::User(OTHER.into())),
+            owner(OWN, Listing::Unlisted, unasked, unopened),
             Owner::Other
         );
     }
 
-    // Such as the same person's elevated codex.
+    #[test]
+    fn a_listed_process_in_another_users_session_is_ignored_and_never_opened() {
+        let no_sid = || Listing::Listed {
+            session: 7,
+            sid: None,
+        };
+        assert_eq!(owner(OWN, no_sid(), |_| true, unopened), Owner::Other);
+        assert_eq!(
+            owner(OWN, no_sid(), |_| false, || Told::User(OTHER.into())),
+            Owner::Other
+        );
+    }
+
+    // Such as the same person's elevated codex, which WTS lists without a SID.
     #[test]
     fn a_process_whose_owner_cannot_be_read_is_unread() {
-        assert_eq!(owner(OWN, None, || false, || Told::Refused), Owner::Unread);
+        let no_listing = || Listing::Unanswered;
         assert_eq!(
-            owner(OWN, None, || false, || Told::User(OWN.into())),
+            owner(OWN, no_listing(), unasked, || Told::Refused),
+            Owner::Unread
+        );
+        assert_eq!(
+            owner(OWN, no_listing(), |_| false, || Told::User(OWN.into())),
             Owner::Own
         );
-        assert_eq!(owner(OWN, None, || false, || Told::Gone), Owner::Other);
+        assert_eq!(
+            owner(OWN, no_listing(), |_| false, || Told::Gone),
+            Owner::Other
+        );
     }
 }

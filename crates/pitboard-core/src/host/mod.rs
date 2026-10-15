@@ -42,6 +42,7 @@ mod linux;
 mod macos;
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) mod memory;
+#[cfg(any(windows, test))]
 pub(crate) mod owner;
 pub(crate) mod program;
 #[cfg_attr(
@@ -535,13 +536,24 @@ pub struct Listed {
 
 // None where one of them cannot be placed, since it may be any kind of holder.
 pub(crate) fn named(os: Os, all: Vec<Listed>, program: &str) -> Option<Vec<Process>> {
-    let file = match os {
-        Os::MacOs | Os::Linux => program.to_owned(),
-        Os::Windows => format!("{program}.exe"),
+    let files: Vec<String> = match os {
+        Os::MacOs | Os::Linux => vec![program.to_owned()],
+        Os::Windows => {
+            let mut files = vec![format!("{program}.exe")];
+            // winget's Codex is the nested portable codex-<triple>.exe behind Links\codex.exe;
+            // Toolhelp names the image the link resolves to (codex_windows_install_places).
+            if program == "codex" {
+                files.push("codex-x86_64-pc-windows-msvc.exe".to_owned());
+                files.push("codex-aarch64-pc-windows-msvc.exe".to_owned());
+            }
+            files
+        }
     };
     let runs = |name: &std::ffi::OsStr| match os {
-        Os::MacOs | Os::Linux => name == file.as_str(),
-        Os::Windows => same_name_in_any_case(name, std::ffi::OsStr::new(&file)),
+        Os::MacOs | Os::Linux => files.iter().any(|file| name == file.as_str()),
+        Os::Windows => files
+            .iter()
+            .any(|file| same_name_in_any_case(name, std::ffi::OsStr::new(file))),
     };
     let found: Vec<Listed> = all
         .into_iter()
@@ -651,7 +663,7 @@ pub(crate) trait Host: Send + Sync + std::fmt::Debug {
     fn listing(&self) -> std::result::Result<Vec<Listed>, String>;
 
     // By the program's own name, so a script that merely mentions it is not counted. None is
-    // not the same as none running. Another user's use another user's login.
+    // not the same as none running. Another user's processes use that user's login.
     fn processes(&self, program: &str) -> Option<Vec<Process>> {
         named(OS, self.listing().ok()?, program)
     }
@@ -858,12 +870,21 @@ mod tests {
                 listed(4, "C:/n/vendor/codex-path/rg.exe"),
                 listed(5, "/usr/local/bin/codex"),
                 listed(6, "C:/n/codex"),
+                // winget's nested portable, which Toolhelp names behind Links\codex.exe.
+                listed(
+                    7,
+                    "C:/Users/a/AppData/Local/Microsoft/WinGet/Packages/OpenAI.Codex_x/codex-x86_64-pc-windows-msvc.exe",
+                ),
+                listed(
+                    8,
+                    "C:/Users/a/AppData/Local/Microsoft/WinGet/Packages/OpenAI.Codex_x/codex-aarch64-pc-windows-msvc.exe",
+                ),
             ]
         };
         let pids = |os: Os| {
             named(os, all(), "codex").map(|found| found.iter().map(|p| p.pid).collect::<Vec<_>>())
         };
-        assert_eq!(pids(Os::Windows), Some(vec![1]));
+        assert_eq!(pids(Os::Windows), Some(vec![1, 7, 8]));
         assert_eq!(pids(Os::MacOs), Some(vec![5, 6]));
         assert_eq!(pids(Os::Linux), Some(vec![5, 6]));
     }

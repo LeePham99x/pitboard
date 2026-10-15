@@ -1,8 +1,8 @@
 //! A tool Pitboard starts on Windows, in a job of its own from its first instruction on.
 
-use super::proc::{Handle, image};
+use super::proc::image;
 use std::io;
-use std::os::windows::io::AsRawHandle;
+use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::os::windows::process::CommandExt;
 use std::process::{Child, Command, ExitStatus};
 use windows_sys::Win32::Foundation::{ERROR_MORE_DATA, INVALID_HANDLE_VALUE, WAIT_OBJECT_0};
@@ -40,10 +40,7 @@ pub(crate) struct Tool {
     ended: bool,
 }
 
-struct Job(Handle);
-
-// SAFETY: a job's handle names a kernel object, which any thread may use and close.
-unsafe impl Send for Job {}
+struct Job(OwnedHandle);
 
 pub(crate) fn start(command: Command) -> io::Result<Tool> {
     // SAFETY: no argument; the window is only compared with null.
@@ -52,7 +49,6 @@ pub(crate) fn start(command: Command) -> io::Result<Tool> {
 }
 
 fn start_with(mut command: Command, console: bool) -> io::Result<Tool> {
-    refuse_a_broken_line(&command)?;
     command.creation_flags(flags(console));
     let job = job()?;
     let mut child = command.spawn()?;
@@ -77,41 +73,21 @@ fn flags(console: bool) -> PROCESS_CREATION_FLAGS {
     }
 }
 
-// std quotes a `.cmd`'s arguments for `cmd.exe`, where a line break would end the line.
-fn refuse_a_broken_line(command: &Command) -> io::Result<()> {
-    let batch = std::path::Path::new(command.get_program())
-        .extension()
-        .is_some_and(|extension| {
-            extension.eq_ignore_ascii_case("cmd") || extension.eq_ignore_ascii_case("bat")
-        });
-    let broken = command.get_args().any(|arg| {
-        arg.as_encoded_bytes()
-            .iter()
-            .any(|&b| b == b'\r' || b == b'\n')
-    });
-    if batch && broken {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "an argument to a .cmd holds a line break",
-        ));
-    }
-    Ok(())
-}
-
 // No kill on close, and Codex starts its daemons breaking away (`codex_windows_app_server`).
 fn job() -> io::Result<Job> {
-    // SAFETY: no attributes and no name; the handle is closed by `Handle`.
+    // SAFETY: no attributes and no name.
     let made = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
     if made.is_null() {
         return Err(io::Error::last_os_error());
     }
-    let job = Handle(made);
+    // SAFETY: a valid job handle this process now owns, closed by `OwnedHandle`.
+    let job = unsafe { OwnedHandle::from_raw_handle(made) };
     let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
     limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_BREAKAWAY_OK;
     // SAFETY: the job just made, and limits of the size given.
     let set = unsafe {
         SetInformationJobObject(
-            job.0,
+            job.as_raw_handle(),
             JobObjectExtendedLimitInformation,
             (&raw const limits).cast(),
             size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
@@ -125,7 +101,7 @@ fn job() -> io::Result<Job> {
 
 fn assign(job: &Job, child: &Child) -> io::Result<()> {
     // SAFETY: the job and the child's own process handle, both open.
-    if unsafe { AssignProcessToJobObject(job.0.0, child.as_raw_handle()) } == 0 {
+    if unsafe { AssignProcessToJobObject(job.0.as_raw_handle(), child.as_raw_handle()) } == 0 {
         return Err(io::Error::last_os_error());
     }
     Ok(())
@@ -133,25 +109,26 @@ fn assign(job: &Job, child: &Child) -> io::Result<()> {
 
 // std's `Child` keeps no handle on its thread; a suspended program has one, a snapshot names it.
 fn resume(pid: u32) -> io::Result<()> {
-    // SAFETY: a snapshot of every thread; closed by `Handle`.
+    // SAFETY: a snapshot of every thread.
     let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
     if snapshot == INVALID_HANDLE_VALUE {
         return Err(io::Error::last_os_error());
     }
-    let snapshot = Handle(snapshot);
+    // SAFETY: a valid snapshot handle this process now owns, closed by `OwnedHandle`.
+    let snapshot = unsafe { OwnedHandle::from_raw_handle(snapshot) };
     let mut entry = THREADENTRY32 {
         dwSize: size_of::<THREADENTRY32>() as u32,
         ..THREADENTRY32::default()
     };
     let mut threads = Vec::new();
     // SAFETY: an open snapshot, and an entry whose size it carries.
-    let mut more = unsafe { Thread32First(snapshot.0, &mut entry) } != 0;
+    let mut more = unsafe { Thread32First(snapshot.as_raw_handle(), &mut entry) } != 0;
     while more {
         if entry.th32OwnerProcessID == pid {
             threads.push(entry.th32ThreadID);
         }
         // SAFETY: as above.
-        more = unsafe { Thread32Next(snapshot.0, &mut entry) } != 0;
+        more = unsafe { Thread32Next(snapshot.as_raw_handle(), &mut entry) } != 0;
     }
     let [thread] = threads[..] else {
         return Err(io::Error::other(format!(
@@ -159,14 +136,15 @@ fn resume(pid: u32) -> io::Result<()> {
             threads.len()
         )));
     };
-    // SAFETY: plain values; the handle is closed by `Handle`.
-    let opened = unsafe { OpenThread(THREAD_SUSPEND_RESUME, 0, thread) };
-    if opened.is_null() {
+    // SAFETY: plain values.
+    let handle = unsafe { OpenThread(THREAD_SUSPEND_RESUME, 0, thread) };
+    if handle.is_null() {
         return Err(io::Error::last_os_error());
     }
-    let opened = Handle(opened);
+    // SAFETY: a valid thread handle this process now owns, closed by `OwnedHandle`.
+    let opened = unsafe { OwnedHandle::from_raw_handle(handle) };
     // SAFETY: an open thread, with the right to resume it.
-    if unsafe { ResumeThread(opened.0) } == u32::MAX {
+    if unsafe { ResumeThread(opened.as_raw_handle()) } == u32::MAX {
         return Err(io::Error::last_os_error());
     }
     Ok(())
@@ -210,19 +188,23 @@ impl Drop for Tool {
     }
 }
 
-fn opened(pid: u32, access: u32) -> Option<Handle> {
-    // SAFETY: plain values; a handle that comes back is closed by `Handle`.
+fn opened(pid: u32, access: u32) -> Option<OwnedHandle> {
+    // SAFETY: plain values.
     let handle = unsafe { OpenProcess(access, 0, pid) };
-    (!handle.is_null()).then_some(Handle(handle))
+    // SAFETY: a non-null process handle this process now owns, closed by `OwnedHandle`.
+    (!handle.is_null()).then(|| unsafe { OwnedHandle::from_raw_handle(handle) })
 }
 
-fn in_job(process: &Handle, job: &Job) -> bool {
+fn in_job(process: &OwnedHandle, job: &Job) -> bool {
     let mut inside = 0;
     // SAFETY: two open handles, and a BOOL of this frame.
-    unsafe { IsProcessInJob(process.0, job.0.0, &mut inside) != 0 && inside != 0 }
+    unsafe {
+        IsProcessInJob(process.as_raw_handle(), job.0.as_raw_handle(), &mut inside) != 0
+            && inside != 0
+    }
 }
 
-fn in_the_chain(process: &Handle) -> bool {
+fn in_the_chain(process: &OwnedHandle) -> bool {
     image(process)
         .as_deref()
         .and_then(std::path::Path::file_name)
@@ -244,11 +226,12 @@ fn end_the_chain(job: &Job) {
                 continue;
             };
             // SAFETY: an open handle with SYNCHRONIZE, waited on for no time at all.
-            let running = unsafe { WaitForSingleObject(process.0, 0) } != WAIT_OBJECT_0;
+            let running =
+                unsafe { WaitForSingleObject(process.as_raw_handle(), 0) } != WAIT_OBJECT_0;
             // A pid listed and since ended may be another program's by now.
             if running && in_job(&process, job) && in_the_chain(&process) {
                 // SAFETY: an open handle with the right to end it.
-                unsafe { TerminateProcess(process.0, 1) };
+                unsafe { TerminateProcess(process.as_raw_handle(), 1) };
                 ending.push(process);
             }
         }
@@ -257,7 +240,7 @@ fn end_the_chain(job: &Job) {
         }
         for process in ending {
             // SAFETY: an open handle with SYNCHRONIZE.
-            unsafe { WaitForSingleObject(process.0, ENDING_MS) };
+            unsafe { WaitForSingleObject(process.as_raw_handle(), ENDING_MS) };
         }
     }
 }
@@ -271,7 +254,7 @@ fn members(job: &Job) -> Vec<u32> {
         // SAFETY: an open job, and a buffer of the length given, aligned for the list.
         let read = unsafe {
             QueryInformationJobObject(
-                job.0.0,
+                job.0.as_raw_handle(),
                 JobObjectBasicProcessIdList,
                 list.as_mut_ptr().cast(),
                 (list.len() * size_of::<usize>()) as u32,
@@ -478,6 +461,8 @@ mod tests {
             serde_json::from_str(&helper::written(&recorded)).expect("what it was handed");
         assert_eq!(read, handed);
 
+        // std's make_bat_command_line refuses a batch argument with a line break before
+        // CreateProcessW, so Pitboard needs no guard of its own.
         let refused = dir.join("refused.json");
         for broken in ["a\nb", "a\rb"] {
             let mut command = quietly(helper::command(&front, Job::Records, &refused));

@@ -176,7 +176,6 @@ pub mod testing {
         Ok(crate::store::vault_write(ctx, permit, service, contents)?)
     }
 
-    /// Whether the process `pid` may still run, as the system says.
     pub fn may_be_running(pid: u32) -> bool {
         crate::host::proc::may_be_running(pid)
     }

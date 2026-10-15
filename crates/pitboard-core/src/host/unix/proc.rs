@@ -179,6 +179,10 @@ pub(crate) fn product_version(_path: &Path) -> Option<[u16; 4]> {
     None
 }
 
+pub(crate) fn product_name(_path: &Path) -> Option<String> {
+    None
+}
+
 #[cfg(test)]
 #[allow(
     clippy::disallowed_methods,
