@@ -217,6 +217,10 @@ fn over_the_account_switched_to(error: &Error) -> bool {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test sets up its scratch files as a person or a tool would"
+)]
 mod tests {
     use super::super::harness::{
         Machine, NOW, cache_usage, config_names, document, hold, machine, owner, state_file,

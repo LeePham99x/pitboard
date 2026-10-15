@@ -78,6 +78,10 @@ pub(crate) fn forget(settled: Settled, key: &Key) -> Result<(String, Vec<Warning
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test sets up its scratch files as a person or a tool would"
+)]
 mod tests {
     use super::super::harness::{
         Machine, NOW, account, config_names, document, in_organisation, machine,

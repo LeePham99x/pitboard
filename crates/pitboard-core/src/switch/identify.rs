@@ -610,6 +610,10 @@ pub(crate) fn write_down(ctx: &Context, permit: Permit, noticed: &[Noticed]) {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test sets up its scratch files as a person or a tool would"
+)]
 mod tests {
     use super::super::Settled;
     use super::super::harness::{

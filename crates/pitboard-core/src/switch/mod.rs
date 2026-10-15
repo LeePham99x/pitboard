@@ -3,6 +3,10 @@ use crate::provider::{LoginKind, Provider, ProviderId};
 mod adopt;
 mod auto;
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test sets up its scratch files as a person or a tool would"
+)]
 mod crash;
 pub(crate) mod enroll;
 pub(crate) mod folder;
@@ -10,6 +14,10 @@ pub(crate) mod folder;
 mod foreign;
 mod forget;
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test sets up its scratch files as a person or a tool would"
+)]
 pub(crate) mod harness;
 pub(crate) mod identify;
 mod journal;
@@ -17,6 +25,10 @@ mod journal;
 mod pinned;
 mod refresh;
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test sets up its scratch files as a person or a tool would"
+)]
 mod refusals;
 mod rename;
 pub(crate) mod renew;

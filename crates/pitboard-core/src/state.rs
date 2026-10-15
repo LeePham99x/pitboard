@@ -1142,6 +1142,10 @@ pub(crate) fn save(ctx: &Context, permit: Permit, state: &State) -> Result<()> {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test sets up its scratch files as a person or a tool would"
+)]
 mod tests {
     /// CLAUDE_CONFIG_DIR picks which keychain item is the live one, and one state file
     /// serves every slot on a machine. A record of whose login one slot holds says nothing

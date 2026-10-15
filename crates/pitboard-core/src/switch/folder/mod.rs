@@ -1,9 +1,17 @@
 pub(crate) mod awaited;
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test sets up its scratch files as a person or a tool would"
+)]
 mod crash;
 mod moves;
 mod settle;
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test sets up its scratch files as a person or a tool would"
+)]
 mod tests;
 mod verdict;
 

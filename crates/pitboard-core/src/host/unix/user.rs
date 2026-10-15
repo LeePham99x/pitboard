@@ -227,6 +227,10 @@ fn path(entry: &libc::passwd, field: *const libc::c_char) -> Option<PathBuf> {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test sets up its scratch files as a person or a tool would"
+)]
 mod tests {
     use super::*;
     use std::path::Path;

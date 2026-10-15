@@ -694,6 +694,13 @@ window loads its site, and whatever the site's pages load, as a browser would.
   `host/macos/launchd.rs`. `clippy.toml` refuses `std::env::var`, `var_os`, `vars` and
   `vars_os` outside `context.rs`, so every other read carries an `#[allow]` that says why
   it is meant.
+- The core makes every file and folder through `host::fs`, so how each is made, and made
+  private, is said once for each system. Its own `clippy.toml` refuses std's ways to make
+  one, `fs::write`, `File::create`, `OpenOptions::create`, `fs::copy`, `create_dir` and the
+  rest, outside the faces in `host/`, the stand-in, the Claude Desktop the tests play and
+  the tests that set up a scratch folder, each of which says why in its `#[allow]`. It
+  repeats the root's rules, since a crate's own `clippy.toml` replaces the root's, and a
+  test holds it to them.
 - `READ` in `context.rs` and `settings::OVERRIDING_ENV` name every variable a release of
   Pitboard reads. `READ_BY_BUILDS_FOR_TESTS` names the one only a build for tests reads,
   `PITBOARD_TEST_CLAUDE_DESKTOP`, and is empty in a release. `Environment` refuses, in a

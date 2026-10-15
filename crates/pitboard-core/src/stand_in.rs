@@ -209,6 +209,10 @@ fn done(did: io::Result<()>) -> ExitCode {
 }
 
 impl Job {
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "the stand-in writes as the tool it plays does"
+    )]
     fn run(self) -> io::Result<()> {
         match self {
             Job::CopiesItselfTo(to) => {
@@ -254,6 +258,10 @@ pub fn script_beside(program: &Path) -> PathBuf {
 
 /// `contents` at `at`, whole: written under a name of this process's own beside it, then
 /// moved into place, so two stand-ins writing the same file never move each other's half.
+#[allow(
+    clippy::disallowed_methods,
+    reason = "the stand-in writes as the tool it plays does"
+)]
 fn write_whole(at: &Path, contents: &str) -> io::Result<()> {
     let part = sibling(at, &format!("part-{}", std::process::id()));
     std::fs::write(&part, contents)?;
@@ -444,6 +452,10 @@ impl Run<'_> {
         70
     }
 
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "the stand-in writes as the tool it plays does"
+    )]
     fn take(&mut self, step: &Step, args: &[String], held: &mut Vec<Held>) -> io::Result<Took> {
         match step {
             Step::Says(text) => {
@@ -555,6 +567,10 @@ impl Run<'_> {
             .map(PathBuf::from)
     }
 
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "the stand-in writes as the tool it plays does"
+    )]
     fn records(&self, at: &Path, variables: &[String], args: &[String]) -> io::Result<()> {
         let given: serde_json::Map<String, serde_json::Value> = variables
             .iter()
@@ -620,6 +636,10 @@ fn claude_code_slot(dir: &Path) -> String {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test sets up its scratch files as a person or a tool would"
+)]
 mod tests {
     use super::*;
     use std::collections::HashMap;

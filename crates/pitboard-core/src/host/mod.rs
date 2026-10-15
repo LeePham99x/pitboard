@@ -776,6 +776,32 @@ pub(crate) fn current_program() -> std::io::Result<PathBuf> {
 mod tests {
     use super::*;
 
+    // This crate's clippy.toml replaces the root's, so it repeats each of its rules.
+    #[test]
+    fn the_crates_lints_keep_every_rule_of_the_workspaces_and_refuse_stds_creates() {
+        let read = |path: &str| {
+            std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(path)).expect(path)
+        };
+        let rules = |text: &str| -> Vec<String> {
+            text.lines()
+                .filter(|line| line.trim_start().starts_with("{ path"))
+                .map(str::to_owned)
+                .collect()
+        };
+        let own = rules(&read("clippy.toml"));
+        for rule in rules(&read("../../clippy.toml")) {
+            assert!(own.contains(&rule), "{rule}");
+        }
+        for create in [
+            "std::fs::write",
+            "std::fs::OpenOptions::create",
+            "std::fs::create_dir_all",
+        ] {
+            let named = format!("{{ path = \"{create}\",");
+            assert!(own.iter().any(|rule| rule.contains(&named)), "{create}");
+        }
+    }
+
     /// A machine without a store of secrets must say so rather than hand back something
     /// that behaves like one. A tool's own module builds its chain out of this answer, so a
     /// host that always offered one would build a chain that cannot work.

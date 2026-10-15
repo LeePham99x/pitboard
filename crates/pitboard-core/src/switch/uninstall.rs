@@ -143,6 +143,10 @@ fn remove_home(ctx: &Context, permit: Permit) -> bool {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test sets up its scratch files as a person or a tool would"
+)]
 mod tests {
     use super::super::harness::{codex_machine, machine};
     use super::super::settle;

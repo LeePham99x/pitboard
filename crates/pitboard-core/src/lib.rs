@@ -53,6 +53,10 @@ pub mod context;
 // The Claude Desktop the tests play, reached as `testing::desktop`.
 #[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "it leaves Claude Desktop's files as Claude does"
+)]
 pub mod desktop_testing;
 pub mod doctor;
 pub mod duty;

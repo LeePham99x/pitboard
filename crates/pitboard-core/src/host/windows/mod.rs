@@ -17,6 +17,10 @@
 //! Each tool's own live chain refuses on Windows in its provider's code, not here: which
 //! store a tool keeps its login in is the tool's to say (W21, W22, W23).
 
+#[allow(
+    clippy::disallowed_methods,
+    reason = "the face every file and folder Pitboard makes is made through"
+)]
 pub(crate) mod fs;
 pub(crate) mod proc;
 pub(crate) mod user;

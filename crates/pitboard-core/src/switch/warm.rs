@@ -396,6 +396,10 @@ pub(crate) fn range(settled: Settled, range: Range) -> Result<Range> {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test sets up its scratch files as a person or a tool would"
+)]
 mod tests {
     use super::super::harness::{audit_lines, codex_account, machine};
     use crate::duty::warm::{self, Range};
