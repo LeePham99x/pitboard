@@ -82,20 +82,21 @@ pub(crate) struct Proxies {
 impl Proxies {
     /// What `env` says, by ureq 3.4.2's rules.
     pub(crate) fn read(env: &Environment) -> Proxies {
-        let exempting = EXEMPTING.into_iter().find(|name| env.text(name).is_some());
+        let (naming, exempting) = (set_in(env, &NAMING), set_in(env, &EXEMPTING));
         let entries: Vec<&str> = exempting
+            .first()
             .and_then(|name| env.text(name))
             .map_or_else(Vec::new, |list| list.split(',').collect());
         let mut read = Proxies {
-            exempting,
-            set: NAMING
+            exempting: exempting.first().copied(),
+            set: naming
                 .iter()
-                .chain(&EXEMPTING)
+                .chain(&exempting)
                 .filter_map(|name| env.text(name).map(|value| (*name, value.to_string())))
                 .collect(),
             ..Proxies::default()
         };
-        for name in NAMING {
+        for name in naming {
             let Some(value) = env.text(name) else {
                 continue;
             };
@@ -240,6 +241,26 @@ impl std::fmt::Debug for Proxies {
             )
             .finish()
     }
+}
+
+// Each of `names` that `env` sets, in their order, once a variable and as it was spelled:
+// on Windows `all_proxy` and `ALL_PROXY` are one variable (RF-B4).
+fn set_in(env: &Environment, names: &[&'static str]) -> Vec<&'static str> {
+    let mut set: Vec<&'static str> = Vec::new();
+    for &name in names {
+        let Some(spelled) = env.text(name).and(env.spelling(name)) else {
+            continue;
+        };
+        let name = names
+            .iter()
+            .copied()
+            .find(|named| std::ffi::OsStr::new(named) == spelled)
+            .unwrap_or(name);
+        if !set.contains(&name) {
+            set.push(name);
+        }
+    }
+    set
 }
 
 /// Whether ureq tunnels through `proxy` with `CONNECT`, as it does through an HTTP or an
@@ -586,6 +607,37 @@ mod tests {
             assert_eq!(read.exempting(), row.exempting, "{said}");
             assert_eq!(read.exempt_hosts(), row.exempt, "{said}");
         }
+    }
+
+    // RF-B4: on Windows `all_proxy` and `ALL_PROXY` are one variable.
+    #[test]
+    fn a_windows_variable_is_named_once_as_it_was_set() {
+        let windows = |pairs: &[(&'static str, &'static str)]| {
+            Proxies::read(&Environment::on(
+                crate::host::Os::Windows,
+                pairs.iter().copied(),
+            ))
+        };
+        let socks = windows(&[
+            ("all_proxy", "socks5://127.0.0.1:7890"),
+            ("no_proxy", "example.com"),
+        ]);
+        assert_eq!(socks.variable(), Some("all_proxy"));
+        assert_eq!(socks.exempting(), Some("no_proxy"));
+        assert_eq!(
+            socks
+                .variables()
+                .iter()
+                .map(|(name, _)| *name)
+                .collect::<Vec<_>>(),
+            ["all_proxy", "no_proxy"]
+        );
+        let passed = windows(&[
+            ("https_proxy", "not a proxy"),
+            ("HTTP_PROXY", "http://p.example:8080"),
+        ]);
+        assert_eq!(passed.passed_over(), ["https_proxy"]);
+        assert_eq!(passed.variable(), Some("HTTP_PROXY"));
     }
 
     /// Set in a child's environment to the row of [`TABLE`] it checks, which is how the child
