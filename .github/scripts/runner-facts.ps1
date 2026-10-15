@@ -1328,12 +1328,23 @@ function Measure-Channels($Result) {
         msi_bin = $msiBin
         cargo_bin = $cargoBin
     }
+    $wingetPackages = { Get-ChildItem -Directory -Path (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages') -Filter 'Pitboard.CLI*' -ErrorAction SilentlyContinue }
+    $wingetKeys = {
+        Get-ChildItem -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue |
+            Where-Object { $_.PSChildName -like 'Pitboard.CLI*' }
+    }
+    # What a winget install of Pitboard.CLI leaves: the link, the package's folder and its Uninstall key.
+    $wingetLeft = {
+        if (Get-Item -Force -LiteralPath (Join-Path $links 'pitboard.exe') -ErrorAction SilentlyContinue) { 'winget_link' }
+        if (& $wingetPackages) { 'winget_package' }
+        if (& $wingetKeys) { 'winget_uninstall_key' }
+    }
     $environment = Get-UserEnvironment
     $scoopConfig = Join-Path $env:USERPROFILE '.config\scoop'
     $scoopConfigBefore = Test-Path -LiteralPath $scoopConfig
     $winget = Get-Command winget -ErrorAction SilentlyContinue
     # What the rows changed, for the finally: a row's block runs in a scope of its own.
-    $state = @{ CargoCopy = $false; LocalManifestsBefore = $null; WingetInstalled = $false; Held = [Collections.Generic.List[object]]::new(); AsrBefore = $null }
+    $state = @{ CargoCopy = $false; LocalManifestsBefore = $null; WingetManifest = $null; Held = [Collections.Generic.List[object]]::new(); AsrBefore = $null }
     $server = $null
     try {
         # The release's URLs, on this machine: http://127.0.0.1:<port>/v<version>/<zip>.
@@ -1403,7 +1414,7 @@ function Measure-Channels($Result) {
                 $manifests = Join-Path $channels "winget\$version"
                 Write-WingetManifest $manifests $version "$base/v$version/$(Split-Path -Leaf $zips[$version].path)" $zips[$version].sha256
                 $r.validate = Invoke-Tool $winget.Source @('validate', '--manifest', $manifests)
-                $state.WingetInstalled = $true
+                $state.WingetManifest = $manifests
                 $r.install = Invoke-Tool $winget.Source @('install', '--manifest', $manifests, '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity')
                 $link = Get-Item -LiteralPath (Join-Path $links 'pitboard.exe') -ErrorAction SilentlyContinue
                 $r.link = if ($link) { [ordered]@{ type = $link.LinkType; target = Get-PathLabel (Split-Path -Parent $link.Target) $places } } else { $null }
@@ -1465,6 +1476,7 @@ function Measure-Channels($Result) {
                 $r.winget_old_left_after_running = Test-Path -LiteralPath $link.Target
                 Stop-Held $process
                 $r.winget_upgrade_stopped = Invoke-Tool $winget.Source @('upgrade', '--manifest', $manifests, '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity')
+                if ($r.winget_upgrade_stopped.exit -eq '0x00000000') { $state.WingetManifest = $manifests }
                 $r.winget_link_after_stopped = & $linked
             }
             $r
@@ -1474,10 +1486,15 @@ function Measure-Channels($Result) {
         # run three ways. Audit mode logs 1122 and blocks nothing; block mode would log 1121.
         Invoke-Row $Result 'l4_defender' {
             $status = Get-MpComputerStatus
+            $preference = Get-MpPreference
+            # The prevalence and ransomware rules ask the cloud, so its state says whether they could act.
             $r = [ordered]@{
                 real_time = $status.RealTimeProtectionEnabled
                 behavior_monitor = $status.BehaviorMonitorEnabled
                 tamper_protected = $status.IsTamperProtected
+                maps_reporting = $preference.MAPSReporting
+                cloud_block_level = $preference.CloudBlockLevel
+                submit_samples_consent = $preference.SubmitSamplesConsent
                 engine = $status.AMEngineVersion
             }
             $state.AsrBefore = Get-AsrRules
@@ -1530,13 +1547,13 @@ function Measure-Channels($Result) {
                 ((Get-AsrRules) | ConvertTo-Json -Compress) -eq ($state.AsrBefore | ConvertTo-Json -Compress)
             }
         }
-        if ($state.WingetInstalled) {
-            $undo.winget_uninstall = Invoke-Fact { Invoke-Tool $winget.Source @('uninstall', '--id', 'Pitboard.CLI', '--exact', '--disable-interactivity') }
+        if ($state.WingetManifest) {
+            # By id, winget finds no package installed from a local manifest (0x8A150014 in run 38725515950).
+            $undo.winget_uninstall = Invoke-Fact { Invoke-Tool $winget.Source @('uninstall', '--manifest', $state.WingetManifest, '--disable-interactivity') }
+            $undo.winget_left_by_uninstall = @(& $wingetLeft)
             Remove-Item -Force -LiteralPath (Join-Path $links 'pitboard.exe') -ErrorAction SilentlyContinue
-            Get-ChildItem -Directory -Path (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages') -Filter 'Pitboard.CLI*' -ErrorAction SilentlyContinue |
-                Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-            Get-ChildItem -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue |
-                Where-Object { $_.PSChildName -like 'Pitboard.CLI*' } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+            & $wingetPackages | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+            & $wingetKeys | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
         }
         if ($winget -and $state.LocalManifestsBefore -eq $false) {
             $undo.local_manifests = Invoke-Fact { Invoke-Tool $winget.Source @('settings', '--disable', 'LocalManifestFiles') }
@@ -1551,7 +1568,7 @@ function Measure-Channels($Result) {
         Remove-Item -Recurse -Force -LiteralPath $channels -ErrorAction SilentlyContinue
         $left = [Collections.Generic.List[string]]::new()
         if ($state.CargoCopy -and (Test-Path -LiteralPath (Join-Path $cargoBin 'pitboard.exe'))) { $left.Add('cargo_bin') }
-        if (Get-Item -Force -LiteralPath (Join-Path $links 'pitboard.exe') -ErrorAction SilentlyContinue) { $left.Add('winget_link') }
+        foreach ($label in & $wingetLeft) { $left.Add($label) }
         if (Test-Path -LiteralPath $channels) { $left.Add('scratch') }
         $undo.left = @($left)
         $Result.undo = $undo
