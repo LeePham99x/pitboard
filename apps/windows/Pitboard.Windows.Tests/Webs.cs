@@ -14,7 +14,8 @@ internal sealed class Webs : IAsyncDisposable
     public static readonly TimeSpan Patience = TimeSpan.FromSeconds(60);
 
     private readonly DirectoryInfo _folder;
-    private readonly List<CoreWebView2Controller> _controllers = [];
+    // Each page with its controller, whose CoreWebView2 is a new object each time it is read.
+    private readonly List<(CoreWebView2Controller Controller, CoreWebView2 Page)> _pages = [];
     private readonly TaskCompletionSource _exited = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private Webs(DirectoryInfo folder, WebEnvironment web, CoreWebView2Environment environment, List<string> elsewhere)
@@ -65,12 +66,13 @@ internal sealed class Webs : IAsyncDisposable
             CoreWebView2ControllerWindowReference.CreateFromWindowHandle((ulong)Window),
             WebEnvironment.Options(environment, profile)).AsTask().WaitAsync(Patience);
         controller.Bounds = new Rect(0, 0, 800, 600);
-        _controllers.Add(controller);
-        return controller.CoreWebView2;
+        var page = controller.CoreWebView2;
+        _pages.Add((controller, page));
+        return page;
     }
 
     // As its window closing closes it.
-    public void Close(CoreWebView2 page) => _controllers.Single(controller => controller.CoreWebView2 == page).Close();
+    public void Close(CoreWebView2 page) => _pages.Single(made => made.Page == page).Controller.Close();
 
     // Whether a page loads after `start`. A navigation stopped before it, which may end later, does not count.
     public static async Task<bool> Loads(CoreWebView2 page, Func<Task> start)
@@ -124,7 +126,7 @@ internal sealed class Webs : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        foreach (var controller in _controllers)
+        foreach (var (controller, _) in _pages)
         {
             try
             {
@@ -135,7 +137,7 @@ internal sealed class Webs : IAsyncDisposable
             }
         }
 
-        if (_controllers.Count > 0)
+        if (_pages.Count > 0)
         {
             await Task.WhenAny(Exited, Task.Delay(Patience));
         }
