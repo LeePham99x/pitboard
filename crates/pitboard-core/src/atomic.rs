@@ -50,6 +50,7 @@ pub(crate) fn write_at(
         let mut file = create_fresh(permit, &temp)?;
         file.write_all(contents)?;
         file.sync_all()?;
+        // Closed before Windows opens it again to set its list and to rename it.
         drop(file);
         if let Perms::MatchExisting = perms {
             fs::copy_access(permit, path, &temp)?;
