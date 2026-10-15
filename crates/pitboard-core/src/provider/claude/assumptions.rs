@@ -247,6 +247,12 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         linux: Read("2.1.296"),
         windows: Read("2.1.296"),
     },
+    PerSystem {
+        name: "windows_home_folder",
+        macos: NotRead("macOS keeps the home in `HOME`, which config_file_location reads"),
+        linux: NotRead("Linux keeps the home in `HOME`, which config_file_location reads"),
+        windows: Read("2.1.300"),
+    },
     warm_up("headless_token_descriptor"),
     warm_up("headless_print_mode"),
     warm_up("headless_result"),
@@ -879,6 +885,27 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         absent: &[],
     },
     Assumption {
+        name: "windows_home_folder",
+        fact: "on Windows the home `~/.claude` and `~/.claude.json` are in is `os.homedir()`: \
+               `USERPROFILE` where it is set, and `GetUserProfileDirectoryW` where it is not. \
+               A `USERPROFILE` shorter than three bytes makes it throw. `HOME`, which Git Bash \
+               sets, is not read for it",
+        read_from: "the config dir, `(CLAUDE_CONFIG_DIR ?? join(homedir(), \".claude\"))` in NFC \
+                    with `homedir` from `os`, in the win32-x64 and win32-arm64 builds; Bun \
+                    1.4.3's `os.homedir` in src/runtime/node/node_os.rs, as embedded in Claude \
+                    Code 2.1.300, which calls libuv's `uv_os_homedir`, in src/win/util.c at \
+                    oven-sh/libuv 8023581; read on 2026-10-15",
+        verified_against: "2.1.300",
+        depends: "context::Environment::home and host::windows::user::home, which every \
+                  default home on Windows is made from",
+        probe: &[
+            "import{homedir as",
+            "USERPROFILE",
+            "GetUserProfileDirectoryW",
+        ],
+        absent: &[],
+    },
+    Assumption {
         name: "headless_token_descriptor",
         fact: "where `CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR` names a descriptor, Claude Code \
                reads an OAuth access token from it, an inherited pipe until a newline or its \
@@ -1013,6 +1040,7 @@ mod tests {
                 "status_line_input_names_no_account",
                 "refresh_lock",
                 "login_carries_its_plan",
+                "windows_home_folder",
             ]
         );
         for name in [

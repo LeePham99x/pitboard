@@ -6301,13 +6301,15 @@ mod tests {
     /// nothing else, since every other check reads under one of the homes. It read Claude
     /// Code's and Pitboard's files under whatever folder it was run from.
     #[test]
-    #[cfg_attr(windows, ignore = "W14: Pitboard's own folder on Windows")]
     fn doctor_checks_nothing_under_a_home_that_is_not_a_full_path() {
         use crate::context::Environment;
+        let variable = crate::host::OS.home_variable();
+        let full = std::env::temp_dir().to_string_lossy().into_owned();
+        let empty = format!("{variable} is empty");
         for (pairs, said) in [
-            (&[("HOME", "")][..], "HOME is empty"),
+            (&[(variable, "")][..], empty.as_str()),
             (
-                &[("HOME", "/Users/x"), ("CODEX_HOME", "codex")],
+                &[(variable, full.as_str()), ("CODEX_HOME", "codex")],
                 "CODEX_HOME is `codex`, which is not a full path",
             ),
         ] {

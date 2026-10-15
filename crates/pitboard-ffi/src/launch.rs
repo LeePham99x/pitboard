@@ -1238,8 +1238,17 @@ mod tests {
 
     /// A core over a home nothing can be written under, with a `codex` named where one is
     /// given, and scheduling the command line at `helper` where one is.
+    // `/dev/null` is no folder, and Windows has none like it, so a folder nothing makes.
+    fn nowhere() -> PathBuf {
+        use pitboard_core::host::{OS, Os};
+        match OS {
+            Os::MacOs | Os::Linux => PathBuf::from("/dev/null"),
+            Os::Windows => std::env::temp_dir().join("pitboard-app-nowhere"),
+        }
+    }
+
     fn made(codex: Option<&str>, helper: Option<&Path>) -> Made {
-        let mut ctx = Context::new(PathBuf::from("/dev/null")).with_caller("app".into());
+        let mut ctx = Context::new(nowhere()).with_caller("app".into());
         if let Some(codex) = codex {
             ctx = ctx.with_codex_program(PathBuf::from(codex));
         }
@@ -1250,7 +1259,7 @@ mod tests {
             found: codex.map(|_| ProviderId::Codex).into_iter().collect(),
             search_path: None,
             helper: helper.map(Path::to_path_buf),
-            command_line_places: pitboard_core::app::command_line_places(Path::new("/dev/null")),
+            command_line_places: pitboard_core::app::command_line_places(&nowhere()),
             core: service::Pitboard::new(ctx),
         }
     }
@@ -1262,11 +1271,15 @@ mod tests {
     /// The environment of an app whose home is `home`, whose login shell cannot be run, so
     /// no test starts the person's own, and with `more` beside.
     fn environment(home: &str, more: &[(&str, &str)]) -> HashMap<String, String> {
-        [("HOME", home), ("SHELL", "/nowhere/at/all/sh")]
-            .iter()
-            .chain(more)
-            .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-            .collect()
+        [
+            ("HOME", home),
+            ("USERPROFILE", home),
+            ("SHELL", "/nowhere/at/all/sh"),
+        ]
+        .iter()
+        .chain(more)
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect()
     }
 
     /// Counts how often the app's core was made.
@@ -1289,9 +1302,8 @@ mod tests {
     /// home is one nothing can be written under, so even a regression here reaches no
     /// scheduler.
     #[test]
-    #[cfg_attr(windows, ignore = "W14: Pitboard's own folder on Windows")]
     fn the_app_schedules_nothing_without_a_command_line_to_run() {
-        let core = AppCore::for_app(environment("/dev/null", &[]), None);
+        let core = AppCore::for_app(environment(&nowhere().to_string_lossy(), &[]), None);
         let Err(PitboardError::Failed { code, message, .. }) = core.schedule_install() else {
             panic!("the app scheduled itself");
         };
@@ -1301,7 +1313,7 @@ mod tests {
 
     #[test]
     fn the_apps_core_names_the_apps_version_to_the_release_gate() {
-        AppCore::for_app(environment("/dev/null", &[]), None);
+        AppCore::for_app(environment(&nowhere().to_string_lossy(), &[]), None);
         assert_eq!(
             pitboard_core::release::version(),
             Some(env!("CARGO_PKG_VERSION"))
@@ -1376,7 +1388,7 @@ mod tests {
         let core = AppCore::asking(
             move || {
                 let mut made = made(None, None);
-                let ctx = Context::new(PathBuf::from("/dev/null"))
+                let ctx = Context::new(nowhere())
                     .with_caller("app".into())
                     .with_memory_stores(Arc::clone(&host));
                 made.core = service::Pitboard::new(ctx);
@@ -1458,7 +1470,11 @@ mod tests {
         ));
         assert!(!full.exists(), "{} is there already", full.display());
         for (home, pitboard, variable) in [
-            ("relative".into(), full.join(".pitboard"), "HOME"),
+            (
+                "relative".into(),
+                full.join(".pitboard"),
+                pitboard_core::host::OS.home_variable(),
+            ),
             (full.clone(), "pitboard".into(), "PITBOARD_HOME"),
             (full.clone(), PathBuf::new(), "PITBOARD_HOME"),
         ] {
@@ -1527,9 +1543,8 @@ mod tests {
     /// outside an app names no command line, and in one that names this test's own program,
     /// which stands in for a command line that is there.
     #[test]
-    #[cfg_attr(windows, ignore = "W14: Pitboard's own folder on Windows")]
     fn the_app_repairs_nothing_where_no_schedule_runs_it() {
-        let launched = AppCore::for_app(environment("/dev/null", &[]), None);
+        let launched = AppCore::for_app(environment(&nowhere().to_string_lossy(), &[]), None);
         assert!(!launched.schedule_repair().expect("nothing to repair"));
         let there = std::env::current_exe().expect("this test's own program");
         let named = AppCore::asking(move || (made(None, Some(&there)), false), ASK_AGAIN_AFTER);
@@ -1540,7 +1555,6 @@ mod tests {
     /// something first needs it, and not when the app makes its model, which it does on its
     /// main thread; and once, however many calls arrive at the same time.
     #[test]
-    #[cfg_attr(windows, ignore = "W14: Pitboard's own folder on Windows")]
     fn the_core_is_made_once_when_it_is_first_needed() {
         let asks = Asks::default();
         let core = Arc::new(AppCore::asking(
@@ -1589,7 +1603,6 @@ mod tests {
     /// later, and what it answers then is what is used. Once more and no more: a shell that
     /// is always that slow would otherwise cost its patience on every ask.
     #[test]
-    #[cfg_attr(windows, ignore = "W14: Pitboard's own folder on Windows")]
     fn a_login_shell_too_slow_to_answer_is_asked_once_more_later() {
         let asks = Asks::default();
         let mut core = AppCore::asking(

@@ -195,7 +195,10 @@ pub fn find_command_line(
     };
     let own = helper.and_then(|helper| std::fs::canonicalize(helper).ok());
     match own {
-        Some(own) if std::fs::canonicalize(&found).is_ok_and(|resolved| resolved == own) => {
+        Some(own)
+            if std::fs::canonicalize(&found)
+                .is_ok_and(|resolved| OS.same_path(&resolved, &own)) =>
+        {
             CommandLine::Bundled(found)
         }
         _ => CommandLine::Another(found),

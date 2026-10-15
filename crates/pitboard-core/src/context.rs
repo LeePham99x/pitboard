@@ -154,24 +154,25 @@ impl Environment {
         self.text(name).is_some_and(|v| !v.is_empty())
     }
 
-    /// The person's home: `HOME`, or, where it is unset, the account's own, as the passwd
-    /// database names it and Foundation finds it for an app. Set, even empty, it is what the
+    /// The person's home: `HOME` on macOS and Linux and `USERPROFILE` on Windows, or, where
+    /// it is unset, the account's own, as the passwd database names it and Foundation finds
+    /// it for an app, or as `GetUserProfileDirectoryW` does. Set, even empty, it is what the
     /// person said, and an empty or relative one is refused where it is used
     /// ([`crate::home::check_absolute`]), never taken to be the folder Pitboard runs in.
     pub(crate) fn home(&self) -> PathBuf {
-        self.path("HOME")
+        self.path(self.os.home_variable())
             .map(PathBuf::from)
             .or_else(crate::host::user::home)
             .unwrap_or_default()
     }
 
     /// Pitboard's own directory: `PITBOARD_HOME`, or the system's default for
-    /// `Environment::home`, `.pitboard` there on macOS and Linux. The path as the
-    /// environment gives it, with any `.`, `..` or trailing `/` it holds.
+    /// `Environment::home`. The path as the environment gives it, with any `.`, `..` or
+    /// trailing separator it holds.
     pub fn pitboard_home(&self) -> PathBuf {
         self.path("PITBOARD_HOME")
             .map(PathBuf::from)
-            .unwrap_or_else(|| crate::host::default_pitboard_home(&self.home()))
+            .unwrap_or_else(|| self.os.default_pitboard_home(&self.home()))
     }
 
     /// Every variable, as a program started in this environment is given them.
@@ -285,6 +286,8 @@ pub(crate) mod testing {
 
 #[derive(Clone, Debug)]
 pub struct Context {
+    // This build's system, but where a test reads an environment as another's.
+    pub(crate) os: Os,
     pub(crate) home: PathBuf,
     pub(crate) pitboard_home: PathBuf,
     /// `CLAUDE_CONFIG_DIR`, held as it is set, empty included. Claude Code reads an empty
@@ -408,6 +411,11 @@ impl Context {
         &self.home
     }
 
+    // The one the schedule renews, whatever `PITBOARD_HOME` says.
+    pub(crate) fn default_pitboard_home(&self) -> PathBuf {
+        self.os.default_pitboard_home(&self.home)
+    }
+
     /// The machine this context reaches.
     pub(crate) fn host(&self) -> &dyn Host {
         self.host.as_ref()
@@ -422,14 +430,15 @@ impl Context {
         self.api.as_ref()
     }
 
-    /// Claude Code's defaults for a person whose home is `home`: `~/.pitboard`, `~/.claude`,
-    /// the default credential slot, `claude` looked up on `PATH`, and no proxy. Pitboard's own
-    /// directory is the system's default for `home`, the home handed in and never this
-    /// account's own.
+    /// Claude Code's defaults for a person whose home is `home`: Pitboard's default
+    /// directory, `~/.claude`, the default credential slot, `claude` looked up on `PATH`, and
+    /// no proxy. Pitboard's own directory is the system's default for `home`, the home handed
+    /// in and never this account's own.
     #[cfg(any(test, feature = "test-support"))]
     #[doc(hidden)]
     pub fn new(home: PathBuf) -> Context {
         Context {
+            os: crate::host::OS,
             pitboard_home: crate::host::default_pitboard_home(&home),
             home,
             claude_config_dir: None,
@@ -729,7 +738,13 @@ impl Context {
     #[cfg(test)]
     pub(crate) fn for_unit_test() -> Context {
         let sentinel = unit_test_sentinel().into_os_string();
-        let homes = ["HOME", "PITBOARD_HOME", "CLAUDE_CONFIG_DIR", "CODEX_HOME"];
+        let homes = [
+            "HOME",
+            "USERPROFILE",
+            "PITBOARD_HOME",
+            "CLAUDE_CONFIG_DIR",
+            "CODEX_HOME",
+        ];
         let kept: Environment = std::env::vars_os()
             .filter(|(name, _)| !variables().any(|read| name == read))
             .chain(homes.map(|home| (home.into(), sentinel.clone())))
@@ -753,6 +768,7 @@ impl Context {
                 .map_or_else(|| PathBuf::from(tool.program()), PathBuf::from)
         };
         let read = Context {
+            os: env.os(),
             pitboard_home: env.pitboard_home(),
             home,
             claude_config_dir: owned("CLAUDE_CONFIG_DIR"),
@@ -1108,12 +1124,12 @@ mod tests {
     /// refused as one whose home is not a full path. It was read as unset, which pointed
     /// Pitboard at `~/.claude`, where no Claude Code started with it keeps anything.
     #[test]
-    #[cfg_attr(windows, ignore = "W14: Pitboard's own folder on Windows")]
     fn an_explicit_context_reads_claude_codes_settings_the_way_the_environment_does() {
-        let ctx = Context::new(PathBuf::from("/home/x"))
+        let (home, named) = full_home();
+        let ctx = Context::new(home.clone())
             .with_claude_config_dir(String::new())
             .with_secure_storage_dir(String::new());
-        assert_eq!(ctx.pitboard_home, PathBuf::from("/home/x/.pitboard"));
+        assert_eq!(ctx.pitboard_home, crate::host::default_pitboard_home(&home));
         assert_eq!(
             ctx.claude_config_dir.as_deref(),
             Some(""),
@@ -1125,9 +1141,12 @@ mod tests {
             "empty is set, and pins the default slot"
         );
         assert_eq!(ctx.claude_program(), Path::new("claude"));
-        let env: Environment = [("HOME", "/home/x"), ("CLAUDE_CONFIG_DIR", "")]
-            .into_iter()
-            .collect();
+        let env: Environment = [
+            (crate::host::OS.home_variable(), named.as_str()),
+            ("CLAUDE_CONFIG_DIR", ""),
+        ]
+        .into_iter()
+        .collect();
         let read = Context::for_command_line(&env);
         assert_eq!(read.claude_config_dir, ctx.claude_config_dir);
         for ctx in [ctx, read] {
@@ -1195,10 +1214,10 @@ mod tests {
     /// The command line reads the environment it is handed rather than this process's, so
     /// every variable can be tried without changing what the tests themselves run in.
     #[test]
-    #[cfg_attr(windows, ignore = "W14: Pitboard's own folder on Windows")]
     fn the_command_line_reads_the_environment_it_is_given() {
+        let (home, named) = full_home();
         let env: Environment = [
-            ("HOME", "/Users/x"),
+            (crate::host::OS.home_variable(), named.as_str()),
             ("PITBOARD_CLAUDE", "/elsewhere/claude"),
             ("PITBOARD_CODEX", ""),
             ("CLAUDE_CODE_CUSTOM_OAUTH_URL", "https://oauth.example"),
@@ -1222,9 +1241,11 @@ mod tests {
             "empty is unset"
         );
         assert_eq!(ctx.search_path(), "/opt/tools/bin:/usr/bin");
-        assert_eq!(ctx.pitboard_home, PathBuf::from("/Users/x/.pitboard"));
+        assert_eq!(ctx.pitboard_home, crate::host::default_pitboard_home(&home));
         assert_eq!(ctx.caller, "cli");
-        let no_path: Environment = [("HOME", "/Users/x")].into_iter().collect();
+        let no_path: Environment = [(crate::host::OS.home_variable(), named.as_str())]
+            .into_iter()
+            .collect();
         assert_eq!(
             Context::for_command_line(&no_path).search_path(),
             "",
@@ -1281,6 +1302,41 @@ mod tests {
         assert_eq!(user(Os::Linux).as_deref(), Some("posix"));
     }
 
+    // Git Bash sets `HOME`, which neither tool takes for the home on Windows.
+    #[test]
+    fn each_tool_finds_its_home_in_userprofile_on_windows_whatever_home_says() {
+        let profile = std::env::temp_dir().join("pitboard-profile-tools");
+        let named = profile.to_string_lossy().into_owned();
+        let pairs = [("HOME", "/c/Users/x"), ("USERPROFILE", named.as_str())];
+        let ctx = Context::read(&Environment::on(Os::Windows, pairs), "cli");
+        assert_eq!(ctx.home, profile);
+        assert_eq!(
+            crate::provider::claude::paths::config_dir(&ctx),
+            profile.join(".claude")
+        );
+        assert_eq!(
+            crate::provider::claude::paths::config_file(&ctx),
+            profile.join(".claude.json")
+        );
+        assert_eq!(
+            crate::provider::codex::paths::home(&ctx),
+            profile.join(".codex")
+        );
+        assert_eq!(
+            ctx.pitboard_home,
+            profile.join("AppData").join("Local").join("Pitboard")
+        );
+        let posix = Context::read(&Environment::on(Os::Linux, pairs), "cli");
+        assert_eq!(posix.home, PathBuf::from("/c/Users/x"));
+    }
+
+    // A full path on every system, which nothing makes.
+    fn full_home() -> (PathBuf, String) {
+        let home = std::env::temp_dir().join("pitboard-never-made-home");
+        let named = home.to_string_lossy().into_owned();
+        (home, named)
+    }
+
     /// A variable read without being listed is caught the first time a test reads it, so the
     /// list the tests withhold from every command they run cannot fall behind what is read.
     #[test]
@@ -1294,14 +1350,15 @@ mod tests {
     /// is where the app has always looked. The command line took an empty path instead, and
     /// so kept its files in `.pitboard` wherever it was run from.
     #[test]
-    #[cfg_attr(windows, ignore = "W14: the account's own home on Windows")]
     fn without_home_the_home_is_the_accounts_own() {
         let _real = crate::host::user::testing::reaching_the_real_home();
         let own = crate::host::user::home().expect("this account has a home");
         let ctx = Context::for_command_line(&Environment::default());
         assert_eq!(ctx.home, own);
-        assert_eq!(ctx.pitboard_home, own.join(".pitboard"));
-        let empty: Environment = [("HOME", "")].into_iter().collect();
+        assert_eq!(ctx.pitboard_home, crate::host::default_pitboard_home(&own));
+        let empty: Environment = [(crate::host::OS.home_variable(), "")]
+            .into_iter()
+            .collect();
         assert_eq!(
             Context::for_command_line(&empty).home,
             PathBuf::new(),

@@ -167,8 +167,9 @@ pub fn can_run(path: String) -> bool {
 }
 
 /// The Pitboard directory of an app started with `environment`, as the core reads it:
-/// `PITBOARD_HOME`, or `.pitboard` in the home. The path as the environment gives it, with
-/// any `.`, `..` or trailing `/` it holds.
+/// `PITBOARD_HOME`, or the system's default in the home, `AppData\Local\Pitboard` on
+/// Windows. The path as the environment gives it, with any `.`, `..` or trailing separator
+/// it holds.
 #[uniffi::export]
 pub fn pitboard_directory(environment: HashMap<String, String>) -> String {
     let environment: Environment = environment.into_iter().collect();
@@ -485,6 +486,7 @@ mod tests {
         let environment = |pitboard: &str| -> HashMap<String, String> {
             HashMap::from([
                 ("HOME".into(), scratch.to_string_lossy().into_owned()),
+                ("USERPROFILE".into(), scratch.to_string_lossy().into_owned()),
                 ("PITBOARD_HOME".into(), pitboard.into()),
             ])
         };

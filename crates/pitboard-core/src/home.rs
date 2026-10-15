@@ -138,7 +138,7 @@ pub(crate) fn ensure(ctx: &Context, permit: Permit) -> io::Result<PathBuf> {
 /// every read of Pitboard's account list, so nothing is read or written under such a home.
 pub(crate) fn check_absolute(ctx: &Context) -> Result<()> {
     let homes: [(&'static str, Option<&Path>); 5] = [
-        ("HOME", Some(ctx.home())),
+        (ctx.os.home_variable(), Some(ctx.home())),
         ("PITBOARD_HOME", Some(&ctx.pitboard_home)),
         (
             "CLAUDE_CONFIG_DIR",
@@ -182,12 +182,13 @@ pub(crate) fn check_location(path: &Path) -> Result<()> {
 mod tests {
     use super::*;
     use crate::context::Environment;
+    use crate::host::Os;
 
-    /// What `check_absolute` says of the context `pairs` make: the variable it names, or
-    /// `None` where every home is a full path.
-    fn refused_over(pairs: &[(&str, &str)]) -> Option<(&'static str, PathBuf)> {
-        let env: Environment = pairs.iter().copied().collect();
-        match check_absolute(&Context::for_command_line(&env)) {
+    /// What `check_absolute` says of the context `pairs` make on `os`: the variable it names,
+    /// or `None` where every home is a full path.
+    fn refused_over(os: Os, pairs: &[(&str, &str)]) -> Option<(&'static str, PathBuf)> {
+        let env = Environment::on(os, pairs.iter().copied());
+        match check_absolute(&Context::read(&env, "cli")) {
             Ok(()) => None,
             Err(Error::HomeNotAbsolute { variable, path }) => Some((variable, path)),
             Err(other) => panic!("{other}"),
@@ -239,60 +240,67 @@ mod tests {
     /// Each home the environment names is a full path or refused, by the variable that
     /// named it, and the home is asked first, so a relative one is named rather than the
     /// Pitboard directory worked out from it. Unset, a tool's variable names nothing, and an
-    /// empty `CLAUDE_SECURESTORAGE_CONFIG_DIR` names Claude Code's default folder.
+    /// empty `CLAUDE_SECURESTORAGE_CONFIG_DIR` names Claude Code's default folder. The home
+    /// is `USERPROFILE` on Windows.
     #[test]
-    #[cfg_attr(windows, ignore = "W14: Pitboard's own folder on Windows")]
     fn a_home_that_is_not_a_full_path_is_refused_by_the_variable_that_named_it() {
-        let home = ("HOME", "/Users/x");
-        for pairs in [
-            &[home][..],
-            &[home, ("PITBOARD_HOME", "/elsewhere/./pitboard/")],
-            &[home, ("CLAUDE_CONFIG_DIR", "/Users/x/claude")],
-            &[home, ("CLAUDE_SECURESTORAGE_CONFIG_DIR", "")],
-            &[home, ("CLAUDE_SECURESTORAGE_CONFIG_DIR", "/Users/x/slot")],
-            &[home, ("CODEX_HOME", "/Users/x/codex")],
-            &[home, ("CODEX_HOME", "")],
-        ] {
-            assert_eq!(refused_over(pairs), None, "{pairs:?}");
-        }
-        for (pairs, variable, path) in [
-            (&[("HOME", "")][..], "HOME", ""),
-            (&[("HOME", "relative")], "HOME", "relative"),
-            (
-                &[("HOME", "x"), ("PITBOARD_HOME", "/Users/x/.pitboard")],
-                "HOME",
-                "x",
-            ),
-            (&[home, ("PITBOARD_HOME", "")], "PITBOARD_HOME", ""),
-            (
-                &[home, ("PITBOARD_HOME", "pitboard")],
-                "PITBOARD_HOME",
-                "pitboard",
-            ),
-            (
-                &[home, ("CLAUDE_CONFIG_DIR", "claude")],
-                "CLAUDE_CONFIG_DIR",
-                "claude",
-            ),
-            (&[home, ("CLAUDE_CONFIG_DIR", "")], "CLAUDE_CONFIG_DIR", ""),
-            (
-                &[home, ("CLAUDE_SECURESTORAGE_CONFIG_DIR", "./slot")],
-                "CLAUDE_SECURESTORAGE_CONFIG_DIR",
-                "./slot",
-            ),
-            (&[home, ("CODEX_HOME", "codex")], "CODEX_HOME", "codex"),
-        ] {
-            assert_eq!(
-                refused_over(pairs),
-                Some((variable, PathBuf::from(path))),
-                "{pairs:?}"
-            );
+        let full = std::env::temp_dir().join("pitboard-full-home");
+        let at = |name: &str| full.join(name).to_string_lossy().into_owned();
+        let (pitboard, claude, slot, codex) =
+            (at("pitboard"), at("claude"), at("slot"), at("codex"));
+        let x = full.to_string_lossy().into_owned();
+        for os in [Os::MacOs, Os::Linux, Os::Windows] {
+            let variable = os.home_variable();
+            let home = (variable, x.as_str());
+            for pairs in [
+                &[home][..],
+                &[home, ("PITBOARD_HOME", pitboard.as_str())],
+                &[home, ("CLAUDE_CONFIG_DIR", claude.as_str())],
+                &[home, ("CLAUDE_SECURESTORAGE_CONFIG_DIR", "")],
+                &[home, ("CLAUDE_SECURESTORAGE_CONFIG_DIR", slot.as_str())],
+                &[home, ("CODEX_HOME", codex.as_str())],
+                &[home, ("CODEX_HOME", "")],
+            ] {
+                assert_eq!(refused_over(os, pairs), None, "{os:?} {pairs:?}");
+            }
+            for (pairs, refused, path) in [
+                (&[(variable, "")][..], variable, ""),
+                (&[(variable, "relative")], variable, "relative"),
+                (
+                    &[(variable, "x"), ("PITBOARD_HOME", pitboard.as_str())],
+                    variable,
+                    "x",
+                ),
+                (&[home, ("PITBOARD_HOME", "")], "PITBOARD_HOME", ""),
+                (
+                    &[home, ("PITBOARD_HOME", "pitboard")],
+                    "PITBOARD_HOME",
+                    "pitboard",
+                ),
+                (
+                    &[home, ("CLAUDE_CONFIG_DIR", "claude")],
+                    "CLAUDE_CONFIG_DIR",
+                    "claude",
+                ),
+                (&[home, ("CLAUDE_CONFIG_DIR", "")], "CLAUDE_CONFIG_DIR", ""),
+                (
+                    &[home, ("CLAUDE_SECURESTORAGE_CONFIG_DIR", "./slot")],
+                    "CLAUDE_SECURESTORAGE_CONFIG_DIR",
+                    "./slot",
+                ),
+                (&[home, ("CODEX_HOME", "codex")], "CODEX_HOME", "codex"),
+            ] {
+                assert_eq!(
+                    refused_over(os, pairs),
+                    Some((refused, PathBuf::from(path))),
+                    "{os:?} {pairs:?}"
+                );
+            }
         }
     }
 
     /// The refusal says which variable, what it holds, and the two ways out.
     #[test]
-    #[cfg_attr(windows, ignore = "W14: Pitboard's own folder on Windows")]
     fn a_home_that_is_not_a_full_path_is_said_with_the_way_out() {
         let said = |pairs: &[(&str, &str)]| {
             let env: Environment = pairs.iter().copied().collect();
@@ -300,14 +308,18 @@ mod tests {
             assert_eq!(refused.code(), "home_not_absolute");
             refused.to_string()
         };
+        let variable = crate::host::OS.home_variable();
         assert_eq!(
-            said(&[("HOME", "")]),
-            "HOME is empty, so the folder it names would depend on where each program runs. \
-             Set it to a full path, or unset it; Pitboard reads and changes nothing until \
-             then."
+            said(&[(variable, "")]),
+            format!(
+                "{variable} is empty, so the folder it names would depend on where each \
+                 program runs. Set it to a full path, or unset it; Pitboard reads and changes \
+                 nothing until then."
+            )
         );
+        let full = std::env::temp_dir().to_string_lossy().into_owned();
         assert!(
-            said(&[("HOME", "/Users/x"), ("CODEX_HOME", "codex")])
+            said(&[(variable, full.as_str()), ("CODEX_HOME", "codex")])
                 .starts_with("CODEX_HOME is `codex`, which is not a full path, so ")
         );
     }

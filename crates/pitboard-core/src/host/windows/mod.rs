@@ -11,7 +11,6 @@
 //! - no process list (W18), so a switch says nobody can tell what still runs a tool, and
 //!   every process may still be running;
 //! - no scheduler (W25);
-//! - no home of the account's own (W14), which is refused as a home that is not a full path;
 //! - no file made, private or not, and no access read (W15, W16);
 //! - no program found (W17), and no `PATH` of a login shell, which Windows does not have.
 //!

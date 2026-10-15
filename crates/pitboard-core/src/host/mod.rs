@@ -168,6 +168,22 @@ impl Os {
         }
     }
 
+    // Bun 1.4.3's `os.homedir` on Windows is libuv's `uv_os_homedir`: `USERPROFILE`, else
+    // `GetUserProfileDirectoryW`. Git Bash sets `HOME`, which no tool takes for the home there.
+    pub fn home_variable(self) -> &'static str {
+        match self {
+            Os::MacOs | Os::Linux => "HOME",
+            Os::Windows => "USERPROFILE",
+        }
+    }
+
+    pub(crate) fn default_pitboard_home(self, home: &Path) -> PathBuf {
+        match self {
+            Os::MacOs | Os::Linux => home.join(".pitboard"),
+            Os::Windows => home.join("AppData").join("Local").join("Pitboard"),
+        }
+    }
+
     /// The command line an app at `app` comes with, which is what its renewal schedule runs:
     /// the app itself is not one. A Mac app carries it at `Contents/Helpers/pitboard`, where
     /// `build-app.sh` puts it, and anything that is not an app bundle, such as a test or a
@@ -277,7 +293,7 @@ fn begins(path: &Path, with: &Path) -> bool {
 
 // `canonicalize` spells `C:\x` as `\\?\C:\x`.
 #[cfg(any(test, feature = "test-support"))]
-fn plain(path: &Path) -> PathBuf {
+pub(crate) fn plain(path: &Path) -> PathBuf {
     use std::path::{Component, Prefix};
     let mut parts = path.components();
     let Some(Component::Prefix(prefix)) = parts.next() else {
@@ -682,21 +698,15 @@ pub(crate) trait Scheduler: Send + Sync + std::fmt::Debug {
 }
 
 /// Where Pitboard keeps its own files for a person whose home is `home`, when
-/// `PITBOARD_HOME` names nowhere else: `.pitboard` in that home on macOS and Linux.
+/// `PITBOARD_HOME` names nowhere else: `.pitboard` in that home on macOS and Linux, and
+/// `AppData\Local\Pitboard` in it on Windows.
 ///
 /// Worked out from the home it is handed, never from this account's own, so a context made
-/// for a home of a test's own, or of an app's choosing, keeps Pitboard's files there. The
-/// daily renewal schedule belongs to this home and no other ([`crate::schedule`]).
-///
-/// On Windows it is the person's local application data, `%LOCALAPPDATA%\Pitboard`, which
-/// W14 finds from the home it is handed. Until then there is none: the empty path is refused
-/// as a home that is not a full path, so nothing is read or written anywhere Pitboard did not
-/// find, and `PITBOARD_HOME` has to name the folder.
+/// for a home of a test's own, or of an app's choosing, keeps Pitboard's files there, and a
+/// scheduled run and one by hand never part over a moved `USERPROFILE`. The daily renewal
+/// schedule belongs to this home and no other ([`crate::schedule`]).
 pub(crate) fn default_pitboard_home(home: &Path) -> PathBuf {
-    match OS {
-        Os::MacOs | Os::Linux => home.join(".pitboard"),
-        Os::Windows => PathBuf::new(),
-    }
+    OS.default_pitboard_home(home)
 }
 
 // Time awake since a fixed moment (boot on Windows, the first call elsewhere); a sleep adds none.

@@ -84,10 +84,11 @@ pub const SCHEDULED_RUN: [&str; 2] = ["renew", "--scheduled"];
 /// is belongs to the default home, and [`install`] refuses to put one there from it.
 ///
 /// The two are compared as paths, as written, so `~/.pitboard/` is the default home, while
-/// a link to it, or the same directory spelled in another case on a file system that
-/// ignores case, is another directory.
+/// a link to it is another directory, and so is the same directory spelled in another case,
+/// but on Windows, whose paths are one in any case.
 pub(crate) fn serves(ctx: &Context) -> bool {
-    crate::home::dir(ctx) == crate::host::default_pitboard_home(ctx.home())
+    ctx.os
+        .same_path(&crate::home::dir(ctx), &ctx.default_pitboard_home())
 }
 
 /// Whether this process is a run the schedule itself started: as the system's scheduler
@@ -119,10 +120,9 @@ pub(crate) fn for_its_run(ctx: &Context) -> Context {
     assert!(
         !crate::host::user::is_the_accounts_own_home(ctx.home()),
         "a build for tests ran as the daily renewal schedule with this account's own home, \
-         where it would renew the real Pitboard directory: give it a HOME of its own"
+         where it would renew the real Pitboard directory: give it a home of its own"
     );
-    ctx.clone()
-        .with_pitboard_home(crate::host::default_pitboard_home(ctx.home()))
+    ctx.clone().with_pitboard_home(ctx.default_pitboard_home())
 }
 
 /// The Pitboard the schedule should run: the one the context names, or this one, by the
@@ -229,7 +229,7 @@ pub(crate) fn install(ctx: &Context, permit: Permit) -> Result<PathBuf> {
     if !serves(ctx) {
         return Err(Error::ScheduleNotDefaultHome {
             home: crate::home::dir(ctx),
-            default: crate::host::default_pitboard_home(ctx.home()),
+            default: ctx.default_pitboard_home(),
         });
     }
     let proxy = ctx
@@ -724,17 +724,61 @@ mod tests {
     /// The scheduler starts `renew` with the default home, so a Pitboard pointed anywhere
     /// else leaves the schedule alone.
     #[test]
-    #[cfg_attr(windows, ignore = "W14: Pitboard's own folder on Windows")]
     fn the_schedule_belongs_to_the_default_home_alone() {
-        let ctx = Context::new(PathBuf::from("/home/x"));
+        let home = std::env::temp_dir().join("pitboard-schedule-home");
+        let ctx = Context::new(home.clone());
+        let default = crate::host::default_pitboard_home(&home);
         assert!(serves(&ctx));
-        assert!(serves(
+        let trailing = PathBuf::from(format!(
+            "{}{}",
+            default.display(),
+            std::path::MAIN_SEPARATOR
+        ));
+        assert!(serves(&ctx.clone().with_pitboard_home(trailing)));
+        let upper = PathBuf::from(default.to_string_lossy().to_uppercase());
+        assert_eq!(
+            serves(&ctx.clone().with_pitboard_home(upper)),
+            crate::host::OS == crate::host::Os::Windows,
+            "in another case"
+        );
+        assert!(!serves(&ctx.with_pitboard_home(home.join("elsewhere"))));
+    }
+
+    // RF-B1, run 38693947329: on Windows a scheduled run and one by hand both derive the
+    // folder from `USERPROFILE`, wherever `HOME` points.
+    #[test]
+    fn a_windows_schedule_renews_the_folder_in_userprofile_whatever_home_says() {
+        let profile = std::env::temp_dir().join("pitboard-profile");
+        let named = profile.to_string_lossy().into_owned();
+        let env = crate::context::Environment::on(
+            crate::host::Os::Windows,
+            [
+                ("USERPROFILE", named.as_str()),
+                ("HOME", "/c/Users/elsewhere"),
+            ],
+        );
+        let ctx = Context::read(&env, "cli");
+        let folder = profile.join("AppData").join("Local").join("Pitboard");
+        assert_eq!(ctx.pitboard_home, folder);
+        assert_eq!(env.pitboard_home(), folder, "what an app asks for");
+        assert!(serves(&ctx));
+        let run = for_its_run(
             &ctx.clone()
-                .with_pitboard_home(PathBuf::from("/home/x/.pitboard/"))
-        ));
-        assert!(!serves(
-            &ctx.with_pitboard_home(PathBuf::from("/tmp/elsewhere"))
-        ));
+                .with_pitboard_home(profile.join("elsewhere"))
+                .started_by_the_schedule(),
+        );
+        assert_eq!(run.pitboard_home, folder);
+    }
+
+    // Stopped before it reads anything: the context is all that is made.
+    #[test]
+    #[should_panic(expected = "with this account's own home")]
+    fn a_build_for_tests_never_runs_as_the_schedule_with_the_accounts_own_home() {
+        let own = {
+            let _real = crate::host::user::testing::reaching_the_real_home();
+            crate::host::user::home().expect("this account has a home")
+        };
+        let _ = for_its_run(&Context::new(own).started_by_the_schedule());
     }
 
     /// The schedule renews the default home alone, so it is installed only from there. With

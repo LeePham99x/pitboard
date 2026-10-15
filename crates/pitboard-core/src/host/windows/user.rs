@@ -16,21 +16,64 @@ pub(crate) fn login_name() -> Option<String> {
     None
 }
 
-/// This account's own home, where the environment names none: not read until W14 asks
-/// Windows for the profile folder. Without one, Pitboard refuses the empty home as one that
-/// is not a full path.
+/// This account's own home, where the environment names none: `GetUserProfileDirectoryW`,
+/// where libuv's `uv_os_homedir` looks once `USERPROFILE` is unset.
+///
+/// Never in a build for tests, unless a unit test says through
+/// [`testing::reaching_the_real_home`] that this lookup is what it tests, so a test that
+/// gives no home of its own reaches nothing real, and Pitboard refuses the empty home that
+/// leaves as a home that is not a full path.
 pub(crate) fn home() -> Option<PathBuf> {
-    None
+    real_lookups().then(profile_directory).flatten()
 }
 
-/// Whether `path` is this account's own home, for a build for tests to refuse to run as the
-/// daily renewal schedule there. Nobody can tell until W14 reads the profile folder, and
-/// nothing needs to: such a run renews Pitboard's default home, which on Windows is none
-/// until W14 finds it too, and is refused as a home that is not a full path
-/// ([`crate::host::default_pitboard_home`]).
+#[cfg(test)]
+fn real_lookups() -> bool {
+    testing::reaches_the_real_home()
+}
+
+#[cfg(not(test))]
+fn real_lookups() -> bool {
+    !cfg!(feature = "test-support")
+}
+
+fn profile_directory() -> Option<PathBuf> {
+    use windows_sys::Win32::UI::Shell::GetUserProfileDirectoryW;
+    let token = Opened::this_process()?;
+    let mut size = 0u32;
+    // SAFETY: with no buffer it writes only the length it needs, NUL included, to `size`.
+    unsafe { GetUserProfileDirectoryW(token.0, std::ptr::null_mut(), &raw mut size) };
+    let mut wide = vec![0u16; size as usize];
+    // SAFETY: an open token, and a buffer of the `size` units it says.
+    let read = unsafe { GetUserProfileDirectoryW(token.0, wide.as_mut_ptr(), &raw mut size) };
+    (read != 0).then(|| path_of(&wide))
+}
+
+fn path_of(wide: &[u16]) -> PathBuf {
+    use std::os::windows::ffi::OsStringExt;
+    let len = wide
+        .iter()
+        .position(|&unit| unit == 0)
+        .unwrap_or(wide.len());
+    PathBuf::from(std::ffi::OsString::from_wide(&wide[..len]))
+}
+
+/// Whether `path` is this account's own home, as `FOLDERID_Profile` and
+/// `GetUserProfileDirectoryW` name it, for a build for tests to refuse to run as the daily
+/// renewal schedule there. Compared as the file system resolves each where it is there, in
+/// any case, so a spelling with `\\?\` or a short name is the home too.
 #[cfg(any(test, feature = "test-support"))]
-pub(crate) fn is_the_accounts_own_home(_path: &std::path::Path) -> bool {
-    false
+pub(crate) fn is_the_accounts_own_home(path: &std::path::Path) -> bool {
+    let resolved = |p: &std::path::Path| {
+        crate::host::plain(&std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf()))
+    };
+    [
+        known_folder(&windows_sys::Win32::UI::Shell::FOLDERID_Profile),
+        profile_directory(),
+    ]
+    .into_iter()
+    .flatten()
+    .any(|own| crate::host::same_path_in_any_case(&resolved(&own), &resolved(path)))
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -192,22 +235,74 @@ fn version() -> Option<(u32, u32, u32)> {
     (status == 0).then_some((info.dwMajorVersion, info.dwMinorVersion, info.dwBuildNumber))
 }
 
-/// The one way a unit test reaches this account's real home, which on Windows reaches
-/// nothing until W14.
+/// The one way a unit test reaches this account's real home.
 #[cfg(test)]
 pub(crate) mod testing {
-    /// What a unit test keeps while it reaches the real home.
+    use std::cell::Cell;
+
+    thread_local! {
+        static REACHES: Cell<bool> = const { Cell::new(false) };
+    }
+
+    /// While what this returns is kept, [`super::home`] and the other lookups of this
+    /// account's own folders answer this thread's test: for a test of the lookups
+    /// themselves, or of what reads them where the environment names no home.
     pub(crate) fn reaching_the_real_home() -> Reaching {
+        REACHES.with(|reaches| reaches.set(true));
         Reaching(())
     }
 
     /// What [`reaching_the_real_home`] returns.
     pub(crate) struct Reaching(());
+
+    impl Drop for Reaching {
+        fn drop(&mut self) {
+            REACHES.with(|reaches| reaches.set(false));
+        }
+    }
+
+    pub(super) fn reaches_the_real_home() -> bool {
+        REACHES.with(Cell::get)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // RF-B1, run 38693947329: `FOLDERID_Profile` ignores `USERPROFILE`, and agrees with
+    // `GetUserProfileDirectoryW` on a local profile.
+    #[test]
+    fn the_home_is_read_only_where_a_test_reaches_for_it() {
+        assert_eq!(home(), None, "a test that does not reach for it");
+        let _real = testing::reaching_the_real_home();
+        let own = home().expect("the profile folder");
+        assert!(own.is_absolute(), "{}", own.display());
+        let profile =
+            known_folder(&windows_sys::Win32::UI::Shell::FOLDERID_Profile).expect("the profile");
+        assert!(crate::host::same_path_in_any_case(&own, &profile));
+    }
+
+    #[test]
+    fn the_accounts_own_home_is_its_profile_however_it_is_spelled() {
+        let profile =
+            known_folder(&windows_sys::Win32::UI::Shell::FOLDERID_Profile).expect("the profile");
+        let text = profile.to_string_lossy().into_owned();
+        for spelling in [
+            text.clone(),
+            text.to_uppercase(),
+            text.to_lowercase(),
+            format!(r"\\?\{text}"),
+            format!(r"{text}\"),
+        ] {
+            assert!(
+                is_the_accounts_own_home(std::path::Path::new(&spelling)),
+                "{spelling}"
+            );
+        }
+        assert!(!is_the_accounts_own_home(&std::env::temp_dir()));
+        assert!(!is_the_accounts_own_home(&profile.join("AppData")));
+    }
 
     #[test]
     fn the_profile_and_local_app_data_are_named() {
