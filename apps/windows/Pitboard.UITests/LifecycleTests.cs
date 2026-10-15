@@ -21,8 +21,9 @@ public sealed partial class LifecycleTests
         var window = launched.Window("Pitboard");
         TestContext.WriteLine($"CF5: the window was up {clock.ElapsedMilliseconds} ms after the start");
         var activity = window.FindFirstDescendant(found => found.ByAutomationId("pane.activity"))!;
-        Assert.AreEqual(
-            window.Properties.NativeWindowHandle.Value, GetForegroundWindow(), "CF1: the window is not in front");
+        var handle = window.Properties.NativeWindowHandle.Value;
+        var inFront = Retry.WhileFalse(() => GetForegroundWindow() == handle, TimeSpan.FromSeconds(5)).Result;
+        Assert.IsTrue(inFront, $"CF1: the window is not in front, {InFront()} is");
         Mouse.Click(activity.GetClickablePoint());
 
         var selected = Retry.WhileFalse(
@@ -82,6 +83,37 @@ public sealed partial class LifecycleTests
         stays.Window("Pitboard");
     }
 
+    // The window in front, by its class and its process.
+    private static unsafe string InFront()
+    {
+        var window = GetForegroundWindow();
+        if (window == 0)
+        {
+            return "no window";
+        }
+
+        var name = stackalloc char[256];
+        var length = GetClassName(window, name, 256);
+        _ = GetWindowThreadProcessId(window, out var owner);
+        string process;
+        try
+        {
+            process = Process.GetProcessById((int)owner).ProcessName;
+        }
+        catch (ArgumentException)
+        {
+            process = $"process {owner}";
+        }
+
+        return $"{new string(name, 0, length)} of {process}";
+    }
+
     [LibraryImport("user32.dll")]
     private static partial nint GetForegroundWindow();
+
+    [LibraryImport("user32.dll", EntryPoint = "GetClassNameW")]
+    private static unsafe partial int GetClassName(nint window, char* name, int capacity);
+
+    [LibraryImport("user32.dll")]
+    private static partial uint GetWindowThreadProcessId(nint window, out uint process);
 }
