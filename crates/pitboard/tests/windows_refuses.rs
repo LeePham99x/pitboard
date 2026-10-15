@@ -5,15 +5,15 @@
 //!
 //! Which refusal it meets is the build's, and CI's Windows jobs run it against both, each as a
 //! fresh standard user. One opened to Windows before its release (`pitboard_core::release`)
-//! lets a change through the gate, to parts of the face that make no file, and the reads
-//! answer. One that is not opened refuses every command but `--version`, `--help`,
+//! lets a change through the gate, whatever it makes kept in Pitboard's own folders, and the
+//! reads answer. One that is not opened refuses every command but `--version`, `--help`,
 //! `completions` and `manpage` with `windows_not_released`, which CI checks again of a build
 //! made as a release is, without the tests' features.
 #![cfg(windows)]
 
 use serde_json::Value;
 use std::io::{BufRead, BufReader};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::time::Duration;
 
@@ -205,12 +205,36 @@ fn a_windows_build_answers_what_it_may_and_changes_nothing() {
         }
     }
 
+    // An opened build's are the folder PITBOARD_HOME names and, in USERPROFILE, the default
+    // a run of the schedule renews.
+    let default = Path::new("AppData").join("Local").join("Pitboard");
     for folder in FOLDERS {
-        let left: Vec<_> = std::fs::read_dir(root.join(folder))
-            .expect("the scratch folder is still there")
-            .flatten()
-            .map(|entry| entry.file_name())
-            .collect();
+        let kept = match folder {
+            "PITBOARD_HOME" if opened => continue,
+            "USERPROFILE" if opened => Some(default.as_path()),
+            _ => None,
+        };
+        let left = left_in(&root.join(folder), kept);
         assert!(left.is_empty(), "{folder} holds {left:?}");
     }
+}
+
+/// What `folder` holds, by its path in it, apart from `kept` and what is in it.
+fn left_in(folder: &Path, kept: Option<&Path>) -> Vec<PathBuf> {
+    let mut left = Vec::new();
+    let mut to_read = vec![PathBuf::new()];
+    while let Some(below) = to_read.pop() {
+        for entry in std::fs::read_dir(folder.join(&below))
+            .expect("the scratch folder is still there")
+            .flatten()
+        {
+            let name = below.join(entry.file_name());
+            match kept {
+                Some(kept) if name.starts_with(kept) => {}
+                Some(kept) if kept.starts_with(&name) => to_read.push(name),
+                _ => left.push(name),
+            }
+        }
+    }
+    left
 }
