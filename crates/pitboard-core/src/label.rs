@@ -144,6 +144,26 @@ pub struct Chosen {
 /// does.
 pub const DEFAULT: ProviderId = ProviderId::Claude;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Unusable {
+    Empty,
+    NotOneWord,
+    Separator,
+}
+
+// A new account's name within its tool, by the rules docs/reference/commands.mdx lists.
+pub fn check(name: &str) -> std::result::Result<(), Unusable> {
+    if name.is_empty() {
+        Err(Unusable::Empty)
+    } else if name.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        Err(Unusable::NotOneWord)
+    } else if name.contains(SEPARATOR) {
+        Err(Unusable::Separator)
+    } else {
+        Ok(())
+    }
+}
+
 /// Read `[provider/]label` as a name for an account that does not exist yet.
 ///
 /// Unlike `resolve`, nothing is enrolled yet to disambiguate against, so a bare name
@@ -162,22 +182,23 @@ pub fn choose(typed: &str) -> std::result::Result<Chosen, String> {
             (provider, label)
         }
     };
-    if label.is_empty() {
-        return Err(format!(
+    match check(label) {
+        Ok(()) => Ok(Chosen {
+            provider,
+            label: label.to_string(),
+        }),
+        Err(Unusable::Empty) if typed.contains(SEPARATOR) => Err(format!(
             "`{typed}` names a tool but no account. Try `{}{SEPARATOR}work`",
             provider.code()
-        ));
-    }
-    if label.contains(SEPARATOR) {
-        return Err(format!(
+        )),
+        Err(Unusable::Empty | Unusable::NotOneWord) => {
+            Err("a label must be one word, such as `personal` or `work`".into())
+        }
+        Err(Unusable::Separator) => Err(format!(
             "a label cannot contain `{SEPARATOR}`: it separates the tool from the name, so \
              at most one belongs in `{typed}`"
-        ));
+        )),
     }
-    Ok(Chosen {
-        provider,
-        label: label.to_string(),
-    })
 }
 
 #[cfg(test)]
@@ -360,9 +381,23 @@ mod tests {
             ("codx/work", "not a tool"),
             ("claude/", "no account"),
             ("claude/b/c", "cannot contain"),
+            ("two words", "one word"),
+            ("codex/two words", "one word"),
+            ("tab\there", "one word"),
+            ("", "one word"),
         ] {
             let refused = choose(typed).unwrap_err();
             assert!(refused.contains(says), "{typed}: {refused}");
         }
+    }
+
+    #[test]
+    fn a_name_is_one_word_with_no_separator() {
+        assert_eq!(check("work"), Ok(()));
+        assert_eq!(check("é工"), Ok(()));
+        assert_eq!(check(""), Err(Unusable::Empty));
+        assert_eq!(check("my work"), Err(Unusable::NotOneWord));
+        assert_eq!(check("line\u{7}"), Err(Unusable::NotOneWord));
+        assert_eq!(check("codex/phu"), Err(Unusable::Separator));
     }
 }

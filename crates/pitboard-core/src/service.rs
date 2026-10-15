@@ -1218,18 +1218,26 @@ impl Pitboard {
         Failed::of(error, warnings)
     }
 
-    /// The account `pitboard enroll <typed>` is about: the one already enrolled under that
-    /// exact name, or a new one of the tool the name says.
-    ///
-    /// A label written by 0.1.x could contain a slash, which a new name cannot, and signing
-    /// in to such an account again is exactly what every message about a lapsed park tells
-    /// somebody to do. So an existing account is found by its whole name first.
+    // An account enrolled already keeps the name it has, which a new one may no longer get:
+    // 0.1.x wrote labels with a slash, and the app took labels with a space.
     fn enrolling(&self, typed: &str) -> Result<Key> {
-        if typed.contains(crate::label::SEPARATOR)
-            && let Ok(state) = state::load(&self.ctx)
-            && let Some(existing) = state.accounts.iter().find(|a| a.label == typed)
-        {
-            return Ok(existing.key());
+        if let Ok(state) = state::load(&self.ctx) {
+            let whole = state
+                .accounts
+                .iter()
+                .find(|a| typed.contains(crate::label::SEPARATOR) && a.label == typed);
+            let named = match crate::label::parse(typed) {
+                Ok(crate::label::Spec::Bare(label)) => {
+                    state.get(&Key::new(crate::label::DEFAULT, label))
+                }
+                Ok(crate::label::Spec::Qualified(provider, label)) => {
+                    state.get(&Key::new(provider, label))
+                }
+                Err(_) => None,
+            };
+            if let Some(existing) = whole.or(named) {
+                return Ok(existing.key());
+            }
         }
         crate::label::choose(typed)
             .map(|chosen| Key::new(chosen.provider, chosen.label))
@@ -2402,6 +2410,34 @@ mod tests {
         assert!(
             m.mem.jars_asked().len() == 1 && m.mem.listings() == 1,
             "the enrolment's own"
+        );
+    }
+
+    // The app took names with a space before a new name had to be one word.
+    #[test]
+    fn an_account_named_before_names_were_one_word_keeps_its_name() {
+        let m = machine("one-word");
+        let mut state = state::load(&m.ctx).expect("state");
+        state
+            .accounts
+            .iter_mut()
+            .find(|a| a.label == "there")
+            .expect("there")
+            .label = "over there".into();
+        state::save(&m.ctx, Permit::for_a_test(), &state).expect("saved");
+        let pitboard = Pitboard::new(m.ctx.clone());
+
+        assert_eq!(
+            pitboard.account_to_enroll("over there").map(|a| a.label),
+            Some("over there".to_owned())
+        );
+        let refused = pitboard
+            .enroll_current("new one")
+            .expect_err("a new name of two words");
+        assert_eq!(refused.error.code(), "usage", "{}", refused.error);
+        assert_eq!(
+            audit_lines(&m, "enroll"),
+            [("new one".to_owned(), "label_unusable".to_owned())]
         );
     }
 
