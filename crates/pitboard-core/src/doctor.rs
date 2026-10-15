@@ -6213,9 +6213,7 @@ mod tests {
         assert!(login.detail.contains("not readable"), "{}", login.detail);
     }
 
-    /// A running codex holds the account it started with for as long as it runs, which is
-    /// the one thing a switch cannot reach. Said, never warned about: running it is the
-    /// point of having it. What makes each kind take a switch is said beside it.
+    // Said, never warned about: running it is the point of having it.
     #[test]
     fn running_codex_processes_are_reported_as_a_fact() {
         use crate::holder::classify;
@@ -6223,6 +6221,7 @@ mod tests {
         let at = |pid: u32, path: &str| Process {
             pid,
             path: PathBuf::from(path),
+            package: None,
         };
         let holders = crate::provider::codex::holders::HOLDERS;
         let mut codex = with_codex();

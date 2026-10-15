@@ -74,16 +74,33 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
     later_on_windows(
         "codex_runs_inside_the_chatgpt_app",
         "26.928.31416",
-        &["W18"],
-        "codex_windows_app_identity: how the ChatGPT app for Windows runs its own codex, and \
-         how that codex is told apart",
+        &["W27"],
+        "whether the app codex_windows_app_identity names runs its own codex inside its \
+         package, and whether closing its windows leaves it running, session step 10",
     ),
-    later_on_windows(
-        "codex_app_server_daemon",
-        "0.159.3",
-        &["W18"],
-        "where the background app server runs from on Windows, and what starts it",
-    ),
+    PerSystem {
+        name: "codex_app_server_daemon",
+        macos: Read("0.159.3"),
+        linux: Read("0.159.3"),
+        windows: NotRead(
+            "where the app server runs from on Windows, and how it starts there, is \
+             codex_windows_app_server's",
+        ),
+    },
+    PerSystem {
+        name: "codex_windows_app_server",
+        macos: NotRead("where the app server runs from on macOS is codex_app_server_daemon's"),
+        linux: NotRead("where the app server runs from on Linux is codex_app_server_daemon's"),
+        windows: Read("0.162.1"),
+    },
+    PerSystem {
+        name: "codex_windows_app_identity",
+        macos: NotRead(
+            "ChatGPT for macOS is a bundle, which codex_runs_inside_the_chatgpt_app reads",
+        ),
+        linux: NotRead("OpenAI makes no desktop app for Linux"),
+        windows: Read("0.162.1"),
+    },
     PerSystem {
         name: "codex_home_isolates_a_sign_in",
         macos: Read("0.160.0"),
@@ -286,6 +303,48 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         verified_against: "0.159.3",
         depends: "provider::codex::holders's app_server_daemon",
         probe: &["app-server daemon restart"],
+        absent: &[],
+    },
+    Assumption {
+        name: "codex_windows_app_server",
+        fact: "on Windows the background app server runs \
+               `<CODEX_HOME>\\packages\\app-server-daemon\\current\\bin\\codex.exe`, where \
+               `current` is a junction Codex itself points at one of its \
+               `releases\\<version>-<target>`. Codex starts it with `DETACHED_PROCESS | \
+               CREATE_BREAKAWAY_FROM_JOB`, out of the starting terminal's job, refuses to from \
+               an elevated terminal, and `codex app-server daemon restart` starts it again",
+        read_from: "package_root and managed_codex_bin in \
+                    codex-rs/app-server-daemon/src/managed_install.rs, select_release in \
+                    prepare_install_windows.rs, the Windows start in backend/pid_start.rs and \
+                    ensure_not_elevated in backend/windows.rs, at tag rust-v0.162.1, read on \
+                    2026-10-16; the win32-x64 and win32-arm64 builds hold their messages",
+        verified_against: "0.162.1",
+        depends: "provider::codex::holders's app_server_daemon on Windows",
+        probe: &[
+            "app-server daemon restart",
+            "failed to create managed daemon junction after native creation was denied",
+            "start the Windows daemon from a non-elevated terminal",
+        ],
+        absent: &[],
+    },
+    Assumption {
+        name: "codex_windows_app_identity",
+        fact: "OpenAI's desktop app for Windows, ChatGPT- or Codex-branded, is the Store package \
+               of family `OpenAI.Codex_2p2nqsd0c76g0`, so its app's id is \
+               `OpenAI.Codex_2p2nqsd0c76g0!App`, the one Start lists as `OpenAI.Codex_*!App`. \
+               Codex tells the app's running process by that family, from \
+               `GetPackageFamilyName`",
+        read_from: "installed_windows_app and process_package_family in \
+                    codex-rs/cli/src/doctor/desktop/platform.rs, and codex_app_is_installed in \
+                    codex-rs/cli/src/desktop_app/windows.rs, at tag rust-v0.162.1, read on \
+                    2026-10-16; the win32-x64 and win32-arm64 builds hold both",
+        verified_against: "0.162.1",
+        depends: "provider::codex::holders's chatgpt_app on Windows, and the app id it hands \
+                  an app to quit ChatGPT with",
+        probe: &[
+            "OpenAI.Codex_2p2nqsd0c76g0",
+            "Get-StartApps | Where-Object AppID -Like 'OpenAI.Codex_*!App'",
+        ],
         absent: &[],
     },
     Assumption {
@@ -615,6 +674,8 @@ mod tests {
                 "codex_usage_endpoint",
                 "codex_revokes_on_its_own_sign_out",
                 "codex_never_follows_a_switch",
+                "codex_windows_app_server",
+                "codex_windows_app_identity",
                 "codex_windows_home",
                 "codex_identity_is_the_person",
                 "codex_refusal_is_invalid_grant",
@@ -630,6 +691,8 @@ mod tests {
     #[test]
     fn macos_and_linux_read_every_fact() {
         let windows = [
+            "codex_windows_app_server",
+            "codex_windows_app_identity",
             "codex_windows_home",
             "codex_windows_install_places",
             "codex_windows_version",

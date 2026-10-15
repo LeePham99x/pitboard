@@ -22,6 +22,7 @@ pub(super) fn processes(program: &str) -> Option<Vec<Process>> {
                 pid,
                 path: std::fs::read_link(entry.path().join("exe"))
                     .unwrap_or_else(|_| PathBuf::from(program)),
+                package: None,
             })
         })
         .collect();

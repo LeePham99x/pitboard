@@ -54,7 +54,16 @@ pub(crate) struct Helper {
 
 impl Helper {
     pub(crate) fn start(job: Job, file: &Path) -> Helper {
-        let mut child = Command::new(std::env::current_exe().expect("this test's program"))
+        Helper::start_as(
+            &std::env::current_exe().expect("this test's program"),
+            job,
+            file,
+        )
+    }
+
+    // `program` is a copy of this test's program, under another name.
+    pub(crate) fn start_as(program: &Path, job: Job, file: &Path) -> Helper {
+        let mut child = Command::new(program)
             .args([
                 "helper::tests::a_helper_serves",
                 "--exact",
@@ -81,6 +90,11 @@ impl Helper {
             stdin,
             stdout,
         }
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn pid(&self) -> u32 {
+        self.child.id()
     }
 
     // What the helper said once it stopped.

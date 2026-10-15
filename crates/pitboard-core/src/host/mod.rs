@@ -42,6 +42,7 @@ mod linux;
 mod macos;
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) mod memory;
+pub(crate) mod owner;
 pub(crate) mod program;
 #[cfg_attr(
     not(windows),
@@ -511,14 +512,13 @@ pub(crate) fn windows_floor(version: Option<(u32, u32, u32)>) -> Floor {
     }
 }
 
-/// One process this user is running, and where its program runs from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Process {
     pub(crate) pid: u32,
-    /// The program's path where the system says one, or its bare name where it does not.
-    /// macOS gives what the program was started as, which is its full path when whatever
-    /// started it named one; Linux gives the file it runs, where this user may read that.
+    // macOS gives what it was started as, which a shell gives as the bare name.
     pub(crate) path: PathBuf,
+    // The family of the Windows package it runs from.
+    pub(crate) package: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -526,17 +526,38 @@ pub struct Listed {
     pub pid: u32,
     pub parent: u32,
     pub path: PathBuf,
+    pub package: Option<String>,
+    // False where Windows would not say whose it is or where it runs from: `path` is its name.
+    pub placed: bool,
 }
 
-// Those of `all` whose program's own name is `program`, as `Host::processes` answers.
-pub(crate) fn named(all: Vec<Listed>, program: &str) -> Vec<Process> {
-    all.into_iter()
-        .filter(|p| p.path.file_name().is_some_and(|name| name == program))
-        .map(|p| Process {
-            pid: p.pid,
-            path: p.path,
-        })
-        .collect()
+// None where one of them cannot be placed, since it may be any kind of holder.
+pub(crate) fn named(os: Os, all: Vec<Listed>, program: &str) -> Option<Vec<Process>> {
+    let file = match os {
+        Os::MacOs | Os::Linux => program.to_owned(),
+        Os::Windows => format!("{program}.exe"),
+    };
+    let runs = |name: &std::ffi::OsStr| match os {
+        Os::MacOs | Os::Linux => name == file.as_str(),
+        Os::Windows => same_name_in_any_case(name, std::ffi::OsStr::new(&file)),
+    };
+    let found: Vec<Listed> = all
+        .into_iter()
+        .filter(|p| p.path.file_name().is_some_and(runs))
+        .collect();
+    if found.iter().any(|p| !p.placed) {
+        return None;
+    }
+    Some(
+        found
+            .into_iter()
+            .map(|p| Process {
+                pid: p.pid,
+                path: p.path,
+                package: p.package,
+            })
+            .collect(),
+    )
 }
 
 pub struct Jar {
@@ -624,17 +645,13 @@ pub(crate) trait Host: Send + Sync + std::fmt::Debug {
     /// nothing in it can be anybody else's.
     fn vault_is_shared(&self) -> bool;
 
-    // every process this user runs; Err says why the list could not be read
+    // Every process this user runs, in any session; Err says why the list could not be read.
     fn listing(&self) -> std::result::Result<Vec<Listed>, String>;
 
-    /// The processes this user is running `program` in, with where each runs from. `None`
-    /// where the process list could not be read, which is not the same as none running.
-    ///
-    /// What is compared is the program's own name, so a script or a shell that merely
-    /// mentions the program is not counted. Only this user's: another user's sessions use
-    /// another user's login, which a switch here never touches.
+    // By the program's own name, so a script that merely mentions it is not counted. None is
+    // not the same as none running. Another user's use another user's login.
     fn processes(&self, program: &str) -> Option<Vec<Process>> {
-        Some(named(self.listing().ok()?, program))
+        named(OS, self.listing().ok()?, program)
     }
 
     // a Chromium jar's rows for `hosts`, and those named one of `names` on any host, as stored
@@ -812,6 +829,64 @@ mod tests {
         assert_eq!(
             ctx.host().file(PathBuf::from("/nowhere/at/all")).kind(),
             crate::store::Backend::File
+        );
+    }
+
+    fn listed(pid: u32, path: &str) -> Listed {
+        Listed {
+            pid,
+            parent: 1,
+            path: PathBuf::from(path),
+            package: None,
+            placed: true,
+        }
+    }
+
+    // 0.162.1's Windows package holds codex.exe beside programs whose names start like it.
+    #[test]
+    fn a_program_is_named_by_its_file_as_each_system_names_it() {
+        let all = || {
+            vec![
+                listed(
+                    1,
+                    "C:/Users/a/.codex/packages/standalone/current/bin/Codex.EXE",
+                ),
+                listed(2, "C:/n/vendor/codex-resources/codex-command-runner.exe"),
+                listed(3, "C:/n/vendor/bin/codex-code-mode-host.exe"),
+                listed(4, "C:/n/vendor/codex-path/rg.exe"),
+                listed(5, "/usr/local/bin/codex"),
+                listed(6, "C:/n/codex"),
+            ]
+        };
+        let pids = |os: Os| {
+            named(os, all(), "codex").map(|found| found.iter().map(|p| p.pid).collect::<Vec<_>>())
+        };
+        assert_eq!(pids(Os::Windows), Some(vec![1]));
+        assert_eq!(pids(Os::MacOs), Some(vec![5, 6]));
+        assert_eq!(pids(Os::Linux), Some(vec![5, 6]));
+    }
+
+    // Such as the same person's elevated codex: it may be any kind of holder.
+    #[test]
+    fn a_process_that_cannot_be_placed_makes_the_answer_unknown() {
+        let unplaced = |name: &str| Listed {
+            placed: false,
+            ..listed(7, name)
+        };
+        let placed = listed(1, "C:/x/codex.exe");
+        assert_eq!(
+            named(
+                Os::Windows,
+                vec![placed.clone(), unplaced("codex.exe")],
+                "codex"
+            ),
+            None
+        );
+        assert_eq!(
+            named(Os::Windows, vec![placed, unplaced("svchost.exe")], "codex")
+                .map(|found| found.len()),
+            Some(1),
+            "unless it is not the program"
         );
     }
 

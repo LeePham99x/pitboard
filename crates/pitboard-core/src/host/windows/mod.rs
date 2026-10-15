@@ -8,8 +8,6 @@
 //! - no store of secrets for a tool (W23 offers Credential Manager), and a vault whose every
 //!   call cannot be read, of a kind of its own, [`Backend::Unknown`] (W20 seals parks to the
 //!   person);
-//! - no process list (W18), so a switch says nobody can tell what still runs a tool, and
-//!   every process may still be running;
 //! - no scheduler (W25).
 //!
 //! Each tool's own live chain refuses on Windows in its provider's code, not here: which
@@ -24,7 +22,7 @@ pub(crate) mod proc;
 pub(crate) mod user;
 
 use super::administered::{Administered, Hive};
-use super::{Elevation, Floor, Host, Jar, JarError, Listed, LoginPath, Os, Process, Scheduler};
+use super::{Elevation, Floor, Host, Jar, JarError, Listed, LoginPath, Os, Scheduler};
 use crate::context::{Context, Environment};
 use crate::store::{Backend, PlainFile, RawStore, Unbuilt};
 use std::path::{Path, PathBuf};
@@ -156,15 +154,8 @@ impl Host for Windows {
         true
     }
 
-    /// W18 reads which processes run a tool, in every session of the person's. Until then
-    /// the list cannot be read, which is not the same as nothing running.
-    fn processes(&self, _program: &str) -> Option<Vec<Process>> {
-        None
-    }
-
-    // Nothing asks: Claude Desktop's data folder is refused here first.
     fn listing(&self) -> Result<Vec<Listed>, String> {
-        Err("this system's process list is not read for Claude Desktop".into())
+        proc::listing()
     }
 
     fn cookies(&self, _jar: &Path, _hosts: &[&str], _names: &[&str]) -> Result<Jar, JarError> {
@@ -314,15 +305,66 @@ mod tests {
         unreadable(vault.delete(permit, "pitboard-park"), why);
     }
 
-    /// Nobody can tell what runs a tool here, which a switch says, and every process may
-    /// still be running.
+    // Copies of this test's program, each kept running by a helper until it is let go.
     #[test]
-    fn holders_are_unknown() {
-        let ctx = ctx();
-        for tool in ["claude", "codex"] {
-            assert_eq!(ctx.host().processes(tool), None, "{tool}");
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "a test puts its stand-ins where a person would install a program"
+    )]
+    fn a_codex_this_user_runs_is_found_where_it_runs_from_in_any_case() {
+        use crate::helper::{Helper, Job};
+        let dir = std::env::temp_dir().join(format!("pitboard-codex-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let programs = [
+            dir.join("a").join("codex.exe"),
+            dir.join("b").join("Codex.EXE"),
+        ];
+        let helpers: Vec<Helper> = programs
+            .iter()
+            .enumerate()
+            .map(|(index, program)| {
+                std::fs::create_dir_all(program.parent().expect("its folder")).expect("a folder");
+                std::fs::copy(std::env::current_exe().expect("this test"), program)
+                    .expect("a stand-in");
+                Helper::start_as(program, Job::Locks, &dir.join(format!("{index}.lock")))
+            })
+            .collect();
+        let found = host().processes("codex").expect("the process list reads");
+        for (program, helper) in programs.iter().zip(&helpers) {
+            let one = found
+                .iter()
+                .find(|one| one.pid == helper.pid())
+                .unwrap_or_else(|| panic!("{} runs: {found:?}", program.display()));
+            assert_eq!(
+                std::fs::canonicalize(&one.path).expect("the path it runs from"),
+                std::fs::canonicalize(program).expect("the stand-in"),
+                "{}",
+                one.path.display()
+            );
+            assert_eq!(one.package, None);
         }
-        assert!(host().listing().is_err());
+        let listed = host().listing().expect("the process list reads");
+        let me = listed
+            .iter()
+            .find(|one| one.pid == std::process::id())
+            .expect("this test is listed");
+        assert!(me.placed);
+        for helper in helpers {
+            assert_eq!(
+                listed
+                    .iter()
+                    .find(|one| one.pid == helper.pid())
+                    .map(|one| one.parent),
+                Some(std::process::id()),
+                "a helper's parent is this test"
+            );
+            helper.stop();
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn no_cookie_jar_or_app_is_read() {
         assert!(matches!(
             host().cookies(Path::new("C:/x/Cookies"), &["claude.ai"], &["sessionKey"]),
             Err(JarError::Unsupported)

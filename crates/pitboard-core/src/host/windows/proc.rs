@@ -1,10 +1,14 @@
 //! Processes on Windows, and the programs a Windows shell starts.
 
+use crate::host::Listed;
+use crate::host::owner::{self, Owner, Told};
+use std::collections::HashMap;
 use std::os::windows::fs::OpenOptionsExt;
 use std::os::windows::io::AsRawHandle;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use windows_sys::Win32::Foundation::{
-    CloseHandle, ERROR_INVALID_PARAMETER, FILETIME, HANDLE, WAIT_OBJECT_0,
+    CloseHandle, ERROR_INSUFFICIENT_BUFFER, ERROR_INVALID_PARAMETER, ERROR_SUCCESS, FILETIME,
+    HANDLE, INVALID_HANDLE_VALUE, WAIT_OBJECT_0,
 };
 use windows_sys::Win32::Storage::FileSystem::{
     FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO, FILE_EXECUTE,
@@ -12,11 +16,23 @@ use windows_sys::Win32::Storage::FileSystem::{
     FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FileAttributeTagInfo,
     GetFileInformationByHandleEx,
 };
+use windows_sys::Win32::Storage::Packaging::Appx::GetPackageFamilyName;
+use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+    CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
+};
+use windows_sys::Win32::System::RemoteDesktop::{
+    WTS_CURRENT_SERVER_HANDLE, WTS_INFO_CLASS, WTS_PROCESS_INFO_EXW, WTSDomainName,
+    WTSEnumerateProcessesExW, WTSFreeMemory, WTSFreeMemoryExW, WTSQuerySessionInformationW,
+    WTSTypeProcessInfoLevel1, WTSUserName,
+};
 use windows_sys::Win32::System::SystemServices::IO_REPARSE_TAG_APPEXECLINK;
 use windows_sys::Win32::System::Threading::{
-    GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE,
-    WaitForSingleObject,
+    GetProcessTimes, OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+    PROCESS_SYNCHRONIZE, QueryFullProcessImageNameW, WaitForSingleObject,
 };
+
+// wtsapi32.h's, which windows-sys does not carry.
+const WTS_ANY_SESSION: u32 = 0xFFFF_FFFE;
 
 struct Handle(HANDLE);
 
@@ -71,6 +87,204 @@ pub(crate) fn started(pid: u32) -> Option<u64> {
         unsafe { GetProcessTimes(process.0, &mut created, &mut exited, &mut kernel, &mut user) };
     (read != 0)
         .then(|| (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime))
+}
+
+// Toolhelp for the parents, which WTS does not give; WTS for owners without opening anything.
+pub(crate) fn listing() -> Result<Vec<Listed>, String> {
+    let own = super::user::sid().ok_or("Windows did not say who this account is")?;
+    let all = snapshot().map_err(|e| format!("Windows did not list its processes: {e}"))?;
+    let listed = listed_by_wts();
+    let mut sessions: HashMap<u32, bool> = HashMap::new();
+    let mut found = Vec::new();
+    for (pid, parent, name) in all {
+        let said = listed.get(&pid);
+        let owner = owner::owner(
+            &own,
+            said.and_then(|(_, sid)| sid.as_deref()),
+            || {
+                said.is_some_and(|&(session, _)| {
+                    *sessions
+                        .entry(session)
+                        .or_insert_with(|| session_user(session).is_some_and(|its| its != own))
+                })
+            },
+            || token_owner(pid),
+        );
+        let unplaced = || Listed {
+            pid,
+            parent,
+            path: PathBuf::from(&name),
+            package: None,
+            placed: false,
+        };
+        match owner {
+            Owner::Other => {}
+            Owner::Unread => found.push(unplaced()),
+            Owner::Own => match open(pid, PROCESS_QUERY_LIMITED_INFORMATION) {
+                Open::Gone => {}
+                Open::Refused => found.push(unplaced()),
+                Open::Handle(process) => found.push(match image(&process) {
+                    Some(path) => Listed {
+                        pid,
+                        parent,
+                        path,
+                        package: package_family(&process),
+                        placed: true,
+                    },
+                    None => unplaced(),
+                }),
+            },
+        }
+    }
+    Ok(found)
+}
+
+fn snapshot() -> std::io::Result<Vec<(u32, u32, String)>> {
+    // SAFETY: a snapshot of every process; 0 names no one process.
+    let snap = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+    if snap == INVALID_HANDLE_VALUE {
+        return Err(std::io::Error::last_os_error());
+    }
+    let snap = Handle(snap);
+    let mut entry = PROCESSENTRY32W {
+        dwSize: size_of::<PROCESSENTRY32W>() as u32,
+        ..PROCESSENTRY32W::default()
+    };
+    let mut all = Vec::new();
+    // SAFETY: an open snapshot, and an entry whose size it carries.
+    let mut more = unsafe { Process32FirstW(snap.0, &mut entry) } != 0;
+    while more {
+        let length = entry
+            .szExeFile
+            .iter()
+            .position(|&unit| unit == 0)
+            .unwrap_or(entry.szExeFile.len());
+        all.push((
+            entry.th32ProcessID,
+            entry.th32ParentProcessID,
+            String::from_utf16_lossy(&entry.szExeFile[..length]),
+        ));
+        // SAFETY: as above.
+        more = unsafe { Process32NextW(snap.0, &mut entry) } != 0;
+    }
+    Ok(all)
+}
+
+// Each process's session, and its user's SID where WTS gives one.
+fn listed_by_wts() -> HashMap<u32, (u32, Option<String>)> {
+    let (mut level, mut count) = (1u32, 0u32);
+    let mut info: windows_sys::core::PWSTR = std::ptr::null_mut();
+    // SAFETY: level 1 answers WTS_PROCESS_INFO_EXW, in memory freed below.
+    let listed = unsafe {
+        WTSEnumerateProcessesExW(
+            WTS_CURRENT_SERVER_HANDLE,
+            &mut level,
+            WTS_ANY_SESSION,
+            &mut info,
+            &mut count,
+        )
+    };
+    if listed == 0 || info.is_null() {
+        return HashMap::new();
+    }
+    let entries = info.cast::<WTS_PROCESS_INFO_EXW>();
+    let told = (0..count as usize)
+        .map(|index| {
+            // SAFETY: `count` entries, alive until freed below.
+            let entry = unsafe { &*entries.add(index) };
+            let sid = (!entry.pUserSid.is_null())
+                .then(|| super::user::sid_text(entry.pUserSid))
+                .flatten();
+            (entry.ProcessId, (entry.SessionId, sid))
+        })
+        .collect();
+    // SAFETY: the memory WTSEnumerateProcessesExW gave, of `count` level 1 entries.
+    unsafe {
+        WTSFreeMemoryExW(WTSTypeProcessInfoLevel1, info.cast(), count);
+    }
+    told
+}
+
+fn session_user(session: u32) -> Option<String> {
+    let name = session_text(session, WTSUserName).filter(|name| !name.is_empty())?;
+    let domain = session_text(session, WTSDomainName).unwrap_or_default();
+    super::user::account_sid(&format!("{domain}\\{name}"))
+}
+
+fn session_text(session: u32, class: WTS_INFO_CLASS) -> Option<String> {
+    let mut text: windows_sys::core::PWSTR = std::ptr::null_mut();
+    let mut bytes = 0u32;
+    // SAFETY: WTS allocates the answer, freed below.
+    let read = unsafe {
+        WTSQuerySessionInformationW(
+            WTS_CURRENT_SERVER_HANDLE,
+            session,
+            class,
+            &mut text,
+            &mut bytes,
+        )
+    };
+    if read == 0 || text.is_null() {
+        return None;
+    }
+    let units = bytes as usize / size_of::<u16>();
+    // SAFETY: `bytes` bytes of UTF-16, its NUL among them.
+    let said = String::from_utf16(unsafe { std::slice::from_raw_parts(text, units) }).ok();
+    // SAFETY: the memory WTSQuerySessionInformationW gave, freed this once.
+    unsafe { WTSFreeMemory(text.cast()) };
+    said.map(|said| said.trim_end_matches('\0').to_owned())
+}
+
+fn token_owner(pid: u32) -> Told {
+    match open(pid, PROCESS_QUERY_LIMITED_INFORMATION) {
+        Open::Handle(process) => {
+            super::user::token_user(process.0).map_or(Told::Refused, Told::User)
+        }
+        Open::Refused => Told::Refused,
+        Open::Gone => Told::Gone,
+    }
+}
+
+fn image(process: &Handle) -> Option<PathBuf> {
+    let mut buffer = vec![0u16; 1024];
+    loop {
+        let mut length = buffer.len() as u32;
+        // SAFETY: an open handle, and a buffer of the length given.
+        let read = unsafe {
+            QueryFullProcessImageNameW(
+                process.0,
+                PROCESS_NAME_WIN32,
+                buffer.as_mut_ptr(),
+                &mut length,
+            )
+        };
+        if read != 0 {
+            return Some(PathBuf::from(String::from_utf16_lossy(
+                &buffer[..length as usize],
+            )));
+        }
+        let short = std::io::Error::last_os_error().raw_os_error()
+            == Some(ERROR_INSUFFICIENT_BUFFER as i32);
+        if !short || buffer.len() >= 32_768 {
+            return None;
+        }
+        buffer.resize(buffer.len() * 2, 0);
+    }
+}
+
+fn package_family(process: &Handle) -> Option<String> {
+    let mut buffer = vec![0u16; 128];
+    let mut length = buffer.len() as u32;
+    // SAFETY: an open handle, and a buffer of the length given.
+    let mut said = unsafe { GetPackageFamilyName(process.0, &mut length, buffer.as_mut_ptr()) };
+    if said == ERROR_INSUFFICIENT_BUFFER {
+        buffer.resize(length as usize, 0);
+        // SAFETY: as above, with the length it asked for.
+        said = unsafe { GetPackageFamilyName(process.0, &mut length, buffer.as_mut_ptr()) };
+    }
+    // APPMODEL_ERROR_NO_PACKAGE outside a package.
+    (said == ERROR_SUCCESS)
+        .then(|| String::from_utf16_lossy(&buffer[..(length as usize).saturating_sub(1)]))
 }
 
 // An app execution alias opens as nothing, so only its tag and its `WindowsApps` folder tell it.
@@ -358,10 +572,17 @@ mod tests {
         assert_eq!(product_version(&script), None, "nor has a script");
     }
 
-    // System's.
+    // System's, whose token a standard user is not expected to read.
     #[test]
-    fn pid_4_is_running() {
+    fn pid_4_is_running_and_never_absent_or_this_users() {
         assert!(may_be_running(4));
+        let told = token_owner(4);
+        println!("pid 4's token: {told:?}");
+        assert_ne!(told, Told::Gone);
+        assert_ne!(
+            told,
+            Told::User(crate::host::windows::user::sid().expect("this user"))
+        );
     }
 
     #[test]
@@ -379,10 +600,15 @@ mod tests {
         assert!(!may_be_running(exited));
         let never = u32::MAX - 3;
         assert!(!may_be_running(never));
+        assert_eq!(token_owner(never), Told::Gone);
         assert_eq!(started(never), None);
 
         let me = std::process::id();
         assert!(may_be_running(me));
+        assert_eq!(
+            token_owner(me),
+            crate::host::windows::user::sid().map_or(Told::Refused, Told::User)
+        );
         assert!(started(me).is_some());
     }
 

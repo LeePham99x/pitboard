@@ -200,13 +200,13 @@ impl MemoryHost {
         self.runs_at(program, &vec![program; count]);
     }
 
-    /// Say that a process is running `program` from each of `paths`.
     pub fn runs_at(&self, program: &str, paths: &[&str]) {
         let processes = (1..)
             .zip(paths)
             .map(|(pid, path)| Process {
                 pid,
                 path: PathBuf::from(path),
+                package: None,
             })
             .collect();
         self.running
@@ -384,6 +384,8 @@ impl Host for MemoryHost {
                     .and_then(|parent| paths.iter().position(|p| p == parent))
                     .map_or(1, pid),
                 path: path.clone(),
+                package: None,
+                placed: true,
             })
             .collect())
     }

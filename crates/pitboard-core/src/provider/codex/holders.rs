@@ -5,7 +5,9 @@
 //! each its own way. Measured on 2026-10-01 from the process list of a Mac running ChatGPT
 //! 26.928.31416, its bundled codex 0.159.2, Codex's app-server daemon 0.159.3 and terminal
 //! sessions, with the facts in `assumptions`. No editor with the Codex extension was
-//! running there, so its place is the extension's packaged layout, unmeasured.
+//! running there, so its place is the extension's packaged layout, unmeasured. On Windows the
+//! app server's place and ChatGPT's package are read from 0.162.1's source; that ChatGPT's own
+//! codex runs in that package waits on the session's step 10.
 
 use crate::holder::{AppId, Holder, Location, Noun, Remedy};
 
@@ -22,8 +24,19 @@ pub(crate) const HOLDERS: &[Holder] = &[
             name: "ChatGPT",
         },
     },
+    // Its family and app id as Codex names them (codex_windows_app_identity).
+    Holder {
+        kind: "chatgpt_app",
+        noun: Noun::One("the ChatGPT app"),
+        location: Location::Package("OpenAI.Codex_2p2nqsd0c76g0"),
+        remedy: Remedy::ReopenApp {
+            app: AppId::WindowsAumid("OpenAI.Codex_2p2nqsd0c76g0!App"),
+            name: "ChatGPT",
+        },
+    },
     // `~/.codex/packages/app-server-daemon/releases/0.159.3-aarch64-apple-darwin/bin/codex`,
-    // a child of launchd, which terminal sessions can share.
+    // a child of launchd, which terminal sessions can share. On Windows
+    // `current\bin\codex.exe` there, through a junction (codex_windows_app_server).
     Holder {
         kind: "app_server_daemon",
         noun: Noun::One("Codex's background app server"),
@@ -56,8 +69,7 @@ mod tests {
     use crate::host::Process;
     use std::path::PathBuf;
 
-    /// The paths this Mac's process list gave, each where it belongs, and an editor
-    /// extension's as its packaged layout has it, since none was running there.
+    // No editor with the extension was running, so its path is the packaged layout's.
     #[test]
     fn every_measured_codex_is_its_own_kind() {
         let listed = [
@@ -73,6 +85,7 @@ mod tests {
             .map(|(pid, path)| Process {
                 pid,
                 path: PathBuf::from(path),
+                package: None,
             })
             .collect();
         let holding = classify(&processes, HOLDERS);
@@ -88,6 +101,58 @@ mod tests {
                 ("editor_extension", vec![6]),
                 ("session", vec![1, 2]),
             ]
+        );
+    }
+
+    // ChatGPT by its package's family wherever it is installed, not by its folder.
+    #[test]
+    fn every_codex_on_windows_is_its_own_kind() {
+        let listed = [
+            (
+                "C:/Users/a/AppData/Local/Programs/OpenAI/Codex/bin/codex.exe",
+                None,
+            ),
+            (
+                "C:/Program Files/WindowsApps/OpenAI.Codex_1.0.0.0_x64__2p2nqsd0c76g0/codex.exe",
+                Some("OpenAI.Codex_2p2nqsd0c76g0"),
+            ),
+            (
+                "C:/Users/a/.codex/packages/app-server-daemon/current/bin/codex.exe",
+                None,
+            ),
+            (
+                "C:/Users/a/.vscode/extensions/openai.chatgpt-26.5.0-win32-x64/bin/windows-x86_64/codex.exe",
+                None,
+            ),
+        ];
+        let processes: Vec<Process> = (1..)
+            .zip(listed)
+            .map(|(pid, (path, package))| Process {
+                pid,
+                path: PathBuf::from(path),
+                package: package.map(str::to_owned),
+            })
+            .collect();
+        let holding = classify(&processes, HOLDERS);
+        let kinds: Vec<(&str, Vec<u32>)> = holding
+            .iter()
+            .map(|h| (h.holder.kind, h.pids.clone()))
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                ("chatgpt_app", vec![2]),
+                ("app_server_daemon", vec![3]),
+                ("editor_extension", vec![4]),
+                ("session", vec![1]),
+            ]
+        );
+        assert_eq!(
+            holding[0].holder.remedy,
+            Remedy::ReopenApp {
+                app: AppId::WindowsAumid("OpenAI.Codex_2p2nqsd0c76g0!App"),
+                name: "ChatGPT",
+            }
         );
     }
 

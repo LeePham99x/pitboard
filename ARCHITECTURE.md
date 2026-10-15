@@ -64,48 +64,53 @@ window loads its site, and whatever the site's pages load, as a browser would.
       reads no keychain item, decrypts nothing and sends no request. A person signs in
       inside Claude, and no usage of a Claude Desktop account is read.
   - `holder.rs`: what keeps a tool's login in memory while it runs, told apart by where
-    its program runs from. A switch's warning, `doctor` and the app's offer to quit an app
-    all read it, so they cannot disagree.
+    its program runs from, or on Windows by the package it runs in. A switch's warning,
+    `doctor` and the app's offer to quit an app all read it, so they cannot disagree.
   - `host/`: the machine, behind one seam. The `Host` trait is what a test replaces: the
-    system's store of secrets, files, the vault, this user's processes, each with its parent
-    (`listing`), a Chromium cookie jar's rows, read only (`cookies`), an app bundle's
-    version and identifier (`app_version`, `app_id`), the scheduler, whether this process
-    runs as the person (`elevation`), whether the system is one Pitboard changes things on
-    by its version (`floor`, `host::Floor`), and what an administrator set for a program
-    outside every home (`administered_file`, `administered_folder`, `managed_preference`,
-    which `macos/preferences.rs` reads, and `policy`, a value under the Windows registry's
-    `HKLM` or `HKCU`), reached through `Context` and faked by `host/memory.rs`,
-    which plays every answer. In a build for tests the real hosts read nothing an
-    administrator set (`host/administered.rs`) and no app installed on the machine. `fs`,
-    `proc` and `user` are plain functions for what the system does whoever asks: private
-    files and directories, every other change to the disk, whether a process is alive, a
-    program run with a ceiling (`proc::run_within`), the login name, whether this process
-    runs as root, and the `PATH` the person's login shell builds, which `unix/shell.rs` asks
-    for. `fs` creates each private file itself and hands it back open (`create_private`,
-    `open_private_append` and `open_private_lock`), so how a file is made private is the
-    face's alone. A login kept as files moves through four more: `fs::private_dir` says
-    whether a folder is this user's own and closed to others, `fs::lock_dir` takes a
-    folder's advisory lock without waiting, `fs::same_volume` says whether two paths can be
-    renamed between, and `fs::move_new` is the kernel's rename that never replaces what is
-    there, the one way an item of a Claude Desktop login moves. `fs::testing`, in a build
-    for tests, is how a test or a fixture sets a file's access or makes a link; other crates
-    reach it as `pitboard_core::testing::fs`. `program.rs` finds a program the way the
-    system's launcher does: on Windows each folder is tried with the extensions of `PATHEXT`
-    in its order, kept to `.exe`, `.bat` and `.cmd`, and a bare name is never handed to std's
-    `Command`, which would look beside Pitboard first. `mod.rs` chooses the system, once: `macos/` (the keychain
-    through `security`, `ps`, a cookie jar through the system's SQLite in `sqlite.rs`, a
-    bundle's `Info.plist` in `bundle.rs`, launchd) or `linux/` (`/proc`, systemd), each with
-    what `unix/` holds for both, or `windows/`. Linux and Windows refuse Claude Desktop's
-    data folder before anything else is asked, so neither face lists processes with their
-    parents or reads a cookie jar. `windows/` is the face that refuses whatever of Windows
-    is not built yet: no store of secrets, a vault of `store::Backend::Unknown` whose every
-    call cannot be read, no process list, no scheduler, and none of the four calls that move
-    Claude Desktop's data folder. It finds programs as a Windows shell does, an app execution
-    alias in a `WindowsApps` folder by its reparse tag, and reads the `Path` a program
-    started now is given from the registry, the machine's and then the person's, which a
-    build for tests reads in its own test alone. It also reads this process's token, through
-    windows-sys (`windows/user.rs`), which `token.rs` makes an `Elevation` of and whose
-    `TokenUser` is the person's SID, the account's own folders (`GetUserProfileDirectoryW`,
+    system's store of secrets, files, the vault, this user's processes in any session, each
+    with its parent (`listing`), a Chromium cookie jar's rows, read only (`cookies`), an app
+    bundle's version and identifier (`app_version`, `app_id`), the scheduler, whether this
+    process runs as the person (`elevation`), whether the system is one Pitboard changes
+    things on by its version (`floor`, `host::Floor`), and what an administrator set for a
+    program outside every home (`administered_file`, `administered_folder`,
+    `managed_preference`, which `macos/preferences.rs` reads, and `policy`, a value under
+    the Windows registry's `HKLM` or `HKCU`), reached through `Context` and faked by
+    `host/memory.rs`, which plays every answer. In a build for tests the real hosts read
+    nothing an administrator set (`host/administered.rs`) and no app installed on the
+    machine. `fs`, `proc` and `user` are plain functions for what the system does whoever
+    asks: private files and directories, every other change to the disk, whether a process
+    is alive, a program run with a ceiling (`proc::run_within`), the login name, whether
+    this process runs as root, and the `PATH` the person's login shell builds, which
+    `unix/shell.rs` asks for. `fs` creates each private file itself and hands it back open
+    (`create_private`, `open_private_append` and `open_private_lock`), so how a file is made
+    private is the face's alone. A login kept as files moves through four more:
+    `fs::private_dir` says whether a folder is this user's own and closed to others,
+    `fs::lock_dir` takes a folder's advisory lock without waiting, `fs::same_volume` says
+    whether two paths can be renamed between, and `fs::move_new` is the kernel's rename that
+    never replaces what is there, the one way an item of a Claude Desktop login moves.
+    `fs::testing`, in a build for tests, is how a test or a fixture sets a file's access or
+    makes a link; other crates reach it as `pitboard_core::testing::fs`. `program.rs` finds
+    a program the way the system's launcher does: on Windows each folder is tried with the
+    extensions of `PATHEXT` in its order, kept to `.exe`, `.bat` and `.cmd`, and a bare name
+    is never handed to std's `Command`, which would look beside Pitboard first. `mod.rs`
+    chooses the system, once: `macos/` (the keychain through `security`, `ps`, a cookie jar
+    through the system's SQLite in `sqlite.rs`, a bundle's `Info.plist` in `bundle.rs`,
+    launchd) or `linux/` (`/proc`, systemd), each with what `unix/` holds for both, or
+    `windows/`. Linux and Windows refuse Claude Desktop's data folder before anything else
+    is asked, so neither reads a cookie jar, and Linux lists no process with its parent.
+    `windows/` is the face that refuses whatever of Windows is not built yet: no store of
+    secrets, a vault of `store::Backend::Unknown` whose every call cannot be read, no
+    scheduler, and none of the four calls that move Claude Desktop's data folder. It lists
+    processes from a Toolhelp snapshot, for their parents, and keeps this account's in any
+    session: whose each is, WTS says without opening it, a process in another user's session
+    is passed over unopened, and the rest's tokens are read (`owner.rs`). A program whose
+    owner or path does not read makes `processes` unknown, since it may be any kind of
+    holder. It finds programs as a Windows shell does, an app execution alias in a
+    `WindowsApps` folder by its reparse tag, and reads the `Path` a program started now is
+    given from the registry, the machine's and then the person's, which a build for tests
+    reads in its own test alone. It also reads this process's token, through windows-sys
+    (`windows/user.rs`), which `token.rs` makes an `Elevation` of and whose `TokenUser` is
+    the person's SID, the account's own folders (`GetUserProfileDirectoryW`,
     `FOLDERID_Profile`, `FOLDERID_LocalAppData` and the profile type), which a build for
     tests answers nothing from, and the build `RtlGetVersion` gives, which
     `host::windows_floor` holds against 26100, the build of Windows 11 24H2 and Windows
@@ -1209,11 +1214,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
   run, as reads are. Opening at login and linking the command line onto the `PATH` with an
   administrator's password are each app's own, and once an app has linked it, it sends
   `Intent::LookForCommandLine` for the model to look for the command line again.
-- `AppControl` names an app by one string, the id the core's holder detection gives it,
-  which on macOS is its bundle id: the ChatGPT app's in `provider/codex/holders.rs`, and
-  Claude's in `provider/desktop/mod.rs` (`HOLDER`). What names an app on Windows, and so
-  what the core's holder detection gives there, is a question still open for the owner;
-  the trait takes one string so that a Windows id fits it unchanged.
+- `AppControl` names an app by one string, the id the core's holder detection gives it:
+  on macOS its bundle id, on Windows its Application User Model ID. The ChatGPT app's are
+  in `provider/codex/holders.rs`, and Claude's in `provider/desktop/mod.rs` (`HOLDER`).
 - One thread tells a `ModelListener`, so snapshots arrive in revision order, and a snapshot
   is told only where it differs from the last, and of several waiting only the newest. So a
   test waits for what a snapshot says once something is over, never to be told one in
@@ -2217,8 +2220,11 @@ Tasks:
 
 Processes and jobs:
 
-- As a standard user, WTS (any session) and Toolhelp name another user's `codex.exe` in the
-  same session, with its image path.
+- As a standard user, WTS at level 1 for any session lists every process Toolhelp does,
+  session 0's among them. It gives the SID of the user's own `codex.exe` and `Codex.EXE` and
+  of the elevated job user's `codex.exe` in the same session, and each of them opens for
+  limited queries, with its token's user and its image path, on both images (run
+  38741362483).
 - `GetProcessInformation(ProcessMachineTypeInfo)` reports an x64 program emulated on
   windows-11-arm as x64. `IsWow64Process2` gives the native machine.
 - A process a standard user starts is in a job already, and a job of its own still takes its
@@ -2326,8 +2332,8 @@ on 15 October 2026. W27 reviews the list.
 | An explicit ACE for the user decides what a UAC-filtered token can do with a file | [How DACLs control access](https://learn.microsoft.com/en-us/windows/win32/secauthz/how-dacls-control-access-to-an-object) | The limited token opened only a file it made. |
 | `VerQueryValueW` reads a program's version resource | [VerQueryValueW](https://learn.microsoft.com/en-us/windows/win32/api/winver/nf-winver-verqueryvaluew) | No row reads one. |
 | A running program sees a variable changed in the registry only after `WM_SETTINGCHANGE` | [Environment variables](https://learn.microsoft.com/en-us/windows/win32/procthread/environment-variables) | Only a task started after `setx` was measured. |
-| WTS lists another session's processes to Administrators only | [WTSEnumerateProcessesExW](https://learn.microsoft.com/en-us/windows/win32/api/wtsapi32/nf-wtsapi32-wtsenumerateprocessesexw) | No row looked at another user's process in another session: the network logon saw only the same user's, from session 0. |
-| `GetProcessTimes` gives a process's creation time | [GetProcessTimes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesstimes) | No row reads it. |
+| WTS lists another session's processes to Administrators only | [WTSEnumerateProcessesExW](https://learn.microsoft.com/en-us/windows/win32/api/wtsapi32/nf-wtsapi32-wtsenumerateprocessesexw) | No row looked at another user's process in another session. A standard user's listing held session 0's processes. |
+| `GetProcessTimes` gives a process's creation time | [GetProcessTimes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesstimes) | Only the tests read it, of their own process. |
 | A generic credential's blob holds at most 2560 bytes | [CREDENTIALW](https://learn.microsoft.com/en-us/windows/win32/api/wincred/ns-wincred-credentialw) | The largest blob written was a 2400-byte piece. |
 | Reserved device names, and trailing dots and spaces, in a file name | [Naming files](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file) | No row makes such a name. |
 | `lpReserved2` is reserved for the C runtime | [STARTUPINFOW](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/ns-processthreadsapi-startupinfow) | A later runner-facts row measures the hand-over through it. |
@@ -2824,6 +2830,20 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
     the kinds apart by the directories in that path, and a bare name is a `codex` session.
   - No editor with the Codex extension was running there. Its place, a folder named
     `openai.chatgpt-<version>`, is the extension's packaged layout, not measured.
+- Read on 16 October 2026 from Codex's source at tag `rust-v0.162.1` and its win32 builds:
+  - (`codex_windows_app_server`) the background app server runs
+    `<CODEX_HOME>\packages\app-server-daemon\current\bin\codex.exe`, `current` a
+    junction Codex points at one of its releases. It is started with `DETACHED_PROCESS |
+    CREATE_BREAKAWAY_FROM_JOB`, never from an elevated terminal.
+  - (`codex_windows_app_identity`) the desktop app for Windows, ChatGPT- or Codex-branded,
+    is the package of family `OpenAI.Codex_2p2nqsd0c76g0`, its app
+    `OpenAI.Codex_2p2nqsd0c76g0!App`, and Codex tells its process by that family. So
+    Pitboard does too, wherever the package is installed. That the app runs its own
+    `codex.exe` inside the package, and what closing its windows does, waits on the
+    session's step 10.
+  - The Windows package holds `codex-command-runner.exe`, `codex-code-mode-host.exe`,
+    `codex-windows-sandbox-setup.exe`, `codex-voice-host.exe` and `rg.exe` beside
+    `codex.exe`. Only a program named `codex.exe`, in any case, is a running Codex.
 - The ID token names the account: `email`, and under `https://api.openai.com/auth`,
   `chatgpt_account_id` and `chatgpt_user_id`. A Team or Business workspace shares one
   `chatgpt_account_id`, and `chatgpt_user_id` is the person.

@@ -34,6 +34,8 @@ fn listed(listing: &str) -> Vec<Listed> {
                 pid: pid.parse().ok()?,
                 parent: parent.parse().ok()?,
                 path: PathBuf::from(path.trim()),
+                package: None,
+                placed: true,
             })
         })
         .collect()
@@ -92,7 +94,10 @@ garbage
                        9001     1 /Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex\n\
                        9002     1 /Users/a/Codex Things/bin/codex\n\
                        node\n";
-        let named = |program: &str| crate::host::named(listed(listing), program);
+        let named = |program: &str| {
+            crate::host::named(crate::host::Os::MacOs, listed(listing), program)
+                .expect("every one placed")
+        };
         let found = named("codex");
         assert_eq!(
             found.iter().map(|p| p.pid).collect::<Vec<_>>(),

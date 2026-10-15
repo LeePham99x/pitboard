@@ -41,15 +41,14 @@ pub enum Noun {
     One(&'static str),
 }
 
-/// Where a kind of holder runs its program from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Location {
-    /// Inside a directory of exactly this name, such as an app bundle.
+    // A directory of exactly this name, such as an app bundle.
     Within(&'static str),
-    /// Inside a directory whose name starts with this, such as an editor extension's folder,
-    /// which is named for its version.
+    // An editor extension's folder is named for its version.
     WithinPrefixed(&'static str),
-    /// Anywhere at all: the kind every process no other kind claims is.
+    // A Windows package's family, wherever the package is installed.
+    Package(&'static str),
     Anywhere,
 }
 
@@ -73,37 +72,30 @@ pub enum Remedy {
     Do(&'static str),
 }
 
-/// An app, by the id its own system knows it by, which is what Pitboard asks that system to
-/// quit it and open it again with.
-///
-/// Which system's id is part of the id, rather than chosen by the system Pitboard runs on.
-/// An app is told apart by where its program runs from, and that place is its own system's:
-/// a program inside a Mac app's bundle runs only on a Mac. So an app found running is always
-/// named by the id of the system it was found on, and a test whose machine runs a Mac app's
-/// program has that Mac app, on whatever system the test runs.
-///
-/// Another system's kind of id is another variant, so a match outside this crate keeps an
-/// arm for the ones to come, and [`AppId::as_str`] is what an app is handed.
+// Which system's id is part of the id: a program in a Mac app's bundle runs only on a Mac, so a
+// test whose machine runs one has that Mac app on whatever system the test runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum AppId {
-    /// A Mac app's bundle identifier, such as `com.openai.codex`.
     MacBundle(&'static str),
+    // An Application User Model ID, `<package family>!<app>`.
+    WindowsAumid(&'static str),
 }
 
 impl AppId {
-    /// The id as its system writes it, which is what an app hands its system.
     pub fn as_str(self) -> &'static str {
         match self {
-            AppId::MacBundle(id) => id,
+            AppId::MacBundle(id) | AppId::WindowsAumid(id) => id,
         }
     }
 
-    /// What makes the app `name` let go of a login, as a clause, said its own system's way.
-    /// On a Mac that is Command-Q: an app stays open after its last window closes.
+    // An app stays open after its last window closes.
     fn reopen(self, name: &str) -> String {
         match self {
             AppId::MacBundle(_) => format!("quit {name} with Command-Q and open it again"),
+            AppId::WindowsAumid(_) => {
+                format!("quit {name} from its notification-area icon and open it again")
+            }
         }
     }
 }
@@ -117,14 +109,15 @@ pub struct Holding {
 }
 
 impl Location {
-    /// Whether a program at `path` runs from here. Only the directories it is in are
-    /// looked at, never the program's own name. A directory's name is compared the way this
-    /// system compares paths ([`crate::host::Os::same_path`]), and a prefix as that many of
-    /// its first characters.
-    fn holds(self, path: &Path) -> bool {
-        let mut directories = path.ancestors().skip(1).filter_map(Path::file_name);
+    // Never by the program's own name. A prefix is compared as that many first characters.
+    fn holds(self, process: &Process) -> bool {
+        let mut directories = process.path.ancestors().skip(1).filter_map(Path::file_name);
         match self {
             Location::Anywhere => true,
+            Location::Package(family) => process
+                .package
+                .as_deref()
+                .is_some_and(|its| its.eq_ignore_ascii_case(family)),
             Location::Within(name) => {
                 directories.any(|dir| OS.same_path(Path::new(dir), Path::new(name)))
             }
@@ -140,9 +133,7 @@ impl Location {
     }
 }
 
-/// `processes` sorted into `holders`, each to the first whose location holds it, in the
-/// holders' order. A kind with nothing running is left out, and so is a process no holder
-/// claims, which a list ending in [`Location::Anywhere`] never leaves.
+// Each to the first holder whose location holds it. A kind with nothing running is left out.
 pub(crate) fn classify(processes: &[Process], holders: &[Holder]) -> Vec<Holding> {
     let mut holding: Vec<Holding> = holders
         .iter()
@@ -154,7 +145,7 @@ pub(crate) fn classify(processes: &[Process], holders: &[Holder]) -> Vec<Holding
     for process in processes {
         if let Some(found) = holding
             .iter_mut()
-            .find(|h| h.holder.location.holds(&process.path))
+            .find(|h| h.holder.location.holds(process))
         {
             found.pids.push(process.pid);
         }
@@ -306,6 +297,7 @@ mod tests {
         Process {
             pid,
             path: PathBuf::from(path),
+            package: None,
         }
     }
 
@@ -340,18 +332,13 @@ mod tests {
         );
     }
 
-    /// The program's own name is not where it runs from: a program that happens to be
-    /// called like a place is still wherever it is.
     #[test]
     fn only_the_directories_a_program_is_in_say_where_it_runs() {
         let holding = classify(&[at(1, "/usr/bin/App.app")], HOLDERS);
         assert_eq!(kinds(&holding), [("session", vec![1])]);
-        assert!(!Location::WithinPrefixed("vendor.tool-").holds(Path::new("vendor.tool-9")));
+        assert!(!Location::WithinPrefixed("vendor.tool-").holds(&at(1, "vendor.tool-9")));
     }
 
-    /// A folder is the place a kind names only as this system compares paths: exactly, on
-    /// macOS and Linux, so a folder of the same name in another case is somewhere else, and
-    /// in any case on Windows, where it is the same folder.
     #[test]
     fn a_place_is_named_as_this_system_compares_paths() {
         let holding = classify(
@@ -369,9 +356,9 @@ mod tests {
                 assert_eq!(kinds(&holding), [("app", vec![1]), ("extension", vec![2])]);
             }
         }
-        assert!(Location::WithinPrefixed("vendor.tool-").holds(Path::new("/e/vendor.tool-1/t")));
+        assert!(Location::WithinPrefixed("vendor.tool-").holds(&at(1, "/e/vendor.tool-1/t")));
         assert!(
-            !Location::WithinPrefixed("vendor.tool-").holds(Path::new("/e/vendor.tool/t")),
+            !Location::WithinPrefixed("vendor.tool-").holds(&at(1, "/e/vendor.tool/t")),
             "a name shorter than the prefix does not start with it"
         );
     }
@@ -393,6 +380,44 @@ mod tests {
                 app: mac,
                 name: "App"
             })
+        );
+    }
+
+    // By its family, so a package installed elsewhere is still the app, and a path is not.
+    #[test]
+    fn a_windows_app_is_its_package_and_is_quit_from_its_notification_area_icon() {
+        const STORE: Holder = Holder {
+            kind: "app",
+            noun: Noun::One("the App"),
+            location: Location::Package("Vendor.App_0000000000000"),
+            remedy: Remedy::ReopenApp {
+                app: AppId::WindowsAumid("Vendor.App_0000000000000!App"),
+                name: "App",
+            },
+        };
+        let packaged = |pid, family: &str| Process {
+            package: Some(family.into()),
+            ..at(pid, "D:/Apps/Vendor.App/tool.exe")
+        };
+        let holding = classify(
+            &[
+                packaged(1, "vendor.app_0000000000000"),
+                packaged(2, "Vendor.Other_0000000000000"),
+                at(
+                    3,
+                    "C:/Program Files/WindowsApps/Vendor.App_1.0.0.0_x64__0000000000000/tool.exe",
+                ),
+            ],
+            &[STORE, SESSION],
+        );
+        assert_eq!(kinds(&holding), [("app", vec![1]), ("session", vec![2, 3])]);
+        assert_eq!(
+            AppId::WindowsAumid("Vendor.App_0000000000000!App").as_str(),
+            "Vendor.App_0000000000000!App"
+        );
+        assert_eq!(
+            remedies(&holding[..1], "to use the new account"),
+            "Quit App from its notification-area icon and open it again to use the new account."
         );
     }
 
