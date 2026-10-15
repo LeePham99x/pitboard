@@ -2891,7 +2891,9 @@ That needs a person, in a debug build with a scratch home.
 
 Read in the C# that uniffi-bindgen-cs v0.11.0+v0.31.0 generated from `pitboard-ffi`, and
 measured by `apps/windows/Pitboard.Core.Tests` against the debug library, on 5 October 2026.
-Nothing here ran on Windows.
+Read again on 15 October 2026 in what v0.11.1+v0.31.0 generates, which differs only in how a
+string crosses: it is read and written in the Rust buffer's own memory, with no `byte[]`
+between.
 
 - An exported object's class frees its Rust object from a finalizer: `~PitboardModel()`
   calls `Destroy()`. So .NET's finalizer thread can be the one that drops a
@@ -2922,6 +2924,17 @@ Nothing here ran on Windows.
   its arguments, the types it takes, gives and throws, and its doc comment. A record type is
   recorded by its module and name alone, so no checksum covers a record's fields. Read in
   `uniffi_macros` 0.31.2, `fnsig.rs` and `record.rs`.
+
+On Windows, CI's `csharp-windows` job measured on windows-2025 and windows-11-arm, in run
+38683164949 on 15 October 2026, where both passed:
+
+- The C# generated from the release `pitboard_ffi.dll`, built as a 0.x release is and
+  opened with its fixtures, is the Linux job's file byte for byte on both images. The DLL
+  keeps through the release profile's strip the exports the generator reads, where Linux's
+  shared library does not.
+- A test program published self-contained for the image's machine loads either DLL as a
+  fresh standard user, and its calls answer. A model over the gated DLL reads
+  `windows_not_released` and leaves each home it was given empty.
 
 ### The Swift bindings
 
@@ -3023,8 +3036,8 @@ Measured on 6 October 2026 on macOS 27.0, with `pitboard-ffi` built for
   line of a stand-in page and an account of the worlds found it on no line of the release
   `libpitboard_ffi.a` or `libpitboard_ffi.dylib`, and on 2 lines of each built with it, one
   for each, and on 4 of the universal library `build-xcframework.sh --fixture` builds.
-  The CI job for C# checks the Linux library the same way, and `build-app.sh` the macOS
-  library and app.
+  CI's C# jobs check the Linux library and the gated Windows DLL the same way, and
+  `build-app.sh` the macOS library and app.
 - `fixture_page` gives, byte for byte, what the macOS app's `FixturePages.page(for:)` gives,
   for nine addresses on `pitboard-fixture://`: each site's home and a path of each, two of
   chatgpt.com's sign-in hosts, the artifact's frame, a host of no site, and chatgpt.com in

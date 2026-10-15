@@ -63,7 +63,7 @@ unicode-width = "0.2"
 windows-sys = "0.61"
 # Both generators must match this exact version, since bindings check method checksums at load
 # time. The Swift one is built from it. The C# one, uniffi-bindgen-cs, is released for one
-# UniFFI version at a time (v0.11.0+v0.31.0 reads 0.31), so this moves only with a release of
+# UniFFI version at a time (v0.11.1+v0.31.0 reads 0.31), so this moves only with a release of
 # it for the new version; Dependabot leaves it alone.
 uniffi = "=0.31.2"
 # TLS: rustls for the protocol, the operating system for deciding which certificates to
