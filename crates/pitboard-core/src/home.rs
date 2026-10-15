@@ -109,8 +109,8 @@ pub(crate) fn remove_retired(ctx: &Context, permit: Permit) {
     let _ = crate::host::fs::remove_dir(permit, &readings);
 }
 
-// What stayed of a folder that could not be removed whole: each file left in it, or the
-// folder itself where only folders are.
+// What stayed of a folder that could not be removed whole: each file that could not be
+// removed, and each folder that could not where nothing in it stayed.
 #[derive(Debug)]
 pub(crate) struct Kept {
     pub(crate) left: Vec<PathBuf>,
@@ -139,23 +139,27 @@ pub(crate) fn remove_all(permit: Permit, folder: &Path) -> std::result::Result<(
         Err(why) => why,
     };
     let mut left = Vec::new();
-    files_in(folder, &mut left);
+    remove_each(permit, folder, &mut left);
     if left.is_empty() {
-        left.push(folder.to_path_buf());
+        return Ok(());
     }
     left.sort();
     Err(Kept { left, why })
 }
 
-fn files_in(folder: &Path, found: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(folder) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        match entry.file_type() {
-            Ok(kind) if kind.is_dir() => files_in(&entry.path(), found),
-            _ => found.push(entry.path()),
+// std's `remove_dir_all` stops at the first file it cannot remove, so each is tried on its own.
+fn remove_each(permit: Permit, folder: &Path, left: &mut Vec<PathBuf>) {
+    let before = left.len();
+    for entry in std::fs::read_dir(folder).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+            remove_each(permit, &path, left);
+        } else if crate::host::fs::remove_file(permit, &path).is_err() {
+            left.push(path);
         }
+    }
+    if crate::host::fs::remove_dir(permit, folder).is_err() && left.len() == before {
+        left.push(folder.to_path_buf());
     }
 }
 
@@ -344,6 +348,64 @@ mod tests {
         assert!(readings.join("my data.ndjson").exists());
 
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn scratch(name: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "pitboard-home-{name}-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        root
+    }
+
+    // Each file is tried on its own, so one that stays keeps no other.
+    #[test]
+    fn what_could_not_be_removed_is_named_alone_and_the_rest_goes() {
+        use crate::host::fs::testing;
+        let home = scratch("kept");
+        let stuck = home.join("stuck");
+        std::fs::create_dir_all(&stuck).expect("a folder");
+        std::fs::write(stuck.join("kept"), "x").expect("written");
+        for n in 0..20 {
+            std::fs::write(home.join(format!("file-{n}")), "x").expect("written");
+        }
+        testing::deny_changes(&stuck).expect("read-only");
+        let kept = remove_all(Permit::for_a_test(), &home);
+        testing::allow_changes(&stuck).expect("changeable again");
+
+        let kept = kept.expect_err("a file stayed");
+        assert_eq!(kept.left, vec![stuck.join("kept")]);
+        let mut there: Vec<PathBuf> = std::fs::read_dir(&home)
+            .expect("still there")
+            .map(|entry| entry.expect("listed").path())
+            .collect();
+        there.sort();
+        assert_eq!(there, vec![stuck.clone()]);
+        remove_all(Permit::for_a_test(), &home).expect("removed once it can be");
+        assert!(!home.exists());
+    }
+
+    // std's remove_dir_all stops at the first file it cannot remove, which on NTFS comes first
+    // by name.
+    #[cfg(windows)]
+    #[test]
+    fn a_file_held_without_sharing_its_deletion_keeps_only_itself() {
+        use crate::helper::{Helper, Job};
+        let home = scratch("held");
+        std::fs::create_dir_all(&home).expect("a folder");
+        for name in ["audit.log", "state.json", "usage.json"] {
+            std::fs::write(home.join(name), "x").expect("written");
+        }
+        let held = Helper::start(Job::HoldsWithoutDelete, &home.join("audit.log"));
+        let kept = remove_all(Permit::for_a_test(), &home).expect_err("held");
+        assert_eq!(kept.left, vec![home.join("audit.log")]);
+        assert!(!home.join("state.json").exists());
+        assert!(!home.join("usage.json").exists());
+        held.stop();
+        remove_all(Permit::for_a_test(), &home).expect("removed once let go of");
+        assert!(!home.exists());
     }
 
     /// Each home the environment names is a full path or refused, by the variable that
