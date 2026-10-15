@@ -96,14 +96,14 @@ window loads its site, and whatever the site's pages load, as a browser would.
     data folder before anything else is asked, so neither face lists processes with their
     parents or reads a cookie jar. `windows/` is the face that refuses whatever of Windows
     is not built yet: no store of secrets, a vault of `store::Backend::Unknown` whose every
-    call cannot be read, no process list, no scheduler, none of the four ways a login kept as
-    files moves, and no program found. What it does read is this process's token, through windows-sys
-    (`windows/user.rs`), which `token.rs` makes an `Elevation` of and whose `TokenUser` is
-    the person's SID, the account's own folders (`GetUserProfileDirectoryW`,
-    `FOLDERID_Profile`, `FOLDERID_LocalAppData` and the profile type), which a build for
-    tests answers nothing from, and the build `RtlGetVersion` gives, which
-    `host::windows_floor` holds against 26100, the build of Windows 11 24H2 and Windows
-    Server 2025. `windows/fs.rs` makes each private file and folder with a security
+    call cannot be read, no process list, no scheduler, none of the four calls that move
+    Claude Desktop's data folder, and no program found. What it does read is this process's
+    token, through windows-sys (`windows/user.rs`), which `token.rs` makes an `Elevation` of
+    and whose `TokenUser` is the person's SID, the account's own folders
+    (`GetUserProfileDirectoryW`, `FOLDERID_Profile`, `FOLDERID_LocalAppData` and the profile
+    type), which a build for tests answers nothing from, and the build `RtlGetVersion`
+    gives, which `host::windows_floor` holds against 26100, the build of Windows 11 24H2 and
+    Windows Server 2025. `windows/fs.rs` makes each private file and folder with a security
     descriptor from SDDL: owned by the person's SID, with a protected access list granting
     the person, SYSTEM and Administrators alone, which a folder passes on to what is made in
     it. A folder already there keeps its own list. `fs::access` reads a path's list, and
@@ -119,14 +119,13 @@ window loads its site, and whatever the site's pages load, as a browser would.
     NTFS, ReFS, exFAT and FAT32; an SMB share refuses, and there the write-through is what
     makes the rename last. `token.rs`, `acl.rs` and `replace.rs` are compiled on every
     system, so how a token and a list read and which route a volume takes is tested
-    everywhere, and `words.rs` says each system's refusal from a `host::Os`. A fact that differs by system is a `match` on `host::OS`,
-    such as the folders macOS asks about before an app may look in them, or
-    `Os::default_pitboard_home`, where Pitboard keeps its files for a home when
-    `PITBOARD_HOME` names nowhere else.
-    `same_path_in_any_case` is how Windows compares paths, for the core and the apps alike,
-    and `path_key_in_any_case` a key read from the text alone, which also reads `\\?\`, `.`
-    and `..` away. `awake` is the time the machine has been awake, which the app's timers
-    count.
+    everywhere, and `words.rs` says each system's refusal from a `host::Os`. A fact that
+    differs by system is a `match` on `host::OS`, such as the folders macOS asks about
+    before an app may look in them, or `Os::default_pitboard_home`, where Pitboard keeps its
+    files for a home when `PITBOARD_HOME` names nowhere else. `same_path_in_any_case` is how
+    Windows compares paths, for the core and the apps alike, and `path_key_in_any_case` a
+    key read from the text alone, which also reads `\\?\`, `.` and `..` away. `awake` is the
+    time the machine has been awake, which the app's timers count.
   - `release.rs`: whether this build may do anything on its system. A Windows build of a
     0.x release may not, unless it was compiled with `--cfg pitboard_unreleased_windows`,
     which CI's Windows jobs set and no release does; macOS and Linux always may. The
@@ -768,11 +767,11 @@ window loads its site, and whatever the site's pages load, as a browser would.
   Pitboard reads. `READ_BY_BUILDS_FOR_TESTS` names the one only a build for tests reads,
   `PITBOARD_TEST_CLAUDE_DESKTOP`, and is empty in a release. `Environment` refuses, in a
   build with debug assertions, to read a variable none of them names. The integration tests
-  withhold every one of them from each command they run, except `HOME` and `USER`, and
-  `SystemRoot`, `TEMP`, `TMP` and `USERNAME` on Windows, and the
-  core's unit tests make their context with `Context::for_unit_test`, which withholds all
-  of them, so a variable exported where `cargo test` runs, such as `PITBOARD_CLAUDE`,
-  never reaches a test.
+  withhold every one of them from each command they run, except `HOME` and `USER` on macOS
+  and Linux, and `SystemRoot`, `TEMP`, `TMP` and `USERNAME` on Windows, and the core's unit
+  tests make their context with `Context::for_unit_test`, which withholds all of them, so a
+  variable exported where `cargo test` runs, such as `PITBOARD_CLAUDE`, never reaches a
+  test.
 - The proxy variables are among them, listed in `proxy.rs` in the order ureq tries them.
   Every request goes out on the agent its context makes, `api::agent`, which is given the
   proxy the context read, or none. ureq still reads this process's environment as each
@@ -800,18 +799,17 @@ window loads its site, and whatever the site's pages load, as a browser would.
   that asks panics, unless it is a test of that lookup and says so, and any other build
   for tests, the command line the integration tests run and an app built with the
   fixtures among them, is told there is none, which is refused as below. On Windows every
-  lookup of the account's own folders answers nothing in a build for tests, a unit test
-  that does not say it tests one included.
+  lookup of the account's own folders answers nothing in a build for tests, a unit test that
+  does not say it tests one included.
 - Every home Pitboard reads or writes under is a full path: `HOME`, `USERPROFILE` on
-  Windows, Pitboard's own
-  directory, `CLAUDE_CONFIG_DIR` and `CLAUDE_SECURESTORAGE_CONFIG_DIR` where they name a
-  folder, and `CODEX_HOME` where it is set. One that is empty or relative is refused with
-  `home_not_absolute`, naming the variable, by `home::check_absolute`, which the gate every
-  change passes asks, and every read of the accounts. `doctor` fails its `homes` check
-  over it and checks nothing else. The command line asks it before every command but
-  `completions`, `manpage`, `doctor` and `renew`, which the gate refuses, so `log`,
-  `schedule status` and the status line refuse it too. Nothing is resolved against the
-  folder Pitboard runs in.
+  Windows, Pitboard's own directory, `CLAUDE_CONFIG_DIR` and
+  `CLAUDE_SECURESTORAGE_CONFIG_DIR` where they name a folder, and `CODEX_HOME` where it is
+  set. One that is empty or relative is refused with `home_not_absolute`, naming the
+  variable, by `home::check_absolute`, which the gate every change passes asks, and every
+  read of the accounts. `doctor` fails its `homes` check over it and checks nothing else.
+  The command line asks it before every command but `completions`, `manpage`, `doctor` and
+  `renew`, which the gate refuses, so `log`, `schedule status` and the status line refuse it
+  too. Nothing is resolved against the folder Pitboard runs in.
 - Which system Pitboard runs on is decided in `host/mod.rs` and nowhere else. Anything
   that differs by system is either the host's to answer or a `match` on `host::OS`, so a
   system added to `host::Os` does not compile until it is said for every one. No such
@@ -1002,11 +1000,11 @@ window loads its site, and whatever the site's pages load, as a browser would.
   `app_command_line`, which only joins paths; `can_run`, which asks the file system about
   one path; `pitboard_directory`, which reads the environment it is given and, without
   `HOME`, this account's passwd entry, or without `USERPROFILE` on Windows, its profile
-  folder; `windows_records_key`, which reads only what it is
-  given; `launch_refusal`, which asks the system whether this process is elevated and which
-  build it runs on; and `fixture_names` and `fixture_page`, which read only what they are
-  given. `PitboardModel::fixture` and `PitboardModel::fixture_in` make the fixture's world
-  in its folder before they answer, files in a temporary directory and nothing slower.
+  folder; `windows_records_key`, which reads only what it is given; `launch_refusal`, which
+  asks the system whether this process is elevated and which build it runs on; and
+  `fixture_names` and `fixture_page`, which read only what they are given.
+  `PitboardModel::fixture` and `PitboardModel::fixture_in` make the fixture's world in its
+  folder before they answer, files in a temporary directory and nothing slower.
 - What a snapshot says is made by `present`, which reads the state and the moment and asks
   nothing of anyone but the app's `LocalTime`, for each clock time and whether a moment is
   on another day than now, and for each date and time of the activity log. Where that cannot
