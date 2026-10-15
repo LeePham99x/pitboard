@@ -41,6 +41,10 @@ public sealed class SettingsPaneTests
         await Views.Until(() => Views.Texts(pane).Contains(inside), $"{automationId} did not open on '{inside}'");
     }
 
+    private static TextBlock Said(SettingsPane pane, string text) =>
+        Views.Visible<TextBlock>(pane).SingleOrDefault(shown => shown.Text == text)
+        ?? throw new AssertFailedException($"'{text}' is not among: {string.Join(", ", Views.Texts(pane))}");
+
     [UITestMethod]
     public async Task ShowingThePageReadsTheScheduleAndLooksForTheCommandLine()
     {
@@ -90,7 +94,20 @@ public sealed class SettingsPaneTests
         toggle.IsOn = true;
 
         Assert.IsFalse(toggle.IsOn);
-        Assert.Contains("Access is denied.", Views.Texts(pane));
+        Assert.AreEqual(AutomationLiveSetting.Assertive, AutomationProperties.GetLiveSetting(Said(pane, "Access is denied.")));
+    }
+
+    // Narrator says only the switch's new state, so the reason is a live region.
+    [UITestMethod]
+    public async Task AScheduleWindowsRefusedIsSaidAloud()
+    {
+        var pane = await Shown(new AppModel(new StandInModel(With(1, machine => machine with
+        {
+            Schedule = machine.Schedule with { Failed = "Task Scheduler refused the task." },
+        }))));
+
+        Assert.AreEqual(
+            AutomationLiveSetting.Assertive, AutomationProperties.GetLiveSetting(Said(pane, "Task Scheduler refused the task.")));
     }
 
     [UITestMethod]

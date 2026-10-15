@@ -43,7 +43,7 @@
         <StackPanel VerticalAlignment="Center" Spacing="2">
           <TextBlock Text="Start when you sign in to Windows" TextWrapping="Wrap" />
           <TextBlock x:Name="StartupNote" Style="{StaticResource Explanatory}" />
-          <TextBlock x:Name="StartupFailed" Style="{StaticResource Explanatory}" />
+          <TextBlock x:Name="StartupFailed" Style="{StaticResource Explanatory}" AutomationProperties.LiveSetting="Assertive" />
         </StackPanel>
         <ToggleSwitch
             x:Name="StartAtSignInSwitch"
@@ -135,7 +135,7 @@
         <StackPanel VerticalAlignment="Center" Spacing="2">
           <TextBlock Text="Renew parked logins daily" TextWrapping="Wrap" />
           <TextBlock x:Name="ScheduleNote" Style="{StaticResource Explanatory}" />
-          <TextBlock x:Name="ScheduleFailed" Style="{StaticResource Explanatory}" />
+          <TextBlock x:Name="ScheduleFailed" Style="{StaticResource Explanatory}" AutomationProperties.LiveSetting="Assertive" />
         </StackPanel>
         <ToggleSwitch
             x:Name="RenewDaily"

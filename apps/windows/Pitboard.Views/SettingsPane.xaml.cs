@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Pitboard.Core;
 using Pitboard.Windows;
@@ -90,7 +91,7 @@ public sealed partial class SettingsPane : UserControl
         StartAtSignInSwitch.IsOn = _startAtSignIn.On;
         StartAtSignInSwitch.IsEnabled = _startAtSignIn.Refusal is null;
         StartupNote.Text = _startAtSignIn.Refusal ?? SettingsPage.StartupNote;
-        Say(StartupFailed, _startAtSignIn.Failed);
+        Announce(StartupFailed, _startAtSignIn.Failed);
     }
 
     private void ShowLimits(AutoSwitchShown auto, WarmShown warm)
@@ -134,7 +135,7 @@ public sealed partial class SettingsPane : UserControl
         RenewDaily.IsOn = schedule.On;
         RenewDaily.IsEnabled = schedule.Enabled;
         Say(ScheduleNote, schedule.Note);
-        Say(ScheduleFailed, schedule.Failed);
+        Announce(ScheduleFailed, schedule.Failed);
         RunsCard.Visibility = Look.Shown(schedule.Runs is not null);
         Runs.Text = schedule.Runs ?? "";
         ScheduledInCard.Visibility = Look.Shown(schedule.ScheduledIn is not null);
@@ -174,6 +175,18 @@ public sealed partial class SettingsPane : UserControl
     {
         text.Text = said ?? "";
         text.Visibility = Look.Shown(said is not null);
+    }
+
+    // WinUI's live region: Narrator reads the text again only when its peer says it changed.
+    private static void Announce(TextBlock text, string? said)
+    {
+        var changed = said is not null && said != text.Text;
+        Say(text, said);
+        if (changed)
+        {
+            (FrameworkElementAutomationPeer.FromElement(text) ?? FrameworkElementAutomationPeer.CreatePeerForElement(text))
+                .RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
+        }
     }
 
     private void OnStartAtSignInToggled(object sender, RoutedEventArgs args)
