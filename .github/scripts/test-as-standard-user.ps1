@@ -64,13 +64,36 @@ function Get-MachineLayers {
     ) | Where-Object { Test-Path -LiteralPath $_ }
 }
 
+# The app's data folders hold its account windows' sign-ins.
 function Get-LoginPlaces([string] $ProfileDir, [string] $LocalData) {
     @(
         (Join-Path $ProfileDir '.claude'),
         (Join-Path $ProfileDir '.claude.json'),
         (Join-Path $ProfileDir '.codex'),
-        (Join-Path $LocalData 'Pitboard')
+        (Join-Path $LocalData 'Pitboard'),
+        (Join-Path $LocalData 'Pitboard App'),
+        (Join-Path $LocalData 'Pitboard App Debug')
     )
+}
+
+# What only an installed Release registers, under the job user's HKCU: its link schemes, the
+# start at sign-in and the command line on the user PATH.
+function Get-JobRegistrations {
+    foreach ($scheme in 'pitboard', 'pitboard-debug') {
+        if (Test-Path -LiteralPath "HKCU:\Software\Classes\$scheme") { "HKCU\Software\Classes\$scheme" }
+    }
+    $run = Get-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'Pitboard' -ErrorAction SilentlyContinue
+    if ($null -ne $run) { 'the Run value Pitboard' }
+    if ([Environment]::GetEnvironmentVariable('Path', 'User') -match 'Programs\\Pitboard') { 'a user PATH naming Programs\Pitboard' }
+}
+
+# Every user's, which the job user may list. Through Windows PowerShell, whose Appx module
+# PowerShell 7 does not load on every image.
+function Get-PitboardPackages {
+    $names = & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command `
+        "Get-AppxPackage -AllUsers -Name 'Pitboard*' | ForEach-Object { `$_.PackageFullName }"
+    if ($LASTEXITCODE -ne 0) { throw 'Get-AppxPackage could not list the packages' }
+    @($names | Where-Object { $_ })
 }
 
 $layers = @(Get-MachineLayers)
@@ -82,6 +105,8 @@ Write-Output 'Codex''s %ProgramData%\OpenAI\Codex, Claude Code''s C:\Program Fil
 $jobPlaces = @(Get-LoginPlaces $env:USERPROFILE $env:LOCALAPPDATA)
 $jobPlacesBefore = @($jobPlaces | Where-Object { Test-Path -LiteralPath $_ })
 Write-Output "Of the job user's own login places, $($jobPlacesBefore.Count) of $($jobPlaces.Count) are there before the tests run."
+$jobRegistrationsBefore = @(Get-JobRegistrations)
+$packagesBefore = @(Get-PitboardPackages)
 
 function Test-Inside([string] $Path, [string] $Folder) {
     $Path.StartsWith($Folder.TrimEnd('\') + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)
@@ -311,8 +336,29 @@ try {
             $leaked.Add("the job user's real $(Split-Path -Leaf $place) appeared")
         }
     }
+    # reg.exe exits 0 where the key or value is there, as the standard user reads its own HKCU.
+    $userKeys = [ordered]@{
+        'HKCU\Software\Classes\pitboard' = @('query', 'HKCU\Software\Classes\pitboard')
+        'HKCU\Software\Classes\pitboard-debug' = @('query', 'HKCU\Software\Classes\pitboard-debug')
+        'the Run value Pitboard' = @('query', 'HKCU\Software\Microsoft\Windows\CurrentVersion\Run', '/v', 'Pitboard')
+    }
+    $i = 0
+    foreach ($key in $userKeys.Keys) {
+        $query = Start-AsUser "$env:SystemRoot\System32\reg.exe" $userKeys[$key] $runDir $userEnv "registry-$i"
+        $i++
+        if ($query.Exit -eq 0) { $leaked.Add("the standard user's $key exists") }
+    }
+    $path = Start-AsUser "$env:SystemRoot\System32\reg.exe" @('query', 'HKCU\Environment', '/v', 'Path') $runDir $userEnv 'registry-path'
+    if ($path.Exit -eq 0 -and (Get-Content -Raw -Path $path.Out) -match 'Programs\\Pitboard') {
+        $leaked.Add("the standard user's PATH names Programs\Pitboard")
+    }
+    foreach ($registration in (Get-JobRegistrations)) {
+        if ($jobRegistrationsBefore -notcontains $registration) { $leaked.Add("the job user's $registration appeared") }
+    }
+    $packages = @(Get-PitboardPackages | Where-Object { $packagesBefore -notcontains $_ })
+    if ($packages.Count -gt 0) { $leaked.Add("a package named Pitboard* appeared: $($packages -join ', ')") }
     if ($leaked.Count -eq 0) {
-        Write-Output "No $(if ($probePath) { 'login, test item, ' })task or login folder was left behind."
+        Write-Output "No $(if ($probePath) { 'login, test item, ' })task, login folder, registration or package was left behind."
     }
     $failed.AddRange($leaked)
 } finally {

@@ -544,6 +544,111 @@ jobs:
           -Dotnet target/csharp/gated/Pitboard.Core.Tests.exe, target/csharp/opened/Pitboard.Core.Tests.exe
           -Probe target/debug/pitboard-probe.exe
 
+  # The Windows app on each image the windows job names: a Debug build over pitboard_ffi.dll
+  # opened with its fixtures, and a Release build over the library as a 0.x release builds it.
+  # Its tests run as a fresh standard user, and an elevated launch as the job's user. Nothing is
+  # uploaded, so no runnable build of a pull request leaves the runner.
+  windows-app:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            triple: x86_64-pc-windows-msvc
+            runtime: win-x64
+            platform: x64
+          - os: windows-11-arm
+            triple: aarch64-pc-windows-msvc
+            runtime: win-arm64
+            platform: ARM64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      RUSTFLAGS: -D warnings -C target-feature=+crt-static --cfg pitboard_unreleased_windows
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      DOTNET_NOLOGO: 1
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/rust
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: apps/windows/global.json
+      - uses: ./.github/actions/windows-builds
+        with:
+          triple: ${{ matrix.triple }}
+          gated-pitboard: 'false'
+      - name: pitboard_ffi.dll as a 0.x release builds it
+        env:
+          RUSTFLAGS: -D warnings -C target-feature=+crt-static
+          CARGO_TARGET_DIR: target/gated
+        run: cargo build --locked --release -p pitboard-ffi
+      - name: pitboard_ffi.dll opened, with its fixtures
+        run: cargo build --locked --release -p pitboard-ffi --features fixture
+      # csharp-windows checks that both libraries give these bindings, byte for byte.
+      - name: The bindings
+        env:
+          RUSTFLAGS: -D warnings -C target-feature=+crt-static
+          CARGO_TARGET_DIR: target/gated
+        run: |
+          mkdir -p apps/windows/Pitboard.Core/Generated
+          cargo run --locked --release -p uniffi-bindgen-csharp -- \
+            --library target/gated/release/pitboard_ffi.dll \
+            --out-dir apps/windows/Pitboard.Core/Generated \
+            --config crates/pitboard-ffi/uniffi.toml --no-format
+      # The build fails on .editorconfig's style rules; this checks the layout too.
+      - name: The C# is laid out as .editorconfig says
+        working-directory: apps/windows
+        run: dotnet format whitespace --folder --verify-no-changes .
+      # Built where it runs, the ARM64 app on windows-11-arm (CF6). Published by the job's user
+      # into the workspace, where the standard user may read and run it.
+      - name: The app, its unit tests and its UI tests
+        working-directory: apps/windows
+        env:
+          RUNTIME: ${{ matrix.runtime }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          out="$GITHUB_WORKSPACE/target/windows-app"
+          dotnet publish Pitboard.App -c Debug -r "$RUNTIME" -p:Platform="$PLATFORM" -o "$out/debug" \
+            -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/release/pitboard_ffi.dll"
+          dotnet publish Pitboard.App -c Release -r "$RUNTIME" -p:Platform="$PLATFORM" -o "$out/release" \
+            -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/gated/release/pitboard_ffi.dll"
+          dotnet publish Pitboard.Windows.Tests -c Debug -r "$RUNTIME" -p:Platform="$PLATFORM" --self-contained \
+            -o "$out/tests"
+          dotnet publish Pitboard.UITests -c Debug -r "$RUNTIME" --self-contained -o "$out/uitests" \
+            -p:PitboardAppDebug="$out/debug/Pitboard.exe" -p:PitboardAppRelease="$out/release/Pitboard.exe"
+          cd "$GITHUB_WORKSPACE"
+          cmp target/release/pitboard_ffi.dll target/windows-app/debug/pitboard_ffi.dll
+          cmp target/gated/release/pitboard_ffi.dll target/windows-app/release/pitboard_ffi.dll
+      - name: "The Release build: no fixture, no package identity, the core's C runtime inside it"
+        shell: pwsh
+        env:
+          TRIPLE: ${{ matrix.triple }}
+        run: ./.github/scripts/check-windows-app.ps1 -Folder target/windows-app/release -Triple $env:TRIPLE
+      # CF5: the self-contained app needs none of these for the standard user.
+      - name: The Windows App Runtime packages this image holds
+        shell: pwsh
+        run: >
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command
+          "Get-AppxPackage -AllUsers -Name 'Microsoft.WindowsAppRuntime*' | Format-Table Name, Version, Architecture -AutoSize"
+      # Each UI test starts a Pitboard.exe in homes of its own and drives it as that user (CF1, CF2).
+      - name: The app's tests, as a standard user
+        shell: pwsh
+        run: >
+          ./.github/scripts/test-as-standard-user.ps1
+          -Dotnet target/windows-app/tests/Pitboard.Windows.Tests.exe, target/windows-app/uitests/Pitboard.UITests.exe
+          -Probe target/debug/pitboard-probe.exe
+      # The job's user is elevated, so of the UI tests only the elevated launch's runs.
+      - name: An elevated launch refuses and writes nothing, as the job user
+        shell: pwsh
+        run: |
+          & target/windows-app/uitests/Pitboard.UITests.exe --results-directory (Join-Path $env:RUNNER_TEMP 'elevated')
+          exit $LASTEXITCODE
+
   # The floor the manifests promise, built the way someone on an older toolchain builds it.
   msrv:
     runs-on: ubuntu-latest
@@ -680,6 +785,7 @@ jobs:
       - apple
       - csharp
       - csharp-windows
+      - windows-app
       - msrv
       - semver
       - deny
