@@ -17,12 +17,8 @@ use pitboard_core::provider::ProviderId;
 use pitboard_core::switch::{Foreseen, WaitStep};
 use pitboard_core::words as said;
 
-/// The name a sheet would save or sign in as, from what was typed in it without the white
-/// space around it, or why what was typed cannot be one. Signing in again needs no name
-/// typed: it is the account's own, whatever a new name may be now. A rename needs a name it
-/// does not already have.
-///
-/// The model saves by the same rule, and answers at once, so a view asks it as it is typed in.
+/// The name a sheet would save, trimmed, or why what is typed cannot be one. The model saves by
+/// the same rule, and it answers at once, so a view asks it as it is typed in.
 #[uniffi::export]
 pub fn check_name(sheet: Sheet, typed: String) -> NameCheck {
     let saves = |name: Option<&str>| NameCheck {

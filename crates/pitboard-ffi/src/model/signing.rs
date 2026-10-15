@@ -170,6 +170,43 @@ fn a_sign_in_whose_program_has_gone_says_so_under_its_tool() {
     assert_eq!(model.count(installed_ask), asked + 1, "and looks again");
 }
 
+// A look under way when the core says a program has gone was asked before it went: its answer
+// leaves the tool missing, and Pitboard looks once more.
+#[test]
+fn a_look_under_way_when_a_program_goes_leaves_it_missing() {
+    let mut model = Hand::new();
+    let mut machine = Machine::reading(Ok(status(Vec::new())));
+    machine.found = vec![claude_code(), codex()];
+    put_up(&mut model, &mut machine, add(Some("codex")));
+    model.send(Intent::LookForTools);
+    let look = model.take(installed_ask);
+    let before = machine.answer(look);
+    machine.starting = Err(refusal(
+        "codex_program_missing",
+        "`codex` is not on this machine",
+        Vec::new(),
+    ));
+    machine.found = vec![claude_code()];
+    model.send(sign_in("codex", "phu"));
+    model.run_but(&mut machine, installed_ask);
+
+    model.give(before);
+    let codex_missing = |model: &Hand| {
+        model
+            .shown()
+            .sheet_text
+            .and_then(|text| text.tools.into_iter().find(|tool| tool.code == "codex"))
+            .is_some_and(|tool| tool.missing.is_some())
+    };
+    assert!(
+        codex_missing(&model),
+        "not brought back by an answer from before"
+    );
+    let again = model.take(installed_ask);
+    model.give(machine.answer(again));
+    assert!(codex_missing(&model));
+}
+
 // A failure is about what was asked, so it goes once the name or the tool changes.
 #[test]
 fn a_failure_goes_once_the_form_changes() {

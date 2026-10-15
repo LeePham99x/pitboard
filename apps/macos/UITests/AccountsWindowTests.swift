@@ -48,11 +48,11 @@ final class AccountsWindowTests: FixtureTestCase {
         XCTAssertTrue(app.accountRow("codex/third").waitForExistence(timeout: 10))
     }
 
-    /// A tool Pitboard did not find is offered all the same, says what to install and where to
-    /// read how, and cannot be signed in to.
+    /// A tool Pitboard did not find says what to install, and cannot be signed in to.
     @MainActor
     func testAToolPitboardDidNotFindSaysWhatToInstall() {
-        let app = launch(.oneTool)
+        // Claude Code and Claude Desktop, and no Codex CLI.
+        let app = launch(.claudeDesktop)
         app.openWindow()
         app.toolbars.buttons["Add Account"].click()
         let tool = app.popUpButtons["sheet.tool"]
@@ -70,8 +70,7 @@ final class AccountsWindowTests: FixtureTestCase {
         XCTAssertFalse(app.buttons["Sign In"].isEnabled)
     }
 
-    /// A name typed with its tool, or with a space, says why under the field, and Sign In waits
-    /// for one that can be a name.
+    /// A name typed with its tool says why under the field, and Sign In waits for a name.
     @MainActor
     func testANameThatCannotBeOneSaysWhy() {
         let app = launch(.oneTool)

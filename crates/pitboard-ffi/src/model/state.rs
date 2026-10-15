@@ -928,6 +928,9 @@ pub(crate) struct State {
     /// Whether that is being asked now. A read asked for meanwhile waits for the same answer
     /// rather than asking again.
     asking_installed: bool,
+    // A tool the core found no program for since the ask under way began, which that ask's
+    // answer may still name.
+    gone_since_asked: Option<String>,
     /// Reads waiting for that answer, which go ahead once it comes.
     waiting: Vec<Asked>,
     /// When the account index was last written, as last seen. `None` until something has
@@ -1068,6 +1071,7 @@ impl State {
             changes_seen: 0,
             installed: None,
             asking_installed: false,
+            gone_since_asked: None,
             waiting: Vec::new(),
             changed_at: None,
             readings_at: None,
@@ -2464,9 +2468,16 @@ impl State {
             Answer::WarmedUp { asked, done } => self.warmed_up(asked, done, now, jobs),
             Answer::WarmSet { done } => self.warm_set(done, now, jobs),
             Answer::Looked { changed, measured } => self.looked(changed, measured, now, jobs),
-            Answer::Installed { tools } => {
+            Answer::Installed { mut tools } => {
+                let gone = self.gone_since_asked.take();
+                if let Some(gone) = &gone {
+                    tools.retain(|tool| &tool.code != gone);
+                }
                 self.installed = Some(tools);
                 self.installed_over(now, jobs);
+                if gone.is_some() {
+                    self.ask_installed(jobs);
+                }
             }
             Answer::Held {
                 qualified,
@@ -2864,7 +2875,11 @@ impl State {
             if let Some(tools) = self.installed.as_mut() {
                 tools.retain(|tool| tool.code != signing.provider);
             }
-            self.ask_installed(jobs);
+            if self.asking_installed {
+                self.gone_since_asked = Some(signing.provider.clone());
+            } else {
+                self.ask_installed(jobs);
+            }
             if self.sheet.is_some() {
                 self.keep(&refused.warnings);
                 return;

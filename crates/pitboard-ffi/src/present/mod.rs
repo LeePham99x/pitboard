@@ -474,8 +474,7 @@ pub struct Missing {
     pub link: String,
 }
 
-/// What a name typed in a sheet comes to: the name it would save, and why it is not one where
-/// it cannot be. Neither while nothing is typed.
+/// A name typed in a sheet: the name it would save, or why it cannot be one.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct NameCheck {
     pub name: Option<String>,

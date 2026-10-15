@@ -269,15 +269,13 @@ pub enum Intent {
     ShowWindow { pane: Option<Pane> },
     /// Somebody has read the failure the window said, and put it away.
     DismissFailure,
-    /// The name or the tool in the sheet has changed, so what went wrong with the last of them
-    /// is no longer what the sheet says.
+    /// The sheet's name or tool changed, so the failure about the last of them goes.
     DismissSheetFailure,
-    /// Look again which tools are installed, while a sheet that signs in is up: the app came
-    /// back to the front, maybe from installing one.
+    /// Look again which tools are installed, while a sheet that signs in is up.
     LookForTools,
     /// Enrol the login signed in now to `provider`'s tool under `name`, with no browser: the
-    /// Name sheet's Save. The name is taken without the white space around it, as
-    /// `name_to_save` takes it, and one with nothing else in it saves nothing; nor does a
+    /// Name sheet's Save. The name is read as `check_name` reads it, and one that is not a
+    /// name saves nothing; nor does a
     /// second Save from a sheet already saving. Once enrolled, the sheet naming a login of
     /// that tool closes, and only that one, and the accounts are read; what goes wrong is
     /// said in the sheet it was asked from, or in the window where that sheet has gone. For a

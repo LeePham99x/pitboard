@@ -1595,7 +1595,17 @@ impl Pitboard {
     pub fn rename(&self, from: &str, to: &str) -> Changing<String> {
         let permit = self.permitted()?;
         let from = self.named(permit, "rename", from)?;
-        let chosen = self.chosen(permit, "rename", to)?;
+        let chosen = crate::label::choose(to)
+            .map(|chosen| Key::new(chosen.provider, chosen.label))
+            .map_err(|refusal| {
+                self.refused(
+                    permit,
+                    "rename",
+                    to,
+                    "label_unusable",
+                    Error::Usage(refusal),
+                )
+            })?;
         // Only a prefix somebody actually typed can disagree: a bare new name stays inside
         // the account's own tool whatever tool a bare name would mean for a new account.
         if to.contains(crate::label::SEPARATOR) && chosen.provider != from.provider {
@@ -2443,6 +2453,30 @@ mod tests {
         assert_eq!(
             audit_lines(&m, "enroll"),
             [("new one".to_owned(), "label_unusable".to_owned())]
+        );
+    }
+
+    // An existing account's name keeps it, and a rename gives a new one by the rules all the same.
+    #[test]
+    fn a_rename_to_a_name_another_tool_has_follows_the_rules_for_a_new_one() {
+        let m = codex_machine("rename-one-word");
+        let mut state = state::load(&m.ctx).expect("state");
+        state
+            .accounts
+            .push(switch::harness::account("my work", "elsewhere", None));
+        state::save(&m.ctx, Permit::for_a_test(), &state).expect("saved");
+        let pitboard = Pitboard::new(m.ctx.clone());
+
+        let refused = pitboard
+            .rename("codex/there", "my work")
+            .expect_err("a name of two words");
+        assert_eq!(refused.error.code(), "usage", "{}", refused.error);
+        assert!(
+            state::load(&m.ctx)
+                .expect("state")
+                .get(&m.key("there"))
+                .is_some(),
+            "the Codex account keeps its name"
         );
     }
 

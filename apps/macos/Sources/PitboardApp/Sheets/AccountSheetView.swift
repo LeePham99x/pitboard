@@ -71,8 +71,7 @@ extension SheetLayout where Status == EmptyView {
     }
 }
 
-/// A tool Pitboard did not find, said where it is picked: what Pitboard needs of it, and where
-/// to read how to get it.
+/// A tool Pitboard did not find, where it is picked: what to install, and a link to how.
 struct ToolMissing: View {
     let missing: Missing
 
