@@ -93,6 +93,12 @@ internal sealed class Launched : IDisposable
 
     public void Invoke(string name) => Named(name).Patterns.Invoke.Pattern.Invoke();
 
+    public TextBox Field(string automationId) => Find(found => found.ByAutomationId(automationId), automationId).AsTextBox();
+
+    // A button the model holds back until it can be pressed.
+    public bool Enables(string name) =>
+        Retry.WhileFalse(() => Look(found => found.ByName(name))?.IsEnabled == true, Shortly, TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
+
     public void Select(string pane) =>
         Find(found => found.ByAutomationId(pane), pane).Patterns.SelectionItem.Pattern.Select();
 

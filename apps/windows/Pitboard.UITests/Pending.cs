@@ -6,4 +6,6 @@ internal static class Pending
     public const string W16 = "W16: Pitboard writing, replacing and removing files on Windows";
 
     public const string W23a = "W23a: Claude Code's Credential Manager store, which a machine in memory plays";
+
+    public const string W23b = "W23b: Claude Code's login left in a file behind its Credential Manager store";
 }
