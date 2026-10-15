@@ -398,6 +398,14 @@ The worlds that seed Claude Code wait for W23a on Windows. Started again, the se
 its launch to the first, which brings its window forward, and quits. Exit in the icon's menu
 ends it.
 
+To open a link, give the second copy a Pitboard link of the Debug build, and the first asks
+which account opens it. Outside a fixture a Debug build refuses one:
+
+```powershell
+$app.ArgumentList.Add('pitboard-debug://open?url=' + [Uri]::EscapeDataString('https://chatgpt.com/'))
+[Diagnostics.Process]::Start($app)
+```
+
 On x64, build with `-r win-x64 -p:Platform=x64`, which builds into `bin\x64\...\win-x64`. A
 Debug build keeps apart from an installed Release:
 

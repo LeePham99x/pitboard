@@ -2071,6 +2071,8 @@ The Windows app's account windows run in WebView2, over the same decisions from 
   `decide_response`, with `PageNavigations` saying whether the page's own navigation
   started it, and `Downloads` keeps every window's downloads. `StoreJanitor` answers each
   deletion the model asks for, and `HeldStores` says why a held store's entry opens nothing.
+  `Launching` finds a launch's Pitboard link, and the one in a launch another copy hands
+  over, and `Handovers` keeps what is handed over until the app has its model.
 - `apps/windows/Pitboard.Views`: `AccountWindow` is the window, a command bar of Back,
   Forward, Reload or Stop, and Downloads once the model lists a download of the window,
   with **Remove Website Data…** under More, the window's note in an InfoBar, and the page,
@@ -2079,11 +2081,23 @@ The Windows app's account windows run in WebView2, over the same decisions from 
   download list and the browser keys are WebView2's own.
   `SignInWindow` is a sign-in window, at `sign_in_window_size` over the account's window.
   The icon's menu and an account's shortcut menu offer each window, from
-  `AccountWindowsShown.menus` and `AccountItem.windows`.
+  `AccountWindowsShown.menus` and `AccountItem.windows`. `OpenLinkWindow` is the
+  **Open Link** window, over `AccountWindowsShown.picker`, with its buttons in a
+  ContentDialog's order: the default first, Cancel last.
 - `apps/windows/Pitboard.App/AccountWindows.cs` opens a window per store and brings an open
   one forward, tells the model each opened and closed, closes those the model says close,
   and hands each store asked for to the janitor. It owns `Downloads`, and asks before Quit
-  while one is under way.
+  while one is under way. It brings the **Open Link** window forward with each link that
+  arrives, and withdraws it once none waits.
+
+A Pitboard link reaches `Pitboard.exe` as its only argument. Only an installer registers
+`pitboard`, nothing registers `pitboard-debug`, and neither build registers a scheme as it
+runs. A copy started while another holds the key hands its launch over, and the running copy
+reads the link from that launch's command line. A Debug build outside a fixture refuses a
+`pitboard-debug` link before it takes the key or writes anything, since it would run on
+whatever homes its launch has. **Open in Browser** goes where a page sent elsewhere goes: to
+Windows, and in a fixture nowhere. `AccountPickerTests` hands every link over through a
+second copy on the runners.
 
 One thing differs from WebKit in how a store goes, read in Microsoft's documentation of
 `CoreWebView2Profile.Delete` for WebView2 1.0.4258.31 on 16 October 2026: deleting a profile
@@ -3630,6 +3644,14 @@ Microsoft's documentation.
   the STA thread, as Microsoft's [App instancing](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/applifecycle/applifecycle-instancing)
   does it, to a copy that runs and to one that is starting, on both images (`LifecycleTests`,
   run 38795330950).
+- `FindOrRegisterForKey` returns the `AppInstance` that `GetCurrent` does, so the handler
+  `Program` connects before it takes the key hears each launch handed to that key. An
+  unpackaged launch's arguments are its whole command line, as `GetCommandLine` has it, its
+  program first, which the SDK splits with `CommandLineToArgvW` to find its own (commit
+  13160d54 again, read on 16 October 2026: `AppInstance.cpp` `FindOrRegisterForKey` and
+  `GetActivatedEventArgs`, and `LaunchActivatedEventArgs.h`). So `Handovers` keeps each
+  launch with its link, and `Launching.Handed` splits the command line as the SDK does.
+  `AccountPickerTests` hands links over on the runners.
 - Under `DispatcherShutdownMode.OnExplicitShutdown`, closing the main window leaves
   Pitboard.exe running ([DispatcherShutdownMode](https://learn.microsoft.com/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.application.dispatchershutdownmode)),
   on both images (`LifecycleTests.ClosingTheWindowLeavesPitboardRunning`, run 38804714545).
