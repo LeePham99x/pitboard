@@ -1,7 +1,18 @@
 # Releasing
 
-A tag `v<version>` releases Pitboard through `.github/workflows/release.yml`. A tag with a
-suffix, such as `v<version>-rc1`, makes a GitHub pre-release.
+A tag releases Pitboard through `.github/workflows/release.yml`. Its `guard` job reads the
+tag with `version` under `[workspace.package]` in `Cargo.toml`, as
+`.github/scripts/release-kind.sh` does, and refuses any other pair:
+
+| Tag | `Cargo.toml` | Kind | crates.io | Latest |
+| --- | --- | --- | --- | --- |
+| `v1.2.0` | `1.2.0` | Full release | Yes | When no published full release is higher |
+| `v1.2.0-rc1` | `1.2.0` | Release candidate, a GitHub pre-release | No | No |
+| `v1.3.0-beta.1` | `1.3.0-beta.1` | Beta, a GitHub pre-release | Yes | No |
+
+An rc's number starts at 1, a beta's runs from 1 to 98, and a beta's major version is 1 or
+more. `usepitboard.com/install.sh` and the app's feed lead to GitHub's latest release, so a
+0.x release made after 1.0.0 never moves them back.
 
 ## Prepare a release
 
@@ -13,8 +24,8 @@ The first release with Claude Desktop waits until the hand measurements M1 to M1
    The entries under it become the release notes.
 3. At the bottom of `CHANGELOG.md`, point `[Unreleased]` at `v<version>...HEAD`. Add a
    `[<version>]` line that compares the previous tag with `v<version>`.
-4. In `website/src/data/highlights.ts`, add a line for the version, 60 characters at most.
-   The site's build fails without it.
+4. For a full release, add a line for the version in `website/src/data/highlights.ts`, 60
+   characters at most. The site's build fails without it. A beta has none.
 5. In `Cargo.toml`, set `version` under `[workspace.package]`. `pitboard-core` has a
    version of its own: if `crates/pitboard-core` changed since that version reached
    crates.io, raise it in `crates/pitboard-core/Cargo.toml`, as a patch, or as the minor an
@@ -35,8 +46,8 @@ The first release with Claude Desktop waits until the hand measurements M1 to M1
    git push origin v<version>-rc1
    ```
 
-   A pre-release builds, signs and attests everything, and runs its own install script on
-   each target. It also exchanges the crates.io token, so a wrong Trusted Publishing
+   A release candidate builds, signs and attests everything, and runs its own install script
+   on each target. It also exchanges the crates.io token, so a wrong Trusted Publishing
    registration fails here, where it costs nothing. It uploads nothing to crates.io, has no
    release notes or update feed, and skips the `feed`, `tap` and `brew` jobs.
 
@@ -47,10 +58,9 @@ The first release with Claude Desktop waits until the hand measurements M1 to M1
    git push origin v<version>
    ```
 
-   The `guard` job refuses a tag whose version, without its suffix, is not `Cargo.toml`'s,
-   a full release with no section in `CHANGELOG.md`, and a `pitboard-core` that changed
-   while its version stayed. Releases run one at a time, so this run waits until the
-   pre-release's has ended.
+   The `guard` job refuses a tag the table above does not allow, a full release or a beta
+   with no section in `CHANGELOG.md`, and a `pitboard-core` that changed while its version
+   stayed. Releases run one at a time, so this run waits until the candidate's has ended.
 
 9. Approve the `publish` job when it waits in the `release` environment.
 10. Watch the run to the end. A re-run fixes three failures:
@@ -61,14 +71,25 @@ The first release with Claude Desktop waits until the hand measurements M1 to M1
 | `tap` | At the push | Re-run it. It reads the run's own `SHA256SUMS`. Never write the tap by hand: its checksums would come from a second download |
 | `install-script` | At "Install the way the README says to" | Check [the redirect](#the-redirect), then re-run it |
 
+An rc or beta number is used once. A fix that needs another commit takes the next number,
+and a published tag never moves. The workflow decides which release is latest: never mark
+one by hand.
+
+## 0.x after 1.0.0
+
+A 0.x release made after 1.0.0 is never the latest. It ships from a `release/0.N` branch,
+protected like `main` and cut from the last 0.x tag. A release runs the `release.yml` of the
+commit it tags, so that tag must hold the release kinds above: release a 0.x with them
+before 1.0.0-beta.1.
+
 ## What a release publishes
 
 Each release has a tarball of the command line for each target of the `build` job, the app
-as a zip, a bill of materials beside each, `install.sh` and `SHA256SUMS`. A full release
-also has `appcast.xml`, the update feed. It uploads `pitboard-core`, when its version
-moved, and then `pitboard` to crates.io, and writes the Homebrew tap. Every file on the
-GitHub release has a GitHub attestation. No release builds anything for Windows while the
-major version is 0.
+as a zip, a bill of materials beside each, `install.sh` and `SHA256SUMS`. The latest release
+also has `appcast.xml`, the update feed, and writes the Homebrew tap. A full release or a
+beta uploads `pitboard-core`, when its version moved, and then `pitboard` to crates.io.
+Every file on the GitHub release has a GitHub attestation. No release builds anything for
+Windows while the major version is 0.
 
 Immutable releases are on, and only the owner changes that setting. A published release's
 files and tag cannot change; its title, notes and marks can. Only the next version fixes a
@@ -105,7 +126,7 @@ Renaming it breaks the crates.io registration. The `homebrew-tap` environment ho
 
 ## The Homebrew tap
 
-For every full release, the `tap` job writes `datlechin/homebrew-tap` from `packaging/`: the
+For the latest release, the `tap` job writes `datlechin/homebrew-tap` from `packaging/`: the
 two casks with the version and the run's checksums filled in, `tap_migrations.json`, and
 `tap-README.md` as `README.md`. Change those files here. An edit made in the tap is replaced
 at the next release.
@@ -126,9 +147,9 @@ tarballs' checksums, so each release carries its own copy. People run:
 curl -fsSL https://usepitboard.com/install.sh | sh
 ```
 
-That reaches the copy in the release GitHub marks latest. GitHub never marks a pre-release
-latest. For a full release, the `install-script` job runs the line on each target. Change
-the line and the job together: `rg -F usepitboard.com/install.sh` finds every copy.
+That reaches the copy in the release GitHub marks latest. For the latest release, the
+`install-script` job runs the line on each target. Change the line and the job together:
+`rg -F usepitboard.com/install.sh` finds every copy.
 
 ### The redirect
 

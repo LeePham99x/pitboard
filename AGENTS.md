@@ -51,6 +51,8 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
   rule sends `/install.sh` to the newest release; a site file there would change what people
   pipe to `sh`.
 - Never push a tag.
+- Never mark a release latest by hand, or reuse or move an rc or beta tag. The release
+  workflow decides latest.
 - Never let `.github/workflows/rotation.yml` name a repository secret. Its rehearsal ships
   bundles that update themselves, and must never reach the real key.
 - Never keep the update key and the Developer ID certificate in one place. With both lost,

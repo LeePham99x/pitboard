@@ -119,6 +119,14 @@ python3 .github/scripts/test-install.py
 The test runs the script under each of `sh`, `dash`, `bash`, `zsh` and `busybox sh` it finds
 on `PATH`. `TEST_INSTALL_SHELLS` names the ones that must be found, as CI sets it.
 
+For a change to the release's scripts, `release-kind.sh` and `core-unchanged.sh` in
+`.github/scripts`:
+
+```sh
+shellcheck -s sh .github/scripts/release-kind.sh .github/scripts/core-unchanged.sh
+python3 .github/scripts/test-release.py
+```
+
 The app, the C# bindings, Windows and the website have checks of their own, in their
 sections. CI's `all-green` check fails when any other job failed or was cancelled, and a pull
 request needs it to pass.

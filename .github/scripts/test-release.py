@@ -9,6 +9,9 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 CORE_UNCHANGED = REPO / ".github" / "scripts" / "core-unchanged.sh"
+RELEASE_KIND = REPO / ".github" / "scripts" / "release-kind.sh"
+KEYS = ["version", "base", "kind", "prerelease", "windows", "crates", "latest"]
+NOT_A_TAG = "is not a release tag: vX.Y.Z, vX.Y.Z-rcN or vX.Y.Z-beta.N"
 
 
 def run(*args):
@@ -84,6 +87,129 @@ class CoreUnchanged(unittest.TestCase):
 
     def test_it_takes_two_arguments(self):
         done = run(CORE_UNCHANGED, self.crate())
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("usage:", done.stderr)
+
+
+class ReleaseKind(unittest.TestCase):
+    def setUp(self):
+        self.work = Path(tempfile.mkdtemp())
+
+    def tearDown(self):
+        shutil.rmtree(self.work)
+
+    def kind(self, tag, manifest, published=()):
+        listed = self.work / "published"
+        listed.write_text("".join(f"{line}\n" for line in published))
+        return run(RELEASE_KIND, tag, manifest, listed)
+
+    def outputs(self, tag, manifest, published=()):
+        done = self.kind(tag, manifest, published)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stderr, "")
+        pairs = [line.split("=", 1) for line in done.stdout.splitlines()]
+        self.assertEqual([key for key, _ in pairs], KEYS)
+        return dict(pairs)
+
+    def assertRefused(self, tag, manifest, message, published=()):
+        done = self.kind(tag, manifest, published)
+        self.assertEqual(done.returncode, 1, done.stdout)
+        self.assertEqual(done.stdout, "")
+        self.assertIn(message, done.stderr)
+
+    def test_each_kind_of_release(self):
+        # tag, Cargo.toml, published full releases, kind, windows, crates, latest
+        rows = [
+            ("v0.15.0", "0.15.0", ["v0.14.0"], "full", "false", "true", "true"),
+            ("v0.15.0-rc1", "0.15.0", ["v0.14.0"], "rc", "false", "false", "false"),
+            ("v0.15.2", "0.15.2", ["v1.0.0"], "full", "false", "true", "false"),
+            ("v1.0.0-beta.1", "1.0.0-beta.1", ["v0.15.0"], "beta", "true", "true", "false"),
+            ("v1.0.0-rc1", "1.0.0", ["v0.15.0"], "rc", "true", "false", "false"),
+            ("v1.0.0", "1.0.0", ["v0.15.2"], "full", "true", "true", "true"),
+            ("v1.1.0-beta.1", "1.1.0-beta.1", ["v1.0.0"], "beta", "true", "true", "false"),
+        ]
+        for tag, manifest, published, kind, windows, crates, latest in rows:
+            with self.subTest(tag=tag):
+                self.assertEqual(
+                    self.outputs(tag, manifest, published),
+                    {
+                        "version": tag[1:],
+                        "base": manifest,
+                        "kind": kind,
+                        "prerelease": str(kind != "full").lower(),
+                        "windows": windows,
+                        "crates": crates,
+                        "latest": latest,
+                    },
+                )
+
+    def test_only_a_full_release_nothing_published_outranks_is_latest(self):
+        cases = [
+            ("v0.15.1", ["v0.15.0", "v0.14.0"], "true"),
+            ("v0.15.2", ["v1.0.0", "v0.15.1"], "false"),
+            ("v1.0.1", ["v1.0.0", "v0.15.2"], "true"),
+            ("v1.0.0", ["v1.0.0", "v0.15.2"], "true"),
+            ("v0.9.0", ["v0.10.0"], "false"),
+            ("v0.10.0", ["v0.9.0"], "true"),
+            ("v2.0.0", [], "true"),
+        ]
+        for tag, published, latest in cases:
+            with self.subTest(tag=tag, published=published):
+                self.assertEqual(self.outputs(tag, tag[1:], published)["latest"], latest)
+
+    def test_a_tag_or_manifest_that_disagrees_is_refused(self):
+        for tag, manifest in (
+            ("v1.0.0-beta.1", "1.0.0"),
+            ("v1.0.0", "1.0.0-beta.1"),
+            ("v1.0.0-rc1", "1.0.0-beta.1"),
+            ("v1.0.0-rc1", "1.0.0-rc1"),
+            ("v1.0.1", "1.0.0"),
+        ):
+            with self.subTest(tag=tag, manifest=manifest):
+                self.assertRefused(
+                    tag, manifest, f"tag {tag} does not match Cargo.toml's {manifest}"
+                )
+        self.assertRefused(
+            "v0.15.0-beta.1",
+            "0.15.0-beta.1",
+            "v0.15.0-beta.1 is a beta of a 0.x release: betas are Windows betas, which start at "
+            "1.0.0",
+        )
+
+    def test_a_tag_that_is_none_of_the_three_is_refused(self):
+        for tag in (
+            "v1.0.0-alpha.1",
+            "v1.0.0-beta.1-rc1",
+            "v1.0.0-beta.0",
+            "v1.0.0-beta.99",
+            "v1.0.0-beta.01",
+            "v1.0.0-rc0",
+            "v1.0.0-rc01",
+            "v1.0.0-rc",
+            "v1.0.0-",
+            "v1.0",
+            "v01.0.0",
+            "1.0.0",
+            "v",
+            "",
+            "v1.0.0$(id)",
+            "v1.0.0`id`",
+            "v1.0.0\nlatest=true",
+            "v1.0.0 ",
+        ):
+            with self.subTest(tag=tag):
+                self.assertRefused(tag, tag[1:], NOT_A_TAG)
+
+    def test_a_published_full_release_with_another_tag_is_refused(self):
+        self.assertRefused(
+            "v1.0.1",
+            "1.0.1",
+            "the published full release nightly has no vX.Y.Z tag",
+            ["v1.0.0", "nightly"],
+        )
+
+    def test_it_takes_three_arguments(self):
+        done = run(RELEASE_KIND, "v1.0.0", "1.0.0")
         self.assertEqual(done.returncode, 2)
         self.assertIn("usage:", done.stderr)
 

@@ -640,9 +640,10 @@ window loads its site, and whatever the site's pages load, as a browser would.
   - `scripts/` holds the EdDSA key and signature helpers, and the scripts that add Sparkle,
     the command line and the Share extension's library to the app's bill of materials.
     `fill-template.sh` writes a release's version and checksums into a `packaging/`
-    template, and `test-install.py` tests it and the install script. `core-unchanged.sh`
-    refuses a `pitboard-core` that changed under a version crates.io already has, and
-    `test-release.py` tests it.
+    template, and `test-install.py` tests it and the install script. `release-kind.sh`
+    says what a tag releases and whether it is latest, `core-unchanged.sh` refuses a
+    `pitboard-core` that changed under a version crates.io already has, and
+    `test-release.py` tests both.
   - `dependabot.yml` asks for weekly updates of Cargo dependencies, GitHub Actions and the
     .NET SDK in `apps/windows/global.json`.
   - `zizmor.yml` configures the audit CI runs on the workflows.
