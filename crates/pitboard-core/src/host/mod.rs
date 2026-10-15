@@ -319,6 +319,15 @@ pub(crate) fn claude_desktop_on_windows(roaming: &[PathBuf], local: &[PathBuf]) 
         .collect()
 }
 
+// Where the Windows app's account windows keep their WebView2 sign-ins, each build its own.
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn pitboard_app_on_windows(local: &[PathBuf]) -> Vec<PathBuf> {
+    local
+        .iter()
+        .flat_map(|dir| ["Pitboard App", "Pitboard App Debug"].map(|name| dir.join(name)))
+        .collect()
+}
+
 // Is, holds or lies in, for a build for tests to refuse, the same on every system: through
 // every link, one to nothing yet included, and in any case, as macOS's own volumes compare.
 #[cfg(any(test, feature = "test-support"))]
@@ -934,6 +943,30 @@ mod tests {
             roaming.join("Claudette"),
             local.join("Claude"),
             local.join("Pitboard"),
+        ] {
+            assert!(!refused(path.clone()), "{}", path.display());
+        }
+    }
+
+    // Compared by component, so `Pitboard` and `Pitboard App` are never inside one another.
+    #[test]
+    fn the_windows_apps_folders_are_refused_in_any_spelling() {
+        let local = PathBuf::from("/p/AppData/Local");
+        let places = pitboard_app_on_windows(std::slice::from_ref(&local));
+        let refused = |path: PathBuf| places.iter().any(|place| lies_in(&path, place));
+        for path in [
+            local.join("Pitboard App").join("WebView2"),
+            local.join("pitboard app debug").join("x"),
+            local.join("PITBOARD APP"),
+            local.clone(),
+        ] {
+            assert!(refused(path.clone()), "{}", path.display());
+        }
+        for path in [
+            local.join("Pitboard Apps"),
+            local.join("Pitboard"),
+            local.join("Pitboard").join("App"),
+            local.join("Pitboard App Debugger"),
         ] {
             assert!(!refused(path.clone()), "{}", path.display());
         }
