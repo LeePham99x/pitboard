@@ -1236,17 +1236,7 @@ mod tests {
     use crate::tools;
     use pitboard_core::context::Context;
 
-    /// A core over a home nothing can be written under, with a `codex` named where one is
-    /// given, and scheduling the command line at `helper` where one is.
-    // `/dev/null` is no folder, and Windows has none like it, so a folder nothing makes.
-    fn nowhere() -> PathBuf {
-        use pitboard_core::host::{OS, Os};
-        match OS {
-            Os::MacOs | Os::Linux => PathBuf::from("/dev/null"),
-            Os::Windows => std::env::temp_dir().join("pitboard-app-nowhere"),
-        }
-    }
-
+    // A core over a home that is no folder on macOS and Linux, and one nothing makes on Windows.
     fn made(codex: Option<&str>, helper: Option<&Path>) -> Made {
         let mut ctx = Context::new(nowhere()).with_caller("app".into());
         if let Some(codex) = codex {
@@ -1261,6 +1251,15 @@ mod tests {
             helper: helper.map(Path::to_path_buf),
             command_line_places: pitboard_core::app::command_line_places(&nowhere()),
             core: service::Pitboard::new(ctx),
+        }
+    }
+
+    // `/dev/null` is no folder, and Windows has none like it, so there a folder nothing makes.
+    fn nowhere() -> PathBuf {
+        use pitboard_core::host::{OS, Os};
+        match OS {
+            Os::MacOs | Os::Linux => PathBuf::from("/dev/null"),
+            Os::Windows => std::env::temp_dir().join("pitboard-app-nowhere"),
         }
     }
 
@@ -1297,10 +1296,9 @@ mod tests {
         }
     }
 
-    /// The app's core never schedules itself: where it names no command line to run,
-    /// scheduling this process would start a second app every day and renew nothing. The
-    /// home is one nothing can be written under, so even a regression here reaches no
-    /// scheduler.
+    // Scheduling this process would start a second app every day and renew nothing. The home
+    // is no folder on macOS and Linux and one nothing makes on Windows, so a regression here
+    // reaches no scheduler.
     #[test]
     fn the_app_schedules_nothing_without_a_command_line_to_run() {
         let core = AppCore::for_app(environment(&nowhere().to_string_lossy(), &[]), None);
