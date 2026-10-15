@@ -79,11 +79,15 @@ pub(crate) enum World {
     /// `OneTool`, with personal turned on for warm-ups all day and its five-hour period not
     /// running, so the app warms it up as it starts.
     WarmUp,
+    /// `OneTool`, with a login of personal's left in `.credentials.json` behind Claude Code's
+    /// own store, as a sign-in that could not reach the store leaves one, so the app offers to
+    /// put it away.
+    LeftInFile,
 }
 
 impl World {
     /// Every world, in the order the macOS app's `Fixture` listed them.
-    pub(crate) const ALL: [World; 13] = [
+    pub(crate) const ALL: [World; 14] = [
         World::TwoTools,
         World::OneTool,
         World::Empty,
@@ -97,6 +101,7 @@ impl World {
         World::ClaudeDesktop,
         World::ClaudeDesktopOpen,
         World::WarmUp,
+        World::LeftInFile,
     ];
 
     /// Its name, as `PITBOARD_FIXTURE` gives it and the UI tests launch it.
@@ -115,6 +120,7 @@ impl World {
             World::ClaudeDesktop => "claudeDesktop",
             World::ClaudeDesktopOpen => "claudeDesktopOpen",
             World::WarmUp => "warmUp",
+            World::LeftInFile => "leftInFile",
         }
     }
 
@@ -144,7 +150,8 @@ impl World {
             | World::ReadFailure
             | World::Stuck
             | World::ChatGptOpen
-            | World::WarmUp => &[ProviderId::Claude, ProviderId::Codex],
+            | World::WarmUp
+            | World::LeftInFile => &[ProviderId::Claude, ProviderId::Codex],
             World::ClaudeDesktop | World::ClaudeDesktopOpen => {
                 &[ProviderId::Claude, ProviderId::Desktop]
             }
@@ -924,6 +931,12 @@ fn seed(world: World, machine: &Machine) -> Result<(), Unmade> {
             claude_switches(machine)?;
             interrupted(machine)
         }
+        World::LeftInFile => {
+            claude_accounts(machine)?;
+            claude_switches(machine)?;
+            left_in_a_file(machine);
+            Ok(())
+        }
         World::OnlyOne => {
             let work = work();
             uses(machine, &work);
@@ -1100,6 +1113,16 @@ pub(crate) fn out_of_reach(machine: &Machine) -> Result<(), Unmade> {
         }
     }
     Ok(())
+}
+
+/// A login of personal's that a sign-in left in `.credentials.json` in Claude Code's own
+/// directory, behind its own store, which it could not reach, as over SSH.
+fn left_in_a_file(machine: &Machine) {
+    let login = machine.login(&personal(), machine.now + DAY, machine.now + 30 * DAY);
+    machine
+        .host
+        .file_at(machine.home().join(".claude").join(".credentials.json"))
+        .plant(&live_service(&machine.base), &login.document);
 }
 
 /// A switch to personal from the app ten minutes ago that nothing can finish. Claude Code's
