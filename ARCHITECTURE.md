@@ -3332,7 +3332,8 @@ its own date.
 
 ### What the Windows app's glue rests on
 
-Read on 15 October 2026, in the sources of the builds the app is made with.
+Read on 15 October 2026, in the sources of the builds the app is made with and in
+Microsoft's documentation.
 
 - `Environment.GetFolderPath(SpecialFolder.LocalApplicationData)` asks
   `SHGetKnownFolderPath(FOLDERID_LocalAppData)`, and only where that fails, as on Nano
