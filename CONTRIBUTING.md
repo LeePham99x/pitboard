@@ -422,11 +422,13 @@ A pull request against `main` needs all of these:
 - `CHANGELOG.md` has an entry, if someone using Pitboard would notice the change.
 - `docs/` says what the code does, for anything the change makes it say differently.
 - A change that removes, renames or reshapes anything public in `pitboard-core` raises the
-  minor version in `Cargo.toml`: `version` under `[workspace.package]`, and the `=` version
-  of `pitboard-core` under `[workspace.dependencies]`. Then run `cargo update --workspace`.
-  CI's `semver` job fails until it is raised.
+  core's minor version, which is its own and not Pitboard's: `version` in
+  `crates/pitboard-core/Cargo.toml`, and the `=` version of `pitboard-core` under
+  `[workspace.dependencies]` in `Cargo.toml`. Then run `cargo update --workspace`. CI's
+  `semver` job fails until it is raised.
 
-When `Cargo.toml` already names a minor version past the last release, it stays.
+When `crates/pitboard-core/Cargo.toml` already names a minor version past the core's last
+release, it stays.
 
 Each commit subject is one present-tense sentence saying what Pitboard does after the change,
 with no prefix, such as "The man page sets out every command instead of naming pages that

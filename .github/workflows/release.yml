@@ -27,6 +27,7 @@ jobs:
       version: ${{ steps.check.outputs.version }}
       base: ${{ steps.check.outputs.base }}
       prerelease: ${{ steps.check.outputs.prerelease }}
+      core: ${{ steps.core.outputs.core }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -54,6 +55,24 @@ jobs:
             echo "base=$base"
             echo "prerelease=$prerelease"
           } >> "$GITHUB_OUTPUT"
+      - id: core
+        run: |
+          core=$(sed -n 's/^version = "\(.*\)"/\1/p' crates/pitboard-core/Cargo.toml | head -1)
+          on_crates_io=$(curl -fsSL -A "pitboard release" -o /dev/null -w "%{http_code}" \
+            "https://crates.io/api/v1/crates/pitboard-core/$core" || true)
+          case $on_crates_io in
+            200)
+              curl -fsSL -A "pitboard release" -o "$RUNNER_TEMP/core.crate" \
+                "https://static.crates.io/crates/pitboard-core/pitboard-core-$core.crate"
+              sh .github/scripts/core-unchanged.sh "$RUNNER_TEMP/core.crate" crates/pitboard-core
+              ;;
+            404) ;;
+            *)
+              echo "crates.io answered $on_crates_io for pitboard-core $core" >&2
+              exit 1
+              ;;
+          esac
+          echo "core=$core" >> "$GITHUB_OUTPUT"
 
   build:
     needs: guard
@@ -402,6 +421,7 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ steps.registry.outputs.token }}
           PRERELEASE: ${{ needs.guard.outputs.prerelease }}
           VERSION: ${{ needs.guard.outputs.version }}
+          CORE: ${{ needs.guard.outputs.core }}
         run: |
           if [ -z "$CARGO_REGISTRY_TOKEN" ]; then
             echo "crates.io returned no token; check Trusted Publishing on both crates" >&2
@@ -411,12 +431,21 @@ jobs:
             echo "the token exchange works; a pre-release publishes nothing to crates.io"
             exit 0
           fi
-          on_crates_io=$(curl -fsSL -A "pitboard release" \
-            "https://crates.io/api/v1/crates/pitboard/$VERSION" -o /dev/null -w "%{http_code}" || true)
-          if [ "$on_crates_io" = "200" ]; then
-            echo "pitboard $VERSION is already on crates.io; not publishing again"
-          else
-            cargo publish --locked --workspace
+          # cargo publish refuses every crate it is given when one of them is already there.
+          set --
+          for crate in "pitboard-core $CORE" "pitboard $VERSION"; do
+            name=${crate% *}
+            version=${crate#* }
+            on_crates_io=$(curl -fsSL -A "pitboard release" \
+              "https://crates.io/api/v1/crates/$name/$version" -o /dev/null -w "%{http_code}" || true)
+            if [ "$on_crates_io" = "200" ]; then
+              echo "$name $version is already on crates.io; not publishing it again"
+            else
+              set -- "$@" -p "$name"
+            fi
+          done
+          if [ "$#" -gt 0 ]; then
+            cargo publish --locked "$@"
           fi
 
       # SHA256SUMS is made in this job and published in the release it describes, so on its

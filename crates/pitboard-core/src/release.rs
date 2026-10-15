@@ -7,11 +7,6 @@
 //! `--version`, `--help`, `completions` and `manpage`, says that Pitboard for Windows is not
 //! released yet, and changes nothing. macOS and Linux are never refused here.
 //!
-//! The gate is decided from three things fixed when the core is compiled: the system it is
-//! for, the version's major number, and whether the build was opened to Windows before its
-//! release, which only a build for working on Pitboard is (`OPENED`). Version 1, including
-//! `1.0.0-beta.N`, opens it, so the first beta is the first Windows build that runs.
-//!
 //! Every change asks it before anything else, in the one gate every change passes
 //! ([`crate::service::Permit`]), so no file is written, no store of logins changed and no
 //! token renewed by a caller that forgot to ask. Every read of Pitboard's account list asks
@@ -20,6 +15,7 @@
 
 use crate::error::{Error, Result};
 use crate::host::{OS, Os};
+use std::sync::OnceLock;
 
 /// Whether this build was opened to Windows before Windows is released: a build compiled
 /// with `--cfg pitboard_unreleased_windows` in `RUSTFLAGS`, which CI's Windows jobs set for
@@ -33,8 +29,18 @@ use crate::host::{OS, Os};
 /// the compiler, as a change to the source would, and no index offers one.
 pub(crate) const OPENED: bool = cfg!(any(test, pitboard_unreleased_windows));
 
-/// This build's version, as Cargo gives it.
-const VERSION: &str = env!("CARGO_PKG_VERSION");
+// pitboard-core has a version line of its own, so the gate reads Pitboard's.
+static VERSION: OnceLock<&'static str> = OnceLock::new();
+
+pub fn set_version(version: &'static str) {
+    let _ = VERSION.set(version);
+}
+
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
+pub fn version() -> Option<&'static str> {
+    VERSION.get().copied()
+}
 
 /// What the gate decides of a build.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,10 +68,15 @@ pub(crate) fn decision(os: Os, version: &str, opened: bool) -> Decision {
     }
 }
 
+// A process that names no version is taken for a 0.x one.
+fn decided(os: Os, opened: bool) -> Decision {
+    decision(os, VERSION.get().copied().unwrap_or_default(), opened)
+}
+
 /// Whether this build may do anything here: `windows_not_released` where it is a Windows
 /// build of a 0.x release that was not opened to Windows.
 pub fn check() -> Result<()> {
-    match decision(OS, VERSION, OPENED) {
+    match decided(OS, OPENED) {
         Decision::Runs => Ok(()),
         Decision::NotReleased => Err(Error::WindowsNotReleased),
     }
@@ -121,10 +132,7 @@ mod tests {
     #[test]
     fn this_build_answers_for_its_own_system_and_version() {
         const { assert!(OPENED) };
-        assert_eq!(
-            check().is_ok(),
-            decision(OS, VERSION, OPENED) == Decision::Runs
-        );
+        assert_eq!(check().is_ok(), decided(OS, OPENED) == Decision::Runs);
         assert!(check().is_ok());
         let refused = Error::WindowsNotReleased;
         assert_eq!(refused.code(), "windows_not_released");
@@ -133,5 +141,14 @@ mod tests {
             "Pitboard for Windows is not released yet. This build changes nothing."
         );
         assert_eq!(refused.exit_code(), 1);
+    }
+
+    #[test]
+    fn the_gate_reads_the_version_the_front_end_names() {
+        assert_eq!(decided(Os::Windows, false), Decision::NotReleased);
+        set_version("1.0.0-beta.1");
+        set_version("0.15.0");
+        assert_eq!(version(), Some("1.0.0-beta.1"));
+        assert_eq!(decided(Os::Windows, false), Decision::Runs);
     }
 }

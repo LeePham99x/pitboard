@@ -8,18 +8,20 @@ suffix, such as `v<version>-rc1`, makes a GitHub pre-release.
 The first release with Claude Desktop waits until the hand measurements M1 to M10 in
 [ARCHITECTURE.md](ARCHITECTURE.md#claude-desktop) are recorded.
 
-1. Pick the version: minor for anything people would notice, patch for fixes alone. A
-   `pitboard-core` API break has already raised the minor version in `Cargo.toml`, as
-   [Submit a change](CONTRIBUTING.md#submit-a-change) asks.
+1. Pick the version: minor for anything people would notice, patch for fixes alone.
 2. In `CHANGELOG.md`, add `## [<version>] - YYYY-MM-DD` directly under `## [Unreleased]`.
    The entries under it become the release notes.
 3. At the bottom of `CHANGELOG.md`, point `[Unreleased]` at `v<version>...HEAD`. Add a
    `[<version>]` line that compares the previous tag with `v<version>`.
 4. In `website/src/data/highlights.ts`, add a line for the version, 60 characters at most.
    The site's build fails without it.
-5. In `Cargo.toml`, set `version` under `[workspace.package]`, and `version = "=<version>"`
-   on the `pitboard-core` line under `[workspace.dependencies]`. Run
-   `cargo update --workspace`: CI and the release build with `--locked`.
+5. In `Cargo.toml`, set `version` under `[workspace.package]`. `pitboard-core` has a
+   version of its own: if `crates/pitboard-core` changed since that version reached
+   crates.io, raise it in `crates/pitboard-core/Cargo.toml`, as a patch, or as the minor an
+   API break has already raised there ([Submit a change](CONTRIBUTING.md#submit-a-change)).
+   Put it on the `pitboard-core` line under `[workspace.dependencies]` as
+   `version = "=<core version>"`. Run `cargo update --workspace`: CI and the release build
+   with `--locked`.
 6. Commit as `Release <version>` and land it on `main`. Nothing else names the version:
    `build-app.sh` takes the app's version and build number from `Cargo.toml`.
 
@@ -46,15 +48,16 @@ The first release with Claude Desktop waits until the hand measurements M1 to M1
    ```
 
    The `guard` job refuses a tag whose version, without its suffix, is not `Cargo.toml`'s,
-   and a full release with no section in `CHANGELOG.md`. Releases run one at a time, so
-   this run waits until the pre-release's has ended.
+   a full release with no section in `CHANGELOG.md`, and a `pitboard-core` that changed
+   while its version stayed. Releases run one at a time, so this run waits until the
+   pre-release's has ended.
 
 9. Approve the `publish` job when it waits in the `release` environment.
 10. Watch the run to the end. A re-run fixes three failures:
 
 | Job | Failed | Do |
 | --- | --- | --- |
-| `publish` | After both crates reached crates.io | Re-run it. It skips crates.io when that version of `pitboard` is there |
+| `publish` | After the crates reached crates.io | Re-run it. It skips each crate whose version is there |
 | `tap` | At the push | Re-run it. It reads the run's own `SHA256SUMS`. Never write the tap by hand: its checksums would come from a second download |
 | `install-script` | At "Install the way the README says to" | Check [the redirect](#the-redirect), then re-run it |
 
@@ -62,9 +65,10 @@ The first release with Claude Desktop waits until the hand measurements M1 to M1
 
 Each release has a tarball of the command line for each target of the `build` job, the app
 as a zip, a bill of materials beside each, `install.sh` and `SHA256SUMS`. A full release
-also has `appcast.xml`, the update feed. It uploads `pitboard-core` and then `pitboard` to
-crates.io, and writes the Homebrew tap. Every file on the GitHub release has a GitHub
-attestation. No release builds anything for Windows while the major version is 0.
+also has `appcast.xml`, the update feed. It uploads `pitboard-core`, when its version
+moved, and then `pitboard` to crates.io, and writes the Homebrew tap. Every file on the
+GitHub release has a GitHub attestation. No release builds anything for Windows while the
+major version is 0.
 
 Immutable releases are on, and only the owner changes that setting. A published release's
 files and tag cannot change; its title, notes and marks can. Only the next version fixes a

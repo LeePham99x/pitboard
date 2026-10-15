@@ -102,9 +102,9 @@ checks of each other section of CONTRIBUTING.md the change reaches.
   [Tool registers](CONTRIBUTING.md#tool-registers) says how.
 - A change people would notice gets an entry under `## [Unreleased]` in
   [CHANGELOG.md](CHANGELOG.md), as [Changelog](CONTRIBUTING.md#changelog) says.
-- A change that breaks `pitboard-core`'s public API raises the minor version in the same
-  pull request. When `Cargo.toml` already names a minor version past the last release, it
-  stays.
+- A change that breaks `pitboard-core`'s public API raises the core's own minor version in
+  the same pull request. When `crates/pitboard-core/Cargo.toml` already names a minor
+  version past the core's last release, it stays.
 - A commit subject is one present-tense sentence saying what Pitboard does after the change,
   with no prefix. The body says why, and what was measured.
 
