@@ -511,6 +511,7 @@ fn to_api(error: ProviderError) -> ApiError {
         | P::ShapeUnexpected { detail, .. }
         | P::Unsupported { reason: detail, .. } => ApiError::Malformed(detail),
         P::NoLogin { .. } => ApiError::Malformed("nothing is signed in".into()),
+        missing @ P::HomeMissing { .. } => ApiError::Malformed(missing.to_string()),
         P::InvalidGrant { .. } => ApiError::InvalidGrant,
     }
 }

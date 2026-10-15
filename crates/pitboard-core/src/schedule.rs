@@ -79,7 +79,7 @@ pub const SCHEDULED_RUN: [&str; 2] = ["renew", "--scheduled"];
 /// Whether the schedule is this context's to look after.
 ///
 /// The schedule always renews the default home, `~/.pitboard`
-/// ([`crate::host::default_pitboard_home`]), whatever `PITBOARD_HOME` its job is given
+/// ([`crate::host::Os::default_pitboard_home`]), whatever `PITBOARD_HOME` its job is given
 /// ([`for_its_run`]). A Pitboard pointed at another home has none of its own: the one there
 /// is belongs to the default home, and [`install`] refuses to put one there from it.
 ///
@@ -727,7 +727,7 @@ mod tests {
     fn the_schedule_belongs_to_the_default_home_alone() {
         let home = std::env::temp_dir().join("pitboard-schedule-home");
         let ctx = Context::new(home.clone());
-        let default = crate::host::default_pitboard_home(&home);
+        let default = crate::host::OS.default_pitboard_home(&home);
         assert!(serves(&ctx));
         let trailing = PathBuf::from(format!(
             "{}{}",

@@ -37,6 +37,11 @@ pub(crate) fn home() -> Option<PathBuf> {
     passwd_home()
 }
 
+// Windows alone names a profile folder apart from the home.
+pub(crate) fn profile() -> Option<PathBuf> {
+    None
+}
+
 /// [`home`], asked of the passwd database whatever the build.
 fn passwd_home() -> Option<PathBuf> {
     entry(|passwd| path(passwd, passwd.pw_dir))
@@ -49,7 +54,7 @@ pub(crate) fn accounts_own_home() -> Option<PathBuf> {
 
 #[cfg(feature = "test-support")]
 pub(crate) fn accounts_own_pitboard_home() -> Option<PathBuf> {
-    passwd_home().map(|home| crate::host::default_pitboard_home(&home))
+    passwd_home().map(|home| crate::host::OS.default_pitboard_home(&home))
 }
 
 /// Whether `path` is this account's own home, as the passwd database names it, for a build

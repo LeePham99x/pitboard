@@ -330,6 +330,8 @@ pub struct Context {
     pub(crate) hover_rest: bool,
     /// `CODEX_HOME`, which moves everything Codex keeps, including its keyring account.
     pub(crate) codex_home: Option<String>,
+    // Where Codex looks for its home on Windows where `CODEX_HOME` is unset: `FOLDERID_Profile`.
+    pub(crate) codex_profile: Option<PathBuf>,
     /// The Pitboard the daily renewal schedule runs. `None` is this program, which is right
     /// for the command line and wrong for an app: the schedule runs `pitboard renew`, so an
     /// app names the command line it comes with.
@@ -439,7 +441,7 @@ impl Context {
     pub fn new(home: PathBuf) -> Context {
         Context {
             os: crate::host::OS,
-            pitboard_home: crate::host::default_pitboard_home(&home),
+            pitboard_home: crate::host::OS.default_pitboard_home(&home),
             home,
             claude_config_dir: None,
             secure_storage_dir: None,
@@ -454,6 +456,7 @@ impl Context {
             agent: crate::api::Agents::default(),
             hover_rest: false,
             codex_home: None,
+            codex_profile: None,
             schedule_program: None,
             search_path: None,
             scheduled_job: None,
@@ -485,6 +488,12 @@ impl Context {
 
     pub(crate) fn codex_home(&self) -> Option<&str> {
         self.codex_home.as_deref()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_codex_profile(mut self, profile: PathBuf) -> Context {
+        self.codex_profile = Some(profile);
+        self
     }
 
     pub fn with_pitboard_home(mut self, dir: PathBuf) -> Context {
@@ -788,6 +797,9 @@ impl Context {
             agent: crate::api::Agents::default(),
             hover_rest: matches!(env.text("CLAUDE_CODE_HOVER_REST"), Some("1" | "true")),
             codex_home: owned("CODEX_HOME").filter(|v| !v.is_empty()),
+            codex_profile: (env.os() == Os::Windows)
+                .then(crate::host::user::profile)
+                .flatten(),
             schedule_program: None,
             // Unset is nowhere, as it is to the shell: nothing is found on an empty `PATH`.
             search_path: Some(env.path("PATH").unwrap_or_default().to_os_string()),
@@ -1129,7 +1141,10 @@ mod tests {
         let ctx = Context::new(home.clone())
             .with_claude_config_dir(String::new())
             .with_secure_storage_dir(String::new());
-        assert_eq!(ctx.pitboard_home, crate::host::default_pitboard_home(&home));
+        assert_eq!(
+            ctx.pitboard_home,
+            crate::host::OS.default_pitboard_home(&home)
+        );
         assert_eq!(
             ctx.claude_config_dir.as_deref(),
             Some(""),
@@ -1241,7 +1256,10 @@ mod tests {
             "empty is unset"
         );
         assert_eq!(ctx.search_path(), "/opt/tools/bin:/usr/bin");
-        assert_eq!(ctx.pitboard_home, crate::host::default_pitboard_home(&home));
+        assert_eq!(
+            ctx.pitboard_home,
+            crate::host::OS.default_pitboard_home(&home)
+        );
         assert_eq!(ctx.caller, "cli");
         let no_path: Environment = [(crate::host::OS.home_variable(), named.as_str())]
             .into_iter()
@@ -1355,7 +1373,10 @@ mod tests {
         let own = crate::host::user::home().expect("this account has a home");
         let ctx = Context::for_command_line(&Environment::default());
         assert_eq!(ctx.home, own);
-        assert_eq!(ctx.pitboard_home, crate::host::default_pitboard_home(&own));
+        assert_eq!(
+            ctx.pitboard_home,
+            crate::host::OS.default_pitboard_home(&own)
+        );
         let empty: Environment = [(crate::host::OS.home_variable(), "")]
             .into_iter()
             .collect();

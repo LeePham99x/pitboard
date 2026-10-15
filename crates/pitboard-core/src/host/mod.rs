@@ -177,6 +177,14 @@ impl Os {
         }
     }
 
+    /// Where Pitboard keeps its own files for a person whose home is `home`, when
+    /// `PITBOARD_HOME` names nowhere else: `.pitboard` in that home on macOS and Linux, and
+    /// `AppData\Local\Pitboard` in it on Windows.
+    ///
+    /// Worked out from the home it is handed, never from this account's own, so a context
+    /// made for a home of a test's own, or of an app's choosing, keeps Pitboard's files
+    /// there, and a scheduled run and one by hand never part over a moved `USERPROFILE`. The
+    /// daily renewal schedule belongs to this home and no other ([`crate::schedule`]).
     pub(crate) fn default_pitboard_home(self, home: &Path) -> PathBuf {
         match self {
             Os::MacOs | Os::Linux => home.join(".pitboard"),
@@ -260,6 +268,25 @@ pub fn path_key_in_any_case(path: &str) -> String {
     }
     let names: Vec<String> = names.into_iter().map(upper).collect();
     root + &names.join(r"\")
+}
+
+// As libuv's realpath and Codex's `AbsolutePathBuf` spell what `GetFinalPathNameByHandleW`
+// gives, read lexically on every system.
+pub(crate) fn without_verbatim_prefix(path: PathBuf) -> PathBuf {
+    let Some(text) = path.to_str() else {
+        return path;
+    };
+    if let Some(unc) = text.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{unc}"));
+    }
+    match text.strip_prefix(r"\\?\") {
+        Some(rest) if drive_absolute(rest) => PathBuf::from(rest),
+        _ => path,
+    }
+}
+
+fn drive_absolute(path: &str) -> bool {
+    matches!(path.as_bytes(), [drive, b':', b'\\' | b'/', ..] if drive.is_ascii_alphabetic())
 }
 
 // Is, holds or lies in, for a build for tests to refuse, the same on every system: through
@@ -697,18 +724,6 @@ pub(crate) trait Scheduler: Send + Sync + std::fmt::Debug {
     fn started_this_process(&self, said: Option<&str>) -> bool;
 }
 
-/// Where Pitboard keeps its own files for a person whose home is `home`, when
-/// `PITBOARD_HOME` names nowhere else: `.pitboard` in that home on macOS and Linux, and
-/// `AppData\Local\Pitboard` in it on Windows.
-///
-/// Worked out from the home it is handed, never from this account's own, so a context made
-/// for a home of a test's own, or of an app's choosing, keeps Pitboard's files there, and a
-/// scheduled run and one by hand never part over a moved `USERPROFILE`. The daily renewal
-/// schedule belongs to this home and no other ([`crate::schedule`]).
-pub(crate) fn default_pitboard_home(home: &Path) -> PathBuf {
-    OS.default_pitboard_home(home)
-}
-
 // Time awake since a fixed moment (boot on Windows, the first call elsewhere); a sleep adds none.
 pub fn awake() -> std::time::Duration {
     os::awake()
@@ -787,6 +802,27 @@ mod tests {
         assert!(!same("Straße", "STRASSE"), "ß is upper case as it is");
         assert!(!same("Codex.exe", "Codex"));
         assert!(!same("/a/b", "/a/b/c"));
+    }
+
+    #[test]
+    fn a_verbatim_path_is_spelled_as_libuv_and_codex_spell_it() {
+        let plain = |path: &str| without_verbatim_prefix(PathBuf::from(path));
+        assert_eq!(
+            plain(r"\\?\C:\Users\X\.codex"),
+            PathBuf::from(r"C:\Users\X\.codex")
+        );
+        assert_eq!(
+            plain(r"\\?\UNC\server\share\x"),
+            PathBuf::from(r"\\server\share\x")
+        );
+        for kept in [
+            r"C:\Users\X",
+            r"\\?\Volume{0}\x",
+            r"\\server\share",
+            "/Users/x",
+        ] {
+            assert_eq!(plain(kept), PathBuf::from(kept), "{kept}");
+        }
     }
 
     // Read by the text alone, on every system, as Foundation standardises a file URL on macOS.

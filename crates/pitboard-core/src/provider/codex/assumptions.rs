@@ -84,12 +84,21 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         &["W18"],
         "where the background app server runs from on Windows, and what starts it",
     ),
-    later_on_windows(
-        "codex_home_isolates_a_sign_in",
-        "0.160.0",
-        &["W14"],
-        "codex_windows_home: Codex's home on Windows, and what moves it",
-    ),
+    PerSystem {
+        name: "codex_home_isolates_a_sign_in",
+        macos: Read("0.160.0"),
+        linux: Read("0.160.0"),
+        windows: NotRead(
+            "an empty or unset `CODEX_HOME` is not `~/.codex` there, and is read as \
+             codex_windows_home",
+        ),
+    },
+    PerSystem {
+        name: "codex_windows_home",
+        macos: NotRead("macOS's codex finds its default home in `HOME`"),
+        linux: NotRead("Linux's codex finds its default home in `HOME`"),
+        windows: Read("0.162.1"),
+    },
     later_on_windows(
         "codex_keychain_stores_are_its_own",
         VERIFIED_AGAINST,
@@ -280,6 +289,28 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         verified_against: "0.160.0",
         depends: "provider::codex::engine's sign_in and read_signin, and Isolation for Codex",
         probe: &["CODEX_HOME", "cli_auth_credentials_store"],
+        absent: &[],
+    },
+    Assumption {
+        name: "codex_windows_home",
+        fact: "on Windows a `CODEX_HOME` that is set and not empty must name a folder, or Codex \
+               does not start, and is canonicalised, `\\\\?\\` taken off. Unset or empty, the \
+               home is `.codex` in `FOLDERID_Profile`, which ignores `USERPROFILE` and `HOME`. \
+               Codex's install.ps1 puts it in `%USERPROFILE%\\.codex`, so the two part where \
+               `USERPROFILE` is moved",
+        read_from: "find_codex_home_from_env in codex-rs/utils/home-dir/src/lib.rs, \
+                    AbsolutePathBuf::from_absolute_path in codex-rs/utils/absolute-path, and \
+                    scripts/install/install.ps1, at tag rust-v0.162.1; dirs 6.0.0's home_dir \
+                    and dirs-sys 0.5.0's known_folder_profile; read on 2026-10-15, with the \
+                    messages in the win32-x64 and win32-arm64 builds",
+        verified_against: "0.162.1",
+        depends: "provider::codex::paths::home and missing_home, and Context::read's lookup of \
+                  the profile",
+        probe: &[
+            "CODEX_HOME points to",
+            "but that path does not exist",
+            "but that path is not a directory",
+        ],
         absent: &[],
     },
     Assumption {
@@ -516,9 +547,9 @@ mod tests {
     use super::*;
     use crate::assumptions::Platform;
 
-    /// The facts the Windows builds of 0.160.0 were read for, by name. The rest are about
-    /// where Codex keeps things, what runs it and how it is installed, which the Windows
-    /// work reads for Windows on its own.
+    /// The facts the Windows builds of 0.160.0 were read for, by name, and the home 0.162.1's
+    /// were. The rest are about where Codex keeps things, what runs it and how it is
+    /// installed, which the Windows work reads for Windows on its own.
     #[test]
     fn windows_reads_the_facts_its_build_was_read_for() {
         let read: Vec<&str> = PER_SYSTEM
@@ -535,6 +566,7 @@ mod tests {
                 "codex_usage_endpoint",
                 "codex_revokes_on_its_own_sign_out",
                 "codex_never_follows_a_switch",
+                "codex_windows_home",
                 "codex_identity_is_the_person",
                 "codex_refusal_is_invalid_grant",
                 "codex_login_prints_its_address",
@@ -544,11 +576,11 @@ mod tests {
     }
 
     /// Every fact is read on macOS, and on Linux, as the register said of each before it had
-    /// a table, but the managed preferences, which Linux has none of. The conformance run
-    /// checks a build of each system for them.
+    /// a table, but the managed preferences, which Linux has none of, and the Windows home.
+    /// The conformance run checks a build of each system for them.
     #[test]
     fn macos_and_linux_read_every_fact() {
-        for line in PER_SYSTEM {
+        for line in PER_SYSTEM.iter().filter(|l| l.name != "codex_windows_home") {
             assert!(matches!(line.on(Platform::MacOs), Read(_)), "{}", line.name);
             assert_eq!(
                 matches!(line.on(Platform::Linux), Read(_)),

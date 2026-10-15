@@ -6,7 +6,8 @@
 
 use super::layers;
 use crate::context::Context;
-use std::path::PathBuf;
+use crate::host::Os;
+use std::path::{Path, PathBuf};
 
 /// The file Codex keeps its login in, inside [`home`].
 pub(crate) const AUTH_FILE: &str = "auth.json";
@@ -14,12 +15,29 @@ pub(crate) const AUTH_FILE: &str = "auth.json";
 /// `CODEX_HOME`, or `~/.codex`.
 ///
 /// Codex requires the directory to exist already and canonicalises it, so a scratch home
-/// for a private sign-in has to be created before `codex login` is run.
+/// for a private sign-in has to be created before `codex login` is run. On Windows the home
+/// is as Codex 0.162.1 spells it, canonical with `\\?\` taken off, and unset it is in
+/// `FOLDERID_Profile`, wherever `USERPROFILE` points (`codex_windows_home` in the register).
 pub(crate) fn home(ctx: &Context) -> PathBuf {
     match ctx.codex_home() {
-        Some(dir) if !dir.is_empty() => PathBuf::from(dir),
-        _ => ctx.home().join(".codex"),
+        Some(dir) if !dir.is_empty() => match ctx.os {
+            Os::MacOs | Os::Linux => PathBuf::from(dir),
+            Os::Windows => std::fs::canonicalize(dir)
+                .map_or_else(|_| PathBuf::from(dir), crate::host::without_verbatim_prefix),
+        },
+        _ => ctx
+            .codex_profile
+            .as_deref()
+            .unwrap_or(ctx.home())
+            .join(".codex"),
     }
+}
+
+// Codex does not start where `CODEX_HOME` names no folder. Asked on Windows alone until
+// macOS and Linux refuse it too, which would be a change in what they accept.
+pub(crate) fn missing_home(ctx: &Context) -> Option<PathBuf> {
+    let dir = ctx.codex_home().filter(|dir| !dir.is_empty())?;
+    (ctx.os == Os::Windows && !Path::new(dir).is_dir()).then(|| PathBuf::from(dir))
 }
 
 pub(crate) fn auth_file(ctx: &Context) -> PathBuf {
@@ -30,7 +48,7 @@ pub(crate) fn auth_file(ctx: &Context) -> PathBuf {
 /// shell's `PATH`: the link its standalone installer makes in `~/.local/bin`, then where the
 /// system's package managers put it, which is where its Homebrew cask and a global npm
 /// install go (`codex_install_places` in the register).
-pub(crate) fn install_places(home: &std::path::Path) -> Vec<PathBuf> {
+pub(crate) fn install_places(home: &Path) -> Vec<PathBuf> {
     std::iter::once(home.join(".local/bin"))
         .chain(crate::host::OS.package_bins().iter().map(PathBuf::from))
         .collect()
@@ -86,7 +104,7 @@ mod tests {
         store(ctx).backend
     }
 
-    fn at(dir: &std::path::Path, config: &str) -> Context {
+    fn at(dir: &Path, config: &str) -> Context {
         std::fs::create_dir_all(dir).expect("a scratch codex home");
         std::fs::write(dir.join("config.toml"), config).expect("a config");
         Context::for_unit_test().with_codex_home(dir.to_string_lossy().into())
@@ -100,6 +118,59 @@ mod tests {
         ));
         let _ = std::fs::remove_dir_all(&dir);
         dir
+    }
+
+    // Codex 0.162.1's find_codex_home_from_env: a set `CODEX_HOME` must be a folder and is
+    // canonicalised, and unset it is `.codex` in `FOLDERID_Profile`, which dirs 6.0.0 reads.
+    #[test]
+    fn codex_finds_its_home_on_windows_as_codex_does() {
+        use crate::context::Environment;
+        use crate::host::Os;
+        let profile = scratch("profile");
+        std::fs::create_dir_all(profile.join("codex")).expect("a scratch codex home");
+        std::fs::write(profile.join("file"), "").expect("a file");
+        let named = |path: PathBuf| path.to_string_lossy().into_owned();
+        let read = |os: Os, codex: Option<PathBuf>| {
+            let pairs = [
+                ("USERPROFILE", named(profile.clone())),
+                ("HOME", named(profile.clone())),
+            ]
+            .into_iter()
+            .chain(codex.map(|dir| ("CODEX_HOME", named(dir))));
+            Context::read(&Environment::on(os, pairs), "cli")
+        };
+
+        let unset = read(Os::Windows, None);
+        assert_eq!(
+            home(&unset),
+            profile.join(".codex"),
+            "no profile is looked up in a test"
+        );
+        let elsewhere = profile.join("Profile");
+        assert_eq!(
+            home(&unset.with_codex_profile(elsewhere.clone())),
+            elsewhere.join(".codex"),
+            "not the home, where the profile is elsewhere"
+        );
+        let given = read(Os::Windows, Some(profile.join(".").join("codex")));
+        let canonical = std::fs::canonicalize(profile.join("codex")).expect("there");
+        assert_eq!(
+            home(&given),
+            crate::host::without_verbatim_prefix(canonical)
+        );
+        assert_eq!(missing_home(&given), None);
+        for nothing in [profile.join("never-made"), profile.join("file")] {
+            assert_eq!(
+                missing_home(&read(Os::Windows, Some(nothing.clone()))),
+                Some(nothing)
+            );
+        }
+        for os in [Os::MacOs, Os::Linux] {
+            let missing = profile.join("never-made");
+            let ctx = read(os, Some(missing.clone()));
+            assert_eq!((home(&ctx), missing_home(&ctx)), (missing, None), "{os:?}");
+        }
+        let _ = std::fs::remove_dir_all(&profile);
     }
 
     /// The shipped default is a packaged one rather than a line anybody wrote, so an absent

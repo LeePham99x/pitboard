@@ -54,6 +54,12 @@ impl Provider for Codex {
     /// line for the person's own `config.toml`, or that only an administrator can, where a
     /// requirement or a managed layer chose it. A store nobody can tell is refused too.
     fn live(&self, ctx: &Context) -> Result<LiveStore, ProviderError> {
+        if let Some(path) = paths::missing_home(ctx) {
+            return Err(ProviderError::HomeMissing {
+                provider: ProviderId::Codex,
+                path,
+            });
+        }
         let unsupported = |reason: String| {
             Err(ProviderError::Unsupported {
                 provider: ProviderId::Codex,
@@ -618,6 +624,31 @@ mod tests {
             Some(login())
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // Codex does not start there, so nothing under it is read.
+    #[test]
+    fn a_codex_home_that_names_no_folder_is_refused_on_windows() {
+        use crate::context::{Context as Read, Environment};
+        let missing = std::env::temp_dir().join("pitboard-codex-never-made");
+        let named = missing.to_string_lossy().into_owned();
+        let env = Environment::on(
+            Os::Windows,
+            [("USERPROFILE", "/nowhere"), ("CODEX_HOME", named.as_str())],
+        );
+        let refused = Codex.live(&Read::read(&env, "cli")).err().expect("refused");
+        let ProviderError::HomeMissing { provider, path } = &refused else {
+            panic!("refused otherwise: {refused:?}");
+        };
+        assert_eq!((*provider, path), (ProviderId::Codex, &missing));
+        assert_eq!(
+            refused.to_string(),
+            format!(
+                "CODEX_HOME is {}, which is no folder, so Codex does not start. Make that \
+                 folder, or unset CODEX_HOME",
+                missing.display()
+            )
+        );
     }
 
     /// A keychain store is refused with a reason rather than read: every read of an item

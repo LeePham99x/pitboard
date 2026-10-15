@@ -27,6 +27,13 @@ pub(crate) fn home() -> Option<PathBuf> {
     real_lookups().then(profile_directory).flatten()
 }
 
+// RF-B1: `FOLDERID_Profile` ignores `USERPROFILE` and `HOME`. Codex's default home is in it.
+pub(crate) fn profile() -> Option<PathBuf> {
+    real_lookups()
+        .then(|| known_folder(&windows_sys::Win32::UI::Shell::FOLDERID_Profile))
+        .flatten()
+}
+
 #[cfg(test)]
 fn real_lookups() -> bool {
     testing::reaches_the_real_home()
@@ -94,7 +101,6 @@ pub(crate) fn accounts_own_pitboard_home() -> Option<PathBuf> {
 }
 
 // KF_FLAG_DONT_VERIFY: a folder not made yet is still where a login would go.
-#[cfg(any(test, feature = "test-support"))]
 fn known_folder(id: &windows_sys::core::GUID) -> Option<PathBuf> {
     use std::os::windows::ffi::OsStringExt;
     use windows_sys::Win32::UI::Shell::{KF_FLAG_DONT_VERIFY, SHGetKnownFolderPath};

@@ -392,7 +392,8 @@ fn unidentified(which: ProviderId, error: provider::ProviderError) -> Error {
             refused: false,
         },
         other @ (provider::ProviderError::ShapeUnexpected { .. }
-        | provider::ProviderError::Unsupported { .. }) => shape(which, other),
+        | provider::ProviderError::Unsupported { .. }
+        | provider::ProviderError::HomeMissing { .. }) => shape(which, other),
         other => Error::IdentityUnverifiable {
             tool: which,
             cause: crate::error::Cause::of_provider(&other),
@@ -1107,6 +1108,7 @@ pub(super) fn shape(tool: ProviderId, error: provider::ProviderError) -> Error {
         provider::ProviderError::Unsupported { reason, .. } => {
             Error::LiveStoreUnsupported { tool, reason }
         }
+        provider::ProviderError::HomeMissing { path, .. } => Error::CodexHomeMissing { path },
         other => Error::LiveCredentialShapeUnexpected {
             tool,
             detail: other.to_string(),
@@ -1177,6 +1179,22 @@ mod tests {
     use super::*;
 
     use std::cell::RefCell;
+
+    #[test]
+    fn a_tools_home_that_names_no_folder_refuses_with_its_own_code() {
+        let path = PathBuf::from("/nowhere/codex");
+        let missing = || provider::ProviderError::HomeMissing {
+            provider: ProviderId::Codex,
+            path: path.clone(),
+        };
+        let codex = ProviderId::Codex;
+        for refused in [shape(codex, missing()), unidentified(codex, missing())] {
+            assert_eq!(refused.code(), "codex_home_missing");
+            assert_eq!(refused.exit_code(), 1);
+            let said = refused.to_string();
+            assert!(said.starts_with("CODEX_HOME is /nowhere/codex, which is no folder"));
+        }
+    }
 
     fn failing(message: &str) -> store::Error {
         store::Error::Write(message.into())
