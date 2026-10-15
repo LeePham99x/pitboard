@@ -106,6 +106,11 @@ pub enum Error {
     /// SSH. Never "no credential" either, and nothing is wrong with what it holds.
     #[error("the credential store could not be read: {LOCKED}")]
     Locked,
+    /// A park sealed to this account is there but does not open in this logon: an
+    /// administrator's password reset, a profile restored on another PC, or a logon without
+    /// the user's key, as over SSH. `code` is `CryptUnprotectData`'s, where there was one.
+    #[error("the sealed credential does not open in this logon: {detail}")]
+    Sealed { code: Option<i32>, detail: String },
     #[error("the stored credential is not valid JSON: {0}")]
     Malformed(String),
     #[error("writing the credential failed: {0}")]
@@ -119,6 +124,7 @@ impl Error {
         match self {
             Error::Unreadable(_) => "credential_store_unreadable",
             Error::Locked => "credential_store_locked",
+            Error::Sealed { .. } => "credential_sealed",
             Error::Malformed(_) => "credential_not_json",
             Error::Write(_) => "credential_write_failed",
             Error::NotDurable(_) => "credential_not_durable",

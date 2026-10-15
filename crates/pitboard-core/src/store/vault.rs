@@ -57,20 +57,31 @@ fn entropy(service: &str) -> Vec<u8> {
     [ENTROPY, service.as_bytes()].concat()
 }
 
+// Why a sealed park would not open: its shape is wrong, or the seal itself did not open, which
+// carries `CryptUnprotectData`'s code so doctor can tell a logon without the key from a shape
+// Pitboard planted or a stranger wrote.
+enum Opened {
+    Shape(String),
+    Sealed { code: Option<i32>, detail: String },
+}
+
 // Whatever stops it opening, a park is there and unreadable, never absent.
-fn opened(seal: &dyn Seal, service: &str, sealed: &[u8]) -> Result<String, String> {
+fn opened(seal: &dyn Seal, service: &str, sealed: &[u8]) -> Result<String, Opened> {
     let Some((&version, blob)) = sealed.strip_prefix(SEALED).and_then(<[u8]>::split_first) else {
-        return Err("it is not a park Pitboard sealed".into());
+        return Err(Opened::Shape("it is not a park Pitboard sealed".into()));
     };
     if version != VERSION {
-        return Err(format!(
+        return Err(Opened::Shape(format!(
             "it is sealed in form {version}, which this Pitboard does not read"
-        ));
+        )));
     }
     let plain = seal
         .open(&entropy(service), blob)
-        .map_err(|e| format!("it does not open for this account: {e}"))?;
-    String::from_utf8(plain).map_err(|_| "what it holds is not text".into())
+        .map_err(|e| Opened::Sealed {
+            code: e.raw_os_error(),
+            detail: format!("it does not open for this account: {e}"),
+        })?;
+    String::from_utf8(plain).map_err(|_| Opened::Shape("what it holds is not text".into()))
 }
 
 // Windows opens a device for CON, NUL.json or COM1.x, and cuts trailing dots and spaces.
@@ -88,7 +99,7 @@ fn storable(service: &str) -> bool {
         && service
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
-        && !service.ends_with(['.', ' '])
+        && !service.ends_with('.')
         && !device
 }
 
@@ -139,7 +150,8 @@ impl RawStore for FileVault {
             |why: String| Error::Unreadable(format!("cannot read {}: {why}", path.display()));
         match read {
             Ok(Ok(s)) => Ok(Some(s)),
-            Ok(Err(why)) => Err(unreadable(why)),
+            Ok(Err(Opened::Shape(why))) => Err(unreadable(why)),
+            Ok(Err(Opened::Sealed { code, detail })) => Err(Error::Sealed { code, detail }),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(e) => Err(unreadable(e.to_string())),
         }
@@ -235,10 +247,12 @@ mod tests {
         (FileVault::sealed(&ctx, SEAL), scratch)
     }
 
-    // Never absent and never a login, and still there to a look.
+    // Never absent and never a login, and still there to a look: a shape Pitboard did not
+    // seal reads Unreadable, a seal that will not open reads Sealed.
     fn unopened(vault: &FileVault, service: &str) {
         match vault.read(service) {
             Err(Error::Unreadable(why)) => assert!(why.contains(service), "{why}"),
+            Err(Error::Sealed { .. }) => {}
             other => panic!("{service} read as {other:?}"),
         }
         assert!(vault.contains(service).expect("a look"), "{service}");
@@ -324,7 +338,7 @@ mod tests {
             .with_pitboard_home(scratch.path().join("pitboard"));
         let vault = FileVault::sealed(&ctx, &Lost);
         match vault.write(Permit::for_a_test(), PARK, LOGIN) {
-            Err(Error::Unreadable(_)) => {}
+            Err(Error::Sealed { .. }) => {}
             other => panic!("a write that does not read back: {other:?}"),
         }
         unopened(&vault, PARK);

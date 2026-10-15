@@ -263,6 +263,10 @@ pub(crate) struct ParkFact {
 pub(crate) enum Unreadable {
     /// It is behind a keychain that is locked here, which says nothing about the login.
     Locked,
+    /// A park sealed to this account that will not open in this logon, with
+    /// `CryptUnprotectData`'s code where there was one: a lost key, not a missing or damaged
+    /// file.
+    Sealed(Option<i32>),
     /// Missing, damaged, or refused by the store, in words.
     Broken(String),
 }
@@ -317,6 +321,7 @@ fn park_facts(ctx: &Context, state: &State) -> Vec<ParkFact> {
                 };
                 park::load(ctx, tool, &a.key(), p).err().map(|e| match e {
                     Error::Store(store::Error::Locked) => Unreadable::Locked,
+                    Error::Store(store::Error::Sealed { code, .. }) => Unreadable::Sealed(code),
                     Error::ParkedCredentialMissing { .. } => {
                         Unreadable::Broken("missing from the vault".into())
                     }
@@ -591,9 +596,9 @@ fn parts_of(document: &Value) -> Vec<(String, usize)> {
     parts
 }
 
-// Every file holding a usable login that others may read: who a file lets in is what a
-// restore, a copy or a careless umask changes, and on Windows Claude Code's file takes its
-// folder's access list (Claude Code 2.1.300, RF-C1b).
+// Every file holding a login that others may read, or, where it is sealed, change: who a file
+// lets in is what a restore, a copy or a careless umask changes, and on Windows Claude Code's
+// file takes its folder's access list (Claude Code 2.1.300, RF-C1b).
 fn loose_logins(ctx: &Context) -> Vec<(String, Kind, Access)> {
     let mut loose = Vec::new();
     let mut look = |path: PathBuf| {
@@ -609,10 +614,9 @@ fn loose_logins(ctx: &Context) -> Vec<(String, Kind, Access)> {
         }
     };
     look(claude_live::credential_file(ctx));
-    // Only this Windows account opens a sealed park, whoever can read the file.
-    if store::vault_kind(ctx) == store::Backend::SealedFile {
-        return loose;
-    }
+    // A sealed park opens for this Windows account alone, but sealing stops reading, not
+    // writing: another account with write access can corrupt or plant a park, so the vault and
+    // its parks are still checked.
     let vault = store::vault_dir(ctx);
     look(vault.clone());
     if let Ok(entries) = std::fs::read_dir(&vault) {
@@ -734,8 +738,8 @@ fn codex_version(program: &std::path::Path) -> Option<String> {
         })
         .or_else(|| {
             near.iter().find_map(|dir| {
-                codex_package_version(&dir.join("package.json"))
-                    .or_else(|| codex_layout_version(&dir.join("codex-package.json")))
+                version_where(&dir.join("package.json"), "name", "@openai/codex")
+                    .or_else(|| version_where(&dir.join("codex-package.json"), "variant", "codex"))
             })
         })
 }
@@ -748,17 +752,11 @@ fn looks_like_a_version(name: &str) -> bool {
             .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
 }
 
-fn codex_package_version(path: &std::path::Path) -> Option<String> {
+// The `version` of a JSON file whose `key` reads `expected`: `package.json`'s name
+// `@openai/codex`, or `codex-package.json`'s variant `codex`.
+fn version_where(path: &std::path::Path, key: &str, expected: &str) -> Option<String> {
     let json: Value = serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
-    if json.get("name")?.as_str()? != "@openai/codex" {
-        return None;
-    }
-    Some(json.get("version")?.as_str()?.to_string())
-}
-
-fn codex_layout_version(path: &std::path::Path) -> Option<String> {
-    let json: Value = serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
-    if json.get("variant")?.as_str()? != "codex" {
+    if json.get(key)?.as_str()? != expected {
         return None;
     }
     Some(json.get("version")?.as_str()?.to_string())
@@ -1169,9 +1167,10 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
                          Code stores them where there is no keychain. Anyone else on this \
                          machine can read them",
                     Os::Windows =>
-                        "These hold usable OAuth tokens in plain text, and Claude Code's file \
-                         takes the access list of the folder it is in. Anyone else on this \
-                         PC can read them",
+                        "These hold a login: Claude Code's file in plain text, a sealed park \
+                         only this account opens. Claude Code's file takes the access list of \
+                         the folder it is in, and a seal stops reading, not writing. Anyone \
+                         else on this PC can read or change them",
                 },
                 running(&commands),
             ),
@@ -1665,7 +1664,13 @@ pub fn renewal_due(refresh_expires_at: i64, now: i64) -> bool {
     (1..RENEW_WITHIN).contains(&(refresh_expires_at - now))
 }
 
-// Every park lost at once, as after an administrator resets the password, is one finding.
+// The code `CryptUnprotectData` returns after an administrator's password reset, as RF-D1d
+// measured (run 38797729796), where the account's master key no longer opens the blob.
+const DPAPI_KEY_RESET: i32 = 0x8009_000B_u32 as i32;
+
+// Every sealed park lost at once, as after an administrator resets the password, is one
+// finding. A seal that reads 0x8009000B for all of them points at a reset or a restored
+// profile; any other code (a logon without the key, as over SSH) gets neutral wording.
 fn judge_vault(facts: &Facts, lost: &[&ParkFact]) -> Option<Check> {
     if facts.vault != store::Backend::SealedFile {
         return None;
@@ -1681,6 +1686,26 @@ fn judge_vault(facts: &Facts, lost: &[&ParkFact]) -> Option<Check> {
         .iter()
         .map(|p| format!("pitboard enroll {} --sign-in", p.typed()))
         .collect();
+    let a_reset = lost.iter().all(|p| {
+        matches!(
+            p.unreadable,
+            Some(Unreadable::Sealed(Some(DPAPI_KEY_RESET)))
+        )
+    });
+    let way_out = if a_reset {
+        format!(
+            "An administrator's reset of your Windows password, or a profile restored on \
+             another PC, leaves them sealed with a key this account no longer has. Sign in to \
+             each again{}",
+            running(&again)
+        )
+    } else {
+        format!(
+            "They do not open in this logon. Run `pitboard doctor` from a desktop session \
+             before signing in again{}",
+            running(&again)
+        )
+    };
     Some(fail(
         "vault",
         "parked logins",
@@ -1688,16 +1713,12 @@ fn judge_vault(facts: &Facts, lost: &[&ParkFact]) -> Option<Check> {
             "none of the {} parked logins opens for this Windows account",
             lost.len()
         ),
-        format!(
-            "An administrator's reset of your Windows password, or a profile restored on \
-             another PC, leaves them sealed with a key this account no longer has. Sign in to \
-             each again{}",
-            running(&again)
-        ),
+        way_out,
     ))
 }
 
-// Two parks or more in a sealed vault, and none of them usable.
+// Two sealed parks or more in a sealed vault, each failing to open: a lost key, not a missing
+// or damaged file, so a reset or a restored profile is told from a stray unreadable park.
 fn lost_parks(facts: &Facts) -> Vec<&ParkFact> {
     let parked: Vec<&ParkFact> = facts
         .parks
@@ -1711,7 +1732,7 @@ fn lost_parks(facts: &Facts) -> Vec<&ParkFact> {
     let all = parked.len() >= 2
         && parked
             .iter()
-            .all(|p| matches!(p.unreadable, Some(Unreadable::Broken(_))));
+            .all(|p| matches!(p.unreadable, Some(Unreadable::Sealed(_))));
     if facts.vault == store::Backend::SealedFile && all {
         parked
     } else {
@@ -1742,6 +1763,14 @@ fn judge_park(fact: &ParkFact, now: i64) -> Check {
                 name,
                 "not read: the keychain is locked",
                 "Unlock it, then run `pitboard doctor` again.",
+            );
+        }
+        Some(Unreadable::Sealed(_)) => {
+            return fail(
+                code,
+                name,
+                "its parked login does not open in this logon",
+                renew,
             );
         }
         Some(Unreadable::Broken(why)) => {
@@ -4032,17 +4061,18 @@ mod tests {
         assert_eq!(
             found.advice,
             format!(
-                "These hold usable OAuth tokens in plain text, and Claude Code's file takes the \
-                 access list of the folder it is in. Anyone else on this PC can read them: \
-                 `{claude}`, `{claude_grant}`, `{vault}`, `{vault_grant}`, `{park}` and \
-                 `{park_grant}`."
+                "These hold a login: Claude Code's file in plain text, a sealed park only this \
+                 account opens. Claude Code's file takes the access list of the folder it is \
+                 in, and a seal stops reading, not writing. Anyone else on this PC can read or \
+                 change them: `{claude}`, `{claude_grant}`, `{vault}`, `{vault_grant}`, \
+                 `{park}` and `{park_grant}`."
             )
         );
         f.sid = None;
         assert!(
             check(&evaluate(&f), "private_on_disk")
                 .advice
-                .ends_with("can read them."),
+                .ends_with("can read or change them."),
             "no command without the SID"
         );
     }
@@ -4176,8 +4206,10 @@ mod tests {
         assert_eq!(folder.1, Kind::Directory, "{found:?}");
     }
 
+    // A seal stops others reading a park, not writing it: a vault or park another account can
+    // change is still a finding.
     #[test]
-    fn a_sealed_park_others_can_read_is_no_login_on_disk() {
+    fn a_sealed_park_others_can_change_is_reported() {
         let scratch = tempfile::tempdir().expect("a scratch home");
         let root = scratch.path().to_path_buf();
         let ctx = Context::new(root.clone())
@@ -4188,8 +4220,24 @@ mod tests {
         let park = vault.join("pitboard-park-x.json");
         std::fs::write(&park, "sealed").expect("a park");
         crate::host::fs::testing::open_to_others(&park).expect("opened to others");
+        let found = loose_logins(&ctx);
+        assert!(
+            found
+                .iter()
+                .any(|(path, ..)| *path == park.display().to_string()),
+            "a sealed park others can change: {found:?}"
+        );
+
+        crate::host::fs::testing::make_private(&park).expect("made private");
         crate::host::fs::testing::open_to_others(&vault).expect("opened to others");
-        assert_eq!(loose_logins(&ctx), Vec::new());
+        let found = loose_logins(&ctx);
+        assert!(
+            found
+                .iter()
+                .any(|(path, kind, _)| *path == vault.display().to_string()
+                    && *kind == Kind::Directory),
+            "the opened vault: {found:?}"
+        );
     }
 
     /// On a machine with no keychain every parked login is a plaintext OAuth token in a
@@ -5511,9 +5559,7 @@ mod tests {
             )
         );
 
-        let lost = Some(Unreadable::Broken(
-            "it does not open for this account".into(),
-        ));
+        let lost = Some(Unreadable::Sealed(Some(DPAPI_KEY_RESET)));
         f.parks[0].unreadable = lost.clone();
         let checks = evaluate(&f);
         assert_eq!(check(&checks, "vault").level, Level::Ok, "one of two");
@@ -5553,6 +5599,47 @@ mod tests {
             Level::Warn,
             "nothing parked"
         );
+    }
+
+    // Parks missing from the vault are not a lost key, so doctor does not tell the person to
+    // sign every account in again; each keeps its own per-park finding.
+    #[test]
+    fn missing_sealed_parks_are_not_a_reset_finding() {
+        let mut f = facts();
+        f.vault = store::Backend::SealedFile;
+        f.parks = vec![parked("work", None), codex_parked("home", None)];
+        let missing = Some(Unreadable::Broken("missing from the vault".into()));
+        f.parks[0].unreadable = missing.clone();
+        f.parks[1].unreadable = missing;
+        let checks = evaluate(&f);
+        assert_eq!(
+            check(&checks, "vault").level,
+            Level::Ok,
+            "missing is not a lost key"
+        );
+        assert_eq!(named(&checks, "account work").level, Level::Fail);
+        assert_eq!(named(&checks, "account codex/home").level, Level::Fail);
+    }
+
+    // A sealed park that will not open in this logon (a network logon over SSH, not the reset
+    // code) gets neutral wording, not "an administrator reset your password".
+    #[test]
+    fn sealed_parks_lost_to_this_logon_get_neutral_wording() {
+        let mut f = facts();
+        f.vault = store::Backend::SealedFile;
+        f.parks = vec![parked("work", None), codex_parked("home", None)];
+        let sealed = Some(Unreadable::Sealed(Some(5)));
+        f.parks[0].unreadable = sealed.clone();
+        f.parks[1].unreadable = sealed;
+        let checks = evaluate(&f);
+        let vault = check(&checks, "vault");
+        assert_eq!(vault.level, Level::Fail);
+        assert!(
+            vault.advice.contains("from a desktop session"),
+            "{}",
+            vault.advice
+        );
+        assert!(!vault.advice.contains("administrator"), "{}", vault.advice);
     }
 
     /// A parked login is due to be renewed from three days before its refresh token expires

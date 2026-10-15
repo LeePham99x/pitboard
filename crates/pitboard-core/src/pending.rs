@@ -794,8 +794,22 @@ mod tests {
         let reclaimed = reclaim(&ctx, Permit::for_a_test(), &mut state).expect("reclaimed");
         assert_eq!(reclaimed.unreadable, [ours, stranger]);
         assert!(reclaimed.deleted.is_empty() && reclaimed.given_back.is_empty());
+
+        // A readable park no account refers to, discarded: purge deletes only it, and leaves
+        // the two unreadable parks in the vault.
+        let gone = "pitboard-park-gone-1760000000002";
+        mem.vault().plant(gone, &oauth("g").to_string());
+        state.discarded.push(crate::state::Dropped {
+            service: gone.to_string(),
+            kind: ParkKind::Vault,
+            forgotten: false,
+        });
         assert_eq!(park::purge(&ctx, Permit::for_a_test(), &mut state), 0);
-        assert!(state.discarded.is_empty());
+        assert!(state.discarded.is_empty(), "the readable park is purged");
+        assert!(
+            mem.vault().peek(gone).is_none(),
+            "the discarded park is gone"
+        );
         assert_eq!(
             outstanding(&ctx, Some(&state)),
             [ours],
