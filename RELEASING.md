@@ -163,8 +163,11 @@ API token, then its own registration under **Settings** > **Trusted Publishing**
 
 The `release` environment has required reviewers, and the `publish` job waits in it.
 Renaming it breaks the crates.io registration. The `homebrew-tap` environment holds
-`HOMEBREW_TAP_TOKEN`. `scoop-bucket` holds `SCOOP_BUCKET_TOKEN` and `winget` holds
-`WINGET_TOKEN`, and each takes deployments from `v*` tags only.
+`HOMEBREW_TAP_TOKEN`, `scoop-bucket` holds `SCOOP_BUCKET_TOKEN` and `winget` holds
+`WINGET_TOKEN`. Give `release`, `homebrew-tap`, `scoop-bucket`, `winget` and
+`windows-signing` each a deployment rule for `v*` tags, under **Settings** >
+**Environments** > **Deployment branches and tags**, so a job run from a branch never
+reaches them.
 
 [Rotate the update key](#rotate-the-update-key) covers the repository variable
 `SPARKLE_KEY_ROTATION`, and [Windows signing](#windows-signing) `WINDOWS_SIGNER`,

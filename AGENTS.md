@@ -56,12 +56,12 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
 - Never push a tag.
 - Never mark a release latest by hand, or reuse or move an rc or beta tag. The release
   workflow decides latest.
-- Never dispatch a workflow but `windows-facts.yml`.
+- An agent never dispatches a workflow but `windows-facts.yml`, and only on its own branch.
 - Never sign with a signer's release policy or production credentials outside `release.yml`
   on a `v*` tag. Test signing uses the signer's test policy or sandbox.
 - Never let a job that runs on a pull request or by hand reach the `release`,
-  `windows-signing`, `scoop-bucket` or `winget` environment. Each keeps a deployment rule for
-  `v*` tags only.
+  `windows-signing`, `homebrew-tap`, `scoop-bucket` or `winget` environment. Each must keep a
+  deployment rule for `v*` tags only.
 - Never write the Scoop bucket or a `winget-pkgs` branch by hand, past the first commit and
   the first versions RELEASING.md sets out. The release writes them from its own
   `SHA256SUMS`, as it writes the tap.
@@ -114,7 +114,10 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
   share a folder, start OpenSSH Server, install Bun and Scoop, turn on winget's local
   manifests, serve files on loopback, put a build it made behind a Scoop shim, in WinGet's
   Links, in `~\.cargo\bin` or on the user `PATH`, and set Defender's attack surface reduction
-  rules to audit. It undoes each in a `finally`. Never copy one of those changes, or
+  rules to audit. It undoes each in a `finally`. `release.yml`'s `scoop-install` job, on a
+  GitHub-hosted runner after `publish`, may install Scoop into the job's temporary folder,
+  which writes the job user's `PATH` and `HKCU\Environment`, then install the published
+  `pitboard` from the bucket and run its `--version`. Never copy one of those changes, or
   `test-as-standard-user.ps1`'s, into a script meant for a person's machine.
 - `windows-facts.yml` stays `workflow_dispatch` only, names no secret, and uploads only the
   probe's redacted reports. No workflow uploads an opened `pitboard.exe`: the repository is
