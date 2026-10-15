@@ -289,6 +289,18 @@ fn drive_absolute(path: &str) -> bool {
     matches!(path.as_bytes(), [drive, b':', b'\\' | b'/', ..] if drive.is_ascii_alphabetic())
 }
 
+// Claude Desktop's on Windows, which no test reads (AGENTS.md). Its `Claude-3p` there is named
+// by analogy with macOS's, unmeasured: a guard may refuse more than is there.
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn claude_desktop_on_windows(roaming: &[PathBuf], local: &[PathBuf]) -> Vec<PathBuf> {
+    let roaming = roaming
+        .iter()
+        .flat_map(|dir| ["Claude", "Claude-3p"].map(|name| dir.join(name)));
+    roaming
+        .chain(local.iter().map(|dir| dir.join("AnthropicClaude")))
+        .collect()
+}
+
 // Is, holds or lies in, for a build for tests to refuse, the same on every system: through
 // every link, one to nothing yet included, and in any case, as macOS's own volumes compare.
 #[cfg(any(test, feature = "test-support"))]
@@ -874,6 +886,33 @@ mod tests {
         assert!(!lies("never-made/Library/Application Support"));
         assert!(!lies("Library/../elsewhere/Application Support"));
         assert!(!root.exists());
+    }
+
+    #[test]
+    fn claude_desktops_windows_folders_are_refused_in_any_spelling() {
+        let (roaming, local) = (
+            PathBuf::from("/p/AppData/Roaming"),
+            PathBuf::from("/p/AppData/Local"),
+        );
+        let places =
+            claude_desktop_on_windows(std::slice::from_ref(&roaming), std::slice::from_ref(&local));
+        let refused = |path: PathBuf| places.iter().any(|place| lies_in(&path, place));
+        for path in [
+            roaming.join("Claude"),
+            roaming.join("claude").join("Cookies"),
+            roaming.join("CLAUDE-3P"),
+            local.join("AnthropicClaude").join("app-1.0"),
+            roaming.clone(),
+        ] {
+            assert!(refused(path.clone()), "{}", path.display());
+        }
+        for path in [
+            roaming.join("Claudette"),
+            local.join("Claude"),
+            local.join("Pitboard"),
+        ] {
+            assert!(!refused(path.clone()), "{}", path.display());
+        }
     }
 
     #[test]

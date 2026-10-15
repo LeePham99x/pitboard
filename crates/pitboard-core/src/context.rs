@@ -238,19 +238,33 @@ pub(crate) fn refuse_a_real_claude(path: &std::path::Path) {
     let fake = testing::guarded_home();
     #[cfg(not(test))]
     let fake: Option<PathBuf> = None;
-    let real = ["Library/Application Support", "Applications/Claude.app"]
-        .into_iter()
-        .any(|below| {
-            user::lies_in_the_accounts_own(path, below)
-                || fake
-                    .as_ref()
-                    .is_some_and(|home| crate::host::lies_in(path, &home.join(below)))
-        })
-        || crate::host::lies_in(path, std::path::Path::new("/Applications/Claude.app"));
+    let real = match crate::host::OS {
+        Os::MacOs | Os::Linux => {
+            ["Library/Application Support", "Applications/Claude.app"]
+                .into_iter()
+                .any(|below| {
+                    user::lies_in_the_accounts_own(path, below)
+                        || fake
+                            .as_ref()
+                            .is_some_and(|home| crate::host::lies_in(path, &home.join(below)))
+                })
+                || crate::host::lies_in(path, std::path::Path::new("/Applications/Claude.app"))
+        }
+        Os::Windows => {
+            let (mut roaming, mut local) = user::app_data_folders();
+            if let Some(home) = &fake {
+                roaming.push(home.join("AppData").join("Roaming"));
+                local.push(home.join("AppData").join("Local"));
+            }
+            crate::host::claude_desktop_on_windows(&roaming, &local)
+                .iter()
+                .any(|place| crate::host::lies_in(path, place))
+        }
+    };
     assert!(
         !real,
-        "a test named {} for Claude, which is, holds or lies in this account's own \
-         Application Support or a real Claude.app: give it a folder of its own",
+        "a test named {} for Claude, which is, holds or lies in where this account's own \
+         Claude Desktop keeps its data or its app: give it a folder of its own",
         path.display()
     );
 }
@@ -987,6 +1001,33 @@ mod tests {
             named(support.join("pitboard-test-never-made")),
             "while a test guards a fake home too"
         );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn a_scratch_in_claude_desktops_windows_folders_panics() {
+        let named = |folder: PathBuf| {
+            std::panic::catch_unwind(move || {
+                Context::new(PathBuf::from(r"C:\nowhere")).with_scratch_claude(folder)
+            })
+            .is_err()
+        };
+        let (roaming, local) = crate::host::user::app_data_folders();
+        assert!(!roaming.is_empty() && !local.is_empty());
+        for dir in &roaming {
+            assert!(named(dir.join("Claude").join("pitboard-test-never-made")));
+            assert!(named(dir.join("claude-3p")), "in any case");
+        }
+        for dir in &local {
+            assert!(named(dir.join("AnthropicClaude")));
+        }
+        assert!(!named(
+            std::env::temp_dir().join("pitboard-scratch-elsewhere")
+        ));
+        let fake = std::env::temp_dir().join("pitboard-fake-profile");
+        let _guarding = testing::also_guarding(&fake);
+        let roaming = fake.join("AppData").join("Roaming");
+        assert!(named(roaming.join("Claude").join("x")), "a fake profile's");
     }
 
     // `..` past a folder not made yet is resolved only once something makes that folder.

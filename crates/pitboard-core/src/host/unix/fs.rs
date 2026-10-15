@@ -137,9 +137,11 @@ pub(crate) fn same_volume(a: &Path, b: &Path) -> io::Result<bool> {
 }
 
 #[cfg(any(test, feature = "test-support"))]
-pub(crate) fn file_id(path: &Path) -> Option<(u64, u64)> {
+pub(crate) fn file_id(path: &Path) -> Option<(u64, u128)> {
     use std::os::unix::fs::MetadataExt;
-    std::fs::metadata(path).map(|it| (it.dev(), it.ino())).ok()
+    std::fs::metadata(path)
+        .map(|it| (it.dev(), u128::from(it.ino())))
+        .ok()
 }
 
 /// Set the modification time of the directory at `path` to `at`.

@@ -134,19 +134,27 @@ pub mod testing {
         let pitboard = user::accounts_own_pitboard_home()
             .ok_or("this system names no Pitboard folder for this account")?;
         let own = crate::context::Context::new(home).with_pitboard_home(pitboard);
+        let (roaming, local) = user::app_data_folders();
         Ok([&own, started_in]
             .into_iter()
             .flat_map(|ctx| {
-                [
+                let mut places = vec![
                     crate::provider::claude::paths::config_dir(ctx),
                     crate::provider::claude::paths::config_file(ctx),
                     crate::provider::codex::paths::home(ctx),
                     ctx.pitboard_home.clone(),
-                    ctx.home.join("Library/Application Support/Claude"),
-                    ctx.home.join("Library/Application Support/Claude-3p"),
-                    std::path::PathBuf::from("/Applications/Claude.app"),
-                ]
+                    ctx.default_pitboard_home(),
+                ];
+                if ctx.os != crate::host::Os::Windows {
+                    places.extend([
+                        ctx.home.join("Library/Application Support/Claude"),
+                        ctx.home.join("Library/Application Support/Claude-3p"),
+                        std::path::PathBuf::from("/Applications/Claude.app"),
+                    ]);
+                }
+                places
             })
+            .chain(crate::host::claude_desktop_on_windows(&roaming, &local))
             .filter(|place| place.is_absolute())
             .collect())
     }

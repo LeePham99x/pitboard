@@ -112,10 +112,37 @@ pub(crate) fn same_volume(_a: &Path, _b: &Path) -> io::Result<bool> {
     Err(not_yet())
 }
 
-// The guard asks for macOS's firmlinks, which Windows has none of.
+// The volume and the file's id on it (MC-fileid), a folder's included, through a junction.
 #[cfg(any(test, feature = "test-support"))]
-pub(crate) fn file_id(_path: &Path) -> Option<(u64, u64)> {
-    None
+pub(crate) fn file_id(path: &Path) -> Option<(u64, u128)> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_ID_INFO, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE,
+        FILE_SHARE_READ, FILE_SHARE_WRITE, FileIdInfo, GetFileInformationByHandleEx,
+    };
+    let file = std::fs::OpenOptions::new()
+        .access_mode(FILE_READ_ATTRIBUTES)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(path)
+        .ok()?;
+    let mut info = FILE_ID_INFO::default();
+    // SAFETY: an open handle, and a FILE_ID_INFO buffer of exactly the length given.
+    let read = unsafe {
+        GetFileInformationByHandleEx(
+            file.as_raw_handle(),
+            FileIdInfo,
+            (&raw mut info).cast(),
+            size_of::<FILE_ID_INFO>() as u32,
+        )
+    };
+    (read != 0).then(|| {
+        (
+            info.VolumeSerialNumber,
+            u128::from_le_bytes(info.FileId.Identifier),
+        )
+    })
 }
 
 /// Who besides its owner can reach `path`: nobody can tell until W15 reads its access
@@ -232,6 +259,34 @@ mod tests {
         let private = testing::is_private(path).expect_err("is_private");
         assert_eq!(private.kind(), io::ErrorKind::Unsupported);
         assert!(!path.exists(), "nothing was made");
+    }
+
+    // A junction needs no right of its own, unlike a symbolic link.
+    #[test]
+    fn a_folder_has_one_id_through_a_junction() {
+        let root = std::env::temp_dir().join(format!("pitboard-file-id-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let (target, other, junction) = (
+            root.join("target"),
+            root.join("other"),
+            root.join("junction"),
+        );
+        for folder in [&target, &other] {
+            std::fs::create_dir_all(folder).expect("a scratch folder");
+        }
+        let made = std::process::Command::new("cmd.exe")
+            .args(["/d", "/c", "mklink", "/J"])
+            .arg(&junction)
+            .arg(&target)
+            .output()
+            .expect("cmd runs");
+        assert!(made.status.success(), "{made:?}");
+        let id = super::file_id(&target).expect("an id");
+        assert_eq!(super::file_id(&junction), Some(id));
+        assert_ne!(super::file_id(&other), Some(id));
+        assert_eq!(super::file_id(&root.join("never-made")), None);
+        let _ = std::fs::remove_dir(&junction);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
