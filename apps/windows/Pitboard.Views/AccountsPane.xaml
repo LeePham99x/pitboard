@@ -104,6 +104,7 @@
       <FontIcon
           x:Name="EmptyMark"
           FontSize="40"
+          IsTextScaleFactorEnabled="False"
           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
           AutomationProperties.AccessibilityView="Raw" />
       <ProgressRing x:Name="EmptyProgress" IsActive="False" />

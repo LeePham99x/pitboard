@@ -75,7 +75,7 @@
               <ColumnDefinition Width="*" />
               <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <FontIcon x:Name="LevelMark" Margin="0,2,0,0" VerticalAlignment="Top" FontSize="16" />
+            <FontIcon x:Name="LevelMark" Margin="0,2,0,0" VerticalAlignment="Top" FontSize="16" IsTextScaleFactorEnabled="False" />
             <StackPanel Grid.Column="1" Spacing="2">
               <TextBlock Text="{x:Bind Name}" Style="{StaticResource BodyTextBlockStyle}" />
               <TextBlock
