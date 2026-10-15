@@ -26,3 +26,7 @@ pins, and `proper-lockfile` from `bun.lock` with `bun install --frozen-lockfile
 - `bun-secrets.mjs <set|delete>`: `Bun.secrets` items as Claude Code writes its login and its
   pieces, under the `pitboard-citest-bun` service, for `pitboard-probe credman-item` to read
   and delete (G3). It refuses outside a GitHub-hosted runner.
+- `fd3-read.mjs`: reads descriptor 3 as Claude Code 2.1.300 reads its OAuth token descriptor
+  (fstat for a pipe or socket, then `readSync` until a newline or end of stream), and prints
+  the byte count and what fstat saw. `pitboard-probe fd-handover` hands it a dummy on
+  descriptor 3 through the C runtime's inheritance table (RF-WW1); it reads nothing of its own.

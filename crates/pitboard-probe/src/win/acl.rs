@@ -282,7 +282,11 @@ fn probe_file_in(file: &Path, scratch: &Path) -> Result<(), String> {
 
 /// C2: a file with a protected DACL granting this user, SYSTEM and Administrators, and no
 /// owner set, so it gets the token's default owner. Its owner and access are read back.
-fn create_protected(scratch: &Path, own: Option<&str>, keep: bool) -> Result<Value, String> {
+pub(super) fn create_protected(
+    scratch: &Path,
+    own: Option<&str>,
+    keep: bool,
+) -> Result<Value, String> {
     std::fs::create_dir_all(scratch).map_err(|e| e.to_string())?;
     let sid = own.ok_or("cannot read the token's user")?;
     let sddl = format!("D:P(A;;FA;;;{sid})(A;;FA;;;SY)(A;;FA;;;BA)");
