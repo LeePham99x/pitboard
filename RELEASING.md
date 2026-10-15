@@ -66,10 +66,11 @@ The first release with Claude Desktop waits until the hand measurements M1 to M1
    stayed. Releases run one at a time, so this run waits until the candidate's has ended.
 
 9. Approve the `publish` job when it waits in the `release` environment.
-10. Watch the run to the end. A re-run fixes three failures:
+10. Watch the run to the end. A re-run fixes four failures:
 
 | Job | Failed | Do |
 | --- | --- | --- |
+| `windows-sign` | Anywhere | Re-run it. SignPath evaluates at most three re-runs of a run, and fails the fourth |
 | `publish` | After the crates reached crates.io | Re-run it. It skips each crate whose version is there |
 | `tap` | At the push | Re-run it. It reads the run's own `SHA256SUMS`. Never write the tap by hand: its checksums would come from a second download |
 | `install-script` | At "Install the way the README says to" | Check [the redirect](#the-redirect), then re-run it |
@@ -93,7 +94,8 @@ also has `appcast.xml`, the update feed, and writes the Homebrew tap. A full rel
 beta uploads `pitboard-core`, when its version moved, and then `pitboard` to crates.io.
 Every file on the GitHub release has a GitHub attestation. From major version 1, each
 release also has a zip of the command line for Windows on x64 and on ARM64, built and checked
-by `.github/actions/windows-release`, which CI runs on every pull request.
+by `.github/actions/windows-release`, which CI runs on every pull request, and signed as
+[Windows signing](#windows-signing) says.
 
 Immutable releases are on, and only the owner changes that setting. A published release's
 files and tag cannot change; its title, notes and marks can. Only the next version fixes a
@@ -112,6 +114,17 @@ From major version 1, the guard refuses an rc or a full release while `WINDOWS_S
 unset, and any release that sets it without `WINDOWS_SIGNER_SUBJECT`. A beta with no signer
 ships its Windows files unsigned. Once a signer is set, every Windows release is signed,
 betas included: never unset it to ship one unsigned.
+
+The `windows-sign` job takes the zips `build-windows` made and hands them to `publish`. It
+runs in the `windows-signing` environment, which takes deployments from `v*` tags only and
+holds the signer's credentials. Make it before the first 1.x tag: a job that names a missing
+environment makes one with no rule. Before it hands the zips on,
+`.github/scripts/verify-windows-signatures.ps1` checks every program in them: signed by
+`WINDOWS_SIGNER_SUBJECT`, valid and timestamped, or, with no signer, not signed at all. No
+signer has a signing step yet, so a set `WINDOWS_SIGNER` fails the job. Once one has, a
+signed release waits for one approval at the signer, then one at `release`.
+
+Keep the signer's account apart from the update key and the Developer ID certificate.
 
 ## Secrets and environments
 
@@ -140,8 +153,8 @@ Renaming it breaks the crates.io registration. The `homebrew-tap` environment ho
 `HOMEBREW_TAP_TOKEN`.
 
 [Rotate the update key](#rotate-the-update-key) covers the repository variable
-`SPARKLE_KEY_ROTATION`, and [Windows signing](#windows-signing) `WINDOWS_SIGNER` and
-`WINDOWS_SIGNER_SUBJECT`.
+`SPARKLE_KEY_ROTATION`, and [Windows signing](#windows-signing) `WINDOWS_SIGNER`,
+`WINDOWS_SIGNER_SUBJECT` and the `windows-signing` environment.
 
 ## The Homebrew tap
 

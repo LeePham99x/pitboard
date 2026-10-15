@@ -325,8 +325,9 @@ job's byte for byte, and runs the C# tests against each the same way.
 
 CI's `windows-release` job builds the release's zips with `.github/actions/windows-release`,
 as `release.yml` does from 1.0.0. `.github/scripts/check-windows-build.ps1` checks each
-`pitboard.exe` in both jobs, and `test-windows-release.ps1` tests `package-windows.ps1` and
-`check-windows-build.ps1`. They run on CI's runners only.
+`pitboard.exe` in both jobs, and `test-windows-release.ps1` tests `package-windows.ps1`,
+`check-windows-build.ps1` and `verify-windows-signatures.ps1`, which checks a release's
+signatures. They run on CI's runners only.
 
 `gh workflow run windows-facts.yml --ref <branch>` measures both runner images with
 `pitboard-probe` and `.github/scripts/runner-facts.ps1`. No pull request runs it on its own:

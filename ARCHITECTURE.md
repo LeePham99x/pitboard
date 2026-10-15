@@ -655,8 +655,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     says what a tag releases and whether it is latest, `core-unchanged.sh` refuses a
     `pitboard-core` that changed under a version crates.io already has, and
     `test-release.py` tests both and the app's `build-number.sh`. `package-windows.ps1` zips
-    a Windows build, `check-windows-build.ps1` checks one, and `test-windows-release.ps1`
-    tests both.
+    a Windows build, `check-windows-build.ps1` checks one, `verify-windows-signatures.ps1`
+    checks the signature of every program a Windows release hands on, and
+    `test-windows-release.ps1` tests all three.
   - `dependabot.yml` asks for weekly updates of Cargo dependencies, GitHub Actions and the
     .NET SDK in `apps/windows/global.json`.
   - `zizmor.yml` configures the audit CI runs on the workflows.

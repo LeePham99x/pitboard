@@ -185,7 +185,7 @@ jobs:
           tar -C "$RUNNER_TEMP/dist" -czf "$RUNNER_TEMP/dist/$name.tar.gz" "$name"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ${{ matrix.target }}
+          name: dist-${{ matrix.target }}
           path: ${{ runner.temp }}/dist/*.tar.gz
 
   # The command line for Windows, from 1.0.0, each zip built and checked on the machine it is
@@ -210,10 +210,67 @@ jobs:
         with:
           triple: ${{ matrix.triple }}
           version: ${{ needs.guard.outputs.version }}
+      # Not dist-, so publish never takes it: only windows-sign hands a Windows zip on.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ${{ matrix.triple }}
+          name: unsigned-${{ matrix.triple }}
           path: ${{ runner.temp }}/dist/*.zip
+          if-no-files-found: error
+
+  # Every Windows zip reaches publish through here, checked: each program in it signed by the
+  # signer's subject when the guard says signed, and none signed when it does not. No cache here or
+  # in build-windows: SignPath's origin verification refuses a build that may take another's files.
+  windows-sign:
+    needs: [guard, build-windows]
+    if: needs.guard.outputs.windows == 'true'
+    runs-on: windows-2025
+    timeout-minutes: 120
+    # Takes deployments from v* tags only, and holds the signer's credentials.
+    environment: windows-signing
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: unsigned-*
+          path: ${{ runner.temp }}/unsigned
+          merge-multiple: true
+      - name: Sign
+        shell: pwsh
+        env:
+          SIGNED: ${{ needs.guard.outputs.signed }}
+          SIGNER: ${{ vars.WINDOWS_SIGNER }}
+        run: |
+          $dist = Join-Path $env:RUNNER_TEMP 'dist'
+          New-Item -ItemType Directory -Force -Path $dist | Out-Null
+          if ($env:SIGNED -ne 'true') {
+            Copy-Item -Path (Join-Path $env:RUNNER_TEMP 'unsigned\*.zip') -Destination $dist
+            Write-Output 'No signer is set, so this beta ships its Windows zips unsigned.'
+            exit 0
+          }
+          throw "no signing step for $env:SIGNER"
+      - name: Every signature
+        shell: pwsh
+        env:
+          SIGNED: ${{ needs.guard.outputs.signed }}
+          SUBJECT: ${{ vars.WINDOWS_SIGNER_SUBJECT }}
+        run: |
+          $mode = if ($env:SIGNED -eq 'true') { 'signed' } else { 'unsigned' }
+          $zips = @(Get-ChildItem -Path (Join-Path $env:RUNNER_TEMP 'dist\*.zip') | ForEach-Object FullName)
+          if ($zips.Count -ne 2) { throw "windows-sign has $($zips.Count) zips to hand on, not 2" }
+          ./.github/scripts/verify-windows-signatures.ps1 -Path $zips -Mode $mode -Subject $env:SUBJECT `
+            -Built (Join-Path $env:RUNNER_TEMP 'unsigned')
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dist-windows-x86_64-pc-windows-msvc
+          path: ${{ runner.temp }}/dist/*-x86_64-pc-windows-msvc.zip
+          if-no-files-found: error
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dist-windows-aarch64-pc-windows-msvc
+          path: ${{ runner.temp }}/dist/*-aarch64-pc-windows-msvc.zip
+          if-no-files-found: error
 
   # The menu bar app, signed and notarised when the Apple secrets are set; without them it
   # is still built and released, ad-hoc signed, which Gatekeeper warns about on first
@@ -349,19 +406,19 @@ jobs:
           fi
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: app
+          name: dist-app
           path: |
             ${{ runner.temp }}/dist/*.zip
             ${{ runner.temp }}/dist/appcast.xml
 
   # A skipped job skips every job after it in the chain unless their `if` says otherwise, and
-  # build-windows is skipped below 1.0.0. So publish and the jobs after it name what they need.
+  # windows-sign is skipped below 1.0.0. So publish and the jobs after it name what they need.
   publish:
-    needs: [guard, build, app, build-windows]
+    needs: [guard, build, app, windows-sign]
     if: >-
       ${{ !cancelled() && needs.build.result == 'success' && needs.app.result == 'success' &&
-      (needs.build-windows.result == 'success' ||
-      (needs.build-windows.result == 'skipped' && needs.guard.outputs.windows == 'false')) }}
+      (needs.windows-sign.result == 'success' ||
+      (needs.windows-sign.result == 'skipped' && needs.guard.outputs.windows == 'false')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # Required reviewers on this environment are what stops an unexpected tag walking into
@@ -382,6 +439,7 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
+          pattern: dist-*
           path: ${{ runner.temp }}/dist
           merge-multiple: true
 
