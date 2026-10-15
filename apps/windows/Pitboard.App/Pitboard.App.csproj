@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.26100.0</SupportedOSPlatformVersion>
+    <TargetPlatformMinVersion>10.0.26100.0</TargetPlatformMinVersion>
+    <RootNamespace>Pitboard.App</RootNamespace>
+    <AssemblyName>Pitboard</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Platforms>x64;ARM64</Platforms>
+    <UseWinUI>true</UseWinUI>
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <!-- Given only with a runtime: one inferred from the machine restoring would leave the lock file's. -->
+    <SelfContained Condition="'$(RuntimeIdentifier)' != ''">true</SelfContained>
+    <!-- Program.Main decides whether this launch runs before WinUI starts. -->
+    <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Manifest Include="$(ApplicationManifest)" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Pitboard.Core/Pitboard.Core.csproj" />
+    <ProjectReference Include="../Pitboard.Windows/Pitboard.Windows.csproj" />
+  </ItemGroup>
+  <!--
+    The core, built by Cargo: pass its path as PitboardNativeLibrary, pitboard_ffi.dll built
+    opened and with the fixture feature for Debug, and as a release builds it for Release.
+  -->
+  <ItemGroup Condition="'$(PitboardNativeLibrary)' != ''">
+    <None Include="$(PitboardNativeLibrary)" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+</Project>
