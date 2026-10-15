@@ -28,15 +28,15 @@ public sealed class AccountsWindowTests
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
         launched.OpenWindow();
 
-        launched.Invoke("Add Account");
+        launched.Invoke("Add account");
         launched.Field("sheet.name").Enter("third");
-        launched.Invoke("Sign In");
+        launched.Invoke("Sign in");
         var code = launched.Field("sheet.code");
         Assert.IsTrue(launched.Enables("Open"), "Open stayed dimmed");
-        launched.Invoke("Copy Link");
+        launched.Invoke("Copy link");
         Assert.AreEqual("https://claude.com/cai/oauth/authorize?code=true&state=pitboard-fixture", ClipboardText.Read());
         code.Enter("fixture-code#state");
-        launched.Invoke("Submit Code");
+        launched.Invoke("Submit code");
 
         launched.Row("claude/third");
         Assert.IsTrue(launched.Gone(found => found.ByAutomationId("sheet.code")), "the sheet stayed up");
@@ -50,10 +50,10 @@ public sealed class AccountsWindowTests
         using var launched = Launched.Start(Builds.Debug, fixture: "twoTools");
         launched.OpenWindow();
 
-        launched.Invoke("Add Account");
+        launched.Invoke("Add account");
         launched.Find(found => found.ByAutomationId("sheet.tool"), "sheet.tool").AsComboBox().Select("Codex");
         launched.Field("sheet.name").Enter("third");
-        launched.Invoke("Sign In");
+        launched.Invoke("Sign in");
 
         launched.Row("codex/third");
     }
@@ -66,19 +66,19 @@ public sealed class AccountsWindowTests
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
         launched.OpenWindow();
 
-        launched.Invoke("Add Account");
+        launched.Invoke("Add account");
         launched.Field("sheet.name").Enter("third");
-        launched.Invoke("Sign In");
+        launched.Invoke("Sign in");
         launched.Field("sheet.code");
         launched.Invoke("Cancel");
         Assert.IsTrue(launched.Gone(found => found.ByAutomationId("sheet.code")), "the sheet stayed up");
         Assert.IsTrue(launched.Gone(found => found.ByAutomationId("account.claude/third")), "third was added");
 
-        launched.Invoke("Add Account");
+        launched.Invoke("Add account");
         launched.Field("sheet.name").Enter("third");
-        launched.Invoke("Sign In");
+        launched.Invoke("Sign in");
         launched.Field("sheet.code").Enter("fixture-code#state");
-        launched.Invoke("Submit Code");
+        launched.Invoke("Submit code");
 
         launched.Row("claude/third");
     }
@@ -178,12 +178,12 @@ public sealed class AccountsWindowTests
         using var launched = Launched.Start(Builds.Debug, fixture: "leftInFile");
         launched.OpenWindow();
 
-        launched.Invoke("Put Away…");
-        Assert.IsTrue(launched.Enables("Put Away"), "Put Away stayed dimmed after the look");
-        launched.Invoke("Put Away");
+        launched.Invoke("Put away…");
+        Assert.IsTrue(launched.Enables("Put away"), "Put away stayed dimmed after the look");
+        launched.Invoke("Put away");
 
         launched.Find(found => found.ByAutomationId("notice.stowed"), "notice stowed");
-        Assert.IsTrue(launched.Gone(found => found.ByName("Put Away…")), "the file is still said to be there");
+        Assert.IsTrue(launched.Gone(found => found.ByName("Put away…")), "the file is still said to be there");
     }
 
     [TestMethod]
@@ -193,8 +193,8 @@ public sealed class AccountsWindowTests
         using var launched = Launched.Start(Builds.Debug, fixture: "empty");
         launched.OpenWindow();
 
-        launched.Named("No Accounts");
-        launched.Invoke("Add Account…");
+        launched.Named("No accounts");
+        launched.Invoke("Add account…");
 
         launched.Field("sheet.name");
     }
@@ -206,8 +206,8 @@ public sealed class AccountsWindowTests
         using var launched = Launched.Start(Builds.Debug, fixture: "stuck");
         launched.OpenWindow();
 
-        launched.Invoke("Give Up…");
-        launched.Invoke("Give Up");
+        launched.Invoke("Give up…");
+        launched.Invoke("Give up");
         var notice = launched.Find(found => found.ByAutomationId("notice.abandoned"), "notice abandoned");
 
         Assert.Contains("Gave up on the interrupted switch", Launched.Lines(notice));
@@ -222,7 +222,7 @@ public sealed class AccountsWindowTests
         launched.OpenWindow();
         launched.Named("Add a second account");
 
-        launched.Invoke("Not Now");
+        launched.Invoke("Not now");
 
         Assert.IsTrue(launched.Gone(found => found.ByName("Add a second account")), "the tip stayed");
         launched.Row("claude/work");
@@ -241,7 +241,7 @@ public sealed class AccountsWindowTests
         window.Focus();
         Keyboard.TypeSimultaneously(VirtualKeyShort.CONTROL, VirtualKeyShort.KEY_N);
         launched.Field("sheet.name");
-        launched.Find(found => found.ByName("Add Account").And(found.ByControlType(ControlType.Text)), "the sheet's title");
+        launched.Find(found => found.ByName("Add account").And(found.ByControlType(ControlType.Text)), "the sheet's title");
         launched.Invoke("Cancel");
 
         Assert.IsTrue(launched.Gone(found => found.ByAutomationId("sheet.name")), "the sheet stayed up");
@@ -257,6 +257,6 @@ public sealed class AccountsWindowTests
 
         launched.Window("Pitboard");
 
-        launched.Named("No Accounts");
+        launched.Named("No accounts");
     }
 }

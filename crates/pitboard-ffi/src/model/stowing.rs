@@ -3,7 +3,7 @@
 //! then puts it away once somebody confirms what it says, as `pitboard stow` asks first.
 
 use super::state::{Answer, Job};
-use super::testing::{Hand, Machine, claude, refusal, warned, warning};
+use super::testing::{Hand, Machine, claude, refusal, titled, warned, warning};
 use super::{Intent, Sheet};
 use crate::Held;
 use crate::present::Severity;
@@ -92,7 +92,7 @@ fn the_notice_of_a_login_left_in_a_file_offers_to_put_it_away() {
             continue;
         }
         assert_eq!(notice.actions.len(), 1, "{held:?}: {:?}", notice.actions);
-        assert_eq!(notice.actions[0].title, "Put Away…");
+        assert_eq!(notice.actions[0].title, titled("Put Away…", "Put away…"));
         assert_eq!(notice.actions[0].intent, stow_sheet());
         assert!(notice.actions[0].enabled);
         assert_eq!(notice.actions[0].confirm, None, "the sheet asks");
@@ -121,8 +121,14 @@ fn the_sheet_says_whose_the_login_is_once_it_is_known() {
     model.run(&mut machine);
 
     let text = model.shown().stow_text.expect("the sheet's words");
-    assert_eq!(text.title, "Put Away the Login Left in a File");
-    assert_eq!(text.confirm, "Put Away");
+    assert_eq!(
+        text.title,
+        titled(
+            "Put Away the Login Left in a File",
+            "Put away the login left in a file"
+        )
+    );
+    assert_eq!(text.confirm, titled("Put Away", "Put away"));
     assert_eq!(text.looking, None);
     assert!(text.can_confirm);
     assert!(!text.saving);

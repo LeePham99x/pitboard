@@ -131,7 +131,7 @@ public sealed class IconMenuTests
     {
         var expired = Items.Account("claude", "old") with
         {
-            Action = new ItemAction("Sign In", "Sign in to old again", new Intent.PresentSheet(new Sheet.SignInAgain("claude", "old"))),
+            Action = new ItemAction("Sign in", "Sign in to old again", new Intent.PresentSheet(new Sheet.SignInAgain("claude", "old"))),
         };
         var unusable = Items.Account("claude", "broken") with { Action = null };
         var model = Model(snapshot => snapshot with
@@ -183,11 +183,11 @@ public sealed class IconMenuTests
     {
         var entries = IconMenu.Entries(TwoTools(), new NoUpdates());
 
-        Assert.AreEqual(new IconCommand.Send(new Intent.PresentSheet(new Sheet.Add(Provider: null))), Command(entries, "Add Account…").Does);
+        Assert.AreEqual(new IconCommand.Send(new Intent.PresentSheet(new Sheet.Add(Provider: null))), Command(entries, "Add account…").Does);
         Assert.AreEqual(new IconCommand.Send(new Intent.Refresh(Asked: true)), Command(entries, "Refresh").Does);
         Assert.AreEqual(new IconCommand.Send(new Intent.ShowWindow(Pane: null)), Command(entries, "Open Pitboard").Does);
         Assert.AreEqual(new IconCommand.ShowSettings(), Command(entries, "Settings").Does);
-        Assert.AreEqual(new IconCommand.OpenLink("https://docs.usepitboard.com"), Command(entries, "Pitboard Help").Does);
+        Assert.AreEqual(new IconCommand.OpenLink("https://docs.usepitboard.com"), Command(entries, "Pitboard help").Does);
         Assert.AreEqual(new IconCommand.Quit(), Command(entries, "Exit").Does);
     }
 
@@ -202,11 +202,11 @@ public sealed class IconMenuTests
     [TestMethod]
     public void CheckForUpdatesShowsOnlyWhileTheUpdaterIsOn()
     {
-        Assert.DoesNotContain("Check for Updates", Said(IconMenu.Entries(TwoTools(), new NoUpdates())));
+        Assert.DoesNotContain("Check for updates", Said(IconMenu.Entries(TwoTools(), new NoUpdates())));
 
         var entries = IconMenu.Entries(TwoTools(), new StandInUpdates(waiting: null));
 
-        Assert.AreEqual(new IconCommand.CheckForUpdates(), Command(entries, "Check for Updates").Does);
+        Assert.AreEqual(new IconCommand.CheckForUpdates(), Command(entries, "Check for updates").Does);
         Assert.Contains("Open Pitboard | Settings | Check for Updates | -", Said(entries));
     }
 

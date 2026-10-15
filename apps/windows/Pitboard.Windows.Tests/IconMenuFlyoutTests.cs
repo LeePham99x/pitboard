@@ -142,7 +142,7 @@ public sealed class IconMenuFlyoutTests
         var chosen = new List<IconCommand>();
         var menu = Menu(TwoTools(), chosen);
 
-        new MenuFlyoutItemAutomationPeer(Item(menu, "Add Account…")).Invoke();
+        new MenuFlyoutItemAutomationPeer(Item(menu, "Add account…")).Invoke();
         Toggle(Item(menu, "personal"));
         new MenuFlyoutItemAutomationPeer(Item(menu, "Exit")).Invoke();
 

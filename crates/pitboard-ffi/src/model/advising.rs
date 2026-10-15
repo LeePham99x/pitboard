@@ -6,7 +6,9 @@
 
 use super::advice::{Advice, Told};
 use super::switching::switch;
-use super::testing::{Hand, Machine, already_active, refusal, status, switched, warned, warning};
+use super::testing::{
+    Hand, Machine, already_active, refusal, status, switched, titled, warned, warning,
+};
 use super::{Intent, RunOutNotice};
 use crate::Account;
 use crate::present::testing::{LimitExt, account, window};
@@ -502,7 +504,9 @@ fn updating_the_config_keeps_the_advice_about_the_account_in_use() {
         .notices
         .into_iter()
         .flat_map(|notice| notice.actions)
-        .find(|action| action.title == "Update Claude Code’s Config")
+        .find(|action| {
+            action.title == titled("Update Claude Code’s Config", "Update Claude Code’s config")
+        })
         .expect("offered");
 
     machine.answer = Ok(status(vec![work(100.0, 7_200), personal()]));

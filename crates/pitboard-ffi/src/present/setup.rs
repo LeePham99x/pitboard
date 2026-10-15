@@ -117,7 +117,7 @@ pub(crate) fn step(seen: &Seen, footing: &Footing) -> Option<SetupStep> {
                 ),
                 actions: vec![
                     Choice {
-                        title: "Add Account…".into(),
+                        title: words::titled(seen.os, "Add Account…", "Add account…"),
                         intent: Intent::PresentSheet {
                             sheet: Sheet::Add {
                                 provider: Some(provider.clone()),
@@ -128,7 +128,7 @@ pub(crate) fn step(seen: &Seen, footing: &Footing) -> Option<SetupStep> {
                     // Somebody may keep one account on purpose and watch its limits, so the
                     // nudge can be declined, for its tool alone.
                     Choice {
-                        title: "Not Now".into(),
+                        title: words::titled(seen.os, "Not Now", "Not now"),
                         intent: Intent::DeclineSecondAccount {
                             provider: provider.clone(),
                         },
@@ -151,32 +151,40 @@ pub(crate) fn accounts_shown(seen: &Seen, footing: &Footing) -> AccountsShown {
     let names = words::listed(&names);
     match footing {
         Footing::NoClaudeCode => AccountsShown::NoTool {
-            title: "Claude Code Isn’t Installed".into(),
+            title: words::titled(
+                seen.os,
+                "Claude Code Isn’t Installed",
+                "Claude Code isn’t installed",
+            ),
             detail: format!(
                 "Pitboard switches the logins of {names}, so there is nothing for it to do \
                  until one of them is installed and signed in once."
             ),
-            link_title: "How to Install Claude Code".into(),
+            link_title: words::titled(
+                seen.os,
+                "How to Install Claude Code",
+                "How to install Claude Code",
+            ),
             link: INSTALL_CLAUDE_CODE.into(),
         },
         _ if seen.problem().is_some() && seen.accounts().is_empty() => AccountsShown::ReadFailed {
-            title: "Couldn’t Read Accounts".into(),
+            title: words::titled(seen.os, "Couldn’t Read Accounts", "Couldn’t read accounts"),
             detail: seen.problem().unwrap_or_default().to_owned(),
             // Held back while the accounts are read again, as the toolbar's Refresh is, so
             // pressing it is seen to have done something; AccountsPane.swift held it back.
             retry: Choice {
-                title: "Try Again".into(),
+                title: words::titled(seen.os, "Try Again", "Try again"),
                 intent: Intent::Refresh { asked: true },
                 enabled: seen.state.reads == 0,
             },
         },
         Footing::NoOneSignedIn => AccountsShown::NoAccounts {
-            title: "No Accounts".into(),
+            title: words::titled(seen.os, "No Accounts", "No accounts"),
             detail: "Sign in once here and Pitboard parks that login, so signing in to another \
                      account doesn’t cost you the first."
                 .into(),
             add: Choice {
-                title: "Add Account…".into(),
+                title: words::titled(seen.os, "Add Account…", "Add account…"),
                 intent: Intent::PresentSheet {
                     sheet: Sheet::Add { provider: None },
                 },

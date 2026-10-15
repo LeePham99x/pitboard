@@ -72,7 +72,7 @@
             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
             IsTextScaleFactorEnabled="False"
             AutomationProperties.AccessibilityView="Raw" />
-        <TextBlock Text="In Use" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        <TextBlock Text="In use" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
       </StackPanel>
       <Button x:Name="ActionButton" Click="OnAction" />
     </Grid>

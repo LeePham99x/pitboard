@@ -34,17 +34,17 @@ public sealed class NoticeBarTests
     {
         var performed = new List<NoticeAction>();
         var giveUp = new NoticeAction(
-            "Give Up…", new Intent.AbandonStuckSwitch(), Dismisses: false, Switches: false, Enabled: true,
-            Confirm: new Question("Give up on the interrupted switch?", "Both logins are kept.", "Give Up"));
+            "Give up…", new Intent.AbandonStuckSwitch(), Dismisses: false, Switches: false, Enabled: true,
+            Confirm: new Question("Give up on the interrupted switch?", "Both logins are kept.", "Give up"));
         var dismiss = Items.Dismiss("codex");
         var bar = await Views.Shown(new NoticeBar(Items.Notice("stuck", giveUp, dismiss), performed.Add, TimeProvider.System));
 
-        Views.Press(Views.Button(bar, "Give Up…"));
+        Views.Press(Views.Button(bar, "Give up…"));
         Assert.IsFalse(Views.Visible<Button>(bar).Any(button => button.Content as string == "Dismiss"), "Dismiss as a button");
         var close = Views.Descendants(bar).OfType<Button>().Single(button => button.Name == "CloseButton");
         Views.Press(close);
 
-        Assert.AreEqual("Give Up…, Dismiss", string.Join(", ", performed.Select(action => action.Title)));
+        Assert.AreEqual("Give up…, Dismiss", string.Join(", ", performed.Select(action => action.Title)));
         Assert.IsTrue(Views.Element<InfoBar>(bar, "notice.stuck").IsOpen, "the notice went before the model took it away");
     }
 

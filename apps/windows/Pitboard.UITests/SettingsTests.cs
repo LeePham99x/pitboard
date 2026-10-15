@@ -113,7 +113,7 @@ public sealed class SettingsTests
 
         Control(launched, "settings.renewDaily").Patterns.Toggle.Pattern.Toggle();
         launched.Named("Every day");
-        launched.Invoke("Renew Now");
+        launched.Invoke("Renew now");
         launched.Named("Renewed one.");
     }
 

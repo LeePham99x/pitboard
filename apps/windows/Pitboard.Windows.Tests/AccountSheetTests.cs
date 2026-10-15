@@ -24,9 +24,9 @@ public sealed class AccountSheetTests
             SheetText = Items.AddAccount(Items.Tool("claude", "Claude Code"), Items.Tool("codex", "Codex")),
         });
         var picker = up.Element<ComboBox>("sheet.tool");
-        Assert.AreEqual("Add Account", up.Sheet.Title);
+        Assert.AreEqual("Add account", up.Sheet.Title);
         Assert.AreEqual(0, picker.SelectedIndex);
-        Assert.IsFalse(up.Sheet.IsPrimaryButtonEnabled, "Sign In with no name");
+        Assert.IsFalse(up.Sheet.IsPrimaryButtonEnabled, "Sign in with no name");
 
         picker.SelectedIndex = 1;
         await up.Type("sheet.name", "third");
@@ -62,7 +62,7 @@ public sealed class AccountSheetTests
         await using var up = await Up.Over(Snapshots.Read(1) with
         {
             Sheet = new Sheet.SignInAgain("claude", "work"),
-            SheetText = Items.AddAccount() with { Title = "Sign In to work Again", Account = "work" },
+            SheetText = Items.AddAccount() with { Title = "Sign in to work again", Account = "work" },
         });
         Assert.IsFalse(up.Visible("sheet.name"), "a name field for an account that has one");
         Assert.IsTrue(Views.Visible<TextBox>(up.Sheet).Any(field => field.Text == "work"), "the account it signs in to");
@@ -107,7 +107,7 @@ public sealed class AccountSheetTests
 
         await Views.Until(() => bar.IsOpen, "the missing CLI was not said");
         Assert.AreEqual(missing.Title, bar.Title);
-        Assert.IsFalse(up.Sheet.IsPrimaryButtonEnabled, "Sign In to a tool not here");
+        Assert.IsFalse(up.Sheet.IsPrimaryButtonEnabled, "Sign in to a tool not here");
         new Microsoft.UI.Xaml.Automation.Peers.HyperlinkButtonAutomationPeer(up.Element<HyperlinkButton>("sheet.missing.link")).Invoke();
         CollectionAssert.AreEqual(new[] { new Uri(missing.Link) }, up.Opened);
     }
@@ -150,7 +150,7 @@ public sealed class AccountSheetTests
 
         up.App.Apply(signingIn with { Revision = 2, SigningIn = Items.Running("claude", Address, wantsCode: true) });
         await Views.Until(() => up.Visible("sheet.code"), "no code field once the tool asked");
-        Assert.AreEqual("Submit Code", up.Sheet.PrimaryButtonText);
+        Assert.AreEqual("Submit code", up.Sheet.PrimaryButtonText);
         Assert.IsFalse(up.Sheet.IsPrimaryButtonEnabled, "Submit Code with no code");
         await up.Type("sheet.code", "fixture-code#state");
         Views.Press(up.Part("PrimaryButton"));
@@ -172,7 +172,7 @@ public sealed class AccountSheetTests
         };
         await using var up = await Up.Over(signingIn);
         Assert.IsFalse(Views.Button(up.Sheet, "Open").IsEnabled, "Open with nothing to open");
-        Assert.IsFalse(Views.Button(up.Sheet, "Copy Link").IsEnabled);
+        Assert.IsFalse(Views.Button(up.Sheet, "Copy link").IsEnabled);
 
         up.App.Apply(signingIn with { Revision = 2, SigningIn = Items.Running("claude", Address) });
         await Views.Until(() => Views.Button(up.Sheet, "Open").IsEnabled, "Open stayed dimmed");
@@ -205,7 +205,7 @@ public sealed class AccountSheetTests
         await using var up = await Up.Over(Snapshots.Read(1) with
         {
             Sheet = new Sheet.Name("claude", "dana@work.example"),
-            SheetText = Items.Rename("") with { Title = "Name This Account", Confirm = "Save", Saving = true },
+            SheetText = Items.Rename("") with { Title = "Name this account", Confirm = "Save", Saving = true },
         });
 
         Assert.IsFalse(up.Part("CloseButton").IsEnabled, "Cancel while saving");
@@ -223,7 +223,7 @@ public sealed class AccountSheetTests
         var naming = Snapshots.Read(1) with
         {
             Sheet = new Sheet.Name("claude", "dana@work.example"),
-            SheetText = Items.Rename("") with { Title = "Name This Account", Confirm = "Save" },
+            SheetText = Items.Rename("") with { Title = "Name this account", Confirm = "Save" },
         };
         await using var up = await Up.Over(naming);
 
@@ -253,10 +253,10 @@ public sealed class AccountSheetTests
         var stowing = Snapshots.Read(1) with { Sheet = new Sheet.Stow(), StowText = Items.Stow() };
         await using var up = await Up.Over(stowing);
         Assert.Contains("Finding out whose login it is…", Views.Texts(up.Sheet));
-        Assert.IsFalse(up.Sheet.IsPrimaryButtonEnabled, "Put Away before the look");
+        Assert.IsFalse(up.Sheet.IsPrimaryButtonEnabled, "Put away before the look");
 
         up.App.Apply(stowing with { Revision = 2, StowText = Items.Stow("The file holds work’s login, signed in 2 days ago.") });
-        await Views.Until(() => up.Sheet.IsPrimaryButtonEnabled, "Put Away stayed dimmed");
+        await Views.Until(() => up.Sheet.IsPrimaryButtonEnabled, "Put away stayed dimmed");
         Views.Press(up.Part("PrimaryButton"));
 
         Assert.Contains("The file holds work’s login, signed in 2 days ago.", Views.Texts(up.Sheet));

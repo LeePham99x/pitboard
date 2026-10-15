@@ -41,18 +41,18 @@ internal static class Items
         new(Id: provider, Heading: heading, Accounts: accounts);
 
     public static SheetTool Tool(string code, string name, Missing? missing = null) =>
-        new(Code: code, Name: name, Message: $"Pitboard opens {name}’s own sign-in in your browser.", Confirm: "Sign In", Missing: missing);
+        new(Code: code, Name: name, Message: $"Pitboard opens {name}’s own sign-in in your browser.", Confirm: "Sign in", Missing: missing);
 
     public static Missing CodexCliMissing() =>
         new(
             Title: "Pitboard can’t find the Codex CLI on this PC.",
             Detail: "Adding a Codex account runs the Codex CLI’s own sign-in. Pitboard doesn’t use the copy inside the ChatGPT app. Install the CLI, then come back to this window.",
-            LinkTitle: "How to Install the Codex CLI", Link: "https://developers.openai.com/codex/cli");
+            LinkTitle: "How to install the Codex CLI", Link: "https://developers.openai.com/codex/cli");
 
     public static SheetText AddAccount(params SheetTool[] tools) =>
         new(
-            Title: "Add Account", Message: "Pitboard opens Claude Code’s own sign-in in your browser.", Tools: tools,
-            Tool: "claude", Account: null, Name: "", Prompt: "work", Confirm: "Sign In", Saving: false, Progress: null);
+            Title: "Add account", Message: "Pitboard opens Claude Code’s own sign-in in your browser.", Tools: tools,
+            Tool: "claude", Account: null, Name: "", Prompt: "work", Confirm: "Sign in", Saving: false, Progress: null);
 
     public static SheetText Rename(string label) =>
         new(
@@ -64,7 +64,7 @@ internal static class Items
 
     public static SigningInText SigningIn(string tool) =>
         new(
-            Title: $"Signing In to {tool}",
+            Title: $"Signing in to {tool}",
             Message: $"Finish signing in as third in your browser. This closes once {tool} says you’re in.",
             CodeNote: $"{tool} takes the code shown after you sign in, whether or not your browser came back to it.",
             Refused: null, Waiting: "Waiting for your browser", OffersLink: true,
@@ -73,8 +73,8 @@ internal static class Items
 
     public static StowText Stow(params string[] lines) =>
         new(
-            Title: "Put Away the Login Left in a File",
+            Title: "Put away the login left in a file",
             Message: "Claude Code left a login in a file behind the keychain.", Lines: lines,
-            Looking: lines.Length == 0 ? "Finding out whose login it is…" : null, Confirm: "Put Away",
+            Looking: lines.Length == 0 ? "Finding out whose login it is…" : null, Confirm: "Put away",
             CanConfirm: lines.Length > 0, Saving: false);
 }

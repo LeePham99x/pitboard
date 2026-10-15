@@ -48,8 +48,8 @@ public sealed class TextSizeTests
                 new AppModel(new StandInModel(snapshot with
                 {
                     AccountsShown = new AccountsShown.NoAccounts(
-                        "No Accounts", "Sign in to add one.",
-                        new Choice("Add Account…", new Intent.PresentSheet(new Sheet.Add(Provider: null)), Enabled: true)),
+                        "No accounts", "Sign in to add one.",
+                        new Choice("Add account…", new Intent.PresentSheet(new Sheet.Add(Provider: null)), Enabled: true)),
                 })),
                 new DialogHost(() => UnitTestApp.Window?.Content?.XamlRoot))),
         ];

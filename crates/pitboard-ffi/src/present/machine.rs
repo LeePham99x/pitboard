@@ -524,9 +524,9 @@ fn activity(seen: &Seen) -> ActivityShown {
             })
             .collect(),
         empty: log.is_empty().then(|| {
-            let (title, detail) = words::NO_ACTIVITY;
+            let (title, detail) = words::no_activity(seen.os);
             EmptyList {
-                title: title.into(),
+                title,
                 detail: detail.into(),
             }
         }),

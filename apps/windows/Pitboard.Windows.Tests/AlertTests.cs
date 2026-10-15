@@ -9,7 +9,7 @@ namespace Pitboard.Windows.Tests;
 public sealed class AlertTests
 {
     private static readonly AlertText Failure = new("Couldn’t switch to spare", "Claude Code is signing in.");
-    private static readonly Question QuitChatGPT = new("Quit ChatGPT to switch?", "ChatGPT signs in again.", "Quit ChatGPT and Switch");
+    private static readonly Question QuitChatGPT = new("Quit ChatGPT to switch?", "ChatGPT signs in again.", "Quit ChatGPT and switch");
     private static readonly QuitQuestion Asked = new(Qualified: "codex/spare", AppId: "com.openai.chat", Name: "ChatGPT");
 
     // The window's content, with the bar a sheet carries, so a dialog has somewhere to show.
@@ -65,7 +65,7 @@ public sealed class AlertTests
         });
         var (_, bar) = await Window(new AppModel(model));
 
-        Views.Press(Views.Button(bar, "Quit ChatGPT and Switch"));
+        Views.Press(Views.Button(bar, "Quit ChatGPT and switch"));
 
         Assert.AreEqual(new Intent.QuitAndSwitch("codex/spare"), model.Sent.Single(intent => intent is Intent.QuitAndSwitch));
     }

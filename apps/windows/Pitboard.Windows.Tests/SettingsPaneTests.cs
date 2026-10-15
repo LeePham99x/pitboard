@@ -236,7 +236,7 @@ public sealed class SettingsPaneTests
         Assert.Contains(task, texts);
         Assert.IsTrue(Views.Element<ToggleSwitch>(pane, "settings.renewDaily").IsOn);
 
-        Views.Press(Views.Button(pane, "Renew Now"));
+        Views.Press(Views.Button(pane, "Renew now"));
         Assert.Contains(new Intent.RenewNow(), model.Sent);
 
         Views.Element<ToggleSwitch>(pane, "settings.renewDaily").IsOn = false;
@@ -258,7 +258,7 @@ public sealed class SettingsPaneTests
         Assert.DoesNotContain("Runs", texts);
         Assert.DoesNotContain("Scheduled in", texts);
         Assert.IsFalse(Views.Element<ToggleSwitch>(pane, "settings.renewDaily").IsEnabled);
-        Assert.IsFalse(Views.Button(pane, "Renew Now").IsEnabled);
+        Assert.IsFalse(Views.Button(pane, "Renew now").IsEnabled);
     }
 
     // The installer owns the PATH entry, so the section offers no link even where the model would.

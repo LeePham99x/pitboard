@@ -198,7 +198,7 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
         Refused.Text = text.Refused ?? "";
         Refused.Visibility = Look.Shown(text.Refused is not null);
         CodeNote.Text = text.CodeNote;
-        PrimaryButtonText = running.WantsCode ? "Submit Code" : "";
+        PrimaryButtonText = running.WantsCode ? "Submit code" : "";
         SecondaryButtonText = text.Undo?.Title ?? "";
         DefaultButton = running.WantsCode ? ContentDialogButton.Primary : ContentDialogButton.None;
         Announce(text.Announce);

@@ -21,7 +21,7 @@ public sealed class PanesTests
         var model = new StandInModel(Snapshots.Read(1));
         var pane = await Views.Shown(new ActivityPane(new AppModel(model)));
 
-        Assert.Contains("No Activity", Views.Texts(pane));
+        Assert.Contains("No activity", Views.Texts(pane));
         Assert.Contains(new Intent.PaneShown(Pane.Activity), model.Sent);
     }
 
@@ -42,7 +42,7 @@ public sealed class PanesTests
         Assert.AreEqual(
             "15/01/2027 09:00, Switch, claude/work, done, pitboard | 14/01/2027 18:00, Enrol, claude/spare, refused, Pitboard app",
             string.Join(" | ", rows));
-        Assert.DoesNotContain("No Activity", Views.Texts(pane));
+        Assert.DoesNotContain("No activity", Views.Texts(pane));
     }
 
     [UITestMethod]

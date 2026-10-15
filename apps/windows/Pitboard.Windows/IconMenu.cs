@@ -71,7 +71,7 @@ public static class IconMenu
             Attention(model.MenuNotices, updates),
             .. Accounts(model),
             [
-                new IconMenuEntry.Command("Add Account…", new IconCommand.Send(new Intent.PresentSheet(new Sheet.Add(Provider: null)))),
+                new IconMenuEntry.Command("Add account…", new IconCommand.Send(new Intent.PresentSheet(new Sheet.Add(Provider: null)))),
                 new IconMenuEntry.Command("Refresh", new IconCommand.Send(new Intent.Refresh(Asked: true)))
                 {
                     Detail = model.UpdatedMenu,
@@ -81,10 +81,10 @@ public static class IconMenu
             [
                 new IconMenuEntry.Command("Open Pitboard", new IconCommand.Send(new Intent.ShowWindow(Pane: null))) { Default = true },
                 new IconMenuEntry.Command("Settings", new IconCommand.ShowSettings()),
-                .. updates.Available ? [new IconMenuEntry.Command("Check for Updates", new IconCommand.CheckForUpdates())] : Array.Empty<IconMenuEntry>(),
+                .. updates.Available ? [new IconMenuEntry.Command("Check for updates", new IconCommand.CheckForUpdates())] : Array.Empty<IconMenuEntry>(),
             ],
             [
-                new IconMenuEntry.Command("Pitboard Help", new IconCommand.OpenLink(HelpLink)),
+                new IconMenuEntry.Command("Pitboard help", new IconCommand.OpenLink(HelpLink)),
                 new IconMenuEntry.Command("Exit", new IconCommand.Quit()),
             ],
         ];

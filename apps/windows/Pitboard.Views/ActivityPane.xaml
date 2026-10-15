@@ -47,7 +47,7 @@
       <TextBlock Grid.Column="1" Text="Change" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="WrapWholeWords" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
       <TextBlock Grid.Column="2" Text="Account" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="WrapWholeWords" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
       <TextBlock Grid.Column="3" Text="Result" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="WrapWholeWords" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-      <TextBlock Grid.Column="4" Text="Asked By" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="WrapWholeWords" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+      <TextBlock Grid.Column="4" Text="Asked by" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="WrapWholeWords" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
     </Grid>
     <ListView
         x:Name="Lines"

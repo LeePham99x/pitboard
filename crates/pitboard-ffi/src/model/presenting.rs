@@ -9,7 +9,7 @@ use super::switching::switch;
 use super::testing::{
     CHATGPT, Hand, Machine, StandInApps, awaiting, chatgpt_holding, claude_code, codex,
     desktop_account, desktop_machine, desktop_warning, enrolled_as, refusal, status, switched,
-    warned, warning,
+    titled, warned, warning,
 };
 use super::{Intent, Pane, Sheet, Snapshot, WindowRequest};
 use crate::account_windows::forget_message_on;
@@ -117,7 +117,7 @@ fn ids(shown: &Snapshot) -> Vec<String> {
 
 fn give_up() -> NoticeAction {
     NoticeAction {
-        title: "Give Up…".into(),
+        title: titled("Give Up…", "Give up…"),
         intent: Intent::AbandonStuckSwitch,
         dismisses: false,
         switches: false,
@@ -127,7 +127,7 @@ fn give_up() -> NoticeAction {
             message: "Every login is kept, and nothing is deleted. Pitboard stops trying to \
                       finish it."
                 .into(),
-            confirm: "Give Up".into(),
+            confirm: titled("Give Up", "Give up"),
         }),
     }
 }
@@ -271,7 +271,7 @@ fn pressing_an_account_does_the_one_thing_its_state_allows() {
     );
     assert_eq!(
         stale.action.map(|action| action.spoken),
-        Some("Sign In to stale Again…".into())
+        Some(titled("Sign In to stale Again…", "Sign in to stale again…"))
     );
     let unnamed = described(account(None).of("codex").signed_in().uuid("u").build());
     assert_eq!(
@@ -322,10 +322,8 @@ fn a_switch_running_holds_back_every_account_and_marks_only_its_own() {
     assert_eq!(other.action, None);
     // Its own menu offers no switch either, and what else it offers it offers as the Swift
     // menu did, which held nothing else back for a switch.
-    assert_eq!(
-        offered(&other),
-        [("Sign In Again…", true), ("Rename…", true)]
-    );
+    let again = titled("Sign In Again…", "Sign in again…");
+    assert_eq!(offered(&other), [(again.as_str(), true), ("Rename…", true)]);
     assert!(other.forget.as_ref().is_some_and(|forget| forget.enabled));
     let unnamed = || account(None).signed_in().uuid("u").build();
     assert_eq!(described_while(unnamed(), switching(running)).action, None);
@@ -354,11 +352,12 @@ fn a_sign_in_running_holds_back_only_another_sign_in() {
         })
     );
     // Its own menu shows signing in again, held back, beside what can still be done.
+    let again = titled("Sign In Again…", "Sign in again…");
     assert_eq!(
         offered(&spare),
         [
             ("Use spare", true),
-            ("Sign In Again…", false),
+            (again.as_str(), false),
             ("Rename…", true)
         ]
     );
@@ -377,7 +376,7 @@ fn a_sign_in_running_holds_back_only_another_sign_in() {
     assert_eq!(sends(&stale), None);
     assert_eq!(
         offered(&stale),
-        [("Sign In Again…", false), ("Rename…", true)]
+        [(again.as_str(), false), ("Rename…", true)]
     );
 }
 
@@ -405,6 +404,7 @@ fn an_accounts_own_menu_offers_what_can_be_done_to_it() {
             label: label.into(),
         })
     };
+    let sign_in_again = titled("Sign In Again…", "Sign in again…");
     let offer = |title: &str, intent: Intent| ItemOffer {
         checked: None,
         title: title.into(),
@@ -426,7 +426,7 @@ fn an_accounts_own_menu_offers_what_can_be_done_to_it() {
     assert_eq!(
         work.offers,
         [
-            offer("Sign In Again…", again("work")),
+            offer(&sign_in_again, again("work")),
             offer("Rename…", rename("work"))
         ],
         "nothing to switch to: it is the one in use"
@@ -445,7 +445,7 @@ fn an_accounts_own_menu_offers_what_can_be_done_to_it() {
                     qualified: "claude/spare".into()
                 }
             ),
-            offer("Sign In Again…", again("spare")),
+            offer(&sign_in_again, again("spare")),
             offer("Rename…", rename("spare")),
         ]
     );
@@ -469,7 +469,7 @@ fn an_accounts_own_menu_offers_what_can_be_done_to_it() {
     assert_eq!(
         stale.offers,
         [
-            offer("Sign In Again…", again("stale")),
+            offer(&sign_in_again, again("stale")),
             offer("Rename…", rename("stale"))
         ],
         "its own action, offered once"
@@ -1000,7 +1000,13 @@ fn an_account_that_cannot_be_switched_to_is_signed_in_to_again_from_the_panel() 
             .action
             .as_ref()
             .map(|action| action.spoken.as_str()),
-        Some("Sign In to work (Codex) Again…"),
+        Some(
+            titled(
+                "Sign In to work (Codex) Again…",
+                "Sign in to work (Codex) again…"
+            )
+            .as_str()
+        ),
         "named with its tool beside another tool's accounts"
     );
 }
@@ -1330,10 +1336,10 @@ fn a_failed_read_with_nothing_to_list_is_what_the_window_shows() {
     let reason = "/Users/dana/.pitboard/state.json was written on another Mac.";
     let failed = || Err(refusal("state_wrong_machine", reason, Vec::new()));
     let read_failed = AccountsShown::ReadFailed {
-        title: "Couldn’t Read Accounts".into(),
+        title: titled("Couldn’t Read Accounts", "Couldn’t read accounts"),
         detail: reason.into(),
         retry: Choice {
-            title: "Try Again".into(),
+            title: titled("Try Again", "Try again"),
             intent: Intent::Refresh { asked: true },
             enabled: true,
         },
@@ -1411,7 +1417,7 @@ fn the_panes_try_again_is_held_back_while_the_accounts_are_read() {
     assert_eq!(
         retry(&model),
         Choice {
-            title: "Try Again".into(),
+            title: titled("Try Again", "Try again"),
             intent: Intent::Refresh { asked: true },
             enabled: false,
         }
@@ -2178,7 +2184,7 @@ fn the_config_names_another_notice_offers_to_update_it() {
     assert_eq!(
         shown.notices[0].actions,
         [NoticeAction {
-            title: "Update Claude Code’s Config".into(),
+            title: titled("Update Claude Code’s Config", "Update Claude Code’s config"),
             intent: Intent::UpdateConfig {
                 qualified: "claude/work".into()
             },
@@ -2242,9 +2248,10 @@ fn a_notices_action_is_either_a_button_or_what_puts_it_away() {
         .flat_map(|notice| notice.actions)
         .collect();
     let titles: Vec<&str> = actions.iter().map(|a| a.title.as_str()).collect();
+    let give_up = titled("Give Up…", "Give up…");
     assert_eq!(
         titles,
-        ["Give Up…", "Switch to spare", "Dismiss", "Dismiss"]
+        [give_up.as_str(), "Switch to spare", "Dismiss", "Dismiss"]
     );
     let dismisses: Vec<bool> = actions.iter().map(|a| a.dismisses).collect();
     assert_eq!(dismisses, [false, false, true, true]);
@@ -2401,12 +2408,12 @@ fn where_there_are_no_accounts_the_menu_and_the_window_say_why() {
     assert_eq!(
         shown.accounts_shown,
         AccountsShown::NoAccounts {
-            title: "No Accounts".into(),
+            title: titled("No Accounts", "No accounts"),
             detail: "Sign in once here and Pitboard parks that login, so signing in to another \
                      account doesn’t cost you the first."
                 .into(),
             add: Choice {
-                title: "Add Account…".into(),
+                title: titled("Add Account…", "Add account…"),
                 intent: present_sheet(Sheet::Add { provider: None }),
                 enabled: true,
             },
@@ -2577,14 +2584,14 @@ fn one_enrolled_account_is_told_there_is_nothing_to_switch_to() {
                 .into(),
             actions: vec![
                 Choice {
-                    title: "Add Account…".into(),
+                    title: titled("Add Account…", "Add account…"),
                     intent: present_sheet(Sheet::Add {
                         provider: Some("claude".into())
                     }),
                     enabled: true,
                 },
                 Choice {
-                    title: "Not Now".into(),
+                    title: titled("Not Now", "Not now"),
                     intent: Intent::DeclineSecondAccount {
                         provider: "claude".into()
                     },
@@ -2871,7 +2878,7 @@ fn each_sheet_says_what_it_is_for() {
         model.shown().sheet_text.expect("the sheet")
     };
     let add = shown(Sheet::Add { provider: None });
-    assert_eq!(add.title, "Add Account");
+    assert_eq!(add.title, titled("Add Account", "Add account"));
     assert_eq!(
         add.message,
         "Pitboard opens Claude Code’s own sign-in in your browser. Sign in as the account \
@@ -2884,7 +2891,10 @@ fn each_sheet_says_what_it_is_for() {
         provider: "codex".into(),
         label: "work".into(),
     });
-    assert_eq!(again.title, "Sign In to work Again");
+    assert_eq!(
+        again.title,
+        titled("Sign In to work Again", "Sign in to work again")
+    );
     assert_eq!(
         again.message,
         "Pitboard opens Codex’s own sign-in in your browser. Sign in as work to give Pitboard \
@@ -2896,7 +2906,7 @@ fn each_sheet_says_what_it_is_for() {
         provider: "codex".into(),
         email: "c@example.com".into(),
     });
-    assert_eq!(name.title, "Name This Account");
+    assert_eq!(name.title, titled("Name This Account", "Name this account"));
     assert_eq!(
         name.message,
         "c@example.com is signed in to Codex. Pitboard parks its login under this name \
@@ -2933,13 +2943,14 @@ fn each_sheets_default_button_says_what_it_does() {
         model.send(present_sheet(sheet));
         model.shown().sheet_text.expect("the sheet").confirm
     };
-    assert_eq!(confirm(Sheet::Add { provider: None }), "Sign In");
+    let sign_in = titled("Sign In", "Sign in");
+    assert_eq!(confirm(Sheet::Add { provider: None }), sign_in);
     assert_eq!(
         confirm(Sheet::SignInAgain {
             provider: "codex".into(),
             label: "work".into(),
         }),
-        "Sign In"
+        sign_in
     );
     assert_eq!(
         confirm(Sheet::Name {
@@ -2978,7 +2989,10 @@ fn a_sign_in_under_way_says_what_to_do_in_the_browser() {
         put_back: None,
     });
     let text = model.shown().signing_in_text.expect("what it says");
-    assert_eq!(text.title, "Signing In to Claude Code");
+    assert_eq!(
+        text.title,
+        titled("Signing In to Claude Code", "Signing in to Claude Code")
+    );
     assert!(text.offers_link, "a browser sign-in offers its page");
     assert_eq!(
         text.message,
@@ -3028,7 +3042,10 @@ fn the_question_about_quitting_an_app_is_asked_in_its_name() {
     switch(&mut model, &mut machine, "codex/spare");
     let asked = model.shown().quit_confirmation.expect("the question");
     assert_eq!(asked.title, "Quit ChatGPT to switch?");
-    assert_eq!(asked.confirm, "Quit ChatGPT and Switch");
+    assert_eq!(
+        asked.confirm,
+        titled("Quit ChatGPT and Switch", "Quit ChatGPT and switch")
+    );
     model.send(Intent::KeepAppOpen);
     assert_eq!(model.shown().quit_confirmation, None);
 }

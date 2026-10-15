@@ -50,7 +50,7 @@ internal static class Snapshots
             About: "A parked login is renewed whenever Pitboard runs, and otherwise not."),
         Checks: new ChecksShown(Lines: [], Summary: null, Checking: false, Checked: null, Waiting: "Checking this PC…"),
         Activity: new ActivityShown(
-            Lines: [], Empty: new EmptyList(Title: "No Activity", Detail: "Pitboard lists every change it makes here.")),
+            Lines: [], Empty: new EmptyList(Title: "No activity", Detail: "Pitboard lists every change it makes here.")),
         CommandLine: new CommandLineShown(
             Found: null, InTerminal: null, UpdateNote: null, OffersLink: false, CannotLink: null),
         AutoSwitch: new AutoSwitchShown(

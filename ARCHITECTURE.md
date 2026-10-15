@@ -3483,10 +3483,12 @@ Microsoft's documentation.
   them, and prefers the standard tooltip. Its Windows 7 page (updated 11 March 2025) gives
   the icon's menu no About command where the program has a window. The Windows 7 menu
   guidance (updated 26 July 2026) names Exit, puts no ellipsis on Help or Settings, shows a
-  context menu's default command in bold and no shortcut keys, and lets a program keep
-  title-style capitalization rather than mix styles, as the model's strings are. So the
-  icon's menu says Exit, bolds Open Pitboard, shows no shortcuts, leaves About to the
-  settings page, and keeps the macOS menu's words otherwise.
+  context menu's default command in bold and no shortcut keys, and writes labels in
+  sentence-style capitalization, keeping title style for a legacy program that would
+  otherwise mix styles. So the icon's menu says Exit, bolds Open Pitboard, shows no shortcuts
+  and leaves About to the settings page, and the Windows app writes all its text in sentence
+  case: its own, and the model's buttons, menu items and headings, which `words::titled`
+  words for each system, title case on macOS as Apple's guidelines have it.
 - Read in microsoft-ui-xaml at `winui3/release/2.5.1`: a light-dismiss popup hides its
   flyout when its window is deactivated (`Popup_Partial.cpp`), so `MenuHost` is made the
   foreground window before the menu opens; a `MenuFlyoutItem` raises `Click` before it closes

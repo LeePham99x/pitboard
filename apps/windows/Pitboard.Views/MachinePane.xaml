@@ -28,7 +28,7 @@
         OverflowButtonVisibility="Collapsed">
       <AppBarButton
           x:Name="CheckAgain"
-          Label="Check Again"
+          Label="Check again"
           ToolTipService.ToolTip="Make every check again"
           AutomationProperties.AutomationId="machine.check"
           Click="OnCheckAgain">

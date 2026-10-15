@@ -769,6 +769,46 @@ mod tests {
     /// 12:00 UTC on Wednesday 14 January 2026.
     const MIDDAY: i64 = 1_768_392_000;
 
+    /// Each system writes a control's words its own way: title case on macOS, as Apple's
+    /// guidelines have it, and sentence case on Windows, as Microsoft's have all of an app's
+    /// text.
+    #[test]
+    fn windows_says_its_controls_in_sentence_case() {
+        use crate::model::Sheet;
+        use crate::present::testing::{both_tools, read, status};
+        let mut state = read(status(Vec::new(), Vec::new()), both_tools());
+        state.sheet = Some(Sheet::Add { provider: None });
+        let words = |os| {
+            let shown = present_on(os, &state, MIDDAY, &Utc);
+            let AccountsShown::NoAccounts { title, add, .. } = shown.accounts_shown else {
+                panic!("{:?}", shown.accounts_shown);
+            };
+            let sheet = shown.sheet_text.expect("the sheet");
+            let empty = shown.machine.activity.empty.expect("no activity");
+            [title, add.title, sheet.title, sheet.confirm, empty.title]
+        };
+        assert_eq!(
+            words(Os::MacOs),
+            [
+                "No Accounts",
+                "Add Account…",
+                "Add Account",
+                "Sign In",
+                "No Activity"
+            ]
+        );
+        assert_eq!(
+            words(Os::Windows),
+            [
+                "No accounts",
+                "Add account…",
+                "Add account",
+                "Sign in",
+                "No activity"
+            ]
+        );
+    }
+
     /// A moment later today is a clock time, and one on another day names its day as well,
     /// whether it is days away or a minute past midnight: which day it falls on decides, not
     /// how far off it is. The person's own calendar says which day that is.
