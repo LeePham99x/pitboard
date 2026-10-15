@@ -1,34 +1,47 @@
 // Files on Windows. What Pitboard makes is private through its access list from the moment it
-// is made. Replacing, moving and removing one is W16's: until then each refuses as
-// unsupported, which every caller reports as a write that failed.
+// is made, and what replaces another program's file takes that file's list.
 
 use crate::host::acl::{self, Ace};
+use crate::host::replace::{self, Route};
 use crate::host::{Access, Private};
 use crate::service::Permit;
 use std::fs::File;
 use std::io;
 use std::os::windows::ffi::OsStrExt;
-use std::os::windows::io::FromRawHandle;
+use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
+use std::os::windows::io::{AsRawHandle, FromRawHandle};
 use std::path::Path;
 use std::time::SystemTime;
 use windows_sys::Win32::Foundation::{GENERIC_WRITE, INVALID_HANDLE_VALUE, LocalFree};
 use windows_sys::Win32::Security::Authorization::{
-    ConvertStringSecurityDescriptorToSecurityDescriptorW, GetNamedSecurityInfoW, SDDL_REVISION_1,
-    SE_FILE_OBJECT,
+    ConvertStringSecurityDescriptorToSecurityDescriptorW, GetNamedSecurityInfoW, GetSecurityInfo,
+    SDDL_REVISION_1, SE_FILE_OBJECT, SetSecurityInfo,
 };
 use windows_sys::Win32::Security::{
     ACCESS_ALLOWED_ACE, ACE_HEADER, ACL, DACL_SECURITY_INFORMATION, GetAce,
-    OWNER_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID, SECURITY_ATTRIBUTES,
+    GetSecurityDescriptorControl, OWNER_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION,
+    PSECURITY_DESCRIPTOR, PSID, SE_DACL_PROTECTED, SECURITY_ATTRIBUTES,
+    UNPROTECTED_DACL_SECURITY_INFORMATION,
 };
 use windows_sys::Win32::Storage::FileSystem::{
-    CREATE_NEW, CreateDirectoryW, CreateFileW, FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_WRITE,
-    FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_WRITE_DATA, OPEN_ALWAYS,
+    CREATE_NEW, CreateDirectoryW, CreateFileW, DELETE, FILE_ATTRIBUTE_REPARSE_POINT,
+    FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_WRITE,
+    FILE_READ_ATTRIBUTES, FILE_RENAME_INFO, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+    FILE_WRITE_ATTRIBUTES, FILE_WRITE_DATA, FileRenameInfoEx, GetVolumeInformationByHandleW,
+    MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW, OPEN_ALWAYS, READ_CONTROL,
+    SYNCHRONIZE, SetFileInformationByHandle, WRITE_DAC,
 };
 
-fn not_yet() -> io::Error {
+const SHARE_ALL: u32 = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
+// FILE_RENAME_FLAG_REPLACE_IF_EXISTS and FILE_RENAME_FLAG_POSIX_SEMANTICS (MC-rename), which
+// windows-sys does not name.
+const REPLACE_IF_EXISTS: u32 = 0x1;
+const POSIX_SEMANTICS: u32 = 0x2;
+
+fn macos_only() -> io::Error {
     io::Error::new(
         io::ErrorKind::Unsupported,
-        "Pitboard does not move, replace or remove files on Windows yet",
+        "Claude Desktop is macOS only, so Pitboard moves no app's folder on Windows",
     )
 }
 
@@ -283,74 +296,285 @@ pub(crate) fn access(path: &Path) -> Option<Access> {
     Some(acl::access(read.aces().as_deref(), you.as_deref()))
 }
 
-// W16 copies another program's access onto what replaces its file.
-pub(crate) fn copy_access(_: Permit, _existing: &Path, _temp: &Path) -> io::Result<()> {
-    Err(not_yet())
+// As std opens a file, sharing all three ways, with `access` alone.
+fn opened(path: &Path, access: u32, flags: u32) -> io::Result<File> {
+    std::fs::OpenOptions::new()
+        .access_mode(access)
+        .share_mode(SHARE_ALL)
+        .custom_flags(flags)
+        .open(path)
 }
 
-/// Nothing is renamed here, so there is nothing to make durable. W16 says what a rename
-/// needs to last on each kind of volume.
-pub(crate) fn sync_dir(_dir: &Path) {}
-
-/// W16.
-pub(crate) fn touch_dir(_: Permit, _path: &Path, _at: SystemTime) -> io::Result<()> {
-    Err(not_yet())
+fn volume_flags(file: &File) -> Option<u32> {
+    let mut flags = 0u32;
+    // SAFETY: an open handle, and no buffer but the flags this frame owns.
+    let read = unsafe {
+        GetVolumeInformationByHandleW(
+            file.as_raw_handle(),
+            std::ptr::null_mut(),
+            0,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            &raw mut flags,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    (read != 0).then_some(flags)
 }
 
-/// W16.
-pub(crate) fn create_dir_all(_: Permit, _path: &Path) -> io::Result<()> {
-    Err(not_yet())
+// The list goes over protected or inherited as it is. Nothing is copied from a reparse point,
+// which the rename replaces rather than follows, nor where nothing is there or the volume keeps
+// no lists, as exFAT and FAT32 keep none.
+pub(crate) fn copy_access(_: Permit, existing: &Path, temp: &Path) -> io::Result<()> {
+    let from = match opened(
+        existing,
+        READ_CONTROL | FILE_READ_ATTRIBUTES,
+        FILE_FLAG_OPEN_REPARSE_POINT,
+    ) {
+        Ok(from) => from,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e),
+    };
+    let link = from.metadata()?.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0;
+    let lists = volume_flags(&from).is_none_or(|flags| flags & replace::PERSISTENT_ACLS != 0);
+    if link || !lists {
+        return Ok(());
+    }
+    let mut descriptor: PSECURITY_DESCRIPTOR = std::ptr::null_mut();
+    let mut dacl: *mut ACL = std::ptr::null_mut();
+    // SAFETY: an open handle; the list points into the descriptor, freed below.
+    let failed = unsafe {
+        GetSecurityInfo(
+            from.as_raw_handle(),
+            SE_FILE_OBJECT,
+            DACL_SECURITY_INFORMATION,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            &raw mut dacl,
+            std::ptr::null_mut(),
+            &raw mut descriptor,
+        )
+    };
+    if failed != 0 {
+        return Err(io::Error::from_raw_os_error(failed as i32));
+    }
+    let set = (|| {
+        let (mut control, mut revision) = (0u16, 0u32);
+        // SAFETY: the descriptor GetSecurityInfo gave.
+        if unsafe { GetSecurityDescriptorControl(descriptor, &raw mut control, &raw mut revision) }
+            == 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+        let kept = if control & SE_DACL_PROTECTED != 0 {
+            PROTECTED_DACL_SECURITY_INFORMATION
+        } else {
+            UNPROTECTED_DACL_SECURITY_INFORMATION
+        };
+        let to = opened(temp, WRITE_DAC | READ_CONTROL, FILE_FLAG_OPEN_REPARSE_POINT)?;
+        // SAFETY: an open handle, and a list inside the descriptor, which outlives the call.
+        let failed = unsafe {
+            SetSecurityInfo(
+                to.as_raw_handle(),
+                SE_FILE_OBJECT,
+                DACL_SECURITY_INFORMATION | kept,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                dacl,
+                std::ptr::null(),
+            )
+        };
+        if failed != 0 {
+            return Err(io::Error::from_raw_os_error(failed as i32));
+        }
+        Ok(())
+    })();
+    // SAFETY: the LocalAlloc'd descriptor GetSecurityInfo gave, freed this once.
+    unsafe { LocalFree(descriptor) };
+    set
 }
 
-/// W16, with the locks made of a directory.
-pub(crate) fn create_dir(_: Permit, _path: &Path) -> io::Result<()> {
-    Err(not_yet())
+// A rename lasts once its folder is flushed, which NTFS, ReFS, exFAT and FAT32 let a standard
+// user do (RF-C5, RF-C5j). An SMB share refuses with 1, and is replaced by `MoveFileExW`, which
+// writes through.
+pub(crate) fn sync_dir(dir: &Path) {
+    let _ = flush_dir(dir);
 }
 
-/// W16.
-pub(crate) fn copy(_: Permit, _from: &Path, _to: &Path) -> io::Result<u64> {
-    Err(not_yet())
+pub(crate) fn flush_dir(dir: &Path) -> io::Result<()> {
+    opened(dir, GENERIC_WRITE, FILE_FLAG_BACKUP_SEMANTICS)?.sync_all()
 }
 
-/// W16 replaces a file atomically on every kind of volume.
-pub(crate) fn rename(_: Permit, _from: &Path, _to: &Path) -> io::Result<()> {
-    Err(not_yet())
+pub(crate) fn touch_dir(_: Permit, path: &Path, at: SystemTime) -> io::Result<()> {
+    opened(path, FILE_WRITE_ATTRIBUTES, FILE_FLAG_BACKUP_SEMANTICS)?.set_modified(at)
 }
 
-/// W16.
-pub(crate) fn remove_file(_: Permit, _path: &Path) -> io::Result<()> {
-    Err(not_yet())
+// A folder another program keeps takes its parent's list, as one it made would.
+pub(crate) fn create_dir_all(_: Permit, path: &Path) -> io::Result<()> {
+    std::fs::create_dir_all(path)
 }
 
-/// W16.
-pub(crate) fn remove_dir(_: Permit, _path: &Path) -> io::Result<()> {
-    Err(not_yet())
+pub(crate) fn create_dir(_: Permit, path: &Path) -> io::Result<()> {
+    std::fs::create_dir(path)
 }
 
-/// W16.
-pub(crate) fn remove_dir_all(_: Permit, _path: &Path) -> io::Result<()> {
-    Err(not_yet())
+pub(crate) fn copy(_: Permit, from: &Path, to: &Path) -> io::Result<u64> {
+    std::fs::copy(from, to)
+}
+
+// Never over a read-only file, whose owner said it is not to change, and never by clearing the
+// attribute. A reader or a scanner holding `to` is waited out for RF-C4's budget.
+pub(crate) fn rename(_: Permit, from: &Path, to: &Path) -> io::Result<()> {
+    let name = to.file_name().unwrap_or(to.as_os_str()).to_string_lossy();
+    if std::fs::symlink_metadata(to).is_ok_and(|found| found.permissions().readonly()) {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("{name} is read-only, and Pitboard does not replace a read-only file"),
+        ));
+    }
+    let mut waits = replace::waits();
+    loop {
+        let refused = match replaced(from, to) {
+            Ok(()) => return Ok(()),
+            Err(refused) => refused,
+        };
+        if !replace::waited_out(refused.raw_os_error()) {
+            return Err(io::Error::new(
+                refused.kind(),
+                format!("{name} could not be replaced: {refused}"),
+            ));
+        }
+        match waits.next() {
+            Some(wait) => std::thread::sleep(wait),
+            None => {
+                return Err(io::Error::new(
+                    refused.kind(),
+                    format!(
+                        "{name} stayed open in another program that does not let it be replaced"
+                    ),
+                ));
+            }
+        }
+    }
+}
+
+fn replaced(from: &Path, to: &Path) -> io::Result<()> {
+    let source = opened(
+        from,
+        DELETE | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+        FILE_FLAG_OPEN_REPARSE_POINT,
+    )?;
+    match replace::route(volume_flags(&source)) {
+        Route::Posix => posix_rename(&source, to),
+        Route::MoveFile => {
+            drop(source);
+            let (from, to) = (verbatim(from)?, verbatim(to)?);
+            // SAFETY: two NUL-terminated names.
+            let moved = unsafe {
+                MoveFileExW(
+                    from.as_ptr(),
+                    to.as_ptr(),
+                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+                )
+            };
+            if moved == 0 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        }
+    }
+}
+
+// Laid out as std's own rename lays it: the name at FileName's offset, its length in bytes
+// without the NUL, and room for the NUL.
+fn posix_rename(source: &File, to: &Path) -> io::Result<()> {
+    let mut name = verbatim(to)?;
+    name.pop();
+    let offset = std::mem::offset_of!(FILE_RENAME_INFO, FileName);
+    let bytes = name.len() * 2;
+    let size = (offset + bytes + 2).max(size_of::<FILE_RENAME_INFO>());
+    // u64s, so the buffer is aligned for FILE_RENAME_INFO.
+    let mut buffer = vec![0u64; size.div_ceil(8)];
+    let info = buffer.as_mut_ptr().cast::<FILE_RENAME_INFO>();
+    // SAFETY: `buffer` holds `size` zeroed bytes aligned for FILE_RENAME_INFO; the header is
+    // written in place and the name copied to FileName's offset, within `size`.
+    unsafe {
+        (*info).Anonymous.Flags = REPLACE_IF_EXISTS | POSIX_SEMANTICS;
+        (*info).RootDirectory = std::ptr::null_mut();
+        (*info).FileNameLength = bytes as u32;
+        std::ptr::copy_nonoverlapping(
+            name.as_ptr(),
+            info.cast::<u8>().add(offset).cast::<u16>(),
+            name.len(),
+        );
+    }
+    // SAFETY: a handle open for DELETE, and a FILE_RENAME_INFO of `size` bytes.
+    let renamed = unsafe {
+        SetFileInformationByHandle(
+            source.as_raw_handle(),
+            FileRenameInfoEx,
+            info.cast(),
+            size as u32,
+        )
+    };
+    if renamed == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+// `path` whole, in the `\\?\` form, NUL-terminated.
+fn verbatim(path: &Path) -> io::Result<Vec<u16>> {
+    let full = std::path::absolute(path)?;
+    let text = full.as_os_str();
+    let lead: &str = match text.to_string_lossy() {
+        spelled if spelled.starts_with(r"\\?\") || spelled.starts_with(r"\\.\") => "",
+        spelled if spelled.starts_with(r"\\") => r"\\?\UNC",
+        _ => r"\\?\",
+    };
+    let rest: Vec<u16> = text.encode_wide().collect();
+    let rest = if lead == r"\\?\UNC" {
+        &rest[1..]
+    } else {
+        &rest[..]
+    };
+    Ok(lead
+        .encode_utf16()
+        .chain(rest.iter().copied())
+        .chain([0])
+        .collect())
+}
+
+pub(crate) fn remove_file(_: Permit, path: &Path) -> io::Result<()> {
+    std::fs::remove_file(path)
+}
+
+pub(crate) fn remove_dir(_: Permit, path: &Path) -> io::Result<()> {
+    std::fs::remove_dir(path)
+}
+
+// On exFAT and FAT32 a file another program holds open keeps its folder, which fails 145
+// (RF-C6x); NTFS and ReFS let it go.
+pub(crate) fn remove_dir_all(_: Permit, path: &Path) -> io::Result<()> {
+    std::fs::remove_dir_all(path)
 }
 
 // Claude Desktop is macOS only, so nothing asks these here.
 pub(crate) fn private_dir(_path: &Path) -> io::Result<Private> {
-    Err(not_yet())
+    Err(macos_only())
 }
 
 pub(crate) fn lock_dir(_path: &Path) -> io::Result<File> {
-    Err(not_yet())
+    Err(macos_only())
 }
 
 pub(crate) fn move_new(_: Permit, _from: &Path, _to: &Path) -> io::Result<()> {
-    Err(not_yet())
-}
-
-pub(crate) fn flush_dir(_dir: &Path) -> io::Result<()> {
-    Err(not_yet())
+    Err(macos_only())
 }
 
 pub(crate) fn same_volume(_a: &Path, _b: &Path) -> io::Result<bool> {
-    Err(not_yet())
+    Err(macos_only())
 }
 
 // The 8.3 name Windows keeps beside a long one, where the volume keeps them (RF-B2).
@@ -1085,6 +1309,180 @@ mod tests {
         assert_eq!(file_id(&root.join("never-made")), None);
         let _ = std::fs::remove_dir(&junction);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn listed(path: &Path) -> (bool, Vec<(String, u32, u8, bool)>) {
+        let read = Security::of(path).expect("its security");
+        let mut aces: Vec<_> = read
+            .aces()
+            .expect("a list")
+            .into_iter()
+            .map(|ace| (ace.sid, ace.mask, ace.flags, ace.allows))
+            .collect();
+        aces.sort();
+        aces.dedup();
+        (read.protected(), aces)
+    }
+
+    #[test]
+    fn what_replaces_a_tools_file_keeps_its_list_inherited_or_protected() {
+        use crate::atomic::{Perms, write};
+        let dir = scratch("keeps");
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let permit = Permit::for_a_test();
+        let (inherited, protected) = (dir.join(".claude.json"), dir.join(".credentials.json"));
+        for made in [&inherited, &protected] {
+            std::fs::write(made, "{}").expect("written");
+        }
+        testing::open_to_others(&protected).expect("opened");
+        for path in [&inherited, &protected] {
+            let before = listed(path);
+            write(permit, path, b"{\"new\":1}", Perms::MatchExisting).expect("replaced");
+            assert_eq!(listed(path), before, "{}", path.display());
+            assert_eq!(std::fs::read(path).expect("read"), b"{\"new\":1}");
+        }
+        assert!(!listed(&inherited).0, "it inherits still");
+        assert!(listed(&protected).0);
+        assert!(access(&protected).expect("read").shared);
+
+        write(permit, &protected, b"{}", Perms::Secret).expect("replaced");
+        private_to_you(&protected, false);
+        assert_eq!(std::fs::read_dir(&dir).expect("listed").count(), 2);
+        std::fs::remove_dir_all(&dir).expect("cleared");
+    }
+
+    #[test]
+    fn a_read_only_file_is_refused_and_left_as_it_was() {
+        use crate::atomic::{Perms, write};
+        let dir = scratch("read-only");
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let path = dir.join(".claude.json");
+        std::fs::write(&path, "{}").expect("written");
+        let writable = std::fs::metadata(&path).expect("there").permissions();
+        let mut read_only = writable.clone();
+        read_only.set_readonly(true);
+        std::fs::set_permissions(&path, read_only).expect("read-only");
+        for perms in [Perms::Secret, Perms::MatchExisting] {
+            let refused = write(Permit::for_a_test(), &path, b"new", perms).expect_err("refused");
+            assert_eq!(refused.kind(), io::ErrorKind::PermissionDenied);
+            assert_eq!(
+                refused.to_string(),
+                ".claude.json is read-only, and Pitboard does not replace a read-only file"
+            );
+        }
+        assert_eq!(std::fs::read(&path).expect("read"), b"{}");
+        assert!(
+            std::fs::metadata(&path)
+                .expect("there")
+                .permissions()
+                .readonly()
+        );
+        assert_eq!(std::fs::read_dir(&dir).expect("listed").count(), 1);
+        std::fs::set_permissions(&path, writable).expect("writable again");
+        std::fs::remove_dir_all(&dir).expect("cleared");
+    }
+
+    // As proper-lockfile keeps a lock: the time set is the time read back.
+    #[test]
+    fn a_folders_time_is_set_flushed_and_read_back() {
+        let dir = scratch("touch");
+        let lock = dir.join("target.lock");
+        std::fs::create_dir_all(&lock).expect("a lock");
+        let at = SystemTime::now() - std::time::Duration::from_secs(3600);
+        touch_dir(Permit::for_a_test(), &lock, at).expect("touched");
+        assert_eq!(
+            std::fs::metadata(&lock)
+                .expect("there")
+                .modified()
+                .expect("its time"),
+            at
+        );
+        flush_dir(&dir).expect("flushed");
+        assert!(flush_dir(&dir.join("missing")).is_err());
+        assert!(touch_dir(Permit::for_a_test(), &dir.join("missing"), at).is_err());
+        std::fs::remove_dir_all(&dir).expect("cleared");
+    }
+
+    // RF-C4's 10,000 replaces, through Pitboard's own write, beside another process reading the
+    // file again and again as std opens one, sharing its deletion; then beside one holding it
+    // without sharing that.
+    #[test]
+    fn ten_thousand_replaces_never_leave_a_reader_without_the_whole_file() {
+        use crate::atomic::{Perms, write};
+        use crate::helper::{Helper, Job, counts, record};
+        let dir = scratch("replaces");
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let path = dir.join("state.json");
+        let permit = Permit::for_a_test();
+        write(permit, &path, &record(0), Perms::Secret).expect("written");
+        let reader = Helper::start(Job::Reads, &path);
+        for round in 1..=10_000 {
+            write(permit, &path, &record(round), Perms::Secret)
+                .unwrap_or_else(|e| panic!("round {round}: {e}"));
+        }
+        let said = reader.stop();
+        let [reads, whole, torn, missing, failed] = counts(&said);
+        assert!(reads > 0, "{said}");
+        assert_eq!((whole, torn, missing, failed), (reads, 0, 0, 0), "{said}");
+
+        let holder = Helper::start(Job::HoldsWithoutDelete, &path);
+        let started = std::time::Instant::now();
+        let refused = write(permit, &path, &record(0), Perms::Secret).expect_err("held");
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(10),
+            "{:?}",
+            started.elapsed()
+        );
+        assert_eq!(
+            refused.to_string(),
+            "state.json stayed open in another program that does not let it be replaced"
+        );
+        holder.stop();
+        assert_eq!(std::fs::read(&path).expect("read"), record(10_000));
+        assert_eq!(std::fs::read_dir(&dir).expect("listed").count(), 1);
+        std::fs::remove_dir_all(&dir).expect("cleared");
+    }
+
+    // exFAT keeps no POSIX rename and no access list, so `MoveFileExW` replaces there, Pitboard's
+    // own files and a tool's, and any program holding the file is waited out, then refused.
+    #[test]
+    fn a_volume_without_posix_renames_is_written_through_move_file() {
+        use crate::atomic::{Perms, write};
+        use crate::helper::{Helper, Job, exfat};
+        let dir = exfat("pitboard-move-file");
+        std::fs::create_dir_all(&dir).expect("a folder on the volume");
+        let flags = volume_flags(
+            &opened(&dir, FILE_READ_ATTRIBUTES, FILE_FLAG_BACKUP_SEMANTICS)
+                .expect("the folder opened"),
+        );
+        assert_eq!(replace::route(flags), Route::MoveFile, "{flags:x?}");
+        let permit = Permit::for_a_test();
+        let (own, tools) = (dir.join("state.json"), dir.join(".claude.json"));
+        std::fs::write(&tools, "{}").expect("written");
+        for round in 0..3 {
+            let body = format!("{{\"round\":{round}}}");
+            write(permit, &own, body.as_bytes(), Perms::Secret).expect("replaced");
+            write(permit, &tools, body.as_bytes(), Perms::MatchExisting).expect("replaced");
+            for path in [&own, &tools] {
+                assert_eq!(std::fs::read_to_string(path).expect("read"), body);
+            }
+        }
+        assert_eq!(std::fs::read_dir(&dir).expect("listed").count(), 2);
+
+        let holder = Helper::start(Job::Locks, &own);
+        let started = std::time::Instant::now();
+        let refused = write(permit, &own, b"{}", Perms::Secret).expect_err("held");
+        assert!(started.elapsed() < std::time::Duration::from_secs(10));
+        assert_eq!(
+            refused.to_string(),
+            "state.json stayed open in another program that does not let it be replaced"
+        );
+        holder.stop();
+        assert_eq!(
+            std::fs::read_to_string(&own).expect("read"),
+            "{\"round\":2}"
+        );
+        std::fs::remove_dir_all(&dir).expect("cleared");
     }
 
     #[test]

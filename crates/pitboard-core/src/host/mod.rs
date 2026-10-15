@@ -43,6 +43,14 @@ mod macos;
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) mod memory;
 pub(crate) mod program;
+#[cfg_attr(
+    not(windows),
+    allow(
+        dead_code,
+        reason = "only Windows replaces a file this way; every system's tests read these rules"
+    )
+)]
+pub(crate) mod replace;
 pub(crate) mod token;
 #[cfg(unix)]
 mod unix;

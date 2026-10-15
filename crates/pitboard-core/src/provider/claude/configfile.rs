@@ -258,10 +258,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_quiet_file_is_written_once_and_what_was_dropped_is_recorded() {
         let (ctx, path, _s) = scratch();
         std::fs::write(

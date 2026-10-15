@@ -1514,10 +1514,6 @@ mod tests {
 
     /// A park written before Pitboard parked the whole slice holds the OAuth block alone.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_park_of_the_oauth_block_alone_says_its_plan_to_a_read() {
         let home = tempfile::tempdir().expect("a scratch home");
         let (ctx, _mem, _api) = machine(home.path(), None);
@@ -2304,10 +2300,6 @@ mod tests {
     /// it, and has its row with what was last measured, as it has online. Between the app's
     /// reads it went, and the account Claude Code's config named was in use in its place.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn offline_a_login_nobody_enrolled_has_its_row() {
         let home = tempfile::tempdir().expect("a scratch home");
         let (ctx, _mem, api) = machine(home.path(), Some("alpha-uuid"));

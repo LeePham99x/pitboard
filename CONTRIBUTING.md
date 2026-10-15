@@ -295,6 +295,10 @@ Working there takes:
   it there.
 - Developer Mode, or the right to make symbolic links, for the tests that make links. Only on
   a machine kept for testing, as AGENTS.md says.
+- A folder on an exFAT volume, named in `PITBOARD_TEST_VOLUME`, for the tests of how Pitboard
+  replaces and removes files where a volume has no POSIX rename. An administrator makes one
+  with `diskpart`: `create vdisk`, `attach vdisk`, `create partition primary`,
+  `format fs=exfat quick` and `assign`.
 
 Read the [Windows rules in AGENTS.md](AGENTS.md#on-windows) first. Then, as a Windows account
 that holds no real login, in PowerShell from a terminal that is not elevated:
@@ -318,13 +322,14 @@ From a Mac or Linux, `cargo check --target x86_64-pc-windows-msvc` checks only
 `pitboard-sites` and `pitboard-share-ffi`, since ring compiles C against MSVC's headers.
 
 CI's `windows` job runs these commands on `windows-2025` and `windows-11-arm`, the tests as
-a fresh standard user through `.github/scripts/test-as-standard-user.ps1`. The job fails when
-a run leaves a login item, a scheduled task or a login folder behind. It also builds
-`pitboard.exe` as a 0.x release is built and checks that it refuses and changes nothing. It
-runs the opened build with no argument as a fresh standard user, as winget's validation runs
-a program. The `csharp-windows` job builds `pitboard_ffi.dll` twice, as a 0.x release is
-built and opened with its fixtures, checks that the bindings generated from each are the Linux
-job's byte for byte, and runs the C# tests against each the same way.
+a fresh standard user through `.github/scripts/test-as-standard-user.ps1`, with an exFAT
+volume the job mounts. The job fails when a run leaves a login item, a scheduled task or a
+login folder behind. It also builds `pitboard.exe` as a 0.x release is built and checks that
+it refuses and changes nothing. It runs the opened build with no argument as a fresh standard
+user, as winget's validation runs a program. The `csharp-windows` job builds
+`pitboard_ffi.dll` twice, as a 0.x release is built and opened with its fixtures, checks that
+the bindings generated from each are the Linux job's byte for byte, and runs the C# tests
+against each the same way.
 
 CI's `windows-release` job builds the release's zips with `.github/actions/windows-release`,
 as `release.yml` does from 1.0.0. `.github/scripts/check-windows-build.ps1` checks each

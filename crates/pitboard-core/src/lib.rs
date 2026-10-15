@@ -79,6 +79,8 @@ pub mod words;
 
 pub(crate) mod atomic;
 pub(crate) mod fault;
+#[cfg(test)]
+mod helper;
 pub mod holder;
 pub(crate) mod home;
 pub mod host;

@@ -1527,10 +1527,6 @@ mod tests {
 
     // Each said `~/.pitboard` whatever `PITBOARD_HOME` named.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn uninstall_names_the_folder_it_asks_about_and_deletes() {
         use pitboard_core::testing::MemoryHost;
         let home = std::env::temp_dir().join(format!(
@@ -1545,8 +1541,11 @@ mod tests {
                 .with_pitboard_home(elsewhere.clone())
                 .with_memory_stores(MemoryHost::new()),
         );
-        let named = std::path::Path::new("~").join("elsewhere");
-        let named = named.display();
+        let named = if cfg!(windows) {
+            elsewhere.display().to_string()
+        } else {
+            std::path::Path::new("~").join("elsewhere").display().to_string()
+        };
         let asked = uninstall_question(&pitboard);
         assert!(
             asked.starts_with(&format!(

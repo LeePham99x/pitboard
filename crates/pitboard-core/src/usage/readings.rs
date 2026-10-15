@@ -195,10 +195,6 @@ mod tests {
     /// config named, which could be another login's, and kept a limit until its reset
     /// whatever an answer said. The account's first answer is all that is left of it.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_reading_0_9_0_wrote_under_the_wrong_account_is_gone_at_the_first_answer() {
         let (ctx, _scratch) = machine();
         std::fs::write(
@@ -234,10 +230,6 @@ mod tests {
     /// One file holds both tools' readings, and each answer is recorded by what it is:
     /// Anthropic's lists every limit, and a window OpenAI's leaves out stands while it runs.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn each_answer_is_recorded_by_whether_it_lists_every_limit() {
         let (ctx, _scratch) = machine();
         let given = |kinds: &[&str], at: i64, lists_every_limit: bool| Snapshot {
@@ -278,10 +270,6 @@ mod tests {
     /// The owner's panes: a busy one had recorded 22% when an idle one, still holding the
     /// 20% of its last response, ran after it. Whoever writes last, the 22% stands.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_session_never_moves_a_reading_back_whoever_writes_last() {
         let (ctx, _scratch) = machine();
         answered(
@@ -307,10 +295,6 @@ mod tests {
     /// A session's numbers do not say whose they are, and an account Pitboard has never had
     /// an answer about has no window to know them by.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_session_founds_no_reading() {
         let (ctx, _scratch) = machine();
         passes(&ctx, "five_hour", 22.0);
@@ -321,10 +305,6 @@ mod tests {
     /// A status line runs in every open session, as often as every second, and what it
     /// passes is mostly what is already here.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_reading_that_changes_nothing_leaves_the_file_alone() {
         let (ctx, _scratch) = machine();
         let answers = [
@@ -345,10 +325,6 @@ mod tests {
     /// so the 100% stands until Pitboard's next answer from Anthropic, which can. From there
     /// sessions move the lower share forward again.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_banked_reset_is_recorded_by_the_next_answer_and_followed_by_sessions() {
         let (ctx, _scratch) = machine();
         let weekly = |ctx: &Context| load(ctx)["work"].windows[0].percent;
@@ -376,10 +352,6 @@ mod tests {
     /// finds nothing used is recorded once, and every read after it that finds the same
     /// leaves the file alone.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_window_past_its_reset_is_recorded_reset_once() {
         let (ctx, _scratch) = machine();
         let mut full = answer("session", 100.0, NOW - 7_200);

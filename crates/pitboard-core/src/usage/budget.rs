@@ -377,10 +377,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn asking_again_inside_the_floor_serves_what_is_already_known() {
         let (ctx, clock, _s) = machine();
         let five_hour = reading(&["five_hour"]);
@@ -420,10 +416,6 @@ mod tests {
     /// `status --fresh` and the app's Refresh do not ask through a wait the service asked
     /// for, as the 0.3.0 changelog and doctor's advice say. They asked through it before.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn asking_for_it_keeps_a_wait_the_service_asked_for() {
         let (ctx, clock, _s) = machine();
         record(
@@ -439,10 +431,6 @@ mod tests {
     /// A wait Pitboard chose after failing to reach the service is its own guess, and
     /// somebody asking is how it learns the network is back.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn asking_for_it_tries_an_unreachable_service_again() {
         let (ctx, _clock, _s) = machine();
         record(
@@ -458,10 +446,6 @@ mod tests {
     /// has a long way back to its last answer: one that could not be reached was said
     /// to be rate limited.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn an_unreachable_service_is_not_called_rate_limiting() {
         let (ctx, _clock, _s) = machine();
         record(
@@ -491,10 +475,6 @@ mod tests {
 
     /// What Anthropic said to wait is believed over anything Pitboard would pick.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_retry_after_is_taken_at_its_word() {
         let (ctx, clock, _s) = machine();
         record(
@@ -511,10 +491,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn refusals_in_a_row_wait_longer_each_time_up_to_a_cap() {
         let (ctx, clock, _s) = machine();
         let waits: Vec<i64> = (0..8)
@@ -539,10 +515,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn an_answer_clears_a_wait_and_starts_the_floor_again() {
         let (ctx, _clock, _s) = machine();
         record(

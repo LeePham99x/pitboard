@@ -211,10 +211,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn uninstalling_where_nothing_is_scheduled_is_not_a_failure() {
         let m = machine("uninstall-unscheduled");
         let removed = uninstall(

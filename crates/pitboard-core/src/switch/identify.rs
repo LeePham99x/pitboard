@@ -1612,10 +1612,6 @@ mod tests {
     /// Codex's login says whose it is by itself, so it is never renewed to tell, however
     /// long ago its access token lapsed.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_codex_login_is_told_by_its_claims_and_never_renewed() {
         let m = codex_machine("identify-codex-lapsed");
         let mut login = codex_login("here", "here-again");

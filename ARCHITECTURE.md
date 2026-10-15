@@ -96,8 +96,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     data folder before anything else is asked, so neither face lists processes with their
     parents or reads a cookie jar. `windows/` is the face that refuses whatever of Windows
     is not built yet: no store of secrets, a vault of `store::Backend::Unknown` whose every
-    call cannot be read, no process list, no scheduler, no file replaced, moved or removed,
-    and no program found. What it does read is this process's token, through windows-sys
+    call cannot be read, no process list, no scheduler, none of the four ways a login kept as
+    files moves, and no program found. What it does read is this process's token, through windows-sys
     (`windows/user.rs`), which `token.rs` makes an `Elevation` of and whose `TokenUser` is
     the person's SID, the account's own folders (`GetUserProfileDirectoryW`,
     `FOLDERID_Profile`, `FOLDERID_LocalAppData` and the profile type), which a build for
@@ -108,9 +108,18 @@ window loads its site, and whatever the site's pages load, as a browser would.
     the person, SYSTEM and Administrators alone, which a folder passes on to what is made in
     it. A folder already there keeps its own list. `fs::access` reads a path's list, and
     `acl.rs` says who else it lets reach the data, by the names Windows shows, and the
-    `icacls` line that closes it. `token.rs` and `acl.rs` are compiled on every system, so
-    how a token and a list read is tested everywhere, and `words.rs` says each system's
-    refusal from a `host::Os`. A fact that differs by system is a `match` on `host::OS`,
+    `icacls` line that closes it. `fs::rename` replaces a file whole: by the POSIX rename
+    where the volume reports `FILE_SUPPORTS_POSIX_UNLINK_RENAME`, as NTFS and ReFS do, which
+    lands over a file another program holds sharing its deletion, and by `MoveFileExW` with
+    write-through on exFAT, FAT32 and an SMB share. `replace.rs` says which route a volume's
+    flags give and which refusals are waited out: a sharing violation or access denied, for
+    about 2.3 s. A read-only file is refused, never cleared. `fs::copy_access` gives what
+    replaces another program's file that file's list, protected or inherited as it is, and
+    `fs::sync_dir` flushes the folder a rename was made in, which a standard user may on
+    NTFS, ReFS, exFAT and FAT32; an SMB share refuses, and there the write-through is what
+    makes the rename last. `token.rs`, `acl.rs` and `replace.rs` are compiled on every
+    system, so how a token and a list read and which route a volume takes is tested
+    everywhere, and `words.rs` says each system's refusal from a `host::Os`. A fact that differs by system is a `match` on `host::OS`,
     such as the folders macOS asks about before an app may look in them, or
     `Os::default_pitboard_home`, where Pitboard keeps its files for a home when
     `PITBOARD_HOME` names nowhere else.
@@ -2091,6 +2100,9 @@ Replacing a file:
 - 10000 POSIX renames beside a probe reader and a Bun reader that share delete, Bun holding
   each open 50 ms, needed no retry: about 13 s on NTFS on both images, and 2000 took 1.4 s
   on ReFS. No reader saw a torn or empty file.
+- A reader thread in the renaming process itself found the file missing in 10788 of its
+  69694 opens during those renames on windows-2025, and in none on windows-11-arm. Readers in
+  other processes never did.
 - Beside readers that reopen the file without a pause, one not sharing delete,
   `MoveFileExW` fails 5 most of the time. In 180 s it replaced the file 154 times on
   windows-2025, 30 rounds running out of 50 retries, and 2439 times on windows-11-arm, in up

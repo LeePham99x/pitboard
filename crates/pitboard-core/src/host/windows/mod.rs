@@ -11,7 +11,6 @@
 //! - no process list (W18), so a switch says nobody can tell what still runs a tool, and
 //!   every process may still be running;
 //! - no scheduler (W25);
-//! - no file replaced, moved or removed (W16);
 //! - no program found (W17), and no `PATH` of a login shell, which Windows does not have.
 //!
 //! Each tool's own live chain refuses on Windows in its provider's code, not here: which
@@ -65,7 +64,6 @@ impl Host for Windows {
         None
     }
 
-    // Read as on every system. Every write ends in a rename, which `fs` refuses until W16.
     fn file(&self, path: PathBuf) -> Box<dyn RawStore> {
         Box::new(PlainFile::at(path))
     }
@@ -278,9 +276,9 @@ mod tests {
         assert!(crate::service::gate(&ctx).is_ok());
     }
 
-    // Nothing is replaced, moved or removed until W16, and no program is found until W17.
+    // Claude Desktop's folders are never moved here, and no program is found until W17.
     #[test]
-    fn no_file_is_moved_and_no_program_found() {
+    fn no_apps_folder_is_moved_and_no_program_found() {
         let dir = std::env::temp_dir().join(format!("pitboard-windows-{}", std::process::id()));
         let permit = crate::service::Permit::for_a_test();
         let unsupported = |made: std::io::Result<()>| {
@@ -289,16 +287,11 @@ mod tests {
                 Err(std::io::ErrorKind::Unsupported)
             );
         };
-        unsupported(fs::create_dir_all(permit, &dir));
-        unsupported(fs::create_dir(permit, &dir));
         unsupported(fs::private_dir(&dir).map(drop));
         unsupported(fs::lock_dir(&dir).map(drop));
         unsupported(fs::move_new(permit, &dir, &dir.join("x")));
-        unsupported(fs::flush_dir(&dir));
         unsupported(fs::same_volume(&dir, &dir).map(drop));
         unsupported(write_jar(&dir.join("Cookies"), &[]));
-        unsupported(fs::rename(permit, &dir, &dir.join("x")));
-        unsupported(fs::remove_dir_all(permit, &dir));
         assert!(!dir.exists(), "nothing was made");
         assert!(!proc::can_run(&std::env::current_exe().expect("this test")));
         assert_eq!(login_path(&Environment::default()), LoginPath::Unknown);

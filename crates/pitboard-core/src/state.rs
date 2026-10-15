@@ -1152,17 +1152,13 @@ mod tests {
     /// about another, so it is not carried over, and says nothing about Codex's at all. It is
     /// kept for when its slot is read again, whatever another slot records meanwhile.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn whose_login_another_slot_holds_is_not_claimed_here() {
         let home = std::env::temp_dir().join(format!("pitboard-slots-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&home);
         let here = Context::new(home.clone()).with_pitboard_home(home.clone());
         let elsewhere = here
             .clone()
-            .with_claude_config_dir("/somewhere/else".into());
+            .with_claude_config_dir(home.join("somewhere-else").to_string_lossy().into());
 
         let mut state = State::default();
         state.accounts.push(account("work", None));
@@ -1211,10 +1207,6 @@ mod tests {
     /// `CLAUDE_CONFIG_DIR` picks Claude Code's keychain item. A record made under one home
     /// says nothing about another, and says nothing about Claude Code's at all.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn another_codex_home_is_another_codex_slot() {
         let home = std::env::temp_dir().join(format!(
             "pitboard-codex-slots-{}-{:?}",
@@ -1237,7 +1229,9 @@ mod tests {
                 .account_in_use(which)
                 .map(|account| account.label.clone())
         };
-        let moved = here.clone().with_codex_home("/somewhere/else".into());
+        let moved = here
+            .clone()
+            .with_codex_home(home.join("somewhere-else").to_string_lossy().into());
         let loaded = load(&moved).unwrap();
         assert_eq!(loaded.in_use(ProviderId::Codex), None);
         assert_eq!(
@@ -1341,10 +1335,6 @@ mod tests {
     /// that account's record with nothing established about the login, so nothing reads it
     /// as what the service said until the service is asked.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_schema_5_file_comes_forward_with_the_account_in_use_unconfirmed() {
         let home = std::env::temp_dir().join(format!(
             "pitboard-schema-5-{}-{:?}",
@@ -1410,10 +1400,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_schema_6_file_is_written_back_at_schema_8_and_otherwise_as_it_was() {
         let home = std::env::temp_dir().join(format!(
             "pitboard-schema-6-{}-{:?}",
@@ -1450,10 +1436,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_schema_7_file_0_11_0_wrote_is_written_back_at_schema_8_with_its_discarded_parks_typed() {
         let home = std::env::temp_dir().join(format!(
             "pitboard-schema-7-{}-{:?}",
@@ -1706,10 +1688,6 @@ mod tests {
 
     /// 0.11.0 kept a Codex plan beside the workspace, as its token says it.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_codex_plan_0_11_0_recorded_is_the_accounts_plan() {
         let home = std::env::temp_dir().join(format!(
             "pitboard-plan-0-11-0-{}-{:?}",

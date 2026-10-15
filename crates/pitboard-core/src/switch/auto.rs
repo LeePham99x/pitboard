@@ -420,10 +420,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_limit_below_the_share_takes_no_lock_and_changes_nothing() {
         let (m, _) = nearly_out("auto-below", 94.0);
         let before = m.mem.live().peek(&m.service);
@@ -461,10 +457,6 @@ mod tests {
     /// Below the share it says which account it watches, how full its fullest limit is, and
     /// when that was read.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn below_the_share_it_says_which_account_it_watches() {
         let (m, _) = nearly_out("auto-watching", 94.0);
         let looked = stands(&m);
@@ -485,10 +477,6 @@ mod tests {
     /// Anthropic asking for less traffic about the account in use holds back its next reading,
     /// which is what the automatic switch judges, so that is said with what it watches.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_rate_limit_hold_is_said_with_what_it_watches() {
         let (m, _) = nearly_out("auto-held", 60.0);
         crate::usage::budget::record(
@@ -682,10 +670,6 @@ mod tests {
     /// from under the name of the one switched to. Taken as `here`'s, a full five-hour limit
     /// in it switched `here` away at 10%.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_usage_cache_in_claude_codes_config_moves_nothing() {
         let (m, _) = nearly_out("auto-cache", 10.0);
         cache_usage(&m, usage_answer(100.0));
@@ -1200,10 +1184,6 @@ mod tests {
     /// Under a custom OAuth endpoint Claude Code keeps its login where Pitboard does not act,
     /// so there is nothing to watch, whatever the numbers say, and nothing is settled.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn under_a_custom_oauth_endpoint_nothing_is_watched() {
         let (m, _) = nearly_out("auto-custom-oauth", 96.0);
         let config = m.ctx_home().join(".claude");
@@ -1492,10 +1472,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn as_root_nothing_is_switched_or_recorded() {
         let (m, _) = nearly_out("auto-root", 96.0);
         m.mem
