@@ -108,7 +108,7 @@ window loads its site, and whatever the site's pages load, as a browser would.
     the person, SYSTEM and Administrators alone, which a folder passes on to what is made in
     it. A folder already there keeps its own list. `fs::access` reads a path's list, and
     `acl.rs` says who else it lets reach the data, by the names Windows shows, and the
-    `icacls` line that closes it. `fs::rename` replaces a file whole: by the POSIX rename
+    `icacls` lines that close it. `fs::rename` replaces a file whole: by the POSIX rename
     where the volume reports `FILE_SUPPORTS_POSIX_UNLINK_RENAME`, as NTFS and ReFS do, which
     lands over a file another program holds sharing its deletion, and by `MoveFileExW` with
     write-through on exFAT, FAT32 and an SMB share. `replace.rs` says which route a volume's

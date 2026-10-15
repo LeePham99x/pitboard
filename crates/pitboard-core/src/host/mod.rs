@@ -95,7 +95,7 @@ impl Os {
         }
     }
 
-    // What a person types to make `paths` private to themselves: on Windows one `icacls` a
+    // What a person types to make `paths` private to themselves: on Windows two `icacls` a
     // path, naming them by `sid`, and none without it or for files and folders alike.
     pub(crate) fn make_private_commands(
         self,
@@ -115,7 +115,7 @@ impl Os {
             Os::Windows => match (kind, sid) {
                 (Kind::Directory | Kind::File, Some(sid)) => paths
                     .iter()
-                    .map(|path| acl::icacls(kind == Kind::Directory, path, sid))
+                    .flat_map(|path| acl::icacls(kind == Kind::Directory, path, sid))
                     .collect(),
                 _ => Vec::new(),
             },

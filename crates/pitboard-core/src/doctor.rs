@@ -3917,7 +3917,7 @@ mod tests {
 
     const SID: &str = "S-1-5-21-1004336348-1177238915-682003330-1001";
 
-    // On Windows one `icacls` a path, and none where the person's SID could not be read.
+    // On Windows two `icacls` a path, and none where the person's SID could not be read.
     #[test]
     fn advice_names_a_command_only_where_there_is_one() {
         assert_eq!(
@@ -3929,14 +3929,19 @@ mod tests {
             ": `chmod 700 /a /b`."
         );
         let windows =
-            Os::Windows.make_private_commands(Kind::File, &[r"C:\a", r"C:\b c"], Some(SID));
+            Os::Windows.make_private_commands(Kind::File, &[r"C:\a", r"C:\b c\"], Some(SID));
         assert_eq!(
             windows,
-            [r"C:\a", r"C:\b c"].map(|path| crate::host::acl::icacls(false, path, SID))
+            [r"C:\a", r"C:\b c"]
+                .map(|path| crate::host::acl::icacls(false, path, SID))
+                .concat()
         );
         assert_eq!(
             running(&windows),
-            format!(": `{}` and `{}`.", windows[0], windows[1])
+            format!(
+                ": `{}`, `{}`, `{}` and `{}`.",
+                windows[0], windows[1], windows[2], windows[3]
+            )
         );
         assert!(
             Os::Windows
@@ -3986,14 +3991,19 @@ mod tests {
             )
         );
         // A folder's inheritance on a file leaves it open to nobody, its owner too.
-        let [claude, vault, park] = [(claude, false), (vault, true), (park, false)]
+        let [
+            [claude, claude_grant],
+            [vault, vault_grant],
+            [park, park_grant],
+        ] = [(claude, false), (vault, true), (park, false)]
             .map(|(path, folder)| crate::host::acl::icacls(folder, path, SID));
         assert_eq!(
             found.advice,
             format!(
                 "These hold usable OAuth tokens in plain text, and Claude Code's file takes the \
                  access list of the folder it is in. Anyone else on this PC can read them: \
-                 `{claude}`, `{vault}` and `{park}`."
+                 `{claude}`, `{claude_grant}`, `{vault}`, `{vault_grant}`, `{park}` and \
+                 `{park_grant}`."
             )
         );
         f.sid = None;
@@ -4019,11 +4029,12 @@ mod tests {
             home.detail,
             r"C:\Users\dana\AppData\Local\Pitboard is open to Users, you, SYSTEM and Administrators"
         );
+        let [reset, grant] = crate::host::acl::icacls(true, &f.home.display().to_string(), SID);
         assert_eq!(
             home.advice,
             format!(
-                "Park names contain account identifiers, so only you should read it: `{}`.",
-                crate::host::acl::icacls(true, &f.home.display().to_string(), SID)
+                "Park names contain account identifiers, so only you should read it: `{reset}` \
+                 and `{grant}`."
             )
         );
     }
@@ -6156,12 +6167,13 @@ mod tests {
         let checks = judge_codex(Os::Windows, Some(SID), &codex, &[], NOW);
         let file = check(&checks, "codex_auth_file");
         assert_eq!(file.level, Level::Warn);
+        let [reset, grant] =
+            crate::host::acl::icacls(false, r"C:\Users\dana\.codex\auth.json", SID);
         assert_eq!(
             file.advice,
             format!(
                 "It holds a usable login in plain text, and Codex gives it no access list of \
-                 its own, so it takes its folder's: `{}`.",
-                crate::host::acl::icacls(false, r"C:\Users\dana\.codex\auth.json", SID)
+                 its own, so it takes its folder's: `{reset}` and `{grant}`."
             )
         );
 

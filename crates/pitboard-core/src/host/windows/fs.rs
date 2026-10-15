@@ -1218,7 +1218,7 @@ mod tests {
         let you = crate::host::user::sid().expect("this account's SID");
         let named = path.display().to_string();
         let lines = Os::Windows.make_private_commands(kind, &[&named], Some(&you));
-        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert_eq!(lines.len(), 2, "{lines:?}");
         for line in lines {
             let ran = match shell {
                 "cmd" => std::process::Command::new("cmd.exe")
@@ -1255,13 +1255,31 @@ mod tests {
             run_advice(shell, Kind::File, &login);
             assert_eq!(access(&login), Some(private.clone()), "{shell}");
             assert_eq!(std::fs::read(&login).expect("its owner reads it"), b"x");
+            // As `icacls /grant Users:R` opens the file itself.
+            testing::open_to_others(&login).expect("opened");
+            run_advice(shell, Kind::File, &login);
+            assert_eq!(
+                access(&login),
+                Some(private.clone()),
+                "{shell}: its own grant"
+            );
         }
         let inside = shared.join("inside");
         std::fs::write(&inside, "x").expect("written");
+        testing::open_to_others(&shared).expect("opened");
         run_advice("powershell", Kind::Directory, &shared);
         assert_eq!(access(&shared), Some(private.clone()));
-        assert_eq!(access(&inside), Some(private), "what is inside takes it");
+        assert_eq!(
+            access(&inside),
+            Some(private.clone()),
+            "what is inside takes it"
+        );
         assert_eq!(std::fs::read(&inside).expect("its owner reads it"), b"x");
+        // A trailing separator, whose `\"` the C runtime would read as a quote.
+        testing::open_to_others(&shared).expect("opened");
+        let spelled = std::path::PathBuf::from(format!("{}\\", shared.display()));
+        run_advice("cmd", Kind::Directory, &spelled);
+        assert_eq!(access(&shared), Some(private));
         std::fs::remove_dir_all(&dir).expect("cleared");
     }
 
