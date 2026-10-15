@@ -1,0 +1,56 @@
+namespace Pitboard.Windows.Tests;
+
+[TestClass]
+public sealed class IdentityTests
+{
+    private static readonly Identity Debug = new(Build.Debug);
+    private static readonly Identity Release = new(Build.Release);
+
+    [TestMethod]
+    public void ADebugBuildKeepsApartFromARelease()
+    {
+        Assert.AreEqual("Pitboard.Pitboard", Release.Aumid);
+        Assert.AreEqual("Pitboard.Pitboard.Debug", Debug.Aumid);
+        Assert.AreEqual("pitboard", Release.LinkScheme);
+        Assert.AreEqual("pitboard-debug", Debug.LinkScheme);
+        Assert.AreEqual("Pitboard", Release.InstanceKey(null));
+        Assert.AreEqual("Pitboard Debug", Debug.InstanceKey(null));
+        Assert.AreEqual(@"Pitboard Debug C:\Temp\pitboard-fixture", Debug.InstanceKey(@"C:\Temp\pitboard-fixture"));
+    }
+
+    [TestMethod]
+    public void EachBuildKeepsItsDataInAFolderOfItsOwn()
+    {
+        var local = Path.Combine(Path.GetTempPath(), "Local");
+        var fixture = Path.Combine(Path.GetTempPath(), "pitboard-fixture");
+
+        Assert.AreEqual(Path.Combine(local, "Pitboard App"), Release.DataFolder(local, null));
+        Assert.AreEqual(Path.Combine(local, "Pitboard App Debug"), Debug.DataFolder(local, null));
+        Assert.AreEqual(fixture, Debug.DataFolder(local, fixture));
+    }
+
+    // "Pitboard App" begins with "Pitboard", which a comparison of strings would take for inside it.
+    [TestMethod]
+    public void TheAppsFoldersAndPitboardsAreNeverInsideOneAnother()
+    {
+        var local = Path.Combine(Path.GetTempPath(), "Local");
+        string[] folders = [Path.Combine(local, "Pitboard"), Release.DataFolder(local, null), Debug.DataFolder(local, null)];
+
+        foreach (var folder in folders)
+        {
+            foreach (var other in folders.Where(other => other != folder))
+            {
+                Assert.IsFalse(Inside(folder, other), $"{folder} is inside {other}");
+            }
+        }
+
+        Assert.IsTrue(Inside(Path.Combine(local, "Pitboard App", "WebView2"), Release.DataFolder(local, null)));
+    }
+
+    private static bool Inside(string path, string folder)
+    {
+        var relative = Path.GetRelativePath(folder, path);
+        return relative != "." && relative != ".." && !Path.IsPathRooted(relative)
+            && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal);
+    }
+}

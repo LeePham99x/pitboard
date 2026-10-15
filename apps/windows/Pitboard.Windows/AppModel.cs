@@ -1,0 +1,154 @@
+using System.ComponentModel;
+using System.Reflection;
+using System.Runtime.CompilerServices;
+using Microsoft.UI.Dispatching;
+using Pitboard.Core;
+
+namespace Pitboard.Windows;
+
+// The macOS AppModel's rules: an older snapshot is dropped, and only the parts that changed are told.
+public sealed class AppModel : INotifyPropertyChanged
+{
+    private static readonly PropertyInfo[] Parts =
+        typeof(Snapshot).GetProperties(BindingFlags.Public | BindingFlags.Instance);
+
+    private readonly Dictionary<string, object?> _parts = [];
+    private readonly PitboardModel? _model;
+
+    public AppModel(Snapshot first)
+    {
+        foreach (var part in Parts)
+        {
+            _parts[part.Name] = part.GetValue(first);
+        }
+    }
+
+    private AppModel(PitboardModel model)
+        : this(model.Snapshot())
+    {
+        _model = model;
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    // The queue runs nothing it was handed before this returns, so Deliver is set before any snapshot.
+    public static AppModel Listening(DispatcherQueue queue, Func<ModelListener, PitboardModel> make)
+    {
+        var listening = new ModelListening(queue);
+        var app = new AppModel(make(listening));
+        listening.Deliver = snapshot => app.Apply(snapshot);
+        return app;
+    }
+
+    public void Send(Intent intent) => _model?.Send(intent);
+
+    public void Shutdown() => _model?.Shutdown();
+
+    public IReadOnlyList<string> Apply(Snapshot snapshot)
+    {
+        if (snapshot.Revision <= Revision)
+        {
+            return [];
+        }
+
+        var assigned = new List<string>();
+        foreach (var part in Parts)
+        {
+            var value = part.GetValue(snapshot);
+            if (!Structural.Equal(_parts[part.Name], value))
+            {
+                _parts[part.Name] = value;
+                assigned.Add(part.Name);
+            }
+        }
+
+        foreach (var name in assigned)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+        }
+
+        return assigned;
+    }
+
+    public ulong Revision => Part<ulong>();
+
+    public long Now => Part<long>();
+
+    public bool Reading => Part<bool>();
+
+    public long? UpdatedAt => Part<long?>();
+
+    public Status? Status => Part<Status?>();
+
+    public Warning[] Warnings => Part<Warning[]>();
+
+    public ReadFailure? ReadFailure => Part<ReadFailure?>();
+
+    public bool Stuck => Part<bool>();
+
+    public Tool[]? Installed => Part<Tool[]?>();
+
+    public string? SwitchUnderWay => Part<string?>();
+
+    public QuitQuestion? QuitQuestion => Part<QuitQuestion?>();
+
+    public LastSwitch[] LastSwitches => Part<LastSwitch[]>();
+
+    public Abandoned? Abandoned => Part<Abandoned?>();
+
+    public Failure? Failure => Part<Failure?>();
+
+    public WindowRequest WindowRequest => Part<WindowRequest>();
+
+    public RunningSignIn? SigningIn => Part<RunningSignIn?>();
+
+    public Sheet? Sheet => Part<Sheet?>();
+
+    public Failure? SheetFailure => Part<Failure?>();
+
+    public MenuBarText MenuBar => Part<MenuBarText>();
+
+    public AccountSection[] Sections => Part<AccountSection[]>();
+
+    public bool ShowsTools => Part<bool>();
+
+    public PanelNotice[] Notices => Part<PanelNotice[]>();
+
+    public MenuNotices MenuNotices => Part<MenuNotices>();
+
+    public Footing Footing => Part<Footing>();
+
+    public SetupStep? Setup => Part<SetupStep?>();
+
+    public AccountsShown AccountsShown => Part<AccountsShown>();
+
+    public string? MenuAccountsNote => Part<string?>();
+
+    public string UpdatedMenu => Part<string>();
+
+    public string UpdatedWindow => Part<string>();
+
+    public SheetText? SheetText => Part<SheetText?>();
+
+    public SigningInText? SigningInText => Part<SigningInText?>();
+
+    public StowText? StowText => Part<StowText?>();
+
+    public Question? QuitConfirmation => Part<Question?>();
+
+    public AlertText? FailureAlert => Part<AlertText?>();
+
+    public MachineShown Machine => Part<MachineShown>();
+
+    public AccountWindowsShown AccountWindows => Part<AccountWindowsShown>();
+
+    private T Part<T>([CallerMemberName] string name = "") => (T)_parts[name]!;
+}
+
+// The model's next snapshot waits for this call, so it only queues the snapshot on the app's thread.
+public sealed class ModelListening(DispatcherQueue queue) : ModelListener
+{
+    public Action<Snapshot>? Deliver { get; set; }
+
+    public void Changed(Snapshot snapshot) => queue.TryEnqueue(() => Deliver?.Invoke(snapshot));
+}

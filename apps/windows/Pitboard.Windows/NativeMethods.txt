@@ -1,0 +1,17 @@
+SHGetKnownFolderPath
+FOLDERID_LocalAppData
+KNOWN_FOLDER_FLAG
+CoTaskMemFree
+SetCurrentProcessExplicitAppUserModelID
+MessageBox
+CoWaitForMultipleObjects
+RegisterClassEx
+CreateWindowEx
+DefWindowProc
+GetModuleHandle
+WM_ENDSESSION
+WM_QUERYENDSESSION
+WM_SETTINGCHANGE
+WM_TIMECHANGE
+CWMO_FLAGS
+INFINITE
