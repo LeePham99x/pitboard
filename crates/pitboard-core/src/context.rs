@@ -162,11 +162,7 @@ impl Environment {
         self.text(name).is_some_and(|v| !v.is_empty())
     }
 
-    /// The person's home: `HOME` on macOS and Linux and `USERPROFILE` on Windows, or, where
-    /// it is unset, the account's own, as the passwd database names it and Foundation finds
-    /// it for an app, or as `GetUserProfileDirectoryW` does. Set, even empty, it is what the
-    /// person said, and an empty or relative one is refused where it is used
-    /// ([`crate::home::check_absolute`]), never taken to be the folder Pitboard runs in.
+    // Set, even empty, it is the person's: `check_absolute` refuses an empty or relative one.
     pub(crate) fn home(&self) -> PathBuf {
         self.path(self.os.home_variable())
             .map(PathBuf::from)
@@ -174,9 +170,7 @@ impl Environment {
             .unwrap_or_default()
     }
 
-    /// Pitboard's own directory: `PITBOARD_HOME`, or the system's default for
-    /// `Environment::home`. The path as the environment gives it, with any `.`, `..` or
-    /// trailing separator it holds.
+    // As the environment spells it, any `.`, `..` or trailing separator kept.
     pub fn pitboard_home(&self) -> PathBuf {
         self.path("PITBOARD_HOME")
             .map(PathBuf::from)
@@ -460,10 +454,6 @@ impl Context {
         self.api.as_ref()
     }
 
-    /// Claude Code's defaults for a person whose home is `home`: Pitboard's default
-    /// directory, `~/.claude`, the default credential slot, `claude` looked up on `PATH`, and
-    /// no proxy. Pitboard's own directory is the system's default for `home`, the home handed
-    /// in and never this account's own.
     #[cfg(any(test, feature = "test-support"))]
     #[doc(hidden)]
     pub fn new(home: PathBuf) -> Context {

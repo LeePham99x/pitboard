@@ -202,14 +202,7 @@ impl Os {
         }
     }
 
-    /// Where Pitboard keeps its own files for a person whose home is `home`, when
-    /// `PITBOARD_HOME` names nowhere else: `.pitboard` in that home on macOS and Linux, and
-    /// `AppData\Local\Pitboard` in it on Windows.
-    ///
-    /// Worked out from the home it is handed, never from this account's own, so a context
-    /// made for a home of a test's own, or of an app's choosing, keeps Pitboard's files
-    /// there, and a scheduled run and one by hand never part over a moved `USERPROFILE`. The
-    /// daily renewal schedule belongs to this home and no other ([`crate::schedule`]).
+    // From the home it is handed, so a scheduled run and one by hand agree.
     pub(crate) fn default_pitboard_home(self, home: &Path) -> PathBuf {
         match self {
             Os::MacOs | Os::Linux => home.join(".pitboard"),

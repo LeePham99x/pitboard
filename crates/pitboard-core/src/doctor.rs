@@ -64,10 +64,7 @@ pub(crate) struct Facts {
     pub(crate) credential_parts: Vec<(String, usize)>,
     pub(crate) home: PathBuf,
     pub(crate) home_access: Option<Access>,
-    /// Anything on this disk holding a login that somebody other than the owner can read:
-    /// (path, whether it is a file or a folder, its access). Empty on a machine with a
-    /// keychain and a tidy plaintext fallback, and the whole security story on a machine
-    /// without one.
+    // Each login on disk somebody else can read: its path, whether it is a folder, its access.
     pub(crate) readable_by_others: Vec<(String, Kind, Access)>,
     pub(crate) machine_id_known: bool,
     pub(crate) windows: Option<WindowsHomes>,

@@ -219,7 +219,6 @@ fn a_windows_build_answers_what_it_may_and_changes_nothing() {
     }
 }
 
-/// What `folder` holds, by its path in it, apart from `kept` and what is in it.
 fn left_in(folder: &Path, kept: Option<&Path>) -> Vec<PathBuf> {
     let mut left = Vec::new();
     let mut to_read = vec![PathBuf::new()];

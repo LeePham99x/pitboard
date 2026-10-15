@@ -12,12 +12,7 @@ use std::path::{Path, PathBuf};
 /// The file Codex keeps its login in, inside [`home`].
 pub(crate) const AUTH_FILE: &str = "auth.json";
 
-/// `CODEX_HOME`, or `~/.codex`.
-///
-/// Codex requires the directory to exist already and canonicalises it, so a scratch home
-/// for a private sign-in has to be created before `codex login` is run. On Windows the home
-/// is as Codex 0.162.1 spells it, canonical with `\\?\` taken off, and unset it is in
-/// `FOLDERID_Profile`, wherever `USERPROFILE` points (`codex_windows_home` in the register).
+// Unset on Windows, in `FOLDERID_Profile` wherever `USERPROFILE` points (`codex_windows_home`).
 pub(crate) fn home(ctx: &Context) -> PathBuf {
     match ctx.codex_home() {
         Some(dir) if !dir.is_empty() => match ctx.os {

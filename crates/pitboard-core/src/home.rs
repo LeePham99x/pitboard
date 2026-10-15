@@ -220,9 +220,7 @@ pub(crate) fn check_absolute(ctx: &Context) -> Result<()> {
     }
 }
 
-/// Refuses a Pitboard directory a sync client would copy to another machine, by the names
-/// in [`synced_by`] and by what the system says ([`Syncing`]), read off the path as the file
-/// system resolves it where it is there.
+// A sync client would copy a parked login to another machine.
 pub(crate) fn check_location(ctx: &Context, path: &Path) -> Result<()> {
     check_location_with(path, &Syncing::of(ctx))
 }
@@ -301,8 +299,6 @@ mod tests {
     use super::*;
     use crate::context::Environment;
 
-    /// What `check_absolute` says of the context `pairs` make on `os`: the variable it names,
-    /// or `None` where every home is a full path.
     fn refused_over(os: Os, pairs: &[(&str, &str)]) -> Option<(&'static str, PathBuf)> {
         let env = Environment::on(os, pairs.iter().copied());
         match check_absolute(&Context::read(&env, "cli")) {

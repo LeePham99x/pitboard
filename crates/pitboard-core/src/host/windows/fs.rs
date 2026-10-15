@@ -780,7 +780,7 @@ pub mod testing {
         if folder { "OICI" } else { "" }
     }
 
-    /// A file anybody may read.
+    // Users may read it.
     pub fn open_to_others(path: &Path) -> io::Result<()> {
         let folder = folder(path)?;
         let on = passed_on(folder);
@@ -791,13 +791,11 @@ pub mod testing {
         )
     }
 
-    /// A file or a directory only its owner may reach, as Pitboard makes its own.
     pub fn make_private(path: &Path) -> io::Result<()> {
         let folder = folder(path)?;
         set(path, &format!("D:P{}", acl::private_aces(&you()?, folder)))
     }
 
-    /// Whether `path` is private as Pitboard makes its own files and directories.
     pub fn is_private(path: &Path) -> io::Result<bool> {
         let folder = folder(path)?;
         let read = Security::of(path)?;
@@ -807,13 +805,12 @@ pub mod testing {
             .is_some_and(|aces| acl::is_private(read.protected(), &aces, &you, folder)))
     }
 
-    /// A file its owner may read and nobody may change.
     pub fn read_only_for_owner(path: &Path) -> io::Result<()> {
         let on = passed_on(folder(path)?);
         set(path, &format!("D:P(A;{on};FR;;;{})", you()?))
     }
 
-    /// A file nobody may read or change, its owner included.
+    // Its owner included.
     pub fn deny_reading(path: &Path) -> io::Result<()> {
         let folder = folder(path)?;
         let you = you()?;
@@ -823,9 +820,7 @@ pub mod testing {
         )
     }
 
-    /// A file anybody may run.
-    // Windows has no run bit: a file runs by its extension and its access list, so only what
-    // `deny_running` set is undone.
+    // Windows has no run bit, so only what `deny_running` set is undone.
     pub fn make_runnable(path: &Path) -> io::Result<()> {
         folder(path)?;
         let denied = Security::of(path)?.aces().is_some_and(|aces| {
@@ -845,7 +840,7 @@ pub mod testing {
         )
     }
 
-    /// A file nobody may run, which anybody may still read.
+    // Anybody may still read it.
     pub fn deny_running(path: &Path) -> io::Result<()> {
         folder(path)?;
         let you = you()?;
@@ -858,9 +853,7 @@ pub mod testing {
         )
     }
 
-    /// A directory nothing can be added to or removed from.
-    // Nothing is added to the folder or removed from it, and nothing in it is removed: except
-    // what keeps an access list of its own, as Pitboard's files do, which Windows asks alone.
+    // A file in it with an access list of its own, as Pitboard makes one, can still go.
     pub fn deny_changes(dir: &Path) -> io::Result<()> {
         let you = you()?;
         set(
@@ -872,7 +865,6 @@ pub mod testing {
         )
     }
 
-    /// A directory its owner may change again.
     pub fn allow_changes(dir: &Path) -> io::Result<()> {
         let you = you()?;
         set(
@@ -884,13 +876,12 @@ pub mod testing {
         )
     }
 
-    /// A link at `at` that leads to the file `target`.
     // Developer Mode or the symbolic-link right, which CI's runners have (AGENTS.md).
     pub fn link(target: &Path, at: &Path) -> io::Result<()> {
         std::os::windows::fs::symlink_file(target, at)
     }
 
-    /// A link at `at` that leads to the directory `target`.
+    // A junction, which needs no right of its own.
     pub fn link_dir(target: &Path, at: &Path) -> io::Result<()> {
         super::junction(target, at)
     }

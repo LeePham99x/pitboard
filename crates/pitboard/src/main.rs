@@ -203,12 +203,7 @@ impl Command {
         !matches!(self, Command::Completions { .. } | Command::Manpage)
     }
 
-    /// Whether the command is refused here where a home the environment names is not a
-    /// full path. Every one reads or writes under the homes but the two that print a
-    /// generated file; `doctor` says so as a check of its own and checks nothing else; and
-    /// `renew` is refused by the gate it asks, of the homes it renews in, since a run of the
-    /// schedule renews the default folder whatever `PITBOARD_HOME` says, empty or relative
-    /// too.
+    // `doctor` says so in a check, and `renew`'s gate refuses for the homes it renews in.
     fn refuses_a_home_that_is_not_a_full_path(&self) -> bool {
         !matches!(
             self,

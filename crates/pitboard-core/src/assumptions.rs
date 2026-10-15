@@ -470,10 +470,7 @@ mod tests {
         }
     }
 
-    /// The readings still to come are listed in one place, so the last pull request of the
-    /// Windows work can require the list to be empty. Today it is the facts of each tool that
-    /// Windows reads differently or later: eight of Claude Code's, and seven of Codex's, with
-    /// the layers its store is read from.
+    // In one place, so the last pull request of the Windows work can require it empty.
     #[test]
     fn the_readings_still_to_come_are_listed() {
         let waiting = pending();
