@@ -2097,6 +2097,11 @@ Accounts and tokens:
   for an icon named by its window and id and for one named by a GUID (CI run 38753437460).
   So the UI tests that click Pitboard's icon, `NotificationAreaTests` and `MenuBarTests`, run
   only where Explorer takes it, and the session's step A2 clicks it.
+- A window of that user's program comes to the front on windows-2025. On windows-11-arm a
+  `Windows.UI.Core.CoreWindow` of `WWAHost`, in the job user's session, holds the foreground,
+  and Windows keeps it there for a program the tests start, as `SetForegroundWindow` documents
+  for a process not started by the one in front (run 38795330950). So the test of the first
+  launch wants the front only where no window held it before the launch.
 - Developer Mode is on, and that user makes file and directory symbolic links as it is. It
   makes them with the symbolic-link right granted too, but Developer Mode was on for that run
   as well, so the right alone is not measured.
@@ -2335,7 +2340,6 @@ on 15 October 2026. W27 reviews the list.
 | winget puts a portable package's install folder on `PATH`, not a link in Links, for a standard user without Developer Mode | [winget-pkgs FAQ](https://github.com/microsoft/winget-pkgs/blob/master/doc/FAQ.md) | Both images have Developer Mode on, and the job's user is an administrator. A standard user's install is the session's. |
 | Since winget 1.29, an MSI wins over a portable installer whatever the manifest's order | [winget-cli 1.29.380](https://github.com/microsoft/winget-cli/releases/tag/v1.29.380) | windows-2025's winget is 1.11.510, and no runner installs from winget's sources. |
 | A broadcast, such as `WM_ENDSESSION`, reaches a top-level window that is never shown, and no message-only window | [Message-only windows](https://learn.microsoft.com/en-us/windows/win32/winmsg/window-features#message-only-windows) | A runner's session never ends while a job runs; CF9 sends one. |
-| A second instance redirects its launch off the STA thread, which waits without blocking COM | [App instancing](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/applifecycle/applifecycle-instancing) | No test starts a second copy until APP-12's links. |
 | A new notification-area icon goes to the overflow, where only the person promotes it | [Notifications and the notification area](https://learn.microsoft.com/en-us/windows/win32/shell/notification-area) | No runner's Explorer takes the test user's icon; the session's step A2 records where it starts. |
 | A notification icon's menu closes on a click elsewhere only when its window was made the foreground window first | [TrackPopupMenu](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-trackpopupmenu) | Only a person clicks elsewhere: the session's step A2. |
 | A GUID icon is tied to the path of the exe that added it, unless both are signed by one company | [NOTIFYICONDATAW](https://learn.microsoft.com/en-us/windows/win32/api/shellapi/ns-shellapi-notifyicondataw) | No Release build runs from two paths on a runner; the 1.0 session's P4 upgrades one. |
@@ -3394,7 +3398,10 @@ Microsoft's documentation.
   then lets the second copy quit (`ProcessRedirectionRequests`). So `Program` connects its
   handler before it takes the key, and `Handovers` keeps a launch that arrives before the
   window can open: connected after, a launch handed over while the first copy started was lost
-  without a word from either copy (run 38789385677).
+  without a word from either copy (run 38789385677). A second copy hands its launch over off
+  the STA thread, as Microsoft's [App instancing](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/applifecycle/applifecycle-instancing)
+  does it, to a copy that runs and to one that is starting, on both images (`LifecycleTests`,
+  run 38795330950).
 - Rust's `std::env::temp_dir` (Rust 1.98.1, `library/std/src/sys/paths/windows.rs`) and
   .NET's `Path.GetTempPath` (dotnet/runtime v10.0.13, `Path.Windows.cs`) both ask
   `GetTempPath2W`, .NET falling back to `GetTempPathW` where it is missing. So the app finds
