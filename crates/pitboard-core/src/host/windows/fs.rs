@@ -129,6 +129,31 @@ pub(crate) fn short_path(path: &Path) -> Option<std::path::PathBuf> {
         .then(|| std::path::PathBuf::from(std::ffi::OsString::from_wide(&short[..len as usize])))
 }
 
+// MC-sync: asked of the deepest folder there, since a folder not made yet is in no root.
+pub(crate) fn in_a_sync_root(path: &Path) -> bool {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::CloudFilters::{
+        CF_SYNC_ROOT_BASIC_INFO, CF_SYNC_ROOT_INFO_BASIC, CfGetSyncRootInfoByPath,
+    };
+    let Some(there) = path.ancestors().find(|above| above.exists()) else {
+        return false;
+    };
+    let wide: Vec<u16> = there.as_os_str().encode_wide().chain([0]).collect();
+    let mut info = CF_SYNC_ROOT_BASIC_INFO::default();
+    let mut written = 0u32;
+    // SAFETY: a NUL-terminated name, and a buffer of exactly the length given.
+    let answer = unsafe {
+        CfGetSyncRootInfoByPath(
+            wide.as_ptr(),
+            CF_SYNC_ROOT_INFO_BASIC,
+            (&raw mut info).cast(),
+            size_of::<CF_SYNC_ROOT_BASIC_INFO>() as u32,
+            &raw mut written,
+        )
+    };
+    answer >= 0
+}
+
 // The volume and the file's id on it (MC-fileid), a folder's included, through a junction.
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn file_id(path: &Path) -> Option<(u64, u128)> {

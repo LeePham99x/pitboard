@@ -348,6 +348,8 @@ pub struct Context {
     pub(crate) profile: Option<PathBuf>,
     // Windows' `LOCALAPPDATA`, as the environment gives it.
     pub(crate) local_app_data: Option<PathBuf>,
+    // The folders OneDrive syncs on Windows, as its variables name them.
+    pub(crate) one_drive: Vec<PathBuf>,
     /// The Pitboard the daily renewal schedule runs. `None` is this program, which is right
     /// for the command line and wrong for an app: the schedule runs `pitboard renew`, so an
     /// app names the command line it comes with.
@@ -474,6 +476,7 @@ impl Context {
             codex_home: None,
             profile: None,
             local_app_data: None,
+            one_drive: Vec::new(),
             schedule_program: None,
             search_path: None,
             scheduled_job: None,
@@ -821,6 +824,12 @@ impl Context {
                 .path("LOCALAPPDATA")
                 .filter(|_| env.os() == Os::Windows)
                 .map(PathBuf::from),
+            one_drive: ["OneDrive", "OneDriveCommercial", "OneDriveConsumer"]
+                .into_iter()
+                .filter(|_| env.os() == Os::Windows)
+                .filter_map(|name| env.path(name).filter(|folder| !folder.is_empty()))
+                .map(PathBuf::from)
+                .collect(),
             schedule_program: None,
             // Unset is nowhere, as it is to the shell: nothing is found on an empty `PATH`.
             search_path: Some(env.path("PATH").unwrap_or_default().to_os_string()),

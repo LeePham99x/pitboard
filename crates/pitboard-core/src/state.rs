@@ -925,7 +925,7 @@ pub(crate) fn load_any_machine(ctx: &Context) -> Result<(State, bool)> {
     crate::release::check()?;
     let path = file(ctx);
     home::check_absolute(ctx)?;
-    home::check_location(&home::dir(ctx))?;
+    home::check_location(ctx, &home::dir(ctx))?;
     let raw = match std::fs::read_to_string(&path) {
         Ok(s) => s,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok((State::default(), true)),
@@ -1123,7 +1123,7 @@ fn seven_to_eight(document: &mut Value) {
 
 pub(crate) fn save(ctx: &Context, permit: Permit, state: &State) -> Result<()> {
     home::check_absolute(ctx)?;
-    home::check_location(&home::dir(ctx))?;
+    home::check_location(ctx, &home::dir(ctx))?;
     let mut state = state.clone();
     for &tool in ProviderId::ALL {
         if let Some(slot) = crate::provider::slot(ctx, tool) {

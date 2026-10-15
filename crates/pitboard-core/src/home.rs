@@ -4,6 +4,7 @@
 
 use crate::context::Context;
 use crate::error::{Error, Result};
+use crate::host::Os;
 use crate::service::Permit;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -166,10 +167,17 @@ pub(crate) fn check_absolute(ctx: &Context) -> Result<()> {
 }
 
 /// Refuses a Pitboard directory a sync client would copy to another machine, by the names
-/// in [`synced_by`], read off the path as the file system resolves it where it is there.
-pub(crate) fn check_location(path: &Path) -> Result<()> {
-    let resolved = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-    match synced_by(&resolved) {
+/// in [`synced_by`] and by what the system says ([`Syncing`]), read off the path as the file
+/// system resolves it where it is there.
+pub(crate) fn check_location(ctx: &Context, path: &Path) -> Result<()> {
+    check_location_with(path, &Syncing::of(ctx))
+}
+
+pub(crate) fn check_location_with(path: &Path, syncing: &Syncing) -> Result<()> {
+    let resolved = path
+        .canonicalize()
+        .map_or_else(|_| path.to_path_buf(), crate::host::without_verbatim_prefix);
+    match synced_by(&resolved).or_else(|| syncing.over(&resolved)) {
         Some(marker) => Err(Error::StateOnSyncedDrive {
             path: resolved,
             marker,
@@ -178,11 +186,62 @@ pub(crate) fn check_location(path: &Path) -> Result<()> {
     }
 }
 
+// What Windows says it syncs, besides `synced_by`'s names: OneDrive's folders, a sync root
+// (MC-sync), and a roaming profile but its `AppData\Local` and `LocalLow` (MC-roam).
+pub(crate) struct Syncing<'a> {
+    pub(crate) folders: Vec<PathBuf>,
+    pub(crate) roaming: Option<PathBuf>,
+    pub(crate) in_a_sync_root: &'a dyn Fn(&Path) -> bool,
+}
+
+impl Default for Syncing<'_> {
+    fn default() -> Self {
+        Syncing {
+            folders: Vec::new(),
+            roaming: None,
+            in_a_sync_root: &|_| false,
+        }
+    }
+}
+
+impl Syncing<'static> {
+    fn of(ctx: &Context) -> Syncing<'static> {
+        match ctx.os {
+            Os::MacOs | Os::Linux => Syncing::default(),
+            Os::Windows => Syncing {
+                folders: ctx.one_drive.clone(),
+                roaming: crate::host::user::profile_roams()
+                    .then(|| ctx.profile.clone().unwrap_or_else(|| ctx.home.clone())),
+                in_a_sync_root: &crate::host::fs::in_a_sync_root,
+            },
+        }
+    }
+}
+
+impl Syncing<'_> {
+    // Compared as Windows compares a path, in any case.
+    fn over(&self, path: &Path) -> Option<String> {
+        let within = |folder: &Path| {
+            path.ancestors()
+                .any(|above| crate::host::same_path_in_any_case(above, folder))
+        };
+        if let Some(folder) = self.folders.iter().find(|folder| within(folder)) {
+            return Some(folder.display().to_string());
+        }
+        if (self.in_a_sync_root)(path) {
+            return Some("a cloud sync folder".into());
+        }
+        let profile = self.roaming.as_ref()?;
+        let local = ["Local", "LocalLow"].map(|name| profile.join("AppData").join(name));
+        (within(profile) && !local.iter().any(|folder| within(folder)))
+            .then(|| "a roaming profile".into())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::context::Environment;
-    use crate::host::Os;
 
     /// What `check_absolute` says of the context `pairs` make on `os`: the variable it names,
     /// or `None` where every home is a full path.
@@ -332,11 +391,50 @@ mod tests {
 
     /// The name `check_location` refuses `path` over, if it does.
     fn synced_over(path: &str) -> Option<String> {
-        match check_location(Path::new(path)) {
+        synced_on(path, &Syncing::default())
+    }
+
+    fn synced_on(path: &str, syncing: &Syncing) -> Option<String> {
+        match check_location_with(Path::new(path), syncing) {
             Ok(()) => None,
             Err(Error::StateOnSyncedDrive { marker, .. }) => Some(marker),
             Err(other) => panic!("{other}"),
         }
+    }
+
+    // MC-sync and MC-roam: what Windows says of a folder, which no runner can make it say.
+    #[test]
+    fn a_windows_folder_that_syncs_or_roams_is_refused() {
+        let roots = |path: &Path| path.starts_with("/u/Box");
+        let syncing = Syncing {
+            folders: vec![PathBuf::from("/u/Work Files")],
+            roaming: Some(PathBuf::from("/u/profile")),
+            in_a_sync_root: &roots,
+        };
+        for (path, marker) in [
+            ("/u/Work Files/pitboard", "/u/Work Files"),
+            ("/u/work files/x/pitboard", "/u/Work Files"),
+            ("/u/Box/pitboard", "a cloud sync folder"),
+            ("/u/profile/pitboard", "a roaming profile"),
+            ("/u/profile/AppData/Roaming/Pitboard", "a roaming profile"),
+            ("/u/PROFILE/AppData/LocalLowly", "a roaming profile"),
+        ] {
+            assert_eq!(synced_on(path, &syncing).as_deref(), Some(marker), "{path}");
+        }
+        for path in [
+            "/u/profile/AppData/Local/Pitboard",
+            "/u/profile/appdata/local",
+            "/u/profile/AppData/LocalLow/Pitboard",
+            "/u/elsewhere/pitboard",
+            "/u/Boxes/pitboard",
+        ] {
+            assert_eq!(synced_on(path, &syncing), None, "{path}");
+        }
+        assert_eq!(
+            synced_on("/u/profile/pitboard", &Syncing::default()),
+            None,
+            "a local profile"
+        );
     }
 
     /// Real folder names of the sync clients, in the case each writes them and in others,

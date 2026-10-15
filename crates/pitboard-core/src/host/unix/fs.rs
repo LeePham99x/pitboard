@@ -136,9 +136,13 @@ pub(crate) fn same_volume(a: &Path, b: &Path) -> io::Result<bool> {
     Ok(nearest(a)?.dev() == nearest(b)?.dev())
 }
 
-// Short names are Windows'.
+// Short names and sync roots are Windows'.
 pub(crate) fn short_path(_path: &Path) -> Option<std::path::PathBuf> {
     None
+}
+
+pub(crate) fn in_a_sync_root(_path: &Path) -> bool {
+    false
 }
 
 #[cfg(any(test, feature = "test-support"))]

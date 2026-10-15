@@ -67,6 +67,7 @@ pub(crate) struct Facts {
     /// fallback, and the whole security story on a machine without one.
     pub(crate) readable_by_others: Vec<(String, Access)>,
     pub(crate) machine_id_known: bool,
+    pub(crate) windows: Option<WindowsHomes>,
     /// `CLAUDE_CODE_HOVER_REST`, which switches on the successor credential backend.
     pub(crate) hover_rest_env: bool,
     /// Claude Code's supervisor daemon, where one has ever run for this slot.
@@ -208,6 +209,16 @@ pub(crate) struct CodexFacts {
     /// Every `codex` running as this user, by where it runs from. `None` where that could
     /// not be asked.
     pub(crate) running: Option<Vec<crate::holder::Holding>>,
+}
+
+// What Windows says of the account's folders, beside the home Pitboard reads them from.
+pub(crate) struct WindowsHomes {
+    pub(crate) home: PathBuf,
+    pub(crate) default_pitboard_home: PathBuf,
+    pub(crate) local_app_data: Option<PathBuf>,
+    pub(crate) profile: Option<PathBuf>,
+    pub(crate) codex_home_set: bool,
+    pub(crate) roams: bool,
 }
 
 /// Whose a Codex login is, as its own ID token says. Nothing in here is a secret: the
@@ -448,6 +459,14 @@ pub(crate) fn gather(ctx: &Context) -> Facts {
         readable_by_others: loose_logins(ctx),
         home,
         machine_id_known: crate::state::machine_id() != crate::state::UNKNOWN_MACHINE,
+        windows: (ctx.os == Os::Windows).then(|| WindowsHomes {
+            home: ctx.home().to_path_buf(),
+            default_pitboard_home: ctx.default_pitboard_home(),
+            local_app_data: crate::host::user::local_app_data(),
+            profile: ctx.profile.clone(),
+            codex_home_set: ctx.codex_home().is_some(),
+            roams: crate::host::user::profile_roams(),
+        }),
         hover_rest_env: ctx.hover_rest,
         daemon: daemon::read(ctx),
         pending_parks: crate::pending::outstanding(ctx, state.as_ref().ok()),
@@ -767,6 +786,61 @@ fn elevated(os: Os, elevation: crate::host::Elevation) -> Option<Check> {
             said.way_out
         ),
     ))
+}
+
+// Each only where it is so, as a person on Windows would not otherwise find out.
+fn judge_windows_homes(facts: &Facts) -> Vec<Check> {
+    let Some(windows) = &facts.windows else {
+        return Vec::new();
+    };
+    let same = |a: &std::path::Path, b: &std::path::Path| Os::Windows.same_path(a, b);
+    let mut checks = Vec::new();
+    if let Some(local) = &windows.local_app_data
+        && !same(&local.join("Pitboard"), &windows.default_pitboard_home)
+    {
+        checks.push(warn(
+            "local_app_data",
+            "local app data",
+            format!(
+                "Windows keeps this account's local app data in {}",
+                local.display()
+            ),
+            format!(
+                "Pitboard keeps its folder in {} whatever Windows says, so a run of the \
+                 renewal schedule and one by hand use the same folder.",
+                windows.default_pitboard_home.display()
+            ),
+        ));
+    }
+    let codex = |folder: &std::path::Path| folder.join(".codex");
+    if let Some(profile) = windows
+        .profile
+        .as_deref()
+        .filter(|_| !windows.codex_home_set)
+        && !same(&codex(profile), &codex(&windows.home))
+    {
+        checks.push(warn(
+            "codex_installer_home",
+            "Codex's home",
+            format!(
+                "Codex keeps its login in {}, and its installer, install.ps1, in {}",
+                codex(profile).display(),
+                codex(&windows.home).display()
+            ),
+            "Set CODEX_HOME, so both use one folder.",
+        ));
+    }
+    if windows.roams {
+        checks.push(warn(
+            "roaming_profile",
+            "roaming profile",
+            "this Windows profile roams",
+            "Claude Code's and Codex's logins in it go to every computer this account signs in \
+             to, as their Credential Manager items do. Pitboard's own folder, in AppData\\Local, \
+             stays on this one.",
+        ));
+    }
+    checks
 }
 
 fn too_old(floor: crate::host::Floor) -> Option<Check> {
@@ -1165,6 +1239,7 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
         ));
     }
 
+    checks.extend(judge_windows_homes(facts));
     checks.push(judge_storage_v5(facts));
     checks.push(judge_daemon(facts));
     checks.push(judge_pending(facts));
@@ -3679,6 +3754,7 @@ mod tests {
             home_access: Some(mode(0o700)),
             readable_by_others: Vec::new(),
             machine_id_known: true,
+            windows: None,
             hover_rest_env: false,
             daemon: None,
             pending_parks: Vec::new(),
@@ -6286,6 +6362,61 @@ mod tests {
         let ctx = Context::for_command_line(&env).with_memory_stores(host);
         let codes: Vec<&str> = run(&ctx).checks.iter().map(|c| c.code).collect();
         assert_eq!(codes, ["system_too_old", "elevated", "homes"]);
+    }
+
+    // RF-B1 measured the profile, local app data and the home agreeing on a local profile.
+    #[test]
+    fn doctor_says_where_windows_keeps_an_accounts_folders_apart_from_the_home() {
+        let home = PathBuf::from("C:").join("Users").join("x");
+        let measured = || WindowsHomes {
+            home: home.clone(),
+            default_pitboard_home: Os::Windows.default_pitboard_home(&home),
+            local_app_data: Some(home.join("AppData").join("Local")),
+            profile: Some(home.clone()),
+            codex_home_set: false,
+            roams: false,
+        };
+        let codes = |windows: Option<WindowsHomes>| {
+            let mut facts = facts();
+            facts.windows = windows;
+            judge_windows_homes(&facts)
+                .iter()
+                .map(|check| (check.code, check.level))
+                .collect::<Vec<_>>()
+        };
+        assert!(codes(None).is_empty());
+        assert!(codes(Some(measured())).is_empty());
+        let in_any_case = PathBuf::from("c:").join("users").join("X");
+        let other_case = WindowsHomes {
+            local_app_data: Some(in_any_case.join("appdata").join("local")),
+            profile: Some(in_any_case),
+            ..measured()
+        };
+        assert!(codes(Some(other_case)).is_empty());
+        let moved = WindowsHomes {
+            local_app_data: Some(PathBuf::from("D:").join("Local")),
+            ..measured()
+        };
+        assert_eq!(codes(Some(moved)), [("local_app_data", Level::Warn)]);
+        let elsewhere = PathBuf::from("C:").join("Users").join("y");
+        let parted = || WindowsHomes {
+            profile: Some(elsewhere.clone()),
+            ..measured()
+        };
+        assert_eq!(
+            codes(Some(parted())),
+            [("codex_installer_home", Level::Warn)]
+        );
+        let named = WindowsHomes {
+            codex_home_set: true,
+            ..parted()
+        };
+        assert!(codes(Some(named)).is_empty(), "CODEX_HOME names one folder");
+        let roams = WindowsHomes {
+            roams: true,
+            ..measured()
+        };
+        assert_eq!(codes(Some(roams)), [("roaming_profile", Level::Warn)]);
     }
 
     /// With neither tool present, a new machine is told what to do first, as it always was.

@@ -34,6 +34,22 @@ pub(crate) fn profile() -> Option<PathBuf> {
         .flatten()
 }
 
+pub(crate) fn local_app_data() -> Option<PathBuf> {
+    real_lookups()
+        .then(|| known_folder(&windows_sys::Win32::UI::Shell::FOLDERID_LocalAppData))
+        .flatten()
+}
+
+// RF-B3 measured flags 0, a local profile, on the runners; `PT_ROAMING` is MC-roam.
+pub(crate) fn profile_roams() -> bool {
+    use windows_sys::Win32::System::GroupPolicy::PT_ROAMING;
+    use windows_sys::Win32::UI::Shell::GetProfileType;
+    let mut flags = 0u32;
+    // SAFETY: a u32 of this frame, which the call writes and does not keep.
+    let read = real_lookups() && unsafe { GetProfileType(&raw mut flags) } != 0;
+    read && flags & PT_ROAMING != 0
+}
+
 #[cfg(test)]
 fn real_lookups() -> bool {
     testing::reaches_the_real_home()
