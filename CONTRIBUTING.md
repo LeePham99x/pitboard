@@ -276,17 +276,24 @@ cannot pass there until a later Windows pull request says so in its Rust counter
 [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows, IgnoreMessage = "W<n>: <what it waits on>")]
 ```
 
+In the projects that build only on Windows, `Pitboard.Windows.Tests` and `Pitboard.UITests`:
+
+```csharp
+[Ignore("W<n>: <what it waits on>")]
+```
+
 The tests that start a fixture's model are skipped against a library built without the
 `fixture` feature. To run them, build the library with
 `cargo build --locked -p pitboard-ffi --features fixture` before `dotnet test`. The bindings
 need not be generated again.
 
 Each project restores only the packages its `packages.lock.json` pins, at the versions
-`Directory.Packages.props` names, with the exact .NET SDK `global.json` names: `Pitboard.Core`'s
-lock file holds that SDK's trimming analyzers. After changing a package or the SDK, run
-`dotnet restore --force-evaluate` on both solutions, with `-p:EnableWindowsTargeting=true` on
-macOS and Linux, and commit the lock files. The build fails on the style rules in `apps/windows/.editorconfig`, and CI checks the
-layout with `dotnet format whitespace --folder --verify-no-changes apps/windows`.
+`Directory.Packages.props` names, with the exact .NET SDK `global.json` names:
+`Pitboard.Core`'s lock file holds that SDK's trimming analyzers. After changing a package or
+the SDK, run `dotnet restore --force-evaluate` on both solutions, with
+`-p:EnableWindowsTargeting=true` on macOS and Linux, and commit the lock files. The build
+fails on the style rules in `apps/windows/.editorconfig`, and CI checks the layout with
+`dotnet format whitespace --folder --verify-no-changes apps/windows`.
 
 ## Windows
 

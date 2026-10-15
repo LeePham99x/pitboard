@@ -10,7 +10,7 @@ namespace Pitboard.UITests;
 public sealed class AccountsWindowTests
 {
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void TheWindowListsEachAccount()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "twoTools");
@@ -23,7 +23,7 @@ public sealed class AccountsWindowTests
     // The fixture's Claude Code takes a code as the real one does, <code>#<state>. The address it prints is
     // copied for another browser, and Open is never pressed: it would open that address in a real one.
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void AddingAClaudeCodeAccount()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
@@ -45,7 +45,7 @@ public sealed class AccountsWindowTests
 
     // A Codex sign-in finishes by itself once the browser is done.
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void AddingACodexAccount()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "twoTools");
@@ -62,7 +62,7 @@ public sealed class AccountsWindowTests
     // Sign In stays dimmed while a sign-in runs, so a second sign-in that starts and finishes is what shows
     // the first one was stopped.
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void CancellingASignInAddsNothing()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
@@ -86,7 +86,7 @@ public sealed class AccountsWindowTests
     }
 
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void RenamingAnAccount()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
@@ -105,7 +105,7 @@ public sealed class AccountsWindowTests
     }
 
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void ForgettingAsksFirst()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
@@ -125,7 +125,7 @@ public sealed class AccountsWindowTests
     }
 
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void TheAccountInUseOffersNoForget()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
@@ -139,7 +139,7 @@ public sealed class AccountsWindowTests
     }
 
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void UsingACodexAccountSaysSessionsKeepTheOldOne()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "twoTools");
@@ -158,7 +158,7 @@ public sealed class AccountsWindowTests
     }
 
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void NamingTheAccountInUse()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "unnamed");
@@ -174,7 +174,7 @@ public sealed class AccountsWindowTests
 
     // macOS has no UI test of this: no world of its fixtures left a login in a file until this one.
     [TestMethod]
-    [Ignore(Pending.W23b)]
+    [Ignore("W23b: Claude Code's login left in a file behind its Credential Manager store")]
     public void PuttingAwayALoginLeftInAFile()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "leftInFile");
@@ -189,7 +189,7 @@ public sealed class AccountsWindowTests
     }
 
     [TestMethod]
-    [Ignore(Pending.W17)]
+    [Ignore("W17: finding programs on Windows, without which these machines have no Claude Code")]
     public void AnEmptyMachineOffersAnAccount()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "empty");
@@ -202,7 +202,7 @@ public sealed class AccountsWindowTests
     }
 
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void GivingUpOnAnInterruptedSwitch()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "stuck");
@@ -217,7 +217,7 @@ public sealed class AccountsWindowTests
     }
 
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void OneAccountIsOfferedASecondUntilNotNow()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "onlyOne");
@@ -232,7 +232,7 @@ public sealed class AccountsWindowTests
 
     // The window goes to the accounts, where the sheet comes up.
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void CtrlNAddsAnAccountFromAnyPane()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
@@ -252,7 +252,7 @@ public sealed class AccountsWindowTests
     }
 
     [TestMethod]
-    [Ignore(Pending.W17)]
+    [Ignore("W17: finding programs on Windows, without which these machines have no Claude Code")]
     public void TheFirstLaunchOpensTheWindow()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "firstLaunch");

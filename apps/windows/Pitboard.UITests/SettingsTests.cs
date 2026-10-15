@@ -36,7 +36,7 @@ public sealed class SettingsTests
 
     // The fixture's stand-in takes it, so nothing is written to the Run key.
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void StartAtSignIn()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
@@ -51,7 +51,7 @@ public sealed class SettingsTests
     }
 
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void SwitchingBeforeAnAccountRunsOut()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
@@ -82,7 +82,7 @@ public sealed class SettingsTests
 
     // The fixture's personal is on for warm-ups with no five-hour period running, so it warms up as the app starts.
     [TestMethod]
-    [Ignore(Pending.WWarm)]
+    [Ignore("W-warm: warming up Claude Code accounts on Windows")]
     public void WarmingUpAccounts()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "warmUp");
@@ -105,7 +105,7 @@ public sealed class SettingsTests
     }
 
     [TestMethod]
-    [Ignore(Pending.W25)]
+    [Ignore("W25: Task Scheduler, which renews parked logins daily")]
     public void DailyRenewal()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
@@ -119,7 +119,7 @@ public sealed class SettingsTests
 
     // The fixture puts no pitboard where a terminal looks, and the installer, not the app, puts one on the PATH.
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void TheCommandLineSectionSaysWherePitboardIs()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
@@ -132,7 +132,7 @@ public sealed class SettingsTests
 
     // A Debug build carries no update key, and the Updates section says so.
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void UpdatesSayWhenTheBuildCannotUpdate()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
