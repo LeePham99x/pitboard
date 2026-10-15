@@ -97,7 +97,9 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
   Debug build's executable directly with `PITBOARD_FIXTURE`, and `USERPROFILE`, `HOME`,
   `APPDATA`, `LOCALAPPDATA`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME` and `PITBOARD_HOME` at fresh
   folders, set after building, as [Run the Windows debug build](CONTRIBUTING.md#run-the-windows-debug-build)
-  shows. A Release build reads no fixture: only CI's UI tests start one, in scratch homes.
+  shows. A Release build reads no fixture, and its data folder, icon and notifications ignore
+  scratch homes: only CI's UI test of the release gate starts one, and only at 0.x, where it
+  refuses.
 - Never start a built `Pitboard.exe` or `PitboardShare.exe` from Explorer, Start, a shortcut,
   `start`, `Invoke-Item`, a notification, the share sheet or a `pitboard://` or
   `pitboard-debug://` link, on any account but the session machine's throwaway ones. Each
