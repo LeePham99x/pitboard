@@ -2104,12 +2104,14 @@ One thing differs from WebKit in how a store goes, read in Microsoft's documenta
 marks it for deletion, closes the web views using it and raises its `Deleted` event, and its
 folder is deleted only as the browser process exits, or at a later start where something
 still held its files. Making a profile of the same name before then fails with
-`HRESULT_FROM_WIN32(ERROR_DELETE_PENDING)`. So `StoreJanitor` answers `StoreDeleted` where
-the profile's folder, `EBWebView\<store>` under the user data folder, is not there, and
-otherwise deletes the profile through a page of its own, made in the app's hidden window,
-and answers `StoreHeld`. That keeps the store recorded and has the next read ask again, and
-the folder goes once no window of the browser process is open, or as Pitboard quits. A
-window of an account enrolled again meanwhile would fail to make its profile, so on Windows
+`HRESULT_FROM_WIN32(ERROR_DELETE_PENDING)`. A profile's folder is
+`EBWebView\WV2Profile_<name>` under the user data folder, as
+`CoreWebView2Profile.ProfilePath` read on both runners in run 38819589926. So `StoreJanitor`
+answers `StoreDeleted` where the store's folder is not there, and otherwise deletes the
+profile through a page of its own, made in the app's hidden window, and answers `StoreHeld`.
+That keeps the store recorded and has the next read ask again, and the folder goes once no
+window of the browser process is open, or as Pitboard quits.
+A window of an account enrolled again meanwhile would fail to make its profile, so on Windows
 the model holds a store answered `StoreHeld` until `StoreDeleted` comes: it asks for it
 again after every read, enrolled again or not, opens no window of it, and lists it in
 `AccountWindowsShown.held`, whose menu items say why with `WindowNoteKind::StoreHeld`. It

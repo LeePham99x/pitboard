@@ -30,7 +30,7 @@ public sealed class WebEnvironmentTests
         var fixture = WebEnvironment.Fixture(Path.Combine("temp", "pitboard-fixture"));
 
         Assert.AreEqual("https", live.Scheme);
-        Assert.AreEqual(Path.Combine("data", "Pitboard App", "WebView2", "EBWebView", "a"), live.ProfileFolder("a"));
+        Assert.AreEqual(Path.Combine("data", "Pitboard App", "WebView2", "EBWebView", "WV2Profile_a"), live.ProfileFolder("a"));
         Assert.AreEqual(WebEnvironment.FixtureScheme, fixture.Scheme);
         Assert.AreEqual(Path.Combine("temp", "pitboard-fixture", "WebView2"), fixture.UserDataFolder);
         Assert.AreEqual(Path.Combine("temp", "pitboard-fixture", "Downloads"), fixture.Downloads, "a fixture saves in its own folder");

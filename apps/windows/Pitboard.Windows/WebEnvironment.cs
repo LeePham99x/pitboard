@@ -78,8 +78,9 @@ public sealed class WebEnvironment
 
     public NavigationPolicy Policy(Site site) => new(site, Scheme);
 
-    // Where WebView2 keeps a profile's data, which goes as its browser process exits once the profile is deleted.
-    public string ProfileFolder(string store) => Path.Combine(UserDataFolder, "EBWebView", store);
+    // Where WebView2 keeps a profile's data, which goes as its browser process exits once the profile is deleted. Its
+    // name is the profile's after WV2Profile_, as CoreWebView2Profile.ProfilePath read on both runners.
+    public string ProfileFolder(string store) => Path.Combine(UserDataFolder, "EBWebView", $"WV2Profile_{store}");
 
     // A fixture's scheme is registered with the browser process, which keeps its registrations for its life. Once that
     // process has exited, as it does when its last page closes, the next page is made in a new one, as Microsoft's
