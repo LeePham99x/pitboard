@@ -36,14 +36,14 @@ public sealed class WindowsNotifications(Build build, Func<IAppNotifications> sy
         }
 
         var notifications = system();
-        if (!notifications.IsSupported())
-        {
-            Off = "Windows offers this process no app notifications.";
-            return null;
-        }
-
         try
         {
+            if (!notifications.IsSupported())
+            {
+                Off = "Windows offers this process no app notifications.";
+                return null;
+            }
+
             notifications.Listen(arguments => clicked(Read(arguments)));
             notifications.Register(DisplayName, new Uri(icon));
         }
