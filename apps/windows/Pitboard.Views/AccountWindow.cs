@@ -11,7 +11,7 @@ using WinRT.Interop;
 namespace Pitboard.Views;
 
 // A window for one site and one account, not a browser: no address bar and no tabs of its own. WebView2's find bar,
-// zoom, dialogs and keys serve its page, and a page that leaves the site goes to the browser.
+// zoom, dialogs, download list and keys serve its page, and a page that leaves the site goes to the browser.
 public sealed partial class AccountWindow : Window, ISessionWindow
 {
     private readonly WebEnvironment _web;
@@ -22,6 +22,7 @@ public sealed partial class AccountWindow : Window, ISessionWindow
     private readonly AppBarButton _forward = Command("Forward", Symbol.Forward, "Show the next page");
     private readonly AppBarButton _reload = Command("Reload", Symbol.Refresh, "Load this page again");
     private readonly AppBarButton _stop = Command("Stop", Symbol.Cancel, "Stop loading this page");
+    private readonly AppBarButton _showDownloads = Command("Downloads", Symbol.Download, "Show this window’s downloads");
     private readonly AppBarButton _removeData = Command("Remove Website Data…", Symbol.Delete, null);
     private readonly InfoBar _note = new() { Severity = InfoBarSeverity.Informational, IsClosable = true };
     private readonly Grid _page = new();
@@ -49,14 +50,16 @@ public sealed partial class AccountWindow : Window, ISessionWindow
         {
             HorizontalAlignment = HorizontalAlignment.Left,
             DefaultLabelPosition = CommandBarDefaultLabelPosition.Collapsed,
-            PrimaryCommands = { _back, _forward, _reload, _stop },
+            PrimaryCommands = { _back, _forward, _reload, _stop, _showDownloads },
             SecondaryCommands = { _removeData },
         };
         _stop.Visibility = Visibility.Collapsed;
+        _showDownloads.Visibility = Visibility.Collapsed;
         _back.Click += (_, _) => _view?.CoreWebView2?.GoBack();
         _forward.Click += (_, _) => _view?.CoreWebView2?.GoForward();
         _reload.Click += (_, _) => _session?.Reload();
         _stop.Click += (_, _) => _view?.CoreWebView2?.Stop();
+        _showDownloads.Click += (_, _) => _view?.CoreWebView2?.OpenDefaultDownloadDialog();
         _removeData.Click += (_, _) => RemoveWebsiteData();
         AutomationProperties.SetAutomationId(_note, "window.note");
         _note.CloseButtonClick += (_, _) => _session?.Dismiss();
@@ -97,9 +100,13 @@ public sealed partial class AccountWindow : Window, ISessionWindow
     // Its account's store, which is also its identity: one window per account.
     public string Store { get; }
 
-    // What the model says of the windows: this one's page once it can show it, and what it shows until then.
+    // What the model says of the windows: this one's page once it can show it, what it shows until then, and whether it
+    // has downloads to list.
     public void Follow(AccountWindowsShown shown)
     {
+        var downloaded = shown.Downloads.Any(
+            download => string.Equals(download.Store, Store, StringComparison.OrdinalIgnoreCase));
+        _showDownloads.Visibility = downloaded ? Visibility.Visible : Visibility.Collapsed;
         var open = shown.Open.FirstOrDefault(window => string.Equals(window.Store, Store, StringComparison.OrdinalIgnoreCase));
         if (open is not null)
         {
@@ -221,7 +228,10 @@ public sealed partial class AccountWindow : Window, ISessionWindow
         _view = view;
         _page.Children.Insert(0, view);
         var environment = await _web.Made();
-        return await WebViews.Made(view, environment, WebEnvironment.Options(environment, Store));
+        var page = await WebViews.Made(view, environment, WebEnvironment.Options(environment, Store));
+        // Under Downloads, at the left of the command bar.
+        page.DefaultDownloadDialogCornerAlignment = CoreWebView2DefaultDownloadDialogCornerAlignment.TopLeft;
+        return page;
     }
 
     // After the session's own handlers, so a navigation it stopped shows no loading.

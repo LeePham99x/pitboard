@@ -15,6 +15,11 @@ public sealed class AccountWindowTests
     private static AccountWindowsShown Shown(WaitingShown waiting, params OpenWindow[] open) =>
         Snapshots.Read(1).AccountWindows with { Accounts = [Main], Open = open, Waiting = new WindowWaiting("Account", waiting) };
 
+    private static DownloadShown Download(string store) =>
+        new(
+            Id: "1", Store: store, Name: "notes.txt", State: new DownloadState.Finished(@"C:\Downloads\notes.txt"),
+            Said: "Downloaded", Running: false);
+
     private static async Task<AccountWindow> Up(AccountWindow window)
     {
         var root = (FrameworkElement)window.Content;
@@ -43,6 +48,32 @@ public sealed class AccountWindowTests
 
             Assert.Contains("The index is damaged.", Views.Texts(window.Content));
             Assert.AreEqual(retry.Intent, sent.Single());
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    // As the macOS toolbar offers its list, the command bar offers WebView2's own once the window has a download.
+    [UITestMethod]
+    public async Task ItsDownloadsAreOfferedOnceItHasOne()
+    {
+        var sent = new List<Intent>();
+        var web = WebEnvironment.Fixture(Path.GetTempPath());
+        var window = await Up(new AccountWindow(Main.Store, web, new Downloads(web.Downloads, sent.Add), sent.Add));
+        try
+        {
+            var reading = Shown(new WaitingShown.Reading("Reading accounts…"));
+            bool Offered() => Views.Visible<AppBarButton>(window.Content).Any(button => button.Label == "Downloads");
+            window.Follow(reading);
+            Assert.IsFalse(Offered());
+
+            window.Follow(reading with { Downloads = [Download(Items.Window("codex", "spare").Store)] });
+            Assert.IsFalse(Offered(), "another window's download");
+
+            window.Follow(reading with { Downloads = [Download(Main.Store.ToUpperInvariant())] });
+            await Views.Until(Offered, "its download was not offered");
         }
         finally
         {
