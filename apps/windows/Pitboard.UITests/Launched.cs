@@ -99,6 +99,19 @@ internal sealed class Launched : IDisposable
     public bool Enables(string name) =>
         Retry.WhileFalse(() => Look(found => found.ByName(name))?.IsEnabled == true, Shortly, TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
 
+    // Pitboard's icon, in Explorer's notification area.
+    public AutomationElement Icon() =>
+        NotificationArea.Icon(Automation) ?? throw new AssertFailedException($"Pitboard's icon is not in the notification area within {Shortly}");
+
+    // The icon's menu, from a right click.
+    public void OpenMenu()
+    {
+        Icon().RightClick();
+        Find(found => found.ByName("Open Pitboard"), "menu");
+    }
+
+    public void Choose(string item) => Named(item).Click();
+
     public void Select(string pane) =>
         Find(found => found.ByAutomationId(pane), pane).Patterns.SelectionItem.Pattern.Select();
 
@@ -145,12 +158,17 @@ internal sealed class Launched : IDisposable
             .SelectMany(Directory.EnumerateFileSystemEntries)
             .ToArray();
 
+    // Asked first, so Pitboard removes its icon: a killed one leaves it in the notification area until hovered.
     public void Dispose()
     {
         if (!Process.HasExited)
         {
-            Process.Kill(entireProcessTree: true);
-            Process.WaitForExit();
+            NotificationArea.AskToEnd(Process);
+            if (!Process.WaitForExit(Shortly))
+            {
+                Process.Kill(entireProcessTree: true);
+                Process.WaitForExit();
+            }
         }
 
         Process.Dispose();

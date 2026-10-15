@@ -636,7 +636,8 @@ jobs:
         run: >
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command
           "Get-AppxPackage -AllUsers -Name 'Microsoft.WindowsAppRuntime*' | Format-Table Name, Version, Architecture -AutoSize"
-      # Each UI test starts a Pitboard.exe in homes of its own and drives it as that user (CF1, CF2).
+      # Each UI test starts a Pitboard.exe in homes of its own and drives it as that user (CF1, CF2), its
+      # icon through the job user's Explorer (CF3).
       - name: The app's tests, as a standard user
         shell: pwsh
         run: >
