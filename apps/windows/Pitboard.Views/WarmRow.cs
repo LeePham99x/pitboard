@@ -5,7 +5,6 @@ using Pitboard.Core;
 
 namespace Pitboard.Views;
 
-// One Claude Code account under the settings' warm-up, with whether it is warmed up and where that stands.
 internal sealed partial class WarmRow : UserControl
 {
     private readonly ToggleSwitch _switch = new();

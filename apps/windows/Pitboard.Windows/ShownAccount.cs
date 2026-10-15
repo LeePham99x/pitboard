@@ -4,7 +4,6 @@ using Pitboard.Core;
 
 namespace Pitboard.Windows;
 
-// A row of the accounts list, kept while the model lists its account.
 public sealed partial class ShownAccount(AccountItem item) : INotifyPropertyChanged
 {
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -28,7 +27,6 @@ public sealed partial class ShownAccount(AccountItem item) : INotifyPropertyChan
     public override string ToString() => Item.Spoken;
 }
 
-// A tool's accounts under its name, once there is more than one tool.
 public sealed partial class ShownSection(string key, string? heading) : ObservableCollection<ShownAccount>
 {
     public string Key { get; } = key;

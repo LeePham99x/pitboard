@@ -6,8 +6,7 @@ using Windows.Win32.UI.WindowsAndMessaging;
 
 namespace Pitboard.Windows;
 
-// Never shown, and not message-only: a message-only window gets no broadcast, such as WM_ENDSESSION or TaskbarCreated.
-// It lives as long as the process.
+// Not message-only: a message-only window gets no WM_ENDSESSION or TaskbarCreated.
 public sealed unsafe class HiddenWindow
 {
     private const string ClassName = "Pitboard.HiddenWindow";

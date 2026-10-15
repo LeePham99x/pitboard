@@ -5,7 +5,6 @@ public interface IUpdates
 {
     bool Available { get; }
 
-    // The version a scheduled check found, waiting to be installed.
     string? Waiting { get; }
 
     void Check();

@@ -11,7 +11,6 @@ using Windows.System;
 
 namespace Pitboard.Views;
 
-// The model's sheet over the main window: adding an account, the sign-in under way, a name, or putting a login away.
 public sealed partial class AccountSheet : ContentDialog, IDisposable
 {
     private static readonly HashSet<string> Parts =

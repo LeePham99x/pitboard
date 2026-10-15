@@ -13,10 +13,11 @@ public static class Shell
         PInvoke.SetCurrentProcessExplicitAppUserModelID(identity.Aumid).ThrowOnFailure();
 
     // Environment.GetFolderPath falls back to LOCALAPPDATA where this fails, and no variable is to move it.
-    public static unsafe string LocalAppData()
+    public static string LocalAppData() => KnownFolder(PInvoke.FOLDERID_LocalAppData);
+
+    public static unsafe string KnownFolder(Guid id)
     {
-        PInvoke.SHGetKnownFolderPath(
-            PInvoke.FOLDERID_LocalAppData, KNOWN_FOLDER_FLAG.KF_FLAG_DONT_VERIFY, null, out var path).ThrowOnFailure();
+        PInvoke.SHGetKnownFolderPath(id, KNOWN_FOLDER_FLAG.KF_FLAG_DONT_VERIFY, null, out var path).ThrowOnFailure();
         try
         {
             return path.ToString();
@@ -27,8 +28,7 @@ public static class Shell
         }
     }
 
-    // The icon Pitboard.exe carries, at the size the notification area draws on this screen. The .NET SDK
-    // numbers an ApplicationIcon 32512, as IDI_APPLICATION is.
+    // The .NET SDK numbers an ApplicationIcon 32512, IDI_APPLICATION's id.
     public static unsafe nint AppIcon()
     {
         using var module = PInvoke.GetModuleHandle((string?)null);

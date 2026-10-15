@@ -20,8 +20,7 @@ public sealed class AccountsWindowTests
         launched.Row("codex/main");
     }
 
-    // The fixture's Claude Code takes a code as the real one does, <code>#<state>. The address it prints is
-    // copied for another browser, and Open is never pressed: it would open that address in a real one.
+    // Open is never pressed: it would open the fixture's address in a real browser.
     [TestMethod]
     [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void AddingAClaudeCodeAccount()
@@ -59,8 +58,7 @@ public sealed class AccountsWindowTests
         launched.Row("codex/third");
     }
 
-    // Sign In stays dimmed while a sign-in runs, so a second sign-in that starts and finishes is what shows
-    // the first one was stopped.
+    // Sign In stays dimmed while a sign-in runs, so a second one finishing shows the first was stopped.
     [TestMethod]
     [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void CancellingASignInAddsNothing()

@@ -39,8 +39,7 @@ public sealed class LaunchingTests
         Assert.AreEqual(Start.Run, Launching.Decide(["--updated"], () => null, () => true));
     }
 
-    // COM starts a copy for a click only when no running copy registered for clicks, and gives its arguments
-    // to the copy that registers: a second copy has nothing to hand over.
+    // COM gives a click's arguments only to the copy that registered for clicks.
     [TestMethod]
     public void AClickOnANotificationIsDroppedByASecondCopy()
     {

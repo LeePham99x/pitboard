@@ -12,7 +12,6 @@ public enum IconMark
     Error,
 }
 
-// Most entries send the model an intent; the rest are the app's own.
 public abstract record IconCommand
 {
     private IconCommand()

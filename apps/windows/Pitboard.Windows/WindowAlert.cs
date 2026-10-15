@@ -2,7 +2,6 @@ using Pitboard.Core;
 
 namespace Pitboard.Windows;
 
-// What the main window puts in front of everything: a switch that failed, or the question before quitting an app.
 public abstract record WindowAlert
 {
     private WindowAlert()

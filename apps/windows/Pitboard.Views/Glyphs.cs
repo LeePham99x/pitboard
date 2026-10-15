@@ -3,18 +3,17 @@ namespace Pitboard.Views;
 // Segoe Fluent Icons, the symbols Windows draws its own apps with.
 internal static class Glyphs
 {
-    public const string Account = "";
-    public const string InUse = "";
-    public const string SignIn = "";
-    public const string Warning = "";
-    public const string Accounts = "";
-    public const string Activity = "";
-    public const string Terminal = "";
-    public const string Problem = "";
-    public const string Name = "";
-    public const string Switch = "";
-    public const string Passed = "";
-    public const string Help = "";
-    public const string Info = "";
-    public const string Update = "";
+    public const string Account = "\uE77B";
+    public const string InUse = "\uEA8C";
+    public const string SignIn = "\uE8D7";
+    public const string Warning = "\uE7BA";
+    public const string Accounts = "\uE716";
+    public const string Terminal = "\uE756";
+    public const string Problem = "\uEA39";
+    public const string Name = "\uE8EC";
+    public const string Switch = "\uE8AB";
+    public const string Passed = "\uE930";
+    public const string Help = "\uE897";
+    public const string Info = "\uE946";
+    public const string Update = "\uE895";
 }

@@ -34,10 +34,7 @@
     <ProjectReference Include="../Pitboard.Views/Pitboard.Views.csproj" />
     <ProjectReference Include="../Pitboard.Windows/Pitboard.Windows.csproj" />
   </ItemGroup>
-  <!--
-    The core, built by Cargo: pass its path as PitboardNativeLibrary, pitboard_ffi.dll built
-    opened and with the fixture feature for Debug, and as a release builds it for Release.
-  -->
+  <!-- pitboard_ffi.dll from Cargo: opened with its fixtures for Debug, as a release builds it for Release. -->
   <ItemGroup Condition="'$(PitboardNativeLibrary)' != ''">
     <None Include="$(PitboardNativeLibrary)" CopyToOutputDirectory="PreserveNewest" Visible="false" />
   </ItemGroup>

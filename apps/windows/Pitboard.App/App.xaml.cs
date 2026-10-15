@@ -29,8 +29,7 @@ public partial class App : Application
         _start = start;
         _handovers = handovers;
 #if DEBUG
-        // Unhandled, it fails Pitboard fast with 0xC000027B: the UI tests read why from here, in WinUI's own
-        // words too, with any theme resource it could not find.
+        // Unhandled, it fails fast with 0xC000027B and says nothing: the UI tests read why from here.
         UnhandledException += (_, args) => Console.Error.WriteLine($"{args.Message}{Environment.NewLine}{args.Exception}");
         DebugSettings.IsXamlResourceReferenceTracingEnabled = true;
         DebugSettings.XamlResourceReferenceFailed += (_, args) => Console.Error.WriteLine(args.Message);

@@ -128,7 +128,7 @@ public sealed class IconMenuFlyoutTests
     {
         var mark = Item(Menu(TwoTools()), "An interrupted switch is waiting").Icon as FontIcon;
 
-        Assert.AreEqual("", mark?.Glyph);
+        Assert.AreEqual("\uE7BA", mark?.Glyph);
     }
 
     [UITestMethod]

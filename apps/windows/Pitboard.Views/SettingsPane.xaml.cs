@@ -9,7 +9,6 @@ using Launcher = Windows.System.Launcher;
 
 namespace Pitboard.Views;
 
-// The settings page the window's Settings item opens, in the macOS Settings' sections and with the model's words.
 public sealed partial class SettingsPane : UserControl
 {
     private readonly AppModel _model;

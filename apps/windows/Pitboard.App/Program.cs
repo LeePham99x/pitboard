@@ -19,8 +19,7 @@ public static class Program
     private static int Main(string[] args)
     {
 #if DEBUG
-        // An exception in a DispatcherQueue callback fails Pitboard fast in CoreMessagingXP.dll and reaches no
-        // handler, so a Debug build says each exception as it is thrown, for the UI tests to show.
+        // A DispatcherQueue callback's exception fails fast in CoreMessagingXP.dll and reaches no handler.
         AppDomain.CurrentDomain.FirstChanceException += (_, thrown) => Console.Error.WriteLine(Thrown(thrown.Exception));
 #endif
         WinRT.ComWrappersSupport.InitializeComWrappers();
