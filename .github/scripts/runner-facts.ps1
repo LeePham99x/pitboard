@@ -2,7 +2,8 @@
 # as the job's user and as throwaway users this makes. Each change it makes is undone in a
 # finally: the probe's marker, VHDs, a ReFS or Dev Drive volume, an SMB share, Bun and
 # proper-lockfile in C:\pitboard-probe-tools, three throwaway users and their passwords, tasks,
-# the job user's HKCU\Environment values, the state of OpenSSH Server where the image has one,
+# the job user's HKCU\Environment values, the state of OpenSSH Server, installed from Microsoft's
+# release where the image ships none,
 # Developer Mode and the symbolic-link right, and for the channel rows Scoop in a scratch root,
 # winget's local manifests and the package they install, a build on the user PATH and in
 # ~\.cargo\bin, a loopback server and Defender's attack surface reduction rules.
@@ -25,14 +26,19 @@ param(
     [Parameter(Mandatory)] [string] $BunZip,
     [Parameter(Mandatory)] [string] $BunSha256,
     # pitboard.exe as a 0.x release builds it, for the channel rows.
-    [string] $Pitboard = ''
+    [string] $Pitboard = '',
+    # Win32-OpenSSH from Microsoft's release, installed where the image ships no sshd
+    # (windows-11-arm), so RF-M's network logon is measured on both images. Pinned by SHA-256.
+    [string] $OpenSshTag = '',
+    [string] $OpenSshZip = '',
+    [string] $OpenSshSha256 = ''
 )
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
 # A GitHub-hosted runner is thrown away after the job.
 if (-not ($env:GITHUB_ACTIONS -eq 'true' -and $env:RUNNER_ENVIRONMENT -eq 'github-hosted')) {
-    throw 'runner-facts.ps1 runs only on a GitHub-hosted runner: it makes Windows accounts, changes their passwords, mounts disks, shares a folder, starts OpenSSH Server and installs Bun for a run'
+    throw 'runner-facts.ps1 runs only on a GitHub-hosted runner: it makes Windows accounts, changes their passwords, mounts disks, shares a folder, installs and starts OpenSSH Server and installs Bun for a run'
 }
 
 $Probe = (Resolve-Path -Path $Probe).Path
@@ -726,9 +732,56 @@ function Get-SshdDiagnosis($User) {
     }
 }
 
-# RF-M: a loopback ssh session as $User by key, where the image ships sshd, in which the probe
-# reads the logon, DPAPI, Credential Manager and the processes of $User's other logon. $User
-# joins OpenSSH Users, the group AllowGroups admits. The service is put back as it was.
+# WF-b: install Win32-OpenSSH from Microsoft's release where the image ships none
+# (windows-11-arm), so RF-M measures the network logon on both images. The zip is taken only
+# when its SHA-256 is the one the workflow pinned. Uninstall-OpenSsh removes the service and
+# the files. Hands back the install folder, or $null when the image already has sshd or no zip
+# was given.
+function Install-OpenSsh($Result, [string] $Tag, [string] $Zip, [string] $Sha256) {
+    if (Get-Service -Name 'sshd' -ErrorAction SilentlyContinue) { $Result.shipped_sshd = $true; return $null }
+    $Result.shipped_sshd = $false
+    if (-not $Zip) { return $null }
+    $dir = 'C:\pitboard-probe-openssh'
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    $download = Join-Path $dir $Zip
+    Invoke-WebRequest -Uri "https://github.com/PowerShell/Win32-OpenSSH/releases/download/$Tag/$Zip" -OutFile $download -UseBasicParsing
+    $Result.sha256_matches = (Get-FileHash -Algorithm SHA256 -Path $download).Hash -eq $Sha256
+    if (-not $Result.sha256_matches) { throw "$Zip is not the Win32-OpenSSH build whose SHA-256 the workflow pinned; nothing of it is installed" }
+    Expand-Archive -Path $download -DestinationPath $dir -Force
+    $sshHome = Get-ChildItem -Path $dir -Directory | Select-Object -First 1 -ExpandProperty FullName
+    if (-not $sshHome) { throw 'the Win32-OpenSSH zip held no folder' }
+    & (Join-Path $sshHome 'install-sshd.ps1') *> (Join-Path $scratch 'openssh-install.txt')
+    $Result.install_exit = $LASTEXITCODE
+    $env:PATH = "$sshHome;$env:PATH"
+    $configDir = Join-Path $env:ProgramData 'ssh'
+    New-Item -ItemType Directory -Force -Path $configDir | Out-Null
+    $config = Join-Path $configDir 'sshd_config'
+    if (-not (Test-Path -LiteralPath $config)) { Copy-Item -Path (Join-Path $sshHome 'sshd_config_default') -Destination $config }
+    & (Join-Path $sshHome 'ssh-keygen.exe') -A *> (Join-Path $scratch 'openssh-keygen.txt')
+    try { & (Join-Path $sshHome 'FixHostFilePermissions.ps1') -Confirm:$false *> (Join-Path $scratch 'openssh-fixperms.txt') } catch { $null = $_ }
+    Set-Service -Name 'sshd' -StartupType Manual -ErrorAction SilentlyContinue
+    $Result.installed = [bool] (Get-Service -Name 'sshd' -ErrorAction SilentlyContinue)
+    $Result.tag = $Tag
+    $sshHome
+}
+
+# Remove what Install-OpenSsh added: the sshd and ssh-agent services, the unpacked files and
+# the config this run created.
+function Uninstall-OpenSsh([string] $SshHome, $Result) {
+    try {
+        Stop-Service -Name 'sshd' -Force -ErrorAction SilentlyContinue
+        Stop-Service -Name 'ssh-agent' -Force -ErrorAction SilentlyContinue
+        & (Join-Path $SshHome 'uninstall-sshd.ps1') *> (Join-Path $scratch 'openssh-uninstall.txt')
+    } catch { $Result.uninstall_error = $_.Exception.Message }
+    Remove-Item -Recurse -Force -Path 'C:\pitboard-probe-openssh' -ErrorAction SilentlyContinue
+    Remove-Item -Recurse -Force -Path (Join-Path $env:ProgramData 'ssh') -ErrorAction SilentlyContinue
+    $Result.sshd_gone = $null -eq (Get-Service -Name 'sshd' -ErrorAction SilentlyContinue)
+}
+
+# RF-M: a loopback ssh session as $User by key, where the image ships sshd or Install-OpenSsh
+# put it there, in which the probe reads the logon, DPAPI, Credential Manager and the processes
+# of $User's other logon. $User joins OpenSSH Users where that group gates logins. The service
+# is put back as it was.
 function Measure-OpenSsh($User, $Result) {
     $service = Get-Service -Name 'sshd' -ErrorAction SilentlyContinue
     $Result.sshd_present = [bool] $service
@@ -875,6 +928,12 @@ function Measure-FreshUser($User, $Result, [string] $Bun, [string] $X64) {
             task = Measure-Task $User $s 'd2' 'probe' "--out $out dpapi --scratch $s --action unseal --file pitboard-probe-d2.bin" -WaitSeconds 30 -Expect $out
         }
     }
+    # RF-D2b: a restricted token like Codex's unelevated sandbox against a sealed park and a
+    # protected file. The restricted-token block seals and makes both as this user, then runs
+    # dpapi unseal and acl open from the restricted token.
+    Invoke-Row $Result 'rf_d2b' {
+        Invoke-AsUser $User 'd2b' @('restricted-token', '--scratch', (Join-Path $s 'd2b'))
+    }
     Invoke-Row $Result 'rf_e5' {
         $e5 = Join-Path $User.RunDir 'e5'
         $app = Join-Path $e5 'app'
@@ -956,6 +1015,11 @@ function Measure-FreshUser($User, $Result, [string] $Bun, [string] $X64) {
                 $r.leak_check = Invoke-AsUser $User 'g3-leak-check' @('credman-names', '--leak-check')
             }
             $r
+        }
+        # RF-WW1: a dummy handed on descriptor 3 through the C runtime's inheritance table, read
+        # back by Bun the way Claude Code reads its token descriptor.
+        Invoke-Row $Result 'rf_ww1' {
+            Invoke-AsUser $User 'ww1' @('fd-handover', '--bun', $Bun, '--script', (Join-Path $toolHelpers 'fd3-read.mjs'))
         }
     }
 }
@@ -1625,7 +1689,15 @@ try {
             Save-Report
             try { Measure-SmbShare $fresh $report.smb_share } catch { $report.smb_share.error = $_.Exception.Message }
             Save-Report
-            try { Measure-OpenSsh $fresh $report.openssh } catch { $report.openssh.error = $_.Exception.Message }
+            $opensshHome = $null
+            try {
+                $opensshHome = Install-OpenSsh $report.openssh $OpenSshTag $OpenSshZip $OpenSshSha256
+                Measure-OpenSsh $fresh $report.openssh
+            } catch {
+                $report.openssh.error = $_.Exception.Message
+            } finally {
+                if ($opensshHome) { Uninstall-OpenSsh $opensshHome $report.openssh }
+            }
             Save-Report
             Measure-PasswordChanges $fresh $report.fresh_standard_user
         }

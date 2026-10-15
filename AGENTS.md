@@ -132,7 +132,8 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
   `windows-facts.yml` on a GitHub-hosted runner, may make Windows accounts, put one in
   Administrators or OpenSSH Users, change their passwords, turn on Developer Mode, grant the
   symbolic-link right, register tasks, write the job user's `HKCU\Environment`, mount volumes,
-  share a folder, start OpenSSH Server, install Bun and Scoop, turn on winget's local
+  share a folder, install Win32-OpenSSH from Microsoft's release where the image ships none and
+  start OpenSSH Server, install Bun and Scoop, turn on winget's local
   manifests, serve files on loopback, put a build it made behind a Scoop shim, in WinGet's
   Links, in `~\.cargo\bin` or on the user `PATH`, and set Defender's attack surface reduction
   rules to audit. It undoes each in a `finally`. `release.yml`'s `scoop-install` job, on a
