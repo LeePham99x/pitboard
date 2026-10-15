@@ -13,7 +13,7 @@ public sealed partial class LifecycleTests
 
     // CF1 and CF5. Windows may keep the foreground for a window that held it before the launch (SetForegroundWindow).
     [TestMethod]
-    public void TheFirstLaunchsWindowComesToTheFrontAndTakesAClick()
+    public void TheFirstLaunchWindowComesToTheFrontAndTakesAClick()
     {
         var before = GetForegroundWindow();
         var clock = Stopwatch.StartNew();

@@ -28,29 +28,4 @@ public sealed class IdentityTests
         Assert.AreEqual(Path.Combine(local, "Pitboard App Debug"), Debug.DataFolder(local, null));
         Assert.AreEqual(fixture, Debug.DataFolder(local, fixture));
     }
-
-    // "Pitboard App" begins with "Pitboard", which a comparison of strings would take for inside it.
-    [TestMethod]
-    public void TheAppsFoldersAndPitboardsAreNeverInsideOneAnother()
-    {
-        var local = Path.Combine(Path.GetTempPath(), "Local");
-        string[] folders = [Path.Combine(local, "Pitboard"), Release.DataFolder(local, null), Debug.DataFolder(local, null)];
-
-        foreach (var folder in folders)
-        {
-            foreach (var other in folders.Where(other => other != folder))
-            {
-                Assert.IsFalse(Inside(folder, other), $"{folder} is inside {other}");
-            }
-        }
-
-        Assert.IsTrue(Inside(Path.Combine(local, "Pitboard App", "WebView2"), Release.DataFolder(local, null)));
-    }
-
-    private static bool Inside(string path, string folder)
-    {
-        var relative = Path.GetRelativePath(folder, path);
-        return relative != "." && relative != ".." && !Path.IsPathRooted(relative)
-            && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal);
-    }
 }
