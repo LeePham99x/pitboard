@@ -74,6 +74,20 @@ public sealed class PageRequestsTests
         Assert.IsInstanceOfType<NavigationDecision.Popup>(PitboardFfiMethods.DecideNavigation(Fixture, PageRole.Window, request));
     }
 
+    // WebView2 raises DownloadStarting only for what it will not show.
+    [TestMethod]
+    public void ADownloadIsAResponseThePageCannotShow()
+    {
+        var site = PageRequests.Download("https://chatgpt.com/files/x.pdf", "attachment; filename=x.pdf", mainFrame: true);
+        var none = PageRequests.Download("data:text/plain,x", "", mainFrame: false);
+
+        Assert.AreEqual(new ResponseFacts("https://chatgpt.com/files/x.pdf", MainFrame: true, CanShow: false, "attachment; filename=x.pdf"), site);
+        Assert.IsNull(none.Disposition, "WebView2 gives an empty header for none");
+        Assert.AreEqual(new ResponseDecision.Download(Ask: false), PitboardFfiMethods.DecideResponse(ChatGPT, PageRole.Window, site));
+        Assert.AreEqual(new ResponseDecision.Download(Ask: true), PitboardFfiMethods.DecideResponse(ChatGPT, PageRole.Window, none));
+        Assert.AreEqual(new ResponseDecision.Ignore(), PitboardFfiMethods.DecideResponse(ChatGPT, PageRole.Popup, site));
+    }
+
     [TestMethod]
     public void AnOriginNamesAPortOnlyWhereItIsNotTheSchemesOwn()
     {

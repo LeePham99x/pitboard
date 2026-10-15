@@ -12,6 +12,9 @@ public interface ISessionWindow
 
     void CloseSignIn();
 
+    // Whether the person lets a download the policy asks about save, asked over the account's window.
+    Task<bool> AllowDownload(AlertText question);
+
     // The window's page is now at this address.
     void Shown(string address);
 
@@ -24,6 +27,7 @@ public interface ISessionWindow
 public sealed class WebSession
 {
     private readonly WebEnvironment _web;
+    private readonly Downloads _downloads;
     private readonly ISessionWindow _window;
     private readonly TimeProvider _time;
     private readonly Dictionary<PageRole, DateTimeOffset> _lastEnded = [];
@@ -31,12 +35,13 @@ public sealed class WebSession
     private ulong _loaded;
     private string _first;
 
-    public WebSession(OpenWindow open, WebEnvironment web, ISessionWindow window, TimeProvider? time = null)
+    public WebSession(OpenWindow open, WebEnvironment web, Downloads downloads, ISessionWindow window, TimeProvider? time = null)
     {
         Account = open.Account;
         Policy = web.Policy(open.Account.Site);
         Note = open.Note;
         _web = web;
+        _downloads = downloads;
         _window = window;
         _time = time ?? TimeProvider.System;
         _loaded = open.Load.Serial;
@@ -141,6 +146,13 @@ public sealed class WebSession
         };
         page.PermissionRequested += (_, args) => Permission(args);
         page.ProcessFailed += (sender, args) => ProcessFailed(role, sender, args);
+        // After the policy's own handlers, so a navigation it stopped is not under way.
+        var navigations = new PageNavigations();
+        page.NavigationStarting += (_, args) => navigations.Starting(args.NavigationId, args.Uri, frame: false, args.Cancel);
+        page.FrameNavigationStarting += (_, args) => navigations.Starting(args.NavigationId, args.Uri, frame: true, args.Cancel);
+        page.NavigationCompleted += (_, args) => navigations.Completed(args.NavigationId, frame: false);
+        page.FrameNavigationCompleted += (_, args) => navigations.Completed(args.NavigationId, frame: true);
+        page.DownloadStarting += (_, args) => Download(role, navigations, args);
         // What a frame loads is the page's to decide, and an address it loads that WebView2 hands to another app never
         // leaves through Pitboard.
         page.LaunchingExternalUriScheme += (_, args) => args.Cancel = true;
@@ -208,6 +220,21 @@ public sealed class WebSession
             case NavigationDecision.Refuse refused:
                 Say(refused.Note);
                 break;
+        }
+    }
+
+    // Left unhandled, so WebView2's own download dialog shows it, as Edge's does.
+    private async void Download(PageRole role, PageNavigations navigations, CoreWebView2DownloadStartingEventArgs args)
+    {
+        var operation = args.DownloadOperation;
+        var facts = PageRequests.Download(operation.Uri, operation.ContentDisposition, navigations.MainFrame(operation.Uri));
+        if (PitboardFfiMethods.DecideResponse(Policy, role, facts) is ResponseDecision.Download saving)
+        {
+            await _downloads.Start(Account.Store, args, saving.Ask, _window.AllowDownload);
+        }
+        else
+        {
+            args.Cancel = true;
         }
     }
 

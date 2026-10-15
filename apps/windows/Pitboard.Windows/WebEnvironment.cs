@@ -5,9 +5,9 @@ using Pitboard.Core;
 
 namespace Pitboard.Windows;
 
-// The world a launch's account windows run in, decided once: the sites over https, or a fixture's stand-ins on a scheme
-// of its own, which reach no network and open nothing elsewhere. One browser process serves every window, over the
-// app's own user data folder, with a profile per store.
+// The world a launch's account windows run in, decided once: the sites over https, saving in the person's Downloads, or
+// a fixture's stand-ins on a scheme of its own, which reach no network, open nothing elsewhere and save in its folder.
+// One browser process serves every window, over the app's own user data folder, with a profile per store.
 public sealed class WebEnvironment
 {
     public const string FixtureScheme = "pitboard-fixture";
@@ -24,10 +24,11 @@ public sealed class WebEnvironment
     private readonly Action<string> _openElsewhere;
     private Task<CoreWebView2Environment>? _made;
 
-    public WebEnvironment(string scheme, string userDataFolder, bool devTools, Action<string> openElsewhere)
+    public WebEnvironment(string scheme, string userDataFolder, string downloads, bool devTools, Action<string> openElsewhere)
     {
         Scheme = scheme;
         UserDataFolder = userDataFolder;
+        Downloads = downloads;
         _devTools = devTools;
         _openElsewhere = openElsewhere;
     }
@@ -36,11 +37,14 @@ public sealed class WebEnvironment
 
     public string UserDataFolder { get; }
 
+    // The folder the windows save downloads in.
+    public string Downloads { get; }
+
     public static WebEnvironment Live(string dataFolder, bool devTools) =>
-        new("https", Path.Combine(dataFolder, "WebView2"), devTools, OpenWithWindows);
+        new("https", Path.Combine(dataFolder, "WebView2"), Shell.Downloads(), devTools, OpenWithWindows);
 
     public static WebEnvironment Fixture(string dataFolder) =>
-        new(FixtureScheme, Path.Combine(dataFolder, "WebView2"), devTools: true, _ => { });
+        new(FixtureScheme, Path.Combine(dataFolder, "WebView2"), Path.Combine(dataFolder, "Downloads"), devTools: true, _ => { });
 
     // Why this PC cannot show an account window, given the Runtime it has, if any; null where it can. A version
     // string may carry its channel after a space.
@@ -89,9 +93,11 @@ public sealed class WebEnvironment
         return options;
     }
 
-    // Each page, before it loads anything. No script, host object or message reaches a site's page.
+    // Each page, before it loads anything. No script, host object or message reaches a site's page. Chromium writes a
+    // download into a temporary file in its profile's download folder until it is named, so a fixture's stay in its own.
     public void Prepare(CoreWebView2 page)
     {
+        page.Profile.DefaultDownloadFolderPath = Downloads;
         var settings = page.Settings;
         settings.AreDevToolsEnabled = _devTools;
         settings.AreHostObjectsAllowed = false;

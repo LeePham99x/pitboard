@@ -15,6 +15,7 @@ namespace Pitboard.Views;
 public sealed partial class AccountWindow : Window, ISessionWindow
 {
     private readonly WebEnvironment _web;
+    private readonly Downloads _downloads;
     private readonly Action<Intent> _send;
     private readonly DialogHost _dialogs;
     private readonly AppBarButton _back = Command("Back", Symbol.Back, "Show the previous page");
@@ -38,10 +39,11 @@ public sealed partial class AccountWindow : Window, ISessionWindow
     private bool _starting;
     private bool _closed;
 
-    public AccountWindow(string store, WebEnvironment web, Action<Intent> send)
+    public AccountWindow(string store, WebEnvironment web, Downloads downloads, Action<Intent> send)
     {
         Store = store;
         _web = web;
+        _downloads = downloads;
         _send = send;
         var bar = new CommandBar
         {
@@ -143,6 +145,10 @@ public sealed partial class AccountWindow : Window, ISessionWindow
 
     public void CloseSignIn() => _signIn?.Close();
 
+    // As the macOS app asks, over the window.
+    public Task<bool> AllowDownload(AlertText question) =>
+        _dialogs.Confirm(new Question(question.Title, question.Message, "Download"));
+
     public void Shown(string address) => _send(new Intent.PageShown(Store, address));
 
     public void Changed() => ShowSession();
@@ -192,7 +198,7 @@ public sealed partial class AccountWindow : Window, ISessionWindow
             return;
         }
 
-        var session = new WebSession(open, _web, this);
+        var session = new WebSession(open, _web, _downloads, this);
         _session = session;
         var page = await NewPage();
         session.Attach(page);

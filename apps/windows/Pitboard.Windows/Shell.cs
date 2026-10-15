@@ -28,6 +28,21 @@ public static class Shell
         }
     }
 
+    // Where the person's downloads go, wherever they moved the folder.
+    public static unsafe string Downloads()
+    {
+        PInvoke.SHGetKnownFolderPath(
+            PInvoke.FOLDERID_Downloads, KNOWN_FOLDER_FLAG.KF_FLAG_DONT_VERIFY, null, out var path).ThrowOnFailure();
+        try
+        {
+            return path.ToString();
+        }
+        finally
+        {
+            PInvoke.CoTaskMemFree(path);
+        }
+    }
+
     // The .NET SDK numbers an ApplicationIcon 32512, IDI_APPLICATION's id.
     public static unsafe nint AppIcon()
     {

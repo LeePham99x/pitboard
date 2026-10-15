@@ -6,7 +6,8 @@ using WinRT.Interop;
 namespace Pitboard.Windows.Tests;
 
 // WebView2 in the test app's window, as the app makes it: a user data folder of the test's own, one browser process
-// over it, and a page per profile name. Pages a test sends elsewhere are kept, and opened nowhere.
+// over it, and a page per profile name. Pages a test sends elsewhere are kept, and opened nowhere; downloads are saved in
+// the test's own folder, and what they tell the model is kept.
 internal sealed class Webs : IAsyncDisposable
 {
     public static readonly TimeSpan Patience = TimeSpan.FromSeconds(60);
@@ -20,12 +21,17 @@ internal sealed class Webs : IAsyncDisposable
         _folder = folder;
         Web = web;
         Elsewhere = elsewhere;
+        Downloads = new Downloads(web.Downloads, Sent.Add);
         environment.BrowserProcessExited += (_, _) => _exited.TrySetResult();
     }
 
     public WebEnvironment Web { get; }
 
     public List<string> Elsewhere { get; }
+
+    public Downloads Downloads { get; }
+
+    public List<Intent> Sent { get; } = [];
 
     // Set once every page of the first browser process has closed and it has let go of the folder.
     public Task Exited => _exited.Task;
@@ -36,7 +42,9 @@ internal sealed class Webs : IAsyncDisposable
     {
         var folder = Directory.CreateTempSubdirectory("pitboard-webview2-");
         var elsewhere = new List<string>();
-        var web = new WebEnvironment(scheme, Path.Combine(folder.FullName, "WebView2"), devTools: false, elsewhere.Add);
+        var web = new WebEnvironment(
+            scheme, Path.Combine(folder.FullName, "WebView2"), Path.Combine(folder.FullName, "Downloads"), devTools: false,
+            elsewhere.Add);
         return new Webs(folder, web, await web.Made().WaitAsync(Patience), elsewhere);
     }
 

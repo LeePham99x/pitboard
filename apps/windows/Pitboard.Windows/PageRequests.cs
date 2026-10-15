@@ -17,6 +17,10 @@ public static class PageRequests
         NavigationPolicy policy, PageRole role, string address, bool userInitiated, string? source, bool mainFrame) =>
         new(address, NavigationTarget.NewWindow, userInitiated, Download: false, Asking(policy, role, source, mainFrame));
 
+    // WebView2 raises DownloadStarting only for what it will not show, and gives an empty header for none.
+    public static ResponseFacts Download(string address, string disposition, bool mainFrame) =>
+        new(address, mainFrame, CanShow: false, disposition.Length > 0 ? disposition : null);
+
     // A port of the scheme's own is 0, and an address with no host, such as about:blank, has an empty one.
     public static FrameOrigin Origin(string? address, bool mainFrame) =>
         Uri.TryCreate(address, UriKind.Absolute, out var uri)

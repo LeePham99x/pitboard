@@ -19,7 +19,7 @@ public sealed class WebSessionTests
         using var site = new StandInSite();
         await using var webs = await Webs.Make(WebEnvironment.FixtureScheme);
         var window = new StandInWindow(webs);
-        var session = new WebSession(Webs.Opened(Main, Home), webs.Web, window);
+        var session = new WebSession(Webs.Opened(Main, Home), webs.Web, webs.Downloads, window);
         var page = await webs.Page(Main.Store);
 
         Assert.IsTrue(await Webs.Loads(page, () => Attach(session, page)), "the fixture's page did not load");
@@ -47,7 +47,7 @@ public sealed class WebSessionTests
     {
         await using var webs = await Webs.Make(WebEnvironment.FixtureScheme);
         var window = new StandInWindow(webs);
-        var session = new WebSession(Webs.Opened(Main, Home), webs.Web, window);
+        var session = new WebSession(Webs.Opened(Main, Home), webs.Web, webs.Downloads, window);
         var page = await webs.Page(Main.Store);
         Assert.IsTrue(await Webs.Loads(page, () => Attach(session, page)), "the fixture's page did not load");
         var host = Main.Site.SignInHosts[0];
@@ -74,7 +74,7 @@ public sealed class WebSessionTests
         var other = await webs.Page(spare.Store);
         Assert.IsTrue(await Webs.Loads(page, site.Address("/set")), "the stand-in did not load");
         Assert.IsTrue(await Webs.Loads(other, site.Address("/set")), "the stand-in did not load in the other profile");
-        var session = new WebSession(Webs.Opened(Main, Home), webs.Web, new StandInWindow(webs));
+        var session = new WebSession(Webs.Opened(Main, Home), webs.Web, webs.Downloads, new StandInWindow(webs));
         Assert.IsTrue(await Webs.Loads(page, () => Attach(session, page)), "the fixture's page did not load");
 
         await session.RemoveWebsiteData();
@@ -107,6 +107,8 @@ public sealed class WebSessionTests
         }
 
         public void CloseSignIn() => Closed++;
+
+        public Task<bool> AllowDownload(AlertText question) => Task.FromResult(false);
 
         public void Shown(string address) => Pages.Add(address);
 

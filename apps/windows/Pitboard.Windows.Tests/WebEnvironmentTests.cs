@@ -21,7 +21,8 @@ public sealed class WebEnvironmentTests
         StringAssert.Contains(WebEnvironment.Refusal(null), "and this PC has none.");
     }
 
-    // The user data folder is the app's own data folder's WebView2, and WebView2 names a profile's folder after it.
+    // The user data folder is the app's own data folder's WebView2, and WebView2 names a profile's folder after it. The
+    // windows save in the person's Downloads.
     [TestMethod]
     public void EachLaunchKeepsItsProfilesInItsDataFolder()
     {
@@ -32,5 +33,7 @@ public sealed class WebEnvironmentTests
         Assert.AreEqual(Path.Combine("data", "Pitboard App", "WebView2", "EBWebView", "a"), live.ProfileFolder("a"));
         Assert.AreEqual(WebEnvironment.FixtureScheme, fixture.Scheme);
         Assert.AreEqual(Path.Combine("temp", "pitboard-fixture", "WebView2"), fixture.UserDataFolder);
+        Assert.AreEqual(Path.Combine("temp", "pitboard-fixture", "Downloads"), fixture.Downloads, "a fixture saves in its own folder");
+        Assert.AreEqual(Shell.Downloads(), live.Downloads);
     }
 }

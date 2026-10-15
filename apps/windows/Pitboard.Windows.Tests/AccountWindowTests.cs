@@ -29,7 +29,8 @@ public sealed class AccountWindowTests
     public async Task UntilItsPageCanShowItSaysWhatItWaitsFor()
     {
         var sent = new List<Intent>();
-        var window = await Up(new AccountWindow(Main.Store, WebEnvironment.Fixture(Path.GetTempPath()), sent.Add));
+        var web = WebEnvironment.Fixture(Path.GetTempPath());
+        var window = await Up(new AccountWindow(Main.Store, web, new Downloads(web.Downloads, sent.Add), sent.Add));
         try
         {
             window.Follow(Shown(new WaitingShown.Reading("Reading accounts…")));
@@ -55,7 +56,7 @@ public sealed class AccountWindowTests
     {
         await using var webs = await Webs.Make(WebEnvironment.FixtureScheme);
         var sent = new List<Intent>();
-        var window = await Up(new AccountWindow(Main.Store, webs.Web, sent.Add));
+        var window = await Up(new AccountWindow(Main.Store, webs.Web, webs.Downloads, sent.Add));
         try
         {
             var home = $"{WebEnvironment.FixtureScheme}://chatgpt.com/";

@@ -5,11 +5,12 @@ using Pitboard.Windows;
 namespace Pitboard.App;
 
 // WebView2's side of the account windows. What they show, and which stores go, is the model's: this tells it what the
-// windows did, and does what it says.
+// windows and their downloads did, and does what it says.
 internal sealed class AccountWindows
 {
     private readonly AppModel _model;
     private readonly WebEnvironment _web;
+    private readonly Downloads _downloads;
     private readonly StoreJanitor _janitor;
     private readonly Dictionary<string, AccountWindow> _open = new(StringComparer.OrdinalIgnoreCase);
 
@@ -18,6 +19,7 @@ internal sealed class AccountWindows
     {
         _model = model;
         _web = web;
+        _downloads = new Downloads(web.Downloads, model.Send);
         _janitor = new StoreJanitor(
             store => Directory.Exists(web.ProfileFolder(store)), store => web.MarkDeleted(store, hidden));
     }
@@ -36,7 +38,7 @@ internal sealed class AccountWindows
             return;
         }
 
-        var window = new AccountWindow(account.Store, _web, _model.Send);
+        var window = new AccountWindow(account.Store, _web, _downloads, _model.Send);
         window.Closed += (_, _) =>
         {
             _open.Remove(window.Store);
