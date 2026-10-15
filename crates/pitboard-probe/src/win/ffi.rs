@@ -746,6 +746,15 @@ impl Child {
         let ok = unsafe { GetExitCodeProcess(self.process.raw(), &mut code) };
         (ok != 0).then_some(code)
     }
+
+    /// End the process, for a child that outran its timeout.
+    pub fn kill(&self) {
+        use windows_sys::Win32::System::Threading::TerminateProcess;
+        // SAFETY: an open process handle; the exit code is this probe's own choice.
+        unsafe {
+            TerminateProcess(self.process.raw(), 1);
+        }
+    }
 }
 
 /// One argument quoted the way the C runtime and `CommandLineToArgvW` split a command line.
@@ -778,13 +787,15 @@ pub fn quote_arg(arg: &OsStr) -> Vec<u16> {
 
 /// Start `exe` with `args` through CreateProcessW, or CreateProcessAsUserW with `token`,
 /// with `flags` and, when given, a whole environment block (`CREATE_UNICODE_ENVIRONMENT` is
-/// added). No standard handles are passed: a child that must answer writes `--out`.
+/// added) and a `Winsta0\<name>` desktop in `STARTUPINFOW.lpDesktop`. No standard handles are
+/// passed: a child that must answer writes `--out`.
 pub fn spawn(
     token: Option<HANDLE>,
     exe: &Path,
     args: &[&OsStr],
     flags: u32,
     env: Option<&[u16]>,
+    desktop: Option<&[u16]>,
 ) -> Result<Child, u32> {
     use windows_sys::Win32::System::Threading::{
         CREATE_UNICODE_ENVIRONMENT, CreateProcessAsUserW, CreateProcessW, PROCESS_INFORMATION,
@@ -799,6 +810,7 @@ pub fn spawn(
     line.push(0);
     let si = STARTUPINFOW {
         cb: size_of::<STARTUPINFOW>() as u32,
+        lpDesktop: desktop.map_or(std::ptr::null_mut(), |d| d.as_ptr() as *mut u16),
         ..Default::default()
     };
     let mut pi = PROCESS_INFORMATION::default();
@@ -809,8 +821,8 @@ pub fn spawn(
     };
     let env_ptr = env.map_or(std::ptr::null(), |e| e.as_ptr().cast::<core::ffi::c_void>());
     // SAFETY: `app` and `line` are NUL-terminated and `line` is mutable as the call needs;
-    // `si` is sized; `env`, when given, is a double-NUL-terminated block that outlives the
-    // call; `pi` receives two handles, one closed here and one owned by the result.
+    // `si` is sized, and its `env` and `desktop`, when given, are NUL-terminated and outlive
+    // the call; `pi` receives two handles, one closed here and one owned by the result.
     let ok = unsafe {
         match token {
             Some(t) => CreateProcessAsUserW(

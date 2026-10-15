@@ -100,9 +100,12 @@ pub fn run(command: &Command, out: Option<&Path>) -> Outcome {
             file,
         } => dpapi::dpapi(scratch, *action, file),
         C::RestrictedToken { scratch } => tokens::restricted(scratch),
-        C::FdHandover { bun, script, token } => {
-            handover::fd_handover(bun, script, token.as_bytes())
-        }
+        C::FdHandover {
+            bun,
+            script,
+            token,
+            kind,
+        } => handover::fd_handover(bun, script, token.as_bytes(), *kind),
         C::Task {
             action,
             scratch,

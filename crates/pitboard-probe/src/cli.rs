@@ -164,11 +164,12 @@ pub enum Command {
         file: String,
     },
     /// D2b/H7: build a restricted token shaped like Codex 0.162.1's unelevated sandbox
-    /// (DISABLE_MAX_PRIVILEGE | LUA_TOKEN | WRITE_RESTRICTED, restricting to the logon SID and
-    /// Everyone), then from it run the probe's `dpapi --action unseal` on a park it sealed and
-    /// `acl --open` on a protected file it made, to see whether a token that cannot see the
-    /// marker still opens a vault-style file. Writes those two files first, so it needs the
-    /// marker; the children only read, so they need the scratch check alone.
+    /// (DISABLE_MAX_PRIVILEGE | LUA_TOKEN | WRITE_RESTRICTED, restricting to a capability SID,
+    /// the logon SID and Everyone, with Codex's default DACL), then from it, on a private
+    /// desktop, run the probe's `dpapi --action unseal` on a park it sealed and `acl --open`
+    /// on a protected file it made, to see whether a token that cannot see the marker still
+    /// opens a vault-style file. Writes those two files first, so it needs the marker; the
+    /// children only read, so they need the scratch check alone.
     RestrictedToken {
         #[arg(long)]
         scratch: PathBuf,
@@ -185,6 +186,9 @@ pub enum Command {
         /// The bytes handed on descriptor 3. A dummy, never a token.
         #[arg(long, default_value = "pitboard-probe: a dummy handed on descriptor 3")]
         token: String,
+        /// Whether descriptor 3 is an anonymous pipe or a loopback socket.
+        #[arg(long, value_enum, default_value_t = HandoverKind::Pipe)]
+        kind: HandoverKind,
     },
     /// E1-E4: register, run, read, list or delete a probe task through ITaskService.
     Task {
@@ -449,6 +453,14 @@ pub enum DpapiAction {
     RoundTrip,
     Seal,
     Unseal,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum HandoverKind {
+    /// An anonymous pipe, which Bun's fstat reads as a FIFO.
+    Pipe,
+    /// A loopback socket, to see whether Bun's fstat reads it as a socket.
+    Socket,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -931,14 +943,34 @@ mod tests {
                 ref bun,
                 ref script,
                 ref token,
+                kind,
             } => {
                 assert_eq!(bun, &PathBuf::from(r"C:\bun\bun.exe"));
                 assert_eq!(script, &PathBuf::from(r"C:\h\fd3-read.mjs"));
                 assert!(token.starts_with("pitboard-probe:"));
+                assert_eq!(kind, HandoverKind::Pipe);
             }
             other => panic!("{other:?}"),
         }
         assert_eq!(block_name(&cli.command), "fd-handover");
+        let sock = Cli::try_parse_from([
+            "pitboard-probe",
+            "fd-handover",
+            "--bun",
+            r"C:\bun\bun.exe",
+            "--script",
+            r"C:\h\fd3-read.mjs",
+            "--kind",
+            "socket",
+        ])
+        .unwrap();
+        assert!(matches!(
+            sock.command,
+            Command::FdHandover {
+                kind: HandoverKind::Socket,
+                ..
+            }
+        ));
         assert!(Cli::try_parse_from(["pitboard-probe", "fd-handover", "--bun", "b"]).is_err());
     }
 

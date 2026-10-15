@@ -27,6 +27,8 @@ pins, and `proper-lockfile` from `bun.lock` with `bun install --frozen-lockfile
   pieces, under the `pitboard-citest-bun` service, for `pitboard-probe credman-item` to read
   and delete (G3). It refuses outside a GitHub-hosted runner.
 - `fd3-read.mjs`: reads descriptor 3 as Claude Code 2.1.300 reads its OAuth token descriptor
-  (fstat for a pipe or socket, then `readSync` until a newline or end of stream), and prints
-  the byte count and what fstat saw. `pitboard-probe fd-handover` hands it a dummy on
-  descriptor 3 through the C runtime's inheritance table (RF-WW1); it reads nothing of its own.
+  (socket gate: a direct `readSync` only when `fstat` calls it a socket, otherwise
+  `/proc/self/fd/<fd>`, with the direct read as a fallback only on EACCES or EPERM there), and
+  prints which branch it took, what fstat saw and whether it got the bytes. `pitboard-probe
+  fd-handover` hands it a dummy on descriptor 3 through the C runtime's inheritance table, as a
+  pipe or a socket (RF-WW1); it reads nothing of its own.
