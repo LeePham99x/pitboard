@@ -312,17 +312,24 @@ pub(crate) mod testing {
 mod tests {
     use super::*;
 
-    // RF-B1, run 38693947329: `FOLDERID_Profile` ignores `USERPROFILE`, and agrees with
-    // `GetUserProfileDirectoryW` on a local profile.
+    // RF-B1 and RF-B3, run 38693947329: on a runner's local profile they agree.
     #[test]
-    fn the_home_is_read_only_where_a_test_reaches_for_it() {
-        assert_eq!(home(), None, "a test that does not reach for it");
+    fn the_accounts_folders_are_read_only_where_a_test_reaches_for_them() {
+        let unread = (home(), profile(), local_app_data(), profile_roams());
+        assert_eq!(
+            unread,
+            (None, None, None, false),
+            "a test that does not reach"
+        );
         let _real = testing::reaching_the_real_home();
         let own = home().expect("the profile folder");
         assert!(own.is_absolute(), "{}", own.display());
-        let profile =
-            known_folder(&windows_sys::Win32::UI::Shell::FOLDERID_Profile).expect("the profile");
+        let profile = profile().expect("the profile");
         assert!(crate::host::same_path_in_any_case(&own, &profile));
+        let local = local_app_data().expect("local app data");
+        let measured = profile.join("AppData").join("Local");
+        assert!(crate::host::same_path_in_any_case(&local, &measured));
+        assert!(!profile_roams());
     }
 
     #[test]

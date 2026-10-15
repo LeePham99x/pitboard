@@ -654,8 +654,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W25: Task Scheduler, which names the task it starts, and Pitboard's default \
-                  home on Windows (W14)"
+        ignore = "W25: Task Scheduler, which names the task it starts"
     )]
     fn a_run_the_schedule_started_renews_the_default_home_whatever_pitboard_home_says() {
         use crate::host::{OS, Os};

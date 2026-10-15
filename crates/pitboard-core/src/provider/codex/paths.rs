@@ -136,6 +136,8 @@ mod tests {
             Context::read(&Environment::on(os, pairs), "cli")
         };
 
+        let handed = Context::new(profile.clone());
+        assert_eq!(home(&handed), profile.join(".codex"), "a handed home's");
         let unset = read(Os::Windows, None);
         assert_eq!(
             home(&unset),

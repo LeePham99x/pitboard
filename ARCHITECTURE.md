@@ -96,14 +96,16 @@ window loads its site, and whatever the site's pages load, as a browser would.
     data folder before anything else is asked, so neither face lists processes with their
     parents or reads a cookie jar. `windows/` is the face that refuses whatever of Windows
     is not built yet: no store of secrets, a vault of `store::Backend::Unknown` whose every
-    call cannot be read, no process list, no scheduler, no home of the account's own, no
-    file made and no program found. What it does read is this process's token, through
-    windows-sys (`windows/user.rs`), which `token.rs` makes an `Elevation` of, and the build
-    `RtlGetVersion` gives, which `host::windows_floor` holds against 26100, the build of
-    Windows 11 24H2 and Windows Server 2025. `token.rs` is compiled on every system, so how
+    call cannot be read, no process list, no scheduler, no file made and no program found.
+    What it does read is this process's token, through windows-sys (`windows/user.rs`),
+    which `token.rs` makes an `Elevation` of, the account's own folders
+    (`GetUserProfileDirectoryW`, `FOLDERID_Profile`, `FOLDERID_LocalAppData` and the profile
+    type), which a build for tests answers nothing from, and the build `RtlGetVersion`
+    gives, which `host::windows_floor` holds against 26100, the build of Windows 11 24H2
+    and Windows Server 2025. `token.rs` is compiled on every system, so how
     a token reads is tested everywhere, and `words.rs` says each system's refusal from a
     `host::Os`. A fact that differs by system is a `match` on `host::OS`, such as the
-    folders macOS asks about before an app may look in them, or `default_pitboard_home`,
+    folders macOS asks about before an app may look in them, or `Os::default_pitboard_home`,
     where Pitboard keeps its files for a home when `PITBOARD_HOME` names nowhere else.
     `same_path_in_any_case` is how Windows compares paths, for the core and the apps alike,
     and `path_key_in_any_case` a key read from the text alone, which also reads `\\?\`, `.`
@@ -119,7 +121,10 @@ window loads its site, and whatever the site's pages load, as a browser would.
     in a folder that syncs (`check_location`). That is told by the text it always refused,
     such as `Sync`, anywhere in the path as written, so nothing it refused is let through,
     and by the names sync clients give their folders, one folder at a time and in any
-    case, and macOS's `Library/CloudStorage` and `Library/Mobile Documents`.
+    case, and macOS's `Library/CloudStorage` and `Library/Mobile Documents`. On Windows
+    also by OneDrive's folders as its variables name them, a sync root
+    (`CfGetSyncRootInfoByPath`), and a roaming profile but its `AppData\Local` and
+    `AppData\LocalLow`.
   - `store/`: reading and writing logins, whichever store holds them: the chain rules, a
     file, the vault of files, the folders under `parks` and the stores in memory the tests
     use. On macOS, a parked Claude Code or Codex login is a keychain item. On Linux, it is a
@@ -287,7 +292,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     taken the same way and kept with Claude Code's own numbers (`Timing`).
   - `context.rs`: what the core takes from its environment, read from a map of variables
     by the same code for every front end, apart from the `PATH` that `host/linux` reads to
-    find the program daily renewal runs.
+    find the program daily renewal runs. On Windows a name is one in any case, and the
+    first of two spellings wins, as Windows hands a program its variables.
   - `app.rs`: what an app finds for itself that a command typed at a prompt is given: each
     tool's program, on the login shell's `PATH` and then where the tool's installers put
     it, and the `pitboard` a terminal would run, there and then where each way of installing
@@ -685,7 +691,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
   Pitboard reads. `READ_BY_BUILDS_FOR_TESTS` names the one only a build for tests reads,
   `PITBOARD_TEST_CLAUDE_DESKTOP`, and is empty in a release. `Environment` refuses, in a
   build with debug assertions, to read a variable none of them names. The integration tests
-  withhold every one of them from each command they run, except `HOME` and `USER`, and the
+  withhold every one of them from each command they run, except `HOME` and `USER`, and
+  `SystemRoot`, `TEMP`, `TMP` and `USERNAME` on Windows, and the
   core's unit tests make their context with `Context::for_unit_test`, which withholds all
   of them, so a variable exported where `cargo test` runs, such as `PITBOARD_CLAUDE`,
   never reaches a test.
@@ -715,8 +722,11 @@ window loads its site, and whatever the site's pages load, as a browser would.
   tests the passwd database is never asked for a home (`host::user::home`): a unit test
   that asks panics, unless it is a test of that lookup and says so, and any other build
   for tests, the command line the integration tests run and an app built with the
-  fixtures among them, is told there is none, which is refused as below.
-- Every home Pitboard reads or writes under is a full path: `HOME`, Pitboard's own
+  fixtures among them, is told there is none, which is refused as below. On Windows every
+  lookup of the account's own folders answers nothing in a build for tests, a unit test
+  that does not say it tests one included.
+- Every home Pitboard reads or writes under is a full path: `HOME`, `USERPROFILE` on
+  Windows, Pitboard's own
   directory, `CLAUDE_CONFIG_DIR` and `CLAUDE_SECURESTORAGE_CONFIG_DIR` where they name a
   folder, and `CODEX_HOME` where it is set. One that is empty or relative is refused with
   `home_not_absolute`, naming the variable, by `home::check_absolute`, which the gate every
@@ -732,6 +742,12 @@ window loads its site, and whatever the site's pages load, as a browser would.
   an answer its callers already have, never one that would let Pitboard act: each tool's
   live chain on Windows is one store whose every call cannot be read (`store::Unbuilt`),
   never Claude Code's file alone, and the Windows face answers as `host/windows` says.
+- A context carries the system its environment was read as, so where the home and
+  Pitboard's default folder are, and how a variable's name compares, are tested for
+  Windows on every system.
+- A `\\?\` path on Windows is for comparing alone. What Pitboard shows, names a lock by or
+  takes for a tool's home is spelled without it, as libuv's realpath and Codex spell a
+  canonical path (`host::without_verbatim_prefix`).
 - With nobody to ask, the command line deletes nothing it was not told to. `forget`,
   `stow` and `uninstall` ask at a terminal, for a person. Through a pipe, from a script or
   with `--json`, each refuses with `confirmation_needed`, exit 2, before it changes
@@ -908,7 +924,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
   `download_destination`, which asks the file system whether each name it tries is taken;
   `app_command_line`, which only joins paths; `can_run`, which asks the file system about
   one path; `pitboard_directory`, which reads the environment it is given and, without
-  `HOME`, this account's passwd entry; `windows_records_key`, which reads only what it is
+  `HOME`, this account's passwd entry, or without `USERPROFILE` on Windows, its profile
+  folder; `windows_records_key`, which reads only what it is
   given; `launch_refusal`, which asks the system whether this process is elevated and which
   build it runs on; and `fixture_names` and `fixture_page`, which read only what they are
   given. `PitboardModel::fixture` and `PitboardModel::fixture_in` make the fixture's world
