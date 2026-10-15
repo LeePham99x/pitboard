@@ -653,7 +653,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     model's words. `Keyed` keeps a shown row while the model lists it, so `ShownAccount`
     keeps its selection across snapshots. `WindowAlert` is the failure or quit question in
     front of the window, `SheetPage` what the sheet over it shows and sends, and `Countdown`
-    a notice's timer.
+    a notice's timer. The account windows' WebView2 glue is mapped under
+    [Account windows](#account-windows).
   - `Pitboard.Views` is the main window's panes, a WinUI library so the test app shows them
     as `Pitboard.exe` does. `AccountsPane` lists the accounts under their notices and setup
     step, each an `AccountRow` with an `AccountMenu`; `ActivityPane` and `MachinePane` are
@@ -664,17 +665,18 @@ window loads its site, and whatever the site's pages load, as a browser would.
     its sign-in, names, renames or puts away a login left in a file, and tells the model
     when somebody closes it. `IconMenuFlyout` is the icon's menu as a MenuFlyout.
     `SettingsPane` is the settings page, in the macOS Settings' sections, each warm-up account
-    a `WarmRow`.
+    a `WarmRow`. `AccountWindow` and `SignInWindow` are the account windows.
   - `Pitboard.App` is `Pitboard.exe`, unpackaged and self-contained, carrying the icon that
     `Icon/make-ico.py` writes from the drawings beside it. `Program.Main` decides the
     launch, and `App` makes the model, over this PC or in a Debug build started with
     `PITBOARD_FIXTURE` a fixture's, keeps the icon, registers for notifications, opens the
     main window when the model asks, and asks for it on a launch from Start or a shortcut,
     since Windows puts a new icon in the overflow; a start at sign-in, after an update or from
-    a notification opens none. It stops the model and unregisters on Exit, and as the session
-    ends stops the model, or ends where Restart Manager asks. `MenuHost` is the pixel of a
-    window the icon's menu opens from. `MainWindow` shows a pane for each of the model's
-    `Pane`s and its settings page, and takes Ctrl+N and Ctrl+comma from any of them.
+    a notification opens none. It opens the account windows through `AccountWindows`. It stops
+    the model and unregisters on Exit, and as the session ends stops the model, or ends where
+    Restart Manager asks. `MenuHost` is the pixel of a window the icon's menu opens from.
+    `MainWindow` shows a pane for each of the model's `Pane`s and its settings page, and takes
+    Ctrl+N and Ctrl+comma from any of them.
   - `Pitboard.Windows.Tests` is a WinUI app that hosts its own tests, the views' among them
     over snapshots made in C#, and `Pitboard.UITests` drives the built app with FlaUI.
     Neither registers anything with Windows. The icon's menu is held by the view tests,
@@ -1845,7 +1847,8 @@ How to run the checker and add a fact is in
 
 The app gives each enrolled account a window on its tool's site: claude.ai for a Claude
 Code account, and chatgpt.com for a Codex account. The site's own pages run in it, in
-WebKit, with a store of website data that belongs to that account alone. A page shared from
+WebKit on macOS and WebView2 on Windows, with a store of website data that belongs to that
+account alone. A page shared from
 a browser's Share menu reaches the app as a Pitboard link, and the person chooses which
 account's window opens it.
 
@@ -2047,28 +2050,70 @@ rests on are under [WebKit and SwiftUI](#webkit-and-swiftui) and
 
 ### On Windows
 
-Nothing of the Windows app's account windows is written yet. Its WebView2 code would get
-the same decisions from the model, and one thing differs from WebKit in how a store goes,
-read in Microsoft's documentation of `CoreWebView2Profile.Delete` for WebView2 1.0.4191.47
-on 6 October 2026: deleting a profile marks it for deletion, closes the web views using it
-and raises its `Deleted` event, and its folder is deleted only as the browser process
-exits, or at a later start where something still held its files. Making a profile of the
-same name before then fails with `HRESULT_FROM_WIN32(ERROR_DELETE_PENDING)`. So the
-Windows app cannot answer `StoreDeleted` when it asks for a deletion, as the macOS app does
-once `remove(forIdentifier:)` returns: it answers `StoreHeld` while the folder is still
-there, which keeps the store recorded and has the next read ask again, and `StoreDeleted`
-once the folder has gone. A window of an account enrolled again meanwhile would fail to
-make its profile, so on Windows the model holds a store answered `StoreHeld` until
-`StoreDeleted` comes: it asks for it again after every read, enrolled again or not, opens no
-window of it, and lists it in `AccountWindowsShown.held`, whose menu item says why with
-`WindowNoteKind::StoreHeld`. It keeps these in `windows.json` too, as `held` beside this
-directory's stores, so after a restart the first read asks for them again and their windows
-wait until the app answers `StoreDeleted`, then open with the sign-in note. Another
-directory's record of a held store does not keep it either, since its deletion is made
-already. Read again for
-WebView2 1.0.4258.31 on 15 October 2026, unchanged. On macOS a store WebKit kept holding is
-still whole, its sign-in included, so an account enrolled again keeps it and its window
-opens on it.
+The Windows app's account windows run in WebView2, over the same decisions from the model.
+
+- `apps/windows/Pitboard.Windows`: `WebEnvironment` is the world a launch's windows run
+  in, decided once: the sites over `https`, with pages sent elsewhere opened by Windows, or
+  a fixture's stand-ins on `pitboard-fixture`, served from `fixture_page` and sent
+  nowhere. One `CoreWebView2Environment` serves every window, over `WebView2` in the app's
+  data folder, the fixture's own folder in a fixture, so a fixture's scheme registration,
+  which a browser process keeps for its life, never meets a real folder. A store is a
+  WebView2 profile named by the store id. `WebSession` is one open window: its page and
+  the sign-in window one of its pages opened, each under its role. It turns
+  `NavigationStarting`, `FrameNavigationStarting` and `NewWindowRequested` into what
+  `decide_navigation` reads through `PageRequests`, and does what it decides: a sign-in
+  window's page is made in the same environment and profile and set as `NewWindow` before
+  it loads, which keeps `window.opener`; `LoadInPage` loads the link in the window's own
+  page, and a page sent elsewhere goes to `Launcher`. It answers `WindowCloseRequested`
+  with `page_may_close`, `PermissionRequested` with `page_may_use`, leaving anything else
+  to WebView2's own prompt, a render process that ended with `after_content_process_ended`,
+  and cancels every launch of another app's scheme. `StoreJanitor` answers each deletion
+  the model asks for, and `HeldStores` says why a held store's entry opens nothing.
+- `apps/windows/Pitboard.Views`: `AccountWindow` is the window, a command bar of Back,
+  Forward and Reload or Stop, with **Remove Website Data…** under More, the window's note in
+  an InfoBar, and the page, or what stands for it until the model lists the window.
+  Find, zoom, script dialogs, file pickers and the browser keys are WebView2's own.
+  `SignInWindow` is a sign-in window, at `sign_in_window_size` over the account's window.
+  The icon's menu and an account's shortcut menu offer each window, from
+  `AccountWindowsShown.menus` and `AccountItem.windows`.
+- `apps/windows/Pitboard.App/AccountWindows.cs` opens a window per store and brings an open
+  one forward, tells the model each opened and closed, closes those the model says close,
+  and hands each store asked for to the janitor.
+
+One thing differs from WebKit in how a store goes, read in Microsoft's documentation of
+`CoreWebView2Profile.Delete` for WebView2 1.0.4258.31 on 16 October 2026: deleting a profile
+marks it for deletion, closes the web views using it and raises its `Deleted` event, and its
+folder is deleted only as the browser process exits, or at a later start where something
+still held its files. Making a profile of the same name before then fails with
+`HRESULT_FROM_WIN32(ERROR_DELETE_PENDING)`. So `StoreJanitor` answers `StoreDeleted` where
+the profile's folder, `EBWebView\<store>` under the user data folder, is not there, and
+otherwise deletes the profile through a page of its own, made in the app's hidden window,
+and answers `StoreHeld`. That keeps the store recorded and has the next read ask again, and
+the folder goes once no window of the browser process is open, or as Pitboard quits. A
+window of an account enrolled again meanwhile would fail to make its profile, so on Windows
+the model holds a store answered `StoreHeld` until `StoreDeleted` comes: it asks for it
+again after every read, enrolled again or not, opens no window of it, and lists it in
+`AccountWindowsShown.held`, whose menu items say why with `WindowNoteKind::StoreHeld`. It
+keeps these in `windows.json` too, as `held` beside this directory's stores, so after a
+restart the first read asks for them again and their windows wait until the app answers
+`StoreDeleted`, then open with the sign-in note. Another directory's record of a held store
+does not keep it either, since its deletion is made already. `ProfileTests` holds the
+contract and the folder's place on the runners, and `TwoProfilesKeepTheirCookiesApart` that
+one profile's cookies are not another's. On macOS a store WebKit kept holding is still
+whole, its sign-in included, so an account enrolled again keeps it and its window opens on
+it.
+
+**Remove Website Data** leaves the page for a blank one, clears the profile with
+`ClearBrowsingDataAsync`, tells the model `WebsiteDataRemoved`, and opens the site's home
+in a new web view, so Back cannot bring the signed-in page back.
+`RemovingWebsiteDataEmptiesTheWindowsProfileAlone` holds that another profile keeps its
+data.
+
+A window refuses to open, saying why, on a PC whose WebView2 Runtime is older than
+144.0.3719.77, the Runtime of the WebView2 SDK the Windows App SDK 2.5.1 brings, 1.0.3719.77
+(`CORE_WEBVIEW_TARGET_PRODUCT_VERSION` in its `WebView2EnvironmentOptions.h`). CI's
+`windows-app` job reads each image's Runtime as Microsoft's distribution guide detects it
+(CF4), and `ProfileTests.ThisPCsRuntimeTakesTheWindows` asks the app's own check there.
 
 ## Measured facts
 
@@ -2411,7 +2456,6 @@ on 15 October 2026. W27 reviews the list.
 | `StartWhenAvailable` runs a start that was missed | [StartWhenAvailable](https://learn.microsoft.com/en-us/windows/win32/taskschd/tasksettings-startwhenavailable) | A runner never sleeps through a trigger. |
 | WSL 2's processes run in a utility VM | [Comparing WSL versions](https://learn.microsoft.com/en-us/windows/wsl/compare-versions) | No runner has WSL. |
 | `QueryUnbiasedInterruptTimePrecise` leaves out sleep and hibernation, which `QueryPerformanceCounter` counts | [QueryUnbiasedInterruptTimePrecise](https://learn.microsoft.com/en-us/windows/win32/api/realtimeapiset/nf-realtimeapiset-queryunbiasedinterrupttimeprecise), [Acquiring high-resolution time stamps](https://learn.microsoft.com/en-us/windows/win32/sysinfo/acquiring-high-resolution-time-stamps) | A runner never sleeps. |
-| A deleted WebView2 profile's folder goes as the browser process exits, and its name is refused with `ERROR_DELETE_PENDING` until then | [CoreWebView2Profile.Delete](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/winrt/microsoft_web_webview2_core/corewebview2profile#delete) | No row runs WebView2 yet. |
 | A program ended by an unhandled exception exits with the exception's code, such as `0xC0000005` | [GetExitCodeProcess](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getexitcodeprocess) | No row crashes a program. |
 | `GetPackageFamilyName` gives a packaged process's family, and `APPMODEL_ERROR_NO_PACKAGE` for an unpackaged one | [GetPackageFamilyName](https://learn.microsoft.com/en-us/windows/win32/api/appmodel/nf-appmodel-getpackagefamilyname) | No row starts a packaged process; session step 10 reads ChatGPT's. |
 | A `CryptProtectData` blob opens only for the same user's credentials on the same computer | [CryptProtectData](https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata) | The runners have one account per logon and one machine each. |
@@ -3714,6 +3758,19 @@ Microsoft's documentation.
   April 2026) has a click on a notification open its context. So a notification says its
   title, its tool and its body, as the macOS one does, with Switch as its button, and a
   click on it opens the window on Accounts.
+- WebView2 SDK 1.0.4258.31's reference (Microsoft Learn, updated 12 October 2026): a page
+  set as `NewWindow` must be in the opener's environment and profile and not yet navigated,
+  takes its settings before it is set and `WebResourceRequested` after, and is what
+  `window.open` returns to the opener; with neither `NewWindow` nor `Handled` WebView2 opens
+  a window of its own. So `WebSession` handles every request, makes a sign-in window's page
+  in the account's profile, prepares it, sets it and only then serves a fixture's pages to
+  it. The multiple profiles guide (updated 26 November 2025) gives each profile its own
+  folder of cookies, storage and caches under one user data folder, and makes a profile
+  that a controller names and none has yet. The distribution guide (updated 2 October 2026)
+  reads the Runtime's version from `pv` under
+  `EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}`, per machine and per user,
+  and has an app feature-detect what a Runtime older than its SDK may lack. `WebSessionTests`
+  and `ProfileTests` hold these on the runners.
 
 ### The model's timers
 
