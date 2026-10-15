@@ -22,23 +22,18 @@ use std::path::{Path, PathBuf};
 /// state file, and Codex's folder.
 pub const PROFILE_LOGIN_NAMES: [&str; 3] = [".claude", ".claude.json", ".codex"];
 
-/// The real profile's folders and files that a scratch path must never be or lie inside: a
-/// mistake there would read or write a real login. The whole profile is not refused,
-/// because the usual scratch root, `%LOCALAPPDATA%\Temp`, is itself inside the profile.
+// Not the whole profile: the usual scratch root, `%LOCALAPPDATA%\Temp`, lies inside it.
 #[derive(Debug, Clone, Default)]
 pub struct RealProfile {
-    /// Every folder that may be this account's profile: `FOLDERID_Profile` asked with the
-    /// process token and without one, `GetUserProfileDirectoryW`, and `%USERPROFILE%` when
-    /// it is absolute, since a tool started from this process follows it.
     pub profiles: Vec<PathBuf>,
-    /// Every folder that may be this account's local app data: `FOLDERID_LocalAppData`
-    /// asked with the token and without one, and `%LOCALAPPDATA%` when it is absolute.
     pub local_app_data: Vec<PathBuf>,
+    pub roaming_app_data: Vec<PathBuf>,
 }
 
+pub const ROAMING_DESKTOP_NAMES: [&str; 2] = ["Claude", "Claude-3p"];
+pub const LOCAL_DESKTOP_NAMES: [&str; 1] = ["AnthropicClaude"];
+
 impl RealProfile {
-    /// For each profile, `.claude`, `.claude.json`, `.codex` and `AppData\Local\Pitboard`;
-    /// for each local app data folder, `Pitboard`. Each once.
     pub fn forbidden_roots(&self) -> Vec<PathBuf> {
         let mut roots = Vec::new();
         for profile in &self.profiles {
@@ -46,9 +41,23 @@ impl RealProfile {
                 roots.push(profile.join(name));
             }
             roots.push(profile.join(r"AppData\Local\Pitboard"));
+            for name in ROAMING_DESKTOP_NAMES {
+                roots.push(profile.join(r"AppData\Roaming").join(name));
+            }
+            for name in LOCAL_DESKTOP_NAMES {
+                roots.push(profile.join(r"AppData\Local").join(name));
+            }
         }
         for lad in &self.local_app_data {
             roots.push(lad.join("Pitboard"));
+            for name in LOCAL_DESKTOP_NAMES {
+                roots.push(lad.join(name));
+            }
+        }
+        for roaming in &self.roaming_app_data {
+            for name in ROAMING_DESKTOP_NAMES {
+                roots.push(roaming.join(name));
+            }
         }
         let mut out: Vec<PathBuf> = Vec::new();
         for root in roots {
@@ -188,6 +197,22 @@ pub fn is_probe_file_name(name: &str) -> bool {
         && name
             .get(..crate::PROBE_PREFIX.len())
             .is_some_and(|p| p.eq_ignore_ascii_case(crate::PROBE_PREFIX))
+}
+
+/// Whether `file` lies inside `scratch`, deeper than `scratch` itself, both absolute as given
+/// with no `..`.
+pub fn lies_in(file: &Path, scratch: &Path) -> bool {
+    is_absolute_without_parent(file)
+        && is_absolute_without_parent(scratch)
+        && is_within(file, scratch)
+        && !is_within(scratch, file)
+}
+
+pub fn probe_file_lies_in(file: &Path, scratch: &Path) -> bool {
+    file.file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(is_probe_file_name)
+        && lies_in(file, scratch)
 }
 
 /// Whether `name` is a name the probe gives a kernel object it makes (a job): its prefix,
@@ -350,6 +375,7 @@ mod tests {
         RealProfile {
             profiles: vec![PathBuf::from(r"C:\Users\dana")],
             local_app_data: vec![PathBuf::from(r"C:\Users\dana\AppData\Local")],
+            roaming_app_data: vec![PathBuf::from(r"C:\Users\dana\AppData\Roaming")],
         }
     }
 
@@ -380,6 +406,60 @@ mod tests {
     }
 
     #[test]
+    fn claude_desktops_folders_are_refused_in_every_spelling() {
+        for p in [
+            r"C:\Users\dana\AppData\Roaming\Claude",
+            r"C:\Users\dana\AppData\Roaming\Claude\Local Storage",
+            r"C:\Users\dana\AppData\Roaming\Claude-3p\x",
+            r"C:\Users\dana\AppData\Local\AnthropicClaude",
+            r"C:\Users\dana\AppData\Local\AnthropicClaude\app-1.0\x",
+            r"c:/users/DANA/appdata/roaming/CLAUDE/x",
+            r"C:\Users\dana\AppData\Roaming\Claude.\x",
+            r"C:\Users\dana\AppData\Roaming\Claude \x",
+            r"\\?\C:\Users\dana\AppData\Roaming\Claude-3p",
+            r"\\.\C:\Users\dana\AppData\Local\AnthropicClaude\x",
+            r"\??\C:\Users\dana\AppData\Roaming\Claude",
+            r"\\localhost\C$\Users\dana\AppData\Roaming\Claude",
+            r"C:\Users\dana\AppData\Roaming\Claude::$INDEX_ALLOCATION\x",
+        ] {
+            assert!(!safe(p), "{p} should be refused");
+        }
+        for ok in [
+            r"C:\Users\dana\AppData\Roaming\Claudex",
+            r"C:\Users\dana\AppData\Roaming\pitboard-probe",
+            r"C:\Users\dana\AppData\Local\Anthropic",
+        ] {
+            assert!(safe(ok), "{ok}");
+        }
+        // %APPDATA% moved away from the profile is refused there too.
+        let moved = RealProfile {
+            roaming_app_data: vec![PathBuf::from(r"R:\roam")],
+            ..profile()
+        }
+        .forbidden_roots();
+        assert!(!scratch_is_safe(Path::new(r"R:\roam\Claude\x"), &moved));
+        assert!(!scratch_is_safe(Path::new(r"r:\ROAM\claude-3P"), &moved));
+    }
+
+    #[test]
+    fn a_file_the_probe_describes_is_one_of_its_own_under_the_scratch() {
+        let s = Path::new(r"C:\Users\dana\AppData\Local\Temp\pitboard-probe-s");
+        assert!(probe_file_lies_in(&s.join("pitboard-probe-bunmode.txt"), s));
+        assert!(probe_file_lies_in(&s.join("d").join("pitboard-probe-x"), s));
+        for bad in [
+            s.join(".credentials.json"),
+            s.join("bunmode.txt"),
+            PathBuf::from(r"C:\Users\dana\AppData\Local\Temp\pitboard-probe-x"),
+            PathBuf::from(r"C:\Users\dana\.claude\pitboard-probe-x"),
+            s.join("..").join("pitboard-probe-x"),
+            PathBuf::from(r"pitboard-probe-s\pitboard-probe-x"),
+            s.to_path_buf(),
+        ] {
+            assert!(!probe_file_lies_in(&bad, s), "{}", bad.display());
+        }
+    }
+
+    #[test]
     fn the_comparison_folds_case_and_separators() {
         assert!(!safe(r"c:/users/DANA/.CLAUDE/x"));
         assert!(!safe(r"C:\USERS\DANA\.Claude.JSON"));
@@ -390,6 +470,7 @@ mod tests {
         let roots = RealProfile {
             profiles: vec![PathBuf::from(r"C:\Users\Đạt Thử")],
             local_app_data: vec![PathBuf::from(r"C:\Users\Đạt Thử\AppData\Local")],
+            ..RealProfile::default()
         }
         .forbidden_roots();
         assert!(!scratch_is_safe(
@@ -563,6 +644,7 @@ mod tests {
                 PathBuf::from(r"C:\Users\dana\AppData\Local"),
                 PathBuf::from(r"E:\lad"),
             ],
+            ..RealProfile::default()
         }
         .forbidden_roots();
         for p in [
@@ -581,7 +663,7 @@ mod tests {
             );
         }
         // The same profile spelled twice gives its roots once.
-        assert_eq!(roots.len(), 4 + 4 + 1);
+        assert_eq!(roots.len(), 7 + 7 + 2);
     }
 
     #[test]

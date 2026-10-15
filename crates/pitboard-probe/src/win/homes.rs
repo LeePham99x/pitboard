@@ -31,13 +31,22 @@ pub(super) fn homes(codex_home: Option<&Path>, claude_config_dir: Option<&Path>)
     )]
     let std_home = std::env::home_dir();
     let profile = ffi::folder_profile();
+    let local_app_data = ffi::folder_local_app_data();
     let temp = std::env::temp_dir();
+    let local_app_data_in_profile = profile.as_ref().zip(local_app_data.as_ref()).map(|(p, l)| {
+        p.join(r"AppData\Local")
+            .display()
+            .to_string()
+            .eq_ignore_ascii_case(&l.display().to_string())
+    });
 
     let mut data = json!({
         "build": os_build(),
         "std_home_dir": std_home.as_deref().map(red),
         "folderid_profile": profile.as_deref().map(red),
-        "folderid_local_app_data": ffi::folder_local_app_data().as_deref().map(red),
+        "folderid_local_app_data": local_app_data.as_deref().map(red),
+        "folderid_local_app_data_is_profile_appdata_local": local_app_data_in_profile,
+        "folderid_roaming_app_data": ffi::folder_roaming_app_data().as_deref().map(red),
         "folderid_program_data": ffi::folder_program_data().as_deref().map(red),
         "get_user_profile_directory": user_profile_directory().as_deref().map(|s| r.redact(s)),
         "std_temp_dir": red(&temp),
@@ -53,6 +62,7 @@ pub(super) fn homes(codex_home: Option<&Path>, claude_config_dir: Option<&Path>)
             "CODEX_HOME": env("CODEX_HOME"),
             "CLAUDE_CONFIG_DIR": env("CLAUDE_CONFIG_DIR"),
             "PITBOARD_HOME": env("PITBOARD_HOME"),
+            "PATHEXT": env("PATHEXT"),
         },
         "profile_type": profile_type(),
         "path_variable_spellings": path_spellings(),

@@ -81,6 +81,9 @@ pub enum Command {
         /// Delete this probe file under --scratch.
         #[arg(long)]
         remove: Option<PathBuf>,
+        /// Read one probe file's owner and DACL under --scratch, changing nothing.
+        #[arg(long)]
+        describe: Option<PathBuf>,
     },
     /// C3: the volume's file system, POSIX flag and both rename routes, each with the target
     /// held open with and without FILE_SHARE_DELETE.
@@ -101,6 +104,12 @@ pub enum Command {
         /// The share mode of the reader this process runs beside the loop.
         #[arg(long, value_enum, default_value_t = ReaderShare::Delete)]
         reader: ReaderShare,
+        /// How each replacement renames over the target.
+        #[arg(long, value_enum, default_value_t = Route::Movefile)]
+        route: Route,
+        /// Stop after this many seconds even with rounds left; 0 runs every round.
+        #[arg(long, default_value_t = 0)]
+        seconds: u64,
     },
     /// C4: a reader in a process of its own against the replace loop's target.
     ReplaceReader {
@@ -125,6 +134,8 @@ pub enum Command {
         mode: LockMode,
         #[arg(long, default_value_t = 30)]
         seconds: u64,
+        #[arg(long, value_enum, default_value_t = LockTiming::Write)]
+        timing: LockTiming,
     },
     /// C6: LockFileEx on a home's state.lock: held, read from another process, or the home
     /// removed while another process holds it.
@@ -209,6 +220,8 @@ pub enum Command {
         chain: Chain,
         #[arg(long, default_value_t = 100)]
         rounds: u32,
+        #[arg(long, value_enum, default_value_t = JobStart::Running)]
+        start: JobStart,
     },
     /// F2: open a local stand-in page from a process in a Job Object, then end the job one
     /// way, and see whether the browser was in it and survived.
@@ -219,6 +232,8 @@ pub enum Command {
         end: JobEnd,
         #[arg(long, default_value_t = 8)]
         wait_seconds: u64,
+        #[arg(long, value_enum, default_value_t = BrowserOpen::Shell)]
+        open: BrowserOpen,
     },
     #[command(hide = true)]
     JobLeaf {
@@ -229,6 +244,8 @@ pub enum Command {
     JobMid {
         #[arg(long)]
         job_name: String,
+        #[arg(long)]
+        breakaway: bool,
     },
     #[command(hide = true)]
     JobOpenPage {
@@ -238,6 +255,8 @@ pub enum Command {
         job_name: String,
         #[arg(long, default_value_t = 0)]
         linger_seconds: u64,
+        #[arg(long, value_enum, default_value_t = BrowserOpen::Shell)]
+        open: BrowserOpen,
     },
     /// H1/I1: the named tools' processes through WTS (any session) and Toolhelp: image path,
     /// session, package family, parent, and whether each runs as this user.
@@ -369,6 +388,29 @@ pub enum LockMode {
     Check,
 }
 
+// Claude Code 2.1.300's write lock and refresh lock, as `pitboard_core::lock` keeps them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum LockTiming {
+    Write,
+    Refresh,
+}
+
+impl LockTiming {
+    pub fn stale_ms(self) -> u64 {
+        match self {
+            LockTiming::Write => 15_000,
+            LockTiming::Refresh => 60_000,
+        }
+    }
+
+    pub fn heartbeat_ms(self) -> u64 {
+        match self {
+            LockTiming::Write => 7_500,
+            LockTiming::Refresh => 5_000,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub enum LfxMode {
     Hold,
@@ -415,6 +457,24 @@ pub enum Chain {
     Exe,
     /// cmd.exe running a .cmd, then node.exe, then the probe leaf, as an npm shim does.
     CmdNodeExe,
+    /// probe, then probe, then the leaf started with CREATE_BREAKAWAY_FROM_JOB.
+    ExeBreakaway,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum JobStart {
+    /// Assigned to the job right after it starts.
+    Running,
+    /// Started with CREATE_SUSPENDED, assigned, then its one thread resumed: W19's route.
+    Suspended,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum BrowserOpen {
+    /// ShellExecuteW's open of the page.
+    Shell,
+    /// The http open command from AssocQueryStringW, started with CreateProcessW.
+    Assoc,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -652,5 +712,179 @@ mod tests {
             _ => panic!("a report"),
         }
         assert!(write_out(std::path::Path::new("x"), "y").is_err());
+    }
+
+    #[test]
+    fn the_lock_takes_claude_codes_write_and_refresh_timing() {
+        assert_eq!(
+            (
+                LockTiming::Write.stale_ms(),
+                LockTiming::Write.heartbeat_ms()
+            ),
+            (15_000, 7_500)
+        );
+        assert_eq!(
+            (
+                LockTiming::Refresh.stale_ms(),
+                LockTiming::Refresh.heartbeat_ms()
+            ),
+            (60_000, 5_000)
+        );
+        let cli = Cli::try_parse_from(["pitboard-probe", "lock", "--scratch", r"C:\s"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Lock {
+                timing: LockTiming::Write,
+                ..
+            }
+        ));
+        let cli = Cli::try_parse_from([
+            "pitboard-probe",
+            "lock",
+            "--scratch",
+            r"C:\s",
+            "--mode",
+            "check",
+            "--timing",
+            "refresh",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Lock {
+                mode: LockMode::Check,
+                timing: LockTiming::Refresh,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn the_replace_loop_takes_a_route_and_a_time_bound() {
+        let cli =
+            Cli::try_parse_from(["pitboard-probe", "replace-loop", "--scratch", r"C:\s"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::ReplaceLoop {
+                route: Route::Movefile,
+                seconds: 0,
+                ..
+            }
+        ));
+        let cli = Cli::try_parse_from([
+            "pitboard-probe",
+            "replace-loop",
+            "--scratch",
+            r"C:\s",
+            "--route",
+            "posix",
+            "--seconds",
+            "240",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::ReplaceLoop {
+                route: Route::Posix,
+                seconds: 240,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn acl_describes_one_file() {
+        let cli = Cli::try_parse_from([
+            "pitboard-probe",
+            "acl",
+            "--scratch",
+            r"C:\s",
+            "--describe",
+            r"C:\s\pitboard-probe-bunmode.txt",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Acl { describe: Some(ref d), create: false, .. }
+                if d == &PathBuf::from(r"C:\s\pitboard-probe-bunmode.txt")
+        ));
+    }
+
+    #[test]
+    fn the_job_takes_a_breakaway_chain_and_a_suspended_start() {
+        let cli = Cli::try_parse_from([
+            "pitboard-probe",
+            "job",
+            "--scratch",
+            r"C:\s",
+            "--chain",
+            "exe-breakaway",
+            "--start",
+            "suspended",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Job {
+                chain: Chain::ExeBreakaway,
+                start: JobStart::Suspended,
+                ..
+            }
+        ));
+        let cli = Cli::try_parse_from(["pitboard-probe", "job", "--scratch", r"C:\s"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Job {
+                start: JobStart::Running,
+                ..
+            }
+        ));
+        let cli = Cli::try_parse_from([
+            "pitboard-probe",
+            "job-mid",
+            "--job-name",
+            "pitboard-probe-job-1",
+            "--breakaway",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::JobMid {
+                breakaway: true,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn the_browser_block_opens_through_the_shell_or_the_association() {
+        let cli = Cli::try_parse_from([
+            "pitboard-probe",
+            "job-browser",
+            "--scratch",
+            r"C:\s",
+            "--open",
+            "assoc",
+            "--end",
+            "parent-exit",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::JobBrowser {
+                open: BrowserOpen::Assoc,
+                end: JobEnd::ParentExit,
+                ..
+            }
+        ));
+        let cli =
+            Cli::try_parse_from(["pitboard-probe", "job-browser", "--scratch", r"C:\s"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::JobBrowser {
+                open: BrowserOpen::Shell,
+                ..
+            }
+        ));
     }
 }

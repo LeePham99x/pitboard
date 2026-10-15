@@ -57,12 +57,14 @@ pub fn run(command: &Command, out: Option<&Path>) -> Outcome {
             keep,
             open,
             remove,
+            describe,
         } => acl::acl(
             scratch.as_deref(),
             *create,
             *keep,
             open.as_deref(),
             remove.as_deref(),
+            describe.as_deref(),
         ),
         C::Volume { scratch } => files::volume(scratch),
         C::ReplaceLoop {
@@ -70,7 +72,9 @@ pub fn run(command: &Command, out: Option<&Path>) -> Outcome {
             rounds,
             lead_seconds,
             reader,
-        } => files::replace_loop(scratch, *rounds, *lead_seconds, *reader),
+            route,
+            seconds,
+        } => files::replace_loop(scratch, *rounds, *lead_seconds, *reader, *route, *seconds),
         C::ReplaceReader {
             scratch,
             seconds,
@@ -81,7 +85,8 @@ pub fn run(command: &Command, out: Option<&Path>) -> Outcome {
             scratch,
             mode,
             seconds,
-        } => files::lock(scratch, *mode, *seconds),
+            timing,
+        } => files::lock(scratch, *mode, *seconds, *timing),
         C::Lockfileex {
             scratch,
             mode,
@@ -127,19 +132,25 @@ pub fn run(command: &Command, out: Option<&Path>) -> Outcome {
             scratch,
             chain,
             rounds,
-        } => job::job(scratch, *chain, *rounds),
+            start,
+        } => job::job(scratch, *chain, *rounds, *start),
         C::JobBrowser {
             scratch,
             end,
             wait_seconds,
-        } => job::job_browser(scratch, *end, *wait_seconds),
+            open,
+        } => job::job_browser(scratch, *end, *wait_seconds, *open),
         C::JobLeaf { job_name } => return job::job_leaf(job_name),
-        C::JobMid { job_name } => return job::job_mid(job_name),
+        C::JobMid {
+            job_name,
+            breakaway,
+        } => return job::job_mid(job_name, *breakaway),
         C::JobOpenPage {
             page,
             job_name,
             linger_seconds,
-        } => return job::job_open_page(page, job_name, *linger_seconds),
+            open,
+        } => return job::job_open_page(page, job_name, *linger_seconds, *open),
         C::Processes { find } => processes::processes(find),
         C::CredmanNames {
             leak_check,
@@ -322,7 +333,7 @@ fn pe_imports(scratch: Option<&Path>, exe: Option<&Path>) -> Report {
             if let Err(reason) = ffi::scratch_check(scratch) {
                 return Report::refused("pe-imports", logon, reason);
             }
-            if !ffi::lies_in(exe, scratch) {
+            if !crate::guard::lies_in(exe, scratch) {
                 return Report::refused(
                     "pe-imports",
                     logon,
