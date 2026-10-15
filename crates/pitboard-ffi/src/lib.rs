@@ -179,7 +179,7 @@ pub fn pitboard_directory(environment: HashMap<String, String>) -> String {
 #[uniffi::export]
 pub fn launch_refusal(environment: HashMap<String, String>) -> Option<ReadFailure> {
     let environment: Environment = environment.into_iter().collect();
-    // The gate writes nothing, so no caller is named for the audit log.
+    // The gate writes nothing, so the command line's caller name never reaches the audit log.
     launch::refusal(Context::for_command_line(&environment))
 }
 

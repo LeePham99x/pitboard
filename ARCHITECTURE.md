@@ -106,8 +106,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     folders macOS asks about before an app may look in them, or `default_pitboard_home`,
     where Pitboard keeps its files for a home when `PITBOARD_HOME` names nowhere else.
     `same_path_in_any_case` is how Windows compares paths, for the core and the apps alike,
-    and `path_key_in_any_case` one text per path compared so. `awake` is the time the
-    machine has been awake, which the app's timers count.
+    and `path_key_in_any_case` a key read from the text alone, which also reads `\\?\`, `.`
+    and `..` away. `awake` is the time the machine has been awake, which the app's timers
+    count.
   - `release.rs`: whether this build may do anything on its system. A Windows build of a
     0.x release may not, unless it was compiled with `--cfg pitboard_unreleased_windows`,
     which CI's Windows jobs set and no release does; macOS and Linux always may. The
@@ -1912,11 +1913,17 @@ Windows app cannot answer `StoreDeleted` when it asks for a deletion, as the mac
 once `remove(forIdentifier:)` returns: it answers `StoreHeld` while the folder is still
 there, which keeps the store recorded and has the next read ask again, and `StoreDeleted`
 once the folder has gone. A window of an account enrolled again meanwhile would fail to
-make its profile, so the model holds a store answered `StoreHeld` until `StoreDeleted`
-comes: it asks for it again after every read, enrolled again or not, opens no window of it,
-and lists it in `AccountWindowsShown.held`, whose menu item says why with
-`WindowNoteKind::StoreHeld`. Read again for WebView2 1.0.4258.31 on 15 October 2026,
-unchanged.
+make its profile, so on Windows the model holds a store answered `StoreHeld` until
+`StoreDeleted` comes: it asks for it again after every read, enrolled again or not, opens no
+window of it, and lists it in `AccountWindowsShown.held`, whose menu item says why with
+`WindowNoteKind::StoreHeld`. It keeps these in `windows.json` too, as `held` beside this
+directory's stores, so after a restart the first read asks for them again and their windows
+wait until the app answers `StoreDeleted`, then open with the sign-in note. Another
+directory's record of a held store does not keep it either, since its deletion is made
+already. Read again for
+WebView2 1.0.4258.31 on 15 October 2026, unchanged. On macOS a store WebKit kept holding is
+still whole, its sign-in included, so an account enrolled again keeps it and its window
+opens on it.
 
 ## Measured facts
 

@@ -667,7 +667,7 @@ fn add_what_it_shows(app: &str) -> String {
 }
 
 // The core's sentence names a command or says to run this again, which the app cannot.
-pub(crate) fn in_app_refusal(error: &Error) -> Option<String> {
+pub(crate) fn in_app_refusal(os: Os, error: &Error) -> Option<String> {
     let desktop = ProviderId::Desktop;
     let app = desktop.program();
     let inside = |tool: &ProviderId| in_its_app(tool.code());
@@ -679,9 +679,9 @@ pub(crate) fn in_app_refusal(error: &Error) -> Option<String> {
         ),
         Error::AppOpen { app, still } => format!(
             "{app} has quit, and {} from it is still running, and Pitboard changes {app}’s login \
-             only while all of it is closed. Wait until it ends, or quit it in Activity Monitor, \
-             then try again. Nothing has changed.",
-            listed(still)
+             only while all of it is closed. {} Nothing has changed.",
+            listed(still),
+            pitboard_core::words::wait_for_still(os, "try again")
         ),
         Error::AppStateUnknown { app, why } => format!(
             "Pitboard couldn’t tell whether {app} is open ({why}), so nothing has changed. Try \
@@ -920,7 +920,7 @@ pub(crate) fn listed(items: &[impl AsRef<str>]) -> String {
     }
 }
 
-pub(crate) fn in_app_warning(warning: &CoreWarning) -> Option<String> {
+pub(crate) fn in_app_warning(os: Os, warning: &CoreWarning) -> Option<String> {
     let tool = warning.tool().filter(|tool| in_its_app(tool.code()))?;
     let app = tool.program();
     let add_what_it_shows = format!(
@@ -1047,42 +1047,42 @@ pub(crate) fn in_app_warning(warning: &CoreWarning) -> Option<String> {
             again,
             ..
         } => awaiting_lines(app, bare(label), bare(put_back), *again).join(" "),
-        CoreWarning::MoveNotGivenUp { label, why, .. } => not_given_up(tool, bare(label), why),
+        CoreWarning::MoveNotGivenUp { label, why, .. } => not_given_up(os, tool, bare(label), why),
         _ => return None,
     })
 }
 
 // After Give Up gave up a switch, so never that nothing has changed.
-fn not_given_up(tool: ProviderId, label: &str, why: &Error) -> String {
+fn not_given_up(os: Os, tool: ProviderId, label: &str, why: &Error) -> String {
     let app = tool.program();
     let settles = format!(
-        "use any {} account: Pitboard settles the move first.",
+        "use any {} account: Pitboard settles the move first",
         tool.name()
     );
     let (because, then) = match why {
         Error::AppOpen { still, .. } if still.is_empty() => (
             Some(format!("{app} is open")),
-            format!("Quit {app}, then {settles}"),
+            format!("Quit {app}, then {settles}."),
         ),
         Error::AppOpen { still, .. } => (
             Some(format!("{} from {app} is still running", listed(still))),
-            format!("Wait until it ends, or quit it in Activity Monitor, then {settles}"),
+            pitboard_core::words::wait_for_still(os, &settles),
         ),
         Error::AppStateUnknown { why, .. } => (
             Some(format!("it couldn’t tell whether {app} is open ({why})")),
-            format!("To try again, {settles}"),
+            format!("To try again, {settles}."),
         ),
         Error::LoginFolderBusy { .. } => (
             Some(format!("another Pitboard is changing {app}’s login")),
-            format!("Once it has finished, {settles}"),
+            format!("Once it has finished, {settles}."),
         ),
         Error::LoginFolderUnreadable { detail, .. } => (
             Some(format!("it couldn’t read {app}’s cookie store ({detail})")),
-            format!("Open {app}, quit it, then {settles}"),
+            format!("Open {app}, quit it, then {settles}."),
         ),
         Error::AppOpenedMidway { .. } => (
             Some(format!("{app} was opened meanwhile")),
-            format!("Nothing is lost. Quit {app}, then {settles}"),
+            format!("Nothing is lost. Quit {app}, then {settles}."),
         ),
         Error::MoveMixed { places, .. } => (
             Some(format!(
@@ -1094,7 +1094,7 @@ fn not_given_up(tool: ProviderId, label: &str, why: &Error) -> String {
                 add_what_it_shows(app)
             ),
         ),
-        _ => (None, format!("Quit {app}, then {settles}")),
+        _ => (None, format!("Quit {app}, then {settles}.")),
     };
     match because {
         Some(because) => format!(
@@ -1928,17 +1928,23 @@ mod tests {
     #[test]
     fn a_parked_login_refused_is_named_as_the_app_names_its_account() {
         assert_eq!(
-            in_app_refusal(&Error::ParkedCredentialMissing {
-                label: "desktop/home".into(),
-            })
+            in_app_refusal(
+                Os::MacOs,
+                &Error::ParkedCredentialMissing {
+                    label: "desktop/home".into(),
+                }
+            )
             .as_deref(),
             Some("The parked login for home is missing. Choose Sign In Again… on home’s row.")
         );
         assert_eq!(
-            in_app_refusal(&Error::ParkedCredentialCorrupt {
-                label: "desktop/home".into(),
-                detail: "it was parked on another Mac".into(),
-            })
+            in_app_refusal(
+                Os::MacOs,
+                &Error::ParkedCredentialCorrupt {
+                    label: "desktop/home".into(),
+                    detail: "it was parked on another Mac".into(),
+                }
+            )
             .as_deref(),
             Some(
                 "The parked login for home is not the one Pitboard recorded (it was parked on \
@@ -1946,9 +1952,12 @@ mod tests {
             )
         );
         assert_eq!(
-            in_app_refusal(&Error::ParkedCredentialMissing {
-                label: "work".into(),
-            }),
+            in_app_refusal(
+                Os::MacOs,
+                &Error::ParkedCredentialMissing {
+                    label: "work".into(),
+                }
+            ),
             None,
             "Claude Code's says the core's sentence"
         );
@@ -1964,7 +1973,7 @@ mod tests {
                 "chrome_crashpad_handler (pid 814)".into(),
             ],
         };
-        let said = in_app_refusal(&still).expect("in the app's words");
+        let said = in_app_refusal(Os::MacOs, &still).expect("in the app's words");
         assert!(
             said.contains(
                 "ShipIt (pid 812), Claude Helper (pid 813) and chrome_crashpad_handler (pid 814) \
@@ -1975,15 +1984,53 @@ mod tests {
     }
 
     #[test]
+    fn the_app_says_to_quit_what_is_left_of_an_app_in_task_manager_on_windows() {
+        let still = |app| Error::AppOpen {
+            app,
+            still: vec!["Helper (pid 812)".into()],
+        };
+        for (os, monitor) in [
+            (Os::Windows, "Task Manager"),
+            (Os::MacOs, "Activity Monitor"),
+        ] {
+            assert_eq!(
+                in_app_refusal(os, &still("ChatGPT")).expect("the app's words"),
+                format!(
+                    "ChatGPT has quit, and Helper (pid 812) from it is still running, and \
+                     Pitboard changes ChatGPT’s login only while all of it is closed. Wait until \
+                     it ends, or quit it in {monitor}, then try again. Nothing has changed."
+                )
+            );
+            let not_given_up = CoreWarning::MoveNotGivenUp {
+                tool: ProviderId::Desktop,
+                label: "desktop/work".into(),
+                why: still("Claude"),
+            };
+            assert_eq!(
+                in_app_warning(os, &not_given_up).expect("the app's words"),
+                format!(
+                    "Pitboard didn’t give up the interrupted move of work’s login, because Helper \
+                     (pid 812) from Claude is still running. Wait until it ends, or quit it in \
+                     {monitor}, then use any Claude Desktop account: Pitboard settles the move \
+                     first."
+                )
+            );
+        }
+    }
+
+    #[test]
     fn a_move_not_given_up_never_says_nothing_has_changed() {
         let tool = ProviderId::Desktop;
         let app = "Claude";
         let said = |why| {
-            in_app_warning(&CoreWarning::MoveNotGivenUp {
-                tool,
-                label: "desktop/work".into(),
-                why,
-            })
+            in_app_warning(
+                Os::MacOs,
+                &CoreWarning::MoveNotGivenUp {
+                    tool,
+                    label: "desktop/work".into(),
+                    why,
+                },
+            )
             .expect("the app's words")
         };
         assert_eq!(
@@ -2329,13 +2376,15 @@ mod tests {
         };
         let mut said: Vec<String> = errors
             .iter()
-            .map(|error| in_app_refusal(error).unwrap_or_else(|| error.to_string()))
+            .map(|error| in_app_refusal(Os::MacOs, error).unwrap_or_else(|| error.to_string()))
             .collect();
         said.extend(
             warnings
                 .iter()
                 .inspect(|warning| assert_eq!(warning.tool(), Some(tool)))
-                .map(|warning| in_app_warning(warning).unwrap_or_else(|| warning.to_string())),
+                .map(|warning| {
+                    in_app_warning(Os::MacOs, warning).unwrap_or_else(|| warning.to_string())
+                }),
         );
         said.push(in_app_given_up(&given_up(Vec::new(), None)));
         said.push(in_app_given_up(&given_up(

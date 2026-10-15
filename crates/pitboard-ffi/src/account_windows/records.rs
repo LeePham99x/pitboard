@@ -49,6 +49,8 @@ pub(crate) struct Entry {
     /// The page each window was last on, by its store: one of the site's own pages, so the
     /// window opens there again.
     pub(crate) pages: BTreeMap<String, String>,
+    // On Windows, recorded stores answered `StoreHeld`, held across a restart until deleted.
+    pub(crate) held: BTreeSet<String>,
 }
 
 /// What `windows.json` holds: each directory's records, by its key.
@@ -58,6 +60,8 @@ pub(crate) struct Records {
     stores: BTreeMap<String, BTreeSet<String>>,
     #[serde(default)]
     pages: BTreeMap<String, BTreeMap<String, String>>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    held: BTreeMap<String, BTreeSet<String>>,
 }
 
 impl Records {
@@ -87,6 +91,7 @@ impl Records {
                     (key.clone(), pages)
                 })
                 .collect(),
+            held: BTreeMap::new(),
         }
         .normalised()
     }
@@ -94,9 +99,8 @@ impl Records {
     /// Every store id in lower case, none that is not a UUID, and no directory that records
     /// nothing.
     fn normalised(self) -> Records {
-        Records {
-            stores: self
-                .stores
+        let ids = |by_key: BTreeMap<String, BTreeSet<String>>| {
+            by_key
                 .into_iter()
                 .map(|(key, stores)| {
                     let stores = stores
@@ -107,7 +111,11 @@ impl Records {
                     (key, stores)
                 })
                 .filter(|(_, stores): &(String, BTreeSet<String>)| !stores.is_empty())
-                .collect(),
+                .collect()
+        };
+        Records {
+            stores: ids(self.stores),
+            held: ids(self.held),
             pages: self
                 .pages
                 .into_iter()
@@ -126,9 +134,14 @@ impl Records {
 
     /// The records of the directory `key` names.
     pub(crate) fn entry(&self, key: &str) -> Entry {
+        let stores = self.stores.get(key).cloned().unwrap_or_default();
+        let held = self.held.get(key).map_or_else(BTreeSet::new, |held| {
+            held.intersection(&stores).cloned().collect()
+        });
         Entry {
-            stores: self.stores.get(key).cloned().unwrap_or_default(),
+            stores,
             pages: self.pages.get(key).cloned().unwrap_or_default(),
+            held,
         }
     }
 
@@ -143,6 +156,11 @@ impl Records {
             self.pages.remove(key);
         } else {
             self.pages.insert(key.to_owned(), entry.pages.clone());
+        }
+        if entry.held.is_empty() {
+            self.held.remove(key);
+        } else {
+            self.held.insert(key.to_owned(), entry.held.clone());
         }
     }
 
@@ -423,7 +441,7 @@ mod tests {
             earlier.entry(DANA),
             Entry {
                 stores: BTreeSet::from([WORK.to_owned()]),
-                pages: BTreeMap::new(),
+                ..Entry::default()
             }
         );
     }
@@ -436,7 +454,7 @@ mod tests {
         let earlier = Records::earlier(&todays_format());
         let mine = Entry {
             stores: BTreeSet::from([WORK.to_owned()]),
-            pages: BTreeMap::new(),
+            ..Entry::default()
         };
         let text = kept(&Ok(None), DANA, Some(&earlier), &mine).expect("written");
         let written = Records::read(&text).expect("records");
@@ -455,6 +473,37 @@ mod tests {
         assert_eq!(emptied.entry(SCRATCH), earlier.entry(SCRATCH));
     }
 
+    #[test]
+    fn a_held_store_is_written_only_while_it_is_recorded() {
+        let held = Entry {
+            stores: BTreeSet::from([WORK.to_owned()]),
+            held: BTreeSet::from([WORK.to_owned()]),
+            ..Entry::default()
+        };
+        let text = kept(&Ok(None), DANA, None, &held).expect("written");
+        assert_eq!(
+            text,
+            format!(
+                r#"{{"stores":{{"{DANA}":["{WORK}"]}},"pages":{{}},"held":{{"{DANA}":["{WORK}"]}}}}"#
+            )
+        );
+        assert_eq!(Records::read(&text).expect("records").entry(DANA), held);
+        let upper = format!(
+            r#"{{"stores":{{"{DANA}":["{WORK}"]}},"held":{{"{DANA}":["{WORK_UPPER}","not a store"]}}}}"#
+        );
+        assert_eq!(
+            load(&there(&upper), DANA, None).expect("records").entry,
+            held
+        );
+        let unrecorded = format!(r#"{{"stores":{{}},"held":{{"{DANA}":["{WORK}"]}}}}"#);
+        assert_eq!(
+            load(&there(&unrecorded), DANA, None)
+                .expect("records")
+                .entry,
+            Entry::default()
+        );
+    }
+
     /// The record is kept per Pitboard directory: a copy of the app run with another home
     /// shares the web stores with the copy installed and none of its accounts.
     ///
@@ -466,7 +515,7 @@ mod tests {
         let mut records = Records::default();
         let entry = |store: &str| Entry {
             stores: BTreeSet::from([store.to_owned()]),
-            pages: BTreeMap::new(),
+            ..Entry::default()
         };
         records.set(DANA, &entry(one));
         records.set(SCRATCH, &entry(two));

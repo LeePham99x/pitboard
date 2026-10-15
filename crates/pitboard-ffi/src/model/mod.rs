@@ -841,9 +841,11 @@ impl PitboardModel {
         let clock = Clock::starting();
         let mut state = State::new(cadence);
         if let Some(place) = &platform.windows {
-            state
-                .windows
-                .on(&place.launch.link_scheme, &place.web_scheme);
+            state.windows.on(
+                pitboard_core::host::OS,
+                &place.launch.link_scheme,
+                &place.web_scheme,
+            );
         }
         let first = present(&state, clock.now().epoch(), platform.local_time.as_ref());
         let shown = Arc::new(Mutex::new(first));

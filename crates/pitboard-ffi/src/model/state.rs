@@ -1447,7 +1447,7 @@ impl State {
             }
             Intent::WebsiteDataRemoved { store } => self.windows.data_removed(&store, jobs),
             Intent::StoreDeleted { store } => self.windows.store_deleted(&store, jobs),
-            Intent::StoreHeld { store } => self.windows.store_held(&store),
+            Intent::StoreHeld { store } => self.windows.store_held(&store, jobs),
             Intent::LinkArrived { text } => self.windows.link_arrived(&text),
             Intent::OpenLink { arrival, store } => {
                 self.windows

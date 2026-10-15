@@ -28,6 +28,7 @@ use crate::account_windows::{
 };
 use crate::present::{DownloadState, PageLoad, StoreDeletion};
 use crate::{LinkRefusal, SiteLink, Status};
+use pitboard_core::host::Os;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
@@ -52,6 +53,13 @@ enum Kept {
 
 impl Kept {
     fn entry(&mut self) -> Option<&mut Entry> {
+        match self {
+            Kept::Unread => None,
+            Kept::Read(entry) | Kept::Held(entry) => Some(entry),
+        }
+    }
+
+    fn get(&self) -> Option<&Entry> {
         match self {
             Kept::Unread => None,
             Kept::Read(entry) | Kept::Held(entry) => Some(entry),
@@ -132,6 +140,8 @@ pub(crate) struct Windows {
     web_scheme: String,
     /// How long a link waits before it can be opened.
     arming_delay: Duration,
+    // On Windows, where WebView2 deletes a profile's folder only as its browser process exits.
+    deletion_lingers: bool,
     kept: Kept,
     /// The stores of the accounts the last read that said who is enrolled found, while the
     /// records are unread: what is put away is put away once they are in.
@@ -141,8 +151,6 @@ pub(crate) struct Windows {
     claimed: BTreeSet<String>,
     /// Stores the app is asked to delete, in the order asked, until it says how it went.
     pub(crate) deleting: Vec<StoreDeletion>,
-    // Stores the app said something holds, asked again after each read until it deletes them.
-    pub(crate) held: BTreeSet<String>,
     /// Stores asked for, which numbers the next.
     asks: u64,
     /// The windows the app has open, in the order they opened.
@@ -177,11 +185,11 @@ impl Windows {
             link_scheme: LINK_SCHEME.into(),
             web_scheme: WEB_SCHEME.into(),
             arming_delay,
+            deletion_lingers: false,
             kept: Kept::Unread,
             enrolled: None,
             claimed: BTreeSet::new(),
             deleting: Vec::new(),
-            held: BTreeSet::new(),
             asks: 0,
             open: Vec::new(),
             waiting: BTreeMap::new(),
@@ -198,8 +206,8 @@ impl Windows {
         }
     }
 
-    /// The schemes this launch's links and pages are on.
-    pub(crate) fn on(&mut self, link_scheme: &str, web_scheme: &str) {
+    pub(crate) fn on(&mut self, os: Os, link_scheme: &str, web_scheme: &str) {
+        self.deletion_lingers = os == Os::Windows;
         link_scheme.clone_into(&mut self.link_scheme);
         web_scheme.clone_into(&mut self.web_scheme);
     }
@@ -289,10 +297,7 @@ impl Windows {
         self.put_away(&keeping, jobs);
     }
 
-    /// Puts away what no account in `keeping` has: the last pages of their windows, and,
-    /// where the records were read, their stores, which another directory is asked about
-    /// first. A store something still holds is left recorded, and put away after the next
-    /// read; one a sweep has claimed already is left to it.
+    // What no account in `keeping` derives, and each held store, enrolled again or not.
     fn put_away(&mut self, keeping: &BTreeSet<String>, jobs: &mut Vec<super::state::Job>) {
         let Some(entry) = self.kept.entry() else {
             return;
@@ -304,7 +309,7 @@ impl Windows {
             Kept::Read(entry) => entry
                 .stores
                 .iter()
-                .filter(|store| !keeping.contains(*store) || self.held.contains(*store))
+                .filter(|store| !keeping.contains(*store) || entry.held.contains(*store))
                 .filter(|store| !self.claimed.contains(*store))
                 .cloned()
                 .collect(),
@@ -338,7 +343,12 @@ impl Windows {
         };
         let mut unrecorded = false;
         for store in stores {
-            if shared.contains(&store) {
+            // A held store's deletion is made already, and another record cannot undo it.
+            let held = self
+                .kept
+                .get()
+                .is_some_and(|entry| entry.held.contains(&store));
+            if shared.contains(&store) && !held {
                 self.claimed.remove(&store);
                 if let Some(entry) = self.kept.entry() {
                     unrecorded |= entry.stores.remove(&store);
@@ -362,8 +372,8 @@ impl Windows {
         if !self.unclaim(&store) {
             return;
         }
-        self.held.remove(&store);
         if let Some(entry) = self.kept.entry() {
+            entry.held.remove(&store);
             let recorded = entry.stores.remove(&store);
             let paged = entry.pages.remove(&store).is_some();
             if recorded || paged {
@@ -372,13 +382,27 @@ impl Windows {
         }
     }
 
-    /// Something still holds `store`, so the app could not delete it: it stays recorded, and
-    /// the next read puts it away again.
-    pub(crate) fn store_held(&mut self, store: &str) {
+    // It stays recorded for the next read to ask again; on Windows it is held until
+    // `StoreDeleted`, enrolled again or not.
+    pub(crate) fn store_held(&mut self, store: &str, jobs: &mut Vec<super::state::Job>) {
         let store = store_key(store);
-        if self.unclaim(&store) {
-            self.held.insert(store);
+        if !self.unclaim(&store) || !self.deletion_lingers {
+            return;
         }
+        if self
+            .kept
+            .entry()
+            .is_some_and(|entry| entry.held.insert(store))
+        {
+            self.keep(jobs);
+        }
+    }
+
+    pub(crate) fn held(&self) -> Vec<String> {
+        self.kept
+            .get()
+            .map(|entry| entry.held.iter().cloned().collect())
+            .unwrap_or_default()
     }
 
     /// `store` is no longer asked of the app, and no longer claimed. Whether it was asked.
@@ -440,12 +464,15 @@ impl Windows {
             else {
                 continue;
             };
-            if self.claimed.contains(&store) || self.held.contains(&store) {
+            if self.claimed.contains(&store) {
                 continue;
             }
             let Some(entry) = self.kept.entry() else {
                 continue;
             };
+            if entry.held.contains(&store) {
+                continue;
+            }
             if self.open[at].made_before.is_none() {
                 let made = entry.stores.contains(&store);
                 if !made {

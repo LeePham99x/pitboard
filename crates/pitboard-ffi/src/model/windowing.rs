@@ -7,6 +7,7 @@
 
 use super::state::Job;
 use super::testing::{DANA, Hand, Machine, refusal, status};
+use super::windows::{LINK_SCHEME, WEB_SCHEME};
 use super::{DownloadEnd, EarlierWindowRecords, Intent};
 use crate::account_windows::records::{Entry, Records};
 use crate::account_windows::{WindowNoteKind, store_id};
@@ -15,6 +16,7 @@ use crate::{
     Account, Choice, DownloadState, LinkPicker, OpenWindow, PickerShown, Question, SiteMenu,
     WaitingShown, WindowWaiting, downloads_quit_question,
 };
+use pitboard_core::host::Os;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::time::Duration;
 
@@ -73,7 +75,18 @@ fn started(machine: &mut Machine) -> Hand {
 /// The same, its windows on a fixture's stand-in pages, as the Swift tests' were.
 fn started_on_stand_ins(machine: &mut Machine) -> Hand {
     let mut model = Hand::new();
-    model.state.windows.on("pitboard-debug", "pitboard-fixture");
+    model
+        .state
+        .windows
+        .on(Os::MacOs, "pitboard-debug", "pitboard-fixture");
+    model.send(Intent::Start);
+    model.run(machine);
+    model
+}
+
+fn started_on(os: Os, machine: &mut Machine) -> Hand {
+    let mut model = Hand::new();
+    model.state.windows.on(os, LINK_SCHEME, WEB_SCHEME);
     model.send(Intent::Start);
     model.run(machine);
     model
@@ -160,7 +173,7 @@ fn file(stores: &[(&str, &[&str])]) -> String {
             key,
             &Entry {
                 stores: stores.iter().map(|&store| store.to_owned()).collect(),
-                pages: BTreeMap::new(),
+                ..Entry::default()
             },
         );
     }
@@ -658,6 +671,7 @@ fn a_windows_last_page_is_kept_per_directory_until_its_store_goes() {
         &Entry {
             stores: BTreeSet::from([work.clone()]),
             pages: BTreeMap::from([(work.clone(), "https://claude.ai/chat/theirs".to_owned())]),
+            ..Entry::default()
         },
     );
     machine.windows_file = theirs.text();
@@ -1011,7 +1025,7 @@ fn a_window_waits_while_its_old_store_is_held() {
     let mut machine = machine();
     machine.windows_file = Some(file(&[(DANA, &[&personal])]));
     machine.answer = Ok(status(without("personal")));
-    let mut model = started(&mut machine);
+    let mut model = started_on(Os::Windows, &mut machine);
     assert_eq!(deleting(&model), vec![personal.clone()]);
     model.send(Intent::StoreHeld {
         store: personal.to_uppercase(),
@@ -1047,6 +1061,98 @@ fn a_window_waits_while_its_old_store_is_held() {
     assert!(model.shown().account_windows.held.is_empty());
     let window = open_window(&model, &personal).expect("open once deleted");
     assert_eq!(window.note, Some(WindowNoteKind::SignIn));
+}
+
+#[test]
+fn a_held_store_is_still_held_after_a_restart() {
+    let personal = claude("p");
+    let mut machine = machine();
+    machine.windows_file = Some(file(&[(DANA, &[&personal])]));
+    machine.answer = Ok(status(without("personal")));
+    let mut model = started_on(Os::Windows, &mut machine);
+    model.send(Intent::StoreHeld {
+        store: personal.clone(),
+    });
+    model.run(&mut machine);
+
+    machine.answer = Ok(status(two_tools()));
+    let mut model = started_on(Os::Windows, &mut machine);
+    assert_eq!(deleting(&model), vec![personal.clone()], "asked again");
+    assert_eq!(model.shown().account_windows.held, vec![personal.clone()]);
+    model.send(Intent::WindowOpened {
+        store: personal.clone(),
+    });
+    model.run(&mut machine);
+    assert_eq!(open_window(&model, &personal), None);
+    model.send(Intent::StoreDeleted {
+        store: personal.clone(),
+    });
+    model.run(&mut machine);
+    let window = open_window(&model, &personal).expect("open once deleted");
+    assert_eq!(window.note, Some(WindowNoteKind::SignIn));
+    assert!(machine.windows_records().held.is_empty());
+}
+
+// WebView2 deletes a profile whoever recorded it, so that cannot keep the window waiting forever.
+#[test]
+fn a_held_store_another_directory_recorded_meanwhile_is_still_deleted() {
+    let personal = claude("p");
+    let mut machine = machine();
+    machine.windows_file = Some(file(&[(DANA, &[&personal])]));
+    machine.answer = Ok(status(without("personal")));
+    let mut model = started_on(Os::Windows, &mut machine);
+    model.send(Intent::StoreHeld {
+        store: personal.clone(),
+    });
+    model.run(&mut machine);
+    let mut records =
+        Records::read(machine.windows_file.as_deref().expect("written")).expect("records");
+    records.set(
+        SCRATCH,
+        &Entry {
+            stores: BTreeSet::from([personal.clone()]),
+            ..Entry::default()
+        },
+    );
+    machine.windows_file = records.text();
+    machine.directories = vec![DANA.into(), SCRATCH.into()];
+
+    machine.answer = Ok(status(two_tools()));
+    model.refresh(&mut machine);
+    assert_eq!(deleting(&model), vec![personal.clone()]);
+    model.send(Intent::WindowOpened {
+        store: personal.clone(),
+    });
+    model.run(&mut machine);
+    assert_eq!(open_window(&model, &personal), None);
+    model.send(Intent::StoreDeleted {
+        store: personal.clone(),
+    });
+    model.run(&mut machine);
+    let window = open_window(&model, &personal).expect("open once deleted");
+    assert_eq!(window.note, Some(WindowNoteKind::SignIn));
+    assert!(model.shown().account_windows.held.is_empty());
+}
+
+// WebKit gave up deleting it, so the store still holds the sign-in its window opens on.
+#[test]
+fn a_mac_keeps_a_held_store_whose_account_is_enrolled_again() {
+    let personal = claude("p");
+    let mut machine = machine();
+    machine.windows_file = Some(file(&[(DANA, &[&personal])]));
+    machine.answer = Ok(status(without("personal")));
+    let mut model = started_on(Os::MacOs, &mut machine);
+    assert_eq!(deleting(&model), vec![personal.clone()]);
+    model.send(Intent::StoreHeld {
+        store: personal.to_uppercase(),
+    });
+    machine.answer = Ok(status(two_tools()));
+    model.refresh(&mut machine);
+    assert!(deleting(&model).is_empty(), "not asked again");
+    let window = open(&mut model, &mut machine, &personal);
+    assert_eq!(window.note, None);
+    assert!(model.shown().account_windows.held.is_empty());
+    assert!(machine.windows_records().stores.contains(&personal));
 }
 
 /// Nothing is put away before the records are read, and a read that lands first is acted on
