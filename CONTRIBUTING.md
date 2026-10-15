@@ -29,7 +29,7 @@ and later, the `rust-version` in `Cargo.toml`.
 | `cargo-insta` | Reviewing a changed `--json` snapshot |
 | `cargo-hack` | The Rust 1.91 floor |
 | `cargo-zigbuild`, Zig and Rust's `x86_64-unknown-linux-gnu` target | Linting the Linux code from a Mac |
-| `shellcheck` 0.11.0 or later, Python 3.9 or later | The install script |
+| `shellcheck` 0.11.0 or later, Python 3.11 or later | The install script and the release's scripts |
 | Xcode with Swift 6.2 or later, XcodeGen | [The app](#the-app) |
 | .NET 10 SDK | [The C# bindings](#the-c-bindings) |
 | Node 24 or later | [Website](#website) |
