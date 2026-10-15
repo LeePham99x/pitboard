@@ -106,8 +106,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     folders macOS asks about before an app may look in them, or `default_pitboard_home`,
     where Pitboard keeps its files for a home when `PITBOARD_HOME` names nowhere else.
     `same_path_in_any_case` is how Windows compares paths, for the core and the apps alike,
-    and `path_key_in_any_case` one text per path compared so. `awake` is the time the
-    machine has been awake, which the app's timers count.
+    and `path_key_in_any_case` a key read from the text alone, which also reads `\\?\`, `.`
+    and `..` away. `awake` is the time the machine has been awake, which the app's timers
+    count.
   - `release.rs`: whether this build may do anything on its system. A Windows build of a
     0.x release may not, unless it was compiled with `--cfg pitboard_unreleased_windows`,
     which CI's Windows jobs set and no release does; macOS and Linux always may. The

@@ -297,7 +297,7 @@ impl Windows {
         self.put_away(&keeping, jobs);
     }
 
-    // Also a held store, enrolled again or not, until `StoreDeleted`.
+    // What no account in `keeping` derives, and each held store, enrolled again or not.
     fn put_away(&mut self, keeping: &BTreeSet<String>, jobs: &mut Vec<super::state::Job>) {
         let Some(entry) = self.kept.entry() else {
             return;
@@ -382,8 +382,8 @@ impl Windows {
         }
     }
 
-    // Still recorded, so the next read asks again where no account derives it; on Windows,
-    // where nothing undoes a deletion, also where one does, until `StoreDeleted`.
+    // It stays recorded for the next read to ask again; on Windows it is held until
+    // `StoreDeleted`, enrolled again or not.
     pub(crate) fn store_held(&mut self, store: &str, jobs: &mut Vec<super::state::Job>) {
         let store = store_key(store);
         if !self.unclaim(&store) || !self.deletion_lingers {

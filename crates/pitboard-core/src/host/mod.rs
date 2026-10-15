@@ -331,11 +331,6 @@ fn beyond(mut at: PathBuf, rest: &Path) -> PathBuf {
     at
 }
 
-/// Whether two names are one as Windows compares a file's name: each character in its upper
-/// case, one for one, and no other change, so `é` written as one character and as `e` with an
-/// accent are two names. A character whose upper case is more than one, such as `ß`, and one
-/// outside the Basic Multilingual Plane, which Windows compares a UTF-16 unit at a time, are
-/// compared as they are.
 fn same_name_in_any_case(a: &std::ffi::OsStr, b: &std::ffi::OsStr) -> bool {
     let (a, b) = (a.to_string_lossy(), b.to_string_lossy());
     a.chars()
@@ -343,6 +338,7 @@ fn same_name_in_any_case(a: &std::ffi::OsStr, b: &std::ffi::OsStr) -> bool {
         .eq(b.chars().map(upper_one_for_one))
 }
 
+// As Windows upper-cases a name: one UTF-16 unit for one, so ß and anything past the BMP stay.
 fn upper_one_for_one(c: char) -> char {
     if u32::from(c) > 0xFFFF {
         return c;
@@ -684,8 +680,7 @@ pub(crate) fn default_pitboard_home(home: &Path) -> PathBuf {
     }
 }
 
-// How long this machine has been awake since a moment of the system's own: what an app's
-// timers count, so a sleep takes none of a wait.
+// Time awake since a fixed moment (boot on Windows, the first call elsewhere); a sleep adds none.
 pub fn awake() -> std::time::Duration {
     os::awake()
 }
