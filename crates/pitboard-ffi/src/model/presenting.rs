@@ -2792,7 +2792,7 @@ fn what_is_installed_is_asked_once() {
     model.refresh(&mut machine);
     model.send(present_sheet(Sheet::Add { provider: None }));
     model.run(&mut machine);
-    let sheet = model.shown().sheet_text.expect("the sheet");
+    let sheet = model.on_a_mac().sheet_text.expect("the sheet");
     assert_eq!(tools_and_missing(&sheet).1, ["desktop"]);
 }
 
@@ -2807,13 +2807,13 @@ fn what_is_installed_is_asked_again_when_the_form_for_another_account_opens() {
     machine.found = vec![claude_code(), codex()];
     model.send(present_sheet(Sheet::Add { provider: None }));
     assert_eq!(
-        tools_and_missing(&model.shown().sheet_text.expect("the sheet")).1,
+        tools_and_missing(&model.on_a_mac().sheet_text.expect("the sheet")).1,
         ["codex", "desktop"],
         "what was found before"
     );
     model.run(&mut machine);
     assert_eq!(
-        tools_and_missing(&model.shown().sheet_text.expect("the sheet")).1,
+        tools_and_missing(&model.on_a_mac().sheet_text.expect("the sheet")).1,
         ["desktop"]
     );
 }
