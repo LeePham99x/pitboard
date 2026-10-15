@@ -2,7 +2,6 @@ namespace Pitboard.UITests;
 
 [TestClass]
 [Elevated(ConditionMode.Exclude)]
-[OwnSession]
 public sealed class PanesTests
 {
     // Newest first: the fixture's two switches are newer than both its enrolments.

@@ -27,8 +27,11 @@ public partial class App : Application
     {
         _start = start;
 #if DEBUG
-        // Unhandled, it fails Pitboard fast with 0xC000027B: the UI tests read why from here.
-        UnhandledException += (_, args) => Console.Error.WriteLine(args.Exception);
+        // Unhandled, it fails Pitboard fast with 0xC000027B: the UI tests read why from here, in WinUI's own
+        // words too, with any theme resource it could not find.
+        UnhandledException += (_, args) => Console.Error.WriteLine($"{args.Message}{Environment.NewLine}{args.Exception}");
+        DebugSettings.IsXamlResourceReferenceTracingEnabled = true;
+        DebugSettings.XamlResourceReferenceFailed += (_, args) => Console.Error.WriteLine(args.Message);
 #endif
         InitializeComponent();
         // Closing the window leaves Pitboard running, as the macOS app does.

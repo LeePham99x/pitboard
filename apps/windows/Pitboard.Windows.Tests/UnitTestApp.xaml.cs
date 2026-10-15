@@ -8,8 +8,11 @@ public partial class UnitTestApp : Application
 {
     public UnitTestApp()
     {
-        // Unhandled, it fails the app fast with 0xC000027B, and the run's log says nothing more.
-        UnhandledException += (_, args) => Console.Error.WriteLine(args.Exception);
+        // Unhandled, it fails the app fast with 0xC000027B, and the run's log says nothing more. WinUI's own
+        // words for it are in Message, and a theme resource it could not find is said only here.
+        UnhandledException += (_, args) => Console.Error.WriteLine($"{args.Message}{Environment.NewLine}{args.Exception}");
+        DebugSettings.IsXamlResourceReferenceTracingEnabled = true;
+        DebugSettings.XamlResourceReferenceFailed += (_, args) => Console.Error.WriteLine(args.Message);
         InitializeComponent();
     }
 
