@@ -8,7 +8,7 @@
   <ItemGroup>
     <PackageReference Include="FlaUI.UIA3" />
   </ItemGroup>
-  <!-- The Debug and Release Pitboard.exe the tests start, each published beside its own pitboard_ffi.dll. -->
+  <!-- The Debug and Release Pitboard.exe the tests start, each beside its own pitboard_ffi.dll. -->
   <ItemGroup>
     <AssemblyMetadata Include="PitboardAppDebug" Value="$(PitboardAppDebug)" />
     <AssemblyMetadata Include="PitboardAppRelease" Value="$(PitboardAppRelease)" />
