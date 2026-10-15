@@ -2144,11 +2144,46 @@ A network logon, by key through sshd as the standard user on windows-2025:
   `CryptProtectData` fails 5.
 - WTS and Toolhelp name the same user's `codex.exe` in session 2.
 
+Scoop, winget and the user `PATH`, as the job's user, with the gated build in the zips
+`package-windows.ps1` makes for 0.14.0 and 0.14.1, served on loopback (runs 38722200575 and
+38725515950):
+
+- ScoopInstaller/Install's `install.ps1` at 1e2f3340, given `-ScoopDir` and `-RunAsAdmin`,
+  installs Scoop v0.6.0 there and puts its shims first on the user `PATH`.
+- From a bucket holding `packaging/scoop/pitboard.json` as the release fills it, Scoop takes
+  the `64bit` zip on windows-2025 and the `arm64` one on windows-11-arm, checks its hash,
+  points `apps\pitboard\current` at the version's folder by a junction, and makes a
+  `pitboard` shim that runs the zip's own `pitboard.exe` (run 38725515950).
+- `scoop update pitboard` while that `pitboard.exe` runs says it is running, skips it and
+  exits 0, leaving `current` on the old version. Once it stops, the update goes through.
+- winget, under Developer Mode, installs the zip from a local manifest naming its
+  `pitboard.exe` a nested portable with the alias `pitboard`. It links `pitboard.exe` in
+  `%LOCALAPPDATA%\Microsoft\WinGet\Links` to the exe in the package's folder by a symbolic
+  link, and appends Links to the user `PATH`.
+- `winget upgrade` while that `pitboard.exe` runs fails 0x8A150052, since it cannot remove the
+  running version's folder, and leaves the link and that folder as they were. Once it stops,
+  the upgrade goes through and the link leads to the new version.
+- A program started after all three finds `pitboard` on the user `PATH` in this order:
+  Scoop's shims, `~\.cargo\bin`, which the images put there, WinGet's Links, then a folder
+  appended last, standing in for the MSI's `bin`.
+- `winget validate` exits 0x8A150028, valid with warnings, for a manifest without schema
+  headers.
+- With all 19 attack surface reduction rules of Microsoft's reference in audit, Defender
+  logged no event 1121 or 1122 while the zip's `pitboard.exe`, marked as downloaded from the
+  internet, ran with `--version`, with no argument and with `completions bash`. Real-time
+  protection is on only on windows-11-arm.
+
+windows-2025's winget, v1.11.510, knows manifest schemas up to 1.10.0. komac 2.16.0 writes
+1.12.0, the default of its winget-types 0.4.3, with a 1.12.0 schema header. Read in
+winget-cli v1.11.510's source, `validate` checks such a manifest against the 1.10.0 schema
+and treats its schema header, and any field 1.10.0 lacks, as warnings. So the release's
+`winget validate` warns on every komac manifest and fails only on what 1.10.0 rejects.
+
 The images:
 
 - Defender's real-time protection is off on windows-2025 and on, with behaviour monitoring
-  and tamper protection, on windows-11-arm. winget is on windows-2025 alone, and Scoop on
-  neither.
+  and tamper protection, on windows-11-arm. winget, v1.11.510, is on windows-2025 alone, and
+  Scoop on neither.
 - diskpart formats ReFS on windows-2025. On windows-11-arm, `Format-Volume -DevDrive` makes a
   trusted Dev Drive with Defender's filter attached.
 - The Server service runs, and `New-SmbShare` serves a folder to `\\localhost`.
@@ -2185,8 +2220,8 @@ on 15 October 2026. W27 reviews the list.
 | winget's validation installs a package as a standard user, runs its program with no argument and wants it to succeed | [Validation](https://github.com/microsoft/winget-pkgs/blob/master/doc/Validation.md), [Validation failure guide](https://github.com/microsoft/winget-pkgs/blob/master/doc/ValidationFailureGuide.md) | No runner submits a winget manifest. |
 | winget's validation scans an installer with several antivirus engines, and Defender scans what it installed | [Validation](https://github.com/microsoft/winget-pkgs/blob/master/doc/Validation.md) | No runner submits a winget manifest. |
 | Moderators label a portable archive `Portable-Archive`, a blocking issue | [Validation failure guide](https://github.com/microsoft/winget-pkgs/blob/master/doc/ValidationFailureGuide.md) | No manifest has been submitted. |
-| winget puts a portable package's command in a Links folder on `PATH` under Developer Mode or as an administrator, and its install folder on `PATH` otherwise | [winget-pkgs FAQ](https://github.com/microsoft/winget-pkgs/blob/master/doc/FAQ.md) | The L2 row in `runner-facts.ps1` installs one as an administrator, and has not run yet. A standard user's install is the session's. |
-| Since winget 1.29, an MSI wins over a portable installer whatever the manifest's order | [winget-cli 1.29.380](https://github.com/microsoft/winget-cli/releases/tag/v1.29.380) | No runner installs from winget's sources. |
+| winget puts a portable package's install folder on `PATH`, not a link in Links, for a standard user without Developer Mode | [winget-pkgs FAQ](https://github.com/microsoft/winget-pkgs/blob/master/doc/FAQ.md) | Both images have Developer Mode on, and the job's user is an administrator. A standard user's install is the session's. |
+| Since winget 1.29, an MSI wins over a portable installer whatever the manifest's order | [winget-cli 1.29.380](https://github.com/microsoft/winget-cli/releases/tag/v1.29.380) | windows-2025's winget is 1.11.510, and no runner installs from winget's sources. |
 
 ### One sign-in at a time
 

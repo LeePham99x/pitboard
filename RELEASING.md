@@ -216,6 +216,8 @@ with the run's read-only token, `.github/scripts/check-winget-hashes.py` checks 
 installer's hash against the run's `SHA256SUMS`, and `winget validate` checks the manifests.
 Then komac opens the pull request from the fork with `WINGET_TOKEN`. A package that is not in
 `microsoft/winget-pkgs` yet, or has a pull request for this version, is skipped with a notice.
+The validate step warns on every release: windows-2025's winget knows manifests up to 1.10.0,
+and komac writes 1.12.0.
 
 komac stays at 2.16.0, pinned by SHA-256 in `release.yml`: 2.17.0 and 2.17.1 write nothing to
 `--output` with `--dry-run`. Before the first 1.x release, make the `winget` environment with a
