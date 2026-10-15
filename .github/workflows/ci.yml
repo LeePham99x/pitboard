@@ -146,13 +146,13 @@ jobs:
       # The gated build is a program for this leg's machine, answers its version, holds its C
       # runtime and no test's variable, and refuses every command with windows_not_released,
       # leaving every folder it is pointed at empty. From 1.0.0 it runs as a standard user instead.
-      - name: The build without the cfg, as a release is checked
+      - name: "The gated build: machine, C runtime, version and the gate"
         shell: pwsh
         env:
           TRIPLE: ${{ matrix.triple }}
         run: >
           ./.github/scripts/check-windows-build.ps1 -Exe target/gated/debug/pitboard.exe
-          -Triple $env:TRIPLE
+          -Triple $env:TRIPLE -Probe target/debug/pitboard-probe.exe
       # Before windows_refuses, whose build for tests replaces the gated pitboard.exe.
       - name: The release's Windows scripts
         shell: pwsh
@@ -160,7 +160,7 @@ jobs:
           TRIPLE: ${{ matrix.triple }}
         run: >
           ./.github/scripts/test-windows-release.ps1 -Exe target/gated/debug/pitboard.exe
-          -Triple $env:TRIPLE
+          -Triple $env:TRIPLE -Probe target/debug/pitboard-probe.exe
       # Tests from here run as a fresh standard user: the job's user is elevated in every program.
       # windows_refuses as it runs against a build that is not opened: every one of its
       # changes and reads refuses with windows_not_released, and every folder stays empty.

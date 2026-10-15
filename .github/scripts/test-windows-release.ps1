@@ -2,7 +2,9 @@
 # cfg and without test-support, as CI's windows job builds one in target/gated.
 param(
     [Parameter(Mandatory)] [string] $Exe,
-    [Parameter(Mandatory)] [ValidateSet('x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc')] [string] $Triple
+    [Parameter(Mandatory)] [ValidateSet('x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc')] [string] $Triple,
+    # For the leak check of a 1.x build's runs as a standard user.
+    [string] $Probe
 )
 $ErrorActionPreference = 'Stop'
 
@@ -89,12 +91,21 @@ try {
     $env:CARGO_ENCODED_RUSTFLAGS = "-C`u{1f}target-feature=+crt-static`u{1f}--cfg`u{1f}pitboard_unreleased_windows"
     Assert-Refused 'a release whose CARGO_ENCODED_RUSTFLAGS open it' @{ Exe = $exePath; Triple = $Triple; Release = $true } 'CARGO_ENCODED_RUSTFLAGS opens'
     $env:CARGO_ENCODED_RUSTFLAGS = $null
-    & $check -Exe $exePath -Triple $Triple -Release | Out-Null
+    $release = @{ Exe = $exePath; Triple = $Triple; Release = $true }
+    if ($Probe) { $release.Probe = $Probe }
+    & $check @release | Out-Null
     Write-Output 'ok: a build with neither passes as a release'
 } finally {
     $env:RUSTFLAGS = $flags.RUSTFLAGS
     $env:CARGO_ENCODED_RUSTFLAGS = $flags.CARGO_ENCODED_RUSTFLAGS
 }
+
+# check-windows-build.ps1's pattern, against the edges that do reach the dev-dependency's feature.
+$manifest = Join-Path $PSScriptRoot '..\..\Cargo.toml'
+$tree = & cargo tree --locked --manifest-path $manifest -e features --target $Triple -p pitboard | Out-String
+if ($LASTEXITCODE -ne 0) { throw "cargo tree exited $LASTEXITCODE" }
+if ($tree -notmatch 'feature "(test-support|fixture)"') { throw "the -Release check's pattern finds no feature for tests in: $tree" }
+Write-Output 'ok: the -Release check''s pattern finds test-support through the dev-dependency'
 
 Remove-Item -Recurse -Force -LiteralPath $work
 Write-Output 'Every case passed.'

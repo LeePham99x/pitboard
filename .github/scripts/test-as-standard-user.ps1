@@ -265,8 +265,10 @@ try {
         }
         for ($i = 0; $i -lt $Commands.Count; $i++) {
             $run = Start-AsUser $userExe (Split-Words $Commands[$i]) $runDir $exeEnv "exe-$i"
-            Write-Output "$(Split-Path -Leaf $exePath) $($Commands[$i]), as the standard user, exited $($run.Exit):"
+            $label = "$(Split-Path -Leaf $exePath) $($Commands[$i])".TrimEnd()
+            Write-Output "::group::$label, as the standard user: exited $($run.Exit)"
             Show-Run $run
+            Write-Output '::endgroup::'
             [pscustomobject]@{ Command = $Commands[$i]; Exit = $run.Exit; Out = (Get-Content -Raw -Path $run.Out) }
         }
     }

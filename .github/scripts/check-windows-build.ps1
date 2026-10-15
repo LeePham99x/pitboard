@@ -8,7 +8,7 @@ param(
     # Built as release.yml builds it, in this environment.
     [switch] $Release,
     # Built for the tests, with --cfg pitboard_unreleased_windows. Run as a 1.x build is, and
-    # failed only when it cannot start, or with -Strict on anything a 1.x build fails on.
+    # failed only when it fails to start or crashes, or with -Strict on anything a 1.x build fails on.
     [switch] $Opened,
     [switch] $Strict,
     # Lists Credential Manager after the runs as a standard user, for the leak check.
@@ -47,6 +47,7 @@ if ($headers -notmatch "Machine: IMAGE_FILE_MACHINE_$machine\b") {
     throw "pitboard.exe is not a program for $machine"
 }
 $imports = & $readobj --coff-imports $exePath | Out-String
+if ($LASTEXITCODE -ne 0) { throw "llvm-readobj could not read $exePath's imports" }
 if ($imports -match '(?i)vcruntime|api-ms-win-crt') {
     Write-Output $imports
     throw 'pitboard.exe takes its C runtime from a DLL: it was built without +crt-static'
@@ -138,9 +139,9 @@ $runs = [Collections.Generic.List[object]]::new()
 if ($runs.Count -ne 2) { throw "test-as-standard-user.ps1 gave $($runs.Count) runs, not 2" }
 $bare, $doctor = $runs
 foreach ($run in $runs) {
-    # Pitboard exits 0 to 255. Anything else is Windows' own status, from a program that never ran.
+    # Pitboard exits 0 to 255. Anything else is a Windows status, such as an unhandled exception's.
     if ($run.Exit -lt 0 -or $run.Exit -gt 255) {
-        throw "pitboard $($run.Command) could not start: $('0x{0:X8}' -f $run.Exit)"
+        throw "pitboard $($run.Command) ended with Windows status $('0x{0:X8}' -f $run.Exit): it failed to start or crashed"
     }
 }
 $envelope = try { $doctor.Out | ConvertFrom-Json } catch { $null }
