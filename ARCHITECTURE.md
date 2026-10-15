@@ -480,10 +480,10 @@ window loads its site, and whatever the site's pages load, as a browser would.
     file, or an alert's "on this Mac", is a `match` on `host::OS`, as what a window cannot
     sign in with is in `sites.rs`. Each takes the system as an argument, so every system's
     answer is tested on every system: Windows says "this PC", numbers a copy
-    `report (1).pdf`, takes names in any case and in no other form for one file, and
-    promises no passkey. `records.rs` reads and writes the windows' records, the
-    stores each Pitboard directory made and the page each window was last on, which the
-    model keeps in `windows.json`.
+    `report (1).pdf` and `archive (1).tar.gz`, takes names in any case and in no other form
+    for one file, and promises no passkey. `records.rs` reads and writes the windows'
+    records, the stores each Pitboard directory made and the page each window was last on,
+    which the model keeps in `windows.json`.
   - `model/` is the app model the macOS app shows and the Windows app is to show. An app
     makes a `PitboardModel`, sends it an `Intent` for each thing asked of it, and its
     `ModelListener` is told of each numbered `Snapshot`; its `AppControl` quits and opens
@@ -2067,18 +2067,23 @@ The Windows app's account windows run in WebView2, over the same decisions from 
   page, and a page sent elsewhere goes to `Launcher`. It answers `WindowCloseRequested`
   with `page_may_close`, `PermissionRequested` with `page_may_use`, leaving anything else
   to WebView2's own prompt, a render process that ended with `after_content_process_ended`,
-  and cancels every launch of another app's scheme. `StoreJanitor` answers each deletion
-  the model asks for, and `HeldStores` says why a held store's entry opens nothing.
+  and cancels every launch of another app's scheme. It hands `DownloadStarting` to
+  `decide_response`, with `PageNavigations` saying whether the page's own navigation
+  started it, and `Downloads` keeps every window's downloads. `StoreJanitor` answers each
+  deletion the model asks for, and `HeldStores` says why a held store's entry opens nothing.
 - `apps/windows/Pitboard.Views`: `AccountWindow` is the window, a command bar of Back,
-  Forward and Reload or Stop, with **Remove Website Data…** under More, the window's note in
-  an InfoBar, and the page, or what stands for it until the model lists the window.
-  Find, zoom, script dialogs, file pickers and the browser keys are WebView2's own.
+  Forward, Reload or Stop, and Downloads once the model lists a download of the window,
+  with **Remove Website Data…** under More, the window's note in an InfoBar, and the page,
+  or what stands for it until the model lists the window. It asks the download question
+  and the quit question as ContentDialogs. Find, zoom, script dialogs, file pickers, the
+  download list and the browser keys are WebView2's own.
   `SignInWindow` is a sign-in window, at `sign_in_window_size` over the account's window.
   The icon's menu and an account's shortcut menu offer each window, from
   `AccountWindowsShown.menus` and `AccountItem.windows`.
 - `apps/windows/Pitboard.App/AccountWindows.cs` opens a window per store and brings an open
   one forward, tells the model each opened and closed, closes those the model says close,
-  and hands each store asked for to the janitor.
+  and hands each store asked for to the janitor. It owns `Downloads`, and asks before Quit
+  while one is under way.
 
 One thing differs from WebKit in how a store goes, read in Microsoft's documentation of
 `CoreWebView2Profile.Delete` for WebView2 1.0.4258.31 on 16 October 2026: deleting a profile
@@ -2108,6 +2113,26 @@ it.
 in a new web view, so Back cannot bring the signed-in page back.
 `RemovingWebsiteDataEmptiesTheWindowsProfileAlone` holds that another profile keeps its
 data.
+
+Downloads go to the person's Downloads folder, `FOLDERID_Downloads`, and a fixture's to
+`Downloads` in its own folder. Each profile's `DefaultDownloadFolderPath` is that folder
+too, since Chromium writes a download into a temporary file there until it is named.
+WebView2 has no response policy: it raises `DownloadStarting` for what it will not show,
+naming no frame, so `decide_response` hears `can_show` false, the address and its
+`Content-Disposition`, and `main_frame` true only while the page's own navigation to that
+address has started and not completed and no frame's has. A download nothing accounts for
+counts as a frame's, so the question shows more often than on macOS, never less: the
+site's own `blob:` and `data:` downloads ask. `Ignore` cancels it before it is named; a
+question holds the event's deferral and cancels on Cancel; a download saved is named by
+`download_destination`, which on Windows numbers a copy `report (1).pdf` and splits a name
+as WebView2 does, `archive (1).tar.gz`. `Downloads` tells the model each one's start, file
+and end, and counts those under way for `downloads_quit_question`: Quit asks over a window
+of an account whose download runs, or another account window, then cancels them all. A
+paused download is under way: WebView2 leaves it interrupted and able to resume. The
+download list, with its Show in folder, is WebView2's own dialog, which Downloads in the
+command bar opens. `DownloadTests` hold this against the stand-in site, and print, for
+CF7, which events WebView2 raised around each kind of download, the name it gives a second
+`archive.tar.gz` on its own, and what a pause leaves.
 
 A window refuses to open, saying why, on a PC whose WebView2 Runtime is older than
 144.0.3719.77, the Runtime of the WebView2 SDK the Windows App SDK 2.5.1 brings, 1.0.3719.77
@@ -3771,6 +3796,18 @@ Microsoft's documentation.
   `EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}`, per machine and per user,
   and has an app feature-detect what a Runtime older than its SDK may lack. `WebSessionTests`
   and `ProfileTests` hold these on the runners.
+- Chromium 155.0.8059.87, read on 16 October 2026: a download whose name is taken is
+  numbered by `CreateUniqueFilename` (`download_path_reservation_tracker.cc`), which puts
+  ` (1)` before `FilePath::Extension`, and that keeps a second extension of one to four
+  characters before `bz`, `bz2`, `gz`, `lz`, `lzma`, `lzo`, `xz`, `z` or `zst`, takes
+  `user.js` whole, and lets an extension hold a space (`base/files/file_path.cc`). A
+  download not yet named is written into a temporary file in the download manager's
+  default folder (`base_file.cc`, `in_progress_download_manager.cc`). So
+  `download_destination` splits a name that way on Windows, and `WebEnvironment` sets each
+  profile's download folder. `CoreWebView2DownloadOperation`'s reference (updated 12
+  October 2026) has `Pause` leave a download interrupted, its reason `UserCanceled`, and
+  `CanResume` say whether an interrupted one can resume, so `Downloads` ends one in the
+  model only once it cannot. `DownloadTests` print what the runners' WebView2 does.
 
 ### The model's timers
 
