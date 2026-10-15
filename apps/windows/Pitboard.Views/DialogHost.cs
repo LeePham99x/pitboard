@@ -4,17 +4,19 @@ using Pitboard.Core;
 
 namespace Pitboard.Views;
 
-// One ContentDialog shows per thread at a time, so each of the window's dialogs waits for the one before it.
+// One ContentDialog shows per thread at a time, so each dialog of any of the thread's windows waits for the one before
+// it.
 public sealed class DialogHost(Func<XamlRoot?> root)
 {
-    private Task _turn = Task.CompletedTask;
+    [ThreadStatic]
+    private static Task? _turn;
 
     public ContentDialog? Open { get; private set; }
 
     // Null when the dialog never showed: withdrawn before its turn, or no window to show it in.
     public async Task<ContentDialogResult?> Show(ContentDialog dialog, CancellationToken withdrawn = default)
     {
-        var before = _turn;
+        var before = _turn ?? Task.CompletedTask;
         var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _turn = done.Task;
         try

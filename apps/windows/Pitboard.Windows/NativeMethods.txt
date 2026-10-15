@@ -26,3 +26,4 @@ RegisterWindowMessage
 LoadIconMetric
 SetForegroundWindow
 GetForegroundWindow
+GetDpiForWindow

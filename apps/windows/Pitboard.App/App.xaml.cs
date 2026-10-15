@@ -23,6 +23,7 @@ public partial class App : Application
     private NotifyIcon? _icon;
     private MenuHost? _menu;
     private MainWindow? _window;
+    private AccountWindows? _accountWindows;
 
     public App(AppStart start, Handovers handovers)
     {
@@ -55,6 +56,8 @@ public partial class App : Application
         _hidden = new HiddenWindow(sessionEnding: EndSession, closing: Quit, icon: OnIcon, taskbarCreated: () => _icon?.Readd());
         _icon = new NotifyIcon(new ShellNotificationArea(), _hidden.Handle, Shell.AppIcon(), _start.Identity.IconGuid);
         _icon.Show(model.MenuBar.Spoken);
+        _accountWindows = new AccountWindows(model, Web(), _hidden.Handle);
+        _accountWindows.Follow(model.AccountWindows);
         PowerManager.SystemSuspendStatusChanged += OnSuspendStatusChanged;
         Follow(model.WindowRequest);
         // A click arrives on a thread of COM's; the model takes a message from any.
@@ -109,6 +112,18 @@ public partial class App : Application
                 launch, listener, new NoOtherApps(), notifications, new WindowsLocalTime()));
     }
 
+    // A fixture's windows show its stand-in pages, in a user data folder of the fixture's own.
+    private WebEnvironment Web()
+    {
+#if DEBUG
+        if (_start.Fixture is not null)
+        {
+            return WebEnvironment.Fixture(_start.DataFolder);
+        }
+#endif
+        return WebEnvironment.Live(_start.DataFolder, devTools: _start.Identity.Build is Build.Debug);
+    }
+
     private void OnModelChanged(object? sender, PropertyChangedEventArgs args)
     {
         if (_model is null)
@@ -123,6 +138,9 @@ public partial class App : Application
                 break;
             case nameof(AppModel.MenuBar):
                 _icon?.Show(_model.MenuBar.Spoken);
+                break;
+            case nameof(AppModel.AccountWindows):
+                _accountWindows?.Follow(_model.AccountWindows);
                 break;
         }
     }
@@ -160,6 +178,9 @@ public partial class App : Application
                 break;
             case IconCommand.OpenLink link:
                 _ = Launcher.LaunchUriAsync(new Uri(link.Url));
+                break;
+            case IconCommand.OpenWindow open:
+                _accountWindows?.Open(open.Window);
                 break;
             case IconCommand.ShowSettings:
                 ShowWindow();
@@ -206,7 +227,7 @@ public partial class App : Application
 
         if (_window is null)
         {
-            var window = new MainWindow(_model, _startAtSignIn, _updates, _version);
+            var window = new MainWindow(_model, _startAtSignIn, _updates, _version, account => _accountWindows?.Open(account));
             window.Closed += (_, _) => _window = null;
             _window = window;
         }

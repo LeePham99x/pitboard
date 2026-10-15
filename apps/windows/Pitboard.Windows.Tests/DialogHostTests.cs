@@ -47,4 +47,26 @@ public sealed class DialogHostTests
         Assert.AreEqual(ContentDialogResult.None, await firstShown);
         Assert.AreEqual(ContentDialogResult.None, await secondShown);
     }
+
+    // An account window's question waits for a sheet over the main window, and the other way round.
+    [UITestMethod]
+    public async Task EachWindowsDialogsWaitForTheOthers()
+    {
+        var content = await Views.Shown(new Grid());
+        var main = new DialogHost(() => content.XamlRoot);
+        var account = new DialogHost(() => content.XamlRoot);
+        var first = new ContentDialog { Title = "first", CloseButtonText = "OK" };
+        var second = new ContentDialog { Title = "second", CloseButtonText = "OK" };
+
+        var firstShown = main.Show(first);
+        var secondShown = account.Show(second);
+        await Views.Until(() => main.Open == first, "the first dialog did not show");
+        Assert.IsNull(account.Open, "the second dialog showed over the first");
+        first.Hide();
+        await Views.Until(() => account.Open == second, "the second dialog did not follow the first");
+        second.Hide();
+
+        Assert.AreEqual(ContentDialogResult.None, await firstShown);
+        Assert.AreEqual(ContentDialogResult.None, await secondShown);
+    }
 }

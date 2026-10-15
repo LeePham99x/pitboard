@@ -20,7 +20,7 @@ public sealed partial class MainWindow : Window
     private WindowAlerts? _alerts;
     private WindowSheets? _sheets;
 
-    public MainWindow(AppModel model, StartAtSignIn startAtSignIn, IUpdates updates, string version)
+    public MainWindow(AppModel model, StartAtSignIn startAtSignIn, IUpdates updates, string version, Action<WindowAccount> openWindow)
     {
         _model = model;
         InitializeComponent();
@@ -30,7 +30,7 @@ public sealed partial class MainWindow : Window
         // WinUI's window class carries no icon, and only an installed build's shortcut gives the taskbar one.
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, WindowsNotifications.IconFile));
         _dialogs = new DialogHost(() => Navigation.XamlRoot);
-        _accounts = new AccountsPane(model, _dialogs);
+        _accounts = new AccountsPane(model, _dialogs, openWindow: openWindow);
         _activity = new ActivityPane(model);
         _machine = new MachinePane(model);
         _settings = new SettingsPane(model, startAtSignIn, updates, version);
