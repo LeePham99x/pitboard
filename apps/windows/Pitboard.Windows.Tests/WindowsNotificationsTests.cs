@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using Microsoft.Windows.AppNotifications;
@@ -19,6 +20,8 @@ public sealed class WindowsNotificationsTests
         Id: "warm-failed/warm_up_not_started/`personal` was not warmed up: the request was answered, and Anthropic still has no period running.",
         Title: "Pitboard could not warm up an account", Subtitle: null,
         Body: "`personal` was not warmed up: the request was answered, and Anthropic still has no period running.", SwitchTo: null);
+
+    private static readonly TimeSpan Patience = TimeSpan.FromSeconds(30);
 
     private static XElement Toast(RunOutNotice notice) => XElement.Parse(WindowsNotifications.Notification(notice).Payload);
 
@@ -162,6 +165,30 @@ public sealed class WindowsNotificationsTests
         Assert.AreEqual("Access is denied.", notifications.Off);
     }
 
+    // ModelTests.ARunOutIsPostedThroughTheAppsNotifications, through to what Windows is asked to show.
+    [TestMethod]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
+    public void AFixturesRunOutIsShownWithItsSwitchButton()
+    {
+        var folder = Directory.CreateTempSubdirectory("pitboard-notifications-").FullName;
+        var system = new StandInNotifications();
+        var notifications = new WindowsNotifications(Build.Release, () => system, Icon);
+        notifications.Start(_ => Assert.Fail("a click"));
+        var told = new Told();
+        using var model = PitboardModel.FixtureIn("oneTool", folder, told, new NoOtherApps(), notifications, new WindowsLocalTime());
+
+        model.Send(new Intent.Start());
+        Assert.IsNotNull(told.Until(snapshot => snapshot is { Reading: false, UpdatedAt: not null, Status.Accounts.Length: > 0 }), "no accounts were read");
+        model.Send(new Intent.SwitchTo("claude/personal"));
+        var shown = system.Shown.TryTake(out var notification, Patience);
+        model.Shutdown();
+
+        Assert.IsTrue(shown, "nothing was shown");
+        var toast = XElement.Parse(notification!.Payload);
+        Assert.AreEqual("personal has no 5-hour limit left", toast.Descendants("text").First().Value);
+        Assert.AreEqual("switch=claude/work", (string?)toast.Descendants("action").Single().Attribute("arguments"));
+    }
+
     // As the Windows App SDK 2.5.1 reads AppNotificationActivatedEventArgs.Arguments: pairs split at ';', each at its
     // first '=', then %25, %3B and %3D decoded.
     private static Dictionary<string, string> Decoded(string arguments)
@@ -177,6 +204,26 @@ public sealed class WindowsNotificationsTests
         }
 
         return decoded;
+    }
+
+    private sealed class Told : ModelListener
+    {
+        private readonly BlockingCollection<Snapshot> _told = [];
+
+        public void Changed(Snapshot snapshot) => _told.Add(snapshot);
+
+        public Snapshot? Until(Func<Snapshot, bool> done)
+        {
+            while (_told.TryTake(out var snapshot, Patience))
+            {
+                if (done(snapshot))
+                {
+                    return snapshot;
+                }
+            }
+
+            return null;
+        }
     }
 
     private sealed class StandInNotifications : IAppNotifications
@@ -220,7 +267,14 @@ public sealed class WindowsNotificationsTests
             return Launched;
         }
 
-        public void Show(AppNotification notification) => Asked.Add($"show {notification.Tag}");
+        // Shown on the model's thread.
+        public BlockingCollection<AppNotification> Shown { get; } = [];
+
+        public void Show(AppNotification notification)
+        {
+            Asked.Add($"show {notification.Tag}");
+            Shown.Add(notification);
+        }
 
         public void Unregister() => Asked.Add("unregister");
 
