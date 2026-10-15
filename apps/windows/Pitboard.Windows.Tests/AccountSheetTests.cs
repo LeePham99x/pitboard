@@ -55,6 +55,22 @@ public sealed class AccountSheetTests
         await Views.Until(() => up.Model.Sent.Contains(new Intent.Rename("claude", "personal", "home")), "no rename to home");
     }
 
+    [UITestMethod]
+    public async Task SigningInAgainShowsTheAccountInPlaceOfAName()
+    {
+        await using var up = await Up.Over(Snapshots.Read(1) with
+        {
+            Sheet = new Sheet.SignInAgain("claude", "work"),
+            SheetText = Items.AddAccount() with { Title = "Sign In to work Again", Account = "work" },
+        });
+        Assert.IsFalse(up.Visible("sheet.name"), "a name field for an account that has one");
+        Assert.IsTrue(Views.Visible<TextBox>(up.Sheet).Any(field => field.Text == "work"), "the account it signs in to");
+
+        Views.Press(up.Part("PrimaryButton"));
+
+        await Views.Until(() => up.Model.Sent.Contains(new Intent.SignIn("claude", "work")), "no sign-in as work");
+    }
+
     // Saying what went wrong where the name typed is still there to correct.
     [UITestMethod]
     public async Task AFailureIsSaidInTheSheetWithTheNameStillInIt()
