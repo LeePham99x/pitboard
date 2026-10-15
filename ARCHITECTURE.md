@@ -649,8 +649,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
   - `Pitboard.Windows.Tests` is a WinUI app that hosts its own tests, the views' among them
     over snapshots made in C#, and `Pitboard.UITests` drives the built app with FlaUI.
     Neither registers anything with Windows, but for the notification-area icon of its own
-    that `NotificationAreaTests` adds and removes by a GUID, which the runner's Explorer
-    remembers for its job user.
+    that `NotificationAreaTests` adds and removes by a GUID wherever Explorer takes the
+    user's icons, which no runner does.
   - `Pitboard.Probe` is never shipped. The session machine runs it to measure the app's
     adapters by hand: it posts a notification through `WindowsNotifications` under an
     AppUserModelID of its own, waits for its Switch, unregisters, and names a process's
@@ -2093,6 +2093,10 @@ Accounts and tokens:
   the workspace. This is how CI runs every Windows test, through
   `.github/scripts/test-as-standard-user.ps1`.
 - That user's programs run in the job user's session, 2, and start inside a job already.
+- Explorer, the job user's, takes no notification-area icon of that user's: `NIM_ADD` fails
+  for an icon named by its window and id and for one named by a GUID (CI run 38753437460).
+  So the UI tests that click Pitboard's icon, `NotificationAreaTests` and `MenuBarTests`, run
+  only where Explorer takes it, and the session's step A2 clicks it.
 - Developer Mode is on, and that user makes file and directory symbolic links as it is. It
   makes them with the symbolic-link right granted too, but Developer Mode was on for that run
   as well, so the right alone is not measured.
@@ -2332,10 +2336,10 @@ on 15 October 2026. W27 reviews the list.
 | Since winget 1.29, an MSI wins over a portable installer whatever the manifest's order | [winget-cli 1.29.380](https://github.com/microsoft/winget-cli/releases/tag/v1.29.380) | windows-2025's winget is 1.11.510, and no runner installs from winget's sources. |
 | A broadcast, such as `WM_ENDSESSION`, reaches a top-level window that is never shown, and no message-only window | [Message-only windows](https://learn.microsoft.com/en-us/windows/win32/winmsg/window-features#message-only-windows) | A runner's session never ends while a job runs; CF9 sends one. |
 | A second instance redirects its launch off the STA thread, which waits without blocking COM | [App instancing](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/applifecycle/applifecycle-instancing) | No test starts a second copy until APP-12's links. |
-| A new notification-area icon goes to the overflow, where only the person promotes it | [Notifications and the notification area](https://learn.microsoft.com/en-us/windows/win32/shell/notification-area) | `NotificationAreaTests` finds the icon wherever it is; the session's step A2 records where it starts. |
+| A new notification-area icon goes to the overflow, where only the person promotes it | [Notifications and the notification area](https://learn.microsoft.com/en-us/windows/win32/shell/notification-area) | No runner's Explorer takes the test user's icon; the session's step A2 records where it starts. |
 | A notification icon's menu closes on a click elsewhere only when its window was made the foreground window first | [TrackPopupMenu](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-trackpopupmenu) | Only a person clicks elsewhere: the session's step A2. |
 | A GUID icon is tied to the path of the exe that added it, unless both are signed by one company | [NOTIFYICONDATAW](https://learn.microsoft.com/en-us/windows/win32/api/shellapi/ns-shellapi-notifyicondataw) | No Release build runs from two paths on a runner; the 1.0 session's P4 upgrades one. |
-| A MenuFlyout with `ShouldConstrainToRootBounds` false draws whole outside the window it opens from | [ShouldConstrainToRootBounds](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.controls.primitives.flyoutbase.shouldconstraintorootbounds) | `NotificationAreaTests` opens the menu but cannot see how it is drawn; the session's step A2 looks at it. |
+| A MenuFlyout with `ShouldConstrainToRootBounds` false draws whole outside the window it opens from | [ShouldConstrainToRootBounds](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.controls.primitives.flyoutbase.shouldconstraintorootbounds) | No runner opens the menu from the icon; the session's step A2 opens it and looks at it. |
 | A `Run` value under HKCU starts its program as that person signs in, with no promise how soon | [Run and RunOnce registry keys](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys) | No runner signs in again, and no test writes the `Run` key; the session's step A6 signs in with it on. |
 | Settings > Apps > Startup lists a program a `Run` value starts and turns it off | [Configure startup applications in Windows](https://support.microsoft.com/en-us/windows/configure-startup-applications-in-windows-115a420a-0bff-4a6f-90e0-1934c844e473) | Only a person uses that page: the session's step A6 turns Pitboard off there and records what the app's switch then shows. |
 | A self-contained unpackaged app registers for app notifications without the Singleton package | [Deploy self-contained apps](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/self-contained-deploy/deploy-self-contained-apps#dependencies-on-additional-msix-packages) | No runner runs a Release build that registers; the session posts through the app at its step 8 and through `Pitboard.Probe` at its step A5. |

@@ -1,22 +1,15 @@
-using System.Runtime.InteropServices;
 using FlaUI.Core.Input;
 using FlaUI.Core.Tools;
 using FlaUI.Core.WindowsAPI;
 
 namespace Pitboard.UITests;
 
-// CF3: the fresh standard user's icon reaches the job user's Explorer, and Explorer's clicks reach Pitboard.
+// CF3: the fresh standard user's icon reaches Explorer, and Explorer's clicks reach Pitboard.
 [TestClass]
 [Elevated(ConditionMode.Exclude)]
-public sealed partial class NotificationAreaTests
+[ExplorerTakesIcons]
+public sealed class NotificationAreaTests
 {
-    private const uint NimAdd = 0;
-    private const uint NimDelete = 2;
-    private const uint NimSetVersion = 4;
-    private const uint NifTip = 0x04;
-    private const uint NifGuid = 0x20;
-    private const uint NifShowTip = 0x80;
-
     // Not the Release build's, whose GUID Explorer would then tie to this test's path.
     private static readonly Guid TestIcon = new("e05d7be5-9ae7-44dd-b273-01ba52314037");
 
@@ -25,26 +18,26 @@ public sealed partial class NotificationAreaTests
     [TestMethod]
     public void ThisUserAddsAnIconByAGuidAndByAWindow()
     {
-        var window = CreateWindowEx(0, "STATIC", "CF3 probe", 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        var window = NotificationArea.OwnerWindow();
         Assert.AreNotEqual(0, window, "CF3: this user could not make a window to own an icon");
         try
         {
-            var byWindow = Data(window, null);
-            var addedByWindow = ShellNotifyIcon(NimAdd, ref byWindow);
+            var byWindow = NotificationArea.Data(window, null);
+            var addedByWindow = NotificationArea.Send(NotificationArea.NimAdd, ref byWindow);
             TestContext.WriteLine($"CF3: Shell_NotifyIconW NIM_ADD by window and id: {addedByWindow}");
             if (addedByWindow)
             {
                 byWindow.Version = 4;
-                TestContext.WriteLine($"CF3: NIM_SETVERSION 4: {ShellNotifyIcon(NimSetVersion, ref byWindow)}");
-                ShellNotifyIcon(NimDelete, ref byWindow);
+                TestContext.WriteLine($"CF3: NIM_SETVERSION 4: {NotificationArea.Send(NotificationArea.NimSetVersion, ref byWindow)}");
+                NotificationArea.Send(NotificationArea.NimDelete, ref byWindow);
             }
 
-            var byGuid = Data(window, TestIcon);
-            var addedByGuid = ShellNotifyIcon(NimAdd, ref byGuid);
+            var byGuid = NotificationArea.Data(window, TestIcon);
+            var addedByGuid = NotificationArea.Send(NotificationArea.NimAdd, ref byGuid);
             TestContext.WriteLine($"CF3: Shell_NotifyIconW NIM_ADD by GUID: {addedByGuid}");
             if (addedByGuid)
             {
-                ShellNotifyIcon(NimDelete, ref byGuid);
+                NotificationArea.Send(NotificationArea.NimDelete, ref byGuid);
             }
 
             Assert.IsTrue(addedByWindow, "CF3: Explorer refused this user's icon named by its window and id");
@@ -52,7 +45,7 @@ public sealed partial class NotificationAreaTests
         }
         finally
         {
-            DestroyWindow(window);
+            NotificationArea.Close(window);
         }
     }
 
@@ -83,52 +76,4 @@ public sealed partial class NotificationAreaTests
     private static bool Opened(Launched launched) =>
         FlaUI.Core.Application.Attach(launched.Process).GetAllTopLevelWindows(launched.Automation)
             .Any(shown => shown.Title == "Pitboard");
-
-    private static unsafe NotifyIconData Data(nint window, Guid? item)
-    {
-        var data = new NotifyIconData
-        {
-            Size = (uint)sizeof(NotifyIconData),
-            Window = window,
-            Id = 1,
-            Flags = NifTip | NifShowTip | (item is null ? 0 : NifGuid),
-            Item = item ?? Guid.Empty,
-        };
-        "CF3 probe".AsSpan().CopyTo(new Span<char>(data.Tip, 128));
-        return data;
-    }
-
-    // NOTIFYICONDATAW as 64-bit Windows lays it out.
-    [StructLayout(LayoutKind.Sequential)]
-    private unsafe struct NotifyIconData
-    {
-        public uint Size;
-        public nint Window;
-        public uint Id;
-        public uint Flags;
-        public uint CallbackMessage;
-        public nint Icon;
-        public fixed char Tip[128];
-        public uint State;
-        public uint StateMask;
-        public fixed char Info[256];
-        public uint Version;
-        public fixed char InfoTitle[64];
-        public uint InfoFlags;
-        public Guid Item;
-        public nint BalloonIcon;
-    }
-
-    [LibraryImport("shell32.dll", EntryPoint = "Shell_NotifyIconW")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool ShellNotifyIcon(uint message, ref NotifyIconData data);
-
-    [LibraryImport("user32.dll", EntryPoint = "CreateWindowExW", StringMarshalling = StringMarshalling.Utf16)]
-    private static partial nint CreateWindowEx(
-        uint extendedStyle, string className, string name, uint style, int x, int y, int width, int height,
-        nint parent, nint menu, nint instance, nint parameter);
-
-    [LibraryImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool DestroyWindow(nint window);
 }

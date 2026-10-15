@@ -11,9 +11,39 @@ namespace Pitboard.UITests;
 // overflow its chevron opens, where Windows puts a new icon.
 internal static partial class NotificationArea
 {
+    public const uint NimAdd = 0;
+    public const uint NimDelete = 2;
+    public const uint NimSetVersion = 4;
+    private const uint NifTip = 0x04;
+    private const uint NifGuid = 0x20;
+    private const uint NifShowTip = 0x80;
+
     private static readonly string[] Overflows = ["TopLevelWindowForOverflowXamlIsland", "NotifyIconOverflowWindow"];
 
     private static readonly TimeSpan Shortly = TimeSpan.FromSeconds(10);
+
+    private static readonly Lazy<bool> Taken = new(() =>
+    {
+        var window = OwnerWindow();
+        try
+        {
+            var icon = Data(window, null);
+            var added = Send(NimAdd, ref icon);
+            if (added)
+            {
+                Send(NimDelete, ref icon);
+            }
+
+            return added;
+        }
+        finally
+        {
+            Close(window);
+        }
+    });
+
+    // Whether Explorer takes an icon of this user's, named by its window and id as the Debug build names its own.
+    public static bool TakesIcons => Taken.Value;
 
     public static AutomationElement? Taskbar(UIA3Automation automation) =>
         automation.GetDesktop().FindFirstChild(found => found.ByClassName("Shell_TrayWnd"));
@@ -69,6 +99,60 @@ internal static partial class NotificationArea
             }
         }
     }
+
+    public static nint OwnerWindow() => CreateWindowEx(0, "STATIC", "CF3 probe", 0, 0, 0, 0, 0, 0, 0, 0, 0);
+
+    public static void Close(nint window) => DestroyWindow(window);
+
+    public static unsafe IconData Data(nint window, Guid? item)
+    {
+        var data = new IconData
+        {
+            Size = (uint)sizeof(IconData),
+            Window = window,
+            Id = 1,
+            Flags = NifTip | NifShowTip | (item is null ? 0 : NifGuid),
+            Item = item ?? Guid.Empty,
+        };
+        "CF3 probe".AsSpan().CopyTo(new Span<char>(data.Tip, 128));
+        return data;
+    }
+
+    public static bool Send(uint message, ref IconData data) => ShellNotifyIcon(message, ref data);
+
+    // NOTIFYICONDATAW as 64-bit Windows lays it out.
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct IconData
+    {
+        public uint Size;
+        public nint Window;
+        public uint Id;
+        public uint Flags;
+        public uint CallbackMessage;
+        public nint Icon;
+        public fixed char Tip[128];
+        public uint State;
+        public uint StateMask;
+        public fixed char Info[256];
+        public uint Version;
+        public fixed char InfoTitle[64];
+        public uint InfoFlags;
+        public Guid Item;
+        public nint BalloonIcon;
+    }
+
+    [LibraryImport("shell32.dll", EntryPoint = "Shell_NotifyIconW")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool ShellNotifyIcon(uint message, ref IconData data);
+
+    [LibraryImport("user32.dll", EntryPoint = "CreateWindowExW", StringMarshalling = StringMarshalling.Utf16)]
+    private static partial nint CreateWindowEx(
+        uint extendedStyle, string className, string name, uint style, int x, int y, int width, int height,
+        nint parent, nint menu, nint instance, nint parameter);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool DestroyWindow(nint window);
 
     [LibraryImport("user32.dll", EntryPoint = "FindWindowExW", StringMarshalling = StringMarshalling.Utf16)]
     private static partial nint FindWindowEx(nint parent, nint after, string className, string? windowName);
