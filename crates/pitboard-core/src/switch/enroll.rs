@@ -225,10 +225,6 @@ pub(crate) fn sign_in(
     tool: &'static dyn Provider,
 ) -> Result<SignIn> {
     let (mut pending, dir) = reserve_signin(ctx, permit, tool)?;
-    if let Some(first) = running_already(ctx, tool.id()) {
-        use std::io::Write;
-        let _ = std::io::stderr().write_all(first.as_bytes());
-    }
     // Pitboard never sees the sign-in; it reads the login the tool stores once it is done.
     // What the tool prints goes to stderr, so `--json` output stays one JSON line.
     let finished = tool
@@ -247,7 +243,7 @@ pub(crate) fn sign_in(
 }
 
 // Windows alone, which is not released, so macOS and Linux say what they said before.
-fn running_already(ctx: &Context, which: ProviderId) -> Option<String> {
+pub(crate) fn running_already(ctx: &Context, which: ProviderId) -> Option<String> {
     if ctx.os != crate::host::Os::Windows || which != ProviderId::Codex {
         return None;
     }
@@ -520,6 +516,8 @@ fn watch(
         .stderr(std::process::Stdio::piped());
     let mut tool = crate::host::proc::start(command)?;
     let child = tool.child();
+    #[cfg(windows)]
+    let pid = child.id();
     let (say, said) = std::sync::mpsc::channel();
     if let Some(first) = first {
         let _ = say.send(first);
@@ -536,21 +534,10 @@ fn watch(
     {
         let say = say.clone();
         std::thread::spawn(move || {
-            use std::io::Read;
-            let mut reader: Box<dyn Read + Send> = match stream {
-                Readable::Out(o) => Box::new(o),
-                Readable::Err(e) => Box::new(e),
-            };
-            let mut buffer = [0_u8; 1024];
-            while let Ok(read) = reader.read(&mut buffer) {
-                if read == 0 {
-                    break;
-                }
-                let text = String::from_utf8_lossy(&buffer[..read]).into_owned();
-                if say.send(text).is_err() {
-                    break;
-                }
-            }
+            #[cfg(windows)]
+            pump(stream, &say, pid);
+            #[cfg(not(windows))]
+            pump(stream, &say);
         });
     }
     Ok(WatchedSignIn {
@@ -564,6 +551,82 @@ fn watch(
 enum Readable {
     Out(std::process::ChildStdout),
     Err(std::process::ChildStderr),
+}
+
+// Read the tool's output by chunk until its pipe closes.
+#[cfg(not(windows))]
+fn pump(stream: Readable, say: &std::sync::mpsc::Sender<String>) {
+    use std::io::Read;
+    let mut reader: Box<dyn Read> = match stream {
+        Readable::Out(o) => Box::new(o),
+        Readable::Err(e) => Box::new(e),
+    };
+    let mut buffer = [0_u8; 1024];
+    while let Ok(read) = reader.read(&mut buffer) {
+        if read == 0 {
+            break;
+        }
+        if say
+            .send(String::from_utf8_lossy(&buffer[..read]).into_owned())
+            .is_err()
+        {
+            break;
+        }
+    }
+}
+
+// On Windows a browser the tool opened inherits the tool's piped stdout and stderr, so the
+// pipe does not close when the tool exits and a blocking read would never return. Read what is
+// pending and stop once the tool itself is gone, whoever still holds the write end.
+#[cfg(windows)]
+fn pump(stream: Readable, say: &std::sync::mpsc::Sender<String>, pid: u32) {
+    use std::io::Read;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::System::Pipes::PeekNamedPipe;
+    let handle = match &stream {
+        Readable::Out(o) => o.as_raw_handle(),
+        Readable::Err(e) => e.as_raw_handle(),
+    };
+    let mut reader: Box<dyn Read> = match stream {
+        Readable::Out(o) => Box::new(o),
+        Readable::Err(e) => Box::new(e),
+    };
+    let mut buffer = [0_u8; 1024];
+    loop {
+        let mut available = 0u32;
+        // SAFETY: an open pipe read handle; `available` is a valid out-param, the rest unused.
+        let peeked = unsafe {
+            PeekNamedPipe(
+                handle,
+                std::ptr::null_mut(),
+                0,
+                std::ptr::null_mut(),
+                &mut available,
+                std::ptr::null_mut(),
+            )
+        };
+        if peeked == 0 {
+            break;
+        }
+        if available > 0 {
+            match reader.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(read) => {
+                    if say
+                        .send(String::from_utf8_lossy(&buffer[..read]).into_owned())
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        } else if crate::host::proc::may_be_running(pid) {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        } else {
+            break;
+        }
+    }
 }
 
 /// Enroll the account signed in to `which` now, or with `signed_in`, the one a sign-in just
@@ -1996,6 +2059,43 @@ mod tests {
         assert_eq!(
             said.within(Duration::from_secs(20)).as_deref(),
             Ok("first\n")
+        );
+        let _ = watched.finish();
+    }
+
+    // A browser a Codex sign-in opens on Windows inherits codex.exe's piped stdout and stderr,
+    // so the pipe stays open after codex exits. The watch must stop reading once codex itself
+    // is gone, or said() never ends and a finished sign-in is never enrolled.
+    #[cfg(windows)]
+    #[test]
+    fn a_sign_in_goes_quiet_when_the_tool_exits_though_its_browser_holds_the_pipes() {
+        use crate::helper::{self, Job};
+        let home = tempfile::tempdir().expect("a scratch home");
+        let ctx = Context::new(home.path().to_path_buf())
+            .with_pitboard_home(home.path().join(".pitboard"));
+        let (pending, _) = reserve_signin(
+            &ctx,
+            Permit::for_a_test(),
+            provider::document(ProviderId::Codex),
+        )
+        .expect("reserved");
+        let dir = tempfile::tempdir().expect("a scratch folder");
+        let exe = std::env::current_exe().expect("this test");
+        let browser_file = dir.path().join("browser.state");
+        let codex_file = dir.path().join("codex.state");
+        // Keeps the browser stand-in waiting while this test runs; its Drop releases it.
+        let _held = helper::hold(&browser_file);
+        let command = helper::goes(&exe, &codex_file, (&exe, Job::Waits, &browser_file));
+        let watched = watch(command, pending, None).expect("started");
+        let said = watched.said();
+        let (ended, ends) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            while said.next().is_some() {}
+            let _ = ended.send(());
+        });
+        assert!(
+            ends.recv_timeout(Duration::from_secs(20)).is_ok(),
+            "said ends once the tool exits, though the browser still holds the pipes"
         );
         let _ = watched.finish();
     }

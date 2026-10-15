@@ -49,6 +49,10 @@ pub(crate) enum Job {
     // The same, started with `CREATE_BREAKAWAY_FROM_JOB`, as Codex starts its daemons.
     #[cfg(windows)]
     StartsBreakingAway,
+    // Starts `NEXT` the way a tool starts a browser, which inherits this helper's piped
+    // stdout and stderr, then exits at once while that child stays, as Codex's browser does.
+    #[cfg(windows)]
+    StartsAndGoes,
     // Every argument after libtest's own, as JSON.
     #[cfg(windows)]
     Records,
@@ -73,6 +77,8 @@ impl Job {
             #[cfg(windows)]
             Job::StartsBreakingAway => "starts-breaking-away",
             #[cfg(windows)]
+            Job::StartsAndGoes => "starts-and-goes",
+            #[cfg(windows)]
             Job::Records => "records",
             #[cfg(windows)]
             Job::SaysItsConsole => "says-its-console",
@@ -93,6 +99,8 @@ impl Job {
             Job::Starts,
             #[cfg(windows)]
             Job::StartsBreakingAway,
+            #[cfg(windows)]
+            Job::StartsAndGoes,
             #[cfg(windows)]
             Job::Records,
             #[cfg(windows)]
@@ -184,6 +192,18 @@ pub(crate) fn starting(
         Job::Starts
     };
     let mut command = command(program, starts, file);
+    command
+        .env(NEXT[0], next)
+        .env(NEXT[1], job.code())
+        .env(NEXT[2], next_file);
+    command
+}
+
+// Starts `next` the way a browser is started, then exits at once while that child stays.
+#[cfg(windows)]
+pub(crate) fn goes(program: &Path, file: &Path, next: (&Path, Job, &Path)) -> Command {
+    let (next, job, next_file) = next;
+    let mut command = command(program, Job::StartsAndGoes, file);
     command
         .env(NEXT[0], next)
         .env(NEXT[1], job.code())
@@ -387,7 +407,7 @@ mod tests {
                 String::new()
             }
             #[cfg(windows)]
-            Job::Starts | Job::StartsBreakingAway => {
+            Job::Starts | Job::StartsBreakingAway | Job::StartsAndGoes => {
                 use std::os::windows::process::CommandExt;
                 let [next, next_job, next_file] = NEXT.map(|name| {
                     std::env::var_os(name).unwrap_or_else(|| panic!("{name} names the next"))
@@ -395,6 +415,8 @@ mod tests {
                 let next_job =
                     Job::named(&next_job.to_string_lossy()).expect("a job this helper knows");
                 let mut next = command(Path::new(&next), next_job, Path::new(&next_file));
+                // Null stdio for the child, as webbrowser gives the browser, but std still sets
+                // bInheritHandles, so the child inherits this helper's piped stdout and stderr.
                 next.stdin(Stdio::null())
                     .stdout(Stdio::null())
                     .stderr(Stdio::null());
@@ -404,6 +426,8 @@ mod tests {
                     );
                 }
                 match next.spawn() {
+                    // StartsAndGoes exits at once, the child holding the pipes; the others wait.
+                    Ok(_) if job == Job::StartsAndGoes => {}
                     Ok(_) => waits(&file),
                     Err(e) => write_whole(&file, &format!("refused {e}")),
                 }
