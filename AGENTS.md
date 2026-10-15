@@ -116,8 +116,11 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
 - Never weaken or get around the release gate in a build anybody installs. No release,
   script or package passes `--cfg pitboard_unreleased_windows`, `test-support` or
   `fixture`.
-- Tests never write the registry, the user `PATH` or a Task Scheduler task, never touch DPAPI
-  keys, and never run elevated on a machine that holds logins. They may read the registry.
+- Tests never write the registry, the user `PATH` or a Task Scheduler task, and never run
+  elevated on a machine that holds logins. They may read the registry.
+- A test seals and unseals only with `CryptProtectData` and `CryptUnprotectData` under the
+  running user's own key, never with `CRYPTPROTECT_LOCAL_MACHINE`, and never backs up, exports
+  or deletes a master key. Every Windows test that parks a login seals it.
 - Never weaken a machine that holds real logins to make a test pass: no Defender exclusion,
   no UAC change, no access change to a real profile, and no Developer Mode or symbolic-link
   right for the tests' links. Those are for CI's runners and a machine kept for testing.

@@ -110,12 +110,27 @@ pub struct MemoryHost {
 
 impl Default for MemoryHost {
     fn default() -> MemoryHost {
+        MemoryHost::parking_in(Backend::Keychain, true)
+    }
+}
+
+impl MemoryHost {
+    pub fn new() -> Arc<MemoryHost> {
+        Arc::new(MemoryHost::default())
+    }
+
+    // Parking as Windows does: in files sealed to the account, inside this home alone.
+    pub fn sealed() -> Arc<MemoryHost> {
+        Arc::new(MemoryHost::parking_in(Backend::SealedFile, false))
+    }
+
+    fn parking_in(vault: Backend, shared: bool) -> MemoryHost {
         let refuse_start = Arc::new(AtomicBool::new(false));
         let trail = Arc::default();
         MemoryHost {
             // Keychain, because that is the chain the interesting rules are written for.
             keychain: MemoryStore::on_trail(Backend::Keychain, "live".into(), Arc::clone(&trail)),
-            vault: MemoryStore::on_trail(Backend::Keychain, "vault".into(), Arc::clone(&trail)),
+            vault: MemoryStore::on_trail(vault, "vault".into(), Arc::clone(&trail)),
             files: Mutex::new(HashMap::new()),
             trail,
             running: Mutex::new(HashMap::new()),
@@ -126,7 +141,7 @@ impl Default for MemoryHost {
             jars_asked: Mutex::new(Vec::new()),
             jar_faults: Mutex::new(HashMap::new()),
             versions: Mutex::new(HashMap::new()),
-            shared_vault: AtomicBool::new(true),
+            shared_vault: AtomicBool::new(shared),
             scheduler: super::os::pretend_scheduler(Arc::clone(&refuse_start)),
             refuse_start,
             unscheduled: AtomicBool::new(false),
@@ -136,12 +151,6 @@ impl Default for MemoryHost {
             forced: Mutex::new(HashMap::new()),
             policies: Mutex::new(HashMap::new()),
         }
-    }
-}
-
-impl MemoryHost {
-    pub fn new() -> Arc<MemoryHost> {
-        Arc::new(MemoryHost::default())
     }
 
     /// The keychain, where a tool that uses one keeps its live credential.

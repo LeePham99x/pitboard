@@ -8,8 +8,8 @@ mod file;
 pub(crate) mod folder;
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) mod memory;
-// Only Linux parks in files: macOS parks in the login keychain, and Windows nowhere yet.
-#[cfg(any(target_os = "linux", test))]
+// macOS parks in the login keychain; Linux in files, and Windows in files sealed to the account.
+#[cfg(any(target_os = "linux", windows, test))]
 pub(crate) mod vault;
 
 pub(crate) use file::PlainFile;
@@ -20,17 +20,17 @@ use crate::service::Permit;
 use serde_json::Value;
 use std::path::PathBuf;
 
-/// Where a credential lives. `Keychain` occurs only where the machine has one: its host
-/// offers no other, so callers need no checks of their own.
+// `Keychain` occurs only where the machine has one, so callers need no checks of their own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Backend {
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Keychain,
     File,
+    // Files only this Windows account can open: Pitboard's parks there.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    SealedFile,
     Absent,
-    /// A store nobody can say anything of yet, since the part of Pitboard that would read it
-    /// is not written: on Windows, until each of its stores is. Kept, with its code, once
-    /// they are.
+    // A store whose reader is not written yet: on Windows, until each of its stores is.
     Unknown,
 }
 
@@ -39,6 +39,7 @@ impl Backend {
         match self {
             Backend::Keychain => "keychain",
             Backend::File => "file",
+            Backend::SealedFile => "sealed_file",
             Backend::Absent => "absent",
             Backend::Unknown => "unknown",
         }

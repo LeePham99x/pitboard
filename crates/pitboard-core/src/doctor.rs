@@ -1055,7 +1055,8 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
                 ),
             }
         }
-        Ok(store::Backend::Unknown) => fail(
+        // No tool keeps its login in Pitboard's sealed files.
+        Ok(store::Backend::Unknown | store::Backend::SealedFile) => fail(
             "credential_store",
             "credential store",
             "a store Pitboard does not read yet",

@@ -406,13 +406,16 @@ mod tests {
     }
 
     fn machine(name: &str) -> (Context, Arc<MemoryHost>, PathBuf) {
+        machine_on(MemoryHost::new(), name)
+    }
+
+    fn machine_on(mem: Arc<MemoryHost>, name: &str) -> (Context, Arc<MemoryHost>, PathBuf) {
         let root = std::env::temp_dir().join(format!(
             "pitboard-pending-{name}-{}-{:?}",
             std::process::id(),
             std::thread::current().id()
         ));
         let _ = std::fs::remove_dir_all(&root);
-        let mem = MemoryHost::new();
         let ctx = Context::new(root.clone())
             .with_pitboard_home(root.clone())
             .with_memory_stores(Arc::clone(&mem))
@@ -765,6 +768,45 @@ mod tests {
         );
         assert_eq!(outstanding(&ctx, None), vec![service.to_string()]);
         assert!(state.discarded.is_empty(), "nothing is deleted on a guess");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    // Windows' vault is this home's alone, and a park there that will not open is still kept.
+    #[test]
+    fn a_sealed_park_that_will_not_open_is_never_deleted() {
+        let (ctx, mem, root) = machine_on(MemoryHost::sealed(), "sealed-unopened");
+        assert_eq!(ctx.host().vault(&ctx).kind(), store::Backend::SealedFile);
+        assert!(!store::vault_is_shared(&ctx));
+        let ours = "pitboard-park-acc-1760000000000";
+        let stranger = "pitboard-park-other-1760000000001";
+        reserve(&ctx, Permit::for_a_test(), ours).expect("written down");
+        for service in [ours, stranger] {
+            mem.vault().plant(service, &oauth("r").to_string());
+            mem.vault().fault(
+                service,
+                store::memory::Fault::Unreadable("it does not open for this account".into()),
+            );
+        }
+        let mut state = State::default();
+        state.accounts.push(account("work", "acc"));
+        state.accounts.push(account("other", "other"));
+
+        let reclaimed = reclaim(&ctx, Permit::for_a_test(), &mut state).expect("reclaimed");
+        assert_eq!(reclaimed.unreadable, [ours, stranger]);
+        assert!(reclaimed.deleted.is_empty() && reclaimed.given_back.is_empty());
+        assert_eq!(park::purge(&ctx, Permit::for_a_test(), &mut state), 0);
+        assert!(state.discarded.is_empty());
+        assert_eq!(
+            outstanding(&ctx, Some(&state)),
+            [ours],
+            "asked again next time"
+        );
+        for service in [ours, stranger] {
+            assert!(
+                mem.vault().peek(service).is_some(),
+                "{service} is still there"
+            );
+        }
         let _ = std::fs::remove_dir_all(root);
     }
 

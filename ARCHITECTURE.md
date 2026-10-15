@@ -102,27 +102,28 @@ window loads its site, and whatever the site's pages load, as a browser would.
     `windows/`. Linux and Windows refuse Claude Desktop's data folder before anything else
     is asked, so neither reads a cookie jar, and Linux lists no process with its parent.
     `windows/` is the face that refuses whatever of Windows is not built yet: no store of
-    secrets, a vault of `store::Backend::Unknown` whose every call cannot be read, no
-    scheduler, and none of the four calls that move Claude Desktop's data folder. It lists
-    processes from a Toolhelp snapshot, for their parents, and keeps this account's in any
-    session: whose each is, WTS says without opening it, a process in another user's session
-    is passed over unopened, and the rest's tokens are read (`owner.rs`). A program whose
-    owner or path does not read makes `processes` unknown, since it may be any kind of
-    holder. It finds programs as a Windows shell does, an app execution alias in a
-    `WindowsApps` folder by its reparse tag, and reads the `Path` a program started now is
-    given from the registry, the machine's and then the person's, which a build for tests
-    reads in its own test alone. It starts a sign-in's tool suspended, puts it in a job of
-    its own that lets a program break away, as Codex starts its daemons, then resumes it,
-    so nothing it starts is outside the job (`windows/job.rs`). A cancel, and a sign-in let
-    go of unfinished, end the job's `cmd.exe`, `conhost.exe`, `node.exe`, `claude.exe` and
-    `codex.exe` and nothing else, so a browser the sign-in opened keeps running. Started by
-    a Pitboard with no console, a tool gets no console window either. It also reads this
-    process's token, through windows-sys (`windows/user.rs`), which `token.rs` makes an
-    `Elevation` of and whose `TokenUser` is the person's SID, the account's own folders
-    (`GetUserProfileDirectoryW`, `FOLDERID_Profile`, `FOLDERID_LocalAppData` and the profile
-    type), which a build for tests answers nothing from, and the build `RtlGetVersion` gives,
-    which `host::windows_floor` holds against 26100, the build of Windows 11 24H2 and
-    Windows Server 2025. `windows/fs.rs` makes each private file and folder with a security
+    secrets, no scheduler, and none of the four calls that move Claude Desktop's data
+    folder. It seals each park with DPAPI under the person's own key (`windows/seal.rs`).
+    It lists processes from a Toolhelp snapshot, for their parents, and keeps this
+    account's in any session: whose each is, WTS says without opening it, a process in
+    another user's session is passed over unopened, and the rest's tokens are read
+    (`owner.rs`). A program whose owner or path does not read makes `processes` unknown,
+    since it may be any kind of holder. It finds programs as a Windows shell does, an app
+    execution alias in a `WindowsApps` folder by its reparse tag, and reads the `Path` a
+    program started now is given from the registry, the machine's and then the person's,
+    which a build for tests reads in its own test alone. It starts a sign-in's tool
+    suspended, puts it in a job of its own that lets a program break away, as Codex starts
+    its daemons, then resumes it, so nothing it starts is outside the job
+    (`windows/job.rs`). A cancel, and a sign-in let go of unfinished, end the job's
+    `cmd.exe`, `conhost.exe`, `node.exe`, `claude.exe` and `codex.exe` and nothing else, so
+    a browser the sign-in opened keeps running. Started by a Pitboard with no console, a
+    tool gets no console window either. It also reads this process's token, through
+    windows-sys (`windows/user.rs`), which `token.rs` makes an `Elevation` of and whose
+    `TokenUser` is the person's SID, the account's own folders (`GetUserProfileDirectoryW`,
+    `FOLDERID_Profile`, `FOLDERID_LocalAppData` and the profile type), which a build for
+    tests answers nothing from, and the build `RtlGetVersion` gives, which
+    `host::windows_floor` holds against 26100, the build of Windows 11 24H2 and Windows
+    Server 2025. `windows/fs.rs` makes each private file and folder with a security
     descriptor from SDDL: owned by the person's SID, with a protected access list granting
     the person, SYSTEM and Administrators alone, which a folder passes on to what is made in
     it. A folder already there keeps its own list. `fs::access` reads a path's list, and
@@ -162,11 +163,14 @@ window loads its site, and whatever the site's pages load, as a browser would.
   - `store/`: reading and writing logins, whichever store holds them: the chain rules, a
     file, the vault of files, the folders under `parks` and the stores in memory the tests
     use. On macOS, a parked Claude Code or Codex login is a keychain item. On Linux, it is a
-    file in the vault. A parked Claude Desktop login is Claude's own files, in a folder of
-    its own under `<pitboard home>/parks` with its manifest, its keys and its items, beside
-    the folders Pitboard set aside. `store/folder.rs` is the only code that touches
-    `parks`. It deletes a folder that holds an item only by name, for `park::FolderParks`,
-    once the folder's account is forgotten.
+    file in the vault. On Windows, it is a file in the vault sealed to the person's account,
+    `store::Backend::SealedFile`: a versioned header, then a `CryptProtectData` blob, and
+    `host/memory.rs` plays that vault on every system (`MemoryHost::sealed`). A parked
+    Claude Desktop login is Claude's own files, in a folder of its own under
+    `<pitboard home>/parks` with its manifest, its keys and its items, beside the folders
+    Pitboard set aside. `store/folder.rs` is the only code that touches `parks`. It deletes
+    a folder that holds an item only by name, for `park::FolderParks`, once the folder's
+    account is forgotten.
   - `switch/`: every change to Pitboard's index (switching, by hand or by itself in
     `auto.rs`, enrolling, adopting, renaming, forgetting, renewing, repairing, abandoning,
     uninstalling, and putting away a login Claude Code left in a file behind the keychain in
@@ -1315,6 +1319,22 @@ window loads its site, and whatever the site's pages load, as a browser would.
 - On macOS, only `/usr/bin/security` reads or writes Claude Code's keychain item and
   Pitboard's parked items. No keychain item is touched through the Security framework. The
   reason is under [macOS](#macos) in Measured facts.
+- On Windows a parked login is sealed with DPAPI to the person's Windows account, never
+  kept in Credential Manager, the keyring crate or PasswordVault, and never read in the
+  clear. It is sealed in CurrentUser scope, never with `CRYPTPROTECT_LOCAL_MACHINE`, with no
+  UI, and with entropy binding a Pitboard constant to the park's name, so a file renamed onto
+  another park's does not open. A file that does not open, after an administrator resets the
+  person's password, on a profile restored on another PC, damaged, or planted as plain JSON,
+  is unreadable and never absent, and a write opens what it wrote and compares the login.
+  Sealing takes about 0.2 ms and opening 0.15 ms, so a `pitboard status` that renews a login
+  and seals its copy costs nothing a person sees. The seal keeps other Windows accounts out
+  and protects the file at rest. It does not protect against a program running as the
+  person, such as Codex's unelevated sandbox: Codex 0.162.1 builds its token with
+  `DISABLE_MAX_PRIVILEGE | LUA_TOKEN | WRITE_RESTRICTED`, which restricts what it writes and
+  not what it reads (`codex-rs/windows-sandbox-rs/src/token.rs`), and whether that token
+  opens a park is runner-facts row RF-D2b's, not run yet. A park copied to another PC opens
+  there only for the same person with a roaming profile, which carries the key, and
+  Pitboard's home is never in a roaming profile's roaming part.
 - Pitboard takes Claude Code's write lock, the same way Claude Code takes it, before writing
   Claude Code's login. It writes the login where it already lives. A switch takes Claude
   Code's refresh lock before that, as a renewal does (the register's `refresh_lock`), and

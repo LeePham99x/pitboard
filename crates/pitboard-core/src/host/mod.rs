@@ -67,6 +67,8 @@ use windows as os;
 
 pub(crate) use administered::{Administered, Hive};
 pub(crate) use os::{fs, proc, user};
+#[cfg(all(windows, test))]
+pub(crate) use windows::seal::Dpapi;
 
 /// The operating systems Pitboard runs on. Windows only once it is released
 /// ([`crate::release`]): until then a Windows build of a release refuses everything, and its

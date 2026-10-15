@@ -1,20 +1,44 @@
-//! Where Pitboard parks logins on a machine with no store of secrets to park them in: one
-//! private file per parked login, inside Pitboard's own private directory.
+//! One private file per parked login, in Pitboard's own private folder: as it is on Linux,
+//! and sealed to the person's account on Windows.
 
 use super::{Backend, Error, RawStore};
 use crate::atomic;
 use crate::context::Context;
 use crate::service::Permit;
+use std::borrow::Cow;
 use std::path::PathBuf;
+
+// What a sealed park starts with, then the version of what follows.
+const SEALED: &[u8] = b"pitboard-sealed";
+const VERSION: u8 = 1;
+// Followed by the park's name, so a park renamed onto another's will not open.
+const ENTROPY: &[u8] = b"pitboard-vault-1\0";
+
+// DPAPI on Windows.
+pub(crate) trait Seal: Sync {
+    fn seal(&self, entropy: &[u8], plain: &[u8]) -> std::io::Result<Vec<u8>>;
+    fn open(&self, entropy: &[u8], sealed: &[u8]) -> std::io::Result<Vec<u8>>;
+}
 
 pub(crate) struct FileVault {
     dir: PathBuf,
+    seal: Option<&'static dyn Seal>,
 }
 
 impl FileVault {
+    #[cfg(any(target_os = "linux", test))]
     pub(crate) fn new(ctx: &Context) -> FileVault {
         FileVault {
             dir: super::vault_dir(ctx),
+            seal: None,
+        }
+    }
+
+    #[cfg(any(windows, test))]
+    pub(crate) fn sealed(ctx: &Context, seal: &'static dyn Seal) -> FileVault {
+        FileVault {
+            dir: super::vault_dir(ctx),
+            seal: Some(seal),
         }
     }
 
@@ -27,6 +51,26 @@ impl FileVault {
         }
         Ok(self.dir.join(format!("{service}.json")))
     }
+}
+
+fn entropy(service: &str) -> Vec<u8> {
+    [ENTROPY, service.as_bytes()].concat()
+}
+
+// Whatever stops it opening, a park is there and unreadable, never absent.
+fn opened(seal: &dyn Seal, service: &str, sealed: &[u8]) -> Result<String, String> {
+    let Some((&version, blob)) = sealed.strip_prefix(SEALED).and_then(<[u8]>::split_first) else {
+        return Err("it is not a park Pitboard sealed".into());
+    };
+    if version != VERSION {
+        return Err(format!(
+            "it is sealed in form {version}, which this Pitboard does not read"
+        ));
+    }
+    let plain = seal
+        .open(&entropy(service), blob)
+        .map_err(|e| format!("it does not open for this account: {e}"))?;
+    String::from_utf8(plain).map_err(|_| "what it holds is not text".into())
 }
 
 // Windows opens a device for CON, NUL.json or COM1.x, and cuts trailing dots and spaces.
@@ -50,7 +94,10 @@ fn storable(service: &str) -> bool {
 
 impl RawStore for FileVault {
     fn kind(&self) -> Backend {
-        Backend::File
+        match self.seal {
+            None => Backend::File,
+            Some(_) => Backend::SealedFile,
+        }
     }
 
     fn contains(&self, service: &str) -> Result<bool, Error> {
@@ -84,21 +131,34 @@ impl RawStore for FileVault {
 
     fn read(&self, service: &str) -> Result<Option<String>, Error> {
         let path = self.path(service)?;
-        match std::fs::read_to_string(&path) {
-            Ok(s) => Ok(Some(s)),
+        let read = match self.seal {
+            None => std::fs::read_to_string(&path).map(Ok),
+            Some(seal) => std::fs::read(&path).map(|sealed| opened(seal, service, &sealed)),
+        };
+        let unreadable =
+            |why: String| Error::Unreadable(format!("cannot read {}: {why}", path.display()));
+        match read {
+            Ok(Ok(s)) => Ok(Some(s)),
+            Ok(Err(why)) => Err(unreadable(why)),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(Error::Unreadable(format!(
-                "cannot read {}: {e}",
-                path.display()
-            ))),
+            Err(e) => Err(unreadable(e.to_string())),
         }
     }
 
     fn write(&self, permit: Permit, service: &str, contents: &str) -> Result<(), Error> {
         let path = self.path(service)?;
+        let bytes = match self.seal {
+            None => Cow::Borrowed(contents.as_bytes()),
+            Some(seal) => {
+                let blob = seal
+                    .seal(&entropy(service), contents.as_bytes())
+                    .map_err(|e| Error::Write(format!("cannot seal {}: {e}", path.display())))?;
+                Cow::Owned([SEALED, &[VERSION], &blob].concat())
+            }
+        };
         crate::host::fs::create_private_dir(permit, &self.dir)
             .map_err(|e| Error::Write(e.to_string()))?;
-        atomic::write(permit, &path, contents.as_bytes(), atomic::Perms::Secret)
+        atomic::write(permit, &path, &bytes, atomic::Perms::Secret)
             .map_err(|e| Error::Write(format!("cannot write {}: {e}", path.display())))?;
         match self.read(service)? {
             Some(back) if back == contents => Ok(()),
@@ -123,6 +183,172 @@ impl RawStore for FileVault {
 mod tests {
     use super::*;
 
+    const PARK: &str = "pitboard-park-1f0e2d3c-4b5a-4968-8776-a5b4c3d2e1f0-1789935600123";
+    const LOGIN: &str = r#"{"claudeAiOauth":{"refreshToken":"r"}}"#;
+
+    #[cfg(windows)]
+    const SEAL: &dyn Seal = &crate::host::Dpapi;
+    #[cfg(not(windows))]
+    const SEAL: &dyn Seal = &StandIn;
+
+    // Off Windows: a digest of the entropy and the login, then the login turned, which a
+    // rename or a flipped byte breaks as it breaks DPAPI.
+    #[cfg(not(windows))]
+    struct StandIn;
+
+    #[cfg(not(windows))]
+    impl StandIn {
+        fn digest(entropy: &[u8], plain: &[u8]) -> Vec<u8> {
+            use sha2::{Digest, Sha256};
+            Sha256::new()
+                .chain_update(entropy)
+                .chain_update(plain)
+                .finalize()
+                .to_vec()
+        }
+    }
+
+    #[cfg(not(windows))]
+    impl Seal for StandIn {
+        fn seal(&self, entropy: &[u8], plain: &[u8]) -> std::io::Result<Vec<u8>> {
+            let turned = plain.iter().map(|b| b ^ 0x5a);
+            Ok(StandIn::digest(entropy, plain)
+                .into_iter()
+                .chain(turned)
+                .collect())
+        }
+
+        fn open(&self, entropy: &[u8], sealed: &[u8]) -> std::io::Result<Vec<u8>> {
+            let bad = || std::io::Error::from(std::io::ErrorKind::InvalidData);
+            let (digest, turned) = sealed.split_at_checked(32).ok_or_else(bad)?;
+            let plain: Vec<u8> = turned.iter().map(|b| b ^ 0x5a).collect();
+            (StandIn::digest(entropy, &plain) == digest)
+                .then_some(plain)
+                .ok_or_else(bad)
+        }
+    }
+
+    fn sealed_vault() -> (FileVault, tempfile::TempDir) {
+        let scratch = tempfile::tempdir().expect("a scratch home");
+        let ctx = Context::new(scratch.path().to_path_buf())
+            .with_pitboard_home(scratch.path().join("pitboard"));
+        (FileVault::sealed(&ctx, SEAL), scratch)
+    }
+
+    // Never absent and never a login, and still there to a look.
+    fn unopened(vault: &FileVault, service: &str) {
+        match vault.read(service) {
+            Err(Error::Unreadable(why)) => assert!(why.contains(service), "{why}"),
+            other => panic!("{service} read as {other:?}"),
+        }
+        assert!(vault.contains(service).expect("a look"), "{service}");
+    }
+
+    #[test]
+    fn a_sealed_park_round_trips_and_holds_no_plain_text() {
+        let (vault, _scratch) = sealed_vault();
+        assert_eq!(vault.kind(), Backend::SealedFile);
+        assert_eq!(vault.read(PARK).expect("nothing yet"), None);
+        vault
+            .write(Permit::for_a_test(), PARK, LOGIN)
+            .expect("sealed");
+        assert_eq!(vault.read(PARK).expect("opened").as_deref(), Some(LOGIN));
+        let held = std::fs::read(vault.path(PARK).unwrap()).expect("the file");
+        assert!(held.starts_with(SEALED), "{held:?}");
+        assert!(
+            !held.windows(5).any(|bytes| bytes == b"oauth"),
+            "the login is not in the file"
+        );
+    }
+
+    #[test]
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "a test damages a park as a disk or a person would"
+    )]
+    fn a_renamed_park_or_one_flipped_byte_does_not_open() {
+        let (vault, _scratch) = sealed_vault();
+        let permit = Permit::for_a_test();
+        let other = "pitboard-park-0a1b2c3d-4b5a-4968-8776-a5b4c3d2e1f0-1789935600456";
+        vault.write(permit, PARK, LOGIN).expect("sealed");
+        std::fs::rename(vault.path(PARK).unwrap(), vault.path(other).unwrap()).expect("renamed");
+        unopened(&vault, other);
+
+        vault.write(permit, PARK, LOGIN).expect("sealed");
+        let path = vault.path(PARK).unwrap();
+        let sealed = std::fs::read(&path).expect("the file");
+        for at in [
+            0,
+            SEALED.len(),
+            SEALED.len() + 1,
+            sealed.len() / 2,
+            sealed.len() - 1,
+        ] {
+            let mut flipped = sealed.clone();
+            flipped[at] ^= 0x01;
+            std::fs::write(&path, &flipped).expect("damaged");
+            unopened(&vault, PARK);
+        }
+    }
+
+    #[test]
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "a test plants a park as a person used to Linux would"
+    )]
+    fn plain_text_planted_in_the_vault_is_never_a_login() {
+        let (vault, _scratch) = sealed_vault();
+        crate::host::fs::create_private_dir(Permit::for_a_test(), &vault.dir).expect("a vault");
+        std::fs::write(vault.path(PARK).unwrap(), LOGIN).expect("planted");
+        unopened(&vault, PARK);
+
+        let later = [SEALED, &[VERSION + 1], LOGIN.as_bytes()].concat();
+        std::fs::write(vault.path(PARK).unwrap(), later).expect("planted");
+        unopened(&vault, PARK);
+    }
+
+    // As a profile restored on another PC, whose key this account does not have.
+    #[test]
+    fn a_seal_whose_key_is_not_found_is_unreadable_not_absent() {
+        struct Lost;
+        impl Seal for Lost {
+            fn seal(&self, _: &[u8], plain: &[u8]) -> std::io::Result<Vec<u8>> {
+                Ok(plain.to_vec())
+            }
+            fn open(&self, _: &[u8], _: &[u8]) -> std::io::Result<Vec<u8>> {
+                Err(std::io::ErrorKind::NotFound.into())
+            }
+        }
+        let scratch = tempfile::tempdir().expect("a scratch home");
+        let ctx = Context::new(scratch.path().to_path_buf())
+            .with_pitboard_home(scratch.path().join("pitboard"));
+        let vault = FileVault::sealed(&ctx, &Lost);
+        match vault.write(Permit::for_a_test(), PARK, LOGIN) {
+            Err(Error::Unreadable(_)) => {}
+            other => panic!("a write that does not read back: {other:?}"),
+        }
+        unopened(&vault, PARK);
+    }
+
+    #[test]
+    fn the_list_is_right_after_writes() {
+        let (vault, _scratch) = sealed_vault();
+        let permit = Permit::for_a_test();
+        assert_eq!(vault.list().expect("listed"), Some(Vec::new()));
+        let names: Vec<String> = (0..3)
+            .map(|at| crate::park::service_name("acc", 1_789_935_600_000 + at))
+            .collect();
+        for name in names.iter().rev() {
+            vault.write(permit, name, LOGIN).expect("sealed");
+        }
+        assert_eq!(vault.list().expect("listed"), Some(names.clone()));
+        vault.delete(permit, &names[1]).expect("deleted");
+        assert_eq!(
+            vault.list().expect("listed"),
+            Some(vec![names[0].clone(), names[2].clone()])
+        );
+    }
+
     /// A real Codex account id is the ChatGPT account and the person inside it, and a park
     /// of one has to be a name this vault stores. Joined with a colon once, every Codex
     /// park on Linux was refused, after a browser sign-in had already been finished.
@@ -144,26 +370,23 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// SECURITY.md tells people that a parked login here is private to its owner, inside a
-    /// directory private to its owner, and that this is the whole of what keeps it from
-    /// everyone else with an account on the machine. Nothing checked it. `atomic::Perms::Secret`
-    /// and `host::fs::create_private_dir` are two other modules' promises, and a change to
-    /// either would quietly widen every parked login on Linux.
+    // SECURITY.md says a park and its folder are private to their owner, sealed or not.
     #[test]
     fn a_parked_login_is_readable_only_by_its_owner() {
         let scratch = tempfile::tempdir().expect("a scratch home");
         let root = scratch.path();
 
         let ctx = Context::new(root.to_path_buf()).with_pitboard_home(root.join(".pitboard"));
-        let vault = FileVault::new(&ctx);
-        let name = "pitboard-park-1f0e2d3c-4b5a-4968-8776-a5b4c3d2e1f0-1789935600123";
-        vault
-            .write(Permit::for_a_test(), name, r#"{"claudeAiOauth":{}}"#)
-            .expect("a park");
+        for vault in [FileVault::new(&ctx), FileVault::sealed(&ctx, SEAL)] {
+            vault
+                .write(Permit::for_a_test(), PARK, r#"{"claudeAiOauth":{}}"#)
+                .expect("a park");
 
-        let shared = |p: &std::path::Path| crate::host::fs::access(p).expect("it exists").shared;
-        assert!(!shared(&vault.dir), "the vault directory");
-        assert!(!shared(&vault.path(name).unwrap()), "the parked login");
+            let shared =
+                |p: &std::path::Path| crate::host::fs::access(p).expect("it exists").shared;
+            assert!(!shared(&vault.dir), "the vault directory");
+            assert!(!shared(&vault.path(PARK).unwrap()), "the parked login");
+        }
     }
 
     #[test]

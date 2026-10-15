@@ -5,9 +5,7 @@
 //! A Windows build of a 0.x release refuses before it gets here ([`crate::release`]). A build
 //! opened to Windows, for working on Pitboard and for CI, reaches this face, and finds:
 //!
-//! - no store of secrets for a tool (W23 offers Credential Manager), and a vault whose every
-//!   call cannot be read, of a kind of its own, [`Backend::Unknown`] (W20 seals parks to the
-//!   person);
+//! - no store of secrets for a tool (W23 offers Credential Manager);
 //! - no scheduler (W25).
 //!
 //! Each tool's own live chain refuses on Windows in its provider's code, not here: which
@@ -20,12 +18,14 @@
 pub(crate) mod fs;
 mod job;
 pub(crate) mod proc;
+pub(super) mod seal;
 pub(crate) mod user;
 
 use super::administered::{Administered, Hive};
 use super::{Elevation, Floor, Host, Jar, JarError, Listed, LoginPath, Os, Scheduler};
 use crate::context::{Context, Environment};
-use crate::store::{Backend, PlainFile, RawStore, Unbuilt};
+use crate::store::vault::FileVault;
+use crate::store::{PlainFile, RawStore};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -139,20 +139,13 @@ impl Host for Windows {
         Box::new(PlainFile::at(path))
     }
 
-    /// Pitboard parks no login on Windows until W20 seals each one to the person's Windows
-    /// account: every call says the vault cannot be read, which is never taken for an empty
-    /// one.
-    fn vault(&self, _ctx: &Context) -> Box<dyn RawStore> {
-        Box::new(Unbuilt::new(
-            Backend::Unknown,
-            "Pitboard does not park logins on Windows yet",
-        ))
+    fn vault(&self, ctx: &Context) -> Box<dyn RawStore> {
+        Box::new(FileVault::sealed(ctx, &seal::Dpapi))
     }
 
-    /// The answer that removes nothing: a park nobody accounts for is left alone, as
-    /// another home's would be, until W20 says where Windows parks are kept.
+    // Inside this home, as on Linux.
     fn vault_is_shared(&self) -> bool {
-        true
+        false
     }
 
     fn listing(&self) -> Result<Vec<Listed>, String> {
@@ -289,21 +282,30 @@ mod tests {
         }
     }
 
-    /// The vault answers every call as one that cannot be read, of a kind of its own, and
-    /// lists nothing: an empty list would say every parked login is gone.
     #[test]
-    fn the_vault_is_unreadable() {
-        let ctx = ctx();
+    fn the_vault_seals_each_park_in_this_home_alone() {
+        let scratch = tempfile::tempdir().expect("a scratch home");
+        let ctx = Context::new(scratch.path().to_path_buf())
+            .with_pitboard_home(scratch.path().join("pitboard"));
         let vault = ctx.host().vault(&ctx);
-        let why = "Pitboard does not park logins on Windows yet";
-        assert_eq!(vault.kind(), Backend::Unknown);
-        assert_eq!(Backend::Unknown.name(), "unknown");
-        unreadable(vault.contains("pitboard-park"), why);
-        unreadable(vault.read("pitboard-park"), why);
-        unreadable(vault.list(), why);
-        let permit = crate::service::Permit::for_a_test();
-        unreadable(vault.write(permit, "pitboard-park", "{}"), why);
-        unreadable(vault.delete(permit, "pitboard-park"), why);
+        let (park, login) = (
+            "pitboard-park-1f0e2d3c-4b5a-4968-8776-a5b4c3d2e1f0-1789935600123",
+            r#"{"claudeAiOauth":{"refreshToken":"r"}}"#,
+        );
+        assert_eq!(vault.kind(), crate::store::Backend::SealedFile);
+        assert!(!host().vault_is_shared());
+        vault
+            .write(crate::service::Permit::for_a_test(), park, login)
+            .expect("sealed");
+        assert_eq!(vault.read(park).expect("opened").as_deref(), Some(login));
+        assert_eq!(vault.list().expect("listed"), Some(vec![park.to_string()]));
+        let held = std::fs::read(crate::store::vault_dir(&ctx).join(format!("{park}.json")))
+            .expect("the file");
+        assert!(
+            !held
+                .windows(login.len())
+                .any(|bytes| bytes == login.as_bytes())
+        );
     }
 
     // Copies of this test's program, each kept running by a helper until it is let go.

@@ -150,7 +150,6 @@ fn a_name_makes_one_env_in_a_process() {
 
 // `delete_park` once deleted nothing on Linux, and nothing checked the harness itself.
 #[test]
-#[cfg_attr(windows, ignore = "W20: parking logins on Windows")]
 fn the_harness_can_park_a_login_find_it_and_take_it_away() {
     let env = Env::new("harness-round-trip");
     let own = pitboard_core::testing::dir_hash(&env.root.to_string_lossy());
@@ -166,7 +165,6 @@ fn the_harness_can_park_a_login_find_it_and_take_it_away() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "W20: parking logins on Windows")]
 fn a_discarded_test_park_is_deleted_by_env_drop() {
     let env = Env::new("discarded-park");
     let service = format!(
