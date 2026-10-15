@@ -122,14 +122,7 @@ impl Os {
         }
     }
 
-    /// The folders of a home, relative to it, that the system asks the person about before
-    /// an app may look inside them. An app passes over a directory of `PATH` in one: looking
-    /// would put that question to the person for something Pitboard never needed, and a
-    /// program started from there would have it asked on its behalf.
-    ///
-    /// macOS asks for the Desktop, Documents and Downloads folders, iCloud Drive and the
-    /// folders of other cloud storage, under Privacy & Security's Files & Folders. Linux
-    /// and Windows ask nothing before an app reads a folder.
+    // Looking in one asks the person whether Pitboard may. Linux and Windows guard none.
     pub(crate) fn guarded_folders(self) -> &'static [&'static str] {
         match self {
             Os::MacOs => &[
@@ -143,11 +136,7 @@ impl Os {
         }
     }
 
-    // Where the system's package managers put programs, for an app with no shell's `PATH`,
-    // after each tool's own installer's place. On a Mac, Homebrew's `bin` on Apple silicon and
-    // on Intel, which is npm's global `bin` too where Homebrew or nodejs.org installed Node
-    // (Claude Code 2.1.289 lists both). None on Linux, where no app runs. On Windows npm's
-    // global prefix, winget's links and Scoop's shims, each from the variable that names it.
+    // Homebrew's on a Mac, also npm's global `bin` there (Claude Code 2.1.289); none on Linux.
     pub(crate) fn package_bins(self, env: &Environment) -> Vec<PathBuf> {
         match self {
             Os::MacOs => vec!["/opt/homebrew/bin".into(), "/usr/local/bin".into()],
@@ -217,11 +206,7 @@ impl Os {
         }
     }
 
-    // The command line an app at `app` comes with, which its renewal schedule runs; none for
-    // anything that is not an app, such as a test or a build folder. A Mac app carries it at
-    // `Contents/Helpers/pitboard`, where `build-app.sh` puts it. The Windows app is
-    // `<install>\Pitboard.exe` and its command line `<install>\bin\pitboard.exe`, never beside
-    // it, since NTFS takes the two names for one. No app runs on Linux.
+    // Never beside the Windows app's `Pitboard.exe`, since NTFS takes the two names for one.
     pub(crate) fn app_command_line(self, app: &Path) -> Option<PathBuf> {
         match self {
             Os::MacOs => (app.extension() == Some("app".as_ref()))
@@ -456,10 +441,7 @@ pub(crate) enum LoginPath {
     Late,
 }
 
-/// The `PATH` the person's own terminal has, which an app the system started does not: asked
-/// of their login shell where the system has one, which can take seconds, so never on an
-/// app's main thread. Windows has no login shell: there it is the `Path` a program started
-/// now is given, read from the registry.
+// A login shell can take seconds, so never on an app's main thread.
 pub(crate) fn login_path(env: &Environment) -> LoginPath {
     os::login_path(env)
 }
@@ -698,9 +680,7 @@ pub(crate) trait Host: Send + Sync + std::fmt::Debug {
     /// Unset in a build for tests, on the real hosts ([`administered::READ_BY_REAL_HOSTS`]).
     fn managed_preference(&self, domain: &str, key: &str) -> Administered;
 
-    // The files in the folder at `dir`, outside every home, that only an administrator
-    // writes, such as Claude Code's `managed-settings.d`. None in a build for tests, on the
-    // real hosts.
+    // None in a build for tests, on the real hosts.
     fn administered_folder(&self, dir: &Path) -> Vec<PathBuf> {
         if administered::READ_BY_REAL_HOSTS {
             administered::listed(dir)
@@ -709,9 +689,7 @@ pub(crate) trait Host: Send + Sync + std::fmt::Debug {
         }
     }
 
-    // The text of `value` of the registry key `key` under `hive`, a `REG_SZ` or a
-    // `REG_EXPAND_SZ` as it is written: a Windows policy, such as Claude Code's `Settings`.
-    // Unset on a system with no registry, and in a build for tests, on the real hosts.
+    // A Windows policy value; unset elsewhere, and in a build for tests, on the real hosts.
     fn policy(&self, _hive: Hive, _key: &str, _value: &str) -> Administered {
         Administered::Unset
     }

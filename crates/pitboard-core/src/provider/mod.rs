@@ -528,17 +528,8 @@ pub(crate) trait Provider: Send + Sync + std::fmt::Debug {
     /// absence is worth saying before anybody opens a browser.
     fn program(&self, ctx: &Context) -> Option<std::path::PathBuf>;
 
-    /// The tool's own sign-in, pointed at `dir` so the live login is never touched.
-    ///
-    /// `dir` exists and is private when this is called, and it is where the tool writes the
-    /// new login: every tool Pitboard handles lets a home variable move its whole store,
-    /// which is the only reason a second account can be signed in without signing the first
-    /// one out. Whether that really isolates the live login is
-    /// [`Provider::private_signin_isolation`]'s question, asked first.
-    ///
-    /// Starting it changes things a run that may change nothing must not: `codex login`
-    /// revokes whatever login is in the home it is given before it signs in. So the command
-    /// is made only with the [`Permit`] only the one gate every change passes makes.
+    // Pointed at `dir`, private and there already, so the live login is never touched; only
+    // with the Permit, since `codex login` revokes whatever login its home holds.
     fn sign_in(
         &self,
         ctx: &Context,
@@ -730,25 +721,8 @@ pub(crate) fn installed_among(
         .collect()
 }
 
-/// A command that runs `tool`'s own program, by the path it was found at, with the search
-/// path as its `PATH`, and the program's own directory in front of it when it is not on it
-/// already.
-///
-/// An npm install is a script that starts `#!/usr/bin/env node`, and npm puts it beside the
-/// `node` that installed it, under whatever prefix or version manager that was. So a
-/// program found somewhere the search path does not reach, where an app finds one its
-/// installer put there, finds its interpreter in its own directory, even for an app whose
-/// `PATH` has neither. The directory as found, never the script it links to: npm links
-/// `<prefix>/bin/codex` to a file deep inside `lib/node_modules`, where no `node` is. A
-/// program found on the search path runs with that path as it is, so `env` finds the `node`
-/// the person's own terminal would, and not an older one that happens to sit beside it.
-///
-/// A program that was not found is left to the search path, where starting it fails the
-/// way a missing program does. On Windows there is none to start: std would look beside
-/// Pitboard and in the system's folders before `PATH` (RF-F3).
-///
-/// What it runs is a tool's sign-in, which changes what that tool keeps, so it is made only
-/// with the [`Permit`] the one gate every change passes makes.
+// The program's own folder goes in front of a search path that lacks it, so an npm script
+// finds the `node` beside it. A bare name on Windows would start one beside Pitboard (RF-F3).
 pub(crate) fn command(
     ctx: &Context,
     _: Permit,
@@ -969,11 +943,9 @@ mod tests {
         assert!(matches!(Adoption::PollingWithin(33), Adoption::PollingWithin(s) if s == 33));
     }
 
-    // A scratch npm prefix's `bin`, with a file for each tool's program as this system names
-    // one. Nothing here is ever run.
+    // Nothing here is ever run.
     struct Prefix(std::path::PathBuf);
 
-    // `codex`, or `codex.exe` on Windows.
     fn file_of(program: &str) -> String {
         format!("{program}{}", std::env::consts::EXE_SUFFIX)
     }
@@ -1013,8 +985,7 @@ mod tests {
             self.0.join("nowhere")
         }
 
-        /// A directory beside `bin` holding something named for each tool's program that
-        /// cannot be run: a directory of that name, or a file nobody may run.
+        // A folder of each program's name, and a file of it nobody may run.
         fn decoys(&self) -> (std::path::PathBuf, std::path::PathBuf) {
             let (dirs, files) = (self.0.join("dirs"), self.0.join("files"));
             for tool in documents().map(|tool| tool.id()) {
@@ -1041,8 +1012,7 @@ mod tests {
             .and_then(|(_, value)| value)
     }
 
-    /// A program is looked for where the caller says, not on this process's own `PATH`: an
-    /// app opened from Finder has only the system's directories there.
+    // An app opened from Finder has only the system's folders on its own `PATH`.
     #[test]
     fn a_program_is_looked_for_on_the_search_path_it_is_given() {
         let prefix = Prefix::new("find");
@@ -1061,8 +1031,6 @@ mod tests {
         );
     }
 
-    /// A directory named for the program, or a file of that name nobody may run, is passed
-    /// over the way `execvp` passes over it, so what is found is what a sign-in can start.
     #[test]
     fn what_cannot_be_run_is_passed_over() {
         let prefix = Prefix::new("decoys");
@@ -1083,10 +1051,7 @@ mod tests {
         }
     }
 
-    /// Every tool's sign-in runs the program found, by its full path. Found on the search
-    /// path, it runs with that path as it is: its directory is on it already, and putting it
-    /// first would only change which `node` an npm install's `env` finds from the one the
-    /// person's own terminal finds.
+    // Its folder first would change which `node` an npm script finds from the terminal's.
     #[test]
     fn a_sign_in_runs_the_program_found_with_the_search_path_as_it_is() {
         let prefix = Prefix::new("sign-in");
@@ -1105,10 +1070,7 @@ mod tests {
         }
     }
 
-    /// A program named outright where the search path does not reach is run with its own
-    /// directory first on `PATH`, which is how an app that found it where its installer
-    /// puts it starts it: an npm install's script names `node` through `env`, and `node` is
-    /// beside it. Named outright on the search path, it runs with that path as it is.
+    // An npm script names `node` through `env`, and `node` is beside it.
     #[test]
     fn a_program_named_outright_is_run_with_its_own_directory_on_path() {
         let prefix = Prefix::new("named");
@@ -1145,10 +1107,7 @@ mod tests {
         }
     }
 
-    /// A program found nowhere is left to the search path on macOS and Linux, so starting it
-    /// fails the way a missing program does rather than running whatever this process's
-    /// `PATH` has. On Windows there is nothing to start: std's `Command` would look for a
-    /// bare name beside Pitboard and in Windows' own folders before `PATH` (RF-F3).
+    // std's `Command` looks for a bare name beside Pitboard first on Windows (RF-F3).
     #[test]
     fn a_program_found_nowhere_is_started_by_its_bare_name_only_off_windows() {
         let prefix = Prefix::new("nowhere");

@@ -4,13 +4,10 @@ use super::Os;
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
-// What starts a program on Windows without a script host, in the order Windows' default
-// `PATHEXT` gives them (RF-B1). Never `.ps1`, `.js`, `.vbs` or `.com`.
+// What runs without a script host, in the default `PATHEXT`'s order (RF-B1).
 const RUNNABLE_ON_WINDOWS: [&str; 3] = [".exe", ".bat", ".cmd"];
 
-/// The names a shell tries for a program in one folder: the name itself on macOS and Linux,
-/// and on Windows the name with each of `PATHEXT`'s extensions that starts a program, in
-/// `PATHEXT`'s own order, unless the name has one of them already.
+// The names a shell tries in one folder: on Windows each kept extension, in `PATHEXT`'s order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Lookup {
     extensions: Option<Vec<&'static str>>,
@@ -66,8 +63,6 @@ fn kept(path_ext: Option<&OsStr>) -> Vec<&'static str> {
     kept
 }
 
-/// Whether `path` names a file Windows starts as a program: an `.exe`, `.bat` or `.cmd`, in
-/// any case.
 pub(crate) fn runnable_on_windows(path: &Path) -> bool {
     path.extension()
         .and_then(OsStr::to_str)
@@ -78,16 +73,7 @@ pub(crate) fn runnable_on_windows(path: &Path) -> bool {
         })
 }
 
-/// Where a program somebody named is: the path itself, made absolute, when it has a
-/// directory in it, or the first file on `search`, a list in `PATH`'s form, that can be run,
-/// each folder tried with every name `lookup` gives before the next.
-///
-/// Found the way `execvp` finds one, which passes over a directory of that name and a file
-/// this user may not run, so what is found here is what starts. Only a directory named from
-/// the root is looked in: a relative one names a place relative to wherever Pitboard was
-/// started, which says nothing about where a tool is installed, and a sign-in that runs
-/// from a directory of its own would read it as somewhere else again. Windows' own shell
-/// looks in the folder it runs in first, which Pitboard never does (RF-F3).
+// Never a relative folder, which is wherever Pitboard runs; Windows' shell looks there first.
 #[cfg(any(target_os = "linux", test))]
 pub(crate) fn find(named: &Path, search: &OsStr, lookup: &Lookup) -> Option<PathBuf> {
     find_in(
@@ -115,9 +101,6 @@ pub(crate) fn find_in(
     find_among(named, dirs, lookup, runnable)
 }
 
-/// The first file called `named` in `dirs` that can be run, in their order, for a list of
-/// places that is not in `PATH`'s form. Only a directory named from the root is looked in,
-/// as on `PATH`.
 pub(crate) fn find_among(
     named: &Path,
     dirs: impl IntoIterator<Item = PathBuf>,
@@ -130,8 +113,7 @@ pub(crate) fn find_among(
         .find(|candidate| runnable(candidate))
 }
 
-// The program an npm `.cmd` shim at `shim` starts, read and never run: the last file it names
-// under `%dp0%`, its own folder, after the `node.exe` it would run a script with.
+// The last file an npm shim names in its own folder comes after the `node.exe` it runs it with.
 pub(crate) fn npm_shim_target(shim: &Path) -> Option<PathBuf> {
     let is_cmd = shim
         .extension()
@@ -161,9 +143,7 @@ pub(crate) fn npm_shim_target(shim: &Path) -> Option<PathBuf> {
 mod tests {
     use super::*;
 
-    /// Only a directory named from the root is looked in. An empty entry and a relative one
-    /// both name somewhere relative to wherever Pitboard was started, and a sign-in that
-    /// runs from a directory of its own would start something else from there.
+    // An empty entry and a relative one name wherever Pitboard was started.
     #[test]
     fn only_a_directory_named_from_the_root_is_looked_in() {
         let mut looked = Vec::new();
@@ -192,9 +172,7 @@ mod tests {
         );
     }
 
-    /// A program named with a directory relative to where Pitboard was started is found as
-    /// that place, by its full path, so the sign-in that runs from a directory of its own
-    /// starts the same program.
+    // So a sign-in that runs from a folder of its own starts the same program.
     #[test]
     fn a_program_named_relative_to_here_is_found_by_its_full_path() {
         let unix = Lookup::new(Os::Linux, None);
@@ -233,10 +211,7 @@ mod tests {
             .collect()
     }
 
-    /// A Windows shell tries, in each folder, the name with each extension of `PATHEXT` in
-    /// `PATHEXT`'s own order before the next folder. Only `.exe`, `.bat` and `.cmd` are kept,
-    /// so a `.ps1`, `.js` or `.com` is never found, and Windows' default `PATHEXT` gives
-    /// `.exe`, `.bat`, `.cmd` (RF-B1).
+    // The runner's `PATHEXT` (RF-B1) and its default give `.exe`, `.bat`, `.cmd`.
     #[test]
     fn a_windows_shell_tries_pathexts_programs_in_its_order_in_each_folder() {
         let measured = ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.CPL";

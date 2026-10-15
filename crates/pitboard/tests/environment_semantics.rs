@@ -112,12 +112,8 @@ fn an_empty_config_dir_is_refused() {
     assert_eq!(left, [".claude.json"], "nothing is written");
 }
 
-/// `PITBOARD_CLAUDE` and `PITBOARD_CODEX` name the program the command line runs for each
-/// tool, as they name the app's, wherever its `PATH` would find another or none. Neither is
-/// ever run: doctor reads which build each is off the path it resolves to, which is where
-/// each tool's installer puts the version. On Windows Claude Code's is named by npm's
-/// `claude.cmd`, which is followed to the program it starts, and read from the package
-/// beside it, since the stand-in carries no version resource.
+// Never run: doctor reads each build off its path, or on Windows off npm's package beside
+// the program `claude.cmd` starts, since the stand-in has no version resource.
 #[test]
 fn a_program_the_environment_names_is_the_one_the_command_line_runs() {
     let (_scratch, home) = scratch();

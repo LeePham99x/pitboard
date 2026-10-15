@@ -17,9 +17,7 @@ pub(crate) fn may_be_running(_pid: u32) -> bool {
     true
 }
 
-// What a Windows shell starts: an `.exe`, `.bat` or `.cmd` this user may open to run or to
-// read, through every link, or an app execution alias in a `WindowsApps` folder, which opens
-// as nothing until Windows starts it.
+// An app execution alias opens as nothing, so only its tag and its `WindowsApps` folder tell it.
 pub(crate) fn can_run(path: &Path) -> bool {
     if !crate::host::program::runnable_on_windows(path) {
         return false;
@@ -67,7 +65,6 @@ fn reparse_tag(path: &Path) -> Option<u32> {
         .then_some(info.ReparseTag)
 }
 
-// The four parts of the product version in `path`'s version resource, read and never run.
 pub(crate) fn product_version(path: &Path) -> Option<[u16; 4]> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::{
@@ -158,10 +155,6 @@ mod tests {
         std::env::join_paths(dirs).expect("a search path")
     }
 
-    /// Each folder is tried with every name `PATHEXT` gives before the next, so a `.cmd`
-    /// in an earlier folder wins over an `.exe` in a later one, and within one folder the
-    /// `.exe` wins unless `PATHEXT` puts `.cmd` first. A `.ps1`, a folder of the name and a
-    /// file this user may not run are passed over.
     #[test]
     fn a_program_is_found_as_a_windows_shell_finds_it() {
         let root = scratch("lookup");
@@ -207,9 +200,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// An app execution alias is told by its reparse tag, read on the link itself: one in a
-    /// `WindowsApps` folder runs, and the same alias anywhere else does not. Each of this
-    /// account's own aliases, read only, is one that runs.
+    // This account's own aliases are only read.
     #[test]
     fn an_app_execution_alias_runs_from_windows_apps() {
         let root = scratch("aliases");
@@ -245,8 +236,7 @@ mod tests {
         );
     }
 
-    // As Windows writes one: version 3, then the package, the app's id, the program and the
-    // kind of app, each ending in a NUL.
+    // Version 3, then the package, the app's id, the program and its kind, each NUL-ended.
     fn alias(at: &Path, target: &Path) -> PathBuf {
         use windows_sys::Win32::System::IO::DeviceIoControl;
         use windows_sys::Win32::System::Ioctl::FSCTL_SET_REPARSE_POINT;
@@ -288,8 +278,7 @@ mod tests {
         at.to_path_buf()
     }
 
-    /// `cmd.exe`'s version resource names Windows 10.0 and a build from the floor up to the
-    /// one running: an enablement update, as 26200 is over 26100, may leave it behind.
+    // An enablement update, as 26200 is over 26100, may leave the binaries' build behind.
     #[test]
     fn cmd_exe_carries_the_build_of_the_windows_it_ships_in() {
         let cmd = std::env::var_os("SystemRoot")

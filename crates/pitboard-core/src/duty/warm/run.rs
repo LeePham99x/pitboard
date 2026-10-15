@@ -60,8 +60,7 @@ pub(crate) fn clear(permit: Permit, home: &Path) {
     let _ = crate::home::remove_all(permit, home);
 }
 
-/// `tool`'s own program, in `home`, with nothing of this process's environment but `PATH`, the
-/// person's name and the proxy Pitboard was given.
+// Nothing of this process's environment but `PATH`, the person's name and the proxy.
 pub(crate) fn command(
     ctx: &Context,
     permit: Permit,

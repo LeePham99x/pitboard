@@ -56,7 +56,6 @@ impl std::fmt::Display for Override {
     }
 }
 
-// Where managed settings are on `os`, a fact about the machine and not about the person.
 fn managed_dir(os: Os) -> PathBuf {
     match os {
         Os::MacOs => "/Library/Application Support/ClaudeCode".into(),
@@ -65,21 +64,16 @@ fn managed_dir(os: Os) -> PathBuf {
     }
 }
 
-// Claude Code's policy value under `HKLM` and `HKCU` (`windows_managed_settings`).
+// Under `HKLM` and `HKCU` (`windows_managed_settings`).
 const POLICIES: &str = r"SOFTWARE\Policies\ClaudeCode";
 const POLICY: &str = "Settings";
 
-// One place Claude Code takes managed settings from: what to call it, and what it holds.
 struct Layer {
     name: String,
     text: String,
 }
 
-// Every place of managed settings a session here may read, through the host, which a test
-// says for itself: the folder's file and drop-ins, in order, and on Windows the policy value
-// under `HKLM`, and the one under `HKCU`, which Claude Code 2.1.300 reads only where neither
-// holds anything. Claude Code takes `HKLM` over the folder unless it is told to merge them,
-// so reading both can find more than a session would, never less.
+// `HKLM` wins over the folder unless they merge, so reading both finds more, never less.
 fn managed(ctx: &Context) -> Vec<Layer> {
     let host = ctx.host();
     let dir = managed_dir(ctx.os);
@@ -130,8 +124,7 @@ fn managed(ctx: &Context) -> Vec<Layer> {
     layers
 }
 
-// Whether Claude Code takes a managed document for one that is there, which keeps `HKCU` out:
-// one it cannot read, or one that sets more than how the managed sources compose.
+// What keeps `HKCU` out: one Claude Code cannot read, or one that sets more than composition.
 fn holds_policy(text: &str) -> bool {
     match serde_json::from_str::<Value>(text) {
         Ok(Value::Object(keys)) => keys.keys().any(|key| {
@@ -149,7 +142,6 @@ fn is_set(value: &str) -> bool {
     !matches!(value.trim(), "" | "0" | "false")
 }
 
-// The person's own file, which is theirs and no administrator's.
 fn own(path: &std::path::Path) -> Option<Layer> {
     Some(Layer {
         name: path.display().to_string(),
@@ -193,12 +185,7 @@ fn overrides_in(layer: &Layer) -> Vec<Override> {
     found
 }
 
-/// Whether a custom OAuth endpoint is configured. Set, it renames both the keychain item
-/// and the config file Claude Code uses, so Pitboard would be reading and writing the wrong
-/// ones: a refusal rather than a warning.
-///
-/// Read from files as well as from this process's environment, because a `CLAUDE_CODE_CUSTOM_OAUTH_URL`
-/// in a settings file is just as real and the app could not see the environment one.
+// It renames Claude Code's keychain item and config file, so it is a refusal, not a warning.
 pub(crate) fn custom_oauth(ctx: &Context) -> bool {
     if ctx.custom_oauth() {
         return true;
@@ -219,9 +206,6 @@ pub(crate) fn custom_oauth(ctx: &Context) -> bool {
         })
 }
 
-/// Every reason a session started here would authenticate as something other than the login
-/// Pitboard moves. Empty means a switch changes what a session sees, which is the answer
-/// Pitboard needs before it moves anything.
 pub(crate) fn overrides(ctx: &Context) -> Vec<Override> {
     let mut found: Vec<Override> = managed(ctx)
         .into_iter()
@@ -236,9 +220,7 @@ pub(crate) fn overrides(ctx: &Context) -> Vec<Override> {
     found
 }
 
-/// [`overrides`] for a run of Claude Code started with nothing of this process's environment
-/// and its own config directory, `config`, as a warm-up's is: the managed settings', which
-/// every run of Claude Code on this machine reads, and that directory's own.
+// A warm-up's run gets none of this process's environment.
 pub(crate) fn overrides_of_a_run_in(ctx: &Context, config: &std::path::Path) -> Vec<Override> {
     managed(ctx)
         .into_iter()
@@ -371,7 +353,6 @@ mod managed_tests {
     use serde_json::json;
     use std::sync::Arc;
 
-    // A context of `os` whose stores and machine are `memory`, in a scratch home.
     fn on(os: Os, memory: &Arc<MemoryHost>) -> (Context, tempfile::TempDir) {
         let scratch = tempfile::tempdir().expect("a scratch home");
         let home = scratch.path().to_string_lossy().into_owned();
@@ -399,9 +380,6 @@ mod managed_tests {
             .collect()
     }
 
-    /// Each system's managed settings are read where Claude Code keeps them, through the
-    /// host: the file, then the drop-ins that end in `.json`, in order. A setting there
-    /// counts for a session and for a warm-up's run alike.
     #[test]
     fn managed_settings_are_read_where_claude_code_keeps_them_on_each_system() {
         for (os, dir) in [
@@ -450,9 +428,6 @@ mod managed_tests {
         }
     }
 
-    /// On Windows the policy value under `HKLM` is read beside the folder, and the one under
-    /// `HKCU` only where neither holds a policy, as Claude Code 2.1.300 reads them. No other
-    /// system has them.
     #[test]
     fn windows_policies_are_read_as_claude_code_reads_them() {
         let memory = MemoryHost::new();
@@ -497,7 +472,6 @@ mod managed_tests {
         assert_eq!(overrides(&mac), Vec::new(), "macOS has no registry");
     }
 
-    /// A file in the folder that holds a policy keeps `HKCU` out as `HKLM` does.
     #[test]
     fn a_managed_file_keeps_the_persons_policy_out() {
         let memory = MemoryHost::new();

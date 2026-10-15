@@ -45,9 +45,7 @@ pub(super) fn awake() -> std::time::Duration {
     super::from_interrupt_time(units)
 }
 
-// Windows has no login shell: a program started now is given the machine's `Path` and then
-// the person's, from the registry, which an app started before a change has not been given.
-// Never a PowerShell profile's. A build for tests reads none but in its own test.
+// What a program started now is given, which one started before a change was not.
 pub(super) fn login_path(_env: &Environment) -> LoginPath {
     if cfg!(any(test, feature = "test-support")) {
         return LoginPath::Unknown;
@@ -74,7 +72,6 @@ fn registry_path() -> LoginPath {
     LoginPath::Said(parts.join(";"))
 }
 
-// A `REG_SZ`, or a `REG_EXPAND_SZ` expanded as this process's environment expands it.
 fn expanded(key: windows_registry::Key, name: &str) -> Option<String> {
     use windows_registry::Type;
     let kind = key.get_type(name).ok()?;
@@ -106,8 +103,7 @@ fn expanded(key: windows_registry::Key, name: &str) -> Option<String> {
     }
 }
 
-// As `reg.exe query` prints one, which is how Claude Code reads a policy: a `REG_SZ`, or a
-// `REG_EXPAND_SZ` left unexpanded, its end trimmed. A value of any other kind is nothing.
+// As `reg.exe query` prints it for Claude Code: unexpanded, trimmed, and only a string.
 fn policy(hive: Hive, key: &str, value: &str) -> Administered {
     use windows_registry::{CURRENT_USER, LOCAL_MACHINE, Type};
     let root = match hive {
@@ -220,8 +216,7 @@ pub(super) fn host() -> Arc<dyn Host> {
     Arc::new(Windows)
 }
 
-/// The path this program was started by, as Windows says it. Whether a link or a shim
-/// started it is W25's to read.
+// Whether a link or a shim started it is W25's to read.
 pub(super) fn current_program() -> std::io::Result<PathBuf> {
     std::env::current_exe()
 }
@@ -382,8 +377,6 @@ mod tests {
         assert_eq!(user::login_name(), None);
     }
 
-    /// A policy is read as `reg.exe` prints it: a `REG_SZ` as it is, here Windows' own build,
-    /// and a key that is not there as nothing. A build for tests reads none but here.
     #[test]
     fn a_policy_is_read_as_reg_exe_prints_it() {
         let current = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion";
@@ -408,9 +401,7 @@ mod tests {
         );
     }
 
-    /// A build for tests reads no machine's `Path`. Read here, read only, it is the machine's
-    /// and then the person's, each `REG_EXPAND_SZ` expanded, so the `%SystemRoot%\System32`
-    /// the machine's holds is Windows' own folder.
+    // The machine's `Path` holds `%SystemRoot%\System32`, expanded.
     #[test]
     #[allow(
         clippy::disallowed_methods,

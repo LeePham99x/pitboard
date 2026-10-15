@@ -193,13 +193,7 @@ impl Provider for Claude {
         claude::program(ctx)
     }
 
-    /// Measured in 2.1.278: `claude auth login` opens the browser itself and finishes
-    /// through a loopback callback, printing progress with `stdout.write`. Read from
-    /// 2.1.289, as the register's `sign_in_output` holds: it also reads a pasted code from
-    /// stdin, from the start and whether or not the callback is reached. So it needs no
-    /// terminal: pipes are enough.
-    /// `CLAUDE_SECURESTORAGE_CONFIG_DIR` is taken away because it would pin the credential
-    /// slot back to a real one whatever `CLAUDE_CONFIG_DIR` says.
+    // `CLAUDE_SECURESTORAGE_CONFIG_DIR` would pin the slot back to a real one (`sign_in_output`).
     fn sign_in(
         &self,
         ctx: &Context,

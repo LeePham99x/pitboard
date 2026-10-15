@@ -35,13 +35,9 @@ pub(crate) fn auth_file(ctx: &Context) -> PathBuf {
     home(ctx).join(AUTH_FILE)
 }
 
-// Where Codex's installers put `codex`, in the order an app looks there after the login
-// shell's `PATH`: the link its standalone installer makes in `~/.local/bin`, or on Windows the
-// junction install.ps1 makes at `CODEX_INSTALL_DIR`, else in local app data, then where the
-// system's package managers put it, its Homebrew cask, a global npm install and winget's
-// (`codex_install_places` and `codex_windows_install_places` in the register). The copy inside
-// the ChatGPT app is not one: OpenAI documents no use of it, and in ChatGPT 26.1007.71326 it was
-// a 0.162.0 alpha for Apple silicon alone.
+// `codex_install_places` and `codex_windows_install_places` in the register. Never the copy
+// inside the ChatGPT app: OpenAI documents no use of it, and in ChatGPT 26.1007.71326 it was a
+// 0.162.0 alpha for Apple silicon alone.
 pub(crate) fn install_places(env: &Environment) -> Vec<PathBuf> {
     let standalone = match env.os() {
         Os::MacOs | Os::Linux => Some(env.home().join(".local").join("bin")),

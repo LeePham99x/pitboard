@@ -33,9 +33,7 @@ pub struct AppContext {
     /// The login shell had not answered in time, so tools are looked for on this app's own
     /// `PATH` until it is asked again.
     pub late: bool,
-    /// Where each way of installing Pitboard puts `pitboard`, as `command_line_places` gives
-    /// them for this app's home: under it, and where the system's package managers put
-    /// programs. Looked in after the login shell's `PATH` for the one a terminal would run.
+    // Looked in after the login shell's `PATH` for the `pitboard` a terminal would run.
     pub command_line_places: Vec<PathBuf>,
 }
 
@@ -91,8 +89,6 @@ impl AppContext {
     }
 }
 
-/// Whether `dir` is inside a folder of `home` that the system asks the person about before
-/// an app may read it.
 fn guarded(os: Os, dir: &Path, home: &Path) -> bool {
     os.guarded_folders()
         .iter()
@@ -105,9 +101,7 @@ pub fn app_command_line(app: &Path) -> Option<PathBuf> {
     OS.app_command_line(app)
 }
 
-// Whether `path` is a program this user may run, as the core judges every program it finds
-// and the system judges one it starts, so an app asks this of anything it would run or link
-// to and has no rule of its own.
+// So an app has no rule of its own for what it would run or link to.
 pub fn can_run(path: &Path) -> bool {
     host::proc::can_run(path)
 }
@@ -123,11 +117,7 @@ pub enum CommandLine {
     Nowhere,
 }
 
-// Where each way of installing Pitboard puts `pitboard`, for an app started with `env` from
-// `app`, looked in after the login shell's `PATH`: `cargo install`, a copy from a release under
-// the home on macOS and Linux and on Windows the folder the app's installer puts its own in,
-// then where the system's package managers put programs. On a Mac that is where Homebrew
-// links the app's own and where the app links it itself, `/usr/local/bin`.
+// On a Mac `/usr/local/bin` is also where Homebrew and the app itself link the app's own.
 pub fn command_line_places(env: &Environment, app: Option<&Path>) -> Vec<PathBuf> {
     let os = env.os();
     let own: Vec<PathBuf> = match os {
@@ -151,9 +141,7 @@ pub fn command_line_places(env: &Environment, app: Option<&Path>) -> Vec<PathBuf
     own.into_iter().chain(os.package_bins(env)).collect()
 }
 
-/// The first `pitboard` a terminal would run, as a terminal finds it: the first file of
-/// that name that can be run on `search_path`, in `PATH`'s form, and then in `places`. It is
-/// the app's own when, every link on the way followed, it is the command line at `helper`.
+// The app's own where, every link followed, it is the command line at `helper`.
 pub fn find_command_line(
     search_path: Option<&OsStr>,
     places: &[PathBuf],
@@ -279,7 +267,6 @@ mod tests {
         LoginPath::Said(path.into())
     }
 
-    // A full path on this system: `/Users/x/bin` as it is, and `C:\Users\x\bin` on Windows.
     fn full(path: &str) -> PathBuf {
         match OS {
             Os::MacOs | Os::Linux => PathBuf::from(path),
@@ -287,7 +274,6 @@ mod tests {
         }
     }
 
-    // `codex`, or `codex.exe` on Windows.
     fn file_of(program: &str) -> String {
         format!("{program}{}", std::env::consts::EXE_SUFFIX)
     }
@@ -296,7 +282,6 @@ mod tests {
         full(dir).join(file_of(name))
     }
 
-    // A login shell's `PATH` of these entries, each named from the root made full.
     fn search(entries: &[&str]) -> String {
         let entries = entries.iter().map(|entry| {
             if entry.starts_with('/') {
@@ -309,8 +294,7 @@ mod tests {
         joined.to_string_lossy().into_owned()
     }
 
-    // An app's environment whose home is `/Users/x`, as this system names a home, its local
-    // app data in it on Windows, and `more` beside.
+    // Home is `/Users/x`, with its local app data on Windows.
     fn at_home(more: &[(&str, &str)]) -> Environment {
         let home = full("/Users/x").to_string_lossy().into_owned();
         let local = full("/Users/x/AppData/Local")
@@ -332,9 +316,6 @@ mod tests {
         (cli.install_places)(env)[0].join(file_of(tool.program()))
     }
 
-    /// A program is found where the variable naming it outright says, then on the login
-    /// shell's `PATH`, where a version manager or an npm prefix puts it, then where its
-    /// installer does.
     #[test]
     fn a_program_is_found_by_its_variable_then_the_login_shell_then_its_installer() {
         let home = at_home(&[]);
@@ -513,9 +494,6 @@ mod tests {
         std::fs::remove_dir_all(&scratch).unwrap();
     }
 
-    /// The installers' places come after the login shell's `PATH`, in the order each tool
-    /// says: its own installer's, then where the system's package managers put programs, each
-    /// from the variable that names it on Windows, and none where that is unset.
     #[test]
     fn each_tool_is_looked_for_where_its_installers_put_it() {
         let places = |os: Os, pairs: &[(&str, &str)], tool: ProviderId| {
@@ -657,8 +635,7 @@ mod tests {
         assert!(allowed(Some("0")));
     }
 
-    /// A relative entry on the login shell's `PATH` names a directory relative to wherever
-    /// the shell was, which is not where this app is, so it is not looked in.
+    // It names a folder relative to wherever the shell was, which is not where this app is.
     #[test]
     fn a_relative_entry_is_not_looked_in() {
         let looked = RefCell::new(Vec::new());
@@ -676,10 +653,7 @@ mod tests {
         assert_eq!(looked.first(), Some(&program("/usr/bin", "claude")));
     }
 
-    /// A folder macOS guards, such as Documents or iCloud Drive, is not looked in, and is not
-    /// where the core looks or what a sign-in is given: looking there asks the person whether
-    /// Pitboard may, and a program started from there would have it asked on its behalf.
-    /// Linux and Windows guard none.
+    // Looking in one asks the person whether Pitboard may, as a program started there would.
     #[test]
     fn a_guarded_folder_on_the_path_is_not_looked_in() {
         let entries = [
@@ -718,10 +692,7 @@ mod tests {
         assert_eq!(read.search_path.as_deref(), Some(search(kept).as_str()));
     }
 
-    /// The renewal schedule runs the command line inside the app, since the app has no
-    /// renewal of its own: a Mac app's in its bundle, and the Windows app's in the `bin`
-    /// beside `Pitboard.exe`, in any case. Anything else names none, which means it cannot
-    /// schedule renewal: the only other thing to schedule is the app itself.
+    // The app has no renewal of its own, so anything else names none and cannot schedule it.
     #[test]
     fn the_schedule_runs_the_command_line_inside_the_app() {
         let scheduled = |app: Option<&Path>| {
@@ -775,9 +746,7 @@ mod tests {
         assert_eq!(scheduled(None), None);
     }
 
-    /// A scratch directory with an app carrying a command line, and whatever a test puts
-    /// beside it. Its name has a space and a quote in it, as a folder somebody made might.
-    /// Nothing in it is ever run.
+    // Its name has a space and a quote in it, as a folder somebody made might.
     struct Scratch(tempfile::TempDir);
 
     impl Scratch {
@@ -829,9 +798,7 @@ mod tests {
         }
     }
 
-    /// The first `pitboard` on the path is the one a terminal runs, and a link to the app's
-    /// own, the way Homebrew makes one, is the app's own however many links it takes to get
-    /// there. A directory, a file nobody can run and a link to nothing are not a `pitboard`.
+    // A link to the app's own, as Homebrew makes one, is the app's own through every link.
     #[test]
     fn the_first_pitboard_found_says_whose_it_is() {
         let pitboard = file_of("pitboard");
@@ -906,10 +873,6 @@ mod tests {
         );
     }
 
-    /// Pitboard's own installs go where cargo and a copy from a release put it under the
-    /// home, or on Windows where the app's installer puts the app's own, then where the
-    /// system's package managers put programs, each from the variable that names it on
-    /// Windows.
     #[test]
     fn the_command_line_is_looked_for_where_each_way_of_installing_it_puts_it() {
         let under = |root: &str, parts: &[&str]| {

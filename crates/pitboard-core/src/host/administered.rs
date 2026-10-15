@@ -23,7 +23,7 @@ pub(crate) enum Administered {
     Unreadable(String),
 }
 
-// Which hive of the Windows registry a policy is under: `HKLM`, an administrator's, or `HKCU`.
+// `HKLM`, an administrator's, or `HKCU`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum Hive {
     Machine,
@@ -43,7 +43,6 @@ impl Hive {
 /// test, the command line the integration tests run, or an app built with the fixtures.
 pub(crate) const READ_BY_REAL_HOSTS: bool = !cfg!(any(test, feature = "test-support"));
 
-// Every file in the folder at `dir`, by its path; none where it is not there.
 pub(crate) fn listed(dir: &Path) -> Vec<std::path::PathBuf> {
     std::fs::read_dir(dir)
         .into_iter()

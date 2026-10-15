@@ -44,12 +44,7 @@ pub(crate) fn program(ctx: &Context) -> Option<PathBuf> {
     crate::provider::program_of(ctx, crate::provider::ProviderId::Claude)
 }
 
-// Where Claude Code's installers put `claude`, in the order an app looks there after the
-// login shell's `PATH`: the native installer's launcher in the home's `.local/bin`, then where
-// the system's package managers put it, its Homebrew cask, a global npm install and on
-// Windows winget's and Scoop's. The launcher's home on Windows is `HOME ?? USERPROFILE`, as
-// Claude Code reads it there, and none where both are unset (`install_places` and
-// `windows_install_layout` in the register).
+// The launcher's home is `HOME ?? USERPROFILE` on Windows (`windows_install_layout`).
 pub(crate) fn install_places(env: &Environment) -> Vec<PathBuf> {
     let home = match env.os() {
         Os::MacOs | Os::Linux => Some(env.home()),
@@ -64,13 +59,7 @@ pub(crate) fn install_places(env: &Environment) -> Vec<PathBuf> {
         .collect()
 }
 
-// Which Claude Code is installed here, read off disk and never by running it: `claude
-// --version` starts the program being described, which starts a daemon, which writes. On
-// Windows `claude.exe` names its release in its version resource, after npm's `claude.cmd`
-// is followed to the program it starts (`windows_version_resource`). Elsewhere the native
-// installer's link leads to `<...>/versions/<version>`, and an npm install has a
-// `package.json` beside the program or above it. A machine that has run Claude Code at all
-// has `daemon.lock`, which records the version that wrote it.
+// Never by running it: `claude --version` starts a daemon, which writes.
 pub(crate) fn installed_version(ctx: &Context) -> Option<String> {
     let found =
         program(ctx).map(|found| crate::host::program::npm_shim_target(&found).unwrap_or(found));
@@ -100,7 +89,7 @@ pub(crate) fn installed_version(ctx: &Context) -> Option<String> {
     daemon::read(ctx).and_then(|d| d.version)
 }
 
-// `2.1.300.0` is release 2.1.300; another fourth part names no release of Claude Code's.
+// Claude Code's reads `<release>.0` (`windows_version_resource`).
 fn release_of([major, minor, patch, fourth]: [u16; 4]) -> Option<String> {
     (fourth == 0).then(|| format!("{major}.{minor}.{patch}"))
 }
@@ -256,8 +245,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// A bare name is looked up the way a shell looks it up, so Pitboard and the person's
-    /// own shell disagree about whether Claude Code is installed only if PATH differs.
     #[test]
     fn a_program_is_found_on_path_and_a_missing_one_is_not() {
         let ctx = Context::new(PathBuf::from("/home/x"));
@@ -289,8 +276,6 @@ mod tests {
         assert_eq!(release_of([10, 0, 26100, 1]), None);
     }
 
-    /// npm's `claude.cmd` is followed to the program it starts, and the version read beside
-    /// that, where its version resource says none: the package's own `package.json`.
     #[test]
     fn npms_shim_is_followed_to_the_program_it_starts() {
         let prefix = tempfile::tempdir().expect("a scratch npm prefix");

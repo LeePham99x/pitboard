@@ -712,15 +712,7 @@ fn codex_login(ctx: &Context) -> Result<Option<CodexLogin>, CodexLoginTrouble> {
     }))
 }
 
-// Which Codex `program` is, read off the path it resolves to and never by running it, as
-// `codex --version` would start what is being described. Each way Codex is installed puts the
-// version within two folders of the program it resolves to, and only there is looked: the
-// standalone installer's `releases/0.154.0-<target>/bin/codex`, Homebrew's
-// `Caskroom/codex/0.154.0/`, npm's `@openai/codex/package.json` beside the `bin` it runs from,
-// which npm's `codex.cmd` leads to on Windows, and the `codex-package.json` of a package's
-// vendored build, since `codex.exe` carries no version resource (`codex_windows_version`).
-// Folder names are read before any file is opened, so a standalone install inside `~/.codex`
-// is named without reading anything in it.
+// Never by running it, and no further than two folders up: names before any file is opened.
 fn codex_version(program: &std::path::Path) -> Option<String> {
     let program =
         crate::host::program::npm_shim_target(program).unwrap_or_else(|| program.to_path_buf());
@@ -1938,16 +1930,7 @@ fn exempting(proxy: &ProxyFact) -> Option<String> {
     })
 }
 
-/// Whether moving the stored login would change anything a session sees.
-///
-/// Claude Code resolves this from layered settings, so a managed policy or a line in a
-/// person's own `settings.json` can make every switch Pitboard performs a no-op. Read from
-/// files rather than from this process's environment, because an app launched from Finder
-/// has no environment to read and is the surface most likely to be used on a machine that
-/// needs the answer.
-///
-/// Where a file sits behind the keychain, a session already running takes the stored login
-/// only when it next reads it, at its login's renewal, which the `fallback_login` check says.
+// From files as well, since an app launched from Finder has no environment to read.
 fn judge_auth(facts: &Facts) -> Check {
     if facts.auth_overrides.is_empty() {
         let read = if facts.fallback_login.is_some() {
@@ -2923,7 +2906,7 @@ fn desktop_environment(ctx: &Context, facts: &Facts) -> Value {
     })
 }
 
-// Claude Desktop is macOS's alone, so no other system is asked for its build.
+// Claude Desktop is macOS's alone.
 fn desktop_build(ctx: &Context) -> Option<String> {
     match ctx.os {
         Os::MacOs => ctx
@@ -6132,9 +6115,7 @@ mod tests {
         assert_eq!(codex_version(&shim), None);
     }
 
-    /// On Windows npm's `codex.cmd` leads to the package's `bin/codex.js`, and a package's
-    /// own `codex.exe`, which carries no version resource, sits in a `bin` beside its
-    /// `codex-package.json` (0.162.1).
+    // `codex.exe` has no version resource in 0.162.1.
     #[test]
     fn a_version_is_read_where_codex_is_installed_on_windows() {
         let scratch = tempfile::tempdir().expect("a scratch home");
@@ -6174,7 +6155,6 @@ mod tests {
         assert_eq!(codex_version(&shim).as_deref(), Some("0.161.0"));
     }
 
-    // Claude Desktop is macOS's alone: no other system is asked for its build.
     #[test]
     fn only_macos_is_asked_for_claude_desktops_build() {
         let memory = crate::host::memory::MemoryHost::new();

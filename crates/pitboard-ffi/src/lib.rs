@@ -442,9 +442,7 @@ mod tests {
         );
     }
 
-    /// Where an app's Pitboard directory is, which command line an app comes with, and
-    /// whether a path is a program, cross the bindings as the core reads them, so the app has
-    /// no rule of its own for any of them.
+    // So the app has no rule of its own for any of them.
     #[test]
     #[allow(
         clippy::disallowed_methods,

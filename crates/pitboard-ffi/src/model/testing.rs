@@ -1396,9 +1396,7 @@ impl World {
         ))
     }
 
-    /// An app on this machine with a command line inside it, in the scratch home, which a
-    /// schedule runs and a link would reach, as `build-app.sh` puts one in a copy of the app,
-    /// or the Windows app's installer in the `bin` beside `Pitboard.exe`. Where it is.
+    // Where `build-app.sh` puts one in a copy of the app, or the MSI beside `Pitboard.exe`.
     pub(super) fn app_with_a_command_line(&mut self) -> PathBuf {
         self.app_with_a_command_line_in("")
     }
@@ -1425,9 +1423,7 @@ impl World {
         helper
     }
 
-    /// Where the app looks for the `pitboard` a terminal would run, after the login shell's
-    /// `PATH`: `places`, and nothing of this machine's. For the test that makes an app with a
-    /// command line inside it, as its own helpers are.
+    // After the login shell's `PATH`, and nothing of this machine's.
     pub(super) fn looks_for_pitboard_in(
         &mut self,
         places: Vec<PathBuf>,
@@ -1961,8 +1957,7 @@ fn whether_the_stand_in_runs_is_answered_once_it_has_written_its_process_id() {
     writing.join().expect("the writer");
 }
 
-/// A program at `path` that anybody may run, with the directories it needs: the compiled
-/// stand-in, there to be found, which refuses to do anything were it run.
+// The compiled stand-in, which refuses to do anything were it run.
 pub(super) fn a_program_at(path: &std::path::Path) {
     use pitboard_core::testing::stand_in::{self, Script};
     let dir = path.parent().expect("a program's directory");

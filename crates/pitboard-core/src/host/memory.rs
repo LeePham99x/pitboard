@@ -301,8 +301,7 @@ impl MemoryHost {
             .insert(path, holds);
     }
 
-    // Say the registry holds `text` as `value` of `key` under `hive`, on whatever system the
-    // tests run on.
+    // On whatever system the tests run on.
     #[cfg(test)]
     pub(crate) fn sets_policy(&self, hive: super::Hive, key: &str, value: &str, text: &str) {
         self.policies
@@ -494,7 +493,6 @@ impl Host for MemoryHost {
             .unwrap_or(Administered::Unset)
     }
 
-    // The files a test said an administrator wrote in `dir`.
     fn administered_folder(&self, dir: &Path) -> Vec<PathBuf> {
         self.administered
             .lock()

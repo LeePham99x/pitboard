@@ -1494,17 +1494,11 @@ mod tests {
         assert_eq!(Job::FindCommandLine.lane(), Lane::Discovery);
     }
 
-    // `pitboard`, or `pitboard.exe` on Windows.
     fn pitboard() -> String {
         format!("pitboard{}", std::env::consts::EXE_SUFFIX)
     }
 
-    /// The `pitboard` a terminal runs: the first on the login shell's `PATH`, then where each
-    /// way of installing Pitboard puts one, and whether it is this app's own once every link
-    /// on the way to it is followed. Looked for over real files in the scratch home, and in
-    /// none of this machine's places.
-    ///
-    /// MachineModelTests.swift's theCommandLineIsLookedForWhereATerminalWouldFindIt.
+    // MachineModelTests.swift's theCommandLineIsLookedForWhereATerminalWouldFindIt.
     #[test]
     fn the_command_line_is_looked_for_where_a_terminal_would_find_it() {
         use crate::FoundCommandLine;
@@ -1543,21 +1537,8 @@ mod tests {
         );
     }
 
-    /// The `pitboard` a terminal runs is looked for in a core made from its parts, as a
-    /// fixture makes its own, and in one made as the app makes its own, by
-    /// `AppCore::for_app` from the environment the app was started with. It is looked for on
-    /// the login shell's `PATH` ahead of what cargo installed, and then where each way of
-    /// installing Pitboard puts it under the app's home, which is all there is where the shell
-    /// could not be asked. Only a copy of the app has a command line inside it for a link to
-    /// lead back to: a core not run from an app has none, and nor does a build directory.
-    /// Each look finds a copy in the scratch home before any place of this machine's. The
-    /// core made from its parts names no tool's program and is given an empty search path
-    /// for one, needing neither; the one made from the environment names each tool's
-    /// program outright, and the login shell it names cannot be run. So nothing of this
-    /// machine is looked in. A build for tests on Windows reads no machine's `Path`.
-    ///
-    /// AppModelTests.swift's theSettingsLookForTheCommandLineWhereTheLoginShellSays, but for
-    /// linking nothing, since linking is the app's own.
+    // AppModelTests.swift's theSettingsLookForTheCommandLineWhereTheLoginShellSays. Nothing of
+    // this machine is looked in: each tool is named outright, and no login shell or registry read.
     #[test]
     fn the_settings_look_for_the_command_line_where_the_login_shell_says() {
         use crate::{FoundCommandLine, Made, OwnCommandLine};
