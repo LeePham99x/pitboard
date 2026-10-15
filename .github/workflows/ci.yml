@@ -511,11 +511,11 @@ jobs:
         run: |
           dotnet publish Pitboard.Core.Tests -c Release -r "$RUNTIME" --self-contained \
             -o "$GITHUB_WORKSPACE/target/csharp/gated" \
-            -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/gated/release/pitboard_ffi.dll" \
-            -p:PitboardNativeLibraryGated=true
+            -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/gated/release/pitboard_ffi.dll"
           dotnet publish Pitboard.Core.Tests -c Release -r "$RUNTIME" --self-contained \
             -o "$GITHUB_WORKSPACE/target/csharp/opened" \
-            -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/release/pitboard_ffi.dll"
+            -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/release/pitboard_ffi.dll" \
+            -p:PitboardNativeLibraryOpened=true
       - name: The C# tests, as a standard user
         shell: pwsh
         run: >

@@ -10,10 +10,10 @@
     <None Include="$(PitboardNativeLibrary)" CopyToOutputDirectory="PreserveNewest" Visible="false" />
   </ItemGroup>
   <!--
-    Where that library was built as a release is, without the cfg pitboard_unreleased_windows,
-    pass PitboardNativeLibraryGated=true as well, for the test of what it refuses on Windows.
+    Where that is a Windows library built with the cfg pitboard_unreleased_windows, pass
+    PitboardNativeLibraryOpened=true as well, or the test of what a 0.x release refuses fails.
   -->
-  <ItemGroup Condition="'$(PitboardNativeLibraryGated)' == 'true'">
-    <AssemblyMetadata Include="PitboardNativeLibraryGated" Value="true" />
+  <ItemGroup Condition="'$(PitboardNativeLibraryOpened)' == 'true'">
+    <AssemblyMetadata Include="PitboardNativeLibraryOpened" Value="true" />
   </ItemGroup>
 </Project>

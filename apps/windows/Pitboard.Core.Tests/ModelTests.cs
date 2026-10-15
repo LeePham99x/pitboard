@@ -919,9 +919,9 @@ public sealed class ModelTests
         CollectionAssert.AreEqual(ranOut, posted);
     }
 
-    private static bool LibraryIsGated =>
+    private static bool LibraryIsOpened =>
         typeof(ModelTests).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
-            .Any(metadata => metadata is { Key: "PitboardNativeLibraryGated", Value: "true" });
+            .Any(metadata => metadata is { Key: "PitboardNativeLibraryOpened", Value: "true" });
 
     // The version the gate reads, from Cargo.toml rather than the library under test.
     private static int ProductMajor()
@@ -945,11 +945,11 @@ public sealed class ModelTests
     [OSCondition(OperatingSystems.Windows)]
     public void AWindowsModelReadsNothingUntilPitboardForWindowsIsReleased()
     {
-        if (!LibraryIsGated)
+        if (LibraryIsOpened)
         {
             Assert.Inconclusive(
-                "This library was not built as a release is, without `--cfg pitboard_unreleased_windows`. " +
-                "Pass one that was to PitboardNativeLibrary, with PitboardNativeLibraryGated=true, to run this test.");
+                "This library was built with `--cfg pitboard_unreleased_windows`, which opens it to Windows. " +
+                "Pass one built as a release is to PitboardNativeLibrary, without PitboardNativeLibraryOpened, to run this test.");
         }
 
         var root = Directory.CreateTempSubdirectory("pitboard-gate-").FullName;
@@ -971,11 +971,20 @@ public sealed class ModelTests
             Assert.IsNotNull(read, "the model told of no read");
             if (ProductMajor() == 0)
             {
-                Assert.AreEqual("windows_not_released", read.ReadFailure?.Code);
-                foreach (var home in environment.Values)
+                Assert.AreEqual(
+                    "windows_not_released", read.ReadFailure?.Code,
+                    "A library built with `--cfg pitboard_unreleased_windows` takes PitboardNativeLibraryOpened=true.");
+                // Shutdown waits for the actor alone, so a lane may still write after it.
+                var settled = DateTime.UtcNow + TimeSpan.FromSeconds(2);
+                do
                 {
-                    Assert.IsEmpty(Directory.EnumerateFileSystemEntries(home), home);
-                }
+                    foreach (var home in environment.Values)
+                    {
+                        Assert.IsEmpty(Directory.EnumerateFileSystemEntries(home), home);
+                    }
+
+                    Thread.Sleep(50);
+                } while (DateTime.UtcNow < settled);
             }
             else
             {

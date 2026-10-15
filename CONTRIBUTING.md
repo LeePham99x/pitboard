@@ -251,10 +251,9 @@ dotnet test --solution Pitboard.slnx -p:PitboardNativeLibrary="$PWD/../../target
 ```
 
 On Linux the library the tests load is `libpitboard_ffi.so`, and on Windows
-`pitboard_ffi.dll`. A Windows library built without `--cfg pitboard_unreleased_windows`, as a
-0.x release is, takes `-p:PitboardNativeLibraryGated=true` as well, for the test of what it
-refuses. C# makes each field of a record a member of it, so a field may not share its record's
-name.
+`pitboard_ffi.dll`. A Windows library built with `--cfg pitboard_unreleased_windows` takes
+`-p:PitboardNativeLibraryOpened=true` as well, or the test of what a 0.x release refuses fails.
+C# makes each field of a record a member of it, so a field may not share its record's name.
 
 The tests that start a fixture's model are skipped against a library built without the
 `fixture` feature. To run them, build the library with
