@@ -8,10 +8,6 @@ namespace Pitboard.Windows.Tests;
 [TestClass]
 public sealed class ProfileTests
 {
-    [GlobalTestInitialize]
-    public static void ReadTheWindowsApartment(TestContext context) =>
-        Apartments.Before($"{context.FullyQualifiedTestClassName}.{context.TestName}");
-
     // CF4: the Runtime of the PC the tests run on is one the windows take.
     [TestMethod]
     public void ThisPCsRuntimeTakesTheWindows()

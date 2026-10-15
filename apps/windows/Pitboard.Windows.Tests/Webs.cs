@@ -46,16 +46,14 @@ internal sealed class Webs : IAsyncDisposable
         var web = new WebEnvironment(
             scheme, Path.Combine(folder.FullName, "WebView2"), Path.Combine(folder.FullName, "Downloads"), devTools: false,
             elsewhere.Add);
-        var asking = $"{Apartments.Now()}, the window's thread {UnitTestApp.Window!.DispatcherQueue.HasThreadAccess}";
+        var apartment = Thread.CurrentThread.GetApartmentState();
         try
         {
             return new Webs(folder, web, await web.Made().WaitAsync(Patience), elsewhere);
         }
         catch (COMException failed)
         {
-            throw new AssertFailedException(
-                $"WebView2 made no environment, asked from {asking}; the window's thread was {Apartments.Said}: {failed.Message}",
-                failed);
+            throw new AssertFailedException($"WebView2 made no environment, asked from a thread in the {apartment}: {failed.Message}", failed);
         }
     }
 
