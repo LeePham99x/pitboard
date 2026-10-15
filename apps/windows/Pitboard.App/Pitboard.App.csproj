@@ -7,6 +7,8 @@
     <RootNamespace>Pitboard.App</RootNamespace>
     <AssemblyName>Pitboard</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Drawn in ../Icon and written by its make-ico.py. -->
+    <ApplicationIcon>Pitboard.ico</ApplicationIcon>
     <Platforms>x64;ARM64</Platforms>
     <UseWinUI>true</UseWinUI>
     <EnableMsixTooling>true</EnableMsixTooling>
