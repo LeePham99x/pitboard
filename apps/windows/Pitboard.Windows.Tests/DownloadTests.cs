@@ -35,6 +35,7 @@ public sealed class DownloadTests
         };
         var own = $"{WebEnvironment.FixtureScheme}://chatgpt.com/files/page.txt";
         Directory.CreateDirectory(webs.Web.Downloads);
+        var failures = new List<string>();
 
         foreach (var (kind, name, saved, content, script) in new[]
         {
@@ -53,13 +54,22 @@ public sealed class DownloadTests
 
             await page.ExecuteScriptAsync($"{script}; 0");
 
-            var (file, end) = await Ended(webs, from, kind);
-            Console.WriteLine($"CF7: {kind}: {string.Join(", ", events)}; asked: {window.Questions.Count > asked}");
-            Assert.IsInstanceOfType<DownloadEnd.Finished>(end, kind);
-            Assert.AreEqual(Path.Combine(webs.Web.Downloads, saved), file, kind);
-            Assert.AreEqual(content, File.ReadAllText(file!), kind);
+            // Every kind is tried, so one run measures each.
+            try
+            {
+                var (file, end) = await Ended(webs, from, kind, events);
+                Console.WriteLine($"CF7: {kind}: {string.Join(", ", events)}; asked: {window.Questions.Count > asked}");
+                Assert.IsInstanceOfType<DownloadEnd.Finished>(end, kind);
+                Assert.AreEqual(Path.Combine(webs.Web.Downloads, saved), file, kind);
+                Assert.AreEqual(content, File.ReadAllText(file!), kind);
+            }
+            catch (AssertFailedException failed)
+            {
+                failures.Add(failed.Message);
+            }
         }
 
+        Assert.IsEmpty(failures, string.Join(Environment.NewLine, failures));
         Assert.AreEqual(webs.Web.Downloads, page.Profile.DefaultDownloadFolderPath);
     }
 
@@ -87,7 +97,7 @@ public sealed class DownloadTests
 
             await page.ExecuteScriptAsync($"{script}; 0");
 
-            var (file, end) = await Ended(webs, from, kind);
+            var (file, end) = await Ended(webs, from, kind, events);
             Console.WriteLine($"CF7: {kind}: {string.Join(", ", events)}");
             Assert.AreEqual(question, window.Questions.Skip(asked).Single().Title, kind);
             Assert.IsInstanceOfType<DownloadEnd.Cancelled>(end, kind);
@@ -252,9 +262,20 @@ public sealed class DownloadTests
     }
 
     // The file the first download told the model of after `from` saved to, if any, and how it ended.
-    private static async Task<(string? File, DownloadEnd End)> Ended(Webs webs, int from, string what)
+    private static async Task<(string? File, DownloadEnd End)> Ended(
+        Webs webs, int from, string what, List<string>? events = null)
     {
-        await Webs.Until(() => webs.Sent.Skip(from).OfType<Intent.DownloadEnded>().Any(), $"{what} did not end");
+        try
+        {
+            await Webs.Until(() => webs.Sent.Skip(from).OfType<Intent.DownloadEnded>().Any(), $"{what} did not end");
+        }
+        catch (AssertFailedException late)
+        {
+            throw new AssertFailedException(
+                $"{late.Message}, after {string.Join(", ", events ?? [])}; the model was told {string.Join(", ", webs.Sent.Skip(from))}",
+                late);
+        }
+
         var ended = webs.Sent.Skip(from).OfType<Intent.DownloadEnded>().First();
         var saving = webs.Sent.Skip(from).OfType<Intent.DownloadSaving>().SingleOrDefault(saving => saving.Id == ended.Id);
         return (saving?.File, ended.End);
