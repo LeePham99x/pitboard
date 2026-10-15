@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.VisualStudio.TestTools.UnitTesting.AppContainer;
 using Pitboard.Core;
 using Pitboard.Views;
@@ -79,6 +80,25 @@ public sealed class AccountWindowTests
         {
             window.Close();
         }
+    }
+
+    // A window closed while it asks about a download answers no, whether the question showed or waited its turn.
+    [UITestMethod]
+    public async Task ClosingTheWindowAnswersItsDownloadQuestionNo()
+    {
+        var sent = new List<Intent>();
+        var web = WebEnvironment.Fixture(Path.GetTempPath());
+        var window = await Up(new AccountWindow(Main.Store, web, new Downloads(web.Downloads, sent.Add), sent.Add));
+        var root = window.Content.XamlRoot;
+        var question = PitboardFfiMethods.DownloadQuestion("notes.txt", "chatgpt.com");
+        var shown = window.AllowDownload(question);
+        var waiting = window.AllowDownload(question);
+        await Views.Until(() => VisualTreeHelper.GetOpenPopupsForXamlRoot(root).Count > 0, "the question did not show");
+
+        window.Close();
+
+        Assert.IsFalse(await shown.WaitAsync(Webs.Patience));
+        Assert.IsFalse(await waiting.WaitAsync(Webs.Patience));
     }
 
     // The page loads in WebView2, over the fixture's stand-ins, and the model hears where it is.

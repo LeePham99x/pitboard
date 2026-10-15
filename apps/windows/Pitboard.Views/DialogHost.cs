@@ -11,7 +11,16 @@ public sealed class DialogHost(Func<XamlRoot?> root)
     [ThreadStatic]
     private static Task? _turn;
 
+    private bool _withdrawn;
+
     public ContentDialog? Open { get; private set; }
+
+    // As its window closes: the dialog it shows goes, and none waiting shows.
+    public void Withdraw()
+    {
+        _withdrawn = true;
+        Open?.Hide();
+    }
 
     // Null when the dialog never showed: withdrawn before its turn, or no window to show it in.
     public async Task<ContentDialogResult?> Show(ContentDialog dialog, CancellationToken withdrawn = default)
@@ -22,7 +31,7 @@ public sealed class DialogHost(Func<XamlRoot?> root)
         try
         {
             await before;
-            if (withdrawn.IsCancellationRequested || root() is not { } shownIn)
+            if (_withdrawn || withdrawn.IsCancellationRequested || root() is not { } shownIn)
             {
                 return null;
             }

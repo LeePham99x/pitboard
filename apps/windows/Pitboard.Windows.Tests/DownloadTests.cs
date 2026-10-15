@@ -187,6 +187,27 @@ public sealed class DownloadTests
         Assert.IsFalse(File.Exists(webs.Sent.OfType<Intent.DownloadSaving>().Last().File));
     }
 
+    // A window closed while it asks answers no, and the closed page takes its download with it.
+    [UITestMethod]
+    public async Task ADownloadWhosePageClosedWhileAskedIsCancelled()
+    {
+        using var site = new StandInSite();
+        await using var webs = await Webs.Make(WebEnvironment.FixtureScheme);
+        var answer = new TaskCompletionSource<bool>();
+        var window = new StandInWindow(webs, answer: true) { Pending = answer.Task };
+        var page = await Open(webs, window);
+        await page.ExecuteScriptAsync(
+            $"document.body.insertAdjacentHTML('beforeend', '<iframe src=\"{site.Address("/attachment/late.bin")}\"></iframe>'); 0");
+        await Webs.Until(() => window.Questions.Count == 1, "the download was not asked about");
+
+        webs.Close(page);
+        answer.SetResult(false);
+
+        await Webs.Until(() => webs.Sent.OfType<Intent.DownloadEnded>().Any(), "the model did not hear the download ended");
+        Assert.AreEqual(new DownloadEnd.Cancelled(), webs.Sent.OfType<Intent.DownloadEnded>().Single().End);
+        Assert.IsEmpty(webs.Sent.OfType<Intent.DownloadSaving>());
+    }
+
     // A download from another host's frame that never finishes, once it is saving.
     private static async Task Stall(Webs webs, CoreWebView2 page, StandInSite site, string name)
     {
@@ -245,6 +266,9 @@ public sealed class DownloadTests
 
         public CoreWebView2? SignIn { get; private set; }
 
+        // An answer still to come, in place of the one given.
+        public Task<bool>? Pending { get; init; }
+
         public async Task<CoreWebView2?> OpenSignIn(SignInWindowSize size)
         {
             SignIn = await webs.Page(Main.Store);
@@ -258,7 +282,7 @@ public sealed class DownloadTests
         public Task<bool> AllowDownload(AlertText question)
         {
             Questions.Add(question);
-            return Task.FromResult(answer);
+            return Pending ?? Task.FromResult(answer);
         }
 
         public void Shown(string address)

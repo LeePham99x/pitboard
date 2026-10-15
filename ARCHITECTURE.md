@@ -2123,16 +2123,16 @@ naming no frame, so `decide_response` hears `can_show` false, the address and it
 address has started and not completed and no frame's has. A download nothing accounts for
 counts as a frame's, so the question shows more often than on macOS, never less: the
 site's own `blob:` and `data:` downloads ask. `Ignore` cancels it before it is named; a
-question holds the event's deferral and cancels on Cancel; a download saved is named by
-`download_destination`, which on Windows numbers a copy `report (1).pdf` and splits a name
-as WebView2 does, `archive (1).tar.gz`. `Downloads` tells the model each one's start, file
-and end, and counts those under way for `downloads_quit_question`: Quit asks over a window
-of an account whose download runs, or another account window, then cancels them all. A
-paused download is under way: WebView2 leaves it interrupted and able to resume. The
-download list, with its Show in folder, is WebView2's own dialog, which Downloads in the
-command bar opens. `DownloadTests` hold this against the stand-in site, and print, for
-CF7, which events WebView2 raised around each kind of download, the name it gives a second
-`archive.tar.gz` on its own, and what a pause leaves.
+question holds the event's deferral and cancels on Cancel, or as its window closes and
+withdraws it; a download saved is named by `download_destination`, which on Windows
+numbers a copy `report (1).pdf` and splits a name as WebView2 does, `archive (1).tar.gz`.
+`Downloads` tells the model each one's start, file and end, and counts those under way for
+`downloads_quit_question`: Quit asks over a window of an account whose download runs, or
+another account window, then cancels them all. A paused download is under way: WebView2
+leaves it interrupted and able to resume. The download list is WebView2's own dialog,
+which Downloads in the command bar opens. `DownloadTests` hold this against the stand-in
+site, and print, for CF7, which events WebView2 raised around each kind of download, the
+name it gives a second `archive.tar.gz` on its own, and what a pause leaves.
 
 A window refuses to open, saying why, on a PC whose WebView2 Runtime is older than
 144.0.3719.77, the Runtime of the WebView2 SDK the Windows App SDK 2.5.1 brings, 1.0.3719.77

@@ -60,6 +60,9 @@ internal sealed class Webs : IAsyncDisposable
         return controller.CoreWebView2;
     }
 
+    // As its window closing closes it.
+    public void Close(CoreWebView2 page) => _controllers.Single(controller => controller.CoreWebView2 == page).Close();
+
     // Whether a page loads after `start`. A navigation stopped before it, which may end later, does not count.
     public static async Task<bool> Loads(CoreWebView2 page, Func<Task> start)
     {

@@ -48,6 +48,24 @@ public sealed class DialogHostTests
         Assert.AreEqual(ContentDialogResult.None, await secondShown);
     }
 
+    // As an account window closes: its question goes, and one waiting its turn never shows.
+    [UITestMethod]
+    public async Task AWithdrawnHostsDialogGoesAndNoneWaitingShows()
+    {
+        var content = await Views.Shown(new Grid());
+        var dialogs = new DialogHost(() => content.XamlRoot);
+        var first = new ContentDialog { Title = "first", CloseButtonText = "OK" };
+        var second = new ContentDialog { Title = "second", CloseButtonText = "OK" };
+        var firstShown = dialogs.Show(first);
+        var secondShown = dialogs.Show(second);
+        await Views.Until(() => dialogs.Open == first, "the first dialog did not show");
+
+        dialogs.Withdraw();
+
+        Assert.AreEqual(ContentDialogResult.None, await firstShown);
+        Assert.IsNull(await secondShown);
+    }
+
     // An account window's question waits for a sheet over the main window, and the other way round.
     [UITestMethod]
     public async Task EachWindowsDialogsWaitForTheOthers()

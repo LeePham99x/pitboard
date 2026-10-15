@@ -91,6 +91,7 @@ public sealed partial class AccountWindow : Window, ISessionWindow
         Closed += (_, _) =>
         {
             _closed = true;
+            _dialogs.Withdraw();
             _signIn?.Close();
             _view?.Close();
         };
@@ -118,6 +119,7 @@ public sealed partial class AccountWindow : Window, ISessionWindow
         }
     }
 
+    // A window closed meanwhile answers no.
     public Task<bool> Confirm(Question question) => _dialogs.Confirm(question);
 
     public void Bring()
@@ -156,7 +158,7 @@ public sealed partial class AccountWindow : Window, ISessionWindow
 
     // As the macOS app asks, over the window.
     public Task<bool> AllowDownload(AlertText question) =>
-        _dialogs.Confirm(new Question(question.Title, question.Message, "Download"));
+        Confirm(new Question(question.Title, question.Message, "Download"));
 
     public void Shown(string address) => _send(new Intent.PageShown(Store, address));
 
