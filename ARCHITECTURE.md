@@ -402,11 +402,15 @@ window loads its site, and whatever the site's pages load, as a browser would.
     it draws: `app_command_line`, for the command line inside its bundle, as it starts and
     as it links that one; `can_run`, whether that one runs, as it links it; and
     `pitboard_directory`, for where `app.json` is and the key the account windows' records
-    are kept under, as it starts. The snapshot carries what an app shows of the tools, a
-    sign-in, the command line a terminal runs, a limit and its pace, a parked login, a
-    renewal run and doctor's checks, made by `present/` and the model's lanes, so no free
-    function says it again. The helpers `present/` makes it with here, `tools`,
-    `usage_level`, `renewal_note` and `doctor_summary`, are the crate's own.
+    are kept under, as it starts. The Windows app calls two more as it starts:
+    `launch_refusal`, what the gate every change passes refuses once it has named the app's
+    version to the release gate, the release gate first, then an elevated process, a
+    Windows build below 26100 and a home that is not a full path, which it shows in place
+    of a model; and `windows_records_key`, its records' key. The snapshot carries what an
+    app shows of the tools, a sign-in, the command line a terminal runs, a limit and its
+    pace, a parked login, a renewal run and doctor's checks, made by `present/` and the
+    model's lanes, so no free function says it again. The helpers `present/` makes it with
+    here, `tools`, `usage_level`, `renewal_note` and `doctor_summary`, are the crate's own.
   - `launch.rs` is the core the model's lanes call, `AppCore`, which nothing exports. It is
     made from the `AppLaunch` the app was started with, read as `AppContext::discover`
     reads it, the first time a lane needs it, and made once more a while after a login
@@ -893,10 +897,11 @@ window loads its site, and whatever the site's pages load, as a browser would.
   `download_destination`, which asks the file system whether each name it tries is taken;
   `app_command_line`, which only joins paths; `can_run`, which asks the file system about
   one path; `pitboard_directory`, which reads the environment it is given and, without
-  `HOME`, this account's passwd entry; and `fixture_names` and `fixture_page`, which read
-  only what they are given. `PitboardModel::fixture` and `PitboardModel::fixture_in` make
-  the fixture's world in its folder before they answer, files in a temporary directory and
-  nothing slower.
+  `HOME`, this account's passwd entry; `windows_records_key`, which reads only what it is
+  given; `launch_refusal`, which asks the system whether this process is elevated and which
+  build it runs on; and `fixture_names` and `fixture_page`, which read only what they are
+  given. `PitboardModel::fixture` and `PitboardModel::fixture_in` make the fixture's world
+  in its folder before they answer, files in a temporary directory and nothing slower.
 - What a snapshot says is made by `present`, which reads the state and the moment and asks
   nothing of anyone but the app's `LocalTime`, for each clock time and whether a moment is
   on another day than now, and for each date and time of the activity log. Where that cannot

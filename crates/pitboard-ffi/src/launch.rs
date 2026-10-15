@@ -96,6 +96,14 @@ fn account_id(tool: ProviderId, id: &str) -> String {
     }
 }
 
+// What the gate every change passes refuses in `ctx`, as a read failure says it.
+pub(crate) fn refusal(ctx: pitboard_core::context::Context) -> Option<crate::ReadFailure> {
+    pitboard_core::release::set_version(env!("CARGO_PKG_VERSION"));
+    let refused = service::Pitboard::new(ctx).permit().err()?;
+    let PitboardError::Failed { code, message, .. } = refused.into();
+    Some(crate::ReadFailure { code, message })
+}
+
 // What giving up came to: the switch, each move given up in the app's words, and warnings.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct GaveUp {
@@ -1296,6 +1304,64 @@ mod tests {
             pitboard_core::release::version(),
             Some(env!("CARGO_PKG_VERSION"))
         );
+    }
+
+    #[test]
+    fn the_app_is_refused_at_launch_where_every_change_is() {
+        use pitboard_core::host::{Elevation, Floor};
+        let home = std::env::temp_dir().join(format!(
+            "pitboard-launch-refusal-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let refused = |set: &dyn Fn(&pitboard_core::testing::MemoryHost), pitboard: PathBuf| {
+            let host = pitboard_core::testing::MemoryHost::new();
+            set(&host);
+            refusal(
+                Context::new(home.clone())
+                    .with_pitboard_home(pitboard)
+                    .with_caller("app".into())
+                    .with_memory_stores(host),
+            )
+        };
+        let full = home.join(".pitboard");
+        let code = |set: &dyn Fn(&pitboard_core::testing::MemoryHost), pitboard: &PathBuf| {
+            refused(set, pitboard.clone()).map(|failure| failure.code)
+        };
+        assert_eq!(code(&|_| {}, &full), None);
+        let elevated = |host: &pitboard_core::testing::MemoryHost| {
+            host.runs_with(Elevation::Elevated {
+                why: "as administrator",
+            });
+        };
+        assert_eq!(code(&elevated, &full).as_deref(), Some("elevated"));
+        let unknown = |host: &pitboard_core::testing::MemoryHost| {
+            host.runs_with(Elevation::Unknown);
+        };
+        assert_eq!(code(&unknown, &full).as_deref(), Some("elevated"));
+        let below = |host: &pitboard_core::testing::MemoryHost| {
+            host.runs_on(Floor::Below { build: 22631 });
+        };
+        assert_eq!(
+            refused(&below, full.clone()).map(|failure| failure.message),
+            Some(
+                "Pitboard changes nothing on Windows build 22631. It changes things on Windows \
+                 11 24H2 and later, and on Windows Server 2025: update Windows to use it here."
+                    .into()
+            )
+        );
+        let floor_unknown = |host: &pitboard_core::testing::MemoryHost| {
+            host.runs_on(Floor::Unknown);
+        };
+        assert_eq!(
+            code(&floor_unknown, &full).as_deref(),
+            Some("system_too_old")
+        );
+        assert_eq!(
+            code(&|_| {}, &PathBuf::from("pitboard")).as_deref(),
+            Some("home_not_absolute")
+        );
+        assert!(!home.exists(), "nothing is made");
     }
 
     /// Where Pitboard may change nothing, as root or under sudo, the app's schedule is

@@ -958,6 +958,7 @@ public sealed class ModelTests
             string[] homes = ["USERPROFILE", "HOME", "APPDATA", "LOCALAPPDATA", "CODEX_HOME", "CLAUDE_CONFIG_DIR", "PITBOARD_HOME"];
             var environment = homes.ToDictionary(
                 home => home, home => Directory.CreateDirectory(Path.Combine(root, home)).FullName);
+            var refused = PitboardFfiMethods.LaunchRefusal(environment);
             var waiting = new Waiting();
             using var model = new PitboardModel(
                 new AppLaunch(environment, null), waiting, new StandInApps(), new Posting(), new InUtc());
@@ -974,6 +975,7 @@ public sealed class ModelTests
                 Assert.AreEqual(
                     "windows_not_released", read.ReadFailure?.Code,
                     "A library built with `--cfg pitboard_unreleased_windows` takes PitboardNativeLibraryOpened=true.");
+                Assert.AreEqual(read.ReadFailure, refused);
                 // Shutdown waits for the actor alone, so a lane may still write after it.
                 var settled = DateTime.UtcNow + TimeSpan.FromSeconds(2);
                 do
@@ -989,6 +991,7 @@ public sealed class ModelTests
             else
             {
                 Assert.IsNull(read.ReadFailure, read.ReadFailure?.Message);
+                Assert.IsNull(refused, refused?.Message);
             }
         }
         finally
