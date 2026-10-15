@@ -6,7 +6,7 @@ import SwiftUI
 /// and its place, inside its own tool.
 ///
 /// What it says, its default button's words, whether that can be pressed and what it saves
-/// are the model's: the button offers what `nameToSave` would save, and the model saves by
+/// are the model's: the button offers what `checkName` would save, and the model saves by
 /// the same rule.
 struct NameSheet: View {
     let model: AppModel
@@ -27,12 +27,17 @@ struct NameSheet: View {
         let text = model.sheetText
         // A name being saved cannot be withdrawn, so there is nothing to cancel.
         let busy = text?.saving ?? false
+        let check = checkName(sheet: sheet, typed: name)
         SheetLayout(title: text?.title ?? "", message: text?.message ?? "") {
             Section {
                 TextField("Name", text: $name, prompt: Text(text?.prompt ?? ""))
                     .accessibilityIdentifier("sheet.name")
                     .focused($focused)
                     .onSubmit(save)
+            } footer: {
+                if let problem = check.problem {
+                    NameProblem(problem: problem)
+                }
             }
             if let failure = model.sheetFailure {
                 SheetFailure(failure: failure)
@@ -43,14 +48,18 @@ struct NameSheet: View {
                 .disabled(busy)
             Button(text?.confirm ?? "", action: save)
                 .keyboardShortcut(.defaultAction)
-                .disabled(nameToSave(sheet: sheet, typed: name) == nil || busy)
+                .disabled(check.name == nil || busy)
         }
         .onAppear { focused = true }
+        .onChange(of: name) {
+            if model.sheetFailure != nil { model.send(.dismissSheetFailure) }
+        }
         .interactiveDismissDisabled(busy)
     }
 
     private func save() {
-        guard let name = nameToSave(sheet: sheet, typed: name), model.sheetText?.saving != true
+        guard let name = checkName(sheet: sheet, typed: name).name,
+            model.sheetText?.saving != true
         else { return }
         model.send(saving(name))
     }

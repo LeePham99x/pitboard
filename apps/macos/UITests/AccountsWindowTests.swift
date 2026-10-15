@@ -48,6 +48,48 @@ final class AccountsWindowTests: FixtureTestCase {
         XCTAssertTrue(app.accountRow("codex/third").waitForExistence(timeout: 10))
     }
 
+    /// A tool Pitboard did not find is offered all the same, says what to install and where to
+    /// read how, and cannot be signed in to.
+    @MainActor
+    func testAToolPitboardDidNotFindSaysWhatToInstall() {
+        let app = launch(.oneTool)
+        app.openWindow()
+        app.toolbars.buttons["Add Account"].click()
+        let tool = app.popUpButtons["sheet.tool"]
+        XCTAssertTrue(tool.waitForExistence(timeout: 5))
+        tool.click()
+        tool.menuItems["Codex"].click()
+        let sheet = app.sheets.firstMatch
+        XCTAssertTrue(
+            sheet.staticTexts["Pitboard can’t find the Codex CLI on this Mac."]
+                .waitForExistence(timeout: 5))
+        XCTAssertTrue(sheet.descendants(matching: .any)["sheet.missing.link"].exists)
+        let name = app.textFields["sheet.name"]
+        name.click()
+        name.typeText("third")
+        XCTAssertFalse(app.buttons["Sign In"].isEnabled)
+    }
+
+    /// A name typed with its tool, or with a space, says why under the field, and Sign In waits
+    /// for one that can be a name.
+    @MainActor
+    func testANameThatCannotBeOneSaysWhy() {
+        let app = launch(.oneTool)
+        app.openWindow()
+        app.toolbars.buttons["Add Account"].click()
+        let name = app.textFields["sheet.name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        name.click()
+        name.typeText("claude/third")
+        let problem = app.staticTexts["A name can’t contain “/”. Choose the tool above."]
+        XCTAssertTrue(problem.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Sign In"].isEnabled)
+        name.typeKey("a", modifierFlags: .command)
+        name.typeText("third")
+        XCTAssertTrue(problem.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Sign In"].isEnabled)
+    }
+
     /// Sign In stays disabled while a sign-in runs, so a second sign-in that starts and
     /// finishes is what shows the first one was stopped.
     @MainActor
@@ -93,9 +135,12 @@ final class AccountsWindowTests: FixtureTestCase {
         name.typeKey("a", modifierFlags: .command)
         name.typeText("work")
         app.buttons["Rename"].click()
-        XCTAssertTrue(app.staticTexts["Couldn’t rename personal"].waitForExistence(timeout: 5))
+        let failure = app.staticTexts["Couldn’t rename personal"]
+        XCTAssertTrue(failure.waitForExistence(timeout: 5))
         name.typeKey("a", modifierFlags: .command)
         name.typeText("home")
+        XCTAssertTrue(
+            failure.waitForNonExistence(timeout: 5), "it was about the name typed before")
         app.buttons["Rename"].click()
         XCTAssertTrue(app.accountRow("claude/home").waitForExistence(timeout: 5))
     }

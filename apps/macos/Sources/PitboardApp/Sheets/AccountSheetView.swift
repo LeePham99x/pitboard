@@ -71,6 +71,53 @@ extension SheetLayout where Status == EmptyView {
     }
 }
 
+/// A tool Pitboard did not find, said where it is picked: what Pitboard needs of it, and where
+/// to read how to get it.
+struct ToolMissing: View {
+    let missing: Missing
+
+    var body: some View {
+        Section {
+            Label {
+                VStack(alignment: .leading, spacing: Design.lineSpacing) {
+                    Text(missing.title).fontWeight(.medium)
+                    Text(missing.detail).explanatory()
+                    if let page = URL(string: missing.link) {
+                        Link(missing.linkTitle, destination: page)
+                            .accessibilityIdentifier("sheet.missing.link")
+                    }
+                }
+            } icon: {
+                Image(systemName: Severity.warning.symbol)
+                    .foregroundStyle(Severity.warning.tint)
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("sheet.missing")
+        }
+        // Picking a tool Pitboard did not find changes the sheet below the field in focus.
+        .onAppear(perform: announce)
+        .onChange(of: missing.title, announce)
+    }
+
+    private func announce() {
+        AccessibilityNotification.Announcement("\(missing.title) \(missing.detail)").post()
+    }
+}
+
+/// Why what is typed in a name field cannot be a name, under the field.
+struct NameProblem: View {
+    let problem: String
+
+    var body: some View {
+        Text(problem)
+            .footnote()
+            .accessibilityIdentifier("sheet.problem")
+            .onChange(of: problem, initial: true) {
+                AccessibilityNotification.Announcement(problem).post()
+            }
+    }
+}
+
 /// A failure said inside the sheet that met it, where the name typed is still there to
 /// correct.
 struct SheetFailure: View {
