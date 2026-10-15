@@ -3,6 +3,9 @@
 use std::os::windows::fs::OpenOptionsExt;
 use std::os::windows::io::AsRawHandle;
 use std::path::Path;
+use windows_sys::Win32::Foundation::{
+    CloseHandle, ERROR_INVALID_PARAMETER, FILETIME, HANDLE, WAIT_OBJECT_0,
+};
 use windows_sys::Win32::Storage::FileSystem::{
     FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO, FILE_EXECUTE,
     FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_ATTRIBUTES, FILE_READ_DATA,
@@ -10,11 +13,64 @@ use windows_sys::Win32::Storage::FileSystem::{
     GetFileInformationByHandleEx,
 };
 use windows_sys::Win32::System::SystemServices::IO_REPARSE_TAG_APPEXECLINK;
+use windows_sys::Win32::System::Threading::{
+    GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE,
+    WaitForSingleObject,
+};
 
-/// Whether process `pid` may still be running: always, until W18 asks Windows. The callers
-/// only ever leave alone what a live process may still be using, so this keeps everything.
-pub(crate) fn may_be_running(_pid: u32) -> bool {
-    true
+struct Handle(HANDLE);
+
+impl Drop for Handle {
+    fn drop(&mut self) {
+        // SAFETY: a handle Windows gave this process, closed this once.
+        unsafe {
+            CloseHandle(self.0);
+        }
+    }
+}
+
+enum Open {
+    Handle(Handle),
+    Refused,
+    Gone,
+}
+
+fn open(pid: u32, access: u32) -> Open {
+    // SAFETY: plain values; a handle that comes back is closed by `Handle`.
+    let handle = unsafe { OpenProcess(access, 0, pid) };
+    if !handle.is_null() {
+        return Open::Handle(Handle(handle));
+    }
+    match std::io::Error::last_os_error().raw_os_error() {
+        Some(code) if code == ERROR_INVALID_PARAMETER as i32 => Open::Gone,
+        _ => Open::Refused,
+    }
+}
+
+// Never `GetExitCodeProcess`: a process may exit with 259, which it gives for one running.
+pub(crate) fn may_be_running(pid: u32) -> bool {
+    match open(pid, PROCESS_SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION) {
+        Open::Handle(process) => {
+            // SAFETY: an open handle with SYNCHRONIZE, waited on for no time at all.
+            unsafe { WaitForSingleObject(process.0, 0) != WAIT_OBJECT_0 }
+        }
+        Open::Refused => true,
+        Open::Gone => false,
+    }
+}
+
+// As Claude Code records it: the FILETIME as one number.
+pub(crate) fn started(pid: u32) -> Option<u64> {
+    let Open::Handle(process) = open(pid, PROCESS_QUERY_LIMITED_INFORMATION) else {
+        return None;
+    };
+    let (mut created, mut exited) = (FILETIME::default(), FILETIME::default());
+    let (mut kernel, mut user) = (FILETIME::default(), FILETIME::default());
+    // SAFETY: an open handle, and four FILETIMEs of this frame.
+    let read =
+        unsafe { GetProcessTimes(process.0, &mut created, &mut exited, &mut kernel, &mut user) };
+    (read != 0)
+        .then(|| (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime))
 }
 
 // An app execution alias opens as nothing, so only its tag and its `WindowsApps` folder tell it.
@@ -300,6 +356,34 @@ mod tests {
         let script = scratch("versions").join("plain.cmd");
         std::fs::write(&script, "@echo off").expect("a script");
         assert_eq!(product_version(&script), None, "nor has a script");
+    }
+
+    // System's.
+    #[test]
+    fn pid_4_is_running() {
+        assert!(may_be_running(4));
+    }
+
+    #[test]
+    fn a_process_that_exited_and_one_that_never_was_are_gone() {
+        let exited = {
+            let mut child = std::process::Command::new(std::env::current_exe().expect("this test"))
+                .arg("--list")
+                .stdout(std::process::Stdio::null())
+                .spawn()
+                .expect("it starts");
+            let pid = child.id();
+            child.wait().expect("it ends");
+            pid
+        };
+        assert!(!may_be_running(exited));
+        let never = u32::MAX - 3;
+        assert!(!may_be_running(never));
+        assert_eq!(started(never), None);
+
+        let me = std::process::id();
+        assert!(may_be_running(me));
+        assert!(started(me).is_some());
     }
 
     #[test]

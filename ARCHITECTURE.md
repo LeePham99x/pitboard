@@ -2540,6 +2540,11 @@ treated, and only the macOS build shows it. The run reads both builds since.
   empty and signs in with the file, or is signed out.
 - The supervisor daemon records itself in `<config dir>/daemon.lock`, with its pid and the
   Claude Code version that started it. It leaves the file behind when it stops.
+- Read on 16 October 2026 from the win32-x64 and win32-arm64 builds of 2.1.300
+  (`windows_daemon_identity`): on Windows the lock also holds `procStartFt`, the daemon's
+  creation time from `GetProcessTimes` as a decimal FILETIME, and Claude Code takes the pid
+  for the daemon only while that time is the same text. Pitboard compares it the same way,
+  so a pid Windows has reused reads as gone. The lock holds no `pidDomain`.
 - Claude Code's storage backends are `keychain`, `plaintext` and `windows-credman`, the
   last behind the `tengu_windows_credman` flag. Its code has no `libsecret`,
   `org.freedesktop.secrets`, `gnome-keyring` or `SecretService`. The Linux binary does

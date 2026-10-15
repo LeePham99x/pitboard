@@ -144,13 +144,15 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         windows: Read("2.1.300"),
     },
     everywhere("oauth_client", VERIFIED_AGAINST),
-    later_on_windows(
-        "supervisor_daemon",
-        VERIFIED_AGAINST,
-        &["W18"],
-        "windows_daemon_identity: how the supervisor daemon is told apart from other \
-         processes on Windows",
-    ),
+    PerSystem {
+        name: "supervisor_daemon",
+        macos: Read(VERIFIED_AGAINST),
+        linux: Read(VERIFIED_AGAINST),
+        windows: NotRead(
+            "which process the lock names on Windows is windows_daemon_identity's, read from \
+             the Windows builds",
+        ),
+    },
     PerSystem {
         name: "no_keyring_off_macos",
         macos: NotRead(
@@ -287,6 +289,12 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         name: "windows_managed_settings",
         macos: NotRead("macOS has no registry, and its managed folder is settings.rs's"),
         linux: NotRead("Linux has no registry, and its managed folder is settings.rs's"),
+        windows: Read("2.1.300"),
+    },
+    PerSystem {
+        name: "windows_daemon_identity",
+        macos: NotRead("off Windows the daemon records `procStart`, which Pitboard does not read"),
+        linux: NotRead("off Windows the daemon records `procStart`, which Pitboard does not read"),
         windows: Read("2.1.300"),
     },
     warm_up("headless_token_descriptor"),
@@ -1029,6 +1037,26 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         absent: &[],
     },
     Assumption {
+        name: "windows_daemon_identity",
+        fact: "on Windows the supervisor daemon records in `daemon.lock`, beside its pid, \
+               `procStartFt`: its own creation time from `GetProcessTimes`, called through \
+               `bun:ffi` with `PROCESS_QUERY_LIMITED_INFORMATION`, the FILETIME as a decimal \
+               string. It takes a daemon for running only while its pid's creation time, read \
+               the same way, is the same text, so a pid Windows has given another process \
+               reads as gone. Where `bun:ffi` does not load it writes `procStart`, \
+               PowerShell's `CreationDate.Ticks`, which it never compares with a FILETIME. \
+               `daemon.lock` holds no `pidDomain`, which only the session records carry, as \
+               `win32:<host name>`. Its pipes are `\\\\.\\pipe\\cc-daemon-<the 16 hex of \
+               daemon\\pipe.key>-<name>`",
+        read_from: "the daemon lock's writer and its liveness check, the process start module \
+                    and the daemon's pipe names, in the win32-x64 and win32-arm64 builds of \
+                    2.1.300, read as bytes on 2026-10-16; 2.1.301's win32-x64 build is the same",
+        verified_against: "2.1.300",
+        depends: "claude::daemon's running, through host::proc::started",
+        probe: &["procStartFt", "\\\\.\\pipe\\cc-daemon-"],
+        absent: &[],
+    },
+    Assumption {
         name: "headless_token_descriptor",
         fact: "where `CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR` names a descriptor, Claude Code \
                reads an OAuth access token from it, an inherited pipe until a newline or its \
@@ -1136,8 +1164,8 @@ mod tests {
     use super::*;
     use crate::assumptions::Platform;
 
-    /// The facts the Windows builds were read for, and those they were not, by name. Read on Windows, the keychain facts would report the keychain gone, and
-    /// `no_keyring_off_macos` a keyring arrived.
+    // Read there, the keychain facts would report the keychain gone, and no_keyring_off_macos a
+    // keyring arrived.
     #[test]
     fn windows_reads_the_facts_its_build_was_read_for() {
         let read: Vec<&str> = PER_SYSTEM
@@ -1168,6 +1196,7 @@ mod tests {
                 "windows_install_layout",
                 "windows_version_resource",
                 "windows_managed_settings",
+                "windows_daemon_identity",
             ]
         );
         for name in [

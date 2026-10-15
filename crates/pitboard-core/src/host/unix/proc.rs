@@ -147,6 +147,11 @@ pub(crate) fn can_run(path: &Path) -> bool {
     executable && std::fs::metadata(path).is_ok_and(|found| found.is_file())
 }
 
+// Claude Code records a process's creation time as `procStartFt` on Windows alone.
+pub(crate) fn started(_pid: u32) -> Option<u64> {
+    None
+}
+
 // Only a Windows program carries a version resource.
 pub(crate) fn product_version(_path: &Path) -> Option<[u16; 4]> {
     None

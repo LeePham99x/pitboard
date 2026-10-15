@@ -328,8 +328,6 @@ mod tests {
             Err(JarError::Unsupported)
         ));
         assert_eq!(host().app_version(Path::new("C:/x")), None);
-        assert!(proc::may_be_running(std::process::id()));
-        assert!(proc::may_be_running(u32::MAX));
     }
 
     /// There is no scheduler, on this machine or on one in memory.
