@@ -1,11 +1,6 @@
 namespace Pitboard.Core.Tests;
 
-/// <summary>
-/// The sites and the links from outside, reached from C# as the Windows app will reach them.
-/// A link a person shares, or the one the pitboard:// handler is given on its command line,
-/// is read by the core's rule, the one the macOS app and its Share extension read it by. What
-/// the rule says is the core's to test; this proves the records and refusals cross.
-/// </summary>
+// The core tests what its rules say; these prove the records and refusals cross.
 [TestClass]
 public sealed class SitesTests
 {
@@ -24,10 +19,6 @@ public sealed class SitesTests
         Assert.AreEqual("claude.ai or chatgpt.com", PitboardFfiMethods.SiteNames(Conjunction.Or));
     }
 
-    /// <summary>
-    /// A Pitboard link written for a link reads back as the link on its site's own host, as
-    /// the macOS app reads one its Share extension wrote.
-    /// </summary>
     [TestMethod]
     public void APitboardLinkReadsBackAsTheLinkItCarries()
     {
@@ -39,9 +30,6 @@ public sealed class SitesTests
         Assert.AreEqual("chatgpt.com", link.Site.Host);
     }
 
-    /// <summary>
-    /// A refusal is thrown as its own kind, and said in the sentence both apps show.
-    /// </summary>
     [TestMethod]
     public void ARefusalSaysWhy()
     {

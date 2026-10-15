@@ -1,11 +1,6 @@
 namespace Pitboard.Core.Tests;
 
-/// <summary>
-/// The rules of an account's window, reached from C# as the Windows app's WebView2 code will
-/// reach them: which accounts have a window and which store keeps each one's data, where a
-/// page may go, and what a window says. What each rule says is the core's to test; this
-/// proves the records, the enums and their variants cross.
-/// </summary>
+// The core tests what each rule says; these prove its records, enums and variants cross.
 [TestClass]
 public sealed class AccountWindowsTests
 {
@@ -18,10 +13,7 @@ public sealed class AccountWindowsTests
             AccountId: uuid, SignedIn: false, Switchable: true, Parked: null, Usage: null,
             Stale: null, StaleExplanation: null, Plan: null, ReadAt: null);
 
-    /// <summary>
-    /// The store is the one the macOS app keeps each window's data under, so it names the
-    /// WebView2 profile of the same account, and a window is found by it in any case.
-    /// </summary>
+    // The store the macOS app keeps the account's data under, found by it in any letter case.
     [TestMethod]
     public void EachEnrolledAccountHasAWindowOnItsToolsSite()
     {
@@ -48,9 +40,6 @@ public sealed class AccountWindowsTests
         CollectionAssert.AreEqual(CodexLabels, several.Windows.Select(window => window.Label).ToArray());
     }
 
-    /// <summary>
-    /// A decision comes back as its variant, with what the window says about it.
-    /// </summary>
     [TestMethod]
     public void APageGoesWhereThePolicySays()
     {
@@ -72,9 +61,6 @@ public sealed class AccountWindowsTests
         Assert.AreEqual("https://chatgpt.com/", PitboardFfiMethods.WindowHome(policy));
     }
 
-    /// <summary>
-    /// What a window says, and what its dialogs and downloads are titled.
-    /// </summary>
     [TestMethod]
     public void AWindowSaysWhatHappenedAndWhoAsks()
     {
