@@ -1,17 +1,4 @@
-// proper-lockfile's side of C5, with the options Claude Code 2.1.300 passes for its write
-// lock (stale 15000 ms, so a heartbeat every 7500 ms, ten retries, 100 ms to 1000 ms of
-// backoff) or for its refresh lock (stale 60000 ms, a heartbeat every 5000 ms). Run it
-// against the target `pitboard-probe lock` uses, so each side can see the other's lock:
-//
-//   hold:  take the lock and keep it for <seconds>, then say whether it was ever reported
-//          compromised. Run `pitboard-probe lock --mode check` meanwhile.
-//   check: for <seconds>, once a second, ask whether the lock is held and try to take it
-//          without retrying. Run `pitboard-probe lock --mode hold` meanwhile.
-//
 // Usage: bun proper-lockfile-loop.mjs <scratch> <hold|check> [seconds] [write|refresh]
-//
-// It touches only `<scratch>\pitboard-probe-locktarget` and the lock beside it, and prints
-// counts and error codes only.
 
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -21,6 +8,7 @@ const scratch = process.argv[2];
 const mode = process.argv[3];
 const seconds = Number(process.argv[4] ?? "30");
 const timing = process.argv[5] ?? "write";
+// The options Claude Code 2.1.300 passes for its write lock and its refresh lock.
 const timings = {
   write: {
     stale: 15000,

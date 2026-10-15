@@ -27,14 +27,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The SHA-256 of Bun 1.4.3's zip for each, read from that release's SHASUMS256.txt
-          # and checked against the zip itself on 2026-10-15.
+          # The SHA-256 of the pinned Bun's zip for each, read from that release's
+          # SHASUMS256.txt and checked against the zip itself on 2026-10-15.
           - os: windows-2025
             triple: x86_64-pc-windows-msvc
+            bun-pinned: 1.4.3
             bun-zip: bun-windows-x64.zip
             bun-sha256: 0bf84e808552beea67bf1202a287a35c6c825d837b287b3f8e9dd513dba35d3d
           - os: windows-11-arm
             triple: aarch64-pc-windows-msvc
+            bun-pinned: 1.4.3
             bun-zip: bun-windows-aarch64.zip
             bun-sha256: 5e8f142ef722cbc9f67dc068a166e46ee72be8307b38cac7186589d2face668f
     runs-on: ${{ matrix.os }}
@@ -53,6 +55,7 @@ jobs:
         id: bun
         env:
           VERSION: ${{ inputs.bun-version }}
+          PINNED_VERSION: ${{ matrix.bun-pinned }}
           PINNED: ${{ matrix.bun-sha256 }}
           GIVEN_X64: ${{ inputs.bun-sha256-x64 }}
           GIVEN_AARCH64: ${{ inputs.bun-sha256-aarch64 }}
@@ -62,7 +65,7 @@ jobs:
             echo "bun-version must be three numbers, such as 1.4.3" >&2
             exit 1
           fi
-          if [ "$VERSION" = 1.4.3 ]; then
+          if [ "$VERSION" = "$PINNED_VERSION" ]; then
             sha="$PINNED"
           elif [ "$TRIPLE" = x86_64-pc-windows-msvc ]; then
             sha="$GIVEN_X64"

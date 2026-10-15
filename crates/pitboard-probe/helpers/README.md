@@ -18,10 +18,11 @@ pins, and `proper-lockfile` from `bun.lock` with `bun install --frozen-lockfile
   proper-lockfile's lock with the options Claude Code passes for its write lock or its
   refresh lock (C5). Run `hold` against `pitboard-probe lock --mode check`, then `check`
   against `pitboard-probe lock --mode hold`, with the same timing.
-- `os-homedir.mjs`: `os.homedir()` and the home-shaped variables, with the profile shown as
-  `<profile>` and the account name as `<user>` (B1, B2).
+- `os-homedir.mjs <profile>`: `os.homedir()`, `os.userInfo().homedir` and the home-shaped
+  variables, with the account's profile folder, given by the script, shown as `<profile>` and
+  the account name as `<user>` (B1, B2).
 - `bun-mode.mjs <scratch>`: a file made as Claude Code makes `.credentials.json`, with mode
   0o600 and `chmod`, for `pitboard-probe acl --describe` to read (C1).
 - `bun-secrets.mjs <set|delete>`: `Bun.secrets` items as Claude Code writes its login and its
   pieces, under the `pitboard-citest-bun` service, for `pitboard-probe credman-item` to read
-  and delete (G3).
+  and delete (G3). It refuses outside a GitHub-hosted runner.

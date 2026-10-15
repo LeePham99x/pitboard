@@ -33,12 +33,10 @@ pub(super) fn homes(codex_home: Option<&Path>, claude_config_dir: Option<&Path>)
     let profile = ffi::folder_profile();
     let local_app_data = ffi::folder_local_app_data();
     let temp = std::env::temp_dir();
-    let local_app_data_in_profile = profile.as_ref().zip(local_app_data.as_ref()).map(|(p, l)| {
-        p.join(r"AppData\Local")
-            .display()
-            .to_string()
-            .eq_ignore_ascii_case(&l.display().to_string())
-    });
+    let local_app_data_in_profile = profile
+        .as_ref()
+        .zip(local_app_data.as_ref())
+        .map(|(p, l)| crate::guard::same_path(&p.join(r"AppData\Local"), l));
 
     let mut data = json!({
         "build": os_build(),

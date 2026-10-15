@@ -24,8 +24,10 @@ use windows_sys::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next,
 };
 use windows_sys::Win32::System::JobObjects::{
-    AssignProcessToJobObject, CreateJobObjectW, IsProcessInJob, JOBOBJECT_BASIC_PROCESS_ID_LIST,
-    JobObjectBasicProcessIdList, OpenJobObjectW, QueryInformationJobObject, TerminateJobObject,
+    AssignProcessToJobObject, CreateJobObjectW, IsProcessInJob, JOB_OBJECT_LIMIT_BREAKAWAY_OK,
+    JOBOBJECT_BASIC_PROCESS_ID_LIST, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+    JobObjectBasicProcessIdList, JobObjectExtendedLimitInformation, OpenJobObjectW,
+    QueryInformationJobObject, SetInformationJobObject, TerminateJobObject,
 };
 use windows_sys::Win32::System::SystemServices::JOB_OBJECT_QUERY;
 use windows_sys::Win32::System::Threading::{
@@ -41,7 +43,9 @@ use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 const IN_JOB: u8 = 10;
 const NOT_IN_JOB: u8 = 11;
 const NO_JOB: u8 = 12;
+const LEAF_UNKNOWN: u8 = 13;
 const BREAKAWAY_REFUSED: u8 = 14;
+const IN_AN_OUTER_JOB_ONLY: u8 = 15;
 const NOT_A_BROWSER: u8 = 4;
 const STILL_ACTIVE: u32 = 259;
 
@@ -50,6 +54,25 @@ fn create_job(name: &str) -> Result<Owned, u32> {
     // SAFETY: `w` is NUL-terminated; the job is owned by the result.
     Owned::new(unsafe { CreateJobObjectW(std::ptr::null(), w.as_ptr()) })
         .ok_or_else(ffi::last_error)
+}
+
+fn allow_breakaway(job: &Owned) -> Result<(), u32> {
+    let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+    limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+    // SAFETY: `job` is a job this process made; `limits` is sized for this class.
+    let ok = unsafe {
+        SetInformationJobObject(
+            job.raw(),
+            JobObjectExtendedLimitInformation,
+            (&raw const limits).cast(),
+            size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+        )
+    };
+    if ok == 0 {
+        Err(ffi::last_error())
+    } else {
+        Ok(())
+    }
 }
 
 fn in_job(process: HANDLE, job: HANDLE) -> Option<bool> {
@@ -112,7 +135,13 @@ fn resume_only_thread(pid: u32) -> Result<(), String> {
     Ok(())
 }
 
-pub(super) fn job(scratch: &Path, chain: Chain, rounds: u32, start: JobStart) -> Report {
+pub(super) fn job(
+    scratch: &Path,
+    chain: Chain,
+    rounds: u32,
+    start: JobStart,
+    breakaway_ok: bool,
+) -> Report {
     if let Err(r) = guarded("job", scratch) {
         return r;
     }
@@ -128,6 +157,13 @@ pub(super) fn job(scratch: &Path, chain: Chain, rounds: u32, start: JobStart) ->
             );
         }
     };
+    if breakaway_ok && let Err(code) = allow_breakaway(&job) {
+        return Report::refused(
+            "job",
+            logon_now(),
+            format!("SetInformationJobObject failed: {code}"),
+        );
+    }
     // SAFETY: a pseudo-handle for this process.
     let parent_in_a_job = in_job(unsafe { GetCurrentProcess() }, std::ptr::null_mut());
 
@@ -162,7 +198,7 @@ pub(super) fn job(scratch: &Path, chain: Chain, rounds: u32, start: JobStart) ->
 
     let mut codes: BTreeMap<String, u32> = BTreeMap::new();
     let (mut assign_failed, mut in_job_n, mut escaped, mut unknown) = (0u32, 0u32, 0u32, 0u32);
-    let (mut breakaway_refused, mut resume_failed) = (0u32, 0u32);
+    let (mut breakaway_refused, mut resume_failed, mut outer_only) = (0u32, 0u32, 0u32);
     let mut assign_errors: BTreeMap<u32, u32> = BTreeMap::new();
     let mut resume_errors: BTreeMap<String, u32> = BTreeMap::new();
     let flags = match start {
@@ -222,6 +258,10 @@ pub(super) fn job(scratch: &Path, chain: Chain, rounds: u32, start: JobStart) ->
         match code {
             Some(c) if c == i32::from(IN_JOB) => in_job_n += 1,
             Some(c) if c == i32::from(NOT_IN_JOB) => escaped += 1,
+            Some(c) if c == i32::from(IN_AN_OUTER_JOB_ONLY) => {
+                escaped += 1;
+                outer_only += 1;
+            }
             Some(c) if c == i32::from(BREAKAWAY_REFUSED) => breakaway_refused += 1,
             _ => unknown += 1,
         }
@@ -235,11 +275,13 @@ pub(super) fn job(scratch: &Path, chain: Chain, rounds: u32, start: JobStart) ->
             "chain": format!("{chain:?}"),
             "start": format!("{start:?}"),
             "rounds": rounds,
+            "breakaway_ok": breakaway_ok,
             "this_process_already_in_a_job": parent_in_a_job,
             "assign_failed": assign_failed,
             "assign_errors_by_code": assign_errors.iter().map(|(k, v)| (k.to_string(), json!(v))).collect::<serde_json::Map<_, _>>(),
             "leaf_in_the_job": in_job_n,
             "leaf_escaped": escaped,
+            "leaf_escaped_into_an_outer_job": outer_only,
             "leaf_unknown": unknown,
             "breakaway_refused": breakaway_refused,
             "resume_failed": resume_failed,
@@ -253,7 +295,6 @@ pub(super) fn job(scratch: &Path, chain: Chain, rounds: u32, start: JobStart) ->
 /// Exit code of a hidden helper given a job name or page that is not the probe's.
 const NOT_THE_PROBES: u8 = 3;
 
-/// The leaf: whether this process is in the named job, as its exit code.
 pub(super) fn job_leaf(job_name: &str) -> Outcome {
     if !guard::is_probe_object_name(job_name) {
         return Outcome::Code(NOT_THE_PROBES);
@@ -264,8 +305,12 @@ pub(super) fn job_leaf(job_name: &str) -> Outcome {
         return Outcome::Code(NO_JOB);
     };
     // SAFETY: a pseudo-handle for this process.
-    match in_job(unsafe { GetCurrentProcess() }, job.raw()) {
+    let me = unsafe { GetCurrentProcess() };
+    match in_job(me, job.raw()) {
         Some(true) => Outcome::Code(IN_JOB),
+        Some(false) if in_job(me, std::ptr::null_mut()) == Some(true) => {
+            Outcome::Code(IN_AN_OUTER_JOB_ONLY)
+        }
         Some(false) => Outcome::Code(NOT_IN_JOB),
         None => Outcome::Code(NO_JOB),
     }
@@ -285,9 +330,14 @@ pub(super) fn job_mid(job_name: &str, breakaway: bool) -> Outcome {
         leaf.creation_flags(CREATE_BREAKAWAY_FROM_JOB);
     }
     match leaf.status() {
-        Ok(s) => Outcome::Code(s.code().map_or(13, |c| c.clamp(0, 255) as u8)),
-        Err(e) if breakaway && e.raw_os_error() == Some(5) => Outcome::Code(BREAKAWAY_REFUSED),
-        Err(_) => Outcome::Code(13),
+        Ok(s) => Outcome::Code(s.code().map_or(LEAF_UNKNOWN, |c| c.clamp(0, 255) as u8)),
+        Err(e)
+            if breakaway
+                && e.raw_os_error() == Some(crate::replace::ERROR_ACCESS_DENIED as i32) =>
+        {
+            Outcome::Code(BREAKAWAY_REFUSED)
+        }
+        Err(_) => Outcome::Code(LEAF_UNKNOWN),
     }
 }
 
@@ -547,7 +597,7 @@ pub(super) fn job_browser(
         logon_now(),
         json!({
             "end": format!("{end:?}"),
-            "open": open_flag(open),
+            "open": format!("{open:?}"),
             "association_program": http_open_command()
                 .map(|c| crate::assoc::command_args(&c, "u"))
                 .and_then(|a| a.first().cloned())

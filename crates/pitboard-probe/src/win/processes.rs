@@ -102,7 +102,7 @@ fn token_user(h: HANDLE) -> Option<String> {
 }
 
 // The machine the process's image is built for, which an x64 program emulated on ARM64 keeps.
-pub(super) fn machine_of(h: HANDLE) -> Option<u16> {
+fn machine_of(h: HANDLE) -> Option<u16> {
     let mut info = PROCESS_MACHINE_INFORMATION::default();
     // SAFETY: `h` is open for limited queries; `info` is sized for this class.
     let ok = unsafe {

@@ -213,8 +213,12 @@ fn windows_folders() -> WindowsFolders {
                     .failures
                     .push(format!("FOLDERID_LocalAppData with the token {}", hex(hr))),
             }
-            if let Ok(p) = configured_folder(&FOLDERID_RoamingAppData, token.raw()) {
-                f.roaming_app_data.push(p);
+            match configured_folder(&FOLDERID_RoamingAppData, token.raw()) {
+                Ok(p) => f.roaming_app_data.push(p),
+                Err(hr) => f.failures.push(format!(
+                    "FOLDERID_RoamingAppData with the token {}",
+                    hex(hr)
+                )),
             }
         }
         Err(code) => f.failures.push(format!("the process token {code}")),
@@ -229,31 +233,41 @@ fn windows_folders() -> WindowsFolders {
             .failures
             .push(format!("FOLDERID_LocalAppData {}", hex(hr))),
     }
-    if let Ok(p) = configured_folder(&FOLDERID_RoamingAppData, std::ptr::null_mut()) {
-        f.roaming_app_data.push(p);
+    match configured_folder(&FOLDERID_RoamingAppData, std::ptr::null_mut()) {
+        Ok(p) => f.roaming_app_data.push(p),
+        Err(hr) => f
+            .failures
+            .push(format!("FOLDERID_RoamingAppData {}", hex(hr))),
     }
     f
 }
 
-// Refuses only when Windows names no profile, or no local app data, by any route: then the
-// guard cannot know where the logins are. Roaming app data is a profile folder by default.
+// A variable never stands in for a folder Windows names none of: the guard would then not
+// know where the logins are.
 pub fn real_profile() -> Result<RealProfile, String> {
     let WindowsFolders {
-        mut profiles,
-        mut local_app_data,
-        mut roaming_app_data,
+        profiles,
+        local_app_data,
+        roaming_app_data,
         failures,
     } = windows_folders();
-    if profiles.is_empty() || local_app_data.is_empty() {
+    let mut profile = RealProfile {
+        profiles,
+        local_app_data,
+        roaming_app_data,
+    };
+    let missing = profile.missing();
+    if !missing.is_empty() {
         return Err(format!(
-            "cannot read the real profile to check the scratch path ({}); refusing",
+            "cannot read the real {} to check the scratch path ({}); refusing",
+            missing.join(" or "),
             failures.join(", ")
         ));
     }
     for (var, into) in [
-        ("USERPROFILE", &mut profiles),
-        ("LOCALAPPDATA", &mut local_app_data),
-        ("APPDATA", &mut roaming_app_data),
+        ("USERPROFILE", &mut profile.profiles),
+        ("LOCALAPPDATA", &mut profile.local_app_data),
+        ("APPDATA", &mut profile.roaming_app_data),
     ] {
         if let Some(v) = std::env::var_os(var) {
             let p = PathBuf::from(v);
@@ -262,11 +276,7 @@ pub fn real_profile() -> Result<RealProfile, String> {
             }
         }
     }
-    Ok(RealProfile {
-        profiles,
-        local_app_data,
-        roaming_app_data,
-    })
+    Ok(profile)
 }
 
 /// Whether the account carries the throwaway marker: in every profile folder Windows names

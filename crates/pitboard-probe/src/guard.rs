@@ -34,6 +34,18 @@ pub const ROAMING_DESKTOP_NAMES: [&str; 2] = ["Claude", "Claude-3p"];
 pub const LOCAL_DESKTOP_NAMES: [&str; 1] = ["AnthropicClaude"];
 
 impl RealProfile {
+    pub fn missing(&self) -> Vec<&'static str> {
+        [
+            ("profile", &self.profiles),
+            ("local app data", &self.local_app_data),
+            ("roaming app data", &self.roaming_app_data),
+        ]
+        .into_iter()
+        .filter(|(_, found)| found.is_empty())
+        .map(|(name, _)| name)
+        .collect()
+    }
+
     pub fn forbidden_roots(&self) -> Vec<PathBuf> {
         let mut roots = Vec::new();
         for profile in &self.profiles {
@@ -70,7 +82,7 @@ impl RealProfile {
 }
 
 /// Whether two paths name the same place as Windows compares them as text.
-fn same_path(a: &Path, b: &Path) -> bool {
+pub fn same_path(a: &Path, b: &Path) -> bool {
     match (normalise(a), normalise(b)) {
         (Some(x), Some(y)) => x == y,
         _ => a == b,
@@ -199,8 +211,6 @@ pub fn is_probe_file_name(name: &str) -> bool {
             .is_some_and(|p| p.eq_ignore_ascii_case(crate::PROBE_PREFIX))
 }
 
-/// Whether `file` lies inside `scratch`, deeper than `scratch` itself, both absolute as given
-/// with no `..`.
 pub fn lies_in(file: &Path, scratch: &Path) -> bool {
     is_absolute_without_parent(file)
         && is_absolute_without_parent(scratch)
@@ -439,6 +449,20 @@ mod tests {
         .forbidden_roots();
         assert!(!scratch_is_safe(Path::new(r"R:\roam\Claude\x"), &moved));
         assert!(!scratch_is_safe(Path::new(r"r:\ROAM\claude-3P"), &moved));
+    }
+
+    #[test]
+    fn a_profile_windows_named_no_folder_of_cannot_be_guarded() {
+        assert!(profile().missing().is_empty());
+        let none = RealProfile {
+            roaming_app_data: Vec::new(),
+            ..profile()
+        };
+        assert_eq!(none.missing(), ["roaming app data"]);
+        assert_eq!(
+            RealProfile::default().missing(),
+            ["profile", "local app data", "roaming app data"]
+        );
     }
 
     #[test]
