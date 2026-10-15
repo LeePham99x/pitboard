@@ -3515,7 +3515,8 @@ mod tests {
         ignore = "Claude Desktop is macOS only: Windows refuses its folder calls"
     )]
     fn doctor_says_the_build_of_the_claude_installed() {
-        let m = switch::harness::desktop_machine("doctor-build");
+        let mut m = switch::harness::desktop_machine("doctor-build");
+        m.ctx.os = Os::MacOs;
         m.mem.app_at(
             std::path::Path::new("/Applications/Claude.app"),
             "2.31226.1",
