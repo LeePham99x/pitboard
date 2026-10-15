@@ -2918,7 +2918,8 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
   1457. It opens the browser with the command Windows has for `http`
   (`AssocQueryStringW`), as a child of its own with no standard streams. So a browser that
   was not running starts in Pitboard's job, and a `codex login` a killed Pitboard left
-  running is ended by the next one.
+  running is ended by the next one. Before a Codex sign-in on Windows, Pitboard says what
+  Codex already runs, since a sign-in open there ends too.
 - Read on 15 October 2026 from the win32 builds of 0.162.1 (`codex_windows_version`):
   `codex.exe` has no version resource. The package it runs from, npm's vendored one or a
   standalone release, holds `codex-package.json` beside its `bin`, whose `version` doctor

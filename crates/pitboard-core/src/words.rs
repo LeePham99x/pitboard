@@ -706,6 +706,19 @@ pub(crate) fn sign_in_awaited(label: &str, put_back: &str, again: bool) -> Strin
     )
 }
 
+// Codex's login server ends one already on its port as it starts (`codex_login_is_driveable`).
+pub(crate) fn codex_runs_before_a_sign_in(holding: &[crate::holder::Holding]) -> String {
+    let (verb, them) = if crate::holder::plural(holding) {
+        ("are", "them")
+    } else {
+        ("is", "it")
+    };
+    format!(
+        "{} {verb} running. A Codex sign-in open in {them} ends as this one starts.\n",
+        crate::holder::described(holding)
+    )
+}
+
 pub(crate) fn move_waiting(label: &str) -> String {
     format!(
         "A move of `{label}`'s login was interrupted. Keep Claude closed: the next change to a \

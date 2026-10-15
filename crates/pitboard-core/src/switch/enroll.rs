@@ -225,6 +225,10 @@ pub(crate) fn sign_in(
     tool: &'static dyn Provider,
 ) -> Result<SignIn> {
     let (mut pending, dir) = reserve_signin(ctx, permit, tool)?;
+    if let Some(first) = running_already(ctx, tool.id()) {
+        use std::io::Write;
+        let _ = std::io::stderr().write_all(first.as_bytes());
+    }
     // Pitboard never sees the sign-in; it reads the login the tool stores once it is done.
     // What the tool prints goes to stderr, so `--json` output stays one JSON line.
     let finished = tool
@@ -240,6 +244,19 @@ pub(crate) fn sign_in(
     }
     pending.read_back()?;
     Ok(pending)
+}
+
+// Windows alone, which is not released, so macOS and Linux say what they said before.
+fn running_already(ctx: &Context, which: ProviderId) -> Option<String> {
+    if ctx.os != crate::host::Os::Windows || which != ProviderId::Codex {
+        return None;
+    }
+    match super::still_holding(ctx, which) {
+        super::StillHolding::These(holding) => {
+            Some(crate::words::codex_runs_before_a_sign_in(&holding))
+        }
+        super::StillHolding::Nothing | super::StillHolding::Unknown => None,
+    }
 }
 
 fn started(which: ProviderId, e: &std::io::Error) -> Error {
@@ -485,13 +502,18 @@ fn start_watched(
     }
     // Only a script playing the tool is told whom the sign-in is for.
     let _ = label;
+    let first = running_already(ctx, which);
     tool.sign_in(ctx, permit, &dir)
-        .and_then(|command| watch(command, pending))
+        .and_then(|command| watch(command, pending, first))
         .map_err(|e| started(which, &e))
 }
 
-/// Runs `command` with its output piped, as the sign-in `pending` reserved.
-fn watch(mut command: std::process::Command, pending: SignIn) -> std::io::Result<WatchedSignIn> {
+// `first` said before anything the tool says.
+fn watch(
+    mut command: std::process::Command,
+    pending: SignIn,
+    first: Option<String>,
+) -> std::io::Result<WatchedSignIn> {
     command
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -499,6 +521,9 @@ fn watch(mut command: std::process::Command, pending: SignIn) -> std::io::Result
     let mut tool = crate::host::proc::start(command)?;
     let child = tool.child();
     let (say, said) = std::sync::mpsc::channel();
+    if let Some(first) = first {
+        let _ = say.send(first);
+    }
     // Claude Code writes the browser URL and the paste prompt without a newline after them,
     // so this reads by chunk rather than by line and lets the caller decide what to show.
     // Codex writes its address to stderr, which is read the same way.
@@ -1923,6 +1948,58 @@ mod tests {
         }
     }
 
+    #[test]
+    fn before_a_codex_sign_in_on_windows_what_codex_runs_is_said() {
+        let mem = crate::host::memory::MemoryHost::new();
+        let on = |os| {
+            let env = crate::context::Environment::on(
+                os,
+                [("HOME", "/nowhere"), ("USERPROFILE", r"C:\nowhere")],
+            );
+            Context::for_command_line(&env).with_memory_stores(Arc::clone(&mem))
+        };
+        assert_eq!(
+            running_already(&on(crate::host::Os::Windows), ProviderId::Codex),
+            None
+        );
+        mem.runs("codex", 2);
+        assert_eq!(
+            running_already(&on(crate::host::Os::Windows), ProviderId::Codex).as_deref(),
+            Some(
+                "2 `codex` sessions are running. A Codex sign-in open in them ends as this one \
+                 starts.\n"
+            )
+        );
+        assert_eq!(
+            running_already(&on(crate::host::Os::Windows), ProviderId::Claude),
+            None
+        );
+        assert_eq!(
+            running_already(&on(crate::host::Os::MacOs), ProviderId::Codex),
+            None
+        );
+
+        let home = tempfile::tempdir().expect("a scratch home");
+        let ctx = Context::new(home.path().to_path_buf())
+            .with_pitboard_home(home.path().join(".pitboard"))
+            .with_memory_stores(Arc::clone(&mem));
+        let (pending, _) = reserve_signin(
+            &ctx,
+            Permit::for_a_test(),
+            provider::document(ProviderId::Codex),
+        )
+        .expect("reserved");
+        let mut quiet = std::process::Command::new(std::env::current_exe().expect("this test"));
+        quiet.args(["--list", "--exact", "pitboard-no-such-test"]);
+        let watched = watch(quiet, pending, Some("first\n".into())).expect("started");
+        let said = watched.said();
+        assert_eq!(
+            said.within(Duration::from_secs(20)).as_deref(),
+            Ok("first\n")
+        );
+        let _ = watched.finish();
+    }
+
     /// A cancel has let go of the core's one sign-in at a time by the time it returns, even
     /// while a copy of its lock's descriptor is open elsewhere, as one is in every process
     /// another thread is starting until that process runs its program. Closing the file let
@@ -1975,7 +2052,7 @@ mod tests {
         // Says its address, then nothing, and ends by itself only once `patience` is up.
         let mut silent = std::process::Command::new("/bin/sh");
         silent.args(["-c", "echo https://auth.openai.com/ >&2; exec sleep 30"]);
-        let watched = watch(silent, pending).expect("started");
+        let watched = watch(silent, pending, None).expect("started");
         let said = watched.said();
         let (heard, hears) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
