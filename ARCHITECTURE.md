@@ -601,7 +601,22 @@ window loads its site, and whatever the site's pages load, as a browser would.
 - `apps/`: the native apps, one directory for each system.
 - `apps/windows/`: the Windows app. `Pitboard.Core` is the core's C# bindings as an
   assembly of their own, generated into `Generated/` and not committed, and
-  `Pitboard.Core.Tests` calls the core through them.
+  `Pitboard.Core.Tests` calls the core through them; `Pitboard.slnx` holds the two, which
+  build on every system. `Pitboard.Windows.slnx` adds the app, which builds on Windows only:
+  - `Pitboard.Windows` is the glue, with no XAML. `AppModel` holds the `PitboardModel` and
+    its newest snapshot, a property for each part, by the macOS `AppModel`'s rules; it
+    compares a part's arrays by what they hold (`Structural`), and `ModelListening` hands it
+    each snapshot on the app's `DispatcherQueue`. `WindowsLocalTime` is the person's clock.
+    `Identity` names everything a build is known by, Debug or Release. `Launching` decides a
+    launch before WinUI starts: the arguments, then `launch_refusal`, then the
+    single-instance key. `HiddenWindow` hears the session's end and the system's broadcasts,
+    and `Shell` is the known folder, the AppUserModelID and the refusal's message box.
+  - `Pitboard.App` is `Pitboard.exe`, unpackaged and self-contained. `Program.Main` decides
+    the launch, and `App` makes the model, over this PC or in a Debug build started with
+    `PITBOARD_FIXTURE` a fixture's, opens the main window when the model asks, and stops the
+    model as the session ends.
+  - `Pitboard.Windows.Tests` is a WinUI app that hosts its own tests, and `Pitboard.UITests`
+    drives the built app with FlaUI. Neither registers anything with Windows.
 - `apps/macos/`: the menu bar app, which shows what `pitboard-ffi`'s model says and sends it
   what was asked. The Swift package holds it as libraries its tests load without starting
   it. `PitboardKit` is the bindings and `AppModel.swift`: `AppModel`, which holds the
@@ -683,7 +698,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     metadata in `crates/pitboard/Cargo.toml`. `package-windows.ps1` zips
     a Windows build, `check-windows-build.ps1` checks one, `verify-windows-signatures.ps1`
     checks the signature of every program a Windows release hands on, and
-    `test-windows-release.ps1` tests all three.
+    `test-windows-release.ps1` tests all three. `check-windows-app.ps1` checks the Windows app's
+    Release build.
   - `dependabot.yml` asks for weekly updates of Cargo dependencies, GitHub Actions and the
     .NET SDK in `apps/windows/global.json`.
   - `zizmor.yml` configures the audit CI runs on the workflows.
@@ -2276,6 +2292,8 @@ on 15 October 2026. W27 reviews the list.
 | Moderators label a portable archive `Portable-Archive`, a blocking issue | [Validation failure guide](https://github.com/microsoft/winget-pkgs/blob/master/doc/ValidationFailureGuide.md) | No manifest has been submitted. |
 | winget puts a portable package's install folder on `PATH`, not a link in Links, for a standard user without Developer Mode | [winget-pkgs FAQ](https://github.com/microsoft/winget-pkgs/blob/master/doc/FAQ.md) | Both images have Developer Mode on, and the job's user is an administrator. A standard user's install is the session's. |
 | Since winget 1.29, an MSI wins over a portable installer whatever the manifest's order | [winget-cli 1.29.380](https://github.com/microsoft/winget-cli/releases/tag/v1.29.380) | windows-2025's winget is 1.11.510, and no runner installs from winget's sources. |
+| A broadcast, such as `WM_ENDSESSION`, reaches a top-level window that is never shown, and no message-only window | [Message-only windows](https://learn.microsoft.com/en-us/windows/win32/winmsg/window-features#message-only-windows) | A runner's session never ends while a job runs; CF9 sends one. |
+| A second instance redirects its launch off the STA thread, which waits without blocking COM | [App instancing](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/applifecycle/applifecycle-instancing) | No test starts a second copy until APP-12's links. |
 
 ### One sign-in at a time
 
@@ -3300,6 +3318,30 @@ its own date.
   sheet's window and shows over it. The window's failure alert and quit question are
   attached through `WindowAlerts` to whichever is in front.
   `testAddingAClaudeDesktopAccountAsksToQuitClaudeOverTheSheet` holds it.
+
+### What the Windows app's glue rests on
+
+Read on 15 October 2026, in the sources of the builds the app is made with.
+
+- `Environment.GetFolderPath(SpecialFolder.LocalApplicationData)` asks
+  `SHGetKnownFolderPath(FOLDERID_LocalAppData)`, and only where that fails, as on Nano
+  Server, returns `LOCALAPPDATA` (dotnet/runtime v10.0.13,
+  `System.Private.CoreLib/src/System/Environment.Win32.cs`). So `Shell.LocalAppData` asks
+  `SHGetKnownFolderPath` itself, and no variable moves the app's data folder.
+  `ShellTests` holds it on Windows.
+- An unpackaged process's `AppInstance.FindOrRegisterForKey` holds a key as the named mutex
+  `<module>_<key>_Mutex`, with every backslash in the key made an underscore, where
+  `<module>` is `App` and a hash of the lowercased path of the process's executable (Windows
+  App SDK v2.5.1, commit 13160d54, `dev/AppLifecycle/AppInstance.cpp` `TrySetKey` and
+  `Association.cpp` `ComputeAppId`). So a key is shared only by copies of one executable: a
+  Debug build and a Release in other folders never meet, and the fixture's folder in a Debug
+  build's key keeps two fixtures of one build apart. `RedirectActivationToAsync` queues the
+  launch for the running copy from a background thread and calls `AllowSetForegroundWindow`
+  for it, so the running copy may bring its window forward.
+- Rust's `std::env::temp_dir` (Rust 1.98.1, `library/std/src/sys/paths/windows.rs`) and
+  .NET's `Path.GetTempPath` (dotnet/runtime v10.0.13, `Path.Windows.cs`) both ask
+  `GetTempPath2W`, .NET falling back to `GetTempPathW` where it is missing. So the app finds
+  a fixture's folder, `pitboard-fixture`, where the core makes it.
 
 ### The model's timers
 
