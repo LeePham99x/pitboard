@@ -147,7 +147,7 @@ Keep the signer's account apart from the update key and the Developer ID certifi
 | `SPARKLE_PUBLIC_KEY`, `SPARKLE_PRIVATE_KEY` | `bin/generate_keys --account pitboard`, from Sparkle's release archive at the version `apps/macos/project.yml` pins, prints the public key. With `-x <file>` it writes the private key to `<file>`, whose contents are the secret. Delete the file afterwards |
 | `HOMEBREW_TAP_TOKEN` | A fine-grained token with `datlechin/homebrew-tap` as its only repository, Contents read and write as its only permission, and an expiry you will notice |
 | `SCOOP_BUCKET_TOKEN` | The same, for `datlechin/scoop-bucket` |
-| `WINGET_TOKEN` | A classic token with the `public_repo` scope, of the account that holds the fork of `microsoft/winget-pkgs`. komac 2.16.0's README says a fine-grained token fails to open the pull request |
+| `WINGET_TOKEN` | A classic token with the `public_repo` scope, of a GitHub account kept for it alone, which holds the fork of `microsoft/winget-pkgs` and can write to no `datlechin` repository. A classic token writes to every public repository its account can, the tap and the bucket among them. komac 2.16.0's README says a fine-grained token fails to open the pull request |
 
 Without the Apple secrets, everything is signed ad hoc and not notarised, and Gatekeeper
 warns about the app on first launch. The `app` job fails without the Sparkle secrets. The
@@ -219,8 +219,8 @@ with the run's read-only token, `.github/scripts/check-winget-hashes.py` checks 
 installer's hash against the run's `SHA256SUMS`, and `winget validate` checks the manifests.
 Then komac opens the pull request from the fork with `WINGET_TOKEN`. A package that is not in
 `microsoft/winget-pkgs` yet, or has a pull request for this version, is skipped with a notice.
-The validate step warns on every release: windows-2025's winget knows manifests up to 1.10.0,
-and komac writes 1.12.0.
+The validate step warns on every manifest komac writes: windows-2025's winget knows manifests
+up to 1.10.0, and komac writes 1.12.0.
 
 komac stays at 2.16.0, pinned by SHA-256 in `release.yml`: 2.17.0 and 2.17.1 write nothing to
 `--output` with `--dry-run`. Before the first 1.x release, make the `winget` environment with a
@@ -228,13 +228,17 @@ deployment rule for `v*` tags, so the job never makes one with no rule. `komac n
 questions at a terminal, so the first version of each package goes in by hand, after 1.0.0 is
 published:
 
-1. Fork `microsoft/winget-pkgs`, and put `WINGET_TOKEN` in the `winget` environment as the
+1. Make a GitHub account for winget alone, with write access to no `datlechin` repository.
+   Fork `microsoft/winget-pkgs` from it: komac opens the pull request from the fork of the
+   account `WINGET_TOKEN` belongs to. Put `WINGET_TOKEN` in the `winget` environment as the
    secrets table says.
-2. Run `komac new Pitboard.CLI --version 1.0.0 --urls <x64 zip> <arm64 zip> --dry-run --output
-   <folder>`, and the same for `Pitboard.Pitboard` with the MSIs. Give the zips the command
-   alias `pitboard`.
+2. Run `komac new Pitboard.CLI --version 1.0.0 --publisher Pitboard --urls <x64 zip> <arm64
+   zip> --dry-run --output <folder>`, and the same for `Pitboard.Pitboard` with the MSIs. Give
+   the zips the command alias `pitboard`. Every later version keeps the publisher this one
+   names.
 3. Run `python3 .github/scripts/check-winget-hashes.py <manifests> <the release's SHA256SUMS>`
-   and `winget validate --manifest <manifests>` on each, and check `Scope: user` on the MSIs.
+   and `winget validate --manifest <manifests>` on each, and check `Publisher: Pitboard` in
+   the locale manifests and `Scope: user` on the MSIs.
 4. Submit with `komac submit <manifests>`. Sign the Microsoft CLA in the first pull request, and
    answer a `Needs-Author-Feedback` label within 5 days: 3 days of silence after that closes
    the pull request.

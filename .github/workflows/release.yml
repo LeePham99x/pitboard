@@ -1244,7 +1244,7 @@ jobs:
   # winget takes each latest release of a package microsoft/winget-pkgs already holds; the first
   # version of each goes in by hand (RELEASING.md). komac writes the manifests with the run's
   # read-only token, check-winget-hashes.py holds each installer's hash to the run's SHA256SUMS,
-  # and winget validates them before WINGET_TOKEN opens a pull request from the owner's fork.
+  # and winget validates them before WINGET_TOKEN opens a pull request from its account's fork.
   winget:
     needs: [guard, publish]
     if: >-
