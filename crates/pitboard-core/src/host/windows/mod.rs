@@ -18,6 +18,7 @@
     reason = "the face every file and folder Pitboard makes is made through"
 )]
 pub(crate) mod fs;
+mod job;
 pub(crate) mod proc;
 pub(crate) mod user;
 

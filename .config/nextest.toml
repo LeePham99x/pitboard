@@ -21,5 +21,10 @@ slow-timeout = { period = "60s", terminate-after = 3 }
 filter = "binary_id(pitboard-core) & test(=host::windows::fs::tests::ten_thousand_replaces_never_leave_a_reader_without_the_whole_file)"
 slow-timeout = { period = "120s", terminate-after = 5 }
 
+# 1000 sign-ins started and stopped on Windows, each two programs.
+[[profile.ci.overrides]]
+filter = "binary_id(pitboard-core) & test(=host::windows::job::tests::a_program_started_at_once_is_in_the_job_every_time)"
+slow-timeout = { period = "120s", terminate-after = 5 }
+
 [profile.ci.junit]
 path = "junit.xml"

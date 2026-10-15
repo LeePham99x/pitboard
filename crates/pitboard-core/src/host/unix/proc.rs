@@ -97,6 +97,28 @@ pub(crate) fn run_within(
     })
 }
 
+// A sign-in's tool, which a cancel kills and reaps.
+pub(crate) struct Tool(Child);
+
+pub(crate) fn start(mut command: Command) -> io::Result<Tool> {
+    command.spawn().map(Tool)
+}
+
+impl Tool {
+    pub(crate) fn child(&mut self) -> &mut Child {
+        &mut self.0
+    }
+
+    pub(crate) fn wait(&mut self) -> io::Result<std::process::ExitStatus> {
+        self.0.wait()
+    }
+
+    pub(crate) fn stop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
 /// How `child` ended, where it did within `grace`.
 fn ended_within(child: &mut Child, grace: Duration) -> Option<std::process::ExitStatus> {
     let began = Instant::now();

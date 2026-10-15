@@ -229,7 +229,10 @@ pub(crate) fn sign_in(
     // What the tool prints goes to stderr, so `--json` output stays one JSON line.
     let finished = tool
         .sign_in(ctx, permit, &dir)
-        .and_then(|mut command| command.stdout(std::io::stderr()).status())
+        .and_then(|mut command| {
+            command.stdout(std::io::stderr());
+            crate::host::proc::start(command)?.wait()
+        })
         .map_err(|e| started(tool.id(), &e))?
         .success();
     if !finished {
@@ -285,7 +288,7 @@ impl Steps {
 
 // A script plays the program only where a test or a fixture says.
 enum Running {
-    Program(std::process::Child),
+    Program(crate::host::proc::Tool),
     InItsApp(Wait),
     #[cfg(any(test, feature = "test-support"))]
     Scripted(Box<dyn ScriptedSignIn>),
@@ -399,9 +402,9 @@ impl WatchedSignIn {
     /// browser.
     pub fn paste(&mut self, line: &str) -> Result<()> {
         match &mut self.tool {
-            Running::Program(child) => {
+            Running::Program(tool) => {
                 use std::io::Write;
-                let stdin = child.stdin.as_mut().ok_or(Error::SignInIncomplete)?;
+                let stdin = tool.child().stdin.as_mut().ok_or(Error::SignInIncomplete)?;
                 writeln!(stdin, "{line}").map_err(|_| Error::SignInIncomplete)?;
                 stdin.flush().map_err(|_| Error::SignInIncomplete)
             }
@@ -421,7 +424,7 @@ impl WatchedSignIn {
     /// Waits for it to finish and hands back the login it stored.
     pub fn finish(mut self) -> Result<SignIn> {
         let finished = match &mut self.tool {
-            Running::Program(child) => child.wait().map_err(|_| Error::SignInIncomplete)?.success(),
+            Running::Program(tool) => tool.wait().map_err(|_| Error::SignInIncomplete)?.success(),
             Running::InItsApp(wait) => {
                 wait.finish()?;
                 true
@@ -442,10 +445,7 @@ impl WatchedSignIn {
     /// one already waiting. What it may have written is discarded by `SignIn`'s own cleanup.
     pub fn cancel(mut self) {
         match &mut self.tool {
-            Running::Program(child) => {
-                let _ = child.kill();
-                let _ = child.wait();
-            }
+            Running::Program(tool) => tool.stop(),
             Running::InItsApp(wait) => wait.cancel(),
             #[cfg(any(test, feature = "test-support"))]
             Running::Scripted(run) => {
@@ -492,11 +492,12 @@ fn start_watched(
 
 /// Runs `command` with its output piped, as the sign-in `pending` reserved.
 fn watch(mut command: std::process::Command, pending: SignIn) -> std::io::Result<WatchedSignIn> {
-    let mut child = command
+    command
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()?;
+        .stderr(std::process::Stdio::piped());
+    let mut tool = crate::host::proc::start(command)?;
+    let child = tool.child();
     let (say, said) = std::sync::mpsc::channel();
     // Claude Code writes the browser URL and the paste prompt without a newline after them,
     // so this reads by chunk rather than by line and lets the caller decide what to show.
@@ -528,7 +529,7 @@ fn watch(mut command: std::process::Command, pending: SignIn) -> std::io::Result
         });
     }
     Ok(WatchedSignIn {
-        tool: Running::Program(child),
+        tool: Running::Program(tool),
         said: Said(std::sync::Arc::new(std::sync::Mutex::new(said))),
         steps: Steps::default(),
         pending,
@@ -1928,7 +1929,7 @@ mod tests {
     /// go of it only once every copy was closed, so the next sign-in was refused as one
     /// already waiting for as long as that took, which ARCHITECTURE.md's Measured facts give.
     #[test]
-    #[cfg(unix)]
+    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_cancelled_sign_in_lets_the_next_start_while_a_copy_of_its_lock_is_open() {
         for (tool, make) in MACHINES {
             let m = make("lock-copied");

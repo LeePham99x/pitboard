@@ -164,8 +164,20 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
              fact rules out, so read from the Windows build it reports a keyring arrived",
         ),
     },
-    everywhere("sign_in_output", "2.1.289"),
-    everywhere("sign_in_takes_another_code", "2.1.289"),
+    // Read again in both Windows builds of 2.1.300, where a line is read with readline and
+    // trimmed, so one typed back with `\r\n` is one with `\n`.
+    PerSystem {
+        name: "sign_in_output",
+        macos: Read("2.1.289"),
+        linux: Read("2.1.289"),
+        windows: Read("2.1.300"),
+    },
+    PerSystem {
+        name: "sign_in_takes_another_code",
+        macos: Read("2.1.289"),
+        linux: Read("2.1.289"),
+        windows: Read("2.1.300"),
+    },
     PerSystem {
         name: "install_places",
         macos: Read("2.1.289"),
@@ -295,6 +307,16 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         name: "windows_daemon_identity",
         macos: NotRead("off Windows the daemon records `procStart`, which Pitboard does not read"),
         linux: NotRead("off Windows the daemon records `procStart`, which Pitboard does not read"),
+        windows: Read("2.1.300"),
+    },
+    PerSystem {
+        name: "windows_browser_open",
+        macos: NotRead(
+            "off Windows a cancel stops the tool alone, so how it opens a browser decides nothing",
+        ),
+        linux: NotRead(
+            "off Windows a cancel stops the tool alone, so how it opens a browser decides nothing",
+        ),
         windows: Read("2.1.300"),
     },
     warm_up("headless_token_descriptor"),
@@ -1057,6 +1079,22 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         absent: &[],
     },
     Assumption {
+        name: "windows_browser_open",
+        fact: "on Windows `claude auth login` opens its sign-in page once it has printed its \
+               prompt by starting `rundll32 url,OpenURL <address>`, a child of its own, which \
+               hands the address to the shell; where its settings or `BROWSER` name a program, \
+               it starts that with the address instead. A browser that was not running starts \
+               from inside whatever job Claude Code runs in",
+        read_from: "the opener `startOAuthFlow` calls after its prompt, which checks the address \
+                    is `http` or `https` and starts `rundll32` on win32, in the win32-x64 and \
+                    win32-arm64 builds of 2.1.300, read as bytes on 2026-10-16",
+        verified_against: "2.1.300",
+        depends: "host::windows::job, which ends only the tool's own programs on a cancel, so a \
+                  browser its sign-in opened keeps running (RF-F2)",
+        probe: &["[\"url,OpenURL\","],
+        absent: &[],
+    },
+    Assumption {
         name: "headless_token_descriptor",
         fact: "where `CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR` names a descriptor, Claude Code \
                reads an OAuth access token from it, an inherited pipe until a newline or its \
@@ -1197,6 +1235,7 @@ mod tests {
                 "windows_version_resource",
                 "windows_managed_settings",
                 "windows_daemon_identity",
+                "windows_browser_open",
             ]
         );
         for name in [

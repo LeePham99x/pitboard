@@ -146,11 +146,15 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         linux: NotRead("a Linux install names its version in its path or its package.json"),
         windows: Read("0.162.1"),
     },
+    // Its static half read from 0.162.1's source: it binds 127.0.0.1:1455, sends `GET /cancel`
+    // to a login server already there and falls back to 1457, opens the browser with the `http`
+    // association's command as a child of its own with no stdio, and reads nothing typed back.
     later_on_windows(
         "codex_login_is_driveable",
         VERIFIED_AGAINST,
-        &["W19"],
-        "whether `codex login` runs piped, with no console window, from a program on Windows",
+        &["W27"],
+        "whether `codex login` runs piped, with no console window, from a program on Windows, \
+         session step 9",
     ),
     everywhere("codex_login_prints_its_address", "0.160.0"),
     later_on_windows(

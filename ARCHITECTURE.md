@@ -111,13 +111,18 @@ window loads its site, and whatever the site's pages load, as a browser would.
     holder. It finds programs as a Windows shell does, an app execution alias in a
     `WindowsApps` folder by its reparse tag, and reads the `Path` a program started now is
     given from the registry, the machine's and then the person's, which a build for tests
-    reads in its own test alone. It also reads this process's token, through windows-sys
-    (`windows/user.rs`), which `token.rs` makes an `Elevation` of and whose `TokenUser` is
-    the person's SID, the account's own folders (`GetUserProfileDirectoryW`,
-    `FOLDERID_Profile`, `FOLDERID_LocalAppData` and the profile type), which a build for
-    tests answers nothing from, and the build `RtlGetVersion` gives, which
-    `host::windows_floor` holds against 26100, the build of Windows 11 24H2 and Windows
-    Server 2025. `windows/fs.rs` makes each private file and folder with a security
+    reads in its own test alone. It starts a sign-in's tool suspended, puts it in a job of
+    its own that lets a program break away, as Codex starts its daemons, then resumes it,
+    so nothing it starts is outside the job (`windows/job.rs`). A cancel, and a sign-in let
+    go of unfinished, end the job's `cmd.exe`, `conhost.exe`, `node.exe`, `claude.exe` and
+    `codex.exe` and nothing else, so a browser the sign-in opened keeps running. Started by
+    a Pitboard with no console, a tool gets no console window either. It also reads this
+    process's token, through windows-sys (`windows/user.rs`), which `token.rs` makes an
+    `Elevation` of and whose `TokenUser` is the person's SID, the account's own folders
+    (`GetUserProfileDirectoryW`, `FOLDERID_Profile`, `FOLDERID_LocalAppData` and the profile
+    type), which a build for tests answers nothing from, and the build `RtlGetVersion` gives,
+    which `host::windows_floor` holds against 26100, the build of Windows 11 24H2 and
+    Windows Server 2025. `windows/fs.rs` makes each private file and folder with a security
     descriptor from SDDL: owned by the person's SID, with a protected access list granting
     the person, SYSTEM and Administrators alone, which a folder passes on to what is made in
     it. A folder already there keeps its own list. `fs::access` reads a path's list, and
@@ -2626,6 +2631,12 @@ treated, and only the macOS build shows it. The run reads both builds since.
   Windows looks in that `.local\bin`, `%APPDATA%\npm`, `%LOCALAPPDATA%\Microsoft\WinGet\Links`
   and `%USERPROFILE%\scoop\shims`, after the registry's `Path`, each only where its
   variable is set.
+- Read on 16 October 2026 from the win32-x64 and win32-arm64 builds of 2.1.300
+  (`windows_browser_open`, `sign_in_output`, `sign_in_takes_another_code`): on Windows
+  `claude auth login` prints its prompts whatever its output is, reads a pasted code with
+  readline and trims it, so a line ended by `\r\n` reads as one ended by `\n`, and opens
+  its page with `rundll32 url,OpenURL <address>`, a child of its own, unless its settings
+  or `BROWSER` name a program.
 - Read on 15 October 2026 from the win32-x64 and win32-arm64 builds of 2.1.300
   (`windows_managed_settings`): on Windows managed settings are in `C:\Program
   Files\ClaudeCode`, as on the other systems in their folder, and in the value `Settings` of
@@ -2897,6 +2908,13 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
   starts `codex.exe` with its arguments and its variables, `CODEX_MANAGED_PACKAGE_ROOT`
   set to its package's folder and `CODEX_MANAGED_BY_NPM` to `1`. So a sign-in starts that
   `codex.exe` with the same, and no `cmd.exe` or `node.exe` runs.
+- Read on 16 October 2026 from `codex-rs/login/src/server.rs` at tag `rust-v0.162.1` and
+  webbrowser 1.2.4: `codex login` listens on 127.0.0.1:1455. Where something holds it, it
+  sends that `GET /cancel`, which ends a login server Codex left there, and falls back to
+  1457. It opens the browser with the command Windows has for `http`
+  (`AssocQueryStringW`), as a child of its own with no standard streams. So a browser that
+  was not running starts in Pitboard's job, and a `codex login` a killed Pitboard left
+  running is ended by the next one.
 - Read on 15 October 2026 from the win32 builds of 0.162.1 (`codex_windows_version`):
   `codex.exe` has no version resource. The package it runs from, npm's vendored one or a
   standalone release, holds `codex-package.json` beside its `bin`, whose `version` doctor

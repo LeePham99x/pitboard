@@ -5,7 +5,6 @@
 //! model ends every thread it started, a drop waiting on none of them.
 
 use super::state::Cadence;
-#[cfg(unix)]
 use super::testing::StandIn;
 use super::testing::{CHATGPT, CHATGPT_CODEX, Posted, StandInApps, World};
 use super::{
@@ -801,7 +800,6 @@ fn a_read_answers_while_the_core_switches() {
 
 /// What a test of signing in starts from: Claude Code with `work` in use, a stand-in in
 /// place of `claude`, and a model over the core read once.
-#[cfg(unix)]
 struct SigningInWorld {
     model: Arc<PitboardModel>,
     told: Arc<Told>,
@@ -811,13 +809,11 @@ struct SigningInWorld {
     world: World,
 }
 
-#[cfg(unix)]
 fn signing_in_world(name: &str) -> SigningInWorld {
     signing_in_world_with(name, World::claude_stand_in)
 }
 
 /// The same, with the stand-in `stand_in` makes.
-#[cfg(unix)]
 fn signing_in_world_with(name: &str, stand_in: fn(&mut World) -> StandIn) -> SigningInWorld {
     let mut world = World::new(name);
     world.enrolled("work", "here", 10.0);
@@ -837,7 +833,6 @@ fn signing_in_world_with(name: &str, stand_in: fn(&mut World) -> StandIn) -> Sig
 }
 
 /// The last snapshot told has a sign-in under way that is `wanted`.
-#[cfg(unix)]
 fn signing(wanted: impl Fn(&super::RunningSignIn) -> bool) -> impl Fn(&[Snapshot]) -> bool {
     move |told| {
         told.last()
@@ -848,7 +843,6 @@ fn signing(wanted: impl Fn(&super::RunningSignIn) -> bool) -> impl Fn(&[Snapshot
 
 /// The last snapshot told has no sign-in under way, and a read that has landed and is over
 /// with `label` among the accounts and `then` true of it.
-#[cfg(unix)]
 fn signed_in_as<'a>(
     label: &'a str,
     then: impl Fn(&Snapshot) -> bool + 'a,
@@ -870,7 +864,6 @@ fn sign_in(name: &str) -> Intent {
     }
 }
 
-#[cfg(unix)]
 fn paste(code: &str) -> Intent {
     Intent::PasteCode { code: code.into() }
 }
@@ -881,7 +874,10 @@ fn paste(code: &str) -> Intent {
 /// it signed in to is parked beside the account in use, and the sheet it was started from
 /// closes.
 #[test]
-#[cfg(unix)]
+#[cfg_attr(
+    windows,
+    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+)]
 fn a_code_claude_code_refused_is_typed_again_into_the_same_sign_in() {
     let at = signing_in_world("paste-again");
     at.model.send(Intent::PresentSheet {
@@ -929,7 +925,10 @@ fn a_code_claude_code_refused_is_typed_again_into_the_same_sign_in() {
 /// with a stand-in for `claude`: signing in again to the account in use puts its new login in
 /// use, keeps it the account in use, and says so beside what Claude Code's last switch said.
 #[test]
-#[cfg(unix)]
+#[cfg_attr(
+    windows,
+    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+)]
 fn signing_in_again_to_the_account_in_use_puts_its_new_login_in_use() {
     let at = signing_in_world("sign-in-again");
     at.model.send(Intent::PresentSheet {
@@ -973,7 +972,10 @@ fn signing_in_again_to_the_account_in_use_puts_its_new_login_in_use() {
 /// a stand-in for `claude` waiting for a code: cancelling stops the tool, whose process is
 /// gone, nothing is typed to it or enrolled, and the sign-in's thread ends.
 #[test]
-#[cfg(unix)]
+#[cfg_attr(
+    windows,
+    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+)]
 fn cancelling_a_sign_in_stops_its_tool() {
     let at = signing_in_world("cancel");
     at.model.send(sign_in("travel"));
@@ -1002,7 +1004,10 @@ fn cancelling_a_sign_in_stops_its_tool() {
 /// It was refused as a sign-in already waiting, since the stop runs on the lane of sign-in
 /// calls while the new sign-in started at once on a thread of its own.
 #[test]
-#[cfg(unix)]
+#[cfg_attr(
+    windows,
+    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+)]
 fn a_sign_in_asked_for_at_once_after_a_cancel_starts_once_that_one_has_stopped() {
     let at = signing_in_world("cancel-then-sign-in");
     at.model.send(sign_in("travel"));
@@ -1041,7 +1046,10 @@ fn a_sign_in_asked_for_at_once_after_a_cancel_starts_once_that_one_has_stopped()
 /// It waited for the thread of the one cancelled, which ends only once its tool's output has
 /// closed, and showed it as starting all that while.
 #[test]
-#[cfg(unix)]
+#[cfg_attr(
+    windows,
+    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+)]
 fn a_sign_in_after_a_cancel_waits_for_no_output_the_tool_stopped_left_open() {
     let at = signing_in_world_with(
         "cancel-output-held",
@@ -1092,7 +1100,10 @@ fn a_sign_in_after_a_cancel_waits_for_no_output_the_tool_stopped_left_open() {
 /// browser, for ever. An app shuts the model down as it quits, and its process ends once that
 /// returns, which ends no tool it started: a stop still under way then never comes.
 #[test]
-#[cfg(unix)]
+#[cfg_attr(
+    windows,
+    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+)]
 fn shutting_down_stops_a_sign_in_under_way() {
     let at = signing_in_world("shutdown-signing-in");
     at.model.send(sign_in("travel"));
@@ -1555,7 +1566,10 @@ fn naming_the_login_in_use_is_read_after_it_whatever_the_poll_finds_meanwhile() 
 /// The same for a sign-in, on the real core with a stand-in for `claude`: what it enrols is
 /// read after it.
 #[test]
-#[cfg(unix)]
+#[cfg_attr(
+    windows,
+    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+)]
 fn a_sign_in_is_read_after_it_enrols_whatever_the_poll_finds_meanwhile() {
     let mut world = World::new("sign-in-looked-at");
     world.enrolled("work", "here", 10.0);

@@ -1263,7 +1263,6 @@ mod tests {
     /// goes, which tells it not to, and a sign-in whose tool starts after that is stopped as
     /// it starts: nothing is left to say it is over.
     #[test]
-    #[cfg(unix)]
     fn a_sign_in_is_told_once_and_let_go_once_the_model_has_gone() {
         let sign_ins = SignIns::default();
         let (tell, told) = channel();
@@ -1315,7 +1314,6 @@ mod tests {
     /// thread ends, for no longer than asked, and one whose tool was stopped does not, though
     /// its thread may still be reading what the tool said.
     #[test]
-    #[cfg(unix)]
     fn the_sign_ins_have_stopped_once_each_tool_has_or_its_thread_has_ended() {
         let sign_ins = Arc::new(SignIns::default());
         let mut world = World::new("stopped-within");
@@ -1398,7 +1396,6 @@ mod tests {
     /// then the tool has been waited for and the core's one sign-in at a time let go of, and
     /// one that reaches nothing says nothing of it.
     #[test]
-    #[cfg(unix)]
     fn a_code_and_a_stop_reach_only_a_tool_that_has_started_and_still_speaks() {
         let mut world = World::new("reach");
         let claude = world.claude_stand_in();

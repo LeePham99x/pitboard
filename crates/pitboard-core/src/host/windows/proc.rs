@@ -1,5 +1,6 @@
 //! Processes on Windows, and the programs a Windows shell starts.
 
+pub(crate) use super::job::{Tool, start};
 use crate::host::Listed;
 use crate::host::owner::{self, Owner, Told};
 use std::collections::HashMap;
@@ -34,7 +35,7 @@ use windows_sys::Win32::System::Threading::{
 // wtsapi32.h's, which windows-sys does not carry.
 const WTS_ANY_SESSION: u32 = 0xFFFF_FFFE;
 
-struct Handle(HANDLE);
+pub(super) struct Handle(pub(super) HANDLE);
 
 impl Drop for Handle {
     fn drop(&mut self) {
@@ -139,7 +140,7 @@ pub(crate) fn listing() -> Result<Vec<Listed>, String> {
     Ok(found)
 }
 
-fn snapshot() -> std::io::Result<Vec<(u32, u32, String)>> {
+pub(super) fn snapshot() -> std::io::Result<Vec<(u32, u32, String)>> {
     // SAFETY: a snapshot of every process; 0 names no one process.
     let snap = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
     if snap == INVALID_HANDLE_VALUE {
@@ -245,7 +246,7 @@ fn token_owner(pid: u32) -> Told {
     }
 }
 
-fn image(process: &Handle) -> Option<PathBuf> {
+pub(super) fn image(process: &Handle) -> Option<PathBuf> {
     let mut buffer = vec![0u16; 1024];
     loop {
         let mut length = buffer.len() as u32;
