@@ -621,7 +621,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     Release build registers, and a click comes back as the intent the Switch button or the
     notification itself asks for. `NoUpdates` is the updater of a build that cannot update.
     `StartAtSignIn` is the settings' start at sign-in over an `IStartupItem`: `RunValue`,
-    which writes the `Run` value through `IRunKey`, sent to the registry by `RegistryRunKey`
+    which writes the `Run` value, `"<exe>" --sign-in`, through `IRunKey`, sent to the
+    registry by `RegistryRunKey`
     and replaced in tests, refuses in a Debug build, and a fixture gets
     `FixtureStartupItem`. `SettingsPage` is what the settings page says and sends beyond the
     model's words. `Keyed` keeps a shown row while the model lists it, so `ShownAccount`
@@ -643,10 +644,12 @@ window loads its site, and whatever the site's pages load, as a browser would.
     `Icon/make-ico.py` writes from the drawings beside it. `Program.Main` decides the
     launch, and `App` makes the model, over this PC or in a Debug build started with
     `PITBOARD_FIXTURE` a fixture's, keeps the icon, registers for notifications, opens the
-    main window when the model asks, and stops the model and unregisters as the session ends
-    or on Exit. `MenuHost` is the pixel of a window the icon's menu opens from. `MainWindow`
-    shows a pane for each of the model's `Pane`s and its settings page, and takes Ctrl+N and
-    Ctrl+comma from any of them.
+    main window when the model asks, and asks for it on a launch from Start or a shortcut,
+    since Windows puts a new icon in the overflow; a start at sign-in, after an update or from
+    a notification opens none. It stops the model and unregisters on Exit, and as the session
+    ends stops the model, or ends where Restart Manager asks. `MenuHost` is the pixel of a
+    window the icon's menu opens from. `MainWindow` shows a pane for each of the model's
+    `Pane`s and its settings page, and takes Ctrl+N and Ctrl+comma from any of them.
   - `Pitboard.Windows.Tests` is a WinUI app that hosts its own tests, the views' among them
     over snapshots made in C#, and `Pitboard.UITests` drives the built app with FlaUI.
     Neither registers anything with Windows. The icon's menu is held by the view tests,

@@ -65,6 +65,12 @@ public partial class App : Application
             model.Send(launchedBy);
         }
 
+        // Windows puts a new icon in the overflow, so a launch from Start shows only through its window.
+        if (Launching.OpensWindow(_start.Arguments))
+        {
+            model.Send(new Intent.ShowWindow(Pane: null));
+        }
+
         // A second launch's handover arrives on a thread of its own.
         var queue = DispatcherQueue.GetForCurrentThread();
         _handovers.Ready(() => queue.TryEnqueue(ShowWindow));

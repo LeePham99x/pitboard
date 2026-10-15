@@ -73,7 +73,7 @@ public sealed partial class LifecycleTests
         launched.OpenWindow();
     }
 
-    // As a double click on Pitboard's shortcut can. noClaudeCode opens no window by itself.
+    // As a double click on Pitboard's shortcut can.
     [TestMethod]
     public void TwoLaunchesAtOnceOpenOneWindow()
     {
@@ -86,6 +86,27 @@ public sealed partial class LifecycleTests
         var (gone, stays) = launched.Process.HasExited ? (launched, again) : (again, launched);
         Assert.IsTrue(gone.HandedOver(out var why), why);
         stays.Window("Pitboard");
+        Assert.HasCount(1, stays.Windows("Pitboard"));
+    }
+
+    // noClaudeCode is not a first launch, and Windows puts a new icon in the overflow.
+    [TestMethod]
+    public void ALaunchAsFromStartOpensTheWindow()
+    {
+        using var launched = Launched.Start(Builds.Debug, fixture: "noClaudeCode");
+
+        launched.Window("Pitboard");
+    }
+
+    [TestMethod]
+    public void AStartAtSignInOpensNoWindow()
+    {
+        using var launched = Launched.Start(Builds.Debug, "noClaudeCode", "--sign-in");
+
+        launched.Running();
+        Assert.IsFalse(
+            Retry.WhileFalse(() => launched.Windows("Pitboard").Length > 0, TimeSpan.FromSeconds(10)).Result,
+            $"a start at sign-in opened the window: {launched.State()}");
     }
 
     private static unsafe string InFront()

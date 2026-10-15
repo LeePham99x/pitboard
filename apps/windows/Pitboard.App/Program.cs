@@ -60,7 +60,10 @@ public static class Program
         }
 
         var started = new AppStart(
-            Running, environment, fixture, Running.DataFolder(Shell.LocalAppData(), fixtureFolder));
+            Running, environment, fixture, Running.DataFolder(Shell.LocalAppData(), fixtureFolder))
+        {
+            Arguments = args,
+        };
         Application.Start(p =>
         {
             SynchronizationContext.SetSynchronizationContext(

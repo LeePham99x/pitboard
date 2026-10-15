@@ -384,16 +384,16 @@ dotnet build Pitboard.App -c Debug -r win-arm64 -p:Platform=ARM64 `
 $scratch = (New-Item -ItemType Directory (Join-Path $env:TEMP "pitboard-$(New-Guid)")).FullName
 $app = [Diagnostics.ProcessStartInfo]::new(
   (Resolve-Path Pitboard.App\bin\ARM64\Debug\net10.0-windows10.0.26100.0\win-arm64\Pitboard.exe).Path)
-$app.Environment['PITBOARD_FIXTURE'] = 'twoTools'
+$app.Environment['PITBOARD_FIXTURE'] = 'firstLaunch'
 foreach ($name in 'USERPROFILE', 'HOME', 'APPDATA', 'LOCALAPPDATA', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'PITBOARD_HOME') {
   $app.Environment[$name] = (New-Item -ItemType Directory (Join-Path $scratch $name)).FullName
 }
 [Diagnostics.Process]::Start($app)
 ```
 
-Only the `firstLaunch` fixture opens the window as it starts. Click Pitboard's icon in the
-notification area to bring the window forward, or run the last line again: the second copy
-hands its launch to the first and quits. Exit in the icon's menu ends it.
+The worlds that seed Claude Code wait for W23a on Windows. Started again, the second copy hands
+its launch to the first, which brings its window forward, and quits. Exit in the icon's menu
+ends it.
 
 On x64, build with `-r win-x64 -p:Platform=x64`, which builds into `bin\x64\...\win-x64`. A
 Debug build keeps apart from an installed Release:

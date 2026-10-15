@@ -7,14 +7,14 @@ public sealed class RunValueTests
 
     // A path with a space is quoted, or Windows would start C:\Users\Dana with the rest as its arguments.
     [TestMethod]
-    public void TheReleaseBuildNamesItsOwnPitboardExeQuoted()
+    public void TheReleaseBuildNamesItsOwnPitboardExeQuotedAndStartsWithoutItsWindow()
     {
         var key = new StandInRunKey();
         var item = new RunValue(Build.Release, Installed, key);
 
         item.Write(starts: true);
 
-        Assert.AreEqual($"\"{Installed}\"", key.Values["Pitboard"]);
+        Assert.AreEqual($"\"{Installed}\" --sign-in", key.Values["Pitboard"]);
         Assert.IsTrue(item.Read());
     }
 
@@ -24,10 +24,13 @@ public sealed class RunValueTests
         var key = new StandInRunKey();
         var item = new RunValue(Build.Release, Installed, key);
 
-        key.Values["Pitboard"] = @"""C:\Old\Pitboard.exe""";
+        key.Values["Pitboard"] = @"""C:\Old\Pitboard.exe"" --sign-in";
         Assert.IsFalse(item.Read());
 
-        key.Values["Pitboard"] = $"\"{Installed.ToUpperInvariant()}\"";
+        key.Values["Pitboard"] = $"\"{Installed}\"";
+        Assert.IsFalse(item.Read(), "it would open the window at every sign-in");
+
+        key.Values["Pitboard"] = $"\"{Installed.ToUpperInvariant()}\" --sign-in";
         Assert.IsTrue(item.Read(), "Windows compares paths without case");
     }
 

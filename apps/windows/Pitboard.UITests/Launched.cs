@@ -23,14 +23,17 @@ internal sealed class Launched : IDisposable
     private readonly DirectoryInfo _root;
     private readonly string _exe;
     private readonly string? _fixture;
+    private readonly string[] _arguments;
     private readonly bool _ownsHomes;
     private readonly StringBuilder _said = new();
 
-    private Launched(DirectoryInfo root, string exe, string? fixture, Dictionary<string, string> homes, bool ownsHomes)
+    private Launched(
+        DirectoryInfo root, string exe, string? fixture, string[] arguments, Dictionary<string, string> homes, bool ownsHomes)
     {
         _root = root;
         _exe = exe;
         _fixture = fixture;
+        _arguments = arguments;
         _ownsHomes = ownsHomes;
         HomeFolders = homes;
         var start = StartInfo();
@@ -59,24 +62,20 @@ internal sealed class Launched : IDisposable
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Pitboard App Debug"),
     ];
 
-    public static Launched Start(string exe, string? fixture = null)
+    public static Launched Start(string exe, string? fixture = null, params string[] arguments)
     {
         var root = Directory.CreateTempSubdirectory("pitboard-ui-");
         var homes = Homes.ToDictionary(home => home, home => root.CreateSubdirectory(home).FullName);
-        return new Launched(root, exe, fixture, homes, ownsHomes: true);
+        return new Launched(root, exe, fixture, arguments, homes, ownsHomes: true);
     }
 
     // Launched again now, in the same homes, as from Start.
-    public Launched Again() => new(_root, _exe, _fixture, HomeFolders, ownsHomes: false);
+    public Launched Again() => new(_root, _exe, _fixture, [], HomeFolders, ownsHomes: false);
 
     // A second launch once Pitboard runs, as from Start, which the running copy answers with its window.
     public Window OpenWindow()
     {
-        if (!Retry.WhileFalse(() => HiddenWindows.Of(Process).Any(), Patience, TimeSpan.FromMilliseconds(250)).Result)
-        {
-            throw new AssertFailedException($"Pitboard did not start within {Patience}: {State()}");
-        }
-
+        Running();
         using (var again = Again())
         {
             if (!again.HandedOver(out var why))
@@ -88,12 +87,24 @@ internal sealed class Launched : IDisposable
         return Window("Pitboard");
     }
 
+    // Pitboard makes its hidden window as it starts, before it can open another.
+    public void Running()
+    {
+        if (!Retry.WhileFalse(() => HiddenWindows.Of(Process).Any(), Patience, TimeSpan.FromMilliseconds(250)).Result)
+        {
+            throw new AssertFailedException($"Pitboard did not start within {Patience}: {State()}");
+        }
+    }
+
     public bool HandedOver(out string why)
     {
         var quit = Process.WaitForExit(Patience);
         why = quit ? State() : $"it went on running after {Patience}";
         return quit && Process.ExitCode == 0;
     }
+
+    public Window[] Windows(string title) =>
+        FlaUI.Core.Application.Attach(Process).GetAllTopLevelWindows(Automation).Where(window => window.Title == title).ToArray();
 
     public Window Window(string title)
     {
@@ -177,7 +188,7 @@ internal sealed class Launched : IDisposable
 
     private ProcessStartInfo StartInfo()
     {
-        var start = new ProcessStartInfo(_exe) { UseShellExecute = false, WorkingDirectory = _root.FullName };
+        var start = new ProcessStartInfo(_exe, _arguments) { UseShellExecute = false, WorkingDirectory = _root.FullName };
         foreach (var (home, folder) in HomeFolders)
         {
             start.Environment[home] = folder;

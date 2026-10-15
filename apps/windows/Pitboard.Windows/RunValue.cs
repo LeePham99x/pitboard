@@ -45,7 +45,7 @@ public sealed class RunValue(Build build, string exe, IRunKey key) : IStartupIte
 
     public string? Refusal => build is Build.Debug ? "A Debug build never starts when you sign in to Windows." : null;
 
-    public static string Command(string exe) => $"\"{exe}\"";
+    public static string Command(string exe) => $"\"{exe}\" {Launching.SignIn}";
 
     // Paths are compared as Windows compares them, without case.
     public bool Read() =>
@@ -72,7 +72,7 @@ public sealed class RunValue(Build build, string exe, IRunKey key) : IStartupIte
         if (command.Length > Longest)
         {
             throw new InvalidOperationException(
-                $"Windows starts a program when you sign in only from a path of up to {Longest - 2} characters, and Pitboard’s is longer.");
+                $"Windows starts a program when you sign in only from a path of up to {Longest - Command("").Length} characters, and Pitboard’s is longer.");
         }
 
         key.Write(Name, command);
