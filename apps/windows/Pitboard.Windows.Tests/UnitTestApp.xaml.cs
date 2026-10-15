@@ -24,7 +24,7 @@ public partial class UnitTestApp : Application
         Window = window;
         window.Activate();
         UITestMethodAttribute.DispatcherQueue = window.DispatcherQueue;
-        Apartments.Launched();
+        Apartments.Read("at launch");
         try
         {
             Environment.ExitCode = await MicrosoftTestingPlatformApplication.RunAsync(
