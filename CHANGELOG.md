@@ -17,6 +17,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   in Claude Code's config directory, as Claude Code does.
 - `pitboard uninstall` and `pitboard doctor` name the Pitboard directory in use, such as one
   `PITBOARD_HOME` names, instead of always `~/.pitboard`.
+- `pitboard uninstall` keeps Pitboard's directory while a warm-up runs in it, and names what it
+  could not remove there.
 
 ## [0.14.0] - 2026-10-14
 

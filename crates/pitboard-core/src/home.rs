@@ -109,6 +109,56 @@ pub(crate) fn remove_retired(ctx: &Context, permit: Permit) {
     let _ = crate::host::fs::remove_dir(permit, &readings);
 }
 
+// What stayed of a folder that could not be removed whole: each file left in it, or the
+// folder itself where only folders are.
+#[derive(Debug)]
+pub(crate) struct Kept {
+    pub(crate) left: Vec<PathBuf>,
+    pub(crate) why: io::Error,
+}
+
+impl From<Kept> for io::Error {
+    fn from(kept: Kept) -> io::Error {
+        let left: Vec<String> = kept
+            .left
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect();
+        io::Error::new(
+            kept.why.kind(),
+            format!("{} could not be removed: {}", left.join(", "), kept.why),
+        )
+    }
+}
+
+// A file another program holds open keeps its folder on exFAT and FAT32 (RF-C6x).
+pub(crate) fn remove_all(permit: Permit, folder: &Path) -> std::result::Result<(), Kept> {
+    let why = match crate::host::fs::remove_dir_all(permit, folder) {
+        Ok(()) => return Ok(()),
+        Err(_) if !folder.exists() => return Ok(()),
+        Err(why) => why,
+    };
+    let mut left = Vec::new();
+    files_in(folder, &mut left);
+    if left.is_empty() {
+        left.push(folder.to_path_buf());
+    }
+    left.sort();
+    Err(Kept { left, why })
+}
+
+fn files_in(folder: &Path, found: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(folder) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        match entry.file_type() {
+            Ok(kind) if kind.is_dir() => files_in(&entry.path(), found),
+            _ => found.push(entry.path()),
+        }
+    }
+}
+
 pub(crate) fn ensure(ctx: &Context, permit: Permit) -> io::Result<PathBuf> {
     let path = dir(ctx);
     crate::host::fs::create_private_dir(permit, &path)?;
@@ -263,10 +313,6 @@ mod tests {
     /// wrote, which keeps the folder too. `PITBOARD_HOME` can name a folder of somebody's
     /// own.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn what_an_older_pitboard_kept_and_this_one_does_not_is_removed() {
         let root = std::env::temp_dir().join(format!(
             "pitboard-home-retired-{}-{:?}",

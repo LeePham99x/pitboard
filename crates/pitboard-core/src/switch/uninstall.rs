@@ -27,6 +27,10 @@ pub struct Removed {
     pub set_aside: usize,
     /// Whether ~/.pitboard itself is gone.
     pub home_removed: bool,
+    // What another program still held in Pitboard's directory, by path, so it stayed.
+    pub home_kept_by: Vec<std::path::PathBuf>,
+    // A warm-up was running, so Pitboard's directory stayed for it.
+    pub warming_up: bool,
     /// Whether the daily renewal schedule was taken away. `false` where there was none.
     pub schedule_removed: bool,
     // A move of an app's login that waited, as it was settled first.
@@ -48,7 +52,7 @@ pub struct Removed {
 /// neither deleted nor left unnamed: it keeps the directory too.
 pub(crate) fn uninstall(settled: Settled) -> Result<Removed> {
     let Settled {
-        _exclusive,
+        _exclusive: exclusive,
         mut state,
         ctx,
         permit,
@@ -70,7 +74,7 @@ pub(crate) fn uninstall(settled: Settled) -> Result<Removed> {
             }
         }
     }
-    match take_away(&ctx, permit, &mut state) {
+    match take_away(&ctx, permit, &mut state, exclusive) {
         Ok(removed) => Ok(Removed {
             warnings,
             ..removed
@@ -80,7 +84,12 @@ pub(crate) fn uninstall(settled: Settled) -> Result<Removed> {
 }
 
 // The rest of `uninstall`, once each app's folder is held and a move of it settled.
-fn take_away(ctx: &Context, permit: Permit, state: &mut state::State) -> Result<Removed> {
+fn take_away(
+    ctx: &Context,
+    permit: Permit,
+    state: &mut state::State,
+    exclusive: std::fs::File,
+) -> Result<Removed> {
     let schedule_removed = remove_schedule(ctx, permit)?;
     let held = state.accounts.iter().filter_map(|a| a.parked.as_ref());
     let left = held
@@ -112,16 +121,27 @@ fn take_away(ctx: &Context, permit: Permit, state: &mut state::State) -> Result<
     if pending == 0 {
         crate::pending::clear(ctx, permit);
     }
-    let home_removed = pending == 0 && remove_home(ctx, permit);
+    let home = (pending == 0).then(|| remove_home(ctx, permit, exclusive));
     Ok(Removed {
         parks: parks.saturating_sub(undeleted - asides_left),
         pending,
         left,
         set_aside: asides.len() - asides_left,
-        home_removed,
+        home_removed: matches!(home, Some(Home::Removed)),
+        warming_up: matches!(home, Some(Home::WarmingUp)),
+        home_kept_by: match home {
+            Some(Home::Kept(by)) => by,
+            _ => Vec::new(),
+        },
         schedule_removed,
         warnings: Vec::new(),
     })
+}
+
+enum Home {
+    Removed,
+    WarmingUp,
+    Kept(Vec<std::path::PathBuf>),
 }
 
 /// The schedule, where it is this home's. One that renews another home is that home's to
@@ -136,10 +156,21 @@ fn remove_schedule(ctx: &Context, permit: Permit) -> Result<bool> {
     }
 }
 
-/// The lock file this run holds lives in here too; on macOS and Linux an open file goes on
-/// existing until the last handle closes, so removing the directory now is safe.
-fn remove_home(ctx: &Context, permit: Permit) -> bool {
-    crate::host::fs::remove_dir_all(permit, &home::dir(ctx)).is_ok()
+// A warm-up runs its tool in a home inside this one for as long as it holds `warm.lock`. This
+// run's own `state.lock` is let go of first: on exFAT and FAT32 a file held open keeps its
+// folder (RF-C6x).
+fn remove_home(ctx: &Context, permit: Permit, exclusive: std::fs::File) -> Home {
+    let dir = home::dir(ctx);
+    let warming_up = std::fs::File::open(dir.join("warm.lock"))
+        .is_ok_and(|lock| matches!(lock.try_lock(), Err(std::fs::TryLockError::WouldBlock)));
+    if warming_up {
+        return Home::WarmingUp;
+    }
+    drop(exclusive);
+    match home::remove_all(permit, &dir) {
+        Ok(()) => Home::Removed,
+        Err(kept) => Home::Kept(kept.left),
+    }
 }
 
 #[cfg(test)]
@@ -221,6 +252,71 @@ mod tests {
         .expect("uninstalled");
         assert!(!removed.schedule_removed);
         assert!(removed.home_removed);
+    }
+
+    // A warm-up started by the app or `pitboard watch` holds `warm.lock` while its tool runs in
+    // a home inside Pitboard's directory.
+    #[test]
+    fn uninstalling_while_a_warm_up_runs_keeps_the_directory_for_it() {
+        use crate::helper::{Helper, Job};
+        let m = machine("uninstall-warming");
+        let warm = home::dir(&m.ctx).join("warm.lock");
+        let running = Helper::start(Job::Locks, &warm);
+        let uninstalled = || {
+            uninstall(
+                settle(&m.ctx, Permit::for_a_test(), None)
+                    .expect("nothing to recover")
+                    .0,
+            )
+            .expect("uninstalled")
+        };
+
+        let removed = uninstalled();
+        assert!(removed.warming_up);
+        assert!(!removed.home_removed);
+        assert_eq!(removed.home_kept_by, Vec::<std::path::PathBuf>::new());
+        assert!(warm.exists());
+        assert_eq!(state::load(&m.ctx).expect("state").accounts.len(), 0);
+
+        running.stop();
+        let removed = uninstalled();
+        assert!(!removed.warming_up);
+        assert!(removed.home_removed);
+        assert!(!home::dir(&m.ctx).exists());
+    }
+
+    // On exFAT and FAT32 a file held open keeps its folder (RF-C6x): uninstalling lets go of
+    // its own `state.lock` first, and names a file another Pitboard still holds.
+    #[cfg(windows)]
+    #[test]
+    fn uninstalling_on_exfat_lets_go_of_its_lock_and_names_what_another_holds() {
+        use crate::helper::{Helper, Job, exfat};
+        let m = machine("uninstall-exfat");
+        let on_exfat = m
+            .ctx
+            .clone()
+            .with_pitboard_home(exfat("pitboard-uninstall"));
+        let uninstalled = || {
+            uninstall(
+                settle(&on_exfat, Permit::for_a_test(), None)
+                    .expect("nothing to recover")
+                    .0,
+            )
+            .expect("uninstalled")
+        };
+        let removed = uninstalled();
+        assert!(removed.home_removed, "{:?}", removed.home_kept_by);
+
+        home::ensure(&on_exfat, Permit::for_a_test()).expect("a home");
+        let usage = home::dir(&on_exfat).join("usage.lock");
+        let reading = Helper::start(Job::Locks, &usage);
+        let removed = uninstalled();
+        assert!(!removed.home_removed);
+        assert_eq!(removed.home_kept_by, vec![usage.clone()]);
+        reading.stop();
+        let removed = uninstalled();
+        assert!(removed.home_removed);
+        assert!(!home::dir(&on_exfat).exists());
     }
 
     /// A renewed login waiting in the vault to be saved where Claude Code keeps it is the

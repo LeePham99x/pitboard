@@ -1059,17 +1059,40 @@ fn uninstall(pitboard: &Pitboard) -> Report {
                  again.\n",
                 removed.pending
             ));
+        } else if removed.warming_up {
+            human.push_str(&format!(
+                "Another Pitboard is warming up an account, in the app or `pitboard watch`, so \
+                 {folder} was kept; run `pitboard uninstall` again once it is done.\n"
+            ));
+        } else if !removed.home_kept_by.is_empty() {
+            let held: Vec<String> = removed
+                .home_kept_by
+                .iter()
+                .map(|path| pitboard.shown(path))
+                .collect();
+            human.push_str(&format!(
+                "{} could not be removed, so {folder} was kept; run `pitboard uninstall` again \
+                 once no program has it open.\n",
+                held.join(", ")
+            ));
         } else if removed.home_removed {
             human.push_str(&format!(
                 "{folder} is gone. Remove Pitboard itself the way you installed it.\n"
             ));
         }
+        let kept_by: Vec<String> = removed
+            .home_kept_by
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect();
         (
             json!({
                 "parks_removed": removed.parks,
                 "parks_pending": removed.pending,
                 "parks_left": removed.left,
                 "home_removed": removed.home_removed,
+                "home_kept_by": kept_by,
+                "warming_up": removed.warming_up,
                 "schedule_removed": removed.schedule_removed,
                 "set_aside_removed": removed.set_aside,
             }),
@@ -1544,7 +1567,10 @@ mod tests {
         let named = if cfg!(windows) {
             elsewhere.display().to_string()
         } else {
-            std::path::Path::new("~").join("elsewhere").display().to_string()
+            std::path::Path::new("~")
+                .join("elsewhere")
+                .display()
+                .to_string()
         };
         let asked = uninstall_question(&pitboard);
         assert!(
@@ -1562,6 +1588,42 @@ mod tests {
             "{said}"
         );
         assert!(!elsewhere.exists());
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    // A warm-up's tool runs in a home inside Pitboard's directory while it holds `warm.lock`.
+    #[test]
+    fn uninstall_keeps_the_folder_a_warm_up_runs_in_and_says_so() {
+        use pitboard_core::testing::MemoryHost;
+        let home = std::env::temp_dir().join(format!(
+            "pitboard-cli-uninstall-warm-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let folder = home.join(".pitboard");
+        std::fs::create_dir_all(&folder).expect("a Pitboard folder");
+        let pitboard = Pitboard::new(
+            Context::new(home.clone())
+                .with_pitboard_home(folder.clone())
+                .with_memory_stores(MemoryHost::new()),
+        );
+        let running = std::fs::File::create(folder.join("warm.lock")).expect("a lock");
+        running.lock().expect("held");
+        let said = uninstall(&pitboard);
+        assert!(
+            said.human.ends_with(&format!(
+                "Another Pitboard is warming up an account, in the app or `pitboard watch`, so \
+                 {} was kept; run `pitboard uninstall` again once it is done.\n",
+                pitboard.shown(&folder)
+            )),
+            "{}",
+            said.human
+        );
+        assert!(folder.join("warm.lock").exists());
+        drop(running);
+        let said = uninstall(&pitboard);
+        assert!(said.human.contains("is gone"), "{}", said.human);
+        assert!(!folder.exists());
         let _ = std::fs::remove_dir_all(&home);
     }
 

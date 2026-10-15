@@ -182,6 +182,8 @@ Step 1 refuses with:
 
 The login each tool is using stays. On macOS, so do parked logins that `pitboard repair` gave back and this Pitboard did not write. The keychain is shared, so another Pitboard may own them.
 
+While a warm-up runs, step 4 keeps `~/.pitboard`. It also keeps it where a file in it could not be removed, and names that file. Run `pitboard uninstall` again once the warm-up is over or the file is closed.
+
 With `PITBOARD_HOME` set to another directory, it deletes that directory and leaves the schedule. `pitboard schedule uninstall` removes the schedule. The question and the output name that directory.
 
 While `CLAUDE_CODE_CUSTOM_OAUTH_URL` is set, `uninstall` refuses with `custom_oauth_endpoint`. [Custom OAuth endpoint](/reference/files#custom-oauth-endpoint) says why.

@@ -39,7 +39,7 @@ pub(crate) fn home(ctx: &Context, tool: ProviderId) -> PathBuf {
 /// this way, from an empty home.
 pub(crate) fn prepare(permit: Permit, home: &Path) -> std::io::Result<()> {
     if home.exists() {
-        crate::host::fs::remove_dir_all(permit, home)?;
+        crate::home::remove_all(permit, home)?;
     }
     if let Some(parent) = home.parent().filter(|parent| !parent.is_dir()) {
         crate::host::fs::create_private_dir(permit, parent)?;
@@ -57,7 +57,7 @@ pub(crate) fn prepare(permit: Permit, home: &Path) -> std::io::Result<()> {
 
 /// Removes `home` once a run is over, with whatever the tool kept in it of the login it ran on.
 pub(crate) fn clear(permit: Permit, home: &Path) {
-    let _ = crate::host::fs::remove_dir_all(permit, home);
+    let _ = crate::home::remove_all(permit, home);
 }
 
 /// `tool`'s own program, in `home`, with nothing of this process's environment but `PATH`, the
