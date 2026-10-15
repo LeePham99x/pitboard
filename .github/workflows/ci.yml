@@ -580,8 +580,10 @@ jobs:
       - name: The C# is laid out as .editorconfig says
         working-directory: apps/windows
         run: dotnet format whitespace --folder --verify-no-changes .
-      # Built where it runs, the ARM64 app on windows-11-arm (CF6). Published by the job's user
-      # into the workspace, where the standard user may read and run it.
+      # Built where it runs, the ARM64 app on windows-11-arm (CF6), by the job's user into the
+      # workspace, where the standard user may read and run it. A WinUI Debug build runs from its
+      # build output: a Debug publish leaves out the XAML files it reads beside it (run
+      # 38770866775). The Release build is published, as a release is.
       - name: The app, its unit tests and its UI tests
         working-directory: apps/windows
         env:
@@ -589,11 +591,11 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
         run: |
           out="$GITHUB_WORKSPACE/target/windows-app"
-          dotnet publish Pitboard.App -c Debug -r "$RUNTIME" -p:Platform="$PLATFORM" -o "$out/debug" \
+          dotnet build Pitboard.App -c Debug -r "$RUNTIME" -p:Platform="$PLATFORM" -o "$out/debug" \
             -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/release/pitboard_ffi.dll"
           dotnet publish Pitboard.App -c Release -r "$RUNTIME" -p:Platform="$PLATFORM" -o "$out/release" \
             -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/gated/release/pitboard_ffi.dll"
-          dotnet publish Pitboard.Windows.Tests -c Debug -r "$RUNTIME" -p:Platform="$PLATFORM" --self-contained \
+          dotnet build Pitboard.Windows.Tests -c Debug -r "$RUNTIME" -p:Platform="$PLATFORM" --self-contained \
             -o "$out/tests" -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/release/pitboard_ffi.dll"
           dotnet publish Pitboard.UITests -c Debug -r "$RUNTIME" --self-contained -o "$out/uitests" \
             -p:PitboardAppDebug="$out/debug/Pitboard.exe" -p:PitboardAppRelease="$out/release/Pitboard.exe"
@@ -642,6 +644,7 @@ jobs:
             'app-built' = "apps/windows/Pitboard.App/bin/$env:PLATFORM/Debug"
             'app-obj' = "apps/windows/Pitboard.App/obj/$env:PLATFORM/Debug"
             'views-built' = "apps/windows/Pitboard.Views/bin/$env:PLATFORM/Debug"
+            'release-published' = 'target/windows-app/release'
           }
           foreach ($entry in $folders.GetEnumerator()) {
             if (-not (Test-Path -LiteralPath $entry.Value)) { Write-Output "== $($entry.Key): no $($entry.Value)"; continue }

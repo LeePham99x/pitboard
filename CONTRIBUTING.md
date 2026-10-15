@@ -340,15 +340,15 @@ argument as a fresh standard user, as winget's validation runs a program. The
 with its fixtures, checks that the bindings generated from each are the Linux job's byte for
 byte, and runs the C# tests against each the same way.
 
-CI's `windows-app` job publishes the app's Debug build over `pitboard_ffi.dll` opened with its
-fixtures, and its Release build over the library as a 0.x release builds it, on both images.
-`.github/scripts/check-windows-app.ps1` checks the Release build for fixture text, a package
-identity and the core's C runtime. The job runs `Pitboard.Windows.Tests`, a WinUI app that
-hosts its own tests, and `Pitboard.UITests`, which drives the built app with FlaUI, as a fresh
-standard user, then the UI test of an elevated launch as the job's user. It builds
-`Pitboard.Probe`, which the session machine runs to measure the app's notifications, and
-checks that it refuses an account without `pitboard-probe`'s throwaway marker. The WinUI
-projects build only there.
+CI's `windows-app` job builds the app in Debug over `pitboard_ffi.dll` opened with its
+fixtures, and publishes it in Release over the library as a 0.x release builds it, on both
+images. `.github/scripts/check-windows-app.ps1` checks the Release build for fixture text, a
+package identity and the core's C runtime. The job runs `Pitboard.Windows.Tests`, a WinUI app
+that hosts its own tests, and `Pitboard.UITests`, which drives the built app with FlaUI, as a
+fresh standard user, then the UI test of an elevated launch as the job's user. It builds
+`Pitboard.Probe`, which the session machine runs to measure the app's notifications, and checks
+that it refuses an account without `pitboard-probe`'s throwaway marker. The WinUI projects
+build only there.
 
 CI's `windows-release` job builds the release's zips with `.github/actions/windows-release`,
 as `release.yml` does from 1.0.0. `.github/scripts/check-windows-build.ps1` checks each
@@ -365,12 +365,13 @@ the run. `ARCHITECTURE.md` records what it measured.
 
 Read [the rules for the app in AGENTS.md](AGENTS.md#on-windows) first. Build the bindings as
 [The C# bindings](#the-c-bindings) says, from a library built with
-`--cfg pitboard_unreleased_windows` and `--features fixture`, then publish the Debug build and
-start its executable in a fixture, with scratch homes set after building, from PowerShell:
+`--cfg pitboard_unreleased_windows` and `--features fixture`, then build the app in Debug and
+start its executable in a fixture, with scratch homes set after building. Build it rather than
+publish it: a Debug publish leaves out the XAML files the app reads beside it. From PowerShell:
 
 ```powershell
 cd apps\windows
-dotnet publish Pitboard.App -c Debug -r win-arm64 -p:Platform=ARM64 -o ..\..\target\windows-app\debug `
+dotnet build Pitboard.App -c Debug -r win-arm64 -p:Platform=ARM64 -o ..\..\target\windows-app\debug `
   -p:PitboardNativeLibrary="$PWD\..\..\target\debug\pitboard_ffi.dll"
 $scratch = (New-Item -ItemType Directory (Join-Path $env:TEMP "pitboard-$(New-Guid)")).FullName
 $app = [Diagnostics.ProcessStartInfo]::new((Resolve-Path ..\..\target\windows-app\debug\Pitboard.exe).Path)
@@ -385,7 +386,7 @@ Only the `firstLaunch` fixture opens the window as it starts. Click Pitboard's i
 notification area to bring the window forward, or run the last line again: the second copy
 hands its launch to the first and quits. Exit in the icon's menu ends it.
 
-On x64, publish with `-r win-x64 -p:Platform=x64`. A Debug build keeps apart from an installed
+On x64, build with `-r win-x64 -p:Platform=x64`. A Debug build keeps apart from an installed
 Release:
 
 | | Debug build | Release build |
