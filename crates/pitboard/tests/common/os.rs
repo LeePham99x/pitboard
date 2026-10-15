@@ -118,11 +118,11 @@ pub(crate) fn system_folders() -> Vec<PathBuf> {
     }
 }
 
-// `env` exits 127, and `cmd.exe` 9009 for npm's shim (pitboard-core's job tests).
+// `env` exits 127, and `cmd.exe` 1 for npm's shim (pitboard-core's job tests).
 pub(crate) fn found_no_interpreter(status: std::process::ExitStatus) -> bool {
     match OS {
         Os::MacOs | Os::Linux => status.code() == Some(127),
-        Os::Windows => status.code() == Some(9009),
+        Os::Windows => status.code() == Some(1),
     }
 }
 

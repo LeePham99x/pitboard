@@ -492,7 +492,7 @@ mod tests {
 
     // What `common::os::found_no_interpreter` takes for npm's shim with no `node` to find.
     #[test]
-    fn npms_shim_with_no_interpreter_to_find_exits_9009() {
+    fn npms_shim_with_no_interpreter_to_find_exits_1() {
         let dir = scratch("no-node");
         let shim = dir.join("codex.cmd");
         std::fs::write(
@@ -508,7 +508,7 @@ mod tests {
         let mut command = quietly(Command::new(&shim));
         command.arg("login").env("PATH", system32());
         let ended = start(command).expect("started").wait().expect("ended");
-        assert_eq!(ended.code(), Some(9009), "{ended:?}");
+        assert_eq!(ended.code(), Some(1), "{ended:?}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
