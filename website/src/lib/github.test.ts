@@ -235,6 +235,34 @@ test("lists the release's files in order and fails on one it does not know", asy
   assert.throws(() => fileRows(more), /does not describe/);
 });
 
+test("lists a release's Windows zips after the Linux tarballs", async () => {
+  const r = await readRelease({ fetch: server({}).f, fixture: { release: recorded, sums } });
+  const zips = ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"].flatMap((triple) =>
+    [".zip", ".zip.cdx.json"].map((end) => ({
+      name: `pitboard-v0.12.0-${triple}${end}`,
+      size: 1,
+      sha256: null,
+      url: "",
+    })),
+  );
+  const rows = fileRows({ ...r, assets: [...r.assets, ...zips] });
+  assert.deepEqual(
+    rows.slice(5, 7).map((row) => [row.asset.name, row.forHtml, row.bom?.name]),
+    [
+      [
+        "pitboard-v0.12.0-x86_64-pc-windows-msvc.zip",
+        "Command line, Windows on x64",
+        "pitboard-v0.12.0-x86_64-pc-windows-msvc.zip.cdx.json",
+      ],
+      [
+        "pitboard-v0.12.0-aarch64-pc-windows-msvc.zip",
+        "Command line, Windows on ARM64",
+        "pitboard-v0.12.0-aarch64-pc-windows-msvc.zip.cdx.json",
+      ],
+    ],
+  );
+});
+
 test("reads SHA256SUMS in text and binary mode, and refuses anything else", () => {
   const a = "a".repeat(64);
   assert.equal(parseSums(`${a}  x.tar.gz\n${a} *y.zip\n`).size, 2);
