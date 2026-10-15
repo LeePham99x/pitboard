@@ -178,6 +178,55 @@ pub fn same_path_in_any_case(a: &Path, b: &Path) -> bool {
     }
 }
 
+// One text per Windows path, read lexically on every system: two spellings of one folder key
+// alike, and a short name or a link keys apart, as a symlink does on macOS.
+pub fn path_key_in_any_case(path: &str) -> String {
+    let path = path.replace('/', r"\");
+    let path = match path.get(..8) {
+        Some(verbatim) if verbatim.eq_ignore_ascii_case(r"\\?\UNC\") => {
+            format!(r"\\{}", &path[8..])
+        }
+        _ => path.strip_prefix(r"\\?\").unwrap_or(&path).to_owned(),
+    };
+    let upper = |name: &str| name.chars().map(upper_one_for_one).collect::<String>();
+    let drive = path
+        .as_bytes()
+        .get(..2)
+        .filter(|head| head[0].is_ascii_alphabetic() && head[1] == b':')
+        .map(|head| char::from(head[0].to_ascii_uppercase()));
+    let (root, rest) = if let Some(unc) = path.strip_prefix(r"\\") {
+        let mut parts = unc.splitn(3, '\\');
+        let (server, share) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""));
+        (
+            format!(r"\\{}\{}\", upper(server), upper(share)),
+            parts.next().unwrap_or(""),
+        )
+    } else if let Some(drive) = drive {
+        match path[2..].strip_prefix('\\') {
+            Some(rest) => (format!(r"{drive}:\"), rest),
+            None => (format!("{drive}:"), &path[2..]),
+        }
+    } else if let Some(rest) = path.strip_prefix('\\') {
+        (r"\".to_owned(), rest)
+    } else {
+        (String::new(), path.as_str())
+    };
+    let rooted = root.ends_with('\\');
+    let mut names: Vec<&str> = Vec::new();
+    for name in rest.split('\\') {
+        match name {
+            "" | "." => {}
+            ".." if names.last().is_some_and(|last| *last != "..") => {
+                names.pop();
+            }
+            ".." if rooted => {}
+            name => names.push(name),
+        }
+    }
+    let names: Vec<String> = names.into_iter().map(upper).collect();
+    root + &names.join(r"\")
+}
+
 // Is, holds or lies in, for a build for tests to refuse, the same on every system: through
 // every link, one to nothing yet included, and in any case, as macOS's own volumes compare.
 #[cfg(any(test, feature = "test-support"))]
@@ -288,18 +337,21 @@ fn beyond(mut at: PathBuf, rest: &Path) -> PathBuf {
 /// outside the Basic Multilingual Plane, which Windows compares a UTF-16 unit at a time, are
 /// compared as they are.
 fn same_name_in_any_case(a: &std::ffi::OsStr, b: &std::ffi::OsStr) -> bool {
-    fn upper(c: char) -> char {
-        if u32::from(c) > 0xFFFF {
-            return c;
-        }
-        let mut upper = c.to_uppercase();
-        match (upper.next(), upper.next()) {
-            (Some(one), None) => one,
-            _ => c,
-        }
-    }
     let (a, b) = (a.to_string_lossy(), b.to_string_lossy());
-    a.chars().map(upper).eq(b.chars().map(upper))
+    a.chars()
+        .map(upper_one_for_one)
+        .eq(b.chars().map(upper_one_for_one))
+}
+
+fn upper_one_for_one(c: char) -> char {
+    if u32::from(c) > 0xFFFF {
+        return c;
+    }
+    let mut upper = c.to_uppercase();
+    match (upper.next(), upper.next()) {
+        (Some(one), None) => one,
+        _ => c,
+    }
 }
 
 /// What the person's login shell said its `PATH` is.
@@ -699,6 +751,40 @@ mod tests {
         assert!(!same("Straße", "STRASSE"), "ß is upper case as it is");
         assert!(!same("Codex.exe", "Codex"));
         assert!(!same("/a/b", "/a/b/c"));
+    }
+
+    // Read by the text alone, on every system, as Foundation standardises a file URL on macOS.
+    #[test]
+    fn a_windows_path_has_one_key_however_it_is_spelled() {
+        let key = path_key_in_any_case;
+        for spelling in [
+            r"C:\Users\X\AppData\Local\Pitboard",
+            r"c:\users\x\appdata\local\pitboard\",
+            r"\\?\C:\Users\X\AppData\Local\Pitboard",
+            "C:/Users/X/AppData/Local/Pitboard",
+            r"C:\Users\X\.\AppData\Local\..\Local\Pitboard",
+            r"C:\Users\\X\AppData\Local\Pitboard",
+        ] {
+            assert_eq!(
+                key(spelling),
+                r"C:\USERS\X\APPDATA\LOCAL\PITBOARD",
+                "{spelling}"
+            );
+        }
+        assert_eq!(key(r"\\server\share\Pitboard"), r"\\SERVER\SHARE\PITBOARD");
+        assert_eq!(
+            key(r"\\?\UNC\server\share\Pitboard"),
+            r"\\SERVER\SHARE\PITBOARD"
+        );
+        assert_eq!(key(r"C:\..\Pitboard"), r"C:\PITBOARD");
+        assert_eq!(key(r"C:\"), r"C:\");
+        assert_eq!(key(r"C:\Users\Straße"), r"C:\USERS\STRAßE");
+        assert_ne!(key("C:\\Users\\e\u{301}"), key("C:\\Users\\\u{e9}"));
+        assert_ne!(
+            key(r"C:\Users\XAVIER~1\AppData\Local\Pitboard"),
+            key(r"C:\Users\Xavier Dana\AppData\Local\Pitboard"),
+            "no short name is expanded"
+        );
     }
 
     // One answer on every system: macOS's own volumes ignore case, and Windows drops `..` as

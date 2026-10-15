@@ -105,7 +105,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     `host::Os`. A fact that differs by system is a `match` on `host::OS`, such as the
     folders macOS asks about before an app may look in them, or `default_pitboard_home`,
     where Pitboard keeps its files for a home when `PITBOARD_HOME` names nowhere else.
-    `same_path_in_any_case` is how Windows compares paths, for the core and the apps alike.
+    `same_path_in_any_case` is how Windows compares paths, for the core and the apps alike,
+    and `path_key_in_any_case` one text per path compared so.
   - `release.rs`: whether this build may do anything on its system. A Windows build of a
     0.x release may not, unless it was compiled with `--cfg pitboard_unreleased_windows`,
     which CI's Windows jobs set and no release does; macOS and Linux always may. The
@@ -1154,7 +1155,11 @@ window loads its site, and whatever the site's pages load, as a browser would.
   before it offers to link the command line. The account windows' records are kept
   under Pitboard's directory standardised as Foundation standardises a file URL, as the
   app kept them before the core said where it is: the app works that key out in
-  `WebEnvironment.recordKey` alone and hands it to the model as `WindowsLaunch::key`.
+  `WebEnvironment.recordKey` alone and hands it to the model as `WindowsLaunch::key`. The
+  Windows app asks the core for its key, `windows_records_key`: the directory as Windows
+  compares paths, with `/` read as `\`, `.` and `..` taken out, no `\\?\` and no trailing
+  separator, and each name in upper case one for one. It reads no file, so a short name or a
+  link keys apart, as a symlink does on macOS.
 - The macOS app's `AppModel` shows only a snapshot newer than the one it shows, so one that
   arrives late never puts back what a newer one replaced, and assigns each part only where
   it differs. `ModelListening` hands each snapshot to the main queue, which runs them in the

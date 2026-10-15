@@ -7,7 +7,8 @@
 //! the links from outside (`sites.rs`), the account windows' rules (`account_windows`),
 //! `name_to_save` and `downloads_quit_question` of `present`, the fixtures' `fixture_names`
 //! and `fixture_page`, and three free functions the macOS app asks of its bundle and its
-//! environment, `app_command_line`, `can_run` and `pitboard_directory`. The snapshot carries
+//! environment, `app_command_line`, `can_run` and `pitboard_directory`, and the Windows app's
+//! `windows_records_key`. The snapshot carries
 //! what an app shows of the accounts and the machine, such as a limit's names or how long an
 //! account lasts, made by `present` and the model, so no free function says it again. The
 //! free functions answer at once from what they are given, apart from `can_run`, which asks
@@ -171,6 +172,12 @@ pub fn can_run(path: String) -> bool {
 pub fn pitboard_directory(environment: HashMap<String, String>) -> String {
     let environment: Environment = environment.into_iter().collect();
     environment.pitboard_home().to_string_lossy().into_owned()
+}
+
+// `WindowsLaunch::key` in the Windows app: the Pitboard directory as Windows compares paths.
+#[uniffi::export]
+pub fn windows_records_key(directory: String) -> String {
+    pitboard_core::host::path_key_in_any_case(&directory)
 }
 
 /// Something to know about that did not stop the operation.
@@ -456,5 +463,17 @@ mod tests {
         assert!(can_run("/bin/sh".into()));
         assert!(!can_run("/bin".into()), "a directory is not a program");
         assert!(!can_run("/nowhere/at/all".into()));
+    }
+
+    #[test]
+    fn the_windows_app_keys_its_records_by_its_directory_in_any_case() {
+        assert_eq!(
+            windows_records_key(r"c:\users\x\appdata\local\pitboard\".into()),
+            windows_records_key(r"\\?\C:\Users\X\AppData\Local\Pitboard".into())
+        );
+        assert_eq!(
+            windows_records_key("C:/Users/X/AppData/Local/Pitboard".into()),
+            r"C:\USERS\X\APPDATA\LOCAL\PITBOARD"
+        );
     }
 }
