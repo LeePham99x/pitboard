@@ -55,10 +55,7 @@ impl Provider for Codex {
     /// requirement or a managed layer chose it. A store nobody can tell is refused too.
     fn live(&self, ctx: &Context) -> Result<LiveStore, ProviderError> {
         if let Some(path) = paths::missing_home(ctx) {
-            return Err(ProviderError::HomeMissing {
-                provider: ProviderId::Codex,
-                path,
-            });
+            return Err(ProviderError::CodexHomeMissing { path });
         }
         let unsupported = |reason: String| {
             Err(ProviderError::Unsupported {
@@ -641,10 +638,10 @@ mod tests {
             [("USERPROFILE", "/nowhere"), ("CODEX_HOME", named.as_str())],
         );
         let refused = Codex.live(&Read::read(&env, "cli")).err().expect("refused");
-        let ProviderError::HomeMissing { provider, path } = &refused else {
+        let ProviderError::CodexHomeMissing { path } = &refused else {
             panic!("refused otherwise: {refused:?}");
         };
-        assert_eq!((*provider, path), (ProviderId::Codex, &missing));
+        assert_eq!(path, &missing);
         assert_eq!(
             refused.to_string(),
             format!(

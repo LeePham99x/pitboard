@@ -126,7 +126,7 @@ impl Cause {
             | P::ShapeUnexpected { .. }
             | P::Unsupported { .. }
             | P::NoLogin { .. }
-            | P::HomeMissing { .. } => Cause::AnswerNotUnderstood,
+            | P::CodexHomeMissing { .. } => Cause::AnswerNotUnderstood,
             P::InvalidGrant { .. } => Cause::LoginRefused,
         }
     }
@@ -170,11 +170,7 @@ pub enum Error {
         path: PathBuf,
     },
 
-    #[error(
-        "CODEX_HOME is {}, which is no folder, so Codex does not start. Make that folder, or \
-         unset CODEX_HOME.",
-        path.display()
-    )]
+    #[error("{}.", codex_home_missing(path))]
     CodexHomeMissing { path: PathBuf },
 
     #[error(
@@ -1119,6 +1115,14 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 /// What Pitboard says of a home that is not a full path: which variable named it, and what
 /// it holds.
+pub(crate) fn codex_home_missing(path: &std::path::Path) -> String {
+    format!(
+        "CODEX_HOME is {}, which is no folder, so Codex does not start. Make that folder, or \
+         unset CODEX_HOME",
+        path.display()
+    )
+}
+
 fn not_absolute(variable: &str, path: &std::path::Path) -> String {
     let holds = if path.as_os_str().is_empty() {
         "empty".to_string()
