@@ -1,11 +1,13 @@
 using FlaUI.Core.AutomationElements;
 using FlaUI.Core.Definitions;
+using FlaUI.Core.Input;
 using FlaUI.Core.Tools;
+using FlaUI.Core.WindowsAPI;
 
 namespace Pitboard.UITests;
 
-// The macOS AccountWindowTests but downloads and find. In a fixture an account's window loads the fixture's stand-in
-// pages, so nothing reaches either site.
+// The macOS AccountWindowTests. In a fixture an account's window loads the fixture's stand-in pages, and saves in the
+// fixture's folder, so nothing reaches either site or the Downloads of whoever runs them.
 [TestClass]
 [Elevated(ConditionMode.Exclude)]
 public sealed class AccountWindowTests
@@ -127,6 +129,41 @@ public sealed class AccountWindowTests
 
         Assert.IsTrue(Says(window, "window.note", "Pitboard stopped it"), "the window did not say Google was stopped");
         Shows(window, "chatgpt.com stand-in");
+    }
+
+    // WebView2 names no frame that started a download, so the site's own asks first; WebView2's own list then names it.
+    [TestMethod]
+    [Ignore(Pending.W23a)]
+    public void ASiteDownloadIsListedInTheWindow()
+    {
+        using var launched = OpenChatGPT();
+        var window = launched.Window("main");
+
+        Invoke(window, "Download notes");
+        launched.Invoke("Download");
+        Invoke(window, "Downloads");
+
+        var listed = Retry.WhileFalse(
+            () => Launched.Lines(window).Any(line => line.Contains("notes.txt", StringComparison.Ordinal)),
+            TimeSpan.FromSeconds(10), TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
+        Assert.IsTrue(listed, "WebView2's download list does not name notes.txt");
+    }
+
+    [TestMethod]
+    [Ignore(Pending.W23a)]
+    public void FindShowsTheFindBar()
+    {
+        using var launched = OpenChatGPT();
+        var window = launched.Window("main");
+        Launched.Within(window, found => found.ByName("chatgpt.com stand-in").And(found.ByControlType(ControlType.Text)), "the page")
+            .Click();
+
+        Keyboard.TypeSimultaneously(VirtualKeyShort.CONTROL, VirtualKeyShort.KEY_F);
+
+        var bar = Retry.WhileNull(
+            () => window.FindFirstDescendant(found => found.ByControlType(ControlType.Edit)),
+            TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
+        Assert.IsNotNull(bar, "WebView2's find bar did not show");
     }
 
     [TestMethod]
