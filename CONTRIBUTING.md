@@ -299,7 +299,10 @@ a fresh standard user through `.github/scripts/test-as-standard-user.ps1`. The j
 a run leaves a login item, a scheduled task or a login folder behind. It also builds
 `pitboard.exe` as a release is built, and checks that it refuses and changes nothing.
 
-`gh workflow run windows-facts.yml` measures both runner images. No pull request runs it.
+`gh workflow run windows-facts.yml --ref <branch>` measures both runner images with
+`pitboard-probe` and `.github/scripts/runner-facts.ps1`. No pull request runs it on its own:
+one that changes the probe, its helpers or the script dispatches it on its branch and names
+the run. `ARCHITECTURE.md` records what it measured.
 
 ## Tool registers
 

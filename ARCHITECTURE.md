@@ -555,17 +555,18 @@ window loads its site, and whatever the site's pages load, as a browser would.
   cross-platform half (the command line, the report shape, the write guard, the Credential
   Manager and process-image allowlists, the redactor, the logon and elevation naming, the
   PE reader), so that half is unit tested on every system. One subcommand per measurement
-  the VM sessions and the runner facts need; `.github/scripts/runner-facts.ps1` runs the
-  safe ones in `windows-facts.yml`. Every writing subcommand refuses unless the account
-  carries a throwaway marker, and refuses a scratch path that is relative or keeps a `..`,
-  or that reaches a real login folder or file, in any spelling Windows opens or by the
+  the runner facts need; `.github/scripts/runner-facts.ps1` runs them in `windows-facts.yml`.
+  Every writing subcommand refuses unless the account carries a throwaway marker, and
+  refuses a scratch path that is relative or keeps a `..`, or that reaches a real login
+  folder or file or Claude Desktop's folders, in any spelling Windows opens or by the
   identity of a folder on the way; every file it is named carries the `pitboard-probe-`
   prefix. `credman-names` asks Credential Manager only for the live login families' and
   `pitboard-*` prefixes and never reads a blob out. Reports name principals by their
   relation to the token rather than by SID, print paths with the profile folder and the
   account name replaced, and never hold two keys that differ only in case, which
-  PowerShell's `ConvertFrom-Json` refuses. `helpers/` holds the Bun and Node scripts, and
-  `sparse/` the sparse-package manifests, script and steps, that the owner runs in the VM.
+  PowerShell's `ConvertFrom-Json` refuses. `helpers/` holds the Bun and Node scripts the
+  runner facts run beside it, and `sparse/` the sparse-package manifests, script and steps
+  the owner runs in the VM.
 - `apps/`: the native apps, one directory for each system.
 - `apps/windows/`: the Windows app. `Pitboard.Core` is the core's C# bindings as an
   assembly of their own, generated into `Generated/` and not committed, and
@@ -629,8 +630,7 @@ window loads its site, and whatever the site's pages load, as a browser would.
   - `actions/xcodegen` puts the pinned XcodeGen on `PATH` for every job that builds the
     app.
   - `workflows/rotation.yml` rehearses rotating the update key.
-  - `workflows/windows-facts.yml`, started by hand, measures the Windows runners and builds
-    the programs a VM session runs.
+  - `workflows/windows-facts.yml`, started by hand, measures the Windows runners.
   - `actions/apple-keychain` imports the Developer ID certificate for every job that signs.
   - `actions/rust` installs the toolchain and restores the Cargo cache for every job outside
     `release.yml`, and `actions/windows-builds` makes the builds both Windows workflows start
