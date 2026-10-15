@@ -642,16 +642,20 @@ window loads its site, and whatever the site's pages load, as a browser would.
   - `workflows/rotation.yml` rehearses rotating the update key.
   - `workflows/windows-facts.yml`, started by hand, measures the Windows runners.
   - `actions/apple-keychain` imports the Developer ID certificate for every job that signs.
-  - `actions/rust` installs the toolchain and restores the Cargo cache for every job outside
-    `release.yml`, and `actions/windows-builds` makes the builds both Windows workflows start
-    from.
+  - `actions/rust` installs the toolchain and, unless a job turns it off, restores the Cargo
+    cache; nothing `release.yml` runs restores one. `actions/windows-builds` makes the builds
+    both Windows workflows start from.
+  - `actions/windows-release` builds, zips and checks `pitboard.exe` for `release.yml` from
+    1.0.0, and for CI on every pull request.
   - `scripts/` holds the EdDSA key and signature helpers, and the scripts that add Sparkle,
     the command line and the Share extension's library to the app's bill of materials.
     `fill-template.sh` writes a release's version and checksums into a `packaging/`
     template, and `test-install.py` tests it and the install script. `release-kind.sh`
     says what a tag releases and whether it is latest, `core-unchanged.sh` refuses a
     `pitboard-core` that changed under a version crates.io already has, and
-    `test-release.py` tests both and the app's `build-number.sh`.
+    `test-release.py` tests both and the app's `build-number.sh`. `package-windows.ps1` zips
+    a Windows build, `check-windows-build.ps1` checks one, and `test-windows-release.ps1`
+    tests both.
   - `dependabot.yml` asks for weekly updates of Cargo dependencies, GitHub Actions and the
     .NET SDK in `apps/windows/global.json`.
   - `zizmor.yml` configures the audit CI runs on the workflows.
@@ -2165,6 +2169,8 @@ on 15 October 2026. W27 reviews the list.
 | WSL 2's processes run in a utility VM | [Comparing WSL versions](https://learn.microsoft.com/en-us/windows/wsl/compare-versions) | No runner has WSL. |
 | `QueryUnbiasedInterruptTimePrecise` leaves out sleep and hibernation, which `QueryPerformanceCounter` counts | [QueryUnbiasedInterruptTimePrecise](https://learn.microsoft.com/en-us/windows/win32/api/realtimeapiset/nf-realtimeapiset-queryunbiasedinterrupttimeprecise), [Acquiring high-resolution time stamps](https://learn.microsoft.com/en-us/windows/win32/sysinfo/acquiring-high-resolution-time-stamps) | A runner never sleeps. |
 | A deleted WebView2 profile's folder goes as the browser process exits, and its name is refused with `ERROR_DELETE_PENDING` until then | [CoreWebView2Profile.Delete](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/winrt/microsoft_web_webview2_core/corewebview2profile#delete) | No row runs WebView2 yet. |
+| A program ended by an unhandled exception exits with the exception's code, such as `0xC0000005` | [GetExitCodeProcess](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getexitcodeprocess) | No row crashes a program. |
+| winget's validation installs a package as a standard user, runs its program with no argument and wants it to succeed | [Validation](https://github.com/microsoft/winget-pkgs/blob/master/doc/Validation.md), [Validation failure guide](https://github.com/microsoft/winget-pkgs/blob/master/doc/ValidationFailureGuide.md) | No runner submits a winget manifest. |
 
 ### One sign-in at a time
 

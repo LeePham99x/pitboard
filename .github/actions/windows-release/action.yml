@@ -21,7 +21,7 @@ runs:
     - uses: ./.github/actions/rust
       with:
         targets: ${{ inputs.triple }}
-        cache: "false"
+        cache: false
     # ring compiles its C with clang on ARM64.
     - if: runner.arch == 'ARM64'
       shell: bash

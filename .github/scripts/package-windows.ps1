@@ -8,6 +8,10 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 
+# A GitHub-hosted runner is thrown away after the job.
+if (-not ($env:GITHUB_ACTIONS -eq 'true' -and $env:RUNNER_ENVIRONMENT -eq 'github-hosted')) {
+    throw 'package-windows.ps1 runs only on a GitHub-hosted runner: it runs the pitboard.exe it is given'
+}
 if ($Version -notmatch '^[0-9A-Za-z.+-]+$') { throw "`"$Version`" is not a version" }
 
 $root = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
@@ -27,10 +31,19 @@ foreach ($file in 'LICENSE', 'NOTICE', 'README.md') {
     Copy-Item -LiteralPath (Join-Path $root $file) -Destination $folder
 }
 
+# Never the runner's own homes, whatever the program comes to read.
+$scratch = Join-Path $env:RUNNER_TEMP "package-windows-$([guid]::NewGuid().ToString('N'))"
+$homes = @{}
+foreach ($variable in 'USERPROFILE', 'HOME', 'APPDATA', 'LOCALAPPDATA', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'PITBOARD_HOME') {
+    $homes[$variable] = Join-Path $scratch $variable
+    New-Item -ItemType Directory -Force -Path $homes[$variable] | Out-Null
+}
+
 # Byte for byte: PowerShell decodes what a program prints and encodes it again.
 function Save-Output([string] $Program, [string[]] $Arguments, [string] $Path) {
     $start = [Diagnostics.ProcessStartInfo]::new($Program)
     foreach ($argument in $Arguments) { $start.ArgumentList.Add($argument) }
+    foreach ($variable in $homes.Keys) { $start.Environment[$variable] = $homes[$variable] }
     $start.UseShellExecute = $false
     $start.RedirectStandardOutput = $true
     $process = [Diagnostics.Process]::Start($start)
@@ -44,6 +57,7 @@ function Save-Output([string] $Program, [string[]] $Arguments, [string] $Path) {
 # Git Bash reads the bash completions.
 Save-Output $packed @('completions', 'powershell') (Join-Path $folder 'completions\pitboard.ps1')
 Save-Output $packed @('completions', 'bash') (Join-Path $folder 'completions\pitboard.bash')
+Remove-Item -Recurse -Force -LiteralPath $scratch
 
 # Each entry named here, with /, as the zip format asks.
 Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.ZipFile

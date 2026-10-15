@@ -85,9 +85,10 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
   `fixture`.
 - Tests never touch Task Scheduler, the registry, the user `PATH` or DPAPI keys, and never
   run elevated on a machine that holds logins.
-- Never run `.github/scripts/test-as-standard-user.ps1`, `check-windows-build.ps1` or
-  `runner-facts.ps1` on a machine of your own. They make Windows accounts and change who holds
-  which rights.
+- Never run `.github/scripts/test-as-standard-user.ps1`, `check-windows-build.ps1`,
+  `package-windows.ps1`, `test-windows-release.ps1` or `runner-facts.ps1` on a machine of your
+  own. They run the builds they are given, make Windows accounts and change who holds which
+  rights.
 - `test-as-standard-user.ps1`, also when `check-windows-build.ps1` runs it, makes one test user
   and may grant it the symbolic-link right. Beside that, only `runner-facts.ps1`, only through
   `windows-facts.yml` on a GitHub-hosted runner, may make Windows accounts, put one in
