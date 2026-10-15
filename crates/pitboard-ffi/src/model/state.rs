@@ -3231,7 +3231,9 @@ impl State {
             ..
         } = question;
         let message = |again: &str| match &outcome {
-            QuitOutcome::Lingering { .. } => crate::present::words::part_still_running(&app, again),
+            QuitOutcome::Lingering { .. } => {
+                crate::present::words::part_still_running(pitboard_core::host::OS, &app, again)
+            }
             _ => crate::present::words::still_open(&app, again),
         };
         let (switching, other) = (message("switch again"), message("try again"));

@@ -8,10 +8,10 @@
 use super::changing::a_look_landing_after;
 use super::state::{After, Answer, Job};
 use super::testing::{
-    CHATGPT, CLAUDE, Hand, Machine, StandInApps, a_look_or_a_read, a_switch, already_active,
-    any_read, chatgpt_holding, claude, codex_account, desktop_account, desktop_machine,
-    desktop_warning, fresh_read, holding_ask, offline_read, percent, refusal, status,
-    still_running, switched, warned, warning,
+    CHATGPT, CLAUDE, Hand, MONITOR, Machine, StandInApps, a_look_or_a_read, a_switch,
+    already_active, any_read, chatgpt_holding, claude, codex_account, desktop_account,
+    desktop_machine, desktop_warning, fresh_read, holding_ask, offline_read, percent, refusal,
+    status, still_running, switched, warned, warning,
 };
 use super::{Intent, LastSwitch, Pane, QuitQuestion, RestartNeeded, Sheet, WindowRequest};
 use crate::{Abandoned, GaveUp};
@@ -1373,8 +1373,10 @@ fn put_back_that_cannot_quit_claude_keeps_the_wait_and_says_why() {
         (
             true,
             true,
-            "Part of Claude is still running after it quit, so nothing has changed. Wait until \
-             it ends, or quit it in Activity Monitor, then switch again.",
+            &format!(
+                "Part of Claude is still running after it quit, so nothing has changed. Wait \
+                 until it ends, or quit it in {MONITOR}, then switch again."
+            ),
         ),
     ] {
         let (mut model, mut machine, id) = waiting_in_claude();
