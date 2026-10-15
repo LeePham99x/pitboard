@@ -367,7 +367,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn an_account_nobody_has_asked_about_is_asked_about() {
         let (ctx, _clock, _s) = machine();
         assert_eq!(may_ask(&ctx, "acc", None, false), None);
@@ -401,7 +400,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn asking_for_it_goes_past_the_floor() {
         let (ctx, _clock, _s) = machine();
         record(
@@ -473,7 +471,6 @@ mod tests {
     /// A record an older Pitboard wrote has no reason, and is told by its length as it
     /// was then: longer than any unreachable wait means asked for.
     #[test]
-    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn a_wait_an_older_pitboard_recorded_is_told_by_its_length() {
         let (ctx, _clock, _s) = machine();
         let written = format!(
@@ -561,7 +558,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn what_is_known_about_an_account_goes_when_the_account_does() {
         let (ctx, _clock, _s) = machine();
         record(

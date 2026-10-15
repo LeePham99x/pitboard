@@ -513,7 +513,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn adopting_an_empty_home_is_not_an_error() {
         let (ctx, _mem, _scratch) = machine();
         assert_eq!(adopt(&ctx, Permit::for_a_test()).expect("adopting"), None);

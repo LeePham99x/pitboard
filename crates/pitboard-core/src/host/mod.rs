@@ -27,6 +27,14 @@ use crate::store::RawStore;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+#[cfg_attr(
+    not(windows),
+    allow(
+        dead_code,
+        reason = "only Windows reads an access list; every system's tests read these rules"
+    )
+)]
+pub(crate) mod acl;
 pub(crate) mod administered;
 #[cfg(target_os = "linux")]
 mod linux;
@@ -458,8 +466,7 @@ pub(crate) fn login_path(env: &Environment) -> LoginPath {
 pub(crate) struct Access {
     /// Whether anybody but the owner can read or change it.
     pub(crate) shared: bool,
-    /// What the system says about it, for a person to read: `mode 600` where access is a
-    /// mode.
+    // For a person to read: `mode 600`, or on Windows who may reach it, never by SID.
     pub(crate) described: String,
 }
 

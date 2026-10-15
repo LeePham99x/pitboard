@@ -444,10 +444,8 @@ fn desktop_awaiting() {
     contract!("use_desktop_installed", value, code);
 }
 
-// A build for tests given no Claude of its own has none, on macOS and Linux. On Windows the
-// change's lock comes first, and Windows refuses to make it.
+// A build for tests given no Claude of its own has none, after the change's lock is taken.
 #[test]
-#[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
 fn desktop_unsupported() {
     let env = Env::new("contract-desktop-unsupported");
     let without = |args: &[&str]| {

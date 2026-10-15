@@ -293,6 +293,8 @@ Working there takes:
   change with `system_too_old`.
 - x64 or ARM64, with Rust's MSVC toolchain. On ARM64, clang as well: ring compiles its C with
   it there.
+- Developer Mode, or the right to make symbolic links, for the tests that make links. Only on
+  a machine kept for testing, as AGENTS.md says.
 
 Read the [Windows rules in AGENTS.md](AGENTS.md#on-windows) first. Then, as a Windows account
 that holds no real login, in PowerShell from a terminal that is not elevated:

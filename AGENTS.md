@@ -102,6 +102,9 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
   `fixture`.
 - Tests never touch Task Scheduler, the registry, the user `PATH` or DPAPI keys, and never
   run elevated on a machine that holds logins.
+- Never weaken a machine that holds real logins to make a test pass: no Defender exclusion,
+  no UAC change, no access change to a real profile, and no Developer Mode or symbolic-link
+  right for the tests' links. Those are for CI's runners and a machine kept for testing.
 - Never run `.github/scripts/test-as-standard-user.ps1`, `check-windows-build.ps1`,
   `package-windows.ps1`, `test-windows-release.ps1` or `runner-facts.ps1` on a machine of your
   own. They run the builds they are given, make Windows accounts and change who holds which

@@ -848,7 +848,6 @@ mod tests {
     /// for is not evidence of an orphan, it is evidence of another Pitboard, and deleting
     /// it would end that account's session for somebody who never ran this command.
     #[test]
-    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn a_login_this_pitboard_never_wrote_down_is_reported_and_not_touched() {
         let (ctx, mem, root) = machine("stranger");
         let service = "pitboard-park-stranger-1760000000000";

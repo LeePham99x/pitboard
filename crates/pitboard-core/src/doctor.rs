@@ -3932,7 +3932,6 @@ mod tests {
     /// looked at a file's mode. A gatherer that returns an empty list whatever the disk
     /// says would pass every one of those tests.
     #[test]
-    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn a_world_readable_park_is_found_on_the_disk() {
         use crate::host::fs::testing;
 
@@ -5910,7 +5909,6 @@ mod tests {
     /// nothing. Only the two directories above the program are looked at, names first, so a
     /// standalone install is named without opening any file inside it.
     #[test]
-    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn a_version_is_read_out_of_each_way_codex_is_installed() {
         use crate::host::fs::testing;
 

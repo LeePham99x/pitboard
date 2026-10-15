@@ -778,7 +778,6 @@ mod tests {
     /// as `codex login` and Claude Code leave one. Where the variable is unset or empty,
     /// nothing is written and it exits 65.
     #[test]
-    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn a_login_is_written_where_the_environment_says_and_nowhere_else() {
         let scratch = tempfile::tempdir().expect("a scratch folder");
         let script = plays(

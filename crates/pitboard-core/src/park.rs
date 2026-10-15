@@ -597,7 +597,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn a_folder_name_is_free_only_where_nothing_is_seen_there() {
         use crate::host::fs::testing;
         let (ctx, _mem, _scratch) = machine();
