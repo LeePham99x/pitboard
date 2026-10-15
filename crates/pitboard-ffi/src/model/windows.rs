@@ -58,6 +58,13 @@ impl Kept {
             Kept::Read(entry) | Kept::Held(entry) => Some(entry),
         }
     }
+
+    fn get(&self) -> Option<&Entry> {
+        match self {
+            Kept::Unread => None,
+            Kept::Read(entry) | Kept::Held(entry) => Some(entry),
+        }
+    }
 }
 
 /// A window the app has open, from the moment it says so until it says it has closed.
@@ -336,7 +343,12 @@ impl Windows {
         };
         let mut unrecorded = false;
         for store in stores {
-            if shared.contains(&store) {
+            // A held store's deletion is made already, and another record cannot undo it.
+            let held = self
+                .kept
+                .get()
+                .is_some_and(|entry| entry.held.contains(&store));
+            if shared.contains(&store) && !held {
                 self.claimed.remove(&store);
                 if let Some(entry) = self.kept.entry() {
                     unrecorded |= entry.stores.remove(&store);
@@ -387,10 +399,10 @@ impl Windows {
     }
 
     pub(crate) fn held(&self) -> Vec<String> {
-        match &self.kept {
-            Kept::Unread => Vec::new(),
-            Kept::Read(entry) | Kept::Held(entry) => entry.held.iter().cloned().collect(),
-        }
+        self.kept
+            .get()
+            .map(|entry| entry.held.iter().cloned().collect())
+            .unwrap_or_default()
     }
 
     /// `store` is no longer asked of the app, and no longer claimed. Whether it was asked.

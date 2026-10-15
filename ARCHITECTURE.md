@@ -1917,7 +1917,9 @@ make its profile, so on Windows the model holds a store answered `StoreHeld` unt
 window of it, and lists it in `AccountWindowsShown.held`, whose menu item says why with
 `WindowNoteKind::StoreHeld`. It keeps these in `windows.json` too, as `held` beside this
 directory's stores, so after a restart the first read asks for them again and their windows
-wait until the app answers `StoreDeleted`, then open with the sign-in note. Read again for
+wait until the app answers `StoreDeleted`, then open with the sign-in note. Another
+directory's record of a held store does not keep it either, since its deletion is made
+already. Read again for
 WebView2 1.0.4258.31 on 15 October 2026, unchanged. On macOS a store WebKit kept holding is
 still whole, its sign-in included, so an account enrolled again keeps it and its window
 opens on it.

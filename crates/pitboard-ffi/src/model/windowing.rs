@@ -1093,6 +1093,47 @@ fn a_held_store_is_still_held_after_a_restart() {
     assert!(machine.windows_records().held.is_empty());
 }
 
+// WebView2 deletes a profile whoever recorded it, so that cannot keep the window waiting forever.
+#[test]
+fn a_held_store_another_directory_recorded_meanwhile_is_still_deleted() {
+    let personal = claude("p");
+    let mut machine = machine();
+    machine.windows_file = Some(file(&[(DANA, &[&personal])]));
+    machine.answer = Ok(status(without("personal")));
+    let mut model = started_on(Os::Windows, &mut machine);
+    model.send(Intent::StoreHeld {
+        store: personal.clone(),
+    });
+    model.run(&mut machine);
+    let mut records =
+        Records::read(machine.windows_file.as_deref().expect("written")).expect("records");
+    records.set(
+        SCRATCH,
+        &Entry {
+            stores: BTreeSet::from([personal.clone()]),
+            ..Entry::default()
+        },
+    );
+    machine.windows_file = records.text();
+    machine.directories = vec![DANA.into(), SCRATCH.into()];
+
+    machine.answer = Ok(status(two_tools()));
+    model.refresh(&mut machine);
+    assert_eq!(deleting(&model), vec![personal.clone()]);
+    model.send(Intent::WindowOpened {
+        store: personal.clone(),
+    });
+    model.run(&mut machine);
+    assert_eq!(open_window(&model, &personal), None);
+    model.send(Intent::StoreDeleted {
+        store: personal.clone(),
+    });
+    model.run(&mut machine);
+    let window = open_window(&model, &personal).expect("open once deleted");
+    assert_eq!(window.note, Some(WindowNoteKind::SignIn));
+    assert!(model.shown().account_windows.held.is_empty());
+}
+
 // WebKit gave up deleting it, so the store still holds the sign-in its window opens on.
 #[test]
 fn a_mac_keeps_a_held_store_whose_account_is_enrolled_again() {
