@@ -654,9 +654,16 @@ jobs:
           $packages = if ($env:NUGET_PACKAGES) { $env:NUGET_PACKAGES } else { Join-Path $env:USERPROFILE '.nuget\packages' }
           $tools = Join-Path $packages 'microsoft.windows.sdk.buildtools'
           $makepri = Get-ChildItem -Recurse -Filter makepri.exe -Path $tools | Where-Object { $_.Directory.Name -eq 'x64' } | Select-Object -First 1
+          $mt = Get-ChildItem -Recurse -Filter mt.exe -Path $tools | Where-Object { $_.Directory.Name -eq 'x64' } | Select-Object -First 1
           $dumps = New-Item -ItemType Directory -Force -Path (Join-Path $env:RUNNER_TEMP 'pri')
-          foreach ($build in 'tests', 'debug') {
-            $folder = (Resolve-Path "target/windows-app/$build").Path
+          foreach ($build in @{ tests = 'Pitboard.Windows.Tests.exe'; debug = 'Pitboard.exe' }.GetEnumerator()) {
+            $folder = (Resolve-Path "target/windows-app/$($build.Key)").Path
+            $manifest = Join-Path $dumps "$($build.Key)-$($build.Value).manifest"
+            & $mt.FullName -nologo "-inputresource:$(Join-Path $folder $build.Value);#1" "-out:$manifest" | Out-Null
+            $classes = @(Select-String -Path $manifest -Pattern 'activatableClass ').Count
+            $files = (Select-String -Path $manifest -Pattern "file name='([^']+)'" -AllMatches).Matches | ForEach-Object { $_.Groups[1].Value }
+            Write-Output "$($build.Value)'s manifest names $classes activatable classes in: $($files -join ', ')"
+            $build = $build.Key
             Write-Output "== ${build}: $((Get-ChildItem -Path $folder -Filter *.pri).Name -join ', ')"
             $xbf = Get-ChildItem -Recurse -Path $folder -Include *.xbf, *.xaml | ForEach-Object { $_.FullName.Substring($folder.Length + 1) }
             Write-Output "XAML files beside it: $($xbf -join ', ')"
