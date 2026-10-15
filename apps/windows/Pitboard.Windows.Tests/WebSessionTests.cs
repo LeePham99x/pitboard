@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.VisualStudio.TestTools.UnitTesting.AppContainer;
 using Microsoft.Web.WebView2.Core;
 using Pitboard.Core;
@@ -25,10 +26,32 @@ public sealed class WebSessionTests
         Assert.IsTrue(await Webs.Loads(page, () => Attach(session, page)), "the fixture's page did not load");
         Assert.AreEqual("chatgpt.com stand-in", page.DocumentTitle);
 
-        await page.ExecuteScriptAsync($"location.href = '{site.Address("/away")}'");
+        // WebView2 counts a navigation a host's script starts as the person's, so the page's own script leaves.
+        var leave = $"{WebEnvironment.FixtureScheme}://chatgpt.com/leave";
+        var away = site.Address("/away");
+        page.WebResourceRequested += (_, args) =>
+        {
+            if (args.Request.Uri == leave)
+            {
+                var body = $"<!doctype html><title>leaving</title><script>location.href = '{away}'</script>";
+                args.Response = page.Environment.CreateWebResourceResponse(
+                    new MemoryStream(Encoding.UTF8.GetBytes(body)).AsRandomAccessStream(), 200, "OK",
+                    "Content-Type: text/html; charset=utf-8");
+            }
+        };
+        bool? awayClicked = null;
+        page.NavigationStarting += (_, args) =>
+        {
+            if (args.Uri == away)
+            {
+                awayClicked = args.IsUserInitiated;
+            }
+        };
+        await page.ExecuteScriptAsync($"location.href = '{leave}'");
         await Webs.Until(() => webs.Elsewhere.Count == 1, "a page outside the site was not handed to the browser");
-        Assert.AreEqual(site.Address("/away"), webs.Elsewhere[0]);
-        Assert.IsInstanceOfType<WindowNoteKind.OpenedInBrowser>(session.Note);
+        Assert.AreEqual(away, webs.Elsewhere[0]);
+        Console.WriteLine($"CF7: a page's own script leaving is user-initiated: {awayClicked}");
+        Assert.IsInstanceOfType<WindowNoteKind.OpenedInBrowser>(session.Note, $"user-initiated: {awayClicked}");
 
         await page.ExecuteScriptAsync("location.href = 'https://accounts.google.com/o/oauth2/v2/auth'");
         await Webs.Until(() => session.Note is WindowNoteKind.GoogleRefused, "Google's sign-in was not refused");
