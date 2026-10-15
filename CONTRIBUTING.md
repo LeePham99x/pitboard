@@ -304,9 +304,9 @@ Working there takes:
 - Developer Mode, or the right to make symbolic links, for the tests that make links. Only on
   a machine kept for testing, as AGENTS.md says.
 - A folder on an exFAT volume, named in `PITBOARD_TEST_VOLUME`, for the tests of how Pitboard
-  replaces and removes files where a volume has no POSIX rename. An administrator makes one
-  with `diskpart`: `create vdisk`, `attach vdisk`, `create partition primary`,
-  `format fs=exfat quick` and `assign`.
+  replaces and removes files where a volume has no POSIX rename. Only on a machine kept for
+  testing: an administrator mounts one with `diskpart`, as `test-as-standard-user.ps1`'s
+  `-ExFat` does on CI.
 
 Read the [Windows rules in AGENTS.md](AGENTS.md#on-windows) first. Then, as a Windows account
 that holds no real login, in PowerShell from a terminal that is not elevated:
@@ -331,7 +331,7 @@ From a Mac or Linux, `cargo check --target x86_64-pc-windows-msvc` checks only
 
 CI's `windows` job runs these commands on `windows-2025` and `windows-11-arm`, the tests as
 a fresh standard user through `.github/scripts/test-as-standard-user.ps1`, with an exFAT
-volume the job mounts. The job fails when a run leaves a login item, a scheduled task, a login
+volume it mounts for the run. The job fails when a run leaves a login item, a scheduled task, a login
 folder, the app's data folder, a link scheme, a notification registration, a start at
 sign-in, a `PATH` entry or a package behind. It also builds `pitboard.exe` as a 0.x release is
 built and checks that it refuses and changes nothing. It runs the opened build with no

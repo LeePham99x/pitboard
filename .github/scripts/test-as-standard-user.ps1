@@ -16,8 +16,9 @@ param(
     # Built already, inside the workspace the user is granted read and run on. Without it, -Exe
     # leaves Credential Manager out of the leak check.
     [string] $Probe,
-    # A folder on a volume the job mounted, which the tests find in PITBOARD_TEST_VOLUME.
-    [string] $Volume
+    # An exFAT VHD for the run, detached when it ends. The tests find a folder on it in
+    # PITBOARD_TEST_VOLUME, and every account may write there: exFAT keeps no access list.
+    [switch] $ExFat
 )
 $ErrorActionPreference = 'Stop'
 
@@ -30,7 +31,7 @@ if (-not $Probe -and ($Cargo -or $Dotnet)) {
 
 # A GitHub-hosted runner is thrown away after the job.
 if (-not ($env:GITHUB_ACTIONS -eq 'true' -and $env:RUNNER_ENVIRONMENT -eq 'github-hosted')) {
-    throw 'test-as-standard-user.ps1 runs only on a GitHub-hosted runner: it makes a Windows account, grants it rights on folders and may change who holds the symbolic-link right'
+    throw 'test-as-standard-user.ps1 runs only on a GitHub-hosted runner: it makes a Windows account, grants it rights on folders, may change who holds the symbolic-link right and may mount a volume'
 }
 
 function Split-Words([string] $Text) {
@@ -47,11 +48,6 @@ if ($Probe) {
 if ($Exe) {
     if (-not (Test-Path -LiteralPath $Exe -PathType Leaf)) { throw "no program at $Exe" }
     $exePath = (Resolve-Path -LiteralPath $Exe).Path
-}
-$volumePath = $null
-if ($Volume) {
-    if (-not (Test-Path -LiteralPath $Volume -PathType Container)) { throw "no folder at $Volume for the tests' volume" }
-    $volumePath = (Resolve-Path -LiteralPath $Volume).Path
 }
 
 # Any of these present would give a test the runner's settings rather than its own.
@@ -231,9 +227,19 @@ function Set-UserRights([string] $Folder, [string] $Rights) {
     if ($LASTEXITCODE -ne 0) { throw "icacls could not set the standard user's rights on $Folder (exit $LASTEXITCODE): $said" }
 }
 
+# diskpart reads its commands from a file.
+function Invoke-Diskpart([string] $Doing, [string[]] $Commands) {
+    $file = Join-Path $logs "diskpart-$Doing.txt"
+    $Commands | Set-Content -Path $file -Encoding ascii
+    $said = diskpart /s $file | Out-String
+    if ($LASTEXITCODE -ne 0) { throw "diskpart could not $Doing the exFAT volume (exit $LASTEXITCODE): $said" }
+}
+
 $user = New-LocalUser -Name $name -Password $secure -AccountNeverExpires -PasswordNeverExpires
 $sid = $user.SID.Value
 $holders = $null
+$vhd = $null
+$volumePath = $null
 $granted = [System.Collections.Generic.List[string]]::new()
 $failed = [System.Collections.Generic.List[string]]::new()
 try {
@@ -245,10 +251,19 @@ try {
         $granted.Add($folder)
         Set-UserRights $folder 'RX'
     }
-    # exFAT and FAT32 keep no access list, and every account may write there.
-    if ($volumePath -and ([System.IO.DriveInfo]::new($volumePath).DriveFormat -notin 'exFAT', 'FAT32', 'FAT')) {
-        $granted.Add($volumePath)
-        Set-UserRights $volumePath 'M'
+    if ($ExFat) {
+        $vhd = Join-Path $env:RUNNER_TEMP "$name-exfat.vhdx"
+        $letter = [char[]](68..90) | Where-Object { -not (Test-Path -Path "$($_):\") } | Select-Object -Last 1
+        Invoke-Diskpart 'make' @(
+            "create vdisk file=`"$vhd`" maximum=256 type=expandable",
+            "select vdisk file=`"$vhd`"",
+            'attach vdisk',
+            'create partition primary',
+            'format fs=exfat quick label=PBTEST',
+            "assign letter=$letter"
+        )
+        $volumePath = "$($letter):\pitboard-test"
+        New-Item -ItemType Directory -Force -Path $volumePath | Out-Null
     }
     if ($Cargo) {
         New-Item -ItemType Directory -Force -Path $store | Out-Null
@@ -401,6 +416,10 @@ try {
     Get-CimInstance -ClassName Win32_UserProfile | Where-Object { $_.SID -eq $sid } |
         Remove-CimInstance -ErrorAction SilentlyContinue
     Remove-Item -Recurse -Force -Path $runDir -ErrorAction SilentlyContinue
+    if ($vhd) {
+        try { Invoke-Diskpart 'detach' @("select vdisk file=`"$vhd`"", 'detach vdisk') } catch { $failed.Add($_.Exception.Message) }
+        Remove-Item -Force -Path $vhd -ErrorAction SilentlyContinue
+    }
 }
 if ($failed.Count -gt 0) {
     throw "as a standard user: $($failed -join '; ')"
