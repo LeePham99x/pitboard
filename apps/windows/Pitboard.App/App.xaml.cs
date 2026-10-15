@@ -14,7 +14,9 @@ public partial class App : Application
     private readonly AppStart _start;
     private readonly WindowRequests _requests = new();
     private readonly NoUpdates _updates = new();
+    private readonly string _version = SettingsPage.Version(typeof(App).Assembly);
     private AppModel? _model;
+    private StartAtSignIn? _startAtSignIn;
     private HiddenWindow? _hidden;
     private NotifyIcon? _icon;
     private MenuHost? _menu;
@@ -38,6 +40,7 @@ public partial class App : Application
         }
 
         _model = model;
+        _startAtSignIn = StartAtSignIn.For(_start, Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "Pitboard.exe"));
         model.PropertyChanged += OnModelChanged;
         _hidden = new HiddenWindow(sessionEnding: EndSession, closing: Quit, icon: OnIcon, taskbarCreated: () => _icon?.Readd());
         _icon = new NotifyIcon(new ShellNotificationArea(), _hidden.Handle, Shell.AppIcon(), _start.Identity.IconGuid);
@@ -135,10 +138,14 @@ public partial class App : Application
             case IconCommand.OpenLink link:
                 _ = Launcher.LaunchUriAsync(new Uri(link.Url));
                 break;
-            // About is a section of the settings page, as Microsoft's settings guidance places it.
-            case IconCommand.ShowSettings or IconCommand.ShowAbout:
+            case IconCommand.ShowSettings:
                 ShowWindow();
                 _window?.Select(null);
+                break;
+            // About is a section of the settings page, as Microsoft's settings guidance places it.
+            case IconCommand.ShowAbout:
+                ShowWindow();
+                _window?.ShowAbout();
                 break;
             case IconCommand.CheckForUpdates:
                 _updates.Check();
@@ -173,14 +180,14 @@ public partial class App : Application
 
     private void ShowWindow()
     {
-        if (_model is null)
+        if (_model is null || _startAtSignIn is null)
         {
             return;
         }
 
         if (_window is null)
         {
-            var window = new MainWindow(_model);
+            var window = new MainWindow(_model, _startAtSignIn, _updates, _version);
             window.Closed += (_, _) => _window = null;
             _window = window;
         }

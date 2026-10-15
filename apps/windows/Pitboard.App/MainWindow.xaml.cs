@@ -16,10 +16,11 @@ public sealed partial class MainWindow : Window
     private readonly AccountsPane _accounts;
     private readonly ActivityPane _activity;
     private readonly MachinePane _machine;
+    private readonly SettingsPane _settings;
     private WindowAlerts? _alerts;
     private WindowSheets? _sheets;
 
-    public MainWindow(AppModel model)
+    public MainWindow(AppModel model, StartAtSignIn startAtSignIn, IUpdates updates, string version)
     {
         _model = model;
         InitializeComponent();
@@ -27,6 +28,7 @@ public sealed partial class MainWindow : Window
         _accounts = new AccountsPane(model, _dialogs);
         _activity = new ActivityPane(model);
         _machine = new MachinePane(model);
+        _settings = new SettingsPane(model, startAtSignIn, updates, version);
         // A dialog needs the window's XamlRoot, which its content has once loaded.
         Navigation.Loaded += (_, _) =>
         {
@@ -60,6 +62,12 @@ public sealed partial class MainWindow : Window
             ? Navigation.MenuItems.OfType<NavigationViewItem>().First(item => item.Tag as string == shown.ToString())
             : Navigation.SettingsItem;
 
+    public void ShowAbout()
+    {
+        Select(null);
+        _settings.ShowAbout();
+    }
+
     public void Show()
     {
         if (AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized } presenter)
@@ -78,7 +86,7 @@ public sealed partial class MainWindow : Window
             Pane.Accounts => _accounts,
             Pane.Activity => _activity,
             Pane.Machine => _machine,
-            _ => null,
+            _ => _settings,
         };
     }
 
