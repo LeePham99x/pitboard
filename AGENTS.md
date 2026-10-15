@@ -50,14 +50,22 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
 - Never put an `install.sh`, a rule naming it or a catch-all fallback in `website/`. A zone
   rule sends `/install.sh` to the newest release; a site file there would change what people
   pipe to `sh`.
+- Never put an `install.ps1` in a release or in `website/`, or a zone rule that names one.
+  Pitboard for Windows installs from the release's own files, Scoop, winget and
+  cargo-binstall.
 - Never push a tag.
 - Never mark a release latest by hand, or reuse or move an rc or beta tag. The release
   workflow decides latest.
 - Never dispatch a workflow but `windows-facts.yml`.
 - Never sign with a signer's release policy or production credentials outside `release.yml`
   on a `v*` tag. Test signing uses the signer's test policy or sandbox.
-- Never let a job that runs on a pull request or by hand reach the `release` or
-  `windows-signing` environment. Each keeps a deployment rule for `v*` tags only.
+- Never let a job that runs on a pull request or by hand reach the `release`,
+  `windows-signing`, `scoop-bucket` or `winget` environment. Each keeps a deployment rule for
+  `v*` tags only.
+- Never write the Scoop bucket or a `winget-pkgs` branch by hand, past the first commit and
+  the first versions RELEASING.md sets out. The release writes them from its own
+  `SHA256SUMS`, as it writes the tap.
+- Never put a beta in Scoop or winget.
 - Never publish a Windows release candidate or final release unsigned, and never unset
   `WINDOWS_SIGNER` once a signer is set.
 - Never add a cache, such as the Actions cache, `rust-cache` or sccache, to a job that leads
