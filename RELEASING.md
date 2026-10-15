@@ -91,8 +91,7 @@ also has `appcast.xml`, the update feed, and writes the Homebrew tap. A full rel
 beta uploads `pitboard-core`, when its version moved, and then `pitboard` to crates.io.
 Every file on the GitHub release has a GitHub attestation. From major version 1, each
 release also has a zip of the command line for Windows on x64 and on ARM64, built and checked
-by `.github/actions/windows-release`, which CI runs on every pull request. No release builds
-anything for Windows while the major version is 0.
+by `.github/actions/windows-release`, which CI runs on every pull request.
 
 Immutable releases are on, and only the owner changes that setting. A published release's
 files and tag cannot change; its title, notes and marks can. Only the next version fixes a

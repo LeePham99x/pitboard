@@ -130,7 +130,7 @@ if ($major -eq 0 -and -not $Opened) {
     exit 0
 }
 
-# winget's validation runs a portable package's program with no argument, and wants 0.
+# winget's validation installs as a standard user, runs the program with no argument, and wants 0.
 $asUser = Join-Path $PSScriptRoot 'test-as-standard-user.ps1'
 $given = @{ Exe = $exePath; Commands = @('', 'doctor --json') }
 if ($Probe) { $given.Probe = $Probe }

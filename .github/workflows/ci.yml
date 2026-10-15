@@ -223,8 +223,9 @@ jobs:
             if ($left.Count -ne 0) { throw "$folder holds $($left.Name -join ', ')" }
           }
           exit 0
-      # winget's validation runs a program with no argument, as a fresh user, and wants 0. Until
-      # Windows is released the opened build only has to start, and the step says what it gave.
+      # winget's validation installs as a standard user, runs the program with no argument and
+      # wants 0. Until Windows is released the opened build only has to run to its own exit, and
+      # the step says what it gave.
       - name: The opened build with no argument, as a standard user
         shell: pwsh
         env:
