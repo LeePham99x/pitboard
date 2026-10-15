@@ -1044,17 +1044,24 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                a `REG_EXPAND_SZ` as `reg.exe query` prints it, its end trimmed, which it takes \
                over the folder unless `managedSourcesBehavior` merges them. The same value \
                under `HKCU` it reads only where neither holds a policy, and there it ignores \
-               what only an administrator may set",
+               what only an administrator may set. A source that holds nothing but \
+               `managedSourcesBehavior` or `wslInheritsWindowsSettings` is not a policy and \
+               keeps `HKCU` out of nothing (its `pt`). A failed `HKLM` `reg.exe query` it treats \
+               as absent (its `vYn` nulls the machine output on a non-zero exit) and still reads \
+               `HKCU`, while an unreadable managed file keeps `HKCU` out",
         read_from: "the managed folder, the policy keys, their reading through \
                     `%SystemRoot%\\System32\\reg.exe query <key> /v Settings` and the managed \
                     sources' order in the win32-x64 and win32-arm64 builds of 2.1.300, read as \
                     bytes on 2026-10-15",
         verified_against: "2.1.300",
         depends: "settings::overrides, custom_oauth and overrides_of_a_run_in, through \
-                  host::Host::policy and administered_folder",
+                  host::Host::policy and administered_folder, where holds_policy and managed \
+                  keep HKCU out",
         probe: &[
             "C:\\Program Files\\ClaudeCode",
             "SOFTWARE\\Policies\\ClaudeCode",
+            "managedSourcesBehavior",
+            "wslInheritsWindowsSettings",
         ],
         absent: &[],
     },

@@ -63,10 +63,17 @@ pub(crate) fn install_places(env: &Environment) -> Vec<PathBuf> {
 pub(crate) fn installed_version(ctx: &Context) -> Option<String> {
     let found =
         program(ctx).map(|found| crate::host::program::npm_shim_target(&found).unwrap_or(found));
-    if let Some(release) = found
+    // Only a `claude.exe` whose version resource names the product `Claude Code`: a shim such
+    // as Scoop's shim.exe or a version manager's launcher may carry its own `x.y.z.0` version.
+    let is_claude_code = found
         .as_deref()
-        .and_then(crate::host::proc::product_version)
-        .and_then(release_of)
+        .and_then(crate::host::proc::product_name)
+        .is_some_and(|name| name == "Claude Code");
+    if is_claude_code
+        && let Some(release) = found
+            .as_deref()
+            .and_then(crate::host::proc::product_version)
+            .and_then(release_of)
     {
         return Some(release);
     }

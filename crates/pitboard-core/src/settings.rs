@@ -116,7 +116,10 @@ fn managed(ctx: &Context) -> Vec<Layer> {
                         text,
                     });
                 }
-                Administered::Unreadable(_) => there = true,
+                // Claude Code treats a failed HKLM query as absent and still reads HKCU (its
+                // `vYn` nulls hklmStdout on a non-zero `reg.exe` exit), so an unreadable
+                // machine policy does not keep HKCU out.
+                Administered::Unreadable(_) => there |= hive != Hive::Machine,
                 Administered::Unset => {}
             }
         }
@@ -470,6 +473,23 @@ mod managed_tests {
 
         let (mac, _scratch) = on(Os::MacOs, &memory);
         assert_eq!(overrides(&mac), Vec::new(), "macOS has no registry");
+    }
+
+    // Claude Code treats a failed HKLM query as absent and still reads HKCU, so Pitboard must
+    // not miss an HKCU override when the machine policy cannot be read.
+    #[test]
+    fn an_unreadable_machine_policy_still_lets_hkcu_be_read() {
+        let memory = MemoryHost::new();
+        let user = format!(r"HKCU\{POLICIES}\{POLICY}");
+        memory.policy_unreadable(Hive::Machine, POLICIES, POLICY, "access denied");
+        memory.sets_policy(
+            Hive::User,
+            POLICIES,
+            POLICY,
+            &json!({"apiKeyHelper": "C:\\key.cmd"}).to_string(),
+        );
+        let (ctx, _scratch) = on(Os::Windows, &memory);
+        assert_eq!(said(&overrides(&ctx)), [(user, "apiKeyHelper".to_string())]);
     }
 
     #[test]

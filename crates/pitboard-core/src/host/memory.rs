@@ -322,6 +322,18 @@ impl MemoryHost {
             );
     }
 
+    // A policy read that fails, such as a hive key that denies this user read access.
+    #[cfg(test)]
+    pub(crate) fn policy_unreadable(&self, hive: super::Hive, key: &str, value: &str, why: &str) {
+        self.policies
+            .lock()
+            .expect("a poisoned test host is a failed test")
+            .insert(
+                (hive, key.to_string(), value.to_string()),
+                Administered::Unreadable(why.into()),
+            );
+    }
+
     /// Say an administrator's configuration profile forces `key` of `domain` to `value`, a
     /// managed preference, on whatever system the tests run on.
     pub fn forces(&self, domain: &str, key: &str, value: &str) {

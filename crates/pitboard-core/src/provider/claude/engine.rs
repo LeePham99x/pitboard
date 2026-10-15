@@ -193,8 +193,8 @@ impl Provider for Claude {
         claude::program(ctx)
     }
 
-    // `CLAUDE_SECURESTORAGE_CONFIG_DIR` would pin the slot back to a real one (`sign_in_output`),
-    // and `CLAUDE_CODE_FORCE_WINDOWS_CREDMAN` the login into Credential Manager (2.1.300).
+    // `CLAUDE_SECURESTORAGE_CONFIG_DIR` would pin the slot back to a real one, and
+    // `CLAUDE_CODE_FORCE_WINDOWS_CREDMAN` the login into Credential Manager (2.1.300).
     fn sign_in(
         &self,
         ctx: &Context,
