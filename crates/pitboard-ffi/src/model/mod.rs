@@ -84,7 +84,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// What the app was started with, which the model reads as the command line reads its own:
 /// the environment, and where the app is. Not called `Launch`, which the macOS app already
@@ -906,16 +906,16 @@ fn lock(shown: &Mutex<Snapshot>) -> MutexGuard<'_, Snapshot> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-/// The model's two clocks: `Instant` for the timers, which on macOS is `CLOCK_UPTIME_RAW` and
-/// stops while the machine sleeps, and the wall clock for what a snapshot says the time is.
+// The timers count time awake, which stops while the machine sleeps, and a snapshot's time is
+// the wall clock's.
 struct Clock {
-    started: Instant,
+    started: Duration,
 }
 
 impl Clock {
     fn starting() -> Clock {
         Clock {
-            started: Instant::now(),
+            started: pitboard_core::host::awake(),
         }
     }
 
@@ -926,7 +926,7 @@ impl Clock {
                 i64::try_from(since.as_millis()).unwrap_or(i64::MAX)
             });
         Now {
-            running: self.started.elapsed(),
+            running: pitboard_core::host::awake().saturating_sub(self.started),
             epoch_ms,
         }
     }

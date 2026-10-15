@@ -106,7 +106,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     folders macOS asks about before an app may look in them, or `default_pitboard_home`,
     where Pitboard keeps its files for a home when `PITBOARD_HOME` names nowhere else.
     `same_path_in_any_case` is how Windows compares paths, for the core and the apps alike,
-    and `path_key_in_any_case` one text per path compared so.
+    and `path_key_in_any_case` one text per path compared so. `awake` is the time the
+    machine has been awake, which the app's timers count.
   - `release.rs`: whether this build may do anything on its system. A Windows build of a
     0.x release may not, unless it was compiled with `--cfg pitboard_unreleased_windows`,
     which CI's Windows jobs set and no release does; macOS and Linux always may. The
@@ -2155,6 +2156,7 @@ on 15 October 2026. W27 reviews the list.
 | `longPathAware` in a manifest lifts the 260-character limit | [Application manifests](https://learn.microsoft.com/en-us/windows/win32/sbscs/application-manifests) | No row uses a long path. |
 | `StartWhenAvailable` runs a start that was missed | [StartWhenAvailable](https://learn.microsoft.com/en-us/windows/win32/taskschd/tasksettings-startwhenavailable) | A runner never sleeps through a trigger. |
 | WSL 2's processes run in a utility VM | [Comparing WSL versions](https://learn.microsoft.com/en-us/windows/wsl/compare-versions) | No runner has WSL. |
+| `QueryUnbiasedInterruptTimePrecise` leaves out sleep and hibernation, which `QueryPerformanceCounter` counts | [QueryUnbiasedInterruptTimePrecise](https://learn.microsoft.com/en-us/windows/win32/api/realtimeapiset/nf-realtimeapiset-queryunbiasedinterrupttimeprecise), [Acquiring high-resolution time stamps](https://learn.microsoft.com/en-us/windows/win32/sysinfo/acquiring-high-resolution-time-stamps) | A runner never sleeps. |
 | A deleted WebView2 profile's folder goes as the browser process exits, and its name is refused with `ERROR_DELETE_PENDING` until then | [CoreWebView2Profile.Delete](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/winrt/microsoft_web_webview2_core/corewebview2profile#delete) | No row runs WebView2 yet. |
 
 ### One sign-in at a time
@@ -3186,25 +3188,35 @@ its own date.
 Read on 5 October 2026 in Rust 1.98.1's standard library and in the macOS SDK of Xcode 27.1,
 with Swift 6.4.
 
-- `std::time::Instant` reads `CLOCK_UPTIME_RAW` on Apple's systems, which macOS's
-  `clock_gettime(3)` says does not increment while the system is asleep. The model's timers
-  run on it, so on macOS they count only the time the machine is awake.
+- The model's timers run on `pitboard_core::host::awake`, the time the machine has been
+  awake. On macOS and Linux that is `std::time::Instant`, which reads `CLOCK_UPTIME_RAW` on
+  Apple's systems, which macOS's `clock_gettime(3)` says does not increment while the system
+  is asleep, and `CLOCK_MONOTONIC` on Linux, which "does not count time that the system is
+  suspended" (Linux man-pages 6.19, `clock_gettime(2)`, read 15 October 2026).
 - The Swift model's loops slept with `Task.sleep(for:)`, whose clock is `.continuous` unless
   it is given another, and `ContinuousClock` does not stop while the system is asleep. After
   a long sleep its five-minute read came as the machine woke, where the model's comes up to
   five minutes of waking time later. An app sends `Intent::Woke` as the machine wakes, which
   reads at once: the macOS app sends it on `NSWorkspace.didWakeNotification`, where the
   Swift model read.
-- The 30 seconds an app is given to quit run on `Instant` too, where the Swift model's ran
+- The 30 seconds an app is given to quit run on time awake too, where the Swift model's ran
   on `ContinuousClock`: a machine put to sleep while an app is asked to quit gives it its
   30 seconds of waking time, where the Swift gave it none once the machine woke.
 - The look whether to switch Claude Code by itself every 30 seconds, and the wait after a
-  refused switch, run on `Instant` too, so they count waking time. After a sleep the read
+  refused switch, run on time awake too, so they count waking time. After a sleep the read
   that `Intent::Woke` asks for is followed by a look at once where it lands, and one that
   fails, as before the network is back, leaves the next look to its timer. A refusal's
   wait goes on where it stopped.
-- On Linux the standard library reads `CLOCK_MONOTONIC`, and on Windows
-  `QueryPerformanceCounter`. How either counts a sleep was not read.
+- On Windows the standard library's `Instant` reads `QueryPerformanceCounter` (Rust 1.98.1's
+  `library/std/src/sys/time/windows.rs`), which Microsoft documents as counting "the time
+  when the machine was in a sleep state such as standby, hibernate, or connected standby"
+  ([Acquiring high-resolution time stamps](https://learn.microsoft.com/windows/win32/sysinfo/acquiring-high-resolution-time-stamps)).
+  There the timers read `QueryUnbiasedInterruptTimePrecise`, whose count "does not include
+  time the system spends in sleep or hibernation", in units of 100 nanoseconds
+  ([QueryUnbiasedInterruptTimePrecise](https://learn.microsoft.com/windows/win32/api/realtimeapiset/nf-realtimeapiset-queryunbiasedinterrupttimeprecise)),
+  read 15 October 2026. With `Instant` there, an app asked to quit just before a sleep would
+  have had its 30 seconds used up by the time the machine woke. Microsoft's contract: no
+  machine has been put to sleep during a quit yet.
 
 ### The fixtures
 

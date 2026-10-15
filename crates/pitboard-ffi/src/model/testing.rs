@@ -824,6 +824,7 @@ impl Machine {
                     Duration::ZERO,
                     Duration::ZERO,
                     || self.lingers,
+                    pitboard_core::host::awake,
                 ),
                 question,
                 then,

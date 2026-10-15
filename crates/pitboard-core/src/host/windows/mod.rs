@@ -31,6 +31,19 @@ use std::sync::Arc;
 
 pub(super) const OS: Os = Os::Windows;
 
+// Instant reads QueryPerformanceCounter here, which counts a sleep; unbiased interrupt time
+// does not.
+pub(super) fn awake() -> std::time::Duration {
+    let mut units = 0u64;
+    // SAFETY: the pointer is to a u64 of this frame, which the call writes and does not keep.
+    unsafe {
+        windows_sys::Win32::System::WindowsProgramming::QueryUnbiasedInterruptTimePrecise(
+            &raw mut units,
+        );
+    }
+    super::from_interrupt_time(units)
+}
+
 /// Windows has no login shell whose startup files build a `PATH`: a program's environment
 /// comes from the registry, through whatever started it. Which `PATH` an app reads tools on
 /// is W17's to say; until then nobody can tell.

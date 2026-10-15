@@ -42,7 +42,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// Which lane a job runs on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -567,6 +567,7 @@ impl Worker {
                     self.quit_within,
                     self.quit_checked_every,
                     || core.holds_app(split(&question.qualified).0, &question.app_id),
+                    pitboard_core::host::awake,
                 ),
                 question,
                 then,
@@ -838,6 +839,7 @@ pub(crate) fn quit(
     within: Duration,
     every: Duration,
     held: impl Fn() -> bool,
+    awake: impl Fn() -> Duration,
 ) -> QuitOutcome {
     let copy = match apps.running(app.to_owned()) {
         Ok(Some(copy)) => copy,
@@ -847,10 +849,10 @@ pub(crate) fn quit(
     if apps.request_quit(app.to_owned()).is_err() {
         return QuitOutcome::StillRunning;
     }
-    let deadline = Instant::now() + within;
+    let deadline = awake() + within;
     let wait = |until: &dyn Fn() -> bool| {
         while !until() {
-            let now = Instant::now();
+            let now = awake();
             if now >= deadline {
                 return false;
             }
@@ -909,9 +911,11 @@ mod tests {
     use crate::model::testing::{
         CHATGPT_CODEX, CLAUDE, Posted, StandInApps, World, chatgpt_holding,
     };
+    use pitboard_core::host::awake;
     use pitboard_core::provider::ProviderId;
     #[cfg(unix)]
     use pitboard_core::testing::fs as files;
+    use std::time::Instant;
 
     const CHATGPT: &str = crate::model::testing::CHATGPT;
 
@@ -1120,13 +1124,13 @@ mod tests {
         let within = Duration::from_millis(50);
         let every = Duration::from_millis(5);
         assert_eq!(
-            quit(apps.as_ref(), CHATGPT, within, every, || false),
+            quit(apps.as_ref(), CHATGPT, within, every, || false, awake),
             QuitOutcome::Quit {
                 copy: StandInApps::copy_of(CHATGPT)
             }
         );
         assert_eq!(
-            quit(apps.as_ref(), CHATGPT, within, every, || false),
+            quit(apps.as_ref(), CHATGPT, within, every, || false, awake),
             QuitOutcome::NotRunning
         );
         assert_eq!(
@@ -1139,11 +1143,45 @@ mod tests {
         let within = Duration::from_millis(100);
         let started = Instant::now();
         assert_eq!(
-            quit(busy.as_ref(), CHATGPT, within, every, || false),
+            quit(busy.as_ref(), CHATGPT, within, every, || false, awake),
             QuitOutcome::StillRunning
         );
         assert!(started.elapsed() >= within);
         assert!(busy.is_running(CHATGPT));
+    }
+
+    // An hour asleep while ChatGPT is asked to quit, after which it quits within 20 seconds
+    // awake: QueryPerformanceCounter, Instant's clock on Windows, counts the hour.
+    #[test]
+    fn a_sleep_while_an_app_is_asked_to_quit_takes_none_of_its_wait() {
+        let quit_across_a_sleep = |counted: bool| {
+            let apps = StandInApps::new(&[CHATGPT], false);
+            let reads = std::sync::atomic::AtomicU64::new(0);
+            let awake = || {
+                let read = reads.fetch_add(1, Ordering::SeqCst);
+                if read == 20 {
+                    apps.set_running(&[]);
+                }
+                let slept = if counted && read >= 2 { 3600 } else { 0 };
+                Duration::from_secs(read + slept)
+            };
+            let within = Duration::from_secs(30);
+            quit(
+                apps.as_ref(),
+                CHATGPT,
+                within,
+                Duration::from_millis(1),
+                || false,
+                awake,
+            )
+        };
+        assert_eq!(
+            quit_across_a_sleep(false),
+            QuitOutcome::Quit {
+                copy: StandInApps::copy_of(CHATGPT)
+            }
+        );
+        assert_eq!(quit_across_a_sleep(true), QuitOutcome::StillRunning);
     }
 
     /// While it waits it asks whether the app still runs every so often, and not more:
@@ -1159,6 +1197,7 @@ mod tests {
             Duration::from_millis(100),
             Duration::from_millis(20),
             || false,
+            awake,
         );
         assert_eq!(outcome, QuitOutcome::StillRunning);
         // Once before asking it to quit, then at 0, 20, 40, 60, 80 and 100 ms, give or take
@@ -1178,7 +1217,7 @@ mod tests {
         let unseen = StandInApps::new(&[CHATGPT], true);
         unseen.fail_running(true);
         assert_eq!(
-            quit(unseen.as_ref(), CHATGPT, within, every, || false),
+            quit(unseen.as_ref(), CHATGPT, within, every, || false, awake),
             QuitOutcome::StillRunning
         );
         assert!(
@@ -1189,7 +1228,7 @@ mod tests {
         let unasked = StandInApps::new(&[CHATGPT], true);
         unasked.fail_quit(true);
         assert_eq!(
-            quit(unasked.as_ref(), CHATGPT, within, every, || false),
+            quit(unasked.as_ref(), CHATGPT, within, every, || false, awake),
             QuitOutcome::StillRunning
         );
         assert!(unasked.is_running(CHATGPT));
@@ -1716,6 +1755,7 @@ mod tests {
             Duration::from_millis(500),
             Duration::from_millis(5),
             || asked.fetch_add(1, Ordering::SeqCst) < 3,
+            awake,
         );
         assert_eq!(
             outcome,
@@ -1744,6 +1784,7 @@ mod tests {
                         asked.fetch_add(1, Ordering::SeqCst);
                         true
                     },
+                    awake,
                 )
             })
         };

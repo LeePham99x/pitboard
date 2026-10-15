@@ -684,6 +684,18 @@ pub(crate) fn default_pitboard_home(home: &Path) -> PathBuf {
     }
 }
 
+// How long this machine has been awake since a moment of the system's own: what an app's
+// timers count, so a sleep takes none of a wait.
+pub fn awake() -> std::time::Duration {
+    os::awake()
+}
+
+#[cfg(any(windows, test))]
+pub(crate) fn from_interrupt_time(units: u64) -> std::time::Duration {
+    std::time::Duration::from_secs(units / 10_000_000)
+        + std::time::Duration::from_nanos(units % 10_000_000 * 100)
+}
+
 /// The host this build is standing on, which is what every real context uses.
 pub(crate) fn current() -> Arc<dyn Host> {
     os::host()
@@ -861,6 +873,30 @@ mod tests {
             "withheld from a unit test, so only root is read"
         );
         assert_eq!(under(""), user::elevation(false));
+    }
+
+    // Instant reads the same clock on macOS and Linux, and a clock that counts sleep on Windows.
+    #[test]
+    fn time_awake_moves_with_this_process_while_it_is_awake() {
+        let (awake_at, instant_at) = (awake(), std::time::Instant::now());
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let (passed, measured) = (awake() - awake_at, instant_at.elapsed());
+        // Wide enough for a busy runner, narrow enough to catch a unit read ten times off.
+        assert!(
+            passed > measured / 2 && passed < measured * 2,
+            "{passed:?} against {measured:?}"
+        );
+    }
+
+    #[test]
+    fn interrupt_time_is_in_hundreds_of_nanoseconds() {
+        use std::time::Duration;
+        assert_eq!(from_interrupt_time(10_000_000), Duration::from_secs(1));
+        assert_eq!(from_interrupt_time(1), Duration::from_nanos(100));
+        assert_eq!(
+            from_interrupt_time(36_000_000_015),
+            Duration::new(3600, 1_500)
+        );
     }
 
     // 22631 is Windows 11 23H2, and 19045 Windows 10 22H2.

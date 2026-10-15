@@ -6,6 +6,7 @@
 mod procfs;
 mod systemd;
 
+pub(super) use super::unix::awake;
 pub(crate) use super::unix::{fs, proc, user};
 
 use super::administered::Administered;
