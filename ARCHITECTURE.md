@@ -615,7 +615,11 @@ window loads its site, and whatever the site's pages load, as a browser would.
     keeps the icon in the notification area through `INotificationArea`, which
     `ShellNotificationArea` sends to `Shell_NotifyIconW` and tests replace, and `IconMenu`
     lists what the icon's menu offers, in the macOS menu's order. `NoUpdates` is the updater
-    of a build that cannot update. `Keyed` keeps a shown row while the model lists it, so
+    of a build that cannot update. `StartAtSignIn` is the settings' start at sign-in over an
+    `IStartupItem`: `RunValue`, which writes the `Run` value through `IRunKey`, sent to the
+    registry by `RegistryRunKey` and replaced in tests, refuses in a Debug build, and a fixture
+    gets `FixtureStartupItem`. `SettingsPage` is what the settings page says and sends beyond
+    the model's words. `Keyed` keeps a shown row while the model lists it, so
     `ShownAccount` keeps its selection across snapshots. `WindowAlert` is the failure or quit
     question in front of the window, `SheetPage` what the sheet over it shows and sends, and
     `Countdown` a notice's timer.
@@ -628,6 +632,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     the model's sheet up as an `AccountSheet`, a ContentDialog that adds an account, follows
     its sign-in, names, renames or puts away a login left in a file, and tells the model
     when somebody closes it. `IconMenuFlyout` is the icon's menu as a MenuFlyout.
+    `SettingsPane` is the settings page, in the macOS Settings' sections, each warm-up account
+    a `WarmRow`.
   - `Pitboard.App` is `Pitboard.exe`, unpackaged and self-contained, carrying the icon that
     `Icon/make-ico.py` writes from the drawings beside it. `Program.Main` decides the launch,
     and `App` makes the model, over this PC or in a Debug build started with
@@ -2321,6 +2327,8 @@ on 15 October 2026. W27 reviews the list.
 | A notification icon's menu closes on a click elsewhere only when its window was made the foreground window first | [TrackPopupMenu](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-trackpopupmenu) | Only a person clicks elsewhere: the session's step A2. |
 | A GUID icon is tied to the path of the exe that added it, unless both are signed by one company | [NOTIFYICONDATAW](https://learn.microsoft.com/en-us/windows/win32/api/shellapi/ns-shellapi-notifyicondataw) | No Release build runs from two paths on a runner; the 1.0 session's P4 upgrades one. |
 | A MenuFlyout with `ShouldConstrainToRootBounds` false draws whole outside the window it opens from | [ShouldConstrainToRootBounds](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.controls.primitives.flyoutbase.shouldconstraintorootbounds) | `NotificationAreaTests` opens the menu but cannot see how it is drawn; the session's step A2 looks at it. |
+| A `Run` value under HKCU starts its program as that person signs in, with no promise how soon | [Run and RunOnce registry keys](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys) | No runner signs in again, and no test writes the `Run` key; the session's step A6 signs in with it on. |
+| Settings > Apps > Startup lists a program a `Run` value starts and turns it off | [Configure startup applications in Windows](https://support.microsoft.com/en-us/windows/configure-startup-applications-in-windows-115a420a-0bff-4a6f-90e0-1934c844e473) | Only a person uses that page: the session's step A6 turns Pitboard off there and records what the app's switch then shows. |
 
 ### One sign-in at a time
 
@@ -3443,6 +3451,34 @@ Microsoft's documentation.
   icon's board, untilted and unplated, whose grey rim, pole and dim row hold 3:1 against
   both #202020 and #f3f3f3: at each size 50% or more of it does against the first and 81%
   or more against the second.
+- Microsoft's app settings guidance (updated 25 June 2026) puts settings behind
+  NavigationView's own settings item, in one scrollable column about 1,000 px wide under
+  BodyStrong headers, of cards with a header, a description and the control on the right,
+  sub-options under an expander, and About at the bottom in an expander with the app's name
+  and version, links and legal lines. It names the Windows Community Toolkit's SettingsCard
+  and SettingsExpander. `SettingsPane` draws the card with WinUI's own resources at the
+  Toolkit's values (`SettingsCard.xaml`: 68 px high at least, 16 px padding,
+  `CardBackgroundFillColorDefaultBrush`, `CardStrokeColorDefaultBrush`,
+  `ControlCornerRadius`), the resources an Expander's header already uses (WinUI 2.3.9's
+  `Themes/generic.xaml`), so the app takes no package for it. A change takes effect at once,
+  through a toggle switch for on and off (Toggle switches, updated 21 September 2026), and a
+  control that cannot change says why in its card.
+- Run and RunOnce registry keys (updated 21 February 2026): a value under the person's `Run`
+  key is a command line of at most 260 characters that Windows starts at each of their
+  sign-ins, with no promise how soon, and a program started from the key should not write
+  to it while it runs. So `RunValue` writes `"<path>\Pitboard.exe"`, quoted for a path with a
+  space, refuses a longer one, and writes only when somebody turns the switch, never as
+  Pitboard starts. It never reads what Settings > Apps > Startup keeps, which has no
+  documented layout; Microsoft's support article on startup apps sends people there to turn
+  one off, and the switch's caption says so. `RunValueTests` hold it.
+- Read in microsoft-ui-xaml at `winui3/release/2.5.1`: a ToggleSwitch raises `Toggled`
+  whenever `IsOn` changes (`ToggleSwitch_Partial.cpp`), a NumberBox raises `ValueChanged` on
+  any change of `Value`, NaN for cleared text (`NumberBox.cpp`), and a TimePicker raises
+  `SelectedTimeChanged` within the setter, with its clock the person's own through
+  `DateTimeFormatter` unless set (`TimePicker_Partial.cpp`). So `SettingsPane` sends nothing
+  while it sets its controls to what the model says, which
+  `SettingsPaneTests.ShowingWhatTheModelSaysSendsNothing` holds, shows the share again after
+  a cleared box, and leaves the warm-up pickers on the person's 12- or 24-hour clock.
 
 ### The model's timers
 
