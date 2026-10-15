@@ -88,6 +88,7 @@ const entries = versions.map((v, i) => {
                 <time class="font-mono text-control text-muted" datetime={e.date}>
                   {longDate(e.date)}
                 </time>
+                {e.prerelease && <span class="font-mono text-control text-muted">Pre-release</span>}
               </div>
               {e.intro && (
                 <div class="changelog-md mt-6" data-source="changelog" set:html={e.intro} />

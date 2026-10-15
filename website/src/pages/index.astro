@@ -19,6 +19,7 @@ import { DOCS, REPO } from "../data/site.ts";
 import { longDate } from "../lib/changelog.ts";
 import { appZip } from "../lib/github.ts";
 import { highlight, siteData } from "../lib/data.ts";
+import { recentReleases } from "../lib/shown.ts";
 import { tools, type Tool } from "../data/world.ts";
 import spark from "../assets/logos/claude-spark.svg?url";
 import blossomBlack from "../assets/logos/openai-blossom-black.svg?url";
@@ -26,7 +27,7 @@ import blossomWhite from "../assets/logos/openai-blossom-white.svg?url";
 
 const { versions, release } = await siteData();
 const zip = appZip(release);
-const recent = versions.slice(0, 3).map((v) => ({ ...v, highlight: highlight(v.version) }));
+const recent = recentReleases(versions).map((v) => ({ ...v, highlight: highlight(v.version) }));
 // a row is one string: on a phone its cells run inline, where whitespace between them would show
 const cell = "border-b border-grid py-3.5 text-left align-baseline max-sm:border-0 max-sm:p-0";
 const row = (v: (typeof recent)[number]) =>

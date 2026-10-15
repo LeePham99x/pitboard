@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { fileRows, formatSize, parseSums, readRelease, readStars, type Release } from "./github.ts";
+import {
+  fileRows,
+  formatSize,
+  parseSums,
+  readPublished,
+  readRelease,
+  readStars,
+  type Release,
+} from "./github.ts";
 
 const recorded = JSON.parse(
   readFileSync(new URL("../data/fixtures/release-latest.json", import.meta.url), "utf8"),
@@ -130,6 +138,45 @@ test("reads the recorded fixture offline without the network", async () => {
   const r = await readRelease({ fetch: f, fixture: { release: recorded, sums } });
   assert.equal(r.source, "fixture");
   assert.equal(r.version, "0.12.0");
+  assert.equal(asked.length, 0);
+});
+
+test("reads which betas GitHub has published, and a draft as not", async () => {
+  const beta = (tag: string, draft = false) =>
+    json({ ...recorded, tag_name: tag, draft, prerelease: true });
+  const { f, asked } = server({
+    [`GET ${API}/releases/tags/v1.0.0-beta.3`]: () => json({ message: "Not Found" }, 404),
+    [`GET ${API}/releases/tags/v1.0.0-beta.2`]: () => beta("v1.0.0-beta.2", true),
+    [`GET ${API}/releases/tags/v1.0.0-beta.1`]: () => beta("v1.0.0-beta.1"),
+  });
+  const published = await readPublished({ fetch: f, token: "t0ken" }, [
+    "1.0.0-beta.3",
+    "1.0.0-beta.2",
+    "1.0.0-beta.1",
+  ]);
+  assert.deepEqual([...published], ["1.0.0-beta.1"]);
+  assert.ok(asked.every((a) => a.auth === "Bearer t0ken"));
+  assert.deepEqual([...(await readPublished({ fetch: server({}).f }, []))], []);
+});
+
+test("stops when GitHub cannot say whether a beta is published", async () => {
+  const limited = server({
+    [`GET ${API}/releases/tags/v1.0.0-beta.1`]: () => json({ message: "rate limit" }, 403),
+  });
+  await assert.rejects(readPublished({ fetch: limited.f }, ["1.0.0-beta.1"]), /answered 403/);
+  const other = server({
+    [`GET ${API}/releases/tags/v1.0.0-beta.1`]: () => json({ ...recorded, tag_name: "v1.0.0" }),
+  });
+  await assert.rejects(readPublished({ fetch: other.f }, ["1.0.0-beta.1"]), /v1\.0\.0/);
+});
+
+test("takes the recorded betas offline without the network", async () => {
+  const { f, asked } = server({});
+  const published = await readPublished({ fetch: f, fixture: ["1.0.0-beta.1"] }, [
+    "1.0.0-beta.2",
+    "1.0.0-beta.1",
+  ]);
+  assert.deepEqual([...published], ["1.0.0-beta.1"]);
   assert.equal(asked.length, 0);
 });
 

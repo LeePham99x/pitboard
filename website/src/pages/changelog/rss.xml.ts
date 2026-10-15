@@ -10,7 +10,7 @@ export async function GET(context: APIContext) {
     site: context.site!,
     trailingSlash: false,
     items: versions.map((v) => ({
-      title: `Pitboard ${v.version}`,
+      title: `Pitboard ${v.version}${v.prerelease ? " (pre-release)" : ""}`,
       link: `/changelog#v${v.version}`,
       // the maintainer's date, at midnight in UTC+7, where releases are made
       pubDate: new Date(`${v.date}T00:00:00+07:00`),

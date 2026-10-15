@@ -27,33 +27,53 @@ jobs:
       version: ${{ steps.check.outputs.version }}
       base: ${{ steps.check.outputs.base }}
       prerelease: ${{ steps.check.outputs.prerelease }}
+      crates: ${{ steps.check.outputs.crates }}
+      latest: ${{ steps.check.outputs.latest }}
+      core: ${{ steps.core.outputs.core }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          version=${GITHUB_REF_NAME#v}
-          # A tag like v0.2.0-rc1 is a release for a few people: a GitHub pre-release, no
-          # crates.io upload, and no appcast, so nobody's copy updates itself into it.
-          case "$version" in
-            *-*) prerelease=true; base=${version%%-*} ;;
-            *)   prerelease=false; base=$version ;;
-          esac
           manifest=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
-          if [ "$base" != "$manifest" ]; then
-            echo "tag $GITHUB_REF_NAME does not match Cargo.toml's $manifest" >&2
-            exit 1
-          fi
-          if [ "$prerelease" = false ] && ! grep -q "^## \[$version\]" CHANGELOG.md; then
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' \
+            > "$RUNNER_TEMP/published"
+          sh .github/scripts/release-kind.sh "$GITHUB_REF_NAME" "$manifest" \
+            "$RUNNER_TEMP/published" > "$RUNNER_TEMP/kind"
+          version=$(sed -n 's/^version=//p' "$RUNNER_TEMP/kind")
+          kind=$(sed -n 's/^kind=//p' "$RUNNER_TEMP/kind")
+          # An rc has no section of its own.
+          if [ "$kind" != rc ] && ! awk -v heading="## [$version] - " \
+            'index($0, heading) == 1 { found = 1 } END { exit !found }' CHANGELOG.md; then
             echo "CHANGELOG.md has no section for $version" >&2
             exit 1
           fi
-          {
-            echo "version=$version"
-            echo "base=$base"
-            echo "prerelease=$prerelease"
-          } >> "$GITHUB_OUTPUT"
+          cat "$RUNNER_TEMP/kind" >> "$GITHUB_OUTPUT"
+      - id: core
+        run: |
+          core=$(sed -n 's/^version = "\(.*\)"/\1/p' crates/pitboard-core/Cargo.toml | head -1)
+          on_crates_io=$(curl -fsSL -A "pitboard release" -o /dev/null -w "%{http_code}" \
+            "https://crates.io/api/v1/crates/pitboard-core/$core" || true)
+          case $on_crates_io in
+            200)
+              curl -fsSL -A "pitboard release" -o "$RUNNER_TEMP/core.crate" \
+                "https://static.crates.io/crates/pitboard-core/pitboard-core-$core.crate"
+              rustup toolchain install
+              cargo package -p pitboard-core --no-verify --locked
+              sh .github/scripts/core-unchanged.sh "$RUNNER_TEMP/core.crate" \
+                "target/package/pitboard-core-$core.crate"
+              ;;
+            404) ;;
+            *)
+              echo "crates.io answered $on_crates_io for pitboard-core $core" >&2
+              exit 1
+              ;;
+          esac
+          echo "core=$core" >> "$GITHUB_OUTPUT"
 
   build:
     needs: guard
@@ -262,7 +282,7 @@ jobs:
       - name: Package
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
-          PRERELEASE: ${{ needs.guard.outputs.prerelease }}
+          LATEST: ${{ needs.guard.outputs.latest }}
         run: |
           if [ -z "$SPARKLE_PRIVATE_KEY" ]; then
             echo "SPARKLE_PRIVATE_KEY is not set: the feed cannot be signed" >&2
@@ -272,8 +292,8 @@ jobs:
           mkdir -p "$out"
           ditto -c -k --keepParent apps/macos/build/Pitboard.app \
             "$out/Pitboard-${GITHUB_REF_NAME}-macos.zip"
-          if [ "$PRERELEASE" = "true" ]; then
-            echo "a pre-release publishes no feed, so no installed copy updates into it"
+          if [ "$LATEST" != "true" ]; then
+            echo "only the latest release publishes a feed, so no copy updates into this one"
             exit 0
           fi
           printf '%s' "$SPARKLE_PRIVATE_KEY" | \
@@ -400,23 +420,33 @@ jobs:
       - name: Publish to crates.io
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.registry.outputs.token }}
-          PRERELEASE: ${{ needs.guard.outputs.prerelease }}
-          VERSION: ${{ needs.guard.outputs.version }}
+          CRATES: ${{ needs.guard.outputs.crates }}
+          BASE: ${{ needs.guard.outputs.base }}
+          CORE: ${{ needs.guard.outputs.core }}
         run: |
           if [ -z "$CARGO_REGISTRY_TOKEN" ]; then
             echo "crates.io returned no token; check Trusted Publishing on both crates" >&2
             exit 1
           fi
-          if [ "$PRERELEASE" = "true" ]; then
-            echo "the token exchange works; a pre-release publishes nothing to crates.io"
+          if [ "$CRATES" != "true" ]; then
+            echo "the token exchange works; a release candidate publishes nothing to crates.io"
             exit 0
           fi
-          on_crates_io=$(curl -fsSL -A "pitboard release" \
-            "https://crates.io/api/v1/crates/pitboard/$VERSION" -o /dev/null -w "%{http_code}" || true)
-          if [ "$on_crates_io" = "200" ]; then
-            echo "pitboard $VERSION is already on crates.io; not publishing again"
-          else
-            cargo publish --locked --workspace
+          # cargo publish refuses every crate it is given when one of them is already there.
+          set --
+          for crate in "pitboard-core $CORE" "pitboard $BASE"; do
+            name=${crate% *}
+            version=${crate#* }
+            on_crates_io=$(curl -fsSL -A "pitboard release" \
+              "https://crates.io/api/v1/crates/$name/$version" -o /dev/null -w "%{http_code}" || true)
+            if [ "$on_crates_io" = "200" ]; then
+              echo "$name $version is already on crates.io; not publishing it again"
+            else
+              set -- "$@" -p "$name"
+            fi
+          done
+          if [ "$#" -gt 0 ]; then
+            cargo publish --locked "$@"
           fi
 
       # SHA256SUMS is made in this job and published in the release it describes, so on its
@@ -431,8 +461,8 @@ jobs:
             ${{ runner.temp }}/dist/SHA256SUMS
             ${{ runner.temp }}/dist/install.sh
       # The feed decides what every installed copy runs next, which makes it the most worth
-      # attesting of anything here. A pre-release publishes none, so it is its own step.
-      - if: needs.guard.outputs.prerelease == 'false'
+      # attesting of anything here. Only the latest release publishes one.
+      - if: needs.guard.outputs.latest == 'true'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: ${{ runner.temp }}/dist/appcast.xml
@@ -447,9 +477,11 @@ jobs:
             inside { print }
           ' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
       # An immutable release takes files only while a draft; softprops drafts only full releases.
+      # GitHub makes each full release it publishes latest unless told otherwise.
       - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           body_path: ${{ runner.temp }}/notes.md
+          make_latest: ${{ needs.guard.outputs.latest }}
           prerelease: ${{ needs.guard.outputs.prerelease == 'true' }}
           draft: ${{ needs.guard.outputs.prerelease == 'true' }}
           files: |
@@ -475,7 +507,7 @@ jobs:
   # here reads a secret any more.
   feed:
     needs: [guard, publish]
-    if: needs.guard.outputs.prerelease == 'false'
+    if: needs.guard.outputs.latest == 'true'
     runs-on: macos-latest
     timeout-minutes: 5
     permissions:
@@ -538,7 +570,7 @@ jobs:
   # either is built on the machine that installs it.
   tap:
     needs: [guard, publish]
-    if: needs.guard.outputs.prerelease == 'false'
+    if: needs.guard.outputs.latest == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # HOMEBREW_TAP_TOKEN is the only credential in this release that reaches another
@@ -603,7 +635,7 @@ jobs:
   # copy of the command line is the one on PATH once it is installed.
   brew:
     needs: [guard, tap]
-    if: needs.guard.outputs.prerelease == 'false'
+    if: needs.guard.outputs.latest == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -742,7 +774,7 @@ jobs:
       attestations: read
     env:
       VERSION: ${{ needs.guard.outputs.version }}
-      # The command line and its man page say Cargo.toml's version: the tag's, less any suffix.
+      # The command line and its man page say Cargo.toml's version, which an rc's tag adds to.
       BASE: ${{ needs.guard.outputs.base }}
       SCRIPT: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/install.sh
     steps:
@@ -808,8 +840,8 @@ jobs:
             [ "$version" = "pitboard $BASE" ]
           '
 
-      # releases/latest skips a pre-release, so only a full release is reachable this way.
-      - if: needs.guard.outputs.prerelease == 'false'
+      # usepitboard.com/install.sh leads to the latest release alone.
+      - if: needs.guard.outputs.latest == 'true'
         name: Install the way the README says to
         run: |
           set -euo pipefail

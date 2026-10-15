@@ -13,8 +13,8 @@
 //! What a version promises, for the part that is supported: a code is a name, and names are
 //! kept. Adding an error, warning or check code is not a breaking change, which is why every
 //! enum a caller reads codes out of is `#[non_exhaustive]` and every such caller needs a
-//! fallback arm. Renaming or removing a code is a breaking change: a new minor version
-//! while Pitboard is at 0.x, as Cargo reads one, and a new major version after 1.0.
+//! fallback arm. Renaming or removing a code is a breaking change: a new minor version of
+//! this crate, whose version is its own, apart from Pitboard's.
 //! A report a caller reads, such as what `uninstall` returns, may likewise say more in a
 //! later release, so those structs are `#[non_exhaustive]` too.
 //!

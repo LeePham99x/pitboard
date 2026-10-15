@@ -108,7 +108,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     `same_path_in_any_case` is how Windows compares paths, for the core and the apps alike.
   - `release.rs`: whether this build may do anything on its system. A Windows build of a
     0.x release may not, unless it was compiled with `--cfg pitboard_unreleased_windows`,
-    which CI's Windows jobs set and no release does; macOS and Linux always may.
+    which CI's Windows jobs set and no release does; macOS and Linux always may. The
+    version is Pitboard's, which the command line and the app's library name with
+    `set_version`, not the core's own. Every request's User-Agent names it too.
   - `home.rs`: Pitboard's own directory, and what every home must be before anything is
     read or written under it: a full path (`check_absolute`), and, for Pitboard's own, not
     in a folder that syncs (`check_location`). That is told by the text it always refused,
@@ -610,7 +612,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     passes `--fixture`. It fails where the core's library, the app or the command line
     inside it holds a fixture world's text or `PITBOARD_TEST_CLAUDE_DESKTOP`, the variable
     only a build for tests reads, and where the app or that command line links a SQLite
-    other than the system's `/usr/lib/libsqlite3.dylib`.
+    other than the system's `/usr/lib/libsqlite3.dylib`. `scripts/build-number.sh` gives
+    it the `CFBundleVersion` Sparkle orders updates by, with room for a beta below its
+    release.
 - `packaging/`: the templates a release fills and publishes, and the tap's other files.
   The casks `pitboard.rb` for the command line and `pitboard-app.rb` for the app go into the
   tap `datlechin/homebrew-tap`, with `tap_migrations.json` and the tap's README.
@@ -638,7 +642,10 @@ window loads its site, and whatever the site's pages load, as a browser would.
   - `scripts/` holds the EdDSA key and signature helpers, and the scripts that add Sparkle,
     the command line and the Share extension's library to the app's bill of materials.
     `fill-template.sh` writes a release's version and checksums into a `packaging/`
-    template, and `test-install.py` tests it and the install script.
+    template, and `test-install.py` tests it and the install script. `release-kind.sh`
+    says what a tag releases and whether it is latest, `core-unchanged.sh` refuses a
+    `pitboard-core` that changed under a version crates.io already has, and
+    `test-release.py` tests both and the app's `build-number.sh`.
   - `dependabot.yml` asks for weekly updates of Cargo dependencies, GitHub Actions and the
     .NET SDK in `apps/windows/global.json`.
   - `zizmor.yml` configures the audit CI runs on the workflows.
@@ -1442,8 +1449,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
   modules are public only so the front ends in this repository can reach them, and may
   change in any release.
 - In that interface, adding an error, warning or check code is not a breaking change.
-  Renaming or removing one is. While Pitboard is at 0.x, a breaking change gets a new minor
-  version, as in 0.3.0, and after 1.0 a new major version.
+  Renaming or removing one is. `pitboard-core` has a version of its own, apart from
+  Pitboard's, and a breaking change gets a new minor version of it.
 - Pitboard and each tool meet at the tool's register. What Pitboard relies on about a tool
   is written there, with the systems each fact was read on. The conformance run checks
   Claude Code's and Codex's registers against their newest builds twice a week. A person

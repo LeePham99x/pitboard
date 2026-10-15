@@ -754,6 +754,7 @@ impl AppCore {
         make: impl Fn() -> (Made, bool) + Send + Sync + 'static,
         again_after: Duration,
     ) -> AppCore {
+        pitboard_core::release::set_version(env!("CARGO_PKG_VERSION"));
         AppCore {
             made: Kept {
                 make: Box::new(make),
@@ -1286,6 +1287,15 @@ mod tests {
         };
         assert_eq!(code, "schedule_program_unnamed");
         assert!(message.contains("command line"), "{message}");
+    }
+
+    #[test]
+    fn the_apps_core_names_the_apps_version_to_the_release_gate() {
+        AppCore::for_app(environment("/dev/null", &[]), None);
+        assert_eq!(
+            pitboard_core::release::version(),
+            Some(env!("CARGO_PKG_VERSION"))
+        );
     }
 
     /// Where Pitboard may change nothing, as root or under sudo, the app's schedule is

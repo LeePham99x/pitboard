@@ -72,7 +72,7 @@ jobs:
           name: junit-${{ matrix.os }}
           path: target/nextest/ci/junit.xml
 
-  # The install script under each shell named here, against a stub release and with no network.
+  # The install script under each shell named here, with no network, and the release's scripts.
   install-script:
     strategy:
       fail-fast: false
@@ -99,10 +99,14 @@ jobs:
         with:
           tool: shellcheck@0.11.0
       - if: runner.os == 'Linux'
-        run: shellcheck -s sh packaging/install.sh .github/scripts/fill-template.sh
+        run: >
+          shellcheck -s sh packaging/install.sh .github/scripts/fill-template.sh
+          .github/scripts/core-unchanged.sh .github/scripts/release-kind.sh
+          apps/macos/scripts/build-number.sh
       - env:
           TEST_INSTALL_SHELLS: ${{ matrix.shells }}
         run: python3 .github/scripts/test-install.py
+      - run: python3 .github/scripts/test-release.py
 
   # Windows, where the core compiles and refuses whatever is not built yet. Each image is
   # named, never windows-latest, so a new image is a change made on purpose.
@@ -532,8 +536,8 @@ jobs:
       - run: cargo hack check --rust-version --workspace-behavior=cargo -p pitboard-ffi --all-targets --locked --features fixture
 
   semver:
-    # What pitboard-core's last version on crates.io promises. A change that breaks it needs
-    # the version in Cargo.toml raised, as CONTRIBUTING.md says, and fails here until it is.
+    # A pitboard-core API break fails here until crates/pitboard-core/Cargo.toml raises the
+    # core's version.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

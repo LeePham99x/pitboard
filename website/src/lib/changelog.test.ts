@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
   compareBase,
+  compareVersions,
   longDate,
   monthOf,
   parseChangelog,
@@ -23,7 +24,7 @@ function doc(body: string, links = LINKS): string {
 test("reads every version of the repository's CHANGELOG.md", () => {
   const text = readFileSync(new URL("../../../CHANGELOG.md", import.meta.url), "utf8");
   const versions = parseChangelog(text);
-  const headings = text.match(/^## \[\d+\.\d+\.\d+\]/gm) ?? [];
+  const headings = text.match(/^## \[\d+\.\d+\.\d+(-beta\.\d+)?\]/gm) ?? [];
   assert.equal(versions.length, headings.length);
   assert.equal(versions.at(-1)?.version, "0.1.0");
   for (const v of versions) {
@@ -96,6 +97,10 @@ test("agrees with release.yml on version headings", () => {
     "## [0.2.0] -- 2026-09-22",
     "## [0.2.0] - 2026-02-30",
     "## [0.2.0-rc1] - 2026-09-22",
+    "## [0.2.0-alpha.1] - 2026-09-22",
+    "## [1.0.0-beta.0] - 2026-09-22",
+    "## [1.0.0-beta.99] - 2026-09-22",
+    "## [0.2.0-beta.1] - 2026-09-22",
     "## [0.2.0](https://example.com) - 2026-09-22",
     "## 0.2.0 - 2026-09-22",
   ];
@@ -116,6 +121,87 @@ test("agrees with release.yml on version headings", () => {
   const awk = text.split(/^## \[0\.2\.0\][^\n]*\n/m)[1].split(/^## \[/m)[0];
   assert.match(awk, /- A\./);
   assert.doesNotMatch(awk, /- B\./);
+});
+
+test("reads a beta, below its release and above the release before it", () => {
+  const versions = parseChangelog(
+    doc(
+      `## [1.0.0] - 2026-11-20
+
+### Added
+
+- Windows.
+
+## [1.0.0-beta.2] - 2026-11-10
+
+### Fixed
+
+- A fix.
+
+## [1.0.0-beta.1] - 2026-11-01
+
+### Added
+
+- Pitboard for Windows.
+
+## [0.15.0] - 2026-10-20
+
+### Fixed
+
+- A fix.
+`,
+      `
+[1.0.0]: https://github.com/datlechin/pitboard/compare/v0.15.0...v1.0.0
+[1.0.0-beta.2]: https://github.com/datlechin/pitboard/compare/v1.0.0-beta.1...v1.0.0-beta.2
+[1.0.0-beta.1]: https://github.com/datlechin/pitboard/compare/v0.15.0...v1.0.0-beta.1
+[0.15.0]: https://github.com/datlechin/pitboard/releases/tag/v0.15.0
+`,
+    ),
+  );
+  assert.deepEqual(
+    versions.map((v) => [v.version, v.prerelease]),
+    [
+      ["1.0.0", false],
+      ["1.0.0-beta.2", true],
+      ["1.0.0-beta.1", true],
+      ["0.15.0", false],
+    ],
+  );
+  assert.equal(versions[2].sections[0].id, "v1.0.0-beta.1-added");
+  assert.equal(compareBase(versions[0].link), "0.15.0");
+  assert.equal(compareBase(versions[1].link), "1.0.0-beta.1");
+  assert.equal(compareBase(versions[2].link), "0.15.0");
+  assert.throws(
+    () =>
+      parseChangelog(
+        doc(
+          "## [1.0.0-beta.1] - 2026-11-01\n\n### Added\n\n- A.\n\n## [1.0.0] - 2026-11-20\n\n### Added\n\n- B.\n",
+          "[1.0.0-beta.1]: https://github.com/datlechin/pitboard/releases/tag/v1.0.0-beta.1\n[1.0.0]: https://github.com/datlechin/pitboard/releases/tag/v1.0.0\n",
+        ),
+      ),
+    /1\.0\.0-beta\.1 is listed above 1\.0\.0/,
+  );
+});
+
+test("orders versions as SemVer does, a beta below its release", () => {
+  const ordered = [
+    "0.9.0",
+    "0.10.0",
+    "0.15.0",
+    "1.0.0-beta.1",
+    "1.0.0-beta.2",
+    "1.0.0-beta.10",
+    "1.0.0",
+    "1.0.1",
+    "1.1.0-beta.1",
+    "1.1.0",
+  ];
+  for (let i = 1; i < ordered.length; i++) {
+    const [a, b] = [ordered[i - 1], ordered[i]];
+    assert.ok(compareVersions(a, b) < 0, `${a} below ${b}`);
+    assert.ok(compareVersions(b, a) > 0, `${b} above ${a}`);
+  }
+  assert.equal(compareVersions("1.0.0-beta.1", "1.0.0-beta.1"), 0);
 });
 
 test("fails on what it cannot render faithfully", () => {
