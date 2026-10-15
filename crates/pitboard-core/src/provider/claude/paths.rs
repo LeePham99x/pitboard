@@ -114,10 +114,11 @@ pub(crate) fn refresh_lock(ctx: &Context) -> PathBuf {
 }
 
 /// What the legacy lock a token refresh takes second guards: the storage directory itself,
-/// its links resolved where it is there, locked beside it.
+/// its links resolved where it is there, locked beside it. Spelled as Bun's realpath spells
+/// it, without the `\\?\` Windows' own gives (`windows_home_folder` in the register).
 pub(crate) fn legacy_refresh_lock(ctx: &Context) -> PathBuf {
     let dir = PathBuf::from(storage_dir(ctx));
-    std::fs::canonicalize(&dir).unwrap_or(dir)
+    std::fs::canonicalize(&dir).map_or(dir, crate::host::without_verbatim_prefix)
 }
 
 fn storage_dir_from(secure: Option<&str>, home: &std::path::Path, config_dir: &str) -> String {
@@ -197,8 +198,39 @@ pub(crate) fn config_account(config: &Value) -> Option<ConfigAccount> {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test sets up its scratch files as a person or a tool would"
+)]
 mod tests {
     use super::*;
+
+    // Bun 1.4.3's realpath is libuv's, which takes `\\?\` off what Windows gives.
+    #[test]
+    fn the_legacy_lock_is_named_as_bun_spells_its_folder() {
+        let root =
+            std::env::temp_dir().join(format!("pitboard-legacy-lock-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("claude")).expect("a scratch config dir");
+        let ctx = Context::new(root.clone())
+            .with_claude_config_dir(root.join(".").join("claude").to_string_lossy().into());
+        let lock = legacy_refresh_lock(&ctx);
+        let canonical = std::fs::canonicalize(root.join("claude")).expect("there");
+        assert_eq!(lock, crate::host::without_verbatim_prefix(canonical));
+        assert!(
+            !lock.to_string_lossy().starts_with(r"\\?\"),
+            "{}",
+            lock.display()
+        );
+        assert!(lock.is_absolute());
+        let missing = root.join("never-made");
+        let ctx = ctx.with_claude_config_dir(missing.to_string_lossy().into());
+        assert_eq!(
+            legacy_refresh_lock(&ctx),
+            missing,
+            "as given where nothing is there"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     /// A bare name is looked up the way a shell looks it up, so Pitboard and the person's
     /// own shell disagree about whether Claude Code is installed only if PATH differs.

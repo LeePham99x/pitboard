@@ -10,7 +10,7 @@
     reason = "the one module that reads this process's environment"
 )]
 
-use crate::host::Host;
+use crate::host::{Host, Os};
 use crate::provider::ProviderId;
 use crate::provider::claude::api::{Anthropic, Api};
 use crate::provider::codex::api::{Network as OpenAiNetwork, OpenAi};
@@ -50,6 +50,18 @@ const READ: &[&str] = &[
     "NO_COLOR",
     "XPC_SERVICE_NAME",
     "SUDO_UID",
+    "USERPROFILE",
+    "USERNAME",
+    "APPDATA",
+    "LOCALAPPDATA",
+    "ProgramData",
+    "SystemRoot",
+    "PATHEXT",
+    "TEMP",
+    "TMP",
+    "OneDrive",
+    "OneDriveCommercial",
+    "OneDriveConsumer",
 ];
 
 // Read only by a build for tests: a release lists none and reads none.
@@ -76,13 +88,47 @@ pub(crate) fn variables() -> impl Iterator<Item = &'static str> {
 /// The command line has a shell's. An app the system started has launchd's, which name the
 /// home and the login and little else, unless somebody set more with `launchctl setenv`;
 /// whatever is there is read the way the command line reads it.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Environment(HashMap<OsString, OsString>);
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Environment {
+    os: Os,
+    variables: HashMap<OsString, (OsString, OsString)>,
+}
+
+impl Default for Environment {
+    fn default() -> Environment {
+        Environment::on(crate::host::OS, std::iter::empty::<(OsString, OsString)>())
+    }
+}
 
 impl Environment {
     /// This process's own.
     pub fn of_this_process() -> Environment {
         std::env::vars_os().collect()
+    }
+
+    pub(crate) fn on<K: Into<OsString>, V: Into<OsString>>(
+        os: Os,
+        pairs: impl IntoIterator<Item = (K, V)>,
+    ) -> Environment {
+        let mut variables = HashMap::new();
+        for (name, value) in pairs {
+            let (name, value) = (name.into(), value.into());
+            let key = os.variable_key(&name);
+            match os {
+                Os::MacOs | Os::Linux => {
+                    variables.insert(key, (name, value));
+                }
+                // RF-B4: Windows hands a program the first of two spellings of a name.
+                Os::Windows => {
+                    variables.entry(key).or_insert((name, value));
+                }
+            }
+        }
+        Environment { os, variables }
+    }
+
+    pub(crate) fn os(&self) -> Os {
+        self.os
     }
 
     /// `name`'s value, whatever bytes it holds, as a path may hold any.
@@ -92,7 +138,9 @@ impl Environment {
             "{name} is read but not listed in context::READ, so the tests would take it \
              from whoever runs them"
         );
-        self.0.get(OsStr::new(name)).map(OsString::as_os_str)
+        self.variables
+            .get(&self.os.variable_key(OsStr::new(name)))
+            .map(|(_, value)| value.as_os_str())
     }
 
     /// `name`'s value as text. One that is not UTF-8 reads as unset, as `std::env::var`
@@ -106,24 +154,25 @@ impl Environment {
         self.text(name).is_some_and(|v| !v.is_empty())
     }
 
-    /// The person's home: `HOME`, or, where it is unset, the account's own, as the passwd
-    /// database names it and Foundation finds it for an app. Set, even empty, it is what the
+    /// The person's home: `HOME` on macOS and Linux and `USERPROFILE` on Windows, or, where
+    /// it is unset, the account's own, as the passwd database names it and Foundation finds
+    /// it for an app, or as `GetUserProfileDirectoryW` does. Set, even empty, it is what the
     /// person said, and an empty or relative one is refused where it is used
     /// ([`crate::home::check_absolute`]), never taken to be the folder Pitboard runs in.
     pub(crate) fn home(&self) -> PathBuf {
-        self.path("HOME")
+        self.path(self.os.home_variable())
             .map(PathBuf::from)
             .or_else(crate::host::user::home)
             .unwrap_or_default()
     }
 
     /// Pitboard's own directory: `PITBOARD_HOME`, or the system's default for
-    /// `Environment::home`, `.pitboard` there on macOS and Linux. The path as the
-    /// environment gives it, with any `.`, `..` or trailing `/` it holds.
+    /// `Environment::home`. The path as the environment gives it, with any `.`, `..` or
+    /// trailing separator it holds.
     pub fn pitboard_home(&self) -> PathBuf {
         self.path("PITBOARD_HOME")
             .map(PathBuf::from)
-            .unwrap_or_else(|| crate::host::default_pitboard_home(&self.home()))
+            .unwrap_or_else(|| self.os.default_pitboard_home(&self.home()))
     }
 
     /// Every variable, as a program started in this environment is given them.
@@ -135,8 +184,8 @@ impl Environment {
         )
     )]
     pub(crate) fn iter(&self) -> impl Iterator<Item = (&OsStr, &OsStr)> {
-        self.0
-            .iter()
+        self.variables
+            .values()
             .map(|(name, value)| (name.as_os_str(), value.as_os_str()))
     }
 }
@@ -162,12 +211,7 @@ fn unit_test_sentinel() -> PathBuf {
 
 impl<K: Into<OsString>, V: Into<OsString>> FromIterator<(K, V)> for Environment {
     fn from_iter<I: IntoIterator<Item = (K, V)>>(pairs: I) -> Environment {
-        Environment(
-            pairs
-                .into_iter()
-                .map(|(name, value)| (name.into(), value.into()))
-                .collect(),
-        )
+        Environment::on(crate::host::OS, pairs)
     }
 }
 
@@ -194,19 +238,33 @@ pub(crate) fn refuse_a_real_claude(path: &std::path::Path) {
     let fake = testing::guarded_home();
     #[cfg(not(test))]
     let fake: Option<PathBuf> = None;
-    let real = ["Library/Application Support", "Applications/Claude.app"]
-        .into_iter()
-        .any(|below| {
-            user::lies_in_the_accounts_own(path, below)
-                || fake
-                    .as_ref()
-                    .is_some_and(|home| crate::host::lies_in(path, &home.join(below)))
-        })
-        || crate::host::lies_in(path, std::path::Path::new("/Applications/Claude.app"));
+    let real = match crate::host::OS {
+        Os::MacOs | Os::Linux => {
+            ["Library/Application Support", "Applications/Claude.app"]
+                .into_iter()
+                .any(|below| {
+                    user::lies_in_the_accounts_own(path, below)
+                        || fake
+                            .as_ref()
+                            .is_some_and(|home| crate::host::lies_in(path, &home.join(below)))
+                })
+                || crate::host::lies_in(path, std::path::Path::new("/Applications/Claude.app"))
+        }
+        Os::Windows => {
+            let (mut roaming, mut local) = user::app_data_folders();
+            if let Some(home) = &fake {
+                roaming.push(home.join("AppData").join("Roaming"));
+                local.push(home.join("AppData").join("Local"));
+            }
+            crate::host::claude_desktop_on_windows(&roaming, &local)
+                .iter()
+                .any(|place| crate::host::lies_in(path, place))
+        }
+    };
     assert!(
         !real,
-        "a test named {} for Claude, which is, holds or lies in this account's own \
-         Application Support or a real Claude.app: give it a folder of its own",
+        "a test named {} for Claude, which is, holds or lies in where this account's own \
+         Claude Desktop keeps its data or its app: give it a folder of its own",
         path.display()
     );
 }
@@ -242,6 +300,8 @@ pub(crate) mod testing {
 
 #[derive(Clone, Debug)]
 pub struct Context {
+    // This build's system, but where a test reads an environment as another's.
+    pub(crate) os: Os,
     pub(crate) home: PathBuf,
     pub(crate) pitboard_home: PathBuf,
     /// `CLAUDE_CONFIG_DIR`, held as it is set, empty included. Claude Code reads an empty
@@ -284,6 +344,14 @@ pub struct Context {
     pub(crate) hover_rest: bool,
     /// `CODEX_HOME`, which moves everything Codex keeps, including its keyring account.
     pub(crate) codex_home: Option<String>,
+    // Windows' `FOLDERID_Profile`, where Codex finds its home with `CODEX_HOME` unset.
+    pub(crate) profile: Option<PathBuf>,
+    // Windows' `LOCALAPPDATA`, as the environment gives it.
+    pub(crate) local_app_data: Option<PathBuf>,
+    // The person's Windows SID, which an `icacls` line names and a report hides.
+    pub(crate) sid: Option<String>,
+    // The folders OneDrive syncs on Windows, as its variables name them.
+    pub(crate) one_drive: Vec<PathBuf>,
     /// The Pitboard the daily renewal schedule runs. `None` is this program, which is right
     /// for the command line and wrong for an app: the schedule runs `pitboard renew`, so an
     /// app names the command line it comes with.
@@ -365,6 +433,11 @@ impl Context {
         &self.home
     }
 
+    // The one the schedule renews, whatever `PITBOARD_HOME` says.
+    pub(crate) fn default_pitboard_home(&self) -> PathBuf {
+        self.os.default_pitboard_home(&self.home)
+    }
+
     /// The machine this context reaches.
     pub(crate) fn host(&self) -> &dyn Host {
         self.host.as_ref()
@@ -379,15 +452,16 @@ impl Context {
         self.api.as_ref()
     }
 
-    /// Claude Code's defaults for a person whose home is `home`: `~/.pitboard`, `~/.claude`,
-    /// the default credential slot, `claude` looked up on `PATH`, and no proxy. Pitboard's own
-    /// directory is the system's default for `home`, the home handed in and never this
-    /// account's own.
+    /// Claude Code's defaults for a person whose home is `home`: Pitboard's default
+    /// directory, `~/.claude`, the default credential slot, `claude` looked up on `PATH`, and
+    /// no proxy. Pitboard's own directory is the system's default for `home`, the home handed
+    /// in and never this account's own.
     #[cfg(any(test, feature = "test-support"))]
     #[doc(hidden)]
     pub fn new(home: PathBuf) -> Context {
         Context {
-            pitboard_home: crate::host::default_pitboard_home(&home),
+            os: crate::host::OS,
+            pitboard_home: crate::host::OS.default_pitboard_home(&home),
             home,
             claude_config_dir: None,
             secure_storage_dir: None,
@@ -402,6 +476,10 @@ impl Context {
             agent: crate::api::Agents::default(),
             hover_rest: false,
             codex_home: None,
+            profile: None,
+            local_app_data: None,
+            sid: None,
+            one_drive: Vec::new(),
             schedule_program: None,
             search_path: None,
             scheduled_job: None,
@@ -433,6 +511,12 @@ impl Context {
 
     pub(crate) fn codex_home(&self) -> Option<&str> {
         self.codex_home.as_deref()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_profile(mut self, profile: PathBuf) -> Context {
+        self.profile = Some(profile);
+        self
     }
 
     pub fn with_pitboard_home(mut self, dir: PathBuf) -> Context {
@@ -686,7 +770,13 @@ impl Context {
     #[cfg(test)]
     pub(crate) fn for_unit_test() -> Context {
         let sentinel = unit_test_sentinel().into_os_string();
-        let homes = ["HOME", "PITBOARD_HOME", "CLAUDE_CONFIG_DIR", "CODEX_HOME"];
+        let homes = [
+            "HOME",
+            "USERPROFILE",
+            "PITBOARD_HOME",
+            "CLAUDE_CONFIG_DIR",
+            "CODEX_HOME",
+        ];
         let kept: Environment = std::env::vars_os()
             .filter(|(name, _)| !variables().any(|read| name == read))
             .chain(homes.map(|home| (home.into(), sentinel.clone())))
@@ -710,11 +800,12 @@ impl Context {
                 .map_or_else(|| PathBuf::from(tool.program()), PathBuf::from)
         };
         let read = Context {
+            os: env.os(),
             pitboard_home: env.pitboard_home(),
             home,
             claude_config_dir: owned("CLAUDE_CONFIG_DIR"),
             secure_storage_dir: owned("CLAUDE_SECURESTORAGE_CONFIG_DIR"),
-            user: owned("USER"),
+            user: owned(env.os().user_variable()),
             custom_oauth: env.set("CLAUDE_CODE_CUSTOM_OAUTH_URL"),
             argv_fallback: env.text("PITBOARD_NO_ARGV") != Some("1"),
             overriding_auth: crate::settings::OVERRIDING_ENV
@@ -729,6 +820,22 @@ impl Context {
             agent: crate::api::Agents::default(),
             hover_rest: matches!(env.text("CLAUDE_CODE_HOVER_REST"), Some("1" | "true")),
             codex_home: owned("CODEX_HOME").filter(|v| !v.is_empty()),
+            profile: (env.os() == Os::Windows)
+                .then(crate::host::user::profile)
+                .flatten(),
+            local_app_data: env
+                .path("LOCALAPPDATA")
+                .filter(|_| env.os() == Os::Windows)
+                .map(PathBuf::from),
+            sid: (env.os() == Os::Windows)
+                .then(crate::host::user::sid)
+                .flatten(),
+            one_drive: ["OneDrive", "OneDriveCommercial", "OneDriveConsumer"]
+                .into_iter()
+                .filter(|_| env.os() == Os::Windows)
+                .filter_map(|name| env.path(name).filter(|folder| !folder.is_empty()))
+                .map(PathBuf::from)
+                .collect(),
             schedule_program: None,
             // Unset is nowhere, as it is to the shell: nothing is found on an empty `PATH`.
             search_path: Some(env.path("PATH").unwrap_or_default().to_os_string()),
@@ -918,6 +1025,33 @@ mod tests {
         );
     }
 
+    #[test]
+    #[cfg(windows)]
+    fn a_scratch_in_claude_desktops_windows_folders_panics() {
+        let named = |folder: PathBuf| {
+            std::panic::catch_unwind(move || {
+                Context::new(PathBuf::from(r"C:\nowhere")).with_scratch_claude(folder)
+            })
+            .is_err()
+        };
+        let (roaming, local) = crate::host::user::app_data_folders();
+        assert!(!roaming.is_empty() && !local.is_empty());
+        for dir in &roaming {
+            assert!(named(dir.join("Claude").join("pitboard-test-never-made")));
+            assert!(named(dir.join("claude-3p")), "in any case");
+        }
+        for dir in &local {
+            assert!(named(dir.join("AnthropicClaude")));
+        }
+        assert!(!named(
+            std::env::temp_dir().join("pitboard-scratch-elsewhere")
+        ));
+        let fake = std::env::temp_dir().join("pitboard-fake-profile");
+        let _guarding = testing::also_guarding(&fake);
+        let roaming = fake.join("AppData").join("Roaming");
+        assert!(named(roaming.join("Claude").join("x")), "a fake profile's");
+    }
+
     // `..` past a folder not made yet is resolved only once something makes that folder.
     #[test]
     fn a_scratch_named_through_a_folder_not_made_yet_panics() {
@@ -1065,12 +1199,15 @@ mod tests {
     /// refused as one whose home is not a full path. It was read as unset, which pointed
     /// Pitboard at `~/.claude`, where no Claude Code started with it keeps anything.
     #[test]
-    #[cfg_attr(windows, ignore = "W14: Pitboard's own folder on Windows")]
     fn an_explicit_context_reads_claude_codes_settings_the_way_the_environment_does() {
-        let ctx = Context::new(PathBuf::from("/home/x"))
+        let (home, named) = full_home();
+        let ctx = Context::new(home.clone())
             .with_claude_config_dir(String::new())
             .with_secure_storage_dir(String::new());
-        assert_eq!(ctx.pitboard_home, PathBuf::from("/home/x/.pitboard"));
+        assert_eq!(
+            ctx.pitboard_home,
+            crate::host::OS.default_pitboard_home(&home)
+        );
         assert_eq!(
             ctx.claude_config_dir.as_deref(),
             Some(""),
@@ -1082,9 +1219,12 @@ mod tests {
             "empty is set, and pins the default slot"
         );
         assert_eq!(ctx.claude_program(), Path::new("claude"));
-        let env: Environment = [("HOME", "/home/x"), ("CLAUDE_CONFIG_DIR", "")]
-            .into_iter()
-            .collect();
+        let env: Environment = [
+            (crate::host::OS.home_variable(), named.as_str()),
+            ("CLAUDE_CONFIG_DIR", ""),
+        ]
+        .into_iter()
+        .collect();
         let read = Context::for_command_line(&env);
         assert_eq!(read.claude_config_dir, ctx.claude_config_dir);
         for ctx in [ctx, read] {
@@ -1152,10 +1292,10 @@ mod tests {
     /// The command line reads the environment it is handed rather than this process's, so
     /// every variable can be tried without changing what the tests themselves run in.
     #[test]
-    #[cfg_attr(windows, ignore = "W14: Pitboard's own folder on Windows")]
     fn the_command_line_reads_the_environment_it_is_given() {
+        let (home, named) = full_home();
         let env: Environment = [
-            ("HOME", "/Users/x"),
+            (crate::host::OS.home_variable(), named.as_str()),
             ("PITBOARD_CLAUDE", "/elsewhere/claude"),
             ("PITBOARD_CODEX", ""),
             ("CLAUDE_CODE_CUSTOM_OAUTH_URL", "https://oauth.example"),
@@ -1179,14 +1319,103 @@ mod tests {
             "empty is unset"
         );
         assert_eq!(ctx.search_path(), "/opt/tools/bin:/usr/bin");
-        assert_eq!(ctx.pitboard_home, PathBuf::from("/Users/x/.pitboard"));
+        assert_eq!(
+            ctx.pitboard_home,
+            crate::host::OS.default_pitboard_home(&home)
+        );
         assert_eq!(ctx.caller, "cli");
-        let no_path: Environment = [("HOME", "/Users/x")].into_iter().collect();
+        let no_path: Environment = [(crate::host::OS.home_variable(), named.as_str())]
+            .into_iter()
+            .collect();
         assert_eq!(
             Context::for_command_line(&no_path).search_path(),
             "",
             "no PATH is nowhere, not this process's"
         );
+    }
+
+    // RF-B4, run 38418961905: a program gets `Path` alone, and a block holding both spellings
+    // hands both to a child, whose `var_os` takes the first for either.
+    #[test]
+    fn a_windows_environment_has_one_value_per_name_in_any_case_and_the_first_wins() {
+        let search_path = |os: Os, pairs: &[(&str, &str)]| {
+            let home = [("HOME", "/home/x"), ("USERPROFILE", "/home/x")];
+            let env = Environment::on(os, home.iter().chain(pairs).copied());
+            Context::read(&env, "cli").search_path()
+        };
+        let windows = |pairs: &[(&str, &str)]| search_path(Os::Windows, pairs);
+        assert_eq!(
+            windows(&[("Path", "C:\\a")]),
+            "C:\\a",
+            "as a program gets it"
+        );
+        assert_eq!(windows(&[("PATH", "C:\\b")]), "C:\\b");
+        assert_eq!(windows(&[("Path", "C:\\a"), ("PATH", "C:\\b")]), "C:\\a");
+        assert_eq!(windows(&[("PATH", "C:\\b"), ("Path", "C:\\a")]), "C:\\b");
+        for os in [Os::MacOs, Os::Linux] {
+            assert_eq!(search_path(os, &[("Path", "/a")]), "", "{os:?}");
+            assert_eq!(search_path(os, &[("Path", "/a"), ("PATH", "/b")]), "/b");
+        }
+        let both = Environment::on(Os::Windows, [("Path", "C:\\a"), ("PATH", "C:\\b")]);
+        let given: Vec<_> = both.iter().collect();
+        assert_eq!(
+            given,
+            [(OsStr::new("Path"), OsStr::new("C:\\a"))],
+            "a child gets one"
+        );
+        assert_eq!(both.text("PATH"), Some("C:\\a"));
+    }
+
+    // Windows names the person in `USERNAME`, and sets no `USER`.
+    #[test]
+    fn the_person_is_named_by_the_systems_own_variable() {
+        let user = |os: Os| {
+            let pairs = [
+                ("HOME", "/home/x"),
+                ("USERPROFILE", "/home/x"),
+                ("USER", "posix"),
+                ("username", "windows"),
+            ];
+            Context::read(&Environment::on(os, pairs), "cli").user
+        };
+        assert_eq!(user(Os::Windows).as_deref(), Some("windows"));
+        assert_eq!(user(Os::MacOs).as_deref(), Some("posix"));
+        assert_eq!(user(Os::Linux).as_deref(), Some("posix"));
+    }
+
+    // Git Bash sets `HOME`, which neither tool takes for the home on Windows.
+    #[test]
+    fn each_tool_finds_its_home_in_userprofile_on_windows_whatever_home_says() {
+        let profile = std::env::temp_dir().join("pitboard-profile-tools");
+        let named = profile.to_string_lossy().into_owned();
+        let pairs = [("HOME", "/c/Users/x"), ("USERPROFILE", named.as_str())];
+        let ctx = Context::read(&Environment::on(Os::Windows, pairs), "cli");
+        assert_eq!(ctx.home, profile);
+        assert_eq!(
+            crate::provider::claude::paths::config_dir(&ctx),
+            profile.join(".claude")
+        );
+        assert_eq!(
+            crate::provider::claude::paths::config_file(&ctx),
+            profile.join(".claude.json")
+        );
+        assert_eq!(
+            crate::provider::codex::paths::home(&ctx),
+            profile.join(".codex")
+        );
+        assert_eq!(
+            ctx.pitboard_home,
+            profile.join("AppData").join("Local").join("Pitboard")
+        );
+        let posix = Context::read(&Environment::on(Os::Linux, pairs), "cli");
+        assert_eq!(posix.home, PathBuf::from("/c/Users/x"));
+    }
+
+    // A full path on every system, which nothing makes.
+    fn full_home() -> (PathBuf, String) {
+        let home = std::env::temp_dir().join("pitboard-never-made-home");
+        let named = home.to_string_lossy().into_owned();
+        (home, named)
     }
 
     /// A variable read without being listed is caught the first time a test reads it, so the
@@ -1202,14 +1431,18 @@ mod tests {
     /// is where the app has always looked. The command line took an empty path instead, and
     /// so kept its files in `.pitboard` wherever it was run from.
     #[test]
-    #[cfg_attr(windows, ignore = "W14: the account's own home on Windows")]
     fn without_home_the_home_is_the_accounts_own() {
         let _real = crate::host::user::testing::reaching_the_real_home();
         let own = crate::host::user::home().expect("this account has a home");
         let ctx = Context::for_command_line(&Environment::default());
         assert_eq!(ctx.home, own);
-        assert_eq!(ctx.pitboard_home, own.join(".pitboard"));
-        let empty: Environment = [("HOME", "")].into_iter().collect();
+        assert_eq!(
+            ctx.pitboard_home,
+            crate::host::OS.default_pitboard_home(&own)
+        );
+        let empty: Environment = [(crate::host::OS.home_variable(), "")]
+            .into_iter()
+            .collect();
         assert_eq!(
             Context::for_command_line(&empty).home,
             PathBuf::new(),

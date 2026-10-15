@@ -1124,10 +1124,6 @@ mod tests {
     /// Both logins are the same person's, so naming the one that holds a label by its email
     /// alone names the one being enrolled too.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_label_another_organisation_holds_is_said_to_be_that() {
         let m = machine("label-in-another-organisation");
         let refused = enrolled_as(&m, "here", here_in(&m, "org-team", "team-refresh"))
@@ -1410,10 +1406,6 @@ mod tests {
     /// Only the account Pitboard last saw in use is warned about. Signing in again to a
     /// parked account renews its park whoever is signed in, as it always did.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_sign_in_to_a_parked_account_is_not_warned_about_the_login_in_use() {
         let m = machine("untold-parked");
         m.sign_in(&harness::document("here-renewed"));

@@ -511,6 +511,7 @@ fn to_api(error: ProviderError) -> ApiError {
         | P::ShapeUnexpected { detail, .. }
         | P::Unsupported { reason: detail, .. } => ApiError::Malformed(detail),
         P::NoLogin { .. } => ApiError::Malformed("nothing is signed in".into()),
+        missing @ P::HomeMissing { .. } => ApiError::Malformed(missing.to_string()),
         P::InvalidGrant { .. } => ApiError::InvalidGrant,
     }
 }
@@ -1110,6 +1111,10 @@ fn assemble(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test sets up its scratch files as a person or a tool would"
+)]
 mod tests {
     use super::*;
     use crate::api::scripted::{Asked as Question, ScriptedApi, Trouble};
@@ -1452,7 +1457,6 @@ mod tests {
 
     /// Read off the login the read already holds, with no request of its own.
     #[test]
-    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn the_login_in_use_says_its_own_plan() {
         let home = tempfile::tempdir().expect("a scratch home");
         let (ctx, _mem, api) = machine(home.path(), Some("work-uuid"));
@@ -1510,7 +1514,6 @@ mod tests {
 
     /// A park written before Pitboard parked the whole slice holds the OAuth block alone.
     #[test]
-    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn a_park_of_the_oauth_block_alone_says_its_plan_to_a_read() {
         let home = tempfile::tempdir().expect("a scratch home");
         let (ctx, _mem, _api) = machine(home.path(), None);
@@ -1549,7 +1552,6 @@ mod tests {
 
     /// The login may be anybody's, so its plan is filed under nobody.
     #[test]
-    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn a_login_nobody_could_name_says_its_plan_for_nobody() {
         let home = tempfile::tempdir().expect("a scratch home");
         let (ctx, mem, api) = machine(home.path(), Some("alpha-uuid"));
@@ -1583,7 +1585,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn a_login_nobody_enrolled_says_its_plan() {
         let home = tempfile::tempdir().expect("a scratch home");
         let (ctx, mem, api) = machine(home.path(), Some("stranger-uuid"));
@@ -1613,7 +1614,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn a_lapsed_park_shows_the_plan_its_account_last_recorded() {
         let home = tempfile::tempdir().expect("a scratch home");
         let (ctx, _mem, _api) = machine(home.path(), None);
@@ -2041,7 +2041,6 @@ mod tests {
     /// holding the machine's MCP tokens. That is nobody signed in. It used to be sent to
     /// Anthropic to identify, and the row read as Anthropic answering badly.
     #[test]
-    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn a_document_holding_no_account_is_nothing_signed_in_and_nobody_is_asked() {
         let home = tempfile::tempdir().expect("a scratch home");
         let (ctx, _mem, api) = machine(home.path(), None);
@@ -2071,7 +2070,6 @@ mod tests {
     /// the account in use showed as parked with nothing parked, and the advice was to sign
     /// in again.
     #[test]
-    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn a_login_that_cannot_be_read_is_said_rather_than_read_as_nobody_signed_in() {
         let home = tempfile::tempdir().expect("a scratch home");
         let (ctx, mem, api) = machine(home.path(), Some("alpha-uuid"));
@@ -2115,7 +2113,6 @@ mod tests {
     /// that login in the keychain, so the config's account read as in use and the one whose
     /// login was stored read as having nothing parked.
     #[test]
-    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn the_account_last_recorded_in_use_is_not_sent_to_sign_in_while_the_login_cannot_be_read() {
         let home = tempfile::tempdir().expect("a scratch home");
         let (ctx, mem, api) = machine(home.path(), Some("alpha-uuid"));
@@ -2218,7 +2215,6 @@ mod tests {
     /// account it replaced. One request is made, the one that failed, and nothing is learned
     /// for the budget or recorded of whose the login is.
     #[test]
-    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn a_login_nobody_could_name_this_time_is_not_asked_about_usage() {
         let home = tempfile::tempdir().expect("a scratch home");
         let (ctx, _mem, api) = machine(home.path(), Some("acc-x"));
@@ -2304,7 +2300,6 @@ mod tests {
     /// it, and has its row with what was last measured, as it has online. Between the app's
     /// reads it went, and the account Claude Code's config named was in use in its place.
     #[test]
-    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn offline_a_login_nobody_enrolled_has_its_row() {
         let home = tempfile::tempdir().expect("a scratch home");
         let (ctx, _mem, api) = machine(home.path(), Some("alpha-uuid"));
@@ -2533,7 +2528,6 @@ mod tests {
     /// `/logout` leaves; one that is not a document of Claude Code's shape at all is a login
     /// Pitboard cannot use, and is said as one.
     #[test]
-    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn only_a_document_holding_no_login_is_nobody_signed_in() {
         let home = tempfile::tempdir().expect("a scratch home");
         let (ctx, _mem, api) = machine(home.path(), Some("alpha-uuid"));

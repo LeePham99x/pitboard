@@ -653,6 +653,10 @@ fn not_identified(path: &Path, error: &ProviderError) -> Error {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test sets up its scratch files as a person or a tool would"
+)]
 mod tests {
     use super::super::harness::{
         Machine, NOW, Session, account, audit_lines, document, lapsed, lets_go_of_the_write_lock,

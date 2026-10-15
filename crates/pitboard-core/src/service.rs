@@ -7,7 +7,7 @@ use crate::doctor::{self, Diagnosis};
 use crate::duty::autoswitch::{Auto, Look, Threshold};
 use crate::error::{Error, Result};
 use crate::holder::{self, capitalised};
-use crate::host::{Elevation, Floor};
+use crate::host::{Elevation, Floor, Os};
 use crate::in_use::{self, Doubt, InUse, Known};
 use crate::provider::{Held, LoginKind, Provider, ProviderId};
 use crate::state::{self, Account, Key, new_id};
@@ -1512,6 +1512,27 @@ impl Pitboard {
         crate::store::folder::parks_dir(&self.ctx)
     }
 
+    // `PITBOARD_HOME`, or the default in the home.
+    pub fn directory(&self) -> std::path::PathBuf {
+        crate::home::dir(&self.ctx)
+    }
+
+    // The one the renewal schedule renews, whatever `PITBOARD_HOME` says.
+    pub fn default_directory(&self) -> std::path::PathBuf {
+        self.ctx.default_pitboard_home()
+    }
+
+    // As a person reads a folder: under the home it starts `~` on macOS and Linux.
+    pub fn shown(&self, folder: &std::path::Path) -> String {
+        let home = self.ctx.home();
+        match folder.strip_prefix(home) {
+            Ok(rest) if self.ctx.os != Os::Windows && !home.as_os_str().is_empty() => {
+                std::path::Path::new("~").join(rest).display().to_string()
+            }
+            _ => folder.display().to_string(),
+        }
+    }
+
     /// When Pitboard's account index last changed, in epoch milliseconds, for a front end
     /// that wants to know whether another one has done something without asking Anthropic
     /// about it.
@@ -1883,6 +1904,10 @@ impl Audited for switch::Removed {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test sets up its scratch files as a person or a tool would"
+)]
 mod tests {
     use super::*;
     use crate::switch::harness::{
@@ -3900,10 +3925,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn the_gate_says_why_it_refuses_and_lets_a_person_through() {
         let m = machine("gate-words");
         let pitboard = Pitboard::new(m.ctx.clone());
@@ -3920,10 +3941,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn the_gate_lets_windows_11_24h2_through_and_says_an_older_one_first() {
         let m = machine("gate-floor");
         let pitboard = Pitboard::new(m.ctx.clone());
@@ -4066,10 +4083,6 @@ mod tests {
     /// too. Where this process may change nothing it draws the same line from the files as
     /// they are, and writes neither.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn the_status_line_where_pitboard_may_change_nothing_draws_the_same_line_and_writes_nothing() {
         let session = serde_json::json!({
             "session_id": "a-session",
@@ -4135,10 +4148,6 @@ mod tests {
     /// `doctor` says why every change is refused, first, as a check that fails, and says
     /// nothing of it where Pitboard runs as the person.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn doctor_says_why_pitboard_changes_nothing() {
         let m = machine("gate-doctor");
         let pitboard = Pitboard::new(m.ctx.clone());

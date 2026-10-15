@@ -199,6 +199,10 @@ pub(crate) fn update(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test sets up its scratch files as a person or a tool would"
+)]
 mod tests {
     use super::*;
 
@@ -223,7 +227,6 @@ mod tests {
     /// Claude Code wrote between Pitboard reading the file and renaming a new one over it
     /// was silently gone.
     #[test]
-    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn a_write_that_would_lose_what_claude_code_just_wrote_does_not_happen() {
         let (ctx, path, _s) = scratch();
         let interfering = std::cell::Cell::new(0);
@@ -255,10 +258,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_quiet_file_is_written_once_and_what_was_dropped_is_recorded() {
         let (ctx, path, _s) = scratch();
         std::fs::write(

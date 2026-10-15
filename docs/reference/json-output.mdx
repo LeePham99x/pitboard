@@ -117,7 +117,7 @@ In the order of `pitboard --help`:
 | `schedule status` | `installed`. When `true`, also `path` and `every_seconds` (`86400`). Where Pitboard has no scheduler to write, also `supported` (`false`). |
 | `schedule uninstall` | `installed` (`false`) and `removed`, `false` when nothing was scheduled. |
 | `log` | `entries`, oldest first, each with `at`, `caller` (`cli`, `app` or `unknown`), `verb`, `subject` and `outcome`, as [`log`](/reference/maintenance-commands#log) explains. |
-| `uninstall` | The counts `parks_removed`, `parks_pending` (could not be deleted, or a renewal of Claude Code's login not saved yet), `parks_left` (left because another Pitboard may own them) and `set_aside_removed` (folders set aside it deleted), and the booleans `home_removed` and `schedule_removed`. |
+| `uninstall` | The counts `parks_removed`, `parks_pending` (could not be deleted, or a renewal of Claude Code's login not saved yet), `parks_left` (left because another Pitboard may own them) and `set_aside_removed` (folders set aside it deleted), the booleans `home_removed`, `warming_up` (a warm-up running kept the directory) and `schedule_removed`, and `home_kept_by`, the paths of the files that could not be removed, which kept the directory. |
 | `rename` | `from`, `to` and `email`. |
 | `doctor` | `environment`, the paths, login stores and versions Pitboard found, as [Doctor environment](/reference/json-output#doctor-environment) lists. `checks`, each with `code`, `name`, `level` (`ok`, `warn` or `fail`), `detail` and `advice`, as [`doctor`](/reference/maintenance-commands#doctor) lists. |
 | `statusline` | `line`, the status line without colour, as [`statusline`](/reference/integration-commands#statusline) describes. |

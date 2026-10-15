@@ -97,6 +97,10 @@ pub(crate) fn exchange(ctx: &Context, permit: Permit, id: &str, run: &Run) -> Op
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test sets up its scratch files as a person or a tool would"
+)]
 mod tests {
     use super::*;
     use crate::time::{Clock, FixedClock};
@@ -130,10 +134,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_session_gets_back_what_it_passed_the_run_before() {
         let (ctx, _scratch) = machine();
         let ctx = at(&ctx, NOW);
@@ -159,10 +159,6 @@ mod tests {
     /// Pitboard 0.9.0 kept the account Claude Code's config named beside each session's
     /// limits. A session it kept is still compared with, the account left out.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_session_an_earlier_pitboard_kept_is_still_compared_with() {
         let (ctx, _scratch) = machine();
         std::fs::write(
@@ -184,10 +180,6 @@ mod tests {
     /// A status line can run every second in every open session, and what it passes is
     /// mostly what it passed the time before.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_run_that_changes_nothing_leaves_the_file_alone() {
         let (ctx, _scratch) = machine();
         exchange(&at(&ctx, NOW), Permit::for_a_test(), "pane", &run(20.0));
@@ -209,10 +201,6 @@ mod tests {
     /// A session still open is seen again once a day, and one nobody has run for a week goes
     /// when anything is next written.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_session_not_seen_for_a_week_is_dropped() {
         let (ctx, _scratch) = machine();
         exchange(&at(&ctx, NOW), Permit::for_a_test(), "gone", &run(20.0));

@@ -96,15 +96,33 @@ window loads its site, and whatever the site's pages load, as a browser would.
     data folder before anything else is asked, so neither face lists processes with their
     parents or reads a cookie jar. `windows/` is the face that refuses whatever of Windows
     is not built yet: no store of secrets, a vault of `store::Backend::Unknown` whose every
-    call cannot be read, no process list, no scheduler, no home of the account's own, no
-    file made and no program found. What it does read is this process's token, through
-    windows-sys (`windows/user.rs`), which `token.rs` makes an `Elevation` of, and the build
-    `RtlGetVersion` gives, which `host::windows_floor` holds against 26100, the build of
-    Windows 11 24H2 and Windows Server 2025. `token.rs` is compiled on every system, so how
-    a token reads is tested everywhere, and `words.rs` says each system's refusal from a
-    `host::Os`. A fact that differs by system is a `match` on `host::OS`, such as the
-    folders macOS asks about before an app may look in them, or `default_pitboard_home`,
-    where Pitboard keeps its files for a home when `PITBOARD_HOME` names nowhere else.
+    call cannot be read, no process list, no scheduler, none of the four ways a login kept as
+    files moves, and no program found. What it does read is this process's token, through windows-sys
+    (`windows/user.rs`), which `token.rs` makes an `Elevation` of and whose `TokenUser` is
+    the person's SID, the account's own folders (`GetUserProfileDirectoryW`,
+    `FOLDERID_Profile`, `FOLDERID_LocalAppData` and the profile type), which a build for
+    tests answers nothing from, and the build `RtlGetVersion` gives, which
+    `host::windows_floor` holds against 26100, the build of Windows 11 24H2 and Windows
+    Server 2025. `windows/fs.rs` makes each private file and folder with a security
+    descriptor from SDDL: owned by the person's SID, with a protected access list granting
+    the person, SYSTEM and Administrators alone, which a folder passes on to what is made in
+    it. A folder already there keeps its own list. `fs::access` reads a path's list, and
+    `acl.rs` says who else it lets reach the data, by the names Windows shows, and the
+    `icacls` line that closes it. `fs::rename` replaces a file whole: by the POSIX rename
+    where the volume reports `FILE_SUPPORTS_POSIX_UNLINK_RENAME`, as NTFS and ReFS do, which
+    lands over a file another program holds sharing its deletion, and by `MoveFileExW` with
+    write-through on exFAT, FAT32 and an SMB share. `replace.rs` says which route a volume's
+    flags give and which refusals are waited out: a sharing violation or access denied, for
+    about 2.3 s. A read-only file is refused, never cleared. `fs::copy_access` gives what
+    replaces another program's file that file's list, protected or inherited as it is, and
+    `fs::sync_dir` flushes the folder a rename was made in, which a standard user may on
+    NTFS, ReFS, exFAT and FAT32; an SMB share refuses, and there the write-through is what
+    makes the rename last. `token.rs`, `acl.rs` and `replace.rs` are compiled on every
+    system, so how a token and a list read and which route a volume takes is tested
+    everywhere, and `words.rs` says each system's refusal from a `host::Os`. A fact that differs by system is a `match` on `host::OS`,
+    such as the folders macOS asks about before an app may look in them, or
+    `Os::default_pitboard_home`, where Pitboard keeps its files for a home when
+    `PITBOARD_HOME` names nowhere else.
     `same_path_in_any_case` is how Windows compares paths, for the core and the apps alike,
     and `path_key_in_any_case` a key read from the text alone, which also reads `\\?\`, `.`
     and `..` away. `awake` is the time the machine has been awake, which the app's timers
@@ -119,7 +137,10 @@ window loads its site, and whatever the site's pages load, as a browser would.
     in a folder that syncs (`check_location`). That is told by the text it always refused,
     such as `Sync`, anywhere in the path as written, so nothing it refused is let through,
     and by the names sync clients give their folders, one folder at a time and in any
-    case, and macOS's `Library/CloudStorage` and `Library/Mobile Documents`.
+    case, and macOS's `Library/CloudStorage` and `Library/Mobile Documents`. On Windows
+    also by OneDrive's folders as its variables name them, a sync root
+    (`CfGetSyncRootInfoByPath`), and a roaming profile but its `AppData\Local` and
+    `AppData\LocalLow`.
   - `store/`: reading and writing logins, whichever store holds them: the chain rules, a
     file, the vault of files, the folders under `parks` and the stores in memory the tests
     use. On macOS, a parked Claude Code or Codex login is a keychain item. On Linux, it is a
@@ -287,7 +308,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     taken the same way and kept with Claude Code's own numbers (`Timing`).
   - `context.rs`: what the core takes from its environment, read from a map of variables
     by the same code for every front end, apart from the `PATH` that `host/linux` reads to
-    find the program daily renewal runs.
+    find the program daily renewal runs. On Windows a name is one in any case, and the
+    first of two spellings wins, as Windows hands a program its variables.
   - `app.rs`: what an app finds for itself that a command typed at a prompt is given: each
     tool's program, on the login shell's `PATH` and then where the tool's installers put
     it, and the `pitboard` a terminal would run, there and then where each way of installing
@@ -681,11 +703,19 @@ window loads its site, and whatever the site's pages load, as a browser would.
   `host/macos/launchd.rs`. `clippy.toml` refuses `std::env::var`, `var_os`, `vars` and
   `vars_os` outside `context.rs`, so every other read carries an `#[allow]` that says why
   it is meant.
+- The core makes every file and folder through `host::fs`, so how each is made, and made
+  private, is said once for each system. Its own `clippy.toml` refuses std's ways to make
+  one, `fs::write`, `File::create`, `OpenOptions::create`, `fs::copy`, `create_dir` and the
+  rest, outside the faces in `host/`, the stand-in, the Claude Desktop the tests play and
+  the tests that set up a scratch folder, each of which says why in its `#[allow]`. It
+  repeats the root's rules, since a crate's own `clippy.toml` replaces the root's, and a
+  test holds it to them.
 - `READ` in `context.rs` and `settings::OVERRIDING_ENV` name every variable a release of
   Pitboard reads. `READ_BY_BUILDS_FOR_TESTS` names the one only a build for tests reads,
   `PITBOARD_TEST_CLAUDE_DESKTOP`, and is empty in a release. `Environment` refuses, in a
   build with debug assertions, to read a variable none of them names. The integration tests
-  withhold every one of them from each command they run, except `HOME` and `USER`, and the
+  withhold every one of them from each command they run, except `HOME` and `USER`, and
+  `SystemRoot`, `TEMP`, `TMP` and `USERNAME` on Windows, and the
   core's unit tests make their context with `Context::for_unit_test`, which withholds all
   of them, so a variable exported where `cargo test` runs, such as `PITBOARD_CLAUDE`,
   never reaches a test.
@@ -715,8 +745,11 @@ window loads its site, and whatever the site's pages load, as a browser would.
   tests the passwd database is never asked for a home (`host::user::home`): a unit test
   that asks panics, unless it is a test of that lookup and says so, and any other build
   for tests, the command line the integration tests run and an app built with the
-  fixtures among them, is told there is none, which is refused as below.
-- Every home Pitboard reads or writes under is a full path: `HOME`, Pitboard's own
+  fixtures among them, is told there is none, which is refused as below. On Windows every
+  lookup of the account's own folders answers nothing in a build for tests, a unit test
+  that does not say it tests one included.
+- Every home Pitboard reads or writes under is a full path: `HOME`, `USERPROFILE` on
+  Windows, Pitboard's own
   directory, `CLAUDE_CONFIG_DIR` and `CLAUDE_SECURESTORAGE_CONFIG_DIR` where they name a
   folder, and `CODEX_HOME` where it is set. One that is empty or relative is refused with
   `home_not_absolute`, naming the variable, by `home::check_absolute`, which the gate every
@@ -732,6 +765,12 @@ window loads its site, and whatever the site's pages load, as a browser would.
   an answer its callers already have, never one that would let Pitboard act: each tool's
   live chain on Windows is one store whose every call cannot be read (`store::Unbuilt`),
   never Claude Code's file alone, and the Windows face answers as `host/windows` says.
+- A context carries the system its environment was read as, so where the home and
+  Pitboard's default folder are, and how a variable's name compares, are tested for
+  Windows on every system.
+- A `\\?\` path on Windows is for comparing alone. What Pitboard shows, names a lock by or
+  takes for a tool's home is spelled without it, as libuv's realpath and Codex spell a
+  canonical path (`host::without_verbatim_prefix`).
 - With nobody to ask, the command line deletes nothing it was not told to. `forget`,
   `stow` and `uninstall` ask at a terminal, for a person. Through a pipe, from a script or
   with `--json`, each refuses with `confirmation_needed`, exit 2, before it changes
@@ -908,7 +947,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
   `download_destination`, which asks the file system whether each name it tries is taken;
   `app_command_line`, which only joins paths; `can_run`, which asks the file system about
   one path; `pitboard_directory`, which reads the environment it is given and, without
-  `HOME`, this account's passwd entry; `windows_records_key`, which reads only what it is
+  `HOME`, this account's passwd entry, or without `USERPROFILE` on Windows, its profile
+  folder; `windows_records_key`, which reads only what it is
   given; `launch_refusal`, which asks the system whether this process is elevated and which
   build it runs on; and `fixture_names` and `fixture_page`, which read only what they are
   given. `PitboardModel::fixture` and `PitboardModel::fixture_in` make the fixture's world
@@ -2060,6 +2100,9 @@ Replacing a file:
 - 10000 POSIX renames beside a probe reader and a Bun reader that share delete, Bun holding
   each open 50 ms, needed no retry: about 13 s on NTFS on both images, and 2000 took 1.4 s
   on ReFS. No reader saw a torn or empty file.
+- A reader thread in the renaming process itself found the file missing in 10788 of its
+  69694 opens during those renames on windows-2025, and in none on windows-11-arm. Readers in
+  other processes never did.
 - Beside readers that reopen the file without a pause, one not sharing delete,
   `MoveFileExW` fails 5 most of the time. In 180 s it replaced the file 154 times on
   windows-2025, 30 rounds running out of 50 retries, and 2439 times on windows-11-arm, in up

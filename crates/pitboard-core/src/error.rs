@@ -125,7 +125,8 @@ impl Cause {
             P::Malformed { .. }
             | P::ShapeUnexpected { .. }
             | P::Unsupported { .. }
-            | P::NoLogin { .. } => Cause::AnswerNotUnderstood,
+            | P::NoLogin { .. }
+            | P::HomeMissing { .. } => Cause::AnswerNotUnderstood,
             P::InvalidGrant { .. } => Cause::LoginRefused,
         }
     }
@@ -168,6 +169,13 @@ pub enum Error {
         variable: &'static str,
         path: PathBuf,
     },
+
+    #[error(
+        "CODEX_HOME is {}, which is no folder, so Codex does not start. Make that folder, or \
+         unset CODEX_HOME.",
+        path.display()
+    )]
+    CodexHomeMissing { path: PathBuf },
 
     #[error(
         "the login for `{label}` needs {bytes} bytes and `security` reads {limit} from \
@@ -899,6 +907,7 @@ impl Error {
         match self {
             StateOnSyncedDrive { .. } => "state_on_synced_drive",
             HomeNotAbsolute { .. } => "home_not_absolute",
+            CodexHomeMissing { .. } => "codex_home_missing",
             ProgramMissing { tool, .. } => match tool {
                 ProviderId::Claude => "claude_program_missing",
                 ProviderId::Codex => "codex_program_missing",

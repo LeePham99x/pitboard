@@ -136,10 +136,21 @@ pub(crate) fn same_volume(a: &Path, b: &Path) -> io::Result<bool> {
     Ok(nearest(a)?.dev() == nearest(b)?.dev())
 }
 
+// Short names and sync roots are Windows'.
+pub(crate) fn short_path(_path: &Path) -> Option<std::path::PathBuf> {
+    None
+}
+
+pub(crate) fn in_a_sync_root(_path: &Path) -> bool {
+    false
+}
+
 #[cfg(any(test, feature = "test-support"))]
-pub(crate) fn file_id(path: &Path) -> Option<(u64, u64)> {
+pub(crate) fn file_id(path: &Path) -> Option<(u64, u128)> {
     use std::os::unix::fs::MetadataExt;
-    std::fs::metadata(path).map(|it| (it.dev(), it.ino())).ok()
+    std::fs::metadata(path)
+        .map(|it| (it.dev(), u128::from(it.ino())))
+        .ok()
 }
 
 /// Set the modification time of the directory at `path` to `at`.

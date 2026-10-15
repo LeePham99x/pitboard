@@ -41,6 +41,14 @@ struct Cli {
     command: Option<Command>,
 }
 
+// The default folder, by the name a person knows it by on each system.
+const RENEWS_THE_DEFAULT: &str = if cfg!(windows) {
+    "Renew as the daily renewal schedule does: %LOCALAPPDATA%\\Pitboard, whatever \
+     PITBOARD_HOME says"
+} else {
+    "Renew as the daily renewal schedule does: ~/.pitboard, whatever PITBOARD_HOME says"
+};
+
 #[derive(Subcommand)]
 enum Command {
     /// What is signed in, and how much each Claude Code and Codex account has left (the default)
@@ -97,10 +105,9 @@ enum Command {
         // The marker the daily renewal schedule's job runs this with on Linux, where what
         // systemd passes a job is not to be relied on. Hidden from help and the man page,
         // since a person has no reason to type it, but clap_complete writes hidden
-        // arguments into every shell's completions, so the line below is what they show,
-        // as written: it has no Markdown for that reason.
-        /// Renew as the daily renewal schedule does: ~/.pitboard, whatever PITBOARD_HOME says
-        #[arg(long, hide = true)]
+        // arguments into every shell's completions, so `RENEWS_THE_DEFAULT` is what they
+        // show, as written: it has no Markdown for that reason.
+        #[arg(long, hide = true, help = RENEWS_THE_DEFAULT)]
         scheduled: bool,
     },
     /// Keep parked logins alive without running anything yourself
@@ -200,7 +207,8 @@ impl Command {
     /// full path. Every one reads or writes under the homes but the two that print a
     /// generated file; `doctor` says so as a check of its own and checks nothing else; and
     /// `renew` is refused by the gate it asks, of the homes it renews in, since a run of the
-    /// schedule renews `~/.pitboard` whatever `PITBOARD_HOME` says, empty or relative too.
+    /// schedule renews the default folder whatever `PITBOARD_HOME` says, empty or relative
+    /// too.
     fn refuses_a_home_that_is_not_a_full_path(&self) -> bool {
         !matches!(
             self,
@@ -790,8 +798,11 @@ fn schedule(pitboard: &Pitboard, what: &ScheduleCommand) -> Report {
     // From any home but the default one, the schedule is not this home's, and installing
     // it is refused until PITBOARD_HOME is unset.
     let renews_this_home = pitboard.schedule_renews_this_home();
-    let renews_only = "The renewal schedule renews only the parked logins in ~/.pitboard, not \
-                       those in the directory PITBOARD_HOME names.";
+    let default = pitboard.shown(&pitboard.default_directory());
+    let renews_only = format!(
+        "The renewal schedule renews only the parked logins in {default}, not those in the \
+         directory PITBOARD_HOME names."
+    );
     let say = |installed: &Installed| match installed {
         Installed::Yes {
             path,
@@ -822,7 +833,7 @@ fn schedule(pitboard: &Pitboard, what: &ScheduleCommand) -> Report {
                     "Run `pitboard schedule install` to change that.".to_string()
                 } else {
                     format!(
-                        "{renews_only} To turn it on for ~/.pitboard, unset PITBOARD_HOME, \
+                        "{renews_only} To turn it on for {default}, unset PITBOARD_HOME, \
                          then run `pitboard schedule install`."
                     )
                 }
@@ -1010,7 +1021,17 @@ fn log(pitboard: &Pitboard, lines: usize) -> Report {
     )
 }
 
+fn uninstall_question(pitboard: &Pitboard) -> String {
+    format!(
+        "Delete every parked login this Pitboard wrote, the daily renewal schedule and {}? \
+         Each tool stays signed in to the account in use; the others need signing in again. \
+         [y/N] ",
+        pitboard.shown(&pitboard.directory())
+    )
+}
+
 fn uninstall(pitboard: &Pitboard) -> Report {
+    let folder = pitboard.shown(&pitboard.directory());
     changed("uninstall", pitboard.uninstall(), |removed| {
         let mut human = format!(
             "Removed {} parked login(s). The login each tool is signed in with is untouched.\n",
@@ -1034,21 +1055,44 @@ fn uninstall(pitboard: &Pitboard) -> Report {
         }
         if removed.pending > 0 {
             human.push_str(&format!(
-                "{} could not be deleted yet, so ~/.pitboard was kept; run `pitboard \
-                 uninstall` again.\n",
+                "{} could not be deleted yet, so {folder} was kept; run `pitboard uninstall` \
+                 again.\n",
                 removed.pending
             ));
+        } else if removed.warming_up {
+            human.push_str(&format!(
+                "Another Pitboard is warming up an account, in the app or `pitboard watch`, so \
+                 {folder} was kept; run `pitboard uninstall` again once it is done.\n"
+            ));
+        } else if !removed.home_kept_by.is_empty() {
+            let held: Vec<String> = removed
+                .home_kept_by
+                .iter()
+                .map(|path| pitboard.shown(path))
+                .collect();
+            human.push_str(&format!(
+                "{} could not be removed, so {folder} was kept; run `pitboard uninstall` again \
+                 once no program has it open.\n",
+                held.join(", ")
+            ));
         } else if removed.home_removed {
-            human.push_str(
-                "~/.pitboard is gone. Remove Pitboard itself the way you installed it.\n",
-            );
+            human.push_str(&format!(
+                "{folder} is gone. Remove Pitboard itself the way you installed it.\n"
+            ));
         }
+        let kept_by: Vec<String> = removed
+            .home_kept_by
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect();
         (
             json!({
                 "parks_removed": removed.parks,
                 "parks_pending": removed.pending,
                 "parks_left": removed.left,
                 "home_removed": removed.home_removed,
+                "home_kept_by": kept_by,
+                "warming_up": removed.warming_up,
                 "schedule_removed": removed.schedule_removed,
                 "set_aside_removed": removed.set_aside,
             }),
@@ -1220,10 +1264,8 @@ fn main() -> ExitCode {
         Command::Schedule { ref what } => schedule(&pitboard, what),
         Command::Log { lines } => log(&pitboard, lines),
         Command::Uninstall { yes } => {
-            let question = "Delete every parked login this Pitboard wrote, the daily renewal \
-                            schedule and ~/.pitboard? Each tool stays signed in to the account \
-                            in use; the others need signing in again. [y/N] ";
-            match Confirm::of(&pitboard, yes, cli.json, terminal()).ask("uninstall", question) {
+            let question = uninstall_question(&pitboard);
+            match Confirm::of(&pitboard, yes, cli.json, terminal()).ask("uninstall", &question) {
                 Ok(true) => uninstall(&pitboard),
                 Ok(false) => return ExitCode::SUCCESS,
                 Err(refused) => Report::failed(Some("uninstall"), refused),
@@ -1472,7 +1514,6 @@ mod tests {
         use pitboard_core::testing::MemoryHost;
         let mem = MemoryHost::new();
         let home = std::env::temp_dir().join("pitboard-cli-confirm");
-        // Windows has no default Pitboard home yet, and the gate refuses the empty one.
         let pitboard = Pitboard::new(
             Context::new(home.clone())
                 .with_pitboard_home(home.join(".pitboard"))
@@ -1505,6 +1546,85 @@ mod tests {
 
         mem.runs_with(Elevation::Elevated { why: "under sudo" });
         assert_eq!(Confirm::of(&pitboard, false, true, false), Confirm::Go);
+    }
+
+    // Each said `~/.pitboard` whatever `PITBOARD_HOME` named.
+    #[test]
+    fn uninstall_names_the_folder_it_asks_about_and_deletes() {
+        use pitboard_core::testing::MemoryHost;
+        let home = std::env::temp_dir().join(format!(
+            "pitboard-cli-uninstall-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let elsewhere = home.join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).expect("a Pitboard folder");
+        let pitboard = Pitboard::new(
+            Context::new(home.clone())
+                .with_pitboard_home(elsewhere.clone())
+                .with_memory_stores(MemoryHost::new()),
+        );
+        let named = if cfg!(windows) {
+            elsewhere.display().to_string()
+        } else {
+            std::path::Path::new("~")
+                .join("elsewhere")
+                .display()
+                .to_string()
+        };
+        let asked = uninstall_question(&pitboard);
+        assert!(
+            asked.starts_with(&format!(
+                "Delete every parked login this Pitboard wrote, the daily renewal schedule and \
+                 {named}? "
+            )),
+            "{asked}"
+        );
+        let said = uninstall(&pitboard).human;
+        assert!(
+            said.ends_with(&format!(
+                "{named} is gone. Remove Pitboard itself the way you installed it.\n"
+            )),
+            "{said}"
+        );
+        assert!(!elsewhere.exists());
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    // A warm-up's tool runs in a home inside Pitboard's directory while it holds `warm.lock`.
+    #[test]
+    fn uninstall_keeps_the_folder_a_warm_up_runs_in_and_says_so() {
+        use pitboard_core::testing::MemoryHost;
+        let home = std::env::temp_dir().join(format!(
+            "pitboard-cli-uninstall-warm-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let folder = home.join(".pitboard");
+        std::fs::create_dir_all(&folder).expect("a Pitboard folder");
+        let pitboard = Pitboard::new(
+            Context::new(home.clone())
+                .with_pitboard_home(folder.clone())
+                .with_memory_stores(MemoryHost::new()),
+        );
+        let running = std::fs::File::create(folder.join("warm.lock")).expect("a lock");
+        running.lock().expect("held");
+        let said = uninstall(&pitboard);
+        assert!(
+            said.human.ends_with(&format!(
+                "Another Pitboard is warming up an account, in the app or `pitboard watch`, so \
+                 {} was kept; run `pitboard uninstall` again once it is done.\n",
+                pitboard.shown(&folder)
+            )),
+            "{}",
+            said.human
+        );
+        assert!(folder.join("warm.lock").exists());
+        drop(running);
+        let said = uninstall(&pitboard);
+        assert!(said.human.contains("is gone"), "{}", said.human);
+        assert!(!folder.exists());
+        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[test]
@@ -1578,6 +1698,27 @@ mod tests {
             );
             assert!(!file.contains("systemd"), "{shell}: {file}");
         }
+    }
+
+    #[test]
+    fn the_schedules_marker_names_the_default_folder_as_each_system_does() {
+        let renew = Cli::command();
+        let scheduled = renew
+            .find_subcommand("renew")
+            .and_then(|renew| {
+                renew
+                    .get_arguments()
+                    .find(|arg| arg.get_id() == "scheduled")
+            })
+            .and_then(|arg| arg.get_help())
+            .map(ToString::to_string)
+            .expect("its help");
+        let folder = if cfg!(windows) {
+            r"%LOCALAPPDATA%\Pitboard"
+        } else {
+            "~/.pitboard"
+        };
+        assert!(scheduled.contains(folder), "{scheduled}");
     }
 
     /// `schedule status` run while `PITBOARD_HOME` names another directory says that the

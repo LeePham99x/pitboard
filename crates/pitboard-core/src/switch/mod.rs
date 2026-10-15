@@ -3,6 +3,10 @@ use crate::provider::{LoginKind, Provider, ProviderId};
 mod adopt;
 mod auto;
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test sets up its scratch files as a person or a tool would"
+)]
 mod crash;
 pub(crate) mod enroll;
 pub(crate) mod folder;
@@ -10,6 +14,10 @@ pub(crate) mod folder;
 mod foreign;
 mod forget;
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test sets up its scratch files as a person or a tool would"
+)]
 pub(crate) mod harness;
 pub(crate) mod identify;
 mod journal;
@@ -17,6 +25,10 @@ mod journal;
 mod pinned;
 mod refresh;
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test sets up its scratch files as a person or a tool would"
+)]
 mod refusals;
 mod rename;
 pub(crate) mod renew;
@@ -392,7 +404,8 @@ fn unidentified(which: ProviderId, error: provider::ProviderError) -> Error {
             refused: false,
         },
         other @ (provider::ProviderError::ShapeUnexpected { .. }
-        | provider::ProviderError::Unsupported { .. }) => shape(which, other),
+        | provider::ProviderError::Unsupported { .. }
+        | provider::ProviderError::HomeMissing { .. }) => shape(which, other),
         other => Error::IdentityUnverifiable {
             tool: which,
             cause: crate::error::Cause::of_provider(&other),
@@ -1107,6 +1120,7 @@ pub(super) fn shape(tool: ProviderId, error: provider::ProviderError) -> Error {
         provider::ProviderError::Unsupported { reason, .. } => {
             Error::LiveStoreUnsupported { tool, reason }
         }
+        provider::ProviderError::HomeMissing { path, .. } => Error::CodexHomeMissing { path },
         other => Error::LiveCredentialShapeUnexpected {
             tool,
             detail: other.to_string(),
@@ -1177,6 +1191,48 @@ mod tests {
     use super::*;
 
     use std::cell::RefCell;
+
+    #[test]
+    fn a_tools_home_that_names_no_folder_refuses_with_its_own_code() {
+        let path = PathBuf::from("/nowhere/codex");
+        let missing = || provider::ProviderError::HomeMissing {
+            provider: ProviderId::Codex,
+            path: path.clone(),
+        };
+        let codex = ProviderId::Codex;
+        for refused in [shape(codex, missing()), unidentified(codex, missing())] {
+            assert_eq!(refused.code(), "codex_home_missing");
+            assert_eq!(refused.exit_code(), 1);
+            let said = refused.to_string();
+            assert!(said.starts_with("CODEX_HOME is /nowhere/codex, which is no folder"));
+        }
+    }
+
+    // Another run's lock, held in another process: this run waits on nobody and gets nothing,
+    // and the look that waits on nobody finds the switch under way. A lock file that is not
+    // there is nobody's.
+    #[test]
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "a test leaves a switch's record as an interrupted run would"
+    )]
+    fn a_lock_another_process_holds_keeps_a_run_out_and_a_missing_one_holds_nobody() {
+        use crate::helper::{Helper, Job};
+        let m = harness::machine("held-elsewhere");
+        let permit = Permit::for_a_test();
+        let lock = home::dir(&m.ctx).join("state.lock");
+        let _ = std::fs::remove_file(&lock);
+        std::fs::write(home::dir(&m.ctx).join("journal.json"), "{}").expect("a switch's record");
+        assert_eq!(unfinished(&m.ctx), Some(Unfinished::Interrupted));
+        assert!(!lock.exists(), "looking makes no lock");
+
+        let other = Helper::start(Job::Locks, &lock);
+        assert!(try_exclusive(&m.ctx, permit).is_none());
+        assert_eq!(unfinished(&m.ctx), Some(Unfinished::UnderWay));
+        other.stop();
+        assert_eq!(unfinished(&m.ctx), Some(Unfinished::Interrupted));
+        assert!(try_exclusive(&m.ctx, permit).is_some());
+    }
 
     fn failing(message: &str) -> store::Error {
         store::Error::Write(message.into())

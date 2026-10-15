@@ -1655,10 +1655,6 @@ fn the_menu_lists_every_account_under_its_tool() {
 /// only the first launch ever opens the window by itself, as its
 /// testTheFirstLaunchOpensTheWindow reads it.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-)]
 fn a_machine_with_nothing_on_it_says_what_to_do_first() {
     for world in [World::NoClaudeCode, World::Empty, World::FirstLaunch] {
         let launched = made(world);

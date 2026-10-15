@@ -26,7 +26,6 @@ fn a_folder_that_is_holds_or_lies_in_a_login_place_clashes() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "W15: links a test makes on Windows")]
 fn a_link_into_a_login_place_clashes() {
     let root = std::env::temp_dir().join(format!("pitboard-clash-link-{}", std::process::id()));
     let place = root.join(".codex");

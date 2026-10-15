@@ -195,7 +195,10 @@ pub fn find_command_line(
     };
     let own = helper.and_then(|helper| std::fs::canonicalize(helper).ok());
     match own {
-        Some(own) if std::fs::canonicalize(&found).is_ok_and(|resolved| resolved == own) => {
+        Some(own)
+            if std::fs::canonicalize(&found)
+                .is_ok_and(|resolved| OS.same_path(&resolved, &own)) =>
+        {
             CommandLine::Bundled(found)
         }
         _ => CommandLine::Another(found),
@@ -279,6 +282,10 @@ pub(crate) fn write_app_file(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test sets up its scratch files as a person or a tool would"
+)]
 mod tests {
     use super::*;
     use crate::host::Os;
@@ -783,10 +790,6 @@ mod tests {
     /// there yet, and the file private to its owner, whole: read back as it was written, and
     /// in its place what was written last. Nothing kept reads as nothing.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn an_apps_file_is_kept_private_in_pitboards_directory() {
         let root = std::env::temp_dir().join(format!("pitboard-app-file-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
@@ -844,10 +847,6 @@ mod tests {
     /// directories made private where they are not there, the file private and whole, and
     /// nothing kept read as nothing, while a file that cannot be read is an error.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_file_kept_elsewhere_is_kept_as_pitboards_own() {
         let root =
             std::env::temp_dir().join(format!("pitboard-app-elsewhere-{}", std::process::id()));

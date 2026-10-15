@@ -1,6 +1,10 @@
 //! What macOS and Linux do the same way, because both are POSIX: modes, signals, the
 //! passwd database, a login shell, and a service manager asked from the command line.
 
+#[allow(
+    clippy::disallowed_methods,
+    reason = "the face every file and folder Pitboard makes is made through"
+)]
 pub(crate) mod fs;
 pub(crate) mod proc;
 pub(crate) mod service;

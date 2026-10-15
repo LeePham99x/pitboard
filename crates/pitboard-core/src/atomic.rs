@@ -50,6 +50,7 @@ pub(crate) fn write_at(
         let mut file = create_fresh(permit, &temp)?;
         file.write_all(contents)?;
         file.sync_all()?;
+        drop(file);
         if let Perms::MatchExisting = perms {
             fs::copy_access(permit, path, &temp)?;
         }
@@ -129,6 +130,10 @@ pub(crate) fn sweep(permit: Permit, dir: &Path) {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test sets up its scratch files as a person or a tool would"
+)]
 mod tests {
     use super::*;
 
@@ -147,10 +152,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_secret_is_private_however_the_umask_is_set() {
         let dir = scratch("secret");
         let path = dir.join("state.json");
@@ -160,10 +161,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn replacing_leaves_no_temp_file_behind() {
         let dir = scratch("replace");
         let path = dir.join("f.json");
@@ -175,10 +172,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn match_existing_keeps_a_file_as_open_as_it_already_was() {
         let dir = scratch("match");
         let path = dir.join("claude.json");
@@ -195,10 +188,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn match_existing_keeps_a_file_as_closed_as_it_already_was() {
         let dir = scratch("tighter");
         let path = dir.join("claude.json");
@@ -215,10 +204,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn match_existing_defaults_to_private_when_nothing_is_there() {
         let dir = scratch("fresh");
         let path = dir.join("new.json");
@@ -304,10 +289,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_name_left_by_an_earlier_process_with_the_same_pid_is_reclaimed() {
         let dir = scratch("reused-pid");
         let temp = dir.join(".state.json.1.0.pitboard");
@@ -328,10 +309,6 @@ mod tests {
     /// A library shares one process between callers: a status refresh writing usage.json
     /// must never disturb a switch writing state.json beside it.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn writers_in_one_process_never_disturb_each_other() {
         let dir = scratch("threads");
         let writers: Vec<_> = (0..8)
@@ -367,10 +344,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_symlinked_destination_does_not_lend_its_permissions() {
         let dir = scratch("symlink");
         let target = dir.join("elsewhere");

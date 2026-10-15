@@ -45,6 +45,8 @@ pub struct Check {
 pub(crate) struct Facts {
     /// The system these were read on, which is what decides some of the judgements.
     pub(crate) os: Os,
+    // The person's Windows SID, which advice to make a file private names.
+    pub(crate) sid: Option<String>,
     pub(crate) security_tool: Option<String>,
     pub(crate) config_path: PathBuf,
     pub(crate) config: Result<Value, Error>,
@@ -67,6 +69,7 @@ pub(crate) struct Facts {
     /// fallback, and the whole security story on a machine without one.
     pub(crate) readable_by_others: Vec<(String, Access)>,
     pub(crate) machine_id_known: bool,
+    pub(crate) windows: Option<WindowsHomes>,
     /// `CLAUDE_CODE_HOVER_REST`, which switches on the successor credential backend.
     pub(crate) hover_rest_env: bool,
     /// Claude Code's supervisor daemon, where one has ever run for this slot.
@@ -208,6 +211,16 @@ pub(crate) struct CodexFacts {
     /// Every `codex` running as this user, by where it runs from. `None` where that could
     /// not be asked.
     pub(crate) running: Option<Vec<crate::holder::Holding>>,
+}
+
+// What Windows says of the account's folders, beside the home Pitboard reads them from.
+pub(crate) struct WindowsHomes {
+    pub(crate) home: PathBuf,
+    pub(crate) default_pitboard_home: PathBuf,
+    pub(crate) local_app_data: Option<PathBuf>,
+    pub(crate) profile: Option<PathBuf>,
+    pub(crate) codex_home_set: bool,
+    pub(crate) roams: bool,
 }
 
 /// Whose a Codex login is, as its own ID token says. Nothing in here is a secret: the
@@ -422,6 +435,7 @@ pub(crate) fn gather(ctx: &Context) -> Facts {
     let config_account = config.as_ref().ok().and_then(claude::config_account);
     Facts {
         os: crate::host::OS,
+        sid: ctx.sid.clone(),
         security_tool: crate::host::OS
             .secrets_tool()
             .filter(|p| std::fs::metadata(p).is_ok())
@@ -448,6 +462,14 @@ pub(crate) fn gather(ctx: &Context) -> Facts {
         readable_by_others: loose_logins(ctx),
         home,
         machine_id_known: crate::state::machine_id() != crate::state::UNKNOWN_MACHINE,
+        windows: (ctx.os == Os::Windows).then(|| WindowsHomes {
+            home: ctx.home().to_path_buf(),
+            default_pitboard_home: ctx.default_pitboard_home(),
+            local_app_data: crate::host::user::local_app_data(),
+            profile: ctx.profile.clone(),
+            codex_home_set: ctx.codex_home().is_some(),
+            roams: crate::host::user::profile_roams(),
+        }),
         hover_rest_env: ctx.hover_rest,
         daemon: daemon::read(ctx),
         pending_parks: crate::pending::outstanding(ctx, state.as_ref().ok()),
@@ -573,14 +595,9 @@ fn parts_of(document: &Value) -> Vec<(String, usize)> {
     parts
 }
 
-/// Every file on this machine that holds a usable login and is not private to its owner.
-///
-/// Claude Code has no keyring backend outside macOS and Windows, so on Linux its own login
-/// is a plaintext file it chmods to 0600, and Pitboard's parked logins are plaintext files
-/// beside it. That is not Pitboard weakening anything, but it does mean the only thing
-/// between a parked OAuth token and everyone else with an account on the machine is who
-/// the file lets in, and that is something a backup restore, a `cp`, an rsync or a careless
-/// umask quietly changes. So it is looked at rather than assumed.
+// Every file holding a usable login that others may read: who a file lets in is what a
+// restore, a copy or a careless umask changes, and on Windows Claude Code's file takes its
+// folder's access list (Claude Code 2.1.300, RF-C1b).
 fn loose_logins(ctx: &Context) -> Vec<(String, Access)> {
     let mut loose = Vec::new();
     let mut look = |path: PathBuf| {
@@ -769,6 +786,61 @@ fn elevated(os: Os, elevation: crate::host::Elevation) -> Option<Check> {
     ))
 }
 
+// Each only where it is so, as a person on Windows would not otherwise find out.
+fn judge_windows_homes(facts: &Facts) -> Vec<Check> {
+    let Some(windows) = &facts.windows else {
+        return Vec::new();
+    };
+    let same = |a: &std::path::Path, b: &std::path::Path| Os::Windows.same_path(a, b);
+    let mut checks = Vec::new();
+    if let Some(local) = &windows.local_app_data
+        && !same(&local.join("Pitboard"), &windows.default_pitboard_home)
+    {
+        checks.push(warn(
+            "local_app_data",
+            "local app data",
+            format!(
+                "Windows keeps this account's local app data in {}",
+                local.display()
+            ),
+            format!(
+                "Pitboard keeps its folder in {} whatever Windows says, so a run of the \
+                 renewal schedule and one by hand use the same folder.",
+                windows.default_pitboard_home.display()
+            ),
+        ));
+    }
+    let codex = |folder: &std::path::Path| folder.join(".codex");
+    if let Some(profile) = windows
+        .profile
+        .as_deref()
+        .filter(|_| !windows.codex_home_set)
+        && !same(&codex(profile), &codex(&windows.home))
+    {
+        checks.push(warn(
+            "codex_installer_home",
+            "Codex's home",
+            format!(
+                "Codex keeps its login in {}, and its installer, install.ps1, in {}",
+                codex(profile).display(),
+                codex(&windows.home).display()
+            ),
+            "Set CODEX_HOME, so both use one folder.",
+        ));
+    }
+    if windows.roams {
+        checks.push(warn(
+            "roaming_profile",
+            "roaming profile",
+            "this Windows profile roams",
+            "Claude Code's and Codex's logins in it go to every computer this account signs in \
+             to, as their Credential Manager items do. Pitboard's own folder, in AppData\\Local, \
+             stays on this one.",
+        ));
+    }
+    checks
+}
+
 fn too_old(floor: crate::host::Floor) -> Option<Check> {
     let said = match floor {
         crate::host::Floor::Met => return None,
@@ -824,11 +896,18 @@ fn fail(
     }
 }
 
-/// The end of a sentence of advice that says what to run, from `: ` to its full stop, where
-/// Pitboard can say a command, and the full stop alone where it cannot
-/// ([`Os::make_private_command`]).
-fn running(command: Option<String>) -> String {
-    command.map_or_else(|| ".".into(), |command| format!(": `{command}`."))
+// Each command to run, in backticks, or `None` where Pitboard can say none.
+fn commands(said: &[String]) -> Option<String> {
+    match said {
+        [] => None,
+        [one] => Some(format!("`{one}`")),
+        [all @ .., last] => Some(format!("`{}` and `{last}`", all.join("`, `"))),
+    }
+}
+
+// The end of a sentence of advice, from `: ` to its full stop.
+fn running(said: &[String]) -> String {
+    commands(said).map_or_else(|| ".".into(), |commands| format!(": {commands}."))
 }
 
 pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
@@ -1024,20 +1103,19 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
         Some(access) if !access.shared => {
             ok("home", "Pitboard home", facts.home.display().to_string())
         }
-        Some(access) => {
-            warn(
-                "home",
-                "Pitboard home",
-                format!("{} is {}", facts.home.display(), access.described),
-                format!(
-                    "Park names contain account identifiers, so only you should read it{}",
-                    running(facts.os.make_private_command(
-                        Kind::Directory,
-                        &[&facts.home.display().to_string()]
-                    ))
-                ),
-            )
-        }
+        Some(access) => warn(
+            "home",
+            "Pitboard home",
+            format!("{} is {}", facts.home.display(), access.described),
+            format!(
+                "Park names contain account identifiers, so only you should read it{}",
+                running(&facts.os.make_private_commands(
+                    Kind::Directory,
+                    &[&facts.home.display().to_string()],
+                    facts.sid.as_deref(),
+                ))
+            ),
+        ),
     });
 
     checks.push(if facts.readable_by_others.is_empty() {
@@ -1057,17 +1135,26 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
             "logins on disk",
             names.join("; "),
             format!(
-                "These hold usable OAuth tokens in plain text, which is how Claude Code \
-                 stores them where there is no keychain. Anyone else on this machine can \
-                 read them{}",
+                "{}{}",
+                match facts.os {
+                    Os::MacOs | Os::Linux =>
+                        "These hold usable OAuth tokens in plain text, which is how Claude \
+                         Code stores them where there is no keychain. Anyone else on this \
+                         machine can read them",
+                    Os::Windows =>
+                        "These hold usable OAuth tokens in plain text, and Claude Code's file \
+                         takes the access list of the folder it is in. Anyone else on this \
+                         PC can read them",
+                },
                 running(
-                    facts.os.make_private_command(
+                    &facts.os.make_private_commands(
                         Kind::Any,
                         &facts
                             .readable_by_others
                             .iter()
                             .map(|(path, _)| path.as_str())
-                            .collect::<Vec<_>>()
+                            .collect::<Vec<_>>(),
+                        facts.sid.as_deref(),
                     )
                 ),
             ),
@@ -1160,11 +1247,15 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
             "machine_id",
             "machine id",
             "this machine has no stable identifier",
-            "Pitboard cannot tell this machine from another that also lacks one, so it cannot \
-             refuse state copied between them. Never copy ~/.pitboard between machines.",
+            format!(
+                "Pitboard cannot tell this machine from another that also lacks one, so it \
+                 cannot refuse state copied between them. Never copy {} between machines.",
+                facts.home.display()
+            ),
         ));
     }
 
+    checks.extend(judge_windows_homes(facts));
     checks.push(judge_storage_v5(facts));
     checks.push(judge_daemon(facts));
     checks.push(judge_pending(facts));
@@ -1182,10 +1273,22 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
     // Only where there is a Codex to say something about. A machine that has never run it
     // reads exactly as it did before Pitboard knew Codex existed.
     if codex_here || !codex_parks.is_empty() {
-        checks.extend(judge_codex(facts.os, &facts.codex, &codex_parks, facts.now));
+        checks.extend(judge_codex(
+            facts.os,
+            facts.sid.as_deref(),
+            &facts.codex,
+            &codex_parks,
+            facts.now,
+        ));
     }
     if let (Some(desktop), Ok(state)) = (&facts.desktop, &facts.state) {
-        checks.extend(judge_desktop(desktop, state, &facts.parks, facts.now));
+        checks.extend(judge_desktop(
+            facts.os,
+            desktop,
+            state,
+            &facts.parks,
+            facts.now,
+        ));
     }
     if !claude_here {
         checks.retain(|check| !CLAUDE_CODES_OWN.contains(&check.code));
@@ -2106,7 +2209,13 @@ fn judge_daemon(facts: &Facts) -> Check {
 ///   and nothing more, so somebody who uses Pitboard for Claude Code alone is not handed a
 ///   warning about a setting they chose and Pitboard has no business with.
 /// - A fact, such as how many sessions are running, which is only ever stated.
-fn judge_codex(os: Os, facts: &CodexFacts, parks: &[&ParkFact], now: i64) -> Vec<Check> {
+fn judge_codex(
+    os: Os,
+    sid: Option<&str>,
+    facts: &CodexFacts,
+    parks: &[&ParkFact],
+    now: i64,
+) -> Vec<Check> {
     let mut checks = Vec::new();
     let enrolled = facts.enrolled > 0 || !parks.is_empty();
     let broken = |code, name: &str, detail: String, advice: String| {
@@ -2196,11 +2305,20 @@ fn judge_codex(os: Os, facts: &CodexFacts, parks: &[&ParkFact], now: i64) -> Vec
                 "Codex login file",
                 format!("{} is {}", facts.auth_file.display(), access.described),
                 format!(
-                    "It holds a usable login in plain text, and Codex sets 0600 only when it \
-                     creates the file, never on a later write{}",
-                    running(os.make_private_command(
+                    "{}{}",
+                    match os {
+                        // Codex 0.162.1's file store sets its mode under `cfg(unix)` alone.
+                        Os::MacOs | Os::Linux =>
+                            "It holds a usable login in plain text, and Codex sets 0600 only \
+                             when it creates the file, never on a later write",
+                        Os::Windows =>
+                            "It holds a usable login in plain text, and Codex gives it no \
+                             access list of its own, so it takes its folder's",
+                    },
+                    running(&os.make_private_commands(
                         Kind::File,
-                        &[&facts.auth_file.display().to_string()]
+                        &[&facts.auth_file.display().to_string()],
+                        sid,
                     ))
                 ),
             ),
@@ -2309,7 +2427,13 @@ fn judge_codex_version(facts: &CodexFacts) -> Check {
 }
 
 // Claude Desktop's section, after Codex's.
-fn judge_desktop(facts: &DesktopFacts, state: &State, parks: &[ParkFact], now: i64) -> Vec<Check> {
+fn judge_desktop(
+    os: Os,
+    facts: &DesktopFacts,
+    state: &State,
+    parks: &[ParkFact],
+    now: i64,
+) -> Vec<Check> {
     use crate::provider::folder::{Sidecar, Unfit, Unread};
     let mut checks = Vec::new();
     let folder = "Claude data folder";
@@ -2462,7 +2586,13 @@ fn judge_desktop(facts: &DesktopFacts, state: &State, parks: &[ParkFact], now: i
                     "desktop_parks_folder",
                     name,
                     format!("{parks_dir} can be reached by others"),
-                    format!("Run `chmod 700 {parks_dir}`."),
+                    // Claude Desktop is macOS only, so no SID is ever named.
+                    commands(&os.make_private_commands(
+                        Kind::Directory,
+                        &[&parks_dir.to_string()],
+                        None,
+                    ))
+                    .map_or_else(String::new, |commands| format!("Run {commands}.")),
                 ),
                 crate::host::Private::Link => fail(
                     "desktop_parks_folder",
@@ -2816,9 +2946,9 @@ fn unplaced(ctx: &Context, variable: &str, path: &std::path::Path) -> Diagnosis 
             .chain(std::iter::once(homes))
             .collect(),
         environment: json!({}),
-        redaction: crate::redact::Sheet::new(
+        redaction: crate::redact::Sheet::of(
+            ctx,
             format!("{}:{}", crate::state::machine_id(), ctx.now_millis()),
-            ctx.home().to_string_lossy(),
         ),
     }
 }
@@ -2828,9 +2958,9 @@ fn unplaced(ctx: &Context, variable: &str, path: &std::path::Path) -> Diagnosis 
 /// The salt is this machine and this moment, so identifiers line up inside one report and
 /// two reports from one machine do not line up with each other. It is never printed.
 fn redaction_for(ctx: &Context, facts: &Facts) -> crate::redact::Sheet {
-    let mut sheet = crate::redact::Sheet::new(
+    let mut sheet = crate::redact::Sheet::of(
+        ctx,
         format!("{}:{}", crate::state::machine_id(), ctx.now_millis()),
-        ctx.home().to_string_lossy(),
     )
     .hide(facts.account.clone(), "user");
 
@@ -2940,6 +3070,10 @@ pub fn healthy(checks: &[Check]) -> bool {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test sets up its scratch files as a person or a tool would"
+)]
 mod tests {
     use super::*;
     use crate::service::Permit;
@@ -3028,7 +3162,7 @@ mod tests {
         state
             .accounts
             .push(desktop_account("work", Some(folder_park("p", None))));
-        let checks = judge_desktop(&desktop(), &state, &[], NOW);
+        let checks = judge_desktop(Os::MacOs, &desktop(), &state, &[], NOW);
         assert!(!checks.is_empty());
         for check in checks {
             assert_eq!(
@@ -3070,7 +3204,7 @@ mod tests {
         );
         let mut facts = desktop();
         facts.one_volume = Some(false);
-        let checks = judge_desktop(&facts, &state, &[], NOW);
+        let checks = judge_desktop(Os::MacOs, &facts, &state, &[], NOW);
         let moved = said(&checks, "desktop_move");
         assert_eq!(moved.len(), 1, "{moved:?}");
         assert_eq!(moved[0].0, Level::Warn);
@@ -3092,7 +3226,7 @@ mod tests {
 
         state.moving.clear();
         facts.one_volume = Some(true);
-        let checks = judge_desktop(&facts, &state, &[], NOW);
+        let checks = judge_desktop(Os::MacOs, &facts, &state, &[], NOW);
         assert!(said(&checks, "desktop_move").is_empty());
         assert_eq!(said(&checks, "desktop_parks_folder")[0].0, Level::Ok);
     }
@@ -3141,7 +3275,7 @@ mod tests {
         });
         facts.parked_here = vec![("home-1".into(), Ok(true)), ("old-1".into(), Ok(true))];
         facts.build = Some("2.31226.1".into());
-        let checks = judge_desktop(&facts, &state, &parks, NOW);
+        let checks = judge_desktop(Os::MacOs, &facts, &state, &parks, NOW);
         let codes: Vec<&str> = checks.iter().map(|c| c.code).collect();
         assert_eq!(
             codes,
@@ -3198,7 +3332,7 @@ mod tests {
         facts.private = Some(crate::host::Private::Shared);
         facts.signed_out = true;
         facts.build = None;
-        let checks = judge_desktop(&facts, &state, &parks, NOW);
+        let checks = judge_desktop(Os::MacOs, &facts, &state, &parks, NOW);
         assert_eq!(
             said(&checks, "desktop_layout"),
             [(
@@ -3222,6 +3356,10 @@ mod tests {
             settings.advice
         );
         assert_eq!(said(&checks, "desktop_parks_folder")[0].0, Level::Fail);
+        assert_eq!(
+            check(&checks, "desktop_parks_folder").advice,
+            "Run `chmod 700 /Users/dana/.pitboard/parks`."
+        );
         assert!(
             said(&checks, "desktop_login")[0]
                 .1
@@ -3246,7 +3384,7 @@ mod tests {
             ),
         ] {
             facts.refused = Some(unfit);
-            let checks = judge_desktop(&facts, &state, &parks, NOW);
+            let checks = judge_desktop(Os::MacOs, &facts, &state, &parks, NOW);
             let folder = checks
                 .iter()
                 .find(|c| c.code == "desktop_data_folder")
@@ -3261,7 +3399,7 @@ mod tests {
         facts.settings = Some(Ok((Sidecar::Valid, true)));
         facts.root = Err("`HOME` names another folder than this account's own".into());
         facts.own_home = Some(PathBuf::from("/Users/dana"));
-        let checks = judge_desktop(&facts, &state, &parks, NOW);
+        let checks = judge_desktop(Os::MacOs, &facts, &state, &parks, NOW);
         let folder = checks
             .iter()
             .find(|c| c.code == "desktop_data_folder")
@@ -3302,7 +3440,7 @@ mod tests {
         std::fs::remove_file(m.ctx_home().join("claude/data/config.json")).expect("removed");
         let facts = desktop_facts(&m.ctx, &state).expect("an account is enrolled");
         assert_eq!(facts.settings, Some(Ok((Sidecar::None, false))));
-        let checks = judge_desktop(&facts, &state, &[], switch::harness::NOW);
+        let checks = judge_desktop(Os::MacOs, &facts, &state, &[], switch::harness::NOW);
         assert_eq!(
             said(&checks, "desktop_settings"),
             [(Level::Ok, "no config.json yet".into())]
@@ -3348,7 +3486,7 @@ mod tests {
         crate::host::fs::testing::make_private(&parks_dir).expect("parks open again");
         let facts = facts.expect("an account is enrolled");
         let parks = park_facts(&m.ctx, &state);
-        let checks = judge_desktop(&facts, &state, &parks, switch::harness::NOW);
+        let checks = judge_desktop(Os::MacOs, &facts, &state, &parks, switch::harness::NOW);
         let home = checks
             .iter()
             .find(|c| c.code == "desktop_parked_login" && c.name == "account desktop/home")
@@ -3387,7 +3525,7 @@ mod tests {
         });
         let facts = desktop_facts(&m.ctx, &state).expect("a folder set aside shows Claude Desktop");
         let parks = park_facts(&m.ctx, &state);
-        let checks = judge_desktop(&facts, &state, &parks, switch::harness::NOW);
+        let checks = judge_desktop(Os::MacOs, &facts, &state, &parks, switch::harness::NOW);
         let folder = checks
             .iter()
             .find(|c| c.code == "desktop_data_folder")
@@ -3457,7 +3595,7 @@ mod tests {
             },
         );
         let set_aside = |state: &State| {
-            let checks = judge_desktop(&desktop(), state, &[], NOW);
+            let checks = judge_desktop(Os::MacOs, &desktop(), state, &[], NOW);
             said(&checks, "desktop_set_aside")
         };
         assert!(set_aside(&state).is_empty(), "none set aside, nothing said");
@@ -3586,7 +3724,7 @@ mod tests {
             doubt: Some(crate::in_use::Doubt::NamedMoved),
             own_record: Some(state.accounts[0].owner()),
         });
-        let checks = judge_desktop(&facts, &state, &[], NOW);
+        let checks = judge_desktop(Os::MacOs, &facts, &state, &[], NOW);
         let login = said(&checks, "desktop_login");
         let warned = crate::service::Warning::InUseUnconfirmed {
             tool: ProviderId::Desktop,
@@ -3650,6 +3788,7 @@ mod tests {
     fn facts() -> Facts {
         Facts {
             os: crate::host::OS,
+            sid: None,
             security_tool: Some("/usr/bin/security".into()),
             config_path: PathBuf::from("/home/x/.claude.json"),
             config: Ok(json!({"oauthAccount": {}})),
@@ -3679,6 +3818,7 @@ mod tests {
             home_access: Some(mode(0o700)),
             readable_by_others: Vec::new(),
             machine_id_known: true,
+            windows: None,
             hover_rest_env: false,
             daemon: None,
             pending_parks: Vec::new(),
@@ -3764,26 +3904,112 @@ mod tests {
         );
     }
 
-    /// Advice to make something private ends with the command that does, where Pitboard can
-    /// say one, and with the sentence alone where it cannot, as on Windows until it reads who
-    /// may read a file.
+    const SID: &str = "S-1-5-21-1004336348-1177238915-682003330-1001";
+
+    // On Windows one `icacls` a path, and none where the person's SID could not be read.
     #[test]
     fn advice_names_a_command_only_where_there_is_one() {
         assert_eq!(
-            running(Os::MacOs.make_private_command(Kind::File, &["/a"])),
+            running(&Os::MacOs.make_private_commands(Kind::File, &["/a"], Some(SID))),
             ": `chmod 600 /a`."
         );
         assert_eq!(
-            running(Os::Linux.make_private_command(Kind::Directory, &["/a", "/b"])),
+            running(&Os::Linux.make_private_commands(Kind::Directory, &["/a", "/b"], None)),
             ": `chmod 700 /a /b`."
         );
-        assert_eq!(Os::Windows.make_private_command(Kind::Any, &["/a"]), None);
-        assert_eq!(running(None), ".");
+        let windows =
+            Os::Windows.make_private_commands(Kind::Any, &[r"C:\a", r"C:\b c"], Some(SID));
+        assert_eq!(
+            windows,
+            [r"C:\a", r"C:\b c"].map(|path| crate::host::acl::icacls(Kind::Any, path, SID))
+        );
+        assert_eq!(
+            running(&windows),
+            format!(": `{}` and `{}`.", windows[0], windows[1])
+        );
+        assert!(
+            Os::Windows
+                .make_private_commands(Kind::Any, &[r"C:\a"], None)
+                .is_empty()
+        );
+        assert_eq!(running(&[]), ".");
+    }
+
+    fn open_to_users() -> Access {
+        Access {
+            shared: true,
+            described: "open to Users, you, SYSTEM and Administrators".into(),
+        }
+    }
+
+    #[test]
+    fn a_login_others_on_a_windows_pc_can_read_is_made_private_one_path_at_a_time() {
+        let mut f = facts();
+        f.os = Os::Windows;
+        f.sid = Some(SID.into());
+        let (claude, park) = (
+            r"C:\Users\dana\.claude\.credentials.json",
+            r"C:\Users\dana\AppData\Local\Pitboard\vault\pitboard-park-x.json",
+        );
+        f.readable_by_others = vec![
+            (claude.into(), open_to_users()),
+            (park.into(), open_to_users()),
+        ];
+        let checks = evaluate(&f);
+        let found = check(&checks, "private_on_disk");
+        assert_eq!(found.level, Level::Fail);
+        assert_eq!(
+            found.detail,
+            format!(
+                "{claude} is open to Users, you, SYSTEM and Administrators; {park} is open to \
+                 Users, you, SYSTEM and Administrators"
+            )
+        );
+        let [claude, park] =
+            [claude, park].map(|path| crate::host::acl::icacls(Kind::Any, path, SID));
+        assert_eq!(
+            found.advice,
+            format!(
+                "These hold usable OAuth tokens in plain text, and Claude Code's file takes the \
+                 access list of the folder it is in. Anyone else on this PC can read them: \
+                 `{claude}` and `{park}`."
+            )
+        );
+        f.sid = None;
+        assert!(
+            check(&evaluate(&f), "private_on_disk")
+                .advice
+                .ends_with("can read them."),
+            "no command without the SID"
+        );
+    }
+
+    #[test]
+    fn a_pitboard_folder_others_on_a_windows_pc_can_read_says_so() {
+        let mut f = facts();
+        f.os = Os::Windows;
+        f.sid = Some(SID.into());
+        f.home = PathBuf::from(r"C:\Users\dana\AppData\Local\Pitboard");
+        f.home_access = Some(open_to_users());
+        let checks = evaluate(&f);
+        let home = check(&checks, "home");
+        assert_eq!(home.level, Level::Warn);
+        assert_eq!(
+            home.detail,
+            r"C:\Users\dana\AppData\Local\Pitboard is open to Users, you, SYSTEM and Administrators"
+        );
+        assert_eq!(
+            home.advice,
+            format!(
+                "Park names contain account identifiers, so only you should read it: `{}`.",
+                crate::host::acl::icacls(Kind::Directory, &f.home.display().to_string(), SID)
+            )
+        );
     }
 
     /// Codex's section for a machine with no Codex accounts parked.
     fn codex_checks(codex: &CodexFacts) -> Vec<Check> {
-        judge_codex(crate::host::OS, codex, &[], NOW)
+        judge_codex(crate::host::OS, None, codex, &[], NOW)
     }
 
     /// A machine whose Codex is signed in, with its login where it should be.
@@ -3853,7 +4079,6 @@ mod tests {
     /// looked at a file's mode. A gatherer that returns an empty list whatever the disk
     /// says would pass every one of those tests.
     #[test]
-    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn a_world_readable_park_is_found_on_the_disk() {
         use crate::host::fs::testing;
 
@@ -3885,12 +4110,9 @@ mod tests {
     /// mode bit. A backup restore, a `cp -r`, an rsync or a careless umask changes one
     /// quietly, and nothing else in Pitboard would ever mention it.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W15: who else can read a login on Windows, and the command that makes one private"
-    )]
     fn a_login_anyone_on_this_machine_can_read_is_a_failure() {
         let mut f = facts();
+        f.os = Os::Linux;
         assert_eq!(check(&evaluate(&f), "private_on_disk").level, Level::Ok);
 
         f.readable_by_others = vec![
@@ -5078,8 +5300,15 @@ mod tests {
     fn a_machine_without_a_stable_identifier_is_flagged() {
         let mut f = facts();
         f.machine_id_known = false;
+        f.home = PathBuf::from("/elsewhere/pitboard");
         let checks = evaluate(&f);
         assert_eq!(check(&checks, "machine_id").level, Level::Warn);
+        assert!(
+            check(&checks, "machine_id")
+                .advice
+                .ends_with("Never copy /elsewhere/pitboard between machines."),
+            "the folder in use"
+        );
         assert!(evaluate(&facts()).iter().all(|c| c.code != "machine_id"));
     }
 
@@ -5824,7 +6053,6 @@ mod tests {
     /// nothing. Only the two directories above the program are looked at, names first, so a
     /// standalone install is named without opening any file inside it.
     #[test]
-    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn a_version_is_read_out_of_each_way_codex_is_installed() {
         use crate::host::fs::testing;
 
@@ -5872,18 +6100,28 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W15: who else can read a login on Windows, and the command that makes one private"
-    )]
     fn a_codex_login_anybody_can_read_or_nobody_can_parse_is_said() {
         let mut codex = with_codex();
         codex.auth_access = Some(mode(0o644));
-        let checks = codex_checks(&codex);
+        let checks = judge_codex(Os::Linux, None, &codex, &[], NOW);
         let file = check(&checks, "codex_auth_file");
         assert_eq!(file.level, Level::Warn);
         assert!(file.detail.contains("mode 644"), "{}", file.detail);
         assert!(file.advice.contains("chmod 600"), "{}", file.advice);
+
+        codex.auth_file = PathBuf::from(r"C:\Users\dana\.codex\auth.json");
+        codex.auth_access = Some(open_to_users());
+        let checks = judge_codex(Os::Windows, Some(SID), &codex, &[], NOW);
+        let file = check(&checks, "codex_auth_file");
+        assert_eq!(file.level, Level::Warn);
+        assert_eq!(
+            file.advice,
+            format!(
+                "It holds a usable login in plain text, and Codex gives it no access list of \
+                 its own, so it takes its folder's: `{}`.",
+                crate::host::acl::icacls(Kind::File, r"C:\Users\dana\.codex\auth.json", SID)
+            )
+        );
 
         codex.auth_access = Some(mode(0o600));
         codex.login = Err(CodexLoginTrouble::Unusable(
@@ -6288,6 +6526,61 @@ mod tests {
         assert_eq!(codes, ["system_too_old", "elevated", "homes"]);
     }
 
+    // RF-B1 measured the profile, local app data and the home agreeing on a local profile.
+    #[test]
+    fn doctor_says_where_windows_keeps_an_accounts_folders_apart_from_the_home() {
+        let home = PathBuf::from("C:").join("Users").join("x");
+        let measured = || WindowsHomes {
+            home: home.clone(),
+            default_pitboard_home: Os::Windows.default_pitboard_home(&home),
+            local_app_data: Some(home.join("AppData").join("Local")),
+            profile: Some(home.clone()),
+            codex_home_set: false,
+            roams: false,
+        };
+        let codes = |windows: Option<WindowsHomes>| {
+            let mut facts = facts();
+            facts.windows = windows;
+            judge_windows_homes(&facts)
+                .iter()
+                .map(|check| (check.code, check.level))
+                .collect::<Vec<_>>()
+        };
+        assert!(codes(None).is_empty());
+        assert!(codes(Some(measured())).is_empty());
+        let in_any_case = PathBuf::from("c:").join("users").join("X");
+        let other_case = WindowsHomes {
+            local_app_data: Some(in_any_case.join("appdata").join("local")),
+            profile: Some(in_any_case),
+            ..measured()
+        };
+        assert!(codes(Some(other_case)).is_empty());
+        let moved = WindowsHomes {
+            local_app_data: Some(PathBuf::from("D:").join("Local")),
+            ..measured()
+        };
+        assert_eq!(codes(Some(moved)), [("local_app_data", Level::Warn)]);
+        let elsewhere = PathBuf::from("C:").join("Users").join("y");
+        let parted = || WindowsHomes {
+            profile: Some(elsewhere.clone()),
+            ..measured()
+        };
+        assert_eq!(
+            codes(Some(parted())),
+            [("codex_installer_home", Level::Warn)]
+        );
+        let named = WindowsHomes {
+            codex_home_set: true,
+            ..parted()
+        };
+        assert!(codes(Some(named)).is_empty(), "CODEX_HOME names one folder");
+        let roams = WindowsHomes {
+            roams: true,
+            ..measured()
+        };
+        assert_eq!(codes(Some(roams)), [("roaming_profile", Level::Warn)]);
+    }
+
     /// With neither tool present, a new machine is told what to do first, as it always was.
     #[test]
     fn a_machine_with_neither_tool_still_hears_about_claude_code() {
@@ -6301,13 +6594,15 @@ mod tests {
     /// nothing else, since every other check reads under one of the homes. It read Claude
     /// Code's and Pitboard's files under whatever folder it was run from.
     #[test]
-    #[cfg_attr(windows, ignore = "W14: Pitboard's own folder on Windows")]
     fn doctor_checks_nothing_under_a_home_that_is_not_a_full_path() {
         use crate::context::Environment;
+        let variable = crate::host::OS.home_variable();
+        let full = std::env::temp_dir().to_string_lossy().into_owned();
+        let empty = format!("{variable} is empty");
         for (pairs, said) in [
-            (&[("HOME", "")][..], "HOME is empty"),
+            (&[(variable, "")][..], empty.as_str()),
             (
-                &[("HOME", "/Users/x"), ("CODEX_HOME", "codex")],
+                &[(variable, full.as_str()), ("CODEX_HOME", "codex")],
                 "CODEX_HOME is `codex`, which is not a full path",
             ),
         ] {

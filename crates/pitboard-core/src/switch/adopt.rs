@@ -127,6 +127,10 @@ pub(crate) fn adopt(ctx: &Context, permit: Permit) -> Result<Option<Adopted>> {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test sets up its scratch files as a person or a tool would"
+)]
 mod tests {
     use super::*;
     use crate::host::memory::MemoryHost;
@@ -401,10 +405,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_home_from_another_machine_keeps_its_accounts_and_loses_its_logins() {
         let (ctx, mem, _scratch) = machine();
         let service = from_elsewhere(&ctx, &mem);
@@ -447,10 +447,6 @@ mod tests {
     /// account has a login yet, and each has the same way back, so none is said to have had
     /// its login replaced.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_login_replaced_on_another_machine_is_not_said_here() {
         let (ctx, mem, _scratch) = machine();
         from_elsewhere(&ctx, &mem);
@@ -481,10 +477,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn adopting_a_home_that_is_already_this_machines_does_nothing() {
         let (ctx, _mem, _scratch) = machine();
         let mut state = State::default();
@@ -513,7 +505,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn adopting_an_empty_home_is_not_an_error() {
         let (ctx, _mem, _scratch) = machine();
         assert_eq!(adopt(&ctx, Permit::for_a_test()).expect("adopting"), None);

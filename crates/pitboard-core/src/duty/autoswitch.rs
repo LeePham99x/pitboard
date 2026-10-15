@@ -1875,10 +1875,6 @@ mod tests {
     /// its own reset, a limit already left was switched away from again when an answer gave
     /// it a second later.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_window_is_kept_while_a_reading_of_it_may_still_run() {
         let rows = [work_at(96.0), spare()];
         let state = state_of(&rows);

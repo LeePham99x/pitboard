@@ -386,6 +386,10 @@ pub(crate) fn outstanding(ctx: &Context, state: Option<&State>) -> Vec<String> {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test sets up its scratch files as a person or a tool would"
+)]
 mod tests {
     use super::*;
     use crate::host::memory::MemoryHost;
@@ -444,10 +448,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_name_claimed_but_never_written_to_is_simply_dropped() {
         let (ctx, _mem, root) = machine("never-written");
         reserve(
@@ -469,10 +469,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_name_the_state_records_is_not_outstanding() {
         let (ctx, _mem, root) = machine("recorded");
         let service = "pitboard-park-acc-1760000000000";
@@ -626,10 +622,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn an_orphan_goes_back_to_the_account_whose_name_it_carries() {
         let (ctx, mem, root) = machine("adopt");
         let service = "pitboard-park-acc-1760000000000";
@@ -696,10 +688,6 @@ mod tests {
     /// Two copies of one refresh chain is the state that ends a login for both holders, so
     /// the copy nothing names loses.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_second_copy_of_the_chain_an_account_holds_is_deleted() {
         let held = "pitboard-park-acc-1750000000000";
         let orphan = "pitboard-park-acc-1760000000000";
@@ -720,10 +708,6 @@ mod tests {
     /// An orphan older than what the account holds is left over from before it, and the
     /// recorded copy is the one Pitboard renews.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn an_older_copy_than_the_one_an_account_holds_is_deleted() {
         let held = "pitboard-park-acc-1760000000000";
         let orphan = "pitboard-park-acc-1750000000000";
@@ -744,10 +728,6 @@ mod tests {
     /// writing and recording leaves. The service spent the older copy's chain when it
     /// answered, so the newer one is the account's only working login and replaces it.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_newer_copy_written_here_replaces_the_one_an_account_holds() {
         let held = "pitboard-park-acc-1750000000000";
         let orphan = "pitboard-park-acc-1760000000000";
@@ -766,10 +746,6 @@ mod tests {
 
     /// A store that could not answer says nothing about what is in it.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn an_item_that_cannot_be_read_stays_listed_rather_than_being_guessed_at() {
         let (ctx, mem, root) = machine("unreadable");
         let service = "pitboard-park-acc-1760000000000";
@@ -796,10 +772,6 @@ mod tests {
     /// wrote a name down for, because the home was lost, or because it was parked by a
     /// version that kept no list. Only asking the store finds it.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn asking_the_store_finds_a_login_the_list_never_knew_about() {
         let (ctx, mem, root) = machine("reclaim");
         let service = "pitboard-park-acc-1760000000000";
@@ -848,7 +820,6 @@ mod tests {
     /// for is not evidence of an orphan, it is evidence of another Pitboard, and deleting
     /// it would end that account's session for somebody who never ran this command.
     #[test]
-    #[cfg_attr(windows, ignore = "W15: files made private to the person on Windows")]
     fn a_login_this_pitboard_never_wrote_down_is_reported_and_not_touched() {
         let (ctx, mem, root) = machine("stranger");
         let service = "pitboard-park-stranger-1760000000000";
@@ -875,10 +846,6 @@ mod tests {
     /// The one case where being sure is possible: this Pitboard wrote the name down, wrote
     /// a login into it, and nothing here recorded it.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_login_this_pitboard_wrote_down_and_nothing_wants_is_deleted() {
         let (ctx, mem, root) = machine("our-orphan");
         let service = "pitboard-park-stranger-1760000000000";
@@ -895,10 +862,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn a_name_the_state_already_carries_is_not_swept_at_all() {
         let (ctx, mem, root) = machine("already-named");
         let service = "pitboard-park-acc-1760000000000";

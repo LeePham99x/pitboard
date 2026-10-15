@@ -3,7 +3,7 @@ use crate::host::{Elevation, Floor};
 use std::path::PathBuf;
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
 use windows_sys::Win32::Security::{
-    GetTokenInformation, IsWellKnownSid, TOKEN_ELEVATION, TOKEN_ELEVATION_TYPE, TOKEN_QUERY,
+    GetTokenInformation, IsWellKnownSid, PSID, TOKEN_ELEVATION, TOKEN_ELEVATION_TYPE, TOKEN_QUERY,
     TOKEN_USER, TokenElevation, TokenElevationType, TokenUser, WinLocalServiceSid,
     WinLocalSystemSid, WinNetworkServiceSid,
 };
@@ -16,27 +16,137 @@ pub(crate) fn login_name() -> Option<String> {
     None
 }
 
-/// This account's own home, where the environment names none: not read until W14 asks
-/// Windows for the profile folder. Without one, Pitboard refuses the empty home as one that
-/// is not a full path.
+/// This account's own home, where the environment names none: `GetUserProfileDirectoryW`,
+/// where libuv's `uv_os_homedir` looks once `USERPROFILE` is unset.
+///
+/// Never in a build for tests, unless a unit test says through
+/// [`testing::reaching_the_real_home`] that this lookup is what it tests, so a test that
+/// gives no home of its own reaches nothing real, and Pitboard refuses the empty home that
+/// leaves as a home that is not a full path.
 pub(crate) fn home() -> Option<PathBuf> {
-    None
+    real_lookups().then(profile_directory).flatten()
 }
 
-/// Whether `path` is this account's own home, for a build for tests to refuse to run as the
-/// daily renewal schedule there. Nobody can tell until W14 reads the profile folder, and
-/// nothing needs to: such a run renews Pitboard's default home, which on Windows is none
-/// until W14 finds it too, and is refused as a home that is not a full path
-/// ([`crate::host::default_pitboard_home`]).
+// The token's TokenUser, which owns and is granted what Pitboard makes, and a report hides.
+pub(crate) fn sid() -> Option<String> {
+    Opened::this_process()?.user_sid()
+}
+
+pub(crate) fn sid_text(sid: PSID) -> Option<String> {
+    use windows_sys::Win32::Security::Authorization::ConvertSidToStringSidW;
+    let mut text: windows_sys::core::PWSTR = std::ptr::null_mut();
+    // SAFETY: a valid SID, and `text` is LocalAlloc'd on success and freed below.
+    if unsafe { ConvertSidToStringSidW(sid, &raw mut text) } == 0 || text.is_null() {
+        return None;
+    }
+    let mut len = 0;
+    // SAFETY: on success `text` is a NUL-terminated string, read up to its NUL.
+    while unsafe { *text.add(len) } != 0 {
+        len += 1;
+    }
+    // SAFETY: `text` holds `len` units before its NUL.
+    let said = String::from_utf16(unsafe { std::slice::from_raw_parts(text, len) }).ok();
+    // SAFETY: the LocalAlloc'd string ConvertSidToStringSidW gave, freed this once.
+    unsafe { windows_sys::Win32::Foundation::LocalFree(text.cast()) };
+    said
+}
+
+// RF-B1: `FOLDERID_Profile` ignores `USERPROFILE` and `HOME`. Codex's default home is in it.
+pub(crate) fn profile() -> Option<PathBuf> {
+    real_lookups()
+        .then(|| known_folder(&windows_sys::Win32::UI::Shell::FOLDERID_Profile))
+        .flatten()
+}
+
+pub(crate) fn local_app_data() -> Option<PathBuf> {
+    real_lookups()
+        .then(|| known_folder(&windows_sys::Win32::UI::Shell::FOLDERID_LocalAppData))
+        .flatten()
+}
+
+// RF-B3 measured flags 0, a local profile, on the runners; `PT_ROAMING` is MC-roam.
+pub(crate) fn profile_roams() -> bool {
+    use windows_sys::Win32::System::GroupPolicy::PT_ROAMING;
+    use windows_sys::Win32::UI::Shell::GetProfileType;
+    let mut flags = 0u32;
+    // SAFETY: a u32 of this frame, which the call writes and does not keep.
+    let read = real_lookups() && unsafe { GetProfileType(&raw mut flags) } != 0;
+    read && flags & PT_ROAMING != 0
+}
+
+#[cfg(test)]
+fn real_lookups() -> bool {
+    testing::reaches_the_real_home()
+}
+
+#[cfg(not(test))]
+fn real_lookups() -> bool {
+    !cfg!(feature = "test-support")
+}
+
+fn profile_directory() -> Option<PathBuf> {
+    use windows_sys::Win32::UI::Shell::GetUserProfileDirectoryW;
+    let token = Opened::this_process()?;
+    let mut size = 0u32;
+    // SAFETY: with no buffer it writes only the length it needs, NUL included, to `size`.
+    unsafe { GetUserProfileDirectoryW(token.0, std::ptr::null_mut(), &raw mut size) };
+    let mut wide = vec![0u16; size as usize];
+    // SAFETY: an open token, and a buffer of the `size` units it says.
+    let read = unsafe { GetUserProfileDirectoryW(token.0, wide.as_mut_ptr(), &raw mut size) };
+    (read != 0).then(|| path_of(&wide))
+}
+
+fn path_of(wide: &[u16]) -> PathBuf {
+    use std::os::windows::ffi::OsStringExt;
+    let len = wide
+        .iter()
+        .position(|&unit| unit == 0)
+        .unwrap_or(wide.len());
+    PathBuf::from(std::ffi::OsString::from_wide(&wide[..len]))
+}
+
+/// Whether `path` is this account's own home, as `FOLDERID_Profile` and
+/// `GetUserProfileDirectoryW` name it, for a build for tests to refuse to run as the daily
+/// renewal schedule there. Compared as the file system resolves each where it is there, in
+/// any case, so a spelling with `\\?\` or a short name is the home too.
 #[cfg(any(test, feature = "test-support"))]
-pub(crate) fn is_the_accounts_own_home(_path: &std::path::Path) -> bool {
-    false
+pub(crate) fn is_the_accounts_own_home(path: &std::path::Path) -> bool {
+    let resolved = |p: &std::path::Path| {
+        crate::host::plain(&std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf()))
+    };
+    [
+        known_folder(&windows_sys::Win32::UI::Shell::FOLDERID_Profile),
+        profile_directory(),
+    ]
+    .into_iter()
+    .flatten()
+    .any(|own| crate::host::same_path_in_any_case(&resolved(&own), &resolved(path)))
 }
 
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn lies_in_the_accounts_own(path: &std::path::Path, below: &str) -> bool {
     known_folder(&windows_sys::Win32::UI::Shell::FOLDERID_Profile)
         .is_some_and(|home| crate::host::lies_in(path, &home.join(below)))
+}
+
+// The known folders, and the ones this test process was started with, which can be others.
+#[cfg(any(test, feature = "test-support"))]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "the folders this process was started with, which a test's guard refuses too"
+)]
+pub(crate) fn app_data_folders() -> (Vec<PathBuf>, Vec<PathBuf>) {
+    use windows_sys::Win32::UI::Shell::{FOLDERID_LocalAppData, FOLDERID_RoamingAppData};
+    let started = |name: &str| std::env::var_os(name).map(PathBuf::from);
+    let roaming = [known_folder(&FOLDERID_RoamingAppData), started("APPDATA")];
+    let local = [
+        known_folder(&FOLDERID_LocalAppData),
+        started("LOCALAPPDATA"),
+    ];
+    (
+        roaming.into_iter().flatten().collect(),
+        local.into_iter().flatten().collect(),
+    )
 }
 
 #[cfg(feature = "test-support")]
@@ -51,7 +161,6 @@ pub(crate) fn accounts_own_pitboard_home() -> Option<PathBuf> {
 }
 
 // KF_FLAG_DONT_VERIFY: a folder not made yet is still where a login would go.
-#[cfg(any(test, feature = "test-support"))]
 fn known_folder(id: &windows_sys::core::GUID) -> Option<PathBuf> {
     use std::os::windows::ffi::OsStringExt;
     use windows_sys::Win32::UI::Shell::{KF_FLAG_DONT_VERIFY, SHGetKnownFolderPath};
@@ -134,6 +243,20 @@ impl Opened {
     }
 
     fn service_account(&self) -> Option<bool> {
+        self.with_user(|user| {
+            let is = |kind| {
+                // SAFETY: `user` is the valid SID Windows just gave, still in its buffer.
+                unsafe { IsWellKnownSid(user, kind) != 0 }
+            };
+            is(WinLocalSystemSid) || is(WinLocalServiceSid) || is(WinNetworkServiceSid)
+        })
+    }
+
+    fn user_sid(&self) -> Option<String> {
+        self.with_user(sid_text).flatten()
+    }
+
+    fn with_user<T>(&self, then: impl FnOnce(PSID) -> T) -> Option<T> {
         let mut needed = 0u32;
         // SAFETY: with no buffer it writes only the length it needs, to `needed`.
         unsafe {
@@ -160,11 +283,7 @@ impl Opened {
         }
         // SAFETY: an aligned TOKEN_USER starts the buffer, and its SID points into the buffer.
         let user = unsafe { (*buffer.as_ptr().cast::<TOKEN_USER>()).User.Sid };
-        let is = |kind| {
-            // SAFETY: `user` is the valid SID Windows just gave, still in its buffer.
-            unsafe { IsWellKnownSid(user, kind) != 0 }
-        };
-        Some(is(WinLocalSystemSid) || is(WinLocalServiceSid) || is(WinNetworkServiceSid))
+        Some(then(user))
     }
 }
 
@@ -192,22 +311,84 @@ fn version() -> Option<(u32, u32, u32)> {
     (status == 0).then_some((info.dwMajorVersion, info.dwMinorVersion, info.dwBuildNumber))
 }
 
-/// The one way a unit test reaches this account's real home, which on Windows reaches
-/// nothing until W14.
+/// The one way a unit test reaches this account's real home.
 #[cfg(test)]
 pub(crate) mod testing {
-    /// What a unit test keeps while it reaches the real home.
+    use std::cell::Cell;
+
+    thread_local! {
+        static REACHES: Cell<bool> = const { Cell::new(false) };
+    }
+
+    /// While what this returns is kept, [`super::home`] and the other lookups of this
+    /// account's own folders answer this thread's test: for a test of the lookups
+    /// themselves, or of what reads them where the environment names no home.
     pub(crate) fn reaching_the_real_home() -> Reaching {
+        REACHES.with(|reaches| reaches.set(true));
         Reaching(())
     }
 
     /// What [`reaching_the_real_home`] returns.
     pub(crate) struct Reaching(());
+
+    impl Drop for Reaching {
+        fn drop(&mut self) {
+            REACHES.with(|reaches| reaches.set(false));
+        }
+    }
+
+    pub(super) fn reaches_the_real_home() -> bool {
+        REACHES.with(Cell::get)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // RF-B1 and RF-B3, run 38693947329: on a runner's local profile they agree.
+    #[test]
+    fn the_accounts_folders_are_read_only_where_a_test_reaches_for_them() {
+        let unread = (home(), profile(), local_app_data(), profile_roams());
+        assert_eq!(
+            unread,
+            (None, None, None, false),
+            "a test that does not reach"
+        );
+        let _real = testing::reaching_the_real_home();
+        let own = home().expect("the profile folder");
+        assert!(own.is_absolute(), "{}", own.display());
+        let profile = profile().expect("the profile");
+        assert!(crate::host::same_path_in_any_case(&own, &profile));
+        let local = local_app_data().expect("local app data");
+        let measured = profile.join("AppData").join("Local");
+        assert!(crate::host::same_path_in_any_case(&local, &measured));
+        assert!(!profile_roams());
+    }
+
+    #[test]
+    fn the_accounts_own_home_is_its_profile_however_it_is_spelled() {
+        let profile =
+            known_folder(&windows_sys::Win32::UI::Shell::FOLDERID_Profile).expect("the profile");
+        let text = profile.to_string_lossy().into_owned();
+        for spelling in [
+            text.clone(),
+            text.to_uppercase(),
+            text.to_lowercase(),
+            format!(r"\\?\{text}"),
+            format!(r"{text}\"),
+        ] {
+            assert!(
+                is_the_accounts_own_home(std::path::Path::new(&spelling)),
+                "{spelling}"
+            );
+        }
+        if let Some(short) = crate::host::fs::short_path(&profile) {
+            assert!(is_the_accounts_own_home(&short), "{}", short.display());
+        }
+        assert!(!is_the_accounts_own_home(&std::env::temp_dir()));
+        assert!(!is_the_accounts_own_home(&profile.join("AppData")));
+    }
 
     #[test]
     fn the_profile_and_local_app_data_are_named() {
@@ -216,6 +397,19 @@ mod tests {
             let folder = known_folder(&id).expect("a known folder");
             assert!(folder.is_absolute(), "{}", folder.display());
         }
+    }
+
+    // `whoami /user` prints the user's name and SID, which is this token's TokenUser.
+    #[test]
+    fn the_sid_is_the_one_windows_shows_for_this_user() {
+        let sid = sid().expect("TokenUser");
+        assert!(sid.starts_with("S-1-"), "{sid}");
+        let said = std::process::Command::new("whoami.exe")
+            .args(["/user", "/fo", "csv", "/nh"])
+            .output()
+            .expect("whoami runs");
+        let said = String::from_utf8_lossy(&said.stdout);
+        assert!(said.trim_end().ends_with(&format!("\"{sid}\"")), "{said}");
     }
 
     #[test]

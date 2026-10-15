@@ -4,6 +4,7 @@
 
 use crate::context::Context;
 use crate::error::{Error, Result};
+use crate::host::Os;
 use crate::service::Permit;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -108,6 +109,56 @@ pub(crate) fn remove_retired(ctx: &Context, permit: Permit) {
     let _ = crate::host::fs::remove_dir(permit, &readings);
 }
 
+// What stayed of a folder that could not be removed whole: each file left in it, or the
+// folder itself where only folders are.
+#[derive(Debug)]
+pub(crate) struct Kept {
+    pub(crate) left: Vec<PathBuf>,
+    pub(crate) why: io::Error,
+}
+
+impl From<Kept> for io::Error {
+    fn from(kept: Kept) -> io::Error {
+        let left: Vec<String> = kept
+            .left
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect();
+        io::Error::new(
+            kept.why.kind(),
+            format!("{} could not be removed: {}", left.join(", "), kept.why),
+        )
+    }
+}
+
+// A file another program holds open keeps its folder on exFAT and FAT32 (RF-C6x).
+pub(crate) fn remove_all(permit: Permit, folder: &Path) -> std::result::Result<(), Kept> {
+    let why = match crate::host::fs::remove_dir_all(permit, folder) {
+        Ok(()) => return Ok(()),
+        Err(_) if !folder.exists() => return Ok(()),
+        Err(why) => why,
+    };
+    let mut left = Vec::new();
+    files_in(folder, &mut left);
+    if left.is_empty() {
+        left.push(folder.to_path_buf());
+    }
+    left.sort();
+    Err(Kept { left, why })
+}
+
+fn files_in(folder: &Path, found: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(folder) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        match entry.file_type() {
+            Ok(kind) if kind.is_dir() => files_in(&entry.path(), found),
+            _ => found.push(entry.path()),
+        }
+    }
+}
+
 pub(crate) fn ensure(ctx: &Context, permit: Permit) -> io::Result<PathBuf> {
     let path = dir(ctx);
     crate::host::fs::create_private_dir(permit, &path)?;
@@ -138,7 +189,7 @@ pub(crate) fn ensure(ctx: &Context, permit: Permit) -> io::Result<PathBuf> {
 /// every read of Pitboard's account list, so nothing is read or written under such a home.
 pub(crate) fn check_absolute(ctx: &Context) -> Result<()> {
     let homes: [(&'static str, Option<&Path>); 5] = [
-        ("HOME", Some(ctx.home())),
+        (ctx.os.home_variable(), Some(ctx.home())),
         ("PITBOARD_HOME", Some(&ctx.pitboard_home)),
         (
             "CLAUDE_CONFIG_DIR",
@@ -166,10 +217,17 @@ pub(crate) fn check_absolute(ctx: &Context) -> Result<()> {
 }
 
 /// Refuses a Pitboard directory a sync client would copy to another machine, by the names
-/// in [`synced_by`], read off the path as the file system resolves it where it is there.
-pub(crate) fn check_location(path: &Path) -> Result<()> {
-    let resolved = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-    match synced_by(&resolved) {
+/// in [`synced_by`] and by what the system says ([`Syncing`]), read off the path as the file
+/// system resolves it where it is there.
+pub(crate) fn check_location(ctx: &Context, path: &Path) -> Result<()> {
+    check_location_with(path, &Syncing::of(ctx))
+}
+
+pub(crate) fn check_location_with(path: &Path, syncing: &Syncing) -> Result<()> {
+    let resolved = path
+        .canonicalize()
+        .map_or_else(|_| path.to_path_buf(), crate::host::without_verbatim_prefix);
+    match synced_by(&resolved).or_else(|| syncing.over(&resolved)) {
         Some(marker) => Err(Error::StateOnSyncedDrive {
             path: resolved,
             marker,
@@ -178,16 +236,72 @@ pub(crate) fn check_location(path: &Path) -> Result<()> {
     }
 }
 
+// What Windows says it syncs, besides `synced_by`'s names: OneDrive's folders, a sync root
+// (MC-sync), and a roaming profile but its `AppData\Local` and `LocalLow` (MC-roam).
+pub(crate) struct Syncing<'a> {
+    pub(crate) folders: Vec<PathBuf>,
+    pub(crate) roaming: Option<PathBuf>,
+    pub(crate) in_a_sync_root: &'a dyn Fn(&Path) -> bool,
+}
+
+impl Default for Syncing<'_> {
+    fn default() -> Self {
+        Syncing {
+            folders: Vec::new(),
+            roaming: None,
+            in_a_sync_root: &|_| false,
+        }
+    }
+}
+
+impl Syncing<'static> {
+    fn of(ctx: &Context) -> Syncing<'static> {
+        match ctx.os {
+            Os::MacOs | Os::Linux => Syncing::default(),
+            Os::Windows => Syncing {
+                folders: ctx.one_drive.clone(),
+                roaming: crate::host::user::profile_roams()
+                    .then(|| ctx.profile.clone().unwrap_or_else(|| ctx.home.clone())),
+                in_a_sync_root: &crate::host::fs::in_a_sync_root,
+            },
+        }
+    }
+}
+
+impl Syncing<'_> {
+    // Compared as Windows compares a path, in any case.
+    fn over(&self, path: &Path) -> Option<String> {
+        let within = |folder: &Path| {
+            path.ancestors()
+                .any(|above| crate::host::same_path_in_any_case(above, folder))
+        };
+        if let Some(folder) = self.folders.iter().find(|folder| within(folder)) {
+            return Some(folder.display().to_string());
+        }
+        if (self.in_a_sync_root)(path) {
+            return Some("a cloud sync folder".into());
+        }
+        let profile = self.roaming.as_ref()?;
+        let local = ["Local", "LocalLow"].map(|name| profile.join("AppData").join(name));
+        (within(profile) && !local.iter().any(|folder| within(folder)))
+            .then(|| "a roaming profile".into())
+    }
+}
+
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test sets up its scratch files as a person or a tool would"
+)]
 mod tests {
     use super::*;
     use crate::context::Environment;
 
-    /// What `check_absolute` says of the context `pairs` make: the variable it names, or
-    /// `None` where every home is a full path.
-    fn refused_over(pairs: &[(&str, &str)]) -> Option<(&'static str, PathBuf)> {
-        let env: Environment = pairs.iter().copied().collect();
-        match check_absolute(&Context::for_command_line(&env)) {
+    /// What `check_absolute` says of the context `pairs` make on `os`: the variable it names,
+    /// or `None` where every home is a full path.
+    fn refused_over(os: Os, pairs: &[(&str, &str)]) -> Option<(&'static str, PathBuf)> {
+        let env = Environment::on(os, pairs.iter().copied());
+        match check_absolute(&Context::read(&env, "cli")) {
             Ok(()) => None,
             Err(Error::HomeNotAbsolute { variable, path }) => Some((variable, path)),
             Err(other) => panic!("{other}"),
@@ -199,10 +313,6 @@ mod tests {
     /// wrote, which keeps the folder too. `PITBOARD_HOME` can name a folder of somebody's
     /// own.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-    )]
     fn what_an_older_pitboard_kept_and_this_one_does_not_is_removed() {
         let root = std::env::temp_dir().join(format!(
             "pitboard-home-retired-{}-{:?}",
@@ -239,60 +349,67 @@ mod tests {
     /// Each home the environment names is a full path or refused, by the variable that
     /// named it, and the home is asked first, so a relative one is named rather than the
     /// Pitboard directory worked out from it. Unset, a tool's variable names nothing, and an
-    /// empty `CLAUDE_SECURESTORAGE_CONFIG_DIR` names Claude Code's default folder.
+    /// empty `CLAUDE_SECURESTORAGE_CONFIG_DIR` names Claude Code's default folder. The home
+    /// is `USERPROFILE` on Windows.
     #[test]
-    #[cfg_attr(windows, ignore = "W14: Pitboard's own folder on Windows")]
     fn a_home_that_is_not_a_full_path_is_refused_by_the_variable_that_named_it() {
-        let home = ("HOME", "/Users/x");
-        for pairs in [
-            &[home][..],
-            &[home, ("PITBOARD_HOME", "/elsewhere/./pitboard/")],
-            &[home, ("CLAUDE_CONFIG_DIR", "/Users/x/claude")],
-            &[home, ("CLAUDE_SECURESTORAGE_CONFIG_DIR", "")],
-            &[home, ("CLAUDE_SECURESTORAGE_CONFIG_DIR", "/Users/x/slot")],
-            &[home, ("CODEX_HOME", "/Users/x/codex")],
-            &[home, ("CODEX_HOME", "")],
-        ] {
-            assert_eq!(refused_over(pairs), None, "{pairs:?}");
-        }
-        for (pairs, variable, path) in [
-            (&[("HOME", "")][..], "HOME", ""),
-            (&[("HOME", "relative")], "HOME", "relative"),
-            (
-                &[("HOME", "x"), ("PITBOARD_HOME", "/Users/x/.pitboard")],
-                "HOME",
-                "x",
-            ),
-            (&[home, ("PITBOARD_HOME", "")], "PITBOARD_HOME", ""),
-            (
-                &[home, ("PITBOARD_HOME", "pitboard")],
-                "PITBOARD_HOME",
-                "pitboard",
-            ),
-            (
-                &[home, ("CLAUDE_CONFIG_DIR", "claude")],
-                "CLAUDE_CONFIG_DIR",
-                "claude",
-            ),
-            (&[home, ("CLAUDE_CONFIG_DIR", "")], "CLAUDE_CONFIG_DIR", ""),
-            (
-                &[home, ("CLAUDE_SECURESTORAGE_CONFIG_DIR", "./slot")],
-                "CLAUDE_SECURESTORAGE_CONFIG_DIR",
-                "./slot",
-            ),
-            (&[home, ("CODEX_HOME", "codex")], "CODEX_HOME", "codex"),
-        ] {
-            assert_eq!(
-                refused_over(pairs),
-                Some((variable, PathBuf::from(path))),
-                "{pairs:?}"
-            );
+        let full = std::env::temp_dir().join("pitboard-full-home");
+        let at = |name: &str| full.join(name).to_string_lossy().into_owned();
+        let (pitboard, claude, slot, codex) =
+            (at("pitboard"), at("claude"), at("slot"), at("codex"));
+        let x = full.to_string_lossy().into_owned();
+        for os in [Os::MacOs, Os::Linux, Os::Windows] {
+            let variable = os.home_variable();
+            let home = (variable, x.as_str());
+            for pairs in [
+                &[home][..],
+                &[home, ("PITBOARD_HOME", pitboard.as_str())],
+                &[home, ("CLAUDE_CONFIG_DIR", claude.as_str())],
+                &[home, ("CLAUDE_SECURESTORAGE_CONFIG_DIR", "")],
+                &[home, ("CLAUDE_SECURESTORAGE_CONFIG_DIR", slot.as_str())],
+                &[home, ("CODEX_HOME", codex.as_str())],
+                &[home, ("CODEX_HOME", "")],
+            ] {
+                assert_eq!(refused_over(os, pairs), None, "{os:?} {pairs:?}");
+            }
+            for (pairs, refused, path) in [
+                (&[(variable, "")][..], variable, ""),
+                (&[(variable, "relative")], variable, "relative"),
+                (
+                    &[(variable, "x"), ("PITBOARD_HOME", pitboard.as_str())],
+                    variable,
+                    "x",
+                ),
+                (&[home, ("PITBOARD_HOME", "")], "PITBOARD_HOME", ""),
+                (
+                    &[home, ("PITBOARD_HOME", "pitboard")],
+                    "PITBOARD_HOME",
+                    "pitboard",
+                ),
+                (
+                    &[home, ("CLAUDE_CONFIG_DIR", "claude")],
+                    "CLAUDE_CONFIG_DIR",
+                    "claude",
+                ),
+                (&[home, ("CLAUDE_CONFIG_DIR", "")], "CLAUDE_CONFIG_DIR", ""),
+                (
+                    &[home, ("CLAUDE_SECURESTORAGE_CONFIG_DIR", "./slot")],
+                    "CLAUDE_SECURESTORAGE_CONFIG_DIR",
+                    "./slot",
+                ),
+                (&[home, ("CODEX_HOME", "codex")], "CODEX_HOME", "codex"),
+            ] {
+                assert_eq!(
+                    refused_over(os, pairs),
+                    Some((refused, PathBuf::from(path))),
+                    "{os:?} {pairs:?}"
+                );
+            }
         }
     }
 
     /// The refusal says which variable, what it holds, and the two ways out.
     #[test]
-    #[cfg_attr(windows, ignore = "W14: Pitboard's own folder on Windows")]
     fn a_home_that_is_not_a_full_path_is_said_with_the_way_out() {
         let said = |pairs: &[(&str, &str)]| {
             let env: Environment = pairs.iter().copied().collect();
@@ -300,14 +417,18 @@ mod tests {
             assert_eq!(refused.code(), "home_not_absolute");
             refused.to_string()
         };
+        let variable = crate::host::OS.home_variable();
         assert_eq!(
-            said(&[("HOME", "")]),
-            "HOME is empty, so the folder it names would depend on where each program runs. \
-             Set it to a full path, or unset it; Pitboard reads and changes nothing until \
-             then."
+            said(&[(variable, "")]),
+            format!(
+                "{variable} is empty, so the folder it names would depend on where each \
+                 program runs. Set it to a full path, or unset it; Pitboard reads and changes \
+                 nothing until then."
+            )
         );
+        let full = std::env::temp_dir().to_string_lossy().into_owned();
         assert!(
-            said(&[("HOME", "/Users/x"), ("CODEX_HOME", "codex")])
+            said(&[(variable, full.as_str()), ("CODEX_HOME", "codex")])
                 .starts_with("CODEX_HOME is `codex`, which is not a full path, so ")
         );
     }
@@ -320,11 +441,50 @@ mod tests {
 
     /// The name `check_location` refuses `path` over, if it does.
     fn synced_over(path: &str) -> Option<String> {
-        match check_location(Path::new(path)) {
+        synced_on(path, &Syncing::default())
+    }
+
+    fn synced_on(path: &str, syncing: &Syncing) -> Option<String> {
+        match check_location_with(Path::new(path), syncing) {
             Ok(()) => None,
             Err(Error::StateOnSyncedDrive { marker, .. }) => Some(marker),
             Err(other) => panic!("{other}"),
         }
+    }
+
+    // MC-sync and MC-roam: what Windows says of a folder, which no runner can make it say.
+    #[test]
+    fn a_windows_folder_that_syncs_or_roams_is_refused() {
+        let roots = |path: &Path| path.starts_with("/u/Box");
+        let syncing = Syncing {
+            folders: vec![PathBuf::from("/u/Work Files")],
+            roaming: Some(PathBuf::from("/u/profile")),
+            in_a_sync_root: &roots,
+        };
+        for (path, marker) in [
+            ("/u/Work Files/pitboard", "/u/Work Files"),
+            ("/u/work files/x/pitboard", "/u/Work Files"),
+            ("/u/Box/pitboard", "a cloud sync folder"),
+            ("/u/profile/pitboard", "a roaming profile"),
+            ("/u/profile/AppData/Roaming/Pitboard", "a roaming profile"),
+            ("/u/PROFILE/AppData/LocalLowly", "a roaming profile"),
+        ] {
+            assert_eq!(synced_on(path, &syncing).as_deref(), Some(marker), "{path}");
+        }
+        for path in [
+            "/u/profile/AppData/Local/Pitboard",
+            "/u/profile/appdata/local",
+            "/u/profile/AppData/LocalLow/Pitboard",
+            "/u/elsewhere/pitboard",
+            "/u/Boxes/pitboard",
+        ] {
+            assert_eq!(synced_on(path, &syncing), None, "{path}");
+        }
+        assert_eq!(
+            synced_on("/u/profile/pitboard", &Syncing::default()),
+            None,
+            "a local profile"
+        );
     }
 
     /// Real folder names of the sync clients, in the case each writes them and in others,

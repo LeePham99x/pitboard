@@ -37,9 +37,33 @@ pub(crate) fn home() -> Option<PathBuf> {
     passwd_home()
 }
 
+// Windows alone names a profile folder apart from the home, local app data, a profile that
+// roams and a SID.
+pub(crate) fn sid() -> Option<String> {
+    None
+}
+
+pub(crate) fn profile() -> Option<PathBuf> {
+    None
+}
+
+pub(crate) fn local_app_data() -> Option<PathBuf> {
+    None
+}
+
+pub(crate) fn profile_roams() -> bool {
+    false
+}
+
 /// [`home`], asked of the passwd database whatever the build.
 fn passwd_home() -> Option<PathBuf> {
     entry(|passwd| path(passwd, passwd.pw_dir))
+}
+
+// Claude Desktop keeps nothing in Windows' app data folders here.
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn app_data_folders() -> (Vec<PathBuf>, Vec<PathBuf>) {
+    (Vec::new(), Vec::new())
 }
 
 #[cfg(feature = "test-support")]
@@ -49,7 +73,7 @@ pub(crate) fn accounts_own_home() -> Option<PathBuf> {
 
 #[cfg(feature = "test-support")]
 pub(crate) fn accounts_own_pitboard_home() -> Option<PathBuf> {
-    passwd_home().map(|home| crate::host::default_pitboard_home(&home))
+    passwd_home().map(|home| crate::host::OS.default_pitboard_home(&home))
 }
 
 /// Whether `path` is this account's own home, as the passwd database names it, for a build
@@ -203,6 +227,10 @@ fn path(entry: &libc::passwd, field: *const libc::c_char) -> Option<PathBuf> {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a test sets up its scratch files as a person or a tool would"
+)]
 mod tests {
     use super::*;
     use std::path::Path;

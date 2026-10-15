@@ -27,6 +27,14 @@ use crate::store::RawStore;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+#[cfg_attr(
+    not(windows),
+    allow(
+        dead_code,
+        reason = "only Windows reads an access list; every system's tests read these rules"
+    )
+)]
+pub(crate) mod acl;
 pub(crate) mod administered;
 #[cfg(target_os = "linux")]
 mod linux;
@@ -35,6 +43,14 @@ mod macos;
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) mod memory;
 pub(crate) mod program;
+#[cfg_attr(
+    not(windows),
+    allow(
+        dead_code,
+        reason = "only Windows replaces a file this way; every system's tests read these rules"
+    )
+)]
+pub(crate) mod replace;
 pub(crate) mod token;
 #[cfg(unix)]
 mod unix;
@@ -79,11 +95,14 @@ impl Os {
         }
     }
 
-    /// The command a person types on this system to make `paths` private to themselves.
-    /// `None` where Pitboard cannot say one yet: on Windows, where a file is private through
-    /// its access control list, W15 says the command along with who may read a file, and
-    /// until then nothing asks, since the Windows face cannot tell who may.
-    pub(crate) fn make_private_command(self, kind: Kind, paths: &[&str]) -> Option<String> {
+    // What a person types to make `paths` private to themselves: on Windows one `icacls` a
+    // path, naming them by `sid`, and none without it.
+    pub(crate) fn make_private_commands(
+        self,
+        kind: Kind,
+        paths: &[&str],
+        sid: Option<&str>,
+    ) -> Vec<String> {
         match self {
             Os::MacOs | Os::Linux => {
                 let mode = match kind {
@@ -91,9 +110,14 @@ impl Os {
                     Kind::File => "600",
                     Kind::Any => "go-rwx",
                 };
-                Some(format!("chmod {mode} {}", paths.join(" ")))
+                vec![format!("chmod {mode} {}", paths.join(" "))]
             }
-            Os::Windows => None,
+            Os::Windows => sid.map_or_else(Vec::new, |sid| {
+                paths
+                    .iter()
+                    .map(|path| acl::icacls(kind, path, sid))
+                    .collect()
+            }),
         }
     }
 
@@ -146,6 +170,49 @@ impl Os {
         match self {
             Os::MacOs | Os::Linux => a == b,
             Os::Windows => same_path_in_any_case(a, b),
+        }
+    }
+
+    pub(crate) fn variable_key(self, name: &std::ffi::OsStr) -> std::ffi::OsString {
+        match self {
+            Os::MacOs | Os::Linux => name.to_os_string(),
+            Os::Windows => name
+                .to_string_lossy()
+                .chars()
+                .map(upper_one_for_one)
+                .collect::<String>()
+                .into(),
+        }
+    }
+
+    pub(crate) fn user_variable(self) -> &'static str {
+        match self {
+            Os::MacOs | Os::Linux => "USER",
+            Os::Windows => "USERNAME",
+        }
+    }
+
+    // Bun 1.4.3's `os.homedir` on Windows is libuv's `uv_os_homedir`: `USERPROFILE`, else
+    // `GetUserProfileDirectoryW`. Git Bash sets `HOME`, which no tool takes for the home there.
+    pub fn home_variable(self) -> &'static str {
+        match self {
+            Os::MacOs | Os::Linux => "HOME",
+            Os::Windows => "USERPROFILE",
+        }
+    }
+
+    /// Where Pitboard keeps its own files for a person whose home is `home`, when
+    /// `PITBOARD_HOME` names nowhere else: `.pitboard` in that home on macOS and Linux, and
+    /// `AppData\Local\Pitboard` in it on Windows.
+    ///
+    /// Worked out from the home it is handed, never from this account's own, so a context
+    /// made for a home of a test's own, or of an app's choosing, keeps Pitboard's files
+    /// there, and a scheduled run and one by hand never part over a moved `USERPROFILE`. The
+    /// daily renewal schedule belongs to this home and no other ([`crate::schedule`]).
+    pub(crate) fn default_pitboard_home(self, home: &Path) -> PathBuf {
+        match self {
+            Os::MacOs | Os::Linux => home.join(".pitboard"),
+            Os::Windows => home.join("AppData").join("Local").join("Pitboard"),
         }
     }
 
@@ -227,6 +294,37 @@ pub fn path_key_in_any_case(path: &str) -> String {
     root + &names.join(r"\")
 }
 
+// As libuv's realpath and Codex's `AbsolutePathBuf` spell what `GetFinalPathNameByHandleW`
+// gives, read lexically on every system.
+pub(crate) fn without_verbatim_prefix(path: PathBuf) -> PathBuf {
+    let Some(text) = path.to_str() else {
+        return path;
+    };
+    if let Some(unc) = text.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{unc}"));
+    }
+    match text.strip_prefix(r"\\?\") {
+        Some(rest) if drive_absolute(rest) => PathBuf::from(rest),
+        _ => path,
+    }
+}
+
+fn drive_absolute(path: &str) -> bool {
+    matches!(path.as_bytes(), [drive, b':', b'\\' | b'/', ..] if drive.is_ascii_alphabetic())
+}
+
+// Claude Desktop's on Windows, which no test reads (AGENTS.md). Its `Claude-3p` there is named
+// by analogy with macOS's, unmeasured: a guard may refuse more than is there.
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn claude_desktop_on_windows(roaming: &[PathBuf], local: &[PathBuf]) -> Vec<PathBuf> {
+    let roaming = roaming
+        .iter()
+        .flat_map(|dir| ["Claude", "Claude-3p"].map(|name| dir.join(name)));
+    roaming
+        .chain(local.iter().map(|dir| dir.join("AnthropicClaude")))
+        .collect()
+}
+
 // Is, holds or lies in, for a build for tests to refuse, the same on every system: through
 // every link, one to nothing yet included, and in any case, as macOS's own volumes compare.
 #[cfg(any(test, feature = "test-support"))]
@@ -258,7 +356,7 @@ fn begins(path: &Path, with: &Path) -> bool {
 
 // `canonicalize` spells `C:\x` as `\\?\C:\x`.
 #[cfg(any(test, feature = "test-support"))]
-fn plain(path: &Path) -> PathBuf {
+pub(crate) fn plain(path: &Path) -> PathBuf {
     use std::path::{Component, Prefix};
     let mut parts = path.components();
     let Some(Component::Prefix(prefix)) = parts.next() else {
@@ -339,7 +437,7 @@ fn same_name_in_any_case(a: &std::ffi::OsStr, b: &std::ffi::OsStr) -> bool {
 }
 
 // As Windows upper-cases a name: one UTF-16 unit for one, so ß and anything past the BMP stay.
-fn upper_one_for_one(c: char) -> char {
+pub(crate) fn upper_one_for_one(c: char) -> char {
     if u32::from(c) > 0xFFFF {
         return c;
     }
@@ -384,8 +482,7 @@ pub(crate) fn login_path(env: &Environment) -> LoginPath {
 pub(crate) struct Access {
     /// Whether anybody but the owner can read or change it.
     pub(crate) shared: bool,
-    /// What the system says about it, for a person to read: `mode 600` where access is a
-    /// mode.
+    // For a person to read: `mode 600`, or on Windows who may reach it, never by SID.
     pub(crate) described: String,
 }
 
@@ -400,7 +497,7 @@ pub enum Private {
     Missing,
 }
 
-/// What a person makes private with the command [`Os::make_private_command`] gives.
+// What a person makes private with the commands `Os::make_private_commands` gives.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Kind {
     Directory,
@@ -662,24 +759,6 @@ pub(crate) trait Scheduler: Send + Sync + std::fmt::Debug {
     fn started_this_process(&self, said: Option<&str>) -> bool;
 }
 
-/// Where Pitboard keeps its own files for a person whose home is `home`, when
-/// `PITBOARD_HOME` names nowhere else: `.pitboard` in that home on macOS and Linux.
-///
-/// Worked out from the home it is handed, never from this account's own, so a context made
-/// for a home of a test's own, or of an app's choosing, keeps Pitboard's files there. The
-/// daily renewal schedule belongs to this home and no other ([`crate::schedule`]).
-///
-/// On Windows it is the person's local application data, `%LOCALAPPDATA%\Pitboard`, which
-/// W14 finds from the home it is handed. Until then there is none: the empty path is refused
-/// as a home that is not a full path, so nothing is read or written anywhere Pitboard did not
-/// find, and `PITBOARD_HOME` has to name the folder.
-pub(crate) fn default_pitboard_home(home: &Path) -> PathBuf {
-    match OS {
-        Os::MacOs | Os::Linux => home.join(".pitboard"),
-        Os::Windows => PathBuf::new(),
-    }
-}
-
 // Time awake since a fixed moment (boot on Windows, the first call elsewhere); a sleep adds none.
 pub fn awake() -> std::time::Duration {
     os::awake()
@@ -704,6 +783,32 @@ pub(crate) fn current_program() -> std::io::Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // This crate's clippy.toml replaces the root's, so it repeats each of its rules.
+    #[test]
+    fn the_crates_lints_keep_every_rule_of_the_workspaces_and_refuse_stds_creates() {
+        let read = |path: &str| {
+            std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(path)).expect(path)
+        };
+        let rules = |text: &str| -> Vec<String> {
+            text.lines()
+                .filter(|line| line.trim_start().starts_with("{ path"))
+                .map(str::to_owned)
+                .collect()
+        };
+        let own = rules(&read("clippy.toml"));
+        for rule in rules(&read("../../clippy.toml")) {
+            assert!(own.contains(&rule), "{rule}");
+        }
+        for create in [
+            "std::fs::write",
+            "std::fs::OpenOptions::create",
+            "std::fs::create_dir_all",
+        ] {
+            let named = format!("{{ path = \"{create}\",");
+            assert!(own.iter().any(|rule| rule.contains(&named)), "{create}");
+        }
+    }
 
     /// A machine without a store of secrets must say so rather than hand back something
     /// that behaves like one. A tool's own module builds its chain out of this answer, so a
@@ -760,6 +865,27 @@ mod tests {
         assert!(!same("/a/b", "/a/b/c"));
     }
 
+    #[test]
+    fn a_verbatim_path_is_spelled_as_libuv_and_codex_spell_it() {
+        let plain = |path: &str| without_verbatim_prefix(PathBuf::from(path));
+        assert_eq!(
+            plain(r"\\?\C:\Users\X\.codex"),
+            PathBuf::from(r"C:\Users\X\.codex")
+        );
+        assert_eq!(
+            plain(r"\\?\UNC\server\share\x"),
+            PathBuf::from(r"\\server\share\x")
+        );
+        for kept in [
+            r"C:\Users\X",
+            r"\\?\Volume{0}\x",
+            r"\\server\share",
+            "/Users/x",
+        ] {
+            assert_eq!(plain(kept), PathBuf::from(kept), "{kept}");
+        }
+    }
+
     // Read by the text alone, on every system, as Foundation standardises a file URL on macOS.
     #[test]
     fn a_windows_path_has_one_key_however_it_is_spelled() {
@@ -809,6 +935,33 @@ mod tests {
         assert!(!lies("never-made/Library/Application Support"));
         assert!(!lies("Library/../elsewhere/Application Support"));
         assert!(!root.exists());
+    }
+
+    #[test]
+    fn claude_desktops_windows_folders_are_refused_in_any_spelling() {
+        let (roaming, local) = (
+            PathBuf::from("/p/AppData/Roaming"),
+            PathBuf::from("/p/AppData/Local"),
+        );
+        let places =
+            claude_desktop_on_windows(std::slice::from_ref(&roaming), std::slice::from_ref(&local));
+        let refused = |path: PathBuf| places.iter().any(|place| lies_in(&path, place));
+        for path in [
+            roaming.join("Claude"),
+            roaming.join("claude").join("Cookies"),
+            roaming.join("CLAUDE-3P"),
+            local.join("AnthropicClaude").join("app-1.0"),
+            roaming.clone(),
+        ] {
+            assert!(refused(path.clone()), "{}", path.display());
+        }
+        for path in [
+            roaming.join("Claudette"),
+            local.join("Claude"),
+            local.join("Pitboard"),
+        ] {
+            assert!(!refused(path.clone()), "{}", path.display());
+        }
     }
 
     #[test]

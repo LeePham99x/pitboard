@@ -430,10 +430,6 @@ fn reads_as_settling_refuses(case: &str, make: Make, point: &'static str) {
 /// in that window, the item is an orphan: never renewed, never deleted, and on macOS not
 /// listable by any tool the user has.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-)]
 fn enrolling_killed_between_the_write_and_the_record_leaves_nothing_unnamed() {
     for point in ["enroll.park_stored", "enroll.park_recorded"] {
         let m = machine(&point.replace('.', "-"));
@@ -607,10 +603,6 @@ fn a_switch_that_cannot_read_the_store_back_keeps_every_copy_and_its_record() {
 /// into it, and records it; killed between the write and the record, the copy is an orphan,
 /// and the renewal runs inside every plain `pitboard`.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-)]
 fn renewing_killed_between_the_write_and_the_record_leaves_nothing_unnamed() {
     let m = machine("renew-park-stored");
     // The parked login is due: its access token has lapsed.
@@ -685,10 +677,6 @@ fn renewing_killed_between_the_write_and_the_record_leaves_nothing_unnamed() {
 /// copy, which this once did, left the account nothing that works. The next change gives
 /// it back.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-)]
 fn a_renewal_that_cannot_record_its_answer_keeps_it_for_the_next_run() {
     use crate::host::fs::testing;
     let m = machine("renew-save-fails");
@@ -759,10 +747,6 @@ fn a_renewal_that_cannot_record_its_answer_keeps_it_for_the_next_run() {
 /// Forgetting deletes the account before deleting its park. Killed between the two, the
 /// park is listed for deletion and a later run finishes it.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W16: Pitboard writing, replacing and removing files on Windows"
-)]
 fn forgetting_killed_after_the_record_still_deletes_the_park() {
     let m = machine("forget-recorded");
     let settled = settle(&m.ctx, Permit::for_a_test(), None)

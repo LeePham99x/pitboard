@@ -296,7 +296,6 @@ impl Machine {
         let host = MemoryHost::new();
         let api = ScriptedApi::new();
         let base = Context::new(home.clone())
-            .with_pitboard_home(home.join(".pitboard"))
             .with_codex_home(home.join(".codex").to_string_lossy().into_owned())
             .with_user("dana".into())
             // Nothing on this machine's own `PATH` is ever found.
@@ -828,9 +827,8 @@ pub(crate) fn make(world: World, folder: Folder) -> Result<Launched, Unmade> {
     ));
     let windows = WindowsLaunch {
         directory: machine.root().to_string_lossy().into_owned(),
-        key: machine
-            .home()
-            .join(".pitboard")
+        key: service::Pitboard::new(machine.base.clone())
+            .directory()
             .to_string_lossy()
             .into_owned(),
         link_scheme: LINK_SCHEME.into(),
@@ -1069,7 +1067,8 @@ fn codex_parked(machine: &Machine) -> Result<(), Unmade> {
 /// none to give it: there, the world is not made, rather than made otherwise than its name
 /// says.
 fn unreadable_index(machine: &Machine) -> Result<(), Unmade> {
-    files::deny_reading(&machine.home().join(".pitboard").join("state.json"))?;
+    let pitboard = service::Pitboard::new(machine.base.clone()).directory();
+    files::deny_reading(&pitboard.join("state.json"))?;
     match service::Pitboard::new(machine.base.clone()).status_offline() {
         Err(error) if error.code() == "state_unreadable" => Ok(()),
         Err(error) => Err(Unmade(format!(

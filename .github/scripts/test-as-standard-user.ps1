@@ -15,7 +15,9 @@ param(
     [string[]] $Commands = @(''),
     # Built already, inside the workspace the user is granted read and run on. Without it, -Exe
     # leaves Credential Manager out of the leak check.
-    [string] $Probe
+    [string] $Probe,
+    # A folder on a volume the job mounted, which the tests find in PITBOARD_TEST_VOLUME.
+    [string] $Volume
 )
 $ErrorActionPreference = 'Stop'
 
@@ -45,6 +47,11 @@ if ($Probe) {
 if ($Exe) {
     if (-not (Test-Path -LiteralPath $Exe -PathType Leaf)) { throw "no program at $Exe" }
     $exePath = (Resolve-Path -LiteralPath $Exe).Path
+}
+$volumePath = $null
+if ($Volume) {
+    if (-not (Test-Path -LiteralPath $Volume -PathType Container)) { throw "no folder at $Volume for the tests' volume" }
+    $volumePath = (Resolve-Path -LiteralPath $Volume).Path
 }
 
 # Any of these present would give a test the runner's settings rather than its own.
@@ -190,6 +197,11 @@ try {
         $granted.Add($folder)
         Set-UserRights $folder 'RX'
     }
+    # exFAT and FAT32 keep no access list, and every account may write there.
+    if ($volumePath -and ([System.IO.DriveInfo]::new($volumePath).DriveFormat -notin 'exFAT', 'FAT32', 'FAT')) {
+        $granted.Add($volumePath)
+        Set-UserRights $volumePath 'M'
+    }
     if ($Cargo) {
         New-Item -ItemType Directory -Force -Path $store | Out-Null
         $granted.Add($store)
@@ -235,6 +247,7 @@ try {
         INSTA_WORKSPACE_ROOT = $workspace
         INSTA_UPDATE = 'no'
     }
+    if ($volumePath) { $userEnv.PITBOARD_TEST_VOLUME = $volumePath }
     # Made by the user itself, so the folder is its own.
     if (-not (Test-Path -LiteralPath $userEnv.TEMP)) {
         $temp = Start-AsUser "$env:SystemRoot\System32\cmd.exe" @('/d', '/c', 'mkdir', $userEnv.TEMP) $runDir $userEnv 'temp'

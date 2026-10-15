@@ -1,0 +1,44 @@
+# The root's clippy.toml, which says why each of its rules is there, repeated, since a crate's
+# own file replaces it. Then std's ways to make a file or a folder: this crate makes each
+# through host::fs, which says how each system makes one private. An #[allow] says why one is
+# meant elsewhere: in host/'s faces, the stand-in, the Claude Desktop the tests play, and the
+# tests that set up a scratch folder.
+disallowed-methods = [
+    { path = "std::env::var", reason = "read the environment through context::Environment, or say why not in an #[allow]" },
+    { path = "std::env::var_os", reason = "read the environment through context::Environment, or say why not in an #[allow]" },
+    { path = "std::env::vars", reason = "read the environment through context::Environment, or say why not in an #[allow]" },
+    { path = "std::env::vars_os", reason = "read the environment through context::Environment, or say why not in an #[allow]" },
+    { path = "ureq::Proxy::try_from_env", reason = "read the proxy through the context (proxy::Proxies), or say why not in an #[allow]" },
+    { path = "ureq::Agent::new_with_defaults", reason = "send requests on the context's agent, api::agent, which is given the context's proxy" },
+    { path = "ureq::Agent::new_with_config", reason = "send requests on the context's agent, api::agent, which is given the context's proxy" },
+    { path = "ureq::Agent::with_parts", reason = "send requests on the context's agent, api::agent, which is given the context's proxy" },
+    { path = "ureq::Agent::config_builder", reason = "send requests on the context's agent, api::agent, which is given the context's proxy" },
+    { path = "ureq::RequestExt::with_default_agent", reason = "send requests on the context's agent, api::agent, which is given the context's proxy" },
+    { path = "ureq::agent", reason = "send requests on the context's agent, api::agent, which is given the context's proxy" },
+    { path = "ureq::run", reason = "send requests on the context's agent, api::agent, which is given the context's proxy" },
+    { path = "ureq::get", reason = "send requests on the context's agent, api::agent, which is given the context's proxy" },
+    { path = "ureq::post", reason = "send requests on the context's agent, api::agent, which is given the context's proxy" },
+    { path = "ureq::put", reason = "send requests on the context's agent, api::agent, which is given the context's proxy" },
+    { path = "ureq::delete", reason = "send requests on the context's agent, api::agent, which is given the context's proxy" },
+    { path = "ureq::head", reason = "send requests on the context's agent, api::agent, which is given the context's proxy" },
+    { path = "ureq::options", reason = "send requests on the context's agent, api::agent, which is given the context's proxy" },
+    { path = "ureq::connect", reason = "send requests on the context's agent, api::agent, which is given the context's proxy" },
+    { path = "ureq::patch", reason = "send requests on the context's agent, api::agent, which is given the context's proxy" },
+    { path = "ureq::trace", reason = "send requests on the context's agent, api::agent, which is given the context's proxy" },
+    { path = "ureq::RequestBuilder::config", reason = "send each request with its agent's configuration, which api::made gives the context's proxy, and no redirects while a SOCKS proxy is named" },
+    { path = "ureq::Agent::configure_request", reason = "send each request with its agent's configuration, which api::made gives the context's proxy, and no redirects while a SOCKS proxy is named" },
+    { path = "ureq::request_ext::WithAgent::configure", reason = "send each request with its agent's configuration, which api::made gives the context's proxy, and no redirects while a SOCKS proxy is named" },
+    { path = "ureq::RequestExt::middleware_config", reason = "send each request with its agent's configuration, which api::made gives the context's proxy, and no redirects while a SOCKS proxy is named" },
+    { path = "std::fs::write", reason = "make a file through host::fs, which makes it private to the person, or say why not in an #[allow]" },
+    { path = "std::fs::File::create", reason = "make a file through host::fs, which makes it private to the person, or say why not in an #[allow]" },
+    { path = "std::fs::File::create_new", reason = "make a file through host::fs, which makes it private to the person, or say why not in an #[allow]" },
+    { path = "std::fs::OpenOptions::create", reason = "make a file through host::fs, which makes it private to the person, or say why not in an #[allow]" },
+    { path = "std::fs::OpenOptions::create_new", reason = "make a file through host::fs, which makes it private to the person, or say why not in an #[allow]" },
+    { path = "std::fs::copy", reason = "make a file through host::fs, which makes it private to the person, or say why not in an #[allow]" },
+    { path = "std::fs::create_dir", reason = "make a folder through host::fs, which makes it private to the person, or say why not in an #[allow]" },
+    { path = "std::fs::create_dir_all", reason = "make a folder through host::fs, which makes it private to the person, or say why not in an #[allow]" },
+    { path = "std::fs::DirBuilder::create", reason = "make a folder through host::fs, which makes it private to the person, or say why not in an #[allow]" },
+]
+disallowed-types = [
+    { path = "ureq::config::Config", reason = "send requests on the context's agent, api::agent, which is given the context's proxy" },
+]

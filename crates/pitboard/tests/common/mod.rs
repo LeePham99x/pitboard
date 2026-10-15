@@ -350,7 +350,6 @@ impl Env {
         given
     }
 
-    // The runners' `Path` (run 37673429917) stays beside the given `PATH` until W14.
     #[allow(
         clippy::disallowed_methods,
         reason = "the tests' own environment, from which this withholds what Pitboard reads"
