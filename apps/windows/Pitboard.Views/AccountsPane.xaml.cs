@@ -246,16 +246,10 @@ public sealed partial class AccountsPane : UserControl
             return;
         }
 
-        switch (args.Key)
+        if (AccountKeys.Pressed(args.Key, shown.Item) is var (confirm, intent))
         {
-            case VirtualKey.Enter when shown.Item.Action is { } action:
-                args.Handled = true;
-                _model.Send(action.Intent);
-                break;
-            case VirtualKey.Delete when shown.Item.Forget is { Enabled: true } forget:
-                args.Handled = true;
-                Ask(forget.Confirm, forget.Intent);
-                break;
+            args.Handled = true;
+            Ask(confirm, intent);
         }
     }
 
