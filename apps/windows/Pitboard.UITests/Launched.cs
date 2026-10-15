@@ -67,14 +67,26 @@ internal sealed class Launched : IDisposable
     // A second launch in the same homes, as from Start, which the running copy answers with its window.
     public Window OpenWindow()
     {
-        using var again = Process.Start(StartInfo())!;
+        var start = StartInfo();
+        start.RedirectStandardError = true;
+        using var again = Process.Start(start)!;
+        var said = again.StandardError.ReadToEndAsync();
         if (!again.WaitForExit(Patience))
         {
             again.Kill();
             throw new AssertFailedException($"a second launch did not hand over to the first within {Patience}");
         }
 
-        return Window("Pitboard");
+        var handedOver = $"the second launch exited 0x{again.ExitCode:X8}, saying: {said.Result.Trim()}";
+        Assert.AreEqual(0, again.ExitCode, handedOver);
+        try
+        {
+            return Window("Pitboard");
+        }
+        catch (AssertFailedException missing)
+        {
+            throw new AssertFailedException($"{missing.Message}; {handedOver}");
+        }
     }
 
     public Window Window(string title)
