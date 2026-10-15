@@ -1,16 +1,4 @@
-// The Bun (or Node) side of the replace loop (VM C4). It waits for the loop's target to
-// appear, then opens it by path, reads it whole and closes it, again and again, the way a
-// tool reads its login on each use, until the loop writes its `.done` file or the time runs
-// out. Each read is checked against the loop's record format, so a torn read (a mix of two
-// records, or a short one) is told from a whole one and from a missing file. Only counts and
-// error codes are printed, never what was read.
-//
 // Usage: bun reader-loop.mjs <scratch> [seconds] [hold-ms]
-//   <scratch>  the folder given to `pitboard-probe replace-loop --scratch`
-//   hold-ms    keep each opened file open this long before closing it (default 0)
-//
-// libuv opens a file sharing read, write and delete (fs__open in src/win/fs.c); how Bun's
-// node:fs opens one on Windows is part of what this measures, not assumed.
 
 import { closeSync, existsSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";

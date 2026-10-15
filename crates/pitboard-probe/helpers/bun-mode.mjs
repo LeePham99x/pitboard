@@ -1,12 +1,4 @@
-// C1 from Bun's side: a login file made the way Claude Code 2.1.300's plaintext store makes
-// `.credentials.json`: the folder with `mkdir -p` and no mode, the file written to a
-// temporary one with mode 0o600 and renamed over, then `chmod 0o600`. What that leaves in the
-// file's DACL is read afterwards with `pitboard-probe acl --describe`.
-//
 // Usage: bun bun-mode.mjs <scratch>
-//
-// It makes only `<scratch>\pitboard-probe-bunmode\` and the file in it, writes a dummy, and
-// prints the modes Bun reports.
 
 import { chmodSync, mkdirSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -22,6 +14,7 @@ const tmp = `${file}.tmp`;
 const mode = (p) => statSync(p).mode & 0o777;
 const runtime = typeof Bun !== "undefined" ? `bun ${Bun.version}` : `node ${process.version}`;
 
+// As Claude Code 2.1.300's plaintext store writes `.credentials.json`.
 const steps = {};
 const step = (name, f) => {
   try {

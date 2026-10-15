@@ -1,15 +1,15 @@
-// VM B1 and B2 from Bun's (or Node's) side: os.homedir(), the home-shaped variables, and
-// whether each follows an overridden USERPROFILE. The account is hidden as the probe hides
-// it: the profile folder Windows reports for the account (os.userInfo().homedir) prints as
-// <profile> and the account name as <user>.
-//
-// Usage: bun os-homedir.mjs   (and: node os-homedir.mjs)
+// Usage: bun os-homedir.mjs <profile>   (and: node os-homedir.mjs <profile>)
 
 import os from "node:os";
 
+// Given, not read: Bun's os.userInfo().homedir follows USERPROFILE.
+const profile = process.argv[2];
+if (!profile) {
+  console.error("usage: os-homedir.mjs <the account's profile folder>");
+  process.exit(2);
+}
 const runtime = typeof Bun !== "undefined" ? `bun ${Bun.version}` : `node ${process.version}`;
 const info = os.userInfo();
-const profile = info.homedir;
 const user = info.username;
 
 function redact(value) {
@@ -44,7 +44,8 @@ console.log(
       os_homedir: redact(home),
       os_homedir_is_the_account_profile: home.toLowerCase() === profile.toLowerCase(),
       os_homedir_follows_USERPROFILE: home === process.env.USERPROFILE,
-      userinfo_homedir_follows_USERPROFILE: profile === process.env.USERPROFILE,
+      userinfo_homedir_is_the_account_profile: info.homedir.toLowerCase() === profile.toLowerCase(),
+      userinfo_homedir_follows_USERPROFILE: info.homedir === process.env.USERPROFILE,
       os_homedir_is_nfc: home === home.normalize("NFC"),
       env: Object.fromEntries(
         [

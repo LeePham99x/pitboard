@@ -45,6 +45,7 @@ $pwsh = (Get-Process -Id $PID).Path
 $jobSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 $usersSid = 'S-1-5-32-545'
 $administratorsSid = 'S-1-5-32-544'
+$openSshUsersSid = 'S-1-5-32-585'
 # The files of the reports that ConvertFrom-Json could not read. The step fails on any.
 $script:unreadable = [System.Collections.Generic.List[string]]::new()
 $report = [ordered]@{ triple = $Triple }
@@ -77,24 +78,24 @@ function Invoke-Row($Result, [string] $Key, [scriptblock] $Block) {
     Save-Report
 }
 
-# Run the probe as the job's user with its report written to a file, and hand the report
-# back. The probe writes only a file whose name begins pitboard-probe-. Its output goes to
-# files rather than pipes: a browser it starts can hold an inherited pipe open long after it
-# exits, and run 38685119129 waited on one until the job's time ran out.
+function Wait-Bounded($Process, [int] $TimeoutSeconds) {
+    $exited = $Process.WaitForExit($TimeoutSeconds * 1000)
+    if (-not $exited) {
+        taskkill /PID $Process.Id /T /F *> $null
+        $null = $Process.WaitForExit(15000)
+    }
+    [pscustomobject]@{ TimedOut = -not $exited; Exit = $(if ($Process.HasExited) { $Process.ExitCode } else { $null }) }
+}
+
+# Output to files, not pipes: a browser the probe starts can hold an inherited pipe open.
 function Invoke-Probe([string] $Label, [string[]] $ProbeArgs, [int] $TimeoutSeconds = 900) {
     $file = Join-Path $scratch "pitboard-probe-report-$Label.json"
     Remove-Item -Force -Path $file -ErrorAction SilentlyContinue
     $process = Start-Process -FilePath $Probe -ArgumentList (Format-Arguments (@('--out', $file) + $ProbeArgs)) -NoNewWindow -PassThru `
         -RedirectStandardOutput (Join-Path $scratch "job-$Label-out.txt") -RedirectStandardError (Join-Path $scratch "job-$Label-err.txt")
     $null = $process.Handle
-    $exited = $process.WaitForExit($TimeoutSeconds * 1000)
-    if (-not $exited) {
-        taskkill /PID $process.Id /T /F *> $null
-        $null = $process.WaitForExit(15000)
-    }
-    $result = [ordered]@{ exit = $(if ($process.HasExited) { $process.ExitCode } else { $null }); report = (Read-Json $file) }
-    if (-not $exited) { $result.timed_out = $true }
-    $result
+    $waited = Wait-Bounded $process $TimeoutSeconds
+    [ordered]@{ timed_out = $waited.TimedOut; exit = $waited.Exit; report = (Read-Json $file) }
 }
 
 # Start-Process joins its arguments with spaces, so one holding a space is quoted here. None
@@ -165,16 +166,12 @@ function Start-AsUser($User, [string] $Label, [string[]] $ArgumentList, [string]
 # a report, or with -Text the last lines of plain text.
 function Wait-Run($Run, [int] $TimeoutSeconds = 900, [switch] $Text) {
     if (-not $Run.Process) { return [ordered]@{ started = $false; error = $Run.Failure } }
-    $exited = $Run.Process.WaitForExit($TimeoutSeconds * 1000)
-    if (-not $exited) {
-        taskkill /PID $Run.Process.Id /T /F *> $null
-        $null = $Run.Process.WaitForExit(15000)
-    }
-    $exit = if ($Run.Process.HasExited) { $Run.Process.ExitCode } else { $null }
+    $waited = Wait-Bounded $Run.Process $TimeoutSeconds
+    $exit = $waited.Exit
     $result = [ordered]@{
         started = $true
         environment = if ($Run.User.Env) { 'the user''s own profile variables' } else { 'the job user''s' }
-        timed_out = -not $exited
+        timed_out = $waited.TimedOut
         exit = $exit
         exit_hex = if ($null -ne $exit) { '0x{0:X8}' -f $exit } else { $null }
     }
@@ -647,7 +644,6 @@ function Measure-ReFs($User, $Result, [string] $Bun) {
 function Measure-SmbShare($User, $Result) {
     $dir = 'C:\pitboard-probe-share'
     $share = 'pitboard-probe-share'
-    $Result.server_service = [string] (Get-Service -Name 'LanmanServer' -ErrorAction SilentlyContinue).Status
     try {
         New-Item -ItemType Directory -Force -Path $dir | Out-Null
         icacls $dir /grant "*$($User.Sid):(OI)(CI)M" *> $null
@@ -725,13 +721,9 @@ function Get-SshdDiagnosis($User) {
     }
 }
 
-# RF-M: a loopback ssh session as $User with a key, where sshd ships with the image, in which
-# the probe reads the logon, DPAPI, Credential Manager and the processes of $User's other
-# logon. The service is put back as it was. Run 38685119129 found no sshd on windows-11-arm,
-# and Add-WindowsCapability did not install it within 10 minutes, so an image without one is
-# recorded and left alone. Run 38691271016 found windows-2025's sshd_config allowing only the
-# groups in AllowGroups, so $User joins OpenSSH Users, the built-in group Windows Server 2025
-# makes for that, and leaves it when it is removed.
+# RF-M: a loopback ssh session as $User by key, where the image ships sshd, in which the probe
+# reads the logon, DPAPI, Credential Manager and the processes of $User's other logon. $User
+# joins OpenSSH Users, the group AllowGroups admits. The service is put back as it was.
 function Measure-OpenSsh($User, $Result) {
     $service = Get-Service -Name 'sshd' -ErrorAction SilentlyContinue
     $Result.sshd_present = [bool] $service
@@ -743,9 +735,9 @@ function Measure-OpenSsh($User, $Result) {
     $holder = $null
     try {
         if ($before.start_type -eq 'Disabled') { Set-Service -Name 'sshd' -StartupType Manual }
-        $sshUsers = Get-LocalGroup -SID 'S-1-5-32-585' -ErrorAction SilentlyContinue
+        $sshUsers = Get-LocalGroup -SID $openSshUsersSid -ErrorAction SilentlyContinue
         $Result.openssh_users_group = [bool] $sshUsers
-        if ($sshUsers) { Add-LocalGroupMember -SID 'S-1-5-32-585' -Member $User.Name }
+        if ($sshUsers) { Add-LocalGroupMember -SID $openSshUsersSid -Member $User.Name }
         New-Item -ItemType Directory -Force -Path $keyDir | Out-Null
         $key = Join-Path $keyDir 'pitboard-probe-m-key'
         $keygen = Start-Process -FilePath 'ssh-keygen.exe' -ArgumentList (Format-Arguments @('-q', '-t', 'ed25519', '-N', '', '-C', 'pitboard-probe', '-f', $key)) `
@@ -787,7 +779,7 @@ function Measure-OpenSsh($User, $Result) {
         if ($session.logon.exit -ne 0) { $Result.diagnosis = Get-SshdDiagnosis $User }
     } finally {
         if ($holder -and $holder.Process -and -not $holder.Process.HasExited) { taskkill /PID $holder.Process.Id /T /F *> $null }
-        Invoke-Probe 'm-cleanup' @('credman-item', '--action', 'delete', '--name', 'pitboard-probe-m') | Out-Null
+        Invoke-AsUser $User 'm-cleanup' @('credman-item', '--action', 'delete', '--name', 'pitboard-probe-m') | Out-Null
         if ($before.status -ne 'Running') { Stop-Service -Name 'sshd' -Force -ErrorAction SilentlyContinue }
         Set-Service -Name 'sshd' -StartupType $before.start_type -ErrorAction SilentlyContinue
         Remove-Item -Recurse -Force -Path $keyDir, $sshDir -ErrorAction SilentlyContinue
@@ -796,7 +788,7 @@ function Measure-OpenSsh($User, $Result) {
     }
 }
 
-# The fresh standard user's rows, in the order the roadmap gives them, each saved as it lands.
+# The fresh standard user's rows, each saved as it lands.
 function Measure-FreshUser($User, $Result, [string] $Bun, [string] $X64) {
     $s = $User.Scratch
     $Result.tokens = Invoke-AsUser $User 'tokens' @('tokens')
@@ -825,13 +817,14 @@ function Measure-FreshUser($User, $Result, [string] $Bun, [string] $X64) {
         $fakeProfile = Join-Path $User.RunDir 'b1-profile'
         $node = (Get-Command -Name 'node' -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source
         $r = [ordered]@{ node_present = [bool] $node }
+        $scriptArgs = @($script, $User.ProfileDir)
         if ($node) {
-            $r.node = Invoke-AsUser $User 'b1e-node' @($script) -FilePath $node
-            $r.node_userprofile_overridden = Invoke-AsUser $User 'b1e-node-up' @($script) -FilePath $node -Extra @{ USERPROFILE = $fakeProfile }
+            $r.node = Invoke-AsUser $User 'b1e-node' $scriptArgs -FilePath $node
+            $r.node_userprofile_overridden = Invoke-AsUser $User 'b1e-node-up' $scriptArgs -FilePath $node -Extra @{ USERPROFILE = $fakeProfile }
         }
         if ($Bun) {
-            $r.bun = Invoke-AsUser $User 'b1e-bun' @($script) -FilePath $Bun
-            $r.bun_userprofile_overridden = Invoke-AsUser $User 'b1e-bun-up' @($script) -FilePath $Bun -Extra @{ USERPROFILE = $fakeProfile }
+            $r.bun = Invoke-AsUser $User 'b1e-bun' $scriptArgs -FilePath $Bun
+            $r.bun_userprofile_overridden = Invoke-AsUser $User 'b1e-bun-up' $scriptArgs -FilePath $Bun -Extra @{ USERPROFILE = $fakeProfile }
         }
         $r
     }
@@ -899,9 +892,13 @@ function Measure-FreshUser($User, $Result, [string] $Bun, [string] $X64) {
     Invoke-Row $Result 'rf_f1' {
         $r = [ordered]@{}
         foreach ($start in 'running', 'suspended') {
-            foreach ($chain in @(@('exe', 1000), @('cmd-node-exe', 1000), @('exe-breakaway', 200))) {
-                $r["$($chain[0])_$start"] = Invoke-AsUser $User "f1-$($chain[0])-$start" @('job', '--scratch', (Join-Path $s 'f1'),
-                    '--chain', $chain[0], '--rounds', [string] $chain[1], '--start', $start) -TimeoutSeconds 600
+            foreach ($run in @(
+                    @{ key = 'exe'; chain = 'exe'; rounds = 1000; more = @() },
+                    @{ key = 'cmd-node-exe'; chain = 'cmd-node-exe'; rounds = 1000; more = @() },
+                    @{ key = 'exe-breakaway'; chain = 'exe-breakaway'; rounds = 200; more = @() },
+                    @{ key = 'exe-breakaway-ok'; chain = 'exe-breakaway'; rounds = 200; more = @('--allow-breakaway') })) {
+                $r["$($run.key)_$start"] = Invoke-AsUser $User "f1-$($run.key)-$start" (@('job', '--scratch', (Join-Path $s 'f1'),
+                    '--chain', $run.chain, '--rounds', [string] $run.rounds, '--start', $start) + $run.more) -TimeoutSeconds 600
                 Save-Report
             }
         }
@@ -1012,8 +1009,16 @@ function Measure-NonAsciiUser($Result, [string] $Bun) {
         $user = New-ThrowawayUser 'nonascii' $name @($usersSid) $Result
         if ($user.ProfileDir) {
             $s = $user.Scratch
-            $Result.homes = Invoke-AsUser $user 'b2-homes' @('homes', '--codex-home', (Join-Path $s 'codex'), '--claude-config-dir', (Join-Path $s 'cc'))
-            if ($Bun) { $Result.bun_os_homedir = Invoke-AsUser $user 'b2-bun' @((Join-Path $toolHelpers 'os-homedir.mjs')) -FilePath $Bun }
+            $codex = Join-Path $s 'codex'
+            $cc = Join-Path $s 'cc'
+            # Made by the user, so they are its own and have canonical spellings to hash.
+            $Result.made_homes = Invoke-AsUser $user 'b2-mkdir' @('/d', '/c', 'mkdir', $codex, $cc) -FilePath (Join-Path $env:SystemRoot 'System32\cmd.exe') -Text
+            $Result.homes = Invoke-AsUser $user 'b2-homes' @('homes', '--codex-home', $codex, '--claude-config-dir', $cc)
+            $Result.homes_by_short_names = Invoke-Fact {
+                $fso = New-Object -ComObject 'Scripting.FileSystemObject'
+                Invoke-AsUser $user 'b2-homes-short' @('homes', '--codex-home', $fso.GetFolder($codex).ShortPath, '--claude-config-dir', $fso.GetFolder($cc).ShortPath)
+            }
+            if ($Bun) { $Result.bun_os_homedir = Invoke-AsUser $user 'b2-bun' @((Join-Path $toolHelpers 'os-homedir.mjs'), $user.ProfileDir) -FilePath $Bun }
         }
     } catch {
         $Result.error = $_.Exception.Message

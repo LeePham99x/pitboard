@@ -1,23 +1,19 @@
-// G3 from Bun's side: Credential Manager items written through `Bun.secrets` the way Claude
-// Code 2.1.300's store writes its login, with no `persist` and no `allowUnrestrictedAccess`:
-// the item itself, a piece `#0` of 2400 characters and the manifest `#m` that names the
-// pieces. The service is `pitboard-citest-bun`, never a tool's, and every value is a dummy.
-// `pitboard-probe credman-item` reads each item's attributes and deletes it; `delete` here
-// removes whatever is left.
-//
 // Usage: bun bun-secrets.mjs <set|delete>
-//
-// It prints lengths and booleans, never a value.
 
 const service = "pitboard-citest-bun";
 const names = ["claude-code-user", "claude-code-user#0", "claude-code-user#m"];
 const piece = "A".repeat(2400);
 const values = {
-  "claude-code-user": '{"dummy":"pitboard-probe"}',
+  // Not ASCII, so the blob tells UTF-8 from UTF-16 and from an ANSI code page.
+  "claude-code-user": '{"dummy":"pitboard-probe-\u0110\u1ea1t"}',
   "claude-code-user#0": piece,
   "claude-code-user#m": JSON.stringify({ n: 1, l: piece.length }),
 };
 
+if (process.env.GITHUB_ACTIONS !== "true" || process.env.RUNNER_ENVIRONMENT !== "github-hosted") {
+  console.error("bun-secrets.mjs writes Credential Manager items, so it runs only on a GitHub-hosted runner");
+  process.exit(2);
+}
 const action = process.argv[2];
 if (typeof Bun === "undefined" || !Bun.secrets || (action !== "set" && action !== "delete")) {
   console.error("usage: bun bun-secrets.mjs <set|delete>, under Bun");
@@ -28,6 +24,7 @@ const out = { runtime: `bun ${Bun.version}`, action, items: {} };
 for (const name of names) {
   try {
     if (action === "set") {
+      // No persist and no allowUnrestrictedAccess, as Claude Code 2.1.300 calls it.
       await Bun.secrets.set({ service, name, value: values[name] });
       const read = await Bun.secrets.get({ service, name });
       out.items[name] = { set: true, read_back_length: read?.length ?? null, matches: read === values[name] };
