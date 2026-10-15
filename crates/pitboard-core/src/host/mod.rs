@@ -87,11 +87,14 @@ impl Os {
         }
     }
 
-    /// The command a person types on this system to make `paths` private to themselves.
-    /// `None` where Pitboard cannot say one yet: on Windows, where a file is private through
-    /// its access control list, W15 says the command along with who may read a file, and
-    /// until then nothing asks, since the Windows face cannot tell who may.
-    pub(crate) fn make_private_command(self, kind: Kind, paths: &[&str]) -> Option<String> {
+    // What a person types to make `paths` private to themselves: on Windows one `icacls` a
+    // path, naming them by `sid`, and none without it.
+    pub(crate) fn make_private_commands(
+        self,
+        kind: Kind,
+        paths: &[&str],
+        sid: Option<&str>,
+    ) -> Vec<String> {
         match self {
             Os::MacOs | Os::Linux => {
                 let mode = match kind {
@@ -99,9 +102,14 @@ impl Os {
                     Kind::File => "600",
                     Kind::Any => "go-rwx",
                 };
-                Some(format!("chmod {mode} {}", paths.join(" ")))
+                vec![format!("chmod {mode} {}", paths.join(" "))]
             }
-            Os::Windows => None,
+            Os::Windows => sid.map_or_else(Vec::new, |sid| {
+                paths
+                    .iter()
+                    .map(|path| acl::icacls(kind, path, sid))
+                    .collect()
+            }),
         }
     }
 
@@ -481,7 +489,7 @@ pub enum Private {
     Missing,
 }
 
-/// What a person makes private with the command [`Os::make_private_command`] gives.
+// What a person makes private with the commands `Os::make_private_commands` gives.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Kind {
     Directory,

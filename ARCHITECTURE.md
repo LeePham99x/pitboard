@@ -96,17 +96,24 @@ window loads its site, and whatever the site's pages load, as a browser would.
     data folder before anything else is asked, so neither face lists processes with their
     parents or reads a cookie jar. `windows/` is the face that refuses whatever of Windows
     is not built yet: no store of secrets, a vault of `store::Backend::Unknown` whose every
-    call cannot be read, no process list, no scheduler, no file made and no program found.
-    What it does read is this process's token, through windows-sys (`windows/user.rs`),
-    which `token.rs` makes an `Elevation` of, the account's own folders
-    (`GetUserProfileDirectoryW`, `FOLDERID_Profile`, `FOLDERID_LocalAppData` and the profile
-    type), which a build for tests answers nothing from, and the build `RtlGetVersion`
-    gives, which `host::windows_floor` holds against 26100, the build of Windows 11 24H2
-    and Windows Server 2025. `token.rs` is compiled on every system, so how
-    a token reads is tested everywhere, and `words.rs` says each system's refusal from a
-    `host::Os`. A fact that differs by system is a `match` on `host::OS`, such as the
-    folders macOS asks about before an app may look in them, or `Os::default_pitboard_home`,
-    where Pitboard keeps its files for a home when `PITBOARD_HOME` names nowhere else.
+    call cannot be read, no process list, no scheduler, no file replaced, moved or removed,
+    and no program found. What it does read is this process's token, through windows-sys
+    (`windows/user.rs`), which `token.rs` makes an `Elevation` of and whose `TokenUser` is
+    the person's SID, the account's own folders (`GetUserProfileDirectoryW`,
+    `FOLDERID_Profile`, `FOLDERID_LocalAppData` and the profile type), which a build for
+    tests answers nothing from, and the build `RtlGetVersion` gives, which
+    `host::windows_floor` holds against 26100, the build of Windows 11 24H2 and Windows
+    Server 2025. `windows/fs.rs` makes each private file and folder with a security
+    descriptor from SDDL: owned by the person's SID, with a protected access list granting
+    the person, SYSTEM and Administrators alone, which a folder passes on to what is made in
+    it. A folder already there keeps its own list. `fs::access` reads a path's list, and
+    `acl.rs` says who else it lets reach the data, by the names Windows shows, and the
+    `icacls` line that closes it. `token.rs` and `acl.rs` are compiled on every system, so
+    how a token and a list read is tested everywhere, and `words.rs` says each system's
+    refusal from a `host::Os`. A fact that differs by system is a `match` on `host::OS`,
+    such as the folders macOS asks about before an app may look in them, or
+    `Os::default_pitboard_home`, where Pitboard keeps its files for a home when
+    `PITBOARD_HOME` names nowhere else.
     `same_path_in_any_case` is how Windows compares paths, for the core and the apps alike,
     and `path_key_in_any_case` a key read from the text alone, which also reads `\\?\`, `.`
     and `..` away. `awake` is the time the machine has been awake, which the app's timers

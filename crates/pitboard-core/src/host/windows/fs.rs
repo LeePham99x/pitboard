@@ -688,6 +688,7 @@ pub mod testing {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::{Kind, Os};
     use std::io::Write;
 
     fn scratch(name: &str) -> std::path::PathBuf {
@@ -961,6 +962,82 @@ mod tests {
         assert_eq!(open.described, "open to everyone, with no access list");
         testing::make_private(&file).expect("private");
         assert_eq!(access(&dir.join("never-made")), None);
+        std::fs::remove_dir_all(&dir).expect("cleared");
+    }
+
+    // PowerShell's -EncodedCommand takes the command as base64 of its UTF-16, so nothing in it
+    // is quoted again on the way.
+    fn encoded(command: &str) -> String {
+        const DIGITS: &[u8; 64] =
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let bytes: Vec<u8> = command.encode_utf16().flat_map(u16::to_le_bytes).collect();
+        bytes
+            .chunks(3)
+            .flat_map(|chunk| {
+                let n = chunk.iter().enumerate().fold(0u32, |n, (at, byte)| {
+                    n | (u32::from(*byte) << (16 - 8 * at))
+                });
+                (0..4).map(move |at| {
+                    if at <= chunk.len() {
+                        char::from(DIGITS[((n >> (18 - 6 * at)) & 63) as usize])
+                    } else {
+                        '='
+                    }
+                })
+            })
+            .collect()
+    }
+
+    // Each line as a person pastes it, into cmd or into PowerShell.
+    fn run_advice(shell: &str, kind: Kind, path: &Path) {
+        use std::os::windows::process::CommandExt;
+        let you = crate::host::user::sid().expect("this account's SID");
+        let named = path.display().to_string();
+        let lines = Os::Windows.make_private_commands(kind, &[&named], Some(&you));
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        for line in lines {
+            let ran = match shell {
+                "cmd" => std::process::Command::new("cmd.exe")
+                    .args(["/d", "/c"])
+                    .raw_arg(&line)
+                    .output(),
+                _ => std::process::Command::new("powershell.exe")
+                    .args(["-NoProfile", "-NonInteractive", "-EncodedCommand"])
+                    .arg(encoded(&line))
+                    .output(),
+            }
+            .expect(shell);
+            assert!(ran.status.success(), "{shell}: {line}: {ran:?}");
+        }
+    }
+
+    #[test]
+    fn the_icacls_advice_closes_a_login_to_others_and_its_owner_still_reads_it() {
+        let dir = scratch("icacls Đạt");
+        std::fs::create_dir_all(&dir).expect("a folder");
+        testing::open_to_others(&dir).expect("opened");
+        // As a folder made under one others read is open: through what it inherits.
+        let shared = dir.join("shared folder");
+        std::fs::create_dir(&shared).expect("a folder");
+        assert!(access(&shared).expect("read").shared, "its parent's list");
+        let private = Access {
+            shared: false,
+            described: "open to you, SYSTEM and Administrators".into(),
+        };
+        for (shell, kind) in [("cmd", Kind::File), ("powershell", Kind::Any)] {
+            let login = shared.join(format!("{shell} Đạt's login.json"));
+            std::fs::write(&login, "x").expect("written");
+            assert!(access(&login).expect("read").shared, "its folder's list");
+            run_advice(shell, kind, &login);
+            assert_eq!(access(&login), Some(private.clone()), "{shell}");
+            assert_eq!(std::fs::read(&login).expect("its owner reads it"), b"x");
+        }
+        let inside = shared.join("inside");
+        std::fs::write(&inside, "x").expect("written");
+        run_advice("powershell", Kind::Directory, &shared);
+        assert_eq!(access(&shared), Some(private.clone()));
+        assert_eq!(access(&inside), Some(private), "what is inside takes it");
+        assert_eq!(std::fs::read(&inside).expect("its owner reads it"), b"x");
         std::fs::remove_dir_all(&dir).expect("cleared");
     }
 
