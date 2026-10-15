@@ -626,7 +626,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
 - `packaging/`: the templates a release fills and publishes, and the tap's other files.
   The casks `pitboard.rb` for the command line and `pitboard-app.rb` for the app go into the
   tap `datlechin/homebrew-tap`, with `tap_migrations.json` and the tap's README.
-  `install.sh`, the install script, goes on the release.
+  `scoop/pitboard.json`, Scoop's manifest for the command line on Windows, goes into the
+  bucket `datlechin/scoop-bucket` with `scoop/README.md`. `install.sh`, the install script,
+  goes on the release.
 - `docs/`: the Mintlify source of docs.usepitboard.com.
 - `website/`: the usepitboard.com site, built with Astro from `CHANGELOG.md` and the latest
   GitHub release into static files for Cloudflare Workers. `scripts/guard.mjs` checks the
@@ -653,8 +655,10 @@ window loads its site, and whatever the site's pages load, as a browser would.
     `fill-template.sh` writes a release's version and checksums into a `packaging/`
     template, and `test-install.py` tests it and the install script. `release-kind.sh`
     says what a tag releases and whether it is latest, `core-unchanged.sh` refuses a
-    `pitboard-core` that changed under a version crates.io already has, and
-    `test-release.py` tests both and the app's `build-number.sh`. `package-windows.ps1` zips
+    `pitboard-core` that changed under a version crates.io already has,
+    `check-winget-hashes.py` holds komac's winget manifests to a release's `SHA256SUMS`, and
+    `test-release.py` tests the three, the app's `build-number.sh` and the cargo-binstall
+    metadata in `crates/pitboard/Cargo.toml`. `package-windows.ps1` zips
     a Windows build, `check-windows-build.ps1` checks one, `verify-windows-signatures.ps1`
     checks the signature of every program a Windows release hands on, and
     `test-windows-release.ps1` tests all three.
@@ -2179,6 +2183,10 @@ on 15 October 2026. W27 reviews the list.
 | A deleted WebView2 profile's folder goes as the browser process exits, and its name is refused with `ERROR_DELETE_PENDING` until then | [CoreWebView2Profile.Delete](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/winrt/microsoft_web_webview2_core/corewebview2profile#delete) | No row runs WebView2 yet. |
 | A program ended by an unhandled exception exits with the exception's code, such as `0xC0000005` | [GetExitCodeProcess](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getexitcodeprocess) | No row crashes a program. |
 | winget's validation installs a package as a standard user, runs its program with no argument and wants it to succeed | [Validation](https://github.com/microsoft/winget-pkgs/blob/master/doc/Validation.md), [Validation failure guide](https://github.com/microsoft/winget-pkgs/blob/master/doc/ValidationFailureGuide.md) | No runner submits a winget manifest. |
+| winget's validation scans an installer with several antivirus engines, and Defender scans what it installed | [Validation](https://github.com/microsoft/winget-pkgs/blob/master/doc/Validation.md) | No runner submits a winget manifest. |
+| Moderators label a portable archive `Portable-Archive`, a blocking issue | [Validation failure guide](https://github.com/microsoft/winget-pkgs/blob/master/doc/ValidationFailureGuide.md) | No manifest has been submitted. |
+| winget puts a portable package's command in a Links folder on `PATH` under Developer Mode or as an administrator, and its install folder on `PATH` otherwise | [winget-pkgs FAQ](https://github.com/microsoft/winget-pkgs/blob/master/doc/FAQ.md) | The L2 row in `runner-facts.ps1` installs one as an administrator, and has not run yet. A standard user's install is the session's. |
+| Since winget 1.29, an MSI wins over a portable installer whatever the manifest's order | [winget-cli 1.29.380](https://github.com/microsoft/winget-cli/releases/tag/v1.29.380) | No runner installs from winget's sources. |
 
 ### One sign-in at a time
 
