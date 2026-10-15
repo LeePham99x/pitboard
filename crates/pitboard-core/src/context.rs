@@ -344,8 +344,10 @@ pub struct Context {
     pub(crate) hover_rest: bool,
     /// `CODEX_HOME`, which moves everything Codex keeps, including its keyring account.
     pub(crate) codex_home: Option<String>,
-    // Where Codex looks for its home on Windows where `CODEX_HOME` is unset: `FOLDERID_Profile`.
-    pub(crate) codex_profile: Option<PathBuf>,
+    // Windows' `FOLDERID_Profile`, where Codex finds its home with `CODEX_HOME` unset.
+    pub(crate) profile: Option<PathBuf>,
+    // Windows' `LOCALAPPDATA`, as the environment gives it.
+    pub(crate) local_app_data: Option<PathBuf>,
     /// The Pitboard the daily renewal schedule runs. `None` is this program, which is right
     /// for the command line and wrong for an app: the schedule runs `pitboard renew`, so an
     /// app names the command line it comes with.
@@ -470,7 +472,8 @@ impl Context {
             agent: crate::api::Agents::default(),
             hover_rest: false,
             codex_home: None,
-            codex_profile: None,
+            profile: None,
+            local_app_data: None,
             schedule_program: None,
             search_path: None,
             scheduled_job: None,
@@ -505,8 +508,8 @@ impl Context {
     }
 
     #[cfg(test)]
-    pub(crate) fn with_codex_profile(mut self, profile: PathBuf) -> Context {
-        self.codex_profile = Some(profile);
+    pub(crate) fn with_profile(mut self, profile: PathBuf) -> Context {
+        self.profile = Some(profile);
         self
     }
 
@@ -811,9 +814,13 @@ impl Context {
             agent: crate::api::Agents::default(),
             hover_rest: matches!(env.text("CLAUDE_CODE_HOVER_REST"), Some("1" | "true")),
             codex_home: owned("CODEX_HOME").filter(|v| !v.is_empty()),
-            codex_profile: (env.os() == Os::Windows)
+            profile: (env.os() == Os::Windows)
                 .then(crate::host::user::profile)
                 .flatten(),
+            local_app_data: env
+                .path("LOCALAPPDATA")
+                .filter(|_| env.os() == Os::Windows)
+                .map(PathBuf::from),
             schedule_program: None,
             // Unset is nowhere, as it is to the shell: nothing is found on an empty `PATH`.
             search_path: Some(env.path("PATH").unwrap_or_default().to_os_string()),

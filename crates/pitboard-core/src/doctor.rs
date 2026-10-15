@@ -2816,9 +2816,9 @@ fn unplaced(ctx: &Context, variable: &str, path: &std::path::Path) -> Diagnosis 
             .chain(std::iter::once(homes))
             .collect(),
         environment: json!({}),
-        redaction: crate::redact::Sheet::new(
+        redaction: crate::redact::Sheet::of(
+            ctx,
             format!("{}:{}", crate::state::machine_id(), ctx.now_millis()),
-            ctx.home().to_string_lossy(),
         ),
     }
 }
@@ -2828,9 +2828,9 @@ fn unplaced(ctx: &Context, variable: &str, path: &std::path::Path) -> Diagnosis 
 /// The salt is this machine and this moment, so identifiers line up inside one report and
 /// two reports from one machine do not line up with each other. It is never printed.
 fn redaction_for(ctx: &Context, facts: &Facts) -> crate::redact::Sheet {
-    let mut sheet = crate::redact::Sheet::new(
+    let mut sheet = crate::redact::Sheet::of(
+        ctx,
         format!("{}:{}", crate::state::machine_id(), ctx.now_millis()),
-        ctx.home().to_string_lossy(),
     )
     .hide(facts.account.clone(), "user");
 

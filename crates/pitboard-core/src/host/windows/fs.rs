@@ -112,6 +112,23 @@ pub(crate) fn same_volume(_a: &Path, _b: &Path) -> io::Result<bool> {
     Err(not_yet())
 }
 
+// The 8.3 name Windows keeps beside a long one, where the volume keeps them (RF-B2).
+pub(crate) fn short_path(path: &Path) -> Option<std::path::PathBuf> {
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    use windows_sys::Win32::Storage::FileSystem::GetShortPathNameW;
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
+    // SAFETY: a NUL-terminated name; with no buffer it answers the length it needs.
+    let needed = unsafe { GetShortPathNameW(wide.as_ptr(), std::ptr::null_mut(), 0) };
+    if needed == 0 {
+        return None;
+    }
+    let mut short = vec![0u16; needed as usize];
+    // SAFETY: a buffer of the `needed` units it asked for.
+    let len = unsafe { GetShortPathNameW(wide.as_ptr(), short.as_mut_ptr(), needed) };
+    (len != 0 && len < needed)
+        .then(|| std::path::PathBuf::from(std::ffi::OsString::from_wide(&short[..len as usize])))
+}
+
 // The volume and the file's id on it (MC-fileid), a folder's included, through a junction.
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn file_id(path: &Path) -> Option<(u64, u128)> {
@@ -259,6 +276,24 @@ mod tests {
         let private = testing::is_private(path).expect_err("is_private");
         assert_eq!(private.kind(), io::ErrorKind::Unsupported);
         assert!(!path.exists(), "nothing was made");
+    }
+
+    #[test]
+    fn a_path_with_a_space_has_a_short_name_that_leads_to_it() {
+        let long = std::env::temp_dir().join(format!("pitboard short {}", std::process::id()));
+        std::fs::create_dir_all(&long).expect("a scratch folder");
+        let short = super::short_path(&long).expect("a short name");
+        assert!(
+            !short.to_string_lossy().contains(' '),
+            "{}",
+            short.display()
+        );
+        assert_eq!(
+            std::fs::canonicalize(&short).expect("there"),
+            std::fs::canonicalize(&long).expect("there")
+        );
+        assert_eq!(super::short_path(&long.join("never-made")), None);
+        let _ = std::fs::remove_dir_all(&long);
     }
 
     // A junction needs no right of its own, unlike a symbolic link.

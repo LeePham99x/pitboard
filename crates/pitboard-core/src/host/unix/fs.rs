@@ -136,6 +136,11 @@ pub(crate) fn same_volume(a: &Path, b: &Path) -> io::Result<bool> {
     Ok(nearest(a)?.dev() == nearest(b)?.dev())
 }
 
+// Short names are Windows'.
+pub(crate) fn short_path(_path: &Path) -> Option<std::path::PathBuf> {
+    None
+}
+
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn file_id(path: &Path) -> Option<(u64, u128)> {
     use std::os::unix::fs::MetadataExt;

@@ -326,6 +326,9 @@ mod tests {
                 "{spelling}"
             );
         }
+        if let Some(short) = crate::host::fs::short_path(&profile) {
+            assert!(is_the_accounts_own_home(&short), "{}", short.display());
+        }
         assert!(!is_the_accounts_own_home(&std::env::temp_dir()));
         assert!(!is_the_accounts_own_home(&profile.join("AppData")));
     }

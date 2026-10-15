@@ -17,6 +17,8 @@
 //! this moment, so two reports from one machine do not correlate. That is the intent and it
 //! is worth saying out loud rather than leaving to be discovered.
 
+use crate::context::Context;
+use crate::host::Os;
 use serde_json::Value;
 
 /// Everything a report must not carry out of a machine, and what to put in its place.
@@ -24,8 +26,16 @@ use serde_json::Value;
 pub struct Sheet {
     salt: String,
     /// Longest first, so a substring never hides the string that contains it.
-    secrets: Vec<(String, &'static str)>,
-    home: String,
+    secrets: Vec<Hidden>,
+    // Each spelling of a folder and what it is shown as, longest first.
+    folders: Vec<Hidden>,
+}
+
+#[derive(Debug, Clone)]
+struct Hidden {
+    text: String,
+    under: &'static str,
+    any_case: bool,
 }
 
 impl Sheet {
@@ -34,22 +44,70 @@ impl Sheet {
     /// `salt` makes the digests this report's own. Pass something that changes between
     /// reports and does not identify the machine on its own.
     pub(crate) fn new(salt: impl Into<String>, home: impl Into<String>) -> Sheet {
+        let home = Hidden {
+            text: home.into(),
+            under: "~",
+            any_case: false,
+        };
         Sheet {
             salt: salt.into(),
             secrets: Vec::new(),
-            home: home.into(),
+            folders: vec![home],
         }
     }
 
+    // On Windows also the profile and `%LOCALAPPDATA%`, in every spelling and case, and the user.
+    pub(crate) fn of(ctx: &Context, salt: impl Into<String>) -> Sheet {
+        let sheet = Sheet::new(salt, ctx.home().to_string_lossy());
+        match ctx.os {
+            Os::MacOs | Os::Linux => sheet,
+            Os::Windows => {
+                let homes = ctx.profile.iter().chain([&ctx.home]);
+                let sheet = homes.fold(sheet, |sheet, folder| {
+                    sheet.folder(&windows_spellings(folder), "~")
+                });
+                let sheet = match &ctx.local_app_data {
+                    Some(local) => sheet.folder(&windows_spellings(local), "%LOCALAPPDATA%"),
+                    None => sheet,
+                };
+                sheet.hide_in_any_case(ctx.user.clone().unwrap_or_default(), "user")
+            }
+        }
+    }
+
+    // Shown as `under`, in any case, as Windows compares a path.
+    pub(crate) fn folder(mut self, spellings: &[String], under: &'static str) -> Sheet {
+        self.folders.extend(spellings.iter().map(|text| Hidden {
+            text: text.clone(),
+            under,
+            any_case: true,
+        }));
+        self.folders
+            .sort_by_key(|folder| std::cmp::Reverse(folder.text.chars().count()));
+        self
+    }
+
     /// Hide every occurrence of `secret`, under a digest prefixed by `kind`.
-    pub(crate) fn hide(mut self, secret: impl Into<String>, kind: &'static str) -> Sheet {
-        let secret = secret.into();
+    pub(crate) fn hide(self, secret: impl Into<String>, kind: &'static str) -> Sheet {
+        self.secret(secret.into(), kind, false)
+    }
+
+    // A Windows user's name, which Windows takes in any case.
+    pub(crate) fn hide_in_any_case(self, secret: impl Into<String>, kind: &'static str) -> Sheet {
+        self.secret(secret.into(), kind, true)
+    }
+
+    fn secret(mut self, secret: String, kind: &'static str, any_case: bool) -> Sheet {
         // Too short to be worth hiding is also too short to hide safely: a two-character
         // login name would rewrite half the report.
         if secret.len() >= 4 {
-            self.secrets.push((secret, kind));
+            self.secrets.push(Hidden {
+                text: secret,
+                under: kind,
+                any_case,
+            });
             self.secrets
-                .sort_by_key(|(secret, _)| std::cmp::Reverse(secret.len()));
+                .sort_by_key(|secret| std::cmp::Reverse(secret.text.len()));
         }
         self
     }
@@ -71,13 +129,11 @@ impl Sheet {
     pub(crate) fn over(&self, text: &str) -> String {
         let mut out = text.to_string();
         // A path is worth keeping, and whose it is is not.
-        if self.home.len() >= 4 {
-            out = out.replace(&self.home, "~");
+        for folder in self.folders.iter().filter(|folder| folder.text.len() >= 4) {
+            out = folder.replace(&out, folder.under);
         }
-        for (secret, kind) in &self.secrets {
-            if out.contains(secret.as_str()) {
-                out = out.replace(secret.as_str(), &self.digest(kind, secret));
-            }
+        for secret in &self.secrets {
+            out = secret.replace(&out, &self.digest(secret.under, &secret.text));
         }
         out
     }
@@ -96,6 +152,58 @@ impl Sheet {
             other => other.clone(),
         }
     }
+}
+
+impl Hidden {
+    fn replace(&self, text: &str, with: &str) -> String {
+        if !self.any_case {
+            return text.replace(&self.text, with);
+        }
+        let upper = crate::host::upper_one_for_one;
+        let wanted: Vec<char> = self.text.chars().map(upper).collect();
+        let chars: Vec<char> = text.chars().collect();
+        let mut out = String::with_capacity(text.len());
+        let mut at = 0;
+        while at < chars.len() {
+            let here = chars.get(at..at + wanted.len());
+            if here.is_some_and(|here| here.iter().copied().map(upper).eq(wanted.iter().copied())) {
+                out.push_str(with);
+                at += wanted.len();
+            } else {
+                out.push(chars[at]);
+                at += 1;
+            }
+        }
+        out
+    }
+}
+
+// Each way a folder can be written in a report: as given, by its long name and its short one
+// (RF-B2), with `\\?\` and with forward slashes.
+fn windows_spellings(folder: &std::path::Path) -> Vec<String> {
+    let long = std::fs::canonicalize(folder)
+        .ok()
+        .map(crate::host::without_verbatim_prefix);
+    let short = crate::host::fs::short_path(folder);
+    let names: Vec<String> = [Some(folder.to_path_buf()), long, short]
+        .into_iter()
+        .flatten()
+        .map(|named| named.to_string_lossy().into_owned())
+        .collect();
+    spellings(&names.iter().map(String::as_str).collect::<Vec<_>>())
+}
+
+fn spellings(names: &[&str]) -> Vec<String> {
+    names
+        .iter()
+        .flat_map(|named| {
+            [
+                (*named).to_owned(),
+                format!(r"\\?\{named}"),
+                named.replace('\\', "/"),
+            ]
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -173,6 +281,64 @@ mod tests {
             "codes are the point of the report"
         );
         assert!(printed.contains("~/.pitboard"));
+    }
+
+    // RF-B2, run 38693947329: a profile whose name is not ASCII has an ASCII short name.
+    #[test]
+    fn a_windows_folder_is_hidden_in_every_spelling_and_case() {
+        let sheet = Sheet::new("salt", "")
+            .folder(&spellings(&[r"C:\Users\Đạt Ng", r"C:\Users\DTNG~1"]), "~")
+            .folder(&spellings(&[r"D:\Local"]), "%LOCALAPPDATA%")
+            .hide_in_any_case("Đạt", "user");
+        for (text, shown) in [
+            (r"C:\Users\Đạt Ng\.claude", r"~\.claude"),
+            (r"c:\users\đẠT NG\.claude.json", r"~\.claude.json"),
+            (r"\\?\C:\Users\Đạt Ng\.codex", r"~\.codex"),
+            ("C:/Users/Đạt Ng/.codex", "~/.codex"),
+            (
+                r"C:\Users\dtng~1\AppData\Local\Pitboard",
+                r"~\AppData\Local\Pitboard",
+            ),
+            (r"\\?\d:\LOCAL\Pitboard", r"%LOCALAPPDATA%\Pitboard"),
+        ] {
+            assert_eq!(sheet.over(text), shown, "{text}");
+        }
+        let user = sheet.over("Đạt");
+        assert!(user.starts_with("<user "), "{user}");
+        assert_eq!(
+            sheet.over("signed in as đẠT"),
+            format!("signed in as {user}")
+        );
+    }
+
+    #[test]
+    fn a_report_from_windows_hides_its_profile_local_app_data_and_user() {
+        use crate::context::Environment;
+        let profile = std::env::temp_dir().join(format!("pitboard redact {}", std::process::id()));
+        let local = std::env::temp_dir().join("pitboard-redact-local");
+        std::fs::create_dir_all(&profile).expect("a scratch profile");
+        let named = |path: &std::path::Path| path.to_string_lossy().into_owned();
+        let env = Environment::on(
+            Os::Windows,
+            [
+                ("USERPROFILE", named(&profile)),
+                ("LOCALAPPDATA", named(&local)),
+                ("USERNAME", "Dana Test".into()),
+            ],
+        );
+        let sheet = Sheet::of(&Context::read(&env, "cli"), "salt");
+        let shown = |path: &std::path::Path| sheet.over(&named(&path.join("x")));
+        assert_eq!(shown(&profile), named(&std::path::Path::new("~").join("x")));
+        assert_eq!(
+            shown(&local),
+            named(&std::path::Path::new("%LOCALAPPDATA%").join("x"))
+        );
+        assert_eq!(sheet.over(&named(&profile).to_uppercase()), "~");
+        if let Some(short) = crate::host::fs::short_path(&profile) {
+            assert_eq!(sheet.over(&named(&short)), "~", "{}", short.display());
+        }
+        assert!(sheet.over("dana test").starts_with("<user "));
+        let _ = std::fs::remove_dir_all(&profile);
     }
 
     #[test]

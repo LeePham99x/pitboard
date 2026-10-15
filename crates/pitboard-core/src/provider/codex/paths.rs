@@ -25,11 +25,7 @@ pub(crate) fn home(ctx: &Context) -> PathBuf {
             Os::Windows => std::fs::canonicalize(dir)
                 .map_or_else(|_| PathBuf::from(dir), crate::host::without_verbatim_prefix),
         },
-        _ => ctx
-            .codex_profile
-            .as_deref()
-            .unwrap_or(ctx.home())
-            .join(".codex"),
+        _ => ctx.profile.as_deref().unwrap_or(ctx.home()).join(".codex"),
     }
 }
 
@@ -148,7 +144,7 @@ mod tests {
         );
         let elsewhere = profile.join("Profile");
         assert_eq!(
-            home(&unset.with_codex_profile(elsewhere.clone())),
+            home(&unset.with_profile(elsewhere.clone())),
             elsewhere.join(".codex"),
             "not the home, where the profile is elsewhere"
         );

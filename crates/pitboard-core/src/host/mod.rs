@@ -413,7 +413,7 @@ fn same_name_in_any_case(a: &std::ffi::OsStr, b: &std::ffi::OsStr) -> bool {
 }
 
 // As Windows upper-cases a name: one UTF-16 unit for one, so ß and anything past the BMP stay.
-fn upper_one_for_one(c: char) -> char {
+pub(crate) fn upper_one_for_one(c: char) -> char {
     if u32::from(c) > 0xFFFF {
         return c;
     }
