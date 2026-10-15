@@ -418,6 +418,34 @@ mod tests {
         assert!(!g.compromised(), "nobody else touched it");
     }
 
+    // Each of Claude Code's two timings, twenty times shorter, kept past three of its stale
+    // windows and never taken for another's: what RF-C5 and RF-C5r measured at full length
+    // against proper-lockfile on Windows.
+    #[test]
+    fn each_heartbeat_outlives_its_stale_window() {
+        let shorter = |timing: Timing| Timing {
+            stale: timing.stale / 20,
+            heartbeat: timing.heartbeat / 20,
+            ..timing
+        };
+        thread::scope(|scope| {
+            for timing in [shorter(WRITE), shorter(REFRESH)] {
+                scope.spawn(move || {
+                    let (_dir, t) = scratch();
+                    let g = acquire(Permit::for_a_test(), &t, timing).expect("acquired");
+                    let lock = PathBuf::from(format!("{}.lock", t.display()));
+                    let held = Instant::now();
+                    while held.elapsed() < timing.stale * 3 {
+                        assert!(!abandoned(&lock, timing), "{timing:?}");
+                        assert!(!g.compromised(), "{timing:?}");
+                        thread::sleep(timing.heartbeat / 5);
+                    }
+                    assert!(acquire(Permit::for_a_test(), &t, QUICK).is_err());
+                });
+            }
+        });
+    }
+
     /// The half of proper-lockfile's protocol this omitted, and the reason it matters. A
     /// machine that sleeps mid-switch lets the lock age past its staleness window; Claude
     /// Code reclaims it and starts writing the credential underneath a switch that believes

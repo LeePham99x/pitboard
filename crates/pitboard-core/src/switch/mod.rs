@@ -1208,6 +1208,32 @@ mod tests {
         }
     }
 
+    // Another run's lock, held in another process: this run waits on nobody and gets nothing,
+    // and the look that waits on nobody finds the switch under way. A lock file that is not
+    // there is nobody's.
+    #[test]
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "a test leaves a switch's record as an interrupted run would"
+    )]
+    fn a_lock_another_process_holds_keeps_a_run_out_and_a_missing_one_holds_nobody() {
+        use crate::helper::{Helper, Job};
+        let m = harness::machine("held-elsewhere");
+        let permit = Permit::for_a_test();
+        let lock = home::dir(&m.ctx).join("state.lock");
+        let _ = std::fs::remove_file(&lock);
+        std::fs::write(home::dir(&m.ctx).join("journal.json"), "{}").expect("a switch's record");
+        assert_eq!(unfinished(&m.ctx), Some(Unfinished::Interrupted));
+        assert!(!lock.exists(), "looking makes no lock");
+
+        let other = Helper::start(Job::Locks, &lock);
+        assert!(try_exclusive(&m.ctx, permit).is_none());
+        assert_eq!(unfinished(&m.ctx), Some(Unfinished::UnderWay));
+        other.stop();
+        assert_eq!(unfinished(&m.ctx), Some(Unfinished::Interrupted));
+        assert!(try_exclusive(&m.ctx, permit).is_some());
+    }
+
     fn failing(message: &str) -> store::Error {
         store::Error::Write(message.into())
     }
