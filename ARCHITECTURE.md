@@ -2636,7 +2636,11 @@ treated, and only the macOS build shows it. The run reads both builds since.
   `claude auth login` prints its prompts whatever its output is, reads a pasted code with
   readline and trims it, so a line ended by `\r\n` reads as one ended by `\n`, and opens
   its page with `rundll32 url,OpenURL <address>`, a child of its own, unless its settings
-  or `BROWSER` name a program.
+  or `BROWSER` name a program. Its store is Credential Manager where
+  `CLAUDE_CODE_FORCE_WINDOWS_CREDMAN` is `1`, or where the `.config.json` or `.claude.json`
+  of its config folder caches `tengu_windows_credman` as true, and its file otherwise. So
+  a private sign-in withholds that variable, and its fresh folder caches nothing, so the
+  login lands in that folder's `.credentials.json`.
 - Read on 15 October 2026 from the win32-x64 and win32-arm64 builds of 2.1.300
   (`windows_managed_settings`): on Windows managed settings are in `C:\Program
   Files\ClaudeCode`, as on the other systems in their folder, and in the value `Settings` of

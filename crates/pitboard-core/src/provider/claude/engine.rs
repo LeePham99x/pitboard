@@ -193,7 +193,8 @@ impl Provider for Claude {
         claude::program(ctx)
     }
 
-    // `CLAUDE_SECURESTORAGE_CONFIG_DIR` would pin the slot back to a real one (`sign_in_output`).
+    // `CLAUDE_SECURESTORAGE_CONFIG_DIR` would pin the slot back to a real one (`sign_in_output`),
+    // and `CLAUDE_CODE_FORCE_WINDOWS_CREDMAN` the login into Credential Manager (2.1.300).
     fn sign_in(
         &self,
         ctx: &Context,
@@ -204,7 +205,8 @@ impl Provider for Claude {
         command
             .args(["auth", "login"])
             .env("CLAUDE_CONFIG_DIR", dir)
-            .env_remove("CLAUDE_SECURESTORAGE_CONFIG_DIR");
+            .env_remove("CLAUDE_SECURESTORAGE_CONFIG_DIR")
+            .env_remove("CLAUDE_CODE_FORCE_WINDOWS_CREDMAN");
         Ok(command)
     }
 
@@ -361,6 +363,29 @@ fn from_api(error: ApiError) -> ProviderError {
 )]
 mod tests {
     use super::*;
+
+    // Never run: a program that is there on every system.
+    #[test]
+    fn a_sign_in_withholds_what_would_store_its_login_elsewhere() {
+        let ctx = Context::new(PathBuf::from("/nowhere"))
+            .with_claude_program(std::env::current_exe().expect("this test"));
+        let dir = std::path::Path::new("/tmp/pitboard-signin-scratch");
+        let command = Claude
+            .sign_in(&ctx, Permit::for_a_test(), dir)
+            .expect("found");
+        assert_eq!(command.get_args().collect::<Vec<_>>(), ["auth", "login"]);
+        for withheld in [
+            "CLAUDE_SECURESTORAGE_CONFIG_DIR",
+            "CLAUDE_CODE_FORCE_WINDOWS_CREDMAN",
+        ] {
+            assert!(
+                command
+                    .get_envs()
+                    .any(|(name, value)| name == withheld && value.is_none()),
+                "{withheld}"
+            );
+        }
+    }
 
     /// The manual address 2.1.289 prints, with its values made up.
     const ADDRESS: &str = "https://claude.com/cai/oauth/authorize?code=true\
