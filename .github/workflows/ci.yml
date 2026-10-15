@@ -628,8 +628,25 @@ jobs:
         run: >
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command
           "Get-AppxPackage -AllUsers -Name 'Microsoft.WindowsAppRuntime*' | Format-Table Name, Version, Architecture -AutoSize"
+      # CF4: the account windows need the Runtime of the WebView2 SDK the app is built with, or later.
+      # Where Microsoft's guide to detecting it looks, per machine and then per user.
+      - name: The WebView2 Runtime this image holds
+        shell: pwsh
+        run: |
+          $client = 'Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+          $found = @("HKLM:\SOFTWARE\WOW6432Node\$client", "HKCU:\$client") |
+            ForEach-Object { (Get-ItemProperty -LiteralPath $_ -Name pv -ErrorAction SilentlyContinue).pv } |
+            Where-Object { $_ -and $_ -ne '0.0.0.0' } | Select-Object -First 1
+          $source = Get-Content -Raw -LiteralPath apps/windows/Pitboard.Windows/WebEnvironment.cs
+          $minimum = [regex]::Match($source, 'MinimumRuntime = "([0-9.]+)"').Groups[1].Value
+          if (-not $found) { throw 'This image holds no WebView2 Runtime, which the account windows need.' }
+          Write-Output "WebView2 Runtime $found; the account windows need $minimum or later."
+          if ([version]$found -lt [version]$minimum) {
+            throw "This image's WebView2 Runtime, $found, is older than the $minimum the account windows need."
+          }
       # Each UI test starts a Pitboard.exe in homes of its own and drives it as that user (CF1, CF2). The
-      # job user's Explorer takes no icon of that user's (CF3), so no UI test clicks the icon.
+      # job user's Explorer takes no icon of that user's (CF3), so no UI test clicks the icon. The WebView2
+      # tests (CF7) run the account windows' glue against a stand-in site on the loopback.
       - name: The app's tests, as a standard user
         shell: pwsh
         run: >
