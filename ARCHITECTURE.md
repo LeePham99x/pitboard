@@ -309,12 +309,13 @@ window loads its site, and whatever the site's pages load, as a browser would.
     by the same code for every front end, apart from the `PATH` that `host/linux` reads to
     find the program daily renewal runs. On Windows a name is one in any case, and the
     first of two spellings wins, as Windows hands a program its variables.
-  - `app.rs`: what an app finds for itself that a command typed at a prompt is given: each
-    tool's program, on the login shell's `PATH` and then where the tool's installers put
-    it, and the `pitboard` a terminal would run, there and then where each way of installing
-    Pitboard puts it, under the app's home and where the system's package managers put
-    programs. And the files an app keeps of its own in Pitboard's directory, `told.json` and
-    `app.json`, written as the core writes its own and read by nothing of the core.
+  - `app.rs`: what an app finds for itself that a command typed at a prompt is given: where
+    to look for each tool's program, on the login shell's `PATH` and then where the tool's
+    installers put it, which the core looks in each time it is asked, and the `pitboard` a
+    terminal would run, there and then where each way of installing Pitboard puts it, under
+    the app's home and where the system's package managers put programs. And the files an
+    app keeps of its own in Pitboard's directory, `told.json` and `app.json`, written as the
+    core writes its own and read by nothing of the core.
   - `api.rs`: what every request shares, the agent each context's requests go out on,
     `api::agent`. The requests to Anthropic are in `provider/claude/api.rs`, and those to
     OpenAI in `provider/codex/api.rs`.
@@ -507,7 +508,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     `notices.rs` the notices, their order and what the menu says of them, `setup.rs` the
     footing, the step it asks for and what stands in for an empty list, `sheets.rs` the
     sheets with their default buttons' words, the quit question and a failure's alert, with
-    `name_to_save`, the rule a sheet's default button and the model both save by,
+    `check_name`, the rule a sheet's default button and the model both save by, which says
+    why what is typed cannot be a name,
     `machine.rs` what the settings and the window's other panes show of this machine, daily
     renewal, Renew Now, doctor's checks, the activity log and the command line,
     `windows.rs` the account windows, what a window says until it can show its page, what
@@ -990,7 +992,7 @@ window loads its site, and whatever the site's pages load, as a browser would.
   only for the actor to take what is already in its mailbox and for each sign-in under way
   to stop, and the core, a tool's sign-in and the app's `AppControl`, `Notifications` and
   `LocalTime` are called on the model's own threads. The free functions block on nothing,
-  and an app may make them where it likes: `name_to_save` and `downloads_quit_question`,
+  and an app may make them where it likes: `check_name` and `downloads_quit_question`,
   which read only what they are given; `sites`, `sites_for`, `site_names`, `site_link`,
   `read_pitboard_link`, `pitboard_link` and `link_refusal_reason`, which are
   `pitboard-sites`' and read only what they are given too; the account windows' rules, such
