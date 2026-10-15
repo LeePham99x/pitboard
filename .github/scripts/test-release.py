@@ -1,9 +1,11 @@
 # The release workflow's scripts, run on what a tag and crates.io could hand them.
 import io
+import re
 import shutil
 import subprocess
 import tarfile
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -11,6 +13,14 @@ REPO = Path(__file__).resolve().parents[2]
 CORE_UNCHANGED = REPO / ".github" / "scripts" / "core-unchanged.sh"
 RELEASE_KIND = REPO / ".github" / "scripts" / "release-kind.sh"
 BUILD_NUMBER = REPO / "apps" / "macos" / "scripts" / "build-number.sh"
+PACKAGE_WINDOWS = REPO / ".github" / "scripts" / "package-windows.ps1"
+WINDOWS_TARGETS = ("x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc")
+TARBALL_TARGETS = (
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "x86_64-unknown-linux-musl",
+    "aarch64-unknown-linux-musl",
+)
 KEYS = ["version", "base", "kind", "prerelease", "windows", "crates", "latest", "signed"]
 NOT_A_TAG = "is not a release tag: vX.Y.Z, vX.Y.Z-rcN or vX.Y.Z-beta.N"
 NO_SIGNER = (
@@ -266,6 +276,71 @@ class ReleaseKind(unittest.TestCase):
                 done = run(RELEASE_KIND, *args)
                 self.assertEqual(done.returncode, 2)
                 self.assertIn("usage:", done.stderr)
+
+
+class Binstall(unittest.TestCase):
+    # As cargo-binstall 1.25.3 merges them (binstalk-types, PkgMeta::merge_overrides): a target's
+    # override replaces pkg-url, pkg-fmt and bin-dir, and adds its disabled-strategies to the
+    # package's.
+    def resolved(self, target):
+        crate = tomllib.loads((REPO / "crates" / "pitboard" / "Cargo.toml").read_text())
+        meta = dict(crate["package"]["metadata"]["binstall"])
+        override = meta.pop("overrides").get(target, {})
+        disabled = set(meta.get("disabled-strategies", []))
+        disabled |= set(override.get("disabled-strategies", []))
+        meta.update({k: override[k] for k in ("pkg-url", "pkg-fmt", "bin-dir") if k in override})
+        meta["disabled-strategies"] = disabled
+        return meta
+
+    def expand(self, template, target, version):
+        workspace = tomllib.loads((REPO / "Cargo.toml").read_text())
+        values = {
+            "repo": workspace["workspace"]["package"]["repository"],
+            "name": "pitboard",
+            "version": version,
+            "target": target,
+            "bin": "pitboard",
+            "binary-ext": ".exe" if "windows" in target else "",
+        }
+        return re.sub(r"\{ ([a-z-]+) \}", lambda m: values[m.group(1)], template)
+
+    def test_windows_installs_the_zip_package_windows_writes(self):
+        script = PACKAGE_WINDOWS.read_text()
+        for line in (
+            '$name = "pitboard-v$Version-$Triple"',
+            '$zip = Join-Path $dist "$name.zip"',
+            "$entries = 'pitboard.exe',",
+        ):
+            self.assertIn(line, script)
+        version = "1.0.0-beta.1"
+        for target in WINDOWS_TARGETS:
+            with self.subTest(target=target):
+                meta = self.resolved(target)
+                name = f"pitboard-v{version}-{target}"
+                self.assertEqual(
+                    self.expand(meta["pkg-url"], target, version),
+                    f"https://github.com/datlechin/pitboard/releases/download/v{version}/{name}.zip",
+                )
+                self.assertEqual(meta["pkg-fmt"], "zip")
+                self.assertEqual(
+                    self.expand(meta["bin-dir"], target, version), f"{name}/pitboard.exe"
+                )
+                self.assertEqual(meta["disabled-strategies"], {"quick-install", "compile"})
+
+    def test_every_other_target_installs_its_tarball(self):
+        version = "1.0.0"
+        for target in TARBALL_TARGETS:
+            with self.subTest(target=target):
+                meta = self.resolved(target)
+                name = f"pitboard-v{version}-{target}"
+                self.assertEqual(
+                    self.expand(meta["pkg-url"], target, version),
+                    f"https://github.com/datlechin/pitboard/releases/download/v{version}/"
+                    f"{name}.tar.gz",
+                )
+                self.assertEqual(meta["pkg-fmt"], "tgz")
+                self.assertEqual(self.expand(meta["bin-dir"], target, version), f"{name}/pitboard")
+                self.assertEqual(meta["disabled-strategies"], {"quick-install"})
 
 
 class BuildNumber(unittest.TestCase):
