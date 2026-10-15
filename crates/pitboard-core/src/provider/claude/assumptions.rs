@@ -118,7 +118,15 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         linux: NO_KEYCHAIN_ON_LINUX,
         windows: NO_KEYCHAIN_ON_WINDOWS,
     },
-    everywhere("write_lock", VERIFIED_AGAINST),
+    // Read again in both Windows builds of 2.1.300. Under Bun 1.4.3, proper-lockfile 4.1.2 and
+    // Pitboard's lock see each other's lock with this timing on both runner images (RF-C5,
+    // run 38693947329).
+    PerSystem {
+        name: "write_lock",
+        macos: Read(VERIFIED_AGAINST),
+        linux: Read(VERIFIED_AGAINST),
+        windows: Read("2.1.300"),
+    },
     everywhere("logout_skips_the_lock", VERIFIED_AGAINST),
     everywhere("account_scoped_keys", VERIFIED_AGAINST),
     later_on_windows(
@@ -235,11 +243,13 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         linux: Read("2.1.294"),
         windows: Read("2.1.294"),
     },
+    // Read again in both Windows builds of 2.1.300, and measured with this timing as the write
+    // lock was (RF-C5r, run 38693947329).
     PerSystem {
         name: "refresh_lock",
         macos: Read("2.1.294"),
         linux: Read("2.1.294"),
-        windows: Read("2.1.294"),
+        windows: Read("2.1.300"),
     },
     PerSystem {
         name: "login_carries_its_plan",
@@ -251,6 +261,12 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         name: "windows_home_folder",
         macos: NotRead("macOS keeps the home in `HOME`, which config_file_location reads"),
         linux: NotRead("Linux keeps the home in `HOME`, which config_file_location reads"),
+        windows: Read("2.1.300"),
+    },
+    PerSystem {
+        name: "windows_open_sharing",
+        macos: NotRead("a rename lands over a file open on macOS whatever opened it"),
+        linux: NotRead("a rename lands over a file open on Linux whatever opened it"),
         windows: Read("2.1.300"),
     },
     warm_up("headless_token_descriptor"),
@@ -906,6 +922,37 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         absent: &[],
     },
     Assumption {
+        name: "windows_open_sharing",
+        fact: "on Windows Claude Code opens its files sharing their reading, writing and \
+               deletion, so a POSIX rename lands over one it holds open. It writes \
+               `.credentials.json` by staging `<file>.tmp.<8 hex>` beside it and renaming that \
+               over, trying the rename four times 50ms apart on EPERM, EBUSY and EACCES, and \
+               then rewriting the file in place on EXDEV, EPERM, EEXIST or EBUSY. Its strict \
+               read of the login takes any error but a missing file for a failed read there, \
+               a sharing violation's EBUSY included, which skips its write \
+               (`read_failed_skip_write`)",
+        read_from: "Bun 1.4.3's `openat_windows`, which calls `NtCreateFile` with \
+                    `FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE`, in src/sys/lib.rs \
+                    at bun-v1.4.3, its errno table, which makes a sharing violation EBUSY, in \
+                    src/errno/windows_errno.rs, and libuv's `uv_fs_open`, which shares all three but under \
+                    `UV_FS_O_EXLOCK`, in src/win/fs.c at oven-sh/libuv 8023581, as embedded in \
+                    Claude Code 2.1.300; the file write's staging, its retries and its \
+                    in-place arm, and the plaintext store's strict read, in the win32-x64 and \
+                    win32-arm64 builds; read on 2026-10-15",
+        verified_against: "2.1.300",
+        depends: "host::windows::fs::rename, which renames over Claude Code's files the POSIX \
+                  way where the volume has it and waits out a file held without sharing its \
+                  deletion, and Pitboard's reads of Claude Code's files, which share all three \
+                  as std opens a file and are never held across Claude Code's lock: a read \
+                  not sharing deletion would turn Claude Code's write into an in-place one",
+        probe: &[
+            r#"["EXDEV","EPERM","EEXIST","EBUSY"]"#,
+            r#"["EPERM","EBUSY","EACCES"]"#,
+            "refusing the in-place arm on a non-regular target",
+        ],
+        absent: &[],
+    },
+    Assumption {
         name: "headless_token_descriptor",
         fact: "where `CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR` names a descriptor, Claude Code \
                reads an OAuth access token from it, an inherited pipe until a newline or its \
@@ -1041,6 +1088,7 @@ mod tests {
                 "refresh_lock",
                 "login_carries_its_plan",
                 "windows_home_folder",
+                "windows_open_sharing",
             ]
         );
         for name in [
