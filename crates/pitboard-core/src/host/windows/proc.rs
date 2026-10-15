@@ -587,13 +587,10 @@ mod tests {
         for alias in &aliases {
             assert!(can_run(alias), "{}", alias.display());
         }
-        // A green run must have read a real alias, not looped zero times. A GitHub-hosted
-        // runner's account has the inbox aliases; if the account running this has none, run
-        // this test once as a user whose profile does, in a ci.yml step of its own.
-        let hosted = std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true")
-            && std::env::var("RUNNER_ENVIRONMENT").as_deref() == Ok("github-hosted");
+        // A fresh standard user's profile has no aliases, so ci.yml runs this again as the job's
+        // user with PITBOARD_TEST_ALIASES set, where a green run must have read a real one.
         assert!(
-            !hosted || !aliases.is_empty(),
+            std::env::var_os("PITBOARD_TEST_ALIASES").is_none() || !aliases.is_empty(),
             "no app execution alias was read from this account's WindowsApps"
         );
         println!(
