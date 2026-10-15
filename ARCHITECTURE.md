@@ -1985,7 +1985,7 @@ Homes and variables:
   ignores `HOME`.
 - `os.homedir()` follows `USERPROFILE` in Node (22.23.3 on windows-2025, 24.21.0 on
   windows-11-arm) and in Bun. Bun's `os.userInfo().homedir` follows it too. Node's keeps the
-  account's profile.
+  account's profile (run 38704825885).
 - Git for Windows' `bash.exe -c` hands a program it starts `HOME` set to the profile, as a
   Windows path.
 - A program gets only `Path`, and a child std's `Command` starts gets one `Path`. A raw
@@ -2002,6 +2002,9 @@ Homes and variables:
 - A profile folder whose name is not ASCII, such as one holding `Đ` and `ạ` (10 UTF-16
   units, 13 UTF-8 bytes, NFC), has an ASCII 8.3 alias holding `~`, and so has the `Temp`
   inside it.
+- `std::fs::canonicalize` of a folder in that profile gives the `\\?\` form with every long
+  name, as stored and in NFC, whether the folder was named by its long or its 8.3 spelling.
+  Without the prefix, it is the long spelling as given (run 38704825885).
 
 Who may read a login:
 
@@ -2082,7 +2085,10 @@ Processes and jobs:
 - A process a standard user starts is in a job already, and a job of its own still takes its
   children. Every leaf of 1000 probe, probe, probe chains and 1000 cmd, node, probe
   chains stayed in it, assigned right after its start or started suspended and resumed.
-  `CREATE_BREAKAWAY_FROM_JOB` failed with 5 all 200 times.
+- In a job without `JOB_OBJECT_LIMIT_BREAKAWAY_OK`, `CREATE_BREAKAWAY_FROM_JOB` failed with 5
+  all 200 times. In a job with it, all 200 leaves started with the flag left that job and
+  stayed in the outer job the process was already in, however the chain was assigned (run
+  38704825885).
 - `GetModuleFileNameW` and `current_exe` give the path a program was started by, through a
   file symbolic link, a junction or a hard link. Canonicalizing resolves the link and the
   junction, not the hard link.
@@ -2095,7 +2101,8 @@ Credential Manager:
 
 - `Bun.secrets.set`, called as Claude Code 2.1.300 calls it, writes a generic item named
   `<service>/<name>`, with the name as its user name, enterprise persistence, no comment and
-  no attributes, and the value's UTF-8 bytes as its blob.
+  no attributes, and the value's UTF-8 bytes as its blob: 30 UTF-16 units holding `Đ` and `ạ`
+  made a 33-byte blob (run 38704825885).
 - As the job's user, in an interactive logon, `credman-names` lists the prefixes of every
   live login family and `pitboard-*` without an error, and finds no item. As the fresh
   standard user, after each Windows test run, it does the same and finds nothing (run
