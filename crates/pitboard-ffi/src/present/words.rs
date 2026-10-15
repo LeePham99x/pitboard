@@ -9,6 +9,7 @@ use crate::model::state::in_its_app;
 use crate::{Level, Warning};
 use pitboard_core::error::{Error, LoginDoubt, Then};
 use pitboard_core::host::{Os, Private};
+use pitboard_core::label::Unusable;
 use pitboard_core::provider::ProviderId;
 use pitboard_core::service::{Stored, Warning as CoreWarning};
 use pitboard_core::state::SetAside;
@@ -380,16 +381,56 @@ pub(crate) fn this_machine(os: Os) -> &'static str {
     crate::account_windows::this_machine(os)
 }
 
-/// Why a tool is missing from the sheet for a new account, rather than leaving it out without
-/// a word.
-pub(crate) fn not_offered(os: Os, names: &[&str], programs: &[&str]) -> String {
-    let verb = if names.len() == 1 { "is" } else { "are" };
-    format!(
-        "{} {verb} not offered: Pitboard did not find {} on {}.",
-        names.join(" and "),
-        programs.join(" or "),
-        this_machine(os)
-    )
+// What Pitboard needs of `tool` to sign in to it, where it did not find that.
+pub(crate) fn missing(os: Os, tool: &str) -> Option<super::Missing> {
+    let here = this_machine(os);
+    let (title, detail, link_title, link) = match tool {
+        "claude" => (
+            format!("Pitboard can’t find Claude Code on {here}."),
+            "Adding a Claude Code account runs Claude Code’s own sign-in. Install it, then come \
+             back to this window.",
+            "How to Install Claude Code",
+            super::notices::INSTALL_CLAUDE_CODE,
+        ),
+        "codex" => (
+            format!("Pitboard can’t find the Codex CLI on {here}."),
+            "Adding a Codex account runs the Codex CLI’s own sign-in, and the ChatGPT app \
+             doesn’t install the CLI. Install it, then come back to this window.",
+            "How to Install the Codex CLI",
+            INSTALL_CODEX_CLI,
+        ),
+        "desktop" => (
+            format!("Pitboard can’t find Claude Desktop on {here}."),
+            "Pitboard finds Claude Desktop by the data it keeps once it has been opened. Open \
+             Claude, sign in, then come back to this window.",
+            "Download Claude",
+            DOWNLOAD_CLAUDE,
+        ),
+        _ => return None,
+    };
+    Some(super::Missing {
+        title,
+        detail: detail.into(),
+        link_title: link_title.into(),
+        link: link.into(),
+    })
+}
+
+// OpenAI's page for the Codex CLI, whose install section names each way to install it.
+const INSTALL_CODEX_CLI: &str = "https://developers.openai.com/codex/cli";
+
+const DOWNLOAD_CLAUDE: &str = "https://claude.ai/download";
+
+// Why what was typed cannot be a new name, where something was. `picks_tool`: the sheet has a
+// picker for the tool.
+pub(crate) fn unusable_name(unusable: Unusable, picks_tool: bool) -> Option<String> {
+    let said = match unusable {
+        Unusable::Empty => return None,
+        Unusable::NotOneWord => "A name is one word, with no spaces.",
+        Unusable::Separator if picks_tool => "A name can’t contain “/”. Choose the tool above.",
+        Unusable::Separator => "A name can’t contain “/”.",
+    };
+    Some(said.into())
 }
 
 /// How the `pitboard` a terminal runs is kept up to date: with the app when it is the one
@@ -1682,23 +1723,31 @@ mod tests {
         assert_eq!(warning_heading(&warning("")), "Pitboard has a warning");
     }
 
-    /// A tool not offered for a new account is named with where Pitboard looked, and the
-    /// machine is named as each system names itself.
+    // Each tool not found says what Pitboard needs of it, on each system in its own name.
     #[test]
-    fn a_tool_not_offered_says_where_pitboard_looked() {
+    fn a_tool_not_found_says_what_to_install() {
+        let codex = missing(Os::Windows, "codex").expect("codex");
+        assert_eq!(codex.title, "Pitboard can’t find the Codex CLI on this PC.");
+        assert_eq!(codex.link_title, "How to Install the Codex CLI");
+        let claude = missing(Os::MacOs, "claude").expect("claude");
+        assert_eq!(claude.title, "Pitboard can’t find Claude Code on this Mac.");
         assert_eq!(
-            not_offered(Os::MacOs, &["Codex"], &["codex"]),
-            "Codex is not offered: Pitboard did not find codex on this Mac."
+            claude.detail,
+            "Adding a Claude Code account runs Claude Code’s own sign-in. Install it, then \
+             come back to this window."
+        );
+        assert_eq!(claude.link_title, "How to Install Claude Code");
+        let desktop = missing(Os::MacOs, "desktop").expect("desktop");
+        assert_eq!(
+            desktop.title,
+            "Pitboard can’t find Claude Desktop on this Mac."
         );
         assert_eq!(
-            not_offered(Os::Linux, &["Claude Code", "Codex"], &["claude", "codex"]),
-            "Claude Code and Codex are not offered: Pitboard did not find claude or codex on \
-             this computer."
+            desktop.detail,
+            "Pitboard finds Claude Desktop by the data it keeps once it has been opened. Open \
+             Claude, sign in, then come back to this window."
         );
-        assert_eq!(
-            not_offered(Os::Windows, &["Codex"], &["codex"]),
-            "Codex is not offered: Pitboard did not find codex on this PC."
-        );
+        assert_eq!(missing(Os::MacOs, "nobody"), None);
     }
 
     /// A clock time the person's own clock could not say is said in UTC and named so, from

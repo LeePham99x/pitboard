@@ -1110,15 +1110,14 @@ fn shutting_down_stops_a_sign_in_under_way() {
     });
 }
 
-/// AppModelTests.swift's aSignInThatCannotStartIsReported on the real core, where Claude
-/// Code's program is nowhere it looks: the sheet it was started from says the core's own
-/// sentence, under its code, and nothing is half-shown.
+// On the real core, where Claude Code's program is nowhere it looks: the sheet says so under
+// the tool before Sign In, and a sign-in asked for anyway leaves it said there.
 #[test]
 #[cfg_attr(
     windows,
     ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
-fn a_sign_in_the_core_cannot_start_says_so_in_its_sheet() {
+fn a_tool_the_core_cannot_find_is_said_missing_in_its_sheet() {
     let world = World::new("no-claude");
     world.enrolled("work", "here", 10.0);
     world.without_claude_code();
@@ -1129,17 +1128,79 @@ fn a_sign_in_the_core_cannot_start_says_so_in_its_sheet() {
     model.send(Intent::PresentSheet {
         sheet: Sheet::Add { provider: None },
     });
+    let missing = |told: &[Snapshot]| {
+        told.last()
+            .and_then(|last| last.sheet_text.as_ref())
+            .and_then(|text| text.tools.iter().find(|tool| tool.code == "claude"))
+            .is_some_and(|tool| tool.missing.is_some())
+    };
+    told.until("Claude Code said missing", missing);
     model.send(sign_in("travel"));
-    let told = told.until("the failure", |told| {
-        told.last().is_some_and(|last| last.sheet_failure.is_some())
+    let told = told.until("the sign-in over", |told| {
+        told.last()
+            .is_some_and(|last| last.signing_in.is_none() && last.status.is_some() && !last.reading)
+            && missing(told)
     });
     let last = told.last().expect("a snapshot");
-    let failure = last.sheet_failure.as_ref().expect("said in the sheet");
-    assert_eq!(failure.title, "Couldn’t sign in to travel");
-    assert_eq!(failure.code.as_deref(), Some("claude_program_missing"));
-    assert_eq!(last.signing_in, None);
+    assert_eq!(last.sheet_failure, None, "said under the tool");
     assert_eq!(last.sheet, Some(Sheet::Add { provider: None }));
     assert_eq!(last.failure, None);
+    model.shutdown();
+}
+
+// The report this rebuild began with: Codex enrolled from a terminal, then only the ChatGPT
+// app, so no Codex CLI. The tip's Add Account says the CLI is missing before Sign In, and a
+// name typed with its tool says why it cannot be one.
+#[test]
+#[cfg(unix)]
+fn adding_codex_without_its_cli_says_so_before_sign_in() {
+    let world = World::new("chatgpt-app-only");
+    world.enrolled("work", "here", 10.0);
+    world.codex_enrolled("main", "me");
+    let told = Arc::new(Told::default());
+    let model = model(&world.core(), &told);
+    model.send(Intent::Start);
+    told.until("the accounts read", |told| {
+        told.last()
+            .is_some_and(|last| !last.reading && labels(last).iter().any(|l| l == "main"))
+    });
+    model.send(Intent::PresentSheet {
+        sheet: Sheet::Add {
+            provider: Some("codex".into()),
+        },
+    });
+    let told = told.until("the sheet", |told| {
+        told.last()
+            .and_then(|last| last.sheet_text.as_ref())
+            .is_some_and(|text| text.tools.iter().any(|tool| tool.missing.is_some()))
+    });
+    let text = told
+        .last()
+        .and_then(|last| last.sheet_text.clone())
+        .expect("the sheet");
+    assert_eq!(text.tool, "codex");
+    let codex = text
+        .tools
+        .iter()
+        .find(|tool| tool.code == "codex")
+        .expect("codex offered");
+    let missing = codex.missing.as_ref().expect("its CLI is not here");
+    assert!(
+        missing
+            .title
+            .starts_with("Pitboard can’t find the Codex CLI")
+    );
+    assert_eq!(
+        crate::present::check_name(
+            Sheet::Add {
+                provider: Some("codex".into())
+            },
+            "codex/phu".into()
+        )
+        .problem
+        .as_deref(),
+        Some("A name can’t contain “/”. Choose the tool above.")
+    );
     model.shutdown();
 }
 

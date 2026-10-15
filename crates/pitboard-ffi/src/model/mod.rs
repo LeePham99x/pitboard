@@ -237,9 +237,9 @@ pub enum Intent {
     /// in to both. For a tool that signs in inside its app, as `State::in_app_add` decides,
     /// the account the app is signed in to is recorded under `name`, or the account in use is
     /// parked and the app watched until it quits signed in, each asked through the quit
-    /// question first. The name is taken without the white space around it, and one with
-    /// nothing else in it starts nothing. One sign-in at a time: asked for while one is under
-    /// way, it does nothing. What goes wrong is said in the sheet it was started from, or in
+    /// question first. The name is read as `check_name` reads it, and one that is not a name
+    /// starts nothing. One sign-in at a time: asked for while one is under way, it does
+    /// nothing. What goes wrong is said in the sheet it was started from, or in
     /// the window where that sheet has gone, and the sheet closes once the sign-in has
     /// finished. Signing in again to the account in use is kept as what its tool's last
     /// switch said.
@@ -258,9 +258,8 @@ pub enum Intent {
     CancelSignIn,
     /// Put `sheet` over the main window, and open the window on the accounts it is about. A
     /// sign-in under way keeps its own sheet: replacing it would leave the tool's sign-in
-    /// running with nothing on screen to finish or stop it. The sheet for a new account, put
-    /// up where none was, asks again which tools are installed: the first answer may have come
-    /// while the person's login shell was too slow to say.
+    /// running with nothing on screen to finish or stop it. A sheet that signs in, put up
+    /// where none was, asks again which tools are installed.
     PresentSheet { sheet: Sheet },
     /// The sheet over the main window has gone, however it went, and what went wrong in it
     /// goes with it. A sign-in it started goes on until it ends or is cancelled.
@@ -270,6 +269,12 @@ pub enum Intent {
     ShowWindow { pane: Option<Pane> },
     /// Somebody has read the failure the window said, and put it away.
     DismissFailure,
+    /// The name or the tool in the sheet has changed, so what went wrong with the last of them
+    /// is no longer what the sheet says.
+    DismissSheetFailure,
+    /// Look again which tools are installed, while a sheet that signs in is up: the app came
+    /// back to the front, maybe from installing one.
+    LookForTools,
     /// Enrol the login signed in now to `provider`'s tool under `name`, with no browser: the
     /// Name sheet's Save. The name is taken without the white space around it, as
     /// `name_to_save` takes it, and one with nothing else in it saves nothing; nor does a

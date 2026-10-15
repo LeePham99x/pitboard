@@ -114,8 +114,8 @@ fn a_sign_in_that_cannot_start_is_reported() {
     let mut model = Hand::new();
     let mut machine = Machine::reading(Ok(status(Vec::new())));
     machine.starting = Err(refusal(
-        "claude_program_missing",
-        "`claude` is not on this machine",
+        "sign_in_not_isolated",
+        "a sign-in here would write over the login in use",
         Vec::new(),
     ));
     put_up(&mut model, &mut machine, add(None));
@@ -127,10 +127,94 @@ fn a_sign_in_that_cannot_start_is_reported() {
     assert_eq!(shown.sheet, Some(add(None)));
     let failure = shown.sheet_failure.expect("said in the sheet");
     assert_eq!(failure.title, "Couldn’t sign in to work");
-    assert_eq!(failure.message, "`claude` is not on this machine");
-    assert_eq!(failure.code.as_deref(), Some("claude_program_missing"));
+    assert_eq!(
+        failure.message,
+        "a sign-in here would write over the login in use"
+    );
+    assert_eq!(failure.code.as_deref(), Some("sign_in_not_isolated"));
     assert_eq!(shown.failure, None, "not in an alert over it");
     assert_eq!(shown.read_failure, None);
+}
+
+// The core found no program where the last look did: the sheet says so under the tool, as it
+// would have before Sign In, and Pitboard looks again.
+#[test]
+fn a_sign_in_whose_program_has_gone_says_so_under_its_tool() {
+    let mut model = Hand::new();
+    let mut machine = Machine::reading(Ok(status(Vec::new())));
+    machine.found = vec![claude_code(), codex()];
+    put_up(&mut model, &mut machine, add(Some("codex")));
+    let recovered = warning(
+        "interrupted_switch_undone",
+        "an earlier switch was interrupted",
+    );
+    machine.starting = Err(refusal(
+        "codex_program_missing",
+        "`codex` is not on this machine",
+        vec![recovered.clone()],
+    ));
+    machine.found = vec![claude_code()];
+    let asked = model.count(installed_ask);
+    starts(&mut model, &mut machine, "codex", "phu");
+
+    let shown = model.shown();
+    assert_eq!(shown.sheet_failure, None, "said under the tool instead");
+    assert_eq!(shown.warnings, [recovered], "and what it found on the way");
+    let sheet = shown.sheet_text.expect("the sheet");
+    let tool = sheet
+        .tools
+        .iter()
+        .find(|t| t.code == "codex")
+        .expect("codex");
+    assert!(tool.missing.is_some(), "{tool:?}");
+    assert_eq!(model.count(installed_ask), asked + 1, "and looks again");
+}
+
+// A failure is about what was asked, so it goes once the name or the tool changes.
+#[test]
+fn a_failure_goes_once_the_form_changes() {
+    let mut model = Hand::new();
+    let mut machine = Machine::reading(Ok(status(Vec::new())));
+    machine.starting = Err(refusal("sign_in_not_isolated", "not here", Vec::new()));
+    put_up(&mut model, &mut machine, add(None));
+    starts(&mut model, &mut machine, "claude", "work");
+    assert!(model.shown().sheet_failure.is_some());
+
+    model.send(Intent::DismissSheetFailure);
+    assert_eq!(model.shown().sheet_failure, None);
+    assert_eq!(model.shown().sheet, Some(add(None)), "the sheet stays");
+}
+
+// Someone told a tool is missing installs it elsewhere and comes back: the sheet looks again,
+// and only a sheet that signs in does.
+#[test]
+fn a_sheet_that_signs_in_looks_for_tools_again_when_asked() {
+    let mut model = Hand::new();
+    let mut machine = Machine::reading(Ok(status(Vec::new())));
+    machine.found = vec![claude_code()];
+    model.refresh(&mut machine);
+    assert_eq!(model.send(Intent::LookForTools), [], "no sheet");
+
+    put_up(&mut model, &mut machine, add(Some("codex")));
+    machine.found = vec![claude_code(), codex()];
+    assert_eq!(model.send(Intent::LookForTools), [Job::AskInstalled]);
+    model.run(&mut machine);
+    assert_eq!(model.shown().installed, Some(vec![claude_code(), codex()]));
+
+    model.send(Intent::CloseSheet);
+    put_up(
+        &mut model,
+        &mut machine,
+        Sheet::Rename {
+            provider: "claude".into(),
+            label: "work".into(),
+        },
+    );
+    assert_eq!(
+        model.send(Intent::LookForTools),
+        [],
+        "a rename signs nothing in"
+    );
 }
 
 /// AppModelTests.swift's aCodexSignInIsForCodex. Codex's sign-in prints an address and reads
@@ -360,8 +444,8 @@ fn a_refused_sign_in_says_what_it_found_on_the_way() {
     let mut model = Hand::new();
     let mut machine = Machine::reading(Ok(status(Vec::new())));
     machine.starting = Err(refusal(
-        "claude_program_missing",
-        "`claude` is not on this machine",
+        "sign_in_not_isolated",
+        "a sign-in here would write over the login in use",
         vec![recovered.clone()],
     ));
     put_up(&mut model, &mut machine, add(None));
@@ -369,7 +453,10 @@ fn a_refused_sign_in_says_what_it_found_on_the_way() {
 
     let shown = model.shown();
     let failure = shown.sheet_failure.expect("said in the sheet");
-    assert_eq!(failure.message, "`claude` is not on this machine");
+    assert_eq!(
+        failure.message,
+        "a sign-in here would write over the login in use"
+    );
     assert_eq!(failure.warnings, std::slice::from_ref(&recovered));
     assert_eq!(shown.warnings, [recovered]);
 }
@@ -1110,6 +1197,17 @@ fn what_is_installed_is_asked_again_when_the_form_for_another_account_opens() {
         2,
         "not for naming the account in use, nor for a read"
     );
+
+    model.send(Intent::CloseSheet);
+    let again = Sheet::SignInAgain {
+        provider: "codex".into(),
+        label: "work".into(),
+    };
+    assert_eq!(
+        model.send(present(again)),
+        [Job::AskInstalled],
+        "signing in again needs the tool as much"
+    );
 }
 
 /// RoutingTests.swift's aSheetIsPutUpOverTheWindow, the sheet: a sheet is over the main
@@ -1340,7 +1438,7 @@ fn what_went_wrong_in_a_sheet_goes_with_it() {
     model.run(&mut machine);
     assert_eq!(model.shown().failure.map(|f| f.id), Some(1));
 
-    machine.starting = Err(refusal("claude_program_missing", "no claude", Vec::new()));
+    machine.starting = Err(refusal("sign_in_not_isolated", "not here", Vec::new()));
     put_up(&mut model, &mut machine, add(None));
     starts(&mut model, &mut machine, "claude", "work");
     assert_eq!(model.shown().sheet_failure.map(|f| f.id), Some(2));
@@ -1358,7 +1456,7 @@ fn what_went_wrong_in_a_sheet_goes_with_it() {
     model.run(&mut machine);
     ends(&mut model, &mut machine, id);
 
-    machine.starting = Err(refusal("claude_program_missing", "no claude", Vec::new()));
+    machine.starting = Err(refusal("sign_in_not_isolated", "not here", Vec::new()));
     starts(&mut model, &mut machine, "claude", "work");
     put_up(&mut model, &mut machine, add(Some("codex")));
     assert_eq!(model.shown().sheet_failure, None, "another sheet");

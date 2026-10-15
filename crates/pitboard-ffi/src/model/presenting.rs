@@ -2704,69 +2704,73 @@ fn adding(found: Vec<crate::Tool>, accounts: Vec<Account>) -> Snapshot {
     model.on_a_mac()
 }
 
-/// Only tools the app found a program for are offered for a new account, and the form says
-/// which were left out rather than leaving them out without a word. A tool with an account
-/// here is here, wherever its program is.
-///
-/// AppModelTests.swift's aNewAccountIsOfferedForToolsThatAreHere.
+// The codes offered, and which of them Pitboard did not find.
+fn tools_and_missing(sheet: &crate::present::SheetText) -> (Vec<&str>, Vec<&str>) {
+    let codes = sheet.tools.iter().map(|t| t.code.as_str()).collect();
+    let missing = sheet
+        .tools
+        .iter()
+        .filter(|t| t.missing.is_some())
+        .map(|t| t.code.as_str())
+        .collect();
+    (codes, missing)
+}
+
+// Offered and refused once Sign In was pressed, a tool Pitboard could not find failed late.
 #[test]
-fn a_new_account_is_offered_for_tools_that_are_here() {
-    let claude_only = adding(vec![claude_code()], Vec::new())
-        .sheet_text
-        .expect("the sheet");
-    assert_eq!(claude_only.tool, "claude");
-    assert!(claude_only.tools.is_empty(), "nothing to pick from");
-    assert_eq!(
-        claude_only.not_offered.as_deref(),
-        Some(
-            "Codex and Claude Desktop are not offered: Pitboard did not find codex or Claude’s \
-             data folder on this Mac."
-        )
-    );
-
-    let codex_only = adding(vec![codex()], Vec::new())
-        .sheet_text
-        .expect("the sheet");
-    assert_eq!(codex_only.tool, "codex");
-    assert!(codex_only.message.contains("Codex’s own sign-in"));
-
-    let both = adding(vec![claude_code(), codex()], Vec::new())
-        .sheet_text
-        .expect("the sheet");
-    assert_eq!(
-        both.not_offered.as_deref(),
-        Some(
-            "Claude Desktop is not offered: Pitboard did not find Claude’s data folder on this \
-             Mac."
-        )
-    );
-    let offered: Vec<&str> = both.tools.iter().map(|t| t.code.as_str()).collect();
-    assert_eq!(offered, ["claude", "codex"]);
-    assert!(both.tools[1].message.contains("Codex’s own sign-in"));
-
-    let known = adding(
+fn every_tool_is_offered_and_one_not_found_says_how_to_get_it() {
+    let codex_known = adding(
         vec![claude_code()],
         vec![account(Some("work")).of("codex").signed_in().build()],
     )
     .sheet_text
     .expect("the sheet");
-    let offered: Vec<&str> = known.tools.iter().map(|t| t.code.as_str()).collect();
-    assert_eq!(offered, ["claude", "codex"]);
+    assert_eq!(
+        tools_and_missing(&codex_known),
+        (vec!["claude", "codex", "desktop"], vec!["codex", "desktop"])
+    );
+    assert_eq!(codex_known.tool, "claude");
+    let missing = codex_known.tools[1].missing.as_ref().expect("codex");
+    assert_eq!(
+        missing.title,
+        "Pitboard can’t find the Codex CLI on this Mac."
+    );
+    assert_eq!(
+        missing.detail,
+        "Adding a Codex account runs the Codex CLI’s own sign-in, and the ChatGPT app doesn’t \
+         install the CLI. Install it, then come back to this window."
+    );
+    assert_eq!(missing.link_title, "How to Install the Codex CLI");
+    assert_eq!(missing.link, "https://developers.openai.com/codex/cli");
+    assert!(codex_known.tools[1].message.contains("Codex’s own sign-in"));
+
+    let codex_only = adding(vec![codex()], Vec::new())
+        .sheet_text
+        .expect("the sheet");
+    assert_eq!(codex_only.tool, "codex", "the first tool found");
+    assert_eq!(codex_only.message, codex_only.tools[1].message);
 }
 
-/// A machine where the app found neither program reads as one with Claude Code alone, as it
-/// always did: whatever it did not find where it looks is not on the PATH of an app opened
-/// from Finder either, so offering every tool offered sign-ins that could not start. Who is
-/// asked is Anthropic.
-///
-/// AppModelTests.swift's nothingFoundOffersClaudeCodeAlone.
+// Nothing found leaves nothing to sign in with, which each tool says.
+//
+// AppModelTests.swift's nothingFoundOffersClaudeCodeAlone.
 #[test]
-fn nothing_found_offers_claude_code_alone() {
+fn nothing_found_starts_on_claude_code_and_says_none_is_here() {
     let sheet = adding(Vec::new(), Vec::new())
         .sheet_text
         .expect("the sheet");
     assert_eq!(sheet.tool, "claude");
-    assert!(sheet.tools.is_empty());
+    assert_eq!(
+        tools_and_missing(&sheet),
+        (
+            vec!["claude", "codex", "desktop"],
+            vec!["claude", "codex", "desktop"]
+        )
+    );
+    assert_eq!(
+        sheet.tools[0].missing.as_ref().map(|m| m.link.as_str()),
+        Some("https://docs.claude.com/en/docs/claude-code/setup")
+    );
 
     let mut model = at_noon();
     let mut machine = Machine::reading(Ok(warned(Vec::new(), vec![interrupted()])));
@@ -2788,15 +2792,8 @@ fn what_is_installed_is_asked_once() {
     model.refresh(&mut machine);
     model.send(present_sheet(Sheet::Add { provider: None }));
     model.run(&mut machine);
-    let offered: Vec<String> = model
-        .shown()
-        .sheet_text
-        .expect("the sheet")
-        .tools
-        .into_iter()
-        .map(|tool| tool.code)
-        .collect();
-    assert_eq!(offered, ["claude", "codex"]);
+    let sheet = model.shown().sheet_text.expect("the sheet");
+    assert_eq!(tools_and_missing(&sheet).1, ["desktop"]);
 }
 
 /// AppModelTests.swift's whatIsInstalledIsAskedAgainWhenTheFormForAnotherAccountOpens, what
@@ -2809,17 +2806,16 @@ fn what_is_installed_is_asked_again_when_the_form_for_another_account_opens() {
     model.refresh(&mut machine);
     machine.found = vec![claude_code(), codex()];
     model.send(present_sheet(Sheet::Add { provider: None }));
-    assert!(
-        model
-            .shown()
-            .sheet_text
-            .expect("the sheet")
-            .tools
-            .is_empty(),
+    assert_eq!(
+        tools_and_missing(&model.shown().sheet_text.expect("the sheet")).1,
+        ["codex", "desktop"],
         "what was found before"
     );
     model.run(&mut machine);
-    assert_eq!(model.shown().sheet_text.expect("the sheet").tools.len(), 2);
+    assert_eq!(
+        tools_and_missing(&model.shown().sheet_text.expect("the sheet")).1,
+        ["desktop"]
+    );
 }
 
 /// The form starts on the tool it was asked about, and otherwise on the first it offers.

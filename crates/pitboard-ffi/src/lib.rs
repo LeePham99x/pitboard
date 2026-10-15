@@ -5,7 +5,7 @@
 //! the core from what the app was started with, and only the model's own threads call it.
 //! Beside the model and the records its snapshots carry, the bindings export the sites and
 //! the links from outside (`sites.rs`), the account windows' rules (`account_windows`),
-//! `name_to_save` and `downloads_quit_question` of `present`, the fixtures' `fixture_names`
+//! `check_name` and `downloads_quit_question` of `present`, the fixtures' `fixture_names`
 //! and `fixture_page`, and three free functions the macOS app asks of its bundle and its
 //! environment, `app_command_line`, `can_run` and `pitboard_directory`, and the Windows app's
 //! `windows_records_key` and `launch_refusal`. The snapshot carries what an app shows of the
@@ -58,11 +58,11 @@ pub use present::{
     AccountItem, AccountSection, AccountWindowsShown, AccountsShown, ActivityLine, ActivityShown,
     AutoSwitchShown, CheckLine, ChecksShown, Choice, CommandLineShown, DownloadShown,
     DownloadState, EmptyList, Footing, ItemAction, ItemOffer, LimitPace, LimitRow, LinkPicker,
-    MachineShown, MenuBarText, MenuEntry, MenuNotices, NoticeAction, OpenWindow, PaceStanding,
-    PageLoad, PanelNotice, PickerAccount, PickerShown, Question, RenewalShown, ScheduleShown,
-    SetupStep, Severity, SheetText, SheetTool, SigningInText, StoreDeletion, StowText,
-    WaitingShown, WarmAccountShown, WarmShown, WindowOffer, WindowWaiting, downloads_quit_question,
-    name_to_save,
+    MachineShown, MenuBarText, MenuEntry, MenuNotices, Missing, NameCheck, NoticeAction,
+    OpenWindow, PaceStanding, PageLoad, PanelNotice, PickerAccount, PickerShown, Question,
+    RenewalShown, ScheduleShown, SetupStep, Severity, SheetText, SheetTool, SigningInText,
+    StoreDeletion, StowText, WaitingShown, WarmAccountShown, WarmShown, WindowOffer, WindowWaiting,
+    check_name, downloads_quit_question,
 };
 
 mod account_windows;

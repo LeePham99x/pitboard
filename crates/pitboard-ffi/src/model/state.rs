@@ -1366,6 +1366,15 @@ impl State {
             }
             Intent::ShowWindow { pane } => self.show_window(pane),
             Intent::DismissFailure => self.presented = None,
+            Intent::DismissSheetFailure => self.sheet_failure = None,
+            Intent::LookForTools => {
+                if matches!(
+                    self.sheet,
+                    Some(Sheet::Add { .. } | Sheet::SignInAgain { .. })
+                ) {
+                    self.ask_installed(jobs);
+                }
+            }
             Intent::Enrol { provider, name } => {
                 let kind = Sheet::Name {
                     provider: provider.clone(),
@@ -1497,7 +1506,7 @@ impl State {
         {
             return None;
         }
-        crate::present::name_to_save(kind, typed.to_owned())
+        crate::present::check_name(kind, typed.to_owned()).name
     }
 
     /// The sheet up, as the one a save is asked from, which holds back until it answers.
@@ -1534,15 +1543,19 @@ impl State {
     /// A sign-in of `provider`'s tool, for the account to be called `name`, as the Swift
     /// model's `signIn` started one. One at a time: a second would take the place of the one
     /// on screen and leave the first tool waiting on a browser with nothing to stop it.
-    fn sign_in(&mut self, provider: String, name: &str, jobs: &mut Vec<Job>) {
-        let name = trimmed(name);
+    fn sign_in(&mut self, provider: String, typed: &str, jobs: &mut Vec<Job>) {
         let held = self
             .sheet
             .as_ref()
             .is_some_and(|sheet| self.saving.contains(sheet));
-        if self.signing_in.is_some() || name.is_empty() || held {
+        let asked = self.sheet.clone().unwrap_or(Sheet::Add { provider: None });
+        let Some(name) = crate::present::check_name(asked, typed.to_owned()).name else {
+            return;
+        };
+        if self.signing_in.is_some() || held {
             return;
         }
+        let name = name.as_str();
         if in_its_app(&provider) {
             if self.switching_of(&provider) {
                 return;
@@ -1848,9 +1861,9 @@ impl State {
         // the moment Pitboard asks whether the app runs: replacing it would leave the change
         // running with nothing on screen to finish or stop it.
         if self.signing_in.is_none() && !self.held_for_its_app() {
-            // The first answer to what is installed may have come while the person's login
-            // shell was too slow to say, and the core asks it once more when that was so.
-            if self.sheet.is_none() && matches!(sheet, Sheet::Add { .. }) {
+            if self.sheet.is_none()
+                && matches!(sheet, Sheet::Add { .. } | Sheet::SignInAgain { .. })
+            {
                 self.ask_installed(jobs);
             }
             if self.sheet.as_ref() != Some(&sheet) {
@@ -2779,7 +2792,7 @@ impl State {
                 }
                 // Cancelled, and it never started: nothing to say.
                 if let Some(signing) = self.signing_in.take_if(|_| current) {
-                    self.sign_in_failed(&signing, error);
+                    self.sign_in_failed(&signing, error, jobs);
                 }
             }
         }
@@ -2829,17 +2842,39 @@ impl State {
                 }
                 self.refresh(asked, now, jobs);
             }
-            (Err(error), Some(signing)) => self.sign_in_failed(&signing, error),
+            (Err(error), Some(signing)) => self.sign_in_failed(&signing, error, jobs),
             (Err(_), None) => {}
         }
     }
 
-    fn sign_in_failed(&mut self, signing: &SigningIn, error: Option<PitboardError>) {
+    // A program the core could not find is one the last look found, or one asked for before
+    // any look: it is said missing where the sheet says so of any tool, and looked for again.
+    fn sign_in_failed(
+        &mut self,
+        signing: &SigningIn,
+        error: Option<PitboardError>,
+        jobs: &mut Vec<Job>,
+    ) {
         let title = could_not_sign_in(&signing.name);
-        let refused = match error {
+        let mut refused = match error {
             Some(error) => Refused::of(title, error),
             None => Refused::lost(title),
         };
+        if refused.code.as_deref() == Some(&format!("{}_program_missing", signing.provider)) {
+            if let Some(tools) = self.installed.as_mut() {
+                tools.retain(|tool| tool.code != signing.provider);
+            }
+            self.ask_installed(jobs);
+            if self.sheet.is_some() {
+                self.keep(&refused.warnings);
+                return;
+            }
+            if let Some(missing) =
+                crate::present::words::missing(pitboard_core::host::OS, &signing.provider)
+            {
+                refused.message = format!("{} {}", missing.title, missing.detail);
+            }
+        }
         self.sign_in_refused(signing, refused);
     }
 

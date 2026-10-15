@@ -42,7 +42,7 @@ pub use machine::{
     ActivityLine, ActivityShown, AutoSwitchShown, CheckLine, ChecksShown, CommandLineShown,
     EmptyList, MachineShown, RenewalShown, ScheduleShown, WarmAccountShown, WarmShown,
 };
-pub use sheets::name_to_save;
+pub use sheets::check_name;
 pub use windows::{
     AccountWindowsShown, DownloadShown, DownloadState, LinkPicker, OpenWindow, PageLoad,
     PickerAccount, PickerShown, StoreDeletion, WaitingShown, WindowWaiting,
@@ -408,8 +408,8 @@ pub struct SheetText {
     pub title: String,
     /// What the sheet is for, about the tool it starts on.
     pub message: String,
-    /// The tools a picker offers, each with what the sheet says about it, where there is
-    /// more than one to pick from.
+    // Every tool Pitboard handles here for a new account, and the account's own for signing
+    // in again: a picker shows them where there is more than one.
     pub tools: Vec<SheetTool>,
     /// The tool it starts on, as a `Tool`'s code.
     pub tool: String,
@@ -419,10 +419,9 @@ pub struct SheetText {
     pub name: String,
     /// What the empty name field shows.
     pub prompt: String,
-    /// Why a tool is missing from the picker, rather than leaving it out without a word.
-    pub not_offered: Option<String>,
     /// What its default button says, which does what the sheet is for: "Sign In", "Save",
-    /// "Rename". It can be pressed once `name_to_save` gives a name, and not while saving.
+    /// "Rename". It can be pressed once `check_name` gives a name, the tool picked is not
+    /// missing, and nothing is being saved.
     pub confirm: String,
     /// A name typed in it is being saved, which cannot be withdrawn: nothing in it can be
     /// pressed meanwhile, and it cannot be closed.
@@ -462,6 +461,25 @@ pub struct SheetTool {
     pub message: String,
     // what the default button says once this tool is picked
     pub confirm: String,
+    // where Pitboard did not find it, so nothing can sign in to it here
+    pub missing: Option<Missing>,
+}
+
+/// A tool Pitboard did not find: what it needs, and where to read how to get it.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct Missing {
+    pub title: String,
+    pub detail: String,
+    pub link_title: String,
+    pub link: String,
+}
+
+/// What a name typed in a sheet comes to: the name it would save, and why it is not one where
+/// it cannot be. Neither while nothing is typed.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct NameCheck {
+    pub name: Option<String>,
+    pub problem: Option<String>,
 }
 
 /// What a sign-in under way says, in the sheet it was started from.
