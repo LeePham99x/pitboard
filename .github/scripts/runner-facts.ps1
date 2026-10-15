@@ -1379,7 +1379,8 @@ function Measure-Channels($Result) {
             Set-Content -LiteralPath (Join-Path $bucket 'bucket\pitboard.json') -Value $zips[$version].scoop -Encoding utf8
             git -C $bucket add -A
             git -C $bucket -c user.name=runner-facts -c user.email=runner-facts@localhost commit -q -m "pitboard $version"
-            $r.bucket_add = Invoke-Tool $scoop @('bucket', 'add', 'pitboard-l8', $bucket)
+            # Scoop 0.6.0 refuses a repository named without a forward slash, so a folder goes as file:///.
+            $r.bucket_add = Invoke-Tool $scoop @('bucket', 'add', 'pitboard-l8', ([Uri] $bucket).AbsoluteUri)
             $r.install_pitboard = Invoke-Tool $scoop @('install', 'pitboard-l8/pitboard')
             $shim = Join-Path $scoopRoot 'shims\pitboard.exe'
             $current = Join-Path $scoopRoot 'apps\pitboard\current'
