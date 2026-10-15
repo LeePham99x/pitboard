@@ -244,7 +244,7 @@ pub(crate) fn account_windows(seen: &Seen) -> AccountWindowsShown {
         deleting: windows.deleting.clone(),
         picker: picker(seen),
         downloads: windows.downloads.iter().rev().map(download).collect(),
-        held: windows.held.iter().cloned().collect(),
+        held: windows.held(),
     }
 }
 

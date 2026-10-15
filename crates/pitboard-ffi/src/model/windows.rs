@@ -144,8 +144,6 @@ pub(crate) struct Windows {
     claimed: BTreeSet<String>,
     /// Stores the app is asked to delete, in the order asked, until it says how it went.
     pub(crate) deleting: Vec<StoreDeletion>,
-    // On Windows, stores answered `StoreHeld`, asked again after each read until deleted.
-    pub(crate) held: BTreeSet<String>,
     /// Stores asked for, which numbers the next.
     asks: u64,
     /// The windows the app has open, in the order they opened.
@@ -185,7 +183,6 @@ impl Windows {
             enrolled: None,
             claimed: BTreeSet::new(),
             deleting: Vec::new(),
-            held: BTreeSet::new(),
             asks: 0,
             open: Vec::new(),
             waiting: BTreeMap::new(),
@@ -305,7 +302,7 @@ impl Windows {
             Kept::Read(entry) => entry
                 .stores
                 .iter()
-                .filter(|store| !keeping.contains(*store) || self.held.contains(*store))
+                .filter(|store| !keeping.contains(*store) || entry.held.contains(*store))
                 .filter(|store| !self.claimed.contains(*store))
                 .cloned()
                 .collect(),
@@ -363,8 +360,8 @@ impl Windows {
         if !self.unclaim(&store) {
             return;
         }
-        self.held.remove(&store);
         if let Some(entry) = self.kept.entry() {
+            entry.held.remove(&store);
             let recorded = entry.stores.remove(&store);
             let paged = entry.pages.remove(&store).is_some();
             if recorded || paged {
@@ -375,10 +372,24 @@ impl Windows {
 
     // Still recorded, so the next read asks again where no account derives it; on Windows,
     // where nothing undoes a deletion, also where one does, until `StoreDeleted`.
-    pub(crate) fn store_held(&mut self, store: &str) {
+    pub(crate) fn store_held(&mut self, store: &str, jobs: &mut Vec<super::state::Job>) {
         let store = store_key(store);
-        if self.unclaim(&store) && self.deletion_lingers {
-            self.held.insert(store);
+        if !self.unclaim(&store) || !self.deletion_lingers {
+            return;
+        }
+        if self
+            .kept
+            .entry()
+            .is_some_and(|entry| entry.held.insert(store))
+        {
+            self.keep(jobs);
+        }
+    }
+
+    pub(crate) fn held(&self) -> Vec<String> {
+        match &self.kept {
+            Kept::Unread => Vec::new(),
+            Kept::Read(entry) | Kept::Held(entry) => entry.held.iter().cloned().collect(),
         }
     }
 
@@ -441,12 +452,15 @@ impl Windows {
             else {
                 continue;
             };
-            if self.claimed.contains(&store) || self.held.contains(&store) {
+            if self.claimed.contains(&store) {
                 continue;
             }
             let Some(entry) = self.kept.entry() else {
                 continue;
             };
+            if entry.held.contains(&store) {
+                continue;
+            }
             if self.open[at].made_before.is_none() {
                 let made = entry.stores.contains(&store);
                 if !made {
