@@ -76,8 +76,6 @@ if ($Cargo) {
     $nextest = (Get-Command -Name cargo-nextest -CommandType Application).Source
     # Where the ci profile writes its report.
     $store = Join-Path $metadata.target_directory 'nextest'
-    $workspace = $metadata.workspace_root
-    $readable = @($workspace)
     if (-not (Test-Inside $metadata.target_directory $workspace)) {
         $readable += $metadata.target_directory
     }
