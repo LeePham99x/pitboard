@@ -79,9 +79,6 @@ pub(crate) struct Facts {
     /// Every reason a session here would authenticate as something other than the stored
     /// login, read from settings files as well as from this process's environment.
     pub(crate) auth_overrides: Vec<crate::settings::Override>,
-    /// What of those settings Pitboard does not read here, where it does not read them all:
-    /// Claude Code's managed settings on Windows, until W17.
-    pub(crate) auth_unread: Option<&'static str>,
     /// Accounts Pitboard is not asking Anthropic about yet, and for how long: (uuid, seconds).
     pub(crate) asking_held: Vec<(String, i64)>,
     pub(crate) state: Result<State, Error>,
@@ -473,7 +470,6 @@ pub(crate) fn gather(ctx: &Context) -> Facts {
         pending_parks: crate::pending::outstanding(ctx, state.as_ref().ok()),
         claude_version: claude::installed_version(ctx),
         auth_overrides: crate::settings::overrides(ctx),
-        auth_unread: crate::settings::unread(),
         asking_held: crate::usage::budget::holds(ctx),
         in_use: state
             .as_ref()
@@ -1950,10 +1946,8 @@ fn exempting(proxy: &ProxyFact) -> Option<String> {
 /// has no environment to read and is the surface most likely to be used on a machine that
 /// needs the answer.
 ///
-/// Where Pitboard does not read every layer, it says which it did not read beside that
-/// answer, since a layer it did not read could still set something else. Where a file sits
-/// behind the keychain, a session already running takes the stored login only when it next
-/// reads it, at its login's renewal, which the `fallback_login` check says.
+/// Where a file sits behind the keychain, a session already running takes the stored login
+/// only when it next reads it, at its login's renewal, which the `fallback_login` check says.
 fn judge_auth(facts: &Facts) -> Check {
     if facts.auth_overrides.is_empty() {
         let read = if facts.fallback_login.is_some() {
@@ -1961,14 +1955,7 @@ fn judge_auth(facts: &Facts) -> Check {
         } else {
             "the stored login, which is what Pitboard moves"
         };
-        return ok(
-            "auth_source",
-            "what a session authenticates with",
-            match facts.auth_unread {
-                None => read.to_string(),
-                Some(unread) => format!("{read}, as far as it reads: {unread}"),
-            },
-        );
+        return ok("auth_source", "what a session authenticates with", read);
     }
     let named: Vec<String> = facts
         .auth_overrides
@@ -3849,7 +3836,6 @@ mod tests {
             pending_parks: Vec::new(),
             claude_version: Some(crate::provider::claude::assumptions::VERIFIED_AGAINST.into()),
             auth_overrides: Vec::new(),
-            auth_unread: None,
             asking_held: Vec::new(),
             state: Ok(State::default()),
             in_use: Some(in_use_as_named()),
@@ -3907,26 +3893,6 @@ mod tests {
             version: None,
             running: Some(Vec::new()),
         }
-    }
-
-    /// Where Pitboard does not read every layer of Claude Code's settings, as it does not
-    /// read the managed ones on Windows yet, the check says which beside its answer, and
-    /// still passes: nothing it read says anything else.
-    #[test]
-    fn the_auth_check_says_what_it_did_not_read() {
-        let mut facts = facts();
-        assert_eq!(
-            judge_auth(&facts).detail,
-            "the stored login, which is what Pitboard moves"
-        );
-        facts.auth_unread = Some("Claude Code's managed settings are not read on Windows yet");
-        let check = judge_auth(&facts);
-        assert_eq!(check.level, Level::Ok);
-        assert_eq!(
-            check.detail,
-            "the stored login, which is what Pitboard moves, as far as it reads: Claude Code's \
-             managed settings are not read on Windows yet"
-        );
     }
 
     const SID: &str = "S-1-5-21-1004336348-1177238915-682003330-1001";

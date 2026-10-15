@@ -283,6 +283,12 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         linux: NotRead("a Linux program carries no version resource"),
         windows: Read("2.1.300"),
     },
+    PerSystem {
+        name: "windows_managed_settings",
+        macos: NotRead("macOS has no registry, and its managed folder is settings.rs's"),
+        linux: NotRead("Linux has no registry, and its managed folder is settings.rs's"),
+        windows: Read("2.1.300"),
+    },
     warm_up("headless_token_descriptor"),
     warm_up("headless_print_mode"),
     warm_up("headless_result"),
@@ -1001,6 +1007,28 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         absent: &[],
     },
     Assumption {
+        name: "windows_managed_settings",
+        fact: "on Windows Claude Code takes managed settings from `C:\\Program Files\\ClaudeCode`, \
+               its `managed-settings.json` and the `.json` files of `managed-settings.d`, and \
+               from the value `Settings` of `HKLM\\SOFTWARE\\Policies\\ClaudeCode`, a `REG_SZ` or \
+               a `REG_EXPAND_SZ` as `reg.exe query` prints it, its end trimmed, which it takes \
+               over the folder unless `managedSourcesBehavior` merges them. The same value \
+               under `HKCU` it reads only where neither holds a policy, and there it ignores \
+               what only an administrator may set",
+        read_from: "the managed folder, the policy keys, their reading through \
+                    `%SystemRoot%\\System32\\reg.exe query <key> /v Settings` and the managed \
+                    sources' order in the win32-x64 and win32-arm64 builds of 2.1.300, read as \
+                    bytes on 2026-10-15",
+        verified_against: "2.1.300",
+        depends: "settings::overrides, custom_oauth and overrides_of_a_run_in, through \
+                  host::Host::policy and administered_folder",
+        probe: &[
+            "C:\\Program Files\\ClaudeCode",
+            "SOFTWARE\\Policies\\ClaudeCode",
+        ],
+        absent: &[],
+    },
+    Assumption {
         name: "headless_token_descriptor",
         fact: "where `CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR` names a descriptor, Claude Code \
                reads an OAuth access token from it, an inherited pipe until a newline or its \
@@ -1139,6 +1167,7 @@ mod tests {
                 "windows_open_sharing",
                 "windows_install_layout",
                 "windows_version_resource",
+                "windows_managed_settings",
             ]
         );
         for name in [

@@ -23,7 +23,7 @@ pub(crate) mod fs;
 pub(crate) mod proc;
 pub(crate) mod user;
 
-use super::administered::Administered;
+use super::administered::{Administered, Hive};
 use super::{Elevation, Floor, Host, Jar, JarError, Listed, LoginPath, Os, Process, Scheduler};
 use crate::context::{Context, Environment};
 use crate::store::{Backend, PlainFile, RawStore, Unbuilt};
@@ -106,6 +106,29 @@ fn expanded(key: windows_registry::Key, name: &str) -> Option<String> {
     }
 }
 
+// As `reg.exe query` prints one, which is how Claude Code reads a policy: a `REG_SZ`, or a
+// `REG_EXPAND_SZ` left unexpanded, its end trimmed. A value of any other kind is nothing.
+fn policy(hive: Hive, key: &str, value: &str) -> Administered {
+    use windows_registry::{CURRENT_USER, LOCAL_MACHINE, Type};
+    let root = match hive {
+        Hive::Machine => LOCAL_MACHINE,
+        Hive::User => CURRENT_USER,
+    };
+    let read = root
+        .open(key)
+        .and_then(|opened| match opened.get_type(value)? {
+            Type::String | Type::ExpandString => opened.get_hstring(value).map(Some),
+            _ => Ok(None),
+        });
+    match read {
+        Ok(Some(text)) => Administered::Set(text.to_string_lossy().trim_end().to_owned()),
+        Ok(None) => Administered::Unset,
+        // HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND): no such key or value.
+        Err(e) if e.code().0 as u32 == 0x8007_0002 => Administered::Unset,
+        Err(e) => Administered::Unreadable(format!("cannot be read: {e}")),
+    }
+}
+
 #[derive(Debug)]
 struct Windows;
 
@@ -177,6 +200,14 @@ impl Host for Windows {
     /// files, which W21 reads (the register's `codex_managed_preferences`).
     fn managed_preference(&self, _domain: &str, _key: &str) -> Administered {
         Administered::Unset
+    }
+
+    fn policy(&self, hive: Hive, key: &str, value: &str) -> Administered {
+        if super::administered::READ_BY_REAL_HOSTS {
+            policy(hive, key, value)
+        } else {
+            Administered::Unset
+        }
     }
 }
 
@@ -349,6 +380,32 @@ mod tests {
         unsupported(write_jar(&dir.join("Cookies"), &[]));
         assert!(!dir.exists(), "nothing was made");
         assert_eq!(user::login_name(), None);
+    }
+
+    /// A policy is read as `reg.exe` prints it: a `REG_SZ` as it is, here Windows' own build,
+    /// and a key that is not there as nothing. A build for tests reads none but here.
+    #[test]
+    fn a_policy_is_read_as_reg_exe_prints_it() {
+        let current = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion";
+        let (_, _, build) = user::version().expect("RtlGetVersion");
+        assert_eq!(
+            policy(Hive::Machine, current, "CurrentBuild"),
+            Administered::Set(build.to_string())
+        );
+        assert_eq!(
+            policy(Hive::Machine, current, "pitboard-absent"),
+            Administered::Unset
+        );
+        for hive in [Hive::Machine, Hive::User] {
+            assert_eq!(
+                policy(hive, r"SOFTWARE\Policies\pitboard-absent", "Settings"),
+                Administered::Unset
+            );
+        }
+        assert_eq!(
+            host().policy(Hive::Machine, current, "CurrentBuild"),
+            Administered::Unset
+        );
     }
 
     /// A build for tests reads no machine's `Path`. Read here, read only, it is the machine's

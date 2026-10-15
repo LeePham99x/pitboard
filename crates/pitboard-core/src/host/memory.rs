@@ -104,6 +104,8 @@ pub struct MemoryHost {
     administered: Mutex<HashMap<PathBuf, Administered>>,
     /// The managed preferences a profile forces, by domain and key, as a test said.
     forced: Mutex<HashMap<(String, String), Administered>>,
+    // The registry's policies, by hive, key and value, as a test said.
+    policies: Mutex<HashMap<(super::Hive, String, String), Administered>>,
 }
 
 impl Default for MemoryHost {
@@ -132,6 +134,7 @@ impl Default for MemoryHost {
             floor: Mutex::new(Floor::Met),
             administered: Mutex::new(HashMap::new()),
             forced: Mutex::new(HashMap::new()),
+            policies: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -296,6 +299,19 @@ impl MemoryHost {
             .lock()
             .expect("a poisoned test host is a failed test")
             .insert(path, holds);
+    }
+
+    // Say the registry holds `text` as `value` of `key` under `hive`, on whatever system the
+    // tests run on.
+    #[cfg(test)]
+    pub(crate) fn sets_policy(&self, hive: super::Hive, key: &str, value: &str, text: &str) {
+        self.policies
+            .lock()
+            .expect("a poisoned test host is a failed test")
+            .insert(
+                (hive, key.to_string(), value.to_string()),
+                Administered::Set(text.into()),
+            );
     }
 
     /// Say an administrator's configuration profile forces `key` of `domain` to `value`, a
@@ -474,6 +490,26 @@ impl Host for MemoryHost {
             .lock()
             .expect("a poisoned test host is a failed test")
             .get(&(domain.to_string(), key.to_string()))
+            .cloned()
+            .unwrap_or(Administered::Unset)
+    }
+
+    // The files a test said an administrator wrote in `dir`.
+    fn administered_folder(&self, dir: &Path) -> Vec<PathBuf> {
+        self.administered
+            .lock()
+            .expect("a poisoned test host is a failed test")
+            .keys()
+            .filter(|path| path.parent() == Some(dir))
+            .cloned()
+            .collect()
+    }
+
+    fn policy(&self, hive: super::Hive, key: &str, value: &str) -> Administered {
+        self.policies
+            .lock()
+            .expect("a poisoned test host is a failed test")
+            .get(&(hive, key.to_string(), value.to_string()))
             .cloned()
             .unwrap_or(Administered::Unset)
     }

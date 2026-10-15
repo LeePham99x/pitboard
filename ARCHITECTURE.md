@@ -72,8 +72,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     version and identifier (`app_version`, `app_id`), the scheduler, whether this process
     runs as the person (`elevation`), whether the system is one Pitboard changes things on
     by its version (`floor`, `host::Floor`), and what an administrator set for a program
-    outside every home (`administered_file`, and `managed_preference`, which
-    `macos/preferences.rs` reads), reached through `Context` and faked by `host/memory.rs`,
+    outside every home (`administered_file`, `administered_folder`, `managed_preference`,
+    which `macos/preferences.rs` reads, and `policy`, a value under the Windows registry's
+    `HKLM` or `HKCU`), reached through `Context` and faked by `host/memory.rs`,
     which plays every answer. In a build for tests the real hosts read nothing an
     administrator set (`host/administered.rs`) and no app installed on the machine. `fs`,
     `proc` and `user` are plain functions for what the system does whoever asks: private
@@ -2611,6 +2612,14 @@ treated, and only the macOS build shows it. The run reads both builds since.
   Windows looks in that `.local\bin`, `%APPDATA%\npm`, `%LOCALAPPDATA%\Microsoft\WinGet\Links`
   and `%USERPROFILE%\scoop\shims`, after the registry's `Path`, each only where its
   variable is set.
+- Read on 15 October 2026 from the win32-x64 and win32-arm64 builds of 2.1.300
+  (`windows_managed_settings`): on Windows managed settings are in `C:\Program
+  Files\ClaudeCode`, as on the other systems in their folder, and in the value `Settings` of
+  `HKLM\SOFTWARE\Policies\ClaudeCode`, which Claude Code reads with `reg.exe query` and takes
+  over the folder unless `managedSourcesBehavior` merges them. The same value under `HKCU`
+  counts only where neither holds a policy. Pitboard reads all three through the host, and
+  the folder and `HKLM` both, so it may name an override a session would not take, never
+  miss one.
 - Read on 15 October 2026 from the win32-x64 and win32-arm64 builds of 2.1.300
   (`windows_version_resource`): `claude.exe` carries a version resource whose product
   version is `2.1.300.0`. So doctor reads the release there on Windows, once npm's

@@ -23,9 +23,35 @@ pub(crate) enum Administered {
     Unreadable(String),
 }
 
+// Which hive of the Windows registry a policy is under: `HKLM`, an administrator's, or `HKCU`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum Hive {
+    Machine,
+    User,
+}
+
+impl Hive {
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Hive::Machine => "HKLM",
+            Hive::User => "HKCU",
+        }
+    }
+}
+
 /// Whether the real hosts read what an administrator set. Not in a build for tests: a unit
 /// test, the command line the integration tests run, or an app built with the fixtures.
 pub(crate) const READ_BY_REAL_HOSTS: bool = !cfg!(any(test, feature = "test-support"));
+
+// Every file in the folder at `dir`, by its path; none where it is not there.
+pub(crate) fn listed(dir: &Path) -> Vec<std::path::PathBuf> {
+    std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path())
+        .collect()
+}
 
 /// The file at `path`, as text. Absent is unset; there and unreadable, or not text, says why.
 pub(crate) fn read_text(path: &Path) -> Administered {
@@ -98,5 +124,17 @@ mod tests {
                 .managed_preference("com.openai.codex", "requirements_toml_base64"),
             Administered::Unset
         );
+        assert_eq!(
+            ctx.host()
+                .administered_folder(Path::new("/etc/claude-code/managed-settings.d")),
+            Vec::<std::path::PathBuf>::new()
+        );
+        for hive in [Hive::Machine, Hive::User] {
+            assert_eq!(
+                ctx.host()
+                    .policy(hive, r"SOFTWARE\Policies\ClaudeCode", "Settings"),
+                Administered::Unset
+            );
+        }
     }
 }

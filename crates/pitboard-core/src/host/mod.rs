@@ -64,7 +64,7 @@ use macos as os;
 #[cfg(windows)]
 use windows as os;
 
-pub(crate) use administered::Administered;
+pub(crate) use administered::{Administered, Hive};
 pub(crate) use os::{fs, proc, user};
 
 /// The operating systems Pitboard runs on. Windows only once it is released
@@ -697,6 +697,24 @@ pub(crate) trait Host: Send + Sync + std::fmt::Debug {
     ///
     /// Unset in a build for tests, on the real hosts ([`administered::READ_BY_REAL_HOSTS`]).
     fn managed_preference(&self, domain: &str, key: &str) -> Administered;
+
+    // The files in the folder at `dir`, outside every home, that only an administrator
+    // writes, such as Claude Code's `managed-settings.d`. None in a build for tests, on the
+    // real hosts.
+    fn administered_folder(&self, dir: &Path) -> Vec<PathBuf> {
+        if administered::READ_BY_REAL_HOSTS {
+            administered::listed(dir)
+        } else {
+            Vec::new()
+        }
+    }
+
+    // The text of `value` of the registry key `key` under `hive`, a `REG_SZ` or a
+    // `REG_EXPAND_SZ` as it is written: a Windows policy, such as Claude Code's `Settings`.
+    // Unset on a system with no registry, and in a build for tests, on the real hosts.
+    fn policy(&self, _hive: Hive, _key: &str, _value: &str) -> Administered {
+        Administered::Unset
+    }
 }
 
 /// The system's own scheduler, which starts `pitboard renew` once a day: launchd on macOS,

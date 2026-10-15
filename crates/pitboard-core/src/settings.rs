@@ -13,14 +13,16 @@
 //! Files are the one thing an app launched from Finder and a shell agree about. Measured in
 //! 2.1.278: managed settings live in `/Library/Application Support/ClaudeCode` on macOS and
 //! `/etc/claude-code` on Linux, as `managed-settings.json` and a `managed-settings.d`
-//! drop-in directory beside it; a person's own are `<config dir>/settings.json`.
+//! drop-in directory beside it; a person's own are `<config dir>/settings.json`. Read from
+//! 2.1.300, Windows keeps them in `C:\Program Files\ClaudeCode` and in the registry's
+//! policy value `Settings` (`windows_managed_settings` in the register).
 //!
 //! Project settings are deliberately not read. `.claude/settings.json` is a fact about one
 //! directory, not about the machine, and an answer true in the directory Pitboard happened
 //! to be run from is worse than no answer at all.
 
 use crate::context::Context;
-use crate::host::Os;
+use crate::host::{Administered, Hive, Os};
 use crate::provider::claude::paths as claude;
 use serde_json::Value;
 use std::path::PathBuf;
@@ -54,44 +56,92 @@ impl std::fmt::Display for Override {
     }
 }
 
-/// Where managed settings are on `os`, which is a fact about the machine and not about the
-/// person. `None` on Windows, where W17 reads where Claude Code keeps them, until which
-/// [`unread`] says so.
-fn managed_dir(os: Os) -> Option<PathBuf> {
+// Where managed settings are on `os`, a fact about the machine and not about the person.
+fn managed_dir(os: Os) -> PathBuf {
     match os {
-        Os::MacOs => Some("/Library/Application Support/ClaudeCode".into()),
-        Os::Linux => Some("/etc/claude-code".into()),
-        Os::Windows => None,
+        Os::MacOs => "/Library/Application Support/ClaudeCode".into(),
+        Os::Linux => "/etc/claude-code".into(),
+        Os::Windows => r"C:\Program Files\ClaudeCode".into(),
     }
 }
 
-/// What Pitboard does not read of what a session here would authenticate as, where it does
-/// not read everything: on Windows, Claude Code's managed settings, until W17.
-pub(crate) fn unread() -> Option<&'static str> {
-    unread_on(crate::host::OS)
+// Claude Code's policy value under `HKLM` and `HKCU` (`windows_managed_settings`).
+const POLICIES: &str = r"SOFTWARE\Policies\ClaudeCode";
+const POLICY: &str = "Settings";
+
+// One place Claude Code takes managed settings from: what to call it, and what it holds.
+struct Layer {
+    name: String,
+    text: String,
 }
 
-fn unread_on(os: Os) -> Option<&'static str> {
-    managed_dir(os)
-        .is_none()
-        .then_some("Claude Code's managed settings are not read on Windows yet")
-}
-
-fn managed_files() -> Vec<PathBuf> {
-    let Some(dir) = managed_dir(crate::host::OS) else {
-        return Vec::new();
-    };
+// Every place of managed settings a session here may read, through the host, which a test
+// says for itself: the folder's file and drop-ins, in order, and on Windows the policy value
+// under `HKLM`, and the one under `HKCU`, which Claude Code 2.1.300 reads only where neither
+// holds anything. Claude Code takes `HKLM` over the folder unless it is told to merge them,
+// so reading both can find more than a session would, never less.
+fn managed(ctx: &Context) -> Vec<Layer> {
+    let host = ctx.host();
+    let dir = managed_dir(ctx.os);
     let mut files = vec![dir.join("managed-settings.json")];
-    if let Ok(entries) = std::fs::read_dir(dir.join("managed-settings.d")) {
-        let mut drop_ins: Vec<PathBuf> = entries
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| p.extension().is_some_and(|e| e == "json"))
-            .collect();
-        drop_ins.sort();
-        files.extend(drop_ins);
+    let mut drop_ins: Vec<PathBuf> = host
+        .administered_folder(&dir.join("managed-settings.d"))
+        .into_iter()
+        .filter(|p| p.extension().is_some_and(|e| e == "json"))
+        .collect();
+    drop_ins.sort();
+    files.extend(drop_ins);
+    let mut there = false;
+    let mut layers: Vec<Layer> = files
+        .into_iter()
+        .filter_map(|path| match host.administered_file(&path) {
+            Administered::Set(text) => {
+                there |= holds_policy(&text);
+                Some(Layer {
+                    name: path.display().to_string(),
+                    text,
+                })
+            }
+            Administered::Unreadable(_) => {
+                there = true;
+                None
+            }
+            Administered::Unset => None,
+        })
+        .collect();
+    if ctx.os == Os::Windows {
+        for hive in [Hive::Machine, Hive::User] {
+            if hive == Hive::User && there {
+                break;
+            }
+            match host.policy(hive, POLICIES, POLICY) {
+                Administered::Set(text) => {
+                    there |= holds_policy(&text);
+                    layers.push(Layer {
+                        name: format!(r"{}\{POLICIES}\{POLICY}", hive.name()),
+                        text,
+                    });
+                }
+                Administered::Unreadable(_) => there = true,
+                Administered::Unset => {}
+            }
+        }
     }
-    files
+    layers
+}
+
+// Whether Claude Code takes a managed document for one that is there, which keeps `HKCU` out:
+// one it cannot read, or one that sets more than how the managed sources compose.
+fn holds_policy(text: &str) -> bool {
+    match serde_json::from_str::<Value>(text) {
+        Ok(Value::Object(keys)) => keys.keys().any(|key| {
+            !matches!(
+                key.as_str(),
+                "managedSourcesBehavior" | "wslInheritsWindowsSettings"
+            )
+        }),
+        Ok(_) | Err(_) => !text.trim().is_empty(),
+    }
 }
 
 /// A value Claude Code would read as set. An empty string, `0` and `false` are not.
@@ -99,14 +149,19 @@ fn is_set(value: &str) -> bool {
     !matches!(value.trim(), "" | "0" | "false")
 }
 
-fn overrides_in(path: &std::path::Path) -> Vec<Override> {
-    let Ok(raw) = std::fs::read_to_string(path) else {
+// The person's own file, which is theirs and no administrator's.
+fn own(path: &std::path::Path) -> Option<Layer> {
+    Some(Layer {
+        name: path.display().to_string(),
+        text: std::fs::read_to_string(path).ok()?,
+    })
+}
+
+fn overrides_in(layer: &Layer) -> Vec<Override> {
+    let Ok(json) = serde_json::from_str::<Value>(&layer.text) else {
         return Vec::new();
     };
-    let Ok(json) = serde_json::from_str::<Value>(&raw) else {
-        return Vec::new();
-    };
-    let layer = path.display().to_string();
+    let layer = layer.name.clone();
     let mut found = Vec::new();
     // A helper that prints an API key is an override whatever it prints.
     if json
@@ -148,15 +203,12 @@ pub(crate) fn custom_oauth(ctx: &Context) -> bool {
     if ctx.custom_oauth() {
         return true;
     }
-    managed_files()
-        .iter()
-        .chain(std::iter::once(
-            &claude::config_dir(ctx).join("settings.json"),
-        ))
-        .any(|path| {
-            std::fs::read_to_string(path)
+    managed(ctx)
+        .into_iter()
+        .chain(own(&claude::config_dir(ctx).join("settings.json")))
+        .any(|layer| {
+            serde_json::from_str::<Value>(&layer.text)
                 .ok()
-                .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
                 .and_then(|json| {
                     json.get("env")?
                         .get("CLAUDE_CODE_CUSTOM_OAUTH_URL")?
@@ -171,12 +223,10 @@ pub(crate) fn custom_oauth(ctx: &Context) -> bool {
 /// Pitboard moves. Empty means a switch changes what a session sees, which is the answer
 /// Pitboard needs before it moves anything.
 pub(crate) fn overrides(ctx: &Context) -> Vec<Override> {
-    let mut found: Vec<Override> = managed_files()
-        .iter()
-        .chain(std::iter::once(
-            &claude::config_dir(ctx).join("settings.json"),
-        ))
-        .flat_map(|path| overrides_in(path))
+    let mut found: Vec<Override> = managed(ctx)
+        .into_iter()
+        .chain(own(&claude::config_dir(ctx).join("settings.json")))
+        .flat_map(|layer| overrides_in(&layer))
         .collect();
     // What this process was started with, which a command line sees and an app does not.
     found.extend(ctx.overriding_auth().iter().map(|key| Override {
@@ -189,11 +239,11 @@ pub(crate) fn overrides(ctx: &Context) -> Vec<Override> {
 /// [`overrides`] for a run of Claude Code started with nothing of this process's environment
 /// and its own config directory, `config`, as a warm-up's is: the managed settings', which
 /// every run of Claude Code on this machine reads, and that directory's own.
-pub(crate) fn overrides_of_a_run_in(config: &std::path::Path) -> Vec<Override> {
-    managed_files()
-        .iter()
-        .chain(std::iter::once(&config.join("settings.json")))
-        .flat_map(|path| overrides_in(path))
+pub(crate) fn overrides_of_a_run_in(ctx: &Context, config: &std::path::Path) -> Vec<Override> {
+    managed(ctx)
+        .into_iter()
+        .chain(own(&config.join("settings.json")))
+        .flat_map(|layer| overrides_in(&layer))
         .collect()
 }
 
@@ -228,18 +278,6 @@ mod tests {
     use super::tests_support::*;
     use super::*;
     use serde_json::json;
-
-    /// Where Pitboard does not know where Claude Code keeps its managed settings, it says it
-    /// did not read them, rather than that nothing is in the way: on Windows, until W17.
-    #[test]
-    fn managed_settings_are_said_unread_where_pitboard_does_not_read_them() {
-        assert_eq!(unread_on(Os::MacOs), None);
-        assert_eq!(unread_on(Os::Linux), None);
-        assert_eq!(
-            unread_on(Os::Windows),
-            Some("Claude Code's managed settings are not read on Windows yet")
-        );
-    }
 
     #[test]
     fn an_ordinary_machine_has_nothing_in_the_way() {
@@ -322,5 +360,158 @@ mod custom_oauth_tests {
             json!({"env": {"CLAUDE_CODE_CUSTOM_OAUTH_URL": "https://oauth.example"}}),
         );
         assert!(custom_oauth(&ctx));
+    }
+}
+
+#[cfg(test)]
+mod managed_tests {
+    use super::*;
+    use crate::context::Environment;
+    use crate::host::memory::MemoryHost;
+    use serde_json::json;
+    use std::sync::Arc;
+
+    // A context of `os` whose stores and machine are `memory`, in a scratch home.
+    fn on(os: Os, memory: &Arc<MemoryHost>) -> (Context, tempfile::TempDir) {
+        let scratch = tempfile::tempdir().expect("a scratch home");
+        let home = scratch.path().to_string_lossy().into_owned();
+        let config = scratch
+            .path()
+            .join(".claude")
+            .to_string_lossy()
+            .into_owned();
+        let env = Environment::on(
+            os,
+            [
+                ("HOME", home.as_str()),
+                ("USERPROFILE", home.as_str()),
+                ("CLAUDE_CONFIG_DIR", config.as_str()),
+            ],
+        );
+        let ctx = Context::for_command_line(&env).with_memory_stores(Arc::clone(memory));
+        (ctx, scratch)
+    }
+
+    fn said(found: &[Override]) -> Vec<(String, String)> {
+        found
+            .iter()
+            .map(|o| (o.layer.clone(), o.key.clone()))
+            .collect()
+    }
+
+    /// Each system's managed settings are read where Claude Code keeps them, through the
+    /// host: the file, then the drop-ins that end in `.json`, in order. A setting there
+    /// counts for a session and for a warm-up's run alike.
+    #[test]
+    fn managed_settings_are_read_where_claude_code_keeps_them_on_each_system() {
+        for (os, dir) in [
+            (Os::MacOs, "/Library/Application Support/ClaudeCode"),
+            (Os::Linux, "/etc/claude-code"),
+            (Os::Windows, r"C:\Program Files\ClaudeCode"),
+        ] {
+            let memory = MemoryHost::new();
+            let dir = PathBuf::from(dir);
+            let (file, drop_ins) = (
+                dir.join("managed-settings.json"),
+                dir.join("managed-settings.d"),
+            );
+            memory.administers(
+                &file,
+                &json!({"env": {"ANTHROPIC_API_KEY": "sk-ant-x"}}).to_string(),
+            );
+            memory.administers(
+                drop_ins.join("20-helper.json"),
+                &json!({"apiKeyHelper": "/opt/key"}).to_string(),
+            );
+            memory.administers(
+                drop_ins.join("10-oauth.json"),
+                &json!({"env": {"CLAUDE_CODE_CUSTOM_OAUTH_URL": "https://oauth.example"}})
+                    .to_string(),
+            );
+            memory.administers(
+                drop_ins.join("30-notes.txt"),
+                &json!({"apiKeyHelper": "/opt/other"}).to_string(),
+            );
+            let (ctx, scratch) = on(os, &memory);
+            let expected = [
+                (
+                    file.display().to_string(),
+                    "env.ANTHROPIC_API_KEY".to_string(),
+                ),
+                (
+                    drop_ins.join("20-helper.json").display().to_string(),
+                    "apiKeyHelper".to_string(),
+                ),
+            ];
+            assert_eq!(said(&overrides(&ctx)), expected, "{os:?}");
+            assert!(custom_oauth(&ctx), "{os:?}");
+            let run = scratch.path().join("warm").join("config");
+            assert_eq!(said(&overrides_of_a_run_in(&ctx, &run)), expected, "{os:?}");
+        }
+    }
+
+    /// On Windows the policy value under `HKLM` is read beside the folder, and the one under
+    /// `HKCU` only where neither holds a policy, as Claude Code 2.1.300 reads them. No other
+    /// system has them.
+    #[test]
+    fn windows_policies_are_read_as_claude_code_reads_them() {
+        let memory = MemoryHost::new();
+        let user = format!(r"HKCU\{POLICIES}\{POLICY}");
+        let machine = format!(r"HKLM\{POLICIES}\{POLICY}");
+        memory.sets_policy(
+            Hive::User,
+            POLICIES,
+            POLICY,
+            &json!({"env": {"CLAUDE_CODE_USE_BEDROCK": "1"}}).to_string(),
+        );
+        let (ctx, _scratch) = on(Os::Windows, &memory);
+        assert_eq!(
+            said(&overrides(&ctx)),
+            [(user.clone(), "env.CLAUDE_CODE_USE_BEDROCK".to_string())]
+        );
+
+        memory.sets_policy(
+            Hive::Machine,
+            POLICIES,
+            POLICY,
+            &json!({"managedSourcesBehavior": "merge"}).to_string(),
+        );
+        assert_eq!(
+            said(&overrides(&ctx)),
+            [(user, "env.CLAUDE_CODE_USE_BEDROCK".to_string())],
+            "one that says only how the sources compose keeps nothing out"
+        );
+
+        memory.sets_policy(
+            Hive::Machine,
+            POLICIES,
+            POLICY,
+            &json!({"apiKeyHelper": "C:\\key.cmd"}).to_string(),
+        );
+        assert_eq!(
+            said(&overrides(&ctx)),
+            [(machine, "apiKeyHelper".to_string())]
+        );
+
+        let (mac, _scratch) = on(Os::MacOs, &memory);
+        assert_eq!(overrides(&mac), Vec::new(), "macOS has no registry");
+    }
+
+    /// A file in the folder that holds a policy keeps `HKCU` out as `HKLM` does.
+    #[test]
+    fn a_managed_file_keeps_the_persons_policy_out() {
+        let memory = MemoryHost::new();
+        memory.sets_policy(
+            Hive::User,
+            POLICIES,
+            POLICY,
+            &json!({"apiKeyHelper": "C:\\key.cmd"}).to_string(),
+        );
+        memory.administers(
+            PathBuf::from(r"C:\Program Files\ClaudeCode").join("managed-settings.json"),
+            &json!({"permissions": {"deny": ["WebFetch"]}}).to_string(),
+        );
+        let (ctx, _scratch) = on(Os::Windows, &memory);
+        assert_eq!(overrides(&ctx), Vec::new());
     }
 }
