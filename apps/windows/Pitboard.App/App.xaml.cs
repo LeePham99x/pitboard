@@ -4,6 +4,8 @@ using Microsoft.UI.Xaml;
 using Microsoft.Windows.System.Power;
 using Pitboard.Core;
 using Pitboard.Windows;
+using Windows.Graphics;
+using Launcher = Windows.System.Launcher;
 
 namespace Pitboard.App;
 
@@ -11,8 +13,11 @@ public partial class App : Application
 {
     private readonly AppStart _start;
     private readonly WindowRequests _requests = new();
+    private readonly NoUpdates _updates = new();
     private AppModel? _model;
     private HiddenWindow? _hidden;
+    private NotifyIcon? _icon;
+    private MenuHost? _menu;
     private MainWindow? _window;
 
     public App(AppStart start)
@@ -34,7 +39,9 @@ public partial class App : Application
 
         _model = model;
         model.PropertyChanged += OnModelChanged;
-        _hidden = new HiddenWindow(sessionEnding: model.Shutdown);
+        _hidden = new HiddenWindow(sessionEnding: EndSession, closing: Quit, icon: OnIcon, taskbarCreated: () => _icon?.Readd());
+        _icon = new NotifyIcon(new ShellNotificationArea(), _hidden.Handle, Shell.AppIcon(), _start.Identity.IconGuid);
+        _icon.Show(model.MenuBar.Spoken);
         PowerManager.SystemSuspendStatusChanged += OnSuspendStatusChanged;
         Follow(model.WindowRequest);
         model.Send(new Intent.Start());
@@ -78,10 +85,80 @@ public partial class App : Application
 
     private void OnModelChanged(object? sender, PropertyChangedEventArgs args)
     {
-        if (args.PropertyName == nameof(AppModel.WindowRequest) && _model is not null)
+        if (_model is null)
         {
-            Follow(_model.WindowRequest);
+            return;
         }
+
+        switch (args.PropertyName)
+        {
+            case nameof(AppModel.WindowRequest):
+                Follow(_model.WindowRequest);
+                break;
+            case nameof(AppModel.MenuBar):
+                _icon?.Show(_model.MenuBar.Spoken);
+                break;
+        }
+    }
+
+    private void OnIcon(IconEvent happened)
+    {
+        switch (happened)
+        {
+            case IconEvent.Activated:
+                _model?.Send(new Intent.ShowWindow(Pane: null));
+                break;
+            case IconEvent.Menu at when _model is { } model:
+                if (_menu is null)
+                {
+                    _menu = new MenuHost();
+                    _menu.Closed += (_, _) => _menu = null;
+                }
+
+                _menu.Show(
+                    IconMenu.Entries(model, _updates),
+                    new PointInt32(at.X, at.Y),
+                    opened: () => model.Send(new Intent.Glanced()),
+                    chosen: Perform,
+                    cancelled: () => _icon?.ReturnFocus());
+                break;
+        }
+    }
+
+    private void Perform(IconCommand command)
+    {
+        switch (command)
+        {
+            case IconCommand.Send send:
+                _model?.Send(send.Intent);
+                break;
+            case IconCommand.OpenLink link:
+                _ = Launcher.LaunchUriAsync(new Uri(link.Url));
+                break;
+            // About is a section of the settings page, as Microsoft's settings guidance places it.
+            case IconCommand.ShowSettings or IconCommand.ShowAbout:
+                ShowWindow();
+                _window?.Select(null);
+                break;
+            case IconCommand.CheckForUpdates:
+                _updates.Check();
+                break;
+            case IconCommand.Quit:
+                Quit();
+                break;
+        }
+    }
+
+    private void EndSession()
+    {
+        _icon?.Remove();
+        _model?.Shutdown();
+    }
+
+    private void Quit()
+    {
+        EndSession();
+        Exit();
     }
 
     private void Follow(WindowRequest request)

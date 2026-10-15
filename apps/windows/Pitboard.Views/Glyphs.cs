@@ -14,4 +14,7 @@ internal static class Glyphs
     public const string Name = "";
     public const string Switch = "";
     public const string Passed = "";
+    public const string Help = "";
+    public const string Info = "";
+    public const string Update = "";
 }

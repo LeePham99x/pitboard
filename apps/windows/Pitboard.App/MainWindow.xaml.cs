@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml.Input;
 using Pitboard.Core;
 using Pitboard.Views;
 using Pitboard.Windows;
+using Windows.System;
 
 namespace Pitboard.App;
 
@@ -37,6 +38,14 @@ public sealed partial class MainWindow : Window
             _sheets?.Dispose();
             _alerts?.Dispose();
         };
+        // VK_OEM_COMMA, which VirtualKey has no name for.
+        var settings = new KeyboardAccelerator { Key = (VirtualKey)0xBC, Modifiers = VirtualKeyModifiers.Control };
+        settings.Invoked += (_, args) =>
+        {
+            args.Handled = true;
+            Select(null);
+        };
+        Navigation.KeyboardAccelerators.Add(settings);
         Select(Pane.Accounts);
     }
 
