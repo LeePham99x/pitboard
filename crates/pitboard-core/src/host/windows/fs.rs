@@ -1248,11 +1248,11 @@ mod tests {
             shared: false,
             described: "open to you, SYSTEM and Administrators".into(),
         };
-        for (shell, kind) in [("cmd", Kind::File), ("powershell", Kind::Any)] {
+        for shell in ["cmd", "powershell"] {
             let login = shared.join(format!("{shell} Đạt's login.json"));
             std::fs::write(&login, "x").expect("written");
             assert!(access(&login).expect("read").shared, "its folder's list");
-            run_advice(shell, kind, &login);
+            run_advice(shell, Kind::File, &login);
             assert_eq!(access(&login), Some(private.clone()), "{shell}");
             assert_eq!(std::fs::read(&login).expect("its owner reads it"), b"x");
         }

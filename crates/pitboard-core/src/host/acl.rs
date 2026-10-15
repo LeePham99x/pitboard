@@ -1,7 +1,7 @@
 // What a Windows access control list says, read apart from the system so every system's
 // tests read it, and the `icacls` line that makes a path private on Windows.
 
-use super::{Access, Kind};
+use super::Access;
 
 pub(crate) const SYSTEM: &str = "S-1-5-18";
 pub(crate) const ADMINISTRATORS: &str = "S-1-5-32-544";
@@ -154,12 +154,9 @@ pub(crate) fn is_private(protected: bool, aces: &[Ace], you: &str, folder: bool)
 // One `icacls` a path, as it takes one. Inheritance goes only beside the grants: alone, it can
 // leave an empty list, which shuts the owner out too. What the path inherits goes, and a grant
 // someone gave another account on the path itself stays.
-pub(crate) fn icacls(kind: Kind, path: &str, sid: &str) -> String {
-    // `Any` may name a folder, whose grants must pass on to what it holds.
-    let rights = match kind {
-        Kind::File => "F",
-        Kind::Directory | Kind::Any => "(OI)(CI)F",
-    };
+pub(crate) fn icacls(folder: bool, path: &str, sid: &str) -> String {
+    // A folder's grants pass on to what it holds; on a file they would grant nothing.
+    let rights = if folder { "(OI)(CI)F" } else { "F" };
     let grant = |who: &str| format!("\"*{who}:{rights}\"");
     format!(
         "icacls \"{path}\" /inheritance:r /grant:r {} {} {}",
@@ -345,18 +342,16 @@ mod tests {
     fn the_icacls_line_quotes_the_path_and_takes_inheritance_away_only_with_the_grants() {
         let path = r"C:\Users\Đạt Ng\.codex\auth.json";
         assert_eq!(
-            icacls(Kind::File, path, YOU),
+            icacls(false, path, YOU),
             format!(
                 r#"icacls "{path}" /inheritance:r /grant:r "*S-1-5-18:F" "*S-1-5-32-544:F" "*{YOU}:F""#
             )
         );
-        for kind in [Kind::Directory, Kind::Any] {
-            assert_eq!(
-                icacls(kind, r"C:\x y", YOU),
-                format!(
-                    r#"icacls "C:\x y" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "*{YOU}:(OI)(CI)F""#
-                )
-            );
-        }
+        assert_eq!(
+            icacls(true, r"C:\x y", YOU),
+            format!(
+                r#"icacls "C:\x y" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "*{YOU}:(OI)(CI)F""#
+            )
+        );
     }
 }

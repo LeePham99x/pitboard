@@ -65,9 +65,10 @@ pub(crate) struct Facts {
     pub(crate) home: PathBuf,
     pub(crate) home_access: Option<Access>,
     /// Anything on this disk holding a login that somebody other than the owner can read:
-    /// (path, its access). Empty on a machine with a keychain and a tidy plaintext
-    /// fallback, and the whole security story on a machine without one.
-    pub(crate) readable_by_others: Vec<(String, Access)>,
+    /// (path, whether it is a file or a folder, its access). Empty on a machine with a
+    /// keychain and a tidy plaintext fallback, and the whole security story on a machine
+    /// without one.
+    pub(crate) readable_by_others: Vec<(String, Kind, Access)>,
     pub(crate) machine_id_known: bool,
     pub(crate) windows: Option<WindowsHomes>,
     /// `CLAUDE_CODE_HOVER_REST`, which switches on the successor credential backend.
@@ -598,13 +599,18 @@ fn parts_of(document: &Value) -> Vec<(String, usize)> {
 // Every file holding a usable login that others may read: who a file lets in is what a
 // restore, a copy or a careless umask changes, and on Windows Claude Code's file takes its
 // folder's access list (Claude Code 2.1.300, RF-C1b).
-fn loose_logins(ctx: &Context) -> Vec<(String, Access)> {
+fn loose_logins(ctx: &Context) -> Vec<(String, Kind, Access)> {
     let mut loose = Vec::new();
     let mut look = |path: PathBuf| {
         if let Some(access) = crate::host::fs::access(&path)
             && access.shared
         {
-            loose.push((path.display().to_string(), access));
+            let kind = if path.is_dir() {
+                Kind::Directory
+            } else {
+                Kind::File
+            };
+            loose.push((path.display().to_string(), kind, access));
         }
     };
     look(claude_live::credential_file(ctx));
@@ -1128,8 +1134,25 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
         let names: Vec<String> = facts
             .readable_by_others
             .iter()
-            .map(|(path, access)| format!("{path} is {}", access.described))
+            .map(|(path, _, access)| format!("{path} is {}", access.described))
             .collect();
+        let sid = facts.sid.as_deref();
+        let commands: Vec<String> = match facts.os {
+            Os::MacOs | Os::Linux => facts.os.make_private_commands(
+                Kind::Any,
+                &facts
+                    .readable_by_others
+                    .iter()
+                    .map(|(path, ..)| path.as_str())
+                    .collect::<Vec<_>>(),
+                sid,
+            ),
+            Os::Windows => facts
+                .readable_by_others
+                .iter()
+                .flat_map(|(path, kind, _)| facts.os.make_private_commands(*kind, &[path], sid))
+                .collect(),
+        };
         fail(
             "private_on_disk",
             "logins on disk",
@@ -1146,17 +1169,7 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
                          takes the access list of the folder it is in. Anyone else on this \
                          PC can read them",
                 },
-                running(
-                    &facts.os.make_private_commands(
-                        Kind::Any,
-                        &facts
-                            .readable_by_others
-                            .iter()
-                            .map(|(path, _)| path.as_str())
-                            .collect::<Vec<_>>(),
-                        facts.sid.as_deref(),
-                    )
-                ),
+                running(&commands),
             ),
         )
     });
@@ -3918,10 +3931,10 @@ mod tests {
             ": `chmod 700 /a /b`."
         );
         let windows =
-            Os::Windows.make_private_commands(Kind::Any, &[r"C:\a", r"C:\b c"], Some(SID));
+            Os::Windows.make_private_commands(Kind::File, &[r"C:\a", r"C:\b c"], Some(SID));
         assert_eq!(
             windows,
-            [r"C:\a", r"C:\b c"].map(|path| crate::host::acl::icacls(Kind::Any, path, SID))
+            [r"C:\a", r"C:\b c"].map(|path| crate::host::acl::icacls(false, path, SID))
         );
         assert_eq!(
             running(&windows),
@@ -3929,7 +3942,13 @@ mod tests {
         );
         assert!(
             Os::Windows
-                .make_private_commands(Kind::Any, &[r"C:\a"], None)
+                .make_private_commands(Kind::File, &[r"C:\a"], None)
+                .is_empty()
+        );
+        // No one `icacls` line serves a file and a folder alike.
+        assert!(
+            Os::Windows
+                .make_private_commands(Kind::Any, &[r"C:\a"], Some(SID))
                 .is_empty()
         );
         assert_eq!(running(&[]), ".");
@@ -3947,13 +3966,15 @@ mod tests {
         let mut f = facts();
         f.os = Os::Windows;
         f.sid = Some(SID.into());
-        let (claude, park) = (
+        let (claude, vault, park) = (
             r"C:\Users\dana\.claude\.credentials.json",
+            r"C:\Users\dana\AppData\Local\Pitboard\vault",
             r"C:\Users\dana\AppData\Local\Pitboard\vault\pitboard-park-x.json",
         );
         f.readable_by_others = vec![
-            (claude.into(), open_to_users()),
-            (park.into(), open_to_users()),
+            (claude.into(), Kind::File, open_to_users()),
+            (vault.into(), Kind::Directory, open_to_users()),
+            (park.into(), Kind::File, open_to_users()),
         ];
         let checks = evaluate(&f);
         let found = check(&checks, "private_on_disk");
@@ -3961,18 +3982,20 @@ mod tests {
         assert_eq!(
             found.detail,
             format!(
-                "{claude} is open to Users, you, SYSTEM and Administrators; {park} is open to \
-                 Users, you, SYSTEM and Administrators"
+                "{claude} is open to Users, you, SYSTEM and Administrators; {vault} is open to \
+                 Users, you, SYSTEM and Administrators; {park} is open to Users, you, SYSTEM and \
+                 Administrators"
             )
         );
-        let [claude, park] =
-            [claude, park].map(|path| crate::host::acl::icacls(Kind::Any, path, SID));
+        // A folder's inheritance on a file leaves it open to nobody, its owner too.
+        let [claude, vault, park] = [(claude, false), (vault, true), (park, false)]
+            .map(|(path, folder)| crate::host::acl::icacls(folder, path, SID));
         assert_eq!(
             found.advice,
             format!(
                 "These hold usable OAuth tokens in plain text, and Claude Code's file takes the \
                  access list of the folder it is in. Anyone else on this PC can read them: \
-                 `{claude}` and `{park}`."
+                 `{claude}`, `{vault}` and `{park}`."
             )
         );
         f.sid = None;
@@ -4002,7 +4025,7 @@ mod tests {
             home.advice,
             format!(
                 "Park names contain account identifiers, so only you should read it: `{}`.",
-                crate::host::acl::icacls(Kind::Directory, &f.home.display().to_string(), SID)
+                crate::host::acl::icacls(true, &f.home.display().to_string(), SID)
             )
         );
     }
@@ -4098,11 +4121,20 @@ mod tests {
         testing::open_to_others(&park).expect("opened to others");
         let found = loose_logins(&ctx);
         assert_eq!(found.len(), 1, "{found:?}");
-        assert_eq!(Some(&found[0].1), crate::host::fs::access(&park).as_ref());
+        assert_eq!(Some(&found[0].2), crate::host::fs::access(&park).as_ref());
         assert!(found[0].0.ends_with("pitboard-park-x.json"), "{found:?}");
+        assert_eq!(found[0].1, Kind::File);
 
         testing::make_private(&park).expect("made private");
         assert!(loose_logins(&ctx).is_empty(), "a private park is not loose");
+
+        testing::open_to_others(&vault).expect("opened to others");
+        let found = loose_logins(&ctx);
+        let folder = found
+            .iter()
+            .find(|(path, ..)| *path == vault.display().to_string())
+            .expect("the vault");
+        assert_eq!(folder.1, Kind::Directory, "{found:?}");
     }
 
     /// On a machine with no keychain every parked login is a plaintext OAuth token in a
@@ -4118,9 +4150,14 @@ mod tests {
         f.readable_by_others = vec![
             (
                 "/home/a/.pitboard/vault/pitboard-park-x.json".into(),
+                Kind::File,
                 mode(0o644),
             ),
-            ("/home/a/.claude/.credentials.json".into(), mode(0o640)),
+            (
+                "/home/a/.claude/.credentials.json".into(),
+                Kind::File,
+                mode(0o640),
+            ),
         ];
         let checks = evaluate(&f);
         let found = check(&checks, "private_on_disk");
@@ -5018,7 +5055,11 @@ mod tests {
         let mut f = facts();
         f.credential = Ok(Some(json!({"slackTag": {}})));
         f.home_access = Some(mode(0o755));
-        f.readable_by_others = vec![("/home/a/.claude/.credentials.json".into(), mode(0o644))];
+        f.readable_by_others = vec![(
+            "/home/a/.claude/.credentials.json".into(),
+            Kind::File,
+            mode(0o644),
+        )];
         for c in evaluate(&f) {
             assert!(!c.advice.contains("  "), "{}: {:?}", c.code, c.advice);
         }
@@ -6119,7 +6160,7 @@ mod tests {
             format!(
                 "It holds a usable login in plain text, and Codex gives it no access list of \
                  its own, so it takes its folder's: `{}`.",
-                crate::host::acl::icacls(Kind::File, r"C:\Users\dana\.codex\auth.json", SID)
+                crate::host::acl::icacls(false, r"C:\Users\dana\.codex\auth.json", SID)
             )
         );
 
