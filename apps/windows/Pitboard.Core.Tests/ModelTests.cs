@@ -772,15 +772,17 @@ public sealed class ModelTests
     private readonly string _own = Path.Combine(Path.GetTempPath(), $"pitboard-bindings-{Guid.NewGuid():N}");
 
     [TestCleanup]
-    public void RemoveTheFixture()
+    public void RemoveTheFixture() => DeleteOnceLanesStop(_own);
+
+    // Shutdown waits for the actor alone, so a lane may still write here for a moment.
+    private static void DeleteOnceLanesStop(string path)
     {
-        // Shutdown waits for the actor alone, so a lane may still write here for a moment.
         var until = DateTime.UtcNow + TimeSpan.FromSeconds(5);
-        while (Directory.Exists(_own))
+        while (Directory.Exists(path))
         {
             try
             {
-                Directory.Delete(_own, recursive: true);
+                Directory.Delete(path, recursive: true);
             }
             catch (IOException) when (DateTime.UtcNow < until)
             {
@@ -1005,7 +1007,7 @@ public sealed class ModelTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            DeleteOnceLanesStop(root);
         }
     }
 }
