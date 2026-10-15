@@ -331,20 +331,23 @@ From a Mac or Linux, `cargo check --target x86_64-pc-windows-msvc` checks only
 CI's `windows` job runs these commands on `windows-2025` and `windows-11-arm`, the tests as
 a fresh standard user through `.github/scripts/test-as-standard-user.ps1`, with an exFAT
 volume the job mounts. The job fails when a run leaves a login item, a scheduled task, a login
-folder, the app's data folder, a link scheme, a start at sign-in, a `PATH` entry or a package
-behind. It also builds `pitboard.exe` as a 0.x release is built and checks that it refuses and
-changes nothing. It runs the opened build with no argument as a fresh standard user, as
-winget's validation runs a program. The `csharp-windows` job builds `pitboard_ffi.dll` twice,
-as a 0.x release is built and opened with its fixtures, checks that the bindings generated
-from each are the Linux job's byte for byte, and runs the C# tests against each the same way.
+folder, the app's data folder, a link scheme, a notification registration, a start at
+sign-in, a `PATH` entry or a package behind. It also builds `pitboard.exe` as a 0.x release is
+built and checks that it refuses and changes nothing. It runs the opened build with no
+argument as a fresh standard user, as winget's validation runs a program. The
+`csharp-windows` job builds `pitboard_ffi.dll` twice, as a 0.x release is built and opened
+with its fixtures, checks that the bindings generated from each are the Linux job's byte for
+byte, and runs the C# tests against each the same way.
 
 CI's `windows-app` job publishes the app's Debug build over `pitboard_ffi.dll` opened with its
 fixtures, and its Release build over the library as a 0.x release builds it, on both images.
 `.github/scripts/check-windows-app.ps1` checks the Release build for fixture text, a package
 identity and the core's C runtime. The job runs `Pitboard.Windows.Tests`, a WinUI app that
 hosts its own tests, and `Pitboard.UITests`, which drives the built app with FlaUI, as a fresh
-standard user, then the UI test of an elevated launch as the job's user. The WinUI projects
-build only there.
+standard user, then the UI test of an elevated launch as the job's user. It builds
+`Pitboard.Probe`, which the session machine runs to measure the app's notifications, and
+checks that it refuses an account without `pitboard-probe`'s throwaway marker. The WinUI
+projects build only there.
 
 CI's `windows-release` job builds the release's zips with `.github/actions/windows-release`,
 as `release.yml` does from 1.0.0. `.github/scripts/check-windows-build.ps1` checks each
@@ -389,6 +392,7 @@ Release:
 | AppUserModelID | `Pitboard.Pitboard.Debug` | `Pitboard.Pitboard` |
 | Data folder | `%LOCALAPPDATA%\Pitboard App Debug`, or the fixture's | `%LOCALAPPDATA%\Pitboard App` |
 | Link scheme | `pitboard-debug://`, never registered | `pitboard://` |
+| Notifications | never registers, posts none | registers as Pitboard |
 
 The data folder is the known folder Local AppData, which `LOCALAPPDATA` does not move. Under a
 fixture the app keeps its data in the fixture's folder, `pitboard-fixture` in the temporary
