@@ -543,6 +543,8 @@ jobs:
       RUSTFLAGS: -D warnings -C target-feature=+crt-static --cfg pitboard_unreleased_windows
       DOTNET_CLI_TELEMETRY_OPTOUT: 1
       DOTNET_NOLOGO: 1
+      # Where dotnet build puts a WinUI project's Debug build, under the project.
+      BUILT: bin/${{ matrix.platform }}/Debug/net10.0-windows10.0.26100.0/${{ matrix.runtime }}
     defaults:
       run:
         shell: bash
@@ -581,9 +583,10 @@ jobs:
         working-directory: apps/windows
         run: dotnet format whitespace --folder --verify-no-changes .
       # Built where it runs, the ARM64 app on windows-11-arm (CF6), by the job's user into the
-      # workspace, where the standard user may read and run it. A WinUI Debug build runs from its
-      # build output: a Debug publish leaves out the XAML files it reads beside it (run
-      # 38770866775). The Release build is published, as a release is.
+      # workspace, where the standard user may read and run it. A WinUI Debug build runs from the
+      # folder it builds into: a Debug publish leaves out the XAML files it reads beside it (run
+      # 38770866775), and -o, which sets OutputPath without its trailing slash, names them
+      # wrong in its PRI file (run 38774669459). The Release build is published, as a release is.
       - name: The app, its unit tests and its UI tests
         working-directory: apps/windows
         env:
@@ -591,19 +594,18 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
         run: |
           out="$GITHUB_WORKSPACE/target/windows-app"
-          dotnet build Pitboard.App -c Debug -r "$RUNTIME" -p:Platform="$PLATFORM" -o "$out/debug" \
+          dotnet build Pitboard.App -c Debug -r "$RUNTIME" -p:Platform="$PLATFORM" \
             -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/release/pitboard_ffi.dll"
           dotnet publish Pitboard.App -c Release -r "$RUNTIME" -p:Platform="$PLATFORM" -o "$out/release" \
             -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/gated/release/pitboard_ffi.dll"
           dotnet build Pitboard.Windows.Tests -c Debug -r "$RUNTIME" -p:Platform="$PLATFORM" --self-contained \
-            -o "$out/tests" -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/release/pitboard_ffi.dll"
+            -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/release/pitboard_ffi.dll"
           dotnet publish Pitboard.UITests -c Debug -r "$RUNTIME" --self-contained -o "$out/uitests" \
-            -p:PitboardAppDebug="$out/debug/Pitboard.exe" -p:PitboardAppRelease="$out/release/Pitboard.exe"
+            -p:PitboardAppDebug="$GITHUB_WORKSPACE/apps/windows/Pitboard.App/$BUILT/Pitboard.exe" -p:PitboardAppRelease="$out/release/Pitboard.exe"
           dotnet publish Pitboard.Probe -c Release -r "$RUNTIME" -p:Platform="$PLATFORM" -o "$out/probe"
-          cd "$GITHUB_WORKSPACE"
-          cmp target/release/pitboard_ffi.dll target/windows-app/debug/pitboard_ffi.dll
-          cmp target/release/pitboard_ffi.dll target/windows-app/tests/pitboard_ffi.dll
-          cmp target/gated/release/pitboard_ffi.dll target/windows-app/release/pitboard_ffi.dll
+          cmp "$GITHUB_WORKSPACE/target/release/pitboard_ffi.dll" "Pitboard.App/$BUILT/pitboard_ffi.dll"
+          cmp "$GITHUB_WORKSPACE/target/release/pitboard_ffi.dll" "Pitboard.Windows.Tests/$BUILT/pitboard_ffi.dll"
+          cmp "$GITHUB_WORKSPACE/target/gated/release/pitboard_ffi.dll" "$out/release/pitboard_ffi.dll"
       - name: "The Release build: no fixture, no package identity, the core's C runtime inside it"
         shell: pwsh
         env:
@@ -621,7 +623,7 @@ jobs:
         shell: pwsh
         run: >
           ./.github/scripts/test-as-standard-user.ps1
-          -Dotnet target/windows-app/tests/Pitboard.Windows.Tests.exe, target/windows-app/uitests/Pitboard.UITests.exe
+          -Dotnet "apps/windows/Pitboard.Windows.Tests/$env:BUILT/Pitboard.Windows.Tests.exe", target/windows-app/uitests/Pitboard.UITests.exe
           -Probe target/debug/pitboard-probe.exe
       # The job's user is elevated, so of the UI tests only the elevated launch's runs.
       - name: An elevated launch refuses and writes nothing, as the job user

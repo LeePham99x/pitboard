@@ -366,15 +366,17 @@ the run. `ARCHITECTURE.md` records what it measured.
 Read [the rules for the app in AGENTS.md](AGENTS.md#on-windows) first. Build the bindings as
 [The C# bindings](#the-c-bindings) says, from a library built with
 `--cfg pitboard_unreleased_windows` and `--features fixture`, then build the app in Debug and
-start its executable in a fixture, with scratch homes set after building. Build it rather than
-publish it: a Debug publish leaves out the XAML files the app reads beside it. From PowerShell:
+start its executable in a fixture, with scratch homes set after building. Build it into its
+own folder, without `-o`, and do not publish it: a Debug publish leaves out the XAML files the
+app reads beside it, and `-o` names them wrong in its PRI file. From PowerShell:
 
 ```powershell
 cd apps\windows
-dotnet build Pitboard.App -c Debug -r win-arm64 -p:Platform=ARM64 -o ..\..\target\windows-app\debug `
+dotnet build Pitboard.App -c Debug -r win-arm64 -p:Platform=ARM64 `
   -p:PitboardNativeLibrary="$PWD\..\..\target\debug\pitboard_ffi.dll"
 $scratch = (New-Item -ItemType Directory (Join-Path $env:TEMP "pitboard-$(New-Guid)")).FullName
-$app = [Diagnostics.ProcessStartInfo]::new((Resolve-Path ..\..\target\windows-app\debug\Pitboard.exe).Path)
+$app = [Diagnostics.ProcessStartInfo]::new(
+  (Resolve-Path Pitboard.App\bin\ARM64\Debug\net10.0-windows10.0.26100.0\win-arm64\Pitboard.exe).Path)
 $app.Environment['PITBOARD_FIXTURE'] = 'twoTools'
 foreach ($name in 'USERPROFILE', 'HOME', 'APPDATA', 'LOCALAPPDATA', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'PITBOARD_HOME') {
   $app.Environment[$name] = (New-Item -ItemType Directory (Join-Path $scratch $name)).FullName
@@ -386,8 +388,8 @@ Only the `firstLaunch` fixture opens the window as it starts. Click Pitboard's i
 notification area to bring the window forward, or run the last line again: the second copy
 hands its launch to the first and quits. Exit in the icon's menu ends it.
 
-On x64, build with `-r win-x64 -p:Platform=x64`. A Debug build keeps apart from an installed
-Release:
+On x64, build with `-r win-x64 -p:Platform=x64`, which builds into `bin\x64\...\win-x64`. A
+Debug build keeps apart from an installed Release:
 
 | | Debug build | Release build |
 | --- | --- | --- |
