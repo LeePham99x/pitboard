@@ -377,6 +377,9 @@ foreach ($name in 'USERPROFILE', 'HOME', 'APPDATA', 'LOCALAPPDATA', 'CODEX_HOME'
 [Diagnostics.Process]::Start($app)
 ```
 
+Only the `firstLaunch` fixture opens the window as it starts. Run the last line again to bring
+the window forward: the second copy hands its launch to the first and quits.
+
 On x64, publish with `-r win-x64 -p:Platform=x64`. A Debug build keeps apart from an installed
 Release:
 

@@ -611,12 +611,23 @@ window loads its site, and whatever the site's pages load, as a browser would.
     launch before WinUI starts: the arguments, then `launch_refusal`, then the
     single-instance key. `HiddenWindow` hears the session's end and the system's broadcasts,
     and `Shell` is the known folder, the AppUserModelID and the refusal's message box.
+    `Keyed` keeps a shown row while the model lists it, so `ShownAccount` keeps its
+    selection across snapshots. `WindowAlert` is the failure or quit question in front of
+    the window, and `Countdown` a notice's timer.
+  - `Pitboard.Views` is the main window's panes, a WinUI library so the test app shows them
+    as `Pitboard.exe` does. `AccountsPane` lists the accounts under their notices and setup
+    step, each an `AccountRow` with an `AccountMenu`; `ActivityPane` and `MachinePane` are
+    the log and this PC's checks. A notice is a `NoticeBar`, an InfoBar. `DialogHost` shows
+    the window's ContentDialogs one at a time, and `WindowAlerts` puts the model's alerts in
+    one, or leaves them to the sheet's `AlertBar` while a sheet is up.
   - `Pitboard.App` is `Pitboard.exe`, unpackaged and self-contained. `Program.Main` decides
     the launch, and `App` makes the model, over this PC or in a Debug build started with
     `PITBOARD_FIXTURE` a fixture's, opens the main window when the model asks, and stops the
-    model as the session ends.
-  - `Pitboard.Windows.Tests` is a WinUI app that hosts its own tests, and `Pitboard.UITests`
-    drives the built app with FlaUI. Neither registers anything with Windows.
+    model as the session ends. `MainWindow` shows a pane for each of the model's `Pane`s and
+    takes Ctrl+N from any of them.
+  - `Pitboard.Windows.Tests` is a WinUI app that hosts its own tests, the views' among them
+    over snapshots made in C#, and `Pitboard.UITests` drives the built app with FlaUI.
+    Neither registers anything with Windows.
 - `apps/macos/`: the menu bar app, which shows what `pitboard-ffi`'s model says and sends it
   what was asked. The Swift package holds it as libraries its tests load without starting
   it. `PitboardKit` is the bindings and `AppModel.swift`: `AppModel`, which holds the
@@ -3342,6 +3353,16 @@ Read on 15 October 2026, in the sources of the builds the app is made with.
   .NET's `Path.GetTempPath` (dotnet/runtime v10.0.13, `Path.Windows.cs`) both ask
   `GetTempPath2W`, .NET falling back to `GetTempPathW` where it is missing. So the app finds
   a fixture's folder, `pitboard-fixture`, where the core makes it.
+- One ContentDialog shows per thread at a time, and opening a second throws, even in another
+  window ([ContentDialog](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.controls.contentdialog),
+  updated 28 July 2026). So `DialogHost` queues the main window's dialogs, and while a sheet
+  is up `WindowAlerts` leaves the failure alert and the quit question to the sheet's
+  `AlertBar`, an InfoBar, where the macOS app shows them over the sheet.
+  `DialogHostTests.OnlyOneContentDialogShowsAtATime` holds it on the runners.
+- WinUI 2.3.9's `Themes/generic.xaml`, in the Windows App SDK 2.5.1 package: the InfoBar's
+  close button is the template part `CloseButton`, which `NoticeBarTests` presses, and a
+  `ListViewItem` is padded `16,0,12,0`, which the Activity pane's column headers and This
+  PC's summary repeat so they line up with the rows under them.
 
 ### The model's timers
 
