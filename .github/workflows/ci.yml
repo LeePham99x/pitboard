@@ -618,11 +618,12 @@ jobs:
           dotnet publish Pitboard.App -c Release -r "$RUNTIME" -p:Platform="$PLATFORM" -o "$out/release" \
             -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/gated/release/pitboard_ffi.dll"
           dotnet publish Pitboard.Windows.Tests -c Debug -r "$RUNTIME" -p:Platform="$PLATFORM" --self-contained \
-            -o "$out/tests"
+            -o "$out/tests" -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/release/pitboard_ffi.dll"
           dotnet publish Pitboard.UITests -c Debug -r "$RUNTIME" --self-contained -o "$out/uitests" \
             -p:PitboardAppDebug="$out/debug/Pitboard.exe" -p:PitboardAppRelease="$out/release/Pitboard.exe"
           cd "$GITHUB_WORKSPACE"
           cmp target/release/pitboard_ffi.dll target/windows-app/debug/pitboard_ffi.dll
+          cmp target/release/pitboard_ffi.dll target/windows-app/tests/pitboard_ffi.dll
           cmp target/gated/release/pitboard_ffi.dll target/windows-app/release/pitboard_ffi.dll
       - name: "The Release build: no fixture, no package identity, the core's C runtime inside it"
         shell: pwsh

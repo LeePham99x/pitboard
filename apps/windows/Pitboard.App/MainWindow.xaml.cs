@@ -16,6 +16,7 @@ public sealed partial class MainWindow : Window
     private readonly ActivityPane _activity;
     private readonly MachinePane _machine;
     private WindowAlerts? _alerts;
+    private WindowSheets? _sheets;
 
     public MainWindow(AppModel model)
     {
@@ -26,8 +27,16 @@ public sealed partial class MainWindow : Window
         _activity = new ActivityPane(model);
         _machine = new MachinePane(model);
         // A dialog needs the window's XamlRoot, which its content has once loaded.
-        Navigation.Loaded += (_, _) => _alerts ??= new WindowAlerts(model, _dialogs);
-        Closed += (_, _) => _alerts?.Dispose();
+        Navigation.Loaded += (_, _) =>
+        {
+            _sheets ??= new WindowSheets(model, _dialogs);
+            _alerts ??= new WindowAlerts(model, _dialogs);
+        };
+        Closed += (_, _) =>
+        {
+            _sheets?.Dispose();
+            _alerts?.Dispose();
+        };
         Select(Pane.Accounts);
     }
 
