@@ -47,13 +47,9 @@ jobs:
             --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' \
             > "$RUNNER_TEMP/published"
           sh .github/scripts/release-kind.sh "$GITHUB_REF_NAME" "$manifest" \
-            "$RUNNER_TEMP/published" "$SIGNER" > "$RUNNER_TEMP/kind"
+            "$RUNNER_TEMP/published" "$SIGNER" "$SUBJECT" > "$RUNNER_TEMP/kind"
           version=$(sed -n 's/^version=//p' "$RUNNER_TEMP/kind")
           kind=$(sed -n 's/^kind=//p' "$RUNNER_TEMP/kind")
-          if grep -qx 'signed=true' "$RUNNER_TEMP/kind" && [ -z "$SUBJECT" ]; then
-            echo "WINDOWS_SIGNER is $SIGNER, and WINDOWS_SIGNER_SUBJECT names no subject to check" >&2
-            exit 1
-          fi
           # An rc has no section of its own.
           if [ "$kind" != rc ] && ! awk -v heading="## [$version] - " \
             'index($0, heading) == 1 { found = 1 } END { exit !found }' CHANGELOG.md; then
@@ -261,16 +257,19 @@ jobs:
           if ($zips.Count -ne 2) { throw "windows-sign has $($zips.Count) zips to hand on, not 2" }
           ./.github/scripts/verify-windows-signatures.ps1 -Path $zips -Mode $mode -Subject $env:SUBJECT `
             -Built (Join-Path $env:RUNNER_TEMP 'unsigned')
+      # Overwritten, so a windows-sign job run again can hand both over again.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dist-windows-x86_64-pc-windows-msvc
           path: ${{ runner.temp }}/dist/*-x86_64-pc-windows-msvc.zip
           if-no-files-found: error
+          overwrite: true
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dist-windows-aarch64-pc-windows-msvc
           path: ${{ runner.temp }}/dist/*-aarch64-pc-windows-msvc.zip
           if-no-files-found: error
+          overwrite: true
 
   # The menu bar app, signed and notarised when the Apple secrets are set; without them it
   # is still built and released, ad-hoc signed, which Gatekeeper warns about on first
@@ -1245,7 +1244,7 @@ jobs:
   # winget takes each latest release of a package microsoft/winget-pkgs already holds; the first
   # version of each goes in by hand (RELEASING.md). komac writes the manifests with the run's
   # read-only token, check-winget-hashes.py holds each installer's hash to the run's SHA256SUMS,
-  # and winget validates them before WINGET_TOKEN opens a pull request from the owner's fork.
+  # and winget validates them before WINGET_TOKEN opens a pull request from its account's fork.
   winget:
     needs: [guard, publish]
     if: >-
