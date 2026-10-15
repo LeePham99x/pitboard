@@ -1406,6 +1406,10 @@ mod tests {
     /// Only the account Pitboard last saw in use is warned about. Signing in again to a
     /// parked account renews its park whoever is signed in, as it always did.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    )]
     fn a_sign_in_to_a_parked_account_is_not_warned_about_the_login_in_use() {
         let m = machine("untold-parked");
         m.sign_in(&harness::document("here-renewed"));

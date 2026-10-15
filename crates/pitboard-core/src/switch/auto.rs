@@ -670,6 +670,10 @@ mod tests {
     /// from under the name of the one switched to. Taken as `here`'s, a full five-hour limit
     /// in it switched `here` away at 10%.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    )]
     fn a_usage_cache_in_claude_codes_config_moves_nothing() {
         let (m, _) = nearly_out("auto-cache", 10.0);
         cache_usage(&m, usage_answer(100.0));
@@ -1184,6 +1188,10 @@ mod tests {
     /// Under a custom OAuth endpoint Claude Code keeps its login where Pitboard does not act,
     /// so there is nothing to watch, whatever the numbers say, and nothing is settled.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    )]
     fn under_a_custom_oauth_endpoint_nothing_is_watched() {
         let (m, _) = nearly_out("auto-custom-oauth", 96.0);
         let config = m.ctx_home().join(".claude");
