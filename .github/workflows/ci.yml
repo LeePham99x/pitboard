@@ -621,33 +621,40 @@ jobs:
           ./.github/scripts/test-as-standard-user.ps1
           -Dotnet target/windows-app/tests/Pitboard.Windows.Tests.exe, target/windows-app/uitests/Pitboard.UITests.exe
           -Probe target/debug/pitboard-probe.exe
-      # Temporary, while a WinUI window fails to load on the runners: what each build's resources.pri
-      # indexes, through the makepri.exe its build used.
+      # Temporary, while a WinUI window fails to load on the runners ("Cannot locate resource from
+      # 'ms-appx:///UnitTestAppWindow.xaml'"): which XAML files and resources.pri each build and publish
+      # holds, and what that index names, through the makepri.exe the build used.
       - name: The WinUI builds' resources.pri
         if: failure()
         shell: pwsh
+        env:
+          PLATFORM: ${{ matrix.platform }}
         run: |
           $packages = if ($env:NUGET_PACKAGES) { $env:NUGET_PACKAGES } else { Join-Path $env:USERPROFILE '.nuget\packages' }
-          $tools = Join-Path $packages 'microsoft.windows.sdk.buildtools'
-          $makepri = Get-ChildItem -Recurse -Filter makepri.exe -Path $tools | Where-Object { $_.Directory.Name -eq 'x64' } | Select-Object -First 1
-          $mt = Get-ChildItem -Recurse -Filter mt.exe -Path $tools | Where-Object { $_.Directory.Name -eq 'x64' } | Select-Object -First 1
+          $makepri = Get-ChildItem -Recurse -Filter makepri.exe -Path (Join-Path $packages 'microsoft.windows.sdk.buildtools') |
+            Where-Object { $_.Directory.Name -eq 'x64' } | Select-Object -First 1
           $dumps = New-Item -ItemType Directory -Force -Path (Join-Path $env:RUNNER_TEMP 'pri')
-          foreach ($build in @{ tests = 'Pitboard.Windows.Tests.exe'; debug = 'Pitboard.exe' }.GetEnumerator()) {
-            $folder = (Resolve-Path "target/windows-app/$($build.Key)").Path
-            $manifest = Join-Path $dumps "$($build.Key)-$($build.Value).manifest"
-            & $mt.FullName -nologo "-inputresource:$(Join-Path $folder $build.Value);#1" "-out:$manifest" | Out-Null
-            $classes = @(Select-String -Path $manifest -Pattern 'activatableClass ').Count
-            $files = (Select-String -Path $manifest -Pattern "file name='([^']+)'" -AllMatches).Matches | ForEach-Object { $_.Groups[1].Value }
-            Write-Output "$($build.Value)'s manifest names $classes activatable classes in: $($files -join ', ')"
-            $build = $build.Key
-            Write-Output "== ${build}: $((Get-ChildItem -Path $folder -Filter *.pri).Name -join ', ')"
-            $xbf = Get-ChildItem -Recurse -Path $folder -Include *.xbf, *.xaml | ForEach-Object { $_.FullName.Substring($folder.Length + 1) }
-            Write-Output "XAML files beside it: $($xbf -join ', ')"
-            foreach ($pri in Get-ChildItem -Path $folder -Filter *.pri) {
-              $dump = Join-Path $dumps "$build-$($pri.BaseName).xml"
+          $folders = [ordered]@{
+            'tests-published' = 'target/windows-app/tests'
+            'tests-built' = "apps/windows/Pitboard.Windows.Tests/bin/$env:PLATFORM/Debug"
+            'tests-obj' = "apps/windows/Pitboard.Windows.Tests/obj/$env:PLATFORM/Debug"
+            'app-published' = 'target/windows-app/debug'
+            'app-built' = "apps/windows/Pitboard.App/bin/$env:PLATFORM/Debug"
+            'app-obj' = "apps/windows/Pitboard.App/obj/$env:PLATFORM/Debug"
+            'views-built' = "apps/windows/Pitboard.Views/bin/$env:PLATFORM/Debug"
+          }
+          foreach ($entry in $folders.GetEnumerator()) {
+            if (-not (Test-Path -LiteralPath $entry.Value)) { Write-Output "== $($entry.Key): no $($entry.Value)"; continue }
+            $root = (Resolve-Path -LiteralPath $entry.Value).Path
+            $found = @(Get-ChildItem -Recurse -Path $root -Include *.pri, *.xbf, *.xaml | ForEach-Object { $_.FullName.Substring($root.Length + 1) })
+            Write-Output "== $($entry.Key), $($found.Count) files: $($found -join ', ')"
+            $index = 0
+            foreach ($pri in Get-ChildItem -Recurse -Path $root -Filter *.pri) {
+              $dump = Join-Path $dumps "$($entry.Key)-$index-$($pri.BaseName).xml"
+              $index++
               & $makepri.FullName dump /if $pri.FullName /of $dump /dt Detailed /o | Out-Null
-              Select-String -Path $dump -Pattern '<ResourceMap |<ResourceMapSubtree name="Files"|\.xbf"|Themes|generic' |
-                Select-Object -First 60 | ForEach-Object { "  $($pri.Name): $($_.Line.Trim())" }
+              $named = @(Select-String -ErrorAction SilentlyContinue -Path $dump -Pattern '<NamedResource name="[^"]*\.(xbf|xaml)"' | ForEach-Object { $_.Line.Trim() })
+              Write-Output "  $($pri.FullName.Substring($root.Length + 1)): $($named.Count) XAML resources: $($named -join ' ')"
             }
           }
       - if: failure()
