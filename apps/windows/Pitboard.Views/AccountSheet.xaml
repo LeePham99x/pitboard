@@ -73,8 +73,17 @@
         <TextBlock x:Name="Refused" TextWrapping="Wrap" />
         <TextBlock x:Name="CodeNote" Style="{StaticResource Note}" />
       </StackPanel>
-      <TextBlock x:Name="NotOffered" Style="{StaticResource Note}" />
     </StackPanel>
+    <InfoBar
+        x:Name="MissingBar"
+        Severity="Warning"
+        IsClosable="False"
+        IsOpen="False"
+        AutomationProperties.AutomationId="sheet.missing">
+      <InfoBar.ActionButton>
+        <HyperlinkButton x:Name="MissingLink" AutomationProperties.AutomationId="sheet.missing.link" Click="OnMissingLink" />
+      </InfoBar.ActionButton>
+    </InfoBar>
     <InfoBar
         x:Name="FailureBar"
         Severity="Error"

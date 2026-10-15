@@ -179,7 +179,7 @@ public sealed class ModelTests
         // The first call loads the library: every checksum is compared, and the listener's
         // calls are registered, before it answers. Saying what a sheet saves reads only what
         // it is given, so it answers at once.
-        Assert.AreEqual("home", PitboardFfiMethods.NameToSave(new Sheet.Name("claude", "a@example.com"), " home "));
+        Assert.AreEqual("home", PitboardFfiMethods.CheckName(new Sheet.Name("claude", "a@example.com"), " home ").Name);
     }
 
     // Never started, so nothing on this machine is read.
@@ -684,10 +684,14 @@ public sealed class ModelTests
     [TestMethod]
     public void ANameIsSavedAsTheSheetOffersIt()
     {
-        Assert.AreEqual("home", PitboardFfiMethods.NameToSave(new Sheet.Name("claude", "a@example.com"), "  home "));
-        Assert.IsNull(PitboardFfiMethods.NameToSave(new Sheet.Name("claude", "a@example.com"), " \n"));
-        Assert.IsNull(PitboardFfiMethods.NameToSave(new Sheet.Rename("claude", "work"), " work "));
-        Assert.AreEqual("work", PitboardFfiMethods.NameToSave(new Sheet.SignInAgain("codex", "work"), ""));
+        var named = new Sheet.Name("claude", "a@example.com");
+        Assert.AreEqual(new NameCheck("home", null), PitboardFfiMethods.CheckName(named, "  home "));
+        Assert.AreEqual(new NameCheck(null, null), PitboardFfiMethods.CheckName(named, " \n"));
+        Assert.IsNull(PitboardFfiMethods.CheckName(new Sheet.Rename("claude", "work"), " work ").Name);
+        Assert.AreEqual("work", PitboardFfiMethods.CheckName(new Sheet.SignInAgain("codex", "work"), "").Name);
+        Assert.AreEqual(
+            new NameCheck(null, "A name can’t contain “/”. Choose the tool above."),
+            PitboardFfiMethods.CheckName(new Sheet.Add("codex"), "codex/phu"));
     }
 
     private sealed class Waiting : ModelListener
