@@ -2,8 +2,8 @@
 # as the job's user and as throwaway users this makes. Each change it makes is undone in a
 # finally: the probe's marker, VHDs, a ReFS or Dev Drive volume, an SMB share, Bun and
 # proper-lockfile in C:\pitboard-probe-tools, three throwaway users and their passwords, tasks,
-# the job user's HKCU\Environment values, OpenSSH Server, Developer Mode and the symbolic-link
-# right.
+# the job user's HKCU\Environment values, the state of OpenSSH Server where the image has one,
+# Developer Mode and the symbolic-link right.
 #
 # Everything goes into one JSON report at -Out, saved after each row, so a run cut short still
 # leaves what it gathered. A fact that cannot be gathered is recorded as an error and does not
@@ -28,7 +28,7 @@ $ProgressPreference = 'SilentlyContinue'
 
 # A GitHub-hosted runner is thrown away after the job.
 if (-not ($env:GITHUB_ACTIONS -eq 'true' -and $env:RUNNER_ENVIRONMENT -eq 'github-hosted')) {
-    throw 'runner-facts.ps1 runs only on a GitHub-hosted runner: it makes Windows accounts, changes their passwords, mounts disks, shares a folder and installs Bun and OpenSSH Server for a run'
+    throw 'runner-facts.ps1 runs only on a GitHub-hosted runner: it makes Windows accounts, changes their passwords, mounts disks, shares a folder, starts OpenSSH Server and installs Bun for a run'
 }
 
 $Probe = (Resolve-Path -Path $Probe).Path
@@ -78,12 +78,23 @@ function Invoke-Row($Result, [string] $Key, [scriptblock] $Block) {
 }
 
 # Run the probe as the job's user with its report written to a file, and hand the report
-# back. The probe writes only a file whose name begins pitboard-probe-.
-function Invoke-Probe([string] $Label, [string[]] $ProbeArgs) {
+# back. The probe writes only a file whose name begins pitboard-probe-. Its output goes to
+# files rather than pipes: a browser it starts can hold an inherited pipe open long after it
+# exits, and run 38685119129 waited on one until the job's time ran out.
+function Invoke-Probe([string] $Label, [string[]] $ProbeArgs, [int] $TimeoutSeconds = 900) {
     $file = Join-Path $scratch "pitboard-probe-report-$Label.json"
     Remove-Item -Force -Path $file -ErrorAction SilentlyContinue
-    & $Probe --out $file @ProbeArgs *> $null
-    [ordered]@{ exit = $LASTEXITCODE; report = (Read-Json $file) }
+    $process = Start-Process -FilePath $Probe -ArgumentList (Format-Arguments (@('--out', $file) + $ProbeArgs)) -NoNewWindow -PassThru `
+        -RedirectStandardOutput (Join-Path $scratch "job-$Label-out.txt") -RedirectStandardError (Join-Path $scratch "job-$Label-err.txt")
+    $null = $process.Handle
+    $exited = $process.WaitForExit($TimeoutSeconds * 1000)
+    if (-not $exited) {
+        taskkill /PID $process.Id /T /F *> $null
+        $null = $process.WaitForExit(15000)
+    }
+    $result = [ordered]@{ exit = $(if ($process.HasExited) { $process.ExitCode } else { $null }); report = (Read-Json $file) }
+    if (-not $exited) { $result.timed_out = $true }
+    $result
 }
 
 # Start-Process joins its arguments with spaces, so one holding a space is quoted here. None
@@ -172,7 +183,7 @@ function Wait-Run($Run, [int] $TimeoutSeconds = 900, [switch] $Text) {
     } else {
         $result.report = Read-Json $Run.Out
     }
-    if ($exit -ne 0) { $result.stderr_tail = Get-ErrorTail $Run.Err $Run.User }
+    if ($exit -ne 0 -or ($null -eq $result.report -and -not $Text)) { $result.stderr_tail = Get-ErrorTail $Run.Err $Run.User }
     $result
 }
 
@@ -662,51 +673,74 @@ function Measure-SmbShare($User, $Result) {
     }
 }
 
-# Run a command over ssh to $User@localhost, with a key or with the user's password handed to
-# ssh by an askpass program from the environment, and read the report it prints.
-function Invoke-Ssh([string] $Label, [string[]] $SshArgs, [string] $Command, [hashtable] $Environment = @{}) {
+# Run a command over ssh as $User@localhost with the key, and read the report it prints.
+function Invoke-Ssh($User, [string] $Label, [string[]] $SshArgs, [string] $Command) {
     $stdout = Join-Path $scratch "ssh-$Label-out.txt"
     $stderr = Join-Path $scratch "ssh-$Label-err.txt"
-    $saved = @{}
-    foreach ($k in $Environment.Keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k); [Environment]::SetEnvironmentVariable($k, $Environment[$k]) }
-    try {
-        & ssh.exe @SshArgs $Command > $stdout 2> $stderr
-        $exit = $LASTEXITCODE
-    } finally {
-        foreach ($k in $saved.Keys) { [Environment]::SetEnvironmentVariable($k, $saved[$k]) }
-    }
+    & ssh.exe @SshArgs $Command > $stdout 2> $stderr
+    $exit = $LASTEXITCODE
     $result = [ordered]@{ exit = $exit; report = (Read-Json $stdout) }
-    if ($exit -ne 0) { $result.stderr_tail = Get-ErrorTail $stderr $null }
+    if ($exit -ne 0) { $result.stderr_tail = Get-ErrorTail $stderr $User }
     $result
 }
 
-# RF-M: OpenSSH Server on this runner, and a loopback session as $User, by key and by
-# password, in which the probe reads the logon, DPAPI, Credential Manager and the processes
-# of $User's other logon. Installed for the run when the image lacks it, and taken out again.
+# Why sshd turns a session down, when it does: its effective settings for $User, who holds
+# the network logon rights it needs, and its last events, with the user's name taken out.
+function Get-SshdDiagnosis($User) {
+    $sshd = Join-Path $env:SystemRoot 'System32\OpenSSH\sshd.exe'
+    $wanted = '^(allowusers|allowgroups|denyusers|denygroups|authorizedkeysfile|pubkeyauthentication|passwordauthentication|authenticationmethods|strictmodes) '
+    $export = Join-Path $scratch 'pitboard-probe-rights-ssh.inf'
+    secedit /export /cfg $export /areas USER_RIGHTS *> $null
+    $rights = Get-Content -Path $export -ErrorAction SilentlyContinue
+    Remove-Item -Force -Path $export -ErrorAction SilentlyContinue
+    $holders = {
+        param([string] $Right)
+        $line = $rights | Where-Object { $_ -match "^$Right\s*=" } | Select-Object -First 1
+        $sids = if ($line) { @((($line -split '=', 2)[1] -split ',') | ForEach-Object { $_.Trim().TrimStart('*') }) } else { @() }
+        [ordered]@{
+            everyone = $sids -contains 'S-1-1-0'
+            users = $sids -contains $usersSid
+            authenticated_users = $sids -contains 'S-1-5-11'
+            this_user = $sids -contains $User.Sid
+            administrators = $sids -contains $administratorsSid
+        }
+    }
+    [ordered]@{
+        effective = Invoke-Fact {
+            @(& $sshd -T -C "user=$($User.Name),host=localhost,addr=127.0.0.1" 2>&1 | ForEach-Object { "$_" } |
+                Where-Object { $_ -match $wanted } | ForEach-Object { $_ -replace [regex]::Escape($User.Name), '<user>' })
+        }
+        network_logon_right = & $holders 'SeNetworkLogonRight'
+        deny_network_logon_right = & $holders 'SeDenyNetworkLogonRight'
+        events = Invoke-Fact {
+            @(Get-WinEvent -LogName 'OpenSSH/Operational' -MaxEvents 15 -ErrorAction Stop | ForEach-Object {
+                    (($_.Message -replace [regex]::Escape($User.Name), '<user>') -split "`r?`n")[0]
+                })
+        }
+    }
+}
+
+# RF-M: a loopback ssh session as $User with a key, where sshd ships with the image, in which
+# the probe reads the logon, DPAPI, Credential Manager and the processes of $User's other
+# logon. The service is put back as it was. Run 38685119129 found no sshd on windows-11-arm,
+# and Add-WindowsCapability did not install it within 10 minutes, so an image without one is
+# recorded and left alone.
 function Measure-OpenSsh($User, $Result) {
     $service = Get-Service -Name 'sshd' -ErrorAction SilentlyContinue
-    $Result.sshd_present_before = [bool] $service
-    $before = if ($service) { [ordered]@{ status = [string] $service.Status; start_type = [string] $service.StartType } } else { $null }
-    $capability = 'OpenSSH.Server~~~~0.0.1.0'
-    $installed = $false
+    $Result.sshd_present = [bool] $service
+    if (-not $service) { return }
+    $before = [ordered]@{ status = [string] $service.Status; start_type = [string] $service.StartType }
+    $Result.before = $before
     $keyDir = Join-Path $scratch 'pitboard-probe-ssh'
     $sshDir = Join-Path $User.ProfileDir '.ssh'
     $holder = $null
     try {
-        if (-not $service) {
-            $job = Start-Job -ScriptBlock { Add-WindowsCapability -Online -Name $using:capability | Out-Null }
-            $finished = Wait-Job -Job $job -Timeout 600
-            $Result.capability_install_finished = [bool] $finished
-            $Result.capability_install_error = ($job.ChildJobs[0].Error | ForEach-Object { $_.Exception.Message }) -join '; '
-            Remove-Job -Job $job -Force
-            $installed = $true
-            $service = Get-Service -Name 'sshd' -ErrorAction SilentlyContinue
-        }
-        if (-not $service) { $Result.skipped = 'no sshd service'; return }
-        if ($service.StartType -eq 'Disabled') { Set-Service -Name 'sshd' -StartupType Manual }
+        if ($before.start_type -eq 'Disabled') { Set-Service -Name 'sshd' -StartupType Manual }
         New-Item -ItemType Directory -Force -Path $keyDir | Out-Null
         $key = Join-Path $keyDir 'pitboard-probe-m-key'
-        & ssh-keygen.exe -q -t ed25519 -N '' -C 'pitboard-probe' -f $key *> $null
+        $keygen = Start-Process -FilePath 'ssh-keygen.exe' -ArgumentList (Format-Arguments @('-q', '-t', 'ed25519', '-N', '', '-C', 'pitboard-probe', '-f', $key)) `
+            -NoNewWindow -Wait -PassThru -RedirectStandardOutput (Join-Path $scratch 'ssh-keygen-out.txt') -RedirectStandardError (Join-Path $scratch 'ssh-keygen-err.txt')
+        $Result.key_made = ($keygen.ExitCode -eq 0) -and (Test-Path -LiteralPath "$key.pub")
         icacls $key /inheritance:r /grant:r "*${jobSid}:F" *> $null
         New-Item -ItemType Directory -Force -Path $sshDir | Out-Null
         $authorized = Join-Path $sshDir 'authorized_keys'
@@ -714,8 +748,8 @@ function Measure-OpenSsh($User, $Result) {
         foreach ($path in $sshDir, $authorized) {
             icacls $path /inheritance:r /grant:r "*$($User.Sid):F" "*S-1-5-18:F" "*${administratorsSid}:F" *> $null
         }
-        Start-Service -Name 'sshd'
-        $Result.sshd_started = [string] (Get-Service -Name 'sshd').Status
+        if ($before.status -ne 'Running') { Start-Service -Name 'sshd' }
+        $Result.sshd_status = [string] (Get-Service -Name 'sshd').Status
 
         # A codex.exe of $User's in its other logon, for processes to find from the session.
         $holderExe = Join-Path $User.RunDir 'm\codex.exe'
@@ -723,13 +757,8 @@ function Measure-OpenSsh($User, $Result) {
         Copy-Item -Path $Probe -Destination $holderExe
         $holder = Start-AsUser $User 'm-holder' @('lock', '--scratch', (Join-Path $User.Scratch 'm-holder'), '--mode', 'hold', '--seconds', '120') -FilePath $holderExe
 
-        $common = @('-o', 'StrictHostKeyChecking=no', '-o', "UserKnownHostsFile=$keyDir\known_hosts",
-            '-o', 'ConnectTimeout=20', '-o', 'NumberOfPasswordPrompts=1')
-        $byKey = $common + @('-i', $key, '-o', 'PreferredAuthentications=publickey', '-o', 'BatchMode=yes', "$($User.Name)@localhost")
-        $askpass = Join-Path $keyDir 'pitboard-probe-askpass.cmd'
-        '@echo %PITBOARD_PROBE_SSH_SECRET%' | Set-Content -Path $askpass -Encoding ascii
-        $byPassword = $common + @('-o', 'BatchMode=no', '-o', 'PreferredAuthentications=password', '-o', 'PubkeyAuthentication=no', "$($User.Name)@localhost")
-        $askEnv = @{ SSH_ASKPASS = $askpass; SSH_ASKPASS_REQUIRE = 'force'; DISPLAY = 'pitboard-probe'; PITBOARD_PROBE_SSH_SECRET = (Get-PlainText $User.Secure) }
+        $byKey = @('-i', $key, '-o', 'BatchMode=yes', '-o', 'PreferredAuthentications=publickey', '-o', 'StrictHostKeyChecking=no',
+            '-o', "UserKnownHostsFile=$keyDir\known_hosts", '-o', 'ConnectTimeout=20', "$($User.Name)@localhost")
         $rows = [ordered]@{
             logon = 'logon'
             dpapi = "dpapi --scratch $($User.Scratch)\m"
@@ -739,32 +768,21 @@ function Measure-OpenSsh($User, $Result) {
             credman_names = 'credman-names'
             processes = 'processes --find codex.exe'
         }
-        foreach ($auth in 'key', 'password') {
-            $session = [ordered]@{}
-            foreach ($row in $rows.Keys) {
-                $session[$row] = if ($auth -eq 'key') {
-                    Invoke-Ssh "$auth-$row" $byKey "$Probe $($rows[$row])"
-                } else {
-                    Invoke-Ssh "$auth-$row" $byPassword "$Probe $($rows[$row])" $askEnv
-                }
-            }
-            $Result[$auth] = $session
+        $session = [ordered]@{}
+        foreach ($row in $rows.Keys) {
+            $session[$row] = Invoke-Ssh $User "key-$row" $byKey "$Probe $($rows[$row])"
             Save-Report
         }
+        $Result.key = $session
+        if ($session.logon.exit -ne 0) { $Result.diagnosis = Get-SshdDiagnosis $User }
     } finally {
         if ($holder -and $holder.Process -and -not $holder.Process.HasExited) { taskkill /PID $holder.Process.Id /T /F *> $null }
         Invoke-Probe 'm-cleanup' @('credman-item', '--action', 'delete', '--name', 'pitboard-probe-m') | Out-Null
-        if ($service) {
-            Stop-Service -Name 'sshd' -Force -ErrorAction SilentlyContinue
-            if ($before) { Set-Service -Name 'sshd' -StartupType $before.start_type -ErrorAction SilentlyContinue }
-        }
-        if ($installed) {
-            $job = Start-Job -ScriptBlock { Remove-WindowsCapability -Online -Name $using:capability | Out-Null }
-            $Result.capability_removed = [bool] (Wait-Job -Job $job -Timeout 300)
-            Remove-Job -Job $job -Force
-        }
+        if ($before.status -ne 'Running') { Stop-Service -Name 'sshd' -Force -ErrorAction SilentlyContinue }
+        Set-Service -Name 'sshd' -StartupType $before.start_type -ErrorAction SilentlyContinue
         Remove-Item -Recurse -Force -Path $keyDir, $sshDir -ErrorAction SilentlyContinue
-        $Result.service_after = if ($before) { [string] (Get-Service -Name 'sshd' -ErrorAction SilentlyContinue).StartType } else { $null }
+        $after = Get-Service -Name 'sshd' -ErrorAction SilentlyContinue
+        $Result.restored_exactly = ([string] $after.Status -eq $before.status) -and ([string] $after.StartType -eq $before.start_type)
     }
 }
 
@@ -1075,7 +1093,7 @@ function Measure-JobUser($Result) {
         foreach ($open in 'shell', 'assoc') {
             foreach ($end in 'terminate-job', 'allowlist', 'parent-exit') {
                 $r["$($open)_$end"] = [ordered]@{
-                    run = Invoke-Probe "f2-$open-$end" @('job-browser', '--scratch', (Join-Path $s 'f2'), '--open', $open, '--end', $end)
+                    run = Invoke-Probe "f2-$open-$end" @('job-browser', '--scratch', (Join-Path $s 'f2'), '--open', $open, '--end', $end) -TimeoutSeconds 120
                     edge_left = @(Get-Process -Name 'msedge' -ErrorAction SilentlyContinue).Count
                 }
                 Stop-Process -Name 'msedge' -Force -ErrorAction SilentlyContinue
