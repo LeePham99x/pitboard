@@ -68,7 +68,7 @@ public static class Program
 
         var started = new AppStart(
             Running, environment, fixture, Running.DataFolder(Shell.LocalAppData(), fixtureFolder));
-        Application.Start(_ =>
+        Application.Start(p =>
         {
             SynchronizationContext.SetSynchronizationContext(
                 new DispatcherQueueSynchronizationContext(DispatcherQueue.GetForCurrentThread()));
