@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Reflection;
+using System.Text.RegularExpressions;
 
 namespace Pitboard.Core.Tests;
 
@@ -1012,5 +1014,74 @@ public sealed class ModelTests
                 SwitchTo: "claude/work"),
         ];
         CollectionAssert.AreEqual(ranOut, posted);
+    }
+
+    private static bool LibraryIsGated =>
+        typeof(ModelTests).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .Any(metadata => metadata is { Key: "PitboardNativeLibraryGated", Value: "true" });
+
+    // The version the gate reads, from Cargo.toml rather than the library under test.
+    private static int ProductMajor()
+    {
+        for (var folder = new DirectoryInfo(AppContext.BaseDirectory); folder is not null; folder = folder.Parent)
+        {
+            var manifest = Path.Combine(folder.FullName, "Cargo.toml");
+            var version = File.Exists(manifest)
+                ? Regex.Match(File.ReadAllText(manifest), @"^\[workspace\.package\]$[^\[]*?^version = ""(\d+)\.", RegexOptions.Multiline)
+                : Match.Empty;
+            if (version.Success)
+            {
+                return int.Parse(version.Groups[1].Value, CultureInfo.InvariantCulture);
+            }
+        }
+
+        throw new InvalidOperationException($"no workspace Cargo.toml above {AppContext.BaseDirectory}");
+    }
+
+    [TestMethod]
+    [OSCondition(OperatingSystems.Windows)]
+    public void AWindowsModelReadsNothingUntilPitboardForWindowsIsReleased()
+    {
+        if (!LibraryIsGated)
+        {
+            Assert.Inconclusive(
+                "This library was not built as a release is, without `--cfg pitboard_unreleased_windows`. " +
+                "Pass one that was to PitboardNativeLibrary, with PitboardNativeLibraryGated=true, to run this test.");
+        }
+
+        var root = Directory.CreateTempSubdirectory("pitboard-gate-").FullName;
+        try
+        {
+            string[] homes = ["USERPROFILE", "HOME", "APPDATA", "LOCALAPPDATA", "CODEX_HOME", "CLAUDE_CONFIG_DIR", "PITBOARD_HOME"];
+            var environment = homes.ToDictionary(
+                home => home, home => Directory.CreateDirectory(Path.Combine(root, home)).FullName);
+            var waiting = new Waiting();
+            using var model = new PitboardModel(
+                new AppLaunch(environment, null), waiting, new StandInApps(), new Posting(), new InUtc());
+
+            model.Send(new Intent.Start());
+            var read = waiting.Until(
+                snapshot => snapshot.ReadFailure is not null || snapshot is { Reading: false, UpdatedAt: not null },
+                Patience);
+            model.Shutdown();
+
+            Assert.IsNotNull(read, "the model told of no read");
+            if (ProductMajor() == 0)
+            {
+                Assert.AreEqual("windows_not_released", read.ReadFailure?.Code);
+                foreach (var home in environment.Values)
+                {
+                    Assert.IsEmpty(Directory.EnumerateFileSystemEntries(home), home);
+                }
+            }
+            else
+            {
+                Assert.IsNull(read.ReadFailure, read.ReadFailure?.Message);
+            }
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 }

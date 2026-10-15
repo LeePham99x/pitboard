@@ -251,8 +251,10 @@ dotnet test --solution Pitboard.slnx -p:PitboardNativeLibrary="$PWD/../../target
 ```
 
 On Linux the library the tests load is `libpitboard_ffi.so`, and on Windows
-`pitboard_ffi.dll`. C# makes each field of a record a member of it, so a field may not share
-its record's name.
+`pitboard_ffi.dll`. A Windows library built without `--cfg pitboard_unreleased_windows`, as a
+0.x release is, takes `-p:PitboardNativeLibraryGated=true` as well, for the test of what it
+refuses. C# makes each field of a record a member of it, so a field may not share its record's
+name.
 
 The tests that start a fixture's model are skipped against a library built without the
 `fixture` feature. To run them, build the library with
@@ -297,7 +299,10 @@ From a Mac or Linux, `cargo check --target x86_64-pc-windows-msvc` checks only
 CI's `windows` job runs these commands on `windows-2025` and `windows-11-arm`, the tests as
 a fresh standard user through `.github/scripts/test-as-standard-user.ps1`. The job fails when
 a run leaves a login item, a scheduled task or a login folder behind. It also builds
-`pitboard.exe` as a release is built, and checks that it refuses and changes nothing.
+`pitboard.exe` as a release is built, and checks that it refuses and changes nothing. The
+`csharp-windows` job builds `pitboard_ffi.dll` that way and opened with its fixtures, checks
+that the bindings generated from each are the Linux job's byte for byte, and runs the C# tests
+against each the same way.
 
 `gh workflow run windows-facts.yml` measures both runner images. No pull request runs it.
 

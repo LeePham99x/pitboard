@@ -9,4 +9,11 @@
   <ItemGroup Condition="'$(PitboardNativeLibrary)' != ''">
     <None Include="$(PitboardNativeLibrary)" CopyToOutputDirectory="PreserveNewest" Visible="false" />
   </ItemGroup>
+  <!--
+    Where that library was built as a release is, without the cfg pitboard_unreleased_windows,
+    pass PitboardNativeLibraryGated=true as well, for the test of what it refuses on Windows.
+  -->
+  <ItemGroup Condition="'$(PitboardNativeLibraryGated)' == 'true'">
+    <AssemblyMetadata Include="PitboardNativeLibraryGated" Value="true" />
+  </ItemGroup>
 </Project>
