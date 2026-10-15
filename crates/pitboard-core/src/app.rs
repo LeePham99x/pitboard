@@ -15,7 +15,6 @@
 use crate::context::{Context, Environment};
 use crate::error::{Error, Result};
 use crate::host::{self, LoginPath, OS};
-use crate::provider::{self, LoginKind, ProviderId};
 use crate::service::Permit;
 use crate::{atomic, home};
 use std::ffi::OsStr;
@@ -26,16 +25,12 @@ use std::path::{Path, PathBuf};
 #[non_exhaustive]
 pub struct AppContext {
     pub context: Context,
-    /// The tools whose program was named outright or found, in [`ProviderId::ALL`]'s order.
-    /// A tool missing here may still be on some `PATH`, so this narrows what an app offers
-    /// and never forbids anything.
-    pub found: Vec<ProviderId>,
     /// The login shell's `PATH`, as far as it is looked in: where each tool's program is
     /// looked for, and what a sign-in is given. `None` where the shell could not be asked,
     /// and the app looks on its own `PATH`, as it always did.
     pub search_path: Option<String>,
-    /// The login shell had not answered in time. What was found stands, and asking again a
-    /// while later may find more.
+    /// The login shell had not answered in time, so tools are looked for on this app's own
+    /// `PATH` until it is asked again.
     pub late: bool,
     /// Where each way of installing Pitboard puts `pitboard`, as `command_line_places` gives
     /// them for this app's home: under it, and where the system's package managers put
@@ -49,22 +44,12 @@ impl AppContext {
     /// Asks the person's login shell for its `PATH`, which can take seconds, so this is never
     /// called on an app's main thread.
     pub fn discover(env: &Environment, app: Option<&Path>) -> AppContext {
-        AppContext::read(env, app, host::login_path(env), host::proc::can_run)
+        AppContext::read(env, app, host::login_path(env))
     }
 
-    /// `discover` with what the login shell said and whether a file can be run handed in, so
-    /// a test can say both without a shell or a program.
-    ///
-    /// Each tool's program is the one its variable names outright, or else the first found
-    /// on the login shell's `PATH`, where a version manager or an npm prefix puts it, and
-    /// then where the tool's own installers put it, which is all there is when the shell
-    /// could not be asked.
-    pub(crate) fn read(
-        env: &Environment,
-        app: Option<&Path>,
-        said: LoginPath,
-        runnable: impl Fn(&Path) -> bool,
-    ) -> AppContext {
+    // A tool's program is looked for when it is needed: the one its variable names, or the
+    // first on the login shell's `PATH`, then where the tool's installers put it.
+    pub(crate) fn read(env: &Environment, app: Option<&Path>, said: LoginPath) -> AppContext {
         let mut context = Context::read(env, "app");
         let (shell, late) = match said {
             LoginPath::Said(path) => (Some(path), false),
@@ -82,36 +67,6 @@ impl AppContext {
                     .collect()
             })
             .unwrap_or_default();
-        let mut found = Vec::new();
-        for &tool in ProviderId::ALL {
-            let Some(cli) = tool.cli() else {
-                let here = match provider::of(tool) {
-                    LoginKind::Folder(app) => app.root(&context).is_ok_and(|root| root.is_dir()),
-                    LoginKind::Document(_) => false,
-                };
-                if here {
-                    found.push(tool);
-                }
-                continue;
-            };
-            if env
-                .path(cli.program_variable)
-                .is_some_and(|named| !named.is_empty())
-            {
-                found.push(tool);
-                continue;
-            }
-            let places = looked
-                .iter()
-                .cloned()
-                .chain((cli.install_places)(&context.home));
-            if let Some(program) =
-                host::program::find_among(Path::new(tool.program()), places, &runnable)
-            {
-                context.set_program(tool, program);
-                found.push(tool);
-            }
-        }
         let search_path = shell.map(|_| {
             std::env::join_paths(&looked)
                 .map(|joined| joined.to_string_lossy().into_owned())
@@ -120,11 +75,11 @@ impl AppContext {
         if let Some(path) = &search_path {
             context.search_path = Some(path.into());
         }
+        context.installer_places = true;
         context.schedule_program = app.and_then(|app| OS.app_command_line(app));
         let command_line_places = command_line_places(&context.home);
         AppContext {
             context,
-            found,
             search_path,
             late,
             command_line_places,
@@ -290,6 +245,7 @@ mod tests {
     use super::*;
     use crate::host::Os;
     use crate::host::fs::testing;
+    use crate::provider::{ProviderId, installed_among, program_among};
     use std::cell::RefCell;
 
     fn env(pairs: &[(&str, &str)]) -> Environment {
@@ -315,23 +271,28 @@ mod tests {
             "/Users/x/.volta/bin/claude",
             "/Users/x/.local/bin/codex",
             "/Users/x/.local/bin/claude",
+            "/elsewhere/codex",
         ]
         .into_iter()
         .map(PathBuf::from)
         .collect();
         let runnable = |path: &Path| here.iter().any(|there| there == path);
+        let program = |read: &AppContext, tool| program_among(&read.context, tool, runnable);
         let login = "/usr/bin:bin:/Users/x/.volta/bin:/Users/x/.nvm/versions/node/v22.1.0/bin";
 
-        let shell = AppContext::read(&home, None, said(login), runnable);
+        let shell = AppContext::read(&home, None, said(login));
         assert_eq!(
-            shell.context.codex_program(),
-            Path::new("/Users/x/.nvm/versions/node/v22.1.0/bin/codex")
+            program(&shell, ProviderId::Codex).as_deref(),
+            Some(Path::new("/Users/x/.nvm/versions/node/v22.1.0/bin/codex"))
         );
         assert_eq!(
-            shell.context.claude_program(),
-            Path::new("/Users/x/.volta/bin/claude")
+            program(&shell, ProviderId::Claude).as_deref(),
+            Some(Path::new("/Users/x/.volta/bin/claude"))
         );
-        assert_eq!(shell.found, [ProviderId::Claude, ProviderId::Codex]);
+        assert_eq!(
+            installed_among(&shell.context, runnable),
+            [ProviderId::Claude, ProviderId::Codex]
+        );
         assert_eq!(
             shell.command_line_places,
             command_line_places(Path::new("/Users/x")),
@@ -349,43 +310,45 @@ mod tests {
             "and a sign-in is given it"
         );
 
-        let named = AppContext::read(
-            &env(&[("HOME", "/Users/x"), ("PITBOARD_CODEX", "/elsewhere/codex")]),
+        let named = |codex: &str| {
+            AppContext::read(
+                &env(&[("HOME", "/Users/x"), ("PITBOARD_CODEX", codex)]),
+                None,
+                said(login),
+            )
+        };
+        assert_eq!(
+            program(&named("/elsewhere/codex"), ProviderId::Codex).as_deref(),
+            Some(Path::new("/elsewhere/codex"))
+        );
+        assert_eq!(
+            program(&named("/gone/codex"), ProviderId::Codex),
             None,
-            said(login),
-            runnable,
-        );
-        assert_eq!(named.context.codex_program(), Path::new("/elsewhere/codex"));
-        assert_eq!(
-            named.context.claude_program(),
-            Path::new("/Users/x/.volta/bin/claude")
-        );
-        assert_eq!(
-            named.found,
-            [ProviderId::Claude, ProviderId::Codex],
-            "a program named outright counts as found"
+            "a program named outright is found only where it is"
         );
 
         let empty = AppContext::read(
             &env(&[("HOME", "/Users/x"), ("PITBOARD_CODEX", "")]),
             None,
             said("/opt/tools/bin"),
-            |path| path == Path::new("/opt/tools/bin/codex"),
         );
         assert_eq!(
-            empty.context.codex_program(),
-            Path::new("/opt/tools/bin/codex"),
+            program_among(&empty.context, ProviderId::Codex, |path| {
+                path == Path::new("/opt/tools/bin/codex")
+            })
+            .as_deref(),
+            Some(Path::new("/opt/tools/bin/codex")),
             "an empty name names nothing, and the app looks as it does without one"
         );
 
-        let unknown = AppContext::read(&home, None, LoginPath::Unknown, runnable);
+        let unknown = AppContext::read(&home, None, LoginPath::Unknown);
         assert_eq!(
-            unknown.context.codex_program(),
-            Path::new("/Users/x/.local/bin/codex")
+            program(&unknown, ProviderId::Codex).as_deref(),
+            Some(Path::new("/Users/x/.local/bin/codex"))
         );
         assert_eq!(
-            unknown.context.claude_program(),
-            Path::new("/Users/x/.local/bin/claude")
+            program(&unknown, ProviderId::Claude).as_deref(),
+            Some(Path::new("/Users/x/.local/bin/claude"))
         );
         assert_eq!(
             unknown.search_path, None,
@@ -393,14 +356,35 @@ mod tests {
         );
         assert!(!unknown.late);
 
-        let nowhere = AppContext::read(&home, None, said(login), |_| false);
-        assert_eq!(nowhere.context.codex_program(), Path::new("codex"));
-        assert_eq!(nowhere.context.claude_program(), Path::new("claude"));
-        assert!(nowhere.found.is_empty());
+        assert!(installed_among(&shell.context, |_| false).is_empty());
 
-        let late = AppContext::read(&home, None, LoginPath::Late, |_| false);
+        let late = AppContext::read(&home, None, LoginPath::Late);
         assert!(late.late, "a late shell says so, for the app to ask again");
         assert_eq!(late.search_path, None);
+    }
+
+    // A program installed after the app started is found the next time it is looked for.
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "W17: where an app finds programs on Windows, whose PATH no login shell builds"
+    )]
+    fn a_program_installed_since_the_app_started_is_found() {
+        let scratch =
+            std::env::temp_dir().join(format!("pitboard-app-installed-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&scratch);
+        let bin = scratch.join(".local/bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let home = scratch.to_string_lossy().into_owned();
+        let read = AppContext::read(&env(&[("HOME", &home)]), None, said("/nowhere"));
+        let pitboard = crate::service::Pitboard::new(read.context);
+        assert!(!pitboard.installed().contains(&ProviderId::Codex));
+
+        let codex = bin.join("codex");
+        std::fs::write(&codex, "#!/bin/sh\n").unwrap();
+        testing::make_runnable(&codex).expect("runnable");
+        assert!(pitboard.installed().contains(&ProviderId::Codex));
+        std::fs::remove_dir_all(&scratch).unwrap();
     }
 
     // On a volume that ignores case `Claude` would find Claude Code's `claude`.
@@ -415,13 +399,13 @@ mod tests {
             &env(&[("HOME", "/Users/x")]),
             None,
             said("/usr/bin:/Users/x/bin"),
-            |path| {
-                looked.borrow_mut().push(path.to_path_buf());
-                path.file_name()
-                    .and_then(OsStr::to_str)
-                    .is_some_and(|name| name.eq_ignore_ascii_case("claude"))
-            },
         );
+        let found = installed_among(&read.context, |path| {
+            looked.borrow_mut().push(path.to_path_buf());
+            path.file_name()
+                .and_then(OsStr::to_str)
+                .is_some_and(|name| name.eq_ignore_ascii_case("claude"))
+        });
         assert!(
             looked
                 .borrow()
@@ -429,7 +413,7 @@ mod tests {
                 .all(|path| path.file_name() != Some(OsStr::new("Claude"))),
             "{looked:?}"
         );
-        assert_eq!(read.found, [ProviderId::Claude]);
+        assert_eq!(found, [ProviderId::Claude]);
         assert_eq!(read.context.program_for(ProviderId::Desktop), None);
     }
 
@@ -439,20 +423,23 @@ mod tests {
             std::env::temp_dir().join(format!("pitboard-app-desktop-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&scratch);
         let named = scratch.to_string_lossy().into_owned();
-        let read = || {
-            AppContext::read(
-                &env(&[
-                    ("HOME", "/Users/x"),
-                    ("PITBOARD_TEST_CLAUDE_DESKTOP", &named),
-                ]),
-                None,
-                LoginPath::Unknown,
-                |_| false,
-            )
-        };
-        assert!(read().found.is_empty(), "no data folder yet");
+        let read = AppContext::read(
+            &env(&[
+                ("HOME", "/Users/x"),
+                ("PITBOARD_TEST_CLAUDE_DESKTOP", &named),
+            ]),
+            None,
+            LoginPath::Unknown,
+        );
+        assert!(
+            installed_among(&read.context, |_| false).is_empty(),
+            "no data folder yet"
+        );
         std::fs::create_dir_all(scratch.join("data")).unwrap();
-        assert_eq!(read().found, [ProviderId::Desktop]);
+        assert_eq!(
+            installed_among(&read.context, |_| false),
+            [ProviderId::Desktop]
+        );
         std::fs::remove_dir_all(&scratch).unwrap();
     }
 
@@ -503,7 +490,7 @@ mod tests {
             ("PITBOARD_API_BASE", "http://127.0.0.1:8080"),
             ("PITBOARD_NO_ARGV", "1"),
         ]);
-        let app = AppContext::read(&given, None, LoginPath::Unknown, |_| false).context;
+        let app = AppContext::read(&given, None, LoginPath::Unknown).context;
         let cli = Context::for_command_line(&given);
         assert_eq!(app.home, cli.home);
         assert_eq!(app.pitboard_home, cli.pitboard_home);
@@ -531,7 +518,7 @@ mod tests {
         let allowed = |value: Option<&str>| {
             let mut pairs = vec![("HOME", "/Users/x")];
             pairs.extend(value.map(|v| ("PITBOARD_NO_ARGV", v)));
-            AppContext::read(&env(&pairs), None, LoginPath::Unknown, |_| false)
+            AppContext::read(&env(&pairs), None, LoginPath::Unknown)
                 .context
                 .argv_fallback()
         };
@@ -549,15 +536,15 @@ mod tests {
     )]
     fn a_relative_entry_is_not_looked_in() {
         let looked = RefCell::new(Vec::new());
-        let _ = AppContext::read(
+        let read = AppContext::read(
             &env(&[("HOME", "/Users/x")]),
             None,
             said("bin:./node_modules/.bin:/usr/bin"),
-            |path| {
-                looked.borrow_mut().push(path.to_path_buf());
-                false
-            },
         );
+        installed_among(&read.context, |path| {
+            looked.borrow_mut().push(path.to_path_buf());
+            false
+        });
         let looked = looked.into_inner();
         assert!(looked.iter().all(|path| path.is_absolute()), "{looked:?}");
         assert_eq!(looked.first(), Some(&PathBuf::from("/usr/bin/claude")));
@@ -587,11 +574,11 @@ mod tests {
             &env(&[("HOME", "/Users/x")]),
             None,
             said(&entries.join(":")),
-            |path| {
-                looked.borrow_mut().push(path.to_path_buf());
-                false
-            },
         );
+        installed_among(&read.context, |path| {
+            looked.borrow_mut().push(path.to_path_buf());
+            false
+        });
         let looked = looked.into_inner();
         let kept: &[&str] = match OS {
             Os::MacOs => &["/Users/x/Documentsbin", "/usr/bin"],
@@ -628,7 +615,6 @@ mod tests {
                 &env(&[("HOME", "/Users/x")]),
                 app.map(Path::new),
                 LoginPath::Unknown,
-                |_| false,
             )
             .context
             .schedule_program()

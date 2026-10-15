@@ -693,9 +693,39 @@ fn ends_an_address(c: char) -> bool {
     c.is_whitespace() || matches!(c, '"' | '\'' | '<' | '>')
 }
 
-/// Where `tool`'s own program is, looked for the way the context says to look.
+// Looked for each time, so a program installed since Pitboard started is found.
 pub(crate) fn program_of(ctx: &Context, tool: ProviderId) -> Option<std::path::PathBuf> {
-    crate::host::program::find(ctx.program_for(tool)?, &ctx.search_path())
+    program_among(ctx, tool, crate::host::proc::can_run)
+}
+
+pub(crate) fn program_among(
+    ctx: &Context,
+    tool: ProviderId,
+    runnable: impl FnMut(&std::path::Path) -> bool,
+) -> Option<std::path::PathBuf> {
+    let installers = tool
+        .cli()
+        .filter(|_| ctx.installer_places)
+        .map(|cli| (cli.install_places)(ctx.home()))
+        .unwrap_or_default();
+    let search = ctx.search_path();
+    let dirs = std::env::split_paths(&search).chain(installers);
+    crate::host::program::find_in(ctx.program_for(tool)?, dirs, runnable)
+}
+
+// What a sign-in of each tool could start here now: its program, or its app's data folder.
+pub(crate) fn installed_among(
+    ctx: &Context,
+    mut runnable: impl FnMut(&std::path::Path) -> bool,
+) -> Vec<ProviderId> {
+    ProviderId::ALL
+        .iter()
+        .copied()
+        .filter(|&tool| match of(tool) {
+            LoginKind::Document(_) => program_among(ctx, tool, &mut runnable).is_some(),
+            LoginKind::Folder(app) => app.root(ctx).is_ok_and(|root| root.is_dir()),
+        })
+        .collect()
 }
 
 /// A command that runs `tool`'s own program, by the path it was found at, with the search

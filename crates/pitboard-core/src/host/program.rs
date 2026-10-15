@@ -1,6 +1,5 @@
 //! Finding a program somebody named, the way the system's own launcher finds it.
 
-use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 /// Where a program somebody named is: the path itself, made absolute, when it has a
@@ -11,22 +10,22 @@ use std::path::{Path, PathBuf};
 /// the root is looked in: a relative one names a place relative to wherever Pitboard was
 /// started, which says nothing about where a tool is installed, and a sign-in that runs
 /// from a directory of its own would read it as somewhere else again.
-pub(crate) fn find(named: &Path, search: &OsStr) -> Option<PathBuf> {
-    find_in(named, search, super::proc::can_run)
+#[cfg(any(target_os = "linux", test))]
+pub(crate) fn find(named: &Path, search: &std::ffi::OsStr) -> Option<PathBuf> {
+    find_in(named, std::env::split_paths(search), super::proc::can_run)
 }
 
-/// `find` with the question of whether a file can be run handed in, so a test can see every
-/// place it looks.
-fn find_in(
+// `find` over `dirs` in their order, with whether a file can be run handed in.
+pub(crate) fn find_in(
     named: &Path,
-    search: &OsStr,
+    dirs: impl IntoIterator<Item = PathBuf>,
     mut runnable: impl FnMut(&Path) -> bool,
 ) -> Option<PathBuf> {
     if named.components().count() > 1 {
         let named = std::path::absolute(named).ok()?;
         return runnable(&named).then_some(named);
     }
-    find_among(named, std::env::split_paths(search), runnable)
+    find_among(named, dirs, runnable)
 }
 
 /// The first file called `named` in `dirs` that can be run, in their order, for a list of
@@ -61,10 +60,14 @@ mod tests {
             root.clone(),
         ])
         .expect("a search path");
-        let found = find_in(Path::new("codex"), &search, |candidate| {
-            looked.push(candidate.to_path_buf());
-            false
-        });
+        let found = find_in(
+            Path::new("codex"),
+            std::env::split_paths(&search),
+            |candidate| {
+                looked.push(candidate.to_path_buf());
+                false
+            },
+        );
         assert_eq!(found, None);
         assert_eq!(looked, [root.join("codex")]);
     }
@@ -74,7 +77,7 @@ mod tests {
     /// starts the same program.
     #[test]
     fn a_program_named_relative_to_here_is_found_by_its_full_path() {
-        let found = find_in(Path::new("./bin/codex"), "".as_ref(), |_| true).expect("found");
+        let found = find_in(Path::new("./bin/codex"), Vec::new(), |_| true).expect("found");
         assert!(found.is_absolute(), "{}", found.display());
         assert_eq!(
             found,

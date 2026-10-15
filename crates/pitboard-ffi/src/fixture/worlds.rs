@@ -817,13 +817,11 @@ pub(crate) fn make(world: World, folder: Folder) -> Result<Launched, Unmade> {
         Arc::new(Browser::new(Arc::clone(&machine))),
         Arc::new(Warmer::new(Arc::clone(&machine))),
     );
-    let found = world.installed().to_vec();
     let (helper, places) = (machine.helper(), vec![machine.bin()]);
     let core = Arc::new(AppCore::asking(
         move || {
             let made = Made {
                 core: service::Pitboard::new(ctx.clone()),
-                found: found.clone(),
                 search_path: None,
                 helper: Some(helper.clone()),
                 command_line_places: places.clone(),

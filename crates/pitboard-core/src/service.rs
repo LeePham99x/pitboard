@@ -1313,6 +1313,11 @@ impl Pitboard {
             .map_err(|error| self.not_started(permit, typed, error))
     }
 
+    // The tools a sign-in could start here now, by the rule `ready_to_sign_in` keeps.
+    pub fn installed(&self) -> Vec<ProviderId> {
+        crate::provider::installed_among(&self.ctx, crate::host::proc::can_run)
+    }
+
     /// A sign-in that did not start, or did not finish, for a reason other than its name.
     fn not_started(&self, permit: Permit, typed: &str, error: Error) -> Failed {
         audit::record(&self.ctx, permit, "enroll", typed, error.code());

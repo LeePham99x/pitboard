@@ -19,7 +19,7 @@ use pitboard_core::provider::ProviderId;
 use pitboard_core::service;
 use pitboard_core::switch::{Left, Stowed};
 use pitboard_core::testing::desktop::{self, FakeClaude, JarAs};
-use pitboard_core::testing::{MemoryHost, ScriptedApi, live_service};
+use pitboard_core::testing::{MemoryHost, ScriptedApi, live_service, stand_in};
 use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -1312,6 +1312,15 @@ pub(super) struct World {
     cores_gone: Receiver<()>,
 }
 
+// A program's file name on this system, as the system runs it.
+pub(super) fn program_name(name: &str) -> String {
+    if cfg!(windows) {
+        format!("{name}.exe")
+    } else {
+        name.to_owned()
+    }
+}
+
 impl World {
     pub(super) fn new(name: &str) -> World {
         let root = std::env::temp_dir().join(format!(
@@ -1323,11 +1332,19 @@ impl World {
         std::fs::create_dir_all(&root).expect("a scratch home");
         let host = MemoryHost::new();
         let api = ScriptedApi::new();
+        let claude = root.join("bin").join(program_name("claude"));
+        std::fs::create_dir_all(root.join("bin")).expect("a scratch bin");
+        stand_in::install(
+            &claude,
+            &stand_in::Script::refusing("a test's Claude Code, never meant to run\n"),
+        )
+        .expect("a Claude Code to find");
         let ctx = Context::new(root.clone())
             .with_pitboard_home(root.join(".pitboard"))
             .with_codex_home(root.join(".codex").to_string_lossy().into_owned())
             .with_user("tester".into())
             .with_search_path(String::new())
+            .with_claude_program(claude)
             .with_memory_stores(Arc::clone(&host))
             .with_scripted_api(Arc::clone(&api))
             .with_scratch_claude(root.join("claude"))
@@ -1348,6 +1365,12 @@ impl World {
         }
     }
 
+    // Claude Code's program taken away, as on a machine where it was never installed.
+    pub(super) fn without_claude_code(&self) {
+        std::fs::remove_file(self.root.join("bin").join(program_name("claude")))
+            .expect("the world's Claude Code");
+    }
+
     /// The app's core over this machine, made from its parts as `AppCore::for_app` makes it
     /// from what the app was started with, with Claude Code's program found.
     pub(super) fn core(&self) -> Arc<AppCore> {
@@ -1363,7 +1386,6 @@ impl World {
                 let _alive = &alive;
                 let made = Made {
                     core: service::Pitboard::new(ctx.clone()),
-                    found: vec![ProviderId::Claude],
                     search_path: search_path.clone(),
                     helper: helper.clone(),
                     command_line_places: places.clone(),

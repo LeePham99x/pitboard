@@ -1121,6 +1121,7 @@ fn shutting_down_stops_a_sign_in_under_way() {
 fn a_sign_in_the_core_cannot_start_says_so_in_its_sheet() {
     let world = World::new("no-claude");
     world.enrolled("work", "here", 10.0);
+    world.without_claude_code();
     let told = Arc::new(Told::default());
     let model = model(&world.core(), &told);
     model.send(Intent::Start);

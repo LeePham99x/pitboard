@@ -21,7 +21,7 @@ repository = "https://github.com/datlechin/pitboard"
 homepage = "https://usepitboard.com"
 
 [workspace.dependencies]
-pitboard-core = { path = "crates/pitboard-core", version = "=0.14.0" }
+pitboard-core = { path = "crates/pitboard-core", version = "=0.15.0" }
 pitboard-sites = { path = "crates/pitboard-sites" }
 anstream = "1"
 anstyle = "1"
