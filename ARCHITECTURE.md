@@ -3422,6 +3422,14 @@ Microsoft's documentation.
 - Under `DispatcherShutdownMode.OnExplicitShutdown`, closing the main window leaves
   Pitboard.exe running ([DispatcherShutdownMode](https://learn.microsoft.com/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.application.dispatchershutdownmode)),
   on both images (`LifecycleTests.ClosingTheWindowLeavesPitboardRunning`, run 38804714545).
+- Microsoft's NavigationApp template (WindowsAppSDK main,
+  `dev/Templates/Source/ProjectTemplates/Desktop/CSharp/NavigationApp`, read on 16 October
+  2026) puts a `TitleBar` with the app's icon and the pane toggle above a `NavigationView`
+  under `MicaBackdrop`, extends the content into the title bar, asks for the tall one and calls
+  `AppWindow.SetIcon`. `MainWindow` does the same, so Mica reaches the title bar, and its
+  icon names the window in the title bar and Alt+Tab (`LifecycleTests.TheWindowCarriesPitboardsIcon`).
+  The PRI file indexes `Pitboard.ico` as `Files/Pitboard.ico` (run 38774669459), which
+  `ms-appx:///Pitboard.ico` reads.
 - Rust's `std::env::temp_dir` (Rust 1.98.1, `library/std/src/sys/paths/windows.rs`) and
   .NET's `Path.GetTempPath` (dotnet/runtime v10.0.13, `Path.Windows.cs`) both ask
   `GetTempPath2W`, .NET falling back to `GetTempPathW` where it is missing. So the app finds

@@ -24,6 +24,11 @@ public sealed partial class MainWindow : Window
     {
         _model = model;
         InitializeComponent();
+        ExtendsContentIntoTitleBar = true;
+        SetTitleBar(AppTitleBar);
+        AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
+        // WinUI's window class carries no icon, and only an installed build's shortcut gives the taskbar one.
+        AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, WindowsNotifications.IconFile));
         _dialogs = new DialogHost(() => Navigation.XamlRoot);
         _accounts = new AccountsPane(model, _dialogs);
         _activity = new ActivityPane(model);
@@ -97,6 +102,8 @@ public sealed partial class MainWindow : Window
             _ => _settings,
         };
     }
+
+    private void OnPaneToggleRequested(TitleBar sender, object args) => Navigation.IsPaneOpen = !Navigation.IsPaneOpen;
 
     // Ctrl+N adds an account from any pane; the model then shows the accounts.
     private void OnAddAccount(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)

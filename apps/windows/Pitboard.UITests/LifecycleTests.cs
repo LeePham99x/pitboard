@@ -9,6 +9,9 @@ namespace Pitboard.UITests;
 [Elevated(ConditionMode.Exclude)]
 public sealed partial class LifecycleTests
 {
+    private const uint GetIcon = 0x007F;
+    private const nuint BigIcon = 1;
+
     public TestContext TestContext { get; set; } = null!;
 
     // CF1 and CF5. Windows may keep the foreground for a window that held it before the launch (SetForegroundWindow).
@@ -48,6 +51,17 @@ public sealed partial class LifecycleTests
         Assert.IsNotNull(machine, "CF2: no element pane.machine");
         machine.Patterns.SelectionItem.Pattern.Select();
         Assert.IsTrue(machine.Patterns.SelectionItem.Pattern.IsSelected.Value, "CF2: pane.machine was not selected");
+    }
+
+    // Its title bar, Alt+Tab and a Debug build's taskbar button show it; WinUI's window class has none.
+    [TestMethod]
+    public void TheWindowCarriesPitboardsIcon()
+    {
+        using var launched = Launched.Start(Builds.Debug, fixture: "firstLaunch");
+
+        var handle = launched.Window("Pitboard").Properties.NativeWindowHandle.Value;
+
+        Assert.AreNotEqual(0, SendMessage(handle, GetIcon, BigIcon, 0), "the window has no icon of its own");
     }
 
     [TestMethod]
@@ -138,6 +152,9 @@ public sealed partial class LifecycleTests
 
     [LibraryImport("user32.dll")]
     private static partial nint GetForegroundWindow();
+
+    [LibraryImport("user32.dll", EntryPoint = "SendMessageW")]
+    private static partial nint SendMessage(nint window, uint message, nuint wParam, nint lParam);
 
     [LibraryImport("user32.dll", EntryPoint = "GetClassNameW")]
     private static unsafe partial int GetClassName(nint window, char* name, int capacity);
