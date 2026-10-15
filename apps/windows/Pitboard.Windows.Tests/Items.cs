@@ -39,4 +39,37 @@ internal static class Items
 
     public static AccountSection Section(string provider, string? heading, params AccountItem[] accounts) =>
         new(Id: provider, Heading: heading, Accounts: accounts);
+
+    public static SheetTool Tool(string code, string name) =>
+        new(Code: code, Name: name, Message: $"Pitboard opens {name}’s own sign-in in your browser.", Confirm: "Sign In");
+
+    public static SheetText AddAccount(params SheetTool[] tools) =>
+        new(
+            Title: "Add Account", Message: "Pitboard opens Claude Code’s own sign-in in your browser.", Tools: tools,
+            Tool: "claude", Account: null, Name: "", Prompt: "work", NotOffered: null, Confirm: "Sign In", Saving: false,
+            Progress: null);
+
+    public static SheetText Rename(string label) =>
+        new(
+            Title: $"Rename “{label}”", Message: "The account keeps its parked login.", Tools: [], Tool: "claude",
+            Account: null, Name: label, Prompt: label, NotOffered: null, Confirm: "Rename", Saving: false, Progress: null);
+
+    public static RunningSignIn Running(string provider, string? url = null, bool wantsCode = false) =>
+        new(Id: 1, Provider: provider, Name: "third", Said: "", Url: url, WantsCode: wantsCode, CodeRefused: false);
+
+    public static SigningInText SigningIn(string tool) =>
+        new(
+            Title: $"Signing In to {tool}",
+            Message: $"Finish signing in as third in your browser. This closes once {tool} says you’re in.",
+            CodeNote: $"{tool} takes the code shown after you sign in, whether or not your browser came back to it.",
+            Refused: null, Waiting: "Waiting for your browser", OffersLink: true,
+            Cancel: new Choice("Cancel", new Intent.CancelSignIn(), Enabled: true), EscapeCancels: true, Undo: null,
+            Announce: null);
+
+    public static StowText Stow(params string[] lines) =>
+        new(
+            Title: "Put Away the Login Left in a File",
+            Message: "Claude Code left a login in a file behind the keychain.", Lines: lines,
+            Looking: lines.Length == 0 ? "Finding out whose login it is…" : null, Confirm: "Put Away",
+            CanConfirm: lines.Length > 0, Saving: false);
 }
