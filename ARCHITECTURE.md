@@ -2926,7 +2926,7 @@ between.
   `uniffi_macros` 0.31.2, `fnsig.rs` and `record.rs`.
 
 On Windows, CI's `csharp-windows` job measured on windows-2025 and windows-11-arm, in run
-38681783239 on 15 October 2026:
+38683164949 on 15 October 2026, where both passed:
 
 - The C# generated from the release `pitboard_ffi.dll`, built as a 0.x release is and
   opened with its fixtures, is the Linux job's file byte for byte on both images. The DLL
