@@ -32,19 +32,17 @@ pub struct AccountWindowsShown {
     /// list: forgotten, in the app or with `pitboard forget`. Each window closes, and says so
     /// with `Intent::WindowClosed`.
     pub closing: Vec<String>,
-    /// Stores to delete, with everything in them, in the order asked: each one recorded by
-    /// this Pitboard directory that a read no longer derives from any enrolled account, and
-    /// that no other directory still there recorded too. The app deletes each once, after
-    /// any window of it has closed, and says how it went with `Intent::StoreDeleted` or
-    /// `Intent::StoreHeld`.
+    // Each once, after any window of it closes, answered with `StoreDeleted` or `StoreHeld`.
+    // Recorded by this directory alone and derived from no enrolled account, or on Windows
+    // held, enrolled again or not.
     pub deleting: Vec<StoreDeletion>,
     /// What the Open Link window shows of the link waiting for an account, while one is.
     pub picker: Option<LinkPicker>,
     /// Every download the windows started, the newest first, for each window to list its own.
     /// What to ask before quitting while some are under way is `downloads_quit_question`'s.
     pub downloads: Vec<DownloadShown>,
-    // Stores still held after their deletion: no window of one opens, and its menu item says
-    // why with `WindowNoteKind::StoreHeld`.
+    // On Windows, stores held by their deletion: no window of one opens, and its menu item
+    // says why with `WindowNoteKind::StoreHeld`.
     #[uniffi(default)]
     pub held: Vec<String>,
 }

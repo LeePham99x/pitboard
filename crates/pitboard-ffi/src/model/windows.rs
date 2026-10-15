@@ -28,6 +28,7 @@ use crate::account_windows::{
 };
 use crate::present::{DownloadState, PageLoad, StoreDeletion};
 use crate::{LinkRefusal, SiteLink, Status};
+use pitboard_core::host::Os;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
@@ -132,6 +133,8 @@ pub(crate) struct Windows {
     web_scheme: String,
     /// How long a link waits before it can be opened.
     arming_delay: Duration,
+    // On Windows, where WebView2 deletes a profile's folder only as its browser process exits.
+    deletion_lingers: bool,
     kept: Kept,
     /// The stores of the accounts the last read that said who is enrolled found, while the
     /// records are unread: what is put away is put away once they are in.
@@ -141,7 +144,7 @@ pub(crate) struct Windows {
     claimed: BTreeSet<String>,
     /// Stores the app is asked to delete, in the order asked, until it says how it went.
     pub(crate) deleting: Vec<StoreDeletion>,
-    // Stores the app said something holds, asked again after each read until it deletes them.
+    // On Windows, stores answered `StoreHeld`, asked again after each read until deleted.
     pub(crate) held: BTreeSet<String>,
     /// Stores asked for, which numbers the next.
     asks: u64,
@@ -177,6 +180,7 @@ impl Windows {
             link_scheme: LINK_SCHEME.into(),
             web_scheme: WEB_SCHEME.into(),
             arming_delay,
+            deletion_lingers: false,
             kept: Kept::Unread,
             enrolled: None,
             claimed: BTreeSet::new(),
@@ -198,8 +202,8 @@ impl Windows {
         }
     }
 
-    /// The schemes this launch's links and pages are on.
-    pub(crate) fn on(&mut self, link_scheme: &str, web_scheme: &str) {
+    pub(crate) fn on(&mut self, os: Os, link_scheme: &str, web_scheme: &str) {
+        self.deletion_lingers = os == Os::Windows;
         link_scheme.clone_into(&mut self.link_scheme);
         web_scheme.clone_into(&mut self.web_scheme);
     }
@@ -289,10 +293,7 @@ impl Windows {
         self.put_away(&keeping, jobs);
     }
 
-    /// Puts away what no account in `keeping` has: the last pages of their windows, and,
-    /// where the records were read, their stores, which another directory is asked about
-    /// first. A store something still holds is left recorded, and put away after the next
-    /// read; one a sweep has claimed already is left to it.
+    // Also a held store, enrolled again or not, until `StoreDeleted`.
     fn put_away(&mut self, keeping: &BTreeSet<String>, jobs: &mut Vec<super::state::Job>) {
         let Some(entry) = self.kept.entry() else {
             return;
@@ -372,11 +373,11 @@ impl Windows {
         }
     }
 
-    /// Something still holds `store`, so the app could not delete it: it stays recorded, and
-    /// the next read puts it away again.
+    // Still recorded, so the next read asks again where no account derives it; on Windows,
+    // where nothing undoes a deletion, also where one does, until `StoreDeleted`.
     pub(crate) fn store_held(&mut self, store: &str) {
         let store = store_key(store);
-        if self.unclaim(&store) {
+        if self.unclaim(&store) && self.deletion_lingers {
             self.held.insert(store);
         }
     }

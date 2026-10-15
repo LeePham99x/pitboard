@@ -5,8 +5,8 @@ use super::accounts::WindowAccount;
 use super::{AlertText, this_machine};
 use pitboard_core::host::{OS, Os};
 
-/// Something an account window has to say, in the bar above its page, until it is dismissed
-/// or the next one replaces it.
+// Said in the bar above a window's page until dismissed or replaced, or for `StoreHeld` by
+// its menu item.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, uniffi::Enum)]
 pub enum WindowNoteKind {
     /// The window opened with a store it never had before: how to sign in to its site.
@@ -20,18 +20,12 @@ pub enum WindowNoteKind {
     OtherApp {
         scheme: String,
     },
-    // Said by the window's menu item, while its account's old store is still being deleted.
+    // The window's account's old store is still being deleted, which only Windows waits for.
     StoreHeld,
 }
 
-/// What the bar above the page of `account`'s window says for `kind`, from the site's own
-/// words and the account's email and label.
 #[uniffi::export]
 pub fn window_note(kind: WindowNoteKind, account: WindowAccount) -> String {
-    window_note_on(OS, kind, &account)
-}
-
-fn window_note_on(os: Os, kind: WindowNoteKind, account: &WindowAccount) -> String {
     let site = &account.site;
     match kind {
         WindowNoteKind::SignIn => format!(
@@ -53,14 +47,9 @@ fn window_note_on(os: Os, kind: WindowNoteKind, account: &WindowAccount) -> Stri
             format!("This window doesn’t open links to other apps, such as this {scheme}: link.")
         }
         // WebView2 deletes a profile's folder as its browser process exits.
-        WindowNoteKind::StoreHeld => match os {
-            Os::Windows => "What this window kept before is deleted when Pitboard quits. It \
-                            opens after Pitboard starts again."
-                .into(),
-            Os::MacOs | Os::Linux => "Something still holds what this window kept before. It \
-                                      opens once Pitboard has deleted that."
-                .into(),
-        },
+        WindowNoteKind::StoreHeld => "What this window kept before is deleted when Pitboard \
+                                      quits. It opens after Pitboard starts again."
+            .into(),
     }
 }
 
@@ -148,19 +137,11 @@ mod tests {
 
     #[test]
     fn a_window_whose_old_store_is_held_says_when_it_opens() {
-        let work = window("work", "claude");
         assert_eq!(
-            window_note_on(Os::Windows, WindowNoteKind::StoreHeld, &work),
+            window_note(WindowNoteKind::StoreHeld, window("work", "claude")),
             "What this window kept before is deleted when Pitboard quits. It opens after \
              Pitboard starts again."
         );
-        for os in [Os::MacOs, Os::Linux] {
-            assert_eq!(
-                window_note_on(os, WindowNoteKind::StoreHeld, &work),
-                "Something still holds what this window kept before. It opens once Pitboard \
-                 has deleted that."
-            );
-        }
     }
 
     /// A window whose store was never made says how to sign in; one that was says nothing.
