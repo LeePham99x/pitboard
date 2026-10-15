@@ -2891,7 +2891,9 @@ That needs a person, in a debug build with a scratch home.
 
 Read in the C# that uniffi-bindgen-cs v0.11.0+v0.31.0 generated from `pitboard-ffi`, and
 measured by `apps/windows/Pitboard.Core.Tests` against the debug library, on 5 October 2026.
-Nothing here ran on Windows.
+Read again on 15 October 2026 in what v0.11.1+v0.31.0 generates, which differs only in how a
+string crosses: it is read and written in the Rust buffer's own memory, with no `byte[]`
+between. Nothing here ran on Windows.
 
 - An exported object's class frees its Rust object from a finalizer: `~PitboardModel()`
   calls `Destroy()`. So .NET's finalizer thread can be the one that drops a
