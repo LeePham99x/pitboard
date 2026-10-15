@@ -710,6 +710,11 @@ function Get-SshdDiagnosis($User) {
             @(& $sshd -T -C "user=$($User.Name),host=localhost,addr=127.0.0.1" 2>&1 | ForEach-Object { "$_" } |
                 Where-Object { $_ -match $wanted } | ForEach-Object { $_ -replace [regex]::Escape($User.Name), '<user>' })
         }
+        config = Invoke-Fact {
+            @(Get-Content -Path (Join-Path $env:ProgramData 'ssh\sshd_config') |
+                Where-Object { $_ -match '^\s*(AllowGroups|AllowUsers|DenyGroups|DenyUsers|Match|AuthorizedKeysFile|PasswordAuthentication|PubkeyAuthentication)\b' } |
+                ForEach-Object { $_.Trim() })
+        }
         network_logon_right = & $holders 'SeNetworkLogonRight'
         deny_network_logon_right = & $holders 'SeDenyNetworkLogonRight'
         events = Invoke-Fact {
@@ -724,7 +729,9 @@ function Get-SshdDiagnosis($User) {
 # the probe reads the logon, DPAPI, Credential Manager and the processes of $User's other
 # logon. The service is put back as it was. Run 38685119129 found no sshd on windows-11-arm,
 # and Add-WindowsCapability did not install it within 10 minutes, so an image without one is
-# recorded and left alone.
+# recorded and left alone. Run 38691271016 found windows-2025's sshd_config allowing only the
+# groups in AllowGroups, so $User joins OpenSSH Users, the built-in group Windows Server 2025
+# makes for that, and leaves it when it is removed.
 function Measure-OpenSsh($User, $Result) {
     $service = Get-Service -Name 'sshd' -ErrorAction SilentlyContinue
     $Result.sshd_present = [bool] $service
@@ -736,6 +743,9 @@ function Measure-OpenSsh($User, $Result) {
     $holder = $null
     try {
         if ($before.start_type -eq 'Disabled') { Set-Service -Name 'sshd' -StartupType Manual }
+        $sshUsers = Get-LocalGroup -SID 'S-1-5-32-585' -ErrorAction SilentlyContinue
+        $Result.openssh_users_group = [bool] $sshUsers
+        if ($sshUsers) { Add-LocalGroupMember -SID 'S-1-5-32-585' -Member $User.Name }
         New-Item -ItemType Directory -Force -Path $keyDir | Out-Null
         $key = Join-Path $keyDir 'pitboard-probe-m-key'
         $keygen = Start-Process -FilePath 'ssh-keygen.exe' -ArgumentList (Format-Arguments @('-q', '-t', 'ed25519', '-N', '', '-C', 'pitboard-probe', '-f', $key)) `
