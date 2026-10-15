@@ -15,11 +15,3 @@ public sealed class NoOtherApps : AppControl
     {
     }
 }
-
-// Until Pitboard posts Windows notifications, the window alone says what ran out.
-public sealed class NoNotifications : Notifications
-{
-    public void Post(RunOutNotice notice)
-    {
-    }
-}

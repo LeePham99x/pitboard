@@ -16,6 +16,7 @@ public partial class App : Application
     private readonly NoUpdates _updates = new();
     private readonly string _version = SettingsPage.Version(typeof(App).Assembly);
     private AppModel? _model;
+    private WindowsNotifications? _notifications;
     private StartAtSignIn? _startAtSignIn;
     private HiddenWindow? _hidden;
     private NotifyIcon? _icon;
@@ -32,7 +33,8 @@ public partial class App : Application
 
     protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
     {
-        var model = Model(DispatcherQueue.GetForCurrentThread());
+        _notifications = WindowsNotifications.For(_start.Identity.Build, AppContext.BaseDirectory);
+        var model = Model(DispatcherQueue.GetForCurrentThread(), _notifications);
         if (model is null)
         {
             Exit();
@@ -47,13 +49,19 @@ public partial class App : Application
         _icon.Show(model.MenuBar.Spoken);
         PowerManager.SystemSuspendStatusChanged += OnSuspendStatusChanged;
         Follow(model.WindowRequest);
+        // A click arrives on a thread of COM's; the model takes a message from any.
+        var launchedBy = _notifications.Start(intent => _model?.Send(intent));
         model.Send(new Intent.Start());
+        if (launchedBy is not null)
+        {
+            model.Send(launchedBy);
+        }
     }
 
     // A second launch, which brings the window forward.
     public void Reopened() => ShowWindow();
 
-    private AppModel? Model(DispatcherQueue queue)
+    private AppModel? Model(DispatcherQueue queue, Notifications notifications)
     {
 #if DEBUG
         if (_start.Fixture is { } fixture)
@@ -83,7 +91,7 @@ public partial class App : Application
         return AppModel.Listening(
             queue,
             listener => new PitboardModel(
-                launch, listener, new NoOtherApps(), new NoNotifications(), new WindowsLocalTime()));
+                launch, listener, new NoOtherApps(), notifications, new WindowsLocalTime()));
     }
 
     private void OnModelChanged(object? sender, PropertyChangedEventArgs args)
@@ -160,6 +168,7 @@ public partial class App : Application
     {
         _icon?.Remove();
         _model?.Shutdown();
+        _notifications?.Stop();
     }
 
     private void Quit()
