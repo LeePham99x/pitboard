@@ -15,3 +15,14 @@ WM_SETTINGCHANGE
 WM_TIMECHANGE
 CWMO_FLAGS
 INFINITE
+Shell_NotifyIcon
+NOTIFYICON_VERSION_4
+NIN_SELECT
+NINF_KEY
+WM_CONTEXTMENU
+WM_APP
+WM_CLOSE
+RegisterWindowMessage
+LoadIconMetric
+SetForegroundWindow
+GetForegroundWindow

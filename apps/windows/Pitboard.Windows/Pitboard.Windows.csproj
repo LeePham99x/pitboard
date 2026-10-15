@@ -7,6 +7,8 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- No resources to index, so no PRI file. -->
     <EnableCoreMrtTooling>false</EnableCoreMrtTooling>
+    <!-- shellapi.h packs its structs to a byte on 32-bit Windows only: x64 and ARM64 lay them out alike. -->
+    <CsWin32PlatformTarget>x64</CsWin32PlatformTarget>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" />
@@ -14,5 +16,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Pitboard.Core/Pitboard.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Pitboard.Windows.Tests" />
   </ItemGroup>
 </Project>
