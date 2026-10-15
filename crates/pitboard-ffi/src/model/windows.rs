@@ -141,6 +141,8 @@ pub(crate) struct Windows {
     claimed: BTreeSet<String>,
     /// Stores the app is asked to delete, in the order asked, until it says how it went.
     pub(crate) deleting: Vec<StoreDeletion>,
+    // Stores the app said something holds, asked again after each read until it deletes them.
+    pub(crate) held: BTreeSet<String>,
     /// Stores asked for, which numbers the next.
     asks: u64,
     /// The windows the app has open, in the order they opened.
@@ -179,6 +181,7 @@ impl Windows {
             enrolled: None,
             claimed: BTreeSet::new(),
             deleting: Vec::new(),
+            held: BTreeSet::new(),
             asks: 0,
             open: Vec::new(),
             waiting: BTreeMap::new(),
@@ -301,7 +304,8 @@ impl Windows {
             Kept::Read(entry) => entry
                 .stores
                 .iter()
-                .filter(|store| !keeping.contains(*store) && !self.claimed.contains(*store))
+                .filter(|store| !keeping.contains(*store) || self.held.contains(*store))
+                .filter(|store| !self.claimed.contains(*store))
                 .cloned()
                 .collect(),
             Kept::Unread | Kept::Held(_) => Vec::new(),
@@ -358,6 +362,7 @@ impl Windows {
         if !self.unclaim(&store) {
             return;
         }
+        self.held.remove(&store);
         if let Some(entry) = self.kept.entry() {
             let recorded = entry.stores.remove(&store);
             let paged = entry.pages.remove(&store).is_some();
@@ -370,7 +375,10 @@ impl Windows {
     /// Something still holds `store`, so the app could not delete it: it stays recorded, and
     /// the next read puts it away again.
     pub(crate) fn store_held(&mut self, store: &str) {
-        self.unclaim(&store_key(store));
+        let store = store_key(store);
+        if self.unclaim(&store) {
+            self.held.insert(store);
+        }
     }
 
     /// `store` is no longer asked of the app, and no longer claimed. Whether it was asked.
@@ -432,7 +440,7 @@ impl Windows {
             else {
                 continue;
             };
-            if self.claimed.contains(&store) {
+            if self.claimed.contains(&store) || self.held.contains(&store) {
                 continue;
             }
             let Some(entry) = self.kept.entry() else {

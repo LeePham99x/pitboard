@@ -43,6 +43,10 @@ pub struct AccountWindowsShown {
     /// Every download the windows started, the newest first, for each window to list its own.
     /// What to ask before quitting while some are under way is `downloads_quit_question`'s.
     pub downloads: Vec<DownloadShown>,
+    // Stores still held after their deletion: no window of one opens, and its menu item says
+    // why with `WindowNoteKind::StoreHeld`.
+    #[uniffi(default)]
+    pub held: Vec<String>,
 }
 
 /// A store the app is asked to delete.
@@ -242,6 +246,7 @@ pub(crate) fn account_windows(seen: &Seen) -> AccountWindowsShown {
         deleting: windows.deleting.clone(),
         picker: picker(seen),
         downloads: windows.downloads.iter().rev().map(download).collect(),
+        held: windows.held.iter().cloned().collect(),
     }
 }
 

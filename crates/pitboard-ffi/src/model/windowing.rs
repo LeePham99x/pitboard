@@ -1003,6 +1003,52 @@ fn a_window_waits_while_its_store_is_deleted() {
     assert!(machine.windows_records().stores.contains(&personal));
 }
 
+// WebView2 refuses a profile of a deleted one's name until its folder goes, as the browser
+// process exits, so the app answers `StoreHeld` until then.
+#[test]
+fn a_window_waits_while_its_old_store_is_held() {
+    let personal = claude("p");
+    let mut machine = machine();
+    machine.windows_file = Some(file(&[(DANA, &[&personal])]));
+    machine.answer = Ok(status(without("personal")));
+    let mut model = started(&mut machine);
+    assert_eq!(deleting(&model), vec![personal.clone()]);
+    model.send(Intent::StoreHeld {
+        store: personal.to_uppercase(),
+    });
+    machine.answer = Ok(status(two_tools()));
+    model.refresh(&mut machine);
+    assert_eq!(
+        deleting(&model),
+        vec![personal.clone()],
+        "asked again, though enrolled again"
+    );
+    model.send(Intent::StoreHeld {
+        store: personal.clone(),
+    });
+    model.send(Intent::WindowOpened {
+        store: personal.clone(),
+    });
+    model.run(&mut machine);
+    assert_eq!(open_window(&model, &personal), None);
+    let shown = model.shown().account_windows;
+    assert_eq!(shown.held, vec![personal.clone()]);
+    assert!(shown.menus.iter().any(|menu| match menu {
+        SiteMenu::One { window, .. } => window.store == personal,
+        SiteMenu::Several { windows, .. } => windows.iter().any(|w| w.store == personal),
+    }));
+
+    model.refresh(&mut machine);
+    assert_eq!(open_window(&model, &personal), None);
+    model.send(Intent::StoreDeleted {
+        store: personal.clone(),
+    });
+    model.run(&mut machine);
+    assert!(model.shown().account_windows.held.is_empty());
+    let window = open_window(&model, &personal).expect("open once deleted");
+    assert_eq!(window.note, Some(WindowNoteKind::SignIn));
+}
+
 /// Nothing is put away before the records are read, and a read that lands first is acted on
 /// once they are in: a store nobody derives goes then, and none sooner.
 #[test]

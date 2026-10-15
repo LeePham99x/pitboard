@@ -1833,7 +1833,7 @@ rests on are under [WebKit and SwiftUI](#webkit-and-swiftui) and
   a time, and holds it recorded until the app answers `StoreDeleted`, when it goes from the
   records, or `StoreHeld`, when the next read asks again with a new number. An app deletes
   each ask once, however many snapshots list it, and a window of a store being deleted
-  waits until the app has answered.
+  waits until the app has answered `StoreDeleted`.
 - A store that another Pitboard directory recorded too is never deleted while that
   directory exists. The same account enrolled in both derives the same store, so deleting
   it would sign the other directory's window out. Forgetting the account in one removes
@@ -1902,9 +1902,11 @@ Windows app cannot answer `StoreDeleted` when it asks for a deletion, as the mac
 once `remove(forIdentifier:)` returns: it answers `StoreHeld` while the folder is still
 there, which keeps the store recorded and has the next read ask again, and `StoreDeleted`
 once the folder has gone. A window of an account enrolled again meanwhile would fail to
-make its profile, which the model's rule of a window waiting while its store is deleted
-covers only while the ask is open, so the Windows app has to keep such a window from
-making its profile until the folder has gone.
+make its profile, so the model holds a store answered `StoreHeld` until `StoreDeleted`
+comes: it asks for it again after every read, enrolled again or not, opens no window of it,
+and lists it in `AccountWindowsShown.held`, whose menu item says why with
+`WindowNoteKind::StoreHeld`. Read again for WebView2 1.0.4258.31 on 15 October 2026,
+unchanged.
 
 ## Measured facts
 
@@ -2148,6 +2150,7 @@ on 15 October 2026. W27 reviews the list.
 | `longPathAware` in a manifest lifts the 260-character limit | [Application manifests](https://learn.microsoft.com/en-us/windows/win32/sbscs/application-manifests) | No row uses a long path. |
 | `StartWhenAvailable` runs a start that was missed | [StartWhenAvailable](https://learn.microsoft.com/en-us/windows/win32/taskschd/tasksettings-startwhenavailable) | A runner never sleeps through a trigger. |
 | WSL 2's processes run in a utility VM | [Comparing WSL versions](https://learn.microsoft.com/en-us/windows/wsl/compare-versions) | No runner has WSL. |
+| A deleted WebView2 profile's folder goes as the browser process exits, and its name is refused with `ERROR_DELETE_PENDING` until then | [CoreWebView2Profile.Delete](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/winrt/microsoft_web_webview2_core/corewebview2profile#delete) | No row runs WebView2 yet. |
 
 ### One sign-in at a time
 
