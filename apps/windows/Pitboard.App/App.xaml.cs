@@ -26,6 +26,10 @@ public partial class App : Application
     public App(AppStart start)
     {
         _start = start;
+#if DEBUG
+        // Unhandled, it fails Pitboard fast with 0xC000027B: the UI tests read why from here.
+        UnhandledException += (_, args) => Console.Error.WriteLine(args.Exception);
+#endif
         InitializeComponent();
         // Closing the window leaves Pitboard running, as the macOS app does.
         DispatcherShutdownMode = DispatcherShutdownMode.OnExplicitShutdown;

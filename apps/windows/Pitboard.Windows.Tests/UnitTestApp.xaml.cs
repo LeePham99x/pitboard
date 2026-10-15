@@ -6,7 +6,12 @@ namespace Pitboard.Windows.Tests;
 // As Microsoft's unpackaged WinUI sample for MSTest hosts its tests.
 public partial class UnitTestApp : Application
 {
-    public UnitTestApp() => InitializeComponent();
+    public UnitTestApp()
+    {
+        // Unhandled, it fails the app fast with 0xC000027B, and the run's log says nothing more.
+        UnhandledException += (_, args) => Console.Error.WriteLine(args.Exception);
+        InitializeComponent();
+    }
 
     // Where a view test puts its view, to be laid out and loaded as in Pitboard's window.
     public static Window? Window { get; private set; }

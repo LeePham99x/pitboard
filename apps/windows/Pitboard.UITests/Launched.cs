@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using FlaUI.Core.AutomationElements;
 using FlaUI.Core.Conditions;
 using FlaUI.Core.Tools;
@@ -22,6 +23,7 @@ internal sealed class Launched : IDisposable
     private readonly DirectoryInfo _root;
     private readonly string _exe;
     private readonly string? _fixture;
+    private readonly StringBuilder _said = new();
 
     private Launched(DirectoryInfo root, string exe, string? fixture, Dictionary<string, string> homes)
     {
@@ -29,7 +31,17 @@ internal sealed class Launched : IDisposable
         _exe = exe;
         _fixture = fixture;
         HomeFolders = homes;
-        Process = Process.Start(StartInfo())!;
+        var start = StartInfo();
+        start.RedirectStandardError = true;
+        Process = Process.Start(start)!;
+        Process.ErrorDataReceived += (_, line) =>
+        {
+            lock (_said)
+            {
+                _said.AppendLine(line.Data);
+            }
+        };
+        Process.BeginErrorReadLine();
     }
 
     public Process Process { get; }
@@ -71,7 +83,25 @@ internal sealed class Launched : IDisposable
             () => FlaUI.Core.Application.Attach(Process).GetAllTopLevelWindows(Automation)
                 .FirstOrDefault(window => window.Title == title),
             Patience, TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
-        return found ?? throw new AssertFailedException($"Pitboard showed no window titled {title} within {Patience}");
+        return found ?? throw new AssertFailedException($"Pitboard showed no window titled {title} within {Patience}: {State()}");
+    }
+
+    // A WinUI app that fails fast exits 0xC000027B and leaves only what it wrote to its standard error.
+    private string State()
+    {
+        if (!Process.HasExited)
+        {
+            var titles = FlaUI.Core.Application.Attach(Process).GetAllTopLevelWindows(Automation)
+                .Select(window => $"'{window.Title}'")
+                .ToArray();
+            return titles.Length == 0 ? "it is running, with no window" : $"it is running, with {string.Join(", ", titles)}";
+        }
+
+        Process.WaitForExit();
+        lock (_said)
+        {
+            return $"it exited 0x{Process.ExitCode:X8}, saying: {_said.ToString().Trim()}";
+        }
     }
 
     // Looked for in every window of Pitboard's, since a menu or a dialog may draw in a window of its own.
