@@ -774,9 +774,18 @@ public sealed class ModelTests
     [TestCleanup]
     public void RemoveTheFixture()
     {
-        if (Directory.Exists(_own))
+        // Shutdown waits for the actor alone, so a lane may still write here for a moment.
+        var until = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        while (Directory.Exists(_own))
         {
-            Directory.Delete(_own, recursive: true);
+            try
+            {
+                Directory.Delete(_own, recursive: true);
+            }
+            catch (IOException) when (DateTime.UtcNow < until)
+            {
+                Thread.Sleep(50);
+            }
         }
     }
 
