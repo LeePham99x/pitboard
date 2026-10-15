@@ -7,6 +7,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+- Pitboard's HTTPS uses rustls 0.23.46, which fixes RUSTSEC-2026-0346, -0347, -0348 and -0349.
+
 ### Fixed
 
 - Pitboard reads and writes Claude Code's `~/.claude.json` where an empty `.config.json` sits
