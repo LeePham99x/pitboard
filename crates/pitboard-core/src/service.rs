@@ -1218,18 +1218,26 @@ impl Pitboard {
         Failed::of(error, warnings)
     }
 
-    /// The account `pitboard enroll <typed>` is about: the one already enrolled under that
-    /// exact name, or a new one of the tool the name says.
-    ///
-    /// A label written by 0.1.x could contain a slash, which a new name cannot, and signing
-    /// in to such an account again is exactly what every message about a lapsed park tells
-    /// somebody to do. So an existing account is found by its whole name first.
+    // An account enrolled already keeps the name it has, which a new one may no longer get:
+    // 0.1.x wrote labels with a slash, and the app took labels with a space.
     fn enrolling(&self, typed: &str) -> Result<Key> {
-        if typed.contains(crate::label::SEPARATOR)
-            && let Ok(state) = state::load(&self.ctx)
-            && let Some(existing) = state.accounts.iter().find(|a| a.label == typed)
-        {
-            return Ok(existing.key());
+        if let Ok(state) = state::load(&self.ctx) {
+            let whole = state
+                .accounts
+                .iter()
+                .find(|a| typed.contains(crate::label::SEPARATOR) && a.label == typed);
+            let named = match crate::label::parse(typed) {
+                Ok(crate::label::Spec::Bare(label)) => {
+                    state.get(&Key::new(crate::label::DEFAULT, label))
+                }
+                Ok(crate::label::Spec::Qualified(provider, label)) => {
+                    state.get(&Key::new(provider, label))
+                }
+                Err(_) => None,
+            };
+            if let Some(existing) = whole.or(named) {
+                return Ok(existing.key());
+            }
         }
         crate::label::choose(typed)
             .map(|chosen| Key::new(chosen.provider, chosen.label))
@@ -1303,6 +1311,11 @@ impl Pitboard {
         self.ready_to_sign_in(driver)
             .and_then(|()| switch::sign_in_watched_as(&self.ctx, permit, driver, &key))
             .map_err(|error| self.not_started(permit, typed, error))
+    }
+
+    // The tools a sign-in could start here now, by the rule `ready_to_sign_in` keeps.
+    pub fn installed(&self) -> Vec<ProviderId> {
+        crate::provider::installed_among(&self.ctx, crate::host::proc::can_run)
     }
 
     /// A sign-in that did not start, or did not finish, for a reason other than its name.
@@ -1582,7 +1595,17 @@ impl Pitboard {
     pub fn rename(&self, from: &str, to: &str) -> Changing<String> {
         let permit = self.permitted()?;
         let from = self.named(permit, "rename", from)?;
-        let chosen = self.chosen(permit, "rename", to)?;
+        let chosen = crate::label::choose(to)
+            .map(|chosen| Key::new(chosen.provider, chosen.label))
+            .map_err(|refusal| {
+                self.refused(
+                    permit,
+                    "rename",
+                    to,
+                    "label_unusable",
+                    Error::Usage(refusal),
+                )
+            })?;
         // Only a prefix somebody actually typed can disagree: a bare new name stays inside
         // the account's own tool whatever tool a bare name would mean for a new account.
         if to.contains(crate::label::SEPARATOR) && chosen.provider != from.provider {
@@ -2402,6 +2425,58 @@ mod tests {
         assert!(
             m.mem.jars_asked().len() == 1 && m.mem.listings() == 1,
             "the enrolment's own"
+        );
+    }
+
+    // The app took names with a space before a new name had to be one word.
+    #[test]
+    fn an_account_named_before_names_were_one_word_keeps_its_name() {
+        let m = machine("one-word");
+        let mut state = state::load(&m.ctx).expect("state");
+        state
+            .accounts
+            .iter_mut()
+            .find(|a| a.label == "there")
+            .expect("there")
+            .label = "over there".into();
+        state::save(&m.ctx, Permit::for_a_test(), &state).expect("saved");
+        let pitboard = Pitboard::new(m.ctx.clone());
+
+        assert_eq!(
+            pitboard.account_to_enroll("over there").map(|a| a.label),
+            Some("over there".to_owned())
+        );
+        let refused = pitboard
+            .enroll_current("new one")
+            .expect_err("a new name of two words");
+        assert_eq!(refused.error.code(), "usage", "{}", refused.error);
+        assert_eq!(
+            audit_lines(&m, "enroll"),
+            [("new one".to_owned(), "label_unusable".to_owned())]
+        );
+    }
+
+    // An existing account's name keeps it, and a rename gives a new one by the rules all the same.
+    #[test]
+    fn a_rename_to_a_name_another_tool_has_follows_the_rules_for_a_new_one() {
+        let m = codex_machine("rename-one-word");
+        let mut state = state::load(&m.ctx).expect("state");
+        state
+            .accounts
+            .push(switch::harness::account("my work", "elsewhere", None));
+        state::save(&m.ctx, Permit::for_a_test(), &state).expect("saved");
+        let pitboard = Pitboard::new(m.ctx.clone());
+
+        let refused = pitboard
+            .rename("codex/there", "my work")
+            .expect_err("a name of two words");
+        assert_eq!(refused.error.code(), "usage", "{}", refused.error);
+        assert!(
+            state::load(&m.ctx)
+                .expect("state")
+                .get(&m.key("there"))
+                .is_some(),
+            "the Codex account keeps its name"
         );
     }
 

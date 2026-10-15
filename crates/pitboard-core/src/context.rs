@@ -363,6 +363,9 @@ pub struct Context {
     /// process's own `PATH`: an app opened from Finder has almost nothing on it, so it
     /// passes the one the person's login shell would have.
     pub(crate) search_path: Option<OsString>,
+    // An app also looks where each tool's installers put its program, which a command line
+    // leaves to the shell's `PATH`.
+    pub(crate) installer_places: bool,
     /// The scheduler's job this process runs as, where a test says. `None` is whatever the
     /// scheduler said when it started this process.
     pub(crate) scheduled_job: Option<String>,
@@ -480,6 +483,7 @@ impl Context {
             one_drive: Vec::new(),
             schedule_program: None,
             search_path: None,
+            installer_places: false,
             scheduled_job: None,
             marked_as_scheduled: false,
             sudo: false,
@@ -676,11 +680,6 @@ impl Context {
         self.programs.get(&tool).map(PathBuf::as_path)
     }
 
-    /// Run `program` for this tool, where an app found it.
-    pub(crate) fn set_program(&mut self, tool: ProviderId, program: PathBuf) {
-        self.programs.insert(tool, program);
-    }
-
     // The Claude a test named; None in a release.
     pub(crate) fn scratch_claude(&self) -> Option<&ScratchClaude> {
         #[cfg(any(test, feature = "test-support"))]
@@ -837,6 +836,7 @@ impl Context {
             schedule_program: None,
             // Unset is nowhere, as it is to the shell: nothing is found on an empty `PATH`.
             search_path: Some(env.path("PATH").unwrap_or_default().to_os_string()),
+            installer_places: false,
             scheduled_job: None,
             marked_as_scheduled: false,
             sudo: env.set("SUDO_UID"),

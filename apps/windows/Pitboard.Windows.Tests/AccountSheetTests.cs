@@ -89,6 +89,50 @@ public sealed class AccountSheetTests
         Assert.AreEqual("work", up.Element<TextBox>("sheet.name").Text);
     }
 
+    // A tool Pitboard did not find says what it needs and links to how, and cannot be signed in to.
+    [UITestMethod]
+    public async Task AToolPitboardDidNotFindSaysWhatToInstall()
+    {
+        var missing = Items.CodexCliMissing();
+        await using var up = await Up.Over(Snapshots.Read(1) with
+        {
+            Sheet = Add,
+            SheetText = Items.AddAccount(Items.Tool("claude", "Claude Code"), Items.Tool("codex", "Codex", missing)),
+        });
+        var bar = up.Element<InfoBar>("sheet.missing");
+        Assert.IsFalse(bar.IsOpen, "Claude Code is here");
+
+        up.Element<ComboBox>("sheet.tool").SelectedIndex = 1;
+        await up.Type("sheet.name", "third");
+
+        await Views.Until(() => bar.IsOpen, "the missing CLI was not said");
+        Assert.AreEqual(missing.Title, bar.Title);
+        Assert.IsFalse(up.Sheet.IsPrimaryButtonEnabled, "Sign In to a tool not here");
+        new Microsoft.UI.Xaml.Automation.Peers.HyperlinkButtonAutomationPeer(up.Element<HyperlinkButton>("sheet.missing.link")).Invoke();
+        CollectionAssert.AreEqual(new[] { new Uri(missing.Link) }, up.Opened);
+    }
+
+    // The name field says under itself why what is typed cannot be a name, and a failure goes once it changes.
+    [UITestMethod]
+    public async Task ANameThatCannotBeOneSaysWhyAndAFailureGoesWithAnEdit()
+    {
+        var renaming = Snapshots.Read(1) with { Sheet = new Sheet.Rename("claude", "personal"), SheetText = Items.Rename("personal") };
+        await using var up = await Up.Over(renaming);
+        var field = up.Element<TextBox>("sheet.name");
+
+        await up.Type("sheet.name", "a/b");
+        Assert.AreEqual("A name can’t contain “/”.", field.Description);
+        Assert.IsFalse(up.Sheet.IsPrimaryButtonEnabled);
+
+        var failure = new Failure(7, "Couldn’t rename personal", "work is already the name of another account.", "name_taken", []);
+        up.App.Apply(renaming with { Revision = 2, SheetFailure = failure });
+        await Views.Until(() => up.Element<InfoBar>("sheet.failure").IsOpen, "the failure was not said");
+        await up.Type("sheet.name", "home");
+
+        Assert.IsNull(field.Description);
+        await Views.Until(() => up.Model.Sent.Contains(new Intent.DismissSheetFailure()), "the failure stayed with the name");
+    }
+
     [UITestMethod]
     public async Task TheCodeFieldAppearsOnceTheToolAsksForIt()
     {

@@ -47,6 +47,23 @@ public sealed class SheetPageTests
     }
 
     [TestMethod]
+    public void SignInWaitsForAToolPitboardFoundAndANameThatCanBeOne()
+    {
+        var missing = Items.CodexCliMissing();
+        var form = new SheetPage.Form(
+            Add, Items.AddAccount(Items.Tool("claude", "Claude Code"), Items.Tool("codex", "Codex", missing)), Running: false);
+
+        Assert.AreEqual(missing, form.NotFound("codex"));
+        Assert.IsNull(form.NotFound("claude"));
+        Assert.IsNull(form.Start("codex", "third"), "a tool Pitboard did not find");
+        Assert.IsNull(form.Start("claude", "codex/phu"));
+        Assert.AreEqual("A name can’t contain “/”. Choose the tool above.", form.Problem("codex/phu"));
+        Assert.AreEqual("A name is one word, with no spaces.", form.Problem("my work"));
+        Assert.IsNull(form.Problem(""), "nothing typed is nothing wrong");
+        Assert.AreEqual(new Intent.SignIn("claude", "third"), form.Start("claude", "third"));
+    }
+
+    [TestMethod]
     public void SigningInAgainIsAsTheAccountItself()
     {
         var again = new SheetPage.Form(new Sheet.SignInAgain("claude", "work"), Items.AddAccount() with { Account = "work" }, Running: false);

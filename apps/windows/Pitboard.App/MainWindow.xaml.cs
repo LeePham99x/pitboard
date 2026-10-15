@@ -40,6 +40,14 @@ public sealed partial class MainWindow : Window
             _sheets?.Dispose();
             _alerts?.Dispose();
         };
+        // Back from installing a tool the sheet said Pitboard could not find.
+        Activated += (_, args) =>
+        {
+            if (args.WindowActivationState != WindowActivationState.Deactivated && _model.Sheet is not null)
+            {
+                _model.Send(new Intent.LookForTools());
+            }
+        };
         // VK_OEM_COMMA, which VirtualKey has no name for.
         var settings = new KeyboardAccelerator { Key = (VirtualKey)0xBC, Modifiers = VirtualKeyModifiers.Control };
         settings.Invoked += (_, args) =>

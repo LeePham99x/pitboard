@@ -70,12 +70,13 @@ struct SignInSheet: View {
         let tools = text?.tools ?? []
         let chosen = tools.first { $0.code == provider }
         let busy = text?.saving ?? false
+        let check = checkName(sheet: sheet, typed: name)
         SheetLayout(
             title: text?.title ?? "",
             message: chosen?.message ?? text?.message ?? ""
         ) {
             Section {
-                if !tools.isEmpty {
+                if tools.count > 1 {
                     Picker("Tool", selection: $provider) {
                         ForEach(tools, id: \.code) { tool in
                             Text(tool.name).tag(tool.code)
@@ -98,11 +99,12 @@ struct SignInSheet: View {
                         .controlSize(.small)
                 }
             } footer: {
-                if let missing = text?.notOffered {
-                    // Said rather than left out without a word, which read as Pitboard not
-                    // handling the tool at all.
-                    Text(missing).footnote()
+                if let problem = check.problem {
+                    NameProblem(problem: problem)
                 }
+            }
+            if let missing = chosen?.missing {
+                ToolMissing(missing: missing)
             }
             if let failure = model.sheetFailure {
                 SheetFailure(failure: failure)
@@ -114,16 +116,27 @@ struct SignInSheet: View {
             Button(chosen?.confirm ?? text?.confirm ?? "", action: start)
                 .keyboardShortcut(.defaultAction)
                 .disabled(
-                    nameToSave(sheet: sheet, typed: name) == nil || model.signingIn != nil
+                    check.name == nil || chosen?.missing != nil || model.signingIn != nil
                         || busy)
         }
         .onAppear { nameFocused = text?.account == nil }
+        .onChange(of: name) { edited() }
+        .onChange(of: provider) { edited() }
+        // Back from installing a tool Pitboard said it could not find.
+        .onReceive(
+            NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
+        ) { _ in model.send(.lookForTools) }
         .interactiveDismissDisabled(busy)
     }
 
+    private func edited() {
+        if model.sheetFailure != nil { model.send(.dismissSheetFailure) }
+    }
+
     private func start() {
-        guard let name = nameToSave(sheet: sheet, typed: name), model.signingIn == nil,
-            shown == nil, model.sheetText?.saving != true
+        let chosen = model.sheetText?.tools.first { $0.code == provider }
+        guard let name = checkName(sheet: sheet, typed: name).name, chosen?.missing == nil,
+            model.signingIn == nil, shown == nil, model.sheetText?.saving != true
         else { return }
         model.send(.signIn(provider: provider, name: name))
     }

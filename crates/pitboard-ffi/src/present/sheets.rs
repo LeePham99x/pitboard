@@ -4,34 +4,41 @@
 //! alert.
 
 use super::words;
-use super::{Choice, Question, Seen, SheetText, SheetTool, SigningInText, StowText, alert_of};
+use super::{
+    Choice, Missing, NameCheck, Question, Seen, SheetText, SheetTool, SigningInText, StowText,
+    alert_of,
+};
 use crate::Tool;
 use crate::account_windows::AlertText;
 use crate::model::state::{After, InAppAdd, Leftover, Recording, in_its_app, split, trimmed};
 use crate::model::{Failure, Intent, QuitQuestion, Sheet};
+use pitboard_core::label;
+use pitboard_core::provider::ProviderId;
 use pitboard_core::switch::{Foreseen, WaitStep};
 use pitboard_core::words as said;
 
-/// The name a sheet would save or sign in as, from what was typed in it, or `None` while
-/// there is nothing to save: what was typed without the white space around it, as the Swift
-/// sheets trimmed it with Foundation's `whitespacesAndNewlines`, and not empty. A rename needs
-/// a name it does not already have. Signing in again needs no name typed: it is the
-/// account's own. Putting away a login left in a file saves no name at all.
-///
-/// The model saves by the same rule, so a sheet that offers Save as this says is never
-/// refused for what is in its field. Answers at once from what it is given, so a view asks it
-/// as it is typed in.
+/// The name a sheet would save, trimmed, or why what is typed cannot be one. The model saves by
+/// the same rule, and it answers at once, so a view asks it as it is typed in.
 #[uniffi::export]
-pub fn name_to_save(sheet: Sheet, typed: String) -> Option<String> {
-    if let Sheet::SignInAgain { label, .. } = sheet {
-        return Some(label);
+pub fn check_name(sheet: Sheet, typed: String) -> NameCheck {
+    let saves = |name: Option<&str>| NameCheck {
+        name: name.map(str::to_owned),
+        problem: None,
+    };
+    if let Sheet::SignInAgain { label, .. } = &sheet {
+        return saves(Some(label));
     }
     let name = trimmed(&typed);
     match &sheet {
-        Sheet::Stow => None,
-        _ if name.is_empty() => None,
-        Sheet::Rename { label, .. } if label == name => None,
-        _ => Some(name.to_owned()),
+        Sheet::Stow => saves(None),
+        Sheet::Rename { label, .. } if label == name => saves(None),
+        _ => match label::check(name) {
+            Ok(()) => saves(Some(name)),
+            Err(unusable) => NameCheck {
+                name: None,
+                problem: words::unusable_name(unusable, matches!(sheet, Sheet::Add { .. })),
+            },
+        },
     }
 }
 
@@ -51,51 +58,32 @@ fn sign_in_message(tool: &str, again: Option<&str>) -> String {
 }
 
 /// The tool the sheet for `sheet` starts on: the one it is about, and for a new account
-/// where nothing said which, the first it offers.
-pub(crate) fn starts_on(sheet: &Sheet, addable: &[Tool]) -> String {
+/// where nothing said which, the first Pitboard found.
+pub(crate) fn starts_on(seen: &Seen, sheet: &Sheet) -> String {
     match sheet {
         Sheet::Add { provider } => provider
             .clone()
-            .or_else(|| addable.first().map(|tool| tool.code.clone()))
-            .unwrap_or_else(|| {
-                pitboard_core::provider::ProviderId::Claude
-                    .code()
-                    .to_owned()
-            }),
+            .or_else(|| {
+                (seen.tools.iter())
+                    .find(|tool| missing(seen, &tool.code).is_none())
+                    .or(seen.tools.first())
+                    .map(|tool| tool.code.clone())
+            })
+            .unwrap_or_else(|| ProviderId::Claude.code().to_owned()),
         Sheet::SignInAgain { provider, .. }
         | Sheet::Name { provider, .. }
         | Sheet::Rename { provider, .. } => provider.clone(),
-        Sheet::Stow => pitboard_core::provider::ProviderId::Claude
-            .code()
-            .to_owned(),
+        Sheet::Stow => ProviderId::Claude.code().to_owned(),
     }
 }
 
-/// Why a tool is missing from the sheet for a new account, rather than leaving it out without
-/// a word. `None` when every tool is offered.
-pub(crate) fn not_offered(seen: &Seen, addable: &[Tool]) -> Option<String> {
-    let missing: Vec<&Tool> = seen
-        .tools
-        .iter()
-        .filter(|tool| !addable.contains(tool))
-        .collect();
-    if missing.is_empty() {
+// Unknown until the model has asked which tools are here, and then said only of one not found.
+fn missing(seen: &Seen, tool: &str) -> Option<Missing> {
+    let found = seen.state.installed.as_ref()?;
+    if found.iter().any(|here| here.code == tool) {
         return None;
     }
-    let names: Vec<&str> = missing.iter().map(|tool| tool.name.as_str()).collect();
-    // A tool that signs in inside its app is found by its data folder, not by a program.
-    let programs: Vec<String> = missing
-        .iter()
-        .map(|tool| {
-            if in_its_app(&tool.code) {
-                format!("{}’s data folder", tool.program)
-            } else {
-                tool.program.clone()
-            }
-        })
-        .collect();
-    let programs: Vec<&str> = programs.iter().map(String::as_str).collect();
-    Some(words::not_offered(seen.os, &names, &programs))
+    words::missing(seen.os, tool)
 }
 
 fn nothing_to_park(seen: &Seen, provider: &str) -> bool {
@@ -201,18 +189,29 @@ fn in_app_form(seen: &Seen, sheet: &Sheet, provider: &str) -> (String, String) {
     }
 }
 
-// A tool the sheet's picker offers, with what the sheet says and its button does once picked.
-fn sheet_tool(seen: &Seen, sheet: &Sheet, tool: &Tool) -> SheetTool {
-    let (message, confirm) = if in_its_app(&tool.code) {
-        in_app_form(seen, sheet, &tool.code)
-    } else {
-        (sign_in_message(&tool.name, None), "Sign In".into())
+// What a sign-in sheet says, and its button, with `tool` picked.
+fn form_words(seen: &Seen, sheet: &Sheet, tool: &str) -> (String, String) {
+    if in_its_app(tool) {
+        return in_app_form(seen, sheet, tool);
+    }
+    let again = match sheet {
+        Sheet::SignInAgain { label, .. } => Some(label.as_str()),
+        _ => None,
     };
+    (
+        sign_in_message(&seen.tool_name(tool), again),
+        "Sign In".into(),
+    )
+}
+
+fn sheet_tool(seen: &Seen, sheet: &Sheet, tool: &Tool) -> SheetTool {
+    let (message, confirm) = form_words(seen, sheet, &tool.code);
     SheetTool {
         code: tool.code.clone(),
         name: tool.name.clone(),
         message,
         confirm,
+        missing: missing(seen, &tool.code),
     }
 }
 
@@ -231,20 +230,12 @@ fn progress(seen: &Seen) -> Option<String> {
 pub(crate) fn sheet_text(seen: &Seen) -> Option<SheetText> {
     let state = seen.state;
     let sheet = state.sheet.as_ref()?;
-    let addable = seen.addable();
-    let tool = starts_on(sheet, &addable);
+    let tool = starts_on(seen, sheet);
     let saving = state.saving.contains(sheet);
     let progress = progress(seen);
     let text = match sheet {
         Sheet::Add { .. } => {
-            let (message, confirm) = if in_its_app(&tool) {
-                in_app_form(seen, sheet, &tool)
-            } else {
-                (
-                    sign_in_message(&seen.tool_name(&tool), None),
-                    "Sign In".into(),
-                )
-            };
+            let (message, confirm) = form_words(seen, sheet, &tool);
             // An add left halfway is finished under the name it was started with.
             let name = state
                 .status
@@ -260,42 +251,31 @@ pub(crate) fn sheet_text(seen: &Seen) -> Option<SheetText> {
             SheetText {
                 title: "Add Account".into(),
                 message,
-                tools: if addable.len() > 1 {
-                    addable
-                        .iter()
-                        .map(|offered| sheet_tool(seen, sheet, offered))
-                        .collect()
-                } else {
-                    Vec::new()
-                },
+                tools: (seen.tools.iter())
+                    .map(|offered| sheet_tool(seen, sheet, offered))
+                    .collect(),
                 tool,
                 account: None,
                 name,
                 prompt: "work".into(),
-                not_offered: not_offered(seen, &addable),
                 confirm,
                 saving,
                 progress,
             }
         }
         Sheet::SignInAgain { label, .. } => {
-            let (message, confirm) = if in_its_app(&tool) {
-                in_app_form(seen, sheet, &tool)
-            } else {
-                (
-                    sign_in_message(&seen.tool_name(&tool), Some(label)),
-                    "Sign In".into(),
-                )
-            };
+            let (message, confirm) = form_words(seen, sheet, &tool);
             SheetText {
                 title: format!("Sign In to {label} Again"),
                 message,
-                tools: Vec::new(),
+                tools: (seen.tools.iter())
+                    .filter(|own| own.code == tool)
+                    .map(|own| sheet_tool(seen, sheet, own))
+                    .collect(),
                 tool,
                 account: Some(label.clone()),
                 name: label.clone(),
                 prompt: "work".into(),
-                not_offered: None,
                 confirm,
                 saving,
                 progress,
@@ -313,7 +293,6 @@ pub(crate) fn sheet_text(seen: &Seen) -> Option<SheetText> {
             account: None,
             name: String::new(),
             prompt: "work".into(),
-            not_offered: None,
             confirm: "Save".into(),
             saving,
             progress: None,
@@ -328,7 +307,6 @@ pub(crate) fn sheet_text(seen: &Seen) -> Option<SheetText> {
             account: None,
             name: label.clone(),
             prompt: label.clone(),
-            not_offered: None,
             confirm: "Rename".into(),
             saving,
             progress: None,
@@ -576,48 +554,65 @@ mod tests {
         }
     }
 
-    /// A name is saved without the white space around it, and Save waits for there to be a
-    /// name: in a rename, one the account does not already have.
-    ///
-    /// NameSheets.swift's Save and Rename buttons, and SignInSheet.swift's Sign In, which the
-    /// Swift tested nowhere.
+    fn saved(sheet: Sheet, typed: &str) -> Option<String> {
+        check_name(sheet, typed.into()).name
+    }
+
+    fn problem(sheet: Sheet, typed: &str) -> Option<String> {
+        check_name(sheet, typed.into()).problem
+    }
+
+    // Save waits for a name, trimmed: in a rename, one the account does not already have.
     #[test]
     fn a_name_is_saved_trimmed_and_only_once_there_is_one() {
         let name = Sheet::Name {
             provider: "claude".into(),
             email: "a@example.com".into(),
         };
+        assert_eq!(saved(name.clone(), "  work\n").as_deref(), Some("work"));
+        assert_eq!(saved(name.clone(), " \t\u{200b}"), None);
+        assert_eq!(saved(name.clone(), ""), None);
+        assert_eq!(problem(name, ""), None, "nothing typed is nothing wrong");
+        assert_eq!(saved(rename("work"), " work "), None, "unchanged");
+        assert_eq!(problem(rename("work"), " work "), None);
+        assert_eq!(saved(rename("work"), "home ").as_deref(), Some("home"));
         assert_eq!(
-            name_to_save(name.clone(), "  work\n".into()).as_deref(),
-            Some("work")
-        );
-        assert_eq!(name_to_save(name.clone(), " \t\u{200b}".into()), None);
-        assert_eq!(name_to_save(name, String::new()), None);
-        assert_eq!(
-            name_to_save(rename("work"), " work ".into()),
-            None,
-            "unchanged"
-        );
-        assert_eq!(
-            name_to_save(rename("work"), "home ".into()).as_deref(),
-            Some("home")
-        );
-        assert_eq!(
-            name_to_save(Sheet::Add { provider: None }, " travel".into()).as_deref(),
+            saved(Sheet::Add { provider: None }, " travel").as_deref(),
             Some("travel")
         );
+        let again = Sheet::SignInAgain {
+            provider: "codex".into(),
+            label: "my work".into(),
+        };
         assert_eq!(
-            name_to_save(
-                Sheet::SignInAgain {
-                    provider: "codex".into(),
-                    label: "work".into()
-                },
-                String::new()
-            )
-            .as_deref(),
-            Some("work"),
-            "the account's own name"
+            saved(again, "").as_deref(),
+            Some("my work"),
+            "the account's own name, whatever a new one may be"
         );
+    }
+
+    // The tool is picked apart from the name, so a name naming one again is refused as typed,
+    // and not where the core would read it as `codex/codex/phu`.
+    #[test]
+    fn a_name_that_cannot_be_one_says_why_as_it_is_typed() {
+        let add = || Sheet::Add {
+            provider: Some("codex".into()),
+        };
+        assert_eq!(saved(add(), "codex/phu"), None);
+        assert_eq!(
+            problem(add(), "codex/phu").as_deref(),
+            Some("A name can’t contain “/”. Choose the tool above.")
+        );
+        assert_eq!(
+            problem(rename("work"), "a/b").as_deref(),
+            Some("A name can’t contain “/”.")
+        );
+        assert_eq!(saved(add(), "my work"), None);
+        assert_eq!(
+            problem(add(), "my work").as_deref(),
+            Some("A name is one word, with no spaces.")
+        );
+        assert_eq!(problem(add(), "phu"), None);
     }
 
     use crate::Account;
@@ -686,31 +681,6 @@ mod tests {
     }
 
     #[test]
-    fn claude_desktop_not_offered_names_its_data_folder() {
-        let state = read(status(Vec::new(), Vec::new()), vec![claude_code()]);
-        let seen = Seen::new(&state, 0, &Utc, Os::MacOs);
-        assert_eq!(
-            not_offered(&seen, &seen.addable()).as_deref(),
-            Some(
-                "Codex and Claude Desktop are not offered: Pitboard did not find codex or \
-                 Claude’s data folder on this Mac."
-            )
-        );
-        let state = read(
-            status(Vec::new(), Vec::new()),
-            vec![claude_code(), crate::present::testing::codex()],
-        );
-        let seen = Seen::new(&state, 0, &Utc, Os::MacOs);
-        assert_eq!(
-            not_offered(&seen, &seen.addable()).as_deref(),
-            Some(
-                "Claude Desktop is not offered: Pitboard did not find Claude’s data folder on \
-                 this Mac."
-            )
-        );
-    }
-
-    #[test]
     fn each_tool_in_the_add_sheet_names_its_own_button() {
         let mut accounts = work_and_home();
         accounts.push(
@@ -724,7 +694,11 @@ mod tests {
                 .iter()
                 .map(|tool| (tool.code.as_str(), tool.confirm.as_str()))
                 .collect::<Vec<_>>(),
-            [("claude", "Sign In"), ("desktop", "Park work")]
+            [
+                ("claude", "Sign In"),
+                ("codex", "Sign In"),
+                ("desktop", "Park work")
+            ]
         );
         assert_eq!(text.confirm, "Sign In", "it starts on Claude Code");
     }

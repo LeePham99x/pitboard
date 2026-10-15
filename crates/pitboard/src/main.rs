@@ -233,9 +233,6 @@ fn label_to_enroll(text: &str) -> Result<String, String> {
 }
 
 fn new_label(text: &str) -> Result<String, String> {
-    if text.is_empty() || text.chars().any(|c| c.is_whitespace() || c.is_control()) {
-        return Err("a label must be one word, such as `personal` or `work`".into());
-    }
     pitboard_core::label::choose(text)?;
     Ok(text.to_string())
 }

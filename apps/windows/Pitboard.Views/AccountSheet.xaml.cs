@@ -82,14 +82,14 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
         var signingIn = page as SheetPage.SigningIn;
         var stowing = page as SheetPage.Stowing;
         var asked = signingIn is { SignIn.WantsCode: true } && CodePart.Visibility == Visibility.Collapsed;
-        ToolPicker.Visibility = Look.Shown(form is { Text.Tools.Length: > 0 });
+        ToolPicker.Visibility = Look.Shown(form is { Text.Tools.Length: > 1 });
         AccountField.Visibility = Look.Shown(form is { Text.Account: not null });
         NameField.Visibility = Look.Shown(page is SheetPage.Naming || form is { Text.Account: null });
         Working.Visibility = Look.Shown((form?.Text.Progress ?? stowing?.Text.Looking) is not null);
         Lines.Visibility = Look.Shown(stowing is { Text.Lines.Length: > 0 });
         Link.Visibility = Look.Shown(signingIn is { Text.OffersLink: true });
         CodePart.Visibility = Look.Shown(signingIn is { SignIn.WantsCode: true });
-        NotOffered.Visibility = Look.Shown(form is { Text.NotOffered: not null });
+        MissingBar.Visibility = Look.Shown(form is not null);
         Waiting.IsActive = signingIn is not null;
         Waiting.Visibility = Look.Shown(signingIn is not null);
         if (form is not null)
@@ -159,7 +159,8 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
         NameField.PlaceholderText = text.Prompt;
         NameField.IsEnabled = !text.Saving;
         WorkingText.Text = text.Progress ?? "";
-        NotOffered.Text = text.NotOffered ?? "";
+        NameField.Description = form.Problem(NameField.Text);
+        ShowMissing(form.NotFound(_tool));
         Message.Text = form.Message(_tool);
         PrimaryButtonText = form.Confirm(_tool);
         SecondaryButtonText = "";
@@ -178,6 +179,7 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
         Message.Text = text.Message;
         NameField.PlaceholderText = text.Prompt;
         NameField.IsEnabled = !text.Saving;
+        NameField.Description = naming.Problem(NameField.Text);
         PrimaryButtonText = text.Confirm;
         SecondaryButtonText = "";
         DefaultButton = ContentDialogButton.Primary;
@@ -222,6 +224,21 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
         PrimaryButtonText = text.Confirm;
         SecondaryButtonText = "";
         DefaultButton = ContentDialogButton.Primary;
+    }
+
+    // Where Pitboard did not find the tool picked: what it needs, and where to read how to get it.
+    private void ShowMissing(Missing? missing)
+    {
+        MissingBar.IsOpen = missing is not null;
+        MissingBar.Margin = new Thickness(0, missing is null ? 0 : 12, 0, 0);
+        if (missing is null)
+        {
+            return;
+        }
+
+        MissingBar.Title = missing.Title;
+        MissingBar.Message = missing.Detail;
+        MissingLink.Content = missing.LinkTitle;
     }
 
     // The InfoBar announces itself as it opens; a failure after another, with the bar already open, is said here.
@@ -286,14 +303,49 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
     {
         if (ToolPicker.SelectedItem is ComboBoxItem { Tag: string tool } && _page is SheetPage.Form form)
         {
+            // The picker is filled again when what is found changes, which picks the same tool.
+            if (tool != _tool)
+            {
+                Edited();
+            }
+
             _tool = tool;
             Message.Text = form.Message(tool);
             PrimaryButtonText = form.Confirm(tool);
+            ShowMissing(form.NotFound(tool));
             Enable();
         }
     }
 
-    private void OnNameChanged(object sender, TextChangedEventArgs args) => Enable();
+    private void OnNameChanged(object sender, TextChangedEventArgs args)
+    {
+        NameField.Description = _page switch
+        {
+            SheetPage.Form form => form.Problem(NameField.Text),
+            SheetPage.Naming naming => naming.Problem(NameField.Text),
+            _ => null,
+        };
+        Edited();
+        Enable();
+    }
+
+    // What went wrong was about the name and tool it was asked with.
+    private void Edited()
+    {
+        if (_model.SheetFailure is not null)
+        {
+            _model.Send(new Intent.DismissSheetFailure());
+        }
+    }
+
+    private void OnMissingLink(object sender, RoutedEventArgs args)
+    {
+        if (_page is SheetPage.Form form && form.NotFound(_tool) is { } missing
+            && Uri.TryCreate(missing.Link, UriKind.Absolute, out var page))
+        {
+            _open(page);
+        }
+    }
 
     private void OnCodeChanged(object sender, TextChangedEventArgs args) => Enable();
 

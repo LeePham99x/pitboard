@@ -597,8 +597,6 @@ impl SignInSession {
 /// asking the person's login shell, which takes up to five seconds.
 pub(crate) struct Made {
     pub(crate) core: service::Pitboard,
-    /// The tools a program was named or found for, which is what `installed` answers.
-    pub(crate) found: Vec<ProviderId>,
     /// The login shell's `PATH` as far as it was looked in, where the `pitboard` a terminal
     /// runs is looked for first.
     pub(crate) search_path: Option<String>,
@@ -619,7 +617,6 @@ impl Made {
         Made {
             helper: found.context.schedule_program().map(Path::to_path_buf),
             command_line_places: found.command_line_places,
-            found: found.found,
             search_path: found.search_path,
             core: service::Pitboard::new(found.context),
         }
@@ -859,16 +856,15 @@ impl AppCore {
         ))
     }
 
-    /// The tools whose program was named or found, in the order a listing shows them. A
-    /// tool missing here may still be on some `PATH`, so this narrows what is offered and
-    /// never forbids anything. May ask the login shell again. None where nothing may be read
-    /// here, where nothing could be enrolled either.
+    // Looked for each time it is asked, so a tool installed since the app started is found.
+    // None where nothing may be read here, where nothing could be enrolled either.
     pub(crate) fn installed(&self) -> Vec<Tool> {
         let Ok(made) = self.readable_asking_again() else {
             return Vec::new();
         };
+        let here = made.core.installed();
         crate::listed(pitboard_core::host::OS)
-            .filter(|tool| made.found.contains(tool))
+            .filter(|tool| here.contains(tool))
             .map(tool)
             .collect()
     }
@@ -1236,9 +1232,12 @@ mod tests {
     use crate::tools;
     use pitboard_core::context::Context;
 
-    // A core over a home that is no folder on macOS and Linux, and one nothing makes on Windows.
+    // A core over a home that is no folder on macOS and Linux, and one nothing makes on Windows,
+    // which finds only the `codex` it is given.
     fn made(codex: Option<&str>, helper: Option<&Path>) -> Made {
-        let mut ctx = Context::new(nowhere()).with_caller("app".into());
+        let mut ctx = Context::new(nowhere())
+            .with_search_path(String::new())
+            .with_caller("app".into());
         if let Some(codex) = codex {
             ctx = ctx.with_codex_program(PathBuf::from(codex));
         }
@@ -1246,12 +1245,25 @@ mod tests {
             ctx = ctx.with_schedule_program(helper.to_path_buf());
         }
         Made {
-            found: codex.map(|_| ProviderId::Codex).into_iter().collect(),
             search_path: None,
             helper: helper.map(Path::to_path_buf),
             command_line_places: pitboard_core::app::command_line_places(&nowhere()),
             core: service::Pitboard::new(ctx),
         }
+    }
+
+    // A `codex` there to be found, which refuses to run.
+    fn codex_at(test: &str) -> String {
+        use pitboard_core::testing::stand_in::{self, Script};
+        let dir = std::env::temp_dir().join(format!("pitboard-ffi-{test}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a scratch folder");
+        let program = dir.join(if cfg!(windows) { "codex.exe" } else { "codex" });
+        stand_in::install(
+            &program,
+            &Script::refusing("a test's codex, never meant to run\n"),
+        )
+        .expect("a codex");
+        program.to_string_lossy().into_owned()
     }
 
     // `/dev/null` is no folder, and Windows has none like it, so there a folder nothing makes.
@@ -1480,7 +1492,7 @@ mod tests {
             let given = pitboard.clone();
             let core = AppCore::asking(
                 move || {
-                    let mut made = made(Some("/nowhere/codex"), None);
+                    let mut made = made(None, None);
                     let ctx = Context::new(PathBuf::clone(&home))
                         .with_pitboard_home(given.clone())
                         .with_caller("app".into())
@@ -1555,13 +1567,14 @@ mod tests {
     #[test]
     fn the_core_is_made_once_when_it_is_first_needed() {
         let asks = Asks::default();
+        let codex = codex_at("made-once");
         let core = Arc::new(AppCore::asking(
             {
                 let asks = asks.clone();
                 move || {
                     asks.note();
                     std::thread::sleep(Duration::from_millis(100));
-                    (made(Some("/nowhere/codex"), None), false)
+                    (made(Some(&codex), None), false)
                 }
             },
             ASK_AGAIN_AFTER,
@@ -1603,12 +1616,13 @@ mod tests {
     #[test]
     fn a_login_shell_too_slow_to_answer_is_asked_once_more_later() {
         let asks = Asks::default();
+        let codex = codex_at("too-slow");
         let mut core = AppCore::asking(
             {
                 let asks = asks.clone();
                 move || match asks.note() {
                     1 => (made(None, None), true),
-                    _ => (made(Some("/nowhere/codex"), None), false),
+                    _ => (made(Some(&codex), None), false),
                 }
             },
             Duration::from_secs(3600),
@@ -1665,12 +1679,13 @@ mod tests {
         assert_eq!(answered.count(), 1);
 
         let late = Asks::default();
+        let codex = codex_at("late-again");
         let again = AppCore::asking(
             {
                 let late = late.clone();
                 move || match late.note() {
                     1 => (made(None, None), true),
-                    _ => (made(Some("/nowhere/codex"), None), true),
+                    _ => (made(Some(&codex), None), true),
                 }
             },
             Duration::ZERO,
@@ -1683,8 +1698,8 @@ mod tests {
 
     /// The app's core reads the environment it was started with as the command line reads its
     /// own, and asks the login shell that environment names. A shell that cannot be run is no
-    /// answer, so nothing is said to be on its `PATH`, and a program named outright counts as
-    /// found. A custom OAuth endpoint refuses a change to a Claude Code account, and an app
+    /// answer, so nothing is said to be on its `PATH`, and a program named outright is found
+    /// where it is. A custom OAuth endpoint refuses a change to a Claude Code account, and an app
     /// outside a bundle has no command line to schedule.
     #[test]
     fn the_apps_core_is_made_from_the_environment_it_was_started_with() {
@@ -1694,6 +1709,7 @@ mod tests {
         std::fs::create_dir_all(&home).expect("a scratch home");
         let at = |name: &str| home.join(name).to_string_lossy().into_owned();
         let (pitboard, claude, codex) = (at("pitboard"), at("claude"), at("codex"));
+        let program = codex_at("environment");
         let core = AppCore::for_app(
             environment(
                 &at(""),
@@ -1701,7 +1717,7 @@ mod tests {
                     ("PITBOARD_HOME", &pitboard),
                     ("CLAUDE_CONFIG_DIR", &claude),
                     ("CODEX_HOME", &codex),
-                    ("PITBOARD_CODEX", "/nowhere/codex"),
+                    ("PITBOARD_CODEX", &program),
                     ("CLAUDE_CODE_CUSTOM_OAUTH_URL", "https://oauth.example"),
                 ],
             ),

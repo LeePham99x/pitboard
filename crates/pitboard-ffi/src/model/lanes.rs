@@ -1594,7 +1594,6 @@ mod tests {
                                 .with_search_path(String::new())
                                 .with_caller("app".into()),
                         ),
-                        found: Vec::new(),
                         search_path: search_path.clone(),
                         helper: helper.clone(),
                         command_line_places: pitboard_core::app::command_line_places(&home),

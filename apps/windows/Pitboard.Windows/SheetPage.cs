@@ -62,9 +62,14 @@ public abstract record SheetPage
 
         public string Confirm(string tool) => Chosen(tool)?.Confirm ?? Text.Confirm;
 
+        // Null where Pitboard found the tool.
+        public Missing? NotFound(string tool) => Chosen(tool)?.Missing;
+
+        public string? Problem(string typed) => PitboardFfiMethods.CheckName(Sheet, typed).Problem;
+
         // Null while Sign In cannot be pressed.
         public Intent? Start(string tool, string typed) =>
-            !Text.Saving && !Running && PitboardFfiMethods.NameToSave(Sheet, typed) is { } name
+            !Text.Saving && !Running && NotFound(tool) is null && PitboardFfiMethods.CheckName(Sheet, typed).Name is { } name
                 ? new Intent.SignIn(tool, name)
                 : null;
 
@@ -75,8 +80,10 @@ public abstract record SheetPage
     {
         public override bool Closable => !Text.Saving;
 
+        public string? Problem(string typed) => PitboardFfiMethods.CheckName(Sheet, typed).Problem;
+
         public Intent? Save(string typed) =>
-            (Text.Saving ? null : PitboardFfiMethods.NameToSave(Sheet, typed), Sheet) switch
+            (Text.Saving ? null : PitboardFfiMethods.CheckName(Sheet, typed).Name, Sheet) switch
             {
                 ({ } name, Sheet.Name named) => new Intent.Enrol(named.Provider, name),
                 ({ } name, Sheet.Rename renamed) => new Intent.Rename(renamed.Provider, renamed.Label, name),

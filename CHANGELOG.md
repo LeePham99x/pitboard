@@ -7,6 +7,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** The public API of `pitboard-core` changes; [its
+  documentation](https://docs.rs/pitboard-core/0.15.0/pitboard_core/) shows the new one.
+- **Add Account** offers every tool Pitboard handles, and says under a tool it cannot find what
+  to install, with a link, instead of failing once you click **Sign In**.
+- The app looks for Claude Code and Codex each time **Add Account** or **Sign In Again** opens
+  and when Pitboard comes to the front, so a tool installed while it runs is found.
+
 ### Security
 
 - Pitboard's HTTPS uses rustls 0.23.46, which fixes RUSTSEC-2026-0346, -0347, -0348 and -0349.
@@ -19,6 +28,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `PITBOARD_HOME` names, instead of always `~/.pitboard`.
 - `pitboard uninstall` keeps Pitboard's directory while a warm-up runs in it, as `warming_up` in
   `--json`, and names what it could not remove, as `home_kept_by`.
+- The app refuses a name with a space or a `/` as you enter it, as the command line does, instead
+  of enrolling `my work` or failing on `codex/codex/work`.
+- A failure in an account dialog goes once you change the name or the tool.
 
 ## [0.14.0] - 2026-10-14
 

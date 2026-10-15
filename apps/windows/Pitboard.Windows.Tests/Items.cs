@@ -40,19 +40,24 @@ internal static class Items
     public static AccountSection Section(string provider, string? heading, params AccountItem[] accounts) =>
         new(Id: provider, Heading: heading, Accounts: accounts);
 
-    public static SheetTool Tool(string code, string name) =>
-        new(Code: code, Name: name, Message: $"Pitboard opens {name}’s own sign-in in your browser.", Confirm: "Sign In");
+    public static SheetTool Tool(string code, string name, Missing? missing = null) =>
+        new(Code: code, Name: name, Message: $"Pitboard opens {name}’s own sign-in in your browser.", Confirm: "Sign In", Missing: missing);
+
+    public static Missing CodexCliMissing() =>
+        new(
+            Title: "Pitboard can’t find the Codex CLI on this PC.",
+            Detail: "Adding a Codex account runs the Codex CLI’s own sign-in. Pitboard doesn’t use the copy inside the ChatGPT app. Install the CLI, then come back to this window.",
+            LinkTitle: "How to Install the Codex CLI", Link: "https://developers.openai.com/codex/cli");
 
     public static SheetText AddAccount(params SheetTool[] tools) =>
         new(
             Title: "Add Account", Message: "Pitboard opens Claude Code’s own sign-in in your browser.", Tools: tools,
-            Tool: "claude", Account: null, Name: "", Prompt: "work", NotOffered: null, Confirm: "Sign In", Saving: false,
-            Progress: null);
+            Tool: "claude", Account: null, Name: "", Prompt: "work", Confirm: "Sign In", Saving: false, Progress: null);
 
     public static SheetText Rename(string label) =>
         new(
             Title: $"Rename “{label}”", Message: "The account keeps its parked login.", Tools: [], Tool: "claude",
-            Account: null, Name: label, Prompt: label, NotOffered: null, Confirm: "Rename", Saving: false, Progress: null);
+            Account: null, Name: label, Prompt: label, Confirm: "Rename", Saving: false, Progress: null);
 
     public static RunningSignIn Running(string provider, string? url = null, bool wantsCode = false) =>
         new(Id: 1, Provider: provider, Name: "third", Said: "", Url: url, WantsCode: wantsCode, CodeRefused: false);

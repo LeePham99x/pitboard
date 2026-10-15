@@ -40,15 +40,19 @@ Old numbers carry their age and often a reason, as in `measured 14:02, 3m ago ·
 
 With no reason, Pitboard asked moments ago, and [waits](/concepts/usage#how-often-pitboard-asks) 3 minutes for a five-hour limit. `pitboard status --fresh`, or **Refresh** in the app, asks anyway.
 
-## Pitboard cannot find Claude Code
+## Pitboard cannot find a tool
+
+The command line says:
 
 ```text
 error: `claude` is not on this machine, and Pitboard signs in with Claude Code's own sign-in. Install Claude Code, or point Pitboard at it.
 ```
 
-Install Claude Code. If it is installed, add its folder to your `PATH`, or set `PITBOARD_CLAUDE` to its path.
+The app's **Add Account** dialog says **Pitboard can't find Claude Code on this Mac.** or **Pitboard can't find the Codex CLI on this Mac.**, links to how to install it, and dims **Sign In**.
 
-The app looks for `claude` on your login shell's `PATH`, then in `~/.local/bin`, `/opt/homebrew/bin` and `/usr/local/bin`. It looks when it opens, and again a minute later if the shell took over 5 seconds to answer. It sees `PITBOARD_CLAUDE` only when `launchctl setenv` set it. After you install Claude Code, quit Pitboard and open it again.
+Install the tool. For Codex, install OpenAI's Codex CLI: Pitboard does not use the copy inside the ChatGPT app. If the tool is installed, add its folder to your `PATH`, or set `PITBOARD_CLAUDE` or `PITBOARD_CODEX` to its path.
+
+The app looks for `claude` and `codex` on your login shell's `PATH`, then in `~/.local/bin`, `/opt/homebrew/bin` and `/usr/local/bin`. It looks each time the dialog opens and each time Pitboard comes to the front, so return to the dialog after you install. It sees `PITBOARD_CLAUDE` and `PITBOARD_CODEX` only when `launchctl setenv` set them.
 
 ## Daily renewal stopped working
 

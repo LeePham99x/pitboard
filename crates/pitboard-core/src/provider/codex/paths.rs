@@ -38,7 +38,9 @@ pub(crate) fn auth_file(ctx: &Context) -> PathBuf {
 /// Where Codex's installers put `codex`, in the order an app looks there after the login
 /// shell's `PATH`: the link its standalone installer makes in `~/.local/bin`, then where the
 /// system's package managers put it, which is where its Homebrew cask and a global npm
-/// install go (`codex_install_places` in the register).
+/// install go (`codex_install_places` in the register). The copy inside the ChatGPT app is
+/// not one: OpenAI documents no use of it, and in ChatGPT 26.1007.71326 it was a 0.162.0
+/// alpha for Apple silicon alone.
 pub(crate) fn install_places(home: &Path) -> Vec<PathBuf> {
     std::iter::once(home.join(".local/bin"))
         .chain(crate::host::OS.package_bins().iter().map(PathBuf::from))
