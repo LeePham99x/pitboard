@@ -55,6 +55,33 @@ public sealed partial class LifecycleTests
         Assert.IsFalse(launched.Process.WaitForExit(TimeSpan.FromSeconds(3)), "Pitboard quit with its window");
     }
 
+    [TestMethod]
+    public void ASecondLaunchOpensTheWindowAgain()
+    {
+        using var launched = Launched.Start(Builds.Debug, fixture: "firstLaunch");
+        var window = launched.Window("Pitboard");
+        window.Close();
+        Assert.IsTrue(Retry.WhileTrue(() => window.IsAvailable, TimeSpan.FromSeconds(10)).Result, "the window stayed open");
+
+        launched.OpenWindow();
+    }
+
+    // As a double click on Pitboard's shortcut can: the copy that holds the key opens its window for the other,
+    // whose launch reaches it while it starts. noClaudeCode opens no window by itself.
+    [TestMethod]
+    public void TwoLaunchesAtOnceOpenOneWindow()
+    {
+        using var launched = Launched.Start(Builds.Debug, fixture: "noClaudeCode");
+        using var again = launched.Again();
+
+        var either = Retry.WhileFalse(
+            () => launched.Process.HasExited || again.Process.HasExited, TimeSpan.FromSeconds(60)).Result;
+        Assert.IsTrue(either, "neither copy handed its launch to the other");
+        var (gone, stays) = launched.Process.HasExited ? (launched, again) : (again, launched);
+        Assert.IsTrue(gone.HandedOver(out var why), why);
+        stays.Window("Pitboard");
+    }
+
     [LibraryImport("user32.dll")]
     private static partial nint GetForegroundWindow();
 }

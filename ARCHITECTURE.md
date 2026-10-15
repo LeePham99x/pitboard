@@ -3389,7 +3389,12 @@ Microsoft's documentation.
   Debug build and a Release in other folders never meet, and the fixture's folder in a Debug
   build's key keeps two fixtures of one build apart. `RedirectActivationToAsync` queues the
   launch for the running copy from a background thread and calls `AllowSetForegroundWindow`
-  for it, so the running copy may bring its window forward.
+  for it, so the running copy may bring its window forward. The running copy raises
+  `Activated` for it once, on a thread pool thread, to the handlers connected then, and only
+  then lets the second copy quit (`ProcessRedirectionRequests`). So `Program` connects its
+  handler before it takes the key, and `Handovers` keeps a launch that arrives before the
+  window can open: connected after, a launch handed over while the first copy started was lost
+  without a word from either copy (run 38789385677).
 - Rust's `std::env::temp_dir` (Rust 1.98.1, `library/std/src/sys/paths/windows.rs`) and
   .NET's `Path.GetTempPath` (dotnet/runtime v10.0.13, `Path.Windows.cs`) both ask
   `GetTempPath2W`, .NET falling back to `GetTempPathW` where it is missing. So the app finds

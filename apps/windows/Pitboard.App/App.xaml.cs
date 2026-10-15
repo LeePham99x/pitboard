@@ -12,6 +12,7 @@ namespace Pitboard.App;
 public partial class App : Application
 {
     private readonly AppStart _start;
+    private readonly Handovers _handovers;
     private readonly WindowRequests _requests = new();
     private readonly NoUpdates _updates = new();
     private readonly string _version = SettingsPage.Version(typeof(App).Assembly);
@@ -23,9 +24,10 @@ public partial class App : Application
     private MenuHost? _menu;
     private MainWindow? _window;
 
-    public App(AppStart start)
+    public App(AppStart start, Handovers handovers)
     {
         _start = start;
+        _handovers = handovers;
 #if DEBUG
         // Unhandled, it fails Pitboard fast with 0xC000027B: the UI tests read why from here, in WinUI's own
         // words too, with any theme resource it could not find.
@@ -63,15 +65,10 @@ public partial class App : Application
         {
             model.Send(launchedBy);
         }
-    }
 
-    // A second launch, which brings the window forward.
-    public void Reopened()
-    {
-#if DEBUG
-        Console.Error.WriteLine($"Reopened, with the model {(_model is null ? "not yet made" : "made")}");
-#endif
-        ShowWindow();
+        // A second launch brings the window forward. Handed over on a thread of its own.
+        var queue = DispatcherQueue.GetForCurrentThread();
+        _handovers.Ready(() => queue.TryEnqueue(ShowWindow));
     }
 
     private AppModel? Model(DispatcherQueue queue, Notifications notifications)

@@ -23,13 +23,15 @@ internal sealed class Launched : IDisposable
     private readonly DirectoryInfo _root;
     private readonly string _exe;
     private readonly string? _fixture;
+    private readonly bool _ownsHomes;
     private readonly StringBuilder _said = new();
 
-    private Launched(DirectoryInfo root, string exe, string? fixture, Dictionary<string, string> homes)
+    private Launched(DirectoryInfo root, string exe, string? fixture, Dictionary<string, string> homes, bool ownsHomes)
     {
         _root = root;
         _exe = exe;
         _fixture = fixture;
+        _ownsHomes = ownsHomes;
         HomeFolders = homes;
         var start = StartInfo();
         start.RedirectStandardError = true;
@@ -61,32 +63,37 @@ internal sealed class Launched : IDisposable
     {
         var root = Directory.CreateTempSubdirectory("pitboard-ui-");
         var homes = Homes.ToDictionary(home => home, home => root.CreateSubdirectory(home).FullName);
-        return new Launched(root, exe, fixture, homes);
+        return new Launched(root, exe, fixture, homes, ownsHomes: true);
     }
 
-    // A second launch in the same homes, as from Start, which the running copy answers with its window.
+    // Launched again now, in the same homes, as from Start.
+    public Launched Again() => new(_root, _exe, _fixture, HomeFolders, ownsHomes: false);
+
+    // A second launch once Pitboard runs, as from Start, which the running copy answers with its window.
     public Window OpenWindow()
     {
-        var start = StartInfo();
-        start.RedirectStandardError = true;
-        using var again = Process.Start(start)!;
-        var said = again.StandardError.ReadToEndAsync();
-        if (!again.WaitForExit(Patience))
+        if (!Retry.WhileFalse(() => NotificationArea.HiddenWindows(Process).Any(), Patience, TimeSpan.FromMilliseconds(250)).Result)
         {
-            again.Kill();
-            throw new AssertFailedException($"a second launch did not hand over to the first within {Patience}");
+            throw new AssertFailedException($"Pitboard did not start within {Patience}: {State()}");
         }
 
-        var handedOver = $"the second launch exited 0x{again.ExitCode:X8}, saying: {said.Result.Trim()}";
-        Assert.AreEqual(0, again.ExitCode, handedOver);
-        try
+        using (var again = Again())
         {
-            return Window("Pitboard");
+            if (!again.HandedOver(out var why))
+            {
+                throw new AssertFailedException($"a second launch did not hand over to the first: {why}");
+            }
         }
-        catch (AssertFailedException missing)
-        {
-            throw new AssertFailedException($"{missing.Message}; {handedOver}");
-        }
+
+        return Window("Pitboard");
+    }
+
+    // Quit without a window, exit code 0, as a copy that hands its launch to a running one does.
+    public bool HandedOver(out string why)
+    {
+        var quit = Process.WaitForExit(Patience);
+        why = quit ? State() : $"it went on running after {Patience}";
+        return quit && Process.ExitCode == 0;
     }
 
     public Window Window(string title)
@@ -99,7 +106,7 @@ internal sealed class Launched : IDisposable
     }
 
     // A WinUI app that fails fast exits 0xC000027B and leaves only what it wrote to its standard error.
-    private string State()
+    public string State()
     {
         string state;
         if (Process.HasExited)
@@ -220,6 +227,9 @@ internal sealed class Launched : IDisposable
 
         Process.Dispose();
         Automation.Dispose();
-        _root.Delete(recursive: true);
+        if (_ownsHomes)
+        {
+            _root.Delete(recursive: true);
+        }
     }
 }

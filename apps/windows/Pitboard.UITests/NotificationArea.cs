@@ -90,12 +90,21 @@ internal static partial class NotificationArea
     // Asks Pitboard to end as taskkill without /f does, through its hidden window, so it takes its icon with it.
     public static void AskToEnd(Process process)
     {
+        foreach (var window in HiddenWindows(process))
+        {
+            PostMessage(window, 0x0010, 0, 0);
+        }
+    }
+
+    // Made as Pitboard starts, before it can show a window.
+    public static IEnumerable<nint> HiddenWindows(Process process)
+    {
         for (var window = FindWindowEx(0, 0, "Pitboard.HiddenWindow", null); window != 0;
              window = FindWindowEx(0, window, "Pitboard.HiddenWindow", null))
         {
             if (GetWindowThreadProcessId(window, out var owner) != 0 && owner == (uint)process.Id)
             {
-                PostMessage(window, 0x0010, 0, 0);
+                yield return window;
             }
         }
     }

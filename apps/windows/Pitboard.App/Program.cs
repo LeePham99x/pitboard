@@ -36,6 +36,15 @@ public static class Program
         var fixtureFolder = fixture is null ? null : Path.Combine(Path.GetTempPath(), "pitboard-fixture");
         ReadFailure? refusal = null;
         AppInstance? running = null;
+        var handovers = new Handovers();
+        // Connected before the key is held: a launch handed over while Pitboard starts would reach no handler.
+        AppInstance.GetCurrent().Activated += (_, _) =>
+        {
+#if DEBUG
+            Console.Error.WriteLine("A second launch handed over");
+#endif
+            handovers.Arrived();
+        };
         var start = Launching.Decide(
             args,
             () => refusal = PitboardFfiMethods.LaunchRefusal(environment),
@@ -59,21 +68,11 @@ public static class Program
 
         var started = new AppStart(
             Running, environment, fixture, Running.DataFolder(Shell.LocalAppData(), fixtureFolder));
-        App? app = null;
-        DispatcherQueue? queue = null;
-        // Raised on a thread of its own.
-        AppInstance.GetCurrent().Activated += (_, _) =>
-        {
-#if DEBUG
-            Console.Error.WriteLine($"A second launch handed over, with the queue {(queue is null ? "not yet made" : "made")}");
-#endif
-            queue?.TryEnqueue(() => app?.Reopened());
-        };
         Application.Start(_ =>
         {
-            queue = DispatcherQueue.GetForCurrentThread();
-            SynchronizationContext.SetSynchronizationContext(new DispatcherQueueSynchronizationContext(queue));
-            app = new App(started);
+            SynchronizationContext.SetSynchronizationContext(
+                new DispatcherQueueSynchronizationContext(DispatcherQueue.GetForCurrentThread()));
+            _ = new App(started, handovers);
         });
         return 0;
     }
