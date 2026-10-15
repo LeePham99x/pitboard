@@ -1,15 +1,20 @@
 # Checks the Windows app as a Release publish lays it out, for CI and the release alike: no
 # fixture in any of its programs, Pitboard.exe without a package identity, and the core built
-# for this machine with its C runtime inside it. It reads the files and runs none of them.
+# without the cfg that opens it before Windows is released, for this machine and with its C
+# runtime inside it. It reads the files and runs none of them, in the environment the core was
+# built in.
 param(
     [Parameter(Mandatory)] [string] $Folder,
-    [Parameter(Mandatory)] [ValidateSet('x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc')] [string] $Triple
+    [Parameter(Mandatory)] [ValidateSet('x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc')] [string] $Triple,
+    # pitboard_ffi.dll as Cargo built it in this environment, which the publish must carry unchanged.
+    [Parameter(Mandatory)] [string] $GatedLibrary
 )
 $ErrorActionPreference = 'Stop'
 
 $root = (Resolve-Path -LiteralPath $Folder).Path
 $exe = Join-Path $root 'Pitboard.exe'
 if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "no Pitboard.exe in $root" }
+$gated = (Resolve-Path -LiteralPath $GatedLibrary).Path
 
 # no-fixture-text.sh's words, as UTF-8 in native code and as UTF-16 in a .NET assembly's strings.
 $fixtureText = 'A Pitboard fixture page', 'dana@work.example', 'PITBOARD_TEST_CLAUDE_DESKTOP'
@@ -85,24 +90,41 @@ if ($manifest -match '<(\w+:)?msix\b') {
 }
 Write-Output 'Pitboard.exe carries no package identity.'
 
+# RUSTFLAGS gives way only to CARGO_ENCODED_RUSTFLAGS. A dev-dependency's features are in
+# cargo tree's features edges unless the edge kinds are named.
+foreach ($name in 'RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS') {
+    $flags = [Environment]::GetEnvironmentVariable($name)
+    if ($flags -and $flags.Contains('pitboard_unreleased_windows')) {
+        throw "$name opens the core to Windows before its release: $flags"
+    }
+}
+$cargoToml = Join-Path $PSScriptRoot '..\..\Cargo.toml'
+$tree = & cargo tree --locked --manifest-path $cargoToml -e 'normal,build,features' --target $Triple -p pitboard-ffi | Out-String
+if ($LASTEXITCODE -ne 0) { throw "cargo tree exited $LASTEXITCODE" }
+if ($tree -match 'feature "(test-support|fixture)"') {
+    throw "pitboard_ffi.dll resolves the $($Matches[1]) feature, which only a build for tests has"
+}
+$library = Join-Path $root 'pitboard_ffi.dll'
+if (-not (Test-Path -LiteralPath $library -PathType Leaf)) { throw 'no pitboard_ffi.dll beside Pitboard.exe' }
+if ((Get-FileHash -LiteralPath $library).Hash -ne (Get-FileHash -LiteralPath $gated).Hash) {
+    throw "the published pitboard_ffi.dll is not $gated"
+}
+Write-Output 'pitboard_ffi.dll is the one built here, with neither the cfg nor a feature for tests.'
+
 $machine = @{ 'x86_64-pc-windows-msvc' = 'AMD64'; 'aarch64-pc-windows-msvc' = 'ARM64' }[$Triple]
 $readobj = Get-Command llvm-readobj -ErrorAction SilentlyContinue
 $readobj = if ($readobj) { $readobj.Source } else { "$env:ProgramFiles\LLVM\bin\llvm-readobj.exe" }
-foreach ($library in 'pitboard_ffi.dll') {
-    $path = Join-Path $root $library
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "no $library beside Pitboard.exe" }
-    $headers = & $readobj --file-headers $path | Out-String
-    if ($LASTEXITCODE -ne 0) { throw "llvm-readobj could not read $library" }
-    if ($headers -notmatch "Machine: IMAGE_FILE_MACHINE_$machine\b") {
-        Write-Output $headers
-        throw "$library is not a library for $machine"
-    }
-    $imports = & $readobj --coff-imports $path | Out-String
-    if ($LASTEXITCODE -ne 0) { throw "llvm-readobj could not read $library's imports" }
-    if ($imports -match '(?i)vcruntime|api-ms-win-crt') {
-        Write-Output $imports
-        throw "$library takes its C runtime from a DLL: it was built without +crt-static"
-    }
-    Write-Output "$library is for $machine, with the C runtime inside it."
+$headers = & $readobj --file-headers $library | Out-String
+if ($LASTEXITCODE -ne 0) { throw 'llvm-readobj could not read pitboard_ffi.dll' }
+if ($headers -notmatch "Machine: IMAGE_FILE_MACHINE_$machine\b") {
+    Write-Output $headers
+    throw "pitboard_ffi.dll is not a library for $machine"
 }
+$imports = & $readobj --coff-imports $library | Out-String
+if ($LASTEXITCODE -ne 0) { throw "llvm-readobj could not read pitboard_ffi.dll's imports" }
+if ($imports -match '(?i)vcruntime|api-ms-win-crt') {
+    Write-Output $imports
+    throw 'pitboard_ffi.dll takes its C runtime from a DLL: it was built without +crt-static'
+}
+Write-Output "pitboard_ffi.dll is for $machine, with the C runtime inside it."
 exit 0

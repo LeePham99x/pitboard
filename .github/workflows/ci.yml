@@ -605,12 +605,16 @@ jobs:
           dotnet publish Pitboard.Probe -c Release -r "$RUNTIME" -p:Platform="$PLATFORM" -o "$out/probe"
           cmp "$GITHUB_WORKSPACE/target/release/pitboard_ffi.dll" "Pitboard.App/$BUILT/pitboard_ffi.dll"
           cmp "$GITHUB_WORKSPACE/target/release/pitboard_ffi.dll" "Pitboard.Windows.Tests/$BUILT/pitboard_ffi.dll"
-          cmp "$GITHUB_WORKSPACE/target/gated/release/pitboard_ffi.dll" "$out/release/pitboard_ffi.dll"
-      - name: "The Release build: no fixture, no package identity, the core's C runtime inside it"
+      # In the environment the gated pitboard_ffi.dll was built in, as a release runs it.
+      - name: "The Release build: no fixture, no package identity, the release gate, the core's C runtime inside it"
         shell: pwsh
         env:
+          RUSTFLAGS: -D warnings -C target-feature=+crt-static
+          CARGO_TARGET_DIR: target/gated
           TRIPLE: ${{ matrix.triple }}
-        run: ./.github/scripts/check-windows-app.ps1 -Folder target/windows-app/release -Triple $env:TRIPLE
+        run: >
+          ./.github/scripts/check-windows-app.ps1 -Folder target/windows-app/release -Triple $env:TRIPLE
+          -GatedLibrary target/gated/release/pitboard_ffi.dll
       # CF5: the self-contained app needs none of these for the standard user.
       - name: The Windows App Runtime packages this image holds
         shell: pwsh
