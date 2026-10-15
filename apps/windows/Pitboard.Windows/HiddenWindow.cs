@@ -95,9 +95,17 @@ public sealed unsafe class HiddenWindow
     {
         switch (message)
         {
-            // The process may end as soon as this returns.
+            // Restart Manager waits for the process to exit; at a sign-out Windows may end it as soon as this returns.
             case PInvoke.WM_ENDSESSION when wParam.Value != 0:
-                _sessionEnding();
+                if ((lParam.Value & PInvoke.ENDSESSION_CLOSEAPP) != 0)
+                {
+                    _closing();
+                }
+                else
+                {
+                    _sessionEnding();
+                }
+
                 return true;
             // As taskkill without /f asks a program to end.
             case PInvoke.WM_CLOSE:
