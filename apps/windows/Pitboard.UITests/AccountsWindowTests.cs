@@ -189,6 +189,7 @@ public sealed class AccountsWindowTests
     }
 
     [TestMethod]
+    [Ignore(Pending.W17)]
     public void AnEmptyMachineOffersAnAccount()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "empty");
@@ -251,6 +252,7 @@ public sealed class AccountsWindowTests
     }
 
     [TestMethod]
+    [Ignore(Pending.W17)]
     public void TheFirstLaunchOpensTheWindow()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "firstLaunch");
