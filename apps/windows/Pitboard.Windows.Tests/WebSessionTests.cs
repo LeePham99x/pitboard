@@ -1,0 +1,117 @@
+using Microsoft.VisualStudio.TestTools.UnitTesting.AppContainer;
+using Microsoft.Web.WebView2.Core;
+using Pitboard.Core;
+
+namespace Pitboard.Windows.Tests;
+
+// An account's window as WebView2 runs it, over the fixture's stand-in pages and a stand-in site on the loopback, with
+// no model.
+[TestClass]
+public sealed class WebSessionTests
+{
+    private static readonly WindowAccount Main = Items.Window("codex", "main", inUse: true);
+
+    private static readonly string Home = $"{WebEnvironment.FixtureScheme}://chatgpt.com/";
+
+    [UITestMethod]
+    public async Task APageGoesWhereThePolicySays()
+    {
+        using var site = new StandInSite();
+        await using var webs = await Webs.Make(WebEnvironment.FixtureScheme);
+        var window = new StandInWindow(webs);
+        var session = new WebSession(Webs.Opened(Main, Home), webs.Web, window);
+        var page = await webs.Page(Main.Store);
+
+        Assert.IsTrue(await Webs.Loads(page, () => Attach(session, page)), "the fixture's page did not load");
+        Assert.AreEqual("chatgpt.com stand-in", page.DocumentTitle);
+
+        await page.ExecuteScriptAsync($"location.href = '{site.Address("/away")}'");
+        await Webs.Until(() => webs.Elsewhere.Count == 1, "a page outside the site was not handed to the browser");
+        Assert.AreEqual(site.Address("/away"), webs.Elsewhere[0]);
+        Assert.IsInstanceOfType<WindowNoteKind.OpenedInBrowser>(session.Note);
+
+        await page.ExecuteScriptAsync("location.href = 'https://accounts.google.com/o/oauth2/v2/auth'");
+        await Webs.Until(() => session.Note is WindowNoteKind.GoogleRefused, "Google's sign-in was not refused");
+
+        var chat = $"{WebEnvironment.FixtureScheme}://chatgpt.com/chat/fixture";
+        Assert.IsTrue(await Webs.Loads(page, async () => await page.ExecuteScriptAsync($"location.href = '{chat}'")));
+        Assert.AreEqual(chat, page.Source);
+        CollectionAssert.Contains(window.Pages, chat);
+        Assert.HasCount(1, webs.Elsewhere);
+        Assert.IsEmpty(site.Asked, $"the stand-in was asked for {string.Join(", ", site.Asked)}");
+    }
+
+    // The sign-in window's page is set as the new window before it loads, which is what keeps window.opener.
+    [UITestMethod]
+    public async Task ASignInWindowKeepsItsOpenerAndClosesWhenItsPageIsDone()
+    {
+        await using var webs = await Webs.Make(WebEnvironment.FixtureScheme);
+        var window = new StandInWindow(webs);
+        var session = new WebSession(Webs.Opened(Main, Home), webs.Web, window);
+        var page = await webs.Page(Main.Store);
+        Assert.IsTrue(await Webs.Loads(page, () => Attach(session, page)), "the fixture's page did not load");
+        var host = Main.Site.SignInHosts[0];
+
+        await page.ExecuteScriptAsync(
+            $"window.open('{WebEnvironment.FixtureScheme}://{host}/sign-in', 'sign-in', 'width=480,height=600'); 0");
+
+        await Webs.Until(() => window.SignIn?.DocumentTitle == $"{host} sign-in stand-in", "no sign-in window loaded its page");
+        Assert.AreEqual(new SignInWindowSize(480, 600), window.Sizes.Single());
+        Assert.AreEqual("true", await window.SignIn!.ExecuteScriptAsync("window.opener !== null"));
+        await window.SignIn.ExecuteScriptAsync("document.getElementById('done').click()");
+        await Webs.Until(() => window.Closed == 1, "the sign-in page's Done did not close its window");
+        Assert.AreEqual(1, window.Closed);
+    }
+
+    // Each profile's data comes from the stand-in, which only a page outside any session can load.
+    [UITestMethod]
+    public async Task RemovingWebsiteDataEmptiesTheWindowsProfileAlone()
+    {
+        using var site = new StandInSite();
+        await using var webs = await Webs.Make(WebEnvironment.FixtureScheme);
+        var spare = Items.Window("codex", "spare");
+        var page = await webs.Page(Main.Store);
+        var other = await webs.Page(spare.Store);
+        Assert.IsTrue(await Webs.Loads(page, site.Address("/set")), "the stand-in did not load");
+        Assert.IsTrue(await Webs.Loads(other, site.Address("/set")), "the stand-in did not load in the other profile");
+        var session = new WebSession(Webs.Opened(Main, Home), webs.Web, new StandInWindow(webs));
+        Assert.IsTrue(await Webs.Loads(page, () => Attach(session, page)), "the fixture's page did not load");
+
+        await session.RemoveWebsiteData();
+
+        Assert.IsEmpty(await page.CookieManager.GetCookiesAsync(site.Address("/")));
+        Assert.AreEqual("who", (await other.CookieManager.GetCookiesAsync(site.Address("/"))).Single().Name);
+    }
+
+    private static Task Attach(WebSession session, CoreWebView2 page)
+    {
+        session.Attach(page);
+        return Task.CompletedTask;
+    }
+
+    private sealed class StandInWindow(Webs webs) : ISessionWindow
+    {
+        public List<SignInWindowSize> Sizes { get; } = [];
+
+        public CoreWebView2? SignIn { get; private set; }
+
+        public int Closed { get; private set; }
+
+        public List<string> Pages { get; } = [];
+
+        public async Task<CoreWebView2?> OpenSignIn(SignInWindowSize size)
+        {
+            Sizes.Add(size);
+            SignIn = await webs.Page(Main.Store);
+            return SignIn;
+        }
+
+        public void CloseSignIn() => Closed++;
+
+        public void Shown(string address) => Pages.Add(address);
+
+        public void Changed()
+        {
+        }
+    }
+}
