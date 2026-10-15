@@ -120,10 +120,11 @@ The test runs the script under each of `sh`, `dash`, `bash`, `zsh` and `busybox 
 on `PATH`. `TEST_INSTALL_SHELLS` names the ones that must be found, as CI sets it.
 
 For a change to the release's scripts, `release-kind.sh` and `core-unchanged.sh` in
-`.github/scripts`:
+`.github/scripts`, or `apps/macos/scripts/build-number.sh`:
 
 ```sh
-shellcheck -s sh .github/scripts/release-kind.sh .github/scripts/core-unchanged.sh
+shellcheck -s sh .github/scripts/release-kind.sh .github/scripts/core-unchanged.sh \
+  apps/macos/scripts/build-number.sh
 python3 .github/scripts/test-release.py
 ```
 

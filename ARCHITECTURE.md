@@ -612,7 +612,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     passes `--fixture`. It fails where the core's library, the app or the command line
     inside it holds a fixture world's text or `PITBOARD_TEST_CLAUDE_DESKTOP`, the variable
     only a build for tests reads, and where the app or that command line links a SQLite
-    other than the system's `/usr/lib/libsqlite3.dylib`.
+    other than the system's `/usr/lib/libsqlite3.dylib`. `scripts/build-number.sh` gives
+    it the `CFBundleVersion` Sparkle orders updates by, with room for a beta below its
+    release.
 - `packaging/`: the templates a release fills and publishes, and the tap's other files.
   The casks `pitboard.rb` for the command line and `pitboard-app.rb` for the app go into the
   tap `datlechin/homebrew-tap`, with `tap_migrations.json` and the tap's README.
@@ -643,7 +645,7 @@ window loads its site, and whatever the site's pages load, as a browser would.
     template, and `test-install.py` tests it and the install script. `release-kind.sh`
     says what a tag releases and whether it is latest, `core-unchanged.sh` refuses a
     `pitboard-core` that changed under a version crates.io already has, and
-    `test-release.py` tests both.
+    `test-release.py` tests both and the app's `build-number.sh`.
   - `dependabot.yml` asks for weekly updates of Cargo dependencies, GitHub Actions and the
     .NET SDK in `apps/windows/global.json`.
   - `zizmor.yml` configures the audit CI runs on the workflows.

@@ -10,8 +10,13 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 CORE_UNCHANGED = REPO / ".github" / "scripts" / "core-unchanged.sh"
 RELEASE_KIND = REPO / ".github" / "scripts" / "release-kind.sh"
+BUILD_NUMBER = REPO / "apps" / "macos" / "scripts" / "build-number.sh"
 KEYS = ["version", "base", "kind", "prerelease", "windows", "crates", "latest"]
 NOT_A_TAG = "is not a release tag: vX.Y.Z, vX.Y.Z-rcN or vX.Y.Z-beta.N"
+NO_BUILD_NUMBER = (
+    "has no build number: it takes X.Y.Z or X.Y.Z-beta.N, with Y and Z at most 99 and N from 1 "
+    "to 98"
+)
 
 
 def run(*args):
@@ -210,6 +215,57 @@ class ReleaseKind(unittest.TestCase):
 
     def test_it_takes_three_arguments(self):
         done = run(RELEASE_KIND, "v1.0.0", "1.0.0")
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("usage:", done.stderr)
+
+
+class BuildNumber(unittest.TestCase):
+    def test_numbers_rise_with_the_version(self):
+        numbers = {
+            "0.14.0": 140099,
+            "0.15.0": 150099,
+            "0.15.1": 150199,
+            "1.0.0-beta.1": 1000001,
+            "1.0.0-beta.2": 1000002,
+            "1.0.0": 1000099,
+            "1.0.1": 1000199,
+            "1.1.0-beta.1": 1010001,
+            "1.1.0-beta.2": 1010002,
+            "1.99.99-beta.98": 1999998,
+            "2.0.0": 2000099,
+        }
+        for version, number in numbers.items():
+            with self.subTest(version=version):
+                done = run(BUILD_NUMBER, version)
+                self.assertEqual(done.returncode, 0, done.stderr)
+                self.assertEqual(done.stdout, f"{number}\n")
+        ordered = [n for _, n in sorted(numbers.items(), key=lambda kv: kv[1])]
+        self.assertEqual(list(numbers.values()), ordered)
+        self.assertEqual(len(set(ordered)), len(ordered))
+        # 0.14.0 shipped as 1400, by the scheme before this one.
+        self.assertGreater(numbers["0.15.0"], 1400)
+
+    def test_a_version_it_cannot_number_is_refused(self):
+        for version in (
+            "1.100.0",
+            "1.0.100",
+            "1.0.0-beta.99",
+            "1.0.0-beta.0",
+            "1.0.0-rc1",
+            "01.0.0",
+            "1.01.0",
+            "1.0",
+            "",
+            "1.0.0\n2.0.0",
+        ):
+            with self.subTest(version=version):
+                done = run(BUILD_NUMBER, version)
+                self.assertEqual(done.returncode, 1)
+                self.assertEqual(done.stdout, "")
+                self.assertIn(NO_BUILD_NUMBER, done.stderr)
+
+    def test_it_takes_one_argument(self):
+        done = run(BUILD_NUMBER)
         self.assertEqual(done.returncode, 2)
         self.assertIn("usage:", done.stderr)
 
