@@ -7,7 +7,7 @@ use crate::doctor::{self, Diagnosis};
 use crate::duty::autoswitch::{Auto, Look, Threshold};
 use crate::error::{Error, Result};
 use crate::holder::{self, capitalised};
-use crate::host::{Elevation, Floor};
+use crate::host::{Elevation, Floor, Os};
 use crate::in_use::{self, Doubt, InUse, Known};
 use crate::provider::{Held, LoginKind, Provider, ProviderId};
 use crate::state::{self, Account, Key, new_id};
@@ -1510,6 +1510,27 @@ impl Pitboard {
     // Where an app's parked logins and the folders set aside are kept, for a front end to name.
     pub fn parks_folder(&self) -> std::path::PathBuf {
         crate::store::folder::parks_dir(&self.ctx)
+    }
+
+    // `PITBOARD_HOME`, or the default in the home.
+    pub fn directory(&self) -> std::path::PathBuf {
+        crate::home::dir(&self.ctx)
+    }
+
+    // The one the renewal schedule renews, whatever `PITBOARD_HOME` says.
+    pub fn default_directory(&self) -> std::path::PathBuf {
+        self.ctx.default_pitboard_home()
+    }
+
+    // As a person reads a folder: under the home it starts `~` on macOS and Linux.
+    pub fn shown(&self, folder: &std::path::Path) -> String {
+        let home = self.ctx.home();
+        match folder.strip_prefix(home) {
+            Ok(rest) if self.ctx.os != Os::Windows && !home.as_os_str().is_empty() => {
+                std::path::Path::new("~").join(rest).display().to_string()
+            }
+            _ => folder.display().to_string(),
+        }
     }
 
     /// When Pitboard's account index last changed, in epoch milliseconds, for a front end

@@ -15,6 +15,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Pitboard reads and writes Claude Code's `~/.claude.json` where an empty `.config.json` sits
   in Claude Code's config directory, as Claude Code does.
+- `pitboard uninstall` and `pitboard doctor` name the Pitboard directory in use, such as one
+  `PITBOARD_HOME` names, instead of always `~/.pitboard`.
 
 ## [0.14.0] - 2026-10-14
 

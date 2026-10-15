@@ -50,11 +50,26 @@ public sealed class BindingsTests
     [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows, IgnoreMessage = "W17: finding programs on Windows")]
     public void TheAppAsksTheCoreWhereThingsAreAndWhatRuns()
     {
-        var environment = new Dictionary<string, string> { ["HOME"] = "/home/x" };
-
-        Assert.AreEqual("/home/x/.pitboard", PitboardFfiMethods.PitboardDirectory(environment));
         Assert.IsNull(PitboardFfiMethods.AppCommandLine("/home/x/pitboard"));
         Assert.IsFalse(PitboardFfiMethods.CanRun("/nowhere/at/all"));
+    }
+
+    // The home is USERPROFILE on Windows, whatever HOME says, and HOME elsewhere.
+    [TestMethod]
+    public void TheAppsDirectoryIsTheCoresDefaultInItsHome()
+    {
+        var windows = OperatingSystem.IsWindows();
+        var environment = new Dictionary<string, string>
+        {
+            ["HOME"] = windows ? "/c/Users/elsewhere" : "/home/x",
+            ["USERPROFILE"] = windows ? @"C:\Users\x" : "/elsewhere",
+        };
+
+        Assert.AreEqual(
+            windows ? @"C:\Users\x\AppData\Local\Pitboard" : "/home/x/.pitboard",
+            PitboardFfiMethods.PitboardDirectory(environment));
+        environment["PITBOARD_HOME"] = "/elsewhere/./p/";
+        Assert.AreEqual("/elsewhere/./p/", PitboardFfiMethods.PitboardDirectory(environment));
     }
 
     [TestMethod]

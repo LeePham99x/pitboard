@@ -1234,8 +1234,11 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
             "machine_id",
             "machine id",
             "this machine has no stable identifier",
-            "Pitboard cannot tell this machine from another that also lacks one, so it cannot \
-             refuse state copied between them. Never copy ~/.pitboard between machines.",
+            format!(
+                "Pitboard cannot tell this machine from another that also lacks one, so it \
+                 cannot refuse state copied between them. Never copy {} between machines.",
+                facts.home.display()
+            ),
         ));
     }
 
@@ -5154,8 +5157,15 @@ mod tests {
     fn a_machine_without_a_stable_identifier_is_flagged() {
         let mut f = facts();
         f.machine_id_known = false;
+        f.home = PathBuf::from("/elsewhere/pitboard");
         let checks = evaluate(&f);
         assert_eq!(check(&checks, "machine_id").level, Level::Warn);
+        assert!(
+            check(&checks, "machine_id")
+                .advice
+                .ends_with("Never copy /elsewhere/pitboard between machines."),
+            "the folder in use"
+        );
         assert!(evaluate(&facts()).iter().all(|c| c.code != "machine_id"));
     }
 

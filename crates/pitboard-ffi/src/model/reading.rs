@@ -212,7 +212,7 @@ fn a_failed_read_shows_its_own_warnings_rather_than_the_last_ones() {
         Vec::new(),
         vec![warning(
             "state_on_synced_drive",
-            "~/.pitboard is on iCloud Drive",
+            "/Users/dana/.pitboard is on iCloud Drive",
         )],
     )));
     model.refresh(&mut machine);

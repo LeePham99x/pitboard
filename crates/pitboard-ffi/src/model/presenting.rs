@@ -1307,7 +1307,7 @@ fn a_failed_read_says_the_numbers_are_old_only_where_there_are_some() {
         Ok(status(Vec::new())),
         Err(refusal(
             "state_unreadable",
-            "~/.pitboard/state.json could not be read",
+            "/Users/dana/.pitboard/state.json could not be read",
             Vec::new(),
         )),
     ] {
@@ -1327,7 +1327,7 @@ fn a_failed_read_says_the_numbers_are_old_only_where_there_are_some() {
 /// PresentationTests.swift's aFailedReadWithNothingToListIsWhatTheWindowShows.
 #[test]
 fn a_failed_read_with_nothing_to_list_is_what_the_window_shows() {
-    let reason = "~/.pitboard/state.json was written on another Mac.";
+    let reason = "/Users/dana/.pitboard/state.json was written on another Mac.";
     let failed = || Err(refusal("state_wrong_machine", reason, Vec::new()));
     let read_failed = AccountsShown::ReadFailed {
         title: "Couldn’t Read Accounts".into(),
@@ -1393,7 +1393,7 @@ fn the_panes_try_again_is_held_back_while_the_accounts_are_read() {
     let failed = || {
         Err(refusal(
             "state_wrong_machine",
-            "~/.pitboard/state.json was written on another Mac.",
+            "/Users/dana/.pitboard/state.json was written on another Mac.",
             Vec::new(),
         ))
     };
