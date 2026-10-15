@@ -773,23 +773,7 @@ mod tests {
     const EPHEMERAL: &str = "cli_auth_credentials_store = \"ephemeral\"\n";
 
     fn base64(text: &str) -> String {
-        const ALPHABET: &[u8; 64] =
-            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-        let mut out = String::new();
-        for chunk in text.as_bytes().chunks(3) {
-            let n = chunk
-                .iter()
-                .enumerate()
-                .fold(0u32, |n, (i, &b)| n | (u32::from(b) << (16 - 8 * i)));
-            for i in 0..4 {
-                if i <= chunk.len() {
-                    out.push(char::from(ALPHABET[((n >> (18 - 6 * i)) & 63) as usize]));
-                } else {
-                    out.push('=');
-                }
-            }
-        }
-        out
+        crate::provider::jwt::base64(text.as_bytes())
     }
 
     /// Nothing set anywhere is Codex's own default, the file.

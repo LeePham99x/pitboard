@@ -99,7 +99,7 @@ fn open(
         CreateFileW(
             name.as_ptr(),
             access,
-            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            SHARE_ALL,
             &raw const attributes,
             disposition,
             flags,
@@ -265,7 +265,6 @@ impl Security {
 
     #[cfg(any(test, feature = "test-support"))]
     fn protected(&self) -> bool {
-        use windows_sys::Win32::Security::{GetSecurityDescriptorControl, SE_DACL_PROTECTED};
         let (mut control, mut revision) = (0u16, 0u32);
         // SAFETY: the descriptor GetNamedSecurityInfoW gave.
         let read = unsafe {
@@ -627,17 +626,14 @@ pub(crate) fn file_id(path: &Path) -> Option<(u64, u128)> {
 // `FILE_FLAG_OPEN_REPARSE_POINT` in `flags` reads a link's own.
 #[cfg(any(test, feature = "test-support"))]
 fn id(path: &Path, flags: u32) -> io::Result<(u64, u128)> {
-    use std::os::windows::fs::OpenOptionsExt;
-    use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Storage::FileSystem::{
-        FILE_FLAG_BACKUP_SEMANTICS, FILE_ID_INFO, FILE_READ_ATTRIBUTES, FileIdInfo,
-        GetFileInformationByHandleEx,
+        FILE_ID_INFO, FileIdInfo, GetFileInformationByHandleEx,
     };
-    let file = std::fs::OpenOptions::new()
-        .access_mode(FILE_READ_ATTRIBUTES)
-        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
-        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | flags)
-        .open(path)?;
+    let file = opened(
+        path,
+        FILE_READ_ATTRIBUTES,
+        FILE_FLAG_BACKUP_SEMANTICS | flags,
+    )?;
     let mut info = FILE_ID_INFO::default();
     // SAFETY: an open handle, and a FILE_ID_INFO buffer of exactly the length given.
     let read = unsafe {
@@ -661,10 +657,7 @@ fn id(path: &Path, flags: u32) -> io::Result<(u64, u128)> {
 // local volume: std's own maker is not stable yet, so this writes the mount point as it does.
 #[cfg(any(test, feature = "test-support"))]
 fn junction(target: &Path, at: &Path) -> io::Result<()> {
-    use std::os::windows::fs::OpenOptionsExt;
-    use std::os::windows::io::AsRawHandle;
     use std::path::{Component, Prefix};
-    use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_BACKUP_SEMANTICS;
     use windows_sys::Win32::System::IO::DeviceIoControl;
     use windows_sys::Win32::System::Ioctl::FSCTL_SET_REPARSE_POINT;
     use windows_sys::Win32::System::SystemServices::IO_REPARSE_TAG_MOUNT_POINT;
@@ -1114,9 +1107,12 @@ mod tests {
         testing::link_dir(&folder, &dir.join("to-folder")).expect("a junction");
         assert!(dir.join("to-folder").is_dir());
         assert!(dir.join("to-folder").join("new").is_file());
-        assert_eq!(file_id(&dir.join("to-folder")), file_id(&folder));
+        let id = file_id(&folder).expect("an id");
+        assert_eq!(file_id(&dir.join("to-folder")), Some(id));
         testing::link_dir(Path::new("folder"), &dir.join("relative")).expect("a junction");
-        assert_eq!(file_id(&dir.join("relative")), file_id(&folder));
+        assert_eq!(file_id(&dir.join("relative")), Some(id));
+        assert_ne!(file_id(&dir), Some(id), "another folder's");
+        assert_eq!(file_id(&dir.join("never-made")), None);
 
         let inode = testing::inode(&file).expect("there");
         assert_ne!(
@@ -1192,24 +1188,8 @@ mod tests {
     // PowerShell's -EncodedCommand takes the command as base64 of its UTF-16, so nothing in it
     // is quoted again on the way.
     fn encoded(command: &str) -> String {
-        const DIGITS: &[u8; 64] =
-            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
         let bytes: Vec<u8> = command.encode_utf16().flat_map(u16::to_le_bytes).collect();
-        bytes
-            .chunks(3)
-            .flat_map(|chunk| {
-                let n = chunk.iter().enumerate().fold(0u32, |n, (at, byte)| {
-                    n | (u32::from(*byte) << (16 - 8 * at))
-                });
-                (0..4).map(move |at| {
-                    if at <= chunk.len() {
-                        char::from(DIGITS[((n >> (18 - 6 * at)) & 63) as usize])
-                    } else {
-                        '='
-                    }
-                })
-            })
-            .collect()
+        crate::provider::jwt::base64(&bytes)
     }
 
     // Each line as a person pastes it, into cmd or into PowerShell.
@@ -1299,34 +1279,6 @@ mod tests {
         );
         assert_eq!(short_path(&long.join("never-made")), None);
         let _ = std::fs::remove_dir_all(&long);
-    }
-
-    // A junction needs no right of its own, unlike a symbolic link.
-    #[test]
-    fn a_folder_has_one_id_through_a_junction() {
-        let root = std::env::temp_dir().join(format!("pitboard-file-id-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        let (target, other, junction) = (
-            root.join("target"),
-            root.join("other"),
-            root.join("junction"),
-        );
-        for folder in [&target, &other] {
-            std::fs::create_dir_all(folder).expect("a scratch folder");
-        }
-        let made = std::process::Command::new("cmd.exe")
-            .args(["/d", "/c", "mklink", "/J"])
-            .arg(&junction)
-            .arg(&target)
-            .output()
-            .expect("cmd runs");
-        assert!(made.status.success(), "{made:?}");
-        let id = file_id(&target).expect("an id");
-        assert_eq!(file_id(&junction), Some(id));
-        assert_ne!(file_id(&other), Some(id));
-        assert_eq!(file_id(&root.join("never-made")), None);
-        let _ = std::fs::remove_dir(&junction);
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     fn listed(path: &Path) -> (bool, Vec<(String, u32, u8, bool)>) {
