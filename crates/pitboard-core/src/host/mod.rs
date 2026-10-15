@@ -149,6 +149,25 @@ impl Os {
         }
     }
 
+    pub(crate) fn variable_key(self, name: &std::ffi::OsStr) -> std::ffi::OsString {
+        match self {
+            Os::MacOs | Os::Linux => name.to_os_string(),
+            Os::Windows => name
+                .to_string_lossy()
+                .chars()
+                .map(upper_one_for_one)
+                .collect::<String>()
+                .into(),
+        }
+    }
+
+    pub(crate) fn user_variable(self) -> &'static str {
+        match self {
+            Os::MacOs | Os::Linux => "USER",
+            Os::Windows => "USERNAME",
+        }
+    }
+
     /// The command line an app at `app` comes with, which is what its renewal schedule runs:
     /// the app itself is not one. A Mac app carries it at `Contents/Helpers/pitboard`, where
     /// `build-app.sh` puts it, and anything that is not an app bundle, such as a test or a

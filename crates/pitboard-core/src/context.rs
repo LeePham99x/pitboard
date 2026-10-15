@@ -10,7 +10,7 @@
     reason = "the one module that reads this process's environment"
 )]
 
-use crate::host::Host;
+use crate::host::{Host, Os};
 use crate::provider::ProviderId;
 use crate::provider::claude::api::{Anthropic, Api};
 use crate::provider::codex::api::{Network as OpenAiNetwork, OpenAi};
@@ -50,6 +50,18 @@ const READ: &[&str] = &[
     "NO_COLOR",
     "XPC_SERVICE_NAME",
     "SUDO_UID",
+    "USERPROFILE",
+    "USERNAME",
+    "APPDATA",
+    "LOCALAPPDATA",
+    "ProgramData",
+    "SystemRoot",
+    "PATHEXT",
+    "TEMP",
+    "TMP",
+    "OneDrive",
+    "OneDriveCommercial",
+    "OneDriveConsumer",
 ];
 
 // Read only by a build for tests: a release lists none and reads none.
@@ -76,13 +88,47 @@ pub(crate) fn variables() -> impl Iterator<Item = &'static str> {
 /// The command line has a shell's. An app the system started has launchd's, which name the
 /// home and the login and little else, unless somebody set more with `launchctl setenv`;
 /// whatever is there is read the way the command line reads it.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Environment(HashMap<OsString, OsString>);
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Environment {
+    os: Os,
+    variables: HashMap<OsString, (OsString, OsString)>,
+}
+
+impl Default for Environment {
+    fn default() -> Environment {
+        Environment::on(crate::host::OS, std::iter::empty::<(OsString, OsString)>())
+    }
+}
 
 impl Environment {
     /// This process's own.
     pub fn of_this_process() -> Environment {
         std::env::vars_os().collect()
+    }
+
+    pub(crate) fn on<K: Into<OsString>, V: Into<OsString>>(
+        os: Os,
+        pairs: impl IntoIterator<Item = (K, V)>,
+    ) -> Environment {
+        let mut variables = HashMap::new();
+        for (name, value) in pairs {
+            let (name, value) = (name.into(), value.into());
+            let key = os.variable_key(&name);
+            match os {
+                Os::MacOs | Os::Linux => {
+                    variables.insert(key, (name, value));
+                }
+                // RF-B4: Windows hands a program the first of two spellings of a name.
+                Os::Windows => {
+                    variables.entry(key).or_insert((name, value));
+                }
+            }
+        }
+        Environment { os, variables }
+    }
+
+    pub(crate) fn os(&self) -> Os {
+        self.os
     }
 
     /// `name`'s value, whatever bytes it holds, as a path may hold any.
@@ -92,7 +138,9 @@ impl Environment {
             "{name} is read but not listed in context::READ, so the tests would take it \
              from whoever runs them"
         );
-        self.0.get(OsStr::new(name)).map(OsString::as_os_str)
+        self.variables
+            .get(&self.os.variable_key(OsStr::new(name)))
+            .map(|(_, value)| value.as_os_str())
     }
 
     /// `name`'s value as text. One that is not UTF-8 reads as unset, as `std::env::var`
@@ -135,8 +183,8 @@ impl Environment {
         )
     )]
     pub(crate) fn iter(&self) -> impl Iterator<Item = (&OsStr, &OsStr)> {
-        self.0
-            .iter()
+        self.variables
+            .values()
             .map(|(name, value)| (name.as_os_str(), value.as_os_str()))
     }
 }
@@ -162,12 +210,7 @@ fn unit_test_sentinel() -> PathBuf {
 
 impl<K: Into<OsString>, V: Into<OsString>> FromIterator<(K, V)> for Environment {
     fn from_iter<I: IntoIterator<Item = (K, V)>>(pairs: I) -> Environment {
-        Environment(
-            pairs
-                .into_iter()
-                .map(|(name, value)| (name.into(), value.into()))
-                .collect(),
-        )
+        Environment::on(crate::host::OS, pairs)
     }
 }
 
@@ -714,7 +757,7 @@ impl Context {
             home,
             claude_config_dir: owned("CLAUDE_CONFIG_DIR"),
             secure_storage_dir: owned("CLAUDE_SECURESTORAGE_CONFIG_DIR"),
-            user: owned("USER"),
+            user: owned(env.os().user_variable()),
             custom_oauth: env.set("CLAUDE_CODE_CUSTOM_OAUTH_URL"),
             argv_fallback: env.text("PITBOARD_NO_ARGV") != Some("1"),
             overriding_auth: crate::settings::OVERRIDING_ENV
@@ -1187,6 +1230,55 @@ mod tests {
             "",
             "no PATH is nowhere, not this process's"
         );
+    }
+
+    // RF-B4, run 38418961905: a program gets `Path` alone, and a block holding both spellings
+    // hands both to a child, whose `var_os` takes the first for either.
+    #[test]
+    fn a_windows_environment_has_one_value_per_name_in_any_case_and_the_first_wins() {
+        let search_path = |os: Os, pairs: &[(&str, &str)]| {
+            let home = [("HOME", "/home/x"), ("USERPROFILE", "/home/x")];
+            let env = Environment::on(os, home.iter().chain(pairs).copied());
+            Context::read(&env, "cli").search_path()
+        };
+        let windows = |pairs: &[(&str, &str)]| search_path(Os::Windows, pairs);
+        assert_eq!(
+            windows(&[("Path", "C:\\a")]),
+            "C:\\a",
+            "as a program gets it"
+        );
+        assert_eq!(windows(&[("PATH", "C:\\b")]), "C:\\b");
+        assert_eq!(windows(&[("Path", "C:\\a"), ("PATH", "C:\\b")]), "C:\\a");
+        assert_eq!(windows(&[("PATH", "C:\\b"), ("Path", "C:\\a")]), "C:\\b");
+        for os in [Os::MacOs, Os::Linux] {
+            assert_eq!(search_path(os, &[("Path", "/a")]), "", "{os:?}");
+            assert_eq!(search_path(os, &[("Path", "/a"), ("PATH", "/b")]), "/b");
+        }
+        let both = Environment::on(Os::Windows, [("Path", "C:\\a"), ("PATH", "C:\\b")]);
+        let given: Vec<_> = both.iter().collect();
+        assert_eq!(
+            given,
+            [(OsStr::new("Path"), OsStr::new("C:\\a"))],
+            "a child gets one"
+        );
+        assert_eq!(both.text("PATH"), Some("C:\\a"));
+    }
+
+    // Windows names the person in `USERNAME`, and sets no `USER`.
+    #[test]
+    fn the_person_is_named_by_the_systems_own_variable() {
+        let user = |os: Os| {
+            let pairs = [
+                ("HOME", "/home/x"),
+                ("USERPROFILE", "/home/x"),
+                ("USER", "posix"),
+                ("username", "windows"),
+            ];
+            Context::read(&Environment::on(os, pairs), "cli").user
+        };
+        assert_eq!(user(Os::Windows).as_deref(), Some("windows"));
+        assert_eq!(user(Os::MacOs).as_deref(), Some("posix"));
+        assert_eq!(user(Os::Linux).as_deref(), Some("posix"));
     }
 
     /// A variable read without being listed is caught the first time a test reads it, so the

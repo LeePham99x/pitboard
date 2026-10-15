@@ -554,8 +554,9 @@ mod tests {
         },
     ];
 
+    // ureq's rules where a name has one case, which the child test holds on Windows too.
     fn environment(row: &Row) -> Environment {
-        row.env.iter().copied().collect()
+        Environment::on(crate::host::Os::Linux, row.env.iter().copied())
     }
 
     /// Everything ureq goes by in a proxy, apart from whether it read it itself.
@@ -604,18 +605,13 @@ mod tests {
     /// in a child: this test binary again, given that row's variables and nothing else of
     /// its kind.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W14: a Windows environment, whose names are one in any case"
-    )]
     #[allow(
         clippy::disallowed_methods,
         reason = "a child is told which row it checks through its environment"
     )]
     fn every_row_agrees_with_what_ureq_reads_from_a_process() {
-        if let Some(row) = std::env::var_os(ROW) {
-            let index: usize = row.to_str().and_then(|r| r.parse().ok()).expect("a row");
-            return agrees_in_this_process(&TABLE[index]);
+        if std::env::var_os(ROW).is_some() {
+            return agrees_in_this_process();
         }
         for (index, row) in TABLE.iter().enumerate() {
             let mut child = std::process::Command::new(std::env::current_exe().expect("me"));
@@ -649,8 +645,10 @@ mod tests {
         clippy::disallowed_methods,
         reason = "ureq's own reading of this process's environment, which Pitboard's is held to"
     )]
-    fn agrees_in_this_process(row: &Row) {
-        let ours = Proxies::read(&environment(row));
+    // On Windows a row's two spellings of one name reach the child as one variable.
+    fn agrees_in_this_process() {
+        let mine = Environment::of_this_process();
+        let ours = Proxies::read(&mine);
         let theirs = ureq::Proxy::try_from_env();
         assert_eq!(
             ours.named.as_ref().map(|(_, proxy)| described(proxy)),
@@ -673,11 +671,11 @@ mod tests {
         // The context's agent is given the proxy the context read, and never the one ureq
         // read from this process: a unit test's context withholds every variable, so its
         // agent goes through none, whatever this process says.
-        let given: Environment = row
-            .env
+        let given: Environment = NAMING
             .iter()
-            .copied()
-            .chain([("HOME", "/nowhere")])
+            .chain(&EXEMPTING)
+            .filter_map(|name| Some((*name, mine.text(name)?)))
+            .chain([("HOME", "/nowhere"), ("USERPROFILE", "/nowhere")])
             .collect();
         let ctx = Context::for_command_line(&given);
         assert_eq!(

@@ -59,7 +59,6 @@ pub(crate) fn claude_desktop_runs_here() -> bool {
     }
 }
 
-// Pitboard reads none of the Windows ones before W14; listed so they pass on from then.
 pub(crate) fn passed_on() -> &'static [&'static str] {
     match OS {
         Os::MacOs | Os::Linux => &["HOME", "USER"],
