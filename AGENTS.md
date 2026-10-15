@@ -53,6 +53,15 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
 - Never push a tag.
 - Never mark a release latest by hand, or reuse or move an rc or beta tag. The release
   workflow decides latest.
+- Never dispatch a workflow but `windows-facts.yml`.
+- Never sign with a signer's release policy or production credentials outside `release.yml`
+  on a `v*` tag. Test signing uses the signer's test policy or sandbox.
+- Never let a job that runs on a pull request or by hand reach the `release` or
+  `windows-signing` environment. Each keeps a deployment rule for `v*` tags only.
+- Never publish a Windows release candidate or final release unsigned, and never unset
+  `WINDOWS_SIGNER` once a signer is set.
+- Never add a cache, such as the Actions cache, `rust-cache` or sccache, to a job that leads
+  to a signing request. SignPath refuses a build that may take files from an earlier one.
 - Never let `.github/workflows/rotation.yml` name a repository secret. Its rehearsal ships
   bundles that update themselves, and must never reach the real key.
 - Never keep the update key and the Developer ID certificate in one place. With both lost,
