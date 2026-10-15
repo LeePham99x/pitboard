@@ -95,7 +95,11 @@ beta uploads `pitboard-core`, when its version moved, and then `pitboard` to cra
 Every file on the GitHub release has a GitHub attestation. From major version 1, each
 release also has a zip of the command line for Windows on x64 and on ARM64, built and checked
 by `.github/actions/windows-release`, which CI runs on every pull request, and signed as
-[Windows signing](#windows-signing) says.
+[Windows signing](#windows-signing) says. The `windows-install` job downloads each published
+zip on its machine, checks it against `SHA256SUMS`, its attestation and its signatures, and
+runs its command line as a fresh standard user. For a full release or a beta it also installs
+the zip with cargo-binstall from crates.io, with `compile` disabled, so a `pkg-url` in
+`crates/pitboard/Cargo.toml` that names no zip fails the job instead of building from source.
 
 Immutable releases are on, and only the owner changes that setting. A published release's
 files and tag cannot change; its title, notes and marks can. Only the next version fixes a

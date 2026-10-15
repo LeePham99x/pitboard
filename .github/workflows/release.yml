@@ -994,3 +994,110 @@ jobs:
             sleep 15
           done
           exit 1
+
+  # What somebody who downloads a Windows zip gets, got, on each machine: the published zip
+  # against SHA256SUMS and its attestation, every signature in it, and its command line run as
+  # a fresh standard user, as winget's validation runs one. A full release or a beta also
+  # installs through cargo-binstall, which takes the zip the crate's metadata names.
+  windows-install:
+    needs: [guard, publish]
+    if: ${{ !cancelled() && needs.publish.result == 'success' && needs.guard.outputs.windows == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # cargo-binstall 1.25.3's zip for each, as its immutable release lists it.
+          - os: windows-2025
+            triple: x86_64-pc-windows-msvc
+            binstall-sha256: de20bf4eefbbc4d90888e32938e4e66808c14bfe122458b2dd7d826821529cd9
+          - os: windows-11-arm
+            triple: aarch64-pc-windows-msvc
+            binstall-sha256: 52723f6d28fc769c3d9de7841f37bddc0f3bade0061641e9f483fb1f4ff17dcf
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      attestations: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The zip, as the release publishes it
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRIPLE: ${{ matrix.triple }}
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'published'
+          $name = "pitboard-$env:GITHUB_REF_NAME-$env:TRIPLE.zip"
+          gh release download $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY --pattern $name --pattern SHA256SUMS --dir $dir
+          if ($LASTEXITCODE -ne 0) { throw "gh release download exited $LASTEXITCODE" }
+          $zip = Join-Path $dir $name
+          $lines = @(Get-Content -LiteralPath (Join-Path $dir 'SHA256SUMS') | Where-Object { ($_ -split '\s+', 2)[1] -eq $name })
+          if ($lines.Count -ne 1) { throw "SHA256SUMS has $($lines.Count) lines for $name" }
+          $listed = ($lines[0] -split '\s+', 2)[0]
+          $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash
+          if ($hash -ne $listed) { throw "$name is $hash, and SHA256SUMS says $listed" }
+          # Sigstore takes a moment to serve an attestation that was written seconds ago.
+          foreach ($attempt in 1..5) {
+            gh attestation verify $zip --repo $env:GITHUB_REPOSITORY
+            if ($LASTEXITCODE -eq 0) { break }
+            Write-Output "no attestation for $name yet (attempt $attempt)"
+            Start-Sleep -Seconds 15
+          }
+          if ($LASTEXITCODE -ne 0) { throw "$name has no attestation from this repository" }
+          Expand-Archive -LiteralPath $zip -DestinationPath (Join-Path $env:RUNNER_TEMP 'unpacked')
+          "ZIP=$zip" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Every signature
+        shell: pwsh
+        env:
+          SIGNED: ${{ needs.guard.outputs.signed }}
+          SUBJECT: ${{ vars.WINDOWS_SIGNER_SUBJECT }}
+        run: |
+          $mode = if ($env:SIGNED -eq 'true') { 'signed' } else { 'unsigned' }
+          ./.github/scripts/verify-windows-signatures.ps1 -Path $env:ZIP -Mode $mode -Subject $env:SUBJECT
+      - name: The command line in it, as a fresh standard user
+        shell: pwsh
+        env:
+          TRIPLE: ${{ matrix.triple }}
+          # What pitboard --version says: Cargo.toml's version, which an rc's tag adds to.
+          BASE: ${{ needs.guard.outputs.base }}
+        run: >
+          ./.github/scripts/check-windows-build.ps1 -Triple $env:TRIPLE -Version $env:BASE
+          -Exe (Join-Path $env:RUNNER_TEMP "unpacked\pitboard-$env:GITHUB_REF_NAME-$env:TRIPLE\pitboard.exe")
+      - if: needs.guard.outputs.crates == 'true'
+        name: cargo binstall, from crates.io
+        shell: pwsh
+        env:
+          TRIPLE: ${{ matrix.triple }}
+          VERSION: ${{ needs.guard.outputs.version }}
+          BINSTALL_SHA256: ${{ matrix.binstall-sha256 }}
+        run: |
+          $tools = Join-Path $env:RUNNER_TEMP 'binstall'
+          New-Item -ItemType Directory -Path $tools | Out-Null
+          $zip = Join-Path $tools 'cargo-binstall.zip'
+          $url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.25.3/cargo-binstall-$env:TRIPLE.zip"
+          Invoke-WebRequest -Uri $url -OutFile $zip -MaximumRetryCount 5 -RetryIntervalSec 10
+          if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash -ne $env:BINSTALL_SHA256) { throw "$url is not the zip read on 15 October 2026" }
+          Expand-Archive -LiteralPath $zip -DestinationPath $tools
+          # crates.io's index serves a version a moment after the upload.
+          $pattern = '"vers":"' + [regex]::Escape($env:VERSION) + '"'
+          $listed = $false
+          foreach ($attempt in 1..12) {
+            $index = curl.exe -fsSL https://index.crates.io/pi/tb/pitboard | Out-String
+            if ($index -match $pattern) { $listed = $true; break }
+            Write-Output "the index has no pitboard $env:VERSION yet (attempt $attempt)"
+            Start-Sleep -Seconds 10
+          }
+          if (-not $listed) { throw "crates.io's index has no pitboard $env:VERSION" }
+          # With compile disabled, a wrong zip in the crate's metadata fails here instead of building from source.
+          $root = Join-Path $env:RUNNER_TEMP 'binstall-root'
+          & (Join-Path $tools 'cargo-binstall.exe') "pitboard@$env:VERSION" --root $root --no-confirm --disable-strategies compile,quick-install
+          if ($LASTEXITCODE -ne 0) { throw "cargo binstall exited $LASTEXITCODE" }
+          $installed = Join-Path $root 'bin\pitboard.exe'
+          $zipped = Join-Path $env:RUNNER_TEMP "unpacked\pitboard-$env:GITHUB_REF_NAME-$env:TRIPLE\pitboard.exe"
+          if ((Get-FileHash -LiteralPath $installed).Hash -ne (Get-FileHash -LiteralPath $zipped).Hash) {
+            throw "cargo binstall installed another pitboard.exe than the $env:TRIPLE zip holds"
+          }
+          & $installed --version
+          exit $LASTEXITCODE
