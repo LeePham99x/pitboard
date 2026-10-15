@@ -343,9 +343,11 @@ byte, and runs the C# tests against each the same way.
 CI's `windows-app` job publishes the app's Debug build over `pitboard_ffi.dll` opened with its
 fixtures, and its Release build over the library as a 0.x release builds it, on both images.
 `.github/scripts/check-windows-app.ps1` checks the Release build for fixture text, a package
-identity and the core's C runtime. The job runs `Pitboard.Windows.Tests`, a WinUI app that
-hosts its own tests, and `Pitboard.UITests`, which drives the built app with FlaUI, as a fresh
-standard user, then the UI test of an elevated launch as the job's user. It builds
+identity and the core's C runtime. The job runs `Pitboard.UITests`, which drives the built app
+with FlaUI, as a fresh standard user, and `Pitboard.Windows.Tests`, a WinUI app that hosts its
+own tests, as the job's user: a WinUI window fails for another user in that session, so the UI
+tests of the window skip there, as do those of the icon, which Explorer refuses. The UI test
+of an elevated launch runs as the job's user. It builds
 `Pitboard.Probe`, which the session machine runs to measure the app's notifications, and
 checks that it refuses an account without `pitboard-probe`'s throwaway marker. The WinUI
 projects build only there.

@@ -2090,9 +2090,14 @@ Accounts and tokens:
   folder, which it cannot open, and `SHGetKnownFolderPath` failed. Given its own profile's
   `USERPROFILE`, `HOMEDRIVE`, `HOMEPATH`, `APPDATA`, `LOCALAPPDATA`, `TEMP`, `TMP` and
   `USERNAME`, every known folder reads as its own. It can read and run what the job built in
-  the workspace. This is how CI runs every Windows test, through
+  the workspace. This is how CI runs every Windows test but the WinUI ones, through
   `.github/scripts/test-as-standard-user.ps1`.
 - That user's programs run in the job user's session, 2, and start inside a job already.
+- A WinUI window fails for that user in the job user's session. `Pitboard.Windows.Tests`'
+  window throws `XamlParseException` from its `InitializeComponent`, and the app exits
+  0xC000027B in `Microsoft.UI.Xaml.dll`; a Debug `Pitboard.exe` exits 0xC000027B in
+  `CoreMessagingXP.dll` before its window (CI run 38758548184). So the WinUI tests run as the
+  job's user, and the UI tests of Pitboard's window run only in a session of the user's own.
 - Explorer, the job user's, takes no notification-area icon of that user's: `NIM_ADD` fails
   for an icon named by its window and id and for one named by a GUID (CI run 38753437460).
   So the UI tests that click Pitboard's icon, `NotificationAreaTests` and `MenuBarTests`, run

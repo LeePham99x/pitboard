@@ -7,6 +7,7 @@ namespace Pitboard.UITests;
 
 [TestClass]
 [Elevated(ConditionMode.Exclude)]
+[OwnSession]
 public sealed partial class LifecycleTests
 {
     public TestContext TestContext { get; set; } = null!;
