@@ -609,12 +609,16 @@ window loads its site, and whatever the site's pages load, as a browser would.
     each snapshot on the app's `DispatcherQueue`. `WindowsLocalTime` is the person's clock.
     `Identity` names everything a build is known by, Debug or Release. `Launching` decides a
     launch before WinUI starts: the arguments, then `launch_refusal`, then the
-    single-instance key. `HiddenWindow` hears the session's end and the system's broadcasts,
-    and `Shell` is the known folder, the AppUserModelID and the refusal's message box.
-    `Keyed` keeps a shown row while the model lists it, so `ShownAccount` keeps its
-    selection across snapshots. `WindowAlert` is the failure or quit question in front of
-    the window, `SheetPage` what the sheet over it shows and sends, and `Countdown` a
-    notice's timer.
+    single-instance key. `HiddenWindow` hears the session's end, the system's broadcasts,
+    `WM_CLOSE` and the icon's clicks, which `IconEvent` reads, and `Shell` is the known
+    folder, the AppUserModelID, the app's icon and the refusal's message box. `NotifyIcon`
+    keeps the icon in the notification area through `INotificationArea`, which
+    `ShellNotificationArea` sends to `Shell_NotifyIconW` and tests replace, and `IconMenu`
+    lists what the icon's menu offers, in the macOS menu's order. `NoUpdates` is the updater
+    of a build that cannot update. `Keyed` keeps a shown row while the model lists it, so
+    `ShownAccount` keeps its selection across snapshots. `WindowAlert` is the failure or quit
+    question in front of the window, `SheetPage` what the sheet over it shows and sends, and
+    `Countdown` a notice's timer.
   - `Pitboard.Views` is the main window's panes, a WinUI library so the test app shows them
     as `Pitboard.exe` does. `AccountsPane` lists the accounts under their notices and setup
     step, each an `AccountRow` with an `AccountMenu`; `ActivityPane` and `MachinePane` are
@@ -623,15 +627,19 @@ window loads its site, and whatever the site's pages load, as a browser would.
     one, or leaves them to the sheet's `AlertBar` while a sheet is up. `WindowSheets` puts
     the model's sheet up as an `AccountSheet`, a ContentDialog that adds an account, follows
     its sign-in, names, renames or puts away a login left in a file, and tells the model
-    when somebody closes it.
-  - `Pitboard.App` is `Pitboard.exe`, unpackaged and self-contained. `Program.Main` decides
-    the launch, and `App` makes the model, over this PC or in a Debug build started with
-    `PITBOARD_FIXTURE` a fixture's, opens the main window when the model asks, and stops the
-    model as the session ends. `MainWindow` shows a pane for each of the model's `Pane`s and
-    takes Ctrl+N from any of them.
+    when somebody closes it. `IconMenuFlyout` is the icon's menu as a MenuFlyout.
+  - `Pitboard.App` is `Pitboard.exe`, unpackaged and self-contained, carrying the icon that
+    `Icon/make-ico.py` writes from the drawings beside it. `Program.Main` decides the launch,
+    and `App` makes the model, over this PC or in a Debug build started with
+    `PITBOARD_FIXTURE` a fixture's, keeps the icon, opens the main window when the model
+    asks, and stops the model as the session ends or on Exit. `MenuHost` is the pixel of a
+    window the icon's menu opens from. `MainWindow` shows a pane for each of the model's
+    `Pane`s and its settings page, and takes Ctrl+N and Ctrl+comma from any of them.
   - `Pitboard.Windows.Tests` is a WinUI app that hosts its own tests, the views' among them
     over snapshots made in C#, and `Pitboard.UITests` drives the built app with FlaUI.
-    Neither registers anything with Windows.
+    Neither registers anything with Windows, but for the notification-area icon of its own
+    that `NotificationAreaTests` adds and removes by a GUID, which the runner's Explorer
+    remembers for its job user.
 - `apps/macos/`: the menu bar app, which shows what `pitboard-ffi`'s model says and sends it
   what was asked. The Swift package holds it as libraries its tests load without starting
   it. `PitboardKit` is the bindings and `AppModel.swift`: `AppModel`, which holds the
@@ -2309,6 +2317,10 @@ on 15 October 2026. W27 reviews the list.
 | Since winget 1.29, an MSI wins over a portable installer whatever the manifest's order | [winget-cli 1.29.380](https://github.com/microsoft/winget-cli/releases/tag/v1.29.380) | windows-2025's winget is 1.11.510, and no runner installs from winget's sources. |
 | A broadcast, such as `WM_ENDSESSION`, reaches a top-level window that is never shown, and no message-only window | [Message-only windows](https://learn.microsoft.com/en-us/windows/win32/winmsg/window-features#message-only-windows) | A runner's session never ends while a job runs; CF9 sends one. |
 | A second instance redirects its launch off the STA thread, which waits without blocking COM | [App instancing](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/applifecycle/applifecycle-instancing) | No test starts a second copy until APP-12's links. |
+| A new notification-area icon goes to the overflow, where only the person promotes it | [Notifications and the notification area](https://learn.microsoft.com/en-us/windows/win32/shell/notification-area) | `NotificationAreaTests` finds the icon wherever it is; the session's step A2 records where it starts. |
+| A notification icon's menu closes on a click elsewhere only when its window was made the foreground window first | [TrackPopupMenu](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-trackpopupmenu) | Only a person clicks elsewhere: the session's step A2. |
+| A GUID icon is tied to the path of the exe that added it, unless both are signed by one company | [NOTIFYICONDATAW](https://learn.microsoft.com/en-us/windows/win32/api/shellapi/ns-shellapi-notifyicondataw) | No Release build runs from two paths on a runner; the 1.0 session's P4 upgrades one. |
+| A MenuFlyout with `ShouldConstrainToRootBounds` false draws whole outside the window it opens from | [ShouldConstrainToRootBounds](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.controls.primitives.flyoutbase.shouldconstraintorootbounds) | `NotificationAreaTests` opens the menu but cannot see how it is drawn; the session's step A2 looks at it. |
 
 ### One sign-in at a time
 
@@ -3390,6 +3402,47 @@ Microsoft's documentation.
   close button is the template part `CloseButton`, which `NoticeBarTests` presses, and a
   `ListViewItem` is padded `16,0,12,0`, which the Activity pane's column headers and This
   PC's summary repeat so they line up with the rows under them.
+- `Shell_NotifyIconW` and `NOTIFYICONDATAW` (Microsoft Learn, updated 1 July 2025 and 20
+  November 2024): `NIM_SETVERSION` follows every `NIM_ADD`; under `NOTIFYICON_VERSION_4` the
+  event is `lParam`'s low word and the point `wParam`'s two words, the icon's upper-left
+  corner when the keyboard sent it; the standard tooltip shows only with `NIF_SHOWTIP`;
+  `szTip` holds 128 UTF-16 units with its null; and a GUID is tied to the path of the exe
+  that added it. Microsoft's NotificationIcon sample in Windows-classic-samples reads
+  `WM_CONTEXTMENU`'s point from `wParam`, makes its window the foreground window before its
+  menu, and asks for Common Controls 6 to call `LoadIconMetric`. So `NotifyIcon` cuts the
+  tooltip to 127 units, names its icon by a GUID in the Release build alone and falls back
+  to its window when Explorer refuses the GUID, and `IconEvent` reads the point as signed.
+  `NotifyIconTests` and `IconEventTests` hold them, and `HiddenWindowTests` the icon's
+  return on `TaskbarCreated`.
+- The notification area guidance (updated 15 April 2025) has a right click bring up a normal
+  shortcut menu and a left click show what the person expects, the program window among
+  them, and prefers the standard tooltip. The Windows 7 menu guidance (updated 26 July 2026)
+  names Exit, puts no ellipsis on About, Help or Settings, shows a context menu's default
+  command in bold, and lets a program keep title-style capitalization rather than mix
+  styles, as the model's strings are. So the icon's menu says Exit, bolds Open Pitboard,
+  and keeps the macOS menu's words otherwise.
+- Read in microsoft-ui-xaml at `winui3/release/2.5.1`: a light-dismiss popup hides its
+  flyout when its window is deactivated (`Popup_Partial.cpp`), so `MenuHost` is made the
+  foreground window before the menu opens; a `MenuFlyoutItem` raises `Click` before it closes
+  its menu, and shows `KeyboardAcceleratorTextOverride` while a keyboard is present
+  (`MenuFlyoutItem_Partial.cpp`), so a choice runs once the menu has closed and the menu says
+  the window's shortcuts; a `RadioMenuFlyoutItem` is a `ToggleMenuFlyoutItem` inside that
+  undoes an uncheck by choosing (`RadioMenuFlyoutItem.cpp`); and NavigationView names its
+  settings item `SettingsItem` (`NavigationView.cpp`), which the UI tests select.
+  `OverlappedPresenter.CreateForContextMenu` keeps a border (Microsoft Learn, updated 28 July
+  2026), which `MenuHost` turns off.
+- The .NET SDK 10.0.401 numbers an `ApplicationIcon` 32512, `IDI_APPLICATION`'s number, and
+  copies it into the apphost on any system (dotnet/runtime v10.0.13,
+  `src/installer/managed/Microsoft.NET.HostModel/AppHost/HostWriter.cs`): `llvm-readobj
+  --coff-resources` on a win-x64 build made on macOS lists `GROUP_ICON` 32512 with eight
+  `ICON` entries in the exe. So `Shell.AppIcon` loads 32512 from `Pitboard.exe`.
+- Microsoft's app icon guidance (updated 14 July and 5 August 2026) asks for a transparent
+  icon drawn straight on, half of it at 3:1 against light and dark backgrounds, at 16, 24,
+  32, 48 and 256 px at least, and the notification area draws it at 16 px at 100% up to 64
+  px at 400%. So `Pitboard.ico` holds 16, 20, 24, 32, 40, 48, 64 and 256 px of the macOS
+  icon's board, untilted and unplated, whose grey rim, pole and dim row hold 3:1 against
+  both #202020 and #f3f3f3: at each size 50% or more of it does against the first and 81%
+  or more against the second.
 
 ### The model's timers
 

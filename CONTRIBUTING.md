@@ -377,8 +377,9 @@ foreach ($name in 'USERPROFILE', 'HOME', 'APPDATA', 'LOCALAPPDATA', 'CODEX_HOME'
 [Diagnostics.Process]::Start($app)
 ```
 
-Only the `firstLaunch` fixture opens the window as it starts. Run the last line again to bring
-the window forward: the second copy hands its launch to the first and quits.
+Only the `firstLaunch` fixture opens the window as it starts. Click Pitboard's icon in the
+notification area to bring the window forward, or run the last line again: the second copy
+hands its launch to the first and quits. Exit in the icon's menu ends it.
 
 On x64, publish with `-r win-x64 -p:Platform=x64`. A Debug build keeps apart from an installed
 Release:
@@ -392,6 +393,10 @@ Release:
 The data folder is the known folder Local AppData, which `LOCALAPPDATA` does not move. Under a
 fixture the app keeps its data in the fixture's folder, `pitboard-fixture` in the temporary
 directory.
+
+The app's icon is drawn in `apps/windows/Icon`. After changing a drawing, run
+`python3 make-ico.py` there, with `rsvg-convert` and Pillow installed, and commit the
+`Pitboard.App/Pitboard.ico` it writes.
 
 ## Tool registers
 
