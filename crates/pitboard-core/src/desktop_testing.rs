@@ -504,14 +504,21 @@ mod tests {
             std::env::temp_dir().join(format!("pitboard-fake-claude-home-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&home);
         let _guarding = crate::context::testing::also_guarding(&home);
-        let data = home.join("Library/Application Support/Claude");
+        // Where the guard looks on each system.
+        let below = match crate::host::OS {
+            crate::host::Os::MacOs | crate::host::Os::Linux => {
+                Path::new("Library/Application Support/Claude")
+            }
+            crate::host::Os::Windows => Path::new(r"AppData\Roaming\Claude"),
+        };
+        let data = home.join(below);
         let jar = data.join("Cookies");
         let planted = refused(&|| plant(&data, &WORK, JarAs::StandIn));
         let signed_in = refused(&|| sign_in_on_disk(&data, &WORK, JarAs::StandIn));
         let sqlite = refused(&|| write_jar(&jar, JarAs::Sqlite, &[]));
         let stand_in = refused(&|| write_jar(&jar, JarAs::StandIn, &[]));
         let bare = refused(&|| write_stand_in_jar(&jar, 24, &[]));
-        let climbed = home.join("never-made/../Library/Application Support/Claude");
+        let climbed = home.join("never-made").join("..").join(below);
         let planted_through = refused(&|| plant(&climbed, &WORK, JarAs::StandIn));
         let signed_in_through = refused(&|| sign_in_on_disk(&climbed, &WORK, JarAs::StandIn));
         let written = home.exists();

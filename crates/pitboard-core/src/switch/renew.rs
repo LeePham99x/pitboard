@@ -645,7 +645,10 @@ mod tests {
         ];
         for (way, scheduled) in ways {
             let m = machine(&format!("scheduled-{}", way.len()));
-            let default = m.ctx.clone().with_pitboard_home(m.home.join(".pitboard"));
+            let default = m
+                .ctx
+                .clone()
+                .with_pitboard_home(m.ctx.default_pitboard_home());
             let elsewhere = m.ctx.clone().with_pitboard_home(m.home.join("elsewhere"));
             park_in(&default, "work", "default-old", NOW - 1);
             park_in(&elsewhere, "other", "elsewhere-old", NOW - 1);
@@ -694,7 +697,10 @@ mod tests {
         use crate::service::Pitboard;
         for named in ["", "relative"] {
             let m = machine(&format!("scheduled-not-full-{}", named.len()));
-            let default = m.ctx.clone().with_pitboard_home(m.home.join(".pitboard"));
+            let default = m
+                .ctx
+                .clone()
+                .with_pitboard_home(m.ctx.default_pitboard_home());
             park_in(&default, "work", "default-old", NOW - 1);
             m.api.renews("default-old", fresh("default-new"));
             let given = m.ctx.clone().with_pitboard_home(named.into());

@@ -149,6 +149,14 @@ impl Environment {
         self.path(name).and_then(OsStr::to_str)
     }
 
+    // On Windows `all_proxy` may be how `ALL_PROXY` was set.
+    pub(crate) fn spelling(&self, name: &str) -> Option<&OsStr> {
+        self.path(name)?;
+        self.variables
+            .get(&self.os.variable_key(OsStr::new(name)))
+            .map(|(spelled, _)| spelled.as_os_str())
+    }
+
     /// Whether `name` holds anything: empty reads as unset.
     pub(crate) fn set(&self, name: &str) -> bool {
         self.text(name).is_some_and(|v| !v.is_empty())
