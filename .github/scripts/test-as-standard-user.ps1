@@ -1,19 +1,29 @@
 # The job's user is elevated in every program it starts, so the tests run as a fresh standard
 # user: nextest's, from the test programs and metadata the job's user built, and test programs
-# that need nothing from the job user's profile, each run as it is.
+# that need nothing from the job user's profile, each run as it is. With -Exe, the user runs
+# one program in scratch homes, and each run comes back as an object.
+# Bound strictly, so a misspelt option fails rather than lands in $args.
+[CmdletBinding()]
 param(
     # Cargo's options for the build, as `cargo nextest list` takes them.
     [string] $Cargo,
     # Self-contained test programs, such as a published Microsoft.Testing.Platform one, inside
     # the workspace.
     [string[]] $Dotnet,
-    # Built already, inside the workspace the user is granted read and run on.
-    [Parameter(Mandatory)] [string] $Probe
+    [string] $Exe,
+    # Its argument lines, run in turn; an empty one runs it with none.
+    [string[]] $Commands = @(''),
+    # Built already, inside the workspace the user is granted read and run on. Without it, -Exe
+    # leaves Credential Manager out of the leak check.
+    [string] $Probe
 )
 $ErrorActionPreference = 'Stop'
 
-if (-not $Cargo -and -not $Dotnet) {
-    throw 'nothing to run: give -Cargo, -Dotnet or both'
+if (-not $Cargo -and -not $Dotnet -and -not $Exe) {
+    throw 'nothing to run: give -Cargo, -Dotnet, -Exe or a mix'
+}
+if (-not $Probe -and ($Cargo -or $Dotnet)) {
+    throw 'the tests need -Probe for the leak check'
 }
 
 # A GitHub-hosted runner is thrown away after the job.
@@ -25,10 +35,17 @@ function Split-Words([string] $Text) {
     @($Text -split '\s+' | Where-Object { $_ })
 }
 
-if (-not (Test-Path -LiteralPath $Probe -PathType Leaf)) {
-    throw "no measurement probe at $Probe for the leak check: build it first, with cargo build --locked -p pitboard-probe"
+$probePath = $null
+if ($Probe) {
+    if (-not (Test-Path -LiteralPath $Probe -PathType Leaf)) {
+        throw "no measurement probe at $Probe for the leak check: build it first, with cargo build --locked -p pitboard-probe"
+    }
+    $probePath = (Resolve-Path -LiteralPath $Probe).Path
 }
-$probePath = (Resolve-Path -LiteralPath $Probe).Path
+if ($Exe) {
+    if (-not (Test-Path -LiteralPath $Exe -PathType Leaf)) { throw "no program at $Exe" }
+    $exePath = (Resolve-Path -LiteralPath $Exe).Path
+}
 
 # Any of these present would give a test the runner's settings rather than its own.
 function Get-MachineLayers {
@@ -184,6 +201,11 @@ try {
         $cargoMetadataFile = Join-Path $runDir 'cargo-metadata.json'
         $cargoMetadata | Set-Content -Path $cargoMetadataFile
     }
+    if ($Exe) {
+        # A copy in the run's folder, which the user may run wherever the program was built.
+        $userExe = Join-Path $runDir (Split-Path -Leaf $exePath)
+        Copy-Item -LiteralPath $exePath -Destination $userExe
+    }
 
     $devKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock'
     $developerMode = (Get-ItemProperty -Path $devKey -ErrorAction SilentlyContinue).AllowDevelopmentWithoutDevLicense -eq 1
@@ -235,14 +257,31 @@ try {
         Write-Output '::endgroup::'
         if ($run.Exit -ne 0) { $failed.Add("$($programs[$i]) exited $($run.Exit)") }
     }
+    if ($Exe) {
+        $exeEnv = $userEnv.Clone()
+        foreach ($folder in 'USERPROFILE', 'HOME', 'APPDATA', 'LOCALAPPDATA', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'PITBOARD_HOME') {
+            $exeEnv[$folder] = Join-Path $runDir "homes\$folder"
+            New-Item -ItemType Directory -Force -Path $exeEnv[$folder] | Out-Null
+        }
+        for ($i = 0; $i -lt $Commands.Count; $i++) {
+            $run = Start-AsUser $userExe (Split-Words $Commands[$i]) $runDir $exeEnv "exe-$i"
+            Write-Output "$(Split-Path -Leaf $exePath) $($Commands[$i]), as the standard user, exited $($run.Exit):"
+            Show-Run $run
+            [pscustomobject]@{ Command = $Commands[$i]; Exit = $run.Exit; Out = (Get-Content -Raw -Path $run.Out) }
+        }
+    }
 
     $leaked = [System.Collections.Generic.List[string]]::new()
-    $leaks = Start-AsUser $probePath @('credman-names', '--leak-check') $runDir $userEnv 'leak-check'
-    Write-Output "::group::Credential Manager's live login families and test items, as the standard user: $(if ($leaks.Exit -eq 0) { 'none' } else { 'FOUND OR UNREADABLE' })"
-    Show-Run $leaks
-    Write-Output '::endgroup::'
-    if ($leaks.Exit -ne 0) {
-        $leaked.Add("the leak check found a live login family's or a test's item in the standard user's Credential Manager, or could not list a family (exit $($leaks.Exit))")
+    if ($probePath) {
+        $leaks = Start-AsUser $probePath @('credman-names', '--leak-check') $runDir $userEnv 'leak-check'
+        Write-Output "::group::Credential Manager's live login families and test items, as the standard user: $(if ($leaks.Exit -eq 0) { 'none' } else { 'FOUND OR UNREADABLE' })"
+        Show-Run $leaks
+        Write-Output '::endgroup::'
+        if ($leaks.Exit -ne 0) {
+            $leaked.Add("the leak check found a live login family's or a test's item in the standard user's Credential Manager, or could not list a family (exit $($leaks.Exit))")
+        }
+    } else {
+        Write-Output 'No probe was given, so the leak check leaves Credential Manager out.'
     }
     # Every task, as the job's user, so a list that cannot be read fails rather than reads empty.
     $tasks = @(Get-ScheduledTask | Where-Object { $_.TaskPath -like '\Pitboard\*' })
@@ -258,7 +297,7 @@ try {
         }
     }
     if ($leaked.Count -eq 0) {
-        Write-Output 'No login, test item, task or login folder was left behind.'
+        Write-Output "No $(if ($probePath) { 'login, test item, ' })task or login folder was left behind."
     }
     $failed.AddRange($leaked)
 } finally {
@@ -277,5 +316,5 @@ try {
 if ($failed.Count -gt 0) {
     throw "as a standard user: $($failed -join '; ')"
 }
-Write-Output 'The tests passed as a standard user.'
+if ($Cargo -or $Dotnet) { Write-Output 'The tests passed as a standard user.' }
 exit 0

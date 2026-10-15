@@ -1,0 +1,44 @@
+name: Windows release
+description: >
+  Builds pitboard.exe for this runner's machine as a release ships it, packs it as
+  pitboard-v<version>-<triple>.zip in the runner's temporary dist folder, and checks the
+  pitboard.exe inside. release.yml builds its Windows zips with this, and CI every pull
+  request's.
+
+inputs:
+  triple:
+    description: The target triple of this runner's machine.
+    required: true
+  version:
+    description: The release's version, which names the zip.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # No Cargo cache: SignPath's origin verification refuses a build that may take files from
+    # an earlier one.
+    - uses: ./.github/actions/rust
+      with:
+        targets: ${{ inputs.triple }}
+        cache: "false"
+    # ring compiles its C with clang on ARM64.
+    - if: runner.arch == 'ARM64'
+      shell: bash
+      run: clang --version
+    # RUSTFLAGS replaces every target's own rustflags, so it names the static C runtime, and
+    # nothing else. One step, so the check reads the environment the build had.
+    - name: pitboard.exe, built, zipped and checked as a release
+      shell: pwsh
+      env:
+        TRIPLE: ${{ inputs.triple }}
+        VERSION: ${{ inputs.version }}
+        RUSTFLAGS: -C target-feature=+crt-static
+      run: |
+        cargo build --release --locked -p pitboard --target $env:TRIPLE
+        if ($LASTEXITCODE -ne 0) { throw "cargo build exited $LASTEXITCODE" }
+        $dist = Join-Path $env:RUNNER_TEMP 'dist'
+        ./.github/scripts/package-windows.ps1 -Exe "target/$env:TRIPLE/release/pitboard.exe" `
+          -Version $env:VERSION -Triple $env:TRIPLE -Out $dist
+        ./.github/scripts/check-windows-build.ps1 -Release -Triple $env:TRIPLE `
+          -Exe (Join-Path $dist "pitboard-v$env:VERSION-$env:TRIPLE\pitboard.exe")
