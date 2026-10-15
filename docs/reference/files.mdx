@@ -246,7 +246,7 @@ A variable that names a folder must hold a full path: [`home_not_absolute`](/ref
 | `CLAUDE_CODE_HOVER_REST` | Both | `1` or `true`: `pitboard doctor`'s `storage v5` check reads as on. Measured in 2.1.278, the login stays in the keychain. |
 | `CODEX_HOME` | Both | Codex's directory, in place of `~/.codex`. Empty counts as unset. |
 | `SUDO_UID` | Both | Not empty, as `sudo` sets it: Pitboard refuses every change with `elevated`. See [Pitboard changes nothing as root](/troubleshooting#pitboard-changes-nothing-as-root). |
-| `PATH` | Both | Where `claude` and `codex` are looked for, in directories named from the root. The app asks your login shell for its `PATH` instead: see [Pitboard cannot find Claude Code](/troubleshooting/accounts#pitboard-cannot-find-claude-code). |
+| `PATH` | Both | Where `claude` and `codex` are looked for, in directories named from the root. The app asks your login shell for its `PATH` instead: see [Pitboard cannot find a tool](/troubleshooting/accounts#pitboard-cannot-find-a-tool). |
 | `SHELL` | App | The login shell the app asks for its `PATH`. Unset or empty, your account's shell. |
 | `NO_COLOR` | Command line | Not empty: no colour in the output. For the status line, see [`statusline`](/reference/integration-commands#statusline). |
 | `XPC_SERVICE_NAME` | Command line | macOS: set by launchd. `com.datlechin.pitboard.renew` marks a run of daily renewal. |

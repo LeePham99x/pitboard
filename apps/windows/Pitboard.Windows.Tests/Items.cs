@@ -46,7 +46,7 @@ internal static class Items
     public static Missing CodexCliMissing() =>
         new(
             Title: "Pitboard can’t find the Codex CLI on this PC.",
-            Detail: "Adding a Codex account runs the Codex CLI’s own sign-in, and the ChatGPT app doesn’t install the CLI. Install it, then come back to this window.",
+            Detail: "Adding a Codex account runs the Codex CLI’s own sign-in. Pitboard doesn’t use the copy inside the ChatGPT app. Install the CLI, then come back to this window.",
             LinkTitle: "How to Install the Codex CLI", Link: "https://developers.openai.com/codex/cli");
 
     public static SheetText AddAccount(params SheetTool[] tools) =>

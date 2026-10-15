@@ -201,13 +201,20 @@ Dialogs open over the Pitboard window's **Accounts** pane.
 
 | Dialog | Opened by | Holds |
 | --- | --- | --- |
-| **Add Account** | **Add Account** in a menu, the toolbar or a tip, **Finish Adding**, or **Add the Account Claude Shows** on a notice | A **Tool** pop-up menu when more than one tool is offered, a **Name** field and the tool's button: see [Browser sign-in](#browser-sign-in) and [Claude Desktop sign-in](#claude-desktop-sign-in). A line under them names a tool not offered, as in **Codex is not offered: Pitboard did not find codex on this Mac.** |
+| **Add Account** | **Add Account** in a menu, the toolbar or a tip, **Finish Adding**, or **Add the Account Claude Shows** on a notice | A **Tool** pop-up menu, a **Name** field and the tool's button: see [Browser sign-in](#browser-sign-in) and [Claude Desktop sign-in](#claude-desktop-sign-in). For a tool Pitboard cannot find, a note such as **Pitboard can't find the Codex CLI on this Mac.** with a link to install it, and the button dimmed. |
 | **Sign In to work Again** | **Sign In Again**, an account marked **Needs signing in again** in the menu, or **Finish Signing In** | The account's label and the tool's button. |
 | **Name This Account** | **Name**, or an account marked **Not named yet** in the menu | A **Name** field and **Save**. |
 | **Rename "work"** | **Rename** | A **Name** field holding the label, and **Rename**. |
 | **Put Away the Login Left in a File** | **Put Away** on its notice | **Finding out whose login it is**, then what the file holds and what putting it away does, as [`pitboard stow`](/reference/recovery-commands#stow) says it. **Put Away** is dimmed for a login of an account not enrolled, and when nothing is left. |
 
-**Add Account** offers each tool the app found on this Mac and each tool that has an account. With none, it offers Claude Code alone.
+**Add Account** offers every tool Pitboard handles on this Mac and starts on the first it finds. Under a **Name** field, a line says why what you entered cannot be a name, and the dialog's button stays dimmed:
+
+| Entered | Line |
+| --- | --- |
+| A space | **A name is one word, with no spaces.** |
+| `/`, as in `codex/work` | **A name can't contain "/". Choose the tool above.** In **Name This Account** and **Rename**, **A name can't contain "/".** |
+
+A failure in a dialog goes once you change the name or the tool.
 
 | Tool | Found by |
 | --- | --- |

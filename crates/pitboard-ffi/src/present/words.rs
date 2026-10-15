@@ -394,8 +394,8 @@ pub(crate) fn missing(os: Os, tool: &str) -> Option<super::Missing> {
         ),
         "codex" => (
             format!("Pitboard can’t find the Codex CLI on {here}."),
-            "Adding a Codex account runs the Codex CLI’s own sign-in, and the ChatGPT app \
-             doesn’t install the CLI. Install it, then come back to this window.",
+            "Adding a Codex account runs the Codex CLI’s own sign-in. Pitboard doesn’t use \
+             the copy inside the ChatGPT app. Install the CLI, then come back to this window.",
             "How to Install the Codex CLI",
             INSTALL_CODEX_CLI,
         ),

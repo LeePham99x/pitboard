@@ -43,11 +43,11 @@ If the line names `/etc/codex/managed_config.toml`, `/etc/codex/requirements.tom
 
 ## Add Codex accounts
 
-Add each one as [Add another account](/guides/accounts#add-another-account) shows: choose **Codex** in the dialog's **Tool** pop-up menu, or start the label with `codex/`.
+Add each one as [Add another account](/guides/accounts#add-another-account) shows. In the app, choose **Codex** in the dialog's **Tool** pop-up menu and enter the name alone. On the command line, start the label with `codex/`.
 
 In the app, add your first Codex account with **Add Account**. Then name the one Codex is signed in to as in [Add the account you are signed in to](/guides/accounts#add-the-account-you-are-signed-in-to). On the command line, `pitboard enroll codex/personal` enrols that one at once.
 
-If the dialog says **Codex is not offered: Pitboard did not find codex on this Mac.**, install Codex, then quit Pitboard and open it again. The app looks for `codex` only when it opens.
+Adding an account runs `codex login` from OpenAI's Codex CLI. Pitboard does not use the copy inside the ChatGPT app. If the dialog says **Pitboard can't find the Codex CLI on this Mac.**, see [Pitboard cannot find a tool](/troubleshooting/accounts#pitboard-cannot-find-a-tool).
 
 ## How Codex accounts differ
 

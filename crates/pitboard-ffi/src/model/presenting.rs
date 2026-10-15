@@ -2737,8 +2737,8 @@ fn every_tool_is_offered_and_one_not_found_says_how_to_get_it() {
     );
     assert_eq!(
         missing.detail,
-        "Adding a Codex account runs the Codex CLI’s own sign-in, and the ChatGPT app doesn’t \
-         install the CLI. Install it, then come back to this window."
+        "Adding a Codex account runs the Codex CLI’s own sign-in. Pitboard doesn’t use the copy \
+         inside the ChatGPT app. Install the CLI, then come back to this window."
     );
     assert_eq!(missing.link_title, "How to Install the Codex CLI");
     assert_eq!(missing.link, "https://developers.openai.com/codex/cli");
