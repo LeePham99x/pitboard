@@ -529,7 +529,7 @@ window loads its site, and whatever the site's pages load, as a browser would.
   - `fixture/` holds the fixtures, the worlds a debug build of either app and its UI tests
     launch into by name, as the macOS app's debug build and UI tests do. Only the `fixture`
     feature compiles them, and it enables `pitboard-core`'s `test-support`. `worlds.rs`
-    makes each of the thirteen on the real core: a home in the fixture's own folder in the
+    makes each of the fourteen on the real core: a home in the fixture's own folder in the
     temporary directory, `MemoryHost` and `ScriptedApi`, and every account put there by the
     core as a person would have, signed in, enrolled, parked and switched on a clock set to
     when it happened. `claudeDesktop` and `claudeDesktopOpen` hold Claude Desktop only where
@@ -613,13 +613,17 @@ window loads its site, and whatever the site's pages load, as a browser would.
     and `Shell` is the known folder, the AppUserModelID and the refusal's message box.
     `Keyed` keeps a shown row while the model lists it, so `ShownAccount` keeps its
     selection across snapshots. `WindowAlert` is the failure or quit question in front of
-    the window, and `Countdown` a notice's timer.
+    the window, `SheetPage` what the sheet over it shows and sends, and `Countdown` a
+    notice's timer.
   - `Pitboard.Views` is the main window's panes, a WinUI library so the test app shows them
     as `Pitboard.exe` does. `AccountsPane` lists the accounts under their notices and setup
     step, each an `AccountRow` with an `AccountMenu`; `ActivityPane` and `MachinePane` are
     the log and this PC's checks. A notice is a `NoticeBar`, an InfoBar. `DialogHost` shows
     the window's ContentDialogs one at a time, and `WindowAlerts` puts the model's alerts in
-    one, or leaves them to the sheet's `AlertBar` while a sheet is up.
+    one, or leaves them to the sheet's `AlertBar` while a sheet is up. `WindowSheets` puts
+    the model's sheet up as an `AccountSheet`, a ContentDialog that adds an account, follows
+    its sign-in, names, renames or puts away a login left in a file, and tells the model
+    when somebody closes it.
   - `Pitboard.App` is `Pitboard.exe`, unpackaged and self-contained. `Program.Main` decides
     the launch, and `App` makes the model, over this PC or in a Debug build started with
     `PITBOARD_FIXTURE` a fixture's, opens the main window when the model asks, and stops the
@@ -3360,6 +3364,28 @@ Microsoft's documentation.
   is up `WindowAlerts` leaves the failure alert and the quit question to the sheet's
   `AlertBar`, an InfoBar, where the macOS app shows them over the sheet.
   `DialogHostTests.OnlyOneContentDialogShowsAtATime` holds it on the runners.
+- A sheet is a ContentDialog, which Microsoft's guidance gives for a question that asks for
+  input, with its "do it" actions as the primary and secondary buttons and a safe close
+  button that Esc presses ([Dialog controls](https://learn.microsoft.com/windows/apps/design/controls/dialogs-and-flyouts/dialogs),
+  updated 15 July 2026). The tool is a ComboBox starting on the tool the sheet is about, as
+  the radio button guidance has a combo box show the option recommended
+  ([Radio buttons](https://learn.microsoft.com/windows/apps/design/controls/radio-button),
+  updated 25 June 2026), and a sign-in waits under an indeterminate ProgressRing, the control
+  that guidance names for "Signing in..."
+  ([Progress controls](https://learn.microsoft.com/windows/apps/design/controls/progress-controls),
+  updated 8 July 2026).
+- Read in microsoft-ui-xaml at `winui3/release/2.5.1`, the WinUI of Windows App SDK 2.5.1.
+  `ContentDialog_Partial.cpp`: Esc clicks the close button where it is enabled and
+  otherwise hides the dialog through a `Closing` it may cancel; Enter clicks the default
+  button where it is enabled; the first focusable element of the content takes focus as the
+  dialog opens; a dialog made in code, outside the live tree, is put whole in its popup.
+  `KeyboardInputProcessor.cpp` raises `PreviewKeyDown` and `KeyDown` with one event
+  argument, so a `PreviewKeyDown` handled on the dialog keeps Esc from its close button.
+  `InfoBar.cpp` announces an InfoBar as it opens only through an automation peer it has
+  already. So `AccountSheet` cancels each button's click and leaves closing to the model,
+  dims its close button through `CloseButtonStyle` while nothing may close it, keeps Esc
+  from a sign-in that waits on its app, and keeps its failure's InfoBar in the tree while it
+  is closed. `AccountSheetTests` holds what runs without a person on the runners.
 - WinUI 2.3.9's `Themes/generic.xaml`, in the Windows App SDK 2.5.1 package: the InfoBar's
   close button is the template part `CloseButton`, which `NoticeBarTests` presses, and a
   `ListViewItem` is padded `16,0,12,0`, which the Activity pane's column headers and This
@@ -3462,6 +3488,10 @@ Measured on 6 October 2026 on macOS 27.0, with `pitboard-ffi` built for
   - A read lists the account in use first, and the read of what is known lists only
     enrolled accounts, so a login nobody has named is listed once the first read has asked
     its service whose it is.
+- leftInFile, which the Swift fixture never had, leaves a login of personal's in
+  `.credentials.json` behind Claude Code's store. Its read warns `fallback_login` with the
+  notice's Put Away…, the read of what is known says nothing of it, and Put Away keeps the
+  login for personal and deletes the file.
 - stuck shows the notice offering Give Up… as the app starts, as the Swift fixture did, now
   from the core's own read: a read says an interrupted switch is waiting wherever the next
   change would be refused over it, as a warning with the refusal's code,
