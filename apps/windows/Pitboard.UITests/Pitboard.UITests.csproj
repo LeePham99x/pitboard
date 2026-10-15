@@ -1,0 +1,16 @@
+<Project Sdk="MSTest.Sdk">
+  <!-- Drives the built Pitboard.exe through UI Automation. Run only on CI's runners: it moves the mouse. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.26100.0</SupportedOSPlatformVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="FlaUI.UIA3" />
+  </ItemGroup>
+  <!-- The Debug and Release Pitboard.exe the tests start, each published beside its own pitboard_ffi.dll. -->
+  <ItemGroup>
+    <AssemblyMetadata Include="PitboardAppDebug" Value="$(PitboardAppDebug)" />
+    <AssemblyMetadata Include="PitboardAppRelease" Value="$(PitboardAppRelease)" />
+  </ItemGroup>
+</Project>
