@@ -2097,11 +2097,13 @@ Accounts and tokens:
   for an icon named by its window and id and for one named by a GUID (CI run 38753437460).
   So the UI tests that click Pitboard's icon, `NotificationAreaTests` and `MenuBarTests`, run
   only where Explorer takes it, and the session's step A2 clicks it.
-- A window of that user's program comes to the front on windows-2025. On windows-11-arm a
-  `Windows.UI.Core.CoreWindow` of `WWAHost`, in the job user's session, holds the foreground,
-  and Windows keeps it there for a program the tests start, as `SetForegroundWindow` documents
-  for a process not started by the one in front (run 38795330950). So the test of the first
-  launch wants the front only where no window held it before the launch.
+- A window of that user's program comes to the front and takes a click on windows-2025. On
+  windows-11-arm a `Windows.UI.Core.CoreWindow` of `WWAHost`, in the job user's session,
+  holds the foreground, and Windows keeps it there for a program the tests start, as
+  `SetForegroundWindow` documents for a process not started by the one in front (run
+  38795330950). A click at Pitboard's window then reaches that window (run 38797997319). So
+  the test of the first launch is inconclusive where the window in front before the launch
+  keeps the foreground, and no test there gives Pitboard real input.
 - Developer Mode is on, and that user makes file and directory symbolic links as it is. It
   makes them with the symbolic-link right granted too, but Developer Mode was on for that run
   as well, so the right alone is not measured.

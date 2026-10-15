@@ -13,7 +13,8 @@ public sealed partial class LifecycleTests
 
     // CF1 and CF5, as the fresh standard user: the window comes to the front and takes a click. Windows keeps
     // the foreground from a process whose starter is not in front (SetForegroundWindow), so where another
-    // program's window was in front before the launch, as WWAHost's is on windows-11-arm, it may stay there.
+    // program's window held it before the launch and keeps it, as WWAHost's does on windows-11-arm, a click
+    // lands on that window and CF1 cannot be read.
     [TestMethod]
     public void TheFirstLaunchsWindowComesToTheFrontAndTakesAClick()
     {
@@ -26,18 +27,17 @@ public sealed partial class LifecycleTests
         var activity = window.FindFirstDescendant(found => found.ByAutomationId("pane.activity"))!;
         var handle = window.Properties.NativeWindowHandle.Value;
         var inFront = Retry.WhileFalse(() => GetForegroundWindow() == handle, TimeSpan.FromSeconds(5)).Result;
-        var front = InFront();
-        var kept = !inFront && before != 0 && GetForegroundWindow() == before;
+        if (!inFront && before != 0 && GetForegroundWindow() == before)
+        {
+            Assert.Inconclusive($"CF1: {InFront()} kept the foreground it held before the launch, over {window.BoundingRectangle}");
+        }
+
+        Assert.IsTrue(inFront, $"CF1: the window is not in front, {InFront()} is");
         Mouse.Click(activity.GetClickablePoint());
 
         var selected = Retry.WhileFalse(
             () => activity.Patterns.SelectionItem.Pattern.IsSelected.Value, TimeSpan.FromSeconds(5)).Result;
-        Assert.IsTrue(inFront || kept, $"CF1: the window is not in front, {front} is");
-        Assert.IsTrue(selected, $"CF1: the click did not reach the window, with {front} in front");
-        if (kept)
-        {
-            TestContext.WriteLine($"CF1: {front} kept the foreground it held before the launch");
-        }
+        Assert.IsTrue(selected, "CF1: the click did not reach the window");
     }
 
     // CF2: UI Automation finds a WinUI element by its AutomationId and invokes it.
@@ -92,7 +92,7 @@ public sealed partial class LifecycleTests
         stays.Window("Pitboard");
     }
 
-    // The window in front, by its class and its process.
+    // The window in front, by its class, title, process and place.
     private static unsafe string InFront()
     {
         var window = GetForegroundWindow();
@@ -103,6 +103,9 @@ public sealed partial class LifecycleTests
 
         var name = stackalloc char[256];
         var length = GetClassName(window, name, 256);
+        var title = stackalloc char[256];
+        var titled = GetWindowText(window, title, 256);
+        _ = GetWindowRect(window, out var place);
         _ = GetWindowThreadProcessId(window, out var owner);
         string process;
         try
@@ -114,7 +117,7 @@ public sealed partial class LifecycleTests
             process = $"process {owner}";
         }
 
-        return $"{new string(name, 0, length)} of {process}";
+        return $"{new string(name, 0, length)} '{new string(title, 0, titled)}' of {process} at {place.Left},{place.Top} to {place.Right},{place.Bottom}";
     }
 
     [LibraryImport("user32.dll")]
@@ -125,4 +128,20 @@ public sealed partial class LifecycleTests
 
     [LibraryImport("user32.dll")]
     private static partial uint GetWindowThreadProcessId(nint window, out uint process);
+
+    [LibraryImport("user32.dll", EntryPoint = "GetWindowTextW")]
+    private static unsafe partial int GetWindowText(nint window, char* text, int capacity);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool GetWindowRect(nint window, out Rect place);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Rect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
 }
