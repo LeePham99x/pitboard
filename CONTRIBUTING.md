@@ -108,8 +108,8 @@ The snapshots in `crates/pitboard/tests/snapshots` pin the `--json` contract, wh
 only on purpose. Review a changed one with `cargo insta review`, and say in the pull request
 why the contract moved.
 
-For a change to the install script, `packaging/install.sh`, or to
-`.github/scripts/fill-template.sh`, which fills it at release time:
+For a change to the install script, `packaging/install.sh`, another template in `packaging/`,
+or `.github/scripts/fill-template.sh`, which fills them at release time:
 
 ```sh
 shellcheck -s sh packaging/install.sh .github/scripts/fill-template.sh
@@ -119,8 +119,9 @@ python3 .github/scripts/test-install.py
 The test runs the script under each of `sh`, `dash`, `bash`, `zsh` and `busybox sh` it finds
 on `PATH`. `TEST_INSTALL_SHELLS` names the ones that must be found, as CI sets it.
 
-For a change to the release's scripts, `release-kind.sh` and `core-unchanged.sh` in
-`.github/scripts`, or `apps/macos/scripts/build-number.sh`:
+For a change to the release's scripts, `release-kind.sh`, `core-unchanged.sh` and
+`check-winget-hashes.py` in `.github/scripts`, `apps/macos/scripts/build-number.sh`, or the
+cargo-binstall metadata in `crates/pitboard/Cargo.toml`:
 
 ```sh
 shellcheck -s sh .github/scripts/release-kind.sh .github/scripts/core-unchanged.sh \

@@ -1241,3 +1241,104 @@ jobs:
           $expected = if ($env:RUNNER_ARCH -eq 'ARM64') { 0xAA64 } else { 0x8664 }
           if ($machine -ne $expected) { throw ('Scoop installed a program for machine 0x{0:X4} on {1}' -f $machine, $env:RUNNER_ARCH) }
           Write-Output "$said, for this machine"
+
+  # winget takes each latest release of a package microsoft/winget-pkgs already holds; the first
+  # version of each goes in by hand (RELEASING.md). komac writes the manifests with the run's
+  # read-only token, check-winget-hashes.py holds each installer's hash to the run's SHA256SUMS,
+  # and winget validates them before WINGET_TOKEN opens a pull request from the owner's fork.
+  winget:
+    needs: [guard, publish]
+    if: >-
+      ${{ !cancelled() && needs.publish.result == 'success' && needs.guard.outputs.latest == 'true' &&
+      needs.guard.outputs.windows == 'true' }}
+    # winget is on windows-2025 and not on windows-11-arm.
+    runs-on: windows-2025
+    timeout-minutes: 20
+    # WINGET_TOKEN opens pull requests on another repository, so it lives in an environment of
+    # its own.
+    environment: winget
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: SHA256SUMS
+          path: ${{ runner.temp }}/sums
+      # 2.16.0, since 2.17.0 and 2.17.1 write nothing to --output with --dry-run. Checked against
+      # the SHA-256 read on 15 October 2026 and against the release's own SHA256SUMS.
+      - name: komac
+        shell: pwsh
+        run: |
+          $komac = Join-Path $env:RUNNER_TEMP 'komac.exe'
+          $base = 'https://github.com/russellbanks/Komac/releases/download/v2.16.0'
+          Invoke-WebRequest -Uri "$base/komac-2.16.0-x86_64-pc-windows-msvc.exe" -OutFile $komac -MaximumRetryCount 5 -RetryIntervalSec 10
+          $pinned = 'BDC45BAF028F750DA7519CC8A5F2EAB5DFEF46DFE88650EEB0D0A9BF51446E4F'
+          if ((Get-FileHash -LiteralPath $komac -Algorithm SHA256).Hash -ne $pinned) { throw 'komac.exe is not the one read on 15 October 2026' }
+          $sums = curl.exe -fsSL "$base/SHA256SUMS" | Out-String
+          if ($sums -notmatch "(?m)^$pinned \*komac-2\.16\.0-x86_64-pc-windows-msvc\.exe\r?$") { throw "komac's own SHA256SUMS lists another komac.exe" }
+          "KOMAC=$komac" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: The manifests, written and checked
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.guard.outputs.version }}
+        run: |
+          $downloads = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:GITHUB_REF_NAME"
+          $packages = [ordered]@{
+            'Pitboard.CLI' = "pitboard-$env:GITHUB_REF_NAME-x86_64-pc-windows-msvc.zip", "pitboard-$env:GITHUB_REF_NAME-aarch64-pc-windows-msvc.zip"
+            # The app's MSIs, which the release builds once the Windows app ships.
+            'Pitboard.Pitboard' = "Pitboard-$env:GITHUB_REF_NAME-windows-x64.msi", "Pitboard-$env:GITHUB_REF_NAME-windows-arm64.msi"
+          }
+          $ready = Join-Path $env:RUNNER_TEMP 'winget-ready.txt'
+          New-Item -ItemType File -Force -Path $ready | Out-Null
+          foreach ($id in $packages.Keys) {
+            $publisher, $name = $id -split '\.', 2
+            $path = "manifests/$($publisher.Substring(0, 1).ToLowerInvariant())/$publisher/$name"
+            $found = curl.exe -sS -o NUL -w '%{http_code}' -H "Authorization: Bearer $env:GH_TOKEN" "https://api.github.com/repos/microsoft/winget-pkgs/contents/$path"
+            if ($found -eq '404') {
+              Write-Output "::notice::$id is not in microsoft/winget-pkgs yet, so its first version goes in by hand (RELEASING.md)"
+              continue
+            }
+            if ($found -ne '200') { throw "GitHub answered $found for microsoft/winget-pkgs' $path" }
+            # komac opens its pull request with this title.
+            $titles = gh api -X GET search/issues -f "q=repo:microsoft/winget-pkgs is:pr in:title $id $env:VERSION" --jq '.items[].title'
+            if ($LASTEXITCODE -ne 0) { throw "GitHub's search exited $LASTEXITCODE" }
+            if (@($titles | Where-Object { $_ -match "(^|\s)$([regex]::Escape($id)) version $([regex]::Escape($env:VERSION))$" })) {
+              Write-Output "::notice::microsoft/winget-pkgs has a pull request for $id $env:VERSION already: answer in it rather than run this again"
+              continue
+            }
+            $out = Join-Path $env:RUNNER_TEMP "winget-$id"
+            $urls = @($packages[$id] | ForEach-Object { "$downloads/$_" })
+            & $env:KOMAC update $id --version $env:VERSION --urls @urls --dry-run --output $out
+            if ($LASTEXITCODE -ne 0) { throw "komac update $id exited $LASTEXITCODE" }
+            $manifests = Join-Path $out "$path/$env:VERSION"
+            python .github/scripts/check-winget-hashes.py $manifests (Join-Path $env:RUNNER_TEMP 'sums\SHA256SUMS')
+            if ($LASTEXITCODE -ne 0) { throw "komac's manifests for $id disagree with SHA256SUMS" }
+            # winget exits APPINSTALLER_CLI_ERROR_MANIFEST_VALIDATION_WARNING for warnings alone.
+            winget validate --manifest $manifests
+            if ($LASTEXITCODE -eq 0x8A150028) {
+              Write-Output "::warning::winget validates $id $env:VERSION with warnings"
+            } elseif ($LASTEXITCODE -ne 0) {
+              throw ('winget validate {0} exited 0x{1:X8}' -f $id, $LASTEXITCODE)
+            }
+            $manifests | Out-File -FilePath $ready -Append -Encoding utf8
+          }
+          exit 0
+      # The one step that holds WINGET_TOKEN, and it submits only what the step before checked.
+      - name: Submit
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        run: |
+          $ready = @(Get-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'winget-ready.txt') | Where-Object { $_ })
+          if ($ready.Count -eq 0) {
+            Write-Output 'no package to submit'
+            exit 0
+          }
+          if (-not $env:GITHUB_TOKEN) { throw 'WINGET_TOKEN is not set in the winget environment' }
+          foreach ($manifests in $ready) {
+            & $env:KOMAC submit $manifests --yes
+            if ($LASTEXITCODE -ne 0) { throw "komac submit $manifests exited $LASTEXITCODE" }
+          }

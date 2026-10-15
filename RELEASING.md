@@ -52,7 +52,8 @@ The first release with Claude Desktop waits until the hand measurements M1 to M1
    A release candidate builds, signs and attests everything, and runs its own install script
    on each target. It also exchanges the crates.io token, so a wrong Trusted Publishing
    registration fails here, where it costs nothing. It uploads nothing to crates.io, has no
-   release notes or update feed, and skips the `feed`, `tap`, `brew` and `scoop` jobs.
+   release notes or update feed, and skips the `feed`, `tap`, `brew`, `scoop` and `winget`
+   jobs.
 
 8. Tag the same commit `v<version>` and push the tag.
 
@@ -66,7 +67,7 @@ The first release with Claude Desktop waits until the hand measurements M1 to M1
    stayed. Releases run one at a time, so this run waits until the candidate's has ended.
 
 9. Approve the `publish` job when it waits in the `release` environment.
-10. Watch the run to the end. A re-run fixes five failures:
+10. Watch the run to the end. A re-run fixes six failures:
 
 | Job | Failed | Do |
 | --- | --- | --- |
@@ -74,7 +75,11 @@ The first release with Claude Desktop waits until the hand measurements M1 to M1
 | `publish` | After the crates reached crates.io | Re-run it. It skips each crate whose version is there |
 | `tap` | At the push | Re-run it. It reads the run's own `SHA256SUMS`. Never write the tap by hand: its checksums would come from a second download |
 | `scoop` | At the push | Re-run it, as `tap`. Never write the bucket by hand |
+| `winget` | Before "Submit" | Re-run it |
 | `install-script` | At "Install the way the README says to" | Check [the redirect](#the-redirect), then re-run it |
+
+Never re-run `winget` once its "Submit" step has started: komac may have opened a pull request
+on `microsoft/winget-pkgs`. Answer in that pull request.
 
 An rc or beta number is used once. A fix that needs another commit takes the next number,
 and a published tag never moves. The workflow decides which release is latest: never mark
@@ -142,6 +147,7 @@ Keep the signer's account apart from the update key and the Developer ID certifi
 | `SPARKLE_PUBLIC_KEY`, `SPARKLE_PRIVATE_KEY` | `bin/generate_keys --account pitboard`, from Sparkle's release archive at the version `apps/macos/project.yml` pins, prints the public key. With `-x <file>` it writes the private key to `<file>`, whose contents are the secret. Delete the file afterwards |
 | `HOMEBREW_TAP_TOKEN` | A fine-grained token with `datlechin/homebrew-tap` as its only repository, Contents read and write as its only permission, and an expiry you will notice |
 | `SCOOP_BUCKET_TOKEN` | The same, for `datlechin/scoop-bucket` |
+| `WINGET_TOKEN` | A classic token with the `public_repo` scope, of the account that holds the fork of `microsoft/winget-pkgs`. komac 2.16.0's README says a fine-grained token fails to open the pull request |
 
 Without the Apple secrets, everything is signed ad hoc and not notarised, and Gatekeeper
 warns about the app on first launch. The `app` job fails without the Sparkle secrets. The
@@ -157,8 +163,8 @@ API token, then its own registration under **Settings** > **Trusted Publishing**
 
 The `release` environment has required reviewers, and the `publish` job waits in it.
 Renaming it breaks the crates.io registration. The `homebrew-tap` environment holds
-`HOMEBREW_TAP_TOKEN`, and `scoop-bucket` holds `SCOOP_BUCKET_TOKEN` and takes deployments
-from `v*` tags only.
+`HOMEBREW_TAP_TOKEN`. `scoop-bucket` holds `SCOOP_BUCKET_TOKEN` and `winget` holds
+`WINGET_TOKEN`, and each takes deployments from `v*` tags only.
 
 [Rotate the update key](#rotate-the-update-key) covers the repository variable
 `SPARKLE_KEY_ROTATION`, and [Windows signing](#windows-signing) `WINDOWS_SIGNER`,
@@ -196,6 +202,37 @@ Before the first 1.x release:
 
 The bucket's page and the `scoop-install` job hold the same install lines. Change them
 together: `rg -F datlechin/scoop-bucket` finds every copy.
+
+## winget
+
+Pitboard is two winget packages: `Pitboard.CLI`, the zips, each holding a portable
+`pitboard.exe` with the command alias `pitboard`, and `Pitboard.Pitboard`, the app's per-user
+MSIs once the release builds them. Since winget 1.29 an MSI wins over a portable under one
+identifier, hence two. A beta never reaches winget.
+
+For the latest release from major version 1, the `winget` job takes each package
+`microsoft/winget-pkgs` already holds. komac writes its next version from the published files
+with the run's read-only token, `.github/scripts/check-winget-hashes.py` checks each
+installer's hash against the run's `SHA256SUMS`, and `winget validate` checks the manifests.
+Then komac opens the pull request from the fork with `WINGET_TOKEN`. A package that is not in
+`microsoft/winget-pkgs` yet, or has a pull request for this version, is skipped with a notice.
+
+komac stays at 2.16.0, pinned by SHA-256 in `release.yml`: 2.17.0 and 2.17.1 write nothing to
+`--output` with `--dry-run`. Before the first 1.x release, make the `winget` environment with a
+deployment rule for `v*` tags, so the job never makes one with no rule. `komac new` asks
+questions at a terminal, so the first version of each package goes in by hand, after 1.0.0 is
+published:
+
+1. Fork `microsoft/winget-pkgs`, and put `WINGET_TOKEN` in the `winget` environment as the
+   secrets table says.
+2. Run `komac new Pitboard.CLI --version 1.0.0 --urls <x64 zip> <arm64 zip> --dry-run --output
+   <folder>`, and the same for `Pitboard.Pitboard` with the MSIs. Give the zips the command
+   alias `pitboard`.
+3. Run `python3 .github/scripts/check-winget-hashes.py <manifests> <the release's SHA256SUMS>`
+   and `winget validate --manifest <manifests>` on each, and check `Scope: user` on the MSIs.
+4. Submit with `komac submit <manifests>`. Sign the Microsoft CLA in the first pull request, and
+   answer a `Needs-Author-Feedback` label within 5 days: 3 days of silence after that closes
+   the pull request.
 
 ## The install script
 

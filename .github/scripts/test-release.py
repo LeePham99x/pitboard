@@ -3,6 +3,7 @@ import io
 import re
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 import tomllib
@@ -13,6 +14,7 @@ REPO = Path(__file__).resolve().parents[2]
 CORE_UNCHANGED = REPO / ".github" / "scripts" / "core-unchanged.sh"
 RELEASE_KIND = REPO / ".github" / "scripts" / "release-kind.sh"
 BUILD_NUMBER = REPO / "apps" / "macos" / "scripts" / "build-number.sh"
+WINGET_HASHES = REPO / ".github" / "scripts" / "check-winget-hashes.py"
 PACKAGE_WINDOWS = REPO / ".github" / "scripts" / "package-windows.ps1"
 WINDOWS_TARGETS = ("x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc")
 TARBALL_TARGETS = (
@@ -341,6 +343,101 @@ class Binstall(unittest.TestCase):
                 self.assertEqual(meta["pkg-fmt"], "tgz")
                 self.assertEqual(self.expand(meta["bin-dir"], target, version), f"{name}/pitboard")
                 self.assertEqual(meta["disabled-strategies"], {"quick-install"})
+
+
+class WingetHashes(unittest.TestCase):
+    VERSION = "1.0.1"
+    DOWNLOADS = f"https://github.com/datlechin/pitboard/releases/download/v{VERSION}/"
+    ZIPS = {
+        "x64": f"pitboard-v{VERSION}-x86_64-pc-windows-msvc.zip",
+        "arm64": f"pitboard-v{VERSION}-aarch64-pc-windows-msvc.zip",
+    }
+
+    def setUp(self):
+        self.work = Path(tempfile.mkdtemp())
+        self.hashes = {name: f"{n:064x}" for n, name in enumerate(self.ZIPS.values(), 1)}
+        self.sums = self.work / "SHA256SUMS"
+        lines = [f"{h}  {name}" for name, h in self.hashes.items()]
+        self.sums.write_text("\n".join([f"{0:064x}  install.sh", *lines]) + "\n")
+
+    def tearDown(self):
+        shutil.rmtree(self.work)
+
+    # As komac 2.16.0 writes one into --output: manifests/<letter>/<publisher>/<name>/<version>.
+    def manifests(self, installers):
+        folder = self.work / "out" / "manifests" / "p" / "Pitboard" / "CLI" / self.VERSION
+        folder.mkdir(parents=True)
+        items = "".join(
+            f"- Architecture: {arch}\n  InstallerUrl: {url}\n  InstallerSha256: {digest}\n"
+            for arch, url, digest in installers
+        )
+        (folder / "Pitboard.CLI.installer.yaml").write_text(
+            "# Created with komac v2.16.0\n"
+            "# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.10.0"
+            ".schema.json\n\n"
+            f"PackageIdentifier: Pitboard.CLI\nPackageVersion: {self.VERSION}\n"
+            "InstallerType: zip\nNestedInstallerType: portable\nNestedInstallerFiles:\n"
+            f"- RelativeFilePath: pitboard-v{self.VERSION}-x86_64-pc-windows-msvc\\pitboard.exe\n"
+            "  PortableCommandAlias: pitboard\n"
+            f"Installers:\n{items}ManifestType: installer\nManifestVersion: 1.10.0\n"
+        )
+        (folder / "Pitboard.CLI.yaml").write_text("PackageIdentifier: Pitboard.CLI\n")
+        return self.work / "out"
+
+    def installers(self, **changed):
+        return [
+            (arch, self.DOWNLOADS + name, changed.get(arch, self.hashes[name].upper()))
+            for arch, name in self.ZIPS.items()
+        ]
+
+    def checked(self, folder):
+        return subprocess.run(
+            [sys.executable, str(WINGET_HASHES), str(folder), str(self.sums)],
+            capture_output=True,
+            text=True,
+        )
+
+    def test_hashes_equal_to_the_release_lines_pass(self):
+        done = self.checked(self.manifests(self.installers()))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        for name in self.ZIPS.values():
+            self.assertIn(f"ok: {name}", done.stdout)
+
+    def test_a_changed_hash_fails(self):
+        wrong = "F" * 64
+        done = self.checked(self.manifests(self.installers(arm64=wrong)))
+        self.assertEqual(done.returncode, 1)
+        name = self.ZIPS["arm64"]
+        self.assertIn(
+            f"{name}: the manifest says {wrong}, and SHA256SUMS {self.hashes[name]}", done.stderr
+        )
+
+    def test_a_url_with_no_line_fails(self):
+        installers = self.installers()
+        installers[1] = ("arm64", self.DOWNLOADS + "pitboard-v1.0.1-arm64.zip", "A" * 64)
+        done = self.checked(self.manifests(installers))
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("SHA256SUMS has no line for pitboard-v1.0.1-arm64.zip", done.stderr)
+
+    def test_an_installer_without_a_url_or_a_hash_fails(self):
+        installers = self.installers()
+        installers[0] = ("x64", self.DOWNLOADS + self.ZIPS["x64"], "")
+        done = self.checked(self.manifests(installers))
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("installer 1 has no InstallerSha256", done.stderr)
+
+    def test_a_folder_with_no_installer_manifest_fails(self):
+        (self.work / "empty").mkdir()
+        done = self.checked(self.work / "empty")
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("holds 0 installer manifests, not 1", done.stderr)
+
+    def test_it_takes_two_arguments(self):
+        done = subprocess.run(
+            [sys.executable, str(WINGET_HASHES), str(self.work)], capture_output=True, text=True
+        )
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("usage:", done.stderr)
 
 
 class BuildNumber(unittest.TestCase):
