@@ -194,7 +194,7 @@ jobs:
           - os: windows-11-arm
             triple: aarch64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -352,9 +352,9 @@ jobs:
   publish:
     needs: [guard, build, app, build-windows]
     if: >-
-      !cancelled() && needs.build.result == 'success' && needs.app.result == 'success' &&
+      ${{ !cancelled() && needs.build.result == 'success' && needs.app.result == 'success' &&
       (needs.build-windows.result == 'success' ||
-      (needs.build-windows.result == 'skipped' && needs.guard.outputs.windows == 'false'))
+      (needs.build-windows.result == 'skipped' && needs.guard.outputs.windows == 'false')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # Required reviewers on this environment are what stops an unexpected tag walking into
