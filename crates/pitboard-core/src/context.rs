@@ -348,6 +348,8 @@ pub struct Context {
     pub(crate) profile: Option<PathBuf>,
     // Windows' `LOCALAPPDATA`, as the environment gives it.
     pub(crate) local_app_data: Option<PathBuf>,
+    // The person's Windows SID, which an `icacls` line names and a report hides.
+    pub(crate) sid: Option<String>,
     // The folders OneDrive syncs on Windows, as its variables name them.
     pub(crate) one_drive: Vec<PathBuf>,
     /// The Pitboard the daily renewal schedule runs. `None` is this program, which is right
@@ -476,6 +478,7 @@ impl Context {
             codex_home: None,
             profile: None,
             local_app_data: None,
+            sid: None,
             one_drive: Vec::new(),
             schedule_program: None,
             search_path: None,
@@ -824,6 +827,9 @@ impl Context {
                 .path("LOCALAPPDATA")
                 .filter(|_| env.os() == Os::Windows)
                 .map(PathBuf::from),
+            sid: (env.os() == Os::Windows)
+                .then(crate::host::user::sid)
+                .flatten(),
             one_drive: ["OneDrive", "OneDriveCommercial", "OneDriveConsumer"]
                 .into_iter()
                 .filter(|_| env.os() == Os::Windows)

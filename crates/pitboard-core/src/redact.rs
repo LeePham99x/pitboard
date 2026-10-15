@@ -56,7 +56,8 @@ impl Sheet {
         }
     }
 
-    // On Windows also the profile and `%LOCALAPPDATA%`, in every spelling and case, and the user.
+    // On Windows also the profile and `%LOCALAPPDATA%`, in every spelling and case, the user
+    // and the SID.
     pub(crate) fn of(ctx: &Context, salt: impl Into<String>) -> Sheet {
         let sheet = Sheet::new(salt, ctx.home().to_string_lossy());
         match ctx.os {
@@ -70,7 +71,9 @@ impl Sheet {
                     Some(local) => sheet.folder(&windows_spellings(local), "%LOCALAPPDATA%"),
                     None => sheet,
                 };
-                sheet.hide_in_any_case(ctx.user.clone().unwrap_or_default(), "user")
+                sheet
+                    .hide_in_any_case(ctx.user.clone().unwrap_or_default(), "user")
+                    .hide_in_any_case(ctx.sid.clone().unwrap_or_default(), "sid")
             }
         }
     }
@@ -339,6 +342,44 @@ mod tests {
         }
         assert!(sheet.over("dana test").starts_with("<user "));
         let _ = std::fs::remove_dir_all(&profile);
+    }
+
+    // The SID as `icacls` advice names it, and as Windows compares one.
+    #[test]
+    fn a_report_from_windows_hides_the_persons_sid_in_every_form() {
+        use crate::context::Environment;
+        let profile =
+            std::env::temp_dir().join(format!("pitboard-redact-sid-{}", std::process::id()));
+        let env = Environment::on(
+            Os::Windows,
+            [("USERPROFILE", profile.to_string_lossy().into_owned())],
+        );
+        let mut ctx = Context::read(&env, "cli");
+        if cfg!(windows) {
+            assert!(ctx.sid.is_some(), "the token's own");
+            assert_eq!(ctx.sid, crate::host::user::sid());
+        }
+        let sid = ctx
+            .sid
+            .get_or_insert_with(|| "S-1-5-21-1004336348-1177238915-682003330-1001".into())
+            .clone();
+        let sheet = Sheet::of(&ctx, "salt");
+        let hidden = sheet.over(&sid);
+        assert!(hidden.starts_with("<sid "), "{hidden}");
+        for form in [
+            format!(r#""*{sid}:F""#),
+            format!(r#""*{sid}:(OI)(CI)F""#),
+            sid.to_lowercase(),
+        ] {
+            let shown = sheet.over(&form);
+            assert!(shown.contains(&hidden), "{form}: {shown}");
+            assert!(!shown.to_uppercase().contains("S-1-5-21-"), "{shown}");
+        }
+        assert_eq!(
+            sheet.over("*S-1-5-18:F"),
+            "*S-1-5-18:F",
+            "SYSTEM is nobody's"
+        );
     }
 
     #[test]

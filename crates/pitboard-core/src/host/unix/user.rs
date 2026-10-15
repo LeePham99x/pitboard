@@ -37,8 +37,12 @@ pub(crate) fn home() -> Option<PathBuf> {
     passwd_home()
 }
 
-// Windows alone names a profile folder apart from the home, local app data and a profile
-// that roams.
+// Windows alone names a profile folder apart from the home, local app data, a profile that
+// roams and a SID.
+pub(crate) fn sid() -> Option<String> {
+    None
+}
+
 pub(crate) fn profile() -> Option<PathBuf> {
     None
 }

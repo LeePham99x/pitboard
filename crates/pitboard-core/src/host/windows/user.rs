@@ -3,7 +3,7 @@ use crate::host::{Elevation, Floor};
 use std::path::PathBuf;
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
 use windows_sys::Win32::Security::{
-    GetTokenInformation, IsWellKnownSid, TOKEN_ELEVATION, TOKEN_ELEVATION_TYPE, TOKEN_QUERY,
+    GetTokenInformation, IsWellKnownSid, PSID, TOKEN_ELEVATION, TOKEN_ELEVATION_TYPE, TOKEN_QUERY,
     TOKEN_USER, TokenElevation, TokenElevationType, TokenUser, WinLocalServiceSid,
     WinLocalSystemSid, WinNetworkServiceSid,
 };
@@ -25,6 +25,30 @@ pub(crate) fn login_name() -> Option<String> {
 /// leaves as a home that is not a full path.
 pub(crate) fn home() -> Option<PathBuf> {
     real_lookups().then(profile_directory).flatten()
+}
+
+// The token's TokenUser, which owns and is granted what Pitboard makes, and a report hides.
+pub(crate) fn sid() -> Option<String> {
+    Opened::this_process()?.user_sid()
+}
+
+pub(crate) fn sid_text(sid: PSID) -> Option<String> {
+    use windows_sys::Win32::Security::Authorization::ConvertSidToStringSidW;
+    let mut text: windows_sys::core::PWSTR = std::ptr::null_mut();
+    // SAFETY: a valid SID, and `text` is LocalAlloc'd on success and freed below.
+    if unsafe { ConvertSidToStringSidW(sid, &raw mut text) } == 0 || text.is_null() {
+        return None;
+    }
+    let mut len = 0;
+    // SAFETY: on success `text` is a NUL-terminated string, read up to its NUL.
+    while unsafe { *text.add(len) } != 0 {
+        len += 1;
+    }
+    // SAFETY: `text` holds `len` units before its NUL.
+    let said = String::from_utf16(unsafe { std::slice::from_raw_parts(text, len) }).ok();
+    // SAFETY: the LocalAlloc'd string ConvertSidToStringSidW gave, freed this once.
+    unsafe { windows_sys::Win32::Foundation::LocalFree(text.cast()) };
+    said
 }
 
 // RF-B1: `FOLDERID_Profile` ignores `USERPROFILE` and `HOME`. Codex's default home is in it.
@@ -219,6 +243,20 @@ impl Opened {
     }
 
     fn service_account(&self) -> Option<bool> {
+        self.with_user(|user| {
+            let is = |kind| {
+                // SAFETY: `user` is the valid SID Windows just gave, still in its buffer.
+                unsafe { IsWellKnownSid(user, kind) != 0 }
+            };
+            is(WinLocalSystemSid) || is(WinLocalServiceSid) || is(WinNetworkServiceSid)
+        })
+    }
+
+    fn user_sid(&self) -> Option<String> {
+        self.with_user(sid_text).flatten()
+    }
+
+    fn with_user<T>(&self, then: impl FnOnce(PSID) -> T) -> Option<T> {
         let mut needed = 0u32;
         // SAFETY: with no buffer it writes only the length it needs, to `needed`.
         unsafe {
@@ -245,11 +283,7 @@ impl Opened {
         }
         // SAFETY: an aligned TOKEN_USER starts the buffer, and its SID points into the buffer.
         let user = unsafe { (*buffer.as_ptr().cast::<TOKEN_USER>()).User.Sid };
-        let is = |kind| {
-            // SAFETY: `user` is the valid SID Windows just gave, still in its buffer.
-            unsafe { IsWellKnownSid(user, kind) != 0 }
-        };
-        Some(is(WinLocalSystemSid) || is(WinLocalServiceSid) || is(WinNetworkServiceSid))
+        Some(then(user))
     }
 }
 
@@ -363,6 +397,19 @@ mod tests {
             let folder = known_folder(&id).expect("a known folder");
             assert!(folder.is_absolute(), "{}", folder.display());
         }
+    }
+
+    // `whoami /user` prints the user's name and SID, which is this token's TokenUser.
+    #[test]
+    fn the_sid_is_the_one_windows_shows_for_this_user() {
+        let sid = sid().expect("TokenUser");
+        assert!(sid.starts_with("S-1-"), "{sid}");
+        let said = std::process::Command::new("whoami.exe")
+            .args(["/user", "/fo", "csv", "/nh"])
+            .output()
+            .expect("whoami runs");
+        let said = String::from_utf8_lossy(&said.stdout);
+        assert!(said.trim_end().ends_with(&format!("\"{sid}\"")), "{said}");
     }
 
     #[test]
