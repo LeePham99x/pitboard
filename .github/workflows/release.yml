@@ -1101,3 +1101,143 @@ jobs:
           }
           & $installed --version
           exit $LASTEXITCODE
+
+  # Scoop's bucket holds the command line for Windows, written like the tap from the SHA256SUMS
+  # the publish job took. Until datlechin/scoop-bucket and SCOOP_BUCKET_TOKEN exist, it says
+  # which is missing and writes nothing.
+  scoop:
+    needs: [guard, publish]
+    if: >-
+      ${{ !cancelled() && needs.publish.result == 'success' && needs.guard.outputs.latest == 'true' &&
+      needs.guard.outputs.windows == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # SCOOP_BUCKET_TOKEN reaches another repository, so it lives in an environment of its own.
+    environment: scoop-bucket
+    outputs:
+      written: ${{ steps.bucket.outputs.written }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: SHA256SUMS
+          path: ${{ runner.temp }}/sums
+      - id: bucket
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+          VERSION: ${{ needs.guard.outputs.version }}
+        run: |
+          set -euo pipefail
+          bucket=${GITHUB_REPOSITORY_OWNER}/scoop-bucket
+          found=$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/$bucket")
+          case $found in
+            200) ;;
+            404)
+              echo "::warning::$bucket does not exist, so Scoop gets no $VERSION. RELEASING.md says how to make it."
+              echo "written=false" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+            *)
+              echo "GitHub answered $found for $bucket" >&2
+              exit 1
+              ;;
+          esac
+          if [ -z "$TOKEN" ]; then
+            echo "::warning::SCOOP_BUCKET_TOKEN is not set in the scoop-bucket environment, so Scoop gets no $VERSION"
+            echo "written=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # A header, as for the tap, masked by hand.
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)"
+          echo "::add-mask::$auth"
+          dir=$RUNNER_TEMP/bucket
+          git -c "http.extraheader=$auth" clone --depth 1 "https://github.com/$bucket.git" "$dir"
+          mkdir -p "$dir/bucket"
+          sh .github/scripts/fill-template.sh packaging/scoop/pitboard.json \
+            "$dir/bucket/pitboard.json" "$VERSION" "$RUNNER_TEMP/sums/SHA256SUMS"
+          cp packaging/scoop/README.md "$dir/README.md"
+
+          cd "$dir"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "the bucket already serves $VERSION"
+          else
+            git commit -m "pitboard $VERSION"
+            git -c "http.extraheader=$auth" push
+          fi
+          echo "written=true" >> "$GITHUB_OUTPUT"
+
+  # What somebody following the bucket's page gets, got, on each Windows machine: Scoop in a
+  # folder of its own, the bucket added, and the command line installed from it.
+  scoop-install:
+    needs: [guard, scoop]
+    if: ${{ !cancelled() && needs.scoop.result == 'success' && needs.scoop.outputs.written == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, windows-11-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      # ScoopInstaller/Install has no releases, so its script is pinned by commit and SHA-256. It
+      # installs Scoop from Scoop's master branch, as it does for everybody.
+      - name: Scoop, in a folder of its own
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP 'install-scoop.ps1'
+          $url = 'https://raw.githubusercontent.com/ScoopInstaller/Install/1e2f334083d609986d8c8bc9e31ae8e87c39fab4/install.ps1'
+          Invoke-WebRequest -Uri $url -OutFile $installer -MaximumRetryCount 5 -RetryIntervalSec 10
+          $pinned = '94F983B190438311E006B957DB7C8422709E0BA62A6C2AC04E278164108F2512'
+          if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash -ne $pinned) { throw "$url is not the script read on 15 October 2026" }
+          $root = Join-Path $env:RUNNER_TEMP 'scoop'
+          # Scoop runs as in a terminal, where an error it writes does not stop it.
+          $ErrorActionPreference = 'Continue'
+          # The job's user is elevated in every program it starts.
+          & $installer -ScoopDir $root -RunAsAdmin
+          Join-Path $root 'shims' | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          "SCOOP=$root" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          scoop --version
+          exit $LASTEXITCODE
+      - name: Install the way the bucket's page says to
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.guard.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Continue'
+          # The push and this clone are two machines talking to GitHub, so the bucket is given a
+          # couple of minutes to be servable before it is called stale.
+          $manifest = Join-Path $env:SCOOP 'buckets\pitboard\bucket\pitboard.json'
+          $served = $null
+          foreach ($attempt in 1..12) {
+            if (Test-Path -LiteralPath $manifest) { scoop bucket rm pitboard }
+            scoop bucket add pitboard https://github.com/datlechin/scoop-bucket
+            if ($LASTEXITCODE -ne 0) { throw "scoop bucket add exited $LASTEXITCODE" }
+            $served = (Get-Content -Raw -LiteralPath $manifest | ConvertFrom-Json).version
+            if ($served -eq $env:VERSION) { break }
+            Write-Output "the bucket serves $served, waiting for $env:VERSION (attempt $attempt)"
+            Start-Sleep -Seconds 10
+          }
+          if ($served -ne $env:VERSION) { throw "this release published $env:VERSION and the bucket serves $served" }
+          scoop install pitboard/pitboard
+          exit $LASTEXITCODE
+      - name: What it installed
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.guard.outputs.version }}
+        run: |
+          $said = (& (Join-Path $env:SCOOP 'shims\pitboard.exe') --version | Out-String).Trim()
+          if ($LASTEXITCODE -ne 0) { throw "pitboard --version exited $LASTEXITCODE" }
+          if ($said -ne "pitboard $env:VERSION") { throw "pitboard --version says '$said', not 'pitboard $env:VERSION'" }
+          # This machine's build, not the other one under emulation: the PE header's machine.
+          $bytes = [IO.File]::ReadAllBytes((Join-Path $env:SCOOP 'apps\pitboard\current\pitboard.exe'))
+          $machine = [BitConverter]::ToUInt16($bytes, [BitConverter]::ToInt32($bytes, 0x3C) + 4)
+          $expected = if ($env:RUNNER_ARCH -eq 'ARM64') { 0xAA64 } else { 0x8664 }
+          if ($machine -ne $expected) { throw ('Scoop installed a program for machine 0x{0:X4} on {1}' -f $machine, $env:RUNNER_ARCH) }
+          Write-Output "$said, for this machine"

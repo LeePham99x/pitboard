@@ -52,7 +52,7 @@ The first release with Claude Desktop waits until the hand measurements M1 to M1
    A release candidate builds, signs and attests everything, and runs its own install script
    on each target. It also exchanges the crates.io token, so a wrong Trusted Publishing
    registration fails here, where it costs nothing. It uploads nothing to crates.io, has no
-   release notes or update feed, and skips the `feed`, `tap` and `brew` jobs.
+   release notes or update feed, and skips the `feed`, `tap`, `brew` and `scoop` jobs.
 
 8. Tag the same commit `v<version>` and push the tag.
 
@@ -66,13 +66,14 @@ The first release with Claude Desktop waits until the hand measurements M1 to M1
    stayed. Releases run one at a time, so this run waits until the candidate's has ended.
 
 9. Approve the `publish` job when it waits in the `release` environment.
-10. Watch the run to the end. A re-run fixes four failures:
+10. Watch the run to the end. A re-run fixes five failures:
 
 | Job | Failed | Do |
 | --- | --- | --- |
 | `windows-sign` | Anywhere | Re-run it. SignPath evaluates at most three re-runs of a run, and fails the fourth |
 | `publish` | After the crates reached crates.io | Re-run it. It skips each crate whose version is there |
 | `tap` | At the push | Re-run it. It reads the run's own `SHA256SUMS`. Never write the tap by hand: its checksums would come from a second download |
+| `scoop` | At the push | Re-run it, as `tap`. Never write the bucket by hand |
 | `install-script` | At "Install the way the README says to" | Check [the redirect](#the-redirect), then re-run it |
 
 An rc or beta number is used once. A fix that needs another commit takes the next number,
@@ -140,10 +141,12 @@ Keep the signer's account apart from the update key and the Developer ID certifi
 | `APPLE_API_KEY_ID`, `APPLE_API_ISSUER` | Shown beside that key |
 | `SPARKLE_PUBLIC_KEY`, `SPARKLE_PRIVATE_KEY` | `bin/generate_keys --account pitboard`, from Sparkle's release archive at the version `apps/macos/project.yml` pins, prints the public key. With `-x <file>` it writes the private key to `<file>`, whose contents are the secret. Delete the file afterwards |
 | `HOMEBREW_TAP_TOKEN` | A fine-grained token with `datlechin/homebrew-tap` as its only repository, Contents read and write as its only permission, and an expiry you will notice |
+| `SCOOP_BUCKET_TOKEN` | The same, for `datlechin/scoop-bucket` |
 
 Without the Apple secrets, everything is signed ad hoc and not notarised, and Gatekeeper
 warns about the app on first launch. The `app` job fails without the Sparkle secrets. The
-`tap` job fails without `HOMEBREW_TAP_TOKEN`.
+`tap` job fails without `HOMEBREW_TAP_TOKEN`. Without `SCOOP_BUCKET_TOKEN` or the bucket, the
+`scoop` job writes nothing and says which is missing.
 
 There is no `CARGO_REGISTRY_TOKEN`: the `publish` job gets a crates.io token through Trusted
 Publishing. Both crates are registered with owner `datlechin`, repository `pitboard`,
@@ -154,7 +157,8 @@ API token, then its own registration under **Settings** > **Trusted Publishing**
 
 The `release` environment has required reviewers, and the `publish` job waits in it.
 Renaming it breaks the crates.io registration. The `homebrew-tap` environment holds
-`HOMEBREW_TAP_TOKEN`.
+`HOMEBREW_TAP_TOKEN`, and `scoop-bucket` holds `SCOOP_BUCKET_TOKEN` and takes deployments
+from `v*` tags only.
 
 [Rotate the update key](#rotate-the-update-key) covers the repository variable
 `SPARKLE_KEY_ROTATION`, and [Windows signing](#windows-signing) `WINDOWS_SIGNER`,
@@ -173,6 +177,25 @@ at the next release.
 
 The `brew` job runs both `brew install` lines on clean runners. Change a line and the job
 together: `rg -F datlechin/tap/pitboard` finds every copy.
+
+## The Scoop bucket
+
+From major version 1, the `scoop` job writes `datlechin/scoop-bucket` for the latest release,
+as `tap` writes the tap: `packaging/scoop/pitboard.json` as `bucket/pitboard.json`, with the
+version and the Windows zips' checksums filled in, and `packaging/scoop/README.md` as
+`README.md`. A beta or an rc never reaches it. The `scoop-install` job then installs Scoop in
+a folder of its own on both Windows machines, adds the bucket and installs `pitboard` from it.
+
+Before the first 1.x release:
+
+1. Make `datlechin/scoop-bucket`, public, with default branch `main` and one commit holding
+   `packaging/scoop/README.md` as `README.md`. Not from Scoop's BucketTemplate: its Excavator
+   would write the bucket too.
+2. Make `SCOOP_BUCKET_TOKEN` as the secrets table says, in an environment `scoop-bucket` with
+   a deployment rule for `v*` tags.
+
+The bucket's page and the `scoop-install` job hold the same install lines. Change them
+together: `rg -F datlechin/scoop-bucket` finds every copy.
 
 ## The install script
 
