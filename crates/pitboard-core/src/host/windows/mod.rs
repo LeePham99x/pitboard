@@ -202,7 +202,9 @@ mod tests {
     /// reads which store Codex keeps its login in on Windows.
     #[test]
     fn codexs_store_is_refused_until_its_configuration_is_read() {
-        let ctx = ctx();
+        // A home Codex starts in, so the store is what is refused and not the home.
+        let home = tempfile::tempdir().expect("a scratch Codex home");
+        let ctx = ctx().with_codex_home(home.path().to_string_lossy().into());
         match crate::provider::document(ProviderId::Codex).live(&ctx) {
             Err(crate::provider::ProviderError::Unsupported {
                 provider: ProviderId::Codex,
