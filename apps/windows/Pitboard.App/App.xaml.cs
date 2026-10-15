@@ -66,7 +66,7 @@ public partial class App : Application
             model.Send(launchedBy);
         }
 
-        // A second launch brings the window forward. Handed over on a thread of its own.
+        // A second launch's handover arrives on a thread of its own.
         var queue = DispatcherQueue.GetForCurrentThread();
         _handovers.Ready(() => queue.TryEnqueue(ShowWindow));
     }

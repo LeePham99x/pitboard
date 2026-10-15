@@ -11,10 +11,7 @@ public sealed partial class LifecycleTests
 {
     public TestContext TestContext { get; set; } = null!;
 
-    // CF1 and CF5, as the fresh standard user: the window comes to the front and takes a click. Windows keeps
-    // the foreground from a process whose starter is not in front (SetForegroundWindow), so where another
-    // program's window held it before the launch and keeps it, as WWAHost's does on windows-11-arm, a click
-    // lands on that window and CF1 cannot be read.
+    // CF1 and CF5. Windows may keep the foreground for a window that held it before the launch (SetForegroundWindow).
     [TestMethod]
     public void TheFirstLaunchsWindowComesToTheFrontAndTakesAClick()
     {
@@ -76,8 +73,7 @@ public sealed partial class LifecycleTests
         launched.OpenWindow();
     }
 
-    // As a double click on Pitboard's shortcut can: the copy that holds the key opens its window for the other,
-    // whose launch reaches it while it starts. noClaudeCode opens no window by itself.
+    // As a double click on Pitboard's shortcut can. noClaudeCode opens no window by itself.
     [TestMethod]
     public void TwoLaunchesAtOnceOpenOneWindow()
     {
@@ -92,7 +88,6 @@ public sealed partial class LifecycleTests
         stays.Window("Pitboard");
     }
 
-    // The window in front, by its class, title, process and place.
     private static unsafe string InFront()
     {
         var window = GetForegroundWindow();

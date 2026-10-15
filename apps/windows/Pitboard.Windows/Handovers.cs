@@ -1,7 +1,6 @@
 namespace Pitboard.Windows;
 
-// A launch a second copy hands over, which can arrive while this copy starts, before it can open its window.
-// AppInstance raises a redirected launch once, to the handlers connected then.
+// AppInstance raises a redirected launch once, which can be before this copy can open its window.
 public sealed class Handovers
 {
     private readonly Lock _lock = new();

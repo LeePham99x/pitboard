@@ -88,7 +88,6 @@ internal sealed class Launched : IDisposable
         return Window("Pitboard");
     }
 
-    // Quit without a window, exit code 0, as a copy that hands its launch to a running one does.
     public bool HandedOver(out string why)
     {
         var quit = Process.WaitForExit(Patience);
@@ -181,8 +180,7 @@ internal sealed class Launched : IDisposable
     public static IEnumerable<string> Lines(AutomationElement scope) =>
         scope.FindAllDescendants(found => found.ByControlType(FlaUI.Core.Definitions.ControlType.Text)).Select(text => text.Name);
 
-    // As its title bar's Close does. OK pressed through UI Automation is a BM_CLICK, which may fail on a box that
-    // is not active, and failed with E_UNEXPECTED on windows-2025 (runs 38782142541 and 38789385677).
+    // OK through UI Automation is a BM_CLICK, which may fail on an inactive box (E_UNEXPECTED on windows-2025).
     public static void Dismiss(Window box) => box.Patterns.Window.Pattern.Close();
 
     private AutomationElement? Look(Func<ConditionFactory, ConditionBase> condition) =>
