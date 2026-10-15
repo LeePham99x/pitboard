@@ -633,8 +633,8 @@ jobs:
       - name: The WebView2 Runtime this image holds
         shell: pwsh
         run: |
-          $client = 'Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
-          $found = @("HKLM:\SOFTWARE\WOW6432Node\$client", "HKCU:\$client") |
+          $client = 'Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+          $found = @("HKLM:\SOFTWARE\WOW6432Node\$client", "HKCU:\Software\$client") |
             ForEach-Object { (Get-ItemProperty -LiteralPath $_ -Name pv -ErrorAction SilentlyContinue).pv } |
             Where-Object { $_ -and $_ -ne '0.0.0.0' } | Select-Object -First 1
           $source = Get-Content -Raw -LiteralPath apps/windows/Pitboard.Windows/WebEnvironment.cs
