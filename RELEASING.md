@@ -4,15 +4,17 @@ A tag releases Pitboard through `.github/workflows/release.yml`. Its `guard` job
 tag with `version` under `[workspace.package]` in `Cargo.toml`, as
 `.github/scripts/release-kind.sh` does, and refuses any other pair:
 
-| Tag | `Cargo.toml` | Kind | crates.io | Latest |
-| --- | --- | --- | --- | --- |
-| `v1.2.0` | `1.2.0` | Full release | Yes | When no published full release is higher |
-| `v1.2.0-rc1` | `1.2.0` | Release candidate, a GitHub pre-release | No | No |
-| `v1.3.0-beta.1` | `1.3.0-beta.1` | Beta, a GitHub pre-release | Yes | No |
+| Tag | `Cargo.toml` | Kind | crates.io | Latest | Windows files |
+| --- | --- | --- | --- | --- | --- |
+| `v1.2.0` | `1.2.0` | Full release | Yes | When no published full release is higher | Signed |
+| `v1.2.0-rc1` | `1.2.0` | Release candidate, a GitHub pre-release | No | No | Signed |
+| `v1.3.0-beta.1` | `1.3.0-beta.1` | Beta, a GitHub pre-release | Yes | No | Signed once a signer is set |
 
 An rc's number starts at 1, a beta's runs from 1 to 98, and a beta's major version is 1 or
 more. `usepitboard.com/install.sh` and the app's feed lead to GitHub's latest release, so a
-0.x release made after 1.0.0 never moves them back.
+0.x release made after 1.0.0 never moves them back. A release ships Windows files from major
+version 1, and the guard refuses an rc or a full release while no signer is set
+([Windows signing](#windows-signing)).
 
 ## Prepare a release
 
@@ -97,6 +99,20 @@ Immutable releases are on, and only the owner changes that setting. A published 
 files and tag cannot change; its title, notes and marks can. Only the next version fixes a
 mistake in a published file. A deleted release's tag name cannot be used again.
 
+## Windows signing
+
+Two repository variables, not secrets, name the signer:
+
+| Variable | Value |
+| --- | --- |
+| `WINDOWS_SIGNER` | `signpath` or `sslcom`, unset until Pitboard for Windows has a signer |
+| `WINDOWS_SIGNER_SUBJECT` | The subject the signer signs as, as `Get-AuthenticodeSignature` prints it |
+
+From major version 1, the guard refuses an rc or a full release while `WINDOWS_SIGNER` is
+unset, and any release that sets it without `WINDOWS_SIGNER_SUBJECT`. A beta with no signer
+ships its Windows files unsigned. Once a signer is set, every Windows release is signed,
+betas included: never unset it to ship one unsigned.
+
 ## Secrets and environments
 
 | Secret | How to make it |
@@ -123,8 +139,9 @@ The `release` environment has required reviewers, and the `publish` job waits in
 Renaming it breaks the crates.io registration. The `homebrew-tap` environment holds
 `HOMEBREW_TAP_TOKEN`.
 
-[Rotate the update key](#rotate-the-update-key) covers the one repository variable,
-`SPARKLE_KEY_ROTATION`.
+[Rotate the update key](#rotate-the-update-key) covers the repository variable
+`SPARKLE_KEY_ROTATION`, and [Windows signing](#windows-signing) `WINDOWS_SIGNER` and
+`WINDOWS_SIGNER_SUBJECT`.
 
 ## The Homebrew tap
 

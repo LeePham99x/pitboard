@@ -30,6 +30,7 @@ jobs:
       windows: ${{ steps.check.outputs.windows }}
       crates: ${{ steps.check.outputs.crates }}
       latest: ${{ steps.check.outputs.latest }}
+      signed: ${{ steps.check.outputs.signed }}
       core: ${{ steps.core.outputs.core }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -38,15 +39,21 @@ jobs:
       - id: check
         env:
           GH_TOKEN: ${{ github.token }}
+          SIGNER: ${{ vars.WINDOWS_SIGNER }}
+          SUBJECT: ${{ vars.WINDOWS_SIGNER_SUBJECT }}
         run: |
           manifest=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
           gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
             --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' \
             > "$RUNNER_TEMP/published"
           sh .github/scripts/release-kind.sh "$GITHUB_REF_NAME" "$manifest" \
-            "$RUNNER_TEMP/published" > "$RUNNER_TEMP/kind"
+            "$RUNNER_TEMP/published" "$SIGNER" > "$RUNNER_TEMP/kind"
           version=$(sed -n 's/^version=//p' "$RUNNER_TEMP/kind")
           kind=$(sed -n 's/^kind=//p' "$RUNNER_TEMP/kind")
+          if grep -qx 'signed=true' "$RUNNER_TEMP/kind" && [ -z "$SUBJECT" ]; then
+            echo "WINDOWS_SIGNER is $SIGNER, and WINDOWS_SIGNER_SUBJECT names no subject to check" >&2
+            exit 1
+          fi
           # An rc has no section of its own.
           if [ "$kind" != rc ] && ! awk -v heading="## [$version] - " \
             'index($0, heading) == 1 { found = 1 } END { exit !found }' CHANGELOG.md; then

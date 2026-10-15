@@ -11,8 +11,12 @@ REPO = Path(__file__).resolve().parents[2]
 CORE_UNCHANGED = REPO / ".github" / "scripts" / "core-unchanged.sh"
 RELEASE_KIND = REPO / ".github" / "scripts" / "release-kind.sh"
 BUILD_NUMBER = REPO / "apps" / "macos" / "scripts" / "build-number.sh"
-KEYS = ["version", "base", "kind", "prerelease", "windows", "crates", "latest"]
+KEYS = ["version", "base", "kind", "prerelease", "windows", "crates", "latest", "signed"]
 NOT_A_TAG = "is not a release tag: vX.Y.Z, vX.Y.Z-rcN or vX.Y.Z-beta.N"
+NO_SIGNER = (
+    "Pitboard for Windows has no signer yet, and a release candidate or final release is never "
+    "unsigned."
+)
 NORMALIZED = """[package]
 name = "pitboard-core"
 version = "0.15.0"
@@ -125,27 +129,27 @@ class ReleaseKind(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.work)
 
-    def kind(self, tag, manifest, published=()):
+    def kind(self, tag, manifest, published=(), signer="signpath"):
         listed = self.work / "published"
         listed.write_text("".join(f"{line}\n" for line in published))
-        return run(RELEASE_KIND, tag, manifest, listed)
+        return run(RELEASE_KIND, tag, manifest, listed, signer)
 
-    def outputs(self, tag, manifest, published=()):
-        done = self.kind(tag, manifest, published)
+    def outputs(self, tag, manifest, published=(), signer="signpath"):
+        done = self.kind(tag, manifest, published, signer)
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(done.stderr, "")
         pairs = [line.split("=", 1) for line in done.stdout.splitlines()]
         self.assertEqual([key for key, _ in pairs], KEYS)
         return dict(pairs)
 
-    def assertRefused(self, tag, manifest, message, published=()):
-        done = self.kind(tag, manifest, published)
+    def assertRefused(self, tag, manifest, message, published=(), signer="signpath"):
+        done = self.kind(tag, manifest, published, signer)
         self.assertEqual(done.returncode, 1, done.stdout)
         self.assertEqual(done.stdout, "")
         self.assertIn(message, done.stderr)
 
     def test_each_kind_of_release(self):
-        # tag, Cargo.toml, published full releases, kind, windows, crates, latest
+        # tag, Cargo.toml, published full releases, kind, windows, crates, latest, with a signer set
         rows = [
             ("v0.15.0", "0.15.0", ["v0.14.0"], "full", "false", "true", "true"),
             ("v0.15.0-rc1", "0.15.0", ["v0.14.0"], "rc", "false", "false", "false"),
@@ -167,8 +171,27 @@ class ReleaseKind(unittest.TestCase):
                         "windows": windows,
                         "crates": crates,
                         "latest": latest,
+                        "signed": windows,
                     },
                 )
+
+    def test_a_windows_release_is_signed_once_a_signer_is_set(self):
+        # tag, Cargo.toml, signer, signed
+        for tag, manifest, signer, signed in (
+            ("v1.0.0-beta.1", "1.0.0-beta.1", "", "false"),
+            ("v1.0.0-beta.2", "1.0.0-beta.2", "signpath", "true"),
+            ("v1.0.0-rc1", "1.0.0", "sslcom", "true"),
+            ("v1.0.0", "1.0.0", "signpath", "true"),
+            ("v0.15.0", "0.15.0", "signpath", "false"),
+            ("v0.15.0-rc1", "0.15.0", "", "false"),
+        ):
+            with self.subTest(tag=tag, signer=signer):
+                self.assertEqual(self.outputs(tag, manifest, signer=signer)["signed"], signed)
+
+    def test_a_windows_release_candidate_or_final_release_needs_a_signer(self):
+        for tag, manifest in (("v1.0.0-rc1", "1.0.0"), ("v1.0.0", "1.0.0"), ("v2.3.4", "2.3.4")):
+            with self.subTest(tag=tag):
+                self.assertRefused(tag, manifest, NO_SIGNER, signer="")
 
     def test_only_a_full_release_nothing_published_outranks_is_latest(self):
         cases = [
@@ -235,10 +258,14 @@ class ReleaseKind(unittest.TestCase):
             ["v1.0.0", "nightly"],
         )
 
-    def test_it_takes_three_arguments(self):
-        done = run(RELEASE_KIND, "v1.0.0", "1.0.0")
-        self.assertEqual(done.returncode, 2)
-        self.assertIn("usage:", done.stderr)
+    def test_it_takes_four_arguments(self):
+        listed = self.work / "published"
+        listed.write_text("")
+        for args in (("v1.0.0", "1.0.0", listed), ("v1.0.0", "1.0.0", listed, "", "x")):
+            with self.subTest(count=len(args)):
+                done = run(RELEASE_KIND, *args)
+                self.assertEqual(done.returncode, 2)
+                self.assertIn("usage:", done.stderr)
 
 
 class BuildNumber(unittest.TestCase):
