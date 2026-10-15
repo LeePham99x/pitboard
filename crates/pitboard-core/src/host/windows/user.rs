@@ -112,7 +112,9 @@ fn path_of(wide: &[u16]) -> PathBuf {
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn is_the_accounts_own_home(path: &std::path::Path) -> bool {
     let resolved = |p: &std::path::Path| {
-        crate::host::plain(&std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf()))
+        crate::host::without_verbatim_prefix(
+            std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf()),
+        )
     };
     [
         known_folder(&windows_sys::Win32::UI::Shell::FOLDERID_Profile),

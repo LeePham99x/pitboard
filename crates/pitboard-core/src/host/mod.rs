@@ -347,32 +347,13 @@ fn near(a: &Path, b: &Path) -> bool {
     begins(a, b) || begins(b, a)
 }
 
-#[cfg(any(test, feature = "test-support"))]
-fn begins(path: &Path, with: &Path) -> bool {
-    let with = plain(with);
-    plain(path)
-        .ancestors()
-        .any(|above| same_path_in_any_case(above, &with))
-}
-
 // `canonicalize` spells `C:\x` as `\\?\C:\x`.
 #[cfg(any(test, feature = "test-support"))]
-pub(crate) fn plain(path: &Path) -> PathBuf {
-    use std::path::{Component, Prefix};
-    let mut parts = path.components();
-    let Some(Component::Prefix(prefix)) = parts.next() else {
-        return path.to_path_buf();
-    };
-    let head = match prefix.kind() {
-        Prefix::VerbatimDisk(disk) => format!("{}:", char::from(disk)),
-        Prefix::VerbatimUNC(server, share) => format!(
-            r"\\{}\{}",
-            server.to_string_lossy(),
-            share.to_string_lossy()
-        ),
-        _ => return path.to_path_buf(),
-    };
-    PathBuf::from(head).join(parts.as_path())
+fn begins(path: &Path, with: &Path) -> bool {
+    let with = without_verbatim_prefix(with.to_path_buf());
+    without_verbatim_prefix(path.to_path_buf())
+        .ancestors()
+        .any(|above| same_path_in_any_case(above, &with))
 }
 
 // A folder above `a` that is `b`'s deepest existing one, whatever either is named:
