@@ -27,6 +27,7 @@ jobs:
       version: ${{ steps.check.outputs.version }}
       base: ${{ steps.check.outputs.base }}
       prerelease: ${{ steps.check.outputs.prerelease }}
+      windows: ${{ steps.check.outputs.windows }}
       crates: ${{ steps.check.outputs.crates }}
       latest: ${{ steps.check.outputs.latest }}
       core: ${{ steps.core.outputs.core }}
@@ -180,6 +181,33 @@ jobs:
           name: ${{ matrix.target }}
           path: ${{ runner.temp }}/dist/*.tar.gz
 
+  # The command line for Windows, from 1.0.0, each zip built and checked on the machine it is
+  # for, by the action CI builds every pull request's with.
+  build-windows:
+    needs: guard
+    if: needs.guard.outputs.windows == 'true'
+    strategy:
+      matrix:
+        include:
+          - os: windows-2025
+            triple: x86_64-pc-windows-msvc
+          - os: windows-11-arm
+            triple: aarch64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/windows-release
+        with:
+          triple: ${{ matrix.triple }}
+          version: ${{ needs.guard.outputs.version }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ matrix.triple }}
+          path: ${{ runner.temp }}/dist/*.zip
+
   # The menu bar app, signed and notarised when the Apple secrets are set; without them it
   # is still built and released, ad-hoc signed, which Gatekeeper warns about on first
   # launch. RELEASING.md lists the secrets.
@@ -319,8 +347,14 @@ jobs:
             ${{ runner.temp }}/dist/*.zip
             ${{ runner.temp }}/dist/appcast.xml
 
+  # A skipped job skips every job after it in the chain unless their `if` says otherwise, and
+  # build-windows is skipped below 1.0.0. So publish and the jobs after it name what they need.
   publish:
-    needs: [guard, build, app]
+    needs: [guard, build, app, build-windows]
+    if: >-
+      !cancelled() && needs.build.result == 'success' && needs.app.result == 'success' &&
+      (needs.build-windows.result == 'success' ||
+      (needs.build-windows.result == 'skipped' && needs.guard.outputs.windows == 'false'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # Required reviewers on this environment are what stops an unexpected tag walking into
@@ -380,6 +414,8 @@ jobs:
       # not installed still resolves, because the filter comes from cargo metadata and not
       # from a standard library it has to find.
       - name: Bill of materials
+        env:
+          WINDOWS: ${{ needs.guard.outputs.windows }}
         run: |
           bom() {
             cargo cyclonedx --manifest-path "crates/$1/Cargo.toml" --target "$2" \
@@ -393,6 +429,12 @@ jobs:
             bom pitboard "$target" \
               "$RUNNER_TEMP/dist/pitboard-${GITHUB_REF_NAME}-${target}.tar.gz.cdx.json"
           done
+          if [ "$WINDOWS" = true ]; then
+            for target in x86_64-pc-windows-msvc aarch64-pc-windows-msvc; do
+              bom pitboard "$target" \
+                "$RUNNER_TEMP/dist/pitboard-${GITHUB_REF_NAME}-${target}.zip.cdx.json"
+            done
+          fi
           # The app carries the core for both macOS architectures, which resolve to the
           # same dependencies, the command line, the Share extension's pitboard-share-ffi,
           # and Sparkle, which no lockfile here mentions. The extension's library is no
@@ -507,7 +549,7 @@ jobs:
   # here reads a secret any more.
   feed:
     needs: [guard, publish]
-    if: needs.guard.outputs.latest == 'true'
+    if: ${{ !cancelled() && needs.publish.result == 'success' && needs.guard.outputs.latest == 'true' }}
     runs-on: macos-latest
     timeout-minutes: 5
     permissions:
@@ -570,7 +612,7 @@ jobs:
   # either is built on the machine that installs it.
   tap:
     needs: [guard, publish]
-    if: needs.guard.outputs.latest == 'true'
+    if: ${{ !cancelled() && needs.publish.result == 'success' && needs.guard.outputs.latest == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # HOMEBREW_TAP_TOKEN is the only credential in this release that reaches another
@@ -635,7 +677,7 @@ jobs:
   # copy of the command line is the one on PATH once it is installed.
   brew:
     needs: [guard, tap]
-    if: needs.guard.outputs.latest == 'true'
+    if: ${{ !cancelled() && needs.tap.result == 'success' && needs.guard.outputs.latest == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -763,6 +805,7 @@ jobs:
   # The install script run the way its readers run it, on each target and on Alpine.
   install-script:
     needs: [guard, publish]
+    if: ${{ !cancelled() && needs.publish.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:

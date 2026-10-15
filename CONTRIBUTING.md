@@ -317,10 +317,16 @@ From a Mac or Linux, `cargo check --target x86_64-pc-windows-msvc` checks only
 CI's `windows` job runs these commands on `windows-2025` and `windows-11-arm`, the tests as
 a fresh standard user through `.github/scripts/test-as-standard-user.ps1`. The job fails when
 a run leaves a login item, a scheduled task or a login folder behind. It also builds
-`pitboard.exe` as a release is built, and checks that it refuses and changes nothing. The
-`csharp-windows` job builds `pitboard_ffi.dll` that way and opened with its fixtures, checks
-that the bindings generated from each are the Linux job's byte for byte, and runs the C# tests
-against each the same way.
+`pitboard.exe` as a 0.x release is built and checks that it refuses and changes nothing. It
+runs the opened build with no argument as a fresh standard user, as winget's validation runs
+a program. The `csharp-windows` job builds `pitboard_ffi.dll` as a 0.x release is built and
+opened with its fixtures, checks that the bindings generated from each are the Linux job's
+byte for byte, and runs the C# tests against each the same way.
+
+CI's `windows-release` job builds the release's zips with `.github/actions/windows-release`,
+as `release.yml` does from 1.0.0. `.github/scripts/check-windows-build.ps1` checks each
+`pitboard.exe` in both jobs, and `test-windows-release.ps1` tests it and
+`package-windows.ps1`. They run on CI's runners only.
 
 `gh workflow run windows-facts.yml --ref <branch>` measures both runner images with
 `pitboard-probe` and `.github/scripts/runner-facts.ps1`. No pull request runs it on its own:

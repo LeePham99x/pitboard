@@ -241,6 +241,8 @@ export function fileRows(release: Release): FileRow[] {
     [`pitboard-v${v}-x86_64-apple-darwin.tar.gz`, "Command line, macOS on Intel"],
     [`pitboard-v${v}-x86_64-unknown-linux-musl.tar.gz`, "Command line, Linux on x86_64"],
     [`pitboard-v${v}-aarch64-unknown-linux-musl.tar.gz`, "Command line, Linux on aarch64"],
+    [`pitboard-v${v}-x86_64-pc-windows-msvc.zip`, "Command line, Windows on x64"],
+    [`pitboard-v${v}-aarch64-pc-windows-msvc.zip`, "Command line, Windows on ARM64"],
     ["install.sh", "The install script"],
     ["SHA256SUMS", "Checksums of the tarballs, the app and <code>install.sh</code>"],
     ["appcast.xml", "The feed the app updates from"],
