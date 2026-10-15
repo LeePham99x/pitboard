@@ -1,9 +1,12 @@
 # The release workflow's scripts, run on what a tag and crates.io could hand them.
 import io
+import re
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -11,8 +14,21 @@ REPO = Path(__file__).resolve().parents[2]
 CORE_UNCHANGED = REPO / ".github" / "scripts" / "core-unchanged.sh"
 RELEASE_KIND = REPO / ".github" / "scripts" / "release-kind.sh"
 BUILD_NUMBER = REPO / "apps" / "macos" / "scripts" / "build-number.sh"
-KEYS = ["version", "base", "kind", "prerelease", "windows", "crates", "latest"]
+WINGET_HASHES = REPO / ".github" / "scripts" / "check-winget-hashes.py"
+PACKAGE_WINDOWS = REPO / ".github" / "scripts" / "package-windows.ps1"
+WINDOWS_TARGETS = ("x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc")
+TARBALL_TARGETS = (
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "x86_64-unknown-linux-musl",
+    "aarch64-unknown-linux-musl",
+)
+KEYS = ["version", "base", "kind", "prerelease", "windows", "crates", "latest", "signed"]
 NOT_A_TAG = "is not a release tag: vX.Y.Z, vX.Y.Z-rcN or vX.Y.Z-beta.N"
+NO_SIGNER = (
+    "Pitboard for Windows has no signer yet, and a release candidate or final release is never "
+    "unsigned."
+)
 NORMALIZED = """[package]
 name = "pitboard-core"
 version = "0.15.0"
@@ -125,27 +141,27 @@ class ReleaseKind(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.work)
 
-    def kind(self, tag, manifest, published=()):
+    def kind(self, tag, manifest, published=(), signer="signpath"):
         listed = self.work / "published"
         listed.write_text("".join(f"{line}\n" for line in published))
-        return run(RELEASE_KIND, tag, manifest, listed)
+        return run(RELEASE_KIND, tag, manifest, listed, signer)
 
-    def outputs(self, tag, manifest, published=()):
-        done = self.kind(tag, manifest, published)
+    def outputs(self, tag, manifest, published=(), signer="signpath"):
+        done = self.kind(tag, manifest, published, signer)
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(done.stderr, "")
         pairs = [line.split("=", 1) for line in done.stdout.splitlines()]
         self.assertEqual([key for key, _ in pairs], KEYS)
         return dict(pairs)
 
-    def assertRefused(self, tag, manifest, message, published=()):
-        done = self.kind(tag, manifest, published)
+    def assertRefused(self, tag, manifest, message, published=(), signer="signpath"):
+        done = self.kind(tag, manifest, published, signer)
         self.assertEqual(done.returncode, 1, done.stdout)
         self.assertEqual(done.stdout, "")
         self.assertIn(message, done.stderr)
 
     def test_each_kind_of_release(self):
-        # tag, Cargo.toml, published full releases, kind, windows, crates, latest
+        # tag, Cargo.toml, published full releases, kind, windows, crates, latest, with a signer set
         rows = [
             ("v0.15.0", "0.15.0", ["v0.14.0"], "full", "false", "true", "true"),
             ("v0.15.0-rc1", "0.15.0", ["v0.14.0"], "rc", "false", "false", "false"),
@@ -167,8 +183,27 @@ class ReleaseKind(unittest.TestCase):
                         "windows": windows,
                         "crates": crates,
                         "latest": latest,
+                        "signed": windows,
                     },
                 )
+
+    def test_a_windows_release_is_signed_once_a_signer_is_set(self):
+        # tag, Cargo.toml, signer, signed
+        for tag, manifest, signer, signed in (
+            ("v1.0.0-beta.1", "1.0.0-beta.1", "", "false"),
+            ("v1.0.0-beta.2", "1.0.0-beta.2", "signpath", "true"),
+            ("v1.0.0-rc1", "1.0.0", "sslcom", "true"),
+            ("v1.0.0", "1.0.0", "signpath", "true"),
+            ("v0.15.0", "0.15.0", "signpath", "false"),
+            ("v0.15.0-rc1", "0.15.0", "", "false"),
+        ):
+            with self.subTest(tag=tag, signer=signer):
+                self.assertEqual(self.outputs(tag, manifest, signer=signer)["signed"], signed)
+
+    def test_a_windows_release_candidate_or_final_release_needs_a_signer(self):
+        for tag, manifest in (("v1.0.0-rc1", "1.0.0"), ("v1.0.0", "1.0.0"), ("v2.3.4", "2.3.4")):
+            with self.subTest(tag=tag):
+                self.assertRefused(tag, manifest, NO_SIGNER, signer="")
 
     def test_only_a_full_release_nothing_published_outranks_is_latest(self):
         cases = [
@@ -235,8 +270,172 @@ class ReleaseKind(unittest.TestCase):
             ["v1.0.0", "nightly"],
         )
 
-    def test_it_takes_three_arguments(self):
-        done = run(RELEASE_KIND, "v1.0.0", "1.0.0")
+    def test_it_takes_four_arguments(self):
+        listed = self.work / "published"
+        listed.write_text("")
+        for args in (("v1.0.0", "1.0.0", listed), ("v1.0.0", "1.0.0", listed, "", "x")):
+            with self.subTest(count=len(args)):
+                done = run(RELEASE_KIND, *args)
+                self.assertEqual(done.returncode, 2)
+                self.assertIn("usage:", done.stderr)
+
+
+class Binstall(unittest.TestCase):
+    # As cargo-binstall 1.25.3 merges them (binstalk-types, PkgMeta::merge_overrides): a target's
+    # override replaces pkg-url, pkg-fmt and bin-dir, and adds its disabled-strategies to the
+    # package's.
+    def resolved(self, target):
+        crate = tomllib.loads((REPO / "crates" / "pitboard" / "Cargo.toml").read_text())
+        meta = dict(crate["package"]["metadata"]["binstall"])
+        override = meta.pop("overrides").get(target, {})
+        disabled = set(meta.get("disabled-strategies", []))
+        disabled |= set(override.get("disabled-strategies", []))
+        meta.update({k: override[k] for k in ("pkg-url", "pkg-fmt", "bin-dir") if k in override})
+        meta["disabled-strategies"] = disabled
+        return meta
+
+    def expand(self, template, target, version):
+        workspace = tomllib.loads((REPO / "Cargo.toml").read_text())
+        values = {
+            "repo": workspace["workspace"]["package"]["repository"],
+            "name": "pitboard",
+            "version": version,
+            "target": target,
+            "bin": "pitboard",
+            "binary-ext": ".exe" if "windows" in target else "",
+        }
+        return re.sub(r"\{ ([a-z-]+) \}", lambda m: values[m.group(1)], template)
+
+    def test_windows_installs_the_zip_package_windows_writes(self):
+        script = PACKAGE_WINDOWS.read_text()
+        for line in (
+            '$name = "pitboard-v$Version-$Triple"',
+            '$zip = Join-Path $dist "$name.zip"',
+            "$entries = 'pitboard.exe',",
+        ):
+            self.assertIn(line, script)
+        version = "1.0.0-beta.1"
+        for target in WINDOWS_TARGETS:
+            with self.subTest(target=target):
+                meta = self.resolved(target)
+                name = f"pitboard-v{version}-{target}"
+                self.assertEqual(
+                    self.expand(meta["pkg-url"], target, version),
+                    f"https://github.com/datlechin/pitboard/releases/download/v{version}/{name}.zip",
+                )
+                self.assertEqual(meta["pkg-fmt"], "zip")
+                self.assertEqual(
+                    self.expand(meta["bin-dir"], target, version), f"{name}/pitboard.exe"
+                )
+                self.assertEqual(meta["disabled-strategies"], {"quick-install", "compile"})
+
+    def test_every_other_target_installs_its_tarball(self):
+        version = "1.0.0"
+        for target in TARBALL_TARGETS:
+            with self.subTest(target=target):
+                meta = self.resolved(target)
+                name = f"pitboard-v{version}-{target}"
+                self.assertEqual(
+                    self.expand(meta["pkg-url"], target, version),
+                    f"https://github.com/datlechin/pitboard/releases/download/v{version}/"
+                    f"{name}.tar.gz",
+                )
+                self.assertEqual(meta["pkg-fmt"], "tgz")
+                self.assertEqual(self.expand(meta["bin-dir"], target, version), f"{name}/pitboard")
+                self.assertEqual(meta["disabled-strategies"], {"quick-install"})
+
+
+class WingetHashes(unittest.TestCase):
+    VERSION = "1.0.1"
+    DOWNLOADS = f"https://github.com/datlechin/pitboard/releases/download/v{VERSION}/"
+    ZIPS = {
+        "x64": f"pitboard-v{VERSION}-x86_64-pc-windows-msvc.zip",
+        "arm64": f"pitboard-v{VERSION}-aarch64-pc-windows-msvc.zip",
+    }
+
+    def setUp(self):
+        self.work = Path(tempfile.mkdtemp())
+        self.hashes = {name: f"{n:064x}" for n, name in enumerate(self.ZIPS.values(), 1)}
+        self.sums = self.work / "SHA256SUMS"
+        lines = [f"{h}  {name}" for name, h in self.hashes.items()]
+        self.sums.write_text("\n".join([f"{0:064x}  install.sh", *lines]) + "\n")
+
+    def tearDown(self):
+        shutil.rmtree(self.work)
+
+    # As komac 2.16.0 writes one into --output: manifests/<letter>/<publisher>/<name>/<version>.
+    def manifests(self, installers):
+        folder = self.work / "out" / "manifests" / "p" / "Pitboard" / "CLI" / self.VERSION
+        folder.mkdir(parents=True)
+        items = "".join(
+            f"- Architecture: {arch}\n  InstallerUrl: {url}\n  InstallerSha256: {digest}\n"
+            for arch, url, digest in installers
+        )
+        (folder / "Pitboard.CLI.installer.yaml").write_text(
+            "# Created with komac v2.16.0\n"
+            "# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.10.0"
+            ".schema.json\n\n"
+            f"PackageIdentifier: Pitboard.CLI\nPackageVersion: {self.VERSION}\n"
+            "InstallerType: zip\nNestedInstallerType: portable\nNestedInstallerFiles:\n"
+            f"- RelativeFilePath: pitboard-v{self.VERSION}-x86_64-pc-windows-msvc\\pitboard.exe\n"
+            "  PortableCommandAlias: pitboard\n"
+            f"Installers:\n{items}ManifestType: installer\nManifestVersion: 1.10.0\n"
+        )
+        (folder / "Pitboard.CLI.yaml").write_text("PackageIdentifier: Pitboard.CLI\n")
+        return self.work / "out"
+
+    def installers(self, **changed):
+        return [
+            (arch, self.DOWNLOADS + name, changed.get(arch, self.hashes[name].upper()))
+            for arch, name in self.ZIPS.items()
+        ]
+
+    def checked(self, folder):
+        return subprocess.run(
+            [sys.executable, str(WINGET_HASHES), str(folder), str(self.sums)],
+            capture_output=True,
+            text=True,
+        )
+
+    def test_hashes_equal_to_the_release_lines_pass(self):
+        done = self.checked(self.manifests(self.installers()))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        for name in self.ZIPS.values():
+            self.assertIn(f"ok: {name}", done.stdout)
+
+    def test_a_changed_hash_fails(self):
+        wrong = "F" * 64
+        done = self.checked(self.manifests(self.installers(arm64=wrong)))
+        self.assertEqual(done.returncode, 1)
+        name = self.ZIPS["arm64"]
+        self.assertIn(
+            f"{name}: the manifest says {wrong}, and SHA256SUMS {self.hashes[name]}", done.stderr
+        )
+
+    def test_a_url_with_no_line_fails(self):
+        installers = self.installers()
+        installers[1] = ("arm64", self.DOWNLOADS + "pitboard-v1.0.1-arm64.zip", "A" * 64)
+        done = self.checked(self.manifests(installers))
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("SHA256SUMS has no line for pitboard-v1.0.1-arm64.zip", done.stderr)
+
+    def test_an_installer_without_a_url_or_a_hash_fails(self):
+        installers = self.installers()
+        installers[0] = ("x64", self.DOWNLOADS + self.ZIPS["x64"], "")
+        done = self.checked(self.manifests(installers))
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("installer 1 has no InstallerSha256", done.stderr)
+
+    def test_a_folder_with_no_installer_manifest_fails(self):
+        (self.work / "empty").mkdir()
+        done = self.checked(self.work / "empty")
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("holds 0 installer manifests, not 1", done.stderr)
+
+    def test_it_takes_two_arguments(self):
+        done = subprocess.run(
+            [sys.executable, str(WINGET_HASHES), str(self.work)], capture_output=True, text=True
+        )
         self.assertEqual(done.returncode, 2)
         self.assertIn("usage:", done.stderr)
 

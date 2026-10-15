@@ -29,7 +29,7 @@ and later, the `rust-version` in `Cargo.toml`.
 | `cargo-insta` | Reviewing a changed `--json` snapshot |
 | `cargo-hack` | The Rust 1.91 floor |
 | `cargo-zigbuild`, Zig and Rust's `x86_64-unknown-linux-gnu` target | Linting the Linux code from a Mac |
-| `shellcheck` 0.11.0 or later, Python 3.9 or later | The install script |
+| `shellcheck` 0.11.0 or later, Python 3.11 or later | The install script and the release's scripts |
 | Xcode with Swift 6.2 or later, XcodeGen | [The app](#the-app) |
 | .NET 10 SDK | [The C# bindings](#the-c-bindings) |
 | Node 24 or later | [Website](#website) |
@@ -108,8 +108,8 @@ The snapshots in `crates/pitboard/tests/snapshots` pin the `--json` contract, wh
 only on purpose. Review a changed one with `cargo insta review`, and say in the pull request
 why the contract moved.
 
-For a change to the install script, `packaging/install.sh`, or to
-`.github/scripts/fill-template.sh`, which fills it at release time:
+For a change to the install script, `packaging/install.sh`, another template in `packaging/`,
+or `.github/scripts/fill-template.sh`, which fills them at release time:
 
 ```sh
 shellcheck -s sh packaging/install.sh .github/scripts/fill-template.sh
@@ -119,8 +119,9 @@ python3 .github/scripts/test-install.py
 The test runs the script under each of `sh`, `dash`, `bash`, `zsh` and `busybox sh` it finds
 on `PATH`. `TEST_INSTALL_SHELLS` names the ones that must be found, as CI sets it.
 
-For a change to the release's scripts, `release-kind.sh` and `core-unchanged.sh` in
-`.github/scripts`, or `apps/macos/scripts/build-number.sh`:
+For a change to the release's scripts, `release-kind.sh`, `core-unchanged.sh` and
+`check-winget-hashes.py` in `.github/scripts`, `apps/macos/scripts/build-number.sh`, or the
+cargo-binstall metadata in `crates/pitboard/Cargo.toml`:
 
 ```sh
 shellcheck -s sh .github/scripts/release-kind.sh .github/scripts/core-unchanged.sh \
@@ -325,8 +326,9 @@ job's byte for byte, and runs the C# tests against each the same way.
 
 CI's `windows-release` job builds the release's zips with `.github/actions/windows-release`,
 as `release.yml` does from 1.0.0. `.github/scripts/check-windows-build.ps1` checks each
-`pitboard.exe` in both jobs, and `test-windows-release.ps1` tests `package-windows.ps1` and
-`check-windows-build.ps1`. They run on CI's runners only.
+`pitboard.exe` in both jobs, and `test-windows-release.ps1` tests `package-windows.ps1`,
+`check-windows-build.ps1` and `verify-windows-signatures.ps1`, which checks a release's
+signatures. They run on CI's runners only.
 
 `gh workflow run windows-facts.yml --ref <branch>` measures both runner images with
 `pitboard-probe` and `.github/scripts/runner-facts.ps1`. No pull request runs it on its own:

@@ -4,15 +4,17 @@ A tag releases Pitboard through `.github/workflows/release.yml`. Its `guard` job
 tag with `version` under `[workspace.package]` in `Cargo.toml`, as
 `.github/scripts/release-kind.sh` does, and refuses any other pair:
 
-| Tag | `Cargo.toml` | Kind | crates.io | Latest |
-| --- | --- | --- | --- | --- |
-| `v1.2.0` | `1.2.0` | Full release | Yes | When no published full release is higher |
-| `v1.2.0-rc1` | `1.2.0` | Release candidate, a GitHub pre-release | No | No |
-| `v1.3.0-beta.1` | `1.3.0-beta.1` | Beta, a GitHub pre-release | Yes | No |
+| Tag | `Cargo.toml` | Kind | crates.io | Latest | Windows files |
+| --- | --- | --- | --- | --- | --- |
+| `v1.2.0` | `1.2.0` | Full release | Yes | When no published full release is higher | Signed |
+| `v1.2.0-rc1` | `1.2.0` | Release candidate, a GitHub pre-release | No | No | Signed |
+| `v1.3.0-beta.1` | `1.3.0-beta.1` | Beta, a GitHub pre-release | Yes | No | Signed once a signer is set |
 
 An rc's number starts at 1, a beta's runs from 1 to 98, and a beta's major version is 1 or
 more. `usepitboard.com/install.sh` and the app's feed lead to GitHub's latest release, so a
-0.x release made after 1.0.0 never moves them back.
+0.x release made after 1.0.0 never moves them back. A release ships Windows files from major
+version 1, and the guard refuses an rc or a full release while no signer is set
+([Windows signing](#windows-signing)).
 
 ## Prepare a release
 
@@ -50,7 +52,8 @@ The first release with Claude Desktop waits until the hand measurements M1 to M1
    A release candidate builds, signs and attests everything, and runs its own install script
    on each target. It also exchanges the crates.io token, so a wrong Trusted Publishing
    registration fails here, where it costs nothing. It uploads nothing to crates.io, has no
-   release notes or update feed, and skips the `feed`, `tap` and `brew` jobs.
+   release notes or update feed, and skips the `feed`, `tap`, `brew`, `scoop` and `winget`
+   jobs.
 
 8. Tag the same commit `v<version>` and push the tag.
 
@@ -64,13 +67,19 @@ The first release with Claude Desktop waits until the hand measurements M1 to M1
    stayed. Releases run one at a time, so this run waits until the candidate's has ended.
 
 9. Approve the `publish` job when it waits in the `release` environment.
-10. Watch the run to the end. A re-run fixes three failures:
+10. Watch the run to the end. A re-run fixes six failures:
 
 | Job | Failed | Do |
 | --- | --- | --- |
+| `windows-sign` | Anywhere | Re-run it. SignPath evaluates at most three re-runs of a run, and fails the fourth |
 | `publish` | After the crates reached crates.io | Re-run it. It skips each crate whose version is there |
 | `tap` | At the push | Re-run it. It reads the run's own `SHA256SUMS`. Never write the tap by hand: its checksums would come from a second download |
+| `scoop` | At the push | Re-run it, as `tap`. Never write the bucket by hand |
+| `winget` | Before "Submit" | Re-run it |
 | `install-script` | At "Install the way the README says to" | Check [the redirect](#the-redirect), then re-run it |
+
+Never re-run `winget` once its "Submit" step has started: komac may have opened a pull request
+on `microsoft/winget-pkgs`. Answer in that pull request.
 
 An rc or beta number is used once. A fix that needs another commit takes the next number,
 and a published tag never moves. The workflow decides which release is latest: never mark
@@ -91,11 +100,41 @@ also has `appcast.xml`, the update feed, and writes the Homebrew tap. A full rel
 beta uploads `pitboard-core`, when its version moved, and then `pitboard` to crates.io.
 Every file on the GitHub release has a GitHub attestation. From major version 1, each
 release also has a zip of the command line for Windows on x64 and on ARM64, built and checked
-by `.github/actions/windows-release`, which CI runs on every pull request.
+by `.github/actions/windows-release`, which CI runs on every pull request, and signed as
+[Windows signing](#windows-signing) says. The `windows-install` job downloads each published
+zip on its machine, checks it against `SHA256SUMS`, its attestation and its signatures, and
+runs its command line as a fresh standard user. For a full release or a beta it also installs
+the zip with cargo-binstall from crates.io, with `compile` disabled, so a `pkg-url` in
+`crates/pitboard/Cargo.toml` that names no zip fails the job instead of building from source.
 
 Immutable releases are on, and only the owner changes that setting. A published release's
 files and tag cannot change; its title, notes and marks can. Only the next version fixes a
 mistake in a published file. A deleted release's tag name cannot be used again.
+
+## Windows signing
+
+Two repository variables, not secrets, name the signer:
+
+| Variable | Value |
+| --- | --- |
+| `WINDOWS_SIGNER` | `signpath` or `sslcom`, unset until Pitboard for Windows has a signer |
+| `WINDOWS_SIGNER_SUBJECT` | The subject the signer signs as, as `Get-AuthenticodeSignature` prints it |
+
+From major version 1, the guard refuses an rc or a full release while `WINDOWS_SIGNER` is
+unset, and any release that sets it without `WINDOWS_SIGNER_SUBJECT`. A beta with no signer
+ships its Windows files unsigned. Once a signer is set, every Windows release is signed,
+betas included: never unset it to ship one unsigned.
+
+The `windows-sign` job takes the zips `build-windows` made and hands them to `publish`. It
+runs in the `windows-signing` environment, which takes deployments from `v*` tags only and
+holds the signer's credentials. Make it before the first 1.x tag: a job that names a missing
+environment makes one with no rule. Before it hands the zips on,
+`.github/scripts/verify-windows-signatures.ps1` checks every program in them: signed by
+`WINDOWS_SIGNER_SUBJECT`, valid and timestamped, or, with no signer, not signed at all. No
+signer has a signing step yet, so a set `WINDOWS_SIGNER` fails the job. Once one has, a
+signed release waits for one approval at the signer, then one at `release`.
+
+Keep the signer's account apart from the update key and the Developer ID certificate.
 
 ## Secrets and environments
 
@@ -107,10 +146,13 @@ mistake in a published file. A deleted release's tag name cannot be used again.
 | `APPLE_API_KEY_ID`, `APPLE_API_ISSUER` | Shown beside that key |
 | `SPARKLE_PUBLIC_KEY`, `SPARKLE_PRIVATE_KEY` | `bin/generate_keys --account pitboard`, from Sparkle's release archive at the version `apps/macos/project.yml` pins, prints the public key. With `-x <file>` it writes the private key to `<file>`, whose contents are the secret. Delete the file afterwards |
 | `HOMEBREW_TAP_TOKEN` | A fine-grained token with `datlechin/homebrew-tap` as its only repository, Contents read and write as its only permission, and an expiry you will notice |
+| `SCOOP_BUCKET_TOKEN` | The same, for `datlechin/scoop-bucket` |
+| `WINGET_TOKEN` | A classic token with the `public_repo` scope, of the account that holds the fork of `microsoft/winget-pkgs`. komac 2.16.0's README says a fine-grained token fails to open the pull request |
 
 Without the Apple secrets, everything is signed ad hoc and not notarised, and Gatekeeper
 warns about the app on first launch. The `app` job fails without the Sparkle secrets. The
-`tap` job fails without `HOMEBREW_TAP_TOKEN`.
+`tap` job fails without `HOMEBREW_TAP_TOKEN`. Without `SCOOP_BUCKET_TOKEN` or the bucket, the
+`scoop` job writes nothing and says which is missing.
 
 There is no `CARGO_REGISTRY_TOKEN`: the `publish` job gets a crates.io token through Trusted
 Publishing. Both crates are registered with owner `datlechin`, repository `pitboard`,
@@ -121,10 +163,12 @@ API token, then its own registration under **Settings** > **Trusted Publishing**
 
 The `release` environment has required reviewers, and the `publish` job waits in it.
 Renaming it breaks the crates.io registration. The `homebrew-tap` environment holds
-`HOMEBREW_TAP_TOKEN`.
+`HOMEBREW_TAP_TOKEN`. `scoop-bucket` holds `SCOOP_BUCKET_TOKEN` and `winget` holds
+`WINGET_TOKEN`, and each takes deployments from `v*` tags only.
 
-[Rotate the update key](#rotate-the-update-key) covers the one repository variable,
-`SPARKLE_KEY_ROTATION`.
+[Rotate the update key](#rotate-the-update-key) covers the repository variable
+`SPARKLE_KEY_ROTATION`, and [Windows signing](#windows-signing) `WINDOWS_SIGNER`,
+`WINDOWS_SIGNER_SUBJECT` and the `windows-signing` environment.
 
 ## The Homebrew tap
 
@@ -139,6 +183,56 @@ at the next release.
 
 The `brew` job runs both `brew install` lines on clean runners. Change a line and the job
 together: `rg -F datlechin/tap/pitboard` finds every copy.
+
+## The Scoop bucket
+
+From major version 1, the `scoop` job writes `datlechin/scoop-bucket` for the latest release,
+as `tap` writes the tap: `packaging/scoop/pitboard.json` as `bucket/pitboard.json`, with the
+version and the Windows zips' checksums filled in, and `packaging/scoop/README.md` as
+`README.md`. A beta or an rc never reaches it. The `scoop-install` job then installs Scoop in
+a folder of its own on both Windows machines, adds the bucket and installs `pitboard` from it.
+
+Before the first 1.x release:
+
+1. Make `datlechin/scoop-bucket`, public, with default branch `main` and one commit holding
+   `packaging/scoop/README.md` as `README.md`. Not from Scoop's BucketTemplate: its Excavator
+   would write the bucket too.
+2. Make `SCOOP_BUCKET_TOKEN` as the secrets table says, in an environment `scoop-bucket` with
+   a deployment rule for `v*` tags.
+
+The bucket's page and the `scoop-install` job hold the same install lines. Change them
+together: `rg -F datlechin/scoop-bucket` finds every copy.
+
+## winget
+
+Pitboard is two winget packages: `Pitboard.CLI`, the zips, each holding a portable
+`pitboard.exe` with the command alias `pitboard`, and `Pitboard.Pitboard`, the app's per-user
+MSIs once the release builds them. Since winget 1.29 an MSI wins over a portable under one
+identifier, hence two. A beta never reaches winget.
+
+For the latest release from major version 1, the `winget` job takes each package
+`microsoft/winget-pkgs` already holds. komac writes its next version from the published files
+with the run's read-only token, `.github/scripts/check-winget-hashes.py` checks each
+installer's hash against the run's `SHA256SUMS`, and `winget validate` checks the manifests.
+Then komac opens the pull request from the fork with `WINGET_TOKEN`. A package that is not in
+`microsoft/winget-pkgs` yet, or has a pull request for this version, is skipped with a notice.
+
+komac stays at 2.16.0, pinned by SHA-256 in `release.yml`: 2.17.0 and 2.17.1 write nothing to
+`--output` with `--dry-run`. Before the first 1.x release, make the `winget` environment with a
+deployment rule for `v*` tags, so the job never makes one with no rule. `komac new` asks
+questions at a terminal, so the first version of each package goes in by hand, after 1.0.0 is
+published:
+
+1. Fork `microsoft/winget-pkgs`, and put `WINGET_TOKEN` in the `winget` environment as the
+   secrets table says.
+2. Run `komac new Pitboard.CLI --version 1.0.0 --urls <x64 zip> <arm64 zip> --dry-run --output
+   <folder>`, and the same for `Pitboard.Pitboard` with the MSIs. Give the zips the command
+   alias `pitboard`.
+3. Run `python3 .github/scripts/check-winget-hashes.py <manifests> <the release's SHA256SUMS>`
+   and `winget validate --manifest <manifests>` on each, and check `Scope: user` on the MSIs.
+4. Submit with `komac submit <manifests>`. Sign the Microsoft CLA in the first pull request, and
+   answer a `Needs-Author-Feedback` label within 5 days: 3 days of silence after that closes
+   the pull request.
 
 ## The install script
 

@@ -3,7 +3,9 @@
 # finally: the probe's marker, VHDs, a ReFS or Dev Drive volume, an SMB share, Bun and
 # proper-lockfile in C:\pitboard-probe-tools, three throwaway users and their passwords, tasks,
 # the job user's HKCU\Environment values, the state of OpenSSH Server where the image has one,
-# Developer Mode and the symbolic-link right.
+# Developer Mode and the symbolic-link right, and for the channel rows Scoop in a scratch root,
+# winget's local manifests and the package they install, a build on the user PATH and in
+# ~\.cargo\bin, a loopback server and Defender's attack surface reduction rules.
 #
 # Everything goes into one JSON report at -Out, saved after each row, so a run cut short still
 # leaves what it gathered. A fact that cannot be gathered is recorded as an error and does not
@@ -21,7 +23,9 @@ param(
     [Parameter(Mandatory)] [string] $Helpers,
     [Parameter(Mandatory)] [string] $BunVersion,
     [Parameter(Mandatory)] [string] $BunZip,
-    [Parameter(Mandatory)] [string] $BunSha256
+    [Parameter(Mandatory)] [string] $BunSha256,
+    # pitboard.exe as a 0.x release builds it, for the channel rows.
+    [string] $Pitboard = ''
 )
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -33,6 +37,7 @@ if (-not ($env:GITHUB_ACTIONS -eq 'true' -and $env:RUNNER_ENVIRONMENT -eq 'githu
 
 $Probe = (Resolve-Path -Path $Probe).Path
 $Helpers = (Resolve-Path -Path $Helpers).Path
+if ($Pitboard) { $Pitboard = (Resolve-Path -LiteralPath $Pitboard).Path }
 $scratch = Join-Path $env:RUNNER_TEMP 'pitboard-probe-scratch'
 New-Item -ItemType Directory -Force -Path $scratch | Out-Null
 # The probe looks for its marker in the folder FOLDERID_Profile names, which is what this
@@ -1120,6 +1125,439 @@ function Measure-JobUser($Result) {
     }
 }
 
+# L2, L3, L4 and L8: the command line as Scoop, winget, a folder on the user PATH and
+# ~\.cargo\bin put it, the gated build in the zips package-windows.ps1 makes, served from a
+# loopback server. Each change is undone in the finally below.
+
+# The 19 rules Microsoft's attack surface reduction reference lists, read on 15 October 2026.
+$asrRules = @(
+    '56a863a9-875e-4185-98a7-b882c64b5ce5', '7674ba52-37eb-4a4f-a9a1-f0f9a1619a2c',
+    'd4f940ab-401b-4efc-aadc-ad5f3c50688a', '9e6c4e1f-7d60-472f-ba1a-a39ef669e4b2',
+    'be9ba2d9-53ea-4cdc-84e5-9b1eeee46550', '01443614-cd74-433a-b99e-2ecdc07bfc25',
+    '5beb7efe-fd9a-4556-801d-275e5ffc04cc', 'd3e037e1-3eb8-44c8-a917-57927947596d',
+    '3b576869-a4ec-4529-8536-b80a7769e899', '75668c1f-73b5-4cf0-bb93-3ecf5cb7cc84',
+    '26190899-1602-49e8-8b27-eb1d0a1ce869', 'e6db77e5-3df2-4cf1-b95a-636979351e5b',
+    'd1e49aac-8f56-4280-b9ba-993a6d77406c', '33ddedf1-c6e0-47cb-833e-de6133960387',
+    'b2b3f03d-6a65-4f7b-a9c7-1c7ef74a9ba4', 'c0033c00-d16d-4114-a5a0-dc9b3a7d2ceb',
+    'a8f5898e-1dc8-49a9-9878-85004b8a61e6', '92e97fa1-2edf-4476-bdd6-9dd0b4dddc7b',
+    'c1db55ab-c21a-4637-bb3f-a12568109d35'
+)
+
+# The rules Defender has, by lowercase ID, with each one's action: 0 off, 1 block, 2 audit, 6 warn.
+function Get-AsrRules {
+    $preference = Get-MpPreference
+    $ids = @($preference.AttackSurfaceReductionRules_Ids)
+    $actions = @($preference.AttackSurfaceReductionRules_Actions)
+    $rules = [ordered]@{}
+    for ($i = 0; $i -lt $ids.Count; $i++) {
+        if ($ids[$i]) { $rules[$ids[$i].ToLowerInvariant()] = [int] $actions[$i] }
+    }
+    $rules
+}
+
+# The last lines a tool printed, with the job user's name and folders taken out.
+function Get-Tail([string] $Text, [int] $Lines = 12) {
+    if (-not $Text) { return $null }
+    foreach ($pair in @(@($env:LOCALAPPDATA, '<job-local>'), @($env:USERPROFILE, '<job-profile>'), @($env:USERNAME, '<job-user>'))) {
+        if ($pair[0]) { $Text = $Text -replace [regex]::Escape($pair[0]), $pair[1] }
+    }
+    $Text = (@($Text -split "\r?\n" | Where-Object { $_.Trim() }) | Select-Object -Last $Lines) -join "`n"
+    if ($Text.Length -gt 1500) { $Text = $Text.Substring($Text.Length - 1500) }
+    $Text
+}
+
+# A native program, or Scoop through its shim, which always exits with a code: the code and the
+# last lines it printed. Errors do not stop Scoop here, as they do not in a terminal.
+function Invoke-Tool([string] $FilePath, [string[]] $ArgumentList) {
+    $ErrorActionPreference = 'Continue'
+    $out = & $FilePath @ArgumentList *>&1 | Out-String
+    [ordered]@{ exit = ('0x{0:X8}' -f $LASTEXITCODE); tail = Get-Tail $out }
+}
+
+# Every value of the job user's HKCU\Environment, unexpanded, with its kind.
+function Get-UserEnvironment {
+    $k = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment')
+    $state = [ordered]@{}
+    foreach ($n in $k.GetValueNames()) {
+        $state[$n] = [ordered]@{ value = $k.GetValue($n, $null, 'DoNotExpandEnvironmentNames'); kind = [string] $k.GetValueKind($n) }
+    }
+    $k.Close()
+    $state
+}
+
+# Puts HKCU\Environment back exactly: values added since are deleted, the rest written as they
+# were. True when it reads back the same.
+function Restore-UserEnvironment($Before) {
+    $k = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
+    foreach ($n in @($k.GetValueNames())) {
+        if (-not $Before.Contains($n)) { $k.DeleteValue($n, $false) }
+    }
+    foreach ($n in $Before.Keys) {
+        $k.SetValue($n, $Before[$n].value, [Microsoft.Win32.RegistryValueKind] $Before[$n].kind)
+    }
+    $k.Close()
+    ((Get-UserEnvironment) | ConvertTo-Json -Compress) -eq ($Before | ConvertTo-Json -Compress)
+}
+
+function Add-UserPath([string] $Dir) {
+    $k = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
+    $path = $k.GetValue('Path', '', 'DoNotExpandEnvironmentNames')
+    $k.SetValue('Path', ($path.TrimEnd(';') + ";$Dir").TrimStart(';'), [Microsoft.Win32.RegistryValueKind]::ExpandString)
+    $k.Close()
+}
+
+# PATH as a program started after these installs gets it: the machine's Path, then the
+# user's, each entry expanded.
+function Get-NewPath {
+    $machine = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey('SYSTEM\CurrentControlSet\Control\Session Manager\Environment')
+    $user = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment')
+    $entries = foreach ($pair in @(@('machine', $machine), @('user', $user))) {
+        foreach ($e in ($pair[1].GetValue('Path', '', 'DoNotExpandEnvironmentNames') -split ';')) {
+            if ($e.Trim()) { [pscustomobject]@{ From = $pair[0]; Dir = [Environment]::ExpandEnvironmentVariables($e.Trim()).TrimEnd('\') } }
+        }
+    }
+    $machine.Close()
+    $user.Close()
+    @($entries)
+}
+
+function Get-PathLabel([string] $Dir, $Places) {
+    foreach ($label in $Places.Keys) {
+        if ($Dir.TrimEnd('\') -like $Places[$label]) { return $label }
+    }
+    'other'
+}
+
+# A pitboard.exe that keeps running from where it is: its PowerShell completions, about 29 KB,
+# fill a pipe nobody reads.
+function Start-Held([string] $Exe, $Homes) {
+    $start = [Diagnostics.ProcessStartInfo]::new($Exe)
+    $start.ArgumentList.Add('completions')
+    $start.ArgumentList.Add('powershell')
+    foreach ($variable in $Homes.Keys) { $start.Environment[$variable] = $Homes[$variable] }
+    $start.UseShellExecute = $false
+    $start.RedirectStandardOutput = $true
+    $process = [Diagnostics.Process]::Start($start)
+    Start-Sleep -Seconds 2
+    $process
+}
+
+function Stop-Held($Process) {
+    if ($Process -and -not $Process.HasExited) {
+        $Process.Kill()
+        $null = $Process.WaitForExit(10000)
+    }
+}
+
+# A winget manifest for Pitboard.CLI at $Version, in the three files komac writes, its zip
+# served at $Url.
+function Write-WingetManifest([string] $Folder, [string] $Version, [string] $Url, [string] $Sha256) {
+    New-Item -ItemType Directory -Force -Path $Folder | Out-Null
+    $arch = if ($Triple -eq 'aarch64-pc-windows-msvc') { 'arm64' } else { 'x64' }
+    $common = "PackageIdentifier: Pitboard.CLI`nPackageVersion: $Version`n"
+    Set-Content -LiteralPath (Join-Path $Folder 'Pitboard.CLI.yaml') -Encoding utf8 -Value (
+        $common + "DefaultLocale: en-US`nManifestType: version`nManifestVersion: 1.10.0`n")
+    Set-Content -LiteralPath (Join-Path $Folder 'Pitboard.CLI.locale.en-US.yaml') -Encoding utf8 -Value (
+        $common + "PackageLocale: en-US`nPublisher: Pitboard`nPackageName: Pitboard`nLicense: Apache-2.0`n" +
+        "ShortDescription: Switch Claude Code and Codex between your own accounts`nManifestType: defaultLocale`nManifestVersion: 1.10.0`n")
+    Set-Content -LiteralPath (Join-Path $Folder 'Pitboard.CLI.installer.yaml') -Encoding utf8 -Value (
+        $common + "InstallerType: zip`nNestedInstallerType: portable`nNestedInstallerFiles:`n" +
+        "- RelativeFilePath: pitboard-v$Version-$Triple\pitboard.exe`n  PortableCommandAlias: pitboard`n" +
+        "Installers:`n- Architecture: $arch`n  InstallerUrl: $Url`n  InstallerSha256: $Sha256`n" +
+        "ManifestType: installer`nManifestVersion: 1.10.0`n")
+}
+
+# Serves -Folder's files on http://127.0.0.1:<port>/, as a release's downloads are served.
+$loopbackServer = @'
+param([int] $Port, [string] $Folder)
+$listener = [Net.HttpListener]::new()
+$listener.Prefixes.Add("http://127.0.0.1:$Port/")
+$listener.Start()
+while ($listener.IsListening) {
+    $context = $listener.GetContext()
+    $relative = [Uri]::UnescapeDataString($context.Request.Url.AbsolutePath.TrimStart('/')).Replace('/', '\')
+    $file = [IO.Path]::GetFullPath((Join-Path $Folder $relative))
+    if ($file.StartsWith($Folder + '\') -and (Test-Path -LiteralPath $file -PathType Leaf)) {
+        $bytes = [IO.File]::ReadAllBytes($file)
+        $context.Response.ContentType = 'application/zip'
+        $context.Response.ContentLength64 = $bytes.Length
+        $context.Response.OutputStream.Write($bytes, 0, $bytes.Length)
+    } else {
+        $context.Response.StatusCode = 404
+    }
+    $context.Response.Close()
+}
+'@
+
+function Measure-Channels($Result) {
+    if (-not $Pitboard) { throw 'no -Pitboard build was given' }
+    $root = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
+    $version = $null
+    $section = ''
+    foreach ($line in Get-Content -LiteralPath (Join-Path $root 'Cargo.toml')) {
+        if ($line -match '^\[(.+)\]\s*$') { $section = $Matches[1] }
+        elseif ($section -eq 'workspace.package' -and $line -match '^version = "(.+)"') { $version = $Matches[1]; break }
+    }
+    $parts = $version -split '[.-]'
+    $next = "$($parts[0]).$($parts[1]).$([int] $parts[2] + 1)"
+    $Result.versions = @($version, $next)
+
+    $channels = Join-Path $scratch 'channels'
+    $serve = Join-Path $channels 'serve'
+    $homes = @{}
+    foreach ($variable in 'USERPROFILE', 'HOME', 'APPDATA', 'LOCALAPPDATA', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'PITBOARD_HOME') {
+        $homes[$variable] = Join-Path $channels "homes\$variable"
+        New-Item -ItemType Directory -Force -Path $homes[$variable] | Out-Null
+    }
+    $zips = [ordered]@{}
+    foreach ($v in $version, $next) {
+        $zip = & (Join-Path $PSScriptRoot 'package-windows.ps1') -Exe $Pitboard -Version $v -Triple $Triple -Out (Join-Path $serve "v$v")
+        $zips[$v] = [ordered]@{ path = $zip; sha256 = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash }
+    }
+    $exeHash = (Get-FileHash -LiteralPath $Pitboard -Algorithm SHA256).Hash
+
+    $scoopRoot = Join-Path $channels 'scoop'
+    $scoop = Join-Path $scoopRoot 'shims\scoop.ps1'
+    $msiBin = Join-Path $channels 'msi-bin'
+    $cargoBin = Join-Path $env:USERPROFILE '.cargo\bin'
+    $links = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links'
+    $places = [ordered]@{
+        scoop_shims = Join-Path $scoopRoot 'shims'
+        winget_links = $links
+        winget_package = (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages') + '\*'
+        msi_bin = $msiBin
+        cargo_bin = $cargoBin
+    }
+    $environment = Get-UserEnvironment
+    $scoopConfig = Join-Path $env:USERPROFILE '.config\scoop'
+    $scoopConfigBefore = Test-Path -LiteralPath $scoopConfig
+    $winget = Get-Command winget -ErrorAction SilentlyContinue
+    # What the rows changed, for the finally: a row's block runs in a scope of its own.
+    $state = @{ CargoCopy = $false; LocalManifestsBefore = $null; WingetInstalled = $false; Held = [Collections.Generic.List[object]]::new(); AsrBefore = $null }
+    $server = $null
+    try {
+        # The release's URLs, on this machine: http://127.0.0.1:<port>/v<version>/<zip>.
+        $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
+        $listener.Start()
+        $port = $listener.LocalEndpoint.Port
+        $listener.Stop()
+        $serverScript = Join-Path $channels 'loopback-server.ps1'
+        Set-Content -LiteralPath $serverScript -Value $loopbackServer -Encoding utf8
+        $server = Start-Process -FilePath $pwsh -ArgumentList (Format-Arguments @('-NoProfile', '-File', $serverScript, $port, $serve)) `
+            -NoNewWindow -PassThru -RedirectStandardOutput (Join-Path $channels 'server-out.txt') -RedirectStandardError (Join-Path $channels 'server-err.txt')
+        $base = "http://127.0.0.1:$port"
+        $first = "$base/v$version/$(Split-Path -Leaf $zips[$version].path)"
+        $up = $false
+        foreach ($attempt in 1..20) {
+            try { $null = Invoke-WebRequest -Uri $first -UseBasicParsing; $up = $true; break } catch { Start-Sleep -Seconds 1 }
+        }
+        if (-not $up) { throw "the loopback server did not answer on port $port" }
+
+        Invoke-Row $Result 'l8_scoop' {
+            $r = [ordered]@{}
+            $installer = Join-Path $channels 'install-scoop.ps1'
+            Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/ScoopInstaller/Install/1e2f334083d609986d8c8bc9e31ae8e87c39fab4/install.ps1' -OutFile $installer -UseBasicParsing
+            if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash -ne '94F983B190438311E006B957DB7C8422709E0BA62A6C2AC04E278164108F2512') {
+                throw 'install.ps1 is not the script read on 15 October 2026; nothing of it runs'
+            }
+            # The job's user is elevated in every program it starts.
+            $r.install = Get-Tail (& { $ErrorActionPreference = 'Continue'; & $installer -ScoopDir $scoopRoot -RunAsAdmin *>&1 | Out-String })
+            $r.installed = Test-Path -LiteralPath $scoop
+            $r.scoop_version = Invoke-Tool $scoop @('--version')
+            # The bucket a release writes, as a local repository, its URL and hash this machine's.
+            $bucket = Join-Path $channels 'bucket'
+            New-Item -ItemType Directory -Force -Path (Join-Path $bucket 'bucket') | Out-Null
+            git -C $bucket init -q -b main
+            $template = Get-Content -Raw -LiteralPath (Join-Path $root 'packaging\scoop\pitboard.json')
+            $arch = if ($Triple -eq 'aarch64-pc-windows-msvc') { 'arm64' } else { '64bit' }
+            foreach ($v in $version, $next) {
+                $manifest = $template.Replace('@VERSION@', $v) -replace '@SHA256_[A-Z0-9_]+@', ('0' * 64) | ConvertFrom-Json
+                $manifest.architecture.$arch.url = "$base/v$v/$(Split-Path -Leaf $zips[$v].path)"
+                $manifest.architecture.$arch.hash = $zips[$v].sha256.ToLowerInvariant()
+                $zips[$v].scoop = $manifest | ConvertTo-Json -Depth 8
+            }
+            Set-Content -LiteralPath (Join-Path $bucket 'bucket\pitboard.json') -Value $zips[$version].scoop -Encoding utf8
+            git -C $bucket add -A
+            git -C $bucket -c user.name=runner-facts -c user.email=runner-facts@localhost commit -q -m "pitboard $version"
+            $r.bucket_add = Invoke-Tool $scoop @('bucket', 'add', 'pitboard-l8', $bucket)
+            $r.install_pitboard = Invoke-Tool $scoop @('install', 'pitboard-l8/pitboard')
+            $shim = Join-Path $scoopRoot 'shims\pitboard.exe'
+            $current = Join-Path $scoopRoot 'apps\pitboard\current'
+            $r.shim = Test-Path -LiteralPath $shim
+            $r.shim_version = if ($r.shim) { (& $shim --version | Out-String).Trim() } else { $null }
+            $r.current_link = (Get-Item -LiteralPath $current -ErrorAction SilentlyContinue).LinkType
+            $installed = Join-Path $current 'pitboard.exe'
+            $r.installed_is_the_build = (Test-Path -LiteralPath $installed) -and (Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash -eq $exeHash
+            $r
+        }
+
+        Invoke-Row $Result 'l2_path' {
+            $r = [ordered]@{ developer_mode = Get-DevMode; winget = [bool] $winget }
+            if ($winget) {
+                $r.winget_version = (& $winget.Source --version | Out-String).Trim()
+                $settings = & $winget.Source settings export | Out-String | ConvertFrom-Json
+                $state.LocalManifestsBefore = [bool] $settings.adminSettings.LocalManifestFiles
+                $r.local_manifests_before = $state.LocalManifestsBefore
+                if (-not $state.LocalManifestsBefore) { $r.enable = Invoke-Tool $winget.Source @('settings', '--enable', 'LocalManifestFiles') }
+                $manifests = Join-Path $channels "winget\$version"
+                Write-WingetManifest $manifests $version "$base/v$version/$(Split-Path -Leaf $zips[$version].path)" $zips[$version].sha256
+                $r.validate = Invoke-Tool $winget.Source @('validate', '--manifest', $manifests)
+                $state.WingetInstalled = $true
+                $r.install = Invoke-Tool $winget.Source @('install', '--manifest', $manifests, '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity')
+                $link = Get-Item -LiteralPath (Join-Path $links 'pitboard.exe') -ErrorAction SilentlyContinue
+                $r.link = if ($link) { [ordered]@{ type = $link.LinkType; target = Get-PathLabel (Split-Path -Parent $link.Target) $places } } else { $null }
+            }
+            # The MSI's bin, which it adds to the user PATH, stood in for by a folder added last.
+            New-Item -ItemType Directory -Force -Path $msiBin | Out-Null
+            Copy-Item -LiteralPath $Pitboard -Destination (Join-Path $msiBin 'pitboard.exe')
+            Add-UserPath $msiBin
+            # Where cargo binstall and cargo install put it.
+            if ((Test-Path -LiteralPath $cargoBin) -and -not (Test-Path -LiteralPath (Join-Path $cargoBin 'pitboard.exe'))) {
+                Copy-Item -LiteralPath $Pitboard -Destination (Join-Path $cargoBin 'pitboard.exe')
+                $state.CargoCopy = $true
+            }
+            $r.cargo_bin = $state.CargoCopy
+            $entries = Get-NewPath
+            $r.order = @($entries | Where-Object { Test-Path -LiteralPath (Join-Path $_.Dir 'pitboard.exe') } |
+                    ForEach-Object { [ordered]@{ label = Get-PathLabel $_.Dir $places; from = $_.From } })
+            $start = [Diagnostics.ProcessStartInfo]::new((Join-Path $env:SystemRoot 'System32\where.exe'))
+            $start.ArgumentList.Add('pitboard')
+            $start.Environment['PATH'] = ($entries.Dir -join ';')
+            $start.UseShellExecute = $false
+            $start.RedirectStandardOutput = $true
+            $where = [Diagnostics.Process]::Start($start)
+            $found = $where.StandardOutput.ReadToEnd()
+            $where.WaitForExit()
+            $r.where = @($found -split "\r?\n" | Where-Object { $_ } | ForEach-Object { Get-PathLabel (Split-Path -Parent $_) $places })
+            $r
+        }
+
+        Invoke-Row $Result 'l3_update_running' {
+            $r = [ordered]@{}
+            $current = Join-Path $scoopRoot 'apps\pitboard\current\pitboard.exe'
+            if (Test-Path -LiteralPath $current) {
+                $bucket = Join-Path $channels 'bucket'
+                Set-Content -LiteralPath (Join-Path $bucket 'bucket\pitboard.json') -Value $zips[$next].scoop -Encoding utf8
+                git -C $bucket -c user.name=runner-facts -c user.email=runner-facts@localhost commit -q -a -m "pitboard $next"
+                $r.scoop_sync = Invoke-Tool $scoop @('update')
+                $process = Start-Held $current $homes
+                $state.Held.Add($process)
+                $r.scoop_running = -not $process.HasExited
+                $r.scoop_update_running = Invoke-Tool $scoop @('update', 'pitboard')
+                $r.scoop_current_after_running = Split-Path -Leaf (Get-Item -LiteralPath (Join-Path $scoopRoot 'apps\pitboard\current')).Target
+                Stop-Held $process
+                $r.scoop_update_stopped = Invoke-Tool $scoop @('update', 'pitboard')
+                $r.scoop_current_after_stopped = Split-Path -Leaf (Get-Item -LiteralPath (Join-Path $scoopRoot 'apps\pitboard\current')).Target
+            }
+            $link = Get-Item -LiteralPath (Join-Path $links 'pitboard.exe') -ErrorAction SilentlyContinue
+            if ($winget -and $link) {
+                $manifests = Join-Path $channels "winget\$next"
+                Write-WingetManifest $manifests $next "$base/v$next/$(Split-Path -Leaf $zips[$next].path)" $zips[$next].sha256
+                # Each zip holds its build in pitboard-v<version>-<triple>, so the link's folder names
+                # the version it leads to.
+                $linked = { Split-Path -Leaf (Split-Path -Parent (Get-Item -LiteralPath (Join-Path $links 'pitboard.exe') -ErrorAction SilentlyContinue).Target) }
+                $process = Start-Held $link.Target $homes
+                $state.Held.Add($process)
+                $r.winget_running = -not $process.HasExited
+                $r.winget_upgrade_running = Invoke-Tool $winget.Source @('upgrade', '--manifest', $manifests, '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity')
+                $r.winget_link_after_running = & $linked
+                $r.winget_old_left_after_running = Test-Path -LiteralPath $link.Target
+                Stop-Held $process
+                $r.winget_upgrade_stopped = Invoke-Tool $winget.Source @('upgrade', '--manifest', $manifests, '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity')
+                $r.winget_link_after_stopped = & $linked
+            }
+            $r
+        }
+
+        # Defender in audit for every rule, then the zip's pitboard.exe marked as downloaded and
+        # run three ways. Audit mode logs 1122 and blocks nothing; block mode would log 1121.
+        Invoke-Row $Result 'l4_defender' {
+            $status = Get-MpComputerStatus
+            $r = [ordered]@{
+                real_time = $status.RealTimeProtectionEnabled
+                behavior_monitor = $status.BehaviorMonitorEnabled
+                tamper_protected = $status.IsTamperProtected
+                engine = $status.AMEngineVersion
+            }
+            $state.AsrBefore = Get-AsrRules
+            $r.rules_before = $state.AsrBefore.Count
+            $since = Get-Date
+            Add-MpPreference -AttackSurfaceReductionRules_Ids $asrRules -AttackSurfaceReductionRules_Actions (@('AuditMode') * $asrRules.Count)
+            $after = Get-AsrRules
+            $r.rules_in_audit = @($asrRules | Where-Object { $after[$_] -eq 2 }).Count
+            $folder = Join-Path $channels 'l4'
+            Expand-Archive -LiteralPath $zips[$version].path -DestinationPath $folder
+            $exe = Join-Path $folder "pitboard-v$version-$Triple\pitboard.exe"
+            Set-Content -LiteralPath $exe -Stream Zone.Identifier -Value "[ZoneTransfer]`r`nZoneId=3"
+            $r.runs = [ordered]@{}
+            foreach ($run in @(@('version', @('--version')), @('bare', @()), @('completions', @('completions', 'bash')))) {
+                $start = [Diagnostics.ProcessStartInfo]::new($exe)
+                foreach ($argument in $run[1]) { $start.ArgumentList.Add($argument) }
+                foreach ($variable in $homes.Keys) { $start.Environment[$variable] = $homes[$variable] }
+                $start.UseShellExecute = $false
+                $start.RedirectStandardOutput = $true
+                $start.RedirectStandardError = $true
+                $process = [Diagnostics.Process]::Start($start)
+                $errors = $process.StandardError.ReadToEndAsync()
+                $null = $process.StandardOutput.ReadToEnd()
+                $process.WaitForExit()
+                $null = $errors.Result
+                $r.runs[$run[0]] = '0x{0:X8}' -f $process.ExitCode
+            }
+            Start-Sleep -Seconds 15
+            $events = @(Get-WinEvent -FilterHashtable @{ LogName = 'Microsoft-Windows-Windows Defender/Operational'; Id = 1121, 1122; StartTime = $since } -ErrorAction SilentlyContinue)
+            $r.events = @($events | ForEach-Object {
+                    $message = $_.Message
+                    [ordered]@{
+                        id = $_.Id
+                        rule = if ($message -match 'ID:\s*([0-9A-Fa-f-]{36})') { $Matches[1].ToLowerInvariant() } else { $null }
+                        path = if ($message -match 'Path:\s*(.+)') { Split-Path -Leaf $Matches[1].Trim() } else { $null }
+                        process = if ($message -match 'Process Name:\s*(.+)') { Split-Path -Leaf $Matches[1].Trim() } else { $null }
+                    }
+                })
+            $r
+        }
+    } finally {
+        foreach ($process in $state.Held) { Stop-Held $process }
+        $undo = [ordered]@{}
+        if ($null -ne $state.AsrBefore) {
+            $undo.asr_restored = Invoke-Fact {
+                Remove-MpPreference -AttackSurfaceReductionRules_Ids $asrRules
+                foreach ($id in $state.AsrBefore.Keys) {
+                    Add-MpPreference -AttackSurfaceReductionRules_Ids $id -AttackSurfaceReductionRules_Actions $state.AsrBefore[$id]
+                }
+                ((Get-AsrRules) | ConvertTo-Json -Compress) -eq ($state.AsrBefore | ConvertTo-Json -Compress)
+            }
+        }
+        if ($state.WingetInstalled) {
+            $undo.winget_uninstall = Invoke-Fact { Invoke-Tool $winget.Source @('uninstall', '--id', 'Pitboard.CLI', '--exact', '--disable-interactivity') }
+            Remove-Item -Force -LiteralPath (Join-Path $links 'pitboard.exe') -ErrorAction SilentlyContinue
+            Get-ChildItem -Directory -Path (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages') -Filter 'Pitboard.CLI*' -ErrorAction SilentlyContinue |
+                Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+            Get-ChildItem -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue |
+                Where-Object { $_.PSChildName -like 'Pitboard.CLI*' } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        if ($winget -and $state.LocalManifestsBefore -eq $false) {
+            $undo.local_manifests = Invoke-Fact { Invoke-Tool $winget.Source @('settings', '--disable', 'LocalManifestFiles') }
+        }
+        if (Test-Path -LiteralPath $scoop) {
+            $undo.scoop_uninstall = Invoke-Fact { Invoke-Tool $scoop @('uninstall', 'pitboard') }
+        }
+        if ($state.CargoCopy) { Remove-Item -Force -LiteralPath (Join-Path $cargoBin 'pitboard.exe') -ErrorAction SilentlyContinue }
+        if (-not $scoopConfigBefore) { Remove-Item -Recurse -Force -LiteralPath $scoopConfig -ErrorAction SilentlyContinue }
+        $undo.environment_restored = Invoke-Fact { Restore-UserEnvironment $environment }
+        if ($server) { Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue }
+        Remove-Item -Recurse -Force -LiteralPath $channels -ErrorAction SilentlyContinue
+        $left = [Collections.Generic.List[string]]::new()
+        if ($state.CargoCopy -and (Test-Path -LiteralPath (Join-Path $cargoBin 'pitboard.exe'))) { $left.Add('cargo_bin') }
+        if (Get-Item -Force -LiteralPath (Join-Path $links 'pitboard.exe') -ErrorAction SilentlyContinue) { $left.Add('winget_link') }
+        if (Test-Path -LiteralPath $channels) { $left.Add('scratch') }
+        $undo.left = @($left)
+        $Result.undo = $undo
+        Save-Report
+    }
+}
+
 # Anything a row left behind: the probe's tasks, a \Pitboard\ folder the run made, the tools.
 function Remove-Leftovers([bool] $PitboardFolderBefore) {
     Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object { $_.TaskName -like 'pitboard-probe-*' } |
@@ -1187,6 +1625,9 @@ try {
 
     $report.job_user_rows = [ordered]@{}
     try { Measure-JobUser $report.job_user_rows } catch { $report.job_user_rows.error = $_.Exception.Message }
+
+    $report.channels = [ordered]@{}
+    try { Measure-Channels $report.channels } catch { $report.channels.error = $_.Exception.Message }
 } finally {
     try { Remove-Leftovers $pitboardFolderBefore } catch { $report.leftovers_error = $_.Exception.Message }
     $report.tools_removed = -not (Test-Path -Path $tools)

@@ -2,13 +2,15 @@
 # What a release tag makes, for release.yml's guard: key=value lines for $GITHUB_OUTPUT.
 set -eu
 
-if [ "$#" -ne 3 ]; then
-  echo "usage: release-kind.sh <tag> <manifest version> <published full tags file>" >&2
+if [ "$#" -ne 4 ]; then
+  echo "usage: release-kind.sh <tag> <manifest version> <published full tags file> <signer>" >&2
   exit 2
 fi
 tag=$1
 manifest=$2
 published=$3
+# The repository variable WINDOWS_SIGNER, empty until Pitboard for Windows has a signer.
+signer=$4
 
 refuse() {
   echo "$1" >&2
@@ -82,8 +84,14 @@ if [ "$latest" = true ]; then
   done <"$published"
 fi
 windows=true
+signed=false
 if [ "$major" = 0 ]; then
   windows=false
+elif [ -n "$signer" ]; then
+  signed=true
+elif [ "$kind" != beta ]; then
+  refuse "Pitboard for Windows has no signer yet, and a release candidate or final release is \
+never unsigned."
 fi
 
 echo "version=$version"
@@ -93,3 +101,4 @@ echo "prerelease=$prerelease"
 echo "windows=$windows"
 echo "crates=$crates"
 echo "latest=$latest"
+echo "signed=$signed"

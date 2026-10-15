@@ -50,9 +50,26 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
 - Never put an `install.sh`, a rule naming it or a catch-all fallback in `website/`. A zone
   rule sends `/install.sh` to the newest release; a site file there would change what people
   pipe to `sh`.
+- Never put an `install.ps1` in a release or in `website/`, or a zone rule that names one.
+  Pitboard for Windows installs from the release's own files, Scoop, winget and
+  cargo-binstall.
 - Never push a tag.
 - Never mark a release latest by hand, or reuse or move an rc or beta tag. The release
   workflow decides latest.
+- Never dispatch a workflow but `windows-facts.yml`.
+- Never sign with a signer's release policy or production credentials outside `release.yml`
+  on a `v*` tag. Test signing uses the signer's test policy or sandbox.
+- Never let a job that runs on a pull request or by hand reach the `release`,
+  `windows-signing`, `scoop-bucket` or `winget` environment. Each keeps a deployment rule for
+  `v*` tags only.
+- Never write the Scoop bucket or a `winget-pkgs` branch by hand, past the first commit and
+  the first versions RELEASING.md sets out. The release writes them from its own
+  `SHA256SUMS`, as it writes the tap.
+- Never put a beta in Scoop or winget.
+- Never publish a Windows release candidate or final release unsigned, and never unset
+  `WINDOWS_SIGNER` once a signer is set.
+- Never add a cache, such as the Actions cache, `rust-cache` or sccache, to a job that leads
+  to a signing request. SignPath refuses a build that may take files from an earlier one.
 - Never let `.github/workflows/rotation.yml` name a repository secret. Its rehearsal ships
   bundles that update themselves, and must never reach the real key.
 - Never keep the update key and the Developer ID certificate in one place. With both lost,
@@ -75,7 +92,7 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
   its program and its sign-in there, and Pitboard leaves them alone on Windows.
 - Never run a `pitboard.exe` built from a branch on a Windows account that holds real
   logins. Never put one on a `PATH`, in `%LOCALAPPDATA%\Programs`, in WinGet's Links or
-  behind a Scoop shim.
+  behind a Scoop shim, but as `runner-facts.ps1` does on a runner, below.
 - Never run a test or a script there before pointing `USERPROFILE`, `HOME`, `APPDATA`,
   `LOCALAPPDATA`, an existing `CODEX_HOME`, `CLAUDE_CONFIG_DIR` and `PITBOARD_HOME` at
   fresh folders. Set them after building: Cargo and rustup find their homes through
@@ -94,9 +111,11 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
   `windows-facts.yml` on a GitHub-hosted runner, may make Windows accounts, put one in
   Administrators or OpenSSH Users, change their passwords, turn on Developer Mode, grant the
   symbolic-link right, register tasks, write the job user's `HKCU\Environment`, mount volumes,
-  share a folder, start OpenSSH Server and install Bun. It undoes each in a `finally`. Never
-  copy one of those changes, or `test-as-standard-user.ps1`'s, into a script meant for a
-  person's machine.
+  share a folder, start OpenSSH Server, install Bun and Scoop, turn on winget's local
+  manifests, serve files on loopback, put a build it made behind a Scoop shim, in WinGet's
+  Links, in `~\.cargo\bin` or on the user `PATH`, and set Defender's attack surface reduction
+  rules to audit. It undoes each in a `finally`. Never copy one of those changes, or
+  `test-as-standard-user.ps1`'s, into a script meant for a person's machine.
 - `windows-facts.yml` stays `workflow_dispatch` only, names no secret, and uploads only the
   probe's redacted reports. No workflow uploads an opened `pitboard.exe`: the repository is
   public, so anyone signed in to GitHub can download an artifact.

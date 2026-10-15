@@ -1,5 +1,6 @@
 #!/bin/sh
-# Writes a packaging/ template with a release's version and checksums: the casks and install.sh.
+# Writes a packaging/ template with a release's version and checksums: the casks, Scoop's manifest
+# and install.sh.
 set -eu
 
 if [ "$#" -ne 4 ]; then
@@ -43,6 +44,12 @@ value() {
     @SHA256_X86_64_UNKNOWN_LINUX_MUSL@)
       checksum "pitboard-v$version-x86_64-unknown-linux-musl.tar.gz"
       ;;
+    @SHA256_X86_64_PC_WINDOWS_MSVC@)
+      checksum "pitboard-v$version-x86_64-pc-windows-msvc.zip"
+      ;;
+    @SHA256_AARCH64_PC_WINDOWS_MSVC@)
+      checksum "pitboard-v$version-aarch64-pc-windows-msvc.zip"
+      ;;
     @SHA256_APP@) checksum "Pitboard-v$version-macos.zip" ;;
   esac
 }
@@ -54,7 +61,8 @@ fi
 cp "$template" "$work"
 # A replacement that matched nothing would leave a placeholder, or the previous value, in place.
 for name in @VERSION@ @SHA256_AARCH64_APPLE_DARWIN@ @SHA256_X86_64_APPLE_DARWIN@ \
-  @SHA256_AARCH64_UNKNOWN_LINUX_MUSL@ @SHA256_X86_64_UNKNOWN_LINUX_MUSL@ @SHA256_APP@; do
+  @SHA256_AARCH64_UNKNOWN_LINUX_MUSL@ @SHA256_X86_64_UNKNOWN_LINUX_MUSL@ \
+  @SHA256_X86_64_PC_WINDOWS_MSVC@ @SHA256_AARCH64_PC_WINDOWS_MSVC@ @SHA256_APP@; do
   if ! grep -qF "$name" "$work"; then
     continue
   fi

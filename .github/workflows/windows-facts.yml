@@ -121,7 +121,8 @@ jobs:
             -ProbeX64 $(if ($env:TRIPLE -ne 'x86_64-pc-windows-msvc' -and (Test-Path $x64)) { (Resolve-Path $x64).Path } else { '' }) `
             -Triple $env:TRIPLE -Out (Join-Path $env:RUNNER_TEMP 'runner-facts.json') `
             -Helpers crates/pitboard-probe/helpers `
-            -BunVersion $env:BUN_VERSION -BunZip $env:BUN_ZIP -BunSha256 $env:BUN_SHA256
+            -BunVersion $env:BUN_VERSION -BunZip $env:BUN_ZIP -BunSha256 $env:BUN_SHA256 `
+            -Pitboard target/gated/debug/pitboard.exe
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

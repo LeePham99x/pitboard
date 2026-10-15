@@ -30,6 +30,7 @@ jobs:
       windows: ${{ steps.check.outputs.windows }}
       crates: ${{ steps.check.outputs.crates }}
       latest: ${{ steps.check.outputs.latest }}
+      signed: ${{ steps.check.outputs.signed }}
       core: ${{ steps.core.outputs.core }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -38,15 +39,21 @@ jobs:
       - id: check
         env:
           GH_TOKEN: ${{ github.token }}
+          SIGNER: ${{ vars.WINDOWS_SIGNER }}
+          SUBJECT: ${{ vars.WINDOWS_SIGNER_SUBJECT }}
         run: |
           manifest=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
           gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
             --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' \
             > "$RUNNER_TEMP/published"
           sh .github/scripts/release-kind.sh "$GITHUB_REF_NAME" "$manifest" \
-            "$RUNNER_TEMP/published" > "$RUNNER_TEMP/kind"
+            "$RUNNER_TEMP/published" "$SIGNER" > "$RUNNER_TEMP/kind"
           version=$(sed -n 's/^version=//p' "$RUNNER_TEMP/kind")
           kind=$(sed -n 's/^kind=//p' "$RUNNER_TEMP/kind")
+          if grep -qx 'signed=true' "$RUNNER_TEMP/kind" && [ -z "$SUBJECT" ]; then
+            echo "WINDOWS_SIGNER is $SIGNER, and WINDOWS_SIGNER_SUBJECT names no subject to check" >&2
+            exit 1
+          fi
           # An rc has no section of its own.
           if [ "$kind" != rc ] && ! awk -v heading="## [$version] - " \
             'index($0, heading) == 1 { found = 1 } END { exit !found }' CHANGELOG.md; then
@@ -178,7 +185,7 @@ jobs:
           tar -C "$RUNNER_TEMP/dist" -czf "$RUNNER_TEMP/dist/$name.tar.gz" "$name"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ${{ matrix.target }}
+          name: dist-${{ matrix.target }}
           path: ${{ runner.temp }}/dist/*.tar.gz
 
   # The command line for Windows, from 1.0.0, each zip built and checked on the machine it is
@@ -203,10 +210,67 @@ jobs:
         with:
           triple: ${{ matrix.triple }}
           version: ${{ needs.guard.outputs.version }}
+      # Not dist-, so publish never takes it: only windows-sign hands a Windows zip on.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ${{ matrix.triple }}
+          name: unsigned-${{ matrix.triple }}
           path: ${{ runner.temp }}/dist/*.zip
+          if-no-files-found: error
+
+  # Every Windows zip reaches publish through here, checked: each program in it signed by the
+  # signer's subject when the guard says signed, and none signed when it does not. No cache here or
+  # in build-windows: SignPath's origin verification refuses a build that may take another's files.
+  windows-sign:
+    needs: [guard, build-windows]
+    if: needs.guard.outputs.windows == 'true'
+    runs-on: windows-2025
+    timeout-minutes: 120
+    # Takes deployments from v* tags only, and holds the signer's credentials.
+    environment: windows-signing
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: unsigned-*
+          path: ${{ runner.temp }}/unsigned
+          merge-multiple: true
+      - name: Sign
+        shell: pwsh
+        env:
+          SIGNED: ${{ needs.guard.outputs.signed }}
+          SIGNER: ${{ vars.WINDOWS_SIGNER }}
+        run: |
+          $dist = Join-Path $env:RUNNER_TEMP 'dist'
+          New-Item -ItemType Directory -Force -Path $dist | Out-Null
+          if ($env:SIGNED -ne 'true') {
+            Copy-Item -Path (Join-Path $env:RUNNER_TEMP 'unsigned\*.zip') -Destination $dist
+            Write-Output 'No signer is set, so this beta ships its Windows zips unsigned.'
+            exit 0
+          }
+          throw "no signing step for $env:SIGNER"
+      - name: Every signature
+        shell: pwsh
+        env:
+          SIGNED: ${{ needs.guard.outputs.signed }}
+          SUBJECT: ${{ vars.WINDOWS_SIGNER_SUBJECT }}
+        run: |
+          $mode = if ($env:SIGNED -eq 'true') { 'signed' } else { 'unsigned' }
+          $zips = @(Get-ChildItem -Path (Join-Path $env:RUNNER_TEMP 'dist\*.zip') | ForEach-Object FullName)
+          if ($zips.Count -ne 2) { throw "windows-sign has $($zips.Count) zips to hand on, not 2" }
+          ./.github/scripts/verify-windows-signatures.ps1 -Path $zips -Mode $mode -Subject $env:SUBJECT `
+            -Built (Join-Path $env:RUNNER_TEMP 'unsigned')
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dist-windows-x86_64-pc-windows-msvc
+          path: ${{ runner.temp }}/dist/*-x86_64-pc-windows-msvc.zip
+          if-no-files-found: error
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dist-windows-aarch64-pc-windows-msvc
+          path: ${{ runner.temp }}/dist/*-aarch64-pc-windows-msvc.zip
+          if-no-files-found: error
 
   # The menu bar app, signed and notarised when the Apple secrets are set; without them it
   # is still built and released, ad-hoc signed, which Gatekeeper warns about on first
@@ -342,19 +406,19 @@ jobs:
           fi
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: app
+          name: dist-app
           path: |
             ${{ runner.temp }}/dist/*.zip
             ${{ runner.temp }}/dist/appcast.xml
 
   # A skipped job skips every job after it in the chain unless their `if` says otherwise, and
-  # build-windows is skipped below 1.0.0. So publish and the jobs after it name what they need.
+  # windows-sign is skipped below 1.0.0. So publish and the jobs after it name what they need.
   publish:
-    needs: [guard, build, app, build-windows]
+    needs: [guard, build, app, windows-sign]
     if: >-
       ${{ !cancelled() && needs.build.result == 'success' && needs.app.result == 'success' &&
-      (needs.build-windows.result == 'success' ||
-      (needs.build-windows.result == 'skipped' && needs.guard.outputs.windows == 'false')) }}
+      (needs.windows-sign.result == 'success' ||
+      (needs.windows-sign.result == 'skipped' && needs.guard.outputs.windows == 'false')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # Required reviewers on this environment are what stops an unexpected tag walking into
@@ -375,6 +439,7 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
+          pattern: dist-*
           path: ${{ runner.temp }}/dist
           merge-multiple: true
 
@@ -929,3 +994,351 @@ jobs:
             sleep 15
           done
           exit 1
+
+  # What somebody who downloads a Windows zip gets, got, on each machine: the published zip
+  # against SHA256SUMS and its attestation, every signature in it, and its command line run as
+  # a fresh standard user, as winget's validation runs one. A full release or a beta also
+  # installs through cargo-binstall, which takes the zip the crate's metadata names.
+  windows-install:
+    needs: [guard, publish]
+    if: ${{ !cancelled() && needs.publish.result == 'success' && needs.guard.outputs.windows == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # cargo-binstall 1.25.3's zip for each, as its immutable release lists it.
+          - os: windows-2025
+            triple: x86_64-pc-windows-msvc
+            binstall-sha256: de20bf4eefbbc4d90888e32938e4e66808c14bfe122458b2dd7d826821529cd9
+          - os: windows-11-arm
+            triple: aarch64-pc-windows-msvc
+            binstall-sha256: 52723f6d28fc769c3d9de7841f37bddc0f3bade0061641e9f483fb1f4ff17dcf
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      attestations: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The zip, as the release publishes it
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRIPLE: ${{ matrix.triple }}
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'published'
+          $name = "pitboard-$env:GITHUB_REF_NAME-$env:TRIPLE.zip"
+          gh release download $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY --pattern $name --pattern SHA256SUMS --dir $dir
+          if ($LASTEXITCODE -ne 0) { throw "gh release download exited $LASTEXITCODE" }
+          $zip = Join-Path $dir $name
+          $lines = @(Get-Content -LiteralPath (Join-Path $dir 'SHA256SUMS') | Where-Object { ($_ -split '\s+', 2)[1] -eq $name })
+          if ($lines.Count -ne 1) { throw "SHA256SUMS has $($lines.Count) lines for $name" }
+          $listed = ($lines[0] -split '\s+', 2)[0]
+          $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash
+          if ($hash -ne $listed) { throw "$name is $hash, and SHA256SUMS says $listed" }
+          # Sigstore takes a moment to serve an attestation that was written seconds ago.
+          foreach ($attempt in 1..5) {
+            gh attestation verify $zip --repo $env:GITHUB_REPOSITORY
+            if ($LASTEXITCODE -eq 0) { break }
+            Write-Output "no attestation for $name yet (attempt $attempt)"
+            Start-Sleep -Seconds 15
+          }
+          if ($LASTEXITCODE -ne 0) { throw "$name has no attestation from this repository" }
+          Expand-Archive -LiteralPath $zip -DestinationPath (Join-Path $env:RUNNER_TEMP 'unpacked')
+          "ZIP=$zip" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Every signature
+        shell: pwsh
+        env:
+          SIGNED: ${{ needs.guard.outputs.signed }}
+          SUBJECT: ${{ vars.WINDOWS_SIGNER_SUBJECT }}
+        run: |
+          $mode = if ($env:SIGNED -eq 'true') { 'signed' } else { 'unsigned' }
+          ./.github/scripts/verify-windows-signatures.ps1 -Path $env:ZIP -Mode $mode -Subject $env:SUBJECT
+      - name: The command line in it, as a fresh standard user
+        shell: pwsh
+        env:
+          TRIPLE: ${{ matrix.triple }}
+          # What pitboard --version says: Cargo.toml's version, which an rc's tag adds to.
+          BASE: ${{ needs.guard.outputs.base }}
+        run: >
+          ./.github/scripts/check-windows-build.ps1 -Triple $env:TRIPLE -Version $env:BASE
+          -Exe (Join-Path $env:RUNNER_TEMP "unpacked\pitboard-$env:GITHUB_REF_NAME-$env:TRIPLE\pitboard.exe")
+      - if: needs.guard.outputs.crates == 'true'
+        name: cargo binstall, from crates.io
+        shell: pwsh
+        env:
+          TRIPLE: ${{ matrix.triple }}
+          VERSION: ${{ needs.guard.outputs.version }}
+          BINSTALL_SHA256: ${{ matrix.binstall-sha256 }}
+        run: |
+          $tools = Join-Path $env:RUNNER_TEMP 'binstall'
+          New-Item -ItemType Directory -Path $tools | Out-Null
+          $zip = Join-Path $tools 'cargo-binstall.zip'
+          $url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.25.3/cargo-binstall-$env:TRIPLE.zip"
+          Invoke-WebRequest -Uri $url -OutFile $zip -MaximumRetryCount 5 -RetryIntervalSec 10
+          if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash -ne $env:BINSTALL_SHA256) { throw "$url is not the zip read on 15 October 2026" }
+          Expand-Archive -LiteralPath $zip -DestinationPath $tools
+          # crates.io's index serves a version a moment after the upload.
+          $pattern = '"vers":"' + [regex]::Escape($env:VERSION) + '"'
+          $listed = $false
+          foreach ($attempt in 1..12) {
+            $index = curl.exe -fsSL https://index.crates.io/pi/tb/pitboard | Out-String
+            if ($index -match $pattern) { $listed = $true; break }
+            Write-Output "the index has no pitboard $env:VERSION yet (attempt $attempt)"
+            Start-Sleep -Seconds 10
+          }
+          if (-not $listed) { throw "crates.io's index has no pitboard $env:VERSION" }
+          # With compile disabled, a wrong zip in the crate's metadata fails here instead of building from source.
+          $root = Join-Path $env:RUNNER_TEMP 'binstall-root'
+          & (Join-Path $tools 'cargo-binstall.exe') "pitboard@$env:VERSION" --root $root --no-confirm --disable-strategies compile,quick-install
+          if ($LASTEXITCODE -ne 0) { throw "cargo binstall exited $LASTEXITCODE" }
+          $installed = Join-Path $root 'bin\pitboard.exe'
+          $zipped = Join-Path $env:RUNNER_TEMP "unpacked\pitboard-$env:GITHUB_REF_NAME-$env:TRIPLE\pitboard.exe"
+          if ((Get-FileHash -LiteralPath $installed).Hash -ne (Get-FileHash -LiteralPath $zipped).Hash) {
+            throw "cargo binstall installed another pitboard.exe than the $env:TRIPLE zip holds"
+          }
+          & $installed --version
+          exit $LASTEXITCODE
+
+  # Scoop's bucket holds the command line for Windows, written like the tap from the SHA256SUMS
+  # the publish job took. Until datlechin/scoop-bucket and SCOOP_BUCKET_TOKEN exist, it says
+  # which is missing and writes nothing.
+  scoop:
+    needs: [guard, publish]
+    if: >-
+      ${{ !cancelled() && needs.publish.result == 'success' && needs.guard.outputs.latest == 'true' &&
+      needs.guard.outputs.windows == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # SCOOP_BUCKET_TOKEN reaches another repository, so it lives in an environment of its own.
+    environment: scoop-bucket
+    outputs:
+      written: ${{ steps.bucket.outputs.written }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: SHA256SUMS
+          path: ${{ runner.temp }}/sums
+      - id: bucket
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+          VERSION: ${{ needs.guard.outputs.version }}
+        run: |
+          set -euo pipefail
+          bucket=${GITHUB_REPOSITORY_OWNER}/scoop-bucket
+          found=$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/$bucket")
+          case $found in
+            200) ;;
+            404)
+              echo "::warning::$bucket does not exist, so Scoop gets no $VERSION. RELEASING.md says how to make it."
+              echo "written=false" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+            *)
+              echo "GitHub answered $found for $bucket" >&2
+              exit 1
+              ;;
+          esac
+          if [ -z "$TOKEN" ]; then
+            echo "::warning::SCOOP_BUCKET_TOKEN is not set in the scoop-bucket environment, so Scoop gets no $VERSION"
+            echo "written=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # A header, as for the tap, masked by hand.
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)"
+          echo "::add-mask::$auth"
+          dir=$RUNNER_TEMP/bucket
+          git -c "http.extraheader=$auth" clone --depth 1 "https://github.com/$bucket.git" "$dir"
+          mkdir -p "$dir/bucket"
+          sh .github/scripts/fill-template.sh packaging/scoop/pitboard.json \
+            "$dir/bucket/pitboard.json" "$VERSION" "$RUNNER_TEMP/sums/SHA256SUMS"
+          cp packaging/scoop/README.md "$dir/README.md"
+
+          cd "$dir"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "the bucket already serves $VERSION"
+          else
+            git commit -m "pitboard $VERSION"
+            git -c "http.extraheader=$auth" push
+          fi
+          echo "written=true" >> "$GITHUB_OUTPUT"
+
+  # What somebody following the bucket's page gets, got, on each Windows machine: Scoop in a
+  # folder of its own, the bucket added, and the command line installed from it.
+  scoop-install:
+    needs: [guard, scoop]
+    if: ${{ !cancelled() && needs.scoop.result == 'success' && needs.scoop.outputs.written == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, windows-11-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      # ScoopInstaller/Install has no releases, so its script is pinned by commit and SHA-256. It
+      # installs Scoop from Scoop's master branch, as it does for everybody.
+      - name: Scoop, in a folder of its own
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP 'install-scoop.ps1'
+          $url = 'https://raw.githubusercontent.com/ScoopInstaller/Install/1e2f334083d609986d8c8bc9e31ae8e87c39fab4/install.ps1'
+          Invoke-WebRequest -Uri $url -OutFile $installer -MaximumRetryCount 5 -RetryIntervalSec 10
+          $pinned = '94F983B190438311E006B957DB7C8422709E0BA62A6C2AC04E278164108F2512'
+          if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash -ne $pinned) { throw "$url is not the script read on 15 October 2026" }
+          $root = Join-Path $env:RUNNER_TEMP 'scoop'
+          # Scoop runs as in a terminal, where an error it writes does not stop it.
+          $ErrorActionPreference = 'Continue'
+          # The job's user is elevated in every program it starts.
+          & $installer -ScoopDir $root -RunAsAdmin
+          Join-Path $root 'shims' | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          "SCOOP=$root" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          scoop --version
+          exit $LASTEXITCODE
+      - name: Install the way the bucket's page says to
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.guard.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Continue'
+          # The push and this clone are two machines talking to GitHub, so the bucket is given a
+          # couple of minutes to be servable before it is called stale.
+          $manifest = Join-Path $env:SCOOP 'buckets\pitboard\bucket\pitboard.json'
+          $served = $null
+          foreach ($attempt in 1..12) {
+            if (Test-Path -LiteralPath $manifest) { scoop bucket rm pitboard }
+            scoop bucket add pitboard https://github.com/datlechin/scoop-bucket
+            if ($LASTEXITCODE -ne 0) { throw "scoop bucket add exited $LASTEXITCODE" }
+            $served = (Get-Content -Raw -LiteralPath $manifest | ConvertFrom-Json).version
+            if ($served -eq $env:VERSION) { break }
+            Write-Output "the bucket serves $served, waiting for $env:VERSION (attempt $attempt)"
+            Start-Sleep -Seconds 10
+          }
+          if ($served -ne $env:VERSION) { throw "this release published $env:VERSION and the bucket serves $served" }
+          scoop install pitboard/pitboard
+          exit $LASTEXITCODE
+      - name: What it installed
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.guard.outputs.version }}
+        run: |
+          $said = (& (Join-Path $env:SCOOP 'shims\pitboard.exe') --version | Out-String).Trim()
+          if ($LASTEXITCODE -ne 0) { throw "pitboard --version exited $LASTEXITCODE" }
+          if ($said -ne "pitboard $env:VERSION") { throw "pitboard --version says '$said', not 'pitboard $env:VERSION'" }
+          # This machine's build, not the other one under emulation: the PE header's machine.
+          $bytes = [IO.File]::ReadAllBytes((Join-Path $env:SCOOP 'apps\pitboard\current\pitboard.exe'))
+          $machine = [BitConverter]::ToUInt16($bytes, [BitConverter]::ToInt32($bytes, 0x3C) + 4)
+          $expected = if ($env:RUNNER_ARCH -eq 'ARM64') { 0xAA64 } else { 0x8664 }
+          if ($machine -ne $expected) { throw ('Scoop installed a program for machine 0x{0:X4} on {1}' -f $machine, $env:RUNNER_ARCH) }
+          Write-Output "$said, for this machine"
+
+  # winget takes each latest release of a package microsoft/winget-pkgs already holds; the first
+  # version of each goes in by hand (RELEASING.md). komac writes the manifests with the run's
+  # read-only token, check-winget-hashes.py holds each installer's hash to the run's SHA256SUMS,
+  # and winget validates them before WINGET_TOKEN opens a pull request from the owner's fork.
+  winget:
+    needs: [guard, publish]
+    if: >-
+      ${{ !cancelled() && needs.publish.result == 'success' && needs.guard.outputs.latest == 'true' &&
+      needs.guard.outputs.windows == 'true' }}
+    # winget is on windows-2025 and not on windows-11-arm.
+    runs-on: windows-2025
+    timeout-minutes: 20
+    # WINGET_TOKEN opens pull requests on another repository, so it lives in an environment of
+    # its own.
+    environment: winget
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: SHA256SUMS
+          path: ${{ runner.temp }}/sums
+      # 2.16.0, since 2.17.0 and 2.17.1 write nothing to --output with --dry-run. Checked against
+      # the SHA-256 read on 15 October 2026 and against the release's own SHA256SUMS.
+      - name: komac
+        shell: pwsh
+        run: |
+          $komac = Join-Path $env:RUNNER_TEMP 'komac.exe'
+          $base = 'https://github.com/russellbanks/Komac/releases/download/v2.16.0'
+          Invoke-WebRequest -Uri "$base/komac-2.16.0-x86_64-pc-windows-msvc.exe" -OutFile $komac -MaximumRetryCount 5 -RetryIntervalSec 10
+          $pinned = 'BDC45BAF028F750DA7519CC8A5F2EAB5DFEF46DFE88650EEB0D0A9BF51446E4F'
+          if ((Get-FileHash -LiteralPath $komac -Algorithm SHA256).Hash -ne $pinned) { throw 'komac.exe is not the one read on 15 October 2026' }
+          $sums = curl.exe -fsSL "$base/SHA256SUMS" | Out-String
+          if ($sums -notmatch "(?m)^$pinned \*komac-2\.16\.0-x86_64-pc-windows-msvc\.exe\r?$") { throw "komac's own SHA256SUMS lists another komac.exe" }
+          "KOMAC=$komac" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: The manifests, written and checked
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.guard.outputs.version }}
+        run: |
+          $downloads = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:GITHUB_REF_NAME"
+          $packages = [ordered]@{
+            'Pitboard.CLI' = "pitboard-$env:GITHUB_REF_NAME-x86_64-pc-windows-msvc.zip", "pitboard-$env:GITHUB_REF_NAME-aarch64-pc-windows-msvc.zip"
+            # The app's MSIs, which the release builds once the Windows app ships.
+            'Pitboard.Pitboard' = "Pitboard-$env:GITHUB_REF_NAME-windows-x64.msi", "Pitboard-$env:GITHUB_REF_NAME-windows-arm64.msi"
+          }
+          $ready = Join-Path $env:RUNNER_TEMP 'winget-ready.txt'
+          New-Item -ItemType File -Force -Path $ready | Out-Null
+          foreach ($id in $packages.Keys) {
+            $publisher, $name = $id -split '\.', 2
+            $path = "manifests/$($publisher.Substring(0, 1).ToLowerInvariant())/$publisher/$name"
+            $found = curl.exe -sS -o NUL -w '%{http_code}' -H "Authorization: Bearer $env:GH_TOKEN" "https://api.github.com/repos/microsoft/winget-pkgs/contents/$path"
+            if ($found -eq '404') {
+              Write-Output "::notice::$id is not in microsoft/winget-pkgs yet, so its first version goes in by hand (RELEASING.md)"
+              continue
+            }
+            if ($found -ne '200') { throw "GitHub answered $found for microsoft/winget-pkgs' $path" }
+            # komac opens its pull request with this title.
+            $titles = gh api -X GET search/issues -f "q=repo:microsoft/winget-pkgs is:pr in:title $id $env:VERSION" --jq '.items[].title'
+            if ($LASTEXITCODE -ne 0) { throw "GitHub's search exited $LASTEXITCODE" }
+            if (@($titles | Where-Object { $_ -match "(^|\s)$([regex]::Escape($id)) version $([regex]::Escape($env:VERSION))$" })) {
+              Write-Output "::notice::microsoft/winget-pkgs has a pull request for $id $env:VERSION already: answer in it rather than run this again"
+              continue
+            }
+            $out = Join-Path $env:RUNNER_TEMP "winget-$id"
+            $urls = @($packages[$id] | ForEach-Object { "$downloads/$_" })
+            & $env:KOMAC update $id --version $env:VERSION --urls @urls --dry-run --output $out
+            if ($LASTEXITCODE -ne 0) { throw "komac update $id exited $LASTEXITCODE" }
+            $manifests = Join-Path $out "$path/$env:VERSION"
+            python .github/scripts/check-winget-hashes.py $manifests (Join-Path $env:RUNNER_TEMP 'sums\SHA256SUMS')
+            if ($LASTEXITCODE -ne 0) { throw "komac's manifests for $id disagree with SHA256SUMS" }
+            # winget exits APPINSTALLER_CLI_ERROR_MANIFEST_VALIDATION_WARNING for warnings alone.
+            winget validate --manifest $manifests
+            if ($LASTEXITCODE -eq 0x8A150028) {
+              Write-Output "::warning::winget validates $id $env:VERSION with warnings"
+            } elseif ($LASTEXITCODE -ne 0) {
+              throw ('winget validate {0} exited 0x{1:X8}' -f $id, $LASTEXITCODE)
+            }
+            $manifests | Out-File -FilePath $ready -Append -Encoding utf8
+          }
+          exit 0
+      # The one step that holds WINGET_TOKEN, and it submits only what the step before checked.
+      - name: Submit
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        run: |
+          $ready = @(Get-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'winget-ready.txt') | Where-Object { $_ })
+          if ($ready.Count -eq 0) {
+            Write-Output 'no package to submit'
+            exit 0
+          }
+          if (-not $env:GITHUB_TOKEN) { throw 'WINGET_TOKEN is not set in the winget environment' }
+          foreach ($manifests in $ready) {
+            & $env:KOMAC submit $manifests --yes
+            if ($LASTEXITCODE -ne 0) { throw "komac submit $manifests exited $LASTEXITCODE" }
+          }

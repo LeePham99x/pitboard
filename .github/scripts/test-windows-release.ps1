@@ -1,5 +1,6 @@
-# Tests package-windows.ps1 and check-windows-build.ps1 against a pitboard.exe built without the
-# cfg and without test-support, as CI's windows job builds one in target/gated.
+# Tests package-windows.ps1, check-windows-build.ps1 and verify-windows-signatures.ps1 against a
+# pitboard.exe built without the cfg and without test-support, as CI's windows job builds one in
+# target/gated.
 param(
     [Parameter(Mandatory)] [string] $Exe,
     [Parameter(Mandatory)] [ValidateSet('x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc')] [string] $Triple,
@@ -70,6 +71,70 @@ try {
     $archive.Dispose()
 }
 Write-Output "ok: the zip holds $($names.Count) files in $top, named with /"
+
+function New-Zip([string] $Zip, [Collections.Specialized.OrderedDictionary] $Entries) {
+    $archive = [IO.Compression.ZipFile]::Open($Zip, [IO.Compression.ZipArchiveMode]::Create)
+    try {
+        foreach ($name in $Entries.Keys) {
+            [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $Entries[$name], $name) | Out-Null
+        }
+    } finally {
+        $archive.Dispose()
+    }
+}
+
+# bottom 0.14.9's release is immutable, and its btm.exe is signed by SignPath Foundation. Nothing in
+# it runs here, and no certificate is made or trusted.
+$verify = Join-Path $PSScriptRoot 'verify-windows-signatures.ps1'
+$signPath = 'CN=SignPath Foundation, O=SignPath Foundation, L=Lewes, S=Delaware, C=US'
+$bottom = Join-Path $work 'bottom_x86_64-pc-windows-msvc.zip'
+$url = 'https://github.com/ClementTsang/bottom/releases/download/0.14.9/bottom_x86_64-pc-windows-msvc.zip'
+Invoke-WebRequest -Uri $url -OutFile $bottom -MaximumRetryCount 5 -RetryIntervalSec 10
+$pinned = '01660721B0FDC72B191F2B27B78DC9A3087AEB7B3FAD4A890C53870089D6B500'
+if ((Get-FileHash -LiteralPath $bottom -Algorithm SHA256).Hash -ne $pinned) { throw "$url is not the zip read on 15 October 2026" }
+& $verify -Path $bottom -Mode signed -Subject $signPath
+Write-Output 'ok: a program SignPath Foundation signed passes as signed by it'
+
+$against = @{ Path = $bottom; Mode = 'signed'; Subject = 'CN=Pitboard' }
+Assert-Refused 'a signed program checked against another subject' $against "not 'CN=Pitboard'" $verify
+$unsigned = @{ Path = $bottom; Mode = 'unsigned' }
+$expected = 'btm\.exe is Valid, and every program of an unsigned release is NotSigned'
+Assert-Refused 'a signed program in an unsigned release' $unsigned $expected $verify
+$nobody = @{ Path = $bottom; Mode = 'signed' }
+Assert-Refused 'a signed release with no subject' $nobody 'names the subject its signer signs as' $verify
+
+$archive = [IO.Compression.ZipFile]::OpenRead($bottom)
+try {
+    $btm = Join-Path $work 'btm.exe'
+    [IO.Compression.ZipFileExtensions]::ExtractToFile($archive.GetEntry('btm.exe'), $btm)
+} finally {
+    $archive.Dispose()
+}
+$mixed = Join-Path $work 'mixed.zip'
+New-Zip $mixed ([ordered]@{ 'mixed/btm.exe' = $btm; 'mixed/pitboard.exe' = $exePath })
+$expected = 'mixed/pitboard\.exe is NotSigned, and every program of a signed release is Valid'
+Assert-Refused 'an unsigned program among signed ones' @{ Path = $mixed; Mode = 'signed'; Subject = $signPath } $expected $verify
+
+$readme = Join-Path $work 'readme.zip'
+New-Zip $readme ([ordered]@{ 'readme/README.md' = (Join-Path $PSScriptRoot '..\..\README.md') })
+Assert-Refused 'a zip that holds no program' @{ Path = $readme; Mode = 'unsigned' } 'readme\.zip holds no program' $verify
+
+& $verify -Path $zip -Mode unsigned -Built $work
+Write-Output 'ok: the zip of an unsigned build passes as unsigned, beside the zip that was built'
+
+$grown = Join-Path $work 'grown'
+New-Item -ItemType Directory -Path $grown | Out-Null
+Copy-Item -LiteralPath $zip -Destination $grown
+$grownZip = Join-Path $grown "$top.zip"
+$archive = [IO.Compression.ZipFile]::Open($grownZip, [IO.Compression.ZipArchiveMode]::Update)
+try {
+    $notice = Join-Path $PSScriptRoot '..\..\NOTICE'
+    [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $notice, "$top/NOTICE.txt") | Out-Null
+} finally {
+    $archive.Dispose()
+}
+$built = @{ Path = $grownZip; Mode = 'unsigned'; Built = $work }
+Assert-Refused 'a zip that holds other entries than it was built with' $built 'holds other entries than it was built with' $verify
 
 $tainted = Join-Path $work 'tainted\pitboard.exe'
 New-Item -ItemType Directory -Path (Split-Path -Parent $tainted) | Out-Null
