@@ -33,7 +33,8 @@ fn standing(row: &Row, now: i64) -> String {
             WARN,
             match row.stale {
                 Some(Stale::LoginUnusable) => "login cannot be switched",
-                _ => "login could not be read",
+                Some(Stale::LoginUnreadable) => "login could not be read",
+                _ => "account could not be told",
             },
         );
     }
@@ -99,7 +100,7 @@ fn standing(row: &Row, now: i64) -> String {
 }
 
 // Said once, by the heading, where every row of the tool has no usage.
-fn said_once(rows: &[&Row]) -> Option<&'static str> {
+fn said_once(rows: &[&Row]) -> Option<String> {
     rows.iter()
         .all(|r| r.stale == Some(Stale::NoUsage))
         .then(|| rows.first().and_then(|r| r.explanation()))
@@ -407,6 +408,7 @@ pub(crate) fn json(report: &Report) -> Value {
             // What its login says or last said, "Max 20x" or "Plus", or null.
             "plan": r.plan,
             "read_at": r.read_at,
+            "reason": r.reason,
         })).collect::<Vec<_>>(),
         "awaiting": report.awaiting.iter().map(|a| json!({
             "provider": a.provider.code(),
@@ -471,6 +473,7 @@ mod tests {
             stale: None,
             plan: None,
             read_at: None,
+            reason: None,
         }
     }
 
@@ -1252,7 +1255,8 @@ mod tests {
                 "provider",
                 "qualified",
                 "plan",
-                "read_at"
+                "read_at",
+                "reason"
             ]
         );
         assert_eq!(

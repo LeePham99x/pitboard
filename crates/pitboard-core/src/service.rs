@@ -143,8 +143,8 @@ pub enum Warning {
         tool: ProviderId,
         label: String,
     },
-    /// A sign-in to the account Pitboard last recorded in use was parked rather than put in
-    /// use, because nobody could say whose login the tool has in use, for `why`.
+    /// A sign-in was parked rather than put in use, because nobody could say whose login the
+    /// tool has in use, for `why`.
     SignInParkedNotInUse {
         tool: ProviderId,
         label: String,

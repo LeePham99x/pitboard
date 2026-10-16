@@ -376,7 +376,7 @@ fn account(row: status::Row, now: i64) -> Account {
         switchable: row.switchable(now),
         stale: row.stale.map(|s| s.code().to_string()),
         // In the row's own tool's words: a Codex row is not about Anthropic.
-        stale_explanation: row.explanation().map(str::to_owned),
+        stale_explanation: row.explanation(),
         plan: row.plan,
         read_at: row.read_at,
         parked: row.parked.map(|p| Parked {

@@ -223,6 +223,9 @@ pub struct Row {
     pub plan: Option<String>,
     // when Pitboard last read this login in use, for a tool no read asks: Claude Desktop's
     pub read_at: Option<i64>,
+    /// Why the login on an [unplaced](Row::unplaced) row is pinned on no account, as its
+    /// tool's store or service said it.
+    pub reason: Option<String>,
 }
 
 impl Row {
@@ -254,13 +257,33 @@ impl Row {
 
     /// What to tell a person about [`Row::stale`], in the words of this row's own tool. A
     /// login in use that is refused is not a parked one, and its tool signs in again.
-    pub fn explanation(&self) -> Option<&'static str> {
-        match (self.stale, self.provider) {
-            (Some(Stale::LoginRefused), ProviderId::Claude) if self.signed_in => {
-                Some("Claude Code's login is no longer accepted; run `claude` and sign in again")
-            }
-            (stale, provider) => stale.and_then(|stale| stale.explanation_for(provider)),
+    pub fn explanation(&self) -> Option<String> {
+        if self.untold()
+            && let Some(reason) = &self.reason
+        {
+            return Some(format!(
+                "Pitboard could not tell which account {}'s login is ({reason})",
+                self.provider.name()
+            ));
         }
+        match (self.stale, self.provider) {
+            (Some(Stale::LoginRefused), ProviderId::Claude) if self.signed_in => Some(
+                "Claude Code's login is no longer accepted; run `claude` and sign in again".into(),
+            ),
+            (stale, provider) => stale
+                .and_then(|stale| stale.explanation_for(provider))
+                .map(str::to_owned),
+        }
+    }
+
+    /// An [unplaced](Row::unplaced) login that was read, and whose account its service could
+    /// not be asked or would not say.
+    pub fn untold(&self) -> bool {
+        self.unplaced()
+            && !matches!(
+                self.stale,
+                Some(Stale::LoginUnreadable | Stale::LoginUnusable)
+            )
     }
 
     /// A tool's live login that Pitboard could not pin on any account: one it could not
@@ -268,12 +291,7 @@ impl Row {
     /// type about it but `pitboard doctor`, so a front end says what it is rather than
     /// showing it as an account nobody has enrolled.
     pub fn unplaced(&self) -> bool {
-        self.label.is_none()
-            && !self.signed_in
-            && matches!(
-                self.stale,
-                Some(Stale::LoginUnreadable | Stale::LoginUnusable)
-            )
+        self.label.is_none() && !self.signed_in && self.account_uuid.is_empty()
     }
 }
 
@@ -1041,6 +1059,7 @@ fn assemble(
                 stale,
                 plan,
                 read_at: read_at(state, which, signed_in),
+                reason: None,
             }
         })
         .collect();
@@ -1074,16 +1093,19 @@ fn assemble(
                 stale,
                 plan,
                 read_at: read_at(state, which, true),
+                reason: None,
             });
             continue;
         }
-        // A login that could not be read, or was read and is not one account's, and that
-        // nothing pins on any account. Said, rather than left out, because leaving it out
-        // reads as nobody being signed in; but only for a tool somebody uses through
-        // Pitboard, so a machine that has never enrolled a Codex account sees nothing about
-        // Codex at all.
-        let enrolled = state.accounts.iter().any(|a| a.provider() == which);
-        if live.out_of_reach && enrolled {
+        // A login that could not be read, was read and is not one account's, or whose account
+        // could not be told, and that nothing pins on any account. Said, rather than left
+        // out, because leaving it out reads as nobody being signed in; but only for the tool a
+        // bare label means and for a tool somebody uses through Pitboard, so a machine that
+        // has never enrolled a Codex account sees nothing about Codex at all.
+        let used =
+            which == crate::label::DEFAULT || state.accounts.iter().any(|a| a.provider() == which);
+        let untold = matches!(live.signed_in, Some(Err(_)));
+        if (live.out_of_reach || untold) && used {
             rows.push(Row {
                 provider: which,
                 label: None,
@@ -1097,6 +1119,7 @@ fn assemble(
                 stale: live.usage().err(),
                 plan: None,
                 read_at: None,
+                reason: live.signed_in.clone().and_then(Result::err),
             });
         }
     }
@@ -1870,7 +1893,10 @@ mod tests {
             parked: asked_about(&[("work-acc", Err(Stale::Unreachable))]),
         };
         let rows = assemble(&s, &f, nothing_remembered, NOW);
-        assert_eq!(rows[0].explanation(), Some("OpenAI could not be reached"));
+        assert_eq!(
+            rows[0].explanation().as_deref(),
+            Some("OpenAI could not be reached")
+        );
     }
 
     fn codex_account(label: &str, uuid: &str) -> Account {
@@ -2135,7 +2161,7 @@ mod tests {
         );
         assert_eq!(alpha.stale, Some(Stale::LoginUnreadable));
         assert_eq!(
-            alpha.explanation(),
+            alpha.explanation().as_deref(),
             Some("Claude Code's login could not be read; run `pitboard doctor`")
         );
         let why = report.signed_in.expect_err("nobody could say whose it is");
@@ -2194,6 +2220,41 @@ mod tests {
     /// recorded it is none of its accounts, gets a row of its own, so its silence is not read
     /// as nobody signed in. Only for a tool somebody uses through Pitboard: a machine that has
     /// never enrolled a Codex account sees nothing about Codex.
+    /// The report of 16 October 2026, first run: Claude Code signed in to a login Anthropic
+    /// would not name, and the window said "No accounts". The login gets a row saying why.
+    #[test]
+    fn a_login_whose_account_cannot_be_told_gets_a_row_from_the_first_run() {
+        let facts = Facts {
+            live: [(
+                ProviderId::Claude,
+                LiveLogin {
+                    signed_in: Some(Err("Anthropic answered 400: No organization".into())),
+                    usage: Some(Err(Stale::Refused)),
+                    ..LiveLogin::default()
+                },
+            )]
+            .into_iter()
+            .collect(),
+            asked: true,
+            plans: BTreeMap::new(),
+            parked: BTreeMap::new(),
+        };
+
+        let rows = assemble(&State::default(), &facts, nothing_remembered, NOW);
+
+        let [row] = &rows[..] else {
+            panic!("one row: {rows:?}");
+        };
+        assert!(row.unplaced() && row.untold() && !row.signed_in, "{row:?}");
+        assert_eq!(
+            row.explanation().as_deref(),
+            Some(
+                "Pitboard could not tell which account Claude Code's login is (Anthropic \
+                 answered 400: No organization)"
+            )
+        );
+    }
+
     #[test]
     fn an_unreadable_login_gets_a_row_only_for_a_tool_with_accounts() {
         let unreadable = || LiveLogin {
@@ -2235,7 +2296,7 @@ mod tests {
         assert_eq!(said.stale, Some(Stale::LoginUnreadable));
         assert!(!said.signed_in && !said.switchable(NOW));
         assert_eq!(
-            said.explanation(),
+            said.explanation().as_deref(),
             Some("Codex's login could not be read; run `pitboard doctor`")
         );
         let work = rows
@@ -2438,7 +2499,7 @@ mod tests {
         assert!(a.signed_in, "the tokens are a's, as its own record says");
         assert_eq!(a.stale, Some(Stale::LoginUnusable));
         assert_eq!(
-            a.explanation(),
+            a.explanation().as_deref(),
             Some("Codex's login is not one Pitboard can park or switch; run `pitboard doctor`")
         );
         assert!(!codex_row(&report, "b").signed_in);
@@ -2664,6 +2725,7 @@ mod tests {
             stale: Some(Stale::LoginUnreadable),
             plan: None,
             read_at: None,
+            reason: None,
         };
         assert!(row.unplaced());
         row.stale = Some(Stale::LoginUnusable);

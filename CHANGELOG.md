@@ -53,6 +53,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Pitboard tells whose a Claude Code login is by asking Anthropic which account and organisation it
   is, as Claude Code does, so a switch between accounts you added works when Anthropic refuses the
   login's profile.
+- A Claude Code login Pitboard cannot identify gets its own row saying why, instead of the window
+  saying **No accounts** while Claude Code is signed in.
+- An account you add while Pitboard cannot identify the login in use says it was parked, not put
+  in use, on a first run too.
 
 ## [0.14.0] - 2026-10-14
 

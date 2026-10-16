@@ -1605,7 +1605,7 @@ mod tests {
             .expect("the account last named");
         assert_eq!(here.stale, Some(crate::status::Stale::LoginRefused));
         assert_eq!(
-            here.explanation(),
+            here.explanation().as_deref(),
             Some("Claude Code's login is no longer accepted; run `claude` and sign in again")
         );
         assert_eq!(m.live(), stored);
@@ -1634,7 +1634,7 @@ mod tests {
             .expect("the account last named");
         assert_eq!(here.stale, Some(crate::status::Stale::LoginRefused));
         assert_eq!(
-            here.explanation(),
+            here.explanation().as_deref(),
             Some("Claude Code's login is no longer accepted; run `claude` and sign in again")
         );
         assert_eq!(renewals(&m), [Asked::Renew("here-renewed".into())]);

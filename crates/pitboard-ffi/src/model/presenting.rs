@@ -2700,6 +2700,30 @@ fn an_unplaced_login_is_neither_unenrolled_nor_offered_a_name() {
     }
 }
 
+/// The report of 16 October 2026, first run: Claude Code signed in to a login Anthropic would
+/// not name. The window said "No accounts"; it shows the login and why.
+#[test]
+fn a_login_whose_account_cannot_be_told_is_shown_from_the_first_run() {
+    let mut untold = unplaced("claude", false);
+    untold.stale = Some("refused".into());
+    untold.stale_explanation = Some(
+        "Pitboard could not tell which account Claude Code's login is (Anthropic answered 400)"
+            .into(),
+    );
+    let (model, _) = reading(vec![untold]);
+    let shown = model.shown();
+    assert_eq!(shown.footing, Footing::Ready);
+    assert_eq!(shown.setup, None);
+    let [row] = &rows(&model)[..] else {
+        panic!("one row");
+    };
+    assert!(row.unplaced && row.action.is_none(), "{row:?}");
+    assert_eq!(
+        row.summary,
+        "Pitboard could not tell which account Claude Code's login is (Anthropic answered 400)"
+    );
+}
+
 // The sheets.
 
 /// The model with the sheet for a new account up, on a machine where `found` were found and

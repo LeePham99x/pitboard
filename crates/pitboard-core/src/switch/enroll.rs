@@ -800,12 +800,15 @@ fn from_sign_in(
         SignedInNow::NotTheirs => park_signed_in(ctx, tool, key, state, login, &owner).map(said),
         SignedInNow::Untold(why) => {
             // Somebody signing in to the account Pitboard last saw in use most likely wants
-            // its broken login replaced, and parking is not that, so it is said.
-            let last_in_use = state
-                .account_in_use(key.provider)
-                .is_some_and(|account| account.is(key));
+            // its broken login replaced, and somebody adding an account while nobody can name
+            // the login in use, as on a first run, may expect it in use. Parking is neither,
+            // so it is said. Signing in again to another parked account renews its park.
+            let renews_a_park = state.get(key).is_some()
+                && !state
+                    .account_in_use(key.provider)
+                    .is_some_and(|account| account.is(key));
             let (enrolled, mut warnings) = park_signed_in(ctx, tool, key, state, login, &owner)?;
-            if last_in_use {
+            if !renews_a_park {
                 warnings.push(Warning::SignInParkedNotInUse {
                     tool: key.provider,
                     label: state.typed(key),
@@ -1492,6 +1495,34 @@ mod tests {
         }
     }
 
+    /// The report of 16 October 2026: Claude Code was signed in before Pitboard, to a login
+    /// Anthropic would not name, and each account added was parked without a word.
+    #[test]
+    fn an_account_added_while_the_login_in_use_cannot_be_named_says_it_was_parked() {
+        let m = machine("first-run-untold");
+        state::save(&m.ctx, Permit::for_a_test(), &State::default()).expect("a first run");
+        m.api.token_trouble(
+            "access-here-refresh",
+            Trouble::Answered(400, r#"{"error":{"type":"invalid_request_error"}}"#),
+        );
+        m.api
+            .owned_by("access-third-refresh", harness::owner("third"));
+
+        let (enrolled, warnings) =
+            enrolled_as(&m, "third", signed_in(&m, "third", "third-refresh")).expect("parked");
+
+        assert!(
+            matches!(enrolled, Enrolled::SignedIn { .. }),
+            "{enrolled:?}"
+        );
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.code() == "sign_in_parked_not_in_use"),
+            "{warnings:?}"
+        );
+    }
+
     /// Claude Code's config names `here` and Pitboard finds no login where it reads: the
     /// login is somewhere Pitboard does not look, so whose it is cannot be told, and `here`
     /// is still the account Pitboard last saw in use. A sign-in to `here` is parked and said
@@ -1527,8 +1558,8 @@ mod tests {
         assert!(harness::audit_lines(&m, "in-use").is_empty());
     }
 
-    /// Only the account Pitboard last saw in use is warned about. Signing in again to a
-    /// parked account renews its park whoever is signed in, as it always did.
+    /// Signing in again to a parked account renews its park whoever is signed in, as it
+    /// always did, and is not warned about.
     #[test]
     fn a_sign_in_to_a_parked_account_is_not_warned_about_the_login_in_use() {
         let m = machine("untold-parked");
