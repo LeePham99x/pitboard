@@ -73,21 +73,31 @@ internal sealed class Launched : IDisposable
     public static string Link(string page) => $"pitboard-debug://open?url={Uri.EscapeDataString(page)}";
 
     // Launched again now, in the same homes, as from Start.
-    public Launched Again() => new(_root, _exe, _fixture, [], HomeFolders, ownsHomes: false);
+    public Launched Again(params string[] arguments) => new(_root, _exe, _fixture, arguments, HomeFolders, ownsHomes: false);
 
     // A second launch once Pitboard runs, as from Start, which the running copy answers with its window.
     public Window OpenWindow()
     {
-        Running();
-        using (var again = Again())
-        {
-            if (!again.HandedOver(out var why))
-            {
-                throw new AssertFailedException($"a second launch did not hand over to the first: {why}");
-            }
-        }
-
+        HandOver();
         return Window("Pitboard");
+    }
+
+    // A link given to a second launch in the same homes and fixture, as the MSI's command gives one, which the running
+    // copy answers with its Open Link window.
+    public Window Share(string page)
+    {
+        HandOver(Link(page));
+        return Window("Open Link");
+    }
+
+    private void HandOver(params string[] arguments)
+    {
+        Running();
+        using var again = Again(arguments);
+        if (!again.HandedOver(out var why))
+        {
+            throw new AssertFailedException($"a second launch did not hand over to the first: {why}");
+        }
     }
 
     // Pitboard makes its hidden window as it starts, before it can open another.
@@ -178,6 +188,14 @@ internal sealed class Launched : IDisposable
     public static string Said(AutomationElement scope) =>
         string.Join(" ", Lines(scope));
 
+    public static void Shows(AutomationElement scope, string text, bool exact = true)
+    {
+        var shown = Retry.WhileFalse(
+            () => Lines(scope).Any(line => exact ? line == text : line.StartsWith(text, StringComparison.Ordinal)),
+            Shortly, TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
+        Assert.IsTrue(shown, $"{scope.Name} does not show '{text}'");
+    }
+
     public static IEnumerable<string> Lines(AutomationElement scope) =>
         scope.FindAllDescendants(found => found.ByControlType(FlaUI.Core.Definitions.ControlType.Text)).Select(text => text.Name);
 
@@ -225,8 +243,8 @@ internal sealed class Launched : IDisposable
         }
 
         // WebView2's browser process outlives Pitboard for a moment, holding the fixture's user data folder, which the
-        // next launch's fixture empties first.
-        if (_fixture is not null)
+        // next launch's fixture empties first. A copy launched again leaves it to the first, which may still use it.
+        if (_fixture is not null && _ownsHomes)
         {
             Retry.WhileFalse(
                 () => Emptied(Path.Combine(Path.GetTempPath(), "pitboard-fixture", "WebView2")),

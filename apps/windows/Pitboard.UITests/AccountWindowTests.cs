@@ -22,7 +22,7 @@ public sealed class AccountWindowTests
         launched.OpenMenu();
         launched.Choose("Open claude.ai as work");
 
-        Shows(launched.Window("work"), "claude.ai stand-in");
+        Launched.Shows(launched.Window("work"), "claude.ai stand-in");
     }
 
     [TestMethod]
@@ -87,7 +87,7 @@ public sealed class AccountWindowTests
         Invoke(signIn, "Done");
 
         Assert.IsTrue(launched.Gone(found => found.ByAutomationId("sign-in")), "the sign-in window stayed");
-        Shows(window, "chatgpt.com stand-in");
+        Launched.Shows(window, "chatgpt.com stand-in");
     }
 
     [TestMethod]
@@ -128,7 +128,7 @@ public sealed class AccountWindowTests
         Invoke(window, "Continue with Google");
 
         Assert.IsTrue(Says(window, "window.note", "Pitboard stopped it"), "the window did not say Google was stopped");
-        Shows(window, "chatgpt.com stand-in");
+        Launched.Shows(window, "chatgpt.com stand-in");
     }
 
     // WebView2 names no frame that started a download, so the site's own asks first; WebView2's own list then names it.
@@ -176,14 +176,14 @@ public sealed class AccountWindowTests
         var note = Launched.Within(window, found => found.ByAutomationId("window.note"), "note");
         Launched.Within(note, found => found.ByAutomationId("CloseButton"), "the note's close button").Patterns.Invoke.Pattern.Invoke();
         Invoke(window, "A chat");
-        Shows(window, "A Pitboard fixture page at /chat/fixture", exact: false);
+        Launched.Shows(window, "A Pitboard fixture page at /chat/fixture", exact: false);
 
         Launched.Within(window, found => found.ByAutomationId("MoreButton"), "the command bar's More").Patterns.Invoke.Pattern.Invoke();
         launched.Invoke("Remove Website Data…");
         launched.Invoke("Remove");
 
         Assert.IsTrue(Says(window, "window.note", "Sign in to chatgpt.com"), "the window did not say how to sign in");
-        Shows(window, "A Pitboard fixture page at /.", exact: false);
+        Launched.Shows(window, "A Pitboard fixture page at /.", exact: false);
     }
 
     [TestMethod]
@@ -195,7 +195,7 @@ public sealed class AccountWindowTests
 
         OpenFromItsRow(launched, "codex/spare");
 
-        Shows(launched.Window("spare"), "chatgpt.com stand-in");
+        Launched.Shows(launched.Window("spare"), "chatgpt.com stand-in");
     }
 
     // From its row's shortcut menu, which needs no notification-area icon.
@@ -204,7 +204,7 @@ public sealed class AccountWindowTests
         var launched = Launched.Start(Builds.Debug, fixture: "twoTools");
         launched.OpenWindow();
         OpenFromItsRow(launched, "codex/main");
-        Shows(launched.Window("main"), "chatgpt.com stand-in");
+        Launched.Shows(launched.Window("main"), "chatgpt.com stand-in");
         return launched;
     }
 
@@ -228,14 +228,6 @@ public sealed class AccountWindowTests
             TimeSpan.FromSeconds(10), TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
         Assert.IsNotNull(found, $"no '{name}' in {scope.Name}");
         found.Patterns.Invoke.Pattern.Invoke();
-    }
-
-    private static void Shows(AutomationElement window, string text, bool exact = true)
-    {
-        var shown = Retry.WhileFalse(
-            () => Launched.Lines(window).Any(line => exact ? line == text : line.StartsWith(text, StringComparison.Ordinal)),
-            TimeSpan.FromSeconds(10), TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
-        Assert.IsTrue(shown, $"{window.Name} does not show '{text}'");
     }
 
     private static bool Says(AutomationElement window, string automationId, string text) =>

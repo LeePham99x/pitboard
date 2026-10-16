@@ -1,9 +1,98 @@
+using FlaUI.Core.AutomationElements;
+using FlaUI.Core.Definitions;
+using FlaUI.Core.Tools;
+
 namespace Pitboard.UITests;
 
+// The macOS AccountPickerTests. Each link goes to a second Debug copy in the same fixture, which hands it to the one
+// running. A refusal, or a site with no account, needs no account, so those run over empty, which W16 opened; the macOS
+// tests use twoTools and onlyOne, which wait for W23a here.
 [TestClass]
 [Elevated(ConditionMode.Exclude)]
 public sealed class AccountPickerTests
 {
+    [TestMethod]
+    [Ignore(Pending.W23a)]
+    public void ASharedLinkAsksWhichAccountOpensIt()
+    {
+        using var launched = Launched.Start(Builds.Debug, fixture: "twoTools");
+
+        var picker = launched.Share("https://chatgpt.com/c/shared");
+
+        Launched.Shows(picker, "Open this chatgpt.com link as:");
+        // Each row is one element for Narrator, its label and email read together.
+        var spare = launched.Find(found => found.ByAutomationId("picker.account.spare"), "spare's row");
+        launched.Find(found => found.ByAutomationId("picker.account.main"), "main's row");
+        Assert.IsTrue(launched.Gone(found => found.ByAutomationId("picker.account.work")), "only the site's own accounts");
+        Assert.AreEqual(0, AccountWindows(launched), "nothing opens before a choice");
+
+        spare.Patterns.SelectionItem.Pattern.Select();
+        // Open waits a moment after the accounts appear, so a stray Enter opens nothing.
+        Assert.IsTrue(launched.Enables("Open"), "Open was held back");
+        Press(picker, "Open");
+
+        Launched.Shows(launched.Window("spare"), "A Pitboard fixture page at /c/shared", exact: false);
+        Assert.IsTrue(Closed(picker), "the Open Link window stayed");
+    }
+
+    [TestMethod]
+    public void ALinkToAnotherSiteIsRefused()
+    {
+        using var launched = Launched.Start(Builds.Debug, fixture: "empty");
+
+        var picker = launched.Share("https://example.com/page");
+
+        Launched.Shows(picker, "Can’t Open This Link");
+        Assert.IsTrue(
+            Launched.Lines(picker).Any(line => line.Contains("This link is on example.com.", StringComparison.Ordinal)),
+            string.Join(" | ", Launched.Lines(picker)));
+        Press(picker, "OK");
+        Assert.IsTrue(Closed(picker), "the Open Link window stayed");
+        Assert.AreEqual(0, AccountWindows(launched));
+    }
+
+    [TestMethod]
+    [Ignore(Pending.W23a)]
+    public void CancellingOpensNothing()
+    {
+        using var launched = Launched.Start(Builds.Debug, fixture: "onlyOne");
+
+        var picker = launched.Share("https://claude.ai/new");
+
+        Launched.Shows(picker, "Open this claude.ai link as:");
+        Press(picker, "Cancel");
+        Assert.IsTrue(Closed(picker), "the Open Link window stayed");
+        Assert.AreEqual(0, AccountWindows(launched));
+    }
+
+    [TestMethod]
+    public void ALinkForASiteWithNoAccountOffersToAddOne()
+    {
+        using var launched = Launched.Start(Builds.Debug, fixture: "empty");
+
+        var picker = launched.Share("https://chatgpt.com/");
+
+        Launched.Shows(picker, "No chatgpt.com Account");
+        Assert.IsNotNull(Button(picker, "Add Account…"));
+        Assert.IsNotNull(Button(picker, "Open in Browser"));
+        Press(picker, "Cancel");
+        Assert.IsTrue(Closed(picker), "the Open Link window stayed");
+    }
+
+    // Someone else's sign-in link is refused: it would sign the window in as them.
+    [TestMethod]
+    public void ASignInLinkIsRefused()
+    {
+        using var launched = Launched.Start(Builds.Debug, fixture: "empty");
+
+        var picker = launched.Share("https://claude.ai/magic-link#someone");
+
+        Launched.Shows(picker, "Can’t Open This Link");
+        Launched.Shows(picker, "Pitboard doesn’t open claude.ai sign-in links", exact: false);
+        Press(picker, "OK");
+        Assert.IsTrue(Closed(picker), "the Open Link window stayed");
+    }
+
     // Outside a fixture a Debug build runs on whatever homes it was given, so it opens no link there.
     [TestMethod]
     public void ADebugBuildOutsideAFixtureRefusesALinkAndWritesNothing()
@@ -18,4 +107,20 @@ public sealed class AccountPickerTests
         Assert.AreEqual(1, launched.Process.ExitCode);
         Assert.AreEqual("", string.Join(", ", launched.Written()));
     }
+
+    private static AutomationElement? Button(AutomationElement picker, string name) =>
+        Retry.WhileNull(
+            () => picker.FindFirstDescendant(found => found.ByName(name).And(found.ByControlType(ControlType.Button))),
+            TimeSpan.FromSeconds(10), TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
+
+    private static void Press(AutomationElement picker, string name) =>
+        (Button(picker, name) ?? throw new AssertFailedException($"no '{name}' in the Open Link window")).Patterns.Invoke.Pattern.Invoke();
+
+    private static bool Closed(AutomationElement picker) =>
+        Retry.WhileTrue(() => picker.IsAvailable, TimeSpan.FromSeconds(10), TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
+
+    // Every window but the Open Link window and Pitboard's own is an account's.
+    private static int AccountWindows(Launched launched) =>
+        FlaUI.Core.Application.Attach(launched.Process).GetAllTopLevelWindows(launched.Automation)
+            .Count(window => window.Title is not ("Open Link" or "Pitboard"));
 }
