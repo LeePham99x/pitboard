@@ -17,7 +17,8 @@ const RUNNING: i32 = 0x0004_1301;
 const NOT_RUN_YET: i32 = 0x0004_1303;
 const QUEUED: i32 = 0x0004_1325;
 
-// Task names are global within a folder, so each person's carries their SID.
+// Task names are global within a folder, so each person's carries their SID. A second person
+// registers in the folder the first made (RF-E1c, run 38922866517).
 pub(crate) fn name(sid: &str) -> String {
     format!("Renew {sid}")
 }

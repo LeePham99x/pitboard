@@ -2620,6 +2620,11 @@ Tasks:
 - A standard user can make `\Pitboard\` and register a task with an interactive token there
   or in the root. With no signed-in session of its own, the task never starts: its last
   result is 0x00041303.
+- `GetFolder` of a missing folder and `GetTask` of a missing task fail with 0x80070002, and
+  `CreateFolder` of a folder there with 0x800700B7. A second standard user opens and
+  registers in a `\Pitboard\` the first made; the first's `DeleteFolder` fails with
+  0x80070091 while the second's task is in it, and succeeds once it is gone (RF-E1 and
+  RF-E1c, run 38922866517).
 - The job user's task in either folder runs, with last result 0.
 
 Processes and jobs:
