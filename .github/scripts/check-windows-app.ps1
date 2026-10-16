@@ -172,11 +172,12 @@ if ($carried -cne $UpdateKey) {
     throw "Pitboard.dll carries $has, and the build was given '$UpdateKey'"
 }
 # WinSparkle sorts 1.0.0+<commit> below 1.0.0, and would offer a build its own version again and again.
-$version = [Diagnostics.FileVersionInfo]::GetVersionInfo($exe).ProductVersion
-if (-not $version -or $version.Contains('+')) {
-    throw "Pitboard.exe's version is '$version': WinSparkle compares it, so it carries no commit"
+# Named apart from $Version: PowerShell's names ignore case, and $version would replace it.
+$compared = [Diagnostics.FileVersionInfo]::GetVersionInfo($exe).ProductVersion
+if (-not $compared -or $compared.Contains('+')) {
+    throw "Pitboard.exe's version is '$compared': WinSparkle compares it, so it carries no commit"
 }
-Write-Output "Pitboard $version carries the update key $carried."
+Write-Output "Pitboard $compared carries the update key $carried."
 # The 1.0 session's build is the only one that reads another feed, and it never ships.
 $feed = & $read -Assembly (Join-Path $root 'Pitboard.Windows.dll') -Constant 'Pitboard.Windows.SparkleUpdates.Feed'
 $latest = 'https://github.com/datlechin/pitboard/releases/latest/download/appcast-windows.xml'
