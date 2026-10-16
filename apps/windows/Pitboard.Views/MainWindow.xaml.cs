@@ -21,7 +21,7 @@ public sealed partial class MainWindow : Window
 
     public MainWindow(
         AppModel model, StartAtSignIn startAtSignIn, IUpdates updates, string version, Action<WindowAccount> openWindow,
-        WindowPlacement placement)
+        WindowPlacement placement, string? notificationsOff = null)
     {
         _model = model;
         InitializeComponent();
@@ -49,7 +49,11 @@ public sealed partial class MainWindow : Window
         }
 
         _dialogs = new DialogHost(() => Navigation.XamlRoot);
-        _context = new PaneContext(model, _dialogs, startAtSignIn, updates, version) { OpenWindow = openWindow };
+        _context = new PaneContext(model, _dialogs, startAtSignIn, updates, version)
+        {
+            OpenWindow = openWindow,
+            NotificationsOff = notificationsOff,
+        };
         // A dialog needs the window's XamlRoot, which its content has once loaded.
         Navigation.Loaded += (_, _) =>
         {
@@ -104,7 +108,7 @@ public sealed partial class MainWindow : Window
             Pane.Accounts => typeof(AccountsPage),
             Pane.Activity => typeof(ActivityPage),
             Pane.Machine => typeof(MachinePage),
-            _ => typeof(SettingsPane),
+            _ => typeof(SettingsPage),
         };
         if (Pages.CurrentSourcePageType != page)
         {

@@ -16,7 +16,7 @@ public partial class App : Application, IIconTargets
     private readonly AppStart _start;
     private readonly Handovers _handovers;
     private readonly WindowRequests _requests = new();
-    private readonly string _version = SettingsPage.Version(typeof(App).Assembly);
+    private readonly string _version = Versions.Of(typeof(App).Assembly);
     private IUpdates _updates = new NoUpdates();
     private AppModel? _model;
     private StartAtSignIn? _startAtSignIn;
@@ -27,6 +27,7 @@ public partial class App : Application, IIconTargets
     private MenuHost? _menu;
     private MainWindow? _window;
     private AccountWindows? _accountWindows;
+    private WindowsNotifications? _notifications;
 
     public App(AppStart start, Handovers handovers)
     {
@@ -46,6 +47,7 @@ public partial class App : Application, IIconTargets
     protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
     {
         var notifications = WindowsNotifications.For(_start.Identity.Build, AppContext.BaseDirectory);
+        _notifications = notifications;
         var queue = DispatcherQueue.GetForCurrentThread();
         var model = Model(queue, notifications);
         if (model is null)
@@ -225,7 +227,7 @@ public partial class App : Application, IIconTargets
         {
             var window = new MainWindow(
                 _model, _startAtSignIn, _updates, _version, account => _accountWindows?.Open(account),
-                new WindowPlacement(Path.Combine(_start.DataFolder, "placement.json")));
+                new WindowPlacement(Path.Combine(_start.DataFolder, "placement.json")), _notifications?.Refusal);
             window.Closed += (_, _) => _window = null;
             _window = window;
         }

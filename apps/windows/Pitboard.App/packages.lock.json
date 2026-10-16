@@ -167,6 +167,7 @@
       "pitboard.views": {
         "type": "Project",
         "dependencies": {
+          "CommunityToolkit.WinUI.Controls.SettingsControls": "[8.2.251219, )",
           "CommunityToolkit.WinUI.Triggers": "[8.2.251219, )",
           "Microsoft.WindowsAppSDK": "[2.5.1, )",
           "Pitboard.Core": "[1.0.0, )",
@@ -179,6 +180,16 @@
           "Microsoft.WindowsAppSDK": "[2.5.1, )",
           "Pitboard.Core": "[1.0.0, )",
           "WinSparkle": "[0.9.4, )"
+        }
+      },
+      "CommunityToolkit.WinUI.Controls.SettingsControls": {
+        "type": "CentralTransitive",
+        "requested": "[8.2.251219, )",
+        "resolved": "8.2.251219",
+        "contentHash": "BAuRi34AOBCYXK/obT9Fwzt9KtxhPrO67yNINXF6+Dit4sAiwtVgehN9y/dJHco96/zZiTX3yF85mBjRyw6AXQ==",
+        "dependencies": {
+          "CommunityToolkit.WinUI.Triggers": "8.2.251219",
+          "Microsoft.WindowsAppSDK": "1.6.250108002"
         }
       },
       "CommunityToolkit.WinUI.Triggers": {

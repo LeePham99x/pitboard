@@ -697,8 +697,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     which writes the `Run` value, `"<exe>" --sign-in`, through `IRunKey`, sent to the
     registry by `RegistryRunKey`
     and replaced in tests, refuses in a Debug build, and a fixture gets
-    `FixtureStartupItem`. `SettingsPage` is what the settings page says and sends beyond the
-    model's words. `AccountsViewModel`, `ActivityViewModel` and `MachineViewModel` are what
+    `FixtureStartupItem`. `SettingsViewModel` is what the settings page shows and sends,
+    beyond the model's words its own, each warm-up account a `WarmAccountRow`, and
+    `Versions` the app's own version. `AccountsViewModel`, `ActivityViewModel` and `MachineViewModel` are what
     the accounts, activity and This PC pages bind to, told part by part as `AppModel` tells
     its own. `Keyed` keeps a shown row while the model lists it, so
     `ShownAccount` keeps its selection across snapshots, and sends its row's action. `WindowAlert` is the failure or quit question in
@@ -719,9 +720,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     `AccountMenu`, and shows an `EmptyState` in place of an empty list; `ActivityPage` is the
     log, a table whose column headers are its list's header, each change stacked under its
     date on a page narrower than 720 epx; `MachinePage` is this PC's checks under doctor's
-    last line in an InfoBar that scrolls with them, and
-    `SettingsPane` the settings page, in the macOS Settings' sections, each warm-up account
-    a `WarmRow`. A notice is a `NoticeBar`, an InfoBar. `DialogHost` shows the ContentDialogs
+    last line in an InfoBar that scrolls with them; and `SettingsPage` is the settings, in the
+    macOS Settings' sections, of the Community Toolkit's SettingsCards and SettingsExpanders.
+    A notice is a `NoticeBar`, an InfoBar. `DialogHost` shows the ContentDialogs
     of every window one at a time, each in its window's theme, and `WindowAlerts` puts the
     model's alerts in one, or leaves them to the sheet's `AlertBar` while a sheet is up.
     `WindowSheets` puts the model's sheet up as an `AccountSheet`, a ContentDialog that adds
@@ -4251,13 +4252,27 @@ Microsoft's documentation.
   BodyStrong headers, of cards with a header, a description and the control on the right,
   sub-options under an expander, and About at the bottom in an expander with the app's name
   and version, links and legal lines. It names the Windows Community Toolkit's SettingsCard
-  and SettingsExpander. `SettingsPane` draws the card with WinUI's own resources at the
-  Toolkit's values (`SettingsCard.xaml`: 68 px high at least, 16 px padding,
-  `CardBackgroundFillColorDefaultBrush`, `CardStrokeColorDefaultBrush`,
-  `ControlCornerRadius`), the resources an Expander's header already uses (WinUI 2.3.9's
-  `Themes/generic.xaml`), so the app takes no package for it. A change takes effect at once,
-  through a toggle switch for on and off (Toggle switches, updated 21 September 2026), and a
-  control that cannot change says why in its card.
+  and SettingsExpander, which the WinUI Gallery's settings page uses, so `SettingsPage` is
+  built of them (`CommunityToolkit.WinUI.Controls.SettingsControls` 8.2.251219). A change
+  takes effect at once, through a toggle switch for on and off (Toggle switches, updated 21
+  September 2026), and a control that cannot change says why in its card's description.
+- Read in the Community Toolkit for Windows at `rel/8.2.251219` (commit a6b4dc45),
+  `components/SettingsControls` and `components/Triggers`. A SettingsCard gives a ToggleSwitch
+  in it `RightAlignedCompactToggleSwitchStyle`, the switch at the card's right edge with its
+  state before it, and its Disabled state dims its header and description
+  (`SettingsCard.xaml`). A SettingsExpander's peer is a Group with no ExpandCollapse, and its
+  template hands the Expander inside it its name, not its id (`SettingsExpander.xaml`), so the
+  UI tests expand through that Expander. Its items come from `Items` or `ItemsSource`, never
+  both, so the warm-up's hours sit in `ItemsHeader` and its notes in `ItemsFooter`, as cards
+  drawn as the toolkit draws an item (58, 8, 44 and 8 epx of padding, 52 high, a top border).
+  A clickable SettingsCard's peer returns itself for the Invoke pattern
+  (`SettingsCardAutomationPeer.cs`), and WinUI 2.3.9's `ButtonBaseAutomationPeer` implements
+  no `IInvokeProvider` (`Microsoft.WinUI.dll` metadata), so UI Automation could not press it:
+  the page copies through a Copy button, as Settings > System > About copies its
+  specifications, and links through HyperlinkButtons. `ControlSizeTrigger` is active while
+  `MinWidth <= ActualWidth < MaxWidth` of an element it names (`ControlSizeTrigger.cs`), the
+  trigger SettingsCard wraps its own content with; AdaptiveTrigger reads the window's width
+  instead, so the Activity page stacks its changes by its own width with it.
 - Run and RunOnce registry keys (updated 21 February 2026): a value under the person's `Run`
   key is a command line of at most 260 characters that Windows starts at each of their
   sign-ins, with no promise how soon, and a program started from the key should not write
@@ -4270,10 +4285,11 @@ Microsoft's documentation.
   whenever `IsOn` changes (`ToggleSwitch_Partial.cpp`), a NumberBox raises `ValueChanged` on
   any change of `Value`, NaN for cleared text (`NumberBox.cpp`), and a TimePicker raises
   `SelectedTimeChanged` within the setter, with its clock the person's own through
-  `DateTimeFormatter` unless set (`TimePicker_Partial.cpp`). So `SettingsPane` sends nothing
-  while it sets its controls to what the model says, which
-  `SettingsPaneTests.ShowingWhatTheModelSaysSendsNothing` holds, shows the share again after
-  a cleared box, and leaves the warm-up pickers on the person's 12- or 24-hour clock.
+  `DateTimeFormatter` unless set (`TimePicker_Partial.cpp`). So `SettingsViewModel` sends only
+  a value that differs from the model's, which `SettingsViewModelTests` and
+  `SettingsPageTests.ShowingWhatTheModelSaysSendsNothing` hold, the page shows the share
+  again after a cleared box, and the warm-up pickers stay on the person's 12- or 24-hour
+  clock, which `LocalTime::time_of_day` gives the hours' summary too.
 - Read in the Windows App SDK at v2.5.1 (commit 13160d54), `dev/AppNotifications` and
   `dev/AppLifecycle`. `IsSupported` refuses only an elevated process. For an unpackaged
   process the manager takes the explicit AppUserModelID, and where none is set its

@@ -9,6 +9,8 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" />
+    <!-- SettingsCard and SettingsExpander, which Microsoft's app settings guidance names. -->
+    <PackageReference Include="CommunityToolkit.WinUI.Controls.SettingsControls" />
     <!-- ControlSizeTrigger, which sets a page's layout by its own width as SettingsCard sets its own. -->
     <PackageReference Include="CommunityToolkit.WinUI.Triggers" />
   </ItemGroup>

@@ -21,6 +21,9 @@ public sealed class WindowsNotifications(Build build, Func<IAppNotifications> sy
     // Why nothing is posted, once Start has asked.
     public string? Off { get; private set; }
 
+    // A Debug build's own off is no refusal: its settings would say it in the docs' pictures.
+    public string? Refusal => build is Build.Debug ? null : Off;
+
     // Register takes the icon as a file, which Pitboard.exe carries beside it.
     public static WindowsNotifications For(Build build, string folder) =>
         new(build, () => new SystemAppNotifications(), Path.Combine(folder, IconFile));

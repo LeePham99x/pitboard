@@ -92,6 +92,7 @@ public sealed class WindowsNotificationsTests
         notifications.Stop();
 
         Assert.AreEqual("A Debug build posts no notifications.", notifications.Off);
+        Assert.IsNull(notifications.Refusal, "the settings would say a Debug build's own off");
     }
 
     [TestMethod]
@@ -163,6 +164,7 @@ public sealed class WindowsNotificationsTests
 
         CollectionAssert.AreEqual(new[] { "supported", "listen", $"register Pitboard {Icon}" }, system.Asked);
         Assert.AreEqual("Access is denied.", notifications.Off);
+        Assert.AreEqual("Access is denied.", notifications.Refusal);
     }
 
     // ModelTests.ARunOutIsPostedThroughTheAppsNotifications, through to what Windows is asked to show.
