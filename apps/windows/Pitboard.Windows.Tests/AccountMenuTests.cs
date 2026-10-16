@@ -84,7 +84,7 @@ public sealed class AccountMenuTests
         var menu = AccountMenu.For(item, (_, _) => { }, opened.Add, held: []);
         new MenuFlyoutItemAutomationPeer((MenuFlyoutItem)menu.Items[2]).Invoke();
 
-        Assert.AreEqual("Rename…, -, Open chatgpt.com, -, Copy Email Address, -, Forget…", string.Join(", ", Said(menu)));
+        Assert.AreEqual("Rename…, -, Open chatgpt.com, -, Copy email address, -, Forget…", string.Join(", ", Said(menu)));
         Assert.AreEqual(spare, opened.Single());
     }
 

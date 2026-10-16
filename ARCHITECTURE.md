@@ -2076,19 +2076,19 @@ The Windows app's account windows run in WebView2, over the same decisions from 
   until the app has its model.
 - `apps/windows/Pitboard.Views`: `AccountWindow` is the window, a command bar of Back,
   Forward, Reload or Stop, and Downloads once the model lists a download of the window,
-  with **Remove Website Data…** under More, the window's note in an InfoBar, and the page,
+  with **Remove website data…** under More, the window's note in an InfoBar, and the page,
   or what stands for it until the model lists the window. It asks the download question
   and the quit question as ContentDialogs. Find, zoom, script dialogs, file pickers, the
   download list and the browser keys are WebView2's own.
   `SignInWindow` is a sign-in window, at `sign_in_window_size` over the account's window.
   The icon's menu and an account's shortcut menu offer each window, from
   `AccountWindowsShown.menus` and `AccountItem.windows`. `OpenLinkWindow` is the
-  **Open Link** window, over `AccountWindowsShown.picker`, with its buttons in a
+  **Open link** window, over `AccountWindowsShown.picker`, with its buttons in a
   ContentDialog's order: the default first, Cancel last.
 - `apps/windows/Pitboard.App/AccountWindows.cs` opens a window per store and brings an open
   one forward, tells the model each opened and closed, closes those the model says close,
   and hands each store asked for to the janitor. It owns `Downloads`, and asks before Quit
-  while one is under way. It brings the **Open Link** window forward with each link that
+  while one is under way. It brings the **Open link** window forward with each link that
   arrives, and withdraws it once none waits.
 
 A Pitboard link reaches `Pitboard.exe` as its first argument, and a launch with one reads no
@@ -2098,7 +2098,7 @@ registers `pitboard-debug`, and neither build registers a scheme as it runs. A c
 while another holds the key hands its launch over, and the running copy reads the link from
 that launch's command line. A Debug build outside a fixture refuses a `pitboard-debug` link
 before it takes the key or writes anything, since it would run on whatever homes its launch
-has. **Open in Browser** goes where a page sent elsewhere goes: to Windows, and in a fixture
+has. **Open in browser** goes where a page sent elsewhere goes: to Windows, and in a fixture
 nowhere. The three `AccountPickerTests` that need no account hand their link over through a
 second copy; choosing an account and cancelling wait for W23a.
 
@@ -2131,7 +2131,7 @@ deletion is made already. `ProfileTests` holds the contract and the sweep on bot
 another's. On macOS a store WebKit kept holding is still whole, its sign-in included, so an
 account enrolled again keeps it and its window opens on it.
 
-**Remove Website Data** leaves the page for a blank one, clears the profile with
+**Remove website data** leaves the page for a blank one, clears the profile with
 `ClearBrowsingDataAsync`, tells the model `WebsiteDataRemoved`, and opens the site's home
 in a new web view, so Back cannot bring the signed-in page back.
 `RemovingWebsiteDataEmptiesTheWindowsProfileAlone` holds that another profile keeps its

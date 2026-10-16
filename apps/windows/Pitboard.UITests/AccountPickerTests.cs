@@ -11,7 +11,7 @@ namespace Pitboard.UITests;
 public sealed class AccountPickerTests
 {
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void ASharedLinkAsksWhichAccountOpensIt()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "twoTools");
@@ -31,7 +31,7 @@ public sealed class AccountPickerTests
         Launched.Press(picker, "Open");
 
         Launched.Shows(launched.Window("spare"), "A Pitboard fixture page at /c/shared", exact: false);
-        Assert.IsTrue(Closed(picker), "the Open Link window stayed");
+        Assert.IsTrue(Closed(picker), "the Open link window stayed");
     }
 
     [TestMethod]
@@ -41,17 +41,17 @@ public sealed class AccountPickerTests
 
         var picker = launched.Share("https://example.com/page");
 
-        Launched.Shows(picker, "Can’t Open This Link");
+        Launched.Shows(picker, "Can’t open this link");
         Assert.IsTrue(
             Launched.Lines(picker).Any(line => line.Contains("This link is on example.com.", StringComparison.Ordinal)),
             string.Join(" | ", Launched.Lines(picker)));
         Launched.Press(picker, "OK");
-        Assert.IsTrue(Closed(picker), "the Open Link window stayed");
+        Assert.IsTrue(Closed(picker), "the Open link window stayed");
         Assert.AreEqual(0, AccountWindows(launched));
     }
 
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void CancellingOpensNothing()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "onlyOne");
@@ -60,7 +60,7 @@ public sealed class AccountPickerTests
 
         Launched.Shows(picker, "Open this claude.ai link as:");
         Launched.Press(picker, "Cancel");
-        Assert.IsTrue(Closed(picker), "the Open Link window stayed");
+        Assert.IsTrue(Closed(picker), "the Open link window stayed");
         Assert.AreEqual(0, AccountWindows(launched));
     }
 
@@ -71,11 +71,11 @@ public sealed class AccountPickerTests
 
         var picker = launched.Share("https://chatgpt.com/");
 
-        Launched.Shows(picker, "No chatgpt.com Account");
-        Assert.IsNotNull(Launched.Pressable(picker, "Add Account…"));
-        Assert.IsNotNull(Launched.Pressable(picker, "Open in Browser"));
+        Launched.Shows(picker, "No chatgpt.com account");
+        Assert.IsNotNull(Launched.Pressable(picker, "Add account…"));
+        Assert.IsNotNull(Launched.Pressable(picker, "Open in browser"));
         Launched.Press(picker, "Cancel");
-        Assert.IsTrue(Closed(picker), "the Open Link window stayed");
+        Assert.IsTrue(Closed(picker), "the Open link window stayed");
     }
 
     // Someone else's sign-in link is refused: it would sign the window in as them.
@@ -86,10 +86,10 @@ public sealed class AccountPickerTests
 
         var picker = launched.Share("https://claude.ai/magic-link#someone");
 
-        Launched.Shows(picker, "Can’t Open This Link");
+        Launched.Shows(picker, "Can’t open this link");
         Launched.Shows(picker, "Pitboard doesn’t open claude.ai sign-in links", exact: false);
         Launched.Press(picker, "OK");
-        Assert.IsTrue(Closed(picker), "the Open Link window stayed");
+        Assert.IsTrue(Closed(picker), "the Open link window stayed");
     }
 
     // Outside a fixture a Debug build runs on whatever homes it was given, so it opens no link there.
@@ -110,6 +110,6 @@ public sealed class AccountPickerTests
     private static bool Closed(AutomationElement picker) =>
         Retry.WhileTrue(() => picker.IsAvailable, TimeSpan.FromSeconds(10), TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
 
-    // Every window but the Open Link window and Pitboard's own is an account's.
-    private static int AccountWindows(Launched launched) => launched.Titles().Count(title => title is not ("Open Link" or "Pitboard"));
+    // Every window but the Open link window and Pitboard's own is an account's.
+    private static int AccountWindows(Launched launched) => launched.Titles().Count(title => title is not ("Open link" or "Pitboard"));
 }

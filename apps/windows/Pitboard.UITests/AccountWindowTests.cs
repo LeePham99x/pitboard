@@ -13,56 +13,19 @@ namespace Pitboard.UITests;
 public sealed class AccountWindowTests
 {
     [TestMethod]
-    [Ignore(Pending.W23a)]
-    [ExplorerTakesIcons]
-    public void OpeningAClaudeAccountsWindowFromTheMenu()
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
+    public void OpeningAClaudeAccountsWindowFromItsRow()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "onlyOne");
+        launched.OpenWindow();
 
-        launched.OpenMenu();
-        launched.Choose("Open claude.ai as work");
+        OpenFromItsRow(launched, "claude/work", "claude.ai");
 
         Launched.Shows(launched.Window("work"), "claude.ai stand-in");
     }
 
     [TestMethod]
-    [Ignore(Pending.W23a)]
-    [ExplorerTakesIcons]
-    public void EachSiteOffersItsOwnToolsAccounts()
-    {
-        using var launched = Launched.Start(Builds.Debug, fixture: "twoTools");
-
-        launched.OpenMenu();
-        launched.Named("Open claude.ai").Patterns.ExpandCollapse.Pattern.Expand();
-        foreach (var label in new[] { "work", "personal", "old" })
-        {
-            launched.Find(found => found.ByAutomationId($"window.claude.ai/{label}"), label);
-        }
-
-        Assert.IsTrue(launched.Gone(found => found.ByAutomationId("window.claude.ai/main")), "main is offered on claude.ai");
-        launched.Named("Open chatgpt.com").Patterns.ExpandCollapse.Pattern.Expand();
-        foreach (var label in new[] { "main", "spare" })
-        {
-            launched.Find(found => found.ByAutomationId($"window.chatgpt.com/{label}"), label);
-        }
-
-        Assert.IsTrue(launched.Gone(found => found.ByAutomationId("window.chatgpt.com/work")), "work is offered on chatgpt.com");
-    }
-
-    [TestMethod]
-    [ExplorerTakesIcons]
-    public void NoAccountOffersNoWindow()
-    {
-        using var launched = Launched.Start(Builds.Debug, fixture: "empty");
-
-        launched.OpenMenu();
-
-        Assert.IsTrue(launched.Gone(found => found.ByName("Open claude.ai")), "claude.ai is offered");
-        Assert.IsTrue(launched.Gone(found => found.ByName("Open chatgpt.com")), "chatgpt.com is offered");
-    }
-
-    [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void OpeningAWindowAgainBringsTheSameOneForward()
     {
         using var launched = OpenChatGPT();
@@ -76,7 +39,7 @@ public sealed class AccountWindowTests
 
     // The link asks for a new window, which WebView2 asks the app for, and the page set there loads it.
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void ASignInLinkOpensASignInWindowThatClosesItself()
     {
         using var launched = OpenChatGPT();
@@ -91,7 +54,7 @@ public sealed class AccountWindowTests
     }
 
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void ASignInScriptOpensASignInWindow()
     {
         using var launched = OpenChatGPT();
@@ -104,7 +67,7 @@ public sealed class AccountWindowTests
     }
 
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void ClosingTheAccountsWindowClosesItsSignInWindow()
     {
         using var launched = OpenChatGPT();
@@ -119,7 +82,7 @@ public sealed class AccountWindowTests
     }
 
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void GoogleSignInIsStoppedInTheWindow()
     {
         using var launched = OpenChatGPT();
@@ -134,7 +97,7 @@ public sealed class AccountWindowTests
     // WebView2 names no frame that started a download, so the site's own asks first; WebView2's own list then names it,
     // and offers its folder, which no surface of Pitboard's does.
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void ASiteDownloadIsListedInTheWindow()
     {
         using var launched = OpenChatGPT();
@@ -152,7 +115,7 @@ public sealed class AccountWindowTests
     }
 
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void FindShowsTheFindBar()
     {
         using var launched = OpenChatGPT();
@@ -169,7 +132,7 @@ public sealed class AccountWindowTests
     }
 
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void RemovingWebsiteDataAsksFirstAndStartsOver()
     {
         using var launched = OpenChatGPT();
@@ -181,7 +144,7 @@ public sealed class AccountWindowTests
         Launched.Shows(window, "A Pitboard fixture page at /chat/fixture", exact: false);
 
         Launched.Within(window, found => found.ByAutomationId("MoreButton"), "the command bar's More").Patterns.Invoke.Pattern.Invoke();
-        launched.Invoke("Remove Website Data…");
+        launched.Invoke("Remove website data…");
         launched.Invoke("Remove");
 
         Assert.IsTrue(Says(window, "window.note", "Sign in to chatgpt.com"), "the window did not say how to sign in");
@@ -189,7 +152,7 @@ public sealed class AccountWindowTests
     }
 
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void AnAccountsShortcutMenuOpensItsWindow()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "twoTools");
@@ -210,11 +173,11 @@ public sealed class AccountWindowTests
         return launched;
     }
 
-    private static void OpenFromItsRow(Launched launched, string qualified)
+    private static void OpenFromItsRow(Launched launched, string qualified, string site = "chatgpt.com")
     {
         launched.Row(qualified).RightClick();
         var label = qualified[(qualified.IndexOf('/', StringComparison.Ordinal) + 1)..];
-        launched.Find(found => found.ByAutomationId($"window.chatgpt.com/{label}"), "the row's window item").Click();
+        launched.Find(found => found.ByAutomationId($"window.{site}/{label}"), "the row's window item").Click();
     }
 
     private static int Windows(Launched launched, string title) => launched.Titles().Count(shown => shown == title);

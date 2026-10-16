@@ -8,7 +8,7 @@ using Windows.UI;
 
 namespace Pitboard.Windows.Tests;
 
-// The Open Link window over what the model says of the link waiting, with no model: it sends what a person chose, and
+// The Open link window over what the model says of the link waiting, with no model: it sends what a person chose, and
 // opens no browser.
 [TestClass]
 public sealed class OpenLinkWindowTests
@@ -122,10 +122,10 @@ public sealed class OpenLinkWindowTests
         var window = await Views.Activated(new OpenLinkWindow(sent.Add, _ => { }, _ => { }));
         try
         {
-            window.Follow(new LinkPicker(7, false, new PickerShown.Refused("Can’t Open This Link", "This link is on example.com.")));
+            window.Follow(new LinkPicker(7, false, new PickerShown.Refused("Can’t open this link", "This link is on example.com.")));
 
             var texts = Views.Texts(window.Content);
-            Assert.Contains("Can’t Open This Link", texts);
+            Assert.Contains("Can’t open this link", texts);
             Assert.Contains("This link is on example.com.", texts);
             Views.Press(Views.Button(window.Content, "OK"));
             Assert.AreEqual(new Intent.DismissLink(7), sent.Single());
@@ -143,7 +143,7 @@ public sealed class OpenLinkWindowTests
         var window = await Views.Activated(new OpenLinkWindow(_ => { }, _ => { }, _ => { }));
         try
         {
-            window.Follow(new LinkPicker(7, false, new PickerShown.Refused("Can’t Open This Link", "This link is on example.com.")));
+            window.Follow(new LinkPicker(7, false, new PickerShown.Refused("Can’t open this link", "This link is on example.com.")));
             var root = (FrameworkElement)window.Content;
             var reason = Views.Visible<TextBlock>(root).Single(text => text.Text == "This link is on example.com.");
             Color Shown() => ((SolidColorBrush)reason.Foreground).Color;
@@ -169,13 +169,13 @@ public sealed class OpenLinkWindowTests
         var window = await Views.Activated(new OpenLinkWindow(sent.Add, _ => { }, browsed.Add));
         try
         {
-            var add = new Choice("Add Account…", new Intent.PresentSheet(new Sheet.Add(Provider: "codex")), Enabled: true);
+            var add = new Choice("Add account…", new Intent.PresentSheet(new Sheet.Add(Provider: "codex")), Enabled: true);
             window.Follow(new LinkPicker(8, false, new PickerShown.NoAccount(
-                Title: "No chatgpt.com Account", Link: Shared, LinkText: "chatgpt.com/c/shared",
-                Detail: "None of the accounts Pitboard has opens chatgpt.com.", InBrowser: "Open in Browser", Add: add)));
+                Title: "No chatgpt.com account", Link: Shared, LinkText: "chatgpt.com/c/shared",
+                Detail: "None of the accounts Pitboard has opens chatgpt.com.", InBrowser: "Open in browser", Add: add)));
 
-            Views.Press(Views.Button(window.Content, "Add Account…"));
-            Views.Press(Views.Button(window.Content, "Open in Browser"));
+            Views.Press(Views.Button(window.Content, "Add account…"));
+            Views.Press(Views.Button(window.Content, "Open in browser"));
 
             CollectionAssert.AreEqual(new[] { add.Intent, new Intent.DismissLink(8) }, sent);
             Assert.AreEqual(Shared.Url, browsed.Single());
@@ -196,9 +196,9 @@ public sealed class OpenLinkWindowTests
             window.Follow(new LinkPicker(9, false, new PickerShown.Reading("Reading accounts…")));
             Assert.Contains("Reading accounts…", Views.Texts(window.Content));
 
-            var retry = new Choice("Try Again", new Intent.Refresh(Asked: true), Enabled: true);
-            window.Follow(new LinkPicker(9, false, new PickerShown.ReadFailed("Couldn’t Read Accounts", "The index is damaged.", retry)));
-            Views.Press(Views.Button(window.Content, "Try Again"));
+            var retry = new Choice("Try again", new Intent.Refresh(Asked: true), Enabled: true);
+            window.Follow(new LinkPicker(9, false, new PickerShown.ReadFailed("Couldn’t read accounts", "The index is damaged.", retry)));
+            Views.Press(Views.Button(window.Content, "Try again"));
 
             Assert.Contains("The index is damaged.", Views.Texts(window.Content));
             Assert.AreEqual(retry.Intent, sent.Single());
@@ -222,7 +222,7 @@ public sealed class OpenLinkWindowTests
         window.Follow(null);
 
         var texts = Views.Texts(window.Content);
-        Assert.Contains("No Link to Open", texts);
+        Assert.Contains("No link to open", texts);
         Assert.IsTrue(
             texts.Any(text => text.StartsWith($"Share a {PitboardFfiMethods.SiteNames(Conjunction.Or)} page", StringComparison.Ordinal)),
             string.Join(" | ", texts));

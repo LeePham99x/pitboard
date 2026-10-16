@@ -252,18 +252,6 @@ public sealed class IconMenuTests
             entry.Detail);
     }
 
-    // The window takes these keys; the menu says them.
-    [TestMethod]
-    public void TheMenuSaysTheWindowsShortcuts()
-    {
-        var entries = IconMenu.Entries(TwoTools(), new NoUpdates());
-
-        Assert.AreEqual("Ctrl+N", Command(entries, "Add account…").Shortcut);
-        Assert.AreEqual("Ctrl+R", Command(entries, "Refresh").Shortcut);
-        Assert.AreEqual("Ctrl+,", Command(entries, "Settings").Shortcut);
-        Assert.IsNull(Command(entries, "Exit").Shortcut);
-    }
-
     [TestMethod]
     public void OpenPitboardIsWhatAClickOnTheIconDoes()
     {

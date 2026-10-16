@@ -12,7 +12,7 @@ using WinRT.Interop;
 
 namespace Pitboard.Views;
 
-// The Open Link window: what the model says of the link waiting, the accounts that can open it, and its buttons in a
+// The Open link window: what the model says of the link waiting, the accounts that can open it, and its buttons in a
 // dialog's order. Every link from outside waits here until somebody chooses, even with one account, so no page can open
 // an account's window by handing Pitboard a link.
 public sealed partial class OpenLinkWindow : Window
@@ -40,7 +40,7 @@ public sealed partial class OpenLinkWindow : Window
         _send = send;
         _open = open;
         _inBrowser = inBrowser;
-        Title = "Open Link";
+        Title = "Open link";
         _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         Grid.SetRow(_buttons, 1);
@@ -196,7 +196,7 @@ public sealed partial class OpenLinkWindow : Window
         shown.Children.Add(new FontIcon { Glyph = Glyphs.Site, FontSize = 32 });
         shown.Children.Add(new TextBlock
         {
-            Text = "No Link to Open",
+            Text = "No link to open",
             Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"],
             HorizontalAlignment = HorizontalAlignment.Center,
         });

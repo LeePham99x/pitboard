@@ -4,7 +4,7 @@ using Pitboard.Windows;
 
 namespace Pitboard.App;
 
-// WebView2's side of the account windows, and the Open Link window. What they show, and which stores go, is the model's:
+// WebView2's side of the account windows, and the Open link window. What they show, and which stores go, is the model's:
 // this tells it what the windows and their downloads did, and does what it says.
 internal sealed class AccountWindows
 {
@@ -106,7 +106,7 @@ internal sealed class AccountWindows
         var arrived = _picker?.Arrival != picker.Arrival;
         if (_picker is null)
         {
-            // A fixture's Open in Browser opens nothing, as its pages send nothing elsewhere.
+            // A fixture's Open in browser opens nothing, as its pages send nothing elsewhere.
             var window = new OpenLinkWindow(_model.Send, Open, _web.OpenElsewhere);
             window.Closed += (_, _) =>
             {

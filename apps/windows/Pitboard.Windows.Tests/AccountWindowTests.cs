@@ -43,7 +43,7 @@ public sealed class AccountWindowTests
     {
         var bar = Views.Descendants(window.Content).OfType<CommandBar>().Single();
         bar.IsOpen = true;
-        Views.Press(bar.SecondaryCommands.OfType<AppBarButton>().Single(command => command.Label == "Remove Website Data…"));
+        Views.Press(bar.SecondaryCommands.OfType<AppBarButton>().Single(command => command.Label == "Remove website data…"));
     }
 
     private static DownloadShown Download(string store) =>
@@ -63,9 +63,9 @@ public sealed class AccountWindowTests
             await Views.Until(() => Views.Texts(window.Content).Contains("Reading accounts…"), "it did not say it reads the accounts");
             Assert.AreEqual("Account", window.Title);
 
-            var retry = new Choice("Try Again", new Intent.Refresh(Asked: true), Enabled: true);
-            window.Follow(Shown(new WaitingShown.ReadFailed("Couldn’t Read Accounts", "The index is damaged.", retry)));
-            Views.Press(Views.Button(window.Content, "Try Again"));
+            var retry = new Choice("Try again", new Intent.Refresh(Asked: true), Enabled: true);
+            window.Follow(Shown(new WaitingShown.ReadFailed("Couldn’t read accounts", "The index is damaged.", retry)));
+            Views.Press(Views.Button(window.Content, "Try again"));
 
             Assert.Contains("The index is damaged.", Views.Texts(window.Content));
             Assert.AreEqual(retry.Intent, sent.Single());
@@ -166,7 +166,7 @@ public sealed class AccountWindowTests
                     ClearDownloads: new Choice("Clear", new Intent.ClearDownloads(refused.Store), Enabled: false))));
 
             await Views.Until(
-                () => Views.Texts(window.Content).Contains("Couldn’t Open This Window"), "the window did not say it could not open",
+                () => Views.Texts(window.Content).Contains("Couldn’t open this window"), "the window did not say it could not open",
                 Webs.Patience);
         }
         finally
@@ -210,7 +210,7 @@ public sealed class AccountWindowTests
         }
     }
 
-    // Remove Website Data asks first, empties the window's profile, and starts again at the site's home in a web view
+    // Remove website data asks first, empties the window's profile, and starts again at the site's home in a web view
     // of its own, so Back cannot bring the signed-in page back.
     [UITestMethod]
     public async Task RemovingWebsiteDataAsksAndStartsAgainAtHome()

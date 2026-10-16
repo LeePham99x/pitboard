@@ -24,7 +24,7 @@ public sealed partial class AccountWindow : Window, ISessionWindow
     private readonly AppBarButton _reload = Command("Reload", Symbol.Refresh, "Load this page again");
     private readonly AppBarButton _stop = Command("Stop", Symbol.Cancel, "Stop loading this page");
     private readonly AppBarButton _showDownloads = Command("Downloads", Symbol.Download, "Show this window’s downloads");
-    private readonly AppBarButton _removeData = Command("Remove Website Data…", Symbol.Delete, null);
+    private readonly AppBarButton _removeData = Command("Remove website data…", Symbol.Delete, null);
     private readonly InfoBar _note = new() { Severity = InfoBarSeverity.Informational, IsClosable = true };
     private readonly Grid _page = new();
     private readonly StackPanel _standIn = new()
@@ -307,7 +307,7 @@ public sealed partial class AccountWindow : Window, ISessionWindow
         ShowHistory();
         if (session.Failure is { } failure)
         {
-            StandIn(Glyphs.Warning, "Couldn’t Load the Page", failure, "Try Again", enabled: true, TryAgain);
+            StandIn(Glyphs.Warning, "Couldn’t load the page", failure, "Try again", enabled: true, TryAgain);
             return;
         }
 
@@ -349,7 +349,7 @@ public sealed partial class AccountWindow : Window, ISessionWindow
     }
 
     private void Unopened(string why) =>
-        StandIn(Glyphs.Warning, "Couldn’t Open This Window", why, choice: null, enabled: false, chosen: null);
+        StandIn(Glyphs.Warning, "Couldn’t open this window", why, choice: null, enabled: false, chosen: null);
 
     private void ShowHistory()
     {

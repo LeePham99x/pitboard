@@ -83,11 +83,11 @@ internal sealed class Launched : IDisposable
     }
 
     // A link given to a second launch in the same homes and fixture, as the MSI's command gives one, which the running
-    // copy answers with its Open Link window.
+    // copy answers with its Open link window.
     public Window Share(string page)
     {
         HandOver(Link(page));
-        return Window("Open Link");
+        return Window("Open link");
     }
 
     private void HandOver(params string[] arguments)

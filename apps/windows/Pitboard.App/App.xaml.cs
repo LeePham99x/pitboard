@@ -74,9 +74,9 @@ public partial class App : Application
         {
             model.Send(new Intent.LinkArrived(link));
         }
-        // Windows puts a new icon in the overflow, so a launch from Start shows only through its window.
         else if (Launching.OpensWindow(_start.Arguments))
         {
+            // Windows puts a new icon in the overflow, so a launch from Start shows only through its window.
             model.Send(new Intent.ShowWindow(Pane: null));
         }
 
