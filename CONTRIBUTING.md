@@ -394,9 +394,8 @@ foreach ($name in 'USERPROFILE', 'HOME', 'APPDATA', 'LOCALAPPDATA', 'CODEX_HOME'
 [Diagnostics.Process]::Start($app)
 ```
 
-The worlds that seed Claude Code wait for W23a on Windows. Started again, the second copy hands
-its launch to the first, which brings its window forward, and quits. Exit in the icon's menu
-ends it.
+Started again, the second copy hands its launch to the first, which brings its window forward,
+and quits. Exit in the icon's menu ends it.
 
 To open a link, start a second copy with a Pitboard link of the Debug build:
 
