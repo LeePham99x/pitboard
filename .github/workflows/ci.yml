@@ -370,9 +370,10 @@ jobs:
           path: ${{ runner.temp }}/UITests.xcresult
 
   csharp:
-    # The Windows app reaches the core through these bindings. They are generated from the
-    # core, compiled and called on every change, so a change C# cannot express, or bindings
-    # that no longer match the library, fail here rather than in the app.
+    # The Windows app reaches the core through these bindings, and PitboardShare.exe reaches
+    # pitboard-share-ffi through its own. They are generated from the libraries, compiled and
+    # called on every change, so a change C# cannot express, or bindings that no longer match
+    # the library, fail here rather than in the app.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -386,16 +387,23 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: apps/windows/global.json
-      - run: cargo build --locked --release -p pitboard-ffi
+      - run: |
+          cargo build --locked --release -p pitboard-ffi
+          cargo build --locked --release -p pitboard-share-ffi
       # Read from the static library: the release profile strips the shared one, and with
       # it the metadata the generator reads, which it answers by writing nothing at all.
       - run: |
-          mkdir -p apps/windows/Pitboard.Core/Generated
+          mkdir -p apps/windows/Pitboard.Core/Generated apps/windows/Pitboard.Share.Core/Generated
           cargo run --locked --release -p uniffi-bindgen-csharp -- \
             --library target/release/libpitboard_ffi.a \
             --out-dir apps/windows/Pitboard.Core/Generated \
             --config crates/pitboard-ffi/uniffi.toml --no-format
           test -s apps/windows/Pitboard.Core/Generated/pitboard_ffi.cs
+          cargo run --locked --release -p uniffi-bindgen-csharp -- \
+            --library target/release/libpitboard_share_ffi.a \
+            --out-dir apps/windows/Pitboard.Share.Core/Generated \
+            --config crates/pitboard-share-ffi/uniffi.toml --no-format
+          test -s apps/windows/Pitboard.Share.Core/Generated/pitboard_share_ffi.cs
       # For csharp-windows, which generates its own and compares, so one file serves every system.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -409,6 +417,7 @@ jobs:
         run: >
           dotnet test --solution Pitboard.slnx
           -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/release/libpitboard_ffi.so"
+          -p:PitboardShareNativeLibrary="$GITHUB_WORKSPACE/target/release/libpitboard_share_ffi.so"
       # The same library with its fixtures, which a debug build of either app launches into.
       # Its bindings must be the very ones generated without them, which is what lets one
       # set serve both, and the library without them must hold none of a fixture's text.
@@ -428,6 +437,7 @@ jobs:
         run: >
           dotnet test --solution Pitboard.slnx
           -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/release/libpitboard_ffi.so"
+          -p:PitboardShareNativeLibrary="$GITHUB_WORKSPACE/target/release/libpitboard_share_ffi.so"
 
   # The bindings on Windows, against pitboard_ffi.dll as a 0.x release builds it and opened with
   # its fixtures, on each image the windows job names. Both test programs are published

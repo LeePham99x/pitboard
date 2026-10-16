@@ -595,17 +595,18 @@ window loads its site, and whatever the site's pages load, as a browser would.
   - `web.rs` reads a page's address, for an account window's rules, as Foundation's `URL`
     does: its scheme, and the host, port and user it names, with the host a request goes
     to, and its path, which a fixture's stand-in page says.
-- `crates/pitboard-share-ffi`: `pitboard-sites` as UniFFI bindings for the macOS Share
-  extension alone, a static library with one function, `share_link`. It checks a shared
-  page and writes the Pitboard link that hands it to the app, or says why not in the
-  sentence the app shows. It holds nothing of the core.
+- `crates/pitboard-share-ffi`: `pitboard-sites` as UniFFI bindings with one function,
+  `share_link`, a static library for the macOS Share extension and a dynamic one for the
+  Windows app's `PitboardShare.exe`. It checks a shared page and writes the Pitboard link
+  that hands it to the app, or says why not in the sentence the app shows. It holds nothing
+  of the core.
 - `crates/uniffi-bindgen-swift` and `crates/uniffi-bindgen-csharp`: generate the Swift and
   the C# bindings with exactly the UniFFI version the library uses. The bindings check
   method checksums when they load. The C# generator is NordSecurity's, pinned to a release
   built against that UniFFI; it is a build tool, so `deny.toml` leaves it out of the graph.
   Every type the core's bindings export is declared in `pitboard-ffi`, because the C#
-  generator cannot use a type from another crate. `pitboard-share-ffi`, which only Swift
-  reads, declares its own.
+  generator cannot use a type from another crate. `pitboard-share-ffi`, which Swift and C#
+  both read, declares its own.
 - `crates/pitboard-conformance`: checks a tool's register against a build of that tool: a
   program for macOS, Linux or Windows, or an Electron app's `app.asar`.
 - `crates/pitboard-probe`: the Windows measurement probe. It is `publish = false`, never
@@ -628,8 +629,11 @@ window loads its site, and whatever the site's pages load, as a browser would.
 - `apps/`: the native apps, one directory for each system.
 - `apps/windows/`: the Windows app. `Pitboard.Core` is the core's C# bindings as an
   assembly of their own, generated into `Generated/` and not committed, and
-  `Pitboard.Core.Tests` calls the core through them; `Pitboard.slnx` holds the two, which
-  build on every system. `Pitboard.Windows.slnx` adds the app, which builds on Windows only:
+  `Pitboard.Core.Tests` calls the core through them. `Pitboard.Share.Core` is
+  `pitboard-share-ffi`'s, generated the same way, beside `Sharing`, what `PitboardShare.exe`
+  answers a share with, over an `IShareOperation` that `Pitboard.Share.Core.Tests` replaces.
+  `Pitboard.slnx` holds the four, which build on every system. `Pitboard.Windows.slnx` adds
+  the app, which builds on Windows only:
   - `Pitboard.Windows` is the glue, with no XAML. `AppModel` holds the `PitboardModel` and
     its newest snapshot, a property for each part, by the macOS `AppModel`'s rules; it
     compares a part's arrays by what they hold (`Structural`), and `ModelListening` hands it

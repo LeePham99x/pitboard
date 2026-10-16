@@ -248,25 +248,31 @@ pluginkit -r <build>/Pitboard.app/Contents/PlugIns/PitboardShare.appex
 ### The C# bindings
 
 The Windows app reaches the core through C# bindings, generated from `pitboard-ffi` like the
-Swift ones and not committed. They need the .NET 10 SDK and run on macOS and Linux as well
-as Windows. `Pitboard.slnx` holds them and their tests, the half of `apps/windows` that builds
-on every system; `Pitboard.Windows.slnx` adds the app, which builds only on Windows:
+Swift ones and not committed, and `PitboardShare.exe` reaches `pitboard-share-ffi` through
+its own. They need the .NET 10 SDK and run on macOS and Linux as well as Windows.
+`Pitboard.slnx` holds them and their tests, the half of `apps/windows` that builds on every
+system; `Pitboard.Windows.slnx` adds the app, which builds only on Windows:
 
 ```sh
 cargo build --locked -p pitboard-ffi
-mkdir -p apps/windows/Pitboard.Core/Generated
+cargo build --locked -p pitboard-share-ffi
+mkdir -p apps/windows/Pitboard.Core/Generated apps/windows/Pitboard.Share.Core/Generated
 cargo run --locked -p uniffi-bindgen-csharp -- --library target/debug/libpitboard_ffi.a \
   --out-dir apps/windows/Pitboard.Core/Generated --config crates/pitboard-ffi/uniffi.toml --no-format
+cargo run --locked -p uniffi-bindgen-csharp -- --library target/debug/libpitboard_share_ffi.a \
+  --out-dir apps/windows/Pitboard.Share.Core/Generated --config crates/pitboard-share-ffi/uniffi.toml --no-format
 cd apps/windows
-dotnet test --solution Pitboard.slnx -p:PitboardNativeLibrary="$PWD/../../target/debug/libpitboard_ffi.dylib"
+dotnet test --solution Pitboard.slnx -p:PitboardNativeLibrary="$PWD/../../target/debug/libpitboard_ffi.dylib" \
+  -p:PitboardShareNativeLibrary="$PWD/../../target/debug/libpitboard_share_ffi.dylib"
 ```
 
-On Linux the library the tests load is `libpitboard_ffi.so`, and on Windows
-`pitboard_ffi.dll`. There the generator reads `pitboard_ffi.dll` or `pitboard_ffi.lib`, which
-give the same file; `pitboard_ffi.dll.lib` gives none. A Windows library built with
-`--cfg pitboard_unreleased_windows` takes `-p:PitboardNativeLibraryOpened=true` as well, or the
-test of what a 0.x release refuses fails. C# makes each field of a record a member of it, so a
-field may not share its record's name.
+On Linux the libraries the tests load are `libpitboard_ffi.so` and `libpitboard_share_ffi.so`,
+and on Windows `pitboard_ffi.dll` and `pitboard_share_ffi.dll`. There the generator reads
+`pitboard_ffi.dll` or `pitboard_ffi.lib`, which give the same file; `pitboard_ffi.dll.lib`
+gives none. A Windows library built with `--cfg pitboard_unreleased_windows` takes
+`-p:PitboardNativeLibraryOpened=true` as well, or the test of what a 0.x release refuses
+fails. C# makes each field of a record a member of it, so a field may not share its record's
+name.
 
 On Windows, run the tests as [Windows](#windows) says: as a Windows account that holds no real
 login, with the homes [AGENTS.md](AGENTS.md#on-windows) names at fresh folders. A C# test that

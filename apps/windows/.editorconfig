@@ -27,3 +27,6 @@ dotnet_separate_import_directive_groups = false
 
 [Pitboard.Core/Generated/**]
 generated_code = true
+
+[Pitboard.Share.Core/Generated/**]
+generated_code = true
