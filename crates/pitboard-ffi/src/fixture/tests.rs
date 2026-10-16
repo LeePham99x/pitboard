@@ -906,11 +906,11 @@ fn the_log_records_changes_newest_last_as_they_are_typed() {
 
 /// Daily renewal can be turned on and off, and taking away a schedule that is not there
 /// says there was nothing to take away. Nothing is ever repaired. The schedule is a file in
-/// the fixture's own folder, which no scheduler is asked to start.
+/// the fixture's own folder, which no scheduler is asked to start: on Windows, the task's
+/// definition as the pretend Task Scheduler keeps it.
 ///
 /// FixtureTests.swift's theScheduleTurnsOnAndOff.
 #[test]
-#[cfg_attr(windows, ignore = "W25: Task Scheduler")]
 fn the_schedule_turns_on_and_off() {
     let launched = made(World::OneTool);
     let core = &launched.core;
@@ -918,8 +918,24 @@ fn the_schedule_turns_on_and_off() {
     assert_eq!(core.schedule_uninstall().ok(), Some(false));
 
     let path = core.schedule_install().expect("installed");
+    let kept = match OS {
+        Os::MacOs | Os::Linux => std::path::PathBuf::from(&path),
+        Os::Windows => {
+            let task = path
+                .strip_prefix(r"\Pitboard\")
+                .expect("in Pitboard's folder");
+            assert!(task.starts_with("Renew S-1-5-"), "{path}");
+            launched
+                .machine
+                .root()
+                .join("home")
+                .join("Tasks")
+                .join("Pitboard")
+                .join(task)
+        }
+    };
     assert!(
-        std::path::Path::new(&path).starts_with(launched.machine.root()),
+        kept.starts_with(launched.machine.root()) && kept.is_file(),
         "{path}"
     );
     assert_eq!(
@@ -1789,7 +1805,6 @@ fn activity_lists_every_switch_above_every_enrolment() {
 /// Daily renewal turns on, says how often it runs, and Renew Now renews the one parked login
 /// that is due, as PanesAndSettingsTests.swift's testDailyRenewal reads it.
 #[test]
-#[cfg_attr(windows, ignore = "W25: Task Scheduler")]
 fn daily_renewal_turns_on_and_renew_now_says_what_it_did() {
     let launched = made(World::OneTool);
     let (model, told) = started(&launched);

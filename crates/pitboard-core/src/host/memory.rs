@@ -125,8 +125,7 @@ pub struct MemoryHost {
     /// keychain. So by default, because that is where the rules about another Pitboard's
     /// parks are needed.
     shared_vault: AtomicBool,
-    /// This system's scheduler, writing in the test's own home, where Pitboard writes for one
-    /// on this system: none on Windows until W25.
+    /// This system's scheduler, writing in the test's own home.
     scheduler: Option<Box<dyn Scheduler>>,
     /// Whether the scheduler refuses the next schedule it is asked to start.
     refuse_start: Arc<AtomicBool>,
@@ -163,6 +162,20 @@ impl MemoryHost {
     // Parking as Windows does: in files sealed to the account, inside this home alone.
     pub fn sealed() -> Arc<MemoryHost> {
         Arc::new(MemoryHost::parking_in(Backend::SealedFile, false))
+    }
+
+    // Scheduling as Windows does, through Task Scheduler as this machine has it, on any system.
+    #[cfg(test)]
+    pub(crate) fn scheduling_tasks(sid: &str) -> Arc<MemoryHost> {
+        let mut host = MemoryHost::default();
+        let pretend = super::task::Pretend {
+            refuse_start: Arc::clone(&host.refuse_start),
+        };
+        host.scheduler = Some(Box::new(super::task::Tasks::new(
+            sid.into(),
+            Arc::new(pretend),
+        )));
+        Arc::new(host)
     }
 
     fn parking_in(vault: Backend, shared: bool) -> MemoryHost {

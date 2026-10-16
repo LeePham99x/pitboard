@@ -1312,6 +1312,7 @@ pub(super) fn holding_ask(job: &Job) -> bool {
 /// machine running the tests is read: no environment, no `PATH`, no login shell.
 pub(super) struct World {
     root: PathBuf,
+    pitboard: PathBuf,
     pub host: Arc<MemoryHost>,
     pub api: Arc<ScriptedApi>,
     ctx: Context,
@@ -1368,6 +1369,7 @@ impl World {
             .with_lock_waiting(2_000, Duration::from_millis(10));
         let (cores, cores_gone) = channel();
         World {
+            pitboard: root.join(".pitboard"),
             root,
             host,
             api,
@@ -1644,7 +1646,7 @@ impl World {
     /// here can be told from the one it has. Planted once the sign-in has started, since
     /// starting one clears whatever a sign-in before it left there.
     pub(super) fn signed_in_privately(&self, who: &str, access: &str, percent: f64) {
-        let dir = self.root.join(".pitboard").join("signin");
+        let dir = self.pitboard_dir().join("signin");
         let service = pitboard_core::testing::service_for_dir(&dir.to_string_lossy());
         let login = self.claude_login_as(who, access, percent);
         self.host.live().plant(&service, &login);
@@ -1766,7 +1768,13 @@ impl World {
 
     /// Pitboard's directory on this machine.
     pub(super) fn pitboard_dir(&self) -> PathBuf {
-        self.root.join(".pitboard")
+        self.pitboard.clone()
+    }
+
+    // The one the schedule renews, which on Windows is not `.pitboard`.
+    pub(super) fn in_the_default_home(&mut self) {
+        self.pitboard = service::Pitboard::new(self.ctx.clone()).default_directory();
+        self.ctx = self.ctx.clone().with_pitboard_home(self.pitboard.clone());
     }
 
     /// Every account was last put in use an hour ago. Enrolling the account signed in puts
@@ -1820,7 +1828,7 @@ impl World {
     }
 
     fn index_written(&self, when: impl FnOnce(SystemTime) -> SystemTime) {
-        let index = self.root.join(".pitboard").join("state.json");
+        let index = self.pitboard_dir().join("state.json");
         let file = std::fs::File::options()
             .write(true)
             .open(&index)

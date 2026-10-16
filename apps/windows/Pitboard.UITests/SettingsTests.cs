@@ -93,7 +93,6 @@ public sealed class SettingsTests
     }
 
     [TestMethod]
-    [Ignore("W25: Task Scheduler, which renews parked logins daily")]
     public void DailyRenewal()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");

@@ -1667,7 +1667,6 @@ mod tests {
     /// MachineModelTests.swift's anAppWithoutACommandLineItCanRunCannotLinkOrSchedule, over a
     /// real file.
     #[test]
-    #[cfg(unix)]
     fn the_command_line_inside_is_read_from_the_file_each_time() {
         let read = |worker: &Worker| match worker.work(Job::ReadSchedule {
             after_change: false,
@@ -1703,7 +1702,13 @@ mod tests {
         assert!(read(&worker).lasting());
 
         let mut temporary = World::new("translocated");
-        temporary.app_with_a_command_line_in("AppTranslocation/0A1B2C/d");
+        temporary.app_with_a_command_line_in(match pitboard_core::host::OS {
+            pitboard_core::host::Os::MacOs | pitboard_core::host::Os::Linux => {
+                "AppTranslocation/0A1B2C/d"
+            }
+            // Where Explorer copies a program it opens from inside a zip.
+            pitboard_core::host::Os::Windows => "Temp1_pitboard-v0.15.0-x86_64-pc-windows-msvc.zip",
+        });
         let gone_on_quit = self::worker(temporary.core(), StandInApps::new(&[], true));
         let own = read(&gone_on_quit);
         assert!(own.inside && own.temporary && own.runs, "{own:?}");

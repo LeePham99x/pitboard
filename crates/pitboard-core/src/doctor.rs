@@ -160,11 +160,10 @@ pub(crate) struct ProxyFact {
     pub(crate) exempt: Vec<String>,
 }
 
-/// The daily renewal schedule as it is installed, read from the file Pitboard wrote and
-/// never by asking the scheduler.
+/// The daily renewal schedule as it is installed, read from what Pitboard wrote: a file, or
+/// on Windows the task as Task Scheduler keeps it.
 pub(crate) struct ScheduleFact {
-    /// The file the platform's scheduler reads.
-    pub(crate) path: PathBuf,
+    pub(crate) location: crate::schedule::Location,
     /// The Pitboard it runs, where the file names one the way Pitboard writes it.
     pub(crate) program: Option<PathBuf>,
     /// Whether that Pitboard is still there to be run.
@@ -582,7 +581,7 @@ fn schedule_fact(ctx: &Context) -> Option<ScheduleFact> {
     if !crate::schedule::serves(ctx) {
         return None;
     }
-    let crate::schedule::Installed::Yes { path, .. } = crate::schedule::status(ctx) else {
+    let crate::schedule::Installed::Yes { location, .. } = crate::schedule::status(ctx) else {
         return None;
     };
     let program = crate::schedule::installed_program(ctx);
@@ -590,7 +589,7 @@ fn schedule_fact(ctx: &Context) -> Option<ScheduleFact> {
     Some(ScheduleFact {
         program_found: program.as_deref().is_some_and(std::path::Path::is_file),
         program,
-        path,
+        location,
         network: network_fact(&proxies),
         network_differs: !proxies.same_way(&ctx.proxy),
     })
@@ -2302,10 +2301,7 @@ fn judge_schedule(facts: &Facts) -> Option<Check> {
         None => warn(
             "schedule",
             "renewal schedule",
-            format!(
-                "{} does not say which Pitboard it runs",
-                schedule.path.display()
-            ),
+            format!("{} does not say which Pitboard it runs", schedule.location),
             again,
         ),
     })
@@ -3378,6 +3374,7 @@ pub fn healthy(checks: &[Check]) -> bool {
 )]
 mod tests {
     use super::*;
+    use crate::schedule::Location;
     use crate::service::Permit;
     use std::sync::Arc;
 
@@ -5202,7 +5199,9 @@ mod tests {
         );
 
         f.schedule = Some(ScheduleFact {
-            path: PathBuf::from("/home/x/Library/LaunchAgents/com.datlechin.pitboard.renew.plist"),
+            location: Location::File(PathBuf::from(
+                "/home/x/Library/LaunchAgents/com.datlechin.pitboard.renew.plist",
+            )),
             program: Some(PathBuf::from("/opt/homebrew/bin/pitboard")),
             program_found: true,
             network: direct(),
@@ -5221,7 +5220,9 @@ mod tests {
         assert_eq!(gone.advice, again(crate::host::OS));
 
         f.schedule = Some(ScheduleFact {
-            path: PathBuf::from("/home/x/Library/LaunchAgents/com.datlechin.pitboard.renew.plist"),
+            location: Location::File(PathBuf::from(
+                "/home/x/Library/LaunchAgents/com.datlechin.pitboard.renew.plist",
+            )),
             program: Some(PathBuf::from(
                 "/Applications/Pitboard.app/Contents/MacOS/Pitboard",
             )),
@@ -5277,7 +5278,6 @@ mod tests {
     /// What the check above is given, read off a real disk: a schedule written the way
     /// `pitboard schedule install` writes it, whose Pitboard is then taken away.
     #[test]
-    #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn a_schedule_whose_pitboard_is_gone_is_found_on_the_disk() {
         let scratch = tempfile::tempdir().expect("a scratch home");
         let root = scratch.path().to_path_buf();
@@ -5307,7 +5307,9 @@ mod tests {
     /// A schedule that runs a Pitboard still there, installed with `network`.
     fn scheduled(network: NetworkFact, network_differs: bool) -> ScheduleFact {
         ScheduleFact {
-            path: PathBuf::from("/home/x/.config/systemd/user/pitboard-renew.timer"),
+            location: Location::File(PathBuf::from(
+                "/home/x/.config/systemd/user/pitboard-renew.timer",
+            )),
             program: Some(PathBuf::from("/usr/local/bin/pitboard")),
             program_found: true,
             network,
@@ -5467,7 +5469,6 @@ mod tests {
     /// another password, and none. The report a person pastes hides the proxy's host, as it
     /// does this run's.
     #[test]
-    #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn the_schedules_proxy_is_read_from_what_install_wrote() {
         let scratch = tempfile::tempdir().expect("a scratch home");
         let root = scratch.path().to_path_buf();
@@ -5477,10 +5478,11 @@ mod tests {
         let machine = crate::host::memory::MemoryHost::new();
         let home = root.to_string_lossy().into_owned();
         let run = |proxy: Option<&str>| {
-            let env: crate::context::Environment = [("HOME", home.as_str())]
-                .into_iter()
-                .chain(proxy.map(|address| ("HTTPS_PROXY", address)))
-                .collect();
+            let env: crate::context::Environment =
+                [("HOME", home.as_str()), ("USERPROFILE", home.as_str())]
+                    .into_iter()
+                    .chain(proxy.map(|address| ("HTTPS_PROXY", address)))
+                    .collect();
             Context::for_command_line(&env)
                 .with_memory_stores(Arc::clone(&machine))
                 .with_schedule_program(program.clone())

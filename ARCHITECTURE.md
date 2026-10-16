@@ -102,12 +102,18 @@ window loads its site, and whatever the site's pages load, as a browser would.
     `windows/`. Linux and Windows refuse Claude Desktop's data folder before anything else
     is asked, so neither reads a cookie jar, and Linux lists no process with its parent.
     `windows/` is the face that refuses whatever of Windows is not built yet: no store of
-    secrets, no scheduler, and none of the four calls that move Claude Desktop's data
-    folder. It seals each park with DPAPI under the person's own key (`windows/seal.rs`).
-    It lists processes from a Toolhelp snapshot, for their parents, and keeps this
-    account's in any session: whose each is, WTS says without opening it, a process in
-    another user's session is passed over unopened, and the rest's tokens are read
-    (`owner.rs`). A program whose owner or path does not read makes `processes` unknown,
+    secrets, and none of the four calls that move Claude Desktop's data folder. It seals
+    each park with DPAPI under the person's own key (`windows/seal.rs`). It registers daily
+    renewal's task through `ITaskService`, on a thread of its own in COM's multithreaded
+    apartment, and a build for tests asks Task Scheduler nothing (`windows/tasks.rs`);
+    `task.rs` writes and reads the task on every system, and keeps the proxy it is given in
+    `schedule.env`, since a task's definition holds no environment. The task runs the path
+    the command line was started by where an upgrade keeps it: Scoop's
+    `apps\<app>\current`, never a version's folder, and winget's link in `WinGet\Links`
+    (`program::lasting`). It lists processes from a Toolhelp snapshot, for their parents,
+    and keeps this account's in any session: whose each is, WTS says without opening it, a
+    process in another user's session is passed over unopened, and the rest's tokens are
+    read (`owner.rs`). A program whose owner or path does not read makes `processes` unknown,
     since it may be any kind of holder. It finds programs as a Windows shell does, an app
     execution alias in a `WindowsApps` folder by its reparse tag, and reads the `Path` a
     program started now is given from the registry, the machine's and then the person's,
@@ -400,8 +406,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     account in use, marked while the record is in doubt. Where the record names no enrolled
     account, both show `unenrolled`, or `?` while the record is in doubt. `schedule.rs`
     decides what daily renewal runs and whose it is, and refuses a program in the temporary
-    copy macOS runs an app from, by `in_a_temporary_copy`, which an app asks of the command
-    line inside it too; the host's scheduler writes it.
+    copy macOS runs an app from, or Explorer one opened inside a zip, by
+    `in_a_temporary_copy`, which an app asks of the command line inside it too; the host's
+    scheduler writes it.
   - `words.rs`: the sentences and column words Pitboard says in more than one place, each
     a function of typed values: spans of time, a limit's names, when it resets, its pace and
     when it runs out, a parked login's life, a renewal run, doctor's summary, and what is
@@ -1057,19 +1064,20 @@ window loads its site, and whatever the site's pages load, as a browser would.
   `elevated` check, first and in the gate's order, and an app writes no file of its own,
   since `app::write_file` takes a permit too. What each says, on each system, is written
   once, in `words::elevated` and `words::too_old`.
-- A run of the daily renewal schedule renews the default home, whatever `PITBOARD_HOME`
-  says, since the schedule is that home's alone: `Pitboard::renew` renews in the context
+- A run of the daily renewal schedule renews the default home, whatever `PITBOARD_HOME` says,
+  since the schedule is that home's alone: `Pitboard::renew` renews in the context
   `schedule::for_its_run` gives it. Such a run is told apart by what the scheduler says,
   launchd's job label in `XPC_SERVICE_NAME`, or, since what systemd passes a job is best
-  effort and not to be relied on, by the marker the unit's `ExecStart` carries,
-  `renew --scheduled` (`schedule::SCHEDULED_RUN`), which the command line passes on through
-  `Context::started_by_the_schedule`. The command line leaves `renew` to the gate, which
-  asks of the homes the run renews in, so an empty or relative `PITBOARD_HOME` stops no run
-  of the schedule. In a build for tests, such a run whose home is the account's own panics
-  before it reads anything. For the same reason `schedule::install` refuses, with
-  `schedule_not_default_home`, wherever `schedule::serves` is false, that is while
-  `PITBOARD_HOME` names another directory. `uninstall` is not refused, so a schedule can be
-  taken away from any home, and `repair` does nothing there, as before, without an error.
+  effort and not to be relied on and Task Scheduler passes none, by the marker the unit's
+  `ExecStart` and the task's action carry, `renew --scheduled` (`schedule::SCHEDULED_RUN`),
+  which the command line passes on through `Context::started_by_the_schedule`. The command
+  line leaves `renew` to the gate, which asks of the homes the run renews in, so an empty or
+  relative `PITBOARD_HOME` stops no run of the schedule. In a build for tests, such a run
+  whose home is the account's own panics before it reads anything. For the same reason
+  `schedule::install` refuses, with `schedule_not_default_home`, wherever `schedule::serves`
+  is false, that is while `PITBOARD_HOME` names another directory. `uninstall` is not
+  refused, so a schedule can be taken away from any home, and `repair` does nothing there, as
+  before, without an error.
 - The schedule's job is started with the system's environment, not the person's shell, so
   `schedule::install` gives it, through `Scheduler::put`, `PITBOARD_NO_ARGV` where the
   installing context refuses the argument line, and every proxy variable that context
@@ -1078,18 +1086,23 @@ window loads its site, and whatever the site's pages load, as a browser would.
   reinstall takes the current ones; `repair` keeps the proxy variables the installed file
   gives (`Scheduler::environment`). A proxy's address can hold a password, so
   `host::unix::service::write` writes every file of the job with `atomic::Perms::Secret`,
-  mode 600 whatever was there, where it kept a file's own mode before. `doctor` reads the
-  installed variables as a context's are read and warns, `schedule_proxy`, where they
-  would send a request another way than this run's (`Proxies::same_way`). In the app,
-  whose environment is the system's as the job's is, the same line is `ok` and says how
-  each way of installing the schedule chooses its proxy: the app's switch would take a
-  terminal's proxy away.
+  mode 600 whatever was there, where it kept a file's own mode before. A task's definition
+  has no environment, and an argument would show the password, so on Windows the proxy
+  variables go in `schedule.env` in the default home, private as the parks are, and
+  `schedule::for_its_run` gives a run the task started that file's variables over its own
+  (`Scheduler::read_by_its_runs`). `PITBOARD_NO_ARGV` means nothing on Windows, so it is
+  not kept. `doctor` reads the installed variables as a context's are read and warns,
+  `schedule_proxy`, where they would send a request another way than this run's
+  (`Proxies::same_way`). In the app, whose environment is the system's as the job's is,
+  the same line is `ok` and says how each way of installing the schedule chooses its
+  proxy: the app's switch would take a terminal's proxy away.
 - No test starts the person's own login shell. A test names a shell of its own in `SHELL`,
   one that is not there, or hands in what a shell said.
 - A test never reaches the system's own scheduler. A test context schedules through
   `MemoryHost`, which writes the files in the test's home and asks no service manager, and
-  the real hosts refuse to ask launchd or systemd from any build for tests: a unit test,
-  the command line the integration tests run, or an app built with the fixtures.
+  on Windows keeps the task's definition there as `Tasks\Pitboard\<name>`, and the real
+  hosts refuse to ask launchd, systemd or Task Scheduler from any build for tests: a unit
+  test, the command line the integration tests run, or an app built with the fixtures.
 - `pitboard-ffi` exports records, enums, three error types, free functions, one object,
   `PitboardModel`, and four traits an app implements, `ModelListener`, `AppControl`,
   `Notifications` and `LocalTime`. Nothing it exports is async. The core it runs on is
@@ -2701,7 +2714,7 @@ The images:
 ### Documented, not measured
 
 Windows facts Pitboard stands on that Microsoft documents and nothing has measured yet, read
-on 15 October 2026, and the MSI's on 16 October 2026. W27 reviews the list.
+on 15 and 16 October 2026. W27 reviews the list.
 
 | Fact | Source | Why not measured |
 |---|---|---|
@@ -2717,6 +2730,7 @@ on 15 October 2026, and the MSI's on 16 October 2026. W27 reviews the list.
 | Reserved device names, and trailing dots and spaces, in a file name | [Naming files](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file) | No row makes such a name. |
 | `longPathAware` in a manifest lifts the 260-character limit | [Application manifests](https://learn.microsoft.com/en-us/windows/win32/sbscs/application-manifests) | No row uses a long path. |
 | `StartWhenAvailable` runs a start that was missed | [StartWhenAvailable](https://learn.microsoft.com/en-us/windows/win32/taskschd/tasksettings-startwhenavailable) | A runner never sleeps through a trigger. |
+| `ITaskFolder::RegisterTask` with `TASK_CREATE_OR_UPDATE`, an interactive token and no `userId` registers the task's XML for the person registering it | [RegisterTask](https://learn.microsoft.com/en-us/windows/win32/api/taskschd/nf-taskschd-itaskfolder-registertask) | RF-E1 registered the same principal through `RegisterTaskDefinition`, and no build for tests asks Task Scheduler; the session's step 13 registers one. |
 | WSL 2's processes run in a utility VM | [Comparing WSL versions](https://learn.microsoft.com/en-us/windows/wsl/compare-versions) | No runner has WSL. |
 | `QueryUnbiasedInterruptTimePrecise` leaves out sleep and hibernation, which `QueryPerformanceCounter` counts | [QueryUnbiasedInterruptTimePrecise](https://learn.microsoft.com/en-us/windows/win32/api/realtimeapiset/nf-realtimeapiset-queryunbiasedinterrupttimeprecise), [Acquiring high-resolution time stamps](https://learn.microsoft.com/en-us/windows/win32/sysinfo/acquiring-high-resolution-time-stamps) | A runner never sleeps. |
 | A program ended by an unhandled exception exits with the exception's code, such as `0xC0000005` | [GetExitCodeProcess](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getexitcodeprocess) | No row crashes a program. |

@@ -700,6 +700,22 @@ impl Context {
         self.marked_as_scheduled
     }
 
+    // `given` over this context's own proxy variables, as a job's are given over the system's.
+    pub(crate) fn with_proxy_variables_over(mut self, given: &[(String, String)]) -> Context {
+        let os = self.os;
+        let key = |name: &str| os.variable_key(OsStr::new(name));
+        let own = self
+            .proxy
+            .variables()
+            .iter()
+            .filter(|(name, _)| !given.iter().any(|(over, _)| key(over) == key(name)))
+            .map(|(name, value)| ((*name).to_string(), value.clone()));
+        let env = Environment::on(os, given.iter().cloned().chain(own));
+        self.proxy = crate::proxy::Proxies::read(&env);
+        self.agent = crate::api::Agents::default();
+        self
+    }
+
     // The program named for this tool, found or not; None for a tool with no program to run.
     pub fn program_for(&self, tool: ProviderId) -> Option<&std::path::Path> {
         self.programs.get(&tool).map(PathBuf::as_path)

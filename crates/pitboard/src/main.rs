@@ -6,6 +6,7 @@ use pitboard_core::doctor;
 use pitboard_core::duty::autoswitch::Threshold;
 use pitboard_core::error::Error;
 use pitboard_core::provider::{Adoption, SignsIn};
+use pitboard_core::schedule::Location;
 use pitboard_core::service::{Changing, Done, Failed, Pitboard, Warning};
 use pitboard_core::switch::{Enrolled, Outcome, Renewal};
 use serde_json::{Value, json};
@@ -810,6 +811,20 @@ fn renew(pitboard: &Pitboard) -> Report {
     )
 }
 
+// Where it is, under the key that says what it is: `path` for a file, `task` for Task Scheduler.
+fn located(installed: Value, location: &Location, rest: Value) -> Value {
+    let mut said = serde_json::Map::new();
+    said.insert("installed".into(), installed);
+    match location {
+        Location::File(path) => said.insert("path".into(), json!(path)),
+        Location::Task(task) => said.insert("task".into(), json!(task)),
+    };
+    if let Value::Object(rest) = rest {
+        said.extend(rest);
+    }
+    Value::Object(said)
+}
+
 fn schedule(pitboard: &Pitboard, what: &ScheduleCommand) -> Report {
     use pitboard_core::schedule::Installed;
     // From any home but the default one, the schedule is not this home's, and installing
@@ -822,18 +837,18 @@ fn schedule(pitboard: &Pitboard, what: &ScheduleCommand) -> Report {
     );
     let say = |installed: &Installed| match installed {
         Installed::Yes {
-            path,
+            location,
             every_seconds,
         } => (
-            json!({
-                "installed": true,
-                "path": path,
-                "every_seconds": every_seconds,
-            }),
+            located(
+                json!(true),
+                location,
+                json!({"every_seconds": every_seconds}),
+            ),
             format!(
                 "Parked logins are renewed every {} by this computer's own scheduler.\n{}\n{}",
                 pitboard_core::words::span(i64::from(*every_seconds)),
-                path.display(),
+                location,
                 if renews_this_home {
                     String::new()
                 } else {
@@ -868,14 +883,13 @@ fn schedule(pitboard: &Pitboard, what: &ScheduleCommand) -> Report {
         }
         ScheduleCommand::Install => match pitboard.schedule_install() {
             Err(error) => Report::failed(Some("schedule"), error),
-            Ok(path) => Report::done(
+            Ok(location) => Report::done(
                 "schedule",
-                json!({"installed": true, "path": path}),
+                located(json!(true), &location, json!({})),
                 format!(
-                    "Parked logins will be renewed daily.\n{}\n\nIt renews your own \
+                    "Parked logins will be renewed daily.\n{location}\n\nIt renews your own \
                      parked logins and does nothing else: it never switches account and \
-                     never asks Anthropic for usage.\n",
-                    path.display()
+                     never asks Anthropic for usage.\n"
                 ),
             ),
         },
@@ -1766,13 +1780,36 @@ mod tests {
         assert!(scheduled.contains(folder), "{scheduled}");
     }
 
+    // A file under `path`, as before; Task Scheduler's task under `task`, with no `path`.
+    #[test]
+    fn the_schedule_says_where_it_is_by_what_it_is() {
+        let plist = "/Users/x/Library/LaunchAgents/com.datlechin.pitboard.renew.plist";
+        let file = located(
+            json!(true),
+            &Location::File(std::path::PathBuf::from(plist)),
+            json!({"every_seconds": 86_400}),
+        );
+        assert_eq!(
+            file.to_string(),
+            format!(r#"{{"installed":true,"path":"{plist}","every_seconds":86400}}"#)
+        );
+        let task = located(
+            json!(true),
+            &Location::Task(r"\Pitboard\Renew S-1-5-21-1".into()),
+            json!({}),
+        );
+        assert_eq!(
+            task.to_string(),
+            r#"{"installed":true,"task":"\\Pitboard\\Renew S-1-5-21-1"}"#
+        );
+    }
+
     /// `schedule status` run while `PITBOARD_HOME` names another directory says that the
     /// schedule renews only the parked logins in `~/.pitboard`. With nothing installed it
     /// says to unset `PITBOARD_HOME` before `pitboard schedule install`, which is refused
     /// until then, rather than to run it as it is. From the default home it says what it
     /// said. On a machine in memory, whose scheduler asks nobody.
     #[test]
-    #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn schedule_status_from_another_home_says_what_the_schedule_renews() {
         use pitboard_core::testing::MemoryHost;
         let home = std::env::temp_dir().join(format!(
@@ -1790,8 +1827,10 @@ mod tests {
         let default = Pitboard::new(ctx.clone());
         let elsewhere = Pitboard::new(ctx.with_pitboard_home(home.join("elsewhere")));
         let said = |pitboard: &Pitboard| schedule(pitboard, &ScheduleCommand::Status).human;
-        let renews_only = "renews only the parked logins in ~/.pitboard, not those in the \
-                           directory PITBOARD_HOME names";
+        let renews_only = &format!(
+            "renews only the parked logins in {}, not those in the directory PITBOARD_HOME names",
+            default.shown(&default.default_directory())
+        );
 
         let here = said(&default);
         assert!(

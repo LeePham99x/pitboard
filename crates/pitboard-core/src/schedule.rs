@@ -16,8 +16,9 @@
 //! `pitboard watch` running.
 //!
 //! What it installs is the system's own scheduler, never a homemade daemon: a LaunchAgent
-//! on macOS, which runs inside the login session so the keychain is unlocked, and a systemd
-//! user timer on Linux, which is that system's answer. How each is asked is
+//! on macOS, which runs inside the login session so the keychain is unlocked, a systemd
+//! user timer on Linux, which is that system's answer, and a task in Task Scheduler on
+//! Windows, which runs only while the person is signed in. How each is asked is
 //! [`crate::host::Scheduler`]'s; what is decided here is which Pitboard it runs, how often,
 //! and whether it is this home's to change. Where there is no scheduler, it says so rather
 //! than inventing one.
@@ -36,9 +37,9 @@ pub(crate) const EVERY_SECONDS: u32 = 86_400;
 /// Whether the schedule is installed, and what it is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Installed {
-    /// Installed, at this path.
+    /// Installed, where `location` says.
     Yes {
-        path: PathBuf,
+        location: Location,
         every_seconds: u32,
     },
     No,
@@ -46,21 +47,42 @@ pub enum Installed {
     Unsupported,
 }
 
+/// Where a person finds the schedule.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Location {
+    /// The file launchd or systemd reads.
+    File(PathBuf),
+    /// Task Scheduler's path for the task, such as `\Pitboard\Renew S-1-5-21-…`.
+    Task(String),
+}
+
+impl std::fmt::Display for Location {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Location::File(path) => write!(f, "{}", path.display()),
+            Location::Task(task) => f.write_str(task),
+        }
+    }
+}
+
 fn scheduler(ctx: &Context) -> Option<&dyn Scheduler> {
     ctx.host().scheduler()
 }
 
-/// Where the schedule lives on this machine, or `None` where there is no scheduler.
+// The file a test's machine keeps the job in: Task Scheduler's own as a pretend keeps it.
 #[cfg(test)]
 pub(crate) fn path(ctx: &Context) -> Option<PathBuf> {
-    scheduler(ctx).map(|s| s.location(ctx))
+    Some(match scheduler(ctx)?.location(ctx) {
+        Location::File(path) => path,
+        Location::Task(task) => crate::host::task::pretend_file(ctx, &task),
+    })
 }
 
 pub(crate) fn status(ctx: &Context) -> Installed {
     match scheduler(ctx) {
         None => Installed::Unsupported,
         Some(s) if s.installed(ctx) => Installed::Yes {
-            path: s.location(ctx),
+            location: s.location(ctx),
             every_seconds: EVERY_SECONDS,
         },
         Some(_) => Installed::No,
@@ -113,7 +135,11 @@ pub(crate) fn for_its_run(ctx: &Context) -> Context {
         "a build for tests ran as the daily renewal schedule with this account's own home, \
          where it would renew the real Pitboard directory: give it a home of its own"
     );
-    ctx.clone().with_pitboard_home(ctx.default_pitboard_home())
+    let run = ctx.clone().with_pitboard_home(ctx.default_pitboard_home());
+    match scheduler(&run).map(|s| s.read_by_its_runs(&run)) {
+        Some(given) if !given.is_empty() => run.with_proxy_variables_over(&given),
+        _ => run,
+    }
 }
 
 /// The Pitboard the schedule should run: the one the context names, or this one, by the
@@ -230,7 +256,7 @@ pub(crate) fn installed_proxies(ctx: &Context) -> Option<crate::proxy::Proxies> 
 /// `PITBOARD_HOME` names another directory would leave that directory's parked logins to
 /// run out while seeming to keep them alive. `uninstall` and `repair` are not refused for
 /// it, so a schedule can always be taken away.
-pub(crate) fn install(ctx: &Context, permit: Permit) -> Result<PathBuf> {
+pub(crate) fn install(ctx: &Context, permit: Permit) -> Result<Location> {
     if !serves(ctx) {
         return Err(Error::ScheduleNotDefaultHome {
             home: crate::home::dir(ctx),
@@ -242,9 +268,9 @@ pub(crate) fn install(ctx: &Context, permit: Permit) -> Result<PathBuf> {
         .variables()
         .iter()
         .map(|(name, value)| ((*name).to_string(), value.clone()));
-    let path = put(ctx, permit, &program(ctx)?, &environment(ctx, proxy))?;
+    let location = put(ctx, permit, &program(ctx)?, &environment(ctx, proxy))?;
     crate::audit::record(ctx, permit, "schedule", "install", "ok");
-    Ok(path)
+    Ok(location)
 }
 
 /// Point a schedule that runs an app's own program at the command line the context names.
@@ -308,7 +334,7 @@ fn put(
     permit: Permit,
     program: &Path,
     environment: &[(String, String)],
-) -> Result<PathBuf> {
+) -> Result<Location> {
     let Some(scheduler) = scheduler(ctx) else {
         return Err(Error::ScheduleUnsupported);
     };
@@ -335,6 +361,7 @@ pub(crate) fn uninstall(ctx: &Context, permit: Permit) -> Result<bool> {
 )]
 mod tests {
     use super::*;
+    use crate::host::Os;
     use crate::host::memory::MemoryHost;
     use std::sync::Arc;
 
@@ -362,11 +389,12 @@ mod tests {
         /// besides, as the command line's is read, on the same machine in memory.
         fn read(&self, vars: &[(&str, &str)]) -> Context {
             let home = self.path().to_string_lossy().into_owned();
-            let env: crate::context::Environment = [("HOME", home.as_str())]
-                .iter()
-                .chain(vars)
-                .copied()
-                .collect();
+            let env: crate::context::Environment =
+                [("HOME", home.as_str()), ("USERPROFILE", home.as_str())]
+                    .iter()
+                    .chain(vars)
+                    .copied()
+                    .collect();
             Context::for_command_line(&env).with_memory_stores(Arc::clone(&self.1))
         }
     }
@@ -391,7 +419,6 @@ mod tests {
 
     /// A schedule the scheduler will not start leaves nothing behind saying renewal is on.
     #[test]
-    #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn a_schedule_the_scheduler_will_not_start_is_not_left_on_disk() {
         let home = Scratch::new();
         let program = home.path().join("bin/pitboard");
@@ -409,10 +436,9 @@ mod tests {
     /// A repair the scheduler will not start leaves the schedule that was there, which is
     /// what the app and doctor then go on reporting.
     #[test]
-    #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn a_repair_the_scheduler_will_not_start_leaves_the_schedule_as_it_was() {
         let home = Scratch::new();
-        std::fs::create_dir_all(home.path().join(".pitboard")).expect("a Pitboard home");
+        std::fs::create_dir_all(home.ctx().default_pitboard_home()).expect("a Pitboard home");
         let app = home
             .path()
             .join("Applications/Pitboard.app/Contents/MacOS/Pitboard");
@@ -441,7 +467,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn nothing_is_installed_on_a_machine_where_nothing_was_installed() {
         let home = Scratch::new();
         let ctx = home.ctx();
@@ -501,7 +526,6 @@ mod tests {
     /// copy, which is there while the app runs and gone once it quits, so being there now
     /// is not enough.
     #[test]
-    #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn a_named_pitboard_that_will_not_be_there_is_refused() {
         let home = Scratch::new();
         let ctx = home.ctx();
@@ -595,7 +619,6 @@ mod tests {
     /// What `pitboard doctor` reads back is what was written, including a path the
     /// scheduler's format has to escape.
     #[test]
-    #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn an_installed_schedule_says_which_pitboard_it_runs() {
         let home = Scratch::new();
         let bundled = home
@@ -618,10 +641,9 @@ mod tests {
     /// every day since. An app that names the command line it comes with puts that in its
     /// place, and every other schedule is left as it is.
     #[test]
-    #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn a_schedule_that_runs_an_app_is_pointed_at_its_command_line() {
         let home = Scratch::new();
-        std::fs::create_dir_all(home.path().join(".pitboard")).expect("a Pitboard home");
+        std::fs::create_dir_all(home.ctx().default_pitboard_home()).expect("a Pitboard home");
         let app = home
             .path()
             .join("Applications/Pitboard.app/Contents/MacOS/Pitboard");
@@ -706,10 +728,9 @@ mod tests {
     /// A process some other job started is not the schedule's own run, and repairs the way
     /// one opened by hand does.
     #[test]
-    #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn a_process_another_job_started_still_repairs() {
         let home = Scratch::new();
-        std::fs::create_dir_all(home.path().join(".pitboard")).expect("a Pitboard home");
+        std::fs::create_dir_all(home.ctx().default_pitboard_home()).expect("a Pitboard home");
         let app = home
             .path()
             .join("Applications/Pitboard.app/Contents/MacOS/Pitboard");
@@ -735,7 +756,6 @@ mod tests {
 
     /// Only what `install` writes is read, and only the way it writes it.
     #[test]
-    #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn a_schedule_pitboard_did_not_write_names_no_program() {
         let home = Scratch::new();
         let ctx = home.ctx();
@@ -772,7 +792,7 @@ mod tests {
         let upper = PathBuf::from(default.to_string_lossy().to_uppercase());
         assert_eq!(
             serves(&ctx.clone().with_pitboard_home(upper)),
-            crate::host::OS == crate::host::Os::Windows,
+            crate::host::OS == Os::Windows,
             "in another case"
         );
         assert!(!serves(&ctx.with_pitboard_home(home.join("elsewhere"))));
@@ -785,7 +805,7 @@ mod tests {
         let profile = std::env::temp_dir().join("pitboard-profile");
         let named = profile.to_string_lossy().into_owned();
         let env = crate::context::Environment::on(
-            crate::host::Os::Windows,
+            Os::Windows,
             [
                 ("USERPROFILE", named.as_str()),
                 ("HOME", "/c/Users/elsewhere"),
@@ -822,14 +842,13 @@ mod tests {
     /// it spells it, installs as before. Neither `uninstall` nor `repair` is refused for it:
     /// a schedule can always be taken away, from whichever home.
     #[test]
-    #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn a_schedule_is_installed_only_where_pitboard_home_is_the_default_home() {
         let home = Scratch::new();
-        std::fs::create_dir_all(home.path().join(".pitboard")).expect("a Pitboard home");
+        std::fs::create_dir_all(home.ctx().default_pitboard_home()).expect("a Pitboard home");
         let program = home.path().join("bin/pitboard");
         a_program_at(&program);
         let ctx = home.ctx().with_schedule_program(program);
-        let default = home.path().join(".pitboard");
+        let default = ctx.default_pitboard_home();
         let elsewhere = home.path().join("elsewhere");
         let another = ctx.clone().with_pitboard_home(elsewhere.clone());
 
@@ -872,10 +891,9 @@ mod tests {
     /// The runs then read the same proxy. A reinstall takes the variables of the Pitboard
     /// that runs it, none included. What is written is only the person's to read.
     #[test]
-    #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn a_schedule_is_given_the_proxy_variables_of_whoever_installs_it() {
         let home = Scratch::new();
-        std::fs::create_dir_all(home.path().join(".pitboard")).expect("a Pitboard home");
+        std::fs::create_dir_all(home.ctx().default_pitboard_home()).expect("a Pitboard home");
         let program = home.path().join("bin/pitboard");
         a_program_at(&program);
         let proxied = home
@@ -890,23 +908,37 @@ mod tests {
             .with_schedule_program(program.clone());
 
         install(&proxied, Permit::for_a_test()).expect("installed");
-        assert_eq!(
-            given(&proxied),
-            pairs(&[
-                ("PITBOARD_NO_ARGV", "1"),
-                ("ALL_PROXY", "socks5h://alice:s3cret@127.0.0.1:1080"),
-                ("HTTPS_PROXY", "http://proxy.example.com:3128"),
-                ("NO_PROXY", ""),
-                ("no_proxy", "localhost"),
-            ])
+        let (all, https) = (
+            ("ALL_PROXY", "socks5h://alice:s3cret@127.0.0.1:1080"),
+            ("HTTPS_PROXY", "http://proxy.example.com:3128"),
         );
+        let (handed, written, private) = match crate::host::OS {
+            Os::MacOs | Os::Linux => (
+                vec![
+                    ("PITBOARD_NO_ARGV", "1"),
+                    all,
+                    https,
+                    ("NO_PROXY", ""),
+                    ("no_proxy", "localhost"),
+                ],
+                path(&proxied).expect("a scheduler here"),
+                "mode 600",
+            ),
+            // One variable in any case, the first spelling given, as Windows hands it on (RF-B4);
+            // no `PITBOARD_NO_ARGV`, read nowhere there; and the task's definition holds no proxy.
+            Os::Windows => (
+                vec![all, https, ("no_proxy", "localhost")],
+                crate::host::task::environment_file(&proxied),
+                "open to you, SYSTEM and Administrators",
+            ),
+        };
+        assert_eq!(given(&proxied), pairs(&handed));
         let its = installed_proxies(&proxied).expect("installed");
         assert!(its.same_way(&proxied.proxy), "{its:?}");
         assert_eq!(its.variables(), proxied.proxy.variables());
-        let written = path(&proxied).expect("a scheduler here");
         assert_eq!(
             crate::host::fs::access(&written).map(|access| access.described),
-            Some("mode 600".to_string()),
+            Some(private.to_string()),
             "a proxy's password is the person's alone to read"
         );
 
@@ -926,10 +958,9 @@ mod tests {
     /// app's environment names one. Where such a file gives a proxy all the same, as one
     /// edited by hand can, the repair keeps it.
     #[test]
-    #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn a_repair_writes_the_proxy_the_schedules_file_gives_and_never_the_apps() {
         let home = Scratch::new();
-        std::fs::create_dir_all(home.path().join(".pitboard")).expect("a Pitboard home");
+        std::fs::create_dir_all(home.ctx().default_pitboard_home()).expect("a Pitboard home");
         let app = home
             .path()
             .join("Applications/Pitboard.app/Contents/MacOS/Pitboard");
@@ -972,7 +1003,6 @@ mod tests {
     /// A real context's scheduler is never asked from a test: the system's own service
     /// manager would reach the person's real schedule.
     #[test]
-    #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn a_test_never_reaches_the_systems_own_scheduler() {
         let root = std::env::temp_dir().join(format!(
             "pitboard-schedule-real-{}-{:?}",

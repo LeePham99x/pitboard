@@ -5,7 +5,7 @@ use super::super::unix::service::{self, Control};
 use crate::context::Context;
 use crate::error::{Error, Result};
 use crate::host::Scheduler;
-use crate::schedule::EVERY_SECONDS;
+use crate::schedule::{EVERY_SECONDS, Location};
 use crate::service::Permit;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -39,8 +39,8 @@ impl Launchd {
 }
 
 impl Scheduler for Launchd {
-    fn location(&self, ctx: &Context) -> PathBuf {
-        Self::agent(ctx)
+    fn location(&self, ctx: &Context) -> Location {
+        Location::File(Self::agent(ctx))
     }
 
     fn installed(&self, ctx: &Context) -> bool {

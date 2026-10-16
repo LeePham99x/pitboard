@@ -624,18 +624,15 @@ mod tests {
     /// `XPC_SERVICE_NAME` or systemd's unit would name it, and by the marker the systemd
     /// unit runs Pitboard with.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W25: Task Scheduler, which names the task it starts"
-    )]
     fn a_run_the_schedule_started_renews_the_default_home_whatever_pitboard_home_says() {
         use crate::host::{OS, Os};
         use crate::service::Pitboard;
         let job = match OS {
-            Os::MacOs => "com.datlechin.pitboard.renew",
-            Os::Linux => "pitboard-renew.service",
-            Os::Windows => panic!("W25 names the task Task Scheduler starts for the schedule"),
+            Os::MacOs => "com.datlechin.pitboard.renew".to_string(),
+            Os::Linux => "pitboard-renew.service".to_string(),
+            Os::Windows => crate::host::task::path(&crate::host::user::sid().expect("a SID")),
         };
+        let job = job.as_str();
         type Told = fn(Context, &str) -> Context;
         let ways: [(&str, Told); 2] = [
             ("as the scheduler says", |ctx, job| {
@@ -730,10 +727,6 @@ mod tests {
     /// gives a run of the schedule a home of its own. Nothing here reads or writes the home;
     /// the context is all that is made.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W25: the task Task Scheduler starts for the schedule"
-    )]
     #[should_panic(expected = "with this account's own home")]
     fn a_run_the_schedule_started_in_a_build_for_tests_never_renews_the_real_home() {
         let own = {

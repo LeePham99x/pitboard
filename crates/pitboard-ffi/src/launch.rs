@@ -1142,10 +1142,10 @@ impl AppCore {
     pub(crate) fn schedule(&self) -> Option<Schedule> {
         Some(match self.readable().ok()?.core.schedule() {
             pitboard_core::schedule::Installed::Yes {
-                path,
+                location,
                 every_seconds,
             } => Schedule::Installed {
-                path: path.to_string_lossy().into_owned(),
+                path: location.to_string(),
                 every_seconds,
             },
             pitboard_core::schedule::Installed::No => Schedule::Absent,
@@ -1162,7 +1162,7 @@ impl AppCore {
         if made.helper.is_none() {
             return Err(pitboard_core::error::Error::ScheduleProgramUnnamed.into());
         }
-        Ok(made.core.schedule_install()?.to_string_lossy().into_owned())
+        Ok(made.core.schedule_install()?.to_string())
     }
 
     /// Take it away. `false` when there was nothing installed.
@@ -1421,7 +1421,6 @@ mod tests {
     /// home, which is all the schedule renews, and the pretend scheduler is left with nothing
     /// installed. The same app with its default home installs it.
     #[test]
-    #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn the_app_schedules_nothing_where_pitboard_home_is_another_directory() {
         let home = std::env::temp_dir().join(format!(
             "pitboard-app-schedule-home-{}-{:?}",
@@ -1458,7 +1457,7 @@ mod tests {
         assert!(message.contains("unset PITBOARD_HOME"), "{message}");
         assert_eq!(elsewhere.schedule(), Some(Schedule::Absent));
 
-        let default = app(home.join(".pitboard"));
+        let default = app(service::Pitboard::new(Context::new(home.clone())).default_directory());
         default.schedule_install().expect("installed");
         assert!(matches!(
             default.schedule(),

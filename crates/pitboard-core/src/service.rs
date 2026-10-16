@@ -1449,7 +1449,7 @@ impl Pitboard {
     /// Ask the platform's own scheduler to run `renew` daily. Opt-in, and stays opt-in.
     /// Refused with `schedule_not_default_home` where this is not the default home
     /// ([`Pitboard::schedule_renews_this_home`]).
-    pub fn schedule_install(&self) -> Result<std::path::PathBuf> {
+    pub fn schedule_install(&self) -> Result<schedule::Location> {
         schedule::install(&self.ctx, self.permit()?)
     }
 

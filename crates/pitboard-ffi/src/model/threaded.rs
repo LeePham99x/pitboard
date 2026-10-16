@@ -1727,11 +1727,12 @@ fn last_where(told: &Told, what: &str, done: impl Fn(&Snapshot) -> bool) -> Snap
 /// doctor's checks; every change Pitboard made, the schedule's among them; and the
 /// `pitboard` a terminal would run, looked for in the scratch home alone.
 #[test]
-#[cfg(unix)]
 fn the_machine_is_kept_over_the_real_core() {
     use super::Pane;
     use crate::{FoundCommandLine, Schedule};
+    use pitboard_core::host::{OS, Os};
     let mut world = World::new("machine");
+    world.in_the_default_home();
     world.enrolled("work", "here", 42.0);
     world.app_with_a_command_line();
     let core = world.core();
@@ -1754,11 +1755,19 @@ fn the_machine_is_kept_over_the_real_core() {
         schedule.on && !schedule.changing && schedule.scheduled_in.is_some()
     });
     let job = on.machine.schedule.scheduled_in.clone().expect("where");
+    let kept = match OS {
+        Os::MacOs | Os::Linux => std::path::PathBuf::from(&job),
+        // The task as the pretend Task Scheduler keeps it.
+        Os::Windows => world
+            .dir("Tasks")
+            .join("Pitboard")
+            .join(job.strip_prefix(r"\Pitboard\").expect("Pitboard's task")),
+    };
     assert!(
-        job.starts_with(&*world.dir("").to_string_lossy()),
+        kept.starts_with(world.dir("")),
         "written in the scratch home: {job}"
     );
-    assert!(std::path::Path::new(&job).is_file());
+    assert!(kept.is_file());
     assert_eq!(on.machine.schedule.runs.as_deref(), Some("Every day"));
 
     // Waited for by what the renewal says: the listener is told only the newest snapshot
@@ -1814,7 +1823,7 @@ fn the_machine_is_kept_over_the_real_core() {
     last_where(&told, "daily renewal off", |last| {
         last.machine.schedule.schedule == Some(Schedule::Absent) && !last.machine.schedule.changing
     });
-    assert!(!std::path::Path::new(&job).exists(), "taken away");
+    assert!(!kept.exists(), "taken away");
 
     model.send(Intent::LookForCommandLine);
     let found = last_where(&told, "the command line looked for", |last| {
