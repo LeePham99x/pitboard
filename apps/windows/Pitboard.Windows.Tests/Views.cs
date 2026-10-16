@@ -1,3 +1,4 @@
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
@@ -100,6 +101,16 @@ internal static class Views
         window.Activate();
         await loaded.Task.WaitAsync(Webs.Patience);
         return window;
+    }
+
+    // Once what the dispatcher has queued ahead of its lowest priority has run, so what was not done meanwhile is not done.
+    public static Task Drained()
+    {
+        var drained = new TaskCompletionSource();
+        Assert.IsTrue(
+            DispatcherQueue.GetForCurrentThread().TryEnqueue(DispatcherQueuePriority.Low, () => drained.TrySetResult()),
+            "the dispatcher took nothing");
+        return drained.Task.WaitAsync(Patience);
     }
 
     public static Task Until(Func<bool> condition, string what, TimeSpan? patience = null) =>

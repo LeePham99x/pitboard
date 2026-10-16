@@ -41,7 +41,7 @@ public sealed class AlertTests
         var app = new AppModel(new StandInModel(sheet));
         var (dialogs, bar) = await Window(app);
         using var alerts = new WindowAlerts(app, dialogs);
-        await Task.Delay(200);
+        await Views.Drained();
 
         Assert.IsNull(dialogs.Open, "a dialog over the sheet");
         Assert.IsTrue(Views.Element<InfoBar>(bar, "alert").IsOpen);

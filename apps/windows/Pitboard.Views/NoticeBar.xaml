@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="Pitboard.Views.NoticeBar"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:core="using:Pitboard.Core">
+  <!-- As Windows shows a change of the app's state: an InfoBar, its buttons under its message and its dismissal the close button. -->
+  <InfoBar x:Name="Bar" IsOpen="True" Closing="OnClosing">
+    <StackPanel x:Name="Below" Margin="0,0,0,12" Spacing="8">
+      <TextBlock x:Name="CountdownText" />
+      <ItemsControl x:Name="Actions" IsTabStop="False">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <StackPanel Orientation="Horizontal" Spacing="8" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="core:NoticeAction">
+            <Button Content="{x:Bind Title}" IsEnabled="{x:Bind Enabled}" Click="OnAction" />
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+  </InfoBar>
+</UserControl>
