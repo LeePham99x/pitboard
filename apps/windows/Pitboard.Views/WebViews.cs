@@ -16,7 +16,19 @@ internal static class WebViews
             await loaded.Task;
         }
 
-        await view.EnsureCoreWebView2Async(environment, options);
-        return view.CoreWebView2;
+        // A page it could not make, such as one whose profile is still being deleted, is reported here alone.
+        Exception? failed = null;
+        void Initialized(WebView2 sender, CoreWebView2InitializedEventArgs args) => failed ??= args.Exception;
+        view.CoreWebView2Initialized += Initialized;
+        try
+        {
+            await view.EnsureCoreWebView2Async(environment, options);
+        }
+        finally
+        {
+            view.CoreWebView2Initialized -= Initialized;
+        }
+
+        return view.CoreWebView2 ?? throw failed ?? new InvalidOperationException("WebView2 made no page.");
     }
 }

@@ -168,6 +168,7 @@ public sealed class AccountWindowTests
             await Views.Until(
                 () => Views.Texts(window.Content).Contains("Couldn’t open this window"), "the window did not say it could not open",
                 Webs.Patience);
+            Assert.DoesNotContain("Object reference not set to an instance of an object.", Views.Texts(window.Content));
         }
         finally
         {
