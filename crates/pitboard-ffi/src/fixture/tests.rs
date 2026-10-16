@@ -2091,7 +2091,7 @@ fn a_failed_read_is_said_in_the_menu_and_in_the_window() {
     assert!(
         failure
             .message
-            .starts_with("could not read Pitboard's account list at "),
+            .starts_with("Could not read Pitboard's account list at "),
         "{failure:?}"
     );
 

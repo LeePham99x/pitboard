@@ -71,6 +71,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   in use, on a first run too.
 - **This Mac** names each check in sentence case, starts what a check says with a capital and
   shows commands without backticks.
+- The app shows a failure it has no words of its own for as a sentence, with a capital and a
+  full stop.
 
 ## [0.14.0] - 2026-10-14
 

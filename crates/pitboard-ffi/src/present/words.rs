@@ -507,20 +507,32 @@ pub(crate) fn check_name(code: &str, name: &str) -> String {
     }
 }
 
+pub(crate) fn check_text(text: &str) -> String {
+    prose_capitalised(text).replace('`', "")
+}
+
+// The command line prints the core's words after "error:"; an app shows them on their own.
+pub(crate) fn sentence(text: &str) -> String {
+    let text = prose_capitalised(text);
+    if text.is_empty() || text.ends_with(['.', '!', '?', '…']) {
+        text
+    } else {
+        format!("{text}.")
+    }
+}
+
 // Only a first word of lowercase letters is prose: a path, an email, a file name, a figure or a
 // backticked name keeps its case.
-pub(crate) fn check_text(text: &str) -> String {
+fn prose_capitalised(text: &str) -> String {
     let first = text
         .split(|c: char| c.is_whitespace() || matches!(c, ',' | ';' | ':'))
         .next()
         .unwrap_or_default();
-    let prose = !first.is_empty() && first.bytes().all(|b| b.is_ascii_lowercase());
-    let text = if prose {
+    if !first.is_empty() && first.bytes().all(|b| b.is_ascii_lowercase()) {
         capitalised(text)
     } else {
         text.to_owned()
-    };
-    text.replace('`', "")
+    }
 }
 
 /// A change as the activity list names it, by the verb the log keeps: "Switch", "Enrol", and
@@ -1307,6 +1319,32 @@ mod tests {
         assert_eq!(capitalised("5-hour 12%"), "5-hour 12%");
         assert_eq!(capitalised("éclair"), "Éclair");
         assert_eq!(capitalised("e\u{301}clair"), "E\u{301}clair");
+    }
+
+    #[test]
+    fn the_cores_words_read_as_a_sentence_in_the_apps() {
+        assert_eq!(
+            sentence("the scheduler refused: access denied"),
+            "The scheduler refused: access denied."
+        );
+        assert_eq!(
+            sentence("the sign-in did not finish, so nothing was enrolled."),
+            "The sign-in did not finish, so nothing was enrolled."
+        );
+        assert_eq!(
+            sentence("/Users/dana/Dropbox looks like it is inside Dropbox"),
+            "/Users/dana/Dropbox looks like it is inside Dropbox."
+        );
+        assert_eq!(
+            sentence("`work` is signed in; switch to another account before forgetting it."),
+            "`work` is signed in; switch to another account before forgetting it."
+        );
+        assert_eq!(
+            sentence("2 parked login(s) could not be removed yet"),
+            "2 parked login(s) could not be removed yet."
+        );
+        assert_eq!(sentence("Is it there?"), "Is it there?");
+        assert_eq!(sentence(""), "");
     }
 
     /// VoiceOver reads the column's "30m" as thirty meters and "5h" as letters, so a limit
