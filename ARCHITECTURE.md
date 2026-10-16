@@ -848,6 +848,7 @@ window loads its site, and whatever the site's pages load, as a browser would.
     hands on, in a zip or an MSI, and of a sparse package, and `test-windows-release.ps1`
     tests all three on zips. `check-windows-app.ps1` checks the Windows app's Release build,
     `pack-windows-share.ps1` packs `PitboardShare.exe`'s sparse package beside it,
+    `test-certificate.ps1` makes the throwaway certificate it and the runner facts sign with,
     `extract-msi.ps1` extracts an MSI's administrative image and `check-windows-msi.ps1`
     checks one, `validate-windows-msi.ps1` runs ICE03 on an MSI with the WiX that built it,
     `read-assembly.ps1` reads a value from a .NET assembly's metadata, and

@@ -36,6 +36,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+. (Join-Path $PSScriptRoot 'test-certificate.ps1')
 
 # A GitHub-hosted runner is thrown away after the job.
 if (-not ($env:GITHUB_ACTIONS -eq 'true' -and $env:RUNNER_ENVIRONMENT -eq 'github-hosted')) {
@@ -1116,7 +1117,6 @@ function Measure-SparseIdentity($User, $Result) {
     $userScript = Join-Path $User.RunDir 'pitboard-probe-cf8.ps1'
     $cer = Join-Path $User.RunDir 'pitboard-probe-cf8.cer'
     $pfx = Join-Path $work 'pitboard-probe-cf8.pfx'
-    $password = [guid]::NewGuid().ToString('N')
     $windowsPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     $handler = Join-Path $location 'pitboard-probe.exe'
     $identityProbe = Join-Path $location 'pitboard-probe-sparse.exe'
@@ -1130,22 +1130,7 @@ function Measure-SparseIdentity($User, $Result) {
         $makeappx = Find-SdkTool 'makeappx.exe'
         $signtool = Find-SdkTool 'signtool.exe'
         $Result.sdk_tools = "$($makeappx.Directory.Parent.Name)\$($makeappx.Directory.Name)"
-        $key = [Security.Cryptography.RSA]::Create(3072)
-        try {
-            $request = [Security.Cryptography.X509Certificates.CertificateRequest]::new(
-                'CN=PitboardProbe', $key, [Security.Cryptography.HashAlgorithmName]::SHA256, [Security.Cryptography.RSASignaturePadding]::Pkcs1)
-            $request.CertificateExtensions.Add([Security.Cryptography.X509Certificates.X509BasicConstraintsExtension]::new($false, $false, 0, $true))
-            $request.CertificateExtensions.Add([Security.Cryptography.X509Certificates.X509KeyUsageExtension]::new('DigitalSignature', $true))
-            $codeSigning = [Security.Cryptography.OidCollection]::new()
-            [void] $codeSigning.Add([Security.Cryptography.Oid]::new('1.3.6.1.5.5.7.3.3'))
-            $request.CertificateExtensions.Add([Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension]::new($codeSigning, $false))
-            $now = [DateTimeOffset]::UtcNow
-            $certificate = $request.CreateSelfSigned($now.AddMinutes(-5), $now.AddDays(1))
-            [IO.File]::WriteAllBytes($pfx, $certificate.Export([Security.Cryptography.X509Certificates.X509ContentType]::Pfx, $password))
-            [IO.File]::WriteAllBytes($cer, $certificate.Export([Security.Cryptography.X509Certificates.X509ContentType]::Cert))
-        } finally {
-            $key.Dispose()
-        }
+        $password = Export-TestCertificate 'CN=PitboardProbe' $pfx $cer
         Set-Content -Path $userScript -Encoding ascii -Value @'
 $ErrorActionPreference = 'Stop'
 $key = 'HKCU:\Software\Classes\pitboard-probe-cf8'
