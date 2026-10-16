@@ -645,7 +645,10 @@ window loads its site, and whatever the site's pages load, as a browser would.
     posts the model's notifications through `IAppNotifications`, which
     `SystemAppNotifications` sends to `AppNotificationManager` and tests replace; only a
     Release build registers, and a click comes back as the intent the Switch button or the
-    notification itself asks for. `NoUpdates` is the updater of a build that cannot update.
+    notification itself asks for. `WindowsApps` is the model's `AppControl`: through
+    `PackagedApps` it finds the process of a Store app's package that owns a top-level
+    window, asks Restart Manager to end it, never forced, and opens the app by its AUMID
+    through the activation manager. `NoUpdates` is the updater of a build that cannot update.
     `StartAtSignIn` is the settings' start at sign-in over an `IStartupItem`: `RunValue`,
     which writes the `Run` value, `"<exe>" --sign-in`, through `IRunKey`, sent to the
     registry by `RegistryRunKey`
@@ -680,6 +683,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     Ctrl+N and Ctrl+comma from any of them.
   - `Pitboard.Windows.Tests` is a WinUI app that hosts its own tests, the views' among them
     over snapshots made in C#, and `Pitboard.UITests` drives the built app with FlaUI.
+    `Pitboard.StandInApp`, never shipped, is the app `WindowsAppsTests` ask Restart Manager
+    to end in place of ChatGPT, copied beside the tests.
     Neither registers anything with Windows. The icon's menu is held by the view tests,
     `IconMenuTests` and `IconMenuFlyoutTests`, and the click on the icon by the session's
     step A2.
@@ -2586,7 +2591,10 @@ on 15 October 2026. W27 reviews the list.
 | winget puts a portable package's install folder on `PATH`, not a link in Links, for a standard user without Developer Mode | [winget-pkgs FAQ](https://github.com/microsoft/winget-pkgs/blob/master/doc/FAQ.md) | Both images have Developer Mode on, and the job's user is an administrator. A standard user's install is the session's. |
 | Since winget 1.29, an MSI wins over a portable installer whatever the manifest's order | [winget-cli 1.29.380](https://github.com/microsoft/winget-cli/releases/tag/v1.29.380) | windows-2025's winget is 1.11.510, and no runner installs from winget's sources. |
 | A broadcast, such as `WM_ENDSESSION`, reaches a top-level window that is never shown, and no message-only window | [Message-only windows](https://learn.microsoft.com/en-us/windows/win32/winmsg/window-features#message-only-windows) | A runner's session never ends while a job runs; CF9 sends one. |
-| Restart Manager asks a program to end with `WM_ENDSESSION` and `ENDSESSION_CLOSEAPP`, which it should end on, then waits for it to exit, sending `WM_CLOSE` to one that does not | [Guidelines for Applications](https://learn.microsoft.com/en-us/windows/win32/rstmgr/guidelines-for-applications) | No runner installs over a running Pitboard; CF9 sends the message, and the session's step A7 upgrades a running copy. |
+| Restart Manager asks a program to end with `WM_ENDSESSION` and `ENDSESSION_CLOSEAPP`, which it should end on, then waits for it to exit, sending `WM_CLOSE` to one that does not; without `RmForceShutdown`, one that answers `WM_QUERYENDSESSION` with `FALSE` runs on and `RmShutdown` gives `ERROR_FAIL_SHUTDOWN` | [Guidelines for Applications](https://learn.microsoft.com/en-us/windows/win32/rstmgr/guidelines-for-applications), [RmShutdown](https://learn.microsoft.com/en-us/windows/win32/api/restartmanager/nf-restartmanager-rmshutdown) | No runner installs over a running Pitboard. CF9's `WindowsAppsTests` ask it to end a stand-in that agrees and one that declines; the session's step A7 upgrades a running copy. |
+| `GetApplicationUserModelId` gives a packaged process's AUMID, and `APPMODEL_ERROR_NO_APPLICATION` for one without an app | [GetApplicationUserModelId](https://learn.microsoft.com/en-us/windows/win32/api/appmodel/nf-appmodel-getapplicationusermodelid) | No runner starts a packaged process; the session's step A4 reads ChatGPT's through `Pitboard.Probe app-control running`. |
+| `IApplicationActivationManager::ActivateApplication` opens a Store app by its AUMID from an unpackaged process | [IApplicationActivationManager](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-iapplicationactivationmanager) | No runner holds a Store app the test user may open; the session's step A4 opens ChatGPT through `Pitboard.Probe app-control reopen`. |
+| Windows may refuse to bring a window forward once another app took the foreground | [SetForegroundWindow](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setforegroundwindow) | Only a person's session opens ChatGPT behind Pitboard: the session's step A4 records which window ends in front. |
 | A launch redirected to the running copy carries the second copy's arguments | [App instancing](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/applifecycle/applifecycle-instancing) | No `windows-app` run has passed `AccountPickerTests` yet: in run 38825074643 the running copy crashed on a theme brush as the link reached it. |
 | A new notification-area icon goes to the overflow, where only the person promotes it | [Notifications and the notification area](https://learn.microsoft.com/en-us/windows/win32/shell/notification-area) | No runner's Explorer takes the test user's icon; the session's step A2 records where it starts. |
 | A notification icon's menu closes on a click elsewhere only when its window was made the foreground window first | [TrackPopupMenu](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-trackpopupmenu) | Only a person clicks elsewhere: the session's step A2. |
@@ -3983,6 +3991,18 @@ Microsoft's documentation.
   `Pause` leave a download interrupted with `CanResume` true, and `Downloads` ends one in
   the model only once it cannot resume. The reference gives the reason as `UserCanceled`;
   the runners give `UserPaused` (CF7 under [Windows](#windows)).
+- Restart Manager's guidelines for applications (updated 11 March 2025) and the references
+  of `RmStartSession` and `RmShutdown` (updated 1 July 2025), read on 16 October 2026: it
+  asks a GUI app with `WM_QUERYENDSESSION`, then `WM_ENDSESSION`, both with
+  `ENDSESSION_CLOSEAPP`, then `WM_CLOSE` where it does not end. One `FALSE` cancels, and
+  only `RmForceShutdown` ends an app regardless. A console app gets `CTRL_C_EVENT`. Only the
+  process that started a session may shut down through it, a user session holds at most 64,
+  and the session lives in the registry. So `PackagedApps` registers a Store app's windowed
+  process alone, never its console `codex` children, ends the session once `RmShutdown`
+  returns, and calls it without flags on a thread of its own, since it returns only once the
+  app has ended or declined. `IApplicationActivationManager::ActivateApplication`'s reference
+  (updated 22 February 2024) offers no option that opens an app behind another window, so
+  `WindowsApps` brings Pitboard's window forward after it.
 
 ### The model's timers
 

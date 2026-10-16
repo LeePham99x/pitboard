@@ -124,10 +124,11 @@ public partial class App : Application
         var windows = new WindowsLaunch(
             _start.DataFolder, PitboardFfiMethods.WindowsRecordsKey(directory), _start.Identity.LinkScheme);
         var launch = new AppLaunch(_start.Environment, AppLocation: null, Windows: windows);
+        // Reopen is called on a thread of the model's, and the window is the UI thread's.
+        var apps = new WindowsApps(() => queue.TryEnqueue(() => _window?.Bring()));
         return AppModel.Listening(
             queue,
-            listener => new PitboardModel(
-                launch, listener, new NoOtherApps(), notifications, new WindowsLocalTime()));
+            listener => new PitboardModel(launch, listener, apps, notifications, new WindowsLocalTime()));
     }
 
     // A fixture's windows show its stand-in pages, in a user data folder of the fixture's own.
