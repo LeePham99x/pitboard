@@ -73,6 +73,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   shows commands without backticks.
 - The app shows a failure it has no words of its own for as a sentence, with a capital and a
   full stop.
+- `pitboard doctor` and **This Mac** say to install Claude Code where it is missing, not to run
+  `claude`.
 
 ## [0.14.0] - 2026-10-14
 
