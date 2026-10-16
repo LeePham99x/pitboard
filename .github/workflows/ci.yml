@@ -716,9 +716,18 @@ jobs:
           ./.github/scripts/check-windows-app.ps1 -Folder $env:IMAGE -Triple $env:TRIPLE
           -GatedLibrary target/gated/release/pitboard_ffi.dll -Signer $env:SHARE_TEST_SIGNER -UpdateKey $env:UPDATE_TEST_KEY
           -Version $env:VERSION -FileVersion $env:FILE_VERSION
+      - name: "The MSI as a release ships it: its version, its layout, the zip's command line and the signed package"
+        shell: pwsh
+        env:
+          MSI_VERSION: ${{ steps.manifest.outputs.msi }}
+          IMAGE: ${{ steps.msi.outputs.folder }}
+        run: >
+          ./.github/scripts/check-windows-msi.ps1 -Msi target/windows-app/msi/Pitboard.msi -Folder $env:IMAGE
+          -MsiVersion $env:MSI_VERSION -CommandLine target/gated/release/pitboard.exe
+          -Share -Package target/windows-app/release/PitboardShare.msix
       # The MSI unsigned and its package signed with the throwaway certificate, as a signed release
       # carries one, both read by the release's signature check.
-      - name: "The checks refuse a package identity anywhere but on PitboardShare.exe, or another than its package's, another update key and another version, and the signature check reads the MSI and the package"
+      - name: "The checks refuse a package identity anywhere but on PitboardShare.exe, or another than its package's, another update key, feed, version or MSI, and the signature check reads the MSI and the package"
         shell: pwsh
         env:
           RUSTFLAGS: -D warnings -C target-feature=+crt-static
@@ -726,10 +735,13 @@ jobs:
           TRIPLE: ${{ matrix.triple }}
           VERSION: ${{ steps.manifest.outputs.version }}
           FILE_VERSION: ${{ steps.manifest.outputs.file }}
+          MSI_VERSION: ${{ steps.manifest.outputs.msi }}
+          IMAGE: ${{ steps.msi.outputs.folder }}
         run: >
           ./.github/scripts/test-windows-app.ps1 -Folder target/windows-app/release -Triple $env:TRIPLE
           -GatedLibrary target/gated/release/pitboard_ffi.dll -Signer $env:SHARE_TEST_SIGNER -UpdateKey $env:UPDATE_TEST_KEY
-          -Version $env:VERSION -FileVersion $env:FILE_VERSION -Msi target/windows-app/msi/Pitboard.msi
+          -Version $env:VERSION -FileVersion $env:FILE_VERSION -Msi target/windows-app/msi/Pitboard.msi -MsiImage $env:IMAGE
+          -MsiVersion $env:MSI_VERSION -CommandLine target/gated/release/pitboard.exe
       - name: The UI tests over the MSI's Pitboard.exe, and the MSI's own tests
         working-directory: apps/windows
         env:

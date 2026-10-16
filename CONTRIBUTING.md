@@ -387,9 +387,11 @@ The job also builds the MSI, `apps/windows/Pitboard.Installer`, with WiX v7 from
 build and the `pitboard.exe` a 0.x release builds, with `PitboardShare.exe` and its package, as
 a signed release carries them, and ICE validates it as it builds. CI never installs an MSI:
 `.github/scripts/extract-msi.ps1` extracts it with `msiexec /a`, `check-windows-app.ps1`
-checks the files it holds, the UI test of the release gate starts its `Pitboard.exe`, and
-`Pitboard.Installer.Tests` reads its tables. `test-windows-app.ps1` then runs the release's
-`verify-windows-signatures.ps1` on the unsigned MSI and on the package the job signed. WiX builds only on Windows. For a change to the version the MSI carries,
+checks the files it holds, `check-windows-msi.ps1` its version, its layout, the command line
+in `bin` and the package it carries, the UI test of the release gate starts its
+`Pitboard.exe`, and `Pitboard.Installer.Tests` reads its tables. `test-windows-app.ps1` tests
+`check-windows-msi.ps1` too, and runs the release's `verify-windows-signatures.ps1` on the
+unsigned MSI and on the package the job signed. WiX builds only on Windows. For a change to the version the MSI carries,
 which needs only the .NET SDK:
 
 ```sh

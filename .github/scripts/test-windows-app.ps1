@@ -1,8 +1,8 @@
 # Tests check-windows-app.ps1's package identity, update key, feed and version checks against the
 # Release folder CI's windows-app job built and packed: each case is a folder of its own with
-# copies of the files those checks read, one thing changed. Then verify-windows-signatures.ps1
-# against the job's unsigned MSI and the package it signed with a throwaway certificate. It runs
-# none of them.
+# copies of the files those checks read, one thing changed. Then check-windows-msi.ps1 and
+# verify-windows-signatures.ps1 against the job's unsigned MSI and the package it signed with a
+# throwaway certificate. It runs none of them.
 param(
     [Parameter(Mandatory)] [string] $Folder,
     [Parameter(Mandatory)] [ValidateSet('x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc')] [string] $Triple,
@@ -14,14 +14,19 @@ param(
     # The version the Release build was given, and its FileVersion.
     [Parameter(Mandatory)] [string] $Version,
     [Parameter(Mandatory)] [string] $FileVersion,
-    # The MSI the job built from that folder, unsigned.
-    [Parameter(Mandatory)] [string] $Msi
+    # The MSI the job built from that folder, unsigned, the folder of its administrative image that
+    # holds Pitboard.exe, the ProductVersion windows-versions.sh gives it and the pitboard.exe in it.
+    [Parameter(Mandatory)] [string] $Msi,
+    [Parameter(Mandatory)] [string] $MsiImage,
+    [Parameter(Mandatory)] [string] $MsiVersion,
+    [Parameter(Mandatory)] [string] $CommandLine
 )
 $ErrorActionPreference = 'Stop'
 
 $check = Join-Path $PSScriptRoot 'check-windows-app.ps1'
 $pack = Join-Path $PSScriptRoot 'pack-windows-share.ps1'
 $verify = Join-Path $PSScriptRoot 'verify-windows-signatures.ps1'
+$checkMsi = Join-Path $PSScriptRoot 'check-windows-msi.ps1'
 $signPath = 'CN=SignPath Foundation, O=SignPath Foundation, L=Lewes, S=Delaware, C=US'
 $msiPath = (Resolve-Path -LiteralPath $Msi).Path
 $root = (Resolve-Path -LiteralPath $Folder).Path
@@ -55,9 +60,11 @@ function Assert-Refused([string] $Case, [string] $In, [string] $By, [string] $Ex
     throw "$Case`: check-windows-app.ps1 let it through"
 }
 
-function Assert-Unverified([string] $Case, [hashtable] $Given, [string] $Expected) {
+function Assert-Thrown([string] $Case, [string] $Script, [hashtable] $Given, [string] $Expected, [hashtable] $Instead = @{}) {
+    $Given = $Given.Clone()
+    foreach ($name in $Instead.Keys) { $Given[$name] = $Instead[$name] }
     try {
-        & $verify @Given | Out-Null
+        & $Script @Given | Out-Null
     } catch {
         if ($_.Exception.Message -notmatch $Expected) {
             throw "$Case`: refused for another reason: $($_.Exception.Message)"
@@ -65,7 +72,7 @@ function Assert-Unverified([string] $Case, [hashtable] $Given, [string] $Expecte
         Write-Output "ok: $Case"
         return
     }
-    throw "$Case`: verify-windows-signatures.ps1 let it through"
+    throw "$Case`: $(Split-Path -Leaf $Script) let it through"
 }
 
 New-Item -ItemType Directory -Path $work | Out-Null
@@ -117,19 +124,29 @@ try {
     Copy-Item -LiteralPath $msiPath -Destination $built
     & $verify -Path $msiPath -Mode unsigned -Built $built | Out-Null
     Write-Output 'ok: the MSI and each program of Pitboard''s in it are NotSigned, and it holds the files it was built with'
-    Assert-Unverified 'an unsigned MSI in a signed release' @{ Path = $msiPath; Mode = 'signed'; Subject = $signPath } `
+    Assert-Thrown 'an unsigned MSI in a signed release' $verify @{ Path = $msiPath; Mode = 'signed'; Subject = $signPath } `
         'Pitboard\.msi is NotSigned, and every program of a signed release is Valid'
+
+    $msiGiven = @{ Msi = $msiPath; Folder = $MsiImage; MsiVersion = $MsiVersion; CommandLine = $CommandLine; Share = $true }
+    Assert-Thrown 'an MSI of another version' $checkMsi $msiGiven "ProductVersion is '.+', not 9\.9\.9" @{ MsiVersion = '9.9.9' }
+    Assert-Thrown 'an MSI with another command line than the zip''s' $checkMsi $msiGiven 'bin\\pitboard\.exe is not the zip''s' `
+        @{ CommandLine = (Join-Path $root 'Pitboard.exe') }
+    Assert-Thrown 'a share target in an MSI without a signed package' $checkMsi $msiGiven 'this release has no signed package' @{ Share = $false }
+    $other = Join-Path $work 'other.msix'
+    Copy-Item -LiteralPath (Join-Path $root 'PitboardShare.msix') -Destination $other
+    [IO.File]::AppendAllText($other, 'another')
+    Assert-Thrown 'an MSI whose package is not the signed one' $checkMsi $msiGiven 'PitboardShare\.msix is not the signed one' @{ Package = $other }
 
     $package = Join-Path $root 'PitboardShare.msix'
     & $verify -Path $package -Mode test -Subject $Signer
-    Assert-Unverified 'a package signed for a test, checked against SignPath''s subject' @{ Path = $package; Mode = 'test'; Subject = $signPath } `
+    Assert-Thrown 'a package signed for a test, checked against SignPath''s subject' $verify @{ Path = $package; Mode = 'test'; Subject = $signPath } `
         "PitboardShare\.msix is signed by '$([regex]::Escape($Signer))', not 'CN=SignPath Foundation"
-    Assert-Unverified 'a package signed for a test, in a signed release' @{ Path = $package; Mode = 'signed'; Subject = $Signer } `
+    Assert-Thrown 'a package signed for a test, in a signed release' $verify @{ Path = $package; Mode = 'signed'; Subject = $Signer } `
         'PitboardShare\.msix is \w+, and every program of a signed release is Valid'
-    Assert-Unverified 'a package signed for a test, in an unsigned release' @{ Path = $package; Mode = 'unsigned' } `
+    Assert-Thrown 'a package signed for a test, in an unsigned release' $verify @{ Path = $package; Mode = 'unsigned' } `
         'PitboardShare\.msix is \w+, and every program of an unsigned release is NotSigned'
 } finally {
     Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
 }
-Write-Output 'check-windows-app.ps1 refused every package identity, update key and version it should, and verify-windows-signatures.ps1 read the MSI and the package.'
+Write-Output 'check-windows-app.ps1 and check-windows-msi.ps1 refused what they should, and verify-windows-signatures.ps1 read the MSI and the package.'
 exit 0

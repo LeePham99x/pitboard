@@ -825,9 +825,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     hands on, in a zip or an MSI, and of a sparse package, and `test-windows-release.ps1`
     tests all three on zips. `check-windows-app.ps1` checks the Windows app's Release build,
     `pack-windows-share.ps1` packs `PitboardShare.exe`'s sparse package beside it,
-    `extract-msi.ps1` extracts an MSI's administrative image, `read-assembly.ps1` reads a
-    value from a .NET assembly's metadata, and `test-windows-app.ps1` tests the check's package
-    identity, update key, feed and version refusals and the signature check on the MSI and the
+    `extract-msi.ps1` extracts an MSI's administrative image and `check-windows-msi.ps1`
+    checks one, `read-assembly.ps1` reads a value from a .NET assembly's metadata, and
+    `test-windows-app.ps1` tests both checks and the signature check on the MSI and the
     package.
   - `dependabot.yml` asks for weekly updates of Cargo dependencies, GitHub Actions and the
     .NET SDK in `apps/windows/global.json`.
