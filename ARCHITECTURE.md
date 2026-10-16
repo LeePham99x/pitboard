@@ -842,8 +842,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     tests all three on zips. `check-windows-app.ps1` checks the Windows app's Release build,
     `pack-windows-share.ps1` packs `PitboardShare.exe`'s sparse package beside it,
     `extract-msi.ps1` extracts an MSI's administrative image and `check-windows-msi.ps1`
-    checks one, `read-assembly.ps1` reads a value from a .NET assembly's metadata, and
-    `test-windows-app.ps1` tests both checks and the signature check on the MSI and the
+    checks one, `validate-windows-msi.ps1` runs ICE03 on an MSI with the WiX that built it,
+    `read-assembly.ps1` reads a value from a .NET assembly's metadata, and
+    `test-windows-app.ps1` tests the checks and the signature check on the MSI and the
     package.
   - `dependabot.yml` asks for weekly updates of Cargo dependencies, GitHub Actions and the
     .NET SDK in `apps/windows/global.json`.
@@ -2698,6 +2699,11 @@ the `runtimes-framework` folders of the Windows App SDK 2.5.1 packages as bytes:
   file's own version resource names 1033 alone.
 - ICE57 takes a shortcut in `ProgramMenuFolder` for the user's in a package whose `ALLUSERS`
   is 2, and refuses it an HKMU key path.
+
+The build suppresses ICE03, which checks every column of every table. `validate-windows-msi.ps1`
+runs it on the built MSI and lets through only those eight rows, found by their names: an
+invalid language on either library's `.mui` file in the ug-CN, mi-NZ or gd-gb folder, and a
+language list too long on either library itself.
 
 With ICE03, ICE33 and ICE61 suppressed, WiX v7 builds it on both images in run 38895887782
 with no warning, ICE57 passing. `msiexec /a`, run by the job's user, lays out each image's

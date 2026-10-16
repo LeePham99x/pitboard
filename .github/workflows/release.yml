@@ -460,9 +460,10 @@ jobs:
           overwrite: true
 
   # Each architecture's MSI, from the files windows-sign signed and the pitboard.exe of its signed
-  # zip, so the zip and the MSI carry one build. WiX v7 builds it and runs ICE validation, msiexec /a
-  # extracts it without installing anything, and it is checked as CI checks the MSI it builds on
-  # every pull request. No runner installs a release's MSI.
+  # zip, so the zip and the MSI carry one build. WiX v7 builds it and runs ICE validation,
+  # validate-windows-msi.ps1 runs ICE03, msiexec /a extracts it without installing anything, and it
+  # is checked as CI checks the MSI it builds on every pull request. No runner installs a release's
+  # MSI.
   app-windows-package:
     needs: [guard, app-windows-build, windows-sign]
     if: needs.guard.outputs.windows == 'true'
@@ -537,6 +538,7 @@ jobs:
           $dist = New-Item -ItemType Directory -Path (Join-Path $env:RUNNER_TEMP 'dist')
           $msi = Join-Path $dist "Pitboard-$env:GITHUB_REF_NAME-windows-$env:INSTALLER.msi"
           Move-Item -LiteralPath (Join-Path $out 'Pitboard.msi') -Destination $msi
+          & "$env:GITHUB_WORKSPACE/.github/scripts/validate-windows-msi.ps1" -Msi $msi
           $folder = & "$env:GITHUB_WORKSPACE/.github/scripts/extract-msi.ps1" -Msi $msi -Destination (Join-Path $env:RUNNER_TEMP 'image')
           Write-Output "Built $msi and extracted it into $folder."
           "msi=$msi" >> $env:GITHUB_OUTPUT

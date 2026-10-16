@@ -418,15 +418,20 @@ Then, as the job's user, it runs the UI test of an elevated launch. It builds `P
 which the session machine runs to measure the app's notifications, and checks that it refuses
 an account without `pitboard-probe`'s throwaway marker.
 
-The job also builds the MSI, `apps/windows/Pitboard.Installer`, with WiX v7 from the Release
-build and the `pitboard.exe` a 0.x release builds, with `PitboardShare.exe` and its package, as
-a signed release carries them, and ICE validates it as it builds. CI never installs an MSI:
-`.github/scripts/extract-msi.ps1` extracts it with `msiexec /a`, `check-windows-app.ps1`
-checks the files it holds, `check-windows-msi.ps1` its version, its layout, the command line
-in `bin` and the package it carries, the UI test of the release gate starts its
-`Pitboard.exe`, and `Pitboard.Installer.Tests` reads its tables. `test-windows-app.ps1` tests
-`check-windows-msi.ps1` too, and runs the release's `verify-windows-signatures.ps1` on the
-unsigned MSI and on the package the job signed. The MSI takes its version from
+The job also builds two MSIs of `apps/windows/Pitboard.Installer` with WiX v7, from the
+Release build and the `pitboard.exe` a 0.x release builds: one with `PitboardShare.exe` and its
+package, as a signed release carries them, and one without, as a release with no signer ships.
+WiX runs ICE validation as it builds, with ICE03 off, and
+`.github/scripts/validate-windows-msi.ps1` runs ICE03 after it and refuses any row but WinUI's
+own files. That script first holds the WiX SDK to nuget.org's hash, so raising
+`WixToolset.Sdk` in `global.json` needs its hash there too. CI never installs an MSI:
+`extract-msi.ps1` extracts each with `msiexec /a`, `check-windows-app.ps1` checks the files
+the signed one holds, `check-windows-msi.ps1` each one's version, layout, command line in `bin`
+and share target, the UI test of the release gate starts the signed one's `Pitboard.exe`, and
+`Pitboard.Installer.Tests` reads each one's tables and asks its `pitboard_ffi.dll` whether it
+opens. `test-windows-app.ps1` tests `check-windows-msi.ps1` and `validate-windows-msi.ps1` too,
+and runs the release's `verify-windows-signatures.ps1` on the signed one's MSI, on copies of
+it with a row changed and on the package the job signed. The MSI takes its version from
 `windows-versions.sh`, which `test-release.py` tests.
 
 The pictures of the Windows app for the docs come from the UI test `ScreenshotTests`, in the
