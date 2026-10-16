@@ -2886,6 +2886,14 @@ treated, and only the macOS build shows it. The run reads both builds since.
   look at `Bun.secrets` fails within 10 seconds reads only the file for its life. A network
   logon has no credential set: every call fails 1312, which Pitboard reads as out of reach
   (`credential_store_locked`), never as no login.
+- Read on 16 October 2026 from the same builds (`credman_unreachable_writes_file`,
+  `fallback_file_pins_session_login`): a session whose start-up look failed, as one in a
+  network logon does, reads no login in Credential Manager and fails every write there, so
+  its sign-in or renewal writes `.credentials.json` and leaves the item as it was, since the
+  wrapper deletes that only where its read before the write held a login. The file then
+  sits behind Credential Manager as it sits behind the keychain on macOS: every session
+  looks at it before each request, the same code on every system, and keeps the login it
+  holds while it is there.
 - Read on 16 October 2026 from the same builds, with Bun 1.4.3 and libuv 8023581 as
   embedded (`windows_plaintext_write`, `windows_plaintext_strict_read`): Claude Code writes
   `.credentials.json` by a temporary file renamed over it with `MoveFileExW`, then `chmod`

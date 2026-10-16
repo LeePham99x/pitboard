@@ -192,7 +192,10 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         name: "locked_sign_in_writes_fallback",
         macos: Read("2.1.294"),
         linux: NO_KEYCHAIN_ON_LINUX,
-        windows: NO_KEYCHAIN_ON_WINDOWS,
+        windows: NotRead(
+            "Windows has no keychain; a session out of Credential Manager's reach writes the \
+             file, credman_unreachable_writes_file's",
+        ),
     },
     PerSystem {
         name: "fallback_outlives_keychain_writes",
@@ -200,16 +203,13 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         linux: NO_KEYCHAIN_ON_LINUX,
         windows: NO_KEYCHAIN_ON_WINDOWS,
     },
+    // Read again in both Windows builds of 2.1.301, where the file sits behind Credential
+    // Manager wherever that store is on.
     PerSystem {
         name: "fallback_file_pins_session_login",
         macos: Read("2.1.294"),
         linux: NO_KEYCHAIN_ON_LINUX,
-        windows: Pending {
-            by: &["W23b"],
-            reads: "the file behind Credential Manager (W23b): whether a session keeps the \
-                    login it holds while `.credentials.json` sits behind that store; where the \
-                    file is the store, how soon a session takes it is windows_file_adoption's",
-        },
+        windows: Read("2.1.301"),
     },
     PerSystem {
         name: "login_is_one_organisation",
@@ -358,6 +358,12 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
     PerSystem {
         name: "credman_migration",
         macos: NotRead("macOS's chain is live_chain_order's"),
+        linux: NotRead("Linux keeps the login in a file"),
+        windows: Read("2.1.301"),
+    },
+    PerSystem {
+        name: "credman_unreachable_writes_file",
+        macos: NotRead("macOS's counterpart is locked_sign_in_writes_fallback"),
         linux: NotRead("Linux keeps the login in a file"),
         windows: Read("2.1.301"),
     },
@@ -817,33 +823,36 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         name: "fallback_file_pins_session_login",
         fact: "before a session makes a request it looks at `.credentials.json` in its storage \
                directory, by its modification time alone. Where the file is not there, or the \
-               look fails, it drops the login it holds and reads the keychain through its 30 \
-               second cache. Where it is there, whatever it holds and whether or not it can be \
-               read, the session keeps the login it holds while that login is usable: it reads \
-               again where the file's modification time has changed, at most every 30 seconds \
-               where that login is gone or its refresh token is empty or known dead, after a \
-               401, and at its own sign-in, and 5 minutes before the login expires it reads \
-               the store and takes the login there where it differs. So while the file sits \
-               behind the keychain, a session already running keeps the account it is on \
-               after a switch until its login is next renewed, or until it is started again. \
-               Read, not measured against a running session",
+               look fails, it drops the login it holds and reads the store in front of the file, \
+               the keychain or Credential Manager, through its 30 second cache. Where it is \
+               there, whatever it holds and whether or not it can be read, the session keeps \
+               the login it holds while that login is usable: it reads again where the file's \
+               modification time has changed, at most every 30 seconds where that login is gone \
+               or its refresh token is empty or known dead, after a 401, and at its own sign-in, \
+               and 5 minutes before the login expires it reads the store and takes the login \
+               there where it differs. So while the file sits behind that store, a session \
+               already running keeps the account it is on after a switch until its login is \
+               next renewed, or until it is started again. Read, not measured against a running \
+               session",
         read_from: "the check before each API client, which stats the file, compares its \
-                    modification time with the one it last saw, reads through the keychain \
+                    modification time with the one it last saw, reads through the store's \
                     cache where the stat fails, and otherwise keeps a usable login, reading \
                     again at most every 30 seconds for one that is not; the renewal check 5 \
                     minutes before expiry, which reads the store first and takes its login \
                     where it differs; and the 401 handlers",
         // Read on 2026-10-08 from the macOS build and on 2026-10-09 from the Linux x64,
-        // Windows x64 and Windows arm64 builds of 2.1.294, whose code here is the same. On
-        // Linux the file is the only store, and on Windows it is unless Credential Manager
-        // is turned on, by `tengu_windows_credman` or `CLAUDE_CODE_FORCE_WINDOWS_CREDMAN`.
+        // Windows x64 and Windows arm64 builds of 2.1.294, whose code here is the same, and
+        // again on 2026-10-16 from both Windows builds of 2.1.301. On Linux the file is the
+        // only store, and on Windows it is unless Credential Manager is turned on
+        // (`windows_backend_choice`).
         verified_against: "2.1.294",
         depends: "Claude's adoption, by which a switch says that running sessions take it at \
-                  their login's next renewal while the file is behind the keychain; Claude's \
-                  behind, which tells the file by a look and says nothing where the look fails; \
-                  the fallback_login warning and check, which say so of a file with no login in \
-                  it, or one Pitboard cannot read, too; and `pitboard stow`, which says sessions \
-                  already running follow a switch within 33 seconds again once the file is gone",
+                  their login's next renewal while the file is behind the keychain or \
+                  Credential Manager; Claude's behind, which tells the file by a look and says \
+                  nothing where the look fails; the fallback_login warning and check, which say \
+                  so of a file with no login in it, or one Pitboard cannot read, too; and \
+                  `pitboard stow`, which says sessions already running follow a switch within 33 \
+                  seconds again once the file is gone",
         probe: &["lastCredentialsMtimeMs", "lastUnusableTokenRecheckAt"],
         absent: &[],
     },
@@ -1327,8 +1336,8 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                     Manager read and write asks, in the win32-x64 and win32-arm64 builds of \
                     2.1.301, read as bytes on 2026-10-16",
         verified_against: "2.1.301",
-        depends: "W23b's file behind Credential Manager, which a session whose probe failed \
-                  writes",
+        depends: "credman_unreachable_writes_file, by which such a session leaves a login in \
+                  the file behind Credential Manager",
         probe: &["probe timeout", "[windows-credman] load failed: "],
         absent: &[],
     },
@@ -1355,6 +1364,27 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
             "primary_and_fallback_failed",
             "plaintext_fallback_primary_not_cleared",
         ],
+        absent: &[],
+    },
+    Assumption {
+        name: "credman_unreachable_writes_file",
+        fact: "with Credential Manager on, a session whose start-up look at `Bun.secrets` \
+               failed, as every call fails in a network logon, reads no login there and fails \
+               every write there, so its fallback wrapper writes the login, a sign-in's or a \
+               renewal's, to `.credentials.json` (`plaintext_fallback_used`) and leaves the \
+               Credential Manager item as it was: it deletes that only where its read before \
+               the write held a login. Credential Manager then holds one login and the file \
+               another, and a session that reads only the file signs in with the file's",
+        read_from: "the Credential Manager store's read and update, which answer no login and a \
+                    failed write while the start-up probe has not passed, the probe, and the \
+                    fallback wrapper's update and read, in the win32-x64 and win32-arm64 builds \
+                    of 2.1.301, read as bytes on 2026-10-16",
+        verified_against: "2.1.301",
+        depends: "Claude's behind on Windows, doctor's fallback_login check, the warning every \
+                  read and every change give while the file is there, and `pitboard stow`, \
+                  which puts that login away",
+        // Behaviour, with no literal of its own.
+        probe: &[],
         absent: &[],
     },
     Assumption {
@@ -1529,6 +1559,7 @@ mod tests {
                 "oauth_client",
                 "sign_in_output",
                 "sign_in_takes_another_code",
+                "fallback_file_pins_session_login",
                 "login_is_one_organisation",
                 "config_may_name_no_organisation",
                 "usage_cache_stamp_is_the_configs",
@@ -1551,6 +1582,7 @@ mod tests {
                 "credman_chunking",
                 "credman_probe",
                 "credman_migration",
+                "credman_unreachable_writes_file",
                 "credman_attributes",
                 "windows_browser_open",
             ]
