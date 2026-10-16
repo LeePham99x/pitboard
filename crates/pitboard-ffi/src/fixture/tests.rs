@@ -1655,35 +1655,44 @@ fn the_menu_lists_every_account_under_its_tool() {
 }
 
 /// A machine without Claude Code says so first, as MenuBarTests.swift's
-/// testAMachineWithoutClaudeCodeSaysSo reads it; one nobody is signed in on offers an
-/// account, as AccountsWindowTests.swift's testAnEmptyMachineOffersAnAccount reads it; and
-/// only the first launch ever opens the window by itself, as its
-/// testTheFirstLaunchOpensTheWindow reads it.
+/// testAMachineWithoutClaudeCodeSaysSo reads it, and opens no window by itself.
 #[test]
-fn a_machine_with_nothing_on_it_says_what_to_do_first() {
-    for world in [World::NoClaudeCode, World::Empty, World::FirstLaunch] {
+fn a_machine_without_claude_code_says_so_first() {
+    let launched = made(World::NoClaudeCode);
+    let (model, told) = started(&launched);
+    let shown = told.until("the accounts read", read_in);
+    assert_eq!(shown.footing, Footing::NoClaudeCode);
+    assert_eq!(
+        shown
+            .menu_notices
+            .install
+            .as_ref()
+            .map(|item| item.title.as_str()),
+        Some("Claude Code isn’t installed")
+    );
+    assert_eq!(shown.window_request.serial, 0);
+    model.shutdown();
+}
+
+/// A machine nobody is signed in on offers an account, as AccountsWindowTests.swift's
+/// testAnEmptyMachineOffersAnAccount reads it, and only the first launch ever opens the
+/// window by itself, as its testTheFirstLaunchOpensTheWindow reads it.
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "W17: finding programs on Windows, without which these machines have no Claude Code"
+)]
+fn a_machine_nobody_is_signed_in_on_offers_an_account() {
+    for world in [World::Empty, World::FirstLaunch] {
         let launched = made(world);
         let (model, told) = started(&launched);
         let shown = told.until("the accounts read", read_in);
-        match world {
-            World::NoClaudeCode => {
-                assert_eq!(shown.footing, Footing::NoClaudeCode);
-                assert_eq!(
-                    shown
-                        .menu_notices
-                        .install
-                        .as_ref()
-                        .map(|item| item.title.as_str()),
-                    Some("Claude Code isn’t installed")
-                );
-            }
-            _ => assert!(
-                matches!(&shown.accounts_shown, AccountsShown::NoAccounts { title, .. } if title == "No Accounts"),
-                "{}: {:?}",
-                world.name(),
-                shown.accounts_shown
-            ),
-        }
+        assert!(
+            matches!(&shown.accounts_shown, AccountsShown::NoAccounts { title, .. } if title == "No Accounts"),
+            "{}: {:?}",
+            world.name(),
+            shown.accounts_shown
+        );
         // The window is asked for once the preferences say the app has never been seen, and
         // they are read on a lane of their own, so the accounts can be read first: in 2 of
         // 800 copies of this test run 16 at a time on Linux, firstLaunch's had not yet asked.
