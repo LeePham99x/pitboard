@@ -8,7 +8,7 @@ namespace Pitboard.Windows.Tests;
 // A web site on this PC's loopback for the WebView2 tests, so nothing reaches the network: every path is a page, /set
 // sets a cookie, /attachment/<name> is a file to save as <name>, /stalled/<name> one that never finishes, /file/<name>
 // a text file it does not say to save, and /anchor/<name> a page that saves that file through an <a download>. It says
-// which paths it was asked for.
+// which paths it was asked for, each with the headers that tell a navigation from a prefetch.
 internal sealed class StandInSite : IDisposable
 {
     private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
@@ -21,6 +21,8 @@ internal sealed class StandInSite : IDisposable
     }
 
     public ConcurrentQueue<string> Asked { get; } = new();
+
+    public ConcurrentQueue<string> Heard { get; } = new();
 
     public string Address(string path) => $"http://127.0.0.1:{((IPEndPoint)_listener.LocalEndpoint).Port}{path}";
 
@@ -58,10 +60,17 @@ internal sealed class StandInSite : IDisposable
                 var stream = client.GetStream();
                 using var reader = new StreamReader(stream, Encoding.ASCII, leaveOpen: true);
                 var path = (await reader.ReadLineAsync())?.Split(' ') is [_, var asked, ..] ? asked : "/";
-                while (!string.IsNullOrEmpty(await reader.ReadLineAsync()))
+                var told = new List<string>();
+                while (await reader.ReadLineAsync() is { Length: > 0 } header)
                 {
+                    if (header.Split(':', 2) is [var name, _]
+                        && name.Trim() is "Sec-Purpose" or "Purpose" or "Sec-Fetch-Mode" or "Sec-Fetch-Dest" or "Sec-Fetch-User" or "Cookie")
+                    {
+                        told.Add(header);
+                    }
                 }
 
+                Heard.Enqueue($"{path} [{string.Join("; ", told)}]");
                 Asked.Enqueue(path);
                 switch (path.Split('/'))
                 {

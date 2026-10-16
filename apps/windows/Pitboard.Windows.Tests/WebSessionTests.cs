@@ -48,6 +48,23 @@ public sealed class WebSessionTests
                 awayClicked = args.IsUserInitiated;
             }
         };
+        // CF7: whether what the stand-in hears of /away passes the page's own requests, and whether it ever commits.
+        var seen = new List<string>();
+        page.AddWebResourceRequestedFilter(away, CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
+        page.WebResourceRequested += (_, args) =>
+        {
+            if (args.Request.Uri == away)
+            {
+                seen.Add($"WebResourceRequested {args.ResourceContext} {args.RequestedSourceKind}");
+            }
+        };
+        page.NavigationCompleted += (sender, args) =>
+        {
+            if (sender.Source == away)
+            {
+                seen.Add($"NavigationCompleted {args.IsSuccess} {args.WebErrorStatus}");
+            }
+        };
         await page.ExecuteScriptAsync($"location.href = '{leave}'");
         await Views.Until(() => webs.Elsewhere.Count == 1, "a page outside the site was not handed to the browser", Webs.Patience);
         Assert.AreEqual(away, webs.Elsewhere[0]);
@@ -62,7 +79,8 @@ public sealed class WebSessionTests
         Assert.AreEqual(chat, page.Source);
         CollectionAssert.Contains(window.Pages, chat);
         Assert.HasCount(1, webs.Elsewhere);
-        Assert.IsEmpty(site.Asked, $"the stand-in was asked for {string.Join(", ", site.Asked)}");
+        Console.WriteLine($"CF7: the stand-in heard {string.Join(", ", site.Heard)}; the page saw {string.Join(", ", seen)}");
+        Assert.IsEmpty(site.Asked, $"the stand-in heard {string.Join(", ", site.Heard)}; the page saw {string.Join(", ", seen)}");
     }
 
     // The sign-in window's page is set as the new window before it loads, which is what keeps window.opener.
