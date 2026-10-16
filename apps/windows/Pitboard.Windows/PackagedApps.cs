@@ -10,7 +10,7 @@ using Windows.Win32.UI.Shell;
 
 namespace Pitboard.Windows;
 
-// What WindowsApps asks of Windows: the process list, Restart Manager and the activation manager.
+// What WindowsApps asks of Windows: the process list, when a process started and the activation manager.
 internal static class PackagedApps
 {
     private delegate WIN32_ERROR Named(SafeHandle process, ref uint length, Span<char> name);
@@ -35,13 +35,13 @@ internal static class PackagedApps
         return listed;
     }
 
-    // Without RmForceShutdown, and on a thread of its own: RmShutdown returns once the app has ended or declined.
-    public static Task<WIN32_ERROR> Close(uint id)
+    // Restart Manager tells a process from a later one with its id by when it started. Null once it has ended.
+    public static RM_UNIQUE_PROCESS? Unique(uint id)
     {
         using var process = Opened(id);
         if (process is null)
         {
-            return Task.FromResult(WIN32_ERROR.ERROR_SUCCESS);
+            return null;
         }
 
         if (!PInvoke.GetProcessTimes(process, out var started, out _, out _, out _))
@@ -49,35 +49,7 @@ internal static class PackagedApps
             throw new PlatformException.Failed($"Windows did not say when process {id} started: {Marshal.GetLastPInvokeErrorMessage()}");
         }
 
-        Span<char> key = stackalloc char[(int)PInvoke.CCH_RM_SESSION_KEY + 1];
-        Succeeded(PInvoke.RmStartSession(out var session, key), "start a Restart Manager session");
-        try
-        {
-            Succeeded(
-                PInvoke.RmRegisterResources(session, default, [new RM_UNIQUE_PROCESS { dwProcessId = id, ProcessStartTime = started }], default),
-                $"register process {id} with Restart Manager");
-        }
-        catch
-        {
-            PInvoke.RmEndSession(session);
-            throw;
-        }
-
-        return Task.Factory.StartNew(
-            () =>
-            {
-                try
-                {
-                    return PInvoke.RmShutdown(session, 0, null!);
-                }
-                finally
-                {
-                    PInvoke.RmEndSession(session);
-                }
-            },
-            CancellationToken.None,
-            TaskCreationOptions.LongRunning,
-            TaskScheduler.Default);
+        return new RM_UNIQUE_PROCESS { dwProcessId = id, ProcessStartTime = started };
     }
 
     // The activation manager is a Shell object, and the model calls from a thread COM knows nothing of.
@@ -161,13 +133,5 @@ internal static class PackagedApps
 
         var name = new char[length];
         return named(process, ref length, name) == WIN32_ERROR.ERROR_SUCCESS ? new string(name, 0, (int)length - 1) : null;
-    }
-
-    private static void Succeeded(WIN32_ERROR result, string what)
-    {
-        if (result != WIN32_ERROR.ERROR_SUCCESS)
-        {
-            throw new PlatformException.Failed($"Windows did not {what}: {Marshal.GetPInvokeErrorMessage((int)result)}");
-        }
     }
 }

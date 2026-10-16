@@ -685,12 +685,14 @@ window loads its site, and whatever the site's pages load, as a browser would.
     Release build registers, and a click comes back as the intent the Switch button or the
     notification itself asks for. `WindowsApps` is the model's `AppControl`: through
     `PackagedApps` it finds the process of a Store app's package that owns a top-level
-    window, asks Restart Manager to end it, never forced, and opens the app by its AUMID
-    through the activation manager. `SparkleUpdates` is a Release build's updater: WinSparkle,
-    through `ISparkle`, which `WinSparkle` sends to `WinSparkle.dll` and tests replace, over
-    the feed of full releases, with WinSparkle's settings in `UpdateSettings`'s file in the
-    app's data folder and the version of an update it finds read from the feed by
-    `UpdateFeed`. `NoUpdates` is the updater of a build that cannot update, and says why.
+    window, asks Restart Manager to end it, never forced, through `IRestartManager`, which
+    `SystemRestartManager` sends to Restart Manager and tests replace, and opens the app by
+    its AUMID through the activation manager. `SparkleUpdates` is a Release build's updater:
+    WinSparkle, through `ISparkle`, which `WinSparkle` sends to `WinSparkle.dll` and tests
+    replace, over the feed of full releases, with WinSparkle's settings in
+    `UpdateSettings`'s file in the app's data folder and the version of an update it finds
+    read from the feed by `UpdateFeed`. `NoUpdates` is the updater of a build that cannot
+    update, and says why.
     `StartAtSignIn` is the settings' start at sign-in over an `IStartupItem`: `RunValue`,
     which writes the `Run` value, `"<exe>" --sign-in`, through `IRunKey`, sent to the
     registry by `RegistryRunKey`
@@ -732,12 +734,11 @@ window loads its site, and whatever the site's pages load, as a browser would.
     of them.
   - `Pitboard.Windows.Tests` is a WinUI app that hosts its own tests, the views' among them
     over snapshots made in C#, and `Pitboard.UITests` drives the built app with FlaUI.
-    `Pitboard.StandInApp`, never shipped, is the app `WindowsAppsTests` ask Restart Manager
-    to end in place of ChatGPT, copied beside the tests.
-    Neither registers anything with Windows. The icon's menu is held by the view tests,
-    `IconMenuTests` and `IconMenuFlyoutTests`, and the click on the icon by the session's
-    step A2. `ScreenshotTests` takes the docs' pictures of the window and of the menu, which
-    it opens with the message Explorer sends on a right click.
+    Neither registers anything with Windows, and neither starts a Restart Manager session,
+    which Restart Manager keeps under the user's HKCU. The icon's menu is held by the view
+    tests, `IconMenuTests` and `IconMenuFlyoutTests`, and the click on the icon by the
+    session's step A2. `ScreenshotTests` takes the docs' pictures of the window and of the
+    menu, which it opens with the message Explorer sends on a right click.
   - `Pitboard.Share` is `PitboardShare.exe`, the share target: Native AOT, with no window,
     and the only program of Pitboard's with a package identity. Its manifest's `<msix>`
     element names the sparse package in `Package/`, the publisher written in at build time
@@ -771,8 +772,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
   - `Pitboard.Probe` is never shipped. The session machine runs it to measure the app's
     adapters by hand: it posts a notification through `WindowsNotifications` under an
     AppUserModelID of its own, waits for its Switch, unregisters, names a process's package,
-    and finds, quits and opens an app by its AUMID through `WindowsApps`. It refuses to run
-    in an account without `pitboard-probe`'s throwaway marker.
+    and finds, quits and opens an app by its AUMID through `WindowsApps`, saying what
+    `RmShutdown` answered and which of the app's processes without a window run on. It
+    refuses to run in an account without `pitboard-probe`'s throwaway marker.
 - `apps/macos/`: the menu bar app, which shows what `pitboard-ffi`'s model says and sends it
   what was asked. The Swift package holds it as libraries its tests load without starting
   it. `PitboardKit` is the bindings and `AppModel.swift`: `AppModel`, which holds the
@@ -2469,13 +2471,29 @@ Accounts and tokens:
   then `DownloadStarting` for the file. A download whose page was the last to close raised
   no `StateChanged`, and its browser process exited; one whose page closed while another
   kept the browser process was still in progress five seconds later.
+- CF8, sparse packages, as the fresh standard user on both images in run 38928930271: with a
+  throwaway certificate trusted in `LocalMachine\TrustedPeople` by the job's user,
+  `Add-AppxPackage` registered the probe's package from either manifest for that user, status
+  `Ok`, signature `Developer`. `pitboard-probe-sparse.exe` in its external location ran with
+  the package's identity and an AUMID. The plain probe and a stand-in `claude.exe` it started
+  had none, and their writes and its own, a file under `%LOCALAPPDATA%\Pitboard` and a value
+  under HKCU, reached the real folder and key with either manifest, none the package's
+  folder. `LaunchUriAsync` of the probe's link scheme from the identity process gave false and
+  started no handler. With the certificate in the user's own `TrustedPeople`,
+  `Add-AppxPackage` refused the package with 0x800B0109 (run 38882775456).
+- CF8, PitboardShare's package, as the fresh standard user on both images in run
+  38928930271: `PitboardShare.exe --register` from a Release publish, its package signed with
+  that certificate, registered `PitboardShare` with the publish's folder as its external
+  location, status `Ok`, and exited 0. `Pitboard.exe --unregister-share` from that folder
+  exited 0, 4888 ms after its start on windows-2025 and 1245 ms on windows-11-arm, and left
+  the user no `PitboardShare` package.
 - CF9, Restart Manager, as the fresh standard user on both images in run 38895887782:
-  `RmShutdown` without `RmForceShutdown`, given only `Pitboard.StandInApp.exe`'s GUI
-  process, ended a stand-in that answers `WM_QUERYENDSESSION` with `TRUE` and quits on
-  `WM_ENDSESSION` with `ENDSESSION_CLOSEAPP`, and gave `ERROR_SUCCESS` after 37 ms on
-  windows-2025 and 46 ms on windows-11-arm. A stand-in that answers `FALSE` ran on with its
-  window, and `RmShutdown` gave `ERROR_FAIL_SHUTDOWN` after 15 and 19 ms. Each stand-in's
-  console child, a `cmd.exe` never registered, ran on.
+  `RmShutdown` without `RmForceShutdown`, given only the GUI process of a stand-in app the
+  tests started then, ended a stand-in that answers `WM_QUERYENDSESSION` with `TRUE` and
+  quits on `WM_ENDSESSION` with `ENDSESSION_CLOSEAPP`, and gave `ERROR_SUCCESS` after 37 ms
+  on windows-2025 and 46 ms on windows-11-arm. A stand-in that answers `FALSE` ran on with
+  its window, and `RmShutdown` gave `ERROR_FAIL_SHUTDOWN` after 15 and 19 ms. Each
+  stand-in's console child, a `cmd.exe` never registered, ran on.
 - A process that gave `RegisterApplicationRestart` `--updated` with `RESTART_NO_CRASH`,
   `RESTART_NO_HANG` and `RESTART_NO_REBOOT` reads them back through
   `GetApplicationRestartSettings`, which gives `HRESULT_FROM_WIN32(ERROR_NOT_FOUND)` before
@@ -2799,8 +2817,8 @@ on 15 and 16 October 2026. W27 reviews the list.
 | Moderators label a portable archive `Portable-Archive`, a blocking issue | [Validation failure guide](https://github.com/microsoft/winget-pkgs/blob/master/doc/ValidationFailureGuide.md) | No manifest has been submitted. |
 | winget puts a portable package's install folder on `PATH`, not a link in Links, for a standard user without Developer Mode | [winget-pkgs FAQ](https://github.com/microsoft/winget-pkgs/blob/master/doc/FAQ.md) | Both images have Developer Mode on, and the job's user is an administrator. A standard user's install is the session's. |
 | Since winget 1.29, an MSI wins over a portable installer whatever the manifest's order | [winget-cli 1.29.380](https://github.com/microsoft/winget-cli/releases/tag/v1.29.380) | windows-2025's winget is 1.11.510, and no runner installs from winget's sources. |
-| A broadcast, such as `WM_ENDSESSION`, reaches a top-level window that is never shown, and no message-only window | [Message-only windows](https://learn.microsoft.com/en-us/windows/win32/winmsg/window-features#message-only-windows) | A runner's session never ends while a job runs; CF9 sends one. |
-| Restart Manager sends `WM_CLOSE` to a program that agreed to end and has not exited | [Guidelines for Applications](https://learn.microsoft.com/en-us/windows/win32/rstmgr/guidelines-for-applications) | CF9's stand-in that agrees ends on `WM_ENDSESSION`; the session's step A7 upgrades a running copy. |
+| A broadcast, such as `WM_ENDSESSION`, reaches a top-level window that is never shown, and no message-only window | [Message-only windows](https://learn.microsoft.com/en-us/windows/win32/winmsg/window-features#message-only-windows) | A runner's session never ends while a job runs, and no test starts a Restart Manager session; the session's step A7 upgrades a running Pitboard. |
+| Restart Manager sends `WM_CLOSE` to a program that agreed to end and has not exited | [Guidelines for Applications](https://learn.microsoft.com/en-us/windows/win32/rstmgr/guidelines-for-applications) | CF9's stand-in that agreed ended on `WM_ENDSESSION` (run 38895887782); the session's step A7 upgrades a running copy. |
 | `GetApplicationUserModelId` gives a packaged process's AUMID, and `APPMODEL_ERROR_NO_APPLICATION` for one without an app | [GetApplicationUserModelId](https://learn.microsoft.com/en-us/windows/win32/api/appmodel/nf-appmodel-getapplicationusermodelid) | No runner starts a packaged process; the session's step A4 reads ChatGPT's through `Pitboard.Probe app-control running`. |
 | `IApplicationActivationManager::ActivateApplication` opens a Store app by its AUMID from an unpackaged process | [IApplicationActivationManager](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-iapplicationactivationmanager) | No runner holds a Store app the test user may open; the session's step A4 opens ChatGPT through `Pitboard.Probe app-control reopen`. |
 | Windows may refuse to bring a window forward once another app took the foreground | [SetForegroundWindow](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setforegroundwindow) | Only a person's session opens ChatGPT behind Pitboard: the session's step A4 records which window ends in front. |
@@ -2817,7 +2835,7 @@ on 15 and 16 October 2026. W27 reviews the list.
 | A click on a notification starts the app again once it called `Unregister` and quit | [AppNotificationManager.Register](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.windows.appnotifications.appnotificationmanager.register) | Only a person clicks a notification: the session's step A5. |
 | A program given identity by a package with an external location gets a share with `AppInstance.GetActivatedEventArgs`, from Windows 10 2004 on | [Get activation info for packaged apps](https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/get-activation-info-for-packaged-apps) | No runner registers Pitboard's package or shares a page; the 1.0 session's P1 shares from Edge, Chrome and Firefox. |
 | The system shows the sentence a share target gives `ShareOperation.ReportError` | [ReportError](https://learn.microsoft.com/en-us/uwp/api/windows.applicationmodel.datatransfer.sharetarget.shareoperation.reporterror) | Only a person shares a page: P1. |
-| A sparse package registers only when signed by a certificate the machine trusts, its Publisher the certificate's subject, and its program's `<msix>` element names the same publisher, package and application | [Grant package identity by packaging with external location](https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/grant-identity-to-nonpackaged-apps) | No runner registers Pitboard's package: CI signs it with a certificate nothing trusts. P1 registers the signed release's. |
+| A sparse package registers only when signed by a certificate the machine trusts, its Publisher the certificate's subject, and its program's `<msix>` element names the same publisher, package and application | [Grant package identity by packaging with external location](https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/grant-identity-to-nonpackaged-apps) | CF8 registered PitboardShare's with its certificate in `LocalMachine\TrustedPeople`, and had the probe's refused with it in the user's own `TrustedPeople` (runs 38928930271 and 38882775456); no runner tried another publisher or `<msix>` element. P1 registers the signed release's. |
 | `VerifyVersionInfoW` compares with the running Windows only in a program whose manifest names Windows 10, and with Windows 8 in one without a manifest, so WinSparkle reads a feed's `minimumSystemVersion` against the real build only there | [VerifyVersionInfoW](https://learn.microsoft.com/windows/win32/api/winbase/nf-winbase-verifyversioninfow) | No runner checks for an update; the 1.0 session's P3 is the first. |
 | A dual-purpose package installs per user with no UAC prompt when `ALLUSERS` is 2 and `MSIINSTALLPERUSER` 1; per user, `ProgramFiles64Folder` is `%LOCALAPPDATA%\Programs`, HKMU is HKCU, and Windows Installer empties `ALLUSERS` | [Single package authoring](https://learn.microsoft.com/en-us/windows/win32/msi/single-package-authoring), [Installation context](https://learn.microsoft.com/en-us/windows/win32/msi/installation-context) | CI only extracts the MSI; the session's steps A1, A7 and A8 install, upgrade and remove it. |
 | An Environment row `=-PATH` with `[~];<value>` appends to the user `PATH` and takes only its part off on uninstall; a new process sees it, a running one does not | [Environment table](https://learn.microsoft.com/en-us/windows/win32/msi/environment-table), [Environment variables](https://learn.microsoft.com/en-us/windows/win32/procthread/environment-variables) | CI only extracts the MSI; the session's step A1 runs `where.exe pitboard` in a new terminal and an open one, and A8 removes it. |
@@ -2826,8 +2844,8 @@ on 15 and 16 October 2026. W27 reviews the list.
 | An exe custom action after `InstallFinalize`, asynchronous with no wait, starts `Pitboard.exe --updated` as the person once a `/passive` update ends | [Custom action return processing options](https://learn.microsoft.com/en-us/windows/win32/msi/custom-action-return-processing-options) | No runner updates Pitboard; the 1.0 session's P3 does. |
 | `msiexec /a` extracts an MSI only on a machine whose platform its `Template` names, as an install would, so `windows-msi`, `windows-feed-key` and `windows-install` each read the MSI for their own machine | [Template Summary property](https://learn.microsoft.com/en-us/windows/win32/msi/template-summary) | Each runner extracts only its own MSI: no row tries the other's. |
 | Windows Installer compares three fields of `ProductVersion` and ignores a fourth, so beta N's `X.Y.Z.N` and its final's `X.Y.Z` are one version, which `MajorUpgrade` with `AllowSameVersionUpgrades` replaces | [ProductVersion property](https://learn.microsoft.com/en-us/windows/win32/msi/productversion) | No runner installs an MSI; the session's step A7 upgrades one. |
-| `RemovePackageAsync` removes the user's registration of a package by its full name from a process without the package's identity, and shuts down every process of the package as it removes it, so `Pitboard.exe --unregister-share` removes PitboardShare's and `PitboardShare.exe` could not | [PackageManager.RemovePackageAsync](https://learn.microsoft.com/en-us/uwp/api/windows.management.deployment.packagemanager.removepackageasync) | No runner registers the package (the row below). P1 uninstalls Pitboard and finds the package gone. |
-| A process that `PitboardShare.exe` starts, or that its `LaunchUriAsync` starts, carries none of its package identity, and none of their writes is redirected | [UpdateProcThreadAttribute](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute) | Not yet measured. CF8 cannot register the probe's sparse package on the runners: with its throwaway certificate in the user's own `TrustedPeople`, `Add-AppxPackage` refused it on both images in run 38882775456 with 0x800B0109, a root the trust provider does not trust, so every row read no identity. P2 measures Pitboard's. |
+| `RemovePackageAsync` shuts down every process of the package as it removes it, so `PitboardShare.exe` could not remove its own package | [PackageManager.RemovePackageAsync](https://learn.microsoft.com/en-us/uwp/api/windows.management.deployment.packagemanager.removepackageasync) | CF8 removed PitboardShare's with no process of the package running (run 38928930271). P1 uninstalls Pitboard and finds the package gone. |
+| A process that `PitboardShare.exe` starts through `LaunchUriAsync` carries none of its package identity | [UpdateProcThreadAttribute](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute) | From the probe's identity process, `LaunchUriAsync` of a link scheme the user registered gave false and started no handler (run 38928930271); its children carried none (CF8 under [Windows](#windows)). P2 measures Pitboard's. |
 
 ### One sign-in at a time
 
@@ -4258,12 +4276,14 @@ Microsoft's documentation.
   `ENDSESSION_CLOSEAPP`, then `WM_CLOSE` where it does not end. One `FALSE` cancels, and
   only `RmForceShutdown` ends an app regardless. A console app gets `CTRL_C_EVENT`. Only the
   process that started a session may shut down through it, a user session holds at most 64,
-  and the session lives in the registry. So `PackagedApps` registers a Store app's windowed
-  process alone, never its console `codex` children, ends the session once `RmShutdown`
-  returns, and calls it without flags on a thread of its own, since it returns only once the
-  app has ended or declined. `IApplicationActivationManager::ActivateApplication`'s reference
-  (updated 22 February 2024) offers no option that opens an app behind another window, so
-  `WindowsApps` brings Pitboard's window forward after it.
+  and the session lives in the registry, under the user's HKCU. So `WindowsApps` registers a
+  Store app's windowed process alone, never its console `codex` children, ends the session
+  once `RmShutdown` returns, and calls it without flags on a thread of its own, since it
+  returns only once the app has ended or declined. Tests stand in for Restart Manager: on a
+  PC only the app and `Pitboard.Probe` start a session, in the session's steps A4 and A7.
+  `IApplicationActivationManager::ActivateApplication`'s reference (updated 22 February
+  2024) offers no option that opens an app behind another window, so `WindowsApps` brings
+  Pitboard's window forward after it.
 - WinSparkle 0.9.4, read on 16 October 2026 in its source at tag `v0.9.4` and in its NuGet
   package. `win_sparkle_set_eddsa_public_key` returns 0 and keeps no key for anything but the
   base64 of 32 bytes, and with no key the downloader logs "Using unsigned updates!" and

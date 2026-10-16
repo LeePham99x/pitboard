@@ -4,10 +4,10 @@
 # proper-lockfile in C:\pitboard-probe-tools, three throwaway users and their passwords, tasks,
 # the job user's HKCU\Environment values, the state of OpenSSH Server, installed from Microsoft's
 # release where the image ships none, Developer Mode and the symbolic-link right, a throwaway
-# certificate in a throwaway user's TrustedPeople with the probe's sparse package and a link
-# scheme registered for that user, and for the channel rows Scoop in a scratch root, winget's
-# local manifests and the package they install, a build on the user PATH and in ~\.cargo\bin, a
-# loopback server and Defender's attack surface reduction rules.
+# certificate in LocalMachine\TrustedPeople with the probe's sparse package, PitboardShare's and
+# a link scheme registered for a throwaway user, and for the channel rows Scoop in a scratch
+# root, winget's local manifests and the package they install, a build on the user PATH and in
+# ~\.cargo\bin, a loopback server and Defender's attack surface reduction rules.
 #
 # Everything goes into one JSON report at -Out, saved after each row, so a run cut short still
 # leaves what it gathered. A fact that cannot be gathered is recorded as an error and does not
@@ -28,6 +28,9 @@ param(
     [Parameter(Mandatory)] [string] $BunSha256,
     # pitboard.exe as a 0.x release builds it, for the channel rows.
     [string] $Pitboard = '',
+    # The Windows app's Release publish, PitboardShare.exe and its unsigned PitboardShare.msix
+    # beside Pitboard.exe, the package's publisher CF8's certificate's subject, CN=PitboardProbe.
+    [string] $App = '',
     # Win32-OpenSSH from Microsoft's release, installed where the image ships no sshd
     # (windows-11-arm), so RF-M's network logon is measured on both images. Pinned by SHA-256.
     [string] $OpenSshTag = '',
@@ -46,6 +49,8 @@ if (-not ($env:GITHUB_ACTIONS -eq 'true' -and $env:RUNNER_ENVIRONMENT -eq 'githu
 $Probe = (Resolve-Path -Path $Probe).Path
 $Helpers = (Resolve-Path -Path $Helpers).Path
 if ($Pitboard) { $Pitboard = (Resolve-Path -LiteralPath $Pitboard).Path }
+if ($App) { $App = (Resolve-Path -LiteralPath $App).Path }
+$cf8Publisher = 'CN=PitboardProbe'
 $scratch = Join-Path $env:RUNNER_TEMP 'pitboard-probe-scratch'
 New-Item -ItemType Directory -Force -Path $scratch | Out-Null
 # The probe looks for its marker in the folder FOLDERID_Profile names, which is what this
@@ -1102,19 +1107,23 @@ function Find-SdkTool([string] $Name) {
     $found
 }
 
-# CF8: the probe's sparse package as $User, with each manifest in sparse/. A throwaway
-# certificate for CN=PitboardProbe is made into a PFX here and trusted in the user's own
-# TrustedPeople, which Add-AppxPackage does not take (0x800B0109 in run 38882775456), so the
-# package is offered for the user with the probe's folder as its external location and refused,
-# and the pitboard-probe-cf8 link scheme is put under the user's
-# HKCU\Software\Classes, its handler the plain probe. The identity process writes, starts its
-# children and opens the link through LaunchUriAsync, as PitboardShare.exe hands a page on; a
-# process without identity reads back what each wrote. The user's part runs in its own Windows
-# PowerShell, whose Appx cmdlets PowerShell 7 cannot load, and each change is undone.
+# CF8: the probe's sparse package as $User, with each manifest in sparse/, then PitboardShare's
+# from -App. A throwaway certificate for CN=PitboardProbe is made into a PFX here and trusted in
+# LocalMachine\TrustedPeople from the job user's elevated side: Add-AppxPackage refused it from
+# the user's own TrustedPeople with 0x800B0109 in run 38882775456. Each package is offered for
+# the user with its program's folder as its external location, and the pitboard-probe-cf8 link
+# scheme is put under the user's HKCU\Software\Classes, its handler the plain probe. The identity
+# process writes, starts its children and opens the link through LaunchUriAsync, as
+# PitboardShare.exe hands a page on; a process without identity reads back what each wrote.
+# PitboardShare.exe --register then adds PitboardShare's package, as the MSI does, and
+# Pitboard.exe --unregister-share removes it, as the MSI's removal does. The user's part runs in
+# its own Windows PowerShell, whose Appx cmdlets PowerShell 7 cannot load, and each change is
+# undone.
 function Measure-SparseIdentity($User, $Result) {
     $s = $User.Scratch
     $sparse = Join-Path $PSScriptRoot '..\..\crates\pitboard-probe\sparse'
     $location = Join-Path $User.RunDir 'cf8'
+    $installed = Join-Path $User.RunDir 'cf8-pitboard'
     $work = Join-Path $env:RUNNER_TEMP 'pitboard-probe-cf8'
     $userScript = Join-Path $User.RunDir 'pitboard-probe-cf8.ps1'
     $cer = Join-Path $User.RunDir 'pitboard-probe-cf8.cer'
@@ -1124,6 +1133,7 @@ function Measure-SparseIdentity($User, $Result) {
     $identityProbe = Join-Path $location 'pitboard-probe-sparse.exe'
     # %1 is the link, taken as an unused --scratch, so Windows appends nothing the probe refuses.
     $command = "$handler --out $(Join-Path $s 'pitboard-probe-cf8-launched.json') sparse --action write --tag launched --scratch `"%1`""
+    $thumbprint = $null
     New-Item -ItemType Directory -Force -Path $location, $work | Out-Null
     try {
         foreach ($name in 'pitboard-probe.exe', 'pitboard-probe-sparse.exe') {
@@ -1132,38 +1142,66 @@ function Measure-SparseIdentity($User, $Result) {
         $makeappx = Find-SdkTool 'makeappx.exe'
         $signtool = Find-SdkTool 'signtool.exe'
         $Result.sdk_tools = "$($makeappx.Directory.Parent.Name)\$($makeappx.Directory.Name)"
-        $password = Export-TestCertificate 'CN=PitboardProbe' $pfx $cer
+        $password = Export-TestCertificate $cf8Publisher $pfx $cer
+        $certificate = [Security.Cryptography.X509Certificates.X509Certificate2]::new($cer)
+        $thumbprint = $certificate.Thumbprint
+        $machine = [Security.Cryptography.X509Certificates.X509Store]::new('TrustedPeople', 'LocalMachine')
+        try {
+            $machine.Open('ReadWrite')
+            $machine.Add($certificate)
+        } finally {
+            $machine.Close()
+        }
+        $Result.trusted_in = 'LocalMachine\TrustedPeople'
+        Save-Report
         Set-Content -Path $userScript -Encoding ascii -Value @'
 $ErrorActionPreference = 'Stop'
 $key = 'HKCU:\Software\Classes\pitboard-probe-cf8'
-# Windows PowerShell started this way has no Cert: drive (run 38878569423), so .NET opens the store.
-$certificates = [Security.Cryptography.X509Certificates.X509Store]::new('TrustedPeople', 'CurrentUser')
+function Hide([string] $Text) {
+    $Text.Replace($env:USERPROFILE, '<profile>').Replace($env:USERNAME, '<user>') -replace 'S-1-5-21-[0-9-]+', '<sid>'
+}
+# The external location as Pitboard.exe --unregister-share reads it, through PackageManager.
+function Get-Share {
+    $package = Get-AppxPackage -Name 'PitboardShare'
+    if (-not $package) { return 'PitboardShare: none' }
+    $at = try {
+        $null = [Windows.Management.Deployment.PackageManager, Windows.Management.Deployment, ContentType = WindowsRuntime]
+        $external = (New-Object Windows.Management.Deployment.PackageManager).FindPackageForUser('', $package.PackageFullName).EffectiveExternalPath
+        if (-not $external) { 'none' }
+        elseif ($external.TrimEnd('\') -ieq $env:PITBOARD_PROBE_CF8_INSTALLED.TrimEnd('\')) { 'the install' }
+        else { 'another folder' }
+    } catch {
+        "unread: $(Hide $_.Exception.Message)"
+    }
+    "PitboardShare: $($package.Status), signature $($package.SignatureKind), external location $at"
+}
 try {
-    $certificates.Open('ReadWrite')
-    if ($env:PITBOARD_PROBE_CF8_STEP -eq 'register') {
-        $certificates.Add([Security.Cryptography.X509Certificates.X509Certificate2]::new($env:PITBOARD_PROBE_CF8_CER))
-        New-Item -Path "$key\shell\open\command" -Force | Out-Null
-        Set-ItemProperty -LiteralPath $key -Name '(default)' -Value 'URL:pitboard-probe-cf8'
-        Set-ItemProperty -LiteralPath $key -Name 'URL Protocol' -Value ''
-        Set-ItemProperty -LiteralPath "$key\shell\open\command" -Name '(default)' -Value $env:PITBOARD_PROBE_CF8_COMMAND
-        Add-AppxPackage -Path $env:PITBOARD_PROBE_CF8_PACKAGE -ExternalLocation $env:PITBOARD_PROBE_CF8_LOCATION
-        $package = Get-AppxPackage -Name 'PitboardProbe'
-        "registered: $($package.Status), signature $($package.SignatureKind)"
-    } else {
-        Get-AppxPackage -Name 'PitboardProbe' | Remove-AppxPackage
-        $certificates.Certificates | Where-Object { $_.Subject -eq 'CN=PitboardProbe' } | ForEach-Object { $certificates.Remove($_) }
-        if (Test-Path -LiteralPath $key) { Remove-Item -LiteralPath $key -Recurse -Force }
-        $left = @()
-        if (Get-AppxPackage -Name 'PitboardProbe') { $left += 'package' }
-        if ($certificates.Certificates | Where-Object { $_.Subject -eq 'CN=PitboardProbe' }) { $left += 'certificate' }
-        if (Test-Path -LiteralPath $key) { $left += 'scheme' }
-        "unregistered, left: $($left -join ', ')"
+    switch ($env:PITBOARD_PROBE_CF8_STEP) {
+        'register' {
+            New-Item -Path "$key\shell\open\command" -Force | Out-Null
+            Set-ItemProperty -LiteralPath $key -Name '(default)' -Value 'URL:pitboard-probe-cf8'
+            Set-ItemProperty -LiteralPath $key -Name 'URL Protocol' -Value ''
+            Set-ItemProperty -LiteralPath "$key\shell\open\command" -Name '(default)' -Value $env:PITBOARD_PROBE_CF8_COMMAND
+            Add-AppxPackage -Path $env:PITBOARD_PROBE_CF8_PACKAGE -ExternalLocation $env:PITBOARD_PROBE_CF8_LOCATION
+            $package = Get-AppxPackage -Name 'PitboardProbe'
+            "registered: $($package.Status), signature $($package.SignatureKind)"
+        }
+        'unregister' {
+            Get-AppxPackage -Name 'PitboardProbe' | Remove-AppxPackage
+            if (Test-Path -LiteralPath $key) { Remove-Item -LiteralPath $key -Recurse -Force }
+            $left = @()
+            if (Get-AppxPackage -Name 'PitboardProbe') { $left += 'package' }
+            if (Test-Path -LiteralPath $key) { $left += 'scheme' }
+            "unregistered, left: $($left -join ', ')"
+        }
+        'share' { Get-Share }
+        'share-clean' {
+            Get-AppxPackage -Name 'PitboardShare' | Remove-AppxPackage
+            Get-Share
+        }
     }
 } catch {
-    $message = $_.Exception.Message.Replace($env:USERPROFILE, '<profile>').Replace($env:USERNAME, '<user>') -replace 'S-1-5-21-[0-9-]+', '<sid>'
-    'failed 0x{0:X8}: {1}' -f $_.Exception.HResult, $message
-} finally {
-    $certificates.Close()
+    'failed 0x{0:X8}: {1}' -f $_.Exception.HResult, (Hide $_.Exception.Message)
 }
 '@
         $userArgs = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $userScript)
@@ -1184,7 +1222,6 @@ try {
                 $r.sign_exit = $LASTEXITCODE
                 if ($r.pack_exit -ne 0 -or $r.sign_exit -ne 0) { return $r }
                 $extra = @{
-                    PITBOARD_PROBE_CF8_CER = $cer
                     PITBOARD_PROBE_CF8_PACKAGE = $package
                     PITBOARD_PROBE_CF8_LOCATION = $location
                     PITBOARD_PROBE_CF8_COMMAND = $command
@@ -1204,10 +1241,43 @@ try {
                 $r
             }
         }
+        if ($App) {
+            Invoke-Row $Result 'cf8_unregister_share' {
+                $r = [ordered]@{}
+                Copy-Item -LiteralPath $App -Destination $installed -Recurse
+                $package = Join-Path $installed 'PitboardShare.msix'
+                $r.sign = ((& $signtool.FullName sign /fd SHA256 /f $pfx /p $password $package 2>&1) | Select-Object -Last 1) -replace [regex]::Escape($installed), '<install>'
+                $r.sign_exit = $LASTEXITCODE
+                if ($r.sign_exit -ne 0) { return $r }
+                $extra = @{ PITBOARD_PROBE_CF8_INSTALLED = $installed }
+                try {
+                    $r.register = Invoke-AsUser $User 'cf8-share-register' @('--register') -FilePath (Join-Path $installed 'PitboardShare.exe') -Text
+                    $r.registered = Invoke-AsUser $User 'cf8-share-registered' $userArgs -FilePath $windowsPowerShell -Text -Extra ($extra + @{ PITBOARD_PROBE_CF8_STEP = 'share' })
+                    $timer = [Diagnostics.Stopwatch]::StartNew()
+                    $r.unregister_share = Invoke-AsUser $User 'cf8-unregister-share' @('--unregister-share') -FilePath (Join-Path $installed 'Pitboard.exe') -Text
+                    $r.unregister_share_ms = $timer.ElapsedMilliseconds
+                    $r.after = Invoke-AsUser $User 'cf8-share-after' $userArgs -FilePath $windowsPowerShell -Text -Extra ($extra + @{ PITBOARD_PROBE_CF8_STEP = 'share' })
+                } finally {
+                    $r.clean = Invoke-AsUser $User 'cf8-share-clean' $userArgs -FilePath $windowsPowerShell -Text -Extra ($extra + @{ PITBOARD_PROBE_CF8_STEP = 'share-clean' })
+                }
+                $r
+            }
+        }
     } finally {
-        Remove-Item -Recurse -Force -LiteralPath $work, $location -ErrorAction SilentlyContinue
+        if ($thumbprint) {
+            $machine = [Security.Cryptography.X509Certificates.X509Store]::new('TrustedPeople', 'LocalMachine')
+            try {
+                $machine.Open('ReadWrite')
+                $machine.Certificates | Where-Object { $_.Thumbprint -eq $thumbprint } | ForEach-Object { $machine.Remove($_) }
+                $Result.certificate_removed = -not ($machine.Certificates | Where-Object { $_.Thumbprint -eq $thumbprint })
+            } finally {
+                $machine.Close()
+            }
+        }
+        Remove-Item -Recurse -Force -LiteralPath $work, $location, $installed -ErrorAction SilentlyContinue
         Remove-Item -Force -LiteralPath $cer, $userScript -ErrorAction SilentlyContinue
-        $Result.removed = -not (Test-Path -LiteralPath $work) -and -not (Test-Path -LiteralPath $location) -and -not (Test-Path -LiteralPath $cer)
+        $Result.removed = -not (Test-Path -LiteralPath $work) -and -not (Test-Path -LiteralPath $location) -and
+            -not (Test-Path -LiteralPath $installed) -and -not (Test-Path -LiteralPath $cer)
         Save-Report
     }
 }

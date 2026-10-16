@@ -31,11 +31,15 @@ jobs:
           # SHASUMS256.txt and checked against the zip itself on 2026-10-15.
           - os: windows-2025
             triple: x86_64-pc-windows-msvc
+            runtime: win-x64
+            platform: x64
             bun-pinned: 1.4.3
             bun-zip: bun-windows-x64.zip
             bun-sha256: 0bf84e808552beea67bf1202a287a35c6c825d837b287b3f8e9dd513dba35d3d
           - os: windows-11-arm
             triple: aarch64-pc-windows-msvc
+            runtime: win-arm64
+            platform: ARM64
             bun-pinned: 1.4.3
             bun-zip: bun-windows-aarch64.zip
             bun-sha256: 5e8f142ef722cbc9f67dc068a166e46ee72be8307b38cac7186589d2face668f
@@ -49,6 +53,8 @@ jobs:
     timeout-minutes: 60
     env:
       RUSTFLAGS: -D warnings -C target-feature=+crt-static --cfg pitboard_unreleased_windows
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      DOTNET_NOLOGO: 1
     defaults:
       run:
         shell: bash
@@ -88,6 +94,9 @@ jobs:
         with:
           cache: false
           targets: ${{ matrix.os == 'windows-11-arm' && 'x86_64-pc-windows-msvc' || '' }}
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: apps/windows/global.json
       # ring compiles its C with clang on ARM64 Windows, and nothing else.
       - if: runner.arch == 'ARM64'
         run: clang --version
@@ -112,6 +121,35 @@ jobs:
         if: matrix.os == 'windows-11-arm'
         continue-on-error: true
         run: cargo build --locked -p pitboard-probe --target x86_64-pc-windows-msvc
+      # For CF8's Pitboard.exe --unregister-share: the Release publish with PitboardShare.exe and
+      # its package beside Pitboard.exe, as the MSI lays them out. The package's publisher is the
+      # subject of CF8's throwaway certificate, which runner-facts.ps1 makes and signs it with. A
+      # failed build only leaves that row out.
+      - name: Pitboard.exe and PitboardShare.exe as a release publishes them
+        id: app
+        continue-on-error: true
+        env:
+          RUNTIME: ${{ matrix.runtime }}
+          PLATFORM: ${{ matrix.platform }}
+          WINDOWS_SIGNER_SUBJECT: CN=PitboardProbe
+        run: |
+          cargo build --locked -p pitboard-ffi -p pitboard-share-ffi
+          mkdir -p apps/windows/Pitboard.Core/Generated apps/windows/Pitboard.Share.Core/Generated
+          cargo run --locked -p uniffi-bindgen-csharp -- --library target/debug/pitboard_ffi.dll \
+            --out-dir apps/windows/Pitboard.Core/Generated --config crates/pitboard-ffi/uniffi.toml --no-format
+          cargo run --locked -p uniffi-bindgen-csharp -- --library target/debug/pitboard_share_ffi.dll \
+            --out-dir apps/windows/Pitboard.Share.Core/Generated --config crates/pitboard-share-ffi/uniffi.toml --no-format
+          version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
+          package=$(sh .github/scripts/windows-versions.sh "$version" | sed -n 's/^package=//p')
+          out="$RUNNER_TEMP/pitboard-app"
+          # From the folder of global.json, which names the SDK the lock files hold.
+          cd apps/windows
+          dotnet publish Pitboard.App -c Release -r "$RUNTIME" -p:Platform="$PLATFORM" -o "$out" \
+            -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/debug/pitboard_ffi.dll"
+          dotnet publish Pitboard.Share -c Release -r "$RUNTIME" -o "$out" \
+            -p:PitboardShareNativeLibrary="$GITHUB_WORKSPACE/target/debug/pitboard_share_ffi.dll"
+          pwsh -NoProfile -File ../../.github/scripts/pack-windows-share.ps1 -Folder "$out" \
+            -Publisher "$WINDOWS_SIGNER_SUBJECT" -Version "$package"
       # The runner facts, as the job's user and as throwaway users the script makes on this
       # disposable runner. runner-facts.ps1 says what it changes, and undoes each change.
       - name: Runner facts
@@ -124,6 +162,7 @@ jobs:
           OPENSSH_TAG: ${{ matrix.openssh-tag }}
           OPENSSH_ZIP: ${{ matrix.openssh-zip }}
           OPENSSH_SHA256: ${{ matrix.openssh-sha256 }}
+          APP_BUILT: ${{ steps.app.outcome }}
         run: |
           $x64 = 'target/x86_64-pc-windows-msvc/debug/pitboard-probe.exe'
           ./.github/scripts/runner-facts.ps1 -Probe target/debug/pitboard-probe.exe `
@@ -132,7 +171,8 @@ jobs:
             -Helpers crates/pitboard-probe/helpers `
             -BunVersion $env:BUN_VERSION -BunZip $env:BUN_ZIP -BunSha256 $env:BUN_SHA256 `
             -OpenSshTag $env:OPENSSH_TAG -OpenSshZip $env:OPENSSH_ZIP -OpenSshSha256 $env:OPENSSH_SHA256 `
-            -Pitboard target/gated/debug/pitboard.exe
+            -Pitboard target/gated/debug/pitboard.exe `
+            -App $(if ($env:APP_BUILT -eq 'success') { Join-Path $env:RUNNER_TEMP 'pitboard-app' } else { '' })
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

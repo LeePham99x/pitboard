@@ -800,8 +800,8 @@ jobs:
       # Each UI test starts a Pitboard.exe in homes of its own and drives it as that user (CF1, CF2), the
       # Release build's the one in the MSI's image, which refuses until Windows is released (CF10). The
       # job user's Explorer takes no icon of that user's (CF3), so no UI test clicks the icon. The WebView2
-      # tests (CF7) run the account windows' glue against a stand-in site on the loopback, and WindowsAppsTests
-      # ask Restart Manager to end Pitboard.StandInApp.exe, never forced (CF9).
+      # tests (CF7) run the account windows' glue against a stand-in site on the loopback. No test starts a
+      # Restart Manager session, which Restart Manager keeps under the user's HKCU (CF9 is the session's).
       - name: The app's tests, as a standard user
         shell: pwsh
         run: >

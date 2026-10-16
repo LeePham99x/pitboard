@@ -86,9 +86,12 @@ words whether the process without identity saw each tag.
 ## On CI's runners (CF8)
 
 `.github/scripts/runner-facts.ps1` measures the same through `windows-facts.yml`, on a
-GitHub-hosted runner, as a fresh standard user. It trusts a throwaway certificate in that
-user's own `TrustedPeople`, registers each manifest for the user, and adds the
-`pitboard-probe-cf8` link scheme under the user's `HKCU\Software\Classes`, whose handler is
-the plain probe writing with the tag `launched`. `sparse --action launch` opens that link from
-the identity process through `LaunchUriAsync`, as `PitboardShare.exe` hands a page to
-`Pitboard.exe`. It undoes each change, and `k1.ps1` stays the VM's.
+GitHub-hosted runner, as a fresh standard user. It trusts a throwaway certificate in
+`LocalMachine\TrustedPeople` as the job's elevated user, since `Add-AppxPackage` refused it
+from the user's own `TrustedPeople` (0x800B0109, run 38882775456), registers each manifest for
+the user, and adds the `pitboard-probe-cf8` link scheme under the user's
+`HKCU\Software\Classes`, whose handler is the plain probe writing with the tag `launched`.
+`sparse --action launch` opens that link from the identity process through `LaunchUriAsync`,
+as `PitboardShare.exe` hands a page to `Pitboard.exe`. Then `PitboardShare.exe --register`
+adds PitboardShare's package and `Pitboard.exe --unregister-share` removes it, as the MSI
+does. It undoes each change, and `k1.ps1` stays the VM's.
