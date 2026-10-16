@@ -16,4 +16,5 @@ internal static class Glyphs
     public const string Help = "\uE897";
     public const string Info = "\uE946";
     public const string Update = "\uE895";
+    public const string Site = "\uE774";
 }

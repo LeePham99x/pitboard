@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.Windows.AppLifecycle;
 using Pitboard.Core;
 using Pitboard.Windows;
+using Windows.ApplicationModel.Activation;
 
 namespace Pitboard.App;
 
@@ -37,9 +38,14 @@ public static class Program
         AppInstance? running = null;
         var handovers = new Handovers();
         // Connected before the key is held: a launch handed over while Pitboard starts would reach no handler.
-        AppInstance.GetCurrent().Activated += (_, _) => handovers.Arrived();
+        AppInstance.GetCurrent().Activated += (_, activated) => handovers.Arrived(
+            activated.Data is ILaunchActivatedEventArgs launch
+                ? Launching.Handed(launch.Arguments, Running, fixtureFolder)
+                : null);
         var start = Launching.Decide(
             args,
+            Running,
+            fixtureFolder,
             () => refusal = PitboardFfiMethods.LaunchRefusal(environment),
             () =>
             {
@@ -51,6 +57,9 @@ public static class Program
         {
             case Start.Refused:
                 Shell.Refuse(refusal!.Message);
+                return 1;
+            case Start.LinkRefused:
+                Shell.Refuse(Launching.LinkRefusal);
                 return 1;
             case Start.Redirect:
                 Redirection.To(running!);

@@ -38,7 +38,7 @@ internal static class Snapshots
                 Accounts: [], Menus: [], Open: [],
                 Waiting: new WindowWaiting(
                     WindowTitle: "Account", Shown: new WaitingShown.Reading(Title: "Reading accounts…")),
-                Closing: [], Deleting: [], Picker: null, Downloads: []));
+                Closing: [], Deleting: [], Picker: null, Downloads: [], Held: []));
     }
 
     private static MachineShown Unread() => new(

@@ -54,7 +54,20 @@ public static class IconMenuFlyout
                     item.FontWeight = FontWeights.SemiBold;
                 }
 
+                if (command.Id is { } id)
+                {
+                    AutomationProperties.SetAutomationId(item, id);
+                }
+
                 return Described(item, command.Detail, command.Does, chosen);
+            case IconMenuEntry.Submenu submenu:
+                var sub = new MenuFlyoutSubItem { Text = submenu.Text };
+                foreach (var inner in submenu.Entries)
+                {
+                    sub.Items.Add(Item(inner, chosen));
+                }
+
+                return sub;
             case IconMenuEntry.Separator:
                 return new MenuFlyoutSeparator();
             default:

@@ -68,4 +68,36 @@ public sealed class AccountMenuTests
 
         Assert.AreEqual((forget.Confirm, forget.Intent), asked.Single());
     }
+
+    [UITestMethod]
+    public void TheAccountsWindowsComeAfterItsOffers()
+    {
+        var spare = Items.Window("codex", "spare");
+        var item = Items.Account("codex", "spare") with
+        {
+            Offers = [Rename],
+            Windows = [new WindowOffer("Open chatgpt.com", spare)],
+            Forget = Items.Forget("codex/spare"),
+        };
+        var opened = new List<WindowAccount>();
+
+        var menu = AccountMenu.For(item, (_, _) => { }, opened.Add, held: []);
+        new MenuFlyoutItemAutomationPeer((MenuFlyoutItem)menu.Items[2]).Invoke();
+
+        Assert.AreEqual("Rename…, -, Open chatgpt.com, -, Copy email address, -, Forget…", string.Join(", ", Said(menu)));
+        Assert.AreEqual(spare, opened.Single());
+    }
+
+    [UITestMethod]
+    public void AWindowWhoseStoreIsHeldCannotBeOpened()
+    {
+        var spare = Items.Window("codex", "spare");
+        var item = Items.Account("codex", "spare") with { Windows = [new WindowOffer("Open chatgpt.com", spare)] };
+
+        var menu = AccountMenu.For(item, (_, _) => { }, _ => { }, held: [spare.Store]);
+
+        var entry = menu.Items.OfType<MenuFlyoutItem>().Single(found => found.Text == "Open chatgpt.com");
+        Assert.IsFalse(entry.IsEnabled);
+        StringAssert.StartsWith((string)ToolTipService.GetToolTip(entry), "What this window kept before is deleted once every account window has closed.");
+    }
 }

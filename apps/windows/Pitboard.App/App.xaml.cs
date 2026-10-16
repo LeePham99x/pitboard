@@ -3,6 +3,7 @@ using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.Windows.System.Power;
 using Pitboard.Core;
+using Pitboard.Views;
 using Pitboard.Windows;
 using Windows.Graphics;
 using Launcher = Windows.System.Launcher;
@@ -23,6 +24,7 @@ public partial class App : Application
     private NotifyIcon? _icon;
     private MenuHost? _menu;
     private MainWindow? _window;
+    private AccountWindows? _accountWindows;
 
     public App(AppStart start, Handovers handovers)
     {
@@ -42,7 +44,8 @@ public partial class App : Application
     protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
     {
         _notifications = WindowsNotifications.For(_start.Identity.Build, AppContext.BaseDirectory);
-        var model = Model(DispatcherQueue.GetForCurrentThread(), _notifications);
+        var queue = DispatcherQueue.GetForCurrentThread();
+        var model = Model(queue, _notifications);
         if (model is null)
         {
             Exit();
@@ -52,9 +55,11 @@ public partial class App : Application
         _model = model;
         _startAtSignIn = StartAtSignIn.For(_start, Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "Pitboard.exe"));
         model.PropertyChanged += OnModelChanged;
-        _hidden = new HiddenWindow(sessionEnding: EndSession, closing: Quit, icon: OnIcon, taskbarCreated: () => _icon?.Readd());
+        _hidden = new HiddenWindow(sessionEnding: EndSession, closing: End, icon: OnIcon, taskbarCreated: () => _icon?.Readd());
         _icon = new NotifyIcon(new ShellNotificationArea(), _hidden.Handle, Shell.AppIcon(), _start.Identity.IconGuid);
         _icon.Show(model.MenuBar.Spoken);
+        _accountWindows = new AccountWindows(model, Web(), _hidden.Handle);
+        _accountWindows.Follow(model.AccountWindows);
         PowerManager.SystemSuspendStatusChanged += OnSuspendStatusChanged;
         Follow(model.WindowRequest);
         // A click arrives on a thread of COM's; the model takes a message from any.
@@ -65,15 +70,31 @@ public partial class App : Application
             model.Send(launchedBy);
         }
 
-        // Windows puts a new icon in the overflow, so a launch from Start shows only through its window.
-        if (Launching.OpensWindow(_start.Arguments))
+        if (_start.Link is { } link)
         {
+            model.Send(new Intent.LinkArrived(link));
+        }
+        else if (Launching.OpensWindow(_start.Arguments))
+        {
+            // Windows puts a new icon in the overflow, so a launch from Start shows only through its window.
             model.Send(new Intent.ShowWindow(Pane: null));
         }
 
         // A second launch's handover arrives on a thread of its own.
-        var queue = DispatcherQueue.GetForCurrentThread();
-        _handovers.Ready(() => queue.TryEnqueue(ShowWindow));
+        _handovers.Ready(handed => queue.TryEnqueue(() => Handed(handed)));
+    }
+
+    // Another copy's launch: its link waits for an account, and one without a link brings the window forward.
+    private void Handed(string? link)
+    {
+        if (link is null)
+        {
+            ShowWindow();
+        }
+        else
+        {
+            _model?.Send(new Intent.LinkArrived(link));
+        }
     }
 
     private AppModel? Model(DispatcherQueue queue, Notifications notifications)
@@ -109,6 +130,18 @@ public partial class App : Application
                 launch, listener, new NoOtherApps(), notifications, new WindowsLocalTime()));
     }
 
+    // A fixture's windows show its stand-in pages, in a user data folder of the fixture's own.
+    private WebEnvironment Web()
+    {
+#if DEBUG
+        if (_start.Fixture is not null)
+        {
+            return WebEnvironment.Fixture(_start.DataFolder);
+        }
+#endif
+        return WebEnvironment.Live(_start.DataFolder, devTools: _start.Identity.Build is Build.Debug);
+    }
+
     private void OnModelChanged(object? sender, PropertyChangedEventArgs args)
     {
         if (_model is null)
@@ -123,6 +156,9 @@ public partial class App : Application
                 break;
             case nameof(AppModel.MenuBar):
                 _icon?.Show(_model.MenuBar.Spoken);
+                break;
+            case nameof(AppModel.AccountWindows):
+                _accountWindows?.Follow(_model.AccountWindows);
                 break;
         }
     }
@@ -161,6 +197,9 @@ public partial class App : Application
             case IconCommand.OpenLink link:
                 _ = Launcher.LaunchUriAsync(new Uri(link.Url));
                 break;
+            case IconCommand.OpenWindow open:
+                _accountWindows?.Open(open.Window);
+                break;
             case IconCommand.ShowSettings:
                 ShowWindow();
                 _window?.Select(null);
@@ -181,8 +220,18 @@ public partial class App : Application
         _notifications?.Stop();
     }
 
-    private void Quit()
+    // Quitting stops every download still running, so it asks first, as the macOS app does.
+    private async void Quit()
     {
+        if (_accountWindows is null || await _accountWindows.MayQuit())
+        {
+            End();
+        }
+    }
+
+    private void End()
+    {
+        _accountWindows?.StopDownloads();
         EndSession();
         Exit();
     }
@@ -206,12 +255,12 @@ public partial class App : Application
 
         if (_window is null)
         {
-            var window = new MainWindow(_model, _startAtSignIn, _updates, _version);
+            var window = new MainWindow(_model, _startAtSignIn, _updates, _version, account => _accountWindows?.Open(account));
             window.Closed += (_, _) => _window = null;
             _window = window;
         }
 
-        _window.Show();
+        _window.Bring();
     }
 
     // On the system's thread; the model takes a message from any.

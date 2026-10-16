@@ -1,5 +1,6 @@
 SHGetKnownFolderPath
 FOLDERID_LocalAppData
+FOLDERID_Downloads
 KNOWN_FOLDER_FLAG
 CoTaskMemFree
 SetCurrentProcessExplicitAppUserModelID
@@ -26,3 +27,6 @@ RegisterWindowMessage
 LoadIconMetric
 SetForegroundWindow
 GetForegroundWindow
+GetDpiForWindow
+CommandLineToArgvW
+LocalFree

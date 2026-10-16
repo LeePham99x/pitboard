@@ -104,6 +104,10 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
   `start`, `Invoke-Item`, a notification, the share sheet or a `pitboard://` or
   `pitboard-debug://` link, on any account but the session machine's throwaway ones. Each
   passes the account's own variables, and so its real homes.
+- Never read, copy or delete `%LOCALAPPDATA%\Pitboard App` or `Pitboard App Debug` on an
+  account that holds real logins. Their WebView2 profiles hold real sign-ins.
+- Never load claude.ai or chatgpt.com in an account window of a Debug, fixture or session
+  build. A fixture serves its own pages.
 - Never let a test, a fixture or a Debug build register with Windows: no
   `AppNotificationManager.Register`, no HKCU `Run`, `Environment` or `Software\Classes` value,
   no package and no certificate in a store. Only a Release build installed by an MSI

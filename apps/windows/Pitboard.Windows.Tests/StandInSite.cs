@@ -1,0 +1,132 @@
+using System.Collections.Concurrent;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+
+namespace Pitboard.Windows.Tests;
+
+// A web site on this PC's loopback for the WebView2 tests, so nothing reaches the network: every path is a page, /set
+// sets a cookie, /attachment/<name> is a file to save as <name>, /stalled/<name> one that never finishes, /file/<name>
+// a text file it does not say to save, /anchor/<name> a page that saves that file through an <a download>, and /leave a
+// page whose script goes to /away. It says which paths it was asked for, each with the headers that tell a navigation
+// from a prefetch.
+internal sealed class StandInSite : IDisposable
+{
+    private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
+    private readonly CancellationTokenSource _stop = new();
+
+    public StandInSite()
+    {
+        _listener.Start();
+        _ = Serve();
+    }
+
+    public ConcurrentQueue<string> Asked { get; } = new();
+
+    public ConcurrentQueue<string> Heard { get; } = new();
+
+    public string Address(string path) => $"http://127.0.0.1:{((IPEndPoint)_listener.LocalEndpoint).Port}{path}";
+
+    public void Dispose()
+    {
+        _stop.Cancel();
+        _listener.Stop();
+        _stop.Dispose();
+    }
+
+    private async Task Serve()
+    {
+        while (true)
+        {
+            TcpClient client;
+            try
+            {
+                client = await _listener.AcceptTcpClientAsync(_stop.Token);
+            }
+            catch (Exception stopped) when (stopped is OperationCanceledException or ObjectDisposedException or SocketException)
+            {
+                return;
+            }
+
+            _ = Answer(client);
+        }
+    }
+
+    private async Task Answer(TcpClient client)
+    {
+        using (client)
+        {
+            try
+            {
+                var stream = client.GetStream();
+                using var reader = new StreamReader(stream, Encoding.ASCII, leaveOpen: true);
+                var path = (await reader.ReadLineAsync())?.Split(' ') is [_, var asked, ..] ? asked : "/";
+                var told = new List<string>();
+                while (await reader.ReadLineAsync() is { Length: > 0 } header)
+                {
+                    if (header.Split(':', 2) is [var name, _]
+                        && name.Trim() is "Sec-Purpose" or "Purpose" or "Sec-Fetch-Mode" or "Sec-Fetch-Dest" or "Sec-Fetch-User" or "Cookie")
+                    {
+                        told.Add(header);
+                    }
+                }
+
+                Heard.Enqueue($"{path} [{string.Join("; ", told)}]");
+                Asked.Enqueue(path);
+                switch (path.Split('/'))
+                {
+                    case ["", var kind and ("attachment" or "stalled"), var name]:
+                        await Attach(stream, name, stalled: kind == "stalled");
+                        return;
+                    case ["", "file", var name]:
+                        await Send(stream, "text/plain; charset=utf-8", Uri.UnescapeDataString(name));
+                        return;
+                    case ["", "leave"]:
+                        await Send(stream, "text/html; charset=utf-8", "<!doctype html><title>leave</title><script>location.href = '/away'</script>");
+                        return;
+                    case ["", "anchor", var name]:
+                        await Send(
+                            stream, "text/html; charset=utf-8",
+                            $"<!doctype html><title>anchor</title><a id=\"save\" download href=\"/file/{name}\">{name}</a>"
+                            + "<script>document.getElementById('save').click()</script>");
+                        return;
+                }
+
+                var cookie = path == "/set" ? "Set-Cookie: who=here; Path=/\r\n" : "";
+                await Send(
+                    stream, "text/html; charset=utf-8",
+                    "<!doctype html><html><head><title>stand-in</title></head><body><p>A stand-in page.</p></body></html>", cookie);
+            }
+            catch (Exception ended) when (ended is IOException or OperationCanceledException or ObjectDisposedException)
+            {
+            }
+        }
+    }
+
+    private static async Task Send(NetworkStream stream, string type, string body, string headers = "")
+    {
+        var answer =
+            $"HTTP/1.1 200 OK\r\nContent-Type: {type}\r\nContent-Length: {Encoding.UTF8.GetByteCount(body)}\r\n"
+            + $"{headers}Connection: close\r\n\r\n{body}";
+        await stream.WriteAsync(Encoding.UTF8.GetBytes(answer));
+    }
+
+    // Its content is its name. A stalled one says it is a megabyte and sends a kilobyte, until the site stops.
+    private async Task Attach(NetworkStream stream, string name, bool stalled)
+    {
+        var body = Encoding.UTF8.GetBytes(Uri.UnescapeDataString(name));
+        var length = stalled ? 1 << 20 : body.Length;
+        var head =
+            $"HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Disposition: attachment; filename=\"{name}\"\r\n"
+            + $"Content-Length: {length}\r\nConnection: close\r\n\r\n";
+        await stream.WriteAsync(Encoding.ASCII.GetBytes(head));
+        if (!stalled)
+        {
+            await stream.WriteAsync(body);
+            return;
+        }
+
+        await stream.WriteAsync(new byte[1024]);
+        await Task.Delay(Timeout.Infinite, _stop.Token);
+    }
+}

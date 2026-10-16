@@ -12,6 +12,9 @@ public sealed record Identity(Build Build)
 
     public string LinkScheme => Build is Build.Debug ? "pitboard-debug" : "pitboard";
 
+    // A Debug build outside a fixture runs on whatever homes its launch has, which no link may reach.
+    public bool OpensLinks(string? fixtureFolder) => Build is Build.Release || fixtureFolder is not null;
+
     public string DataFolderName => Build is Build.Debug ? "Pitboard App Debug" : "Pitboard App";
 
     // Explorer ties an icon's GUID to the path of the exe that added it, which only the MSI keeps fixed.

@@ -60,6 +60,29 @@ public sealed class IconMenuFlyoutTests
             Said(menu));
     }
 
+    // Its windows' items name the account and its site for UI Automation, since an account's own item has its label too.
+    [UITestMethod]
+    public void ASiteWithSeveralWindowsIsASubmenu()
+    {
+        var main = Items.Window("codex", "main");
+        var spare = Items.Window("codex", "spare");
+        var snapshot = Snapshots.Read(1);
+        var model = new AppModel(snapshot with
+        {
+            AccountWindows = snapshot.AccountWindows with { Menus = [new SiteMenu.Several("Open chatgpt.com", main.Site, [main, spare])] },
+        });
+        var chosen = new List<IconCommand>();
+
+        var site = Menu(model, chosen).Items.OfType<MenuFlyoutSubItem>().Single();
+        var window = (MenuFlyoutItem)site.Items[1];
+        new MenuFlyoutItemAutomationPeer(window).Invoke();
+
+        Assert.AreEqual("Open chatgpt.com", site.Text);
+        Assert.AreEqual("main, spare", string.Join(", ", site.Items.OfType<MenuFlyoutItem>().Select(item => item.Text)));
+        Assert.AreEqual("window.chatgpt.com/spare", AutomationProperties.GetAutomationId(window));
+        Assert.AreEqual(new IconCommand.OpenWindow(spare), chosen.Single());
+    }
+
     // The window it opens from is a pixel wide.
     [UITestMethod]
     public void TheMenuDrawsOutsideTheWindowItOpensFrom()

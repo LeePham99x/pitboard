@@ -480,10 +480,10 @@ window loads its site, and whatever the site's pages load, as a browser would.
     file, or an alert's "on this Mac", is a `match` on `host::OS`, as what a window cannot
     sign in with is in `sites.rs`. Each takes the system as an argument, so every system's
     answer is tested on every system: Windows says "this PC", numbers a copy
-    `report (1).pdf`, takes names in any case and in no other form for one file, and
-    promises no passkey. `records.rs` reads and writes the windows' records, the
-    stores each Pitboard directory made and the page each window was last on, which the
-    model keeps in `windows.json`.
+    `report (1).pdf` and `archive (1).tar.gz`, takes names in any case and in no other form
+    for one file, and promises no passkey. `records.rs` reads and writes the windows'
+    records, the stores each Pitboard directory made and the page each window was last on,
+    which the model keeps in `windows.json`.
   - `model/` is the app model the macOS app shows and the Windows app is to show. An app
     makes a `PitboardModel`, sends it an `Intent` for each thing asked of it, and its
     `ModelListener` is told of each numbered `Snapshot`; its `AppControl` quits and opens
@@ -653,7 +653,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     model's words. `Keyed` keeps a shown row while the model lists it, so `ShownAccount`
     keeps its selection across snapshots. `WindowAlert` is the failure or quit question in
     front of the window, `SheetPage` what the sheet over it shows and sends, and `Countdown`
-    a notice's timer.
+    a notice's timer. The account windows' WebView2 glue is mapped under
+    [Account windows](#account-windows).
   - `Pitboard.Views` is the main window's panes, a WinUI library so the test app shows them
     as `Pitboard.exe` does. `AccountsPane` lists the accounts under their notices and setup
     step, each an `AccountRow` with an `AccountMenu`; `ActivityPane` and `MachinePane` are
@@ -664,17 +665,18 @@ window loads its site, and whatever the site's pages load, as a browser would.
     its sign-in, names, renames or puts away a login left in a file, and tells the model
     when somebody closes it. `IconMenuFlyout` is the icon's menu as a MenuFlyout.
     `SettingsPane` is the settings page, in the macOS Settings' sections, each warm-up account
-    a `WarmRow`.
+    a `WarmRow`. `AccountWindow` and `SignInWindow` are the account windows.
   - `Pitboard.App` is `Pitboard.exe`, unpackaged and self-contained, carrying the icon that
     `Icon/make-ico.py` writes from the drawings beside it. `Program.Main` decides the
     launch, and `App` makes the model, over this PC or in a Debug build started with
     `PITBOARD_FIXTURE` a fixture's, keeps the icon, registers for notifications, opens the
     main window when the model asks, and asks for it on a launch from Start or a shortcut,
     since Windows puts a new icon in the overflow; a start at sign-in, after an update or from
-    a notification opens none. It stops the model and unregisters on Exit, and as the session
-    ends stops the model, or ends where Restart Manager asks. `MenuHost` is the pixel of a
-    window the icon's menu opens from. `MainWindow` shows a pane for each of the model's
-    `Pane`s and its settings page, and takes Ctrl+N and Ctrl+comma from any of them.
+    a notification opens none. It opens the account windows through `AccountWindows`. It stops
+    the model and unregisters on Exit, and as the session ends stops the model, or ends where
+    Restart Manager asks. `MenuHost` is the pixel of a window the icon's menu opens from.
+    `MainWindow` shows a pane for each of the model's `Pane`s and its settings page, and takes
+    Ctrl+N and Ctrl+comma from any of them.
   - `Pitboard.Windows.Tests` is a WinUI app that hosts its own tests, the views' among them
     over snapshots made in C#, and `Pitboard.UITests` drives the built app with FlaUI.
     Neither registers anything with Windows. The icon's menu is held by the view tests,
@@ -1843,11 +1845,11 @@ How to run the checker and add a fact is in
 
 ## Account windows
 
-The app gives each enrolled account a window on its tool's site: claude.ai for a Claude
-Code account, and chatgpt.com for a Codex account. The site's own pages run in it, in
-WebKit, with a store of website data that belongs to that account alone. A page shared from
-a browser's Share menu reaches the app as a Pitboard link, and the person chooses which
-account's window opens it.
+The app gives each enrolled account a window on its tool's site: claude.ai for a Claude Code
+account, and chatgpt.com for a Codex account. The site's own pages run in it, in WebKit on
+macOS and WebView2 on Windows, with a store of website data that belongs to that account
+alone. A page shared from a browser's Share menu reaches the app as a Pitboard link, and the
+person chooses which account's window opens it.
 
 The windows read the accounts from the model's last read, and their bookkeeping is the
 model's, so the Windows app's WebView2 code gets the same decisions: which store is whose,
@@ -2047,28 +2049,122 @@ rests on are under [WebKit and SwiftUI](#webkit-and-swiftui) and
 
 ### On Windows
 
-Nothing of the Windows app's account windows is written yet. Its WebView2 code would get
-the same decisions from the model, and one thing differs from WebKit in how a store goes,
-read in Microsoft's documentation of `CoreWebView2Profile.Delete` for WebView2 1.0.4191.47
-on 6 October 2026: deleting a profile marks it for deletion, closes the web views using it
-and raises its `Deleted` event, and its folder is deleted only as the browser process
-exits, or at a later start where something still held its files. Making a profile of the
-same name before then fails with `HRESULT_FROM_WIN32(ERROR_DELETE_PENDING)`. So the
-Windows app cannot answer `StoreDeleted` when it asks for a deletion, as the macOS app does
-once `remove(forIdentifier:)` returns: it answers `StoreHeld` while the folder is still
-there, which keeps the store recorded and has the next read ask again, and `StoreDeleted`
-once the folder has gone. A window of an account enrolled again meanwhile would fail to
-make its profile, so on Windows the model holds a store answered `StoreHeld` until
-`StoreDeleted` comes: it asks for it again after every read, enrolled again or not, opens no
-window of it, and lists it in `AccountWindowsShown.held`, whose menu item says why with
-`WindowNoteKind::StoreHeld`. It keeps these in `windows.json` too, as `held` beside this
-directory's stores, so after a restart the first read asks for them again and their windows
-wait until the app answers `StoreDeleted`, then open with the sign-in note. Another
-directory's record of a held store does not keep it either, since its deletion is made
-already. Read again for
-WebView2 1.0.4258.31 on 15 October 2026, unchanged. On macOS a store WebKit kept holding is
-still whole, its sign-in included, so an account enrolled again keeps it and its window
-opens on it.
+The Windows app's account windows run in WebView2, over the same decisions from the model.
+
+- `apps/windows/Pitboard.Windows`: `WebEnvironment` is the world a launch's windows run in,
+  decided once: the sites over `https`, with pages sent elsewhere opened by Windows, or a
+  fixture's stand-ins on `pitboard-fixture`, served from `fixture_page` and sent nowhere.
+  One `CoreWebView2Environment` serves every window, over `WebView2` in the app's data
+  folder, the fixture's own folder in a fixture, so a fixture's scheme registration, which a
+  browser process keeps for its life, never meets a real folder. A store is a WebView2
+  profile named by the store id. `WebSession` is one open window: its page and the sign-in
+  window one of its pages opened, each under its role. It turns `NavigationStarting`,
+  `FrameNavigationStarting` and `NewWindowRequested` into what `decide_navigation` reads
+  through `PageRequests`, and does what it decides: a sign-in window's page is made in the
+  same environment and profile and set as `NewWindow` before it loads, which keeps
+  `window.opener`; `LoadInPage` loads the link in the window's own page, and a page sent
+  elsewhere goes to `Launcher`. A navigation it stops still sent its request on the runners,
+  so it answers that document request itself, empty, through `WebResourceRequested`. It
+  answers `WindowCloseRequested` with `page_may_close`, `PermissionRequested` with
+  `page_may_use`, leaving anything else to WebView2's own prompt, a render process that
+  ended with `after_content_process_ended`, and cancels every launch of another app's
+  scheme. It hands `DownloadStarting` to `decide_response`, with `PageNavigations` saying
+  whether the page's own navigation started it, and `Downloads` keeps every window's
+  downloads. `StoreJanitor` answers each deletion the model asks for, and `HeldStores` says
+  why a held store's entry opens nothing. `Launching` finds a launch's Pitboard link, and
+  the one in a launch another copy hands over, and `Handovers` keeps what is handed over
+  until the app has its model.
+- `apps/windows/Pitboard.Views`: `AccountWindow` is the window, a command bar of Back,
+  Forward, Reload or Stop, and Downloads once the model lists a download of the window,
+  with **Remove website data…** under More, the window's note in an InfoBar, and the page,
+  or what stands for it until the model lists the window. It asks the download question
+  and the quit question as ContentDialogs. Find, zoom, script dialogs, file pickers, the
+  download list and the browser keys are WebView2's own.
+  `SignInWindow` is a sign-in window, at `sign_in_window_size` over the account's window.
+  The icon's menu and an account's shortcut menu offer each window, from
+  `AccountWindowsShown.menus` and `AccountItem.windows`. `OpenLinkWindow` is the
+  **Open link** window, over `AccountWindowsShown.picker`, with its buttons in a
+  ContentDialog's order: the default first, Cancel last.
+- `apps/windows/Pitboard.App/AccountWindows.cs` opens a window per store and brings an open
+  one forward, tells the model each opened and closed, closes those the model says close,
+  and hands each store asked for to the janitor. It owns `Downloads`, and asks before Quit
+  while one is under way. It brings the **Open link** window forward with each link that
+  arrives, and withdraws it once none waits.
+
+A Pitboard link reaches `Pitboard.exe` as its first argument, and a launch with one reads no
+flag after it: Microsoft's guide to URI schemes warns that a link's unencoded quotes or
+spaces split it into more arguments. Only an installer registers `pitboard`, nothing
+registers `pitboard-debug`, and neither build registers a scheme as it runs. A copy started
+while another holds the key hands its launch over, and the running copy reads the link from
+that launch's command line. A Debug build outside a fixture refuses a `pitboard-debug` link
+before it takes the key or writes anything, since it would run on whatever homes its launch
+has. **Open in browser** goes where a page sent elsewhere goes: to Windows, and in a fixture
+nowhere. The three `AccountPickerTests` that need no account hand their link over through a
+second copy; choosing an account and cancelling wait for W23a.
+
+One thing differs from WebKit in how a store goes, read in Microsoft's documentation of
+`CoreWebView2Profile.Delete` for WebView2 1.0.4258.31 on 16 October 2026: deleting a profile
+marks it for deletion, closes the web views using it and raises its `Deleted` event, and its
+folder is deleted only as the browser process exits, or at a later start where something
+still held its files. Making a profile of the same name before then fails with
+`HRESULT_FROM_WIN32(ERROR_DELETE_PENDING)`. A profile's folder is
+`EBWebView\WV2Profile_<name>` under the user data folder, as
+`CoreWebView2Profile.ProfilePath` read on both runners in run 38819589926. On both runners
+the folder outlived its browser process and went as the next one started (CF7 under
+[Windows](#windows)). So `StoreJanitor` answers `StoreDeleted` where the store's folder is
+not there, once a page of the launch has shown its `ProfilePath` there, and otherwise
+answers `StoreHeld`, which keeps the store recorded and has the next read ask again. A store
+not yet marked it deletes through a page of its own, made in the app's hidden window. Once
+no browser process runs, it sweeps: a page of the default profile starts one, kept until the
+folder goes or for fifteen seconds. A store held at an earlier launch is swept rather than
+marked first, as making its profile after a start had deleted the folder would make it anew,
+and one a start has left since its mark is marked again. A window of an account enrolled
+again meanwhile would fail to make its profile, so on Windows the model holds a store
+answered `StoreHeld` until `StoreDeleted` comes: it asks for it again after every read,
+enrolled again or not, opens no window of it, and lists it in `AccountWindowsShown.held`,
+whose menu items say why with `WindowNoteKind::StoreHeld`. It keeps these in `windows.json`
+too, as `held` beside this directory's stores, so after a restart the first read asks for
+them again and their windows wait until the app answers `StoreDeleted`, then open with the
+sign-in note. Another directory's record of a held store does not keep it either, since its
+deletion is made already. `ProfileTests` holds the contract and the sweep on both images
+(run 38846774768), and `TwoProfilesKeepTheirCookiesApart` that one profile's cookies are not
+another's. On macOS a store WebKit kept holding is still whole, its sign-in included, so an
+account enrolled again keeps it and its window opens on it.
+
+**Remove website data** leaves the page for a blank one, clears the profile with
+`ClearBrowsingDataAsync`, tells the model `WebsiteDataRemoved`, and opens the site's home
+in a new web view, so Back cannot bring the signed-in page back.
+`RemovingWebsiteDataEmptiesTheWindowsProfileAlone` holds that another profile keeps its
+data.
+
+Downloads go to the person's Downloads folder, `FOLDERID_Downloads`, and a fixture's to
+`Downloads` in its own folder. Each profile's `DefaultDownloadFolderPath` is that folder
+too, since Chromium writes a download into a temporary file there until it is named.
+WebView2 has no response policy: it raises `DownloadStarting` for what it will not show,
+naming no frame, so `decide_response` hears `can_show` false, the address and its
+`Content-Disposition`, and `main_frame` true only where the page's own navigation to that
+address is under way, or completed as one that became a download does, unsuccessful and
+`ConnectionAborted`, and the page has not navigated since, and no frame's navigation there
+has done either. A download nothing accounts for counts as a frame's, so the question shows
+more often than on macOS, never less: the site's own `blob:` and `data:` downloads ask.
+`Ignore` cancels it before it is named; a question holds the event's deferral and cancels on
+Cancel, or as its window closes and withdraws it; a download saved is named by
+`download_destination`, which on Windows numbers a copy `report (1).pdf` and splits a name
+as WebView2 does, `archive (1).tar.gz`. `Downloads` tells the model each one's start, file
+and end, and counts those under way for `downloads_quit_question`: Quit asks over a window
+of an account whose download runs, or another account window, then cancels them all. A
+paused download is under way: WebView2 leaves it interrupted and able to resume, and one
+still under way as its browser process exits ends cancelled. The download list is WebView2's
+own dialog, which Downloads in the command bar opens and which offers each file's folder, so
+no surface of Pitboard's reveals a file: `ASiteDownloadIsListedInTheWindow` looks for its
+Show in folder once W23a lets it run. `DownloadTests` hold this against the stand-in site,
+and print for CF7 the events WebView2 raised around each kind of download.
+
+A window refuses to open, saying why, on a PC whose WebView2 Runtime is older than
+144.0.3719.77, the Runtime of the WebView2 SDK the Windows App SDK 2.5.1 brings, 1.0.3719.77
+(`CORE_WEBVIEW_TARGET_PRODUCT_VERSION` in its `WebView2EnvironmentOptions.h`). CI's
+`windows-app` job reads each image's Runtime as Microsoft's distribution guide detects it
+(CF4), and `ProfileTests.ThisPCsRuntimeTakesTheWindows` asks the app's own check there.
 
 ## Measured facts
 
@@ -2139,6 +2235,44 @@ Accounts and tokens:
   the workspace. This is how CI runs every Windows test, through
   `.github/scripts/test-as-standard-user.ps1`.
 - That user's programs run in the job user's session, 2, and start inside a job already.
+- WebView2 tries that user's password blank once for each new user data folder:
+  `msedgewebview2.exe` calls `LogonUser` with an empty password, logon type 2, as Chromium's
+  `CheckBlankPasswordWithPrefs` does, and the Security log records a failed logon
+  (0xC000006A). Read on 154.0.4258.62 on windows-2025 and 155.0.4283.45 on windows-11-arm, in
+  run 38825074643 thirteen folders made thirteen. With a folder per WinUI test the user was
+  locked out on both images after ten in run 38822700418, so those tests share one user data
+  folder for the run, each under profiles of its own.
+- CF4: the WebView2 Runtime is 154.0.4258.62 on windows-2025 and 155.0.4283.45 on
+  windows-11-arm, read from `pv` under the machine's EdgeUpdate client key in run
+  38825074643.
+- CF7, WebView2's downloads, on both images in run 38825074643: a page whose response says
+  `Content-Disposition: attachment` raised `NavigationStarting`, then `NavigationCompleted`
+  unsuccessful with `ConnectionAborted`, then `DownloadStarting`, and a frame of another
+  host did the same with `FrameNavigationStarting` and `FrameNavigationCompleted`; a `blob:`
+  or `data:` link raised `DownloadStarting` alone. An `<a download>` of a `pitboard-fixture`
+  address raised nothing at all, as in runs 38819589926 and 38822700418. For a second
+  `archive.tar.gz` WebView2 offered and saved `archive (1).tar.gz`. A paused download is
+  `Interrupted`, `UserPaused`, and can resume.
+- CF7: a page's own script that leaves the site raises `NavigationStarting` with
+  `IsUserInitiated` false, on both images in run 38825074643.
+- CF7, a deleted profile, on both images in run 38842851059: `CoreWebView2Profile.Delete`
+  had the name refused with `ERROR_DELETE_PENDING` at once, and the folder outlived its
+  browser process, holding `Platform Notifications` and `WebStorage` files on windows-2025
+  and `DIPS`, `DashTrackerDatabase` and `Network Action Predictor` ones on windows-11-arm. A
+  new environment over the user data folder left it for 20 s; a page of another profile
+  started a browser process, and the folder went 5.1 s later. Microsoft's reference has it
+  go as the browser process exits, or at a later start where something held its files.
+- CF7, on both images in runs 38842851059 and 38846774768: a navigation that
+  `NavigationStarting` cancelled still sent its own request, from a page of the fixture's
+  scheme and from one on http, with `Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: document`
+  and no `Sec-Purpose`. WebView2 raised `NavigationStarting` first, then
+  `WebResourceRequested` for it as a `Document` request, where the window's answer kept it
+  from the stand-in site.
+- CF7, downloads, on both images in run 38842851059: an `<a download>` in a frame of the
+  stand-in site raised `FrameNavigationStarting`, a successful `FrameNavigationCompleted`,
+  then `DownloadStarting` for the file. A download whose page was the last to close raised
+  no `StateChanged`, and its browser process exited; one whose page closed while another
+  kept the browser process was still in progress five seconds later.
 - Explorer, the job user's, takes no notification-area icon of that user's: `NIM_ADD` fails
   for an icon named by its window and id and for one named by a GUID (CI run 38753437460).
   So no UI test clicks Pitboard's icon: the view tests hold its menu, and the session's step
@@ -2411,7 +2545,6 @@ on 15 October 2026. W27 reviews the list.
 | `StartWhenAvailable` runs a start that was missed | [StartWhenAvailable](https://learn.microsoft.com/en-us/windows/win32/taskschd/tasksettings-startwhenavailable) | A runner never sleeps through a trigger. |
 | WSL 2's processes run in a utility VM | [Comparing WSL versions](https://learn.microsoft.com/en-us/windows/wsl/compare-versions) | No runner has WSL. |
 | `QueryUnbiasedInterruptTimePrecise` leaves out sleep and hibernation, which `QueryPerformanceCounter` counts | [QueryUnbiasedInterruptTimePrecise](https://learn.microsoft.com/en-us/windows/win32/api/realtimeapiset/nf-realtimeapiset-queryunbiasedinterrupttimeprecise), [Acquiring high-resolution time stamps](https://learn.microsoft.com/en-us/windows/win32/sysinfo/acquiring-high-resolution-time-stamps) | A runner never sleeps. |
-| A deleted WebView2 profile's folder goes as the browser process exits, and its name is refused with `ERROR_DELETE_PENDING` until then | [CoreWebView2Profile.Delete](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/winrt/microsoft_web_webview2_core/corewebview2profile#delete) | No row runs WebView2 yet. |
 | A program ended by an unhandled exception exits with the exception's code, such as `0xC0000005` | [GetExitCodeProcess](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getexitcodeprocess) | No row crashes a program. |
 | `GetPackageFamilyName` gives a packaged process's family, and `APPMODEL_ERROR_NO_PACKAGE` for an unpackaged one | [GetPackageFamilyName](https://learn.microsoft.com/en-us/windows/win32/api/appmodel/nf-appmodel-getpackagefamilyname) | No row starts a packaged process; session step 10 reads ChatGPT's. |
 | A `CryptProtectData` blob opens only for the same user's credentials on the same computer | [CryptProtectData](https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata) | The runners have one account per logon and one machine each. |
@@ -2424,6 +2557,7 @@ on 15 October 2026. W27 reviews the list.
 | Since winget 1.29, an MSI wins over a portable installer whatever the manifest's order | [winget-cli 1.29.380](https://github.com/microsoft/winget-cli/releases/tag/v1.29.380) | windows-2025's winget is 1.11.510, and no runner installs from winget's sources. |
 | A broadcast, such as `WM_ENDSESSION`, reaches a top-level window that is never shown, and no message-only window | [Message-only windows](https://learn.microsoft.com/en-us/windows/win32/winmsg/window-features#message-only-windows) | A runner's session never ends while a job runs; CF9 sends one. |
 | Restart Manager asks a program to end with `WM_ENDSESSION` and `ENDSESSION_CLOSEAPP`, which it should end on, then waits for it to exit, sending `WM_CLOSE` to one that does not | [Guidelines for Applications](https://learn.microsoft.com/en-us/windows/win32/rstmgr/guidelines-for-applications) | No runner installs over a running Pitboard; CF9 sends the message, and the session's step A7 upgrades a running copy. |
+| A launch redirected to the running copy carries the second copy's arguments | [App instancing](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/applifecycle/applifecycle-instancing) | No `windows-app` run has passed `AccountPickerTests` yet: in run 38825074643 the running copy crashed on a theme brush as the link reached it. |
 | A new notification-area icon goes to the overflow, where only the person promotes it | [Notifications and the notification area](https://learn.microsoft.com/en-us/windows/win32/shell/notification-area) | No runner's Explorer takes the test user's icon; the session's step A2 records where it starts. |
 | A notification icon's menu closes on a click elsewhere only when its window was made the foreground window first | [TrackPopupMenu](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-trackpopupmenu) | Only a person clicks elsewhere: the session's step A2. |
 | A GUID icon is tied to the path of the exe that added it, unless both are signed by one company | [NOTIFYICONDATAW](https://learn.microsoft.com/en-us/windows/win32/api/shellapi/ns-shellapi-notifyicondataw) | No Release build runs from two paths on a runner; the 1.0 session's P4 upgrades one. |
@@ -3561,6 +3695,13 @@ Microsoft's documentation.
   the STA thread, as Microsoft's [App instancing](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/applifecycle/applifecycle-instancing)
   does it, to a copy that runs and to one that is starting, on both images (`LifecycleTests`,
   run 38795330950).
+- `FindOrRegisterForKey` returns the `AppInstance` that `GetCurrent` does, so the handler
+  `Program` connects before it takes the key hears each launch handed to that key. An
+  unpackaged launch's arguments are its whole command line, as `GetCommandLine` has it, its
+  program first, which the SDK splits with `CommandLineToArgvW` to find its own (commit
+  13160d54 again, read on 16 October 2026: `AppInstance.cpp` `FindOrRegisterForKey` and
+  `GetActivatedEventArgs`, and `LaunchActivatedEventArgs.h`). So `Handovers` keeps each
+  launch with its link, and `Launching.Handed` splits the command line as the SDK does.
 - Under `DispatcherShutdownMode.OnExplicitShutdown`, closing the main window leaves
   Pitboard.exe running ([DispatcherShutdownMode](https://learn.microsoft.com/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.application.dispatchershutdownmode)),
   on both images (`LifecycleTests.ClosingTheWindowLeavesPitboardRunning`, run 38804714545).
@@ -3714,6 +3855,32 @@ Microsoft's documentation.
   April 2026) has a click on a notification open its context. So a notification says its
   title, its tool and its body, as the macOS one does, with Switch as its button, and a
   click on it opens the window on Accounts.
+- WebView2 SDK 1.0.4258.31's reference (Microsoft Learn, updated 12 October 2026): a page
+  set as `NewWindow` must be in the opener's environment and profile and not yet navigated,
+  takes its settings before it is set and `WebResourceRequested` after, and is what
+  `window.open` returns to the opener; with neither `NewWindow` nor `Handled` WebView2 opens
+  a window of its own. So `WebSession` handles every request, makes a sign-in window's page
+  in the account's profile, prepares it, sets it and only then serves a fixture's pages to
+  it. The multiple profiles guide (updated 26 November 2025) gives each profile its own
+  folder of cookies, storage and caches under one user data folder, and makes a profile that
+  a controller names and none has yet. The distribution guide (updated 2 October 2026) reads
+  the Runtime's version from `pv` under
+  `EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}`, per machine and per user, and
+  has an app feature-detect what a Runtime older than its SDK may lack. In run 38825074643
+  `WebSessionTests.ASignInWindowKeepsItsOpenerAndClosesWhenItsPageIsDone` and
+  `ProfileTests.TwoProfilesKeepTheirCookiesApart` passed on both images.
+- Chromium 155.0.8059.87, read on 16 October 2026: a download whose name is taken is
+  numbered by `CreateUniqueFilename` (`download_path_reservation_tracker.cc`), which puts
+  ` (1)` before `FilePath::Extension`, and that keeps a second extension of one to four
+  characters before `bz`, `bz2`, `gz`, `lz`, `lzma`, `lzo`, `xz`, `z` or `zst`, takes
+  `user.js` whole, and lets an extension hold a space (`base/files/file_path.cc`). A
+  download not yet named is written into a temporary file in the download manager's default
+  folder (`base_file.cc`, `in_progress_download_manager.cc`). So `download_destination`
+  splits a name that way on Windows, and `WebEnvironment` sets each profile's download
+  folder. `CoreWebView2DownloadOperation`'s reference (updated 28 September 2026) has
+  `Pause` leave a download interrupted with `CanResume` true, and `Downloads` ends one in
+  the model only once it cannot resume. The reference gives the reason as `UserCanceled`;
+  the runners give `UserPaused` (CF7 under [Windows](#windows)).
 
 ### The model's timers
 

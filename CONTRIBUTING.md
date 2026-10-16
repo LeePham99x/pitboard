@@ -351,12 +351,14 @@ byte, and runs the C# tests against each the same way.
 CI's `windows-app` job builds the app in Debug over `pitboard_ffi.dll` opened with its
 fixtures, and publishes it in Release over the library as a 0.x release builds it, on both
 images. `.github/scripts/check-windows-app.ps1` checks the Release build for fixture text, a
-package identity, a core opened before Windows is released and the core's C runtime. The job runs `Pitboard.Windows.Tests`, a WinUI app
-that hosts its own tests, and `Pitboard.UITests`, which drives the built app with FlaUI, as a
-fresh standard user, then the UI test of an elevated launch as the job's user. It builds
-`Pitboard.Probe`, which the session machine runs to measure the app's notifications, and checks
-that it refuses an account without `pitboard-probe`'s throwaway marker. The WinUI projects
-build only there.
+package identity, a core opened before Windows is released and the core's C runtime. It reads
+each image's WebView2 Runtime, which the account windows need. The job runs
+`Pitboard.Windows.Tests`, a WinUI app that hosts its own tests, its WebView2 tests against a
+stand-in site on the loopback among them, and `Pitboard.UITests`, which drives the built app
+with FlaUI, as a fresh standard user, then the UI test of an elevated launch as the job's user.
+It builds `Pitboard.Probe`, which the session machine runs to measure the app's notifications,
+and checks that it refuses an account without `pitboard-probe`'s throwaway marker. The WinUI
+projects build only there.
 
 CI's `windows-release` job builds the release's zips with `.github/actions/windows-release`,
 as `release.yml` does from 1.0.0. `.github/scripts/check-windows-build.ps1` checks each
@@ -395,6 +397,17 @@ foreach ($name in 'USERPROFILE', 'HOME', 'APPDATA', 'LOCALAPPDATA', 'CODEX_HOME'
 The worlds that seed Claude Code wait for W23a on Windows. Started again, the second copy hands
 its launch to the first, which brings its window forward, and quits. Exit in the icon's menu
 ends it.
+
+To open a link, start a second copy with a Pitboard link of the Debug build:
+
+```powershell
+$app.ArgumentList.Add('pitboard-debug://open?url=' + [Uri]::EscapeDataString('https://chatgpt.com/'))
+[Diagnostics.Process]::Start($app)
+$app.ArgumentList.Clear()
+```
+
+The first copy asks which account opens it, and the last line has `$app` start plain launches
+again. Outside a fixture a Debug build refuses a link.
 
 On x64, build with `-r win-x64 -p:Platform=x64`, which builds into `bin\x64\...\win-x64`. A
 Debug build keeps apart from an installed Release:

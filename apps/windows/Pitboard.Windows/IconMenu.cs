@@ -22,6 +22,8 @@ public abstract record IconCommand
 
     public sealed record OpenLink(string Url) : IconCommand;
 
+    public sealed record OpenWindow(WindowAccount Window) : IconCommand;
+
     public sealed record ShowSettings : IconCommand;
 
     public sealed record CheckForUpdates : IconCommand;
@@ -46,6 +48,9 @@ public abstract record IconMenuEntry
 
         // What a click on the icon does, which a Windows context menu shows in bold.
         public bool Default { get; init; }
+
+        // What UI Automation finds it by, where its text alone could be another entry's.
+        public string? Id { get; init; }
     }
 
     // Choosing it does what its row's button does; the one in use stays in use until another is chosen.
@@ -56,10 +61,12 @@ public abstract record IconMenuEntry
 
     public sealed record Label(string Text, bool Heading) : IconMenuEntry;
 
+    public sealed record Submenu(string Text, IReadOnlyList<IconMenuEntry> Entries) : IconMenuEntry;
+
     public sealed record Separator : IconMenuEntry;
 }
 
-// The notification-area icon's menu, in the macOS menu's order. The site menus come with the account windows.
+// The notification-area icon's menu, in the macOS menu's order.
 public static class IconMenu
 {
     public const string HelpLink = "https://docs.usepitboard.com";
@@ -78,6 +85,7 @@ public static class IconMenu
                     Enabled = !model.Reading,
                 },
             ],
+            Sites(model.AccountWindows),
             [
                 new IconMenuEntry.Command("Open Pitboard", new IconCommand.Send(new Intent.ShowWindow(Pane: null))) { Default = true },
                 new IconMenuEntry.Command("Settings", new IconCommand.ShowSettings()),
@@ -151,6 +159,32 @@ public static class IconMenu
                 Lines(item.Summary, item.Help))));
             return entries;
         });
+    }
+
+    // An account's window entry: its title is the account's label, as the account's own entry is.
+    public static string WindowId(WindowAccount window) => $"window.{window.Site.Host}/{window.Label}";
+
+    // A site with one account's window is an item, and one with several a submenu of their titles.
+    private static List<IconMenuEntry> Sites(AccountWindowsShown windows) =>
+        [
+            .. windows.Menus.Select<SiteMenu, IconMenuEntry>(menu => menu switch
+            {
+                SiteMenu.One one => Window(one.Title, one.Window, windows.Held),
+                SiteMenu.Several several => new IconMenuEntry.Submenu(
+                    several.Title, [.. several.Windows.Select(window => Window(window.Title, window, windows.Held))]),
+                _ => throw new ArgumentOutOfRangeException(nameof(windows), menu, "a site menu of no kind"),
+            }),
+        ];
+
+    private static IconMenuEntry.Command Window(string text, WindowAccount window, string[] held)
+    {
+        var note = HeldStores.Note(window, held);
+        return new IconMenuEntry.Command(text, new IconCommand.OpenWindow(window))
+        {
+            Detail = note,
+            Enabled = note is null,
+            Id = WindowId(window),
+        };
     }
 
     private static IconMenuEntry.Command Notice(MenuEntry entry, IconMark mark) =>

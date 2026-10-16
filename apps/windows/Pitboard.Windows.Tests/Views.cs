@@ -54,14 +54,27 @@ internal static class Views
 
     public static void Press(Button button) => new ButtonAutomationPeer(button).Invoke();
 
-    public static async Task Until(Func<bool> condition, string what)
+    // A window of its own, activated and laid out.
+    public static async Task<T> Activated<T>(T window)
+        where T : Window
     {
-        var deadline = DateTime.UtcNow + Patience;
+        var root = (FrameworkElement)window.Content;
+        var loaded = new TaskCompletionSource();
+        root.Loaded += (_, _) => loaded.TrySetResult();
+        window.Activate();
+        await loaded.Task.WaitAsync(Webs.Patience);
+        return window;
+    }
+
+    public static async Task Until(Func<bool> condition, string what, TimeSpan? patience = null)
+    {
+        var waited = patience ?? Patience;
+        var deadline = DateTime.UtcNow + waited;
         while (!condition())
         {
             if (DateTime.UtcNow > deadline)
             {
-                throw new AssertFailedException($"{what}, not within {Patience}");
+                throw new AssertFailedException($"{what}, not within {waited}");
             }
 
             await Task.Delay(50);

@@ -1,38 +1,41 @@
 namespace Pitboard.Windows;
 
-// AppInstance raises a redirected launch once, which can be before this copy can open its window.
+// AppInstance raises a redirected launch once, which can be before this copy can take it.
 public sealed class Handovers
 {
     private readonly Lock _lock = new();
-    private Action? _reopen;
-    private bool _held;
+    private readonly List<string?> _held = [];
+    private Action<string?>? _take;
 
-    // From AppInstance.Activated, on a thread of its own.
-    public void Arrived()
+    // From AppInstance.Activated, on a thread of its own, with the launch's Pitboard link or none.
+    public void Arrived(string? link)
     {
-        Action? reopen;
         lock (_lock)
         {
-            reopen = _reopen;
-            _held |= reopen is null;
+            if (_take is not null)
+            {
+                _take(link);
+            }
+            // Every launch without a link held while Pitboard starts asks for the same window.
+            else if (link is not null || !_held.Contains(null))
+            {
+                _held.Add(link);
+            }
         }
-
-        reopen?.Invoke();
     }
 
-    public void Ready(Action reopen)
+    // Under the lock, so the app takes each launch in the order it arrived.
+    public void Ready(Action<string?> take)
     {
-        bool held;
         lock (_lock)
         {
-            _reopen = reopen;
-            held = _held;
-            _held = false;
-        }
+            _take = take;
+            foreach (var link in _held)
+            {
+                take(link);
+            }
 
-        if (held)
-        {
-            reopen();
+            _held.Clear();
         }
     }
 }

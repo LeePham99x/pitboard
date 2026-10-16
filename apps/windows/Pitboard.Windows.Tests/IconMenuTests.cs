@@ -36,6 +36,7 @@ public sealed class IconMenuTests
         IconMenuEntry.Label label => "> " + label.Text,
         IconMenuEntry.Account account => (account.InUse ? "(x) " : "( ) ") + account.Text,
         IconMenuEntry.Command command => command.Text,
+        IconMenuEntry.Submenu submenu => $"{submenu.Text} > {Said(submenu.Entries).Replace(" | ", ", ", StringComparison.Ordinal)}",
         _ => throw new AssertFailedException($"an entry of no kind: {entry}"),
     }));
 
@@ -189,6 +190,66 @@ public sealed class IconMenuTests
         Assert.AreEqual(new IconCommand.ShowSettings(), Command(entries, "Settings").Does);
         Assert.AreEqual(new IconCommand.OpenLink("https://docs.usepitboard.com"), Command(entries, "Pitboard help").Does);
         Assert.AreEqual(new IconCommand.Quit(), Command(entries, "Exit").Does);
+    }
+
+    // Between Refresh and Open Pitboard, as the macOS menu has them.
+    [TestMethod]
+    public void EachSiteOffersItsAccountsWindows()
+    {
+        var work = Items.Window("claude", "work", inUse: true);
+        var main = Items.Window("codex", "main");
+        var spare = Items.Window("codex", "spare");
+        var model = Model(snapshot => snapshot with
+        {
+            Sections = [Items.Section("claude", null, Items.Account("claude", "work", inUse: true))],
+            AccountWindows = snapshot.AccountWindows with
+            {
+                Accounts = [work, main, spare],
+                Menus =
+                [
+                    new SiteMenu.One("Open claude.ai as work", work),
+                    new SiteMenu.Several("Open chatgpt.com", main.Site, [main, spare]),
+                ],
+            },
+        });
+
+        var entries = IconMenu.Entries(model, new NoUpdates());
+
+        Assert.Contains(
+            "Refresh | - | Open claude.ai as work | Open chatgpt.com > main, spare | - | Open Pitboard", Said(entries));
+        Assert.AreEqual(new IconCommand.OpenWindow(work), Command(entries, "Open claude.ai as work").Does);
+        Assert.AreEqual("window.claude.ai/work", Command(entries, "Open claude.ai as work").Id);
+        var chatGPT = entries.OfType<IconMenuEntry.Submenu>().Single();
+        Assert.AreEqual(new IconCommand.OpenWindow(spare), ((IconMenuEntry.Command)chatGPT.Entries[1]).Does);
+    }
+
+    [TestMethod]
+    public void NoAccountWithAWindowOffersNoSite()
+    {
+        Assert.DoesNotContain("Open claude.ai", Said(IconMenu.Entries(TwoTools(), new NoUpdates())));
+    }
+
+    // Its old store is still being deleted, which WebView2 does only as its browser process exits.
+    [TestMethod]
+    public void AWindowWhoseStoreIsHeldSaysWhyAndCannotBeChosen()
+    {
+        var work = Items.Window("claude", "work", inUse: true);
+        var model = Model(snapshot => snapshot with
+        {
+            AccountWindows = snapshot.AccountWindows with
+            {
+                Accounts = [work],
+                Menus = [new SiteMenu.One("Open claude.ai as work", work)],
+                Held = [work.Store.ToUpperInvariant()],
+            },
+        });
+
+        var entry = Command(IconMenu.Entries(model, new NoUpdates()), "Open claude.ai as work");
+
+        Assert.IsFalse(entry.Enabled);
+        Assert.AreEqual(
+            "What this window kept before is deleted once every account window has closed. It opens after that.",
+            entry.Detail);
     }
 
     [TestMethod]

@@ -23,6 +23,7 @@ public sealed partial class AccountsPane : UserControl
     private readonly AppModel _model;
     private readonly DialogHost _dialogs;
     private readonly TimeProvider _time;
+    private readonly Action<WindowAccount>? _openWindow;
     private readonly ObservableCollection<ShownAccount> _rows = [];
     private readonly ObservableCollection<ShownSection> _sections = [];
     private readonly CollectionViewSource _grouped;
@@ -30,11 +31,12 @@ public sealed partial class AccountsPane : UserControl
     private Action? _emptyChoice;
     private SetupStep? _setup;
 
-    public AccountsPane(AppModel model, DialogHost dialogs, TimeProvider? time = null)
+    public AccountsPane(AppModel model, DialogHost dialogs, TimeProvider? time = null, Action<WindowAccount>? openWindow = null)
     {
         _model = model;
         _dialogs = dialogs;
         _time = time ?? TimeProvider.System;
+        _openWindow = openWindow;
         InitializeComponent();
         _grouped = new CollectionViewSource { IsSourceGrouped = true, Source = _sections };
         AccountList.ItemsSource = _rows;
@@ -215,7 +217,7 @@ public sealed partial class AccountsPane : UserControl
             return;
         }
 
-        var menu = AccountMenu.For(shown.Item, Ask);
+        var menu = AccountMenu.For(shown.Item, Ask, _openWindow, _model.AccountWindows.Held);
         if (args.TryGetPosition(item, out var point))
         {
             menu.ShowAt(item, point);

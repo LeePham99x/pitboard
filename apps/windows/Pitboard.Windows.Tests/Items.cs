@@ -15,6 +15,15 @@ internal static class Items
             Summary: "", Problem: null, StaleNote: null, Pace: null, ParkedNote: null, WarmNote: null, Help: null,
             Limits: [], Offers: [], Windows: [], Forget: null);
 
+    // An enrolled account's window, its store derived as the core derives it.
+    public static WindowAccount Window(string provider, string label, bool inUse = false)
+    {
+        var site = PitboardFfiMethods.SitesFor(provider).Single();
+        return new(
+            Site: site, Label: label, Email: $"{label}@example.com", Store: PitboardFfiMethods.StoreId(site, label),
+            InUse: inUse, Title: label);
+    }
+
     public static LimitRow Limit(double percent, PaceStanding standing = PaceStanding.Even) =>
         new(
             Name: "5-hour", Short: "5h", Percent: percent, Figure: $"{percent:0}%",
