@@ -13,6 +13,7 @@ pub(crate) const MOST_PIECES: usize = 256;
 pub(crate) const MOST_BYTES: usize = MOST_PIECES * PIECE / 4 * 3;
 // What one Credential Manager item holds, `CRED_MAX_CREDENTIAL_BLOB_SIZE`, as
 // host::windows::credman's an_item_holds_2560_bytes_and_no_more measures.
+#[cfg(any(windows, test, feature = "test-support"))]
 pub(crate) const BLOB: usize = 5 * 512;
 
 pub(crate) const WHOLE: &str = "";
