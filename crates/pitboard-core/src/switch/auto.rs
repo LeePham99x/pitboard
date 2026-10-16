@@ -801,6 +801,11 @@ mod tests {
     /// the last attempt records why at once, and the look after it stands on that: a front end
     /// waiting after the failure said it only once its wait was over.
     #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "a keychain's ceiling is what `security` reads from stdin; Credential Manager's, \
+                  256 pieces, is a_login_too_large_for_credential_manager_counts_as_an_attempt's"
+    )]
     fn a_login_too_large_to_write_counts_as_an_attempt() {
         let (mut m, clock) = nearly_out("auto-too-large", 96.0);
         m.ctx = m.ctx.clone().with_argv_fallback(false);
@@ -868,6 +873,30 @@ mod tests {
             Ledger::load(&m.ctx),
             tried,
             "every attempt counted, and no account passed over"
+        );
+        assert_eq!(live_refresh(&m).as_deref(), Some("here-refresh"));
+    }
+
+    // Claude Code keeps no login past 256 pieces of 2400 characters in Credential Manager.
+    #[cfg(windows)]
+    #[test]
+    fn a_login_too_large_for_credential_manager_counts_as_an_attempt() {
+        let (m, clock) = nearly_out("auto-too-large-for-pieces", 96.0);
+        let mut login = m.live().expect("a login stored");
+        login["mcpOAuth"]["large"] = serde_json::json!("x".repeat(460_800));
+        m.mem.live().plant(&m.service, &login.to_string());
+
+        for _ in 1..ATTEMPTS {
+            let failed = auto(&m).expect_err("too large to write");
+            assert_eq!(failed.error.code(), "credential_too_large");
+            assert!(stays(&m).is_empty());
+            clock.advance(RETRY_SECONDS);
+        }
+        let last = auto(&m).expect_err("the last attempt");
+        assert_eq!(last.error.code(), "credential_too_large");
+        assert_eq!(
+            stays(&m),
+            [("here".to_string(), "attempts_spent".to_string())]
         );
         assert_eq!(live_refresh(&m).as_deref(), Some("here-refresh"));
     }
