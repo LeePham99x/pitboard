@@ -209,6 +209,9 @@ internal sealed class StandInWindow(Webs webs, WindowAccount account, bool answe
     // An answer still to come, in place of the one given.
     public Task<bool>? Pending { get; init; }
 
+    // Done as each question is asked, before it is answered.
+    public Action<AlertText>? Asking { get; init; }
+
     public async Task<CoreWebView2?> OpenSignIn(SignInWindowSize size)
     {
         Sizes.Add(size);
@@ -221,6 +224,7 @@ internal sealed class StandInWindow(Webs webs, WindowAccount account, bool answe
     public Task<bool> AllowDownload(AlertText question)
     {
         Questions.Add(question);
+        Asking?.Invoke(question);
         return Pending ?? Task.FromResult(answer);
     }
 

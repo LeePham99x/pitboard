@@ -153,14 +153,18 @@ public sealed class DownloadTests
         Console.WriteLine($"CF7: WebView2 offers {proposed} for a second archive.tar.gz and saves {operation.ResultFilePath}");
         Assert.AreEqual("archive (1).tar.gz", Path.GetFileName(operation.ResultFilePath));
 
-        var window = new StandInWindow(webs, Main, answer: true);
+        // Taken only once WebView2 has offered the name, so the window numbers it itself.
+        var window = new StandInWindow(webs, Main, answer: true)
+        {
+            Asking = _ => File.WriteAllText(Path.Combine(webs.Web.Downloads, "archive.tar.gz"), "taken"),
+        };
         var page = await Open(webs, window);
-        File.WriteAllText(Path.Combine(webs.Web.Downloads, "archive.tar.gz"), "taken");
         var from = webs.Sent.Count;
         await page.ExecuteScriptAsync($"document.body.insertAdjacentHTML('beforeend', '<iframe src=\"{archive}\"></iframe>'); 0");
 
         var (file, end) = await Ended(webs, from, "a window's archive.tar.gz");
         Assert.IsInstanceOfType<DownloadEnd.Finished>(end);
+        Assert.AreEqual("archive.tar.gz", webs.Sent.Skip(from).OfType<Intent.DownloadStarted>().Single().Name, "the name WebView2 offered");
         Assert.AreEqual(Path.GetFileName(operation.ResultFilePath), Path.GetFileName(file));
     }
 
