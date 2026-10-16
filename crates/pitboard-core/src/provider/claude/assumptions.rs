@@ -1497,12 +1497,20 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         name: "windows_token_handover",
         fact: "on Windows Claude Code reads no token handed to it on a descriptor. Its reader of \
                `CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR` reads the descriptor directly only where \
-               `fstat` calls it a socket; otherwise it opens `/proc/self/fd/<n>`, and reads \
-               directly only where that fails with EACCES or EPERM. Bun 1.4.3 calls a pipe or a \
+               `fstat` calls it a socket; otherwise it opens `/proc/self/fd/<n>`, and where that \
+               fails it reads the well-known file `/home/claude/.claude/remote/.oauth_token` \
+               before it reads directly, which it does only on EACCES or EPERM. It reads that \
+               file, a regular file alone, where the variable is unset too, unless it runs as \
+               `mcp serve --transport http`, and a token from it comes before `apiKeyHelper` and \
+               the stored login, as `CCR_OAUTH_TOKEN_FILE`. That file is no route on Windows: a \
+               path with no drive names a folder at a drive's root, which every account on the \
+               PC shares, so a token there would sign in every Claude Code run on that drive. \
+               How Bun resolves the path there is not measured. Bun 1.4.3 calls a pipe or a \
                socket handed as descriptor 3 through `STARTUPINFOW.lpReserved2` a FIFO, and \
                opening `/proc/self/fd/3` fails with ENOENT: RF-WW1, runs 38797729796 and \
                38821312770",
-        read_from: "the descriptor reader and its socket check in the win32-x64 and win32-arm64 \
+        read_from: "the descriptor reader, its socket check and its well-known file read, and \
+                    the order of the token sources it names, in the win32-x64 and win32-arm64 \
                     builds of 2.1.301, which embed Bun 1.4.3, read as bytes on 2026-10-16. The \
                     path is fixed when a build is made: the macOS build of 2.1.296 opens \
                     `/dev/fd/<n>`, which takes a pipe",
@@ -1512,6 +1520,7 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
             "descriptor_by_path",
             "file_after_socket",
             "file_after_failed_read",
+            "/home/claude/.claude/remote",
         ],
         absent: &[],
     },
@@ -1522,8 +1531,9 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                `PATH`, where it finds one, and otherwise in PowerShell, `-NoProfile \
                -NonInteractive -ExecutionPolicy Bypass -Command`, saying once a session that a \
                hook ran in PowerShell. Each starts hidden. It finds Git Bash at \
-               `CLAUDE_CODE_GIT_BASH_PATH` where that names a `bash.exe`, `sh.exe`, `bash` or `sh` \
-               that is there, then at `C:\\Program Files\\Git\\bin\\bash.exe`, then at \
+               `CLAUDE_CODE_GIT_BASH_PATH` where that names a file there whose name, in lower \
+               case, is `bash.exe`, `sh.exe`, `bash` or `sh`, then at \
+               `C:\\Program Files\\Git\\bin\\bash.exe`, then at \
                `C:\\Program Files (x86)\\Git\\bin\\bash.exe`, then at `..\\..\\bin\\bash.exe` from \
                the first `git` that `where.exe` finds outside the working folder. It hands bash \
                the command as written, backslashes and all, so the bare `pitboard statusline` \
@@ -1536,6 +1546,8 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                   line and whether a `pitboard` is on the PATH it is handed",
         probe: &[
             r#"["bash.exe","sh.exe","bash","sh"]"#,
+            ".CLAUDE_CODE_GIT_BASH_PATH).toLowerCase()",
+            r#""C:\\Program Files\\Git\\bin\\bash.exe","C:\\Program Files (x86)\\Git\\bin\\bash.exe""#,
             r#""..","..","bin","bash.exe""#,
             "ran in PowerShell. Commands written for bash can fail there.",
         ],
