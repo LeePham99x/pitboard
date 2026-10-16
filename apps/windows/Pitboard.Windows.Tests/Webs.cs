@@ -28,7 +28,7 @@ internal sealed class Webs : IAsyncDisposable
         _folder = folder;
         Web = web;
         Elsewhere = elsewhere;
-        Downloads = new Downloads(web.Downloads, Sent.Add);
+        Downloads = new Downloads(web, Sent.Add);
         web.BrowserExited += () => _exited.TrySetResult();
     }
 

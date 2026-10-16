@@ -7,9 +7,19 @@ namespace Pitboard.Windows;
 // Every window's downloads, as the macOS app's DownloadCenter keeps them: each saved under the name
 // download_destination gives, never over a file or another download's name, asked about first where the policy says,
 // and told to the model from its start to its end. WebView2's own download dialog lists them.
-public sealed class Downloads(string folder, Action<Intent> send)
+public sealed class Downloads
 {
+    private readonly string _folder;
+    private readonly Action<Intent> _send;
     private readonly List<Running> _live = [];
+
+    // A download runs in the browser process of the windows' pages, and goes with it.
+    public Downloads(WebEnvironment web, Action<Intent> send)
+    {
+        _folder = web.Downloads;
+        _send = send;
+        web.BrowserExited += () => Stop(cancel: false);
+    }
 
     // Counted here rather than from a snapshot: a download started a moment before Quit is under way before the
     // snapshot that lists it.
@@ -27,10 +37,10 @@ public sealed class Downloads(string folder, Action<Intent> send)
         var name = Path.GetFileName(args.ResultFilePath);
         var running = new Running(Guid.NewGuid().ToString(), store, operation);
         _live.Add(running);
-        send(new Intent.DownloadStarted(running.Id, store, name));
+        _send(new Intent.DownloadStarted(running.Id, store, name));
         var allowed = !ask || await allow(PitboardFfiMethods.DownloadQuestion(name, PitboardFfiMethods.DownloadHost(operation.Uri)));
         var file = allowed && _live.Contains(running)
-            ? PitboardFfiMethods.DownloadDestination(folder, name, [.. _live.Select(other => other.File).OfType<string>()])
+            ? PitboardFfiMethods.DownloadDestination(_folder, name, [.. _live.Select(other => other.File).OfType<string>()])
             : null;
         try
         {
@@ -59,26 +69,11 @@ public sealed class Downloads(string folder, Action<Intent> send)
         }
 
         running.File = file;
-        send(new Intent.DownloadSaving(running.Id, file));
+        _send(new Intent.DownloadSaving(running.Id, file));
     }
 
     // Quitting stops every download, and none resumes.
-    public void StopAll()
-    {
-        foreach (var running in _live.ToArray())
-        {
-            try
-            {
-                running.Operation.Cancel();
-            }
-            catch (Exception gone) when (gone is COMException or InvalidOperationException)
-            {
-                // Its browser process has gone, and the download with it.
-            }
-
-            End(running, new DownloadEnd.Cancelled());
-        }
-    }
+    public void StopAll() => Stop(cancel: true);
 
     // A paused download is interrupted and can resume, and is still under way.
     private void Changed(Running running, CoreWebView2DownloadOperation operation)
@@ -89,10 +84,31 @@ public sealed class Downloads(string folder, Action<Intent> send)
                 End(running, new DownloadEnd.Finished());
                 break;
             case CoreWebView2DownloadState.Interrupted when !operation.CanResume:
-                End(running, operation.InterruptReason == CoreWebView2DownloadInterruptReason.UserCanceled
+                End(running, operation.InterruptReason is CoreWebView2DownloadInterruptReason.UserCanceled
+                    or CoreWebView2DownloadInterruptReason.UserShutdown
                     ? new DownloadEnd.Cancelled()
                     : new DownloadEnd.Failed(operation.InterruptReason.ToString()));
                 break;
+        }
+    }
+
+    private void Stop(bool cancel)
+    {
+        foreach (var running in _live.ToArray())
+        {
+            try
+            {
+                if (cancel)
+                {
+                    running.Operation.Cancel();
+                }
+            }
+            catch (Exception gone) when (gone is COMException or InvalidOperationException)
+            {
+                // Its browser process has gone, and the download with it.
+            }
+
+            End(running, new DownloadEnd.Cancelled());
         }
     }
 
@@ -100,7 +116,7 @@ public sealed class Downloads(string folder, Action<Intent> send)
     {
         if (_live.Remove(running))
         {
-            send(new Intent.DownloadEnded(running.Id, end));
+            _send(new Intent.DownloadEnded(running.Id, end));
         }
     }
 

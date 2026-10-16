@@ -20,7 +20,7 @@ internal sealed class AccountWindows
     {
         _model = model;
         _web = web;
-        _downloads = new Downloads(web.Downloads, model.Send);
+        _downloads = new Downloads(web, model.Send);
         _janitor = new StoreJanitor(
             store => Directory.Exists(web.ProfileFolder(store)), store => web.MarkDeleted(store, hidden));
     }
@@ -51,8 +51,8 @@ internal sealed class AccountWindows
         window.Activate();
     }
 
-    // Asked over the window of an account whose download is under way, or another account window: a download runs in
-    // the browser process of the windows' pages, which exits once the last one closes.
+    // Asked over the window of an account whose download is under way, or another account window. With none open,
+    // nothing is: a download goes with the browser process, which exits once the last page closes.
     public async Task<bool> MayQuit()
     {
         if (_downloads.QuitQuestion is not { } question)

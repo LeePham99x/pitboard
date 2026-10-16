@@ -26,7 +26,7 @@ public sealed class AccountWindowTests
     {
         var sent = new List<Intent>();
         var web = WebEnvironment.Fixture(Path.GetTempPath());
-        var window = await Views.Activated(new AccountWindow(Main.Store, web, new Downloads(web.Downloads, sent.Add), sent.Add));
+        var window = await Views.Activated(new AccountWindow(Main.Store, web, new Downloads(web, sent.Add), sent.Add));
         try
         {
             window.Follow(Shown(new WaitingShown.Reading("Reading accounts…")));
@@ -52,7 +52,7 @@ public sealed class AccountWindowTests
     {
         var sent = new List<Intent>();
         var web = WebEnvironment.Fixture(Path.GetTempPath());
-        var window = await Views.Activated(new AccountWindow(Main.Store, web, new Downloads(web.Downloads, sent.Add), sent.Add));
+        var window = await Views.Activated(new AccountWindow(Main.Store, web, new Downloads(web, sent.Add), sent.Add));
         try
         {
             var reading = Shown(new WaitingShown.Reading("Reading accounts…"));
@@ -78,7 +78,7 @@ public sealed class AccountWindowTests
     {
         var sent = new List<Intent>();
         var web = WebEnvironment.Fixture(Path.GetTempPath());
-        var window = await Views.Activated(new AccountWindow(Main.Store, web, new Downloads(web.Downloads, sent.Add), sent.Add));
+        var window = await Views.Activated(new AccountWindow(Main.Store, web, new Downloads(web, sent.Add), sent.Add));
         var root = window.Content.XamlRoot;
         var question = PitboardFfiMethods.DownloadQuestion("notes.txt", "chatgpt.com");
         var shown = window.AllowDownload(question);

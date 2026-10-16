@@ -228,6 +228,54 @@ public sealed class DownloadTests
         Assert.IsEmpty(webs.Sent.OfType<Intent.DownloadSaving>());
     }
 
+    // A download goes with the browser process of the windows' pages, which exits once the last of them closes.
+    [UITestMethod]
+    public async Task ADownloadWhoseLastPageClosedEnds()
+    {
+        using var site = new StandInSite();
+        await using var webs = await Webs.Make();
+        var window = new StandInWindow(webs, Main, answer: true);
+        var page = await Open(webs, window);
+        var changes = new List<string>();
+        page.DownloadStarting += (_, args) =>
+            args.DownloadOperation.StateChanged += (operation, _) => changes.Add($"{operation.State} {operation.InterruptReason}");
+        await Stall(webs, page, site, "closed.bin");
+
+        webs.Close(page);
+
+        await Views.Until(() => webs.Sent.OfType<Intent.DownloadEnded>().Any(), "the model did not hear the download ended", Webs.Patience);
+        Console.WriteLine(
+            $"CF7: a download whose last page closed changed to {(changes.Count == 0 ? "nothing" : string.Join(", ", changes))}; "
+            + $"its browser process had exited: {webs.Exited.IsCompleted}");
+        Assert.IsInstanceOfType<DownloadEnd.Cancelled>(webs.Sent.OfType<Intent.DownloadEnded>().Single().End);
+        Assert.IsNull(webs.Downloads.QuitQuestion);
+    }
+
+    // CF7: whether a download carries on once its page closes while another page keeps the browser process. The model
+    // hears it ended only once WebView2 says so.
+    [UITestMethod]
+    public async Task ADownloadWhosePageClosedIsUnderWayWhileWebView2SaysSo()
+    {
+        using var site = new StandInSite();
+        await using var webs = await Webs.Make();
+        var window = new StandInWindow(webs, Main, answer: true);
+        _ = await webs.Page("keeping");
+        var page = await Open(webs, window);
+        CoreWebView2DownloadOperation? operation = null;
+        page.DownloadStarting += (_, args) => operation = args.DownloadOperation;
+        await Stall(webs, page, site, "orphan.bin");
+
+        webs.Close(page);
+        await Task.Delay(TimeSpan.FromSeconds(5));
+
+        var ended = webs.Sent.OfType<Intent.DownloadEnded>().Any();
+        Console.WriteLine(
+            $"CF7: 5 s after its page closed, with another page open, a download is {operation!.State} "
+            + $"{operation.InterruptReason}, and the model heard it ended: {ended}");
+        Assert.AreEqual(operation.State != CoreWebView2DownloadState.InProgress, ended);
+        Assert.AreEqual(!ended, webs.Downloads.QuitQuestion is not null);
+    }
+
     // A download from another host's frame that never finishes, once it is saving.
     private static async Task Stall(Webs webs, CoreWebView2 page, StandInSite site, string name)
     {
