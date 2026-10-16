@@ -299,11 +299,13 @@ impl Machine {
     fn new(folder: Folder) -> Result<Machine, Unmade> {
         let root = folder.path().to_path_buf();
         let home = root.join("home");
-        std::fs::create_dir_all(&home)?;
+        // Codex on Windows does not start where CODEX_HOME names no folder.
+        let codex_home = home.join(".codex");
+        std::fs::create_dir_all(&codex_home)?;
         let host = MemoryHost::new();
         let api = ScriptedApi::new();
         let base = Context::new(home.clone())
-            .with_codex_home(home.join(".codex").to_string_lossy().into_owned())
+            .with_codex_home(codex_home.to_string_lossy().into_owned())
             .with_user("dana".into())
             // Nothing on this machine's own `PATH` is ever found.
             .with_search_path(String::new())

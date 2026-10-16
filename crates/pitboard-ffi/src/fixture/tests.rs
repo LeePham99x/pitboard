@@ -1916,6 +1916,38 @@ fn accounts_are_added_through_each_tools_sign_in() {
     model.shutdown();
 }
 
+// Shots 16 and 31 of 16 October 2026: every world named a CODEX_HOME it never made, which
+// Codex on Windows refuses, so adding a Codex account there was refused.
+#[test]
+fn adding_codex_in_first_launch_reaches_its_sign_in() {
+    let launched = made(World::FirstLaunch);
+    assert!(
+        launched.machine.home().join(".codex").is_dir(),
+        "the world names a Codex home it did not make"
+    );
+    let (model, told) = started(&launched);
+    model.send(Intent::PresentSheet {
+        sheet: Sheet::Add { provider: None },
+    });
+    model.send(Intent::SignIn {
+        provider: "codex".into(),
+        name: "work".into(),
+    });
+    let ended = told.until("the account listed or refused", |snapshot| {
+        snapshot.sheet_failure.is_some()
+            || (snapshot.signing_in.is_none()
+                && read_in(snapshot)
+                && snapshot.status.as_ref().is_some_and(|status| {
+                    status
+                        .accounts
+                        .iter()
+                        .any(|account| account.qualified.as_deref() == Some("codex/work"))
+                }))
+    });
+    assert_eq!(ended.sheet_failure, None);
+    model.shutdown();
+}
+
 /// Cancel and then Sign In at once, as a person can press one after the other: the new
 /// sign-in waits, shown as starting, until the one cancelled before it has stopped and let go
 /// of the core's one sign-in at a time, then asks for the code, and nothing on the way is
