@@ -1,6 +1,8 @@
 # Tests check-windows-app.ps1's package identity, update key and version checks against the
 # Release folder CI's windows-app job built and packed: each case is a folder of its own with
-# copies of the files those checks read, one thing changed. It runs none of them.
+# copies of the files those checks read, one thing changed. Then verify-windows-signatures.ps1
+# against the job's unsigned MSI and the package it signed with a throwaway certificate. It runs
+# none of them.
 param(
     [Parameter(Mandatory)] [string] $Folder,
     [Parameter(Mandatory)] [ValidateSet('x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc')] [string] $Triple,
@@ -11,12 +13,17 @@ param(
     [Parameter(Mandatory)] [string] $UpdateKey,
     # The version the Release build was given, and its FileVersion.
     [Parameter(Mandatory)] [string] $Version,
-    [Parameter(Mandatory)] [string] $FileVersion
+    [Parameter(Mandatory)] [string] $FileVersion,
+    # The MSI the job built from that folder, unsigned.
+    [Parameter(Mandatory)] [string] $Msi
 )
 $ErrorActionPreference = 'Stop'
 
 $check = Join-Path $PSScriptRoot 'check-windows-app.ps1'
 $pack = Join-Path $PSScriptRoot 'pack-windows-share.ps1'
+$verify = Join-Path $PSScriptRoot 'verify-windows-signatures.ps1'
+$signPath = 'CN=SignPath Foundation, O=SignPath Foundation, L=Lewes, S=Delaware, C=US'
+$msiPath = (Resolve-Path -LiteralPath $Msi).Path
 $root = (Resolve-Path -LiteralPath $Folder).Path
 $work = Join-Path ([IO.Path]::GetTempPath()) "test-windows-app-$([guid]::NewGuid().ToString('N'))"
 $other = 'CN=Someone Else'
@@ -48,6 +55,19 @@ function Assert-Refused([string] $Case, [string] $In, [string] $By, [string] $Ex
     throw "$Case`: check-windows-app.ps1 let it through"
 }
 
+function Assert-Unverified([string] $Case, [hashtable] $Given, [string] $Expected) {
+    try {
+        & $verify @Given | Out-Null
+    } catch {
+        if ($_.Exception.Message -notmatch $Expected) {
+            throw "$Case`: refused for another reason: $($_.Exception.Message)"
+        }
+        Write-Output "ok: $Case"
+        return
+    }
+    throw "$Case`: verify-windows-signatures.ps1 let it through"
+}
+
 New-Item -ItemType Directory -Path $work | Out-Null
 try {
     $whole = @('PitboardShare.exe', 'PitboardShare.msix')
@@ -75,8 +95,26 @@ try {
     Assert-Refused 'a FileVersion windows-versions.sh does not give the version' (New-Case 'file' ($whole + 'pitboard_ffi.dll')) $Signer `
         "names the product 'Pitboard' at '$([regex]::Escape($Version))', file .+, not Pitboard at .+, file 9\.9\.9\.1000" `
         -Instead @{ FileVersion = '9.9.9.1000' }
+
+    & $verify -Path $msiPath -Mode unsigned
+    $built = Join-Path $work 'built'
+    New-Item -ItemType Directory -Path $built | Out-Null
+    Copy-Item -LiteralPath $msiPath -Destination $built
+    & $verify -Path $msiPath -Mode unsigned -Built $built | Out-Null
+    Write-Output 'ok: the MSI and each program of Pitboard''s in it are NotSigned, and it holds the files it was built with'
+    Assert-Unverified 'an unsigned MSI in a signed release' @{ Path = $msiPath; Mode = 'signed'; Subject = $signPath } `
+        'Pitboard\.msi is NotSigned, and every program of a signed release is Valid'
+
+    $package = Join-Path $root 'PitboardShare.msix'
+    & $verify -Path $package -Mode test -Subject $Signer
+    Assert-Unverified 'a package signed for a test, checked against SignPath''s subject' @{ Path = $package; Mode = 'test'; Subject = $signPath } `
+        "PitboardShare\.msix is signed by '$([regex]::Escape($Signer))', not 'CN=SignPath Foundation"
+    Assert-Unverified 'a package signed for a test, in a signed release' @{ Path = $package; Mode = 'signed'; Subject = $Signer } `
+        'PitboardShare\.msix is \w+, and every program of a signed release is Valid'
+    Assert-Unverified 'a package signed for a test, in an unsigned release' @{ Path = $package; Mode = 'unsigned' } `
+        'PitboardShare\.msix is \w+, and every program of an unsigned release is NotSigned'
 } finally {
     Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
 }
-Write-Output 'check-windows-app.ps1 refused every package identity, update key and version it should.'
+Write-Output 'check-windows-app.ps1 refused every package identity, update key and version it should, and verify-windows-signatures.ps1 read the MSI and the package.'
 exit 0

@@ -1,16 +1,21 @@
-# Checks the Authenticode signature of every program a Windows release hands on: each file given,
-# and each program inside each zip given. It reads the files and runs none of them.
+# Checks the Authenticode signature of every program a Windows release hands on: each program
+# and sparse package given, each program inside each zip given, and each MSI given with each
+# program of Pitboard's inside it. The .NET runtime's, the Windows App SDK's and WinSparkle.dll in
+# an MSI go through as their makers shipped them. It reads the files and runs none of them: an MSI
+# is extracted with msiexec /a, which installs nothing.
 param(
     [Parameter(Mandatory)] [string[]] $Path,
-    # signed: each program's signature is Valid, by -Subject, with a timestamp. unsigned: none is signed.
-    [Parameter(Mandatory)] [ValidateSet('signed', 'unsigned')] [string] $Mode,
+    # signed: each signature is Valid, by -Subject, with a timestamp. unsigned: none is signed.
+    # test: signed by -Subject with a certificate made for a test, which nothing trusts or timestamps.
+    [Parameter(Mandatory)] [ValidateSet('signed', 'unsigned', 'test')] [string] $Mode,
     [string] $Subject,
-    # The folder holding each zip as it was built, before signing: a zip given must hold the same entries.
+    # The folder holding each zip and MSI as it was built, before signing: one given must hold the same files.
     [string] $Built
 )
 $ErrorActionPreference = 'Stop'
 
-if ($Mode -eq 'signed' -and -not $Subject) { throw 'a signed release names the subject its signer signs as' }
+if ($Mode -ne 'unsigned' -and -not $Subject) { throw 'a signed release names the subject its signer signs as' }
+$extract = Join-Path $PSScriptRoot 'extract-msi.ps1'
 
 Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.ZipFile
 $work = Join-Path ([IO.Path]::GetTempPath()) "verify-windows-signatures-$([guid]::NewGuid().ToString('N'))"
@@ -41,11 +46,23 @@ function Assert-Signature([string] $File, [string] $Name) {
         Write-Output "ok: $Name is NotSigned"
         return
     }
-    if ($status -ne 'Valid') { throw "$Name is $status, and every program of a signed release is Valid" }
+    # A certificate made a moment ago chains to no root the machine trusts, which PowerShell calls UnknownError.
+    $accepted = if ($Mode -eq 'test') { 'Valid', 'UnknownError', 'NotTrusted' } else { , 'Valid' }
+    if ($status -notin $accepted) { throw "$Name is $status, and every program of a $Mode release is $($accepted -join ' or ')" }
     $signer = $signature.SignerCertificate.Subject
     if ($signer -ne $Subject) { throw "$Name is signed by '$signer', not '$Subject'" }
+    if ($Mode -eq 'test') {
+        Write-Output "ok: $Name is signed by '$signer' and $status here"
+        return
+    }
     if (-not $signature.TimeStamperCertificate) { throw "$Name's signature has no timestamp" }
     Write-Output "ok: $Name is Valid, signed by '$signer', timestamped by '$($signature.TimeStamperCertificate.Subject)'"
+}
+
+# Each file of an administrative image, by its path in the image.
+function Get-ImageFiles([string] $Image) {
+    $prefix = (Get-Item -LiteralPath $Image).FullName.TrimEnd('\').Length + 1
+    return @(Get-ChildItem -LiteralPath $Image -Recurse -File | ForEach-Object { $_.FullName.Substring($prefix) } | Sort-Object)
 }
 
 function Get-EntryNames([string] $Zip) {
@@ -88,10 +105,34 @@ try {
                 $archive.Dispose()
             }
             if ($programs -eq 0) { throw "$leaf holds no program" }
+        } elseif ($leaf -like '*.msi') {
+            Assert-Signature $file $leaf
+            $image = Join-Path $work ([guid]::NewGuid().ToString('N'))
+            & $extract -Msi $file -Destination $image | Out-Null
+            $files = Get-ImageFiles $image
+            if ($Built) {
+                $before = Join-Path $Built $leaf
+                if (-not (Test-Path -LiteralPath $before -PathType Leaf)) { throw "$Built holds no $leaf as it was built" }
+                $imageBuilt = Join-Path $work ([guid]::NewGuid().ToString('N'))
+                & $extract -Msi $before -Destination $imageBuilt | Out-Null
+                if (($files -join ', ') -ne ((Get-ImageFiles $imageBuilt) -join ', ')) { throw "$leaf holds other files than it was built with" }
+            }
+            $programs = 0
+            foreach ($inside in $files) {
+                $full = Join-Path $image $inside
+                # Pitboard's own programs are the ones named for it, and only those are its signer's.
+                if ((Split-Path -Leaf $inside) -like 'pitboard*' -and (Test-Program $full)) {
+                    Assert-Signature $full "$leaf/$($inside.Replace('\', '/'))"
+                    $programs++
+                }
+            }
+            if ($programs -eq 0) { throw "$leaf holds no program of Pitboard's" }
+        } elseif ($leaf -like '*.msix') {
+            Assert-Signature $file $leaf
         } elseif (Test-Program $file) {
             Assert-Signature $file $leaf
         } else {
-            throw "$leaf is neither a zip nor a program"
+            throw "$leaf is neither a zip, an MSI, a sparse package nor a program"
         }
     }
 } finally {

@@ -680,18 +680,6 @@ jobs:
           ./.github/scripts/check-windows-app.ps1 -Folder target/windows-app/release -Triple $env:TRIPLE
           -GatedLibrary target/gated/release/pitboard_ffi.dll -Signer $env:SHARE_TEST_SIGNER -UpdateKey $env:UPDATE_TEST_KEY
           -Version $env:VERSION -FileVersion $env:FILE_VERSION
-      - name: The check refuses a package identity anywhere but on PitboardShare.exe, or another than its package's, another update key and another version
-        shell: pwsh
-        env:
-          RUSTFLAGS: -D warnings -C target-feature=+crt-static
-          CARGO_TARGET_DIR: target/gated
-          TRIPLE: ${{ matrix.triple }}
-          VERSION: ${{ steps.manifest.outputs.version }}
-          FILE_VERSION: ${{ steps.manifest.outputs.file }}
-        run: >
-          ./.github/scripts/test-windows-app.ps1 -Folder target/windows-app/release -Triple $env:TRIPLE
-          -GatedLibrary target/gated/release/pitboard_ffi.dll -Signer $env:SHARE_TEST_SIGNER -UpdateKey $env:UPDATE_TEST_KEY
-          -Version $env:VERSION -FileVersion $env:FILE_VERSION
       # ICE validates the MSI as it builds. CI never installs one: msiexec /a extracts its files
       # and registers nothing. The image is Pitboard as an install lays it out, which the UI
       # tests start in place of the Release folder (CF10). The package above is signed, so the
@@ -712,17 +700,9 @@ jobs:
             "-p:PitboardApp=$app" "-p:PitboardCommandLine=$commandLine" "-p:PitboardVersion=$env:VERSION" -p:PitboardShareSigned=true
           if ($LASTEXITCODE -ne 0) { throw "dotnet build exited $LASTEXITCODE" }
           $msi = Join-Path $out 'msi\Pitboard.msi'
-          $image = Join-Path $out 'msi-image'
-          $log = Join-Path $env:RUNNER_TEMP 'msi-admin.log'
-          $extract = Start-Process msiexec.exe -Wait -PassThru -ArgumentList '/a', "`"$msi`"", '/qn', "TARGETDIR=`"$image`"", '/l*v', "`"$log`""
-          if ($extract.ExitCode -ne 0) {
-            Get-Content -LiteralPath $log -Tail 40
-            throw "msiexec /a exited $($extract.ExitCode)"
-          }
-          $found = @(Get-ChildItem -LiteralPath $image -Recurse -File | Where-Object Name -CEQ 'Pitboard.exe')
-          if ($found.Count -ne 1) { throw "the administrative image holds $($found.Count) Pitboard.exe" }
-          Write-Output "Extracted $msi into $($found[0].DirectoryName)."
-          "folder=$($found[0].DirectoryName)" >> $env:GITHUB_OUTPUT
+          $folder = & "$env:GITHUB_WORKSPACE/.github/scripts/extract-msi.ps1" -Msi $msi -Destination (Join-Path $out 'msi-image')
+          Write-Output "Extracted $msi into $folder."
+          "folder=$folder" >> $env:GITHUB_OUTPUT
       - name: "The MSI's files: the checks of the Release build"
         shell: pwsh
         env:
@@ -736,6 +716,20 @@ jobs:
           ./.github/scripts/check-windows-app.ps1 -Folder $env:IMAGE -Triple $env:TRIPLE
           -GatedLibrary target/gated/release/pitboard_ffi.dll -Signer $env:SHARE_TEST_SIGNER -UpdateKey $env:UPDATE_TEST_KEY
           -Version $env:VERSION -FileVersion $env:FILE_VERSION
+      # The MSI unsigned and its package signed with the throwaway certificate, as a signed release
+      # carries one, both read by the release's signature check.
+      - name: "The checks refuse a package identity anywhere but on PitboardShare.exe, or another than its package's, another update key and another version, and the signature check reads the MSI and the package"
+        shell: pwsh
+        env:
+          RUSTFLAGS: -D warnings -C target-feature=+crt-static
+          CARGO_TARGET_DIR: target/gated
+          TRIPLE: ${{ matrix.triple }}
+          VERSION: ${{ steps.manifest.outputs.version }}
+          FILE_VERSION: ${{ steps.manifest.outputs.file }}
+        run: >
+          ./.github/scripts/test-windows-app.ps1 -Folder target/windows-app/release -Triple $env:TRIPLE
+          -GatedLibrary target/gated/release/pitboard_ffi.dll -Signer $env:SHARE_TEST_SIGNER -UpdateKey $env:UPDATE_TEST_KEY
+          -Version $env:VERSION -FileVersion $env:FILE_VERSION -Msi target/windows-app/msi/Pitboard.msi
       - name: The UI tests over the MSI's Pitboard.exe, and the MSI's own tests
         working-directory: apps/windows
         env:

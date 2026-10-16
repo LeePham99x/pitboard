@@ -819,13 +819,15 @@ window loads its site, and whatever the site's pages load, as a browser would.
     `windows-update-key.sh` refuses a Windows update key that changed since the last MSI
     unless a rotation names the release, `test-msi-version.sh` tests the version the MSI
     carries for each version `Cargo.toml` may name, and `test-release.py` tests the six, the
-    app's `build-number.sh` and the cargo-binstall metadata in `crates/pitboard/Cargo.toml`. `package-windows.ps1` zips
-    a Windows build, `check-windows-build.ps1` checks one, `verify-windows-signatures.ps1`
-    checks the signature of every program a Windows release hands on, and
-    `test-windows-release.ps1` tests all three. `check-windows-app.ps1` checks the Windows app's
-    Release build, `pack-windows-share.ps1` packs `PitboardShare.exe`'s sparse package beside
-    it, and `test-windows-app.ps1` tests the check's package identity, update key and version
-    refusals.
+    app's `build-number.sh` and the cargo-binstall metadata in `crates/pitboard/Cargo.toml`.
+    `package-windows.ps1` zips a Windows build, `check-windows-build.ps1` checks one,
+    `verify-windows-signatures.ps1` checks the signature of every program a Windows release
+    hands on, in a zip or an MSI, and of a sparse package, and `test-windows-release.ps1`
+    tests all three on zips. `check-windows-app.ps1` checks the Windows app's Release build,
+    `pack-windows-share.ps1` packs `PitboardShare.exe`'s sparse package beside it,
+    `extract-msi.ps1` extracts an MSI's administrative image, and `test-windows-app.ps1` tests
+    the check's package identity, update key and version refusals and the signature check on
+    the MSI and the package.
   - `dependabot.yml` asks for weekly updates of Cargo dependencies, GitHub Actions and the
     .NET SDK in `apps/windows/global.json`.
   - `zizmor.yml` configures the audit CI runs on the workflows.
