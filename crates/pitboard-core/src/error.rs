@@ -111,6 +111,10 @@ impl Cause {
             P::RateLimited { .. } => Cause::RateLimited,
             P::Network { .. } => Cause::Unreachable,
             P::Unavailable { .. } => Cause::ServerError,
+            // The request is not one the service takes any more, which no sign-in mends.
+            P::Refused { refusal, .. } if matches!(refusal.status, 404 | 405) => {
+                Cause::AnswerNotUnderstood
+            }
             P::Refused { .. } | P::OnHold { .. } => Cause::Refused,
             P::Unnamed { error } => Cause::of_provider(error),
             P::Malformed { .. }
@@ -1599,12 +1603,22 @@ fn warm_up_unsupported(tool: ProviderId, label: &str) -> String {
     }
 }
 
+/// "from `work` to `home`", or "to `home`" for a replacement, which has no account going out.
+fn between(from: &str, to: &str) -> String {
+    if from.is_empty() {
+        format!("to `{to}`")
+    } else {
+        format!("from `{from}` to `{to}`")
+    }
+}
+
 fn recovery_undetermined(tool: ProviderId, from: &str, to: &str, detail: &str) -> String {
     match tool {
         ProviderId::Claude | ProviderId::Codex => format!(
-            "an earlier switch from `{from}` to `{to}` was interrupted, and Pitboard cannot yet \
+            "an earlier switch {} was interrupted, and Pitboard cannot yet \
              tell whether it finished ({detail}). Nothing was changed. {} once so its session \
              is current, then try again.",
+            between(from, to),
             crate::words::run_it(tool, true)
         ),
         ProviderId::Desktop => format!(
@@ -1618,11 +1632,12 @@ fn recovery_undetermined(tool: ProviderId, from: &str, to: &str, detail: &str) -
 fn recovery_elsewhere(tool: ProviderId, from: &str, to: &str, slot: &str) -> String {
     match tool {
         ProviderId::Claude | ProviderId::Codex => format!(
-            "an earlier switch of {} from `{from}` to `{to}` was interrupted while its login was \
-             at {slot}, and this run reads it from somewhere else, so it cannot tell what that \
-             switch did. Nothing was changed. {} to finish it, or `pitboard abandon` to keep \
-             every login it names and move on.",
+            "an earlier switch of {} {} was interrupted while its login was at {slot}, and \
+             this run reads it from somewhere else, so it cannot tell what that switch did. \
+             Nothing was changed. {} to finish it, or `pitboard abandon` to keep every login \
+             it names and move on.",
             tool.name(),
+            between(from, to),
             crate::words::pointing_where_it_did(tool)
         ),
         ProviderId::Desktop => format!(

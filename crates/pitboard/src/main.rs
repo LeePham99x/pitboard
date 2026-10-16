@@ -770,10 +770,14 @@ fn abandon(pitboard: &Pitboard) -> Report {
         data["from"] = json!(a.from);
         data["to"] = json!(a.to);
         data["logins_kept"] = json!(a.kept);
+        let from = if a.from.is_empty() {
+            String::new()
+        } else {
+            format!(" from {}", paint(BOLD, &a.from))
+        };
         human.push_str(&format!(
-            "Gave up on the interrupted switch from {} to {}. {} login(s) kept; \
-             nothing was deleted. Run `pitboard` to see who is signed in.\n",
-            paint(BOLD, &a.from),
+            "Gave up on the interrupted switch{from} to {}. {} login(s) kept; nothing was \
+             deleted. Run `pitboard` to see who is signed in.\n",
             paint(BOLD, &a.to),
             a.kept
         ));

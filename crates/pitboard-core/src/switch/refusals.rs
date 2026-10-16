@@ -698,3 +698,40 @@ fn a_login_whose_email_cannot_be_learned_is_not_offered_for_replacing() {
         "{refused:?}"
     );
 }
+
+/// A login with no refresh token cannot be renewed, so it is replaced as a refused one is.
+/// Killed with the record written and nothing installed, the next change finds a slot whose
+/// login has no refresh token, which the login going in has, and settles it as not finished,
+/// keeping the park, rather than asking Anthropic about a login it cannot name.
+#[test]
+fn a_replacement_of_a_login_with_no_refresh_token_killed_before_its_write_is_undone() {
+    let m = machine("replace-no-refresh");
+    let mut lapsed = harness::lapsed("here-none");
+    lapsed["claudeAiOauth"]
+        .as_object_mut()
+        .expect("a login")
+        .remove("refreshToken");
+    m.sign_in(&lapsed);
+
+    let asked = switch(settled(&m), &m.key("there")).expect_err("it asks first");
+    assert_eq!(asked.code(), "live_login_refused", "{asked:?}");
+    let died = fault::killing("replace.journal_written", || {
+        replace(settled(&m), &m.key("there")).map(|_| ())
+    });
+    assert_eq!(died.err().as_deref(), Some("replace.journal_written"));
+
+    let (settled, warnings) = settle(&m.ctx, Permit::for_a_test(), None).expect("settled");
+    drop(settled);
+    let said: Vec<String> = warnings.iter().map(ToString::to_string).collect();
+    assert!(
+        said.iter()
+            .any(|w| w.starts_with("an earlier switch to `there` was interrupted; it had not")),
+        "{said:?}"
+    );
+    let state = state::load(&m.ctx).expect("state");
+    assert!(
+        state.get(&m.key("there")).expect("there").parked.is_some(),
+        "the park going in is kept"
+    );
+    assert!(!journal::pending(&m.ctx));
+}

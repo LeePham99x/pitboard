@@ -81,17 +81,18 @@ impl Provider for Claude {
         }
         // The profile names the organisation every enrolled account was recorded under, and
         // Claude Code's sign-in records it there or from the token answer. The token is
-        // valid, so neither failing is a refusal of the login.
+        // valid, so neither failing is a refusal of the login. Only a profile refused for good
+        // is read past: an outage is asked again.
         match api::owner(ctx, token) {
             Ok(owner) => Ok(owner.identity()),
-            Err(ProviderError::Unauthorized) => Err(ProviderError::Unauthorized),
-            Err(error) => self
+            Err(error @ ProviderError::Refused { .. }) => self
                 .own_record(ctx)
                 .filter(|recorded| recorded.account_uuid == validated.account_uuid)
                 .map(|recorded| recorded.identity())
                 .ok_or(ProviderError::Unnamed {
                     error: Box::new(error),
                 }),
+            Err(error) => Err(error),
         }
     }
 

@@ -104,6 +104,11 @@ impl Journal {
     fn to(&self) -> Key {
         Key::new(self.provider, self.to_label.clone())
     }
+
+    /// Put a login in place of one its service refused for good, parking nothing going out.
+    fn replaces(&self) -> bool {
+        self.from_id.is_empty()
+    }
 }
 
 fn journal_path(ctx: &Context) -> PathBuf {
@@ -261,6 +266,8 @@ enum Owner {
 fn live_owner(ctx: &Context, tool: &'static dyn Provider, journal: &Journal) -> (Owner, String) {
     match tool.read_live(ctx) {
         Err(e) => (Owner::Unknown(e.to_string()), String::new()),
+        // The login going in was never there or is gone again, and its park is all it has.
+        Ok(None) if journal.replaces() => (Owner::Is(String::new()), String::new()),
         Ok(None) => (Owner::Unknown("nothing is signed in".into()), String::new()),
         Ok(Some(live)) => {
             let login = tool.fingerprint(&live.raw);
@@ -303,6 +310,11 @@ fn ask(
 /// of an interrupted switch leaves a fingerprint matching neither side, which is exactly
 /// when this says nothing and Anthropic is asked after all.
 fn live_owner_by_fingerprint(journal: &Journal, found: &str) -> Option<String> {
+    // The login going in has a refresh token, so a slot whose login has none, as a refused one
+    // may, holds what was there before.
+    if journal.replaces() && found.is_empty() {
+        return Some(journal.from_id.clone());
+    }
     if journal.from_fingerprint.is_empty() || journal.to_fingerprint.is_empty() {
         return None;
     }

@@ -2128,6 +2128,27 @@ mod tests {
             matches!(learned, Some((_, budget::Outcome::Unreachable))),
             "{learned:?}"
         );
+
+        // A request the service no longer takes waits too, and says the answer was not
+        // understood rather than that the login was refused.
+        api.token_trouble(
+            "access-x",
+            Trouble::Answered(404, r#"{"error":{"type":"not_found_error"}}"#),
+        );
+        let (answer, learned) = ask_usage(
+            &ctx,
+            crate::provider::document(ProviderId::Claude),
+            "acc-x",
+            &json!({"claudeAiOauth": {"accessToken": "access-x"}}),
+            false,
+            None,
+            true,
+        );
+        assert_eq!(answer.err(), Some(Stale::AnswerNotUnderstood));
+        assert!(
+            matches!(learned, Some((_, budget::Outcome::Unreachable))),
+            "{learned:?}"
+        );
     }
 
     /// Claude Code's `/logout` deletes the login and leaves the document behind, still

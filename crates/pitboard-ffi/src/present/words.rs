@@ -283,8 +283,13 @@ pub(crate) fn give_up_stuck(moving: &[(String, &str)]) -> String {
 
 /// What giving up on an interrupted switch kept.
 pub(crate) fn gave_up(from: &str, to: &str, kept: u32) -> String {
+    let from = if from.is_empty() {
+        String::new()
+    } else {
+        format!(" from {from}")
+    };
     format!(
-        "The switch from {from} to {to} was given up. {} kept, and nothing was deleted.",
+        "The switch{from} to {to} was given up. {} kept, and nothing was deleted.",
         logins(kept)
     )
 }

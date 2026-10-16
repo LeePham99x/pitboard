@@ -666,6 +666,7 @@ fn replace_refused(
             slot: Some(tool.slot(ctx)),
         },
     )?;
+    fault::point("replace.journal_written");
     // The park going in is kept until the slot is seen to hold it, so a write that did not
     // land loses nothing; only a slot nobody can read keeps the record, for the next change.
     let failed = |detail: String| Error::ReplaceFailed {
