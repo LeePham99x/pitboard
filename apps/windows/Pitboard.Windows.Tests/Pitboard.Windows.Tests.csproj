@@ -30,8 +30,6 @@
     <ProjectReference Include="../Pitboard.Core/Pitboard.Core.csproj" />
     <ProjectReference Include="../Pitboard.Views/Pitboard.Views.csproj" />
     <ProjectReference Include="../Pitboard.Windows/Pitboard.Windows.csproj" />
-    <!-- Copied beside the tests, with what it needs to start. -->
-    <ProjectReference Include="../Pitboard.StandInApp/Pitboard.StandInApp.csproj" />
   </ItemGroup>
   <!-- The core the sheets ask whether a name can be saved: pitboard_ffi.dll, passed as PitboardNativeLibrary. -->
   <ItemGroup Condition="'$(PitboardNativeLibrary)' != ''">

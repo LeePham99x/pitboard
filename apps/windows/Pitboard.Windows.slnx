@@ -10,7 +10,6 @@
   <Project Path="Pitboard.Probe/Pitboard.Probe.csproj" />
   <Project Path="Pitboard.Share/Pitboard.Share.csproj" />
   <Project Path="Pitboard.Share.Core/Pitboard.Share.Core.csproj" />
-  <Project Path="Pitboard.StandInApp/Pitboard.StandInApp.csproj" />
   <Project Path="Pitboard.UITests/Pitboard.UITests.csproj" />
   <Project Path="Pitboard.Views/Pitboard.Views.csproj" />
   <Project Path="Pitboard.Windows.Tests/Pitboard.Windows.Tests.csproj" />

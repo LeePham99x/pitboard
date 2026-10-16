@@ -245,9 +245,6 @@
       "pitboard.core": {
         "type": "Project"
       },
-      "pitboard.standinapp": {
-        "type": "Project"
-      },
       "pitboard.views": {
         "type": "Project",
         "dependencies": {

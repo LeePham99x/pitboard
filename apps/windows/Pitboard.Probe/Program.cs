@@ -190,7 +190,8 @@ public static class Program
         return 0;
     }
 
-    // Through Restart Manager, as Pitboard asks, then looked for as the model looks.
+    // Through Restart Manager, as Pitboard asks, then looked for as the model looks. With RmShutdown's answer, and the
+    // app's processes without a window, which Restart Manager is never given (CF9, session step A4).
     private static int Quit(string app)
     {
         var apps = Apps();
@@ -200,22 +201,40 @@ public static class Program
             return 0;
         }
 
+        var windowless = apps.Windowless(app);
+        Console.WriteLine($"Without a window: {Listed(windowless)}.");
         var asked = Stopwatch.StartNew();
-        apps.RequestQuit(app);
+        var answered = apps.Quit(app).ContinueWith(quit => (Error: quit.Result, After: asked.Elapsed), TaskScheduler.Default);
+        var gone = true;
         while (apps.Running(app) is not null)
         {
             if (asked.Elapsed >= QuitWithin)
             {
-                Console.WriteLine($"Still running after {QuitWithin.TotalSeconds:0} s.");
-                return 1;
+                gone = false;
+                break;
             }
 
             Thread.Sleep(QuitCheckedEvery);
         }
 
-        Console.WriteLine($"Gone after {asked.Elapsed.TotalSeconds:0.0} s.");
-        return 0;
+        var looked = asked.Elapsed;
+        if (answered.Wait(QuitWithin))
+        {
+            var (error, after) = answered.Result;
+            Console.WriteLine($"RmShutdown gave {error} ({Marshal.GetPInvokeErrorMessage(error)}) after {after.TotalMilliseconds:0} ms.");
+        }
+        else
+        {
+            Console.WriteLine($"RmShutdown had not answered after {asked.Elapsed.TotalSeconds:0} s.");
+        }
+
+        Console.WriteLine(gone ? $"Gone after {looked.TotalSeconds:0.0} s." : $"Still running after {QuitWithin.TotalSeconds:0} s.");
+        Console.WriteLine($"Of those without a window, still running: {Listed([.. apps.Windowless(app).Intersect(windowless)])}.");
+        return gone ? 0 : 1;
     }
+
+    private static string Listed(IReadOnlyList<uint> processes) =>
+        processes.Count == 0 ? "none" : string.Join(", ", processes.Select(id => $"process {id}"));
 
     private static int Reopen(string app, bool front)
     {

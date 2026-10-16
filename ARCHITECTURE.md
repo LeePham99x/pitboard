@@ -685,12 +685,14 @@ window loads its site, and whatever the site's pages load, as a browser would.
     Release build registers, and a click comes back as the intent the Switch button or the
     notification itself asks for. `WindowsApps` is the model's `AppControl`: through
     `PackagedApps` it finds the process of a Store app's package that owns a top-level
-    window, asks Restart Manager to end it, never forced, and opens the app by its AUMID
-    through the activation manager. `SparkleUpdates` is a Release build's updater: WinSparkle,
-    through `ISparkle`, which `WinSparkle` sends to `WinSparkle.dll` and tests replace, over
-    the feed of full releases, with WinSparkle's settings in `UpdateSettings`'s file in the
-    app's data folder and the version of an update it finds read from the feed by
-    `UpdateFeed`. `NoUpdates` is the updater of a build that cannot update, and says why.
+    window, asks Restart Manager to end it, never forced, through `IRestartManager`, which
+    `SystemRestartManager` sends to Restart Manager and tests replace, and opens the app by
+    its AUMID through the activation manager. `SparkleUpdates` is a Release build's updater:
+    WinSparkle, through `ISparkle`, which `WinSparkle` sends to `WinSparkle.dll` and tests
+    replace, over the feed of full releases, with WinSparkle's settings in
+    `UpdateSettings`'s file in the app's data folder and the version of an update it finds
+    read from the feed by `UpdateFeed`. `NoUpdates` is the updater of a build that cannot
+    update, and says why.
     `StartAtSignIn` is the settings' start at sign-in over an `IStartupItem`: `RunValue`,
     which writes the `Run` value, `"<exe>" --sign-in`, through `IRunKey`, sent to the
     registry by `RegistryRunKey`
@@ -732,12 +734,11 @@ window loads its site, and whatever the site's pages load, as a browser would.
     of them.
   - `Pitboard.Windows.Tests` is a WinUI app that hosts its own tests, the views' among them
     over snapshots made in C#, and `Pitboard.UITests` drives the built app with FlaUI.
-    `Pitboard.StandInApp`, never shipped, is the app `WindowsAppsTests` ask Restart Manager
-    to end in place of ChatGPT, copied beside the tests.
-    Neither registers anything with Windows. The icon's menu is held by the view tests,
-    `IconMenuTests` and `IconMenuFlyoutTests`, and the click on the icon by the session's
-    step A2. `ScreenshotTests` takes the docs' pictures of the window and of the menu, which
-    it opens with the message Explorer sends on a right click.
+    Neither registers anything with Windows, and neither starts a Restart Manager session,
+    which Restart Manager keeps under the user's HKCU. The icon's menu is held by the view
+    tests, `IconMenuTests` and `IconMenuFlyoutTests`, and the click on the icon by the
+    session's step A2. `ScreenshotTests` takes the docs' pictures of the window and of the
+    menu, which it opens with the message Explorer sends on a right click.
   - `Pitboard.Share` is `PitboardShare.exe`, the share target: Native AOT, with no window,
     and the only program of Pitboard's with a package identity. Its manifest's `<msix>`
     element names the sparse package in `Package/`, the publisher written in at build time
@@ -771,8 +772,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
   - `Pitboard.Probe` is never shipped. The session machine runs it to measure the app's
     adapters by hand: it posts a notification through `WindowsNotifications` under an
     AppUserModelID of its own, waits for its Switch, unregisters, names a process's package,
-    and finds, quits and opens an app by its AUMID through `WindowsApps`. It refuses to run
-    in an account without `pitboard-probe`'s throwaway marker.
+    and finds, quits and opens an app by its AUMID through `WindowsApps`, saying what
+    `RmShutdown` answered and which of the app's processes without a window run on. It
+    refuses to run in an account without `pitboard-probe`'s throwaway marker.
 - `apps/macos/`: the menu bar app, which shows what `pitboard-ffi`'s model says and sends it
   what was asked. The Swift package holds it as libraries its tests load without starting
   it. `PitboardKit` is the bindings and `AppModel.swift`: `AppModel`, which holds the
@@ -2470,12 +2472,12 @@ Accounts and tokens:
   no `StateChanged`, and its browser process exited; one whose page closed while another
   kept the browser process was still in progress five seconds later.
 - CF9, Restart Manager, as the fresh standard user on both images in run 38895887782:
-  `RmShutdown` without `RmForceShutdown`, given only `Pitboard.StandInApp.exe`'s GUI
-  process, ended a stand-in that answers `WM_QUERYENDSESSION` with `TRUE` and quits on
-  `WM_ENDSESSION` with `ENDSESSION_CLOSEAPP`, and gave `ERROR_SUCCESS` after 37 ms on
-  windows-2025 and 46 ms on windows-11-arm. A stand-in that answers `FALSE` ran on with its
-  window, and `RmShutdown` gave `ERROR_FAIL_SHUTDOWN` after 15 and 19 ms. Each stand-in's
-  console child, a `cmd.exe` never registered, ran on.
+  `RmShutdown` without `RmForceShutdown`, given only the GUI process of a stand-in app the
+  tests started then, ended a stand-in that answers `WM_QUERYENDSESSION` with `TRUE` and
+  quits on `WM_ENDSESSION` with `ENDSESSION_CLOSEAPP`, and gave `ERROR_SUCCESS` after 37 ms
+  on windows-2025 and 46 ms on windows-11-arm. A stand-in that answers `FALSE` ran on with
+  its window, and `RmShutdown` gave `ERROR_FAIL_SHUTDOWN` after 15 and 19 ms. Each
+  stand-in's console child, a `cmd.exe` never registered, ran on.
 - A process that gave `RegisterApplicationRestart` `--updated` with `RESTART_NO_CRASH`,
   `RESTART_NO_HANG` and `RESTART_NO_REBOOT` reads them back through
   `GetApplicationRestartSettings`, which gives `HRESULT_FROM_WIN32(ERROR_NOT_FOUND)` before
@@ -2799,8 +2801,8 @@ on 15 and 16 October 2026. W27 reviews the list.
 | Moderators label a portable archive `Portable-Archive`, a blocking issue | [Validation failure guide](https://github.com/microsoft/winget-pkgs/blob/master/doc/ValidationFailureGuide.md) | No manifest has been submitted. |
 | winget puts a portable package's install folder on `PATH`, not a link in Links, for a standard user without Developer Mode | [winget-pkgs FAQ](https://github.com/microsoft/winget-pkgs/blob/master/doc/FAQ.md) | Both images have Developer Mode on, and the job's user is an administrator. A standard user's install is the session's. |
 | Since winget 1.29, an MSI wins over a portable installer whatever the manifest's order | [winget-cli 1.29.380](https://github.com/microsoft/winget-cli/releases/tag/v1.29.380) | windows-2025's winget is 1.11.510, and no runner installs from winget's sources. |
-| A broadcast, such as `WM_ENDSESSION`, reaches a top-level window that is never shown, and no message-only window | [Message-only windows](https://learn.microsoft.com/en-us/windows/win32/winmsg/window-features#message-only-windows) | A runner's session never ends while a job runs; CF9 sends one. |
-| Restart Manager sends `WM_CLOSE` to a program that agreed to end and has not exited | [Guidelines for Applications](https://learn.microsoft.com/en-us/windows/win32/rstmgr/guidelines-for-applications) | CF9's stand-in that agrees ends on `WM_ENDSESSION`; the session's step A7 upgrades a running copy. |
+| A broadcast, such as `WM_ENDSESSION`, reaches a top-level window that is never shown, and no message-only window | [Message-only windows](https://learn.microsoft.com/en-us/windows/win32/winmsg/window-features#message-only-windows) | A runner's session never ends while a job runs, and no test starts a Restart Manager session; the session's step A7 upgrades a running Pitboard. |
+| Restart Manager sends `WM_CLOSE` to a program that agreed to end and has not exited | [Guidelines for Applications](https://learn.microsoft.com/en-us/windows/win32/rstmgr/guidelines-for-applications) | CF9's stand-in that agreed ended on `WM_ENDSESSION` (run 38895887782); the session's step A7 upgrades a running copy. |
 | `GetApplicationUserModelId` gives a packaged process's AUMID, and `APPMODEL_ERROR_NO_APPLICATION` for one without an app | [GetApplicationUserModelId](https://learn.microsoft.com/en-us/windows/win32/api/appmodel/nf-appmodel-getapplicationusermodelid) | No runner starts a packaged process; the session's step A4 reads ChatGPT's through `Pitboard.Probe app-control running`. |
 | `IApplicationActivationManager::ActivateApplication` opens a Store app by its AUMID from an unpackaged process | [IApplicationActivationManager](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-iapplicationactivationmanager) | No runner holds a Store app the test user may open; the session's step A4 opens ChatGPT through `Pitboard.Probe app-control reopen`. |
 | Windows may refuse to bring a window forward once another app took the foreground | [SetForegroundWindow](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setforegroundwindow) | Only a person's session opens ChatGPT behind Pitboard: the session's step A4 records which window ends in front. |
@@ -4258,12 +4260,14 @@ Microsoft's documentation.
   `ENDSESSION_CLOSEAPP`, then `WM_CLOSE` where it does not end. One `FALSE` cancels, and
   only `RmForceShutdown` ends an app regardless. A console app gets `CTRL_C_EVENT`. Only the
   process that started a session may shut down through it, a user session holds at most 64,
-  and the session lives in the registry. So `PackagedApps` registers a Store app's windowed
-  process alone, never its console `codex` children, ends the session once `RmShutdown`
-  returns, and calls it without flags on a thread of its own, since it returns only once the
-  app has ended or declined. `IApplicationActivationManager::ActivateApplication`'s reference
-  (updated 22 February 2024) offers no option that opens an app behind another window, so
-  `WindowsApps` brings Pitboard's window forward after it.
+  and the session lives in the registry, under the user's HKCU. So `WindowsApps` registers a
+  Store app's windowed process alone, never its console `codex` children, ends the session
+  once `RmShutdown` returns, and calls it without flags on a thread of its own, since it
+  returns only once the app has ended or declined. Tests stand in for Restart Manager: on a
+  PC only the app and `Pitboard.Probe` start a session, in the session's steps A4 and A7.
+  `IApplicationActivationManager::ActivateApplication`'s reference (updated 22 February
+  2024) offers no option that opens an app behind another window, so `WindowsApps` brings
+  Pitboard's window forward after it.
 - WinSparkle 0.9.4, read on 16 October 2026 in its source at tag `v0.9.4` and in its NuGet
   package. `win_sparkle_set_eddsa_public_key` returns 0 and keeps no key for anything but the
   base64 of 32 bytes, and with no key the downloader logs "Using unsigned updates!" and
