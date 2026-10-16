@@ -4210,6 +4210,25 @@ Microsoft's documentation.
   16 October 2026). `AccountSheet` sets its own `ContentDialogMinWidth` to the maximum, the
   lightweight styling Microsoft's XAML styles page describes, and keeps one width
   (`AccountSheetTests.TheSheetKeepsOneWidthWhateverItShows`).
+- The same `generic.xaml` shows a TextBox's `Description` in `DescriptionPresenter`, a
+  ContentPresenter with no `TextWrapping`, so a note given as a string stays on one line: the
+  code field's ran past the sheet's edge (after-shot 17 of 16 October 2026). `AccountSheet`
+  gives each field's note as a TextBlock that wraps
+  (`AccountSheetTests.ACodeNoteLongerThanItsFieldWrapsUnderIt`).
+- The code WinUI 2.3.9's XAML compiler writes for a OneWay `x:Bind` function calls it again,
+  as a path in its argument changes, only for a value that is not null (`AccountRow.g.cs`,
+  `Update_Account_Item_Plan`). So a row the list gave an account without a plan kept the tag
+  of the account before (after-shot 21), and a function there takes the account item, which is
+  never null (`AccountRowTests.ARowGivenAnAccountWithoutAPlanHasNoTag`). The same compiler
+  stops on WMC9999 where a template's `x:Bind` names both a member of its `x:DataType` and an
+  element its page names: it goes to warn and finds no resources for the warning
+  (`BindPathListener.ResolveNameOnRoot` in microsoft-ui-xaml's main, read on 16 October 2026).
+  So each page names its title row `PageHeader`, which no template binds.
+- A Selector's `IsSynchronizedWithCurrentItem` is null by default, which keeps its selection on
+  a collection view's current item ([Selector.IsSynchronizedWithCurrentItem](https://learn.microsoft.com/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.controls.primitives.selector.issynchronizedwithcurrentitem)).
+  The Accounts page groups its rows through a CollectionViewSource, so twoTools opened with a
+  row selected that nobody chose (after-shot 43). Its list sets it false
+  (`AccountsPageTests.NoRowIsSelectedUntilOneIsChosen`).
 - Read in microsoft-ui-xaml at `winui3/release/2.5.1`, the WinUI of Windows App SDK 2.5.1.
   `ContentDialog_Partial.cpp`: Esc clicks the close button where it is enabled and
   otherwise hides the dialog through a `Closing` it may cancel; Enter clicks the default
