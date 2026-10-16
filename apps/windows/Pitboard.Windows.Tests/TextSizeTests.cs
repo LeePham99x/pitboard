@@ -40,11 +40,11 @@ public sealed class TextSizeTests
             Summary: "", Checking: false, Checked: "Checked at 09:00", Waiting: null);
         FrameworkElement[] views =
         [
-            await Views.Shown(new AccountRow { Item = Items.Account("claude", "work", inUse: true) }),
+            await Views.Shown(new AccountRow { Account = new ShownAccount(Items.Account("claude", "work", inUse: true), _ => { }) }),
             await Views.Navigated<ActivityPane>(Views.Context(new AppModel(new StandInModel(snapshot)))),
             await Views.Navigated<MachinePane>(Views.Context(new AppModel(new StandInModel(
                 snapshot with { Machine = snapshot.Machine with { Checks = checks } })))),
-            await Views.Navigated<AccountsPane>(Views.Context(
+            await Views.Navigated<AccountsPage>(Views.Context(
                 new AppModel(new StandInModel(snapshot with
                 {
                     AccountsShown = new AccountsShown.NoAccounts(

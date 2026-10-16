@@ -9,6 +9,9 @@
   <Style x:Key="SecondaryCaptionTextBlockStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
     <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
   </Style>
+  <Style x:Key="CriticalCaptionTextBlockStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+    <Setter Property="Foreground" Value="{ThemeResource SystemFillColorCriticalBrush}" />
+  </Style>
   <Style x:Key="PageTitleTextBlockStyle" TargetType="TextBlock" BasedOn="{StaticResource TitleTextBlockStyle}">
     <Setter Property="AutomationProperties.HeadingLevel" Value="Level1" />
   </Style>

@@ -4,7 +4,7 @@ using Pitboard.Core;
 
 namespace Pitboard.Windows;
 
-public sealed partial class ShownAccount(AccountItem item) : INotifyPropertyChanged
+public sealed partial class ShownAccount(AccountItem item, Action<Intent> send) : INotifyPropertyChanged
 {
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -23,11 +23,19 @@ public sealed partial class ShownAccount(AccountItem item) : INotifyPropertyChan
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Item)));
     }
 
+    public void Act()
+    {
+        if (Item.Action is { } action)
+        {
+            send(action.Intent);
+        }
+    }
+
     // UI Automation names a list's item by its text, and Narrator reads the row as one thing.
     public override string ToString() => Item.Spoken;
 }
 
-public sealed partial class ShownSection(string key, string? heading) : ObservableCollection<ShownAccount>
+public sealed partial class ShownSection(string key, string? heading, Action<Intent> send) : ObservableCollection<ShownAccount>
 {
     public string Key { get; } = key;
 
@@ -42,7 +50,7 @@ public sealed partial class ShownSection(string key, string? heading) : Observab
         }
 
         Keyed.Sync(
-            this, section.Accounts, item => item.Id, shown => shown.Key, item => new ShownAccount(item),
+            this, section.Accounts, item => item.Id, shown => shown.Key, item => new ShownAccount(item, send),
             (shown, item) => shown.Show(item));
     }
 }

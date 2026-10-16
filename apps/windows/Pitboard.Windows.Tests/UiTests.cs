@@ -8,12 +8,12 @@ public sealed class UiTests
     {
         var said = new StringWriter();
         var thrown = new InvalidOperationException("The text associated with this error code could not be found.");
-        thrown.Data["RestrictedDescription"] = "Cannot locate resource from 'ms-appx:///Pitboard.Views/AccountsPane.xaml'.";
+        thrown.Data["RestrictedDescription"] = "Cannot locate resource from 'ms-appx:///Pitboard.Views/AccountsPage.xaml'.";
         var callback = Ui.Guarded(() => throw thrown, said);
 
         Assert.AreSame(thrown, Assert.Throws<InvalidOperationException>(() => callback()));
         StringAssert.Contains(said.ToString(), "The text associated with this error code could not be found.");
-        StringAssert.Contains(said.ToString(), "Cannot locate resource from 'ms-appx:///Pitboard.Views/AccountsPane.xaml'.");
+        StringAssert.Contains(said.ToString(), "Cannot locate resource from 'ms-appx:///Pitboard.Views/AccountsPage.xaml'.");
     }
 
     // Where every first chance exception was written, those Pitboard catches buried the one that ended it.

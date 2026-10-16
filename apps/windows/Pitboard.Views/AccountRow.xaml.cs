@@ -1,74 +1,106 @@
+using System.ComponentModel;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Shapes;
 using Pitboard.Core;
+using Pitboard.Windows;
 
 namespace Pitboard.Views;
 
 public sealed partial class AccountRow : UserControl
 {
-    public static readonly DependencyProperty ItemProperty = DependencyProperty.Register(
-        nameof(Item), typeof(AccountItem), typeof(AccountRow), new PropertyMetadata(null, (row, _) => ((AccountRow)row).Show()));
+    public static readonly DependencyProperty AccountProperty = DependencyProperty.Register(
+        nameof(Account), typeof(ShownAccount), typeof(AccountRow),
+        new PropertyMetadata(null, (row, change) => ((AccountRow)row).Follow(change.OldValue as ShownAccount, change.NewValue as ShownAccount)));
 
     private const double PaceMarkHeight = 12;
 
     public AccountRow() => InitializeComponent();
 
-    public AccountItem? Item
+    public ShownAccount? Account
     {
-        get => (AccountItem?)GetValue(ItemProperty);
-        set => SetValue(ItemProperty, value);
+        get => (ShownAccount?)GetValue(AccountProperty);
+        set => SetValue(AccountProperty, value);
     }
 
-    public Action<Intent>? Perform { get; set; }
+    public static string MarkOf(AccountItem item) =>
+        item.Unplaced ? Glyphs.Warning
+        : item.NeedsSignIn ? Glyphs.SignIn
+        : item.InUse ? Glyphs.InUse
+        : Glyphs.Account;
 
-    private void Show()
+    public Style MarkStyle(bool inUse) => (Style)Resources[inUse ? "InUseMark" : "AccountMark"];
+
+    public static Visibility Shows(string? text) => text is null ? Visibility.Collapsed : Visibility.Visible;
+
+    public static Visibility EmailShown(AccountItem item) =>
+        item.Email.Length > 0 && item.Email != item.Title ? Visibility.Visible : Visibility.Collapsed;
+
+    public static Visibility InUseShown(AccountItem item) =>
+        !item.Switching && item.InUse ? Visibility.Visible : Visibility.Collapsed;
+
+    public static Visibility ActionShown(AccountItem item) =>
+        !item.Switching && !item.InUse && item.Action is not null ? Visibility.Visible : Visibility.Collapsed;
+
+    public static string ActionTitle(AccountItem item) => item.Action?.Title ?? "";
+
+    public static string ActionSpoken(AccountItem item) => item.Action?.Spoken ?? "";
+
+    private static Style Shared(string key) => (Style)Application.Current.Resources[key];
+
+    private static T Unspoken<T>(T element)
+        where T : UIElement
     {
-        if (Item is not { } item)
+        AutomationProperties.SetAccessibilityView(element, AccessibilityView.Raw);
+        return element;
+    }
+
+    private void Follow(ShownAccount? before, ShownAccount? now)
+    {
+        if (before is not null)
         {
-            return;
+            before.PropertyChanged -= OnAccountChanged;
         }
 
-        Mark.Glyph = item.Unplaced ? Glyphs.Warning
-            : item.NeedsSignIn ? Glyphs.SignIn
-            : item.InUse ? Glyphs.InUse
-            : Glyphs.Account;
-        Mark.Style = Styled(item.InUse ? "InUseMark" : "AccountMark");
-        TitleText.Text = item.Title;
-        PlanText.Text = item.Plan ?? "";
-        PlanTag.Visibility = Look.Shown(item.Plan is not null);
-        EmailText.Text = item.Email;
-        EmailText.Visibility = Look.Shown(item.Email.Length > 0 && item.Email != item.Title);
-        SwitchingRing.IsActive = item.Switching;
-        SwitchingRing.Visibility = Look.Shown(item.Switching);
-        InUseLabel.Visibility = Look.Shown(!item.Switching && item.InUse);
-        ActionButton.Visibility = Look.Shown(!item.Switching && !item.InUse && item.Action is not null);
-        if (item.Action is { } action)
+        if (now is not null)
         {
-            ActionButton.Content = action.Title;
-            AutomationProperties.SetName(ActionButton, action.Spoken);
+            now.PropertyChanged += OnAccountChanged;
+            ShowLists(now.Item);
         }
+    }
 
+    private void OnAccountChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        if (Account is { } account)
+        {
+            ShowLists(account.Item);
+        }
+    }
+
+    private void ShowLists(AccountItem item)
+    {
         ShowLimits(item.Limits);
         Notes.Children.Clear();
         foreach (var note in new[] { item.Problem, item.StaleNote, item.Pace, item.ParkedNote, item.WarmNote })
         {
             if (note is not null)
             {
-                Notes.Children.Add(new TextBlock { Text = note, Style = Styled("Secondary"), TextWrapping = TextWrapping.Wrap });
+                Notes.Children.Add(
+                    new TextBlock { Text = note, Style = Shared("SecondaryCaptionTextBlockStyle"), TextWrapping = TextWrapping.Wrap });
             }
         }
     }
 
-    // One grid for every limit, so the bars and figures line up whatever each limit is called.
+    // One grid for every limit, so the bars and figures line up whatever each limit is called. WinUI shares no column
+    // widths across a list's items, so the grid is built here.
     private void ShowLimits(LimitRow[] limits)
     {
         Limits.Children.Clear();
         Limits.RowDefinitions.Clear();
         Limits.ColumnDefinitions.Clear();
-        Limits.Visibility = Look.Shown(limits.Length > 0);
+        Limits.Visibility = limits.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         GridLength[] widths =
             [GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto, GridLength.Auto, GridLength.Auto];
         foreach (var width in widths)
@@ -80,20 +112,20 @@ public sealed partial class AccountRow : UserControl
         {
             var limit = limits[row];
             Limits.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            var name = Column(limit.Short, "Secondary");
+            var name = Column(limit.Short, "SecondaryCaptionTextBlockStyle");
             // Narrator reads the limit once, as a sentence, and not the bar and each figure on their own.
             AutomationProperties.SetName(name, limit.Spoken);
             Place(name, row, 0);
             Place(Bar(limit), row, 1);
-            var figure = Column(limit.Figure, "Secondary");
+            var figure = Column(limit.Figure, "SecondaryCaptionTextBlockStyle");
             figure.MinWidth = 36;
             figure.TextAlignment = TextAlignment.Right;
             Place(Unspoken(figure), row, 2);
-            var resets = Column(limit.Resets, "Secondary");
+            var resets = Column(limit.Resets, "SecondaryCaptionTextBlockStyle");
             resets.TextAlignment = TextAlignment.Right;
             Place(Unspoken(resets), row, 3);
             var over = limit.Pace?.Standing == PaceStanding.Over;
-            Place(Unspoken(Column(limit.Pace?.Said ?? "", over ? "Over" : "Secondary")), row, 4);
+            Place(Unspoken(Column(limit.Pace?.Said ?? "", over ? "CriticalCaptionTextBlockStyle" : "SecondaryCaptionTextBlockStyle")), row, 4);
         }
     }
 
@@ -107,7 +139,7 @@ public sealed partial class AccountRow : UserControl
             Value = Math.Clamp(limit.Percent, 0, 100),
             MinWidth = 80,
             VerticalAlignment = VerticalAlignment.Center,
-            Style = Styled(limit.Level switch
+            Style = Own(limit.Level switch
             {
                 UsageLevel.Low => "Low",
                 UsageLevel.Out => "Out",
@@ -121,7 +153,7 @@ public sealed partial class AccountRow : UserControl
             {
                 Width = 2,
                 Height = PaceMarkHeight,
-                Style = Styled(pace.Standing == PaceStanding.Over ? "OverPace" : "UnderPace"),
+                Style = Own(pace.Standing == PaceStanding.Over ? "OverPace" : "UnderPace"),
             };
             var marks = new Canvas { Children = { mark } };
             cell.Children.Add(Unspoken(marks));
@@ -136,8 +168,8 @@ public sealed partial class AccountRow : UserControl
         return cell;
     }
 
-    private TextBlock Column(string text, string style) =>
-        new() { Text = text, Style = Styled(style), TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center };
+    private static TextBlock Column(string text, string style) =>
+        new() { Text = text, Style = Shared(style), TextWrapping = TextWrapping.NoWrap, VerticalAlignment = VerticalAlignment.Center };
 
     private void Place(FrameworkElement element, int row, int column)
     {
@@ -146,20 +178,7 @@ public sealed partial class AccountRow : UserControl
         Limits.Children.Add(element);
     }
 
-    private Style Styled(string key) => (Style)Resources[key];
+    private Style Own(string key) => (Style)Resources[key];
 
-    private static T Unspoken<T>(T element)
-        where T : UIElement
-    {
-        AutomationProperties.SetAccessibilityView(element, AccessibilityView.Raw);
-        return element;
-    }
-
-    private void OnAction(object sender, RoutedEventArgs args)
-    {
-        if (Item?.Action is { } action)
-        {
-            Perform?.Invoke(action.Intent);
-        }
-    }
+    private void OnAction(object sender, RoutedEventArgs args) => Account?.Act();
 }
