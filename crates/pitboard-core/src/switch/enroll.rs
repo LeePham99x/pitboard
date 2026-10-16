@@ -1344,7 +1344,6 @@ mod tests {
     /// Another account's sign-in is parked, and the account in use is left exactly as it
     /// was, as before.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_sign_in_of_another_account_is_parked_beside_the_one_in_use() {
         for (tool, make) in MACHINES {
             let m = make("another-parked");
@@ -1368,7 +1367,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn enrolling_records_the_plan_the_login_says() {
         for ((tool, make), plan) in MACHINES.into_iter().zip(["Max 20x", "Pro"]) {
             let m = make("enrol-plan");
@@ -1399,7 +1397,6 @@ mod tests {
     /// named, so its fingerprint names nobody: for Claude Code one Anthropic refuses or does
     /// not answer about, for Codex one whose ID token cannot be read.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_login_in_use_whose_account_cannot_be_told_is_not_written_over() {
         let mut cases: Vec<(String, Machine)> = Vec::new();
         for (name, trouble) in [
@@ -1740,7 +1737,6 @@ mod tests {
     /// refreshes its token, so a new login put in use is said to need them restarted.
     /// Claude Code sessions read the new login by themselves, and nothing is said.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn sessions_running_on_the_old_login_are_counted_and_warned_about() {
         for (tool, make) in MACHINES {
             let m = make("again-sessions");
@@ -1776,7 +1772,6 @@ mod tests {
     /// the old login to write back, and the sign-in says so rather than nothing. Claude Code
     /// sessions read the new login by themselves, and nothing is said.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_process_list_nobody_could_read_is_said_after_a_sign_in() {
         for (tool, make) in MACHINES {
             let m = make("again-listless");
@@ -1986,7 +1981,6 @@ mod tests {
     /// A played sign-in that is stopped ends what it says and enrols nothing, as a killed
     /// tool does, and the next one can start.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_stopped_scripted_sign_in_enrols_nothing() {
         for (tool, make) in MACHINES {
             let m = make("scripted-stop");
@@ -2106,7 +2100,6 @@ mod tests {
     /// go of it only once every copy was closed, so the next sign-in was refused as one
     /// already waiting for as long as that took, which ARCHITECTURE.md's Measured facts give.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_cancelled_sign_in_lets_the_next_start_while_a_copy_of_its_lock_is_open() {
         for (tool, make) in MACHINES {
             let m = make("lock-copied");
@@ -2139,7 +2132,6 @@ mod tests {
     /// pressing Cancel nearly always finds a reader waiting. The cancel must not wait with
     /// it, and stopping the tool must end the reading rather than leave it waiting forever.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_cancel_does_not_wait_on_a_tool_that_says_nothing() {
         let patience = Duration::from_secs(20);
         let m = codex_machine("cancel");
@@ -2150,8 +2142,11 @@ mod tests {
         )
         .expect("reserved");
         // Says its address, then nothing, and ends by itself only once `patience` is up.
-        let mut silent = std::process::Command::new("/bin/sh");
-        silent.args(["-c", "echo https://auth.openai.com/ >&2; exec sleep 30"]);
+        let silent = crate::helper::command(
+            &std::env::current_exe().expect("this test"),
+            crate::helper::Job::SaysAnAddress,
+            &m.ctx_home().join("silent"),
+        );
         let watched = watch(silent, pending, None).expect("started");
         let said = watched.said();
         let (heard, hears) = std::sync::mpsc::channel();
@@ -2171,10 +2166,9 @@ mod tests {
         cancels
             .recv_timeout(patience)
             .expect("the cancel did not wait on the tool");
-        assert_eq!(
-            hears.recv_timeout(patience).expect("the reading ended"),
-            None
-        );
+        // libtest's own lines may still be on their way.
+        let ended = std::iter::from_fn(|| hears.recv_timeout(patience).ok()).find(Option::is_none);
+        assert_eq!(ended, Some(None), "the reading ended");
         reserve_signin(
             &m.ctx,
             Permit::for_a_test(),

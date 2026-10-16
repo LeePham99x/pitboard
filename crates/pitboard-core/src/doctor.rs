@@ -240,6 +240,8 @@ pub(crate) enum CodexLoginTrouble {
     NotAnAccount(String),
     /// Unreadable, or read and not one account's login.
     Unusable(String),
+    // `CODEX_HOME` names no folder, so Codex does not start: Windows' alone.
+    NoHome(String),
 }
 
 pub(crate) struct ParkFact {
@@ -704,7 +706,13 @@ const PROJECTS_NOT_READ: &str = "Pitboard does not read a project's own \
 fn codex_login(ctx: &Context) -> Result<Option<CodexLogin>, CodexLoginTrouble> {
     let tool = crate::provider::codex();
     let unusable = |e: crate::provider::ProviderError| CodexLoginTrouble::Unusable(e.to_string());
-    let Some(credential) = tool.read_live(ctx).map_err(unusable)? else {
+    let Some(credential) = tool.read_live(ctx).map_err(|e| match e {
+        crate::provider::ProviderError::CodexHomeMissing { .. } => {
+            CodexLoginTrouble::NoHome(e.to_string())
+        }
+        other => unusable(other),
+    })?
+    else {
         return Ok(None);
     };
     // Whether it is one account's login at all, which is the question a park asks of it.
@@ -2351,10 +2359,16 @@ fn judge_codex(
                     facts.backend_remedy
                 ),
                 _ => format!(
-                    "Pitboard reads only Codex's file store, auth.json, and will not touch the \
-                     keychain item Codex created for itself, because every read of it would \
-                     ask you for permission, so no enrolled Codex account can be switched to. \
-                     {}.",
+                    "Pitboard reads only Codex's file store, auth.json, and {}, so no enrolled \
+                     Codex account can be switched to. {}.",
+                    match os {
+                        Os::MacOs | Os::Linux => {
+                            "will not touch the keychain item Codex created for itself, because \
+                             every read of it would ask you for permission"
+                        }
+                        Os::Windows =>
+                            "does not follow Codex into a store it uses only when told to",
+                    },
                     facts.backend_remedy
                 ),
             },
@@ -2452,6 +2466,12 @@ fn judge_codex(
                 "Pitboard will not park or switch a Codex login it cannot read as one \
                  account's. Signing in with `codex` again writes a fresh one."
                     .into(),
+            )),
+            Err(CodexLoginTrouble::NoHome(why)) => checks.push(broken(
+                "codex_login",
+                "Codex login",
+                why.clone(),
+                String::new(),
             )),
         }
     }
@@ -5754,7 +5774,6 @@ mod tests {
     /// account, a signed-in Codex account read as one with nothing parked to switch to, and
     /// the advice was to sign in again.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn an_account_is_active_by_its_own_tools_record() {
         use crate::host::memory::MemoryHost;
 
@@ -5764,6 +5783,8 @@ mod tests {
             .with_pitboard_home(root.join(".pitboard"))
             .with_codex_home(root.join("codex").to_string_lossy().into())
             .with_memory_stores(MemoryHost::new());
+        // Codex does not start on Windows where `CODEX_HOME` names no folder.
+        std::fs::create_dir_all(root.join("codex")).expect("a Codex home");
         std::fs::write(
             root.join(".claude.json"),
             json!({"oauthAccount": {
@@ -6136,55 +6157,108 @@ mod tests {
         }
     }
 
-    /// What `/etc/codex` and the person's own config say is gathered as Codex reads it, and a
-    /// store a requirement pins is said to be one no line of the person's own changes.
+    /// What this machine's folder of Codex's configuration and the person's own config say is
+    /// gathered as Codex reads it, and a store a requirement pins is said to be one no line of
+    /// the person's own changes. On Windows a keyring store is the secret store by default.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_store_an_administrator_pinned_is_gathered_and_said() {
         let host = crate::host::memory::MemoryHost::new();
         let ctx = Context::for_unit_test().with_memory_stores(host.clone());
+        let required = crate::provider::codex::layers::system_file(&ctx, "requirements.toml");
+        let named = required.display().to_string();
         host.administers(
-            "/etc/codex/requirements.toml",
+            required.clone(),
             "cli_auth_credentials_store = \"keyring\"\n",
         );
         let codex = CodexFacts {
             enrolled: 1,
             ..codex_facts(&ctx, None)
         };
-        assert_eq!(codex.backend, "keyring");
-        assert_eq!(
-            codex.backend_setting,
-            "pinned to `keyring` by /etc/codex/requirements.toml"
-        );
+        let (backend, setting) = match crate::host::OS {
+            Os::MacOs | Os::Linux => ("keyring", format!("pinned to `keyring` by {named}")),
+            Os::Windows => (
+                "secrets",
+                format!("pinned to `keyring` by {named}, with `secret_auth_storage` on by default"),
+            ),
+        };
+        assert_eq!(codex.backend, backend);
+        assert_eq!(codex.backend_setting, setting);
         let checks = codex_checks(&codex);
         let found = check(&checks, "codex_backend");
         assert_eq!(found.level, Level::Fail);
-        assert_eq!(
-            found.detail,
-            "keyring (pinned to `keyring` by /etc/codex/requirements.toml)"
-        );
+        assert_eq!(found.detail, format!("{backend} ({setting})"));
         assert!(
-            found.advice.ends_with(
-                "No line in your own config.toml can change it: \
-                 /etc/codex/requirements.toml pins it, and only an administrator can change \
-                 that."
-            ),
+            found.advice.ends_with(&format!(
+                "No line in your own config.toml can change it: {named} pins it, and only an \
+                 administrator can change that."
+            )),
             "{}",
             found.advice
         );
 
-        host.administers("/etc/codex/requirements.toml", "x = \n");
+        host.administers(required, "x = \n");
         let unknown = codex_facts(&ctx, None);
         assert_eq!(unknown.backend, "unknown");
         assert_eq!(
             unknown.backend_setting,
-            "/etc/codex/requirements.toml is not TOML Codex can read, at line 1"
+            format!("{named} is not TOML Codex can read, at line 1")
         );
         assert_eq!(
             unknown.backend_remedy,
             "Codex 0.160.0 does not start until that is put right"
         );
         assert!(matches!(unknown.login, Ok(None)), "nothing is read");
+    }
+
+    #[test]
+    fn a_store_codex_uses_only_when_told_to_is_said_in_each_systems_words() {
+        let keyring = CodexFacts {
+            backend: "keyring",
+            backend_setting: "`cli_auth_credentials_store = \"keyring\"` in config.toml".into(),
+            backend_remedy: "To use the file store, set it".into(),
+            enrolled: 1,
+            ..with_codex()
+        };
+        let advice = |os| {
+            check(&judge_codex(os, None, &keyring, &[], NOW), "codex_backend")
+                .advice
+                .clone()
+        };
+        for os in [Os::MacOs, Os::Linux] {
+            assert_eq!(
+                advice(os),
+                "Pitboard reads only Codex's file store, auth.json, and will not touch the \
+                 keychain item Codex created for itself, because every read of it would ask \
+                 you for permission, so no enrolled Codex account can be switched to. To use \
+                 the file store, set it."
+            );
+        }
+        assert_eq!(
+            advice(Os::Windows),
+            "Pitboard reads only Codex's file store, auth.json, and does not follow Codex into \
+             a store it uses only when told to, so no enrolled Codex account can be switched \
+             to. To use the file store, set it."
+        );
+    }
+
+    // Windows' alone: Codex does not start there where `CODEX_HOME` names no folder.
+    #[test]
+    fn a_codex_home_that_names_no_folder_is_said_as_it_is() {
+        let why = "CODEX_HOME is C:\\nowhere, which is no folder, so Codex does not start. Make \
+                   that folder, or unset CODEX_HOME";
+        for (enrolled, level) in [(1, Level::Fail), (0, Level::Warn)] {
+            let facts = CodexFacts {
+                present: false,
+                auth_access: None,
+                login: Err(CodexLoginTrouble::NoHome(why.into())),
+                enrolled,
+                ..with_codex()
+            };
+            let checks = codex_checks(&facts);
+            let found = check(&checks, "codex_login");
+            assert_eq!((found.level, found.detail.as_str()), (level, why));
+            assert_eq!(found.advice, "");
+        }
     }
 
     /// Signed in with an API key is somebody's choice, and nothing about it is broken or
@@ -6599,7 +6673,6 @@ mod tests {
     /// What the section is judged on, read off a real disk: a scratch Codex home with a
     /// login in it, in the file Codex keeps it in.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn codex_facts_are_read_off_the_disk() {
         use crate::host::fs::testing;
 
@@ -6608,7 +6681,8 @@ mod tests {
         let home = root.join("codex");
         // A `codex` of this test's own. Looked up on `PATH`, it would be this machine's, and
         // the standalone installer keeps that inside the real `~/.codex`.
-        let program = root.join("bin/codex");
+        let codex = format!("codex{}", std::env::consts::EXE_SUFFIX);
+        let program = root.join("bin").join(&codex);
         let ctx = Context::new(root.clone())
             .with_pitboard_home(root.join(".pitboard"))
             .with_codex_home(home.to_string_lossy().into())
@@ -6618,11 +6692,19 @@ mod tests {
         assert!(!absent.present);
         assert_eq!(absent.backend, "file");
         assert_eq!(absent.auth_access, None);
-        assert!(matches!(absent.login, Ok(None)));
+        match crate::host::OS {
+            Os::MacOs | Os::Linux => assert!(matches!(absent.login, Ok(None))),
+            Os::Windows => assert!(
+                matches!(&absent.login, Err(CodexLoginTrouble::NoHome(why)) if why.contains("no folder")),
+                "Codex does not start there"
+            ),
+        }
         assert_eq!(absent.program, None, "the one named, and it is not there");
         assert_eq!(absent.version, None);
 
-        let installed = root.join("releases/0.154.0-aarch64-apple-darwin/bin/codex");
+        let installed = root
+            .join("releases/0.154.0-aarch64-apple-darwin/bin")
+            .join(&codex);
         std::fs::create_dir_all(installed.parent().unwrap()).unwrap();
         std::fs::write(&installed, "").unwrap();
         // A program is what can be run, as the installer leaves it.
@@ -6719,7 +6801,7 @@ mod tests {
         .expect("a config");
         let secrets = codex_facts(&ctx, None);
         assert_eq!(secrets.backend, "secrets");
-        let config = home.join("config.toml");
+        let config = crate::provider::codex::paths::config_file(&ctx);
         assert_eq!(
             secrets.backend_setting,
             format!(

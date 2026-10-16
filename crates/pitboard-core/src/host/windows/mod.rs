@@ -8,8 +8,8 @@
 //! - no store of secrets for a tool (W23 offers Credential Manager);
 //! - no scheduler (W25).
 //!
-//! Each tool's own live chain refuses on Windows in its provider's code, not here: which
-//! store a tool keeps its login in is the tool's to say (W21, W22, W23).
+//! Which store a tool keeps its login in is the tool's to say, in its provider's code: Codex's
+//! file is read there, and Claude Code's chain refuses (W22, W23).
 
 #[allow(
     clippy::disallowed_methods,
@@ -265,15 +265,26 @@ mod tests {
     }
 
     #[test]
-    fn codexs_file_store_is_read_and_its_chain_still_refuses() {
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "a test writes a login as Codex does"
+    )]
+    fn codexs_live_login_is_auth_json_in_its_home() {
         let home = tempfile::tempdir().expect("a scratch Codex home");
         let ctx = ctx().with_codex_home(home.path().to_string_lossy().into());
         let live = crate::provider::document(ProviderId::Codex)
             .live(&ctx)
             .expect("the file store");
-        unreadable(
-            crate::store::read_raw(&live.chain, &live.service),
-            "Pitboard does not switch Codex on Windows yet",
+        assert_eq!(
+            crate::store::read_raw(&live.chain, &live.service).expect("readable"),
+            None
+        );
+        std::fs::write(home.path().join("auth.json"), r#"{"tokens":{}}"#).expect("a login");
+        assert_eq!(
+            crate::store::read_raw(&live.chain, &live.service)
+                .expect("readable")
+                .as_deref(),
+            Some(r#"{"tokens":{}}"#)
         );
     }
 

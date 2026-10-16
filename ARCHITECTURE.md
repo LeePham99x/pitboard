@@ -3030,6 +3030,13 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
   `secret_auth_storage` is on by default, so `keyring` and `auto` keep the login in the
   secret store. Cloud requirements still may not set the store on any system, and a cloud
   configuration still may, for a session of the TUI.
+- Read from 0.163.0's source on 16 October 2026 (`codex_windows_login_location`,
+  `codex_windows_stores`): on Windows the login is `auth.json` in Codex's home, written in
+  place with std's default sharing and no access list of its own. `keyring` and `auto` keep it
+  in `secrets\codex_auth.age` under a passphrase in Credential Manager
+  (`secrets|<16 hex>.codex`), or, with `secret_auth_storage` off, as
+  `cli|<16 hex>.Codex Auth` itself. Pitboard switches the file and refuses the others, naming
+  the line that puts the login in the file.
 - `keyring` and `auto` keep the login in a keychain item, `Codex Auth`, that Codex makes
   through the Security framework. With either of those, the `secret_auth_storage` feature
   keeps it in `secrets/codex_auth.age` instead, under a keychain key.

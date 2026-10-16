@@ -714,7 +714,6 @@ mod tests {
 
     /// A Claude Code park in the shape older versions wrote, and Codex gone from Plus to Pro.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_read_records_the_plan_a_login_says() {
         let m = machine("identify-plan");
         let there = state::load(&m.ctx)
@@ -806,7 +805,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_read_whose_plans_agree_with_the_record_writes_nothing() {
         let m = codex_machine("identify-plans-agree");
         let pitboard = Pitboard::new(m.ctx.clone());
@@ -1612,7 +1610,6 @@ mod tests {
     /// Codex's login says whose it is by itself, so it is never renewed to tell, however
     /// long ago its access token lapsed.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_codex_login_is_told_by_its_claims_and_never_renewed() {
         let m = codex_machine("identify-codex-lapsed");
         let mut login = codex_login("here", "here-again");

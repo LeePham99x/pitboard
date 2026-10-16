@@ -663,7 +663,7 @@ mod tests {
             report["pending_here"]
                 .as_array()
                 .expect("pending_here")
-                .contains(&serde_json::json!("codex_login_location"))
+                .contains(&serde_json::json!("codex_login_is_driveable"))
         );
     }
 

@@ -2467,7 +2467,6 @@ mod tests {
 
     // An existing account's name keeps it, and a rename gives a new one by the rules all the same.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_rename_to_a_name_another_tool_has_follows_the_rules_for_a_new_one() {
         let m = codex_machine("rename-one-word");
         let mut state = state::load(&m.ctx).expect("state");
@@ -3516,7 +3515,6 @@ mod tests {
     /// read. `doctor` and the read that asks nobody said nothing of it, as though only OpenAI
     /// could say whose the login is.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn whose_a_codex_login_is_is_told_without_asking_anyone() {
         let m = interrupted(codex_machine, "codex-renewed-since");
         m.sign_in(&switch::harness::codex_login("here", "renewed-since"));
@@ -3546,20 +3544,20 @@ mod tests {
         assert_eq!(check.detail, refused.error.to_string());
     }
 
-    /// A Codex store that `/etc/codex/requirements.toml` pins is refused before a sign-in
+    /// A Codex store that this machine's `requirements.toml` pins is refused before a sign-in
     /// starts, naming that file, as it is for a switch: no line of the person's own changes
     /// it, and the `-c` Pitboard's sign-ins give is under it, so the login would be kept where
     /// Pitboard cannot read it back. Pitboard used to read only `$CODEX_HOME/config.toml`, and
     /// started the sign-in.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_codex_store_a_requirement_pins_is_refused_before_a_sign_in() {
         let m = codex_machine("codex-pinned");
         // Named where nothing is, so a sign-in that got past the refusal would find no
         // program to run rather than this machine's own `codex`.
         let ctx = m.ctx.clone().with_codex_program("/nowhere/codex".into());
+        let required = crate::provider::codex::layers::system_file(&ctx, "requirements.toml");
         m.mem.administers(
-            "/etc/codex/requirements.toml",
+            required.clone(),
             "cli_auth_credentials_store = \"keyring\"\n",
         );
         let pitboard = Pitboard::new(ctx);
@@ -3570,7 +3568,7 @@ mod tests {
             assert_eq!(refused.error.code(), "live_store_unsupported");
             let said = refused.error.to_string();
             assert!(
-                said.contains("pinned to `keyring` by /etc/codex/requirements.toml"),
+                said.contains(&format!("pinned to `keyring` by {}", required.display())),
                 "{said}"
             );
             assert!(
@@ -3705,7 +3703,6 @@ mod tests {
     /// A mistyped name with nothing to recover takes no lock and writes nothing but its
     /// line in the audit log.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_change_refused_over_its_name_with_nothing_interrupted_changes_nothing() {
         for (tool, make) in MACHINES {
             for (change, verb, code, audited, refuse) in REFUSALS {
@@ -4057,7 +4054,6 @@ mod tests {
     /// every read of the accounts, with `home_not_absolute`, and nothing changes. Asked of
     /// the gate and the reads first, which change nothing whatever they answer.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn every_change_and_read_is_refused_where_the_home_is_not_a_full_path() {
         for home in ["", "relative"] {
             for (tool, make) in MACHINES {
@@ -4068,7 +4064,12 @@ mod tests {
                 let pitboard = Pitboard::new(ctx);
                 let refused = |error: Error| {
                     assert_eq!(error.code(), "home_not_absolute", "{at}: {error}");
-                    assert!(error.to_string().starts_with("HOME is "), "{at}: {error}");
+                    assert!(
+                        error
+                            .to_string()
+                            .starts_with(&format!("{} is ", crate::host::OS.home_variable())),
+                        "{at}: {error}"
+                    );
                 };
 
                 refused(pitboard.permit().expect_err("the gate refuses"));
@@ -4120,7 +4121,6 @@ mod tests {
     /// renews nothing, asks nobody and writes nothing. A park whose access has lapsed is
     /// there to be renewed, so a read that renewed would show it.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_read_where_pitboard_may_change_nothing_asks_nobody_and_says_why() {
         for (tool, make) in MACHINES {
             for refused in REFUSED {
@@ -4199,7 +4199,6 @@ mod tests {
     /// run that could not renew read as one where nothing was due. Refused, it says so, and
     /// asks nobody, with a park that is due to be renewed.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_renewal_where_pitboard_may_change_nothing_is_refused_and_asks_nobody() {
         for (tool, make) in MACHINES {
             for refused in REFUSED {

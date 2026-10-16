@@ -494,7 +494,6 @@ fn in_use<'a>(provider: &'a str, label: &'a str) -> impl Fn(&[Snapshot]) -> bool
 /// snapshot as what Codex's last switch said, and outlasts the read after the switch, which
 /// says nothing of it. The switch is said to be under way until that read has landed.
 #[test]
-#[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
 fn a_codex_switchs_warning_reaches_the_snapshot() {
     let world = two_codex_accounts("codex-switch");
     world.host.runs("codex", 2);
@@ -553,7 +552,6 @@ fn a_codex_switchs_warning_reaches_the_snapshot() {
 /// the person; told to go ahead, ChatGPT is asked to quit, the switch is made once it has,
 /// with nothing left running the old login to warn about, and ChatGPT is opened again.
 #[test]
-#[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
 fn quitting_the_app_holding_the_login_switches_and_opens_it_again() {
     let world = two_codex_accounts("codex-quit");
     world.host.runs_at("codex", &[CHATGPT_CODEX]);
@@ -617,7 +615,6 @@ fn quitting_the_app_holding_the_login_switches_and_opens_it_again() {
 /// restart line it keeps where the core counted nothing, rather than in a notice of its own
 /// under the code's heading.
 #[test]
-#[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
 fn a_switch_on_a_process_list_nobody_could_read_says_so_and_asks_nothing() {
     let world = two_codex_accounts("codex-listless");
     world.host.without_a_process_list();

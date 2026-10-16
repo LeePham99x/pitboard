@@ -48,7 +48,6 @@ fn two_codex_accounts(name: &str) -> Env {
 /// The Codex account signed in now is enrolled from its own login: its ID token names the
 /// account, so nobody is asked, and nothing is parked while it stays signed in.
 #[test]
-#[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
 fn the_codex_account_in_use_is_enrolled_from_its_own_login() {
     let env = Env::new("codex-current");
     env.sign_in_codex(&env.uuid('w'), "w@example.com", "codex-refresh-w");
@@ -72,7 +71,6 @@ fn the_codex_account_in_use_is_enrolled_from_its_own_login() {
 /// account in use is never signed out and never revoked. What it signed in to is parked as
 /// a Codex account, and the private home is gone afterwards.
 #[test]
-#[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
 fn a_second_codex_account_signs_in_privately_and_the_one_in_use_stays() {
     let env = two_codex_accounts("codex-sign-in");
 
@@ -96,7 +94,6 @@ fn a_second_codex_account_signs_in_privately_and_the_one_in_use_stays() {
 /// A Codex switch moves one login in and the other out, and says to restart `codex`
 /// rather than counting down seconds nothing will ever follow.
 #[test]
-#[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
 fn a_codex_switch_moves_the_login_and_says_to_restart_codex() {
     let env = two_codex_accounts("codex-switch");
     let personal_park = account(&env, "codex", "personal")["parked"]["service"]
@@ -144,7 +141,6 @@ fn a_codex_switch_moves_the_login_and_says_to_restart_codex() {
 /// way `codex login` would, and parks nothing. Parked beside the old login, the new one was
 /// thrown away by the next switch away, which parked the old one over it.
 #[test]
-#[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
 fn signing_in_again_to_the_codex_account_in_use_puts_the_new_login_in_use() {
     let env = two_codex_accounts("codex-again");
     env.install_fake_codex_login(&codex_login(
@@ -218,7 +214,6 @@ fn the_same_label_on_both_tools_is_two_accounts() {
 /// `PATH` holds nothing but an empty directory, so no `codex` can be found, whatever this
 /// machine has installed: the real one must never run under a test.
 #[test]
-#[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
 fn a_codex_sign_in_without_codex_says_so_first() {
     let env = Env::new("codex-missing");
     let empty = env.root.join("nothing-on-path");
@@ -253,7 +248,6 @@ fn a_codex_sign_in_without_codex_says_so_first() {
 /// Driven through the library, the way the app drives it: the command line looks for a
 /// program on its own `PATH`, where its directory always is.
 #[test]
-#[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
 fn an_npm_installed_codex_signs_in_from_a_path_without_its_directory() {
     let env = Env::new("codex-npm");
     let program = env.install_fake_npm_codex_login(&codex_login(

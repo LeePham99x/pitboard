@@ -174,7 +174,6 @@ fn a_park_repair_gave_back_outlives_a_switch_away_from_its_account() {
 
 /// Dropping the account that holds one does not delete it either.
 #[test]
-#[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
 fn forgetting_its_account_leaves_a_park_repair_gave_back() {
     for make in MACHINES {
         let m = make("foreign-forgotten");
@@ -206,7 +205,6 @@ fn forgetting_its_account_leaves_a_park_repair_gave_back() {
 /// Uninstalling deletes what this Pitboard wrote and leaves the rest, and says how many it
 /// left, because somebody told their logins were removed would otherwise not look for them.
 #[test]
-#[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
 fn uninstalling_leaves_a_park_repair_gave_back_and_says_so() {
     for make in MACHINES {
         let m = make("foreign-uninstalled");
@@ -276,7 +274,6 @@ fn a_park_repair_gave_back_is_deleted_once_a_switch_installs_it() {
 /// A renewal spends the refresh token it presents, so the copy it renewed is used up
 /// whoever wrote it, and what it writes is this Pitboard's own.
 #[test]
-#[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
 fn a_park_repair_gave_back_is_deleted_once_a_renewal_spends_it() {
     for make in MACHINES {
         let m = make("foreign-renewed");
@@ -306,7 +303,6 @@ fn a_park_repair_gave_back_is_deleted_once_a_renewal_spends_it() {
 /// was saved as used before the answer was written, so giving the fresh one back deletes it
 /// rather than letting it go for a Pitboard that would present a spent token.
 #[test]
-#[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
 fn a_park_repair_gave_back_is_deleted_once_a_killed_renewal_spends_it() {
     for make in MACHINES {
         let m = make("foreign-renewal-killed");
@@ -345,7 +341,6 @@ fn a_park_repair_gave_back_is_deleted_once_a_killed_renewal_spends_it() {
 /// Refused is not spent: presenting it took nothing from it. The Pitboard that wrote it is
 /// refused the same way and drops it itself.
 #[test]
-#[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
 fn a_park_repair_gave_back_that_the_service_refuses_is_let_go_and_left() {
     for make in MACHINES {
         let m = make("foreign-refused");

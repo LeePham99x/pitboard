@@ -58,13 +58,21 @@ const fn later_on_windows(
 /// `holders` and the refusal of a keychain store, runs there as it does on macOS. A Linux
 /// reading of each of its own is no part of the Windows work.
 pub(crate) const PER_SYSTEM: &[PerSystem] = &[
-    later_on_windows(
-        "codex_login_location",
-        "0.160.0",
-        &["W21"],
-        "codex_windows_login_location: where the login is on Windows, and which store \
-         Codex's configuration layers pick there",
-    ),
+    PerSystem {
+        name: "codex_login_location",
+        macos: Read("0.160.0"),
+        linux: Read("0.160.0"),
+        windows: NotRead(
+            "Codex sets no mode on Windows and keeps a keyring store's login in the secret store \
+             by default, which codex_windows_login_location reads",
+        ),
+    },
+    PerSystem {
+        name: "codex_windows_login_location",
+        macos: NotRead("where macOS's login is, is codex_login_location's"),
+        linux: NotRead("where Linux's login is, is codex_login_location's"),
+        windows: Read("0.163.0"),
+    },
     everywhere("codex_login_shape", VERIFIED_AGAINST),
     everywhere("codex_identity_is_local", VERIFIED_AGAINST),
     everywhere("codex_renewal", VERIFIED_AGAINST),
@@ -116,13 +124,20 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         linux: NotRead("Linux's codex finds its default home in `HOME`"),
         windows: Read("0.162.1"),
     },
-    later_on_windows(
-        "codex_keychain_stores_are_its_own",
-        VERIFIED_AGAINST,
-        &["W21"],
-        "codex_windows_stores: what Codex's `keyring`, `auto` and secret stores keep on \
-         Windows, and where",
-    ),
+    PerSystem {
+        name: "codex_keychain_stores_are_its_own",
+        macos: Read(VERIFIED_AGAINST),
+        linux: Read(VERIFIED_AGAINST),
+        windows: NotRead(
+            "Windows has no keychain; what Codex's other stores keep there is codex_windows_stores'",
+        ),
+    },
+    PerSystem {
+        name: "codex_windows_stores",
+        macos: NotRead("macOS's are codex_keychain_stores_are_its_own's"),
+        linux: NotRead("Linux's are codex_keychain_stores_are_its_own's"),
+        windows: Read("0.163.0"),
+    },
     everywhere("codex_identity_is_the_person", VERIFIED_AGAINST),
     everywhere("codex_refusal_is_invalid_grant", VERIFIED_AGAINST),
     PerSystem {
@@ -202,6 +217,65 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         verified_against: "0.160.0",
         depends: "provider::codex::paths, and every read and write of the live login",
         probe: &["auth.json", "cli_auth_credentials_store"],
+        absent: &[],
+    },
+    Assumption {
+        name: "codex_windows_login_location",
+        fact: "on Windows the login is `auth.json` in Codex's home (codex_windows_home), and \
+               `file` is the packaged default store; `keyring` and `auto` keep it in the \
+               secret store by default there (codex_windows_store_layers), and `ephemeral` in \
+               memory. Codex writes `auth.json` in place: it opens it with std's default \
+               sharing, read, write and delete, truncates it, writes the JSON and flushes, \
+               with no temporary file, no rename, no lock and no access list of its own, so \
+               the file takes its folder's. A read can catch it empty or half written, and \
+               Codex's own read does not try again",
+        read_from: "get_auth_file and FileAuthStorage's load, try_read_auth_json and save, \
+                    whose 0o600 is under `cfg(unix)` alone, in \
+                    codex-rs/login/src/auth/storage.rs, AuthCredentialsStoreMode in \
+                    codex-rs/config/src/types.rs and codex-rs/config/defaults.toml, at tag \
+                    rust-v0.163.0, read on 2026-10-16; std's OpenOptions on Windows shares \
+                    read, write and delete unless told otherwise. Both win32 builds hold the \
+                    file's name and the store's setting",
+        verified_against: "0.163.0",
+        depends: "provider::codex::paths and engine on Windows, every read and write of the \
+                  live login there, and the read that tries again where it catches Codex \
+                  writing",
+        probe: &["auth.json", "cli_auth_credentials_store"],
+        absent: &[],
+    },
+    Assumption {
+        name: "codex_windows_stores",
+        fact: "on Windows `keyring` with `secret_auth_storage` on, the default there, keeps \
+               the login in `%CODEX_HOME%\\secrets\\codex_auth.age`, encrypted with a \
+               passphrase Codex keeps in Credential Manager as the generic target \
+               `secrets|<16 hex>.codex`, and deletes `auth.json` once it saved there; `auto` \
+               does the same and falls back to `auth.json` where that fails. With the feature \
+               off, `keyring` keeps the login itself as `cli|<16 hex>.Codex Auth`, through \
+               keyring 3.6.3: a generic target `<user>.<service>`, enterprise persistence, \
+               the Comment `keyring v3.6.3`, no attributes and the JSON as UTF-16LE, so at \
+               most 1280 UTF-16 units. The 16 hex begin the SHA-256 of the home canonicalised \
+               by std, `\\\\?\\` kept, or of the home as given where that fails. MCP \
+               logins go under `<server>|<16 hex>.Codex MCP Credentials`, or in \
+               `secrets\\mcp_oauth.age` under the same `secrets|` key, so a `secrets|` target \
+               can be there for MCP alone",
+        read_from: "compute_store_key, DirectKeyringAuthStorage, SecretsKeyringAuthStorage \
+                    and AutoAuthStorage in codex-rs/login/src/auth/storage.rs, \
+                    compute_keyring_account and KEYRING_SERVICE in \
+                    codex-rs/secrets/src/lib.rs and CODEX_AUTH_SECRETS_FILENAME in \
+                    codex-rs/secrets/src/local.rs, at tag rust-v0.163.0, and the target, \
+                    Comment and UTF-16 blob with its CRED_MAX_CREDENTIAL_BLOB_SIZE check in \
+                    src/windows.rs of keyring 3.6.3, the version Codex's Cargo.lock pins; read \
+                    on 2026-10-16. Both win32 builds hold every name and both prefixes",
+        verified_against: "0.163.0",
+        depends: "provider::codex::engine's refusal of `keyring`, `auto` and the secret store \
+                  on Windows",
+        probe: &[
+            "Codex Auth",
+            "cli|",
+            "secrets|",
+            "codex_auth.age",
+            "Codex MCP Credentials",
+        ],
         absent: &[],
     },
     Assumption {
@@ -725,6 +799,7 @@ mod tests {
         assert_eq!(
             read,
             [
+                "codex_windows_login_location",
                 "codex_login_shape",
                 "codex_identity_is_local",
                 "codex_renewal",
@@ -734,6 +809,7 @@ mod tests {
                 "codex_windows_app_server",
                 "codex_windows_app_identity",
                 "codex_windows_home",
+                "codex_windows_stores",
                 "codex_identity_is_the_person",
                 "codex_refusal_is_invalid_grant",
                 "codex_windows_install_places",
@@ -749,6 +825,8 @@ mod tests {
     #[test]
     fn macos_and_linux_read_every_fact() {
         let windows = [
+            "codex_windows_login_location",
+            "codex_windows_stores",
             "codex_windows_app_server",
             "codex_windows_app_identity",
             "codex_windows_home",
