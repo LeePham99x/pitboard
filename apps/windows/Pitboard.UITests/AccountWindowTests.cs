@@ -101,9 +101,14 @@ public sealed class AccountWindowTests
 
         Launched.Press(window, "Download notes");
         launched.Invoke("Download");
+        // Saved before the list opens: an open list named nothing in runs 38874616742, 38879058247 and 38896104748.
+        var saved = Path.Combine(Path.GetTempPath(), "pitboard-fixture", "Downloads", "notes.txt");
+        Assert.IsTrue(
+            Retry.WhileFalse(() => File.Exists(saved), TimeSpan.FromSeconds(30), TimeSpan.FromMilliseconds(250)).Result,
+            $"notes.txt was not saved as {saved}: {Saved(Path.GetDirectoryName(saved)!)}; {launched.Shown()}");
         Launched.Press(window, "Downloads");
 
-        // Opened again where it is not up, as a person would: it named nothing in runs 38874616742 and 38879058247.
+        // Opened again where it is not up, as a person would.
         var listed = Retry.WhileFalse(
             () =>
             {
@@ -207,4 +212,9 @@ public sealed class AccountWindowTests
             () => window.FindFirstDescendant(found => found.ByAutomationId(automationId)) is { } element
                 && Launched.Lines(element).Any(line => line.Contains(text, StringComparison.Ordinal)),
             TimeSpan.FromSeconds(10), TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
+
+    private static string Saved(string folder) =>
+        Directory.Exists(folder)
+            ? $"{folder} holds {string.Join(", ", Directory.GetFileSystemEntries(folder).Select(Path.GetFileName))}"
+            : $"there is no {folder}";
 }
