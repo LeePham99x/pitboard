@@ -264,12 +264,22 @@ impl MemoryHost {
     }
 
     pub fn runs_at(&self, program: &str, paths: &[&str]) {
+        self.runs_packaged(program, None, paths);
+    }
+
+    /// Say that each of `paths` runs `program` inside the Windows package of family `family`,
+    /// as a Store app's processes do.
+    pub fn runs_in_package(&self, program: &str, family: &str, paths: &[&str]) {
+        self.runs_packaged(program, Some(family), paths);
+    }
+
+    fn runs_packaged(&self, program: &str, family: Option<&str>, paths: &[&str]) {
         let processes = (1..)
             .zip(paths)
             .map(|(pid, path)| Process {
                 pid,
                 path: PathBuf::from(path),
-                package: None,
+                package: family.map(str::to_owned),
             })
             .collect();
         self.running

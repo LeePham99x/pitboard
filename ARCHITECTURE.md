@@ -565,7 +565,7 @@ window loads its site, and whatever the site's pages load, as a browser would.
     asks every 10 milliseconds. `tools.rs` plays Claude Code's and Codex's sign-in through
     the core's `SignInScript`, with the person at the browser. `apps.rs` is the fixture's
     other apps and its notifications, which post nothing. Its ChatGPT runs Codex's login and
-    quits when asked. Its Claude is `testing::desktop::FakeClaude` over the fixture's
+    quits when asked, from its bundle on macOS and its Store package on Windows. Its Claude is `testing::desktop::FakeClaude` over the fixture's
     machine, which writes the data folder as 2.7032.0 does as it quits. It quits when asked,
     and in `claudeDesktopOpen`, opened in front for a sign-in, it signs in to a third
     account after 5 seconds and quits 2 seconds later. `pages.rs` is the stand-in pages an
