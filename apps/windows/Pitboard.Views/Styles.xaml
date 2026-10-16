@@ -12,6 +12,16 @@
   <Style x:Key="CriticalCaptionTextBlockStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
     <Setter Property="Foreground" Value="{ThemeResource SystemFillColorCriticalBrush}" />
   </Style>
+  <!-- A check's level: the shapes differ as well as the colours. -->
+  <Style x:Key="PassedMarkStyle" TargetType="FontIcon">
+    <Setter Property="Foreground" Value="{ThemeResource SystemFillColorSuccessBrush}" />
+  </Style>
+  <Style x:Key="WarningMarkStyle" TargetType="FontIcon">
+    <Setter Property="Foreground" Value="{ThemeResource SystemFillColorCautionBrush}" />
+  </Style>
+  <Style x:Key="FailedMarkStyle" TargetType="FontIcon">
+    <Setter Property="Foreground" Value="{ThemeResource SystemFillColorCriticalBrush}" />
+  </Style>
   <Style x:Key="PageTitleTextBlockStyle" TargetType="TextBlock" BasedOn="{StaticResource TitleTextBlockStyle}">
     <Setter Property="AutomationProperties.HeadingLevel" Value="Level1" />
   </Style>

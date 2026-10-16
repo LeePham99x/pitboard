@@ -1,0 +1,97 @@
+using Pitboard.Core;
+
+namespace Pitboard.Windows.Tests;
+
+[TestClass]
+public sealed class MachineViewModelTests
+{
+    private static readonly ChecksShown Checked = new(
+        Lines:
+        [
+            new CheckLine(0, "claude", "Claude Code", Level.Ok, "Passed", "2.1.299", Advice: null),
+            new CheckLine(1, "parked_login", "Account personal", Level.Warn, "Worth looking at", "Lapses in 2 days", "Use it to renew it."),
+        ],
+        Summary: "One thing is worth looking at.", Checking: false, Checked: "Checked at 09:00", Waiting: null);
+
+    private static Snapshot With(ulong revision, ChecksShown checks)
+    {
+        var read = Snapshots.Read(revision);
+        return read with { Machine = read.Machine with { Checks = checks } };
+    }
+
+    private static (MachineViewModel Shown, AppModel App, List<string> Told) Over(ChecksShown checks)
+    {
+        var app = new AppModel(new StandInModel(With(1, checks)));
+        var shown = new MachineViewModel(app);
+        shown.Listen();
+        var told = new List<string>();
+        shown.PropertyChanged += (_, args) => told.Add(args.PropertyName ?? "");
+        return (shown, app, told);
+    }
+
+    [TestMethod]
+    public void TheChecksAreSaidUnderDoctorsLastLine()
+    {
+        var (shown, _, _) = Over(Checked);
+
+        Assert.HasCount(2, shown.Lines);
+        Assert.IsTrue(shown.HasSummary);
+        Assert.AreEqual("One thing is worth looking at.", shown.Summary);
+        Assert.AreEqual(Level.Warn, shown.Worst);
+        Assert.AreEqual("Checked at 09:00", shown.Checked);
+        Assert.IsTrue(shown.CanCheck);
+        Assert.IsFalse(shown.Waiting);
+    }
+
+    [TestMethod]
+    public void TheWorstLevelIsTheSummarys()
+    {
+        static Level Worst(params Level[] levels) =>
+            Over(Checked with { Lines = [.. levels.Select((level, at) => Checked.Lines[0] with { Id = (ulong)at, Level = level })] }).Shown.Worst;
+
+        Assert.AreEqual(Level.Ok, Worst(Level.Ok, Level.Ok));
+        Assert.AreEqual(Level.Warn, Worst(Level.Warn, Level.Ok));
+        Assert.AreEqual(Level.Fail, Worst(Level.Ok, Level.Fail, Level.Warn));
+        Assert.AreEqual(Level.Ok, Worst());
+    }
+
+    [TestMethod]
+    public void BeforeTheFirstCheckItSaysItIsChecking()
+    {
+        var (shown, _, _) = Over(new ChecksShown(Lines: [], Summary: null, Checking: false, Checked: null, Waiting: "Checking this PC…"));
+
+        Assert.IsTrue(shown.Waiting);
+        Assert.AreEqual("Checking this PC…", shown.WaitingText);
+        Assert.IsFalse(shown.HasSummary);
+    }
+
+    // A list told its lines again goes back to its top: checking again leaves them be until they change.
+    [TestMethod]
+    public void CheckingAgainLeavesTheLinesBe()
+    {
+        var (shown, app, told) = Over(Checked);
+
+        app.Apply(With(2, Checked with { Checking = true, Checked = null }));
+
+        Assert.AreEqual("Checking, CanCheck, Checked", string.Join(", ", told));
+        Assert.IsFalse(shown.CanCheck);
+        Assert.AreEqual("", shown.Checked);
+
+        told.Clear();
+        app.Apply(With(3, Checked with { Lines = [Checked.Lines[0]], Summary = "Everything looks right." }));
+
+        Assert.AreEqual("Lines, Worst, HasSummary, Summary, Checking, CanCheck, Checked", string.Join(", ", told));
+        Assert.AreEqual(Level.Ok, shown.Worst);
+    }
+
+    [TestMethod]
+    public void CheckingAgainAsksTheModel()
+    {
+        var model = new StandInModel(With(1, Checked));
+        var shown = new MachineViewModel(new AppModel(model));
+
+        shown.Check();
+
+        Assert.AreEqual(new Intent.PaneShown(Pane.Machine), model.Sent.Single());
+    }
+}
