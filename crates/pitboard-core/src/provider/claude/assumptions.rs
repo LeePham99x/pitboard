@@ -410,6 +410,26 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         linux: NotRead("macOS and Linux hand a descriptor as headless_token_descriptor says"),
         windows: Read("2.1.301"),
     },
+    PerSystem {
+        name: "windows_statusline_shell",
+        macos: NotRead(
+            "off Windows a status line runs in the person's shell, which finds pitboard",
+        ),
+        linux: NotRead(
+            "off Windows a status line runs in the person's shell, which finds pitboard",
+        ),
+        windows: Read("2.1.301"),
+    },
+    PerSystem {
+        name: "windows_statusline_powershell",
+        macos: NotRead("only Windows runs a status line in PowerShell"),
+        linux: NotRead("only Windows runs a status line in PowerShell"),
+        windows: Pending {
+            by: &["W27"],
+            reads: "which PowerShell runs a status line where no Git Bash is found, without \
+                    pwsh 7 and with it, session step 12",
+        },
+    },
     warm_up("headless_token_descriptor"),
     warm_up("headless_print_mode"),
     warm_up("headless_result"),
@@ -1472,6 +1492,50 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         absent: &[],
     },
     Assumption {
+        name: "windows_statusline_shell",
+        fact: "on Windows Claude Code runs a `statusLine` command as it runs a hook that names no \
+               shell: with `bash -c` in Git Bash, the bash's folder put first on the command's \
+               `PATH`, where it finds one, and otherwise in PowerShell, `-NoProfile \
+               -NonInteractive -ExecutionPolicy Bypass -Command`, saying once a session that a \
+               hook ran in PowerShell. Each starts hidden. It finds Git Bash at \
+               `CLAUDE_CODE_GIT_BASH_PATH` where that names a `bash.exe`, `sh.exe`, `bash` or `sh` \
+               that is there, then at `C:\\Program Files\\Git\\bin\\bash.exe`, then at \
+               `C:\\Program Files (x86)\\Git\\bin\\bash.exe`, then at `..\\..\\bin\\bash.exe` from \
+               the first `git` that `where.exe` finds outside the working folder. It hands bash \
+               the command as written, backslashes and all, so the bare `pitboard statusline` \
+               runs the same in either shell",
+        read_from: "the Git Bash finder, the hook executor the status line's run goes through, \
+                    its default shell and the notice it posts falling back to PowerShell, in the \
+                    win32-x64 and win32-arm64 builds of 2.1.301, read as bytes on 2026-10-16",
+        verified_against: "2.1.301",
+        depends: "doctor's status_line check, which says on Windows which shell runs the status \
+                  line and whether a `pitboard` is on the PATH it is handed",
+        probe: &[
+            r#"["bash.exe","sh.exe","bash","sh"]"#,
+            r#""..","..","bin","bash.exe""#,
+            "ran in PowerShell. Commands written for bash can fail there.",
+        ],
+        absent: &[],
+    },
+    Assumption {
+        name: "windows_statusline_powershell",
+        fact: "where it finds no Git Bash, Claude Code runs a status line in `pwsh` on `PATH`, \
+               then `pwsh.exe` in `%ProgramFiles%\\PowerShell\\7`, \
+               `%LOCALAPPDATA%\\Microsoft\\WindowsApps` or `%USERPROFILE%\\.dotnet\\tools`, then \
+               `powershell` on `PATH`, then \
+               `%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`",
+        read_from: "the PowerShell finder the hook executor asks, in the win32-x64 and \
+                    win32-arm64 builds of 2.1.301, read as bytes on 2026-10-16",
+        verified_against: "2.1.301",
+        depends: "the Windows tests that run `pitboard statusline` under Windows PowerShell 5.1 \
+                  and under pwsh 7, either of which may be the one",
+        probe: &[
+            r#""PowerShell","7","pwsh.exe""#,
+            "fell_back_to_powershell_5",
+        ],
+        absent: &[],
+    },
+    Assumption {
         name: "headless_token_descriptor",
         fact: "where `CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR` names a descriptor, Claude Code \
                reads an OAuth access token from it, an inherited pipe until a newline or its \
@@ -1625,6 +1689,7 @@ mod tests {
                 "credman_attributes",
                 "windows_browser_open",
                 "windows_token_handover",
+                "windows_statusline_shell",
                 "request_starts_the_five_hour_period",
                 "weekly_period_is_a_fixed_cycle",
                 "used_up_limit_refuses_every_request",

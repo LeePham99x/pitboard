@@ -116,7 +116,16 @@ pub(crate) struct Facts {
     /// Claude Code's fallback file, where it is behind the keychain holding the login in use.
     pub(crate) fallback_login: Option<FallbackLogin>,
     pub(crate) floor: crate::host::Floor,
+    // Windows' alone, where a shell decides whether `pitboard statusline` is found.
+    pub(crate) status_line: Option<StatusLineFact>,
     pub(crate) now: i64,
+}
+
+// The shell Claude Code runs the status line in, and the pitboard the PATH it hands that shell
+// finds. Both shells take `pitboard.exe` for a bare `pitboard`.
+pub(crate) struct StatusLineFact {
+    pub(crate) git_bash: claude::GitBash,
+    pub(crate) pitboard: Option<PathBuf>,
 }
 
 /// How Pitboard's requests leave this machine: directly, or through the HTTP proxy its
@@ -521,6 +530,15 @@ pub(crate) fn gather(ctx: &Context) -> Facts {
         elevation: ctx.host().elevation(ctx),
         fallback_login: fallback_login(ctx),
         floor: ctx.host().floor(),
+        status_line: (ctx.os == Os::Windows).then(|| StatusLineFact {
+            git_bash: claude::git_bash(ctx),
+            pitboard: crate::host::program::find_among(
+                std::path::Path::new("pitboard"),
+                std::env::split_paths(&ctx.search_path()),
+                &crate::host::program::Lookup::new(Os::Windows, Some(".EXE".as_ref())),
+                crate::host::proc::can_run,
+            ),
+        }),
         now: ctx.now(),
     }
 }
@@ -1347,6 +1365,7 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
     checks.extend(judge_schedule_proxy(facts));
     checks.push(judge_claude_version(facts));
     checks.extend(judge_warm_up(facts.os));
+    checks.extend(judge_status_line(facts.status_line.as_ref()));
     checks.push(judge_auth(facts));
     checks.push(judge_asking(facts));
     checks.push(judge_network(&facts.network));
@@ -1396,6 +1415,7 @@ const CLAUDE_CODES_OWN: &[&str] = &[
     "daemon",
     "claude_version",
     "warm_up",
+    "status_line",
     "auth",
 ];
 
@@ -2185,6 +2205,44 @@ fn judge_claude_version(facts: &Facts) -> Check {
             format!("{installed} installed; Pitboard's facts were read from {verified}"),
         ),
     }
+}
+
+// Claude Code's PATH is the one this runs with, as the shell it starts takes it.
+fn judge_status_line(line: Option<&StatusLineFact>) -> Option<Check> {
+    let line = line?;
+    let shell = match &line.git_bash.found {
+        Some(bash) => format!("Git Bash, {}", bash.display()),
+        None => "PowerShell, finding no Git Bash".to_string(),
+    };
+    let passed_over = line
+        .git_bash
+        .passed_over
+        .as_ref()
+        .map_or_else(String::new, |named| {
+            format!(
+                "; it passes over {}, which CLAUDE_CODE_GIT_BASH_PATH names",
+                named.display()
+            )
+        });
+    Some(match &line.pitboard {
+        Some(found) => ok(
+            "status_line",
+            "status line",
+            format!(
+                "Claude Code runs the status line in {shell}; `pitboard` there is {}{passed_over}",
+                found.display()
+            ),
+        ),
+        None => warn(
+            "status_line",
+            "status line",
+            format!(
+                "Claude Code runs the status line in {shell}; no `pitboard` is on its \
+                 PATH{passed_over}"
+            ),
+            "Add the folder pitboard.exe is in to your PATH, then start Claude Code again.",
+        ),
+    })
 }
 
 // Nothing else on Windows says it to somebody who never turned a warm-up on.
@@ -4086,6 +4144,7 @@ mod tests {
             elevation: crate::host::Elevation::Normal,
             fallback_login: None,
             floor: crate::host::Floor::Met,
+            status_line: None,
             now: NOW,
         }
     }
@@ -7174,6 +7233,74 @@ mod tests {
         assert!(!looks_like_a_version("releases"));
         assert!(!looks_like_a_version("0.154"));
         assert!(!looks_like_a_version("v0.154.0"));
+    }
+
+    // Claude Code 2.1.301 runs it in Git Bash where it finds one, else in PowerShell.
+    #[test]
+    fn windows_is_told_which_shell_runs_the_status_line_and_whether_it_finds_pitboard() {
+        let mut facts = facts();
+        facts.os = Os::Windows;
+        assert!(evaluate(&facts).iter().all(|c| c.code != "status_line"));
+        let bash = PathBuf::from(r"C:\Program Files\Git\bin\bash.exe");
+        let pitboard = PathBuf::from(r"C:\Users\x\.cargo\bin\pitboard.exe");
+        let named = PathBuf::from(r"D:\tools\git.exe");
+        let mut said = |found: Option<&PathBuf>, passed_over: Option<&PathBuf>, on_path: bool| {
+            facts.status_line = Some(StatusLineFact {
+                git_bash: claude::GitBash {
+                    found: found.cloned(),
+                    passed_over: passed_over.cloned(),
+                },
+                pitboard: on_path.then(|| pitboard.clone()),
+            });
+            let checks = evaluate(&facts);
+            let line = check(&checks, "status_line");
+            (line.level, line.detail.clone(), line.advice.clone())
+        };
+        assert_eq!(
+            said(Some(&bash), None, true),
+            (
+                Level::Ok,
+                format!(
+                    "Claude Code runs the status line in Git Bash, {}; `pitboard` there is {}",
+                    bash.display(),
+                    pitboard.display()
+                ),
+                String::new()
+            )
+        );
+        assert_eq!(
+            said(None, Some(&named), true),
+            (
+                Level::Ok,
+                format!(
+                    "Claude Code runs the status line in PowerShell, finding no Git Bash; \
+                     `pitboard` there is {}; it passes over {}, which CLAUDE_CODE_GIT_BASH_PATH \
+                     names",
+                    pitboard.display(),
+                    named.display()
+                ),
+                String::new()
+            )
+        );
+        assert_eq!(
+            said(Some(&bash), None, false),
+            (
+                Level::Warn,
+                format!(
+                    "Claude Code runs the status line in Git Bash, {}; no `pitboard` is on its \
+                     PATH",
+                    bash.display()
+                ),
+                "Add the folder pitboard.exe is in to your PATH, then start Claude Code again."
+                    .to_string()
+            )
+        );
+        facts.claude_present = false;
+        facts.codex.present = true;
+        assert!(
+            evaluate(&facts).iter().all(|c| c.code != "status_line"),
+            "a machine with no Claude Code is not told"
+        );
     }
 
     // A fact of the system, not a fault: Windows' doctor states it, and stays in order.

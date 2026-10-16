@@ -3082,6 +3082,15 @@ treated, and only the macOS build shows it. The run reads both builds since.
   file strictly, and any error but a missing file, a folder or a path through a file, a
   sharing violation's included, skips the write. So Pitboard's reads share reading, writing
   and deletion and are never held across Claude Code's lock.
+- Read on 16 October 2026 from the win32-x64 and win32-arm64 builds of 2.1.301
+  (`windows_statusline_shell`, `windows_statusline_powershell`): on Windows a status line
+  runs as a hook that names no shell does, with `bash -c` in Git Bash where Claude Code finds
+  one, and otherwise in PowerShell, `pwsh` before Windows PowerShell, with a notice once a
+  session. It hands bash the command as written, so a path with backslashes breaks there,
+  while the bare `pitboard statusline` runs in either. Doctor's `status_line` check finds
+  Git Bash as Claude Code does and says whether a `pitboard.exe` is on the PATH it runs
+  with, which a session started from the same shell hands its status line too. Session
+  step 12 confirms which PowerShell runs.
 - Read on 15 October 2026 from the win32-x64 and win32-arm64 builds of 2.1.300
   (`windows_managed_settings`): on Windows managed settings are in `C:\Program
   Files\ClaudeCode`, as on the other systems in their folder, and in the value `Settings` of
