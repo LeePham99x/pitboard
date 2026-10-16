@@ -2228,9 +2228,10 @@ The Windows app's account windows run in WebView2, over the same decisions from 
   arrives, and withdraws it once none waits.
 
 The share sheet reaches Pitboard through `PitboardShare.exe`, the one program of Pitboard's
-with a package identity, which a share target needs. It takes a web link, else text, and
-launches the Pitboard link `share_link` writes, which `Pitboard.exe`, with no identity, checks
-again as any link; a refusal goes to `ReportError`, whose sentence Windows shows. Its sparse
+with a package identity, which a share target needs. It is offered for a web link alone, as
+the macOS extension is for a web URL, and launches the Pitboard link `share_link` writes, which
+`Pitboard.exe`, with no identity, checks again as any link. A refusal, a link it cannot read
+and a launch that fails each go to `ReportError`, whose sentence Windows shows. Its sparse
 package asks for nothing beyond `runFullTrust` and declares no write virtualization, since it
 writes nothing. Only a signed build carries it: a sparse package registers only when signed
 by a certificate the machine trusts, and its Publisher is the signer's subject.

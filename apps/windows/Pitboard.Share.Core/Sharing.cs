@@ -7,8 +7,6 @@ public interface IShareOperation
 
     Task<string?> WebLinkAsync();
 
-    Task<string?> TextAsync();
-
     Task<bool> LaunchAsync(string link);
 
     void ReportCompleted();
@@ -21,15 +19,28 @@ public static class Sharing
 {
     public const string NotLaunched = "Windows found no Pitboard app to open the page in.";
 
+    public const string NotRead = "Pitboard couldn’t read the link that was shared. Share the page again.";
+
+    // An exception that left the program would end it without a word to the share sheet.
     public static async Task HandOverAsync(IShareOperation share, string scheme)
     {
         ArgumentNullException.ThrowIfNull(share);
         share.ReportStarted();
-        var text = await share.WebLinkAsync().ConfigureAwait(false) ?? await share.TextAsync().ConfigureAwait(false) ?? "";
+        string? webLink;
+        try
+        {
+            webLink = await share.WebLinkAsync().ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            share.ReportError(NotRead);
+            return;
+        }
+
         string link;
         try
         {
-            link = PitboardShareFfiMethods.ShareLink(text, scheme);
+            link = PitboardShareFfiMethods.ShareLink(webLink ?? "", scheme);
         }
         catch (ShareRefusal.Refused refused)
         {
@@ -37,7 +48,17 @@ public static class Sharing
             return;
         }
 
-        if (await share.LaunchAsync(link).ConfigureAwait(false))
+        bool launched;
+        try
+        {
+            launched = await share.LaunchAsync(link).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            launched = false;
+        }
+
+        if (launched)
         {
             share.ReportCompleted();
         }
