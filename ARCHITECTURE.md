@@ -3138,8 +3138,10 @@ treated, and only the macOS build shows it. The run reads both builds since.
   session. It hands bash the command as written, so a path with backslashes breaks there,
   while the bare `pitboard statusline` runs in either. Doctor's `status_line` check finds
   Git Bash as Claude Code does and says whether a `pitboard.exe` is on the PATH it runs
-  with, which a session started from the same shell hands its status line too. Session
-  step 12 confirms which PowerShell runs.
+  with, which a session started from the same shell hands its status line too. It warns of
+  none only where `statusLine.command` in the managed settings or the person's own starts
+  with a bare `pitboard`: a full path, or a script of the person's, needs no such PATH.
+  Session step 12 confirms which PowerShell runs.
 - Read on 15 October 2026 from the win32-x64 and win32-arm64 builds of 2.1.300
   (`windows_managed_settings`): on Windows managed settings are in `C:\Program
   Files\ClaudeCode`, as on the other systems in their folder, and in the value `Settings` of

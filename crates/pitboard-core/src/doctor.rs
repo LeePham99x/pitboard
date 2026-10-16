@@ -139,6 +139,8 @@ pub(crate) struct WslFact {
 pub(crate) struct StatusLineFact {
     pub(crate) git_bash: claude::GitBash,
     pub(crate) pitboard: Option<PathBuf>,
+    // Whether the settings Pitboard reads run a `pitboard` the shell has to find.
+    pub(crate) runs_pitboard: bool,
 }
 
 /// How Pitboard's requests leave this machine: directly, or through the HTTP proxy its
@@ -551,6 +553,8 @@ pub(crate) fn gather(ctx: &Context) -> Facts {
         status_line: (ctx.os == Os::Windows).then(|| StatusLineFact {
             git_bash: claude::git_bash(ctx),
             pitboard: pitboards.first().cloned(),
+            runs_pitboard: crate::settings::status_line_command(ctx)
+                .is_some_and(|command| runs_bare_pitboard(&command)),
         }),
         windows_settings: (ctx.os == Os::Windows).then(|| ctx.host().windows_settings()),
         pitboards,
@@ -2381,6 +2385,15 @@ fn judge_claude_version(facts: &Facts) -> Check {
     }
 }
 
+// A path to pitboard.exe, or a script of the person's own, needs no PATH of Pitboard's.
+fn runs_bare_pitboard(command: &str) -> bool {
+    command
+        .split_whitespace()
+        .next()
+        .map(|program| program.trim_matches(['"', '\'']).to_ascii_lowercase())
+        .is_some_and(|program| program == "pitboard" || program == "pitboard.exe")
+}
+
 // Claude Code's PATH is the one this runs with, as the shell it starts takes it.
 fn judge_status_line(line: Option<&StatusLineFact>) -> Option<Check> {
     let line = line?;
@@ -2407,7 +2420,7 @@ fn judge_status_line(line: Option<&StatusLineFact>) -> Option<Check> {
                 found.display()
             ),
         ),
-        None => warn(
+        None if line.runs_pitboard => warn(
             "status_line",
             "status line",
             format!(
@@ -2415,6 +2428,14 @@ fn judge_status_line(line: Option<&StatusLineFact>) -> Option<Check> {
                  PATH{passed_over}"
             ),
             "Add the folder pitboard.exe is in to your PATH, then start Claude Code again.",
+        ),
+        None => ok(
+            "status_line",
+            "status line",
+            format!(
+                "Claude Code runs the status line in {shell}; no `pitboard` is on its \
+                 PATH{passed_over}"
+            ),
         ),
     })
 }
@@ -7669,12 +7690,14 @@ mod tests {
     // Claude Code 2.1.301 runs it in Git Bash where it finds one, else in PowerShell.
     #[test]
     fn windows_is_told_which_shell_runs_the_status_line_and_whether_it_finds_pitboard() {
+        use std::cell::Cell;
         let mut facts = facts();
         facts.os = Os::Windows;
         assert!(evaluate(&facts).iter().all(|c| c.code != "status_line"));
         let bash = PathBuf::from(r"C:\Program Files\Git\bin\bash.exe");
         let pitboard = PathBuf::from(r"C:\Users\x\.cargo\bin\pitboard.exe");
         let named = PathBuf::from(r"D:\tools\git.exe");
+        let runs_pitboard = Cell::new(true);
         let mut said = |found: Option<&PathBuf>, passed_over: Option<&PathBuf>, on_path: bool| {
             facts.status_line = Some(StatusLineFact {
                 git_bash: claude::GitBash {
@@ -7682,6 +7705,7 @@ mod tests {
                     passed_over: passed_over.cloned(),
                 },
                 pitboard: on_path.then(|| pitboard.clone()),
+                runs_pitboard: runs_pitboard.get(),
             });
             let checks = evaluate(&facts);
             let line = check(&checks, "status_line");
@@ -7726,12 +7750,38 @@ mod tests {
                     .to_string()
             )
         );
+        runs_pitboard.set(false);
+        assert_eq!(
+            said(Some(&bash), None, false).0,
+            Level::Ok,
+            "nothing it runs needs one"
+        );
         facts.claude_present = false;
         facts.codex.present = true;
         assert!(
             evaluate(&facts).iter().all(|c| c.code != "status_line"),
             "a machine with no Claude Code is not told"
         );
+    }
+
+    #[test]
+    fn only_a_bare_pitboard_needs_one_on_the_path() {
+        for command in [
+            "pitboard statusline",
+            "  PITBOARD.EXE statusline --offline",
+            "\"pitboard\" statusline",
+            "pitboard",
+        ] {
+            assert!(runs_bare_pitboard(command), "{command}");
+        }
+        for command in [
+            r"C:\Tools\pitboard.exe statusline",
+            "~/bin/status.sh",
+            "npx ccstatusline",
+            "",
+        ] {
+            assert!(!runs_bare_pitboard(command), "{command}");
+        }
     }
 
     // L5 and H9 from Codex 0.163.0's and Claude Code 2.1.301's builds, read as bytes.

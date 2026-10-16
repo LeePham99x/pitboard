@@ -255,6 +255,21 @@ pub(crate) fn env_settings(ctx: &Context, name: &str) -> Vec<EnvSetting> {
         .collect()
 }
 
+// Managed settings' over the person's own, as each wins over the one below it.
+pub(crate) fn status_line_command(ctx: &Context) -> Option<String> {
+    managed(ctx)
+        .into_iter()
+        .chain(own(&claude::config_dir(ctx).join("settings.json")))
+        .find_map(|layer| {
+            serde_json::from_str::<Value>(&layer.text)
+                .ok()?
+                .get("statusLine")?
+                .get("command")?
+                .as_str()
+                .map(str::to_owned)
+        })
+}
+
 // A warm-up's run gets none of this process's environment.
 pub(crate) fn overrides_of_a_run_in(ctx: &Context, config: &std::path::Path) -> Vec<Override> {
     managed(ctx)
@@ -295,6 +310,22 @@ mod tests {
     use super::tests_support::*;
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn the_status_line_command_is_read_from_the_persons_settings() {
+        let (ctx, config, _scratch) = home();
+        assert_eq!(status_line_command(&ctx), None);
+        write(
+            &config.join("settings.json"),
+            json!({"statusLine": {"type": "command", "command": "pitboard statusline"}}),
+        );
+        assert_eq!(
+            status_line_command(&ctx).as_deref(),
+            Some("pitboard statusline")
+        );
+        write(&config.join("settings.json"), json!({"statusLine": {}}));
+        assert_eq!(status_line_command(&ctx), None);
+    }
 
     #[test]
     fn an_ordinary_machine_has_nothing_in_the_way() {

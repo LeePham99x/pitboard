@@ -1530,26 +1530,29 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                shell: with `bash -c` in Git Bash, the bash's folder put first on the command's \
                `PATH`, where it finds one, and otherwise in PowerShell, `-NoProfile \
                -NonInteractive -ExecutionPolicy Bypass -Command`, saying once a session that a \
-               hook ran in PowerShell. Each starts hidden. It finds Git Bash at \
-               `CLAUDE_CODE_GIT_BASH_PATH` where that names a file there whose name, in lower \
-               case, is `bash.exe`, `sh.exe`, `bash` or `sh`, then at \
+               hook ran in PowerShell. Each starts hidden. The command is `statusLine.command` of \
+               its settings. It finds Git Bash at `CLAUDE_CODE_GIT_BASH_PATH` where that names a \
+               file there whose name, in lower case, is `bash.exe`, `sh.exe`, `bash` or `sh`, then at \
                `C:\\Program Files\\Git\\bin\\bash.exe`, then at \
                `C:\\Program Files (x86)\\Git\\bin\\bash.exe`, then at `..\\..\\bin\\bash.exe` from \
                the first `git` that `where.exe` finds outside the working folder. It hands bash \
                the command as written, backslashes and all, so the bare `pitboard statusline` \
                runs the same in either shell",
         read_from: "the Git Bash finder, the hook executor the status line's run goes through, \
-                    its default shell and the notice it posts falling back to PowerShell, in the \
+                    its default shell, the notice it posts falling back to PowerShell, and the \
+                    settings' `statusLine` and the runner that reads its `command`, in the \
                     win32-x64 and win32-arm64 builds of 2.1.301, read as bytes on 2026-10-16",
         verified_against: "2.1.301",
         depends: "doctor's status_line check, which says on Windows which shell runs the status \
-                  line and whether a `pitboard` is on the PATH it is handed",
+                  line and whether a `pitboard` is on the PATH it is handed, and warns where the \
+                  settings Pitboard reads run a bare `pitboard` and none is there",
         probe: &[
             r#"["bash.exe","sh.exe","bash","sh"]"#,
             ".CLAUDE_CODE_GIT_BASH_PATH).toLowerCase()",
             r#""C:\\Program Files\\Git\\bin\\bash.exe","C:\\Program Files (x86)\\Git\\bin\\bash.exe""#,
             r#""..","..","bin","bash.exe""#,
             "ran in PowerShell. Commands written for bash can fail there.",
+            ".statusLine?.command",
         ],
         absent: &[],
     },

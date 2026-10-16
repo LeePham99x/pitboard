@@ -2239,11 +2239,8 @@ fn an_interrupted_switch_is_offered_a_way_out_as_the_app_starts() {
     );
     assert_eq!(
         checked.machine.checks.summary.as_deref(),
-        Some(match OS {
-            Os::MacOs | Os::Linux => "2 things are worth looking at.",
-            Os::Windows => "3 things are worth looking at.",
-        }),
-        "personal's parked login, the switch, and on Windows the status line"
+        Some("2 things are worth looking at."),
+        "personal's parked login, and the switch"
     );
 
     model.send(Intent::AbandonStuckSwitch);
@@ -2308,16 +2305,12 @@ fn this_mac_shows_the_cores_checks() {
         .filter(|line| line.level != crate::Level::Ok)
         .map(|line| (line.code.as_str(), line.name.as_str()))
         .collect();
-    // Nothing on the fixture's PATH is found, so on Windows no `pitboard` is on the PATH
-    // Claude Code runs the status line with.
-    let expected: &[(&str, &str)] = match OS {
-        Os::MacOs | Os::Linux => &[("parked_login", "account personal")],
-        Os::Windows => &[
-            ("parked_login", "account personal"),
-            ("status_line", "status line"),
-        ],
-    };
-    assert_eq!(worth_looking_at, expected, "{:#?}", checks.lines);
+    assert_eq!(
+        worth_looking_at,
+        [("parked_login", "account personal")],
+        "{:#?}",
+        checks.lines
+    );
     // Every account's parked login is a check of its own under one code, and each is a line
     // with its own id, which the pane lists them by.
     let parked: Vec<&str> = checks
@@ -2340,10 +2333,7 @@ fn this_mac_shows_the_cores_checks() {
     );
     assert_eq!(
         checks.summary.as_deref(),
-        Some(match OS {
-            Os::MacOs | Os::Linux => "One thing is worth looking at.",
-            Os::Windows => "2 things are worth looking at.",
-        })
+        Some("One thing is worth looking at.")
     );
     model.shutdown();
 }
