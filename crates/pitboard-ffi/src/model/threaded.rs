@@ -1179,6 +1179,10 @@ impl LocalTime for Counting {
     fn date_and_time(&self, epoch: i64) -> Result<String, PlatformError> {
         self.clock(epoch, true)
     }
+
+    fn time_of_day(&self, minutes: u16) -> Result<String, PlatformError> {
+        Ok(format!("{:02}:{:02}", minutes / 60, minutes % 60))
+    }
 }
 
 /// A model over `core` telling `told`, its clock times said by `clock`, doing what it does by

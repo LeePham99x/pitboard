@@ -267,7 +267,7 @@ fn an_account_turned_on_is_warmed_up_as_the_app_starts() {
         personal(shown).is_some_and(|note| note.starts_with("Warms up again at "))
     });
     let warm = &shown.machine.warm;
-    assert_eq!(warm.range_label, "00:00 to 24:00");
+    assert_eq!(warm.range_label, "All day");
     assert!(
         warm.accounts
             .iter()

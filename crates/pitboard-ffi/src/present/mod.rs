@@ -584,6 +584,10 @@ impl<'a> Seen<'a> {
             .unwrap_or_else(|_| words::utc_clock(at, self.now))
     }
 
+    pub(crate) fn time_of_day(&self, minutes: u16) -> Option<String> {
+        self.local.time_of_day(minutes).ok()
+    }
+
     /// A time the log keeps, with its offset, as the person's own calendar and clock say it.
     /// The log's own text where it does not read as a time, or where the app's own code
     /// cannot say it, as `pitboard log` prints it, rather than nothing.

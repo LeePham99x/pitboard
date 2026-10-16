@@ -480,6 +480,24 @@ pub(crate) fn spoken_level(level: Level) -> &'static str {
     }
 }
 
+// A clock says a day's end as the next day's 00:00, which a span ending then does not mean.
+pub(crate) fn warm_hours(
+    from: u16,
+    to: u16,
+    time_of_day: impl Fn(u16) -> Option<String>,
+) -> Option<String> {
+    const DAY: u16 = 24 * 60;
+    if from == 0 && to == DAY {
+        return Some("All day".into());
+    }
+    let to = if to == DAY {
+        "midnight".to_owned()
+    } else {
+        time_of_day(to)?
+    };
+    Some(format!("{} to {to}", time_of_day(from)?))
+}
+
 // The command line keeps doctor's own names, which maintenance-commands.mdx documents.
 pub(crate) fn check_name(code: &str, name: &str) -> String {
     match code {

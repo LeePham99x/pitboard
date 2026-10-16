@@ -149,6 +149,7 @@ private final class Utc: LocalTime {
     func clock(epoch: Int64, withWeekday: Bool) throws -> String { "\(epoch)" }
     func sameDay(first: Int64, second: Int64) throws -> Bool { true }
     func dateAndTime(epoch: Int64) throws -> String { "\(epoch)" }
+    func timeOfDay(minutes: UInt16) throws -> String { "\(minutes)" }
 }
 
 private final class NoOtherApps: AppControl {

@@ -43,7 +43,8 @@ pub struct WarmShown {
     /// 24 hours, and a `from` later than it runs past midnight.
     pub from: u16,
     pub to: u16,
-    /// The span in words: "06:00 to 22:00".
+    /// The span in words, on the person's clock: "6:00 AM to 10:00 PM", "6:00 AM to
+    /// midnight", "All day".
     pub range_label: String,
     /// Each Claude Code account enrolled under a name, in the order they were enrolled.
     pub accounts: Vec<WarmAccountShown>,
@@ -302,7 +303,10 @@ fn warm(seen: &Seen) -> WarmShown {
     WarmShown {
         from: range.from(),
         to: range.to(),
-        range_label: range.to_string(),
+        range_label: words::warm_hours(range.from(), range.to(), |minutes| {
+            seen.time_of_day(minutes)
+        })
+        .unwrap_or_else(|| range.to_string()),
         accounts,
         standing,
         note: if unbuilt {
@@ -563,13 +567,76 @@ fn command_line(seen: &Seen) -> CommandLineShown {
 #[cfg(test)]
 mod tests {
     use super::CheckLine;
-    use crate::Level;
     use crate::launch::Check;
     use crate::present::present_on;
     use crate::present::testing::{
-        Utc, account, claude_code, claude_desktop, desktop_account, read, status,
+        Unreadable, Utc, account, claude_code, claude_desktop, desktop_account, read, status,
     };
+    use crate::{Level, LocalTime, PlatformError};
+    use pitboard_core::duty::warm::{Overview, Range};
     use pitboard_core::host::Os;
+
+    // An American's clock, in 12 hours.
+    struct Twelve;
+
+    impl LocalTime for Twelve {
+        fn clock(&self, epoch: i64, with_weekday: bool) -> Result<String, PlatformError> {
+            Utc.clock(epoch, with_weekday)
+        }
+
+        fn same_day(&self, first: i64, second: i64) -> Result<bool, PlatformError> {
+            Utc.same_day(first, second)
+        }
+
+        fn date_and_time(&self, epoch: i64) -> Result<String, PlatformError> {
+            Utc.date_and_time(epoch)
+        }
+
+        fn time_of_day(&self, minutes: u16) -> Result<String, PlatformError> {
+            let (hours, minutes) = (minutes / 60, minutes % 60);
+            let half = if hours < 12 { "AM" } else { "PM" };
+            Ok(format!("{}:{minutes:02} {half}", (hours + 11) % 12 + 1))
+        }
+    }
+
+    fn hours(from: u16, to: u16, clock: &dyn LocalTime) -> String {
+        let mut state = read(status(Vec::new(), Vec::new()), vec![claude_code()]);
+        state.warm.overview = Some(Overview {
+            range: Range::new(from, to).expect("a span"),
+            accounts: Vec::new(),
+            halted: None,
+        });
+        present_on(Os::Windows, &state, 0, clock)
+            .machine
+            .warm
+            .range_label
+    }
+
+    // The summary said 06:00 to 22:00 beside time pickers in AM and PM (shot 12).
+    #[test]
+    fn the_range_is_said_on_the_persons_clock() {
+        assert_eq!(hours(6 * 60, 22 * 60, &Twelve), "6:00 AM to 10:00 PM");
+        assert_eq!(hours(22 * 60 + 30, 6 * 60, &Twelve), "10:30 PM to 6:00 AM");
+        assert_eq!(hours(0, 12 * 60, &Twelve), "12:00 AM to 12:00 PM");
+        assert_eq!(hours(6 * 60, 22 * 60, &Utc), "06:00 to 22:00");
+        assert_eq!(
+            hours(6 * 60, 22 * 60, &Unreadable),
+            "06:00 to 22:00",
+            "as the core writes it where the clock cannot say"
+        );
+    }
+
+    #[test]
+    fn a_range_to_the_end_of_the_day_ends_at_midnight() {
+        assert_eq!(hours(6 * 60, 24 * 60, &Twelve), "6:00 AM to midnight");
+        assert_eq!(hours(6 * 60, 0, &Utc), "06:00 to midnight");
+    }
+
+    #[test]
+    fn a_range_of_the_whole_day_is_all_day() {
+        assert_eq!(hours(0, 24 * 60, &Twelve), "All day");
+        assert_eq!(hours(0, 24 * 60, &Unreadable), "All day");
+    }
 
     fn lines(checks: &[(&str, &str, Level, &str, &str)]) -> Vec<CheckLine> {
         let mut state = read(status(Vec::new(), Vec::new()), vec![claude_code()]);
