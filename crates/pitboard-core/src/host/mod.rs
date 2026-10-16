@@ -68,6 +68,8 @@ use windows as os;
 
 pub(crate) use administered::{Administered, Hive};
 pub(crate) use os::{fs, proc, user};
+#[cfg(all(windows, feature = "test-support"))]
+pub(crate) use windows::credman as windows_credman;
 #[cfg(all(windows, test))]
 pub(crate) use windows::seal::Dpapi;
 
@@ -123,6 +125,23 @@ impl Os {
                     .collect(),
                 _ => Vec::new(),
             },
+        }
+    }
+
+    pub(crate) fn remove_file_command(self, path: &Path) -> String {
+        match self {
+            Os::MacOs | Os::Linux => format!("rm {}", path.display()),
+            Os::Windows => {
+                let mut quoted = String::new();
+                for c in path.display().to_string().chars() {
+                    // PowerShell takes each of these as a single quote, so each is doubled.
+                    if matches!(c, '\'' | '\u{2018}' | '\u{2019}' | '\u{201a}' | '\u{201b}') {
+                        quoted.push(c);
+                    }
+                    quoted.push(c);
+                }
+                format!("Remove-Item -LiteralPath '{quoted}'")
+            }
         }
     }
 
@@ -327,6 +346,42 @@ pub(crate) fn pitboard_app_on_windows(local: &[PathBuf]) -> Vec<PathBuf> {
         .iter()
         .flat_map(|dir| ["Pitboard App", "Pitboard App Debug"].map(|name| dir.join(name)))
         .collect()
+}
+
+// Where this account keeps a real login, or would, and where `started_in` says, for a build for
+// tests to refuse. This account's own are asked of the system, never of the environment.
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn real_login_places(
+    started_in: Option<&Context>,
+) -> std::result::Result<Vec<PathBuf>, String> {
+    let home = user::accounts_own_home().ok_or("this system names no home for this account")?;
+    let pitboard = user::accounts_own_pitboard_home()
+        .ok_or("this system names no Pitboard folder for this account")?;
+    let own = Context::new(home).with_pitboard_home(pitboard);
+    let (roaming, local) = user::app_data_folders();
+    Ok(std::iter::once(&own)
+        .chain(started_in)
+        .flat_map(|ctx| {
+            let mut places = vec![
+                crate::provider::claude::paths::config_dir(ctx),
+                crate::provider::claude::paths::config_file(ctx),
+                crate::provider::codex::paths::home(ctx),
+                ctx.pitboard_home.clone(),
+                ctx.default_pitboard_home(),
+            ];
+            if ctx.os != Os::Windows {
+                places.extend([
+                    ctx.home.join("Library/Application Support/Claude"),
+                    ctx.home.join("Library/Application Support/Claude-3p"),
+                    PathBuf::from("/Applications/Claude.app"),
+                ]);
+            }
+            places
+        })
+        .chain(claude_desktop_on_windows(&roaming, &local))
+        .chain(pitboard_app_on_windows(&local))
+        .filter(|place| place.is_absolute())
+        .collect())
 }
 
 // Is, holds or lies in, for a build for tests to refuse, the same on every system: through
@@ -646,8 +701,8 @@ pub struct Ran {
 /// machine: which item or file a tool keeps its login in is the tool's to say.
 pub(crate) trait Host: Send + Sync + std::fmt::Debug {
     /// Secrets another program keeps in the system's own store of them, under `account`:
-    /// the login keychain on macOS. `None` where the system has no such store, and a tool
-    /// keeps its login in a file instead.
+    /// the login keychain on macOS, Credential Manager's generic items on Windows. `None`
+    /// where the system has no such store, and a tool keeps its login in a file instead.
     ///
     /// Which items and which account is the other program's business, so both are handed
     /// in. Deriving them here is how Claude Code's slot hashing came to live inside what
@@ -732,6 +787,29 @@ pub(crate) trait Host: Send + Sync + std::fmt::Debug {
     // A Windows policy value; unset elsewhere, and in a build for tests, on the real hosts.
     fn policy(&self, _hive: Hive, _key: &str, _value: &str) -> Administered {
         Administered::Unset
+    }
+
+    // Windows' `FOLDERID_ProgramData`, where it can say; none elsewhere.
+    fn program_data(&self) -> Option<PathBuf> {
+        None
+    }
+
+    // The names of Credential Manager's items that begin `prefix`, never what they hold; none
+    // elsewhere, and none in a build for tests on the real hosts.
+    fn credential_names(&self, _prefix: &str) -> std::result::Result<Vec<String>, String> {
+        Ok(Vec::new())
+    }
+
+    // As `HKCU\Environment` holds it, which a program started from now on is given; unset
+    // elsewhere, and in a build for tests on the real hosts.
+    fn user_environment(&self, _name: &str) -> Administered {
+        Administered::Unset
+    }
+
+    // Whether Credential Manager holds a generic item named `target`, never what it holds; Err
+    // says why it cannot tell. None is held where there is no Credential Manager.
+    fn credential_held(&self, _ctx: &Context, _target: &str) -> std::result::Result<bool, String> {
+        Ok(false)
     }
 }
 
@@ -845,8 +923,7 @@ mod tests {
             match OS {
                 Os::MacOs => Some(crate::store::Backend::Keychain),
                 Os::Linux => None,
-                // Credential Manager, which W23 offers.
-                Os::Windows => None,
+                Os::Windows => Some(crate::store::Backend::CredentialManager),
             }
         );
         assert_eq!(

@@ -1,0 +1,556 @@
+// How Claude Code keeps its login in Credential Manager on Windows (`credman_chunking`): in the
+// item itself up to 2400 bytes, above that as base64 pieces `#0` to `#n-1` of 2400 characters
+// with a manifest `#m` naming how many and how long, and `#p` naming how many pieces a write
+// under way may leave. Each is an item of its own, named after the user name.
+
+use crate::service::Permit;
+use crate::store::Error;
+
+pub(crate) const ITEM_BYTES: usize = 2400;
+const PIECE: usize = 2400;
+pub(crate) const MOST_PIECES: usize = 256;
+// What 256 pieces of base64 hold: Claude Code's "max ~460800B".
+pub(crate) const MOST_BYTES: usize = MOST_PIECES * PIECE / 4 * 3;
+
+pub(crate) const WHOLE: &str = "";
+pub(crate) const MANIFEST: &str = "#m";
+pub(crate) const PENDING: &str = "#p";
+
+pub(crate) fn piece(k: usize) -> String {
+    format!("#{k}")
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Manifest {
+    pub(crate) n: usize,
+    pub(crate) l: usize,
+}
+
+impl Manifest {
+    // As Claude Code takes one: integers with 0 < n <= 256 and 0 < l <= n * 2400.
+    pub(crate) fn read(text: &str) -> Option<Manifest> {
+        let value: serde_json::Value = serde_json::from_str(text).ok()?;
+        let whole = |key: &str| {
+            let number = value.get(key)?.as_f64()?;
+            let fits =
+                number.fract() == 0.0 && (1.0..=(MOST_PIECES * PIECE) as f64).contains(&number);
+            fits.then_some(number as usize)
+        };
+        let (n, l) = (whole("n")?, whole("l")?);
+        (n <= MOST_PIECES && l <= n * PIECE).then_some(Manifest { n, l })
+    }
+
+    // As `JSON.stringify` gives it.
+    pub(crate) fn text(self) -> String {
+        format!(r#"{{"n":{},"l":{}}}"#, self.n, self.l)
+    }
+}
+
+// How many pieces a login of `bytes` takes, none for the item alone; None past 256.
+pub(crate) fn pieces_for(bytes: usize) -> Option<usize> {
+    if bytes <= ITEM_BYTES {
+        return Some(0);
+    }
+    let pieces = (bytes.div_ceil(3) * 4).div_ceil(PIECE);
+    (pieces <= MOST_PIECES).then_some(pieces)
+}
+
+// One item's change, in the order Claude Code makes them. `Forget` is a delete whose failure it
+// ignores.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Step {
+    Set(String, String),
+    Delete(String),
+    Forget(String),
+}
+
+// Claude Code's write over what `old` names, None past 256 pieces. One step is Pitboard's own:
+// where pieces are replaced in place, the manifest first names a length no base64 has, so
+// Claude Code's read fails and keeps the login it holds rather than join old pieces and new.
+pub(crate) fn steps(old: Option<Manifest>, contents: &str) -> Option<Vec<Step>> {
+    let set = |name: &str, value: String| Step::Set(name.to_owned(), value);
+    let old_n = old.map_or(0, |old| old.n);
+    let pieces = pieces_for(contents.len())?;
+    if pieces == 0 {
+        let mut steps = vec![set(WHOLE, contents.to_owned())];
+        if old.is_some() {
+            steps.push(set(PENDING, old_n.to_string()));
+            steps.push(Step::Delete(MANIFEST.to_owned()));
+            steps.extend((0..old_n).map(|k| Step::Forget(piece(k))));
+            steps.push(Step::Forget(PENDING.to_owned()));
+        }
+        return Some(steps);
+    }
+    let encoded = crate::base64::encode(contents.as_bytes());
+    let mut steps = vec![set(PENDING, old_n.max(pieces).to_string())];
+    if old.is_some() {
+        steps.push(set(MANIFEST, Manifest { n: pieces, l: 1 }.text()));
+    }
+    steps.extend(
+        encoded
+            .as_bytes()
+            .chunks(PIECE)
+            .enumerate()
+            .map(|(k, part)| set(&piece(k), String::from_utf8_lossy(part).into_owned())),
+    );
+    steps.push(set(
+        MANIFEST,
+        Manifest {
+            n: pieces,
+            l: encoded.len(),
+        }
+        .text(),
+    ));
+    steps.push(Step::Forget(WHOLE.to_owned()));
+    steps.extend((pieces..old_n).map(|k| Step::Forget(piece(k))));
+    steps.push(Step::Forget(PENDING.to_owned()));
+    Some(steps)
+}
+
+// One item each, by its name after the user name's: `WHOLE`, `#<k>`, `MANIFEST`, `PENDING`.
+pub(crate) trait Items {
+    fn get(&self, name: &str) -> Result<Option<String>, Error>;
+    fn set(&self, permit: Permit, name: &str, value: &str) -> Result<(), Error>;
+    fn delete(&self, permit: Permit, name: &str) -> Result<(), Error>;
+}
+
+// Claude Code takes an item holding nothing for one that is not there.
+fn found(items: &dyn Items, name: &str) -> Result<Option<String>, Error> {
+    Ok(items.get(name)?.filter(|held| !held.is_empty()))
+}
+
+// As Claude Code reads it before a write or a delete: one that is no manifest is none.
+fn manifest(items: &dyn Items) -> Result<Option<Manifest>, Error> {
+    Ok(found(items, MANIFEST)?.and_then(|text| Manifest::read(&text)))
+}
+
+// Whether Claude Code's read finds a login here, or Pitboard's finds one it refuses.
+pub(crate) fn holds(items: &dyn Items) -> Result<bool, Error> {
+    Ok(found(items, MANIFEST)?.is_some() || found(items, WHOLE)?.is_some())
+}
+
+// Claude Code's read, stricter where it would follow what no write of its makes, or join the
+// pieces of a write it did not see end.
+pub(crate) fn read(items: &dyn Items, target: &str) -> Result<Option<String>, Error> {
+    let Some(text) = found(items, MANIFEST)? else {
+        return found(items, WHOLE);
+    };
+    let unreadable = |why: &str| Err(Error::Unreadable(format!("`{target}` {why}")));
+    let Some(manifest) = Manifest::read(&text) else {
+        return unreadable("has a manifest `#m` Claude Code does not write");
+    };
+    if found(items, PENDING)?.is_some() {
+        return unreadable("has pieces a write left unfinished, as its `#p` says");
+    }
+    let mut joined = String::with_capacity(manifest.l);
+    for k in 0..manifest.n {
+        let Some(part) = items.get(&piece(k))? else {
+            return unreadable(&format!(
+                "lacks piece #{k} of the {} its manifest names",
+                manifest.n
+            ));
+        };
+        joined.push_str(&part);
+    }
+    if joined.len() != manifest.l {
+        return unreadable(&format!(
+            "has {} characters in its pieces, where its manifest names {}",
+            joined.len(),
+            manifest.l
+        ));
+    }
+    crate::base64::decode(&joined)
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .map(Some)
+        .ok_or_else(|| {
+            Error::Unreadable(format!("`{target}` has pieces that are not base64 of text"))
+        })
+}
+
+// Each step is a durable change a test can stop a write after.
+pub(crate) fn write(
+    items: &dyn Items,
+    permit: Permit,
+    contents: &str,
+    target: &str,
+) -> Result<(), Error> {
+    let steps = steps(manifest(items)?, contents).ok_or_else(|| {
+        Error::Write(format!(
+            "this login is {} bytes, past the {MOST_BYTES} Claude Code keeps in Credential Manager",
+            contents.len()
+        ))
+    })?;
+    let in_pieces = matches!(steps.first(), Some(Step::Set(name, _)) if name == PENDING);
+    for step in steps {
+        match step {
+            Step::Set(name, value) => items.set(permit, &name, &value)?,
+            Step::Delete(name) => items.delete(permit, &name)?,
+            Step::Forget(name) => {
+                let _ = items.delete(permit, &name);
+            }
+        }
+        crate::fault::point("credman.step");
+    }
+    // The item read itself back; pieces are read back whole.
+    if !in_pieces {
+        return Ok(());
+    }
+    match read(items, target)? {
+        Some(back) if back == contents => Ok(()),
+        Some(_) => Err(Error::NotDurable(format!(
+            "`{target}` holds different bytes"
+        ))),
+        None => Err(Error::NotDurable(format!("`{target}` reads back empty"))),
+    }
+}
+
+// Claude Code's delete: the item, the pieces its manifest names, then as many as `#p` says may be
+// left, or where it says none, each piece found from `#0` on.
+pub(crate) fn delete(items: &dyn Items, permit: Permit) -> Result<(), Error> {
+    let named = manifest(items)?;
+    let named_n = named.map_or(0, |named| named.n);
+    items.delete(permit, WHOLE)?;
+    if named.is_some() {
+        for k in 0..named_n {
+            items.delete(permit, &piece(k))?;
+        }
+        items.delete(permit, MANIFEST)?;
+    }
+    let pending = found(items, PENDING)
+        .ok()
+        .flatten()
+        .and_then(|text| text.trim().parse::<usize>().ok())
+        .map_or(0, |n| n.min(MOST_PIECES));
+    let mut left = named_n.max(pending);
+    if left == 0 {
+        while left < MOST_PIECES && matches!(items.get(&piece(left)), Ok(Some(_))) {
+            left += 1;
+        }
+    }
+    let _ = items.delete(permit, MANIFEST);
+    let _ = items.delete(permit, PENDING);
+    for k in named_n..left {
+        let _ = items.delete(permit, &piece(k));
+    }
+    Ok(())
+}
+
+// Claude Code's own read, as it is in 2.1.301: a manifest it does not take is none, and `#p` is
+// never read. `Err` is a read that throws, after which a session keeps what it holds.
+#[cfg(test)]
+pub(crate) fn claude_code_reads(items: &dyn Items) -> Result<Option<String>, ()> {
+    let held = |name: &str| items.get(name).map_err(drop);
+    let manifest = held(MANIFEST)?
+        .filter(|m| !m.is_empty())
+        .and_then(|m| Manifest::read(&m));
+    let Some(manifest) = manifest else {
+        return Ok(held(WHOLE)?.filter(|w| !w.is_empty()));
+    };
+    let parts = (0..manifest.n)
+        .map(|k| held(&piece(k)))
+        .collect::<Result<Vec<_>, ()>>()?;
+    let joined: String = parts.iter().flatten().cloned().collect();
+    if joined.len() != manifest.l || parts.iter().any(Option::is_none) {
+        return Err(());
+    }
+    let bytes = crate::base64::decode(&joined).ok_or(())?;
+    String::from_utf8(bytes).map(Some).map_err(drop)
+}
+
+// A login of `bytes`, all of it its access token.
+#[cfg(test)]
+pub(crate) fn login(bytes: usize) -> String {
+    let mut text = String::from("{\"claudeAiOauth\":{\"accessToken\":\"");
+    let fill = bytes - text.len() - 4;
+    text.extend(std::iter::repeat_n('a', fill));
+    text.push_str("\"}}\n");
+    assert_eq!(text.len(), bytes);
+    text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::RefCell;
+    use std::collections::BTreeMap;
+
+    #[derive(Default)]
+    struct Kept(RefCell<BTreeMap<String, String>>);
+
+    impl Items for Kept {
+        fn get(&self, name: &str) -> Result<Option<String>, Error> {
+            Ok(self.0.borrow().get(name).cloned())
+        }
+
+        fn set(&self, _: Permit, name: &str, value: &str) -> Result<(), Error> {
+            self.0.borrow_mut().insert(name.into(), value.into());
+            Ok(())
+        }
+
+        fn delete(&self, _: Permit, name: &str) -> Result<(), Error> {
+            self.0.borrow_mut().remove(name);
+            Ok(())
+        }
+    }
+
+    impl Kept {
+        fn names(&self) -> Vec<String> {
+            self.0.borrow().keys().cloned().collect()
+        }
+    }
+
+    #[test]
+    fn a_login_takes_the_item_to_2400_bytes_and_pieces_of_2400_characters_to_256() {
+        assert_eq!(pieces_for(0), Some(0));
+        assert_eq!(pieces_for(2399), Some(0));
+        assert_eq!(pieces_for(2400), Some(0));
+        assert_eq!(pieces_for(2401), Some(2), "3204 characters");
+        assert_eq!(pieces_for(3600), Some(2));
+        assert_eq!(
+            pieces_for(5400),
+            Some(3),
+            "7200 characters, three whole pieces"
+        );
+        assert_eq!(pieces_for(5401), Some(4));
+        assert_eq!(pieces_for(MOST_BYTES), Some(256));
+        assert_eq!(pieces_for(MOST_BYTES + 1), None);
+        assert_eq!(MOST_BYTES, 460_800);
+    }
+
+    #[test]
+    fn a_manifest_is_one_claude_code_takes() {
+        assert_eq!(
+            Manifest::read(r#"{"n":2,"l":3204}"#),
+            Some(Manifest { n: 2, l: 3204 })
+        );
+        assert_eq!(
+            Manifest::read(r#"{"l":3204,"n":2.0,"v":1}"#),
+            Some(Manifest { n: 2, l: 3204 })
+        );
+        assert_eq!(Manifest { n: 2, l: 3204 }.text(), r#"{"n":2,"l":3204}"#);
+        for bad in [
+            r#"{"n":0,"l":1}"#,
+            r#"{"n":257,"l":1}"#,
+            r#"{"n":1,"l":2401}"#,
+            r#"{"n":1,"l":0}"#,
+            r#"{"n":1.5,"l":3}"#,
+            r#"{"n":"1","l":3}"#,
+            r#"[1,3]"#,
+            "",
+        ] {
+            assert_eq!(Manifest::read(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn each_size_reads_back_and_shrinking_leaves_the_item_alone() {
+        let items = Kept::default();
+        let target = "Claude Code-credentials-00000000/claude-code-user";
+        for bytes in [2399, 2400, 2401, 9000, MOST_BYTES, 2400, 100] {
+            let text = login(bytes);
+            write(&items, Permit::for_a_test(), &text, target).expect("written");
+            assert_eq!(
+                read(&items, target).expect("read").as_deref(),
+                Some(text.as_str())
+            );
+            assert_eq!(claude_code_reads(&items), Ok(Some(text.clone())), "{bytes}");
+            let pieces = pieces_for(bytes).expect("fits");
+            let mut named: Vec<String> = (0..pieces).map(piece).collect();
+            if pieces == 0 {
+                named.push(WHOLE.into());
+            } else {
+                named.push(MANIFEST.into());
+            }
+            named.sort();
+            assert_eq!(items.names(), named, "{bytes}: nothing else is left");
+        }
+        assert!(matches!(
+            write(&items, Permit::for_a_test(), &login(MOST_BYTES + 1), target),
+            Err(Error::Write(_))
+        ));
+        assert_eq!(items.names(), [WHOLE], "a login too large writes nothing");
+    }
+
+    #[test]
+    fn a_write_runs_in_claude_codes_order() {
+        let small = |steps: Vec<Step>| -> Vec<String> {
+            steps
+                .into_iter()
+                .map(|step| match step {
+                    Step::Set(name, _) => format!("set {name}"),
+                    Step::Delete(name) => format!("delete {name}"),
+                    Step::Forget(name) => format!("forget {name}"),
+                })
+                .collect()
+        };
+        assert_eq!(small(steps(None, "{}").unwrap()), ["set "]);
+        assert_eq!(
+            small(steps(Some(Manifest { n: 2, l: 3204 }), "{}").unwrap()),
+            [
+                "set ",
+                "set #p",
+                "delete #m",
+                "forget #0",
+                "forget #1",
+                "forget #p"
+            ]
+        );
+        assert_eq!(
+            small(steps(None, &login(2401)).unwrap()),
+            [
+                "set #p",
+                "set #0",
+                "set #1",
+                "set #m",
+                "forget ",
+                "forget #p"
+            ]
+        );
+        assert_eq!(
+            small(steps(Some(Manifest { n: 3, l: 7200 }), &login(2401)).unwrap()),
+            [
+                "set #p",
+                "set #m",
+                "set #0",
+                "set #1",
+                "set #m",
+                "forget ",
+                "forget #2",
+                "forget #p"
+            ]
+        );
+        assert_eq!(
+            steps(Some(Manifest { n: 3, l: 7200 }), &login(2401)).unwrap()[0],
+            Step::Set(PENDING.into(), "3".into())
+        );
+    }
+
+    // From every shape Claude Code leaves to every other, the same lengths too: wherever a write
+    // stops, Claude Code reads the login it had, the one written, or fails and keeps its own.
+    #[test]
+    fn a_write_stopped_after_any_step_leaves_no_login_half_written() {
+        let shapes = [
+            login(300),
+            login(2401),
+            login(2401).replace('a', "b"),
+            login(9000),
+        ];
+        for before in &shapes {
+            for after in &shapes {
+                let steps_taken = {
+                    let items = Kept::default();
+                    write(&items, Permit::for_a_test(), before, "t").unwrap();
+                    crate::fault::counting("credman.step", || {
+                        write(&items, Permit::for_a_test(), after, "t")
+                    })
+                    .1
+                };
+                for stop in 1..=steps_taken {
+                    let items = Kept::default();
+                    write(&items, Permit::for_a_test(), before, "t").unwrap();
+                    let died = crate::fault::killing_nth("credman.step", stop, || {
+                        write(&items, Permit::for_a_test(), after, "t")
+                    });
+                    if stop < steps_taken {
+                        assert_eq!(died.unwrap_err(), "credman.step");
+                    }
+                    match claude_code_reads(&items) {
+                        Ok(Some(read)) => assert!(
+                            read == *before || read == *after,
+                            "{} to {} stopped at {stop}: a login half written",
+                            before.len(),
+                            after.len()
+                        ),
+                        Ok(None) => panic!(
+                            "{} to {} stopped at {stop}: signed out",
+                            before.len(),
+                            after.len()
+                        ),
+                        Err(()) => {}
+                    }
+                    match read(&items, "t") {
+                        Ok(Some(read)) => assert!(read == *before || read == *after),
+                        Ok(None) => panic!("Pitboard reads no login"),
+                        Err(Error::Unreadable(_)) => {}
+                        Err(other) => panic!("{other:?}"),
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_manifest_claude_code_does_not_write_or_an_unfinished_write_reads_unreadable() {
+        let items = Kept::default();
+        write(&items, Permit::for_a_test(), &login(9000), "t").unwrap();
+        items.set(Permit::for_a_test(), PENDING, "4").unwrap();
+        let Err(Error::Unreadable(why)) = read(&items, "t") else {
+            panic!("a leftover #p beside pieces");
+        };
+        assert_eq!(
+            why,
+            "`t` has pieces a write left unfinished, as its `#p` says"
+        );
+        items.delete(Permit::for_a_test(), PENDING).unwrap();
+        items
+            .set(Permit::for_a_test(), MANIFEST, r#"{"n":9,"l":1}"#)
+            .unwrap();
+        assert!(matches!(read(&items, "t"), Err(Error::Unreadable(_))));
+        items
+            .set(Permit::for_a_test(), MANIFEST, "not a manifest")
+            .unwrap();
+        let Err(Error::Unreadable(why)) = read(&items, "t") else {
+            panic!("a bad #m");
+        };
+        assert_eq!(why, "`t` has a manifest `#m` Claude Code does not write");
+        assert!(holds(&items).unwrap());
+
+        // A small write never clears a `#p` it finds no manifest beside, nor does Claude Code's.
+        let items = Kept::default();
+        items.set(Permit::for_a_test(), PENDING, "2").unwrap();
+        write(&items, Permit::for_a_test(), "{}", "t").unwrap();
+        assert_eq!(read(&items, "t").unwrap().as_deref(), Some("{}"));
+        assert_eq!(items.names(), [WHOLE, PENDING]);
+        items.set(Permit::for_a_test(), WHOLE, "").unwrap();
+        assert!(!holds(&items).unwrap(), "an item holding nothing is none");
+        assert_eq!(read(&items, "t").unwrap(), None);
+    }
+
+    #[test]
+    fn a_delete_takes_every_piece_a_manifest_or_a_marker_names_or_it_finds() {
+        for (shape, extra) in [
+            (login(9000), None),
+            (login(100), Some(("#p", "3"))),
+            (login(100), None),
+        ] {
+            let items = Kept::default();
+            write(&items, Permit::for_a_test(), &shape, "t").unwrap();
+            for k in 0..3 {
+                items
+                    .set(Permit::for_a_test(), &piece(k + 20), "left")
+                    .unwrap();
+            }
+            if let Some((name, value)) = extra {
+                items.set(Permit::for_a_test(), name, value).unwrap();
+                for k in 0..3 {
+                    items.set(Permit::for_a_test(), &piece(k), "left").unwrap();
+                }
+            }
+            delete(&items, Permit::for_a_test()).unwrap();
+            let left: Vec<String> = items.names();
+            assert!(
+                left.iter().all(|name| name.starts_with("#2")),
+                "{left:?}: only pieces past a gap stay, as Claude Code leaves them"
+            );
+        }
+        let items = Kept::default();
+        for k in 0..5 {
+            items.set(Permit::for_a_test(), &piece(k), "left").unwrap();
+        }
+        delete(&items, Permit::for_a_test()).unwrap();
+        assert!(
+            items.names().is_empty(),
+            "pieces from #0 on, found one by one"
+        );
+    }
+}

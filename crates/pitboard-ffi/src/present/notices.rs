@@ -293,7 +293,7 @@ pub(crate) fn notices(seen: &Seen, footing: &Footing) -> Vec<PanelNotice> {
         said.push(notice(
             id,
             Severity::Warning,
-            words::warning_heading(warning).into(),
+            words::warning_heading(seen.os, warning).into(),
             vec![warning.message.clone()],
             warning_actions(seen, warning),
         ));
@@ -325,7 +325,7 @@ pub(crate) fn notices(seen: &Seen, footing: &Footing) -> Vec<PanelNotice> {
             "stowed".into(),
             Severity::Info,
             "Put away the login left in a file".into(),
-            said::stowed_lines(stowed),
+            said::stowed_lines(seen.os, stowed),
             vec![dismiss(Intent::DismissStowed)],
         ));
     }
@@ -542,7 +542,7 @@ pub(crate) fn auto_not_watching_notice(key: &str, why: &str) -> RunOutNotice {
 pub(crate) fn standing_notice(warning: &Warning) -> RunOutNotice {
     RunOutNotice {
         id: warning_id(warning),
-        title: words::warning_heading(warning).into(),
+        title: words::warning_heading(pitboard_core::host::OS, warning).into(),
         subtitle: None,
         body: warning.message.clone(),
         switch_to: None,

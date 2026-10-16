@@ -1239,10 +1239,6 @@ mod tests {
     /// to. The switch moves the store from the login it found there, so the account it goes
     /// to comes to be in use then, and the login it found is the one parked.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_switch_after_a_sign_in_outside_puts_the_account_it_goes_to_in_use() {
         let m = harness::machine("records-both-logins");
         let mut state = state::load(&m.ctx).expect("state");
@@ -1292,10 +1288,6 @@ mod tests {
     /// meanwhile waits: the login parked for the account switched from is never one a session
     /// spent, with its renewal lost at a save that found another login stored.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_session_renewing_the_outgoing_login_during_a_switch_waits_for_it() {
         use harness::{Session, lock_dir, renews_meanwhile, saves};
         let refreshing =

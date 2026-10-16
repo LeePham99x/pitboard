@@ -1,0 +1,108 @@
+#![cfg(windows)]
+
+//! Pitboard writes Claude Code's login into Credential Manager as `Bun.secrets` writes it for
+//! Claude Code (`credman_attributes`, RF-G3's values): a generic item, enterprise persistence,
+//! the item's own name after the service as its user name, no comment and no attributes. A
+//! write that changed one would leave an item Claude Code's own write and read do not expect.
+//! The counterpart of keychain_write_is_harmless.rs. Runs only against `pitboard-citest-*`
+//! items, never anything Claude Code owns.
+
+mod common;
+
+use pitboard_core::testing::credman::{self, Item};
+
+const GENERIC: u32 = 1;
+const ENTERPRISE: u32 = 3;
+
+fn service() -> String {
+    format!("pitboard-citest-{}", std::process::id())
+}
+
+fn as_bun_writes(item: &Item, user: &str) {
+    assert_eq!(item.kind, GENERIC, "{user}");
+    assert_eq!(item.persist, ENTERPRISE, "{user}");
+    assert_eq!(item.user, user);
+    assert_eq!(item.comment, None, "{user}");
+    assert_eq!(item.attributes, 0, "{user}");
+}
+
+// Taken away by name however the test ends: the leak check after the run finds none.
+struct Discarded(String);
+
+impl Drop for Discarded {
+    fn drop(&mut self) {
+        let _ = credman::discard(&common::ctx(), &self.0);
+    }
+}
+
+#[test]
+fn writing_leaves_each_item_as_bun_writes_one() {
+    let svc = service();
+    let _discarded = Discarded(svc.clone());
+    let ctx = common::ctx();
+    let whole = format!("{svc}/claude-code-user");
+    credman::write_as_bun(&whole, "claude-code-user", r#"{"seed":true}"#).expect("seeded");
+    as_bun_writes(
+        &credman::item(&whole).expect("read").expect("seeded"),
+        "claude-code-user",
+    );
+
+    let small = r#"{"claudeAiOauth":{"accessToken":"a","refreshToken":"b","expiresAt":1}}"#;
+    credman::write(&ctx, &svc, small).expect("the production writer should succeed");
+    let written = credman::item(&whole).expect("read").expect("written");
+    as_bun_writes(&written, "claude-code-user");
+    assert_eq!(written.bytes, small.len());
+    assert_eq!(
+        credman::read(&ctx, &svc).expect("read").as_deref(),
+        Some(small)
+    );
+
+    // 9000 bytes are 12000 characters of base64: five pieces.
+    let large = format!(r#"{{"mcpOAuth":"{}"}}"#, "x".repeat(9000 - 15));
+    assert_eq!(large.len(), 9000);
+    credman::write(&ctx, &svc, &large).expect("written in pieces");
+    for piece in ["#0", "#1", "#2", "#3", "#4", "#m"] {
+        let user = format!("claude-code-user{piece}");
+        let item = credman::item(&format!("{svc}/{user}"))
+            .expect("read")
+            .unwrap_or_else(|| panic!("{piece} is there"));
+        as_bun_writes(&item, &user);
+    }
+    for gone in ["", "#5", "#p"] {
+        assert!(
+            credman::item(&format!("{whole}{gone}"))
+                .expect("read")
+                .is_none(),
+            "{gone:?} is not left"
+        );
+    }
+    assert_eq!(credman::read(&ctx, &svc).expect("read"), Some(large));
+
+    credman::discard(&ctx, &svc).expect("deleted");
+    for left in ["", "#0", "#4", "#m", "#p"] {
+        assert!(
+            credman::item(&format!("{whole}{left}"))
+                .expect("read")
+                .is_none()
+        );
+    }
+}
+
+// Refused before Credential Manager is asked: every name a real login may be kept under.
+#[test]
+fn a_test_build_never_addresses_a_real_login() {
+    for name in [
+        "Claude Code-credentials/claude-code-user",
+        "Claude Code-credentials-e80beed8/claude-code-user#m",
+        "cli|0123456789abcdef.Codex Auth",
+    ] {
+        assert!(credman::item(name).is_err(), "{name}");
+        assert!(
+            credman::write_as_bun(name, "claude-code-user", "{}").is_err(),
+            "{name}"
+        );
+    }
+    let ctx = common::ctx();
+    assert!(credman::read(&ctx, "Claude Code-credentials").is_err());
+    assert!(credman::discard(&ctx, "Claude Code-credentials").is_err());
+}

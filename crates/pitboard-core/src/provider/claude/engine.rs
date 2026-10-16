@@ -29,22 +29,20 @@ pub(crate) struct Claude;
 /// cache expiring.
 const ADOPTION_SECONDS: u32 = switch::ADOPTION_CEILING_SECONDS;
 
-/// When a session already running takes a switch on `os`, with `behind` behind the store a
-/// switch writes. Every system's answer, so each is tested on every system.
+// Every system's answer, so each is tested on every system.
 fn adoption_on(os: Os, behind: Option<&Behind>) -> Adoption {
     match (os, behind) {
-        // Read in 2.1.294 (`fallback_file_pins_session_login`): while the file is there,
-        // whatever it holds, a session keeps the login it holds until it renews it, a request
-        // is refused, it signs in, or the file's mtime changes.
-        (Os::MacOs, Some(behind)) => Adoption::AtRenewal {
+        // Behind the keychain or Credential Manager, whatever the file holds, a session keeps its
+        // login until it renews it, a request is refused, it signs in, or the file's mtime changes
+        // (`fallback_file_pins_session_login`).
+        (Os::MacOs | Os::Windows, Some(behind)) => Adoption::AtRenewal {
             file: behind.path.clone(),
         },
-        (Os::MacOs, None) => Adoption::PollingWithin(ADOPTION_SECONDS),
+        // On Windows until session steps 6 and 7 measure it (`windows_file_adoption`,
+        // `windows_credman_cache`).
+        (Os::MacOs | Os::Windows, None) => Adoption::PollingWithin(ADOPTION_SECONDS),
         // The file is the store, so nothing is behind it, and a switch changes its mtime.
         (Os::Linux, _) => Adoption::PollingWithin(ADOPTION_SECONDS),
-        // How soon a session takes a new `.credentials.json` there, and one behind Credential
-        // Manager, is W22's reading (`windows_file_adoption`).
-        (Os::Windows, _) => Adoption::PollingWithin(ADOPTION_SECONDS),
     }
 }
 
@@ -374,6 +372,12 @@ mod tests {
             .sign_in(&ctx, Permit::for_a_test(), dir)
             .expect("found");
         assert_eq!(command.get_args().collect::<Vec<_>>(), ["auth", "login"]);
+        // As given: Claude Code hashes the string itself for its slot, as read_signin does.
+        assert!(
+            command
+                .get_envs()
+                .any(|(name, value)| name == "CLAUDE_CONFIG_DIR" && value == Some(dir.as_os_str()))
+        );
         for withheld in [
             "CLAUDE_SECURESTORAGE_CONFIG_DIR",
             "CLAUDE_CODE_FORCE_WINDOWS_CREDMAN",
@@ -509,13 +513,11 @@ mod tests {
         let _ = std::fs::remove_dir_all(&home);
     }
 
-    /// Every system's answer, asked on every system. On macOS a session already running
-    /// takes a switch within 33 seconds, unless `.credentials.json` sits behind the
-    /// keychain, whatever it holds and whether or not it can be read: then at its login's
-    /// next renewal. On Linux the file is the store, and a switch writes it. On Windows it
-    /// waits on W22's reading.
+    // Behind the keychain on macOS, or Credential Manager on Windows, whatever the file holds and
+    // whether or not it can be read, a session takes a switch at its login's next renewal. On
+    // Linux the file is the store, and a switch writes it.
     #[test]
-    fn sessions_follow_within_33_seconds_unless_a_file_is_behind_the_keychain_on_macos() {
+    fn sessions_follow_within_33_seconds_unless_a_file_is_behind_the_store() {
         let file = PathBuf::from("/Users/x/.claude/.credentials.json");
         let holding = |held: Held| Behind {
             path: file.clone(),
@@ -525,18 +527,18 @@ mod tests {
             assert_eq!(adoption_on(os, None), Adoption::PollingWithin(33), "{os:?}");
         }
         for held in [Held::Login, Held::NoLogin, Held::Unreadable] {
-            assert_eq!(
-                adoption_on(Os::MacOs, Some(&holding(held))),
-                Adoption::AtRenewal { file: file.clone() },
-                "{held:?}"
-            );
-            for os in [Os::Linux, Os::Windows] {
+            for os in [Os::MacOs, Os::Windows] {
                 assert_eq!(
                     adoption_on(os, Some(&holding(held))),
-                    Adoption::PollingWithin(33),
-                    "{os:?}"
+                    Adoption::AtRenewal { file: file.clone() },
+                    "{os:?} {held:?}"
                 );
             }
+            assert_eq!(
+                adoption_on(Os::Linux, Some(&holding(held))),
+                Adoption::PollingWithin(33),
+                "{held:?}"
+            );
         }
     }
 

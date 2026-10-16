@@ -6,11 +6,11 @@
 //! machine still answers "is there a keychain here"; which item, and which file behind it,
 //! is answered here.
 
-use super::{paths as claude, slot};
+use super::{credman, paths as claude, slot};
 use crate::context::Context;
 use crate::host::{OS, Os};
 use crate::service::Permit;
-use crate::store::{self, Backend, Error, Live, RawStore, Unbuilt};
+use crate::store::{self, Backend, Error, Live, RawStore, Refused};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
@@ -19,37 +19,15 @@ pub(crate) fn credential_file(ctx: &Context) -> PathBuf {
     PathBuf::from(claude::storage_dir(ctx)).join(slot::CRED_FILE)
 }
 
-/// Claude Code's store on Windows, which Pitboard does not read or write yet. Its storage
-/// backends are `keychain`, `plaintext` and `windows-credman`, the last behind the
-/// `tengu_windows_credman` flag or `CLAUDE_CODE_FORCE_WINDOWS_CREDMAN` (the register's
-/// `no_keyring_off_macos`), and which one it uses on Windows is the register's pending
-/// `windows_backend_choice`. So the file alone is never the chain: it could read a login that
-/// is not the one in use, and write one nothing reads. W22 reads the file where Claude Code
-/// reads it and refuses wherever Credential Manager may hold the login, and W23 follows
-/// Claude Code there.
-fn not_on_windows_yet() -> Unbuilt {
-    Unbuilt::new(
-        Backend::Unknown,
-        "Pitboard does not switch Claude Code on Windows yet",
-    )
-}
-
-/// The backends that may hold Claude Code's login, in the order it looks.
-///
-/// Settled in 2.1.278: Claude Code builds its live chain as keychain with a plaintext
-/// fallback, and the successor backend (`tengu_hover_rest`) replaces what backs the
-/// fallback half and only for a caller that hands a backend in. An ordinary `claude` hands
-/// none in, so the keychain stays first.
-///
-/// Resolved on every call, never cached: Claude Code moves the credential between backends
-/// when a keychain write fails for good, so a remembered answer goes wrong without warning.
-/// From 2.1.281 a locked keychain whose item the process has seen does not move it.
-///
-/// On Windows it is one store that refuses every call ([`not_on_windows_yet`]).
+// Claude Code's chain in the order it reads, resolved on every call: it moves the login between
+// backends when a keychain write fails for good (`live_chain_order`). On Windows its store is
+// Credential Manager with the file behind it where anything turns that on, and every write goes
+// there (`credman_migration`); else the file alone, unless Credential Manager holds a login,
+// where every call refuses (`windows_backend_choice`).
 pub(crate) fn chain(ctx: &Context) -> Live {
+    let host = ctx.host();
     match OS {
         Os::MacOs | Os::Linux => {
-            let host = ctx.host();
             let mut backends: Vec<Box<dyn RawStore>> = Vec::new();
             if let Some(keychain) = host.foreign_secrets(ctx, &slot::account_name(ctx)) {
                 backends.push(keychain);
@@ -57,7 +35,14 @@ pub(crate) fn chain(ctx: &Context) -> Live {
             backends.push(host.file(credential_file(ctx)));
             Live::of(backends)
         }
-        Os::Windows => Live::of(vec![Box::new(not_on_windows_yet())]),
+        Os::Windows if credman::turned_on(ctx).is_some() => Live::taken_over_by_the_first(vec![
+            Box::new(credman::Store::of(ctx)),
+            host.file(credential_file(ctx)),
+        ]),
+        Os::Windows => match credman::ambiguity(ctx) {
+            None => Live::of(vec![host.file(credential_file(ctx))]),
+            Some(why) => Live::of(vec![Box::new(Refused::new(Backend::Unknown, why))]),
+        },
     }
 }
 
@@ -109,40 +94,40 @@ pub(crate) fn login_in(held: &str) -> Option<Value> {
     Some(document_in(held)).filter(holds_a_login)
 }
 
-/// The credential Claude Code left for a config directory during a private sign-in: the
-/// keychain item its own hashing names, or the file inside that directory where there is
-/// no keychain. Refused on Windows, as the chain is.
+// What a private sign-in left: the keychain item its own hashing names, or the file inside the
+// folder where there is no keychain. On Windows the item its hashing names in Credential Manager,
+// where something turned that store on for it, then the file.
 pub(crate) fn read_signin(ctx: &Context, dir: &Path) -> Result<Option<String>, Error> {
+    let service = slot::service_for_dir(&dir.to_string_lossy());
+    let file = ctx.host().file(dir.join(slot::CRED_FILE));
     match OS {
-        Os::MacOs | Os::Linux => {}
-        Os::Windows => return not_on_windows_yet().read(""),
-    }
-    match ctx.host().foreign_secrets(ctx, &slot::account_name(ctx)) {
-        Some(keychain) => keychain.read(&slot::service_for_dir(&dir.to_string_lossy())),
-        None => ctx.host().file(dir.join(slot::CRED_FILE)).read(""),
+        Os::MacOs | Os::Linux => match ctx.host().foreign_secrets(ctx, &slot::account_name(ctx)) {
+            Some(keychain) => keychain.read(&service),
+            None => file.read(""),
+        },
+        Os::Windows => {
+            let left = Live::of(vec![Box::new(credman::Store::of(ctx)), file]);
+            store::read_raw(&left, &service)
+        }
     }
 }
 
-/// Deletes an item Claude Code created for a private sign-in.
-///
-/// It refuses any name that could be a real login: the default slot, and whatever this
-/// context's own `CLAUDE_CONFIG_DIR` hashes to. A scratch directory's hash is safe by
-/// construction, and those two are the only names in the family that are not. Refused on
-/// Windows, as the chain is.
+// Never a name that could be a real login: the default slot, or the one this context's own
+// `CLAUDE_CONFIG_DIR` hashes to.
 pub(crate) fn discard_signin(ctx: &Context, permit: Permit, dir: &Path) -> Result<(), Error> {
-    match OS {
-        Os::MacOs | Os::Linux => {}
-        Os::Windows => return not_on_windows_yet().delete(permit, ""),
-    }
     let service = slot::service_for_dir(&dir.to_string_lossy());
     if service == slot::LIVE_SERVICE || service == claude::live_service(ctx) {
         return Err(Error::Write(format!("refusing to delete {service}")));
     }
-    match ctx.host().foreign_secrets(ctx, &slot::account_name(ctx)) {
-        Some(keychain) => keychain.delete(permit, &service),
-        None => ctx
-            .host()
-            .file(dir.join(slot::CRED_FILE))
-            .delete(permit, ""),
+    let file = ctx.host().file(dir.join(slot::CRED_FILE));
+    match OS {
+        Os::MacOs | Os::Linux => match ctx.host().foreign_secrets(ctx, &slot::account_name(ctx)) {
+            Some(keychain) => keychain.delete(permit, &service),
+            None => file.delete(permit, ""),
+        },
+        Os::Windows => {
+            credman::Store::of(ctx).delete(permit, &service)?;
+            file.delete(permit, "")
+        }
     }
 }

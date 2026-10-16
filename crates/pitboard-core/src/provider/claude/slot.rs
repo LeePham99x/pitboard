@@ -3,6 +3,7 @@
 //! changes.
 
 use crate::context::Context;
+use crate::host::Os;
 use sha2::{Digest, Sha256};
 use unicode_normalization::UnicodeNormalization;
 
@@ -24,6 +25,10 @@ const FALLBACK_ACCOUNT: &str = "claude-code-user";
 /// app opened from Finder. Stopping at the literal there would send Pitboard to a different
 /// keychain item than the one Claude Code reads.
 pub(crate) fn account_name(ctx: &Context) -> String {
+    // Its Windows build names its Credential Manager item with the literal alone.
+    if ctx.os == Os::Windows {
+        return FALLBACK_ACCOUNT.to_string();
+    }
     let from_env = ctx.user.as_deref().filter(|u| !u.is_empty());
     match from_env
         .map(str::to_owned)
@@ -109,6 +114,41 @@ mod tests {
     #[test]
     fn a_trailing_slash_is_a_different_slot() {
         assert_ne!(dir_hash("/Users/x/.claude"), dir_hash("/Users/x/.claude/"));
+    }
+
+    // `credman_target`: the string is hashed as given on Windows too, so each spelling of one
+    // folder is an item of its own, and the home's own `.claude` named outright is one too.
+    #[test]
+    fn each_spelling_of_a_windows_folder_is_a_slot_of_its_own() {
+        let spelled: std::collections::BTreeSet<String> = [r"C:\x", "C:/x", r"c:\x", r"C:\x\"]
+            .into_iter()
+            .map(dir_hash)
+            .collect();
+        assert_eq!(spelled.len(), 4);
+        let named = Context::new(std::path::PathBuf::from(r"C:\Users\x"))
+            .with_claude_config_dir(r"C:\Users\x\.claude".into());
+        assert!(!super::super::paths::is_default_slot(&named));
+        assert_eq!(
+            super::super::paths::live_service(&named),
+            service_for_dir(r"C:\Users\x\.claude")
+        );
+    }
+
+    #[test]
+    fn windows_names_every_persons_item_claude_code_user() {
+        let ctx = |os: Os| {
+            Context::for_command_line(&crate::context::Environment::on(
+                os,
+                [
+                    ("HOME", "/home/x"),
+                    ("USERPROFILE", r"C:\Users\x"),
+                    ("USER", "ngoquocdat"),
+                    ("USERNAME", "ngoquocdat"),
+                ],
+            ))
+        };
+        assert_eq!(account_name(&ctx(Os::Windows)), "claude-code-user");
+        assert_eq!(account_name(&ctx(Os::MacOs)), "ngoquocdat");
     }
 
     #[test]

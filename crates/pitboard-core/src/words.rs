@@ -288,28 +288,42 @@ pub fn nothing_left() -> &'static str {
      put away."
 }
 
-/// What `pitboard stow` and the app's sheet say of the file behind Claude Code's store before
-/// it is put away, a paragraph each: what it holds and what putting it away would do with
-/// that, the keys that would go with it, and what becomes of Claude Code's sessions once it is
-/// gone. Of a login of an account nobody enrolled, whose it is and what to do first.
-pub fn left_lines(left: &crate::switch::Left) -> Vec<String> {
+pub fn store_in_front(os: Os) -> &'static str {
+    match os {
+        Os::MacOs | Os::Linux => "the keychain",
+        Os::Windows => "Credential Manager",
+    }
+}
+
+pub(crate) fn reads_only_the_file(os: Os) -> &'static str {
+    match os {
+        Os::MacOs | Os::Linux => {
+            "a session that cannot read the keychain, such as one started over SSH"
+        }
+        Os::Windows => {
+            "a session that cannot reach Credential Manager, such as one in a sign-in over SSH \
+             with a key"
+        }
+    }
+}
+
+pub fn left_lines(os: Os, left: &crate::switch::Left) -> Vec<String> {
     use crate::switch::{Foreseen, Kept};
     if let Foreseen::NotEnrolled(_) = left.login {
         return vec![left_login(left)];
     }
     let held_a_login = left.login != Foreseen::Kept(Kept::NoLogin);
     std::iter::once(left_login(left))
-        .chain(dropped_keys(&left.dropped, false))
-        .chain(std::iter::once(once_stowed(held_a_login)))
+        .chain(dropped_keys(os, &left.dropped, false))
+        .chain(std::iter::once(once_stowed(os, held_a_login)))
         .collect()
 }
 
-/// What they say once it is put away, a paragraph each.
-pub fn stowed_lines(stowed: &crate::switch::Stowed) -> Vec<String> {
+pub fn stowed_lines(os: Os, stowed: &crate::switch::Stowed) -> Vec<String> {
     let held_a_login = stowed.kept != crate::switch::Kept::NoLogin;
     std::iter::once(stowed_login(stowed))
-        .chain(dropped_keys(&stowed.dropped, true))
-        .chain(std::iter::once(once_stowed(held_a_login)))
+        .chain(dropped_keys(os, &stowed.dropped, true))
+        .chain(std::iter::once(once_stowed(os, held_a_login)))
         .collect()
 }
 
@@ -394,9 +408,7 @@ fn stowed_login(stowed: &crate::switch::Stowed) -> String {
     }
 }
 
-/// The other keys the file holds, which go with it unmoved, by name and how many: `None`
-/// where it holds none. `gone` once the file has gone.
-fn dropped_keys(keys: &[String], gone: bool) -> Option<String> {
+fn dropped_keys(os: Os, keys: &[String], gone: bool) -> Option<String> {
     let one = match keys.len() {
         0 => return None,
         n => n == 1,
@@ -414,23 +426,24 @@ fn dropped_keys(keys: &[String], gone: bool) -> Option<String> {
     };
     Some(format!(
         "It also {holds} {count}, {names}, which {goes} with the file: Pitboard does not move \
-         {them}, and Claude Code's document in the keychain keeps its own."
+         {them}, and Claude Code's document in {} keeps its own.",
+        store_in_front(os)
     ))
 }
 
-/// What becomes of Claude Code's sessions once the file is gone: each takes the login stored
-/// again, and one that signed in with a login in the file, as one over SSH does, is signed
-/// out.
-fn once_stowed(held_a_login: bool) -> String {
+fn once_stowed(os: Os, held_a_login: bool) -> String {
     let follow = format!(
         "Once the file is gone, Claude Code sessions already running follow a switch within \
          {} seconds again",
         crate::switch::ADOPTION_CEILING_SECONDS
     );
+    let over_ssh = match os {
+        Os::MacOs | Os::Linux => "one over SSH",
+        Os::Windows => "one in a sign-in over SSH with a key",
+    };
     if held_a_login {
         format!(
-            "{follow}, and one that signed in with its login, such as one over SSH, is signed \
-             out."
+            "{follow}, and one that signed in with its login, such as {over_ssh}, is signed out."
         )
     } else {
         format!("{follow}.")
@@ -1190,6 +1203,59 @@ pub fn listed(mut items: Vec<String>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // The file sits behind the keychain on macOS and behind Credential Manager on Windows, which
+    // a sign-in over SSH with a key cannot reach.
+    #[test]
+    fn a_file_left_behind_the_store_is_said_in_the_words_of_its_system() {
+        use crate::switch::{Foreseen, Kept, Left, Stowed};
+        let path = std::path::PathBuf::from("/x/.credentials.json");
+        let left = Left {
+            path: path.clone(),
+            seen: "0123456789abcdef".into(),
+            login: Foreseen::Kept(Kept::ParkKept {
+                label: "work".into(),
+            }),
+            dropped: vec!["mcpOAuth".into()],
+        };
+        let stowed = Stowed {
+            path,
+            kept: Kept::ParkKept {
+                label: "work".into(),
+            },
+            dropped: vec!["mcpOAuth".into()],
+        };
+        for (os, store, over_ssh, reader) in [
+            (
+                Os::MacOs,
+                "the keychain",
+                "one over SSH",
+                "a session that cannot read the keychain, such as one started over SSH",
+            ),
+            (
+                Os::Windows,
+                "Credential Manager",
+                "one in a sign-in over SSH with a key",
+                "a session that cannot reach Credential Manager, such as one in a sign-in over \
+                 SSH with a key",
+            ),
+        ] {
+            for lines in [left_lines(os, &left), stowed_lines(os, &stowed)] {
+                assert!(
+                    lines[1]
+                        .ends_with(&format!("Claude Code's document in {store} keeps its own.")),
+                    "{os:?}: {lines:?}"
+                );
+                assert!(
+                    lines[2].ends_with(&format!(
+                        "one that signed in with its login, such as {over_ssh}, is signed out."
+                    )),
+                    "{os:?}: {lines:?}"
+                );
+            }
+            assert_eq!(reads_only_the_file(os), reader);
+        }
+    }
 
     #[test]
     fn what_is_left_of_an_app_is_quit_where_the_system_quits_it() {

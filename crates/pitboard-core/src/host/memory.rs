@@ -9,6 +9,7 @@ use super::{
     Administered, Cookie, Elevation, Floor, Host, Jar, JarError, Listed, Process, Scheduler,
 };
 use crate::context::Context;
+use crate::provider::claude::credman::FORCE;
 use crate::service::Permit;
 use crate::store::memory::{Fault, MemoryStore, Touch};
 use crate::store::{Backend, Cost, Error, RawStore};
@@ -23,6 +24,26 @@ use std::sync::{Arc, Mutex};
 struct Opened {
     store: Arc<MemoryStore>,
     argument_line: bool,
+    // A piece's `#<k>`, `#m` or `#p` after the service it is of. Credential Manager names an
+    // item `<service>/claude-code-user<piece>`, one user name for every person, so a test plants
+    // and reads Claude Code's login by its service as on macOS.
+    piece: String,
+}
+
+impl Opened {
+    fn of(store: &Arc<MemoryStore>, ctx: &Context, account: &str) -> Opened {
+        Opened {
+            store: Arc::clone(store),
+            argument_line: ctx.argv_fallback(),
+            piece: account
+                .rfind('#')
+                .map_or_else(String::new, |at| account[at..].to_owned()),
+        }
+    }
+
+    fn key(&self, service: &str) -> String {
+        format!("{service}{}", self.piece)
+    }
 }
 
 impl RawStore for Opened {
@@ -31,35 +52,49 @@ impl RawStore for Opened {
     }
 
     fn contains(&self, service: &str) -> Result<bool, Error> {
-        RawStore::contains(&self.store, service)
+        RawStore::contains(&self.store, &self.key(service))
     }
 
     fn read(&self, service: &str) -> Result<Option<String>, Error> {
-        RawStore::read(&self.store, service)
+        RawStore::read(&self.store, &self.key(service))
     }
 
     fn write(&self, permit: Permit, service: &str, contents: &str) -> Result<(), Error> {
         if let Some(cost) = self.cost(service, contents)
             && cost.refused()
         {
-            return Err(Error::Write(format!(
-                "this credential is {} bytes, past the {}-byte command limit",
-                cost.needs, cost.limit
-            )));
+            return Err(Error::Write(match self.kind() {
+                Backend::CredentialManager => format!(
+                    "this item would hold {} bytes, past the {} a Credential Manager item holds",
+                    cost.needs, cost.limit
+                ),
+                _ => format!(
+                    "this credential is {} bytes, past the {}-byte command limit",
+                    cost.needs, cost.limit
+                ),
+            }));
         }
-        RawStore::write(&self.store, permit, service, contents)
+        RawStore::write(&self.store, permit, &self.key(service), contents)
     }
 
     fn delete(&self, permit: Permit, service: &str) -> Result<(), Error> {
-        RawStore::delete(&self.store, permit, service)
+        RawStore::delete(&self.store, permit, &self.key(service))
     }
 
     fn list(&self) -> Result<Option<Vec<String>>, Error> {
         RawStore::list(&self.store)
     }
 
+    // A Credential Manager item holds 2560 bytes and has no other way in.
     fn cost(&self, service: &str, contents: &str) -> Option<Cost> {
-        RawStore::cost(&self.store, service, contents).map(|cost| Cost {
+        if self.kind() == Backend::CredentialManager {
+            return Some(Cost {
+                needs: contents.len(),
+                limit: 5 * 512,
+                second_route: false,
+            });
+        }
+        RawStore::cost(&self.store, &self.key(service), contents).map(|cost| Cost {
             second_route: self.argument_line,
             ..cost
         })
@@ -106,6 +141,12 @@ pub struct MemoryHost {
     forced: Mutex<HashMap<(String, String), Administered>>,
     // The registry's policies, by hive, key and value, as a test said.
     policies: Mutex<HashMap<(super::Hive, String, String), Administered>>,
+    // Credential Manager's names, as a test said.
+    credentials: Mutex<Vec<String>>,
+    // Why Credential Manager cannot be asked, where a test said it cannot.
+    credentials_fault: Mutex<Option<String>>,
+    // `HKCU\Environment`, by name in upper case, as a test said.
+    user_environment_values: Mutex<HashMap<String, String>>,
 }
 
 impl Default for MemoryHost {
@@ -127,9 +168,17 @@ impl MemoryHost {
     fn parking_in(vault: Backend, shared: bool) -> MemoryHost {
         let refuse_start = Arc::new(AtomicBool::new(false));
         let trail = Arc::default();
+        // Claude Code's Credential Manager store on Windows is on, as the keychain is on macOS, so
+        // the rules written for that chain are asked of this one.
+        let (live, gate) = match super::OS {
+            super::Os::MacOs | super::Os::Linux => (Backend::Keychain, HashMap::new()),
+            super::Os::Windows => (
+                Backend::CredentialManager,
+                HashMap::from([(FORCE.to_uppercase(), "1".to_owned())]),
+            ),
+        };
         MemoryHost {
-            // Keychain, because that is the chain the interesting rules are written for.
-            keychain: MemoryStore::on_trail(Backend::Keychain, "live".into(), Arc::clone(&trail)),
+            keychain: MemoryStore::on_trail(live, "live".into(), Arc::clone(&trail)),
             vault: MemoryStore::on_trail(vault, "vault".into(), Arc::clone(&trail)),
             files: Mutex::new(HashMap::new()),
             trail,
@@ -150,10 +199,14 @@ impl MemoryHost {
             administered: Mutex::new(HashMap::new()),
             forced: Mutex::new(HashMap::new()),
             policies: Mutex::new(HashMap::new()),
+            credentials: Mutex::new(Vec::new()),
+            credentials_fault: Mutex::new(None),
+            user_environment_values: Mutex::new(gate),
         }
     }
 
-    /// The keychain, where a tool that uses one keeps its live credential.
+    /// The keychain, where a tool that uses one keeps its live credential: Credential Manager
+    /// on Windows, by service, a piece's `#<k>`, `#m` or `#p` after it.
     pub fn live(&self) -> &Arc<MemoryStore> {
         &self.keychain
     }
@@ -185,7 +238,8 @@ impl MemoryHost {
     }
 
     /// Locks the keychain from now on, as a screen lock does on macOS, where Claude Code's
-    /// login and Pitboard's vault are items in the one login keychain.
+    /// login and Pitboard's vault are items in the one login keychain. On Windows, Credential
+    /// Manager as a network logon finds it, with no credential set.
     pub fn lock_keychain(&self) {
         self.keychain.fault_all(Fault::Locked);
         self.vault.fault_all(Fault::Locked);
@@ -334,6 +388,21 @@ impl MemoryHost {
             );
     }
 
+    #[cfg(test)]
+    pub(crate) fn keeps_credentials(&self, names: &[&str]) {
+        locked(&self.credentials).extend(names.iter().map(|name| (*name).to_owned()));
+    }
+
+    #[cfg(test)]
+    pub(crate) fn credentials_unreadable(&self, why: &str) {
+        *locked(&self.credentials_fault) = Some(why.into());
+    }
+
+    #[cfg(test)]
+    pub(crate) fn sets_user_environment(&self, name: &str, value: &str) {
+        locked(&self.user_environment_values).insert(name.to_uppercase(), value.into());
+    }
+
     /// Say an administrator's configuration profile forces `key` of `domain` to `value`, a
     /// managed preference, on whatever system the tests run on.
     pub fn forces(&self, domain: &str, key: &str, value: &str) {
@@ -348,11 +417,8 @@ impl MemoryHost {
 }
 
 impl Host for MemoryHost {
-    fn foreign_secrets(&self, ctx: &Context, _account: &str) -> Option<Box<dyn RawStore>> {
-        Some(Box::new(Opened {
-            store: Arc::clone(&self.keychain),
-            argument_line: ctx.argv_fallback(),
-        }))
+    fn foreign_secrets(&self, ctx: &Context, account: &str) -> Option<Box<dyn RawStore>> {
+        Some(Box::new(Opened::of(&self.keychain, ctx, account)))
     }
 
     fn file(&self, path: PathBuf) -> Box<dyn RawStore> {
@@ -360,10 +426,7 @@ impl Host for MemoryHost {
     }
 
     fn vault(&self, ctx: &Context) -> Box<dyn RawStore> {
-        Box::new(Opened {
-            store: Arc::clone(&self.vault),
-            argument_line: ctx.argv_fallback(),
-        })
+        Box::new(Opened::of(&self.vault, ctx, ""))
     }
 
     fn vault_is_shared(&self) -> bool {
@@ -534,6 +597,45 @@ impl Host for MemoryHost {
             .cloned()
             .unwrap_or(Administered::Unset)
     }
+
+    // In any case, as Credential Manager's filter takes a prefix.
+    fn credential_names(&self, prefix: &str) -> Result<Vec<String>, String> {
+        let prefix = prefix.to_lowercase();
+        Ok(locked(&self.credentials)
+            .iter()
+            .filter(|name| name.to_lowercase().starts_with(&prefix))
+            .cloned()
+            .collect())
+    }
+
+    fn user_environment(&self, name: &str) -> Administered {
+        locked(&self.user_environment_values)
+            .get(&name.to_uppercase())
+            .map_or(Administered::Unset, |value| {
+                Administered::Set(value.clone())
+            })
+    }
+
+    // In any case, as Credential Manager finds a target: one a test named, or Claude Code's item
+    // the live store holds.
+    fn credential_held(&self, ctx: &Context, target: &str) -> Result<bool, String> {
+        if let Some(why) = locked(&self.credentials_fault).clone() {
+            return Err(why);
+        }
+        let lower = target.to_lowercase();
+        if locked(&self.credentials)
+            .iter()
+            .any(|name| name.to_lowercase() == lower)
+        {
+            return Ok(true);
+        }
+        let Some((service, account)) = target.rsplit_once('/') else {
+            return Ok(false);
+        };
+        Opened::of(&self.keychain, ctx, account)
+            .contains(service)
+            .map_err(|e| e.to_string())
+    }
 }
 
 #[derive(Debug)]
@@ -562,4 +664,33 @@ pub(crate) struct StandInCookie {
 
 fn locked<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().expect("a poisoned test host is a failed test")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // A Credential Manager item holds 2560 bytes (MC-cred), and each piece is an item of its own.
+    #[test]
+    fn a_credential_manager_item_takes_2560_bytes_and_each_piece_is_its_own() {
+        let store =
+            MemoryStore::on_trail(Backend::CredentialManager, "live".into(), Arc::default());
+        let ctx = Context::for_unit_test();
+        let (whole, piece) = (
+            Opened::of(&store, &ctx, "claude-code-user"),
+            Opened::of(&store, &ctx, "claude-code-user#0"),
+        );
+        let permit = Permit::for_a_test();
+        whole
+            .write(permit, "svc", &"x".repeat(2560))
+            .expect("it fits");
+        assert!(matches!(
+            whole.write(permit, "svc", &"x".repeat(2561)),
+            Err(Error::Write(_))
+        ));
+        piece.write(permit, "svc", "a piece").expect("written");
+        assert_eq!(store.peek("svc").map(|held| held.len()), Some(2560));
+        assert_eq!(store.peek("svc#0").as_deref(), Some("a piece"));
+        assert_eq!(whole.cost("svc", "x").map(|cost| cost.limit), Some(2560));
+    }
 }

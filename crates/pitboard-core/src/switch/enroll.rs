@@ -160,6 +160,11 @@ pub(crate) fn one_at_a_time(ctx: &Context, permit: Permit) -> Result<File> {
     Ok(one_at_a_time)
 }
 
+// The one folder every program's private sign-in uses, so Claude Code's slot for it is fixed.
+pub(crate) fn signin_dir(ctx: &Context) -> PathBuf {
+    home::dir(ctx).join("signin")
+}
+
 // A program's sign-in: the one-at-a-time lock and the private directory it signs in to. It
 // takes no other lock, so a switch meanwhile goes ahead and a second sign-in is refused.
 fn reserve_signin(
@@ -168,7 +173,7 @@ fn reserve_signin(
     tool: &'static dyn Provider,
 ) -> Result<(SignIn, PathBuf)> {
     let one_at_a_time = one_at_a_time(ctx, permit)?;
-    let dir = home::dir(ctx).join("signin");
+    let dir = signin_dir(ctx);
     // A sign-in that was killed rather than finished never ran its cleanup, so a login can
     // be sitting in the scratch slot with nothing naming it. The directory is always the
     // same one, so the slot is too, and this is the moment it can be cleared safely: the
@@ -1163,10 +1168,6 @@ mod tests {
     /// account uuid is the person in both, and identified by it alone the second was
     /// refused as already enrolled, and a switch to it said the first was already in use.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn one_account_in_two_organisations_is_two_logins() {
         let m = machine("two-organisations");
         let (enrolled, _) = enrolled_as(&m, "team", here_in(&m, "org-team", "team-refresh"))
@@ -1228,10 +1229,6 @@ mod tests {
     /// lapse. The new login is the one the tool uses from now on, and nothing is parked:
     /// a park of the account in use is a copy the next switch away would only replace.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn signing_in_again_to_the_account_in_use_puts_the_new_login_in_use() {
         for (tool, make) in MACHINES {
             let m = make("again-in-use");
@@ -1271,10 +1268,6 @@ mod tests {
     /// A park the account in use already holds, from before it was signed in to with the
     /// tool itself, is kept as it is: this sign-in is about the login in use.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn signing_in_again_to_the_account_in_use_keeps_the_park_it_holds() {
         for (tool, make) in MACHINES {
             let m = make("again-keeps-park");
@@ -1314,10 +1307,6 @@ mod tests {
     /// switch away parked the old one over it, which for Codex could be a login whose
     /// chain was already revoked. Now the switch parks what is in use, the new login.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn the_next_switch_away_parks_the_new_login_not_the_old() {
         for (tool, make) in MACHINES {
             let m = make("again-then-switch");
@@ -1344,7 +1333,6 @@ mod tests {
     /// Another account's sign-in is parked, and the account in use is left exactly as it
     /// was, as before.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_sign_in_of_another_account_is_parked_beside_the_one_in_use() {
         for (tool, make) in MACHINES {
             let m = make("another-parked");
@@ -1368,7 +1356,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn enrolling_records_the_plan_the_login_says() {
         for ((tool, make), plan) in MACHINES.into_iter().zip(["Max 20x", "Pro"]) {
             let m = make("enrol-plan");
@@ -1399,7 +1386,6 @@ mod tests {
     /// named, so its fingerprint names nobody: for Claude Code one Anthropic refuses or does
     /// not answer about, for Codex one whose ID token cannot be read.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_login_in_use_whose_account_cannot_be_told_is_not_written_over() {
         let mut cases: Vec<(String, Machine)> = Vec::new();
         for (name, trouble) in [
@@ -1458,10 +1444,6 @@ mod tests {
     /// is still the account Pitboard last saw in use. A sign-in to `here` is parked and said
     /// as for any login whose account cannot be told, and the record still names `here`.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_sign_in_while_the_login_claude_code_names_cannot_be_found_is_parked_and_said() {
         let m = machine("untold-elsewhere");
         m.mem.live().delete_everything();
@@ -1495,10 +1477,6 @@ mod tests {
     /// Only the account Pitboard last saw in use is warned about. Signing in again to a
     /// parked account renews its park whoever is signed in, as it always did.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_sign_in_to_a_parked_account_is_not_warned_about_the_login_in_use() {
         let m = machine("untold-parked");
         m.sign_in(&harness::document("here-renewed"));
@@ -1517,10 +1495,6 @@ mod tests {
     /// label can be the account signed in now before anything enrolled it. It is enrolled
     /// with its new login in use, and says it was enrolled rather than signed in again.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_first_sign_in_to_the_account_in_use_enrols_it_with_the_new_login_in_use() {
         for (tool, make) in MACHINES {
             let m = make("first-in-use");
@@ -1551,10 +1525,6 @@ mod tests {
     /// Somebody signs the tool in to another account between the first read and the one
     /// made under the tool's lock. Nothing is written over the account now signed in.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn the_account_in_use_changing_before_the_write_is_refused_and_nothing_is_written() {
         for (tool, make) in MACHINES {
             let m = make("changed-before-write");
@@ -1610,10 +1580,6 @@ mod tests {
     /// goes with the sign-in. That is said as a sign-in's failure: the new login was not
     /// kept, and signing in again is the way on.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_new_login_that_cannot_be_written_leaves_the_old_one_in_use() {
         for (tool, make) in MACHINES {
             let m = make("again-write-fails");
@@ -1640,10 +1606,6 @@ mod tests {
     /// have no login for the account now, so the new one, the one copy known to be good, is
     /// parked rather than thrown away, and the failure says so.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_new_login_that_did_not_hold_is_parked_rather_than_lost() {
         for (tool, make) in MACHINES {
             let m = make("again-did-not-hold");
@@ -1675,10 +1637,6 @@ mod tests {
     /// would spend the token the tool is using, so none is made: the next renewal once the
     /// slot can be read drops the copy instead, and so does the next change.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_new_login_that_could_not_be_read_back_is_not_kept_beside_itself() {
         for (tool, make) in MACHINES {
             for locked in ["by the write", "after it"] {
@@ -1740,7 +1698,6 @@ mod tests {
     /// refreshes its token, so a new login put in use is said to need them restarted.
     /// Claude Code sessions read the new login by themselves, and nothing is said.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn sessions_running_on_the_old_login_are_counted_and_warned_about() {
         for (tool, make) in MACHINES {
             let m = make("again-sessions");
@@ -1776,7 +1733,6 @@ mod tests {
     /// the old login to write back, and the sign-in says so rather than nothing. Claude Code
     /// sessions read the new login by themselves, and nothing is said.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_process_list_nobody_could_read_is_said_after_a_sign_in() {
         for (tool, make) in MACHINES {
             let m = make("again-listless");
@@ -1917,10 +1873,6 @@ mod tests {
     /// back. Each tool's program is named where there is none, so a seam that let the tool's
     /// program start would fail to start one, never start this machine's own.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_scripted_sign_in_enrols_what_it_stored_without_starting_the_tool() {
         for (tool, make) in MACHINES {
             let m = make("scripted");
@@ -1986,7 +1938,6 @@ mod tests {
     /// A played sign-in that is stopped ends what it says and enrols nothing, as a killed
     /// tool does, and the next one can start.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_stopped_scripted_sign_in_enrols_nothing() {
         for (tool, make) in MACHINES {
             let m = make("scripted-stop");
@@ -2106,7 +2057,6 @@ mod tests {
     /// go of it only once every copy was closed, so the next sign-in was refused as one
     /// already waiting for as long as that took, which ARCHITECTURE.md's Measured facts give.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_cancelled_sign_in_lets_the_next_start_while_a_copy_of_its_lock_is_open() {
         for (tool, make) in MACHINES {
             let m = make("lock-copied");
@@ -2139,7 +2089,6 @@ mod tests {
     /// pressing Cancel nearly always finds a reader waiting. The cancel must not wait with
     /// it, and stopping the tool must end the reading rather than leave it waiting forever.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_cancel_does_not_wait_on_a_tool_that_says_nothing() {
         let patience = Duration::from_secs(20);
         let m = codex_machine("cancel");
@@ -2150,8 +2099,11 @@ mod tests {
         )
         .expect("reserved");
         // Says its address, then nothing, and ends by itself only once `patience` is up.
-        let mut silent = std::process::Command::new("/bin/sh");
-        silent.args(["-c", "echo https://auth.openai.com/ >&2; exec sleep 30"]);
+        let silent = crate::helper::command(
+            &std::env::current_exe().expect("this test"),
+            crate::helper::Job::SaysAnAddress,
+            &m.ctx_home().join("silent"),
+        );
         let watched = watch(silent, pending, None).expect("started");
         let said = watched.said();
         let (heard, hears) = std::sync::mpsc::channel();
@@ -2171,10 +2123,9 @@ mod tests {
         cancels
             .recv_timeout(patience)
             .expect("the cancel did not wait on the tool");
-        assert_eq!(
-            hears.recv_timeout(patience).expect("the reading ended"),
-            None
-        );
+        // libtest's own lines may still be on their way.
+        let ended = std::iter::from_fn(|| hears.recv_timeout(patience).ok()).find(Option::is_none);
+        assert_eq!(ended, Some(None), "the reading ended");
         reserve_signin(
             &m.ctx,
             Permit::for_a_test(),

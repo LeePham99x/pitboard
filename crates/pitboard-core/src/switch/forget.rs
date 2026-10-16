@@ -126,10 +126,6 @@ mod tests {
     /// The login in use is the organisation Anthropic named, not every account of the
     /// person, whatever organisation Claude Code's config names.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn the_account_in_use_is_told_by_its_organisation() {
         let m = two_organisations("forget-by-organisation", "team", Some("org-here"));
         assert!(matches!(
@@ -142,10 +138,6 @@ mod tests {
     /// A config naming no organisation decides nothing, as no config does: the account
     /// Anthropic named for the login stored is the one in use.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_config_naming_no_organisation_decides_nothing() {
         let m = two_organisations("forget-no-organisation", "here", None);
         assert!(matches!(
@@ -159,10 +151,6 @@ mod tests {
     /// login's account into Claude Code's config. The account whose login is stored, as
     /// Anthropic named it, is still the one in use, and the one the config names is not.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn the_account_in_use_cannot_be_forgotten_whatever_the_config_names() {
         let m = machine("forget-drift");
         config_names(&m, "there");
@@ -178,10 +166,6 @@ mod tests {
     /// record names nor one with nothing parked is forgotten: either may hold the only login
     /// it has. An account with a parked login the record does not name is not in use.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn with_nobody_to_say_whose_the_login_is_an_account_with_nothing_parked_is_kept() {
         let m = machine("forget-unidentified");
         let mut state = state::load(&m.ctx).expect("state");

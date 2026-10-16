@@ -1,7 +1,7 @@
 //! The strings a tool may hash a home folder from, and whether a Credential Manager target's
 //! hash suffix is one of them (blocks B2, G4 and H4). Claude Code names a slot's item
 //! `Claude Code-credentials-<hash>` and Codex its opt-in items `cli|<hash>` and
-//! `secrets|<hash>`; which spelling of the folder each hashes is what W14, W21 and W23 need,
+//! `secrets|<hash>`; which spelling of the folder each hashes is what W14, W21 and W23a need,
 //! and what a non-ASCII account name, an 8.3 short name or a `\\?\` prefix can change.
 //!
 //! The probe does not claim either tool's formula. It hashes every candidate spelling with

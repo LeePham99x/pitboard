@@ -595,6 +595,7 @@ mod tests {
             ("ANTHROPIC_API_KEY", "not-a-key"),
             ("CLAUDE_CODE_USE_BEDROCK", "1"),
             ("CLAUDE_CODE_HOVER_REST", "true"),
+            ("CLAUDE_CODE_FORCE_WINDOWS_CREDMAN", "1"),
             ("PITBOARD_API_BASE", "http://127.0.0.1:8080"),
             ("PITBOARD_NO_ARGV", "1"),
         ]);
@@ -613,6 +614,7 @@ mod tests {
         );
         assert_eq!(app.overriding_auth(), cli.overriding_auth());
         assert!(app.hover_rest && cli.hover_rest);
+        assert!(app.credential_manager_forced && cli.credential_manager_forced);
         assert_eq!(app.api_base.as_deref(), Some("http://127.0.0.1:8080"));
         assert_eq!(app.api_base, cli.api_base);
         assert!(!app.argv_fallback() && !cli.argv_fallback());

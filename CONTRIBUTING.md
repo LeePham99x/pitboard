@@ -273,7 +273,7 @@ login, with the homes [AGENTS.md](AGENTS.md#on-windows) names at fresh folders. 
 cannot pass there until a later Windows pull request says so in its Rust counterpart's words:
 
 ```csharp
-[OSCondition(ConditionMode.Exclude, OperatingSystems.Windows, IgnoreMessage = "W<n>: <what it waits on>")]
+[OSCondition(ConditionMode.Exclude, OperatingSystems.Windows, IgnoreMessage = "W<id>: <what it waits on>")]
 ```
 
 In the projects that build only on Windows, `Pitboard.Windows.Tests` and `Pitboard.UITests`:
@@ -330,8 +330,8 @@ cargo nextest run --locked -p pitboard-ffi --features fixture
 are built with.
 
 The whole suite runs on Windows. A Rust test that cannot pass there until a later Windows
-pull request says so with `#[cfg_attr(windows, ignore = "W<n>: <what it waits on>")]`, and in
-no other way: no filter and no `--skip`.
+pull request says so with `#[cfg_attr(windows, ignore = "W<id>: <what it waits on>")]`, the id
+`W14` to `W27`, `W23a`, `W23b` or `W-warm`, and in no other way: no filter and no `--skip`.
 
 From a Mac or Linux, `cargo check --target x86_64-pc-windows-msvc` checks only
 `pitboard-sites` and `pitboard-share-ffi`, since ring compiles C against MSVC's headers.
@@ -394,9 +394,8 @@ foreach ($name in 'USERPROFILE', 'HOME', 'APPDATA', 'LOCALAPPDATA', 'CODEX_HOME'
 [Diagnostics.Process]::Start($app)
 ```
 
-The worlds that seed Claude Code wait for W23a on Windows. Started again, the second copy hands
-its launch to the first, which brings its window forward, and quits. Exit in the icon's menu
-ends it.
+Started again, the second copy hands its launch to the first, which brings its window forward,
+and quits. Exit in the icon's menu ends it.
 
 To open a link, start a second copy with a Pitboard link of the Debug build:
 

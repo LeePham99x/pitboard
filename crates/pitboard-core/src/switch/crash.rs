@@ -55,10 +55,6 @@ macro_rules! each_tool_and_step {
         const _: () = assert!([$($point),*].len() == 2 * POINTS.len());
         $(
             #[test]
-            #[cfg_attr(
-                windows,
-                ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-            )]
             fn $case() {
                 $check(stringify!($case), $make, $point);
             }
@@ -103,10 +99,6 @@ fn recovers_whole(at: &str, make: Make, point: &'static str) {
 /// and both sides were fingerprinted when the record was written, so the common case is a
 /// comparison and not a round trip. That is what makes a switch recoverable on a plane.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_switch_killed_with_nobody_to_ask_is_recovered_from_the_record() {
     for point in POINTS {
         let m = machine(&format!("offline-{}", point.replace('.', "-")));
@@ -153,10 +145,6 @@ fn a_switch_killed_with_nobody_to_ask_is_recovered_from_the_record() {
 /// matching neither side, which is exactly when there is nothing to read off and Anthropic
 /// has to be asked. With nobody to ask, the only right answer is to change nothing.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_switch_whose_token_rotated_while_it_was_interrupted_still_needs_anthropic() {
     let m = machine("rotated-offline");
     let settled = settle(&m.ctx, Permit::for_a_test(), None)
@@ -203,10 +191,6 @@ fn a_switch_whose_token_rotated_while_it_was_interrupted_still_needs_anthropic()
 /// past both fingerprints, is settled by asking Anthropic, whose answer names the
 /// organisation as well as the person.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_switch_between_two_organisations_is_settled_by_the_organisation_anthropic_names() {
     let m = machine("two-organisations-rotated");
     let team = provider::Owner {
@@ -459,10 +443,6 @@ fn enrolling_killed_between_the_write_and_the_record_leaves_nothing_unnamed() {
 /// then records it, and parks nothing. Killed after either, the account is signed in with
 /// the login that was written and every other account still has its own.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn signing_in_again_killed_at_any_step_recovers_to_something_whole() {
     let machines: [(&str, Make); 2] = [("claude", machine), ("codex", codex_machine)];
     for (tool, make) in machines {
@@ -502,10 +482,6 @@ fn signing_in_again_killed_at_any_step_recovers_to_something_whole() {
 /// after the install, the incoming login is gone, and Pitboard used to print "Switched to
 /// work" and exit 0 over an account that was signed out.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_switch_whose_login_was_removed_again_does_not_report_a_switch() {
     let m = machine("did-not-hold");
     let parked_before = m.mem.vault().services();
@@ -552,10 +528,6 @@ fn a_switch_whose_login_was_removed_again_does_not_report_a_switch() {
 /// intent, so a later run with a store that answers decides. Nothing here is a crash: this
 /// is the ordinary shape of a machine whose keychain is locked.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_switch_that_cannot_read_the_store_back_keeps_every_copy_and_its_record() {
     let m = machine("unverified");
     let before = m.mem.live().peek(&m.service).expect("a live login");

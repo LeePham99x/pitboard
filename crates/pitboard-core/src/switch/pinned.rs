@@ -155,7 +155,8 @@ fn signed_in_as_third(m: Machine) -> Machine {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "pins the stores a change touches as macOS and Linux have them: Windows spells a \
+              path with backslashes, and reads Credential Manager's manifest before each item"
 )]
 fn a_document_switch_touches_its_stores_in_the_order_it_always_did() {
     pin(

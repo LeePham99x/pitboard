@@ -634,10 +634,6 @@ mod tests {
     /// Claude Code took another login while Anthropic was being asked about the one it had:
     /// the answer is about a login no longer stored, and is not filed for the one that is.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn an_answer_about_a_login_replaced_meanwhile_is_not_recorded() {
         let m = signed_in_outside("identify-meanwhile");
         m.api.owned_by("access-third-refresh", owner("third"));
@@ -668,10 +664,6 @@ mod tests {
     /// asking about the login: what the read saw the config name is past, and is not filed
     /// over what `use` recorded.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn what_a_read_saw_the_config_name_before_it_was_written_is_not_recorded() {
         let m = machine("identify-config-written-meanwhile");
         config_names(&m, "there");
@@ -714,7 +706,6 @@ mod tests {
 
     /// A Claude Code park in the shape older versions wrote, and Codex gone from Plus to Pro.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_read_records_the_plan_a_login_says() {
         let m = machine("identify-plan");
         let there = state::load(&m.ctx)
@@ -770,10 +761,6 @@ mod tests {
 
     /// Signed in again on Max 20x while a read held the Pro login, parked and then in use.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_plan_read_off_a_login_replaced_meanwhile_is_not_recorded() {
         let m = machine("identify-plan-parked-meanwhile");
         let there = state::load(&m.ctx)
@@ -806,7 +793,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_read_whose_plans_agree_with_the_record_writes_nothing() {
         let m = codex_machine("identify-plans-agree");
         let pitboard = Pitboard::new(m.ctx.clone());
@@ -831,10 +817,6 @@ mod tests {
     /// change that finishes it records what it puts there. A read records nothing meanwhile,
     /// whatever it finds: here a login of an account nobody enrolled.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_read_while_a_switch_is_interrupted_records_nothing() {
         let m = machine("identify-interrupted");
         m.api
@@ -860,10 +842,6 @@ mod tests {
     /// login. A login with no refresh token has no fingerprint, and a record brought forward
     /// from schema 5 names no login, so neither is ever taken for the other.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_login_with_no_fingerprint_is_always_asked_about() {
         let m = machine("identify-no-fingerprint");
         let mut state = state::load(&m.ctx).expect("state");
@@ -990,10 +968,6 @@ mod tests {
     /// token, saves the renewed login with the document's other keys as they were, and names
     /// and records it.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_lapsed_login_is_renewed_under_the_refresh_lock_and_named() {
         let m = lapsed_stored("identify-renews");
         let refreshing = lock_dir(&provider::claude::paths::refresh_lock(&m.ctx));
@@ -1033,10 +1007,6 @@ mod tests {
     /// lock has saved what it renewed to by then. Read again under the lock, that is the
     /// login told, and no refresh token is sent.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_login_a_session_renewed_meanwhile_is_told_and_nothing_is_sent() {
         let m = lapsed_stored("identify-renewed-meanwhile");
         m.api
@@ -1064,10 +1034,6 @@ mod tests {
     /// nothing is written to the store or the vault. Pitboard's record ends as it was: the
     /// copy's name written down before the refresh token was sent is let go of.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_lapsed_login_anthropic_refuses_says_sign_in_again_and_writes_nothing() {
         let m = machine("identify-refused");
         m.sign_in(&lapsed("here-renewed"));
@@ -1095,7 +1061,8 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "a keychain's ceiling is what `security` reads from stdin; Credential Manager's, \
+                  256 pieces, is a_login_credential_manager_could_not_take_back_is_not_renewed's"
     )]
     fn a_login_the_keychain_could_not_take_back_is_not_renewed() {
         let mut m = lapsed_stored("identify-too-large");
@@ -1110,14 +1077,33 @@ mod tests {
         assert_eq!(m.live(), stored);
     }
 
+    // Claude Code's 256 pieces of 2400 characters hold 460800 bytes.
+    #[cfg(windows)]
+    #[test]
+    fn a_login_credential_manager_could_not_take_back_is_not_renewed() {
+        let m = lapsed_stored("identify-too-large-for-pieces");
+        let mut login = m.live().expect("a login stored");
+        login["mcpOAuth"]["large"] = serde_json::json!("x".repeat(460_800));
+        m.mem.live().plant(&m.service, &login.to_string());
+        let stored = m.live();
+
+        let refused = told_now(&m).err().expect("refused");
+
+        assert_eq!(refused.code(), "credential_too_large");
+        assert!(
+            refused
+                .to_string()
+                .contains("past the 460800 Claude Code keeps in Credential Manager"),
+            "{refused}"
+        );
+        assert_eq!(renewals(&m), []);
+        assert_eq!(m.live(), stored);
+    }
+
     /// The exchange spends the refresh token sent, so once Anthropic has answered, Claude
     /// Code's write lock is waited for longer than a change waits: here a session holds it
     /// until a change would have given up on it. The renewed login is saved all the same.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_write_lock_held_once_the_refresh_token_is_spent_is_waited_for() {
         let m = lapsed_stored("identify-write-lock-after");
 
@@ -1140,10 +1126,6 @@ mod tests {
     /// next change saves it, and so does the next read, which must tell whose the login is,
     /// keeping no second copy and renewing nothing again.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn killed_once_anthropic_answered_the_renewed_login_is_saved_or_kept() {
         for (point, next) in [
             ("refresh.exchanged", "change"),
@@ -1196,10 +1178,6 @@ mod tests {
     /// that fails then, the keychain locking or the write failing twice, keeps the renewed
     /// login in the vault, and the next change saves it.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_renewed_login_that_cannot_be_saved_yet_is_kept_for_the_next_change() {
         for (fault, code) in [
             (Fault::Locked, "credential_store_locked"),
@@ -1244,10 +1222,6 @@ mod tests {
     /// holds the refresh token it spent. Where it cannot be saved yet, Claude Code's write
     /// lock being in the way, the change stops with that and sends nothing.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_renewal_left_unsaved_is_saved_before_anything_is_sent() {
         let m = lapsed_stored("identify-left-unsaved");
         killed_once_answered(&m);
@@ -1280,10 +1254,6 @@ mod tests {
     /// while a change under another slot renews that slot's login, and the next change in
     /// its own slot saves it.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_renewal_left_for_another_slot_is_kept_for_it() {
         let m = lapsed_stored("identify-two-slots");
         killed_once_answered(&m);
@@ -1324,10 +1294,6 @@ mod tests {
     /// fingerprint and renews nothing. Once the renewal is saved, the login parked for the
     /// account switched from is the renewed one.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_switch_parks_nothing_while_a_renewal_of_the_login_stored_waits() {
         let m = lapsed_stored("identify-switch-waits");
         killed_once_answered(&m);
@@ -1375,10 +1341,6 @@ mod tests {
     /// token is sent, since the copy's name is written down first and the vault has to answer
     /// for that: nothing is sent and nothing written.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_keychain_locked_before_the_refresh_token_is_sent_stops_the_renewal() {
         let m = lapsed_stored("identify-locked-before-sending");
         let before = state_file(&m);
@@ -1400,10 +1362,6 @@ mod tests {
     /// is spent. What stops says so, and to sign in, and nothing names a copy that was never
     /// made.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_keychain_locked_while_anthropic_answers_says_the_renewal_is_lost() {
         const LOST: &str = "Pitboard renewed Claude Code's login and could not save the renewed \
                             login, so the refresh token stored is spent. Run `claude`, sign in, \
@@ -1424,10 +1382,6 @@ mod tests {
     /// fails. The copy is there all the same, the only renewed login: its name is kept, and
     /// the next change saves it, renewing nothing again.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_copy_written_and_not_read_back_is_kept_for_the_next_change() {
         let m = lapsed_stored("identify-copy-not-read-back");
         m.mem.vault().fault_all(Fault::LocksAfterWrite);
@@ -1456,10 +1410,6 @@ mod tests {
     /// A renewed login saved without Claude Code's write lock, which was never let go of
     /// once Anthropic had answered, is said as a switch says a lock it lost.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_renewal_saved_without_the_write_lock_is_said() {
         let m = lapsed_stored("identify-lock-lost");
 
@@ -1481,10 +1431,6 @@ mod tests {
     /// renews it first where its access token has lapsed, as a change does: the account in
     /// use is told and its usage asked with the renewed login.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_read_renews_a_lapsed_login_to_tell_whose_it_is() {
         let m = lapsed_stored("identify-read-renews");
         m.api.using(
@@ -1524,10 +1470,6 @@ mod tests {
     /// Nothing is renewed for its usage alone. The login Anthropic last named, lapsed, is
     /// known by its fingerprint, so its usage is asked as it is, and Claude Code renews it.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_read_never_renews_a_lapsed_login_it_knows_for_its_usage() {
         let m = machine("identify-read-known-lapsed");
         m.sign_in(&lapsed("here-refresh"));
@@ -1550,10 +1492,6 @@ mod tests {
     /// A read that finds the login refused for good says the account in use has to sign in
     /// again, in words for a login in use rather than a parked one, and writes nothing.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_read_says_sign_in_again_where_the_login_is_refused_for_good() {
         let m = machine("identify-read-refused");
         m.sign_in(&lapsed("here-renewed"));
@@ -1580,10 +1518,6 @@ mod tests {
     /// copy of it has spent the refresh token stored, which Anthropic then refuses: the
     /// account in use is marked so, in words that say to sign in again.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_read_that_loses_the_renewal_says_sign_in_again() {
         let m = lapsed_stored("identify-read-lost");
         // A copy would go on the argument line, so none is made.
@@ -1612,7 +1546,6 @@ mod tests {
     /// Codex's login says whose it is by itself, so it is never renewed to tell, however
     /// long ago its access token lapsed.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_codex_login_is_told_by_its_claims_and_never_renewed() {
         let m = codex_machine("identify-codex-lapsed");
         let mut login = codex_login("here", "here-again");

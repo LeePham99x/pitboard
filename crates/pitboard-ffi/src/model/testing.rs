@@ -1254,6 +1254,15 @@ impl Hand {
         )
     }
 
+    pub(super) fn on_windows(&self) -> Snapshot {
+        crate::present::present_on(
+            pitboard_core::host::Os::Windows,
+            &self.state,
+            self.now.epoch(),
+            &crate::present::testing::Utc,
+        )
+    }
+
     /// How many of the jobs asked for so far are `which`.
     pub(super) fn count(&self, which: fn(&Job) -> bool) -> usize {
         self.asked.iter().filter(|job| which(job)).count()

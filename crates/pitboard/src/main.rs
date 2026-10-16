@@ -671,7 +671,7 @@ fn stow(pitboard: &Pitboard, confirm: impl FnOnce(&str) -> Result<bool, Error>) 
     if let Some(refused) = left.refusal() {
         return Some(Report::failed(Some("stow"), refused));
     }
-    match confirm(&left_question(&left)) {
+    match confirm(&left_question(pitboard_core::host::OS, &left)) {
         Ok(true) => {}
         Ok(false) => return None,
         Err(refused) => return Some(Report::failed(Some("stow"), refused)),
@@ -685,21 +685,18 @@ fn stow(pitboard: &Pitboard, confirm: impl FnOnce(&str) -> Result<bool, Error>) 
                 "account": stowed.kept.account(),
                 "dropped": stowed.dropped,
             }),
-            stowed_lines(&stowed),
+            stowed_lines(pitboard_core::host::OS, &stowed),
         )
     }))
 }
 
-/// The question `pitboard stow` asks before it puts the file away: what it holds, what goes
-/// with it, and what becomes of Claude Code's sessions.
-fn left_question(left: &pitboard_core::switch::Left) -> String {
-    let lines = pitboard_core::words::left_lines(left);
+fn left_question(os: pitboard_core::host::Os, left: &pitboard_core::switch::Left) -> String {
+    let lines = pitboard_core::words::left_lines(os, left);
     format!("{}\nPut it away? [y/N] ", lines.join("\n"))
 }
 
-/// What `pitboard stow` says it did, a line each.
-fn stowed_lines(stowed: &pitboard_core::switch::Stowed) -> String {
-    pitboard_core::words::stowed_lines(stowed)
+fn stowed_lines(os: pitboard_core::host::Os, stowed: &pitboard_core::switch::Stowed) -> String {
+    pitboard_core::words::stowed_lines(os, stowed)
         .into_iter()
         .map(|line| format!("{line}\n"))
         .collect()
@@ -1394,10 +1391,6 @@ mod tests {
     /// asked, and putting it away is not tried, so the file stays and the activity log has no
     /// line of it. On a machine in memory, whose Anthropic answers from a script.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn stow_refuses_a_login_of_an_account_not_enrolled_as_the_look_found_it() {
         use pitboard_core::provider::Owner;
         use pitboard_core::testing::{FixedClock, MemoryHost, ScriptedApi, live_service};
@@ -1456,17 +1449,19 @@ mod tests {
     /// Once it has, it says the same of what it did.
     #[test]
     fn stow_asks_saying_what_the_file_holds_and_says_what_it_did() {
+        use pitboard_core::host::Os;
         use pitboard_core::switch::{Foreseen, Kept, Left, Stowed};
         let path = std::path::PathBuf::from("/Users/x/.claude/.credentials.json");
         let parked = Kept::ParkedNow {
             label: "work".into(),
         };
-        let question = left_question(&Left {
+        let left = Left {
             path: path.clone(),
             seen: "0123456789abcdef".into(),
             login: Foreseen::Kept(parked),
             dropped: vec!["mcpOAuth".into()],
-        });
+        };
+        let question = left_question(Os::MacOs, &left);
         assert_eq!(
             question,
             "/Users/x/.claude/.credentials.json holds `work`'s login, and Pitboard holds no \
@@ -1479,11 +1474,20 @@ mod tests {
              signed out.\n\
              Put it away? [y/N] "
         );
-        let said = stowed_lines(&Stowed {
-            path,
-            kept: Kept::NoLogin,
-            dropped: vec!["mcpOAuth".into(), "coworkRemoteDevice".into()],
-        });
+        let on_windows = left_question(Os::Windows, &left);
+        assert!(
+            on_windows.contains("Claude Code's document in Credential Manager keeps its own.")
+                && on_windows.contains("such as one in a sign-in over SSH with a key, is signed"),
+            "{on_windows}"
+        );
+        let said = stowed_lines(
+            Os::MacOs,
+            &Stowed {
+                path,
+                kept: Kept::NoLogin,
+                dropped: vec!["mcpOAuth".into(), "coworkRemoteDevice".into()],
+            },
+        );
         assert_eq!(
             said,
             "Deleted /Users/x/.claude/.credentials.json, which held no Claude Code login.\n\

@@ -75,7 +75,6 @@ impl Drop for Watching {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn an_account_at_the_share_is_switched_from_once() {
     let env = two_accounts("watch-switches");
     env.an_hour_on();
@@ -122,7 +121,6 @@ fn an_account_at_the_share_is_switched_from_once() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn below_the_share_nothing_moves_and_the_share_is_the_one_asked_for() {
     let env = two_accounts("watch-below");
     env.an_hour_on();
@@ -147,7 +145,6 @@ fn below_the_share_nothing_moves_and_the_share_is_the_one_asked_for() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn with_no_account_to_go_to_it_says_so_and_nothing_moves() {
     let env = two_accounts("watch-no-room");
     env.an_hour_on();
@@ -165,7 +162,6 @@ fn with_no_account_to_go_to_it_says_so_and_nothing_moves() {
 /// A reason is said with the reset it was recorded under, so a later answer giving the same
 /// window's reset a second off is told as the same reason, and recorded once.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn a_reason_is_said_with_the_reset_it_was_recorded_under() {
     let env = two_accounts("watch-said-window");
     env.an_hour_on();
@@ -199,7 +195,6 @@ fn a_reason_is_said_with_the_reset_it_was_recorded_under() {
 /// While it runs, `watch` names the account it watches once it has read every account, and
 /// again whenever that changes, as after a switch somebody makes by hand and one back.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn watching_says_which_account_it_watches_when_that_changes() {
     let env = two_accounts("watch-watching");
     env.an_hour_on();
@@ -213,14 +208,17 @@ fn watching_says_which_account_it_watches_when_that_changes() {
     }
 }
 
-/// A warning a decision finds is printed though the line it comes with was printed before. A
-/// sign-in over SSH leaves its login in a file behind the keychain and Claude Code's config
-/// naming that account, so whose login is stored is in doubt, and the decision that settles it
-/// under the lock comes to the account already watched, and finds the file.
-#[cfg(target_os = "macos")]
+// A warning a decision finds is printed though the line it comes with was printed before. A
+// sign-in over SSH leaves its login in a file behind the keychain or Credential Manager and
+// Claude Code's config naming that account, so whose login is stored is in doubt, and the
+// decision that settles it under the lock comes to the account already watched, and finds the
+// file. Linux keeps no file behind a store.
+#[cfg(any(target_os = "macos", windows))]
 #[test]
 fn a_warning_is_printed_though_the_line_it_comes_with_was_printed_before() {
     let env = two_accounts("watch-warned");
+    #[cfg(windows)]
+    env.turn_credential_manager_on();
     env.an_hour_on();
     let watch = Watching::start(&env);
     assert_eq!(watch.next()["event"], "watching");
@@ -252,7 +250,6 @@ fn a_warning_is_printed_though_the_line_it_comes_with_was_printed_before() {
 /// What a decision found on the way, such as a sign-in that overrides the login Pitboard
 /// moves, is printed with what it came to, as every command prints its warnings.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn warnings_found_while_deciding_are_printed() {
     let env = two_accounts("watch-warnings");
     env.an_hour_on();

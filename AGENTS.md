@@ -84,6 +84,10 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
   Codex's `cli|*` and `secrets|*` targets, and anything under `Codex MCP Credentials`.
 - Never use `cmdkey /delete`, `vaultcmd` or PowerShell's credential modules on those names.
   Tests write only `pitboard-citest-*` items or the slot hashed from their own folder.
+- A build for tests refuses, before `CredReadW`, `CredWriteW` or `CredDeleteW`, every name of
+  those families but the slots hashed from its own scratch `CLAUDE_CONFIG_DIR` and private
+  sign-in folder, and their pieces.
+- Never print what a Credential Manager item holds, from a test, `doctor` or the probe.
 - Never read, copy, rewrite or delete `%USERPROFILE%\.claude`, `%USERPROFILE%\.claude.json`,
   `%USERPROFILE%\.codex`, `%ProgramData%\OpenAI\Codex`, `C:\Program Files\ClaudeCode`, or
   the `%LOCALAPPDATA%\Pitboard` of an account that holds real logins.

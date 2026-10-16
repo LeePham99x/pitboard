@@ -184,10 +184,6 @@ fn last_revision(told: &Told) -> Option<u64> {
 /// tells its listener each snapshot in order, the last of them the one `snapshot` gives.
 /// Before it is started it shows nothing and asks nothing.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_started_model_reads_the_accounts_and_tells_its_listener_in_order() {
     let world = World::new("reads");
     world.enrolled("work", "here", 42.0);
@@ -221,10 +217,6 @@ fn a_started_model_reads_the_accounts_and_tells_its_listener_in_order() {
 /// A change another front end makes, here a rename typed in a terminal, reaches the
 /// listener within a look or two, read from what is already known: nobody is asked.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_change_another_front_end_makes_is_told_without_asking_anyone() {
     let world = World::new("elsewhere");
     world.enrolled("work", "here", 10.0);
@@ -249,10 +241,6 @@ fn a_change_another_front_end_makes_is_told_without_asking_anyone() {
 /// out, and `send` only posts. The snapshot it is given there is never older than the one
 /// it is being told of.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_listener_may_call_the_model_while_it_is_told() {
     let world = World::new("inside");
     world.enrolled("work", "here", 10.0);
@@ -287,10 +275,6 @@ fn a_listener_may_call_the_model_while_it_is_told() {
 /// Intents sent from many threads at once, each starting a read, make many snapshots, and
 /// they reach the listener in order and one at a time, ending with the newest.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn snapshots_made_while_many_threads_send_arrive_in_order() {
     let world = World::new("many");
     world.enrolled("work", "here", 10.0);
@@ -322,10 +306,6 @@ fn snapshots_made_while_many_threads_send_arrive_in_order() {
 /// letting go of the listener and the core. The model still answers `snapshot`, and `send`
 /// comes to nothing.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn shutdown_stops_the_timers_the_lanes_and_the_listener() {
     let world = World::new("shutdown");
     world.enrolled("work", "here", 10.0);
@@ -360,10 +340,6 @@ fn shutdown_stops_the_timers_the_lanes_and_the_listener() {
 /// which never waits on the listener, and not for the thread it is called on. The call it is
 /// made from is the last the listener is told of, and every thread ends.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_listener_may_shut_the_model_down_while_it_is_told() {
     let world = World::new("shut-inside");
     world.enrolled("work", "here", 10.0);
@@ -403,10 +379,6 @@ fn a_listener_may_shut_the_model_down_while_it_is_told() {
 /// making a snapshot. A drop that joined either thread would wait until the test let it go.
 /// Once let go, the threads end, letting go of the listener and the core.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn dropping_the_model_waits_for_nothing() {
     let world = World::new("drop");
     world.enrolled("work", "here", 10.0);
@@ -494,7 +466,6 @@ fn in_use<'a>(provider: &'a str, label: &'a str) -> impl Fn(&[Snapshot]) -> bool
 /// snapshot as what Codex's last switch said, and outlasts the read after the switch, which
 /// says nothing of it. The switch is said to be under way until that read has landed.
 #[test]
-#[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
 fn a_codex_switchs_warning_reaches_the_snapshot() {
     let world = two_codex_accounts("codex-switch");
     world.host.runs("codex", 2);
@@ -553,7 +524,6 @@ fn a_codex_switchs_warning_reaches_the_snapshot() {
 /// the person; told to go ahead, ChatGPT is asked to quit, the switch is made once it has,
 /// with nothing left running the old login to warn about, and ChatGPT is opened again.
 #[test]
-#[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
 fn quitting_the_app_holding_the_login_switches_and_opens_it_again() {
     let world = two_codex_accounts("codex-quit");
     world.host.runs_at("codex", &[CHATGPT_CODEX]);
@@ -617,7 +587,6 @@ fn quitting_the_app_holding_the_login_switches_and_opens_it_again() {
 /// restart line it keeps where the core counted nothing, rather than in a notice of its own
 /// under the code's heading.
 #[test]
-#[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
 fn a_switch_on_a_process_list_nobody_could_read_says_so_and_asks_nothing() {
     let world = two_codex_accounts("codex-listless");
     world.host.without_a_process_list();
@@ -684,10 +653,6 @@ fn a_switch_on_a_process_list_nobody_could_read_says_so_and_asks_nothing() {
 /// its other queues did: here the switch waits on the app's own code saying whether ChatGPT
 /// runs, and a read somebody asks for meanwhile lands, with the switch still under way.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_read_answers_while_a_switch_waits() {
     let world = World::new("read-while-switching");
     world.enrolled("work", "here", 10.0);
@@ -736,10 +701,6 @@ fn a_read_answers_while_a_switch_waits() {
 /// with the switch still under way and nothing switched. Once the session lets go, the
 /// switch is made.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_read_answers_while_the_core_switches() {
     let world = World::new("read-while-the-core-switches");
     world.enrolled("work", "here", 10.0);
@@ -874,10 +835,6 @@ fn paste(code: &str) -> Intent {
 /// it signed in to is parked beside the account in use, and the sheet it was started from
 /// closes.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_code_claude_code_refused_is_typed_again_into_the_same_sign_in() {
     let at = signing_in_world("paste-again");
     at.model.send(Intent::PresentSheet {
@@ -925,10 +882,6 @@ fn a_code_claude_code_refused_is_typed_again_into_the_same_sign_in() {
 /// with a stand-in for `claude`: signing in again to the account in use puts its new login in
 /// use, keeps it the account in use, and says so beside what Claude Code's last switch said.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn signing_in_again_to_the_account_in_use_puts_its_new_login_in_use() {
     let at = signing_in_world("sign-in-again");
     at.model.send(Intent::PresentSheet {
@@ -972,10 +925,6 @@ fn signing_in_again_to_the_account_in_use_puts_its_new_login_in_use() {
 /// a stand-in for `claude` waiting for a code: cancelling stops the tool, whose process is
 /// gone, nothing is typed to it or enrolled, and the sign-in's thread ends.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn cancelling_a_sign_in_stops_its_tool() {
     let at = signing_in_world("cancel");
     at.model.send(sign_in("travel"));
@@ -1004,10 +953,6 @@ fn cancelling_a_sign_in_stops_its_tool() {
 /// It was refused as a sign-in already waiting, since the stop runs on the lane of sign-in
 /// calls while the new sign-in started at once on a thread of its own.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_sign_in_asked_for_at_once_after_a_cancel_starts_once_that_one_has_stopped() {
     let at = signing_in_world("cancel-then-sign-in");
     at.model.send(sign_in("travel"));
@@ -1046,10 +991,6 @@ fn a_sign_in_asked_for_at_once_after_a_cancel_starts_once_that_one_has_stopped()
 /// It waited for the thread of the one cancelled, which ends only once its tool's output has
 /// closed, and showed it as starting all that while.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_sign_in_after_a_cancel_waits_for_no_output_the_tool_stopped_left_open() {
     let at = signing_in_world_with(
         "cancel-output-held",
@@ -1100,10 +1041,6 @@ fn a_sign_in_after_a_cancel_waits_for_no_output_the_tool_stopped_left_open() {
 /// browser, for ever. An app shuts the model down as it quits, and its process ends once that
 /// returns, which ends no tool it started: a stop still under way then never comes.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn shutting_down_stops_a_sign_in_under_way() {
     let at = signing_in_world("shutdown-signing-in");
     at.model.send(sign_in("travel"));
@@ -1124,10 +1061,6 @@ fn shutting_down_stops_a_sign_in_under_way() {
 // On the real core, where Claude Code's program is nowhere it looks: the sheet says so under
 // the tool before Sign In, and a sign-in asked for anyway leaves it said there.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_tool_the_core_cannot_find_is_said_missing_in_its_sheet() {
     let world = World::new("no-claude");
     world.enrolled("work", "here", 10.0);
@@ -1282,10 +1215,6 @@ fn read_and_said(told: &[Snapshot]) -> bool {
 /// snapshot it is part of is told. Asked under the lock `snapshot` takes, it would have
 /// waited on itself, and nothing more been told.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn the_persons_clock_is_asked_with_no_lock_held() {
     let world = World::new("clock-inside");
     world.enrolled("work", "here", 10.0);
@@ -1303,10 +1232,6 @@ fn the_persons_clock_is_asked_with_no_lock_held() {
 /// where it says something new, with nothing sent and nothing else due: the minute tick, run
 /// here every few milliseconds.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn the_minute_tick_makes_what_is_shown_again() {
     let world = World::new("tick");
     world.enrolled("work", "here", 10.0);
@@ -1333,10 +1258,6 @@ fn the_minute_tick_makes_what_is_shown_again() {
 /// Renaming and forgetting from the app reach the core, and the accounts are read after
 /// each: the rename names the account anew, and forgetting takes it away.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn renaming_and_forgetting_reach_the_core() {
     let world = World::new("rename-forget");
     world.enrolled("work", "here", 10.0);
@@ -1371,10 +1292,6 @@ fn renaming_and_forgetting_reach_the_core() {
 /// core: the read says the file is there, the sheet says whose the login is, and once it is
 /// put away the file is gone and the read after it says nothing more of it.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn putting_away_a_login_left_in_a_file_reaches_the_core() {
     let world = World::new("stow");
     world.enrolled("work", "here", 10.0);
@@ -1421,10 +1338,6 @@ fn putting_away_a_login_left_in_a_file_reaches_the_core() {
 /// Naming the login signed in now from its sheet enrols it with the core, and the sheet
 /// closes once it has.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn naming_the_login_signed_in_now_enrols_it() {
     let world = World::new("name");
     world.signed_in("here", 10.0);
@@ -1510,10 +1423,6 @@ fn with_a_look_behind_a_read(
 /// index's time is set back a minute before the model starts, so that the rename's write
 /// moves it whatever second it is made in.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_rename_is_read_after_it_whatever_the_poll_finds_meanwhile() {
     let world = World::new("rename-looked-at");
     world.enrolled("work", "here", 10.0);
@@ -1536,10 +1445,6 @@ fn a_rename_is_read_after_it_whatever_the_poll_finds_meanwhile() {
 /// The same for naming the login signed in now, where no account is enrolled yet, so that
 /// there is no account index until the name writes one.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn naming_the_login_in_use_is_read_after_it_whatever_the_poll_finds_meanwhile() {
     let world = World::new("name-looked-at");
     world.signed_in("here", 10.0);
@@ -1566,10 +1471,6 @@ fn naming_the_login_in_use_is_read_after_it_whatever_the_poll_finds_meanwhile() 
 /// The same for a sign-in, on the real core with a stand-in for `claude`: what it enrols is
 /// read after it.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_sign_in_is_read_after_it_enrols_whatever_the_poll_finds_meanwhile() {
     let mut world = World::new("sign-in-looked-at");
     world.enrolled("work", "here", 10.0);
@@ -1629,10 +1530,6 @@ fn advised(told: &[Snapshot]) -> bool {
 /// window still says it: the owner's decision. The Swift kept the record in memory and told
 /// it again after every relaunch.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn a_run_out_is_notified_once_across_a_relaunch() {
     let world = World::new("run-out");
     world.enrolled("work", "here", 100.0);
@@ -1686,10 +1583,6 @@ fn a_run_out_is_notified_once_across_a_relaunch() {
 /// switch is said in a notification with nothing to switch back to, the activity log records
 /// it as automatic and made by the app, and the account switched to stays in use.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn an_account_at_its_share_is_switched_from_by_itself_on_the_real_core() {
     let world = World::new("auto-switch");
     world.enrolled("work", "here", 97.0);
@@ -1737,10 +1630,6 @@ fn an_account_at_its_share_is_switched_from_by_itself_on_the_real_core() {
 /// asked for. Taken as no file, as it was while any failure to read it read as none, the
 /// model opened the window and kept the defaults in its place.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn preferences_that_cannot_be_read_are_not_a_first_launch() {
     let world = World::new("prefs-unreadable");
     world.enrolled("work", "here", 100.0);
@@ -1767,10 +1656,6 @@ fn preferences_that_cannot_be_read_are_not_a_first_launch() {
 /// them in UserDefaults, one store for every Pitboard directory: the owner's decision moved
 /// them.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn the_apps_preferences_follow_its_pitboard_directory() {
     let one = World::new("prefs-one");
     one.enrolled("work", "here", 10.0);
@@ -1943,10 +1828,6 @@ fn the_machine_is_kept_over_the_real_core() {
 /// An account 0.8.0 enrolled keeps its window and the sign-in in it: the window's store is
 /// derived from the account's id, which an account enrolled then keeps.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn an_account_enrolled_by_0_8_0_keeps_its_window() {
     let world = World::new("windows-0-8-0");
     world.enrolled("work", "here", 10.0);
@@ -1980,10 +1861,6 @@ fn an_account_enrolled_by_0_8_0_keeps_its_window() {
 /// taken off the record once deleted; and an account forgotten in a terminal has its window
 /// closed and its store asked for, the record keeping it until the app has deleted it.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn the_windows_records_are_kept_in_the_apps_own_directory() {
     use super::{DownloadEnd, EarlierWindowRecords, WindowsLaunch, WindowsPlace};
     use std::collections::HashMap;
@@ -2115,10 +1992,6 @@ fn the_windows_records_are_kept_in_the_apps_own_directory() {
 /// not meant: an elevated app is to be refused whole, which the app phase of the Windows
 /// plan does, and until then the platform's delete is not gated.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-)]
 fn the_windows_records_are_not_written_where_pitboard_may_change_nothing() {
     use super::{EarlierWindowRecords, WindowsLaunch, WindowsPlace};
     use std::collections::HashMap;

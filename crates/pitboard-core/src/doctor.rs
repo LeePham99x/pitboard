@@ -61,6 +61,8 @@ pub(crate) struct Facts {
     pub(crate) credential: Result<Option<Value>, store::Error>,
     /// What the live login costs against the store's ceiling, where there is one.
     pub(crate) credential_cost: Option<store::Cost>,
+    // `PITBOARD_NO_ARGV=1`, which nothing on Windows has an argument line to refuse.
+    pub(crate) no_argv: bool,
     /// What is taking up the room, largest first: (what it is, bytes).
     pub(crate) credential_parts: Vec<(String, usize)>,
     pub(crate) home: PathBuf,
@@ -207,6 +209,9 @@ pub(crate) struct CodexFacts {
     /// Every `codex` running as this user, by where it runs from. `None` where that could
     /// not be asked.
     pub(crate) running: Option<Vec<crate::holder::Holding>>,
+    // Credential Manager's `cli|` and `secrets|` items of Codex's, counted by name while it
+    // keeps its login in the file (`codex_windows_stores`).
+    pub(crate) stored_elsewhere: (usize, usize),
 }
 
 // What Windows says of the account's folders, beside the home Pitboard reads them from.
@@ -240,6 +245,8 @@ pub(crate) enum CodexLoginTrouble {
     NotAnAccount(String),
     /// Unreadable, or read and not one account's login.
     Unusable(String),
+    // `CODEX_HOME` names no folder, so Codex does not start: Windows' alone.
+    NoHome(String),
 }
 
 pub(crate) struct ParkFact {
@@ -454,6 +461,7 @@ pub(crate) fn gather(ctx: &Context) -> Facts {
             .ok()
             .flatten()
             .and_then(|raw| store::cost(&claude_live::chain(ctx), &service, &raw)),
+        no_argv: !ctx.argv_fallback(),
         credential_parts: store::read(&claude_live::chain(ctx), &service)
             .ok()
             .flatten()
@@ -670,9 +678,29 @@ fn codex_facts(ctx: &Context, state: Option<&State>) -> CodexFacts {
         version: program.as_deref().and_then(codex_version),
         program,
         running: running_codex(ctx),
+        stored_elsewhere: if backend == codex::Backend::File {
+            stored_elsewhere(ctx)
+        } else {
+            (0, 0)
+        },
         auth_file,
         home,
     }
+}
+
+// A setting Pitboard does not read, such as an enterprise's cloud configuration, can still keep
+// a session's login there. By name alone, so no item's secret is ever read.
+fn stored_elsewhere(ctx: &Context) -> (usize, usize) {
+    use crate::provider::names::{Family, family};
+    let count = |prefix: &str, of: Family| {
+        ctx.host().credential_names(prefix).map_or(0, |names| {
+            names.iter().filter(|name| family(name) == Some(of)).count()
+        })
+    };
+    (
+        count("cli|", Family::CodexCli),
+        count("secrets|", Family::CodexSecrets),
+    )
 }
 
 /// Codex's own word for where it keeps its login, as `cli_auth_credentials_store` spells
@@ -704,7 +732,13 @@ const PROJECTS_NOT_READ: &str = "Pitboard does not read a project's own \
 fn codex_login(ctx: &Context) -> Result<Option<CodexLogin>, CodexLoginTrouble> {
     let tool = crate::provider::codex();
     let unusable = |e: crate::provider::ProviderError| CodexLoginTrouble::Unusable(e.to_string());
-    let Some(credential) = tool.read_live(ctx).map_err(unusable)? else {
+    let Some(credential) = tool.read_live(ctx).map_err(|e| match e {
+        crate::provider::ProviderError::CodexHomeMissing { .. } => {
+            CodexLoginTrouble::NoHome(e.to_string())
+        }
+        other => unusable(other),
+    })?
+    else {
         return Ok(None);
     };
     // Whether it is one account's login at all, which is the question a park asks of it.
@@ -992,7 +1026,11 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
 
     // A login that grows past the ceiling cannot be switched at all, and it grows by things
     // done elsewhere, so it is worth saying before the day it refuses.
-    if let Some(price) = facts.credential_cost {
+    if let (Some(price), Ok(store::Backend::CredentialManager)) =
+        (facts.credential_cost, &facts.backend)
+    {
+        checks.push(judge_pieces(price, &facts.credential_parts));
+    } else if let Some(price) = facts.credential_cost {
         let (bytes, limit) = (price.needs, price.limit);
         checks.push(if price.refused() {
             // The refusal was asked for. Say what it will cost when the day comes rather
@@ -1033,8 +1071,36 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
         });
     }
 
+    if facts.no_argv && facts.os == Os::Windows {
+        checks.push(warn(
+            "no_argv",
+            "PITBOARD_NO_ARGV",
+            "set, and it changes nothing on Windows",
+            "Claude Code's Credential Manager store takes a login of any size it writes in \
+             pieces, never on an argument line. Unset it.",
+        ));
+    }
+
     checks.push(match &facts.backend {
         Ok(store::Backend::Keychain) => ok("credential_store", "credential store", "keychain"),
+        // Enterprise persistence (`credman_attributes`).
+        Ok(store::Backend::CredentialManager) => {
+            let detail = format!(
+                "Credential Manager  ·  {}/{}  ·  every logon of yours on this PC reads it",
+                facts.service, facts.account
+            );
+            if facts.windows.as_ref().is_some_and(|homes| homes.roams) {
+                warn(
+                    "credential_store",
+                    "credential store",
+                    detail,
+                    "Your profile roams, and Credential Manager takes Claude Code's login with it \
+                     to every PC you sign in to, so a switch here changes the login there too.",
+                )
+            } else {
+                ok("credential_store", "credential store", detail)
+            }
+        }
         Ok(store::Backend::File) => {
             let detail = format!("plaintext file  ·  {}", facts.credential_file.display());
             match facts.os {
@@ -1044,19 +1110,8 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
                     detail,
                     "Claude Code fell back to a file, which means a keychain write failed at some point.",
                 ),
-                Os::Linux => ok("credential_store", "credential store", detail),
-                // Claude Code has no keychain on Windows: the file is where it keeps the
-                // login unless it uses Credential Manager, which W22 tells apart. Until then
-                // its chain there is a store Pitboard does not read, never the file, so this
-                // is not reached; and the file alone says nothing of which login is in use
-                // while Credential Manager may hold another.
-                Os::Windows => warn(
-                    "credential_store",
-                    "credential store",
-                    detail,
-                    "Claude Code may keep its login in Credential Manager instead, which \
-                     Pitboard does not read yet.",
-                ),
+                // The chain is the file on Windows only where Credential Manager holds no login.
+                Os::Linux | Os::Windows => ok("credential_store", "credential store", detail),
             }
         }
         // No tool keeps its login in Pitboard's sealed files.
@@ -1095,7 +1150,14 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
             "credential_store",
             "credential store",
             e.to_string(),
-            "Treat this as unknown, never as empty.",
+            match facts.os {
+                Os::MacOs | Os::Linux => "Treat this as unknown, never as empty.",
+                Os::Windows => {
+                    "Treat this as unknown, never as empty. While nothing turns Claude Code's \
+                     Credential Manager store on, its sessions read only .credentials.json, so a \
+                     login left only in Credential Manager is signed out to them."
+                }
+            },
         ),
     });
 
@@ -1562,6 +1624,17 @@ fn judge_credential(facts: &Facts) -> Check {
         // Read in 2.1.294 (the register's `locked_keychain_keeps_last_login`): a session
         // keeps serving the login it last read while the keychain is locked, and one that
         // read none reads the keychain as empty and falls through to the file.
+        Err(store::Error::Locked) if facts.os == Os::Windows => fail(
+            "credential",
+            "credential",
+            "Credential Manager cannot be reached from this logon",
+            format!(
+                "A network logon, as a sign-in over SSH with a key, has no Credential Manager. \
+                 Run Pitboard from a desktop session. A Claude Code session started from this \
+                 logon reads only {}.",
+                facts.credential_file.display()
+            ),
+        ),
         Err(store::Error::Locked) => fail(
             "credential",
             "credential",
@@ -1595,16 +1668,9 @@ fn judge_credential(facts: &Facts) -> Check {
     }
 }
 
-/// The fallback file behind the keychain, with a login in it, none, or what cannot be read.
-///
-/// Read in 2.1.294: a sign-in where the keychain is locked writes its login to the file and
-/// leaves the keychain's in place (`locked_sign_in_writes_fallback`), and a keychain write
-/// deletes the file only where the keychain held nothing before
-/// (`fallback_outlives_keychain_writes`). So the file stays through every switch, and a
-/// session that cannot read the keychain signs in with a login in it whatever Pitboard
-/// switched to. A session already running watches the file by a look at it, whatever it
-/// holds and whether or not it can be read, and while it is there takes a switch only at
-/// its login's next renewal (`fallback_file_pins_session_login`).
+// What leaves the file and keeps it there: `locked_sign_in_writes_fallback` and
+// `fallback_outlives_keychain_writes` on macOS, `credman_unreachable_writes_file` and
+// `credman_migration` on Windows.
 fn judge_fallback_login(facts: &Facts) -> Option<Check> {
     let left = facts.fallback_login.as_ref()?;
     let path = left.path.display();
@@ -1612,6 +1678,20 @@ fn judge_fallback_login(facts: &Facts) -> Option<Check> {
         "While it is there, Claude Code sessions already running at a switch {}.",
         words::kept_until_renewed()
     );
+    let (cannot, could_not, such_as, as_login) = match facts.os {
+        Os::MacOs | Os::Linux => (
+            "cannot read the keychain",
+            "the keychain could not be read",
+            "in a session started over SSH",
+            "`/login` over SSH does",
+        ),
+        Os::Windows => (
+            "cannot reach Credential Manager",
+            "Credential Manager could not be reached",
+            "in a sign-in over SSH with a key",
+            "`/login` does in a sign-in over SSH with a key",
+        ),
+    };
     let (detail, advice) = match &left.fingerprint {
         Ok(Some(fingerprint)) => (
             format!(
@@ -1623,9 +1703,8 @@ fn judge_fallback_login(facts: &Facts) -> Option<Check> {
                 }
             ),
             format!(
-                "Claude Code signs in with this wherever it cannot read the keychain, such as \
-                 in a session started over SSH, and no switch reaches it. A sign-in made where \
-                 the keychain could not be read leaves one, as `/login` over SSH does. \
+                "Claude Code signs in with this wherever it {cannot}, such as {such_as}, and no \
+                 switch reaches it. A sign-in made where {could_not} leaves one, as {as_login}. \
                  {running} `pitboard stow` keeps this login for its account, where Pitboard \
                  holds no other it can switch to, then deletes the file, which leaves one login \
                  for every session."
@@ -1642,9 +1721,10 @@ fn judge_fallback_login(facts: &Facts) -> Option<Check> {
             format!("{path}  ·  not read: {e}"),
             format!(
                 "Pitboard could not read it, so whether it holds a login, which a session that \
-                 cannot read the keychain signs in with, cannot be told, and `pitboard stow` \
-                 cannot put it away. {running} Deleting it lets them follow a switch, and takes \
-                 whatever it holds with it: `rm {path}`."
+                 {cannot} signs in with, cannot be told, and `pitboard stow` cannot put it away. \
+                 {running} Deleting it lets them follow a switch, and takes whatever it holds \
+                 with it: `{}`.",
+                facts.os.remove_file_command(&left.path)
             ),
         ),
     };
@@ -1831,6 +1911,33 @@ fn judge_storage_v5(facts: &Facts) -> Check {
             "storage_v5",
             "storage v5",
             "switched on; the keychain is still where the login is",
+        ),
+    }
+}
+
+// On Windows: one item to 2400 bytes, 2400-character pieces of base64 to 256 (`credman_chunking`).
+fn judge_pieces(price: store::Cost, parts: &[(String, usize)]) -> Check {
+    let (bytes, limit) = (price.needs, price.limit);
+    match crate::provider::claude::pieces::pieces_for(bytes) {
+        None => fail(
+            "credential_size",
+            "login size",
+            format!(
+                "{bytes} bytes, past the {limit} Claude Code keeps in Credential Manager{}",
+                biggest(parts)
+            ),
+            "Neither Pitboard nor Claude Code can write a login this size there. Sign out of \
+             MCP servers you no longer use to make it smaller.",
+        ),
+        Some(0) => ok(
+            "credential_size",
+            "login size",
+            format!("{bytes} bytes, in one item"),
+        ),
+        Some(pieces) => ok(
+            "credential_size",
+            "login size",
+            format!("{bytes} bytes, in {pieces} pieces of 2400 characters"),
         ),
     }
 }
@@ -2351,10 +2458,16 @@ fn judge_codex(
                     facts.backend_remedy
                 ),
                 _ => format!(
-                    "Pitboard reads only Codex's file store, auth.json, and will not touch the \
-                     keychain item Codex created for itself, because every read of it would \
-                     ask you for permission, so no enrolled Codex account can be switched to. \
-                     {}.",
+                    "Pitboard reads only Codex's file store, auth.json, and {}, so no enrolled \
+                     Codex account can be switched to. {}.",
+                    match os {
+                        Os::MacOs | Os::Linux => {
+                            "will not touch the keychain item Codex created for itself, because \
+                             every read of it would ask you for permission"
+                        }
+                        Os::Windows =>
+                            "does not follow Codex into a store it uses only when told to",
+                    },
                     facts.backend_remedy
                 ),
             },
@@ -2453,7 +2566,37 @@ fn judge_codex(
                  account's. Signing in with `codex` again writes a fresh one."
                     .into(),
             )),
+            Err(CodexLoginTrouble::NoHome(why)) => checks.push(broken(
+                "codex_login",
+                "Codex login",
+                why.clone(),
+                String::new(),
+            )),
         }
+    }
+
+    let (cli, secrets) = facts.stored_elsewhere;
+    if file && cli + secrets > 0 {
+        let items = [(cli, "`cli|`"), (secrets, "`secrets|`")]
+            .into_iter()
+            .filter(|&(count, _)| count > 0)
+            .map(|(count, prefix)| match count {
+                1 => format!("1 {prefix} item"),
+                many => format!("{many} {prefix} items"),
+            })
+            .collect();
+        checks.push(Check {
+            advice: "Codex keeps its login there where a setting Pitboard does not read, such as \
+                     an enterprise's cloud configuration in a session of `codex`, chooses \
+                     `keyring` or `auto`. A `secrets|` item also keeps the key of Codex's MCP \
+                     logins. Pitboard switches only auth.json."
+                .into(),
+            ..ok(
+                "codex_credential_manager",
+                "Codex in Credential Manager",
+                words::listed(items),
+            )
+        });
     }
 
     // Each Codex account, the way Claude Code's are judged, in this section and under this
@@ -3896,6 +4039,7 @@ mod tests {
                 limit: 4032,
                 second_route: true,
             }),
+            no_argv: false,
             service: "Claude Code-credentials".into(),
             account: "someone".into(),
             default_slot: true,
@@ -3973,6 +4117,7 @@ mod tests {
             program: None,
             version: None,
             running: Some(Vec::new()),
+            stored_elsewhere: (0, 0),
         }
     }
 
@@ -4299,6 +4444,7 @@ mod tests {
     #[test]
     fn a_locked_keychain_is_one_failure_and_sends_nobody_to_sign_in_again() {
         let mut f = facts();
+        f.os = Os::MacOs;
         f.credential = Err(store::Error::Locked);
         let mut behind = parked("work", Some(NOW + 20 * 86_400));
         behind.unreadable = Some(Unreadable::Locked);
@@ -4345,6 +4491,7 @@ mod tests {
     #[test]
     fn a_login_left_behind_the_keychain_is_said_with_what_reads_it() {
         let mut f = facts();
+        f.os = Os::MacOs;
         assert!(evaluate(&f).iter().all(|c| c.code != "fallback_login"));
 
         f.fallback_login = Some(FallbackLogin {
@@ -4409,6 +4556,7 @@ mod tests {
             check(&checks, "auth_source").detail
         );
 
+        f.os = Os::MacOs;
         f.credential = Err(store::Error::Locked);
         let advice = check(&evaluate(&f), "credential").advice.clone();
         assert!(
@@ -4424,6 +4572,7 @@ mod tests {
     #[test]
     fn a_file_behind_the_keychain_that_cannot_be_read_is_said_with_why() {
         let mut f = facts();
+        f.os = Os::MacOs;
         f.fallback_login = Some(FallbackLogin {
             path: f.credential_file.clone(),
             fingerprint: Err(store::Error::Unreadable(
@@ -4460,14 +4609,61 @@ mod tests {
         );
     }
 
+    // Behind Credential Manager, a network logon is what reads the file, and PowerShell deletes
+    // it, with each single quote in the path doubled.
+    #[test]
+    fn a_file_behind_credential_manager_is_said_in_the_words_of_windows() {
+        let mut f = facts();
+        f.os = Os::Windows;
+        let path = PathBuf::from(r"C:\Users\o'neil\.claude\.credentials.json");
+        f.fallback_login = Some(FallbackLogin {
+            path: path.clone(),
+            fingerprint: Ok(Some("0123456789abcdef".into())),
+        });
+        let said = check(&evaluate(&f), "fallback_login").advice.clone();
+        assert!(
+            said.starts_with(
+                "Claude Code signs in with this wherever it cannot reach Credential Manager, \
+                 such as in a sign-in over SSH with a key, and no switch reaches it. A sign-in \
+                 made where Credential Manager could not be reached leaves one, as `/login` does \
+                 in a sign-in over SSH with a key. While it is there,"
+            ),
+            "{said}"
+        );
+
+        f.fallback_login = Some(FallbackLogin {
+            path,
+            fingerprint: Err(store::Error::Unreadable("access is denied".into())),
+        });
+        let said = check(&evaluate(&f), "fallback_login").advice.clone();
+        assert!(
+            said.starts_with(
+                "Pitboard could not read it, so whether it holds a login, which a session that \
+                 cannot reach Credential Manager signs in with, cannot be told"
+            ),
+            "{said}"
+        );
+        assert!(
+            said.ends_with(
+                r"with it: `Remove-Item -LiteralPath 'C:\Users\o''neil\.claude\.credentials.json'`."
+            ),
+            "{said}"
+        );
+        assert_eq!(
+            Os::Windows.remove_file_command(std::path::Path::new("C:\\it\u{2019}s")),
+            "Remove-Item -LiteralPath 'C:\\it\u{2019}\u{2019}s'"
+        );
+        assert_eq!(
+            Os::MacOs
+                .remove_file_command(std::path::Path::new("/Users/x/.claude/.credentials.json")),
+            "rm /Users/x/.claude/.credentials.json"
+        );
+    }
+
     /// What the checks above are given, read off the stores: the file while the keychain
     /// holds the login in use, with the login in it, none, or why it cannot be read, and
     /// nothing where the file is the store in use.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_login_left_behind_the_keychain_is_found_in_its_file() {
         use crate::host::memory::MemoryHost;
         use crate::store::memory::Fault;
@@ -4607,11 +4803,10 @@ mod tests {
         assert_eq!(check(&checks, "storage_v5").level, Level::Ok);
     }
 
-    /// Claude Code's file is the whole answer only where it has no other store: on Linux. On
-    /// macOS it is a fallback after a keychain write failed, and on Windows Credential
-    /// Manager may hold the login in use instead, which Pitboard does not read yet.
+    // On macOS the file is a fallback after a keychain write failed. On Windows the chain is
+    // the file only where nothing turns Credential Manager on and it holds no login.
     #[test]
-    fn a_file_store_is_the_whole_answer_only_on_linux() {
+    fn a_file_store_is_the_whole_answer_on_linux_and_windows() {
         let mut f = facts();
         f.backend = Ok(store::Backend::File);
         for (os, level, advice) in [
@@ -4622,12 +4817,7 @@ mod tests {
                 "Claude Code fell back to a file, which means a keychain write failed at some \
                  point.",
             ),
-            (
-                Os::Windows,
-                Level::Warn,
-                "Claude Code may keep its login in Credential Manager instead, which Pitboard \
-                 does not read yet.",
-            ),
+            (Os::Windows, Level::Ok, ""),
         ] {
             f.os = os;
             let checks = evaluate(&f);
@@ -4659,6 +4849,129 @@ mod tests {
         let store = check(&checks, "credential_store");
         assert_eq!(store.level, Level::Warn);
         assert!(store.advice.contains("Nothing is signed in"));
+    }
+
+    // Enterprise persistence (`credman_attributes`): the login roams with a roaming profile.
+    #[test]
+    fn credential_manager_is_named_by_its_item_and_a_roaming_profile_is_warned_of() {
+        let mut f = facts();
+        f.os = Os::Windows;
+        f.backend = Ok(store::Backend::CredentialManager);
+        f.account = "claude-code-user".into();
+        f.windows = Some(WindowsHomes {
+            home: PathBuf::from(r"C:\Users\dana"),
+            default_pitboard_home: PathBuf::from(r"C:\Users\dana\AppData\Local\Pitboard"),
+            local_app_data: None,
+            profile: None,
+            codex_home_set: false,
+            roams: false,
+        });
+        let checks = evaluate(&f);
+        let store = check(&checks, "credential_store");
+        assert_eq!(store.level, Level::Ok);
+        assert_eq!(
+            store.detail,
+            "Credential Manager  ·  Claude Code-credentials/claude-code-user  ·  every logon of \
+             yours on this PC reads it"
+        );
+        if let Some(homes) = f.windows.as_mut() {
+            homes.roams = true;
+        }
+        let checks = evaluate(&f);
+        let store = check(&checks, "credential_store");
+        assert_eq!(store.level, Level::Warn);
+        assert!(
+            store.advice.starts_with("Your profile roams"),
+            "{}",
+            store.advice
+        );
+    }
+
+    #[test]
+    fn a_login_in_credential_manager_is_counted_in_pieces_and_257_fail() {
+        let mut f = facts();
+        f.os = Os::Windows;
+        f.backend = Ok(store::Backend::CredentialManager);
+        let size = |f: &Facts, needs: usize| {
+            let mut f_cost = f.credential_cost.expect("a cost");
+            f_cost.needs = needs;
+            judge_pieces(f_cost, &f.credential_parts)
+        };
+        f.credential_cost = Some(store::Cost {
+            needs: 900,
+            limit: 460_800,
+            second_route: false,
+        });
+        assert_eq!(
+            check(&evaluate(&f), "credential_size").detail,
+            "900 bytes, in one item"
+        );
+        let pieces = size(&f, 2401);
+        assert_eq!(pieces.level, Level::Ok);
+        assert_eq!(pieces.detail, "2401 bytes, in 2 pieces of 2400 characters");
+        let past = size(&f, 460_801);
+        assert_eq!(past.level, Level::Fail);
+        assert_eq!(
+            past.detail,
+            "460801 bytes, past the 460800 Claude Code keeps in Credential Manager"
+        );
+    }
+
+    #[test]
+    fn pitboard_no_argv_is_said_to_change_nothing_on_windows() {
+        let mut f = facts();
+        f.no_argv = true;
+        f.os = Os::MacOs;
+        assert!(evaluate(&f).iter().all(|c| c.code != "no_argv"));
+        f.os = Os::Windows;
+        let checks = evaluate(&f);
+        let said = check(&checks, "no_argv");
+        assert_eq!(said.level, Level::Warn);
+        assert_eq!(said.detail, "set, and it changes nothing on Windows");
+    }
+
+    // A network logon, as over sshd with a key, has no credential set: 1312 (MC-net).
+    #[test]
+    fn credential_manager_out_of_this_logons_reach_is_said_in_its_own_words() {
+        let mut f = facts();
+        f.os = Os::Windows;
+        f.credential_file = PathBuf::from(r"C:\Users\dana\.claude\.credentials.json");
+        f.credential = Err(store::Error::Locked);
+        let checks = evaluate(&f);
+        let said = check(&checks, "credential");
+        assert_eq!(said.level, Level::Fail);
+        assert_eq!(
+            said.detail,
+            "Credential Manager cannot be reached from this logon"
+        );
+        assert!(
+            said.advice.ends_with(
+                r"A Claude Code session started from this logon reads only C:\Users\dana\.claude\.credentials.json."
+            ),
+            "{}",
+            said.advice
+        );
+        assert!(!said.advice.contains("keychain"));
+    }
+
+    #[test]
+    fn a_login_credential_manager_holds_that_nothing_turns_on_is_said_to_sign_sessions_out() {
+        let mut f = facts();
+        f.os = Os::Windows;
+        f.backend = Err(store::Error::Unreadable(
+            "Credential Manager holds a login".into(),
+        ));
+        let checks = evaluate(&f);
+        let said = check(&checks, "credential_store");
+        assert_eq!(said.level, Level::Fail);
+        assert!(
+            said.advice.ends_with(
+                "its sessions read only .credentials.json, so a login left only in Credential \
+                 Manager is signed out to them."
+            ),
+            "{}",
+            said.advice
+        );
     }
 
     #[test]
@@ -5754,7 +6067,6 @@ mod tests {
     /// account, a signed-in Codex account read as one with nothing parked to switch to, and
     /// the advice was to sign in again.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn an_account_is_active_by_its_own_tools_record() {
         use crate::host::memory::MemoryHost;
 
@@ -5764,6 +6076,8 @@ mod tests {
             .with_pitboard_home(root.join(".pitboard"))
             .with_codex_home(root.join("codex").to_string_lossy().into())
             .with_memory_stores(MemoryHost::new());
+        // Codex does not start on Windows where `CODEX_HOME` names no folder.
+        std::fs::create_dir_all(root.join("codex")).expect("a Codex home");
         std::fs::write(
             root.join(".claude.json"),
             json!({"oauthAccount": {
@@ -5867,10 +6181,6 @@ mod tests {
     /// naming another, once a read has found the login is still the one named, is said, and
     /// moves nothing.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn the_account_in_use_is_the_one_anthropic_named() {
         use crate::switch::harness::{NOW, config_names, machine};
         let m = machine("doctor-in-use");
@@ -5907,10 +6217,6 @@ mod tests {
     /// That is what happens every few hours, so it is no warning: the next read asks whose it
     /// is. Doctor asks nobody.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_renewed_login_is_not_a_warning() {
         use crate::switch::harness::{NOW, document, machine};
         let m = machine("doctor-renewed");
@@ -5936,10 +6242,6 @@ mod tests {
     /// login can. Something may have signed in, and only Anthropic can say whose the login is
     /// now.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_config_that_moved_since_is_a_warning() {
         use crate::switch::harness::{NOW, config_names, machine};
         let m = machine("doctor-config-moved");
@@ -6136,55 +6438,146 @@ mod tests {
         }
     }
 
-    /// What `/etc/codex` and the person's own config say is gathered as Codex reads it, and a
-    /// store a requirement pins is said to be one no line of the person's own changes.
+    /// What this machine's folder of Codex's configuration and the person's own config say is
+    /// gathered as Codex reads it, and a store a requirement pins is said to be one no line of
+    /// the person's own changes. On Windows a keyring store is the secret store by default.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_store_an_administrator_pinned_is_gathered_and_said() {
         let host = crate::host::memory::MemoryHost::new();
         let ctx = Context::for_unit_test().with_memory_stores(host.clone());
+        let required = crate::provider::codex::layers::system_file(&ctx, "requirements.toml");
+        let named = required.display().to_string();
         host.administers(
-            "/etc/codex/requirements.toml",
+            required.clone(),
             "cli_auth_credentials_store = \"keyring\"\n",
         );
         let codex = CodexFacts {
             enrolled: 1,
             ..codex_facts(&ctx, None)
         };
-        assert_eq!(codex.backend, "keyring");
-        assert_eq!(
-            codex.backend_setting,
-            "pinned to `keyring` by /etc/codex/requirements.toml"
-        );
+        let (backend, setting) = match crate::host::OS {
+            Os::MacOs | Os::Linux => ("keyring", format!("pinned to `keyring` by {named}")),
+            Os::Windows => (
+                "secrets",
+                format!("pinned to `keyring` by {named}, with `secret_auth_storage` on by default"),
+            ),
+        };
+        assert_eq!(codex.backend, backend);
+        assert_eq!(codex.backend_setting, setting);
         let checks = codex_checks(&codex);
         let found = check(&checks, "codex_backend");
         assert_eq!(found.level, Level::Fail);
-        assert_eq!(
-            found.detail,
-            "keyring (pinned to `keyring` by /etc/codex/requirements.toml)"
-        );
+        assert_eq!(found.detail, format!("{backend} ({setting})"));
         assert!(
-            found.advice.ends_with(
-                "No line in your own config.toml can change it: \
-                 /etc/codex/requirements.toml pins it, and only an administrator can change \
-                 that."
-            ),
+            found.advice.ends_with(&format!(
+                "No line in your own config.toml can change it: {named} pins it, and only an \
+                 administrator can change that."
+            )),
             "{}",
             found.advice
         );
 
-        host.administers("/etc/codex/requirements.toml", "x = \n");
+        host.administers(required, "x = \n");
         let unknown = codex_facts(&ctx, None);
         assert_eq!(unknown.backend, "unknown");
         assert_eq!(
             unknown.backend_setting,
-            "/etc/codex/requirements.toml is not TOML Codex can read, at line 1"
+            format!("{named} is not TOML Codex can read, at line 1")
         );
         assert_eq!(
             unknown.backend_remedy,
             "Codex 0.160.0 does not start until that is put right"
         );
         assert!(matches!(unknown.login, Ok(None)), "nothing is read");
+    }
+
+    #[test]
+    fn a_store_codex_uses_only_when_told_to_is_said_in_each_systems_words() {
+        let keyring = CodexFacts {
+            backend: "keyring",
+            backend_setting: "`cli_auth_credentials_store = \"keyring\"` in config.toml".into(),
+            backend_remedy: "To use the file store, set it".into(),
+            enrolled: 1,
+            ..with_codex()
+        };
+        let advice = |os| {
+            check(&judge_codex(os, None, &keyring, &[], NOW), "codex_backend")
+                .advice
+                .clone()
+        };
+        for os in [Os::MacOs, Os::Linux] {
+            assert_eq!(
+                advice(os),
+                "Pitboard reads only Codex's file store, auth.json, and will not touch the \
+                 keychain item Codex created for itself, because every read of it would ask \
+                 you for permission, so no enrolled Codex account can be switched to. To use \
+                 the file store, set it."
+            );
+        }
+        assert_eq!(
+            advice(Os::Windows),
+            "Pitboard reads only Codex's file store, auth.json, and does not follow Codex into \
+             a store it uses only when told to, so no enrolled Codex account can be switched \
+             to. To use the file store, set it."
+        );
+    }
+
+    // By name alone, so no item's hex or secret is said, and only while Codex keeps the file.
+    #[test]
+    fn codexs_items_in_credential_manager_are_a_note_counted_by_name() {
+        let host = crate::host::memory::MemoryHost::new();
+        let home = tempfile::tempdir().expect("a Codex home, which Windows' Codex needs");
+        let ctx = Context::for_unit_test()
+            .with_codex_home(home.path().to_string_lossy().into_owned())
+            .with_memory_stores(host.clone());
+        host.keeps_credentials(&[
+            "CLI|0123456789abcdef.Codex Auth",
+            "secrets|0123456789abcdef.codex",
+            "secrets|0123456789abcdef|gateway-oauth.codex",
+            "cli|0123456789abcdef.Codex MCP Credentials",
+            "Claude Code-credentials",
+            "GitHub - https://github.com",
+        ]);
+        let facts = codex_facts(&ctx, None);
+        assert_eq!(facts.stored_elsewhere, (1, 2));
+        let checks = codex_checks(&facts);
+        let note = check(&checks, "codex_credential_manager");
+        assert_eq!(note.level, Level::Ok);
+        assert_eq!(note.detail, "1 `cli|` item and 2 `secrets|` items");
+        assert!(note.advice.ends_with("Pitboard switches only auth.json."));
+        assert!(!format!("{}{}", note.detail, note.advice).contains("0123456789abcdef"));
+
+        std::fs::write(
+            home.path().join("config.toml"),
+            "cli_auth_credentials_store = \"ephemeral\"\n",
+        )
+        .expect("a config");
+        assert_eq!(codex_facts(&ctx, None).stored_elsewhere, (0, 0));
+        assert!(
+            codex_checks(&with_codex())
+                .iter()
+                .all(|c| c.code != "codex_credential_manager")
+        );
+    }
+
+    // Windows' alone: Codex does not start there where `CODEX_HOME` names no folder.
+    #[test]
+    fn a_codex_home_that_names_no_folder_is_said_as_it_is() {
+        let why = "CODEX_HOME is C:\\nowhere, which is no folder, so Codex does not start. Make \
+                   that folder, or unset CODEX_HOME";
+        for (enrolled, level) in [(1, Level::Fail), (0, Level::Warn)] {
+            let facts = CodexFacts {
+                present: false,
+                auth_access: None,
+                login: Err(CodexLoginTrouble::NoHome(why.into())),
+                enrolled,
+                ..with_codex()
+            };
+            let checks = codex_checks(&facts);
+            let found = check(&checks, "codex_login");
+            assert_eq!((found.level, found.detail.as_str()), (level, why));
+            assert_eq!(found.advice, "");
+        }
     }
 
     /// Signed in with an API key is somebody's choice, and nothing about it is broken or
@@ -6599,7 +6992,6 @@ mod tests {
     /// What the section is judged on, read off a real disk: a scratch Codex home with a
     /// login in it, in the file Codex keeps it in.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn codex_facts_are_read_off_the_disk() {
         use crate::host::fs::testing;
 
@@ -6608,7 +7000,8 @@ mod tests {
         let home = root.join("codex");
         // A `codex` of this test's own. Looked up on `PATH`, it would be this machine's, and
         // the standalone installer keeps that inside the real `~/.codex`.
-        let program = root.join("bin/codex");
+        let codex = format!("codex{}", std::env::consts::EXE_SUFFIX);
+        let program = root.join("bin").join(&codex);
         let ctx = Context::new(root.clone())
             .with_pitboard_home(root.join(".pitboard"))
             .with_codex_home(home.to_string_lossy().into())
@@ -6618,11 +7011,19 @@ mod tests {
         assert!(!absent.present);
         assert_eq!(absent.backend, "file");
         assert_eq!(absent.auth_access, None);
-        assert!(matches!(absent.login, Ok(None)));
+        match crate::host::OS {
+            Os::MacOs | Os::Linux => assert!(matches!(absent.login, Ok(None))),
+            Os::Windows => assert!(
+                matches!(&absent.login, Err(CodexLoginTrouble::NoHome(why)) if why.contains("no folder")),
+                "Codex does not start there"
+            ),
+        }
         assert_eq!(absent.program, None, "the one named, and it is not there");
         assert_eq!(absent.version, None);
 
-        let installed = root.join("releases/0.154.0-aarch64-apple-darwin/bin/codex");
+        let installed = root
+            .join("releases/0.154.0-aarch64-apple-darwin/bin")
+            .join(&codex);
         std::fs::create_dir_all(installed.parent().unwrap()).unwrap();
         std::fs::write(&installed, "").unwrap();
         // A program is what can be run, as the installer leaves it.
@@ -6719,7 +7120,7 @@ mod tests {
         .expect("a config");
         let secrets = codex_facts(&ctx, None);
         assert_eq!(secrets.backend, "secrets");
-        let config = home.join("config.toml");
+        let config = crate::provider::codex::paths::config_file(&ctx);
         assert_eq!(
             secrets.backend_setting,
             format!(

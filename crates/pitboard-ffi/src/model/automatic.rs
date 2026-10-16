@@ -404,7 +404,7 @@ fn the_setting_promises_33_seconds_only_while_no_file_is_behind_the_keychain() {
         )],
     ));
     model.refresh(&mut machine);
-    let note = model.shown().machine.auto_switch.note;
+    let note = model.on_a_mac().machine.auto_switch.note;
     assert!(!note.contains("33 seconds"), "{note}");
     assert!(
         note.contains(
@@ -412,6 +412,11 @@ fn the_setting_promises_33_seconds_only_while_no_file_is_behind_the_keychain() {
              running keep the account they are on until their login is next renewed, or until \
              they are started again."
         ),
+        "{note}"
+    );
+    let note = model.on_windows().machine.auto_switch.note;
+    assert!(
+        note.contains("While a login file is left behind Credential Manager, Claude Code"),
         "{note}"
     );
 }

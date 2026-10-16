@@ -395,13 +395,13 @@ impl fmt::Display for Warning {
                 held: Held::Login,
             } => write!(
                 f,
-                "{path} holds another {tool} login, which a session that cannot read the \
-                 keychain, such as one started over SSH, signs in with. No switch reaches it. \
-                 While it is there, {tool} sessions already running at a switch {running}. \
-                 `pitboard stow` keeps that login for its account, where Pitboard holds no \
-                 other it can switch to, then deletes the file.",
+                "{path} holds another {tool} login, which {reader} signs in with. No switch \
+                 reaches it. While it is there, {tool} sessions already running at a switch \
+                 {running}. `pitboard stow` keeps that login for its account, where Pitboard \
+                 holds no other it can switch to, then deletes the file.",
                 path = path.display(),
                 tool = tool.name(),
+                reader = crate::words::reads_only_the_file(crate::host::OS),
                 running = crate::words::kept_until_renewed(),
             ),
             Warning::FallbackLogin {
@@ -2467,7 +2467,6 @@ mod tests {
 
     // An existing account's name keeps it, and a rename gives a new one by the rules all the same.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_rename_to_a_name_another_tool_has_follows_the_rules_for_a_new_one() {
         let m = codex_machine("rename-one-word");
         let mut state = state::load(&m.ctx).expect("state");
@@ -2597,10 +2596,6 @@ mod tests {
     /// session that cannot read the keychain signs in with and no switch reaches. Codex has
     /// no store behind the one in use, so nothing is said of it.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_switch_says_a_login_is_left_where_it_does_not_reach() {
         let m = machine("switch-fallback-login");
         let left = plant_behind(
@@ -2656,10 +2651,6 @@ mod tests {
     /// reads no keychain, and says nothing of what is behind one. Codex has no store behind
     /// its own.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_read_says_a_file_is_behind_the_keychain() {
         let m = machine("read-fallback-login");
         let left = plant_behind(
@@ -2725,10 +2716,6 @@ mod tests {
     /// with no login in it holds sessions to their account all the same, and is said too:
     /// in words that say so, and with what lets them follow.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn an_empty_file_behind_the_keychain_is_said_too() {
         let m = machine("read-empty-fallback");
         let left = plant_behind(&m, "{}");
@@ -2761,10 +2748,6 @@ mod tests {
     /// cannot read, as one that is not text or that this user may not read, holds sessions
     /// to their account all the same. It is said, in words that do not guess what it holds.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_file_behind_the_keychain_that_cannot_be_read_is_said_too() {
         let m = machine("read-unreadable-fallback");
         let left = plant_behind(&m, "{}");
@@ -2804,10 +2787,6 @@ mod tests {
     /// status` never said it at all. A read says it now, in the words of the refusal, and
     /// changes nothing: the record is kept for whatever finishes it or gives up on it.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_read_says_an_interrupted_switch_it_cannot_finish_is_waiting() {
         for (tool, make) in MACHINES {
             let m = stuck(make, &format!("read-stuck-{tool}"));
@@ -2835,10 +2814,6 @@ mod tests {
     /// Where only the service can say whose the live login is, a read asks it, as the next
     /// change would.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_read_asks_whose_the_login_is_where_only_the_service_can_say() {
         let m = stuck_unless_asked("read-stuck-asked");
         let pitboard = Pitboard::new(m.ctx.clone());
@@ -2862,10 +2837,6 @@ mod tests {
     /// about. The rows already say who is signed in, from the tool's login and not from
     /// Pitboard's record, and the change that finishes it says what it found.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_read_says_nothing_of_a_switch_the_next_change_finishes() {
         for (tool, make) in MACHINES {
             let m = interrupted(make, &format!("read-settles-{tool}"));
@@ -2886,10 +2857,6 @@ mod tests {
     /// settled under one as anywhere else, and given up on as anywhere else: giving up
     /// refused it, so the read offered a way out that could not be taken.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_read_says_a_switch_is_waiting_only_where_a_change_would_stop_at_it() {
         for (tool, make) in MACHINES {
             let m = stuck(make, &format!("read-stuck-custom-{tool}"));
@@ -2938,10 +2905,6 @@ mod tests {
     /// the refusal, and changes nothing. Where only Anthropic could say whose the login is,
     /// it does not say what it cannot know.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_read_that_asks_nobody_says_a_switch_is_waiting_wherever_it_can_tell() {
         for (tool, make) in MACHINES {
             let m = stuck(make, &format!("known-stuck-{tool}"));
@@ -2977,10 +2940,6 @@ mod tests {
     /// from. Four of five caches captured on one machine were another login's numbers, so
     /// no read takes a reading from it, whether or not Anthropic answered this time.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn what_claude_code_cached_is_never_an_accounts_reading() {
         use crate::switch::harness::{NOW, cache_usage, usage_answer};
         let m = machine("cached-usage");
@@ -3019,10 +2978,6 @@ mod tests {
     /// so a read asks whose it is only once the login has changed. It asked on every read,
     /// one round trip more each time for an answer it already had.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_login_already_identified_is_not_asked_about_again() {
         use crate::api::scripted::Asked;
         let m = machine("read-known-login");
@@ -3046,10 +3001,6 @@ mod tests {
     /// row says why it has nothing parked. It read as `nothing parked`, and nothing said what
     /// had happened.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_sign_in_outside_pitboard_is_said_recorded_and_shown_on_its_row() {
         use crate::switch::harness::NOW;
         let m = signed_in_outside("read-signed-in-outside");
@@ -3174,10 +3125,6 @@ mod tests {
     /// A read that finds what the record already says writes nothing, so several front ends
     /// reading one machine never take turns rewriting its account index.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_read_that_finds_nothing_new_writes_nothing() {
         let m = machine("read-nothing-new");
         let pitboard = Pitboard::new(m.ctx.clone());
@@ -3195,10 +3142,6 @@ mod tests {
     /// here is still found by the next read here, and reads taking turns under the two write
     /// nothing once each has its record.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_read_under_another_claude_config_dir_keeps_this_ones_record() {
         use crate::switch::harness::{NOW, account, document, owner};
         let m = machine("read-two-slots");
@@ -3250,10 +3193,6 @@ mod tests {
     /// says it was replaced, least of all one under the slot where it is in use. Once the
     /// other slot's is replaced too, it is.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_login_still_stored_under_another_claude_config_dir_is_not_said_replaced() {
         use crate::switch::harness::{NOW, account, document, owner};
         let m = machine("read-two-slots-one-account");
@@ -3333,10 +3272,6 @@ mod tests {
     /// login is somewhere Pitboard does not look, which is not a sign-out. A read records
     /// nothing, and says of no account that its login was replaced.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_read_that_cannot_find_the_login_claude_code_names_records_nothing() {
         let m = machine("read-login-elsewhere");
         m.mem.live().delete_everything();
@@ -3368,10 +3303,6 @@ mod tests {
     /// that asks nobody takes the account in use from what Anthropic last said of the login
     /// stored, and says the config has moved since. It took the config's account.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn an_offline_read_names_the_account_anthropic_named_whatever_the_config_says() {
         let m = machine("offline-config-moved");
         switch::harness::config_names(&m, "there");
@@ -3398,10 +3329,6 @@ mod tests {
     /// Anthropic never named. Where Claude Code's config names another account, a read that
     /// asks nobody says the account in use is not confirmed, as doctor and the status line do.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn an_offline_read_of_a_record_never_asked_about_says_the_config_names_another() {
         let m = machine("offline-never-asked");
         let mut state = state::load(&m.ctx).expect("state");
@@ -3439,10 +3366,6 @@ mod tests {
     /// The same record where the config names that account, as on nearly every machine
     /// updated from 0.9.0 until its first read that asks: nothing is said, and nobody is asked.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn an_offline_read_of_a_record_never_asked_about_says_nothing_where_the_config_agrees() {
         let m = machine("offline-never-asked-agrees");
         let mut state = state::load(&m.ctx).expect("state");
@@ -3473,10 +3396,6 @@ mod tests {
     /// another account, which `/status` in Claude Code shows. Said by every read after it,
     /// the one that asks nobody too, until something writes the config again.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_read_settles_it_and_says_the_config_names_another() {
         use crate::api::scripted::Asked;
         let m = machine("read-config-names-another");
@@ -3516,7 +3435,6 @@ mod tests {
     /// read. `doctor` and the read that asks nobody said nothing of it, as though only OpenAI
     /// could say whose the login is.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn whose_a_codex_login_is_is_told_without_asking_anyone() {
         let m = interrupted(codex_machine, "codex-renewed-since");
         m.sign_in(&switch::harness::codex_login("here", "renewed-since"));
@@ -3546,20 +3464,20 @@ mod tests {
         assert_eq!(check.detail, refused.error.to_string());
     }
 
-    /// A Codex store that `/etc/codex/requirements.toml` pins is refused before a sign-in
+    /// A Codex store that this machine's `requirements.toml` pins is refused before a sign-in
     /// starts, naming that file, as it is for a switch: no line of the person's own changes
     /// it, and the `-c` Pitboard's sign-ins give is under it, so the login would be kept where
     /// Pitboard cannot read it back. Pitboard used to read only `$CODEX_HOME/config.toml`, and
     /// started the sign-in.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_codex_store_a_requirement_pins_is_refused_before_a_sign_in() {
         let m = codex_machine("codex-pinned");
         // Named where nothing is, so a sign-in that got past the refusal would find no
         // program to run rather than this machine's own `codex`.
         let ctx = m.ctx.clone().with_codex_program("/nowhere/codex".into());
+        let required = crate::provider::codex::layers::system_file(&ctx, "requirements.toml");
         m.mem.administers(
-            "/etc/codex/requirements.toml",
+            required.clone(),
             "cli_auth_credentials_store = \"keyring\"\n",
         );
         let pitboard = Pitboard::new(ctx);
@@ -3570,7 +3488,7 @@ mod tests {
             assert_eq!(refused.error.code(), "live_store_unsupported");
             let said = refused.error.to_string();
             assert!(
-                said.contains("pinned to `keyring` by /etc/codex/requirements.toml"),
+                said.contains(&format!("pinned to `keyring` by {}", required.display())),
                 "{said}"
             );
             assert!(
@@ -3607,10 +3525,6 @@ mod tests {
     /// one: the refusal, and the way out. Where only the service could tell, it says what
     /// it always said, that a switch did not finish.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn doctor_says_a_switch_is_stuck_where_it_can_tell_without_asking() {
         for (tool, make) in MACHINES {
             let m = stuck(make, &format!("doctor-stuck-{tool}"));
@@ -3669,10 +3583,6 @@ mod tests {
     /// all anybody was told. It is settled now, recorded the way any recovery is, and
     /// reported beside the refusal.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_change_refused_over_its_name_still_recovers_an_interrupted_switch() {
         for (tool, make) in MACHINES {
             for (change, verb, code, audited, refuse) in REFUSALS {
@@ -3705,7 +3615,6 @@ mod tests {
     /// A mistyped name with nothing to recover takes no lock and writes nothing but its
     /// line in the audit log.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_change_refused_over_its_name_with_nothing_interrupted_changes_nothing() {
         for (tool, make) in MACHINES {
             for (change, verb, code, audited, refuse) in REFUSALS {
@@ -3734,10 +3643,6 @@ mod tests {
     /// parking a login too big for `security`'s standard input puts it on the argument line.
     /// The change then fails, and that is still said beside the failure.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_new_login_parked_after_it_did_not_hold_says_how_it_was_parked() {
         for (tool, make) in MACHINES {
             let m = make(&format!("not-installed-said-{tool}"));
@@ -3760,10 +3665,6 @@ mod tests {
     /// change: the recovery of a Claude Code switch, and not of a Codex one. What it stops
     /// is left for a later run, and the refusal is reported as it always was.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_custom_claude_endpoint_stops_only_the_recovery_of_a_claude_code_switch() {
         let codex = interrupted(codex_machine, "refused-custom-codex");
         let mut ctx = codex.ctx.clone();
@@ -3949,10 +3850,6 @@ mod tests {
                     assert!([$(stringify!($case)),*].len() == MACHINES.len() * REFUSED.len());
                 $(
                     #[test]
-                    #[cfg_attr(
-                        windows,
-                        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-                    )]
                     fn $case() {
                         every_change_is_refused(stringify!($case), $make, $refused);
                     }
@@ -4057,7 +3954,6 @@ mod tests {
     /// every read of the accounts, with `home_not_absolute`, and nothing changes. Asked of
     /// the gate and the reads first, which change nothing whatever they answer.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn every_change_and_read_is_refused_where_the_home_is_not_a_full_path() {
         for home in ["", "relative"] {
             for (tool, make) in MACHINES {
@@ -4068,7 +3964,12 @@ mod tests {
                 let pitboard = Pitboard::new(ctx);
                 let refused = |error: Error| {
                     assert_eq!(error.code(), "home_not_absolute", "{at}: {error}");
-                    assert!(error.to_string().starts_with("HOME is "), "{at}: {error}");
+                    assert!(
+                        error
+                            .to_string()
+                            .starts_with(&format!("{} is ", crate::host::OS.home_variable())),
+                        "{at}: {error}"
+                    );
                 };
 
                 refused(pitboard.permit().expect_err("the gate refuses"));
@@ -4120,7 +4021,6 @@ mod tests {
     /// renews nothing, asks nobody and writes nothing. A park whose access has lapsed is
     /// there to be renewed, so a read that renewed would show it.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_read_where_pitboard_may_change_nothing_asks_nobody_and_says_why() {
         for (tool, make) in MACHINES {
             for refused in REFUSED {
@@ -4199,7 +4099,6 @@ mod tests {
     /// run that could not renew read as one where nothing was due. Refused, it says so, and
     /// asks nobody, with a park that is due to be renewed.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_renewal_where_pitboard_may_change_nothing_is_refused_and_asks_nobody() {
         for (tool, make) in MACHINES {
             for refused in REFUSED {

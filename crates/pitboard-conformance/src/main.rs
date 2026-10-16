@@ -612,11 +612,9 @@ mod tests {
             "claude.exe\na windows build; Pitboard's facts about claude were read from 2.1.289\n\n"
         ));
         assert!(
-            text.contains(
-                "  pending  live_chain_order  (its windows reading waits on W22 and W23)\n"
-            )
+            text.contains("  pending  windows_file_adoption  (its windows reading waits on W27)\n")
         );
-        assert!(!text.contains("MOVED    live_chain_order"));
+        assert!(!text.contains("MOVED    windows_file_adoption"));
     }
 
     /// `--json` lists the facts it does not read in two keys, `not_read_here` and
@@ -663,7 +661,7 @@ mod tests {
             report["pending_here"]
                 .as_array()
                 .expect("pending_here")
-                .contains(&serde_json::json!("codex_login_location"))
+                .contains(&serde_json::json!("codex_login_is_driveable"))
         );
     }
 

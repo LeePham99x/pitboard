@@ -50,7 +50,7 @@ window loads its site, and whatever the site's pages load, as a browser would.
       login, whose it is, how to renew it, what it has left and what its sign-in prints,
       which `provider::sign_in_view` reads for both apps, and when a session already running
       takes a switch made now (`Adoption`), which for Claude Code turns on whether a file
-      sits behind the keychain (`behind`). `provider/codex/holders.rs` names where a running
+      sits behind the keychain or Credential Manager (`behind`). `provider/codex/holders.rs` names where a running
       `codex` can be, and what makes each take a switch. `provider/codex/layers.rs` reads
       which store Codex keeps its login in from every layer of configuration Codex reads
       outside a project, in Codex's order, for a switch and for a sign-in.
@@ -173,8 +173,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     account is forgotten.
   - `switch/`: every change to Pitboard's index (switching, by hand or by itself in
     `auto.rs`, enrolling, adopting, renaming, forgetting, renewing, repairing, abandoning,
-    uninstalling, and putting away a login Claude Code left in a file behind the keychain in
-    `stow.rs`), and the journal that finishes an interrupted switch of a Claude Code or
+    uninstalling, and putting away a login Claude Code left in a file behind the keychain or
+    Credential Manager in `stow.rs`), and the journal that finishes an interrupted switch of a Claude Code or
     Codex login (`journal.rs`). `identify.rs` says whose login Claude Code or Codex has
     stored: the record's owner where the login's refresh token has the fingerprint the
     record was made for, which asks nobody, and the tool's service otherwise (`whose`). A
@@ -404,8 +404,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
   - `words.rs`: the sentences and column words Pitboard says in more than one place, each
     a function of typed values: spans of time, a limit's names, when it resets, its pace and
     when it runs out, a parked login's life, a renewal run, doctor's summary, and what is
-    left in a file behind the keychain and what putting it away does and did (`left_lines`,
-    `stowed_lines`, `nothing_left`), which `pitboard stow` and the app's sheet both say. It
+    left in a file behind the keychain, or Credential Manager on Windows, and what putting it
+    away does and did (`left_lines`, `stowed_lines`, `nothing_left`, each in the words of the
+    system it is given), which `pitboard stow` and the app's sheet both say. It
     also holds `usage_level`, the steps at which a limit's colour changes. A thing said both
     in a column and in a sentence has a function for each form. The command line calls these
     functions directly, and so does `pitboard-ffi`'s `present/` as it makes the snapshot,
@@ -509,8 +510,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     switch, keeps what each tool's last switch said, runs Claude Code's and Codex's own
     sign-in, parks the account in use for a sign-in inside Claude and waits for Claude to
     quit signed in, enrols the login signed in now, renames and forgets, writes the account
-    in use into Claude Code's config, puts away a login left in a file behind the keychain
-    from a sheet that looks first, keeps the sheet over the main window, says which account
+    in use into Claude Code's config, puts away a login left in a file behind the keychain or
+    Credential Manager from a sheet that looks first, keeps the sheet over the main window, says which account
     to switch to once the one in use has run out, notified once for each reset, switches
     Claude Code by itself with its setting on, asking the core's look after every read and
     every 30 seconds and saying under the setting what it came to, warms up the accounts
@@ -847,9 +848,11 @@ window loads its site, and whatever the site's pages load, as a browser would.
   that differs by system is either the host's to answer or a `match` on `host::OS`, so a
   system added to `host::Os` does not compile until it is said for every one. No such
   `match` has a `_` arm. Where a fact of Windows is not read yet, its arm refuses through
-  an answer its callers already have, never one that would let Pitboard act: each tool's
-  live chain on Windows is one store whose every call cannot be read (`store::Unbuilt`),
-  never Claude Code's file alone, and the Windows face answers as `host/windows` says.
+  an answer its callers already have, never one that would let Pitboard act: Claude Code's
+  live chain on Windows is Credential Manager with its file behind where anything turns that
+  store on, its file alone where nothing does and Credential Manager holds no login at the
+  live target, and otherwise one store whose every call cannot be read (`store::Refused`),
+  and the Windows face answers as `host/windows` says.
 - A context carries the system its environment was read as, so where the home and
   Pitboard's default folder are, and how a variable's name compares, are tested for
   Windows on every system.
@@ -878,10 +881,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
   links a directory otherwise than a file, says how in its own face and nowhere else. The
   integration tests' harness says what differs by system in
   `crates/pitboard/tests/common/os.rs`, one `match` on `host::OS` for each fact: where
-  Claude Code keeps the login it uses (on Windows the harness assumes `.credentials.json`,
-  as on Linux, pending W22: Claude Code's register has `no_keyring_off_macos` unread on
-  Windows, and which store its Windows build chooses, `windows_backend_choice`, is not read
-  yet, so no test that plants a Claude Code login runs there before W22), where Pitboard
+  Claude Code keeps the login it uses (`.credentials.json` on Windows, as on Linux, unless a
+  test turns Credential Manager on, `Env::turn_credential_manager_on`, whose items in its own
+  slot the harness deletes by name: `windows_backend_choice`), where Pitboard
   parks one (sealed to the person on Windows, which only the core's vault writes, so the
   harness parks through it), which variables a command is passed on, which folders
   of a person's account it is given as scratch ones of its own, what its `PATH` holds after
@@ -1145,7 +1147,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
   account in use goes. The core refuses it, writing nothing, where another account is in
   use by then, so a button drawn before a switch landed never switches back. What it warned
   of is said beside the read after it, as a sign-in's is.
-- The notice that a login is left in a file behind the keychain offers to put it away:
+- The notice that a login is left in a file behind the keychain or Credential Manager offers
+  to put it away:
   `Sheet::Stow`, which looks first, on the lane of reads (`Job::LookLeft`), and says whose
   the login is once that is known, in the words `pitboard stow` asks with, offering **Put
   Away** only for a login it can put away. `Intent::Stow` puts away the file as that look
@@ -1357,18 +1360,22 @@ window loads its site, and whatever the site's pages load, as a browser would.
   Desktop then takes the data folder's lock.
 - Codex takes no lock on `auth.json`, so a switch reads the file again before replacing
   it. Every switch reads the live login back rather than trusting its own write.
+- Codex truncates `auth.json` and writes it again in place, so a read that finds it empty or
+  not JSON reads it again, up to ten times 10 ms apart, before taking it as it is.
 - Pitboard never answers a failed keychain write by writing Claude Code's plaintext file.
   That demotion is Claude Code's to make.
-- While Claude Code's `.credentials.json` sits behind the keychain, with a login in it,
-  none, or what Pitboard cannot read, a session already running keeps its account after a
-  switch until its login is next renewed. Pitboard tells the file by a look at it, as the
-  session does, not by reading it. A switch, by hand or by itself, says so in place of a
-  number of seconds (`Adoption::AtRenewal`), and every read that reads the keychain and
-  every change warns while the file is there (`fallback_login`). The automatic switch still
+- While Claude Code's `.credentials.json` sits behind the keychain, or behind Credential
+  Manager on Windows, with a login in it, none, or what Pitboard cannot read, a session
+  already running keeps its account after a switch until its login is next renewed.
+  Pitboard tells the file by a look at it, as the session does, not by reading it. A switch,
+  by hand or by itself, says so in place of a number of seconds (`Adoption::AtRenewal`), and
+  every read that reads that store and every change warns while the file is there
+  (`fallback_login`). The automatic switch still
   switches: new sessions take the account switched to at once, and running ones at their
   next renewal. A read and a switch never touch the file.
 - Only `pitboard stow`, and the app's **Put Away** after its sheet, write or delete
-  `.credentials.json` while the keychain holds the login in use, and only once somebody has
+  `.credentials.json` while the keychain, or Credential Manager on Windows, holds the login in
+  use, and only once somebody has
   confirmed what the file holds. It looks first, taking no lock and writing nothing:
   `stow::find` reads the file, tells whose its login is by its refresh token's fingerprint
   where that is the login stored, a park's that reads back, or the record's, and otherwise
@@ -1425,7 +1432,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
   before `stow` reads the file, and where it cannot be yet, `stow` stops with nothing
   changed. A session that signed in with the file, as one over SSH does, is signed out once
   it is gone. The activity log records it as `stow`. On Linux the file is the store, nothing
-  is behind it, and there is nothing to put away.
+  is behind it, and there is nothing to put away. On Windows a session out of Credential
+  Manager's reach, as one in a sign-in over SSH with a key, leaves one there, and it goes the
+  same way (`credman_unreachable_writes_file`).
 - A Codex login is moved, never copied (`ParkSemantics::MoveOnly`). The parked login is
   read back before the incoming login is written. Codex's own sign-in and sign-out revoke
   the stored refresh token, so two usable copies of one login must never be at rest.
@@ -1761,7 +1770,8 @@ the fact is on macOS, on Linux and on Windows (`assumptions::OnSystem`):
   supports Claude Desktop on macOS alone, so every one of its facts is `NotRead` on Linux
   and Windows.
 - `Pending { by, reads }`: to be read there by a later pull request of the Windows work,
-  `W2` to `W27`, which says what that pull request reads. `assumptions::pending` lists
+  `W2` to `W27` with `W23` split into `W23a` and `W23b`, or `W-warm`, which says what that
+  pull request reads. `assumptions::pending` lists
   these, and the Windows work is not done while the list has anything in it.
 
 Where a tool does something else on Windows, the Windows behaviour is a fact of its own,
@@ -1816,7 +1826,7 @@ and is the same in all four: `usage_cache_stamp_is_the_configs`,
 `status_line_input_names_no_account` and `fallback_file_pins_session_login`, read in the
 macOS build on the 8th, and `refresh_lock`, read in all four on the 9th. The fallback file's
 fact is read on macOS alone: on Linux the file is Claude Code's only store, and on Windows
-it is too unless Credential Manager is turned on, which W22 reads. The checker finds every
+it is too unless Credential Manager is turned on (`windows_backend_choice`). The checker finds every
 fact each build was read for.
 
 On 12 October 2026 the checker was run by hand on the `app.asar` of an installed Claude
@@ -2099,8 +2109,7 @@ while another holds the key hands its launch over, and the running copy reads th
 that launch's command line. A Debug build outside a fixture refuses a `pitboard-debug` link
 before it takes the key or writes anything, since it would run on whatever homes its launch
 has. **Open in browser** goes where a page sent elsewhere goes: to Windows, and in a fixture
-nowhere. The three `AccountPickerTests` that need no account hand their link over through a
-second copy; choosing an account and cancelling wait for W23a.
+nowhere. The `AccountPickerTests` hand their link over through a second copy.
 
 One thing differs from WebKit in how a store goes, read in Microsoft's documentation of
 `CoreWebView2Profile.Delete` for WebView2 1.0.4258.31 on 16 October 2026: deleting a profile
@@ -2160,7 +2169,7 @@ paused download is under way: WebView2 leaves it interrupted and able to resume,
 still under way as its browser process exits ends cancelled. The download list is WebView2's
 own dialog, which Downloads in the command bar opens and which offers each file's folder, so
 no surface of Pitboard's reveals a file: `ASiteDownloadIsListedInTheWindow` looks for its
-Show in folder once W23a lets it run. `DownloadTests` hold this against the stand-in site,
+Show in folder. `DownloadTests` hold this against the stand-in site,
 and print for CF7 the events WebView2 raised around each kind of download.
 
 A window refuses to open, saying why, on a PC whose WebView2 Runtime is older than
@@ -2843,11 +2852,61 @@ treated, and only the macOS build shows it. The run reads both builds since.
   `claude auth login` prints its prompts whatever its output is, reads a pasted code with
   readline and trims it, so a line ended by `\r\n` reads as one ended by `\n`, and opens
   its page with `rundll32 url,OpenURL <address>`, a child of its own, unless its settings
-  or `BROWSER` name a program. Its store is Credential Manager where
-  `CLAUDE_CODE_FORCE_WINDOWS_CREDMAN` is `1`, or where the `.config.json` or `.claude.json`
-  of its config folder caches `tengu_windows_credman` as true, and its file otherwise. So
-  a private sign-in withholds that variable, and its fresh folder caches nothing, so the
-  login lands in that folder's `.credentials.json`.
+  or `BROWSER` name a program. A private sign-in withholds
+  `CLAUDE_CODE_FORCE_WINDOWS_CREDMAN`, and its fresh folder caches no feature, so the login
+  lands in that folder's `.credentials.json` (`windows_backend_choice`, below).
+- Read on 16 October 2026 from the win32-x64 and win32-arm64 builds of 2.1.301
+  (`windows_backend_choice`): Claude Code keeps its login in Credential Manager, with
+  `.credentials.json` behind it, where `CLAUDE_CODE_FORCE_WINDOWS_CREDMAN` is exactly `1` in
+  its environment, asked on every store access, or where its config file caches
+  `tengu_windows_credman` as true, read once a process; otherwise in the file alone. The
+  variable reaches a session from the environment it starts with, `HKCU\Environment` for
+  one started from Explorer, and from the `env` of the config file, of `settings.json` and
+  of managed settings, in that order, at start-up. A project's settings pass it only once
+  the folder is trusted, or in print mode. Pitboard reads every signal but a project's and a
+  `--settings` file's, and takes Claude Code's chain for the file only where none is on and
+  Credential Manager holds nothing at the live target, `<service>/claude-code-user` or its
+  manifest `#m` (`credman_account_name`). Where a signal turns the store on, Pitboard
+  follows it, below. Where a login sits there that nothing Pitboard reads turned on, it
+  refuses, since it cannot tell which store sessions read. A session a project turned the
+  store on for is caught that way once it wrote there.
+- Read on 16 October 2026 from the same builds, with Bun 1.4.3's `Bun.secrets` as embedded
+  (`credman_target`, `credman_chunking`, `credman_attributes`, `credman_migration`,
+  `credman_probe`, `windows_credman_cache`): Claude Code's item is `<service>/claude-code-user`,
+  the service hashed from the folder's string as given, so `C:\x` and `C:/x` are two items.
+  `Bun.secrets` writes it generic, with the name as its user name, the UTF-8 text as its blob,
+  enterprise persistence, no comment and no attributes (RF-G3, run 38704825885). Up to 2400
+  bytes the login is the item's value; above that, base64 pieces `#0` on of 2400 characters,
+  at most 256, a manifest `#m` and a marker `#p`, each an item of its own. Claude Code reads
+  pieces under a manifest that names their count and length, and never reads `#p`, so pieces
+  replaced in place under a manifest of the same length can read half old and half new.
+  Pitboard writes in Claude Code's order with one step of its own: while it replaces pieces
+  in place, the manifest names a length no base64 has, so Claude Code's read fails, and a
+  session keeps the login it has, rather than read a mix. It reads a manifest Claude Code
+  would pass over, or `#p` beside one, as unreadable. Every write goes to Credential Manager
+  first, and deletes `.credentials.json` only where Credential Manager held no login before,
+  as Claude Code's wrapper does; where Credential Manager fails, Claude Code writes the file
+  instead and Pitboard writes nothing more, leaving the switch to the journal's recovery. A
+  session reads the item again 30 seconds after it last did, and a session whose start-up
+  look at `Bun.secrets` fails within 10 seconds reads only the file for its life. A network
+  logon has no credential set: every call fails 1312, which Pitboard reads as out of reach
+  (`credential_store_locked`), never as no login.
+- Read on 16 October 2026 from the same builds (`credman_unreachable_writes_file`,
+  `fallback_file_pins_session_login`): a session whose start-up look failed, as one in a
+  network logon does, reads no login in Credential Manager and fails every write there, so
+  its sign-in or renewal writes `.credentials.json` and leaves the item as it was, since the
+  wrapper deletes that only where its read before the write held a login. The file then
+  sits behind Credential Manager as it sits behind the keychain on macOS: every session
+  looks at it before each request, the same code on every system, and keeps the login it
+  holds while it is there.
+- Read on 16 October 2026 from the same builds, with Bun 1.4.3 and libuv 8023581 as
+  embedded (`windows_plaintext_write`, `windows_plaintext_strict_read`): Claude Code writes
+  `.credentials.json` by a temporary file renamed over it with `MoveFileExW`, then `chmod`
+  0600, which on Windows only clears the read-only attribute, and sets no access list. Its
+  write fails over a read-only file, which Pitboard refuses too. Before a write it reads the
+  file strictly, and any error but a missing file, a folder or a path through a file, a
+  sharing violation's included, skips the write. So Pitboard's reads share reading, writing
+  and deletion and are never held across Claude Code's lock.
 - Read on 15 October 2026 from the win32-x64 and win32-arm64 builds of 2.1.300
   (`windows_managed_settings`): on Windows managed settings are in `C:\Program
   Files\ClaudeCode`, as on the other systems in their folder, and in the value `Settings` of
@@ -3023,6 +3082,23 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
     on macOS and Linux (`cfg!(windows)` in 0.160.0). A requirement may name that table
     `[feature_requirements]` too, as `ConfigRequirementsToml` does; a configuration
     layer's table of that name sets nothing.
+- Read from 0.163.0's config loader on 16 October 2026 (`codex_windows_store_layers`): on
+  Windows this machine's `config.toml` and `requirements.toml` are in `OpenAI\Codex` under
+  `FOLDERID_ProgramData`, or under `C:\ProgramData` where Windows cannot say that folder.
+  There is no `managed_config.toml` layer, no managed preference and no registry layer, and
+  `secret_auth_storage` is on by default, so `keyring` and `auto` keep the login in the
+  secret store. Cloud requirements still may not set the store on any system, and a cloud
+  configuration still may, for a session of the TUI.
+- Read from 0.163.0's source on 16 October 2026 (`codex_windows_login_location`,
+  `codex_windows_stores`): on Windows the login is `auth.json` in Codex's home, written in
+  place with std's default sharing and no access list of its own. `keyring` and `auto` keep it
+  in `secrets\codex_auth.age` under a passphrase in Credential Manager
+  (`secrets|<16 hex>.codex`), or, with `secret_auth_storage` off, as
+  `cli|<16 hex>.Codex Auth` itself. Pitboard switches the file and refuses the others, naming
+  the line that puts the login in the file. While Codex keeps the file, doctor counts the
+  `cli|` and `secrets|` items Credential Manager lists by prefix, by name alone, since a
+  setting Pitboard does not read, such as a cloud configuration, can put a session's login
+  there. `<key>.Codex MCP Credentials` cannot be listed by prefix and is not looked for.
 - `keyring` and `auto` keep the login in a keychain item, `Codex Auth`, that Codex makes
   through the Security framework. With either of those, the `secret_auth_storage` feature
   keeps it in `secrets/codex_auth.age` instead, under a keychain key.

@@ -46,22 +46,6 @@ const fn everywhere(name: &'static str, build: &'static str) -> PerSystem {
     }
 }
 
-/// A fact read on macOS and Linux from the build its entry names, whose Windows reading
-/// waits on the Windows work.
-const fn later_on_windows(
-    name: &'static str,
-    build: &'static str,
-    by: &'static [&'static str],
-    reads: &'static str,
-) -> PerSystem {
-    PerSystem {
-        name,
-        macos: Read(build),
-        linux: Read(build),
-        windows: Pending { by, reads },
-    }
-}
-
 /// A fact a warm-up stands on, read on 12 October 2026 from 2.1.296's macOS build, and from
 /// its Linux build as bytes, and measured on the macOS build with real accounts. Pitboard
 /// warms up no account on Windows.
@@ -83,29 +67,29 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         name: "credential_service_name",
         macos: Read(VERIFIED_AGAINST),
         linux: NO_KEYCHAIN_ON_LINUX,
-        windows: Pending {
-            by: &["W23"],
-            reads: "credman_target: the Credential Manager target Claude Code keeps the login \
-                    under on Windows, once it uses that store",
-        },
+        windows: NotRead(
+            "the Windows build keeps no keychain item; the Credential Manager item it keeps the \
+             login in under the same service is credman_target's",
+        ),
     },
     PerSystem {
         name: "keychain_account_name",
         macos: Read(VERIFIED_AGAINST),
         linux: NO_KEYCHAIN_ON_LINUX,
-        windows: Pending {
-            by: &["W22"],
-            reads: "credman_account_name: the user name on Claude Code's Credential Manager \
-                    item",
-        },
+        windows: NotRead(
+            "the Windows build names its Credential Manager item's user with a literal, which \
+             credman_account_name reads",
+        ),
     },
-    later_on_windows(
-        "live_chain_order",
-        VERIFIED_AGAINST,
-        &["W22", "W23"],
-        "windows_backend_choice (W22): which store Claude Code keeps the login in on Windows, \
-         and credman_migration (W23): how it moves the login into Credential Manager",
-    ),
+    PerSystem {
+        name: "live_chain_order",
+        macos: Read(VERIFIED_AGAINST),
+        linux: Read(VERIFIED_AGAINST),
+        windows: NotRead(
+            "which store Claude Code keeps the login in on Windows is windows_backend_choice's, \
+             and how it moves the login into Credential Manager is credman_migration's",
+        ),
+    },
     PerSystem {
         name: "keychain_write_route",
         macos: Read(VERIFIED_AGAINST),
@@ -129,19 +113,21 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
     },
     everywhere("logout_skips_the_lock", VERIFIED_AGAINST),
     everywhere("account_scoped_keys", VERIFIED_AGAINST),
-    later_on_windows(
-        "credential_cache",
-        "2.1.278",
-        &["W22", "W23"],
-        "windows_file_adoption (W22): how soon a running session takes a new \
-         `.credentials.json` on Windows, and windows_credman_cache (W23): how long it keeps a \
-         login read from Credential Manager",
-    ),
+    PerSystem {
+        name: "credential_cache",
+        macos: Read("2.1.278"),
+        linux: Read("2.1.278"),
+        windows: NotRead(
+            "how long a session keeps a login read from Credential Manager is \
+             windows_credman_cache's, and how soon it takes a new `.credentials.json` \
+             windows_file_adoption's",
+        ),
+    },
     PerSystem {
         name: "config_file_location",
-        macos: Read("2.1.300"),
-        linux: Read("2.1.300"),
-        windows: Read("2.1.300"),
+        macos: Read("2.1.301"),
+        linux: Read("2.1.301"),
+        windows: Read("2.1.301"),
     },
     everywhere("oauth_client", VERIFIED_AGAINST),
     PerSystem {
@@ -187,13 +173,15 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
              windows_install_layout reads",
         ),
     },
-    later_on_windows(
-        "plaintext_credential_mode",
-        VERIFIED_AGAINST,
-        &["W22"],
-        "windows_plaintext_write: how Claude Code writes `.credentials.json` on Windows, and \
-         what keeps others out of it there",
-    ),
+    PerSystem {
+        name: "plaintext_credential_mode",
+        macos: Read(VERIFIED_AGAINST),
+        linux: Read(VERIFIED_AGAINST),
+        windows: NotRead(
+            "a mode keeps nobody out of a file on Windows; how Claude Code writes \
+             `.credentials.json` there is windows_plaintext_write's",
+        ),
+    },
     PerSystem {
         name: "locked_keychain_keeps_last_login",
         macos: Read("2.1.294"),
@@ -204,7 +192,10 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         name: "locked_sign_in_writes_fallback",
         macos: Read("2.1.294"),
         linux: NO_KEYCHAIN_ON_LINUX,
-        windows: NO_KEYCHAIN_ON_WINDOWS,
+        windows: NotRead(
+            "Windows has no keychain; a session out of Credential Manager's reach writes the \
+             file, credman_unreachable_writes_file's",
+        ),
     },
     PerSystem {
         name: "fallback_outlives_keychain_writes",
@@ -212,16 +203,13 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         linux: NO_KEYCHAIN_ON_LINUX,
         windows: NO_KEYCHAIN_ON_WINDOWS,
     },
+    // Read again in both Windows builds of 2.1.301, where the file sits behind Credential
+    // Manager wherever that store is on.
     PerSystem {
         name: "fallback_file_pins_session_login",
         macos: Read("2.1.294"),
         linux: NO_KEYCHAIN_ON_LINUX,
-        windows: Pending {
-            by: &["W22"],
-            reads: "windows_file_adoption: how soon a running session takes a new \
-                    `.credentials.json` on Windows, where it is the store and where it sits \
-                    behind Credential Manager",
-        },
+        windows: Read("2.1.301"),
     },
     PerSystem {
         name: "login_is_one_organisation",
@@ -308,6 +296,92 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         macos: NotRead("off Windows the daemon records `procStart`, which Pitboard does not read"),
         linux: NotRead("off Windows the daemon records `procStart`, which Pitboard does not read"),
         windows: Read("2.1.300"),
+    },
+    PerSystem {
+        name: "windows_backend_choice",
+        macos: NotRead("macOS's chain is live_chain_order's"),
+        linux: NotRead("Linux's store is the file alone, which no_keyring_off_macos reads"),
+        windows: Read("2.1.301"),
+    },
+    PerSystem {
+        name: "windows_plaintext_strict_read",
+        macos: NotRead(
+            "off Windows no reader keeps another out of a file, and a refused read is no login",
+        ),
+        linux: NotRead(
+            "off Windows no reader keeps another out of a file, and a refused read is no login",
+        ),
+        windows: Read("2.1.301"),
+    },
+    PerSystem {
+        name: "windows_plaintext_write",
+        macos: NotRead("how macOS's file is written is plaintext_credential_mode's"),
+        linux: NotRead("how Linux's file is written is plaintext_credential_mode's"),
+        windows: Read("2.1.301"),
+    },
+    PerSystem {
+        name: "windows_file_adoption",
+        macos: NotRead(
+            "on macOS the file sits behind the keychain, fallback_file_pins_session_login's",
+        ),
+        linux: NotRead("how soon a session takes a new login off Windows is credential_cache's"),
+        windows: Pending {
+            by: &["W27"],
+            reads: "how soon a running session takes a `.credentials.json` a switch wrote, \
+                    session step 6",
+        },
+    },
+    PerSystem {
+        name: "credman_account_name",
+        macos: NotRead("macOS's account is keychain_account_name's"),
+        linux: NotRead("Linux keeps the login in a file, which has no user name"),
+        windows: Read("2.1.301"),
+    },
+    PerSystem {
+        name: "credman_target",
+        macos: NotRead("macOS's item is credential_service_name's"),
+        linux: NotRead("Linux keeps the login in a file"),
+        windows: Read("2.1.301"),
+    },
+    PerSystem {
+        name: "credman_chunking",
+        macos: NotRead("a keychain item takes a login of any size, keychain_write_route's"),
+        linux: NotRead("Linux keeps the login in a file"),
+        windows: Read("2.1.301"),
+    },
+    PerSystem {
+        name: "credman_probe",
+        macos: NotRead("macOS's chain is live_chain_order's"),
+        linux: NotRead("Linux keeps the login in a file"),
+        windows: Read("2.1.301"),
+    },
+    PerSystem {
+        name: "credman_migration",
+        macos: NotRead("macOS's chain is live_chain_order's"),
+        linux: NotRead("Linux keeps the login in a file"),
+        windows: Read("2.1.301"),
+    },
+    PerSystem {
+        name: "credman_unreachable_writes_file",
+        macos: NotRead("macOS's counterpart is locked_sign_in_writes_fallback"),
+        linux: NotRead("Linux keeps the login in a file"),
+        windows: Read("2.1.301"),
+    },
+    PerSystem {
+        name: "credman_attributes",
+        macos: NotRead("macOS's item is written by `security`, keychain_write_route's"),
+        linux: NotRead("Linux keeps the login in a file"),
+        windows: Read("2.1.301"),
+    },
+    PerSystem {
+        name: "windows_credman_cache",
+        macos: NotRead("how soon a session takes a new login on macOS is credential_cache's"),
+        linux: NotRead("how soon a session takes a new login on Linux is credential_cache's"),
+        windows: Pending {
+            by: &["W27"],
+            reads: "how soon a running session takes a login a switch wrote to Credential \
+                    Manager, session step 7",
+        },
     },
     PerSystem {
         name: "windows_browser_open",
@@ -519,10 +593,12 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         read_from: "the config path resolution, and the config dir the secure storage module \
                     shares",
         // Read on 2026-10-15 from the darwin-arm64, linux-x64, win32-x64 and win32-arm64 builds
-        // of 2.1.299 and 2.1.300, whose code for both paths is the same.
-        verified_against: "2.1.300",
+        // of 2.1.299 and 2.1.300, and on 2026-10-16 from those of 2.1.301, whose code for both
+        // paths is the same.
+        verified_against: "2.1.301",
         depends: "claude::config_file and claude::config_dir, which read CLAUDE_CONFIG_DIR \
-                  the two ways, and home::check_absolute, which refuses an empty one",
+                  the two ways, home::check_absolute, which refuses an empty one, and \
+                  claude::credman's read of the cached feature, from the file config_file names",
         probe: &[".config.json", "CLAUDE_CONFIG_DIR"],
         absent: &[],
     },
@@ -747,33 +823,36 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         name: "fallback_file_pins_session_login",
         fact: "before a session makes a request it looks at `.credentials.json` in its storage \
                directory, by its modification time alone. Where the file is not there, or the \
-               look fails, it drops the login it holds and reads the keychain through its 30 \
-               second cache. Where it is there, whatever it holds and whether or not it can be \
-               read, the session keeps the login it holds while that login is usable: it reads \
-               again where the file's modification time has changed, at most every 30 seconds \
-               where that login is gone or its refresh token is empty or known dead, after a \
-               401, and at its own sign-in, and 5 minutes before the login expires it reads \
-               the store and takes the login there where it differs. So while the file sits \
-               behind the keychain, a session already running keeps the account it is on \
-               after a switch until its login is next renewed, or until it is started again. \
-               Read, not measured against a running session",
+               look fails, it drops the login it holds and reads the store in front of the file, \
+               the keychain or Credential Manager, through its 30 second cache. Where it is \
+               there, whatever it holds and whether or not it can be read, the session keeps \
+               the login it holds while that login is usable: it reads again where the file's \
+               modification time has changed, at most every 30 seconds where that login is gone \
+               or its refresh token is empty or known dead, after a 401, and at its own sign-in, \
+               and 5 minutes before the login expires it reads the store and takes the login \
+               there where it differs. So while the file sits behind that store, a session \
+               already running keeps the account it is on after a switch until its login is \
+               next renewed, or until it is started again. Read, not measured against a running \
+               session",
         read_from: "the check before each API client, which stats the file, compares its \
-                    modification time with the one it last saw, reads through the keychain \
+                    modification time with the one it last saw, reads through the store's \
                     cache where the stat fails, and otherwise keeps a usable login, reading \
                     again at most every 30 seconds for one that is not; the renewal check 5 \
                     minutes before expiry, which reads the store first and takes its login \
                     where it differs; and the 401 handlers",
         // Read on 2026-10-08 from the macOS build and on 2026-10-09 from the Linux x64,
-        // Windows x64 and Windows arm64 builds of 2.1.294, whose code here is the same. On
-        // Linux the file is the only store, and on Windows it is unless Credential Manager
-        // is turned on, by `tengu_windows_credman` or `CLAUDE_CODE_FORCE_WINDOWS_CREDMAN`.
+        // Windows x64 and Windows arm64 builds of 2.1.294, whose code here is the same, and
+        // again on 2026-10-16 from both Windows builds of 2.1.301. On Linux the file is the
+        // only store, and on Windows it is unless Credential Manager is turned on
+        // (`windows_backend_choice`).
         verified_against: "2.1.294",
         depends: "Claude's adoption, by which a switch says that running sessions take it at \
-                  their login's next renewal while the file is behind the keychain; Claude's \
-                  behind, which tells the file by a look and says nothing where the look fails; \
-                  the fallback_login warning and check, which say so of a file with no login in \
-                  it, or one Pitboard cannot read, too; and `pitboard stow`, which says sessions \
-                  already running follow a switch within 33 seconds again once the file is gone",
+                  their login's next renewal while the file is behind the keychain or \
+                  Credential Manager; Claude's behind, which tells the file by a look and says \
+                  nothing where the look fails; the fallback_login warning and check, which say \
+                  so of a file with no login in it, or one Pitboard cannot read, too; and \
+                  `pitboard stow`, which says sessions already running follow a switch within 33 \
+                  seconds again once the file is gone",
         probe: &["lastCredentialsMtimeMs", "lastUnusableTokenRecheckAt"],
         absent: &[],
     },
@@ -977,18 +1056,16 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                deletion, so a POSIX rename lands over one it holds open. It writes \
                `.credentials.json` by staging `<file>.tmp.<8 hex>` beside it and renaming that \
                over, trying the rename four times 50ms apart on EPERM, EBUSY and EACCES, and \
-               then rewriting the file in place on EXDEV, EPERM, EEXIST or EBUSY. Its strict \
-               read of the login takes any error but a missing file for a failed read there, \
-               a sharing violation's EBUSY included, which skips its write \
-               (`read_failed_skip_write`)",
+               then rewriting the file in place on EXDEV, EPERM, EEXIST or EBUSY. What its \
+               strict read makes of a file held without sharing is \
+               windows_plaintext_strict_read's",
         read_from: "Bun 1.4.3's `openat_windows`, which calls `NtCreateFile` with \
                     `FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE`, in src/sys/lib.rs \
                     at bun-v1.4.3, its errno table, which makes a sharing violation EBUSY, in \
                     src/errno/windows_errno.rs, and libuv's `uv_fs_open`, which shares all three but under \
                     `UV_FS_O_EXLOCK`, in src/win/fs.c at oven-sh/libuv 8023581, as embedded in \
                     Claude Code 2.1.300; the file write's staging, its retries and its \
-                    in-place arm, and the plaintext store's strict read, in the win32-x64 and \
-                    win32-arm64 builds; read on 2026-10-15",
+                    in-place arm, in the win32-x64 and win32-arm64 builds; read on 2026-10-15",
         verified_against: "2.1.300",
         depends: "host::windows::fs::rename, which renames over Claude Code's files the POSIX \
                   way where the volume has it and waits out a file held without sharing its \
@@ -1083,6 +1160,260 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         verified_against: "2.1.300",
         depends: "claude::daemon's running, through host::proc::started",
         probe: &["procStartFt", "\\\\.\\pipe\\cc-daemon-"],
+        absent: &[],
+    },
+    Assumption {
+        name: "windows_backend_choice",
+        fact: "on Windows Claude Code keeps its login in Credential Manager, with \
+               `.credentials.json` behind it, where `CLAUDE_CODE_FORCE_WINDOWS_CREDMAN` is \
+               exactly `1` in its environment, which it asks on every store access, or where its \
+               config file caches `tengu_windows_credman` as true, which it reads once a process: \
+               a non-empty `<config dir>\\.config.json`, else `<CLAUDE_CONFIG_DIR || home>\\.claude.json` \
+               where `.config.json` is missing, empty, a folder or a link loop, any other error \
+               or a file that is not JSON reading as false. Otherwise the file alone is its \
+               store. The variable reaches a session from the environment it starts with, which \
+               Windows makes from `HKCU\\Environment` for one started from Explorer, and from \
+               the `env` of the config file, of the person's `settings.json` and of managed \
+               settings, assigned in that order at start-up, each value coerced to a string. A \
+               project's or local settings' `env` passes only a safe list then, which leaves the \
+               variable out, but is assigned whole once the folder is trusted, or in print \
+               mode, so a project can turn the store on for its own sessions from then on",
+        read_from: "`getSecureStorage`, the backend gate beside it with its memo and its read \
+                    of the cached feature, the backend list, and \
+                    applySafeConfigEnvironmentVariables, applyConfigEnvironmentVariables, the \
+                    project-scope filter and the safe list, in the win32-x64 and win32-arm64 \
+                    builds of 2.1.301, read as bytes on 2026-10-16",
+        verified_against: "2.1.301",
+        depends: "claude::credman::turned_on, which reads every signal but a project's and a \
+                  `--settings` file's, and live::chain on Windows, which is the file only \
+                  where none is on and Credential Manager holds nothing at the live target, so \
+                  a session a project turned the store on for is caught once it wrote there",
+        probe: &[
+            "tengu_windows_credman",
+            "CLAUDE_CODE_FORCE_WINDOWS_CREDMAN",
+            r#"["keychain","plaintext","windows-credman"]"#,
+            "applySafeConfigEnvironmentVariables",
+        ],
+        absent: &[],
+    },
+    Assumption {
+        name: "windows_plaintext_strict_read",
+        fact: "on Windows Claude Code reads `.credentials.json` strictly before it writes: a \
+               missing file, a folder in its place or a path through a file is no login, a \
+               file that is not JSON is no login either, and any other error is a failed read, \
+               EACCES, EPERM and a sharing violation's EBUSY included, which skips its write \
+               (`read_failed_skip_write`). So a read that held the file without sharing it \
+               would have Claude Code drop a renewal",
+        read_from: "the plaintext store's strict read and its error mapping, called with \
+                    `win32`, and the store mutation that skips its write on a failed read, in \
+                    the win32-x64 and win32-arm64 builds of 2.1.301, read as bytes on 2026-10-16",
+        verified_against: "2.1.301",
+        depends: "Pitboard's reads of Claude Code's files on Windows, which share reading, \
+                  writing and deletion as std opens a file and are never held across Claude \
+                  Code's lock (windows_open_sharing)",
+        probe: &["read_failed_skip_write"],
+        absent: &[],
+    },
+    Assumption {
+        name: "windows_plaintext_write",
+        fact: "on Windows Claude Code writes `.credentials.json` in its storage folder, making \
+               the folder first, by a temporary file renamed over it (windows_open_sharing), \
+               then `chmod` 0600, which there only clears the read-only attribute. It sets no \
+               access list, so a file it makes takes its folder's inherited one. Its rename is \
+               `MoveFileExW` with `MOVEFILE_REPLACE_EXISTING`, which fails over a read-only \
+               file, and its in-place arm cannot open one to write, so its write fails there. \
+               The file's modification time changes with every write",
+        read_from: "the plaintext store's write, which calls the file write helper with 384 \
+                    and then chmod 384, in the win32-x64 and win32-arm64 builds of 2.1.301; Bun \
+                    1.4.3's `chmod` and `rename` in src/sys/sys_uv.rs and \
+                    src/runtime/node/node_fs.rs, which call libuv's `uv_fs_chmod`, \
+                    `_wchmod`, and `uv_fs_rename`, `MoveFileExW`, in src/win/fs.c at \
+                    oven-sh/libuv 8023581, as embedded in Claude Code 2.1.301; read on \
+                    2026-10-16",
+        verified_against: "2.1.301",
+        depends: "store::file on Windows, which writes the file by a temporary file renamed \
+                  over it, keeps the access list it had (host::windows::fs::copy_access) and \
+                  refuses a read-only one, as Claude Code's own write fails there",
+        probe: &[
+            ".credentials.json",
+            "Warning: Storing credentials in plaintext.",
+        ],
+        absent: &[],
+    },
+    Assumption {
+        name: "windows_file_adoption",
+        fact: "on Windows, where `.credentials.json` is Claude Code's store, a running session \
+               looks at its modification time before each request and reads it again where it \
+               has changed, so a switch, which changes it, is taken at the session's next \
+               request. Read, not measured against a running session",
+        read_from: "the check before each API client, which compares the file's modification \
+                    time with the one it last saw, in the win32-x64 and win32-arm64 builds of \
+                    2.1.301, read as bytes on 2026-10-16",
+        verified_against: "2.1.301",
+        depends: "Claude's adoption on Windows, which says 33 seconds as on Linux until \
+                  session step 6 measures it",
+        probe: &["lastCredentialsMtimeMs"],
+        absent: &[],
+    },
+    Assumption {
+        name: "credman_account_name",
+        fact: "on Windows Claude Code names its Credential Manager item's user \
+               `claude-code-user` whoever runs it, so its item is \
+               `Claude Code-credentials[-<8 hex>]/claude-code-user` as `Bun.secrets` names one, \
+               and the pieces of one too large for an item `#<k>`, `#m` and `#p` after it",
+        read_from: "the secure storage module's account name, a literal in the win32-x64 and \
+                    win32-arm64 builds of 2.1.301 where the others read `USER`, and the store \
+                    that passes it to `Bun.secrets` with the service name; Bun 1.4.3's \
+                    `Bun.secrets` in src/jsc/bindings/SecretsWindows.cpp, which names a \
+                    generic item `<service>/<name>`, as embedded in Claude Code 2.1.301; read on \
+                    2026-10-16",
+        verified_against: "2.1.301",
+        depends: "slot::account_name on Windows, and claude::credman's look at the live target \
+                  and its manifest",
+        probe: &["claude-code-user", "Bun.secrets.get"],
+        absent: &[],
+    },
+    Assumption {
+        name: "credman_target",
+        fact: "on Windows Claude Code keeps its login in the Credential Manager item \
+               `<service>/claude-code-user`, the service named as on macOS: \
+               `Claude Code${OAUTH_FILE_SUFFIX}-credentials`, with \
+               `-<first 8 hex of sha256>` of `CLAUDE_SECURESTORAGE_CONFIG_DIR`, else of the NFC \
+               config dir, appended unless the one asked for is unset. The string is hashed as \
+               given, so `C:\\x`, `C:/x`, `c:\\x` and `C:\\x\\` name four items for one folder, and \
+               any `CLAUDE_CONFIG_DIR` set names one of its own",
+        read_from: "the secure storage module's service name and slot derivation, and the \
+                    Credential Manager store that hands it to `Bun.secrets` with the user name, \
+                    in the win32-x64 and win32-arm64 builds of 2.1.301, read as bytes on \
+                    2026-10-16",
+        verified_against: "2.1.301",
+        depends: "slot::service_for_dir and slot::dir_hash, which hash the string as given, \
+                  claude::paths::live_service, and claude::credman::Store",
+        probe: &[
+            "-credentials",
+            "OAUTH_FILE_SUFFIX",
+            "CLAUDE_SECURESTORAGE_CONFIG_DIR",
+        ],
+        absent: &[],
+    },
+    Assumption {
+        name: "credman_chunking",
+        fact: "a login of up to 2400 bytes is the item's whole value. Above that it is base64 in \
+               pieces of 2400 characters, `#0` to `#n-1` after the user name, at most 256, with \
+               `#m` holding `{\"n\":n,\"l\":length}` and `#p` the number of pieces a write may \
+               leave. A write of pieces sets `#p`, each piece, then `#m`, then deletes the item \
+               and any piece past the last, then `#p`; a write of one item over pieces sets the \
+               item, `#p`, deletes `#m`, each piece, then `#p`. A read takes `#m` only where its \
+               `n` and `l` are integers with 0 < n <= 256 and 0 < l <= n * 2400, else reads the \
+               item, never reads `#p`, and fails where a piece is missing or the pieces' length \
+               is not `l`. More than 256 pieces, 460800 bytes, fails the write \
+               (`credman_oversize`). A delete takes the item, the pieces `#m` names and `#m`, \
+               then as many as `#p` says, or where it says none each piece found from `#0` on. \
+               An item holding nothing is none. Pieces replaced in place under a manifest of \
+               the same length can be read half old and half new",
+        read_from: "the Credential Manager store's write, read, delete and manifest check, in the \
+                    win32-x64 and win32-arm64 builds of 2.1.301, read as bytes on 2026-10-16",
+        verified_against: "2.1.301",
+        depends: "claude::pieces, which writes in the same order, adds a manifest no base64 \
+                  length matches while pieces are replaced in place, and reads a manifest Claude \
+                  Code would pass over, or `#p` beside one, as unreadable; claude::credman::Store, \
+                  and the ceiling a switch and a renewal check before they write",
+        probe: &[
+            "SecureStorageData too large for Credential Manager (",
+            "chunked read inconsistent: got ",
+            "credman_oversize",
+        ],
+        absent: &[],
+    },
+    Assumption {
+        name: "credman_probe",
+        fact: "a session asks `Bun.secrets` for its item once as it starts, for at most 10 \
+               seconds. Where that fails or takes longer, Credential Manager is out of its reach \
+               for the session's life: it reads only `.credentials.json` and every write to the \
+               store fails, which its fallback wrapper answers by writing the file. Each later \
+               call has a 2 second timeout",
+        read_from: "the startup probe, its 10 second timeout and the flag every Credential \
+                    Manager read and write asks, in the win32-x64 and win32-arm64 builds of \
+                    2.1.301, read as bytes on 2026-10-16",
+        verified_against: "2.1.301",
+        depends: "credman_unreachable_writes_file, by which such a session leaves a login in \
+                  the file behind Credential Manager",
+        probe: &["probe timeout", "[windows-credman] load failed: "],
+        absent: &[],
+    },
+    Assumption {
+        name: "credman_migration",
+        fact: "with Credential Manager on, every write goes there first. Where it took the login \
+               and held none before, `.credentials.json` is deleted, a failure to delete \
+               ignored; where it held one, the file is left. Where Credential Manager fails, \
+               the login is written to the file (`plaintext_fallback_used`), and where it held \
+               a login it cannot then delete, the write fails though the file took it \
+               (`plaintext_fallback_primary_not_cleared`); both failing is \
+               `primary_and_fallback_failed`. A strict read takes an entry that is not JSON as a \
+               failed read. The successor backend behind `tengu_hover_rest` is not used where no \
+               backend is handed in, as an ordinary `claude` hands none",
+        read_from: "the fallback wrapper's update, delete and strict read around the Credential \
+                    Manager and plaintext stores, and `getSecureStorage`, in the win32-x64 and \
+                    win32-arm64 builds of 2.1.301, read as bytes on 2026-10-16",
+        verified_against: "2.1.301",
+        depends: "store::Live::taken_over_by_the_first, which writes Credential Manager and \
+                  deletes the file only where it held nothing, and never writes the file where \
+                  Credential Manager fails: the journal's recovery takes that",
+        probe: &[
+            "plaintext_fallback_used",
+            "primary_and_fallback_failed",
+            "plaintext_fallback_primary_not_cleared",
+        ],
+        absent: &[],
+    },
+    Assumption {
+        name: "credman_unreachable_writes_file",
+        fact: "with Credential Manager on, a session whose start-up look at `Bun.secrets` \
+               failed, as every call fails in a network logon, reads no login there and fails \
+               every write there, so its fallback wrapper writes the login, a sign-in's or a \
+               renewal's, to `.credentials.json` (`plaintext_fallback_used`) and leaves the \
+               Credential Manager item as it was: it deletes that only where its read before \
+               the write held a login. Credential Manager then holds one login and the file \
+               another, and a session that reads only the file signs in with the file's",
+        read_from: "the Credential Manager store's read and update, which answer no login and a \
+                    failed write while the start-up probe has not passed, the probe, and the \
+                    fallback wrapper's update and read, in the win32-x64 and win32-arm64 builds \
+                    of 2.1.301, read as bytes on 2026-10-16",
+        verified_against: "2.1.301",
+        depends: "Claude's behind on Windows, doctor's fallback_login check, the warning every \
+                  read and every change give while the file is there, and `pitboard stow`, \
+                  which puts that login away",
+        // Behaviour, with no literal of its own.
+        probe: &[],
+        absent: &[],
+    },
+    Assumption {
+        name: "credman_attributes",
+        fact: "`Bun.secrets` writes each item generic, named `<service>/<name>`, the name its \
+               user name, the value's UTF-8 bytes its blob, with enterprise persistence, no \
+               comment and no attributes: every logon of the person on that PC reads it, and a \
+               roaming profile takes it to others. It reads an item holding nothing as one that \
+               is there",
+        read_from: "Bun 1.4.3's `Bun.secrets` in src/jsc/bindings/SecretsWindows.cpp, as embedded \
+                    in Claude Code 2.1.301, read on 2026-10-16, and RF-G3, which wrote one as \
+                    Claude Code 2.1.300 calls it (run 38704825885)",
+        verified_against: "2.1.301",
+        depends: "host::windows::credman, which writes each item the same way, \
+                  `credman_write_is_harmless`, and doctor's credential store line",
+        probe: &["Bun.secrets.set", "Bun.secrets.delete"],
+        absent: &[],
+    },
+    Assumption {
+        name: "windows_credman_cache",
+        fact: "a running session serves the login it read from Credential Manager for 30 \
+               seconds before it reads it again, and keeps the last one it read where a read \
+               fails. Read, not measured against a running session",
+        read_from: "the Credential Manager store's cached read, in the win32-x64 and \
+                    win32-arm64 builds of 2.1.301, read as bytes on 2026-10-16",
+        verified_against: "2.1.301",
+        depends: "Claude's adoption on Windows, 33 seconds as on macOS until session step 7 \
+                  measures it",
+        probe: &["[windows-credman] strict load failed: ", "readInFlight"],
         absent: &[],
     },
     Assumption {
@@ -1228,6 +1559,7 @@ mod tests {
                 "oauth_client",
                 "sign_in_output",
                 "sign_in_takes_another_code",
+                "fallback_file_pins_session_login",
                 "login_is_one_organisation",
                 "config_may_name_no_organisation",
                 "usage_cache_stamp_is_the_configs",
@@ -1242,6 +1574,16 @@ mod tests {
                 "windows_version_resource",
                 "windows_managed_settings",
                 "windows_daemon_identity",
+                "windows_backend_choice",
+                "windows_plaintext_strict_read",
+                "windows_plaintext_write",
+                "credman_account_name",
+                "credman_target",
+                "credman_chunking",
+                "credman_probe",
+                "credman_migration",
+                "credman_unreachable_writes_file",
+                "credman_attributes",
                 "windows_browser_open",
             ]
         );

@@ -69,8 +69,8 @@ pub enum OnSystem {
     /// carries what the fact rules out for another reason.
     NotRead(&'static str),
     /// Not read there yet. `by` names the pull requests of the Windows work that read it,
-    /// `W2` to `W27`, and `reads` what each reads, which is a fact of its own wherever the
-    /// tool behaves differently there.
+    /// `W2` to `W27` but `W23`, `W23a`, `W23b` or `W-warm`, and `reads` what each reads, which
+    /// is a fact of its own wherever the tool behaves differently there.
     Pending {
         by: &'static [&'static str],
         reads: &'static str,
@@ -358,14 +358,20 @@ mod tests {
         );
     }
 
-    /// Every fact is read from at least one build. One read from none would never be
-    /// checked, and nothing would say so.
+    /// Every fact is read from at least one build, or waits on a pull request to be. One read
+    /// from none and waiting on none would never be checked, and nothing would say so.
     #[test]
-    fn every_fact_is_read_from_some_build() {
+    fn every_fact_is_read_from_some_build_or_waits_to_be() {
         for &provider in ProviderId::ALL {
             for a in of(provider) {
+                let waits = Platform::EACH.into_iter().any(|platform| {
+                    matches!(
+                        on(provider, a.name, platform),
+                        Some(OnSystem::Pending { .. })
+                    )
+                });
                 assert!(
-                    !read_on(provider, a.name).is_empty(),
+                    !read_on(provider, a.name).is_empty() || waits,
                     "{} is read from no build",
                     a.name
                 );
@@ -440,8 +446,24 @@ mod tests {
         }
     }
 
+    fn is_windows_work(pr: &str) -> bool {
+        let numbered = (2..=27).filter(|n| *n != 23).any(|n| pr == format!("W{n}"));
+        numbered || matches!(pr, "W23a" | "W23b" | "W-warm")
+    }
+
+    #[test]
+    fn the_windows_work_is_w2_to_w27_with_w23_split_and_w_warm() {
+        for pr in ["W2", "W14", "W22", "W23a", "W23b", "W24", "W27", "W-warm"] {
+            assert!(is_windows_work(pr), "{pr}");
+        }
+        for pr in ["W1", "W23", "W23c", "W28", "W-cold", "w14", "W014", ""] {
+            assert!(!is_windows_work(pr), "{pr}");
+        }
+    }
+
     /// A reading still to come names the pull request of the Windows work that takes it,
-    /// `W2` to `W27`, and says what that reads. Nothing on macOS or Linux waits on one.
+    /// `W2` to `W27`, with `W23` split into `W23a` and `W23b`, or `W-warm`, and says what that
+    /// reads. Nothing on macOS or Linux waits on one.
     #[test]
     fn every_pending_reading_names_a_pull_request_of_the_windows_work() {
         for &provider in ProviderId::ALL {
@@ -458,9 +480,8 @@ mod tests {
                         line.name
                     );
                     for pr in by {
-                        let number = pr.strip_prefix('W').and_then(|n| n.parse::<u32>().ok());
                         assert!(
-                            matches!(number, Some(2..=27)),
+                            is_windows_work(pr),
                             "{}: `{pr}` is not a pull request of the Windows work",
                             line.name
                         );
@@ -475,7 +496,7 @@ mod tests {
     fn the_readings_still_to_come_are_listed() {
         let waiting = pending();
         assert!(waiting.iter().all(|&(_, _, p)| p == Platform::Windows));
-        for (provider, count) in [(ProviderId::Claude, 6), (ProviderId::Codex, 5)] {
+        for (provider, count) in [(ProviderId::Claude, 2), (ProviderId::Codex, 2)] {
             let names: Vec<&str> = waiting
                 .iter()
                 .filter(|&&(p, _, _)| p == provider)

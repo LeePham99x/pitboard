@@ -41,10 +41,70 @@ pub fn family(name: &str) -> Option<Family> {
     }
 }
 
+// `slot`'s own item or one of its pieces, `#<k>`, `#m` and `#p`, with or without its user name.
+pub fn spells(name: &str, slot: &str) -> bool {
+    let whole = match name.rsplit_once('#') {
+        Some((whole, piece))
+            if piece == "m"
+                || piece == "p"
+                || (!piece.is_empty() && piece.bytes().all(|b| b.is_ascii_digit())) =>
+        {
+            whole
+        }
+        _ => name,
+    };
+    let named =
+        whole.split_once('/').map_or(
+            whole,
+            |(slot, account)| if account.contains('/') { whole } else { slot },
+        );
+    named.eq_ignore_ascii_case(slot)
+}
+
+// Why a test, or a build for tests, may not address `name`: a family's, and none of `own`'s.
+pub fn refusal(name: &str, own: &[&str]) -> Option<String> {
+    let family = family(name)?;
+    (!own.iter().any(|own| spells(name, own))).then(|| {
+        format!(
+            "a test must never address {name:?}, a {} name a real login may be kept under",
+            family.as_str()
+        )
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::provider::claude::slot::{LIVE_SERVICE, service_for_dir};
+
+    #[test]
+    fn a_tests_own_slot_and_its_pieces_are_let_through_and_nothing_else() {
+        let own = service_for_dir("/tmp/pitboard-e2e-1-own");
+        let own = own.as_str();
+        for name in [
+            own.to_owned(),
+            format!("{own}/claude-code-user"),
+            format!("{own}/claude-code-user#0"),
+            format!("{own}/claude-code-user#255"),
+            format!("{own}/claude-code-user#m"),
+            format!("{own}/CLAUDE-CODE-USER#p"),
+            own.to_uppercase(),
+        ] {
+            assert_eq!(refusal(&name, &[own]), None, "{name}");
+        }
+        for name in [
+            LIVE_SERVICE.to_owned(),
+            format!("{LIVE_SERVICE}/claude-code-user"),
+            format!("{LIVE_SERVICE}/claude-code-user#m"),
+            service_for_dir("/Users/someone/.claude"),
+            format!("{own}/a/b"),
+            "cli|0123456789abcdef.Codex Auth".into(),
+            "secrets|0123456789abcdef.codex".into(),
+        ] {
+            assert!(refusal(&name, &[own]).is_some(), "{name}");
+        }
+        assert_eq!(refusal("pitboard-citest-anything", &[]), None);
+    }
 
     #[test]
     fn every_claude_code_slot_and_piece_is_claude_codes() {

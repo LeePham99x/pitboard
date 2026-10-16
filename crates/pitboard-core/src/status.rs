@@ -1495,7 +1495,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn offline_each_row_shows_the_plan_its_account_last_recorded() {
         let home = tempfile::tempdir().expect("a scratch home");
         let (ctx, _mem, _api) = machine(home.path(), Some("alpha-uuid"));
@@ -1585,10 +1584,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn a_login_nobody_enrolled_says_its_plan() {
         let home = tempfile::tempdir().expect("a scratch home");
         let (ctx, mem, api) = machine(home.path(), Some("stranger-uuid"));
@@ -2244,7 +2239,6 @@ mod tests {
     /// whatever its config names, and Codex's the one its login names, whatever Pitboard last
     /// recorded, so on a plane a signed-in Codex account does not read as parked.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn offline_every_tool_names_its_own_signed_in_account() {
         let home = tempfile::tempdir().expect("a scratch home");
         let (ctx, _mem, api) = machine(home.path(), Some("alpha-uuid"));
@@ -2396,7 +2390,6 @@ mod tests {
     /// the account the tokens belong to and `doctor` failed the login. Online, offline and
     /// doctor now agree on whose it is, and online says Pitboard cannot use it.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_codex_login_that_mixes_two_accounts_is_said_rather_than_read_as_nobody() {
         let home = tempfile::tempdir().expect("a scratch home");
         let (ctx, _mem, api) = machine(home.path(), None);
@@ -2437,7 +2430,6 @@ mod tests {
     /// and not the account whose login Pitboard last recorded in use either, which the key
     /// replaced.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_codex_login_with_an_api_key_is_said_and_pinned_on_no_account() {
         let home = tempfile::tempdir().expect("a scratch home");
         let (ctx, _mem, api) = machine(home.path(), None);
@@ -2467,7 +2459,6 @@ mod tests {
     /// asked for their Codex login to be read or sent anywhere. Until a Codex account is
     /// enrolled, status says nothing about Codex and asks OpenAI nothing.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_tool_with_nothing_enrolled_is_neither_read_nor_asked() {
         let home = tempfile::tempdir().expect("a scratch home");
         let (ctx, _mem, api) = machine(home.path(), None);
@@ -2494,7 +2485,6 @@ mod tests {
     /// then, and Pitboard's record of whose login is stored stands in for it the way
     /// `doctor` already lets it. Without that, the account in use was told to sign in again.
     #[test]
-    #[cfg_attr(windows, ignore = "W21: switching Codex on Windows")]
     fn a_codex_login_caught_half_written_still_names_the_account_in_use() {
         let home = tempfile::tempdir().expect("a scratch home");
         let (ctx, _mem, api) = machine(home.path(), None);
@@ -2668,6 +2658,8 @@ mod tests {
             .with_scripted_api(Arc::clone(&api))
             .with_clock(Arc::new(FixedClock::at(NOW)) as Arc<dyn Clock>);
         crate::home::ensure(&ctx, Permit::for_a_test()).expect("a Pitboard home");
+        // Codex does not start on Windows where `CODEX_HOME` names no folder.
+        std::fs::create_dir_all(root.join("codex")).expect("a Codex home");
         if let Some(uuid) = recorded {
             std::fs::write(
                 root.join(".claude.json"),

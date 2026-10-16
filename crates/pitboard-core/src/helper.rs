@@ -36,6 +36,8 @@ pub(crate) enum Job {
     HoldsWithoutDelete,
     // The file read whole, again and again, opened as std opens one.
     Reads,
+    // A sign-in's address on standard error, then nothing for 30 s, as `codex login` waits.
+    SaysAnAddress,
     // Its process id written to the file, then on while `<file>.held` is there.
     #[cfg(windows)]
     Waits,
@@ -68,6 +70,7 @@ impl Job {
             #[cfg(windows)]
             Job::HoldsWithoutDelete => "holds-without-delete",
             Job::Reads => "reads",
+            Job::SaysAnAddress => "says-an-address",
             #[cfg(windows)]
             Job::Waits => "waits",
             #[cfg(windows)]
@@ -91,6 +94,7 @@ impl Job {
             #[cfg(windows)]
             Job::HoldsWithoutDelete,
             Job::Reads,
+            Job::SaysAnAddress,
             #[cfg(windows)]
             Job::Waits,
             #[cfg(windows)]
@@ -393,6 +397,11 @@ mod tests {
                     said.push_str(&format!("\n{SAID}{each}"));
                 }
                 said
+            }
+            Job::SaysAnAddress => {
+                eprintln!("https://auth.openai.com/");
+                std::thread::sleep(std::time::Duration::from_secs(30));
+                String::new()
             }
             #[cfg(windows)]
             Job::Waits => {

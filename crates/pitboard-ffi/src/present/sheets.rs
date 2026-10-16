@@ -328,9 +328,6 @@ pub(crate) fn sheet_text(seen: &Seen) -> Option<SheetText> {
     Some(text)
 }
 
-/// What the sheet for putting away the login left in a file says while it is up: that it is
-/// looking, then what the look found, in the words `pitboard stow` asks with. Put Away waits
-/// for a login it can put away, which a login of an account nobody enrolled is not.
 pub(crate) fn stow_text(seen: &Seen) -> Option<StowText> {
     let state = seen.state;
     if state.sheet != Some(Sheet::Stow) {
@@ -346,7 +343,7 @@ pub(crate) fn stow_text(seen: &Seen) -> Option<StowText> {
         Some(Leftover::Unknown) => (Vec::new(), None, false),
         Some(Leftover::Found(None)) => (vec![said::nothing_left().to_owned()], None, false),
         Some(Leftover::Found(Some(left))) => (
-            said::left_lines(left),
+            said::left_lines(seen.os, left),
             None,
             !saving && !matches!(left.login, Foreseen::NotEnrolled(_)),
         ),
@@ -357,10 +354,12 @@ pub(crate) fn stow_text(seen: &Seen) -> Option<StowText> {
             "Put Away the Login Left in a File",
             "Put away the login left in a file",
         ),
-        message: "Claude Code left a login in a file behind the keychain, which keeps sessions \
-                  already running from following a switch. Pitboard keeps that login for its \
-                  account where it holds none it can switch to, then deletes the file."
-            .into(),
+        message: format!(
+            "Claude Code left a login in a file behind {}, which keeps sessions already running \
+             from following a switch. Pitboard keeps that login for its account where it holds \
+             none it can switch to, then deletes the file.",
+            said::store_in_front(seen.os)
+        ),
         lines,
         looking,
         confirm: words::titled(seen.os, "Put Away", "Put away"),
