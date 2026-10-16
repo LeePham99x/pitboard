@@ -1083,7 +1083,8 @@ mod tests {
     fn a_login_credential_manager_could_not_take_back_is_not_renewed() {
         let m = lapsed_stored("identify-too-large-for-pieces");
         let mut login = m.live().expect("a login stored");
-        login["mcpOAuth"]["large"] = serde_json::json!("x".repeat(460_800));
+        login["mcpOAuth"]["large"] =
+            serde_json::json!("x".repeat(provider::claude::pieces::MOST_BYTES));
         m.mem.live().plant(&m.service, &login.to_string());
         let stored = m.live();
 

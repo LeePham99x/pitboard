@@ -73,7 +73,8 @@ fn a_login_too_large_for_credential_manager_is_refused_before_anything_moves() {
     let m = machine("too-large-for-pieces");
     let mut login: Value =
         serde_json::from_str(&m.mem.live().peek(&m.service).expect("a live login")).expect("JSON");
-    login["mcpOAuth"]["large"] = serde_json::json!("x".repeat(460_800));
+    login["mcpOAuth"]["large"] =
+        serde_json::json!("x".repeat(provider::claude::pieces::MOST_BYTES));
     m.mem.live().plant(&m.service, &login.to_string());
     let (live_before, vault_before) = (m.mem.live().services(), m.mem.vault().services());
 

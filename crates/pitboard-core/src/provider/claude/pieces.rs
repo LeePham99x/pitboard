@@ -7,10 +7,13 @@ use crate::service::Permit;
 use crate::store::Error;
 
 pub(crate) const ITEM_BYTES: usize = 2400;
-const PIECE: usize = 2400;
+pub(crate) const PIECE: usize = 2400;
 pub(crate) const MOST_PIECES: usize = 256;
 // What 256 pieces of base64 hold: Claude Code's "max ~460800B".
 pub(crate) const MOST_BYTES: usize = MOST_PIECES * PIECE / 4 * 3;
+// What one Credential Manager item holds, `CRED_MAX_CREDENTIAL_BLOB_SIZE`, as
+// host::windows::credman's an_item_holds_2560_bytes_and_no_more measures.
+pub(crate) const BLOB: usize = 5 * 512;
 
 pub(crate) const WHOLE: &str = "";
 pub(crate) const MANIFEST: &str = "#m";

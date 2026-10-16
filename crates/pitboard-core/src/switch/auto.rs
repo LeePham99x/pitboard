@@ -883,7 +883,8 @@ mod tests {
     fn a_login_too_large_for_credential_manager_counts_as_an_attempt() {
         let (m, clock) = nearly_out("auto-too-large-for-pieces", 96.0);
         let mut login = m.live().expect("a login stored");
-        login["mcpOAuth"]["large"] = serde_json::json!("x".repeat(460_800));
+        login["mcpOAuth"]["large"] =
+            serde_json::json!("x".repeat(provider::claude::pieces::MOST_BYTES));
         m.mem.live().plant(&m.service, &login.to_string());
 
         for _ in 1..ATTEMPTS {

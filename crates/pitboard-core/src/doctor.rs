@@ -2133,7 +2133,10 @@ fn judge_pieces(price: store::Cost, parts: &[(String, usize)]) -> Check {
         Some(pieces) => ok(
             "credential_size",
             "login size",
-            format!("{bytes} bytes, in {pieces} pieces of 2400 characters"),
+            format!(
+                "{bytes} bytes, in {pieces} pieces of {} characters",
+                crate::provider::claude::pieces::PIECE
+            ),
         ),
     }
 }

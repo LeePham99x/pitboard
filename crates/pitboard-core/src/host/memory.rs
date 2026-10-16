@@ -86,12 +86,12 @@ impl RawStore for Opened {
         RawStore::list(&self.store)
     }
 
-    // A Credential Manager item holds 2560 bytes and has no other way in.
+    // A Credential Manager item has no other way in.
     fn cost(&self, service: &str, contents: &str) -> Option<Cost> {
         if self.kind() == Backend::CredentialManager {
             return Some(Cost {
                 needs: contents.len(),
-                limit: 5 * 512,
+                limit: crate::provider::claude::pieces::BLOB,
                 second_route: false,
             });
         }
@@ -754,7 +754,7 @@ fn locked<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 mod tests {
     use super::*;
 
-    // A Credential Manager item holds 2560 bytes (MC-cred), and each piece is an item of its own.
+    // A Credential Manager item holds 2560 bytes, and each piece is an item of its own.
     #[test]
     fn a_credential_manager_item_takes_2560_bytes_and_each_piece_is_its_own() {
         let store =
