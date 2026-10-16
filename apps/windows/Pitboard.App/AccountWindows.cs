@@ -22,7 +22,7 @@ internal sealed class AccountWindows
         _web = web;
         _downloads = new Downloads(web, model.Send);
         _janitor = new StoreJanitor(
-            store => Directory.Exists(web.ProfileFolder(store)), store => web.MarkDeleted(store, hidden));
+            store => Directory.Exists(web.ProfileFolder(store)), store => web.MarkDeleted(store, hidden), () => web.LayoutKnown);
     }
 
     // Opening one again brings the open one forward. A held store opens none: its menu item says why.

@@ -9,6 +9,7 @@ public sealed class StoreJanitorTests
     private readonly List<string> _marked = [];
     private readonly List<(string Store, bool Deleted)> _told = [];
     private bool _refusing;
+    private bool _layoutKnown = true;
 
     private StoreJanitor Janitor() => new(
         _folders.Contains,
@@ -21,7 +22,8 @@ public sealed class StoreJanitorTests
 
             _marked.Add(store);
             return Task.CompletedTask;
-        });
+        },
+        () => _layoutKnown);
 
     private void Tell(string store, bool deleted) => _told.Add((store, deleted));
 
@@ -59,6 +61,21 @@ public sealed class StoreJanitorTests
         janitor.Delete([new StoreDeletion("a", 1), new StoreDeletion("b", 2)], Tell);
 
         CollectionAssert.AreEqual(new[] { ("a", true), ("b", true) }, _told);
+    }
+
+    // A Runtime that kept profiles elsewhere would have every folder look absent, and a forgotten account's sign-in stay.
+    [TestMethod]
+    public void AFolderThatLooksAbsentIsDeletedOnlyOnceAPageHasShownWhereFoldersAre()
+    {
+        _layoutKnown = false;
+        var janitor = Janitor();
+
+        janitor.Delete([new StoreDeletion("a", 1)], Tell);
+        _layoutKnown = true;
+        janitor.Delete([new StoreDeletion("a", 2)], Tell);
+
+        Assert.AreEqual("a", _marked.Single());
+        CollectionAssert.AreEqual(new[] { ("a", false), ("a", true) }, _told);
     }
 
     // Answered all the same, or the model would wait on the ask for good.

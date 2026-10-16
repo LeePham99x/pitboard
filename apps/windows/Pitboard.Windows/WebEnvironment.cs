@@ -79,6 +79,9 @@ public sealed class WebEnvironment
         return Refusal(found);
     }
 
+    // Whether a page of this launch has shown its profile's folder where ProfileFolder says.
+    public bool LayoutKnown { get; private set; }
+
     public NavigationPolicy Policy(Site site) => new(site, Scheme);
 
     // Where WebView2 keeps a profile's data, which goes as its browser process exits once the profile is deleted. Its
@@ -101,6 +104,7 @@ public sealed class WebEnvironment
     // download into a temporary file in its profile's download folder until it is named, so a fixture's stay in its own.
     public void Prepare(CoreWebView2 page)
     {
+        Read(page.Profile);
         page.Profile.DefaultDownloadFolderPath = Downloads;
         var settings = page.Settings;
         settings.AreDevToolsEnabled = _devTools;
@@ -137,8 +141,13 @@ public sealed class WebEnvironment
             return;
         }
 
-        controller.CoreWebView2.Profile.Delete();
+        var profile = controller.CoreWebView2.Profile;
+        Read(profile);
+        profile.Delete();
     }
+
+    private void Read(CoreWebView2Profile profile) =>
+        LayoutKnown |= string.Equals(profile.ProfilePath, ProfileFolder(profile.ProfileName), StringComparison.OrdinalIgnoreCase);
 
     private async Task<CoreWebView2Environment> Make()
     {

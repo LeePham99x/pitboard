@@ -64,7 +64,8 @@ public sealed class ProfileTests
         Assert.IsTrue(await Webs.Loads(page, site.Address("/set")), "the stand-in did not load");
         var told = new List<(string Store, bool Deleted)>();
         var janitor = new StoreJanitor(
-            store => Directory.Exists(webs.Web.ProfileFolder(store)), store => webs.Web.MarkDeleted(store, Webs.Window));
+            store => Directory.Exists(webs.Web.ProfileFolder(store)), store => webs.Web.MarkDeleted(store, Webs.Window),
+            () => webs.Web.LayoutKnown);
         var unused = webs.Name("unused");
 
         janitor.Delete([new Core.StoreDeletion(unused, 1)], (store, deleted) => told.Add((store, deleted)));

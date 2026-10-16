@@ -4,8 +4,9 @@ namespace Pitboard.Windows;
 
 // Which stores go, and when, is the model's, in AccountWindowsShown.Deleting. WebView2 deletes a profile's folder only
 // as its browser process exits, so a store is told deleted once its folder has gone, and held until then: the model
-// asks again after its next read.
-public sealed class StoreJanitor(Func<string, bool> exists, Func<string, Task> markDeleted)
+// asks again after its next read. Where the folder is, is read from WebView2's own ProfilePath before an absent one
+// counts, as the Runtime updates itself.
+public sealed class StoreJanitor(Func<string, bool> exists, Func<string, Task> markDeleted, Func<bool> layoutKnown)
 {
     // Each ask once, however many snapshots list it before the model has heard how it went.
     private readonly HashSet<StoreDeletion> _taken = [];
@@ -25,7 +26,8 @@ public sealed class StoreJanitor(Func<string, bool> exists, Func<string, Task> m
 
     private async Task Answer(string store, Action<string, bool> told)
     {
-        if (exists(store) && _marked.Add(store))
+        bool There() => !layoutKnown() || exists(store);
+        if (There() && _marked.Add(store))
         {
             try
             {
@@ -38,6 +40,6 @@ public sealed class StoreJanitor(Func<string, bool> exists, Func<string, Task> m
             }
         }
 
-        told(store, !exists(store));
+        told(store, !There());
     }
 }
