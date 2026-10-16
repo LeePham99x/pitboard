@@ -365,9 +365,13 @@ impl Machine {
     }
 
     /// The command line inside a stand-in app in the fixture's folder, which the schedule
-    /// runs and a link reaches: where the macOS app's fixture put its own.
+    /// runs and a link reaches: where the macOS app's fixture put its own, and on Windows in
+    /// the `bin` beside the app's `Pitboard.exe`, as the app's installer puts it.
     fn helper_in(root: &Path) -> PathBuf {
-        root.join("Pitboard.app/Contents/Helpers/pitboard")
+        match OS {
+            Os::MacOs | Os::Linux => root.join("Pitboard.app/Contents/Helpers/pitboard"),
+            Os::Windows => root.join("Pitboard").join("bin").join("pitboard.exe"),
+        }
     }
 
     pub(crate) fn helper(&self) -> PathBuf {

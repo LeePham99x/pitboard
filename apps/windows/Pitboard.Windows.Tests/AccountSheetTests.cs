@@ -216,7 +216,8 @@ public sealed class AccountSheetTests
 
         await Views.Until(() => up.Model.Sent.Count == 2, "the model was not told");
         CollectionAssert.AreEqual(new Intent[] { new Intent.CancelSignIn(), new Intent.CloseSheet() }, up.Model.Sent.ToArray());
-        CollectionAssert.AreEqual(new[] { true, true }, upWhenTold, "the model heard once the sheet had gone");
+        Assert.HasCount(2, upWhenTold);
+        Assert.IsTrue(upWhenTold.TrueForAll(open => open), "the model heard once the sheet had gone");
         await Views.Until(() => up.Dialogs.Open is null, "the sheet stayed up");
     }
 

@@ -2309,7 +2309,10 @@ Accounts and tokens:
   the one in front (runs 38795330950 and 38800569975). A click at Pitboard's window reaches
   that window (run 38797997319). So the test of the first launch is inconclusive where the
   window in front before the launch keeps the foreground, and no test there gives Pitboard
-  real input.
+  real input. The UI tests type through the Value pattern, press through the Invoke pattern,
+  and there ask for a row's shortcut menu through `IUIAutomationElement3::ShowContextMenu`,
+  which WinUI answers with the row's `ContextRequested` (run 38865911995). Ctrl+N and the find
+  bar, tests of a key itself, are inconclusive there.
 - FlaUI.UIA3 5.0.0, run as that user, finds that user's WinUI elements by AutomationId and
   selects a NavigationView item through its SelectionItem pattern (CF2,
   `LifecycleTests.AWinUIElementIsFoundAndInvokedByItsAutomationId`, run 38804714545).
