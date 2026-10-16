@@ -1330,9 +1330,10 @@ window loads its site, and whatever the site's pages load, as a browser would.
   and seals its copy costs nothing a person sees. The seal keeps other Windows accounts out
   and protects the file at rest. It does not protect against a program running as the
   person, such as Codex's unelevated sandbox: Codex 0.162.1 builds its token with
-  `DISABLE_MAX_PRIVILEGE | LUA_TOKEN | WRITE_RESTRICTED`, which restricts what it writes and
-  not what it reads (`codex-rs/windows-sandbox-rs/src/token.rs`), and whether that token
-  opens a park is runner-facts row RF-D2b's, not run yet. A park copied to another PC opens
+  `DISABLE_MAX_PRIVILEGE | LUA_TOKEN | WRITE_RESTRICTED`
+  (`codex-rs/windows-sandbox-rs/src/token.rs`), and a program started with such a token
+  unseals a park and opens its file to read or delete it, though not to write it
+  ([Windows](#windows) in Measured facts). A park copied to another PC opens
   there only for the same person with a roaming profile, which carries the key, and
   Pitboard's home is never in a roaming profile's roaming part. `doctor` says parks are
   sealed, leaves them out of the logins others can read, and makes two or more that all fail
@@ -2237,6 +2238,15 @@ DPAPI:
 - After an administrator resets the password, nothing sealed before unseals: 0x8009000B.
 - A task with the job user's interactive token, in its session, unseals what the job user
   sealed.
+- A token made from the standard user's as Codex 0.162.1 makes its unelevated sandbox's,
+  with `DISABLE_MAX_PRIVILEGE | LUA_TOKEN | WRITE_RESTRICTED`, a capability SID, the logon
+  SID and Everyone as restricting SIDs, Codex's default DACL and a desktop of its own
+  granted to the logon SID, is not elevated, at medium integrity. A program started with it
+  unseals what the user sealed, its first unseal taking 1.5 ms on windows-11-arm and 1 ms on
+  windows-2025. It opens a file whose protected DACL grants only the user, SYSTEM and
+  Administrators for read and for delete, and fails 5 opening it for write (run
+  38821312770). Without the capability SID, the default DACL and the desktop, its programs
+  started but neither exited within 30 s nor wrote a report (run 38797729796).
 
 Tasks:
 
@@ -2271,6 +2281,17 @@ Processes and jobs:
   a process in a job, runs all its 8 to 10 processes inside that job. `TerminateJobObject`
   ends them all. Ending only the probe's processes, or letting the opener exit, leaves Edge
   running.
+
+Handing a descriptor:
+
+- An anonymous pipe's read end, handed to Bun as C runtime descriptor 3 through
+  `STARTUPINFOW.lpReserved2`, reaches it as descriptor 3. Bun's `fstat` calls it a FIFO,
+  and a direct `readSync` reads all 46 bytes handed (run 38797729796).
+- A loopback socket handed the same way is a FIFO to Bun's `fstat` too, never a socket,
+  and opening `/proc/self/fd/3` fails ENOENT. So a reader that reads the descriptor
+  directly only when `fstat` calls it a socket, and otherwise opens `/proc/self/fd/3` and
+  falls back to the direct read only on EACCES or EPERM, as Claude Code 2.1.300's does,
+  gets nothing from a pipe or a socket (run 38821312770).
 
 Credential Manager:
 
@@ -2366,7 +2387,6 @@ on 15 October 2026. W27 reviews the list.
 | `GetProcessTimes` gives a process's creation time | [GetProcessTimes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesstimes) | Only the tests read it, of their own process. |
 | A generic credential's blob holds at most 2560 bytes | [CREDENTIALW](https://learn.microsoft.com/en-us/windows/win32/api/wincred/ns-wincred-credentialw) | The largest blob written was a 2400-byte piece. |
 | Reserved device names, and trailing dots and spaces, in a file name | [Naming files](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file) | No row makes such a name. |
-| `lpReserved2` is reserved for the C runtime | [STARTUPINFOW](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/ns-processthreadsapi-startupinfow) | A later runner-facts row measures the hand-over through it. |
 | `longPathAware` in a manifest lifts the 260-character limit | [Application manifests](https://learn.microsoft.com/en-us/windows/win32/sbscs/application-manifests) | No row uses a long path. |
 | `StartWhenAvailable` runs a start that was missed | [StartWhenAvailable](https://learn.microsoft.com/en-us/windows/win32/taskschd/tasksettings-startwhenavailable) | A runner never sleeps through a trigger. |
 | WSL 2's processes run in a utility VM | [Comparing WSL versions](https://learn.microsoft.com/en-us/windows/wsl/compare-versions) | No runner has WSL. |
