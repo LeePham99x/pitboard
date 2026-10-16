@@ -4209,6 +4209,13 @@ Microsoft's documentation.
   dims its close button through `CloseButtonStyle` while nothing may close it, keeps Esc
   from a sign-in that waits on its app, and keeps its failure's InfoBar in the tree while it
   is closed. `AccountSheetTests` holds what runs without a person on the runners.
+- Microsoft's InfoBar page raises no notification for a bar changed while open, and has it
+  closed and opened again for a screen reader to hear the new content
+  ([InfoBar](https://learn.microsoft.com/windows/apps/develop/ui/controls/infobar), updated 25
+  June 2026). So the sheet's failure bar closes and opens again for each new failure, and a
+  code the tool refused is an error InfoBar under the code field, where plain text was (shot
+  18). A new failure gives focus back to the field it is about, as the sheet's opening does,
+  so the default button is the one Enter presses.
 - WinUI 2.3.9's `Themes/generic.xaml`, in the Windows App SDK 2.5.1 package: the InfoBar's
   close button is the template part `CloseButton`, which `NoticeBarTests` presses, and a
   `ListViewItem` is padded `16,0,12,0`, which the Activity pane's column headers and This

@@ -208,8 +208,9 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
         CopyLink.IsEnabled = signingIn.Page is not null;
         OpenLink.IsEnabled = signingIn.Page is not null;
         ToolTipService.SetToolTip(OpenLink, running.Url);
-        Refused.Text = text.Refused ?? "";
-        Refused.Visibility = Look.Shown(text.Refused is not null);
+        RefusedBar.Message = text.Refused ?? "";
+        RefusedBar.Margin = new Thickness(0, text.Refused is null ? 0 : 8, 0, 0);
+        RefusedBar.IsOpen = text.Refused is not null;
         CodeField.Description = text.CodeNote;
         PrimaryButtonText = running.WantsCode ? "Submit code" : "";
         SecondaryButtonText = text.Undo?.Title ?? "";
@@ -253,10 +254,11 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
         MissingLink.Content = missing.LinkTitle;
     }
 
-    // The InfoBar announces itself as it opens; a failure after another, with the bar already open, is said here.
+    // The InfoBar announces itself as it opens, so a failure after another opens it again. Focus goes back to the field
+    // the failure is about, so Enter tries again.
     private void ShowFailure(Failure? failure)
     {
-        var said = failure is not null && FailureBar.IsOpen && failure.Id != _failureShown;
+        var fresh = failure is not null && failure.Id != _failureShown;
         _failureShown = failure?.Id;
         if (failure is null)
         {
@@ -275,11 +277,13 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
 
         Warnings.Visibility = Look.Shown(failure.Warnings.Length > 0);
         FailureBar.Margin = new Thickness(0, 12, 0, 0);
-        FailureBar.IsOpen = true;
-        if (said)
+        if (fresh)
         {
-            Say(FailureBar, $"{failure.Title}. {failure.Message}");
+            FailureBar.IsOpen = false;
+            DispatcherQueue.TryEnqueue(Ui.Guarded(FocusField));
         }
+
+        FailureBar.IsOpen = true;
     }
 
     private void Enable()
@@ -422,7 +426,9 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
         }
     }
 
-    private void OnOpened(ContentDialog sender, ContentDialogOpenedEventArgs args)
+    private void OnOpened(ContentDialog sender, ContentDialogOpenedEventArgs args) => FocusField();
+
+    private void FocusField()
     {
         if (NameField.Visibility == Visibility.Visible && NameField.IsEnabled)
         {

@@ -67,7 +67,7 @@
           <Button x:Name="OpenLink" Content="Open" Click="OnOpenLink" />
         </StackPanel>
       </StackPanel>
-      <StackPanel x:Name="CodePart" Spacing="8">
+      <StackPanel x:Name="CodePart">
         <TextBox
             x:Name="CodeField"
             Header="Code"
@@ -76,7 +76,12 @@
             IsTextPredictionEnabled="False"
             AutomationProperties.AutomationId="sheet.code"
             TextChanged="OnCodeChanged" />
-        <TextBlock x:Name="Refused" TextWrapping="Wrap" />
+        <InfoBar
+            x:Name="RefusedBar"
+            Severity="Error"
+            IsClosable="False"
+            IsOpen="False"
+            AutomationProperties.AutomationId="sheet.refused" />
       </StackPanel>
     </StackPanel>
     <InfoBar

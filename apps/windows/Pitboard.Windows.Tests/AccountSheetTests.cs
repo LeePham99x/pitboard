@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Automation.Provider;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.VisualStudio.TestTools.UnitTesting.AppContainer;
 using Pitboard.Core;
@@ -93,6 +94,84 @@ public sealed class AccountSheetTests
         await Views.Until(() => bar.IsOpen, "the failure was not said");
         Assert.AreEqual("Couldn’t rename personal", bar.Title);
         Assert.AreEqual("work", up.Element<TextBox>("sheet.name").Text);
+    }
+
+    // Microsoft's InfoBar guidance closes and opens the bar again for a new message, which Narrator hears as the bar opens.
+    [UITestMethod]
+    public async Task ASecondFailureReopensItsInfoBar()
+    {
+        var renaming = Snapshots.Read(1) with { Sheet = new Sheet.Rename("claude", "personal"), SheetText = Items.Rename("personal") };
+        await using var up = await Up.Over(renaming);
+        var bar = up.Element<InfoBar>("sheet.failure");
+        up.App.Apply(renaming with
+        {
+            Revision = 2,
+            SheetFailure = new Failure(7, "Couldn’t rename personal", "work is already the name of another account.", "name_taken", []),
+        });
+        await Views.Until(() => bar.IsOpen, "the failure was not said");
+        var opened = new List<bool>();
+        bar.RegisterPropertyChangedCallback(InfoBar.IsOpenProperty, (_, _) => opened.Add(bar.IsOpen));
+
+        up.App.Apply(renaming with
+        {
+            Revision = 3,
+            SheetFailure = new Failure(8, "Couldn’t rename personal", "home is already the name of another account.", "name_taken", []),
+        });
+
+        await Views.Until(() => bar.Message == "home is already the name of another account.", "the second failure was not said");
+        Assert.AreEqual("closed, opened", string.Join(", ", opened.Select(open => open ? "opened" : "closed")));
+    }
+
+    // The sign-in ended back at the form: the name typed is there to correct, and Enter tries again.
+    [UITestMethod]
+    public async Task AfterAFailedSignInTheNameHasFocusAndSignInIsTheDefault()
+    {
+        var signingIn = Snapshots.Read(1) with
+        {
+            Sheet = Add,
+            SheetText = Items.AddAccount() with { Name = "third" },
+            SigningIn = Items.Running("claude", Address),
+            SigningInText = Items.SigningIn("Claude Code"),
+        };
+        await using var up = await Up.Over(signingIn);
+
+        up.App.Apply(signingIn with
+        {
+            Revision = 2,
+            SigningIn = null,
+            SigningInText = null,
+            SheetFailure = new Failure(
+                9, "Couldn’t add third", "The sign-in did not finish, so nothing was enrolled.", "sign_in_incomplete", []),
+        });
+
+        var name = up.Element<TextBox>("sheet.name");
+        await Views.Until(() => ReferenceEquals(FocusManager.GetFocusedElement(up.Sheet.XamlRoot), name), "the name field did not take focus");
+        Assert.AreEqual(ContentDialogButton.Primary, up.Sheet.DefaultButton);
+        Assert.IsTrue(up.Sheet.IsPrimaryButtonEnabled, "Sign in with the name typed");
+    }
+
+    // Microsoft's InfoBar guidance gives an error its own bar, where a line of plain text was (shot 18).
+    [UITestMethod]
+    public async Task ARefusedCodeIsAnErrorInfoBar()
+    {
+        var refused = "Claude Code didn’t take that code. Copy the whole code your browser shows, and paste it again.";
+        var signingIn = Snapshots.Read(1) with
+        {
+            Sheet = Add,
+            SheetText = Items.AddAccount(),
+            SigningIn = Items.Running("claude", Address, wantsCode: true),
+            SigningInText = Items.SigningIn("Claude Code"),
+        };
+        await using var up = await Up.Over(signingIn);
+        var bar = up.Element<InfoBar>("sheet.refused");
+        Assert.IsFalse(bar.IsOpen, "a refusal before any code");
+
+        up.App.Apply(signingIn with { Revision = 2, SigningInText = Items.SigningIn("Claude Code") with { Refused = refused } });
+
+        await Views.Until(() => bar.IsOpen, "the refusal was not said");
+        Assert.AreEqual(InfoBarSeverity.Error, bar.Severity);
+        Assert.AreEqual(refused, bar.Message);
+        Assert.IsFalse(bar.IsClosable);
     }
 
     // A tool Pitboard did not find says what it needs and links to how, and cannot be signed in to.
@@ -307,8 +386,10 @@ public sealed class AccountSheetTests
 
         Assert.IsFalse(up.Part("CloseButton").IsEnabled, "Cancel while saving");
         Assert.IsFalse(up.Element<TextBox>("sheet.name").IsEnabled);
+        var closing = new TaskCompletionSource();
+        up.Sheet.Closing += (_, _) => closing.TrySetResult();
         up.Sheet.Hide();
-        await Task.Delay(300);
+        await closing.Task.WaitAsync(TimeSpan.FromSeconds(10));
 
         Assert.AreSame(up.Sheet, up.Dialogs.Open, "the sheet closed while saving");
         Assert.IsEmpty(up.Model.Sent);
