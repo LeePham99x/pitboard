@@ -952,7 +952,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
   The app asks in its own dialogs and does not go through `Confirm`. On Windows std's
   `is_terminal` also takes a pipe named as an msys or cygwin pty for a terminal (`msys_tty_on`
   in Rust 1.98.1's `library/std/src/sys/io/is_terminal/windows.rs`), so under mintty, Git
-  Bash's own terminal, they ask as in a console.
+  Bash's own terminal, they ask as in a console, since mintty sets `TERM` (`xterm` by
+  default). Without it anstream 1.0.0 writes through the console API, which the pipe refuses
+  (run 38901801954).
 - A Windows build of a release before Pitboard for Windows is released does nothing
   (`release.rs`). The gate every change passes asks first, so no file is written, no store
   of logins changed and no token renewed even by a caller that forgot to ask; every read
