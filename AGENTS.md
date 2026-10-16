@@ -149,12 +149,14 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
   job user's `HKCU\Environment`, mount volumes, share a folder, install Win32-OpenSSH from
   Microsoft's release where the image ships none and start OpenSSH Server, install Bun and
   Scoop, turn on winget's local manifests, serve files on loopback, put a build it made behind
-  a Scoop shim, in WinGet's Links, in `~\.cargo\bin` or on the user `PATH`, and set Defender's
-  attack surface reduction rules to audit. It undoes each in a `finally`. `release.yml`'s
-  `scoop-install` job, on a GitHub-hosted runner after `publish`, may install Scoop into the
-  job's temporary folder, which writes the job user's `PATH` and `HKCU\Environment`, then
-  install the published `pitboard` from the bucket and run its `--version`. Never copy one of
-  those changes, or `test-as-standard-user.ps1`'s, into a script meant for a person's machine.
+  a Scoop shim, in WinGet's Links, in `~\.cargo\bin` or on the user `PATH`, trust a test
+  certificate in a throwaway user's `TrustedPeople` and register the probe's sparse package
+  and a probe link scheme for that user, and set Defender's attack surface reduction rules to
+  audit. It undoes each in a `finally`. `release.yml`'s `scoop-install` job, on a
+  GitHub-hosted runner after `publish`, may install Scoop into the job's temporary folder,
+  which writes the job user's `PATH` and `HKCU\Environment`, then install the published
+  `pitboard` from the bucket and run its `--version`. Never copy one of those changes, or
+  `test-as-standard-user.ps1`'s, into a script meant for a person's machine.
 - `windows-facts.yml` stays `workflow_dispatch` only, names no secret, and uploads only the
   probe's redacted reports. No workflow uploads an opened `pitboard.exe`: the repository is
   public, so anyone signed in to GitHub can download an artifact.

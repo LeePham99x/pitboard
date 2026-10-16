@@ -25,6 +25,9 @@ use crate::report::Report;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 
+use windows::Foundation::Uri;
+use windows::System::Launcher;
+use windows::core::HSTRING;
 use windows_sys::Win32::Foundation::ERROR_INSUFFICIENT_BUFFER;
 use windows_sys::Win32::Storage::Packaging::Appx::{
     GetCurrentApplicationUserModelId, GetCurrentPackageFamilyName,
@@ -39,6 +42,10 @@ const APPMODEL_ERROR_NO_PACKAGE: u32 = 15700;
 const KEY: &str = r"Software\pitboard-probe-k1";
 const FOLDER: &str = "pitboard-probe-k1";
 const MADE_RECORD: &str = "pitboard-probe-k1-made-pitboard-folder";
+// runner-facts.ps1 registers this scheme for CF8's user, its handler the plain probe writing
+// with the tag `launched` and its report at LAUNCHED_REPORT in --scratch.
+const LAUNCH_SCHEME: &str = "pitboard-probe-cf8";
+const LAUNCHED_REPORT: &str = "pitboard-probe-cf8-launched.json";
 
 fn identity() -> Value {
     let mut buf = vec![0u16; 256];
@@ -106,6 +113,13 @@ pub(super) fn sparse(
             Some(s) => match ffi::refuse_write(s) {
                 Some(reason) => return Report::refused("sparse", logon, reason),
                 None => children(s),
+            },
+        },
+        SparseAction::Launch => match scratch {
+            None => return Report::refused("sparse", logon, "launch needs --scratch"),
+            Some(s) => match ffi::refuse_write(s) {
+                Some(reason) => return Report::refused("sparse", logon, reason),
+                None => launch(s),
             },
         },
         SparseAction::Read => read(&home),
@@ -235,6 +249,34 @@ fn children(scratch: &Path) -> Value {
     };
     out.insert("child_claude_standin".into(), standin);
     json!({ "identity": identity(), "children": out })
+}
+
+// The way PitboardShare.exe hands a page to Pitboard.exe: through Launcher.LaunchUriAsync.
+fn launch(scratch: &Path) -> Value {
+    let report = scratch.join(LAUNCHED_REPORT);
+    let _ = std::fs::remove_file(&report);
+    let uri = HSTRING::from(format!("{LAUNCH_SCHEME}:launch"));
+    let launched = Uri::CreateUri(&uri)
+        .and_then(|uri| Launcher::LaunchUriAsync(&uri))
+        .and_then(|operation| operation.join());
+    let mut handler = None;
+    if matches!(launched, Ok(true)) {
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        // Read until it parses: the handler writes its report in place.
+        while handler.is_none() && std::time::Instant::now() < until {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            handler = std::fs::read_to_string(&report)
+                .ok()
+                .and_then(|text| serde_json::from_str::<Value>(&text).ok());
+        }
+        let _ = std::fs::remove_file(&report);
+    }
+    json!({
+        "identity": identity(),
+        "launched": launched.as_ref().ok(),
+        "launch_error": launched.as_ref().err().map(|e| format!("0x{:08X}", e.code().0)),
+        "handler": handler.map(|r| r["data"].clone()),
+    })
 }
 
 fn tags_in(dir: &Path) -> Vec<String> {

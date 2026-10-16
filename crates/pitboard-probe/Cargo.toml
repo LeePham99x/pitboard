@@ -66,9 +66,11 @@ windows-sys = { workspace = true, features = [
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ] }
-# Task Scheduler's ITaskService is COM, which windows-sys does not wrap. Used by the task
-# subcommand alone.
+# Task Scheduler's ITaskService is COM, and Launcher WinRT, which windows-sys does not wrap.
+# Used by the task subcommand and sparse's launch alone.
 windows = { version = "0.62", features = [
+    "Foundation",
+    "System",
     "Win32_Foundation",
     "Win32_System_Com",
     "Win32_System_Ole",

@@ -625,7 +625,7 @@ window loads its site, and whatever the site's pages load, as a browser would.
   account name replaced, and never hold two keys that differ only in case, which
   PowerShell's `ConvertFrom-Json` refuses. `helpers/` holds the Bun and Node scripts the
   runner facts run beside it, and `sparse/` the sparse-package manifests, script and steps
-  the owner runs in the VM.
+  the owner runs in the VM, which the runner facts' CF8 rows register on a runner too.
 - `apps/`: the native apps, one directory for each system.
 - `apps/windows/`: the Windows app. `Pitboard.Core` is the core's C# bindings as an
   assembly of their own, generated into `Generated/` and not committed, and

@@ -3,10 +3,11 @@
 # finally: the probe's marker, VHDs, a ReFS or Dev Drive volume, an SMB share, Bun and
 # proper-lockfile in C:\pitboard-probe-tools, three throwaway users and their passwords, tasks,
 # the job user's HKCU\Environment values, the state of OpenSSH Server, installed from Microsoft's
-# release where the image ships none, Developer Mode and the symbolic-link right, and for the
-# channel rows Scoop in a scratch root, winget's local manifests and the package they install, a
-# build on the user PATH and in ~\.cargo\bin, a loopback server and Defender's attack surface
-# reduction rules.
+# release where the image ships none, Developer Mode and the symbolic-link right, a throwaway
+# certificate in a throwaway user's TrustedPeople with the probe's sparse package and a link
+# scheme registered for that user, and for the channel rows Scoop in a scratch root, winget's
+# local manifests and the package they install, a build on the user PATH and in ~\.cargo\bin, a
+# loopback server and Defender's attack surface reduction rules.
 #
 # Everything goes into one JSON report at -Out, saved after each row, so a run cut short still
 # leaves what it gathered. A fact that cannot be gathered is recorded as an error and does not
@@ -1087,6 +1088,138 @@ function Measure-FreshUser($User, $Result, [string] $Bun, [string] $X64) {
     }
 }
 
+# A tool of the Windows SDK on this image, for this machine's architecture where there is one.
+function Find-SdkTool([string] $Name) {
+    $kits = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
+    $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
+    $all = @(Get-ChildItem -Path $kits -Filter $Name -Recurse -ErrorAction SilentlyContinue | Sort-Object FullName -Descending)
+    $native = $all | Where-Object { $_.Directory.Name -eq $arch } | Select-Object -First 1
+    $found = if ($native) { $native } else { $all | Select-Object -First 1 }
+    if (-not $found) { throw "$Name is not under $kits" }
+    $found
+}
+
+# CF8: the probe's sparse package as $User, with each manifest in sparse/. A throwaway
+# certificate for CN=PitboardProbe is made into a PFX here and trusted in the user's own
+# TrustedPeople, the package is registered for the user with the probe's folder as its external
+# location, and the pitboard-probe-cf8 link scheme is put under the user's
+# HKCU\Software\Classes, its handler the plain probe. The identity process writes, starts its
+# children and opens the link through LaunchUriAsync, as PitboardShare.exe hands a page on; a
+# process without identity reads back what each wrote. The user's part runs in its own Windows
+# PowerShell, whose Appx cmdlets PowerShell 7 cannot load, and each change is undone.
+function Measure-SparseIdentity($User, $Result) {
+    $s = $User.Scratch
+    $sparse = Join-Path $PSScriptRoot '..\..\crates\pitboard-probe\sparse'
+    $location = Join-Path $User.RunDir 'cf8'
+    $work = Join-Path $env:RUNNER_TEMP 'pitboard-probe-cf8'
+    $userScript = Join-Path $User.RunDir 'pitboard-probe-cf8.ps1'
+    $cer = Join-Path $User.RunDir 'pitboard-probe-cf8.cer'
+    $pfx = Join-Path $work 'pitboard-probe-cf8.pfx'
+    $password = [guid]::NewGuid().ToString('N')
+    $windowsPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $handler = Join-Path $location 'pitboard-probe.exe'
+    $identityProbe = Join-Path $location 'pitboard-probe-sparse.exe'
+    # %1 is the link, taken as an unused --scratch, so Windows appends nothing the probe refuses.
+    $command = "$handler --out $(Join-Path $s 'pitboard-probe-cf8-launched.json') sparse --action write --tag launched --scratch `"%1`""
+    New-Item -ItemType Directory -Force -Path $location, $work | Out-Null
+    try {
+        foreach ($name in 'pitboard-probe.exe', 'pitboard-probe-sparse.exe') {
+            Copy-Item -LiteralPath (Join-Path (Split-Path -Parent $Probe) $name) -Destination $location
+        }
+        $makeappx = Find-SdkTool 'makeappx.exe'
+        $signtool = Find-SdkTool 'signtool.exe'
+        $Result.sdk_tools = "$($makeappx.Directory.Parent.Name)\$($makeappx.Directory.Name)"
+        $key = [Security.Cryptography.RSA]::Create(3072)
+        try {
+            $request = [Security.Cryptography.X509Certificates.CertificateRequest]::new(
+                'CN=PitboardProbe', $key, [Security.Cryptography.HashAlgorithmName]::SHA256, [Security.Cryptography.RSASignaturePadding]::Pkcs1)
+            $request.CertificateExtensions.Add([Security.Cryptography.X509Certificates.X509BasicConstraintsExtension]::new($false, $false, 0, $true))
+            $request.CertificateExtensions.Add([Security.Cryptography.X509Certificates.X509KeyUsageExtension]::new('DigitalSignature', $true))
+            $codeSigning = [Security.Cryptography.OidCollection]::new()
+            [void] $codeSigning.Add([Security.Cryptography.Oid]::new('1.3.6.1.5.5.7.3.3'))
+            $request.CertificateExtensions.Add([Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension]::new($codeSigning, $false))
+            $now = [DateTimeOffset]::UtcNow
+            $certificate = $request.CreateSelfSigned($now.AddMinutes(-5), $now.AddDays(1))
+            [IO.File]::WriteAllBytes($pfx, $certificate.Export([Security.Cryptography.X509Certificates.X509ContentType]::Pfx, $password))
+            [IO.File]::WriteAllBytes($cer, $certificate.Export([Security.Cryptography.X509Certificates.X509ContentType]::Cert))
+        } finally {
+            $key.Dispose()
+        }
+        Set-Content -Path $userScript -Encoding ascii -Value @'
+$ErrorActionPreference = 'Stop'
+$key = 'HKCU:\Software\Classes\pitboard-probe-cf8'
+$certificates = 'Cert:\CurrentUser\TrustedPeople'
+try {
+    if ($env:PITBOARD_PROBE_CF8_STEP -eq 'register') {
+        Import-Certificate -FilePath $env:PITBOARD_PROBE_CF8_CER -CertStoreLocation $certificates | Out-Null
+        New-Item -Path "$key\shell\open\command" -Force | Out-Null
+        Set-ItemProperty -LiteralPath $key -Name '(default)' -Value 'URL:pitboard-probe-cf8'
+        Set-ItemProperty -LiteralPath $key -Name 'URL Protocol' -Value ''
+        Set-ItemProperty -LiteralPath "$key\shell\open\command" -Name '(default)' -Value $env:PITBOARD_PROBE_CF8_COMMAND
+        Add-AppxPackage -Path $env:PITBOARD_PROBE_CF8_PACKAGE -ExternalLocation $env:PITBOARD_PROBE_CF8_LOCATION
+        $package = Get-AppxPackage -Name 'PitboardProbe'
+        "registered: $($package.Status), signature $($package.SignatureKind)"
+    } else {
+        Get-AppxPackage -Name 'PitboardProbe' | Remove-AppxPackage
+        Get-ChildItem -Path $certificates | Where-Object { $_.Subject -eq 'CN=PitboardProbe' } | Remove-Item
+        if (Test-Path -LiteralPath $key) { Remove-Item -LiteralPath $key -Recurse -Force }
+        $left = @()
+        if (Get-AppxPackage -Name 'PitboardProbe') { $left += 'package' }
+        if (Get-ChildItem -Path $certificates | Where-Object { $_.Subject -eq 'CN=PitboardProbe' }) { $left += 'certificate' }
+        if (Test-Path -LiteralPath $key) { $left += 'scheme' }
+        "unregistered, left: $($left -join ', ')"
+    }
+} catch {
+    $message = $_.Exception.Message.Replace($env:USERPROFILE, '<profile>').Replace($env:USERNAME, '<user>') -replace 'S-1-5-21-[0-9-]+', '<sid>'
+    'failed 0x{0:X8}: {1}' -f $_.Exception.HResult, $message
+}
+'@
+        $userArgs = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $userScript)
+        foreach ($kind in 'virtualized', 'unvirtualized') {
+            Invoke-Row $Result "cf8_$kind" {
+                $package = Join-Path $work "pitboard-probe-$kind.msix"
+                $folder = Join-Path $work "pkg-$kind"
+                New-Item -ItemType Directory -Force -Path (Join-Path $folder 'Assets') | Out-Null
+                $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
+                $xml = (Get-Content -Raw -LiteralPath (Join-Path $sparse "AppxManifest-$kind.xml")) -replace 'ProcessorArchitecture="arm64"', "ProcessorArchitecture=`"$arch`""
+                Set-Content -LiteralPath (Join-Path $folder 'AppxManifest.xml') -Value $xml -Encoding utf8
+                $png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+                [IO.File]::WriteAllBytes((Join-Path $folder 'Assets\probe.png'), [Convert]::FromBase64String($png))
+                $r = [ordered]@{}
+                $r.pack = ((& $makeappx.FullName pack /d $folder /p $package /nv /o 2>&1) | Select-Object -Last 1) -replace [regex]::Escape($work), '<work>'
+                $r.pack_exit = $LASTEXITCODE
+                $r.sign = ((& $signtool.FullName sign /fd SHA256 /f $pfx /p $password $package 2>&1) | Select-Object -Last 1) -replace [regex]::Escape($work), '<work>'
+                $r.sign_exit = $LASTEXITCODE
+                if ($r.pack_exit -ne 0 -or $r.sign_exit -ne 0) { return $r }
+                $extra = @{
+                    PITBOARD_PROBE_CF8_CER = $cer
+                    PITBOARD_PROBE_CF8_PACKAGE = $package
+                    PITBOARD_PROBE_CF8_LOCATION = $location
+                    PITBOARD_PROBE_CF8_COMMAND = $command
+                }
+                try {
+                    $r.register = Invoke-AsUser $User "cf8-$kind-register" $userArgs -FilePath $windowsPowerShell -Text -Extra ($extra + @{ PITBOARD_PROBE_CF8_STEP = 'register' })
+                    $r.identity = Invoke-AsUser $User "cf8-$kind-identity" @('sparse', '--action', 'identity') -FilePath $identityProbe
+                    $r.write = Invoke-AsUser $User "cf8-$kind-write" @('sparse', '--action', 'write', '--tag', 'identity-parent') -FilePath $identityProbe
+                    $r.children = Invoke-AsUser $User "cf8-$kind-children" @('sparse', '--action', 'children', '--scratch', $s) -FilePath $identityProbe
+                    $r.launch = Invoke-AsUser $User "cf8-$kind-launch" @('sparse', '--action', 'launch', '--scratch', $s) -FilePath $identityProbe -TimeoutSeconds 120
+                    $r.read_without_identity = Invoke-AsUser $User "cf8-$kind-read" @('sparse', '--action', 'read') -FilePath $handler
+                } finally {
+                    $r.clean = Invoke-AsUser $User "cf8-$kind-clean" @('sparse', '--action', 'clean') -FilePath $handler
+                    $r.unregister = Invoke-AsUser $User "cf8-$kind-unregister" $userArgs -FilePath $windowsPowerShell -Text -Extra ($extra + @{ PITBOARD_PROBE_CF8_STEP = 'unregister' })
+                    Remove-Item -Recurse -Force -LiteralPath $folder, $package -ErrorAction SilentlyContinue
+                }
+                $r
+            }
+        }
+    } finally {
+        Remove-Item -Recurse -Force -LiteralPath $work, $location -ErrorAction SilentlyContinue
+        Remove-Item -Force -LiteralPath $cer, $userScript -ErrorAction SilentlyContinue
+        $Result.removed = -not (Test-Path -LiteralPath $work) -and -not (Test-Path -LiteralPath $location) -and -not (Test-Path -LiteralPath $cer)
+        Save-Report
+    }
+}
+
 # RF-CM2, RF-D1b and RF-D1d, last, since they change the user's password: the leak check,
 # then a seal, the user's own change through ADSI in a process of its own (both passwords in
 # its environment, never on its command line) and an unseal with the new password, then
@@ -1741,6 +1874,7 @@ try {
     $report.fresh_standard_user = [ordered]@{}
     $report.refs = [ordered]@{}
     $report.smb_share = [ordered]@{}
+    $report.cf8 = [ordered]@{}
     $report.openssh = [ordered]@{}
     $fresh = $null
     try {
@@ -1751,6 +1885,8 @@ try {
             try { Measure-ReFs $fresh $report.refs $bun } catch { $report.refs.error = $_.Exception.Message }
             Save-Report
             try { Measure-SmbShare $fresh $report.smb_share } catch { $report.smb_share.error = $_.Exception.Message }
+            Save-Report
+            try { Measure-SparseIdentity $fresh $report.cf8 } catch { $report.cf8.error = $_.Exception.Message }
             Save-Report
             $opensshHome = $null
             try {
