@@ -2169,10 +2169,12 @@ and end, and counts those under way for `downloads_quit_question`: Quit asks ove
 of an account whose download runs, or another account window, then cancels them all. A
 paused download is under way: WebView2 leaves it interrupted and able to resume, and one
 still under way as its browser process exits ends cancelled. The download list is WebView2's
-own dialog, which Downloads in the command bar opens and which offers each file's folder, so
-no surface of Pitboard's reveals a file: `ASiteDownloadIsListedInTheWindow` looks for its
-Show in folder. `DownloadTests` hold this against the stand-in site,
-and print for CF7 the events WebView2 raised around each kind of download.
+own dialog, which Downloads in the command bar opens, so no surface of Pitboard's reveals a
+file. On both images it lists each file with Open file, and offers Open downloads folder and
+Search downloads, with no Show in folder of a file's own (run 38872384945).
+`ASiteDownloadIsListedInTheWindow` looks for Open downloads folder.
+`DownloadTests` hold this against the stand-in site, and print for CF7 the events WebView2
+raised around each kind of download.
 
 A window refuses to open, saying why, on a PC whose WebView2 Runtime is older than
 144.0.3719.77, the Runtime of the WebView2 SDK the Windows App SDK 2.5.1 brings, 1.0.3719.77
