@@ -151,6 +151,16 @@ Assert-Refused 'a build that holds a variable only a build for tests reads' @{ E
 
 Assert-Refused 'a build that names another version' @{ Exe = $exePath; Triple = $Triple; Version = '0.0.1' } "not 'pitboard 0\.0\.1'"
 
+# The version resource keeps its strings in UTF-16, where Rust keeps none of its own.
+$latin1 = [Text.Encoding]::Latin1
+$text = $latin1.GetString([IO.File]::ReadAllBytes($exePath))
+$named = $latin1.GetString([Text.Encoding]::Unicode.GetBytes('Pitboard'))
+if (-not $text.Contains($named)) { throw 'pitboard.exe holds no version resource that names Pitboard' }
+$renamed = Join-Path $work 'renamed\pitboard.exe'
+New-Item -ItemType Directory -Path (Split-Path -Parent $renamed) | Out-Null
+[IO.File]::WriteAllBytes($renamed, $latin1.GetBytes($text.Replace($named, $latin1.GetString([Text.Encoding]::Unicode.GetBytes('Pitbaord')))))
+Assert-Refused 'a build whose version resource names another product' @{ Exe = $renamed; Triple = $Triple } "has ProductName 'Pitbaord', not 'Pitboard'"
+
 $other = if ($Triple -eq 'x86_64-pc-windows-msvc') { 'aarch64-pc-windows-msvc' } else { 'x86_64-pc-windows-msvc' }
 Assert-Refused 'a build for the other machine' @{ Exe = $exePath; Triple = $other } 'is not a program for'
 

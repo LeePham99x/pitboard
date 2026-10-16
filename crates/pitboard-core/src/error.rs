@@ -305,12 +305,9 @@ pub enum Error {
     ScheduleProgramMissing { path: PathBuf },
 
     /// macOS runs an app opened where it was downloaded from a copy it makes somewhere
-    /// temporary, which is there while the app runs and gone once it quits.
-    #[error(
-        "the renewal schedule would run {path}, which is in a temporary copy macOS made of \
-         the app and is gone once the app quits. Move Pitboard to your Applications folder, \
-         open it from there, and turn on daily renewal again."
-    )]
+    /// temporary, which is there while the app runs and gone once it quits. Windows' Explorer
+    /// runs a program opened inside a zip from a copy of it.
+    #[error("{}", temporary_copy(.path))]
     ScheduleProgramTemporary { path: PathBuf },
 
     /// An app that names no command line for the schedule, where the only other thing to
@@ -1108,6 +1105,23 @@ pub(crate) fn codex_home_missing(path: &std::path::Path) -> String {
     format!(
         "CODEX_HOME is {}, which is no folder, so Codex does not start. Make that folder, or \
          unset CODEX_HOME",
+        path.display()
+    )
+}
+
+fn temporary_copy(path: &std::path::Path) -> String {
+    if crate::schedule::opened_from_a_zip(path) {
+        return format!(
+            "the renewal schedule would run {}, which is in a temporary copy Windows made of a \
+             zip it opened. Install Pitboard, or extract the zip, and turn on daily renewal \
+             from there.",
+            path.display()
+        );
+    }
+    format!(
+        "the renewal schedule would run {}, which is in a temporary copy macOS made of the app \
+         and is gone once the app quits. Move Pitboard to your Applications folder, open it \
+         from there, and turn on daily renewal again.",
         path.display()
     )
 }

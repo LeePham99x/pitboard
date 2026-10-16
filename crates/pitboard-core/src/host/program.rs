@@ -105,12 +105,22 @@ pub(crate) fn find_among(
     named: &Path,
     dirs: impl IntoIterator<Item = PathBuf>,
     lookup: &Lookup,
-    mut runnable: impl FnMut(&Path) -> bool,
+    runnable: impl FnMut(&Path) -> bool,
 ) -> Option<PathBuf> {
+    every_among(named, dirs, lookup, runnable).next()
+}
+
+// Every one a shell would come to, first first.
+pub(crate) fn every_among(
+    named: &Path,
+    dirs: impl IntoIterator<Item = PathBuf>,
+    lookup: &Lookup,
+    mut runnable: impl FnMut(&Path) -> bool,
+) -> impl Iterator<Item = PathBuf> {
     dirs.into_iter()
         .filter(|dir| dir.is_absolute())
-        .flat_map(|dir| lookup.spellings(&dir.join(named)))
-        .find(|candidate| runnable(candidate))
+        .flat_map(move |dir| lookup.spellings(&dir.join(named)))
+        .filter(move |candidate| runnable(candidate))
 }
 
 // The last file an npm shim names in its own folder comes after the `node.exe` it runs it with.
@@ -135,6 +145,35 @@ pub(crate) fn npm_shim_target(shim: &Path) -> Option<PathBuf> {
     Some(target)
 }
 
+// Where an upgrade still finds `running`: an upgrade replaces the folder Scoop or winget named
+// for the version, and keeps Scoop's `apps\<app>\current` junction and winget's link in
+// `WinGet\Links` (run 38725515950). `same` says whether two paths lead to one file.
+#[cfg(any(windows, test))]
+pub(crate) fn lasting(running: PathBuf, same: impl Fn(&Path, &Path) -> bool) -> PathBuf {
+    let named = |dir: Option<&Path>, name: &str| {
+        dir.and_then(Path::file_name)
+            .is_some_and(|found| found.eq_ignore_ascii_case(name))
+    };
+    let Some(file) = running.file_name() else {
+        return running;
+    };
+    let version = running.parent();
+    let app = version.and_then(Path::parent);
+    let scoop = (named(app.and_then(Path::parent), "apps") && !named(version, "current"))
+        .then(|| app.map(|app| app.join("current").join(file)))
+        .flatten();
+    let winget = running
+        .ancestors()
+        .find(|dir| named(Some(dir), "Packages") && named(dir.parent(), "WinGet"))
+        .and_then(Path::parent)
+        .map(|winget| winget.join("Links").join(file));
+    scoop
+        .into_iter()
+        .chain(winget)
+        .find(|lasting| same(lasting, &running))
+        .unwrap_or(running)
+}
+
 #[cfg(test)]
 #[allow(
     clippy::disallowed_methods,
@@ -142,6 +181,45 @@ pub(crate) fn npm_shim_target(shim: &Path) -> Option<PathBuf> {
 )]
 mod tests {
     use super::*;
+
+    // As Scoop and winget lay a version out, by the paths alone.
+    #[test]
+    fn a_program_an_upgrade_replaces_is_scheduled_by_the_path_it_keeps() {
+        let scoop = Path::new("C:/Users/x/scoop/apps/pitboard");
+        let links = Path::new("C:/Users/x/AppData/Local/Microsoft/WinGet/Links/pitboard.exe");
+        let package = Path::new(
+            "C:/Users/x/AppData/Local/Microsoft/WinGet/Packages/Pitboard.CLI_Microsoft.Winget.Source_8wekyb3d8bbwe/pitboard-v0.15.0-x86_64-pc-windows-msvc/pitboard.exe",
+        );
+        let versioned = scoop.join("0.15.0").join("pitboard.exe");
+        let current = scoop.join("current").join("pitboard.exe");
+        let kept = [current.clone(), links.to_path_buf()];
+        let leads_to = |target: &Path| {
+            let (target, kept) = (target.to_path_buf(), kept.clone());
+            move |link: &Path, running: &Path| running == target && kept.iter().any(|k| k == link)
+        };
+        assert_eq!(lasting(versioned.clone(), leads_to(&versioned)), current);
+        assert_eq!(lasting(package.to_path_buf(), leads_to(package)), links);
+        assert_eq!(
+            lasting(current.clone(), leads_to(&current)),
+            current,
+            "already"
+        );
+        assert_eq!(
+            lasting(links.to_path_buf(), leads_to(links)),
+            links,
+            "already"
+        );
+        assert_eq!(
+            lasting(versioned.clone(), |_, _| false),
+            versioned,
+            "a junction that leads elsewhere"
+        );
+        let installed =
+            PathBuf::from("C:/Users/x/AppData/Local/Programs/Pitboard/bin/pitboard.exe");
+        assert_eq!(lasting(installed.clone(), |_, _| true), installed);
+        let cargo = PathBuf::from("C:/Users/x/.cargo/bin/pitboard.exe");
+        assert_eq!(lasting(cargo.clone(), |_, _| true), cargo);
+    }
 
     // An empty entry and a relative one name wherever Pitboard was started.
     #[test]

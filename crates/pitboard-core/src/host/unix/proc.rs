@@ -1,6 +1,7 @@
 //! Processes, the POSIX way.
 
 use crate::host::Ran;
+use crate::service::Permit;
 use std::ffi::CString;
 use std::io::{self, Read, Write};
 use std::os::fd::AsRawFd;
@@ -22,6 +23,7 @@ const DRAINED: Duration = Duration::from_secs(5);
 /// then made to; once the run ended, whatever it left in its group is ended too, so nothing it
 /// started outlives it or keeps its output open.
 pub(crate) fn run_within(
+    _: Permit,
     mut command: Command,
     handed: Option<&[u8]>,
     ceiling: Duration,
@@ -259,6 +261,7 @@ mod tests {
     #[test]
     fn what_is_handed_arrives_on_descriptor_three_alone() {
         let ran = run_within(
+            Permit::for_a_test(),
             shell(r#"printf '%s|' "$(cat <&3)" "$(cat)" "$*""#),
             Some(b"the-token"),
             Duration::from_secs(10),
@@ -272,6 +275,7 @@ mod tests {
     #[test]
     fn with_nothing_handed_descriptor_three_is_closed() {
         let ran = run_within(
+            Permit::for_a_test(),
             shell("cat <&3 2>/dev/null; echo $?"),
             None,
             Duration::from_secs(10),
@@ -285,6 +289,7 @@ mod tests {
     #[test]
     fn a_run_past_the_ceiling_is_stopped_with_its_children() {
         let ran = run_within(
+            Permit::for_a_test(),
             shell("(sleep 30; echo late) & echo started; sleep 30"),
             None,
             Duration::from_secs(1),
@@ -302,8 +307,13 @@ mod tests {
     /// that child ends: the child is stopped, and what the run printed is read whole.
     #[test]
     fn what_a_run_left_behind_holding_its_output_is_stopped() {
-        let ran =
-            run_within(shell("sleep 30 & echo done"), None, Duration::from_secs(60)).expect("ran");
+        let ran = run_within(
+            Permit::for_a_test(),
+            shell("sleep 30 & echo done"),
+            None,
+            Duration::from_secs(60),
+        )
+        .expect("ran");
         assert_eq!(ran.exit, Some(0));
         assert_eq!(ran.stdout, "done\n");
     }

@@ -1327,6 +1327,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "unicode-width",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1358,6 +1359,7 @@ dependencies = [
  "toml 1.1.8+spec-1.1.0",
  "unicode-normalization",
  "ureq",
+ "windows",
  "windows-registry",
  "windows-sys 0.61.2",
 ]

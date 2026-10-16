@@ -3,9 +3,7 @@
 //! by a part that is not built yet.
 //!
 //! A Windows build of a 0.x release refuses before it gets here ([`crate::release`]). A build
-//! opened to Windows, for working on Pitboard and for CI, reaches this face, and finds:
-//!
-//! - no scheduler (W25).
+//! opened to Windows, for working on Pitboard and for CI, reaches this face.
 //!
 //! Which store a tool keeps its login in is the tool's to say, in its provider's code.
 
@@ -18,6 +16,8 @@ pub(crate) mod fs;
 mod job;
 pub(crate) mod proc;
 pub(super) mod seal;
+mod settings;
+mod tasks;
 pub(crate) mod user;
 
 use super::administered::{Administered, Hive};
@@ -124,7 +124,9 @@ fn policy(hive: Hive, key: &str, value: &str) -> Administered {
 }
 
 #[derive(Debug)]
-struct Windows;
+struct Windows {
+    scheduler: Option<super::task::Tasks>,
+}
 
 impl Host for Windows {
     fn foreign_secrets(&self, ctx: &Context, account: &str) -> Option<Box<dyn RawStore>> {
@@ -160,9 +162,8 @@ impl Host for Windows {
         None
     }
 
-    /// Task Scheduler is written for by W25.
     fn scheduler(&self) -> Option<&dyn Scheduler> {
-        None
+        self.scheduler.as_ref().map(|tasks| tasks as &dyn Scheduler)
     }
 
     fn elevation(&self, ctx: &Context) -> Elevation {
@@ -219,6 +220,14 @@ impl Host for Windows {
         let _ = ctx;
         credman::held(target).map_err(|e| e.to_string())
     }
+
+    fn windows_settings(&self) -> super::WindowsSettings {
+        if super::administered::READ_BY_REAL_HOSTS {
+            settings::read()
+        } else {
+            super::WindowsSettings::default()
+        }
+    }
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -227,21 +236,27 @@ pub(crate) fn write_jar(_path: &Path, _cookies: &[super::Cookie]) -> std::io::Re
 }
 
 pub(super) fn host() -> Arc<dyn Host> {
-    Arc::new(Windows)
+    Arc::new(Windows {
+        scheduler: user::sid().map(|sid| super::task::Tasks::new(sid, Arc::new(tasks::System))),
+    })
 }
 
-// Whether a link or a shim started it is W25's to read.
+// RF-E5: the path it was started by, through Scoop's junction or winget's link, which an
+// upgrade keeps.
 pub(super) fn current_program() -> std::io::Result<PathBuf> {
-    std::env::current_exe()
+    let same = |a: &Path, b: &Path| {
+        std::fs::canonicalize(a).is_ok_and(|a| std::fs::canonicalize(b).is_ok_and(|b| a == b))
+    };
+    Ok(super::program::lasting(std::env::current_exe()?, same))
 }
 
-/// Task Scheduler as a machine in memory has it, which W25 writes with the scheduler itself.
-/// Until then a machine in memory on Windows has no scheduler, as this machine has none.
+// Task Scheduler as a machine in memory has it, keeping its task in the test's own home.
 #[cfg(any(test, feature = "test-support"))]
 pub(super) fn pretend_scheduler(
-    _refuse_start: Arc<std::sync::atomic::AtomicBool>,
+    refuse_start: Arc<std::sync::atomic::AtomicBool>,
 ) -> Option<Box<dyn Scheduler>> {
-    None
+    let pretend = Arc::new(super::task::Pretend { refuse_start });
+    user::sid().map(|sid| Box::new(super::task::Tasks::new(sid, pretend)) as Box<dyn Scheduler>)
 }
 
 #[cfg(test)]
@@ -446,16 +461,47 @@ mod tests {
         assert_eq!(host().app_version(Path::new("C:/x")), None);
     }
 
-    /// There is no scheduler, on this machine or on one in memory.
+    // Asked nothing: a test's task would be the person's own, whatever home the test gives.
     #[test]
-    fn there_is_no_scheduler() {
-        assert!(host().scheduler().is_none());
-        let memory = crate::host::memory::MemoryHost::new();
-        assert!(memory.scheduler().is_none());
+    fn the_real_task_scheduler_refuses_a_build_for_tests() {
+        use crate::schedule::Location;
+        let ctx = ctx();
+        let real = host();
+        let tasks = real.scheduler().expect("Task Scheduler");
+        let sid = user::sid().expect("this account's SID");
+        assert_eq!(
+            tasks.location(&ctx),
+            Location::Task(format!(r"\Pitboard\Renew {sid}"))
+        );
+        assert!(!tasks.installed(&ctx));
+        assert_eq!(tasks.task(&ctx), None);
+        let refused = tasks
+            .put(
+                &ctx,
+                crate::service::Permit::for_a_test(),
+                Path::new(r"C:\Program Files\Pitboard\bin\pitboard.exe"),
+                &[],
+            )
+            .expect_err("refused");
+        assert_eq!(refused.code(), "schedule_refused");
+        assert!(
+            refused.to_string().contains("a build for tests"),
+            "{refused}"
+        );
+        assert!(
+            !tasks
+                .remove(&ctx, crate::service::Permit::for_a_test())
+                .expect("nothing there")
+        );
         assert!(matches!(
-            crate::schedule::status(&ctx()),
-            crate::schedule::Installed::Unsupported
+            crate::schedule::status(&ctx),
+            crate::schedule::Installed::No
         ));
+        assert!(
+            crate::host::memory::MemoryHost::new()
+                .scheduler()
+                .is_some_and(|pretend| pretend.location(&ctx) == tasks.location(&ctx))
+        );
     }
 
     #[test]

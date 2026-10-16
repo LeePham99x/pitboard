@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 pub(super) const REAL: bool = !cfg!(any(test, feature = "test-support"));
 
 const NOT_NAMED: &str = "this build is for tests and was given no Claude data folder";
-const MACOS_ONLY: &str = "Pitboard switches Claude Desktop accounts on macOS only";
+pub(crate) const MACOS_ONLY: &str = "Pitboard switches Claude Desktop accounts on macOS only";
 
 pub(crate) fn root(ctx: &Context) -> Result<PathBuf, ProviderError> {
     // cfg! is a value, so this branch compiles in a release too, where scratch_claude is None.

@@ -4,7 +4,7 @@ use super::super::unix::service::{self, Control};
 use crate::context::Context;
 use crate::error::Result;
 use crate::host::Scheduler;
-use crate::schedule::{EVERY_SECONDS, SCHEDULED_RUN};
+use crate::schedule::{EVERY_SECONDS, Location, SCHEDULED_RUN};
 use crate::service::Permit;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -26,16 +26,20 @@ impl Systemd {
     fn units(ctx: &Context) -> PathBuf {
         ctx.home().join(".config/systemd/user")
     }
+
+    // The timer is what says the schedule is installed; the service is what it runs.
+    fn timer_file(ctx: &Context) -> PathBuf {
+        Self::units(ctx).join(TIMER)
+    }
 }
 
 impl Scheduler for Systemd {
-    /// The timer is what says the schedule is installed; the service is what it runs.
-    fn location(&self, ctx: &Context) -> PathBuf {
-        Self::units(ctx).join(TIMER)
+    fn location(&self, ctx: &Context) -> Location {
+        Location::File(Self::timer_file(ctx))
     }
 
     fn installed(&self, ctx: &Context) -> bool {
-        self.location(ctx).is_file()
+        Self::timer_file(ctx).is_file()
     }
 
     /// Read from the service's `ExecStart`, as [`unit_file`] writes it, or as Pitboard wrote
@@ -73,7 +77,7 @@ impl Scheduler for Systemd {
         environment: &[(String, String)],
     ) -> Result<()> {
         let unit = Self::units(ctx).join(SERVICE);
-        let timer_path = self.location(ctx);
+        let timer_path = Self::timer_file(ctx);
         let before = (
             std::fs::read_to_string(&unit).ok(),
             std::fs::read_to_string(&timer_path).ok(),
@@ -96,7 +100,7 @@ impl Scheduler for Systemd {
     }
 
     fn remove(&self, ctx: &Context, permit: Permit) -> Result<bool> {
-        let timer_path = self.location(ctx);
+        let timer_path = Self::timer_file(ctx);
         if !timer_path.is_file() {
             return Ok(false);
         }

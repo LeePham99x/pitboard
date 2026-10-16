@@ -127,6 +127,9 @@ fn standing_json(standing: &Standing) -> Value {
 /// The span, and each Claude Code account with whether it is warmed up and where it stands,
 /// as a person reads it.
 fn said(overview: &Overview) -> String {
+    if let Some(halt @ Halt::Unbuilt) = &overview.halted {
+        return format!("{}\n", halted_line(halt));
+    }
     if overview.accounts.is_empty() {
         return "No Claude Code account is enrolled, so there is nothing to warm up.\n".into();
     }
@@ -209,4 +212,42 @@ fn range_set(pitboard: &Pitboard, range: Range) -> Report {
             format!("Pitboard warms up accounts from {range}.\n"),
         )
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pitboard_core::duty::warm::Choice;
+
+    fn overview(halted: Option<Halt>, on: bool) -> Overview {
+        Overview {
+            range: Range::DEFAULT,
+            halted,
+            accounts: vec![Choice {
+                account: "work".into(),
+                qualified: "claude/work".into(),
+                on,
+                standing: on.then_some(Standing::Due),
+                now: Standing::Due,
+            }],
+        }
+    }
+
+    // Windows warms up nothing, so neither the span nor `warm on` is worth saying there.
+    #[test]
+    fn on_windows_it_says_why_nothing_is_warmed_up_and_nothing_else() {
+        let plain = |overview: &Overview| anstream::adapter::strip_str(&said(overview)).to_string();
+        for on in [false, true] {
+            assert_eq!(
+                plain(&overview(Some(Halt::Unbuilt), on)),
+                "Pitboard is not warming up accounts: warm-ups are not available on Windows, \
+                 where Claude Code does not read the access token a warm-up hands it.\n"
+            );
+        }
+        let elsewhere = plain(&overview(Some(Halt::ProgramMissing), true));
+        assert!(
+            elsewhere.starts_with("Pitboard warms up these accounts from 06:00 to 22:00"),
+            "{elsewhere}"
+        );
+    }
 }

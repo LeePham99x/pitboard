@@ -144,7 +144,7 @@ pub(crate) fn listing() -> Result<Vec<Listed>, String> {
     Ok(found)
 }
 
-pub(super) fn snapshot() -> std::io::Result<Vec<(u32, u32, String)>> {
+pub(crate) fn snapshot() -> std::io::Result<Vec<(u32, u32, String)>> {
     // SAFETY: a snapshot of every process; 0 names no one process.
     let snap = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
     if snap == INVALID_HANDLE_VALUE {
@@ -351,11 +351,10 @@ fn reparse_tag(path: &Path) -> Option<u32> {
         .then_some(info.ReparseTag)
 }
 
-pub(crate) fn product_version(path: &Path) -> Option<[u16; 4]> {
+// A file's version resource, as GetFileVersionInfoW hands it back.
+fn version_block(path: &Path) -> Option<Vec<u8>> {
     use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Storage::FileSystem::{
-        GetFileVersionInfoSizeW, GetFileVersionInfoW, VS_FIXEDFILEINFO, VerQueryValueW,
-    };
+    use windows_sys::Win32::Storage::FileSystem::{GetFileVersionInfoSizeW, GetFileVersionInfoW};
     let name: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
     let mut ignored = 0u32;
     // SAFETY: a NUL-terminated name, and a u32 of this frame for the handle it ignores.
@@ -368,97 +367,87 @@ pub(crate) fn product_version(path: &Path) -> Option<[u16; 4]> {
     if unsafe { GetFileVersionInfoW(name.as_ptr(), 0, size, block.as_mut_ptr().cast()) } == 0 {
         return None;
     }
-    let root: Vec<u16> = "\\".encode_utf16().chain([0]).collect();
-    let mut fixed: *mut core::ffi::c_void = std::ptr::null_mut();
+    Some(block)
+}
+
+// Where VerQueryValueW finds `sub` inside `block`, and its length: in UTF-16 units for a string,
+// in bytes for the root and the translations.
+fn query(block: &[u8], sub: &str) -> Option<(*const core::ffi::c_void, usize)> {
+    use windows_sys::Win32::Storage::FileSystem::VerQueryValueW;
+    let sub: Vec<u16> = sub.encode_utf16().chain([0]).collect();
+    let mut found: *mut core::ffi::c_void = std::ptr::null_mut();
     let mut length = 0u32;
     // SAFETY: the block GetFileVersionInfoW filled, which the answer points into.
-    let found = unsafe {
+    let got = unsafe {
         VerQueryValueW(
             block.as_ptr().cast(),
-            root.as_ptr(),
-            &raw mut fixed,
+            sub.as_ptr(),
+            &raw mut found,
             &raw mut length,
         )
     };
-    if found == 0 || fixed.is_null() || (length as usize) < size_of::<VS_FIXEDFILEINFO>() {
+    (got != 0 && !found.is_null()).then_some((found.cast_const(), length as usize))
+}
+
+fn fixed(path: &Path) -> Option<windows_sys::Win32::Storage::FileSystem::VS_FIXEDFILEINFO> {
+    use windows_sys::Win32::Storage::FileSystem::VS_FIXEDFILEINFO;
+    let block = version_block(path)?;
+    let (found, length) = query(&block, "\\")?;
+    if length < size_of::<VS_FIXEDFILEINFO>() {
         return None;
     }
     // SAFETY: a VS_FIXEDFILEINFO inside `block`, which is still alive.
-    let info = unsafe { fixed.cast::<VS_FIXEDFILEINFO>().read_unaligned() };
-    (info.dwSignature == 0xFEEF_04BD).then_some([
-        (info.dwProductVersionMS >> 16) as u16,
-        info.dwProductVersionMS as u16,
-        (info.dwProductVersionLS >> 16) as u16,
-        info.dwProductVersionLS as u16,
-    ])
+    let info = unsafe { found.cast::<VS_FIXEDFILEINFO>().read_unaligned() };
+    (info.dwSignature == 0xFEEF_04BD).then_some(info)
+}
+
+fn parts(most: u32, least: u32) -> [u16; 4] {
+    [
+        (most >> 16) as u16,
+        most as u16,
+        (least >> 16) as u16,
+        least as u16,
+    ]
+}
+
+pub(crate) fn product_version(path: &Path) -> Option<[u16; 4]> {
+    fixed(path).map(|info| parts(info.dwProductVersionMS, info.dwProductVersionLS))
+}
+
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn file_version(path: &Path) -> Option<[u16; 4]> {
+    fixed(path).map(|info| parts(info.dwFileVersionMS, info.dwFileVersionLS))
 }
 
 // The ProductName string in a file's version resource, so a shim's own x.y.z.0 version is not
 // taken for Claude Code's.
 pub(crate) fn product_name(path: &Path) -> Option<String> {
-    use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Storage::FileSystem::{
-        GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW,
-    };
-    let name: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
-    let mut ignored = 0u32;
-    // SAFETY: a NUL-terminated name, and a u32 of this frame for the handle it ignores.
-    let size = unsafe { GetFileVersionInfoSizeW(name.as_ptr(), &raw mut ignored) };
-    if size == 0 {
-        return None;
-    }
-    let mut block = vec![0u8; size as usize];
-    // SAFETY: a NUL-terminated name, and a buffer of the size it asked for.
-    if unsafe { GetFileVersionInfoW(name.as_ptr(), 0, size, block.as_mut_ptr().cast()) } == 0 {
-        return None;
-    }
-    let translation: Vec<u16> = r"\VarFileInfo\Translation"
-        .encode_utf16()
-        .chain([0])
-        .collect();
-    let mut ptr: *mut core::ffi::c_void = std::ptr::null_mut();
-    let mut length = 0u32;
-    // SAFETY: the block GetFileVersionInfoW filled, which the answer points into.
-    let found = unsafe {
-        VerQueryValueW(
-            block.as_ptr().cast(),
-            translation.as_ptr(),
-            &raw mut ptr,
-            &raw mut length,
-        )
-    };
-    if found == 0 || ptr.is_null() || (length as usize) < 4 {
+    version_string(path, "ProductName")
+}
+
+// A string of the version resource's first language.
+pub(crate) fn version_string(path: &Path, name: &str) -> Option<String> {
+    let block = version_block(path)?;
+    let (translation, length) = query(&block, "\\VarFileInfo\\Translation")?;
+    if length < 4 {
         return None;
     }
     // SAFETY: the first language and code page, two u16 inside `block`.
     let (lang, codepage) = unsafe {
         (
-            ptr.cast::<u16>().read_unaligned(),
-            ptr.cast::<u16>().add(1).read_unaligned(),
+            translation.cast::<u16>().read_unaligned(),
+            translation.cast::<u16>().add(1).read_unaligned(),
         )
     };
-    let sub: Vec<u16> = format!("\\StringFileInfo\\{lang:04x}{codepage:04x}\\ProductName")
-        .encode_utf16()
-        .chain([0])
-        .collect();
-    let mut value: *mut core::ffi::c_void = std::ptr::null_mut();
-    let mut units = 0u32;
-    // SAFETY: the same block; the answer points into it.
-    let got = unsafe {
-        VerQueryValueW(
-            block.as_ptr().cast(),
-            sub.as_ptr(),
-            &raw mut value,
-            &raw mut units,
-        )
-    };
-    if got == 0 || value.is_null() || units == 0 {
+    let sub = format!("\\StringFileInfo\\{lang:04x}{codepage:04x}\\{name}");
+    let (value, units) = query(&block, &sub)?;
+    if units == 0 {
         return None;
     }
-    // SAFETY: `units` UTF-16 code units inside `block`.
-    let name = unsafe { std::slice::from_raw_parts(value.cast::<u16>(), units as usize) };
+    // SAFETY: `units` UTF-16 code units inside `block`, which is still alive.
+    let text = unsafe { std::slice::from_raw_parts(value.cast::<u16>(), units) };
     Some(
-        String::from_utf16_lossy(name)
+        String::from_utf16_lossy(text)
             .trim_end_matches('\0')
             .to_string(),
     )
@@ -467,13 +456,14 @@ pub(crate) fn product_name(path: &Path) -> Option<String> {
 /// Runs no program: a warm-up, the only run with a ceiling, stops on Windows before it
 /// starts one.
 pub(crate) fn run_within(
+    _: crate::service::Permit,
     _command: std::process::Command,
     _handed: Option<&[u8]>,
     _ceiling: std::time::Duration,
 ) -> std::io::Result<crate::host::Ran> {
     Err(std::io::Error::new(
         std::io::ErrorKind::Unsupported,
-        "no program is run with a ceiling on Windows yet",
+        "no program is run with a ceiling on Windows",
     ))
 }
 

@@ -107,6 +107,18 @@ impl Machine {
         self.root.clone()
     }
 
+    // Pitboard's directory moved to the one the schedule renews, which on Windows is not
+    // `.pitboard`.
+    pub(crate) fn in_the_default_home(mut self) -> Machine {
+        let (here, default) = (home::dir(&self.ctx), self.ctx.default_pitboard_home());
+        if here != default {
+            std::fs::create_dir_all(default.parent().expect("its folder")).expect("made");
+            std::fs::rename(&here, &default).expect("moved");
+            self.ctx = self.ctx.clone().with_pitboard_home(default);
+        }
+        self
+    }
+
     /// The live login, read the way the tool reads it.
     pub(crate) fn live(&self) -> Option<Value> {
         provider::document(self.which)

@@ -7,6 +7,7 @@
 
 use super::{
     Administered, Cookie, Elevation, Floor, Host, Jar, JarError, Listed, Process, Scheduler,
+    WindowsSettings,
 };
 use crate::context::Context;
 use crate::provider::claude::credman::FORCE;
@@ -125,8 +126,7 @@ pub struct MemoryHost {
     /// keychain. So by default, because that is where the rules about another Pitboard's
     /// parks are needed.
     shared_vault: AtomicBool,
-    /// This system's scheduler, writing in the test's own home, where Pitboard writes for one
-    /// on this system: none on Windows until W25.
+    /// This system's scheduler, writing in the test's own home.
     scheduler: Option<Box<dyn Scheduler>>,
     /// Whether the scheduler refuses the next schedule it is asked to start.
     refuse_start: Arc<AtomicBool>,
@@ -147,6 +147,9 @@ pub struct MemoryHost {
     credentials_fault: Mutex<Option<String>>,
     // `HKCU\Environment`, by name in upper case, as a test said.
     user_environment_values: Mutex<HashMap<String, String>>,
+    windows_settings: Mutex<WindowsSettings>,
+    kernel_is_wsl: AtomicBool,
+    windows_drives: Mutex<Vec<PathBuf>>,
 }
 
 impl Default for MemoryHost {
@@ -163,6 +166,20 @@ impl MemoryHost {
     // Parking as Windows does: in files sealed to the account, inside this home alone.
     pub fn sealed() -> Arc<MemoryHost> {
         Arc::new(MemoryHost::parking_in(Backend::SealedFile, false))
+    }
+
+    // Scheduling as Windows does, through Task Scheduler as this machine has it, on any system.
+    #[cfg(test)]
+    pub(crate) fn scheduling_tasks(sid: &str) -> Arc<MemoryHost> {
+        let mut host = MemoryHost::default();
+        let pretend = super::task::Pretend {
+            refuse_start: Arc::clone(&host.refuse_start),
+        };
+        host.scheduler = Some(Box::new(super::task::Tasks::new(
+            sid.into(),
+            Arc::new(pretend),
+        )));
+        Arc::new(host)
     }
 
     fn parking_in(vault: Backend, shared: bool) -> MemoryHost {
@@ -202,6 +219,9 @@ impl MemoryHost {
             credentials: Mutex::new(Vec::new()),
             credentials_fault: Mutex::new(None),
             user_environment_values: Mutex::new(gate),
+            windows_settings: Mutex::new(WindowsSettings::default()),
+            kernel_is_wsl: AtomicBool::new(false),
+            windows_drives: Mutex::new(Vec::new()),
         }
     }
 
@@ -411,6 +431,22 @@ impl MemoryHost {
     #[cfg(test)]
     pub(crate) fn sets_user_environment(&self, name: &str, value: &str) {
         locked(&self.user_environment_values).insert(name.to_uppercase(), value.into());
+    }
+
+    #[cfg(test)]
+    pub(crate) fn sets_windows(&self, settings: WindowsSettings) {
+        *locked(&self.windows_settings) = settings;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn runs_in_wsl(&self) {
+        self.kernel_is_wsl.store(true, Ordering::SeqCst);
+    }
+
+    // A folder WSL mounts a Windows drive at, such as `/mnt/c`.
+    #[cfg(test)]
+    pub(crate) fn mounts_a_windows_drive(&self, at: &Path) {
+        locked(&self.windows_drives).push(at.to_path_buf());
     }
 
     /// Say an administrator's configuration profile forces `key` of `domain` to `value`, a
@@ -624,6 +660,20 @@ impl Host for MemoryHost {
             .map_or(Administered::Unset, |value| {
                 Administered::Set(value.clone())
             })
+    }
+
+    fn windows_settings(&self) -> WindowsSettings {
+        locked(&self.windows_settings).clone()
+    }
+
+    fn kernel_is_wsl(&self) -> bool {
+        self.kernel_is_wsl.load(Ordering::SeqCst)
+    }
+
+    fn on_a_windows_drive(&self, path: &Path) -> bool {
+        locked(&self.windows_drives)
+            .iter()
+            .any(|drive| path.starts_with(drive))
     }
 
     // In any case, as Credential Manager finds a target: one a test named, or Claude Code's item

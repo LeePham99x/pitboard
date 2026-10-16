@@ -1,5 +1,6 @@
 # Checks a pitboard.exe for Windows, for CI and the release alike: its machine, its C runtime,
-# its version, and the release gate as the version's major decides it.
+# its version, its version resource and manifest, and the release gate as the version's major
+# decides it.
 param(
     [Parameter(Mandatory)] [string] $Exe,
     [Parameter(Mandatory)] [ValidateSet('x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc')] [string] $Triple,
@@ -57,6 +58,30 @@ $said = (& $exePath --version | Out-String).Trim()
 if ($LASTEXITCODE -ne 0) { throw "pitboard --version exited $LASTEXITCODE" }
 if ($said -ne "pitboard $Version") { throw "pitboard.exe --version says '$said', not 'pitboard $Version'" }
 Write-Output "$said, for $machine, with the C runtime inside it"
+
+# Part 3's version numbers: beta N of X.Y.Z is X.Y.Z.N, and X.Y.Z itself X.Y.Z.1000.
+if ($Version -notmatch '^(\d+)\.(\d+)\.(\d+)(?:-beta\.([1-9]\d{0,2}))?$') {
+    throw "$Version has no FileVersion: it takes X.Y.Z or X.Y.Z-beta.N, N from 1 to 999"
+}
+$fileVersion = "$($Matches[1]).$($Matches[2]).$($Matches[3])." + $(if ($Matches[4]) { $Matches[4] } else { '1000' })
+$info = [Diagnostics.FileVersionInfo]::GetVersionInfo($exePath)
+$expected = [ordered]@{ ProductName = 'Pitboard'; CompanyName = 'Pitboard'; ProductVersion = $Version; FileVersion = $fileVersion }
+foreach ($name in $expected.Keys) {
+    if ($info.$name -ne $expected[$name]) {
+        throw "pitboard.exe's version resource has $name '$($info.$name)', not '$($expected[$name])'"
+    }
+}
+$resources = & $readobj --coff-resources $exePath | Out-String
+if ($LASTEXITCODE -ne 0) { throw "llvm-readobj could not read $exePath's resources" }
+$section = ($resources -split '(?m)^\s*Type: ') | Where-Object { $_ -match '^\S+ \(ID 24\)' } | Select-Object -First 1
+if (-not $section) { throw 'pitboard.exe carries no manifest' }
+$hex = [regex]::Matches($section, '(?m)^\s*[0-9A-F]{4}: ((?:[0-9A-F]{2,8} ?)+?)\s*\|') |
+    ForEach-Object { $_.Groups[1].Value -replace ' ', '' }
+$manifest = [Text.Encoding]::UTF8.GetString([Convert]::FromHexString($hex -join ''))
+foreach ($said in '<(\w+:)?consoleAllocationPolicy[^>]*>\s*detached\s*<', '<(\w+:)?longPathAware[^>]*>\s*true\s*<', 'level=["'']asInvoker["'']') {
+    if ($manifest -notmatch $said) { throw "pitboard.exe's manifest does not match $said`: $manifest" }
+}
+Write-Output "Its version resource names Pitboard $Version, file version $fileVersion, and its manifest is detached, long-path aware and asInvoker."
 
 # A build for the tests has test-support, which reads this variable.
 if (-not $Opened) {

@@ -47,6 +47,8 @@ const READ: &[&str] = &[
     "CLAUDE_CODE_CUSTOM_OAUTH_URL",
     "CLAUDE_CODE_HOVER_REST",
     "CLAUDE_CODE_FORCE_WINDOWS_CREDMAN",
+    "CLAUDE_CODE_GIT_BASH_PATH",
+    "WSL_DISTRO_NAME",
     "CODEX_HOME",
     "CODEX_INSTALL_DIR",
     "NO_COLOR",
@@ -380,6 +382,10 @@ pub struct Context {
     pub(crate) installer_places: std::collections::BTreeMap<ProviderId, Vec<PathBuf>>,
     // `PATHEXT`, which orders the names a Windows shell tries for a program.
     pub(crate) path_ext: Option<OsString>,
+    // `CLAUDE_CODE_GIT_BASH_PATH`, the Git Bash Claude Code looks at first on Windows.
+    pub(crate) git_bash: Option<PathBuf>,
+    // `WSL_DISTRO_NAME` on Linux, set even empty, which WSL gives its programs.
+    pub(crate) wsl_distro: Option<String>,
     /// The scheduler's job this process runs as, where a test says. `None` is whatever the
     /// scheduler said when it started this process.
     pub(crate) scheduled_job: Option<String>,
@@ -500,6 +506,8 @@ impl Context {
             search_path: None,
             installer_places: std::collections::BTreeMap::new(),
             path_ext: None,
+            git_bash: None,
+            wsl_distro: None,
             scheduled_job: None,
             marked_as_scheduled: false,
             sudo: false,
@@ -696,6 +704,22 @@ impl Context {
         self.marked_as_scheduled
     }
 
+    // `given` over this context's own proxy variables, as a job's are given over the system's.
+    pub(crate) fn with_proxy_variables_over(mut self, given: &[(String, String)]) -> Context {
+        let os = self.os;
+        let key = |name: &str| os.variable_key(OsStr::new(name));
+        let own = self
+            .proxy
+            .variables()
+            .iter()
+            .filter(|(name, _)| !given.iter().any(|(over, _)| key(over) == key(name)))
+            .map(|(name, value)| ((*name).to_string(), value.clone()));
+        let env = Environment::on(os, given.iter().cloned().chain(own));
+        self.proxy = crate::proxy::Proxies::read(&env);
+        self.agent = crate::api::Agents::default();
+        self
+    }
+
     // The program named for this tool, found or not; None for a tool with no program to run.
     pub fn program_for(&self, tool: ProviderId) -> Option<&std::path::Path> {
         self.programs.get(&tool).map(PathBuf::as_path)
@@ -860,6 +884,14 @@ impl Context {
             search_path: Some(env.path("PATH").unwrap_or_default().to_os_string()),
             installer_places: std::collections::BTreeMap::new(),
             path_ext: env.path("PATHEXT").map(OsStr::to_os_string),
+            git_bash: env
+                .path("CLAUDE_CODE_GIT_BASH_PATH")
+                .filter(|named| env.os() == Os::Windows && !named.is_empty())
+                .map(PathBuf::from),
+            wsl_distro: env
+                .path("WSL_DISTRO_NAME")
+                .filter(|_| env.os() == Os::Linux)
+                .map(|named| named.to_string_lossy().into_owned()),
             scheduled_job: None,
             marked_as_scheduled: false,
             sudo: env.set("SUDO_UID"),

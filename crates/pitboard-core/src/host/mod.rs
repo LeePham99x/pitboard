@@ -53,6 +53,14 @@ pub(crate) mod program;
     )
 )]
 pub(crate) mod replace;
+#[cfg_attr(
+    not(windows),
+    allow(
+        dead_code,
+        reason = "only Windows schedules a task; every system's tests read these rules"
+    )
+)]
+pub(crate) mod task;
 pub(crate) mod token;
 #[cfg(unix)]
 mod unix;
@@ -566,6 +574,17 @@ pub enum Floor {
     Unknown,
 }
 
+// What Windows' settings say that changes what Pitboard or a tool does there.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct WindowsSettings {
+    // The distributions WSL holds for this account, by `DistributionName` under HKCU's `Lxss`.
+    pub(crate) wsl: Vec<String>,
+    // `ProxyServer` where `ProxyEnable` is not 0, as hyper-util 0.1.20 reads them for Codex.
+    pub(crate) proxy: Option<String>,
+    // `EnableLUA`, which runs administrators in Admin Approval Mode where it is not 0.
+    pub(crate) admin_approval: Option<bool>,
+}
+
 // Windows 11 24H2's build, which Windows Server 2025 shares.
 pub(crate) const WINDOWS_FLOOR: u32 = 26100;
 
@@ -812,17 +831,34 @@ pub(crate) trait Host: Send + Sync + std::fmt::Debug {
     fn credential_held(&self, _ctx: &Context, _target: &str) -> std::result::Result<bool, String> {
         Ok(false)
     }
+
+    // None elsewhere, and none in a build for tests on the real hosts.
+    fn windows_settings(&self) -> WindowsSettings {
+        WindowsSettings::default()
+    }
+
+    // Whether `/proc/version` names Microsoft, as Codex 0.163.0 tells WSL by; false elsewhere,
+    // and in a build for tests on the real hosts.
+    fn kernel_is_wsl(&self) -> bool {
+        false
+    }
+
+    // Whether `path`, or the nearest folder above it that opens, is on 9p, as WSL 2 mounts
+    // Windows' drives; false off Linux.
+    fn on_a_windows_drive(&self, _path: &Path) -> bool {
+        false
+    }
 }
 
 /// The system's own scheduler, which starts `pitboard renew` once a day: launchd on macOS,
-/// a systemd user timer on Linux. Never a homemade daemon.
+/// a systemd user timer on Linux, Task Scheduler on Windows. Never a homemade daemon.
 ///
 /// What Pitboard decides about the schedule, which program it runs, how often, and whether
 /// it is this home's to change, is [`crate::schedule`]'s. This is only how the system is
 /// asked, and what it says back.
 pub(crate) trait Scheduler: Send + Sync + std::fmt::Debug {
     /// Where the schedule is kept, where a person would look for it.
-    fn location(&self, ctx: &Context) -> PathBuf;
+    fn location(&self, ctx: &Context) -> crate::schedule::Location;
 
     /// Whether a schedule is there.
     fn installed(&self, ctx: &Context) -> bool;
@@ -859,6 +895,17 @@ pub(crate) trait Scheduler: Send + Sync + std::fmt::Debug {
     /// Whether this process is a run the schedule itself started. `said` is the job a test
     /// says this process runs as; `None` leaves it to what the system says.
     fn started_this_process(&self, said: Option<&str>) -> bool;
+
+    // What a run it started reads for itself of what `put` was given: none where the system
+    // hands the job its variables.
+    fn read_by_its_runs(&self, _ctx: &Context) -> Vec<(String, String)> {
+        Vec::new()
+    }
+
+    // What the system says of the job beyond what Pitboard wrote: Task Scheduler's alone.
+    fn task(&self, _ctx: &Context) -> Option<task::Task> {
+        None
+    }
 }
 
 // Time awake since a fixed moment (boot on Windows, the first call elsewhere); a sleep adds none.
@@ -1174,17 +1221,10 @@ mod tests {
         ));
     }
 
-    /// Pitboard writes for a scheduler of each system's own: launchd and a systemd user timer.
-    /// Task Scheduler is written for by W25, and until then Windows offers none.
+    // launchd, a systemd user timer and Task Scheduler.
     #[test]
     fn a_scheduler_is_offered_where_pitboard_writes_for_one() {
-        assert_eq!(
-            current().scheduler().is_some(),
-            match OS {
-                Os::MacOs | Os::Linux => true,
-                Os::Windows => false,
-            }
-        );
+        assert!(current().scheduler().is_some());
     }
 
     /// This system's host reads sudo from the environment the context was read from, which

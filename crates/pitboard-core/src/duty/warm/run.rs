@@ -112,7 +112,7 @@ pub struct Started {
 }
 
 /// Runs `headless` for at most [`CEILING`], or plays it where a test or a fixture said to.
-pub(crate) fn run(ctx: &Context, headless: Headless) -> std::io::Result<Ran> {
+pub(crate) fn run(ctx: &Context, permit: Permit, headless: Headless) -> std::io::Result<Ran> {
     #[cfg(any(test, feature = "test-support"))]
     if let Some(script) = ctx.warm_script() {
         let command = &headless.command;
@@ -132,10 +132,15 @@ pub(crate) fn run(ctx: &Context, headless: Headless) -> std::io::Result<Ran> {
     #[cfg(not(any(test, feature = "test-support")))]
     let _ = ctx;
     let Headless { command, token } = headless;
-    crate::host::proc::run_within(command, token.as_deref().map(str::as_bytes), CEILING)
+    crate::host::proc::run_within(
+        permit,
+        command,
+        token.as_deref().map(str::as_bytes),
+        CEILING,
+    )
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 #[allow(
     clippy::disallowed_methods,
     reason = "a test sets up its scratch files as a person or a tool would"

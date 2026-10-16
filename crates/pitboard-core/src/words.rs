@@ -192,7 +192,9 @@ pub fn not_watching(why: &crate::duty::autoswitch::Blind) -> String {
 pub fn not_warming(why: &crate::duty::warm::Halt) -> String {
     use crate::duty::warm::Halt;
     match why {
-        Halt::Unbuilt => "Pitboard does not warm up accounts on this system yet".into(),
+        Halt::Unbuilt => "warm-ups are not available on Windows, where Claude Code does not \
+                          read the access token a warm-up hands it"
+            .into(),
         Halt::SwitchInterrupted => INTERRUPTED.into(),
         Halt::CustomOauth => CUSTOM_OAUTH.into(),
         Halt::Overridden(names) => format!(
@@ -1113,6 +1115,11 @@ pub(crate) struct ChangesNothing {
     pub(crate) to_ask_again: &'static str,
 }
 
+// Doctor's alone, where `EnableLUA` reads 0: the gate reads no setting.
+pub(crate) const ADMIN_APPROVAL_OFF: &str = "User Account Control is off on this PC, so every \
+     program an administrator starts is elevated: turn it on, or run Pitboard from a standard \
+     account.";
+
 // On macOS and Linux root and sudo share one refusal, since the way out is the same.
 pub(crate) fn elevated(os: Os, why: Option<&'static str>) -> ChangesNothing {
     let because = |cannot_tell: &str| match why {
@@ -1255,6 +1262,21 @@ mod tests {
             }
             assert_eq!(reads_only_the_file(os), reader);
         }
+    }
+
+    #[test]
+    fn a_warm_up_is_said_to_be_unavailable_on_windows_and_why() {
+        use crate::duty::warm::Halt;
+        let why = "warm-ups are not available on Windows, where Claude Code does not read the \
+                   access token a warm-up hands it";
+        assert_eq!(not_warming(&Halt::Unbuilt), why);
+        assert_eq!(
+            crate::error::Error::WarmUpHalted {
+                halt: Halt::Unbuilt
+            }
+            .to_string(),
+            format!("Pitboard warms up no account now: {why}.")
+        );
     }
 
     #[test]

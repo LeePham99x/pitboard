@@ -106,6 +106,37 @@ impl Host for Linux {
     fn managed_preference(&self, _domain: &str, _key: &str) -> Administered {
         Administered::Unset
     }
+
+    fn kernel_is_wsl(&self) -> bool {
+        super::administered::READ_BY_REAL_HOSTS && kernel_names_microsoft()
+    }
+
+    fn on_a_windows_drive(&self, path: &Path) -> bool {
+        on_9p(path)
+    }
+}
+
+fn kernel_names_microsoft() -> bool {
+    std::fs::read_to_string("/proc/version")
+        .is_ok_and(|version| version.to_lowercase().contains("microsoft"))
+}
+
+// V9FS_MAGIC, read from the nearest folder that opens, as Codex's `uses_wsl_drvfs` reads it.
+fn on_9p(path: &Path) -> bool {
+    use std::os::fd::AsRawFd;
+    let Some(folder) = path
+        .ancestors()
+        .find_map(|above| std::fs::File::open(above).ok())
+    else {
+        return false;
+    };
+    let mut stats = std::mem::MaybeUninit::<libc::statfs>::uninit();
+    // SAFETY: the descriptor is open for the call, which fills the buffer and keeps neither.
+    if unsafe { libc::fstatfs(folder.as_raw_fd(), stats.as_mut_ptr()) } != 0 {
+        return false;
+    }
+    // SAFETY: fstatfs returned 0, so it filled the buffer.
+    unsafe { stats.assume_init() }.f_type == 0x0102_1997
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -171,6 +202,16 @@ pub(super) fn pretend_scheduler(
 )]
 mod tests {
     use super::*;
+
+    // Read only. A scratch folder is in this Linux, whether or not it runs in WSL.
+    #[test]
+    fn the_kernel_and_a_folders_file_system_are_read_as_codex_reads_them() {
+        assert!(std::fs::read_to_string("/proc/version").is_ok());
+        let _ = kernel_names_microsoft();
+        let scratch = tempfile::tempdir().expect("a scratch folder");
+        assert!(!on_9p(scratch.path()));
+        assert!(!on_9p(&scratch.path().join("not").join("made")));
+    }
 
     /// Homebrew starts Pitboard through a link in its `bin` that leads into a directory
     /// named after the version, and the next upgrade deletes that directory. Linux says

@@ -292,12 +292,28 @@ impl Env {
 
     // std's `Command` folds case on Windows: given `PATH` then `Path`, a child had one, `Path`.
     pub(crate) fn command(&self, args: &[&str]) -> Command {
-        let mut c = Command::new(env!("CARGO_BIN_EXE_pitboard"));
+        self.started(env!("CARGO_BIN_EXE_pitboard"), args)
+    }
+
+    // Another program, such as a shell that runs Pitboard, given what Pitboard is given.
+    pub(crate) fn started(&self, program: impl AsRef<std::ffi::OsStr>, args: &[&str]) -> Command {
+        let mut c = Command::new(program);
         for name in withheld() {
             c.env_remove(name);
         }
         c.args(args).envs(self.given());
         c
+    }
+
+    // A copy of this build in the folder first on the PATH a command is given, so a shell finds
+    // the bare `pitboard`, and a run holds nothing of the build the tests share.
+    pub(crate) fn put_pitboard_on_path(&self) -> PathBuf {
+        let bin = self.root.join("bin");
+        std::fs::create_dir_all(&bin).expect("a bin folder");
+        let copy = bin.join(os::program("pitboard"));
+        std::fs::copy(env!("CARGO_BIN_EXE_pitboard"), &copy)
+            .unwrap_or_else(|e| panic!("{} could not be made: {e}", copy.display()));
+        copy
     }
 
     // Without these the suite reads whatever login the person running it is signed in to.
@@ -319,6 +335,28 @@ impl Env {
                 .map(|(name, folder)| (name, folder.into_os_string())),
         );
         given
+    }
+
+    // Every variable a command is started with, for a start std's Command cannot make.
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "the tests' own environment, from which this withholds what Pitboard reads"
+    )]
+    pub(crate) fn environment(&self) -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
+        let given = self.given();
+        let set: Vec<&str> = given.iter().map(|(name, _)| *name).collect();
+        let kept: Vec<_> = std::env::vars_os()
+            .filter(|(name, _)| {
+                !withheld().any(|kept| is(name, kept)) && !set.iter().any(|set| is(name, set))
+            })
+            .collect();
+        kept.into_iter()
+            .chain(
+                given
+                    .into_iter()
+                    .map(|(name, value)| (std::ffi::OsString::from(name), value)),
+            )
+            .collect()
     }
 
     #[allow(

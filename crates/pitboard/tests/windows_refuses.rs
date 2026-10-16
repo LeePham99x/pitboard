@@ -30,7 +30,7 @@ const FOLDERS: [&str; 7] = [
 ];
 
 /// Every change the command line makes, as a person types it. `--json` is added to each.
-const CHANGES: [&[&str]; 16] = [
+const CHANGES: [&[&str]; 20] = [
     &["enroll", "work"],
     &["enroll", "codex/work", "--sign-in"],
     &["use", "work"],
@@ -45,6 +45,10 @@ const CHANGES: [&[&str]; 16] = [
     &["schedule", "uninstall"],
     &["uninstall", "-y"],
     &["rename", "work", "job"],
+    &["warm", "on", "work"],
+    &["warm", "off", "work"],
+    &["warm", "now", "work"],
+    &["warm", "range", "06:00", "22:00"],
     &["watch"],
     &["watch", "--once"],
 ];
@@ -53,12 +57,13 @@ const CHANGES: [&[&str]; 16] = [
 const WATCH: &[&str] = &["watch"];
 
 /// What reads and changes nothing, as a person types it. `--json` is added to each.
-const READS: [&[&str]; 5] = [
+const READS: [&[&str]; 6] = [
     &["status"],
     &["status", "--offline"],
     &["doctor"],
     &["schedule", "status"],
     &["log"],
+    &["warm"],
 ];
 
 fn scratch() -> tempfile::TempDir {

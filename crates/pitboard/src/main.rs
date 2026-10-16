@@ -6,6 +6,7 @@ use pitboard_core::doctor;
 use pitboard_core::duty::autoswitch::Threshold;
 use pitboard_core::error::Error;
 use pitboard_core::provider::{Adoption, SignsIn};
+use pitboard_core::schedule::Location;
 use pitboard_core::service::{Changing, Done, Failed, Pitboard, Warning};
 use pitboard_core::switch::{Enrolled, Outcome, Renewal};
 use serde_json::{Value, json};
@@ -27,10 +28,8 @@ const CONTRACT: u32 = 1;
 const ERROR: Style = AnsiColor::Red.on_default().bold();
 const WARNING: Style = AnsiColor::Yellow.on_default().bold();
 
-/// Switch Claude Code, Codex and Claude Desktop between your own accounts without signing
-/// out, and see what each Claude Code and Codex account has left.
 #[derive(Parser)]
-#[command(name = "pitboard", version)]
+#[command(name = "pitboard", bin_name = "pitboard", version, about = ABOUT)]
 struct Cli {
     /// Machine-readable output: the same versioned JSON envelope for every command,
     /// whether it succeeds or fails
@@ -40,6 +39,41 @@ struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
 }
+
+// Pitboard switches Claude Desktop on macOS alone, so Windows' help never names it.
+const ABOUT: &str = if cfg!(windows) {
+    "Switch Claude Code and Codex between your own accounts without signing out, and see what \
+     each account has left"
+} else {
+    "Switch Claude Code, Codex and Claude Desktop between your own accounts without signing \
+     out, and see what each Claude Code and Codex account has left"
+};
+
+const LABEL_TO_ENROLL: &str = if cfg!(windows) {
+    "A short name for this account, such as `personal` or `work`. `codex/work` names a Codex \
+     account; a bare name means Claude Code"
+} else {
+    "A short name for this account, such as `personal` or `work`. `codex/work` names a Codex \
+     account, `desktop/work` a Claude Desktop one; a bare name means Claude Code"
+};
+
+const SIGN_IN: &str = if cfg!(windows) {
+    "Sign in through the tool's own sign-in, without signing out of the account in use: for \
+     the account in use, this puts its new login in use, and for another enrolled label, it \
+     renews its parked login"
+} else {
+    "For Claude Code and Codex, sign in through the tool's own sign-in, without signing out of \
+     the account in use: for the account in use, this puts its new login in use, and for \
+     another enrolled label, it renews its parked login. For Claude Desktop, Pitboard parks the \
+     account in use, leaving Claude signed out, waits while you sign in inside Claude and quit \
+     it, then puts that login in use under the label"
+};
+
+const LABEL_TO_USE: &str = if cfg!(windows) {
+    "The label the account was enrolled under, such as `work` or `codex/work`"
+} else {
+    "The label the account was enrolled under, such as `work`, `codex/work` or `desktop/work`"
+};
 
 // The default folder, by the name a person knows it by on each system.
 const RENEWS_THE_DEFAULT: &str = if cfg!(windows) {
@@ -62,22 +96,14 @@ enum Command {
     },
     /// Add an account: the one signed in now, or with --sign-in, another one
     Enroll {
-        /// A short name for this account, such as `personal` or `work`. `codex/work` names a
-        /// Codex account, `desktop/work` a Claude Desktop one; a bare name means Claude Code
-        #[arg(value_parser = label_to_enroll)]
+        #[arg(value_parser = label_to_enroll, help = LABEL_TO_ENROLL)]
         label: String,
-        /// For Claude Code and Codex, sign in through the tool's own sign-in, without signing
-        /// out of the account in use: for the account in use, this puts its new login in use,
-        /// and for another enrolled label, it renews its parked login. For Claude Desktop,
-        /// Pitboard parks the account in use, leaving Claude signed out, waits while you sign in
-        /// inside Claude and quit it, then puts that login in use under the label.
-        #[arg(long)]
+        #[arg(long, help = SIGN_IN)]
         sign_in: bool,
     },
     /// Switch a tool to an enrolled account
     Use {
-        /// The label the account was enrolled under, such as `work`, `codex/work` or
-        /// `desktop/work`
+        #[arg(help = LABEL_TO_USE)]
         label: String,
     },
     /// Drop an account and its parked login
@@ -785,6 +811,20 @@ fn renew(pitboard: &Pitboard) -> Report {
     )
 }
 
+// Where it is, under the key that says what it is: `path` for a file, `task` for Task Scheduler.
+fn located(installed: Value, location: &Location, rest: Value) -> Value {
+    let mut said = serde_json::Map::new();
+    said.insert("installed".into(), installed);
+    match location {
+        Location::File(path) => said.insert("path".into(), json!(path)),
+        Location::Task(task) => said.insert("task".into(), json!(task)),
+    };
+    if let Value::Object(rest) = rest {
+        said.extend(rest);
+    }
+    Value::Object(said)
+}
+
 fn schedule(pitboard: &Pitboard, what: &ScheduleCommand) -> Report {
     use pitboard_core::schedule::Installed;
     // From any home but the default one, the schedule is not this home's, and installing
@@ -797,18 +837,18 @@ fn schedule(pitboard: &Pitboard, what: &ScheduleCommand) -> Report {
     );
     let say = |installed: &Installed| match installed {
         Installed::Yes {
-            path,
+            location,
             every_seconds,
         } => (
-            json!({
-                "installed": true,
-                "path": path,
-                "every_seconds": every_seconds,
-            }),
+            located(
+                json!(true),
+                location,
+                json!({"every_seconds": every_seconds}),
+            ),
             format!(
                 "Parked logins are renewed every {} by this computer's own scheduler.\n{}\n{}",
                 pitboard_core::words::span(i64::from(*every_seconds)),
-                path.display(),
+                location,
                 if renews_this_home {
                     String::new()
                 } else {
@@ -843,14 +883,13 @@ fn schedule(pitboard: &Pitboard, what: &ScheduleCommand) -> Report {
         }
         ScheduleCommand::Install => match pitboard.schedule_install() {
             Err(error) => Report::failed(Some("schedule"), error),
-            Ok(path) => Report::done(
+            Ok(location) => Report::done(
                 "schedule",
-                json!({"installed": true, "path": path}),
+                located(json!(true), &location, json!({})),
                 format!(
-                    "Parked logins will be renewed daily.\n{}\n\nIt renews your own \
+                    "Parked logins will be renewed daily.\n{location}\n\nIt renews your own \
                      parked logins and does nothing else: it never switches account and \
-                     never asks Anthropic for usage.\n",
-                    path.display()
+                     never asks Anthropic for usage.\n"
                 ),
             ),
         },
@@ -1303,6 +1342,27 @@ mod tests {
         Cli::command().debug_assert();
     }
 
+    // clap names the program after how it was started, `pitboard.exe` on Windows.
+    #[test]
+    fn a_usage_error_names_pitboard_however_it_was_started() {
+        for started in [
+            "pitboard",
+            r"C:\Tools\pitboard.exe",
+            "/usr/local/bin/pitboard",
+        ] {
+            let refused = Cli::try_parse_from([started, "use"])
+                .err()
+                .expect("a usage error")
+                .render()
+                .to_string();
+            assert!(
+                refused.contains("Usage: pitboard use <LABEL>"),
+                "{started}: {refused}"
+            );
+            assert!(!refused.contains("pitboard.exe"), "{started}: {refused}");
+        }
+    }
+
     #[test]
     fn a_mistyped_flag_is_rejected_rather_than_ignored() {
         assert!(Cli::try_parse_from(["pitboard", "--jsno", "status"]).is_err());
@@ -1720,13 +1780,36 @@ mod tests {
         assert!(scheduled.contains(folder), "{scheduled}");
     }
 
+    // A file under `path`, as before; Task Scheduler's task under `task`, with no `path`.
+    #[test]
+    fn the_schedule_says_where_it_is_by_what_it_is() {
+        let plist = "/Users/x/Library/LaunchAgents/com.datlechin.pitboard.renew.plist";
+        let file = located(
+            json!(true),
+            &Location::File(std::path::PathBuf::from(plist)),
+            json!({"every_seconds": 86_400}),
+        );
+        assert_eq!(
+            file.to_string(),
+            format!(r#"{{"installed":true,"path":"{plist}","every_seconds":86400}}"#)
+        );
+        let task = located(
+            json!(true),
+            &Location::Task(r"\Pitboard\Renew S-1-5-21-1".into()),
+            json!({}),
+        );
+        assert_eq!(
+            task.to_string(),
+            r#"{"installed":true,"task":"\\Pitboard\\Renew S-1-5-21-1"}"#
+        );
+    }
+
     /// `schedule status` run while `PITBOARD_HOME` names another directory says that the
     /// schedule renews only the parked logins in `~/.pitboard`. With nothing installed it
     /// says to unset `PITBOARD_HOME` before `pitboard schedule install`, which is refused
     /// until then, rather than to run it as it is. From the default home it says what it
     /// said. On a machine in memory, whose scheduler asks nobody.
     #[test]
-    #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn schedule_status_from_another_home_says_what_the_schedule_renews() {
         use pitboard_core::testing::MemoryHost;
         let home = std::env::temp_dir().join(format!(
@@ -1744,8 +1827,10 @@ mod tests {
         let default = Pitboard::new(ctx.clone());
         let elsewhere = Pitboard::new(ctx.with_pitboard_home(home.join("elsewhere")));
         let said = |pitboard: &Pitboard| schedule(pitboard, &ScheduleCommand::Status).human;
-        let renews_only = "renews only the parked logins in ~/.pitboard, not those in the \
-                           directory PITBOARD_HOME names";
+        let renews_only = &format!(
+            "renews only the parked logins in {}, not those in the directory PITBOARD_HOME names",
+            default.shown(&default.default_directory())
+        );
 
         let here = said(&default);
         assert!(
@@ -1827,8 +1912,36 @@ mod tests {
         assert!(!asks(&["manpage"]));
     }
 
+    // The long help of every command a person can ask about, each under the way it is typed.
+    fn every_help() -> String {
+        fn each(command: &mut clap::Command, typed: &str, said: &mut String) {
+            said.push_str(&format!("== {typed}\n{}\n", command.render_long_help()));
+            let names: Vec<String> = command
+                .get_subcommands()
+                .filter(|sub| sub.get_name() != "help")
+                .map(|sub| sub.get_name().to_string())
+                .collect();
+            for name in names {
+                let sub = command.find_subcommand_mut(&name).expect("listed");
+                each(sub, &format!("{typed} {name}"), said);
+            }
+        }
+        let mut cli = Cli::command();
+        cli.build();
+        let mut said = String::new();
+        each(&mut cli, "pitboard", &mut said);
+        said
+    }
+
     #[test]
-    fn the_sign_in_help_says_what_it_does_for_claude_desktop() {
+    #[cfg(not(windows))]
+    fn the_help_reads_as_it_did_off_windows() {
+        insta::assert_snapshot!("help", every_help());
+    }
+
+    // Pitboard switches Claude Desktop on macOS alone; Linux's help keeps the words it had.
+    #[test]
+    fn the_help_names_claude_desktop_only_off_windows() {
         let help = |command: Option<&str>| {
             let mut cli = Cli::command();
             let said = match command {
@@ -1844,6 +1957,25 @@ mod tests {
                 .join(" ")
         };
         let enroll = help(Some("enroll"));
+        if cfg!(windows) {
+            let every = every_help();
+            assert!(!every.contains("Desktop"), "{every}");
+            assert!(!every.contains("desktop/"), "{every}");
+            for said in [
+                "Sign in through the tool's own sign-in, without signing out of the account in \
+                 use: for the account in use, this puts its new login in use, and for another \
+                 enrolled label, it renews its parked login",
+                "`codex/work` names a Codex account; a bare name means Claude Code",
+            ] {
+                assert!(enroll.contains(said), "{said}: {enroll}");
+            }
+            assert!(help(Some("use")).contains("such as `work` or `codex/work`"));
+            assert!(help(None).contains(
+                "Switch Claude Code and Codex between your own accounts without signing out, \
+                 and see what each account has left"
+            ));
+            return;
+        }
         for said in [
             "For Claude Code and Codex, sign in through the tool's own sign-in, without signing \
              out of the account in use: for the account in use, this puts its new login in use, \

@@ -98,20 +98,30 @@ window loads its site, and whatever the site's pages load, as a browser would.
     is never handed to std's `Command`, which would look beside Pitboard first. `mod.rs`
     chooses the system, once: `macos/` (the keychain through `security`, `ps`, a cookie jar
     through the system's SQLite in `sqlite.rs`, a bundle's `Info.plist` in `bundle.rs`,
-    launchd) or `linux/` (`/proc`, systemd), each with what `unix/` holds for both, or
-    `windows/`. Linux and Windows refuse Claude Desktop's data folder before anything else
-    is asked, so neither reads a cookie jar, and Linux lists no process with its parent.
+    launchd) or `linux/` (`/proc`, systemd, and whether it runs in WSL as Codex tells, which
+    a build for tests reads from `WSL_DISTRO_NAME` alone), each with what `unix/` holds for
+    both, or `windows/`. Linux and Windows refuse Claude Desktop's data folder before
+    anything else is asked, so neither reads a cookie jar, and Linux lists no process with
+    its parent.
     `windows/` is the face that refuses whatever of Windows is not built yet: no store of
-    secrets, no scheduler, and none of the four calls that move Claude Desktop's data
-    folder. It seals each park with DPAPI under the person's own key (`windows/seal.rs`).
-    It lists processes from a Toolhelp snapshot, for their parents, and keeps this
-    account's in any session: whose each is, WTS says without opening it, a process in
-    another user's session is passed over unopened, and the rest's tokens are read
-    (`owner.rs`). A program whose owner or path does not read makes `processes` unknown,
+    secrets, and none of the four calls that move Claude Desktop's data folder. It seals
+    each park with DPAPI under the person's own key (`windows/seal.rs`). It registers daily
+    renewal's task through `ITaskService`, on a thread of its own in COM's multithreaded
+    apartment, and a build for tests asks Task Scheduler nothing (`windows/tasks.rs`);
+    `task.rs` writes and reads the task on every system, and keeps the proxy it is given in
+    `schedule.env`, since a task's definition holds no environment. The task runs the path
+    the command line was started by where an upgrade keeps it: Scoop's
+    `apps\<app>\current`, never a version's folder, and winget's link in `WinGet\Links`
+    (`program::lasting`). It lists processes from a Toolhelp snapshot, for their parents,
+    and keeps this account's in any session: whose each is, WTS says without opening it, a
+    process in another user's session is passed over unopened, and the rest's tokens are
+    read (`owner.rs`). A program whose owner or path does not read makes `processes` unknown,
     since it may be any kind of holder. It finds programs as a Windows shell does, an app
     execution alias in a `WindowsApps` folder by its reparse tag, and reads the `Path` a
     program started now is given from the registry, the machine's and then the person's,
-    which a build for tests reads in its own test alone. It starts a sign-in's tool
+    which a build for tests reads in its own test alone, as it does the settings doctor
+    names (`windows/settings.rs`): the distributions WSL holds, Windows' own proxy as
+    hyper-util reads it for Codex, and `EnableLUA`. It starts a sign-in's tool
     suspended, puts it in a job of its own that lets a program break away, as Codex starts
     its daemons, then resumes it, so nothing it starts is outside the job
     (`windows/job.rs`). A cancel, and a sign-in let go of unfinished, end the job's
@@ -241,8 +251,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     in minutes of the clock's time zone (`Clock::zone`), which may run past midnight. It also
     holds `Overview`, each Claude Code account with where it stands, both by itself and for a
     warm-up asked for now (`Choice::now`), and `Halt`, why nothing is warmed up on this
-    machine: Windows, which it is not built for yet, a switch interrupted, a custom OAuth
-    endpoint, managed settings that sign every run of Claude Code in another way, or no
+    machine: Windows, where Claude Code reads no token handed to it
+    (`windows_token_handover`), said whatever is turned on, a switch interrupted, a custom
+    OAuth endpoint, managed settings that sign every run of Claude Code in another way, or no
     program. `decide.rs` is the rule, from the
     reading Anthropic gave, which login of the account is at hand (`Login`), the span and
     `warmed.json`, today's attempts (`Ledger`, by the clock's day): a period running, or one a
@@ -399,8 +410,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     account in use, marked while the record is in doubt. Where the record names no enrolled
     account, both show `unenrolled`, or `?` while the record is in doubt. `schedule.rs`
     decides what daily renewal runs and whose it is, and refuses a program in the temporary
-    copy macOS runs an app from, by `in_a_temporary_copy`, which an app asks of the command
-    line inside it too; the host's scheduler writes it.
+    copy macOS runs an app from, or Explorer one opened inside a zip, by
+    `in_a_temporary_copy`, which an app asks of the command line inside it too; the host's
+    scheduler writes it.
   - `words.rs`: the sentences and column words Pitboard says in more than one place, each
     a function of typed values: spans of time, a limit's names, when it resets, its pace and
     when it runs out, a parked login's life, a renewal run, doctor's summary, and what is
@@ -414,6 +426,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     are not in it.
 - `crates/pitboard`: the command line. Arguments, rendering for people, the man page, and
   the `--json` contract, pinned by the snapshots in `crates/pitboard/tests/snapshots`.
+  `build.rs` gives a Windows build its manifest, which the linker embeds, and its version
+  resource, which `rc.exe` or `llvm-rc` compiles. Both are in `build/`, the resource's writer
+  in `resources.rs`, one file so `pitboard-ffi`'s build script can include it too.
   `json.rs` is the one writer of that JSON, for every command and every error. Its example
   `stand-in` is the program every test starts in place of a tool: `claude`, `codex` and
   Claude's own program under a test's scratch `Claude.app`, which `ps` lists as Claude.
@@ -925,7 +940,10 @@ window loads its site, and whatever the site's pages load, as a browser would.
   with `--json`, each refuses with `confirmation_needed`, exit 2, before it changes
   anything, unless given `--yes` (`Confirm` in `pitboard/src/main.rs`). On 10 October 2026
   `pitboard stow < /dev/null`, run as a look, deleted the login file behind the keychain.
-  The app asks in its own dialogs and does not go through `Confirm`.
+  The app asks in its own dialogs and does not go through `Confirm`. On Windows std's
+  `is_terminal` also takes a pipe named as an msys or cygwin pty for a terminal (`msys_tty_on`
+  in Rust 1.98.1's `library/std/src/sys/io/is_terminal/windows.rs`), so under mintty, Git
+  Bash's own terminal, they ask as in a console.
 - A Windows build of a release before Pitboard for Windows is released does nothing
   (`release.rs`). The gate every change passes asks first, so no file is written, no store
   of logins changed and no token renewed even by a caller that forgot to ask; every read
@@ -954,13 +972,14 @@ window loads its site, and whatever the site's pages load, as a browser would.
   harness parks through it), which variables a command is passed on, which folders
   of a person's account it is given as scratch ones of its own, what its `PATH` holds after
   the test's programs, what a program's file is called, how npm lays out a package's
-  program, and whether Claude Desktop runs there (`os::claude_desktop_runs_here`).
+  program, whether Claude Desktop runs there (`os::claude_desktop_runs_here`), and whether a
+  warm-up does (`os::warm_ups_run_here`).
 - The whole suite runs on macOS, Linux and Windows. A test put off on a system says why in
   its `ignore` reason, which libtest lists:
   - A test that cannot pass on Windows until a later pull request of the Windows work says
     which: `#[cfg_attr(windows, ignore = "W<n>: …")]`.
   - A test of something one system does not have or do names it, such as
-    `ignore = "a warm-up runs on macOS and Linux"` on Windows and
+    `ignore = "a warm-up runs on macOS and Linux: …"` on Windows and
     `ignore = "a firmlink to the Data volume is macOS's own"` off macOS.
   - A core test of Claude Desktop's folder calls, which Windows refuses, says
     `#[cfg_attr(windows, ignore = "Claude Desktop is macOS only: …")]`. It runs on macOS and
@@ -1039,29 +1058,30 @@ window loads its site, and whatever the site's pages load, as a browser would.
   and everything that changes anything takes one as an argument: `atomic::write`, every
   function in `host::fs` that makes, moves or removes a file or a directory,
   `RawStore::write` and `delete` (the keychain among the stores), `Scheduler::put` and
-  `remove` and the service manager they ask, a tool's sign-in started, and the token
-  exchange, `Provider::renew` down to the request. So a change that skips the gate does
-  not compile, and nothing rotates a refresh token it could not then write down. Every
-  change asks the gate before it reads, locks or records anything, so a refused one leaves
-  even the audit log as it was. Where the gate refuses, `status` answers what
-  `status_offline` answers, with a `read_only` warning, the status line writes neither
-  sessions nor readings, `doctor` fails its `system_too_old` or `elevated` check, first and
-  in the gate's order, and an app writes no file of its own, since `app::write_file` takes a
-  permit too. What each says, on each system, is written once, in `words::elevated` and
-  `words::too_old`.
-- A run of the daily renewal schedule renews the default home, whatever `PITBOARD_HOME`
-  says, since the schedule is that home's alone: `Pitboard::renew` renews in the context
+  `remove` and the service manager they ask, a tool's sign-in or warm-up run started
+  (`host::proc::run_within`), and the token exchange, `Provider::renew` down to the request.
+  So a change that skips the gate does not compile, and nothing rotates a refresh token it
+  could not then write down. Every change asks the gate before it reads, locks or records
+  anything, so a refused one leaves even the audit log as it was. Where the gate refuses,
+  `status` answers what `status_offline` answers, with a `read_only` warning, the status
+  line writes neither sessions nor readings, `doctor` fails its `system_too_old` or
+  `elevated` check, first and in the gate's order, and an app writes no file of its own,
+  since `app::write_file` takes a permit too. What each says, on each system, is written
+  once, in `words::elevated` and `words::too_old`.
+- A run of the daily renewal schedule renews the default home, whatever `PITBOARD_HOME` says,
+  since the schedule is that home's alone: `Pitboard::renew` renews in the context
   `schedule::for_its_run` gives it. Such a run is told apart by what the scheduler says,
   launchd's job label in `XPC_SERVICE_NAME`, or, since what systemd passes a job is best
-  effort and not to be relied on, by the marker the unit's `ExecStart` carries,
-  `renew --scheduled` (`schedule::SCHEDULED_RUN`), which the command line passes on through
-  `Context::started_by_the_schedule`. The command line leaves `renew` to the gate, which
-  asks of the homes the run renews in, so an empty or relative `PITBOARD_HOME` stops no run
-  of the schedule. In a build for tests, such a run whose home is the account's own panics
-  before it reads anything. For the same reason `schedule::install` refuses, with
-  `schedule_not_default_home`, wherever `schedule::serves` is false, that is while
-  `PITBOARD_HOME` names another directory. `uninstall` is not refused, so a schedule can be
-  taken away from any home, and `repair` does nothing there, as before, without an error.
+  effort and not to be relied on and Task Scheduler passes none, by the marker the unit's
+  `ExecStart` and the task's action carry, `renew --scheduled` (`schedule::SCHEDULED_RUN`),
+  which the command line passes on through `Context::started_by_the_schedule`. The command
+  line leaves `renew` to the gate, which asks of the homes the run renews in, so an empty or
+  relative `PITBOARD_HOME` stops no run of the schedule. In a build for tests, such a run
+  whose home is the account's own panics before it reads anything. For the same reason
+  `schedule::install` refuses, with `schedule_not_default_home`, wherever `schedule::serves`
+  is false, that is while `PITBOARD_HOME` names another directory. `uninstall` is not
+  refused, so a schedule can be taken away from any home, and `repair` does nothing there, as
+  before, without an error.
 - The schedule's job is started with the system's environment, not the person's shell, so
   `schedule::install` gives it, through `Scheduler::put`, `PITBOARD_NO_ARGV` where the
   installing context refuses the argument line, and every proxy variable that context
@@ -1070,18 +1090,29 @@ window loads its site, and whatever the site's pages load, as a browser would.
   reinstall takes the current ones; `repair` keeps the proxy variables the installed file
   gives (`Scheduler::environment`). A proxy's address can hold a password, so
   `host::unix::service::write` writes every file of the job with `atomic::Perms::Secret`,
-  mode 600 whatever was there, where it kept a file's own mode before. `doctor` reads the
-  installed variables as a context's are read and warns, `schedule_proxy`, where they
-  would send a request another way than this run's (`Proxies::same_way`). In the app,
-  whose environment is the system's as the job's is, the same line is `ok` and says how
-  each way of installing the schedule chooses its proxy: the app's switch would take a
-  terminal's proxy away.
+  mode 600 whatever was there, where it kept a file's own mode before. A task's definition
+  has no environment, and an argument would show the password, so on Windows the proxy
+  variables go in `schedule.env` in the default home, private as the parks are, and
+  `schedule::for_its_run` gives a run the task started that file's variables over its own
+  (`Scheduler::read_by_its_runs`). `PITBOARD_NO_ARGV` means nothing on Windows, so it is
+  not kept. `doctor` reads the installed variables as a context's are read and warns,
+  `schedule_proxy`, where they would send a request another way than this run's
+  (`Proxies::same_way`). In the app, whose environment is the system's as the job's is,
+  the same line is `ok` and says how each way of installing the schedule chooses its
+  proxy: the app's switch would take a terminal's proxy away.
+- On Windows `doctor` also reads what Task Scheduler keeps of the task (`Scheduler::task`):
+  when it last ran and how that run ended, and the settings Pitboard writes that were changed
+  there since (`task::drifted`). A result that is neither 0 nor Task Scheduler's own for a
+  run not yet made or under way is a warning that names `pitboard renew`. A changed setting
+  is a warning whose fix is turning daily renewal off and on again, which writes the task as
+  Pitboard writes it; nothing rewrites it unasked, since the change may be the person's.
 - No test starts the person's own login shell. A test names a shell of its own in `SHELL`,
   one that is not there, or hands in what a shell said.
 - A test never reaches the system's own scheduler. A test context schedules through
   `MemoryHost`, which writes the files in the test's home and asks no service manager, and
-  the real hosts refuse to ask launchd or systemd from any build for tests: a unit test,
-  the command line the integration tests run, or an app built with the fixtures.
+  on Windows keeps the task's definition there as `Tasks\Pitboard\<name>`, and the real
+  hosts refuse to ask launchd, systemd or Task Scheduler from any build for tests: a unit
+  test, the command line the integration tests run, or an app built with the fixtures.
 - `pitboard-ffi` exports records, enums, three error types, free functions, one object,
   `PitboardModel`, and four traits an app implements, `ModelListener`, `AppControl`,
   `Notifications` and `LocalTime`. Nothing it exports is async. The core it runs on is
@@ -2693,7 +2724,7 @@ The images:
 ### Documented, not measured
 
 Windows facts Pitboard stands on that Microsoft documents and nothing has measured yet, read
-on 15 October 2026, and the MSI's on 16 October 2026. W27 reviews the list.
+on 15 and 16 October 2026. W27 reviews the list.
 
 | Fact | Source | Why not measured |
 |---|---|---|
@@ -2709,7 +2740,12 @@ on 15 October 2026, and the MSI's on 16 October 2026. W27 reviews the list.
 | Reserved device names, and trailing dots and spaces, in a file name | [Naming files](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file) | No row makes such a name. |
 | `longPathAware` in a manifest lifts the 260-character limit | [Application manifests](https://learn.microsoft.com/en-us/windows/win32/sbscs/application-manifests) | No row uses a long path. |
 | `StartWhenAvailable` runs a start that was missed | [StartWhenAvailable](https://learn.microsoft.com/en-us/windows/win32/taskschd/tasksettings-startwhenavailable) | A runner never sleeps through a trigger. |
+| `ITaskFolder::RegisterTask` with `TASK_CREATE_OR_UPDATE`, an interactive token and no `userId` registers the task's XML for the person registering it | [RegisterTask](https://learn.microsoft.com/en-us/windows/win32/api/taskschd/nf-taskschd-itaskfolder-registertask) | RF-E1 registered the same principal through `RegisterTaskDefinition`, and no build for tests asks Task Scheduler; the session's step 13 registers one. |
+| A task's `LastTaskResult` is its program's exit code, or one of Task Scheduler's `SCHED_S_` and `SCHED_E_` codes, such as `SCHED_S_TASK_RUNNING` (`0x00041301`) and `SCHED_S_TASK_QUEUED` (`0x00041325`) | [Task Scheduler error and success constants](https://learn.microsoft.com/en-us/windows/win32/taskschd/task-scheduler-error-and-success-constants) | RF-E1 read only 0 and `SCHED_S_TASK_HAS_NOT_RUN` (`0x00041303`); the session's step 13 reads a run's. |
+| A task's `LastRunTime` is a `DATE`, days since 30 December 1899, on the machine's own clock | [get_LastRunTime](https://learn.microsoft.com/en-us/windows/win32/api/taskschd/nf-taskschd-iregisteredtask-get_lastruntime), [DATE](https://learn.microsoft.com/en-us/cpp/atl-mfc-shared/date-type) | The runners' clocks are UTC, which reads the same either way; the session's step 13 reads one. |
 | WSL 2's processes run in a utility VM | [Comparing WSL versions](https://learn.microsoft.com/en-us/windows/wsl/compare-versions) | No runner has WSL. |
+| Each subkey of `HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss` is a distribution WSL holds for the account, named by its `DistributionName` | [How to manage WSL disk space](https://learn.microsoft.com/en-us/windows/wsl/disk-space) | No runner has WSL. |
+| `EnableLUA` 0 turns Admin Approval Mode off, so every program an administrator starts runs elevated; 1 is the default | [User Account Control settings and configuration](https://learn.microsoft.com/en-us/windows/security/application-security/application-control/user-account-control/settings-and-configuration) | Both images have UAC on (RF-A1). |
 | `QueryUnbiasedInterruptTimePrecise` leaves out sleep and hibernation, which `QueryPerformanceCounter` counts | [QueryUnbiasedInterruptTimePrecise](https://learn.microsoft.com/en-us/windows/win32/api/realtimeapiset/nf-realtimeapiset-queryunbiasedinterrupttimeprecise), [Acquiring high-resolution time stamps](https://learn.microsoft.com/en-us/windows/win32/sysinfo/acquiring-high-resolution-time-stamps) | A runner never sleeps. |
 | A program ended by an unhandled exception exits with the exception's code, such as `0xC0000005` | [GetExitCodeProcess](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getexitcodeprocess) | No row crashes a program. |
 | `GetPackageFamilyName` gives a packaged process's family, and `APPMODEL_ERROR_NO_PACKAGE` for an unpackaged one | [GetPackageFamilyName](https://learn.microsoft.com/en-us/windows/win32/api/appmodel/nf-appmodel-getpackagefamilyname) | No row starts a packaged process; session step 10 reads ChatGPT's. |
@@ -3077,6 +3113,15 @@ treated, and only the macOS build shows it. The run reads both builds since.
   file strictly, and any error but a missing file, a folder or a path through a file, a
   sharing violation's included, skips the write. So Pitboard's reads share reading, writing
   and deletion and are never held across Claude Code's lock.
+- Read on 16 October 2026 from the win32-x64 and win32-arm64 builds of 2.1.301
+  (`windows_statusline_shell`, `windows_statusline_powershell`): on Windows a status line
+  runs as a hook that names no shell does, with `bash -c` in Git Bash where Claude Code finds
+  one, and otherwise in PowerShell, `pwsh` before Windows PowerShell, with a notice once a
+  session. It hands bash the command as written, so a path with backslashes breaks there,
+  while the bare `pitboard statusline` runs in either. Doctor's `status_line` check finds
+  Git Bash as Claude Code does and says whether a `pitboard.exe` is on the PATH it runs
+  with, which a session started from the same shell hands its status line too. Session
+  step 12 confirms which PowerShell runs.
 - Read on 15 October 2026 from the win32-x64 and win32-arm64 builds of 2.1.300
   (`windows_managed_settings`): on Windows managed settings are in `C:\Program
   Files\ClaudeCode`, as on the other systems in their folder, and in the value `Settings` of
@@ -3374,6 +3419,15 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
   was not running starts in Pitboard's job, and a `codex login` a killed Pitboard left
   running is ended by the next one. Before a Codex sign-in on Windows, Pitboard says what
   Codex already runs, since a sign-in open there ends too.
+- Read on 16 October 2026 from 0.163.0's source, reqwest 0.12.28 and hyper-util 0.1.20
+  (`codex_windows_system_proxy`): on Windows Codex sends its requests through the proxy the
+  variables name, and where none of them names one, through `ProxyServer` in HKCU's
+  `Internet Settings` where `ProxyEnable` is not 0. Claude Code 2.1.301 and Pitboard follow
+  the variables alone, so doctor says where only Windows' settings name a proxy.
+- Read on 16 October 2026 from 0.163.0's source and its linux-x64 build (`codex_wsl`): the
+  Linux build takes itself to run in WSL where `WSL_DISTRO_NAME` is set or `/proc/version`
+  names Microsoft, and there starts no shared background server where its home is on 9p,
+  as WSL 2 mounts Windows' drives. Doctor reads WSL the same way.
 - Read on 15 October 2026 from the win32 builds of 0.162.1 (`codex_windows_version`):
   `codex.exe` has no version resource. The package it runs from, npm's vendored one or a
   standalone release, holds `codex-package.json` beside its `bin`, whose `version` doctor

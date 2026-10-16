@@ -892,6 +892,43 @@ fn no_build_for_tests_asks_the_systems_service_manager() {
     );
 }
 
+/// Task Scheduler's tasks are the person's own whatever home a test gives, so no build for
+/// tests asks it: `pitboard schedule install` from the default home, given a proxy, is refused
+/// with `schedule_refused` and leaves no `schedule.env` behind. CI's leak check then finds no
+/// task in `\Pitboard\`.
+#[cfg(windows)]
+#[test]
+fn no_build_for_tests_asks_task_scheduler() {
+    let env = two_accounts("no-task-scheduler");
+    let default = env
+        .root
+        .join("profile")
+        .join("AppData")
+        .join("Local")
+        .join("Pitboard");
+
+    let out = env
+        .command(&["schedule", "install", "--json"])
+        .env("PITBOARD_HOME", &default)
+        .env("HTTPS_PROXY", "http://proxy.example.com:3128")
+        .output()
+        .expect("run Pitboard");
+
+    let refused = envelope(&String::from_utf8_lossy(&out.stdout));
+    assert_eq!(out.status.code(), Some(1), "{refused}");
+    assert_eq!(refused["error"]["code"], "schedule_refused", "{refused}");
+    assert!(
+        refused["error"]["message"]
+            .as_str()
+            .is_some_and(|said| said.contains("a build for tests asked Task Scheduler")),
+        "{refused}"
+    );
+    assert!(
+        !default.join("schedule.env").exists(),
+        "the proxy was taken away again"
+    );
+}
+
 /// Under sudo, `pitboard status` answers what `--offline` answers and says why, asking
 /// Anthropic nothing and writing nothing.
 // `SUDO_UID` is Unix's sign of sudo; Windows' `sudo` elevates the token (`windows_refuses`).

@@ -59,6 +59,14 @@ pub(crate) fn claude_desktop_runs_here() -> bool {
     }
 }
 
+// Claude Code on Windows does not read the access token a warm-up hands it.
+pub(crate) fn warm_ups_run_here() -> bool {
+    match OS {
+        Os::MacOs | Os::Linux => true,
+        Os::Windows => false,
+    }
+}
+
 pub(crate) fn passed_on() -> &'static [&'static str] {
     match OS {
         Os::MacOs | Os::Linux => &["HOME", "USER"],

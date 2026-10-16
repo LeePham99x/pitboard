@@ -9,6 +9,7 @@
 
 use crate::context::Context;
 use crate::error::Error;
+use crate::host::task::{Drift, Task};
 use crate::host::{Access, Kind, Os};
 use crate::provider::claude::daemon;
 use crate::provider::claude::live as claude_live;
@@ -116,7 +117,28 @@ pub(crate) struct Facts {
     /// Claude Code's fallback file, where it is behind the keychain holding the login in use.
     pub(crate) fallback_login: Option<FallbackLogin>,
     pub(crate) floor: crate::host::Floor,
+    // Windows' alone, where a shell decides whether `pitboard statusline` is found.
+    pub(crate) status_line: Option<StatusLineFact>,
+    // Windows' alone.
+    pub(crate) windows_settings: Option<crate::host::WindowsSettings>,
+    // Windows' alone: each `pitboard.exe` a shell finds on PATH, the one it runs first.
+    pub(crate) pitboards: Vec<PathBuf>,
+    // Linux's alone, inside WSL.
+    pub(crate) wsl: Option<WslFact>,
     pub(crate) now: i64,
+}
+
+pub(crate) struct WslFact {
+    pub(crate) distribution: Option<String>,
+    // Codex's home, where it is on a drive of Windows'.
+    pub(crate) codex_home_on_windows: Option<PathBuf>,
+}
+
+// The shell Claude Code runs the status line in, and the pitboard the PATH it hands that shell
+// finds. Both shells take `pitboard.exe` for a bare `pitboard`.
+pub(crate) struct StatusLineFact {
+    pub(crate) git_bash: claude::GitBash,
+    pub(crate) pitboard: Option<PathBuf>,
 }
 
 /// How Pitboard's requests leave this machine: directly, or through the HTTP proxy its
@@ -151,11 +173,12 @@ pub(crate) struct ProxyFact {
     pub(crate) exempt: Vec<String>,
 }
 
-/// The daily renewal schedule as it is installed, read from the file Pitboard wrote and
-/// never by asking the scheduler.
+/// The daily renewal schedule as it is installed, read from what Pitboard wrote: a file, or
+/// on Windows the task as Task Scheduler keeps it.
 pub(crate) struct ScheduleFact {
-    /// The file the platform's scheduler reads.
-    pub(crate) path: PathBuf,
+    pub(crate) location: crate::schedule::Location,
+    // Task Scheduler's word on its runs and its settings; none from launchd or systemd.
+    pub(crate) task: Option<Task>,
     /// The Pitboard it runs, where the file names one the way Pitboard writes it.
     pub(crate) program: Option<PathBuf>,
     /// Whether that Pitboard is still there to be run.
@@ -436,6 +459,10 @@ fn desktop_facts(ctx: &Context, state: &State) -> Option<DesktopFacts> {
 }
 
 pub(crate) fn gather(ctx: &Context) -> Facts {
+    let pitboards = match ctx.os {
+        Os::Windows => pitboards(ctx),
+        Os::MacOs | Os::Linux => Vec::new(),
+    };
     let config = claude::load_config(ctx);
     let state = crate::state::load(ctx);
     let service = claude::live_service(ctx);
@@ -521,8 +548,48 @@ pub(crate) fn gather(ctx: &Context) -> Facts {
         elevation: ctx.host().elevation(ctx),
         fallback_login: fallback_login(ctx),
         floor: ctx.host().floor(),
+        status_line: (ctx.os == Os::Windows).then(|| StatusLineFact {
+            git_bash: claude::git_bash(ctx),
+            pitboard: pitboards.first().cloned(),
+        }),
+        windows_settings: (ctx.os == Os::Windows).then(|| ctx.host().windows_settings()),
+        pitboards,
+        wsl: wsl_fact(ctx),
         now: ctx.now(),
     }
+}
+
+// As Codex 0.163.0's Linux build tells WSL (`codex_wsl`).
+fn wsl_fact(ctx: &Context) -> Option<WslFact> {
+    let inside = ctx.os == Os::Linux && (ctx.wsl_distro.is_some() || ctx.host().kernel_is_wsl());
+    let codex_home = codex::home(ctx);
+    inside.then(|| WslFact {
+        distribution: ctx.wsl_distro.clone().filter(|name| !name.is_empty()),
+        codex_home_on_windows: ctx
+            .host()
+            .on_a_windows_drive(&codex_home)
+            .then_some(codex_home),
+    })
+}
+
+// One file two folders lead to, such as winget's link and its package, is one copy.
+fn pitboards(ctx: &Context) -> Vec<PathBuf> {
+    let lookup = crate::host::program::Lookup::new(Os::Windows, Some(".EXE".as_ref()));
+    let mut files: Vec<PathBuf> = Vec::new();
+    let mut copies = Vec::new();
+    for found in crate::host::program::every_among(
+        std::path::Path::new("pitboard"),
+        std::env::split_paths(&ctx.search_path()),
+        &lookup,
+        crate::host::proc::can_run,
+    ) {
+        let file = std::fs::canonicalize(&found).unwrap_or_else(|_| found.clone());
+        if !files.iter().any(|seen| Os::Windows.same_path(seen, &file)) {
+            files.push(file);
+            copies.push(found);
+        }
+    }
+    copies
 }
 
 /// Claude Code's fallback file, where it is behind the keychain, and the login it holds.
@@ -564,7 +631,7 @@ fn schedule_fact(ctx: &Context) -> Option<ScheduleFact> {
     if !crate::schedule::serves(ctx) {
         return None;
     }
-    let crate::schedule::Installed::Yes { path, .. } = crate::schedule::status(ctx) else {
+    let crate::schedule::Installed::Yes { location, .. } = crate::schedule::status(ctx) else {
         return None;
     };
     let program = crate::schedule::installed_program(ctx);
@@ -572,7 +639,8 @@ fn schedule_fact(ctx: &Context) -> Option<ScheduleFact> {
     Some(ScheduleFact {
         program_found: program.as_deref().is_some_and(std::path::Path::is_file),
         program,
-        path,
+        location,
+        task: crate::schedule::task(ctx),
         network: network_fact(&proxies),
         network_differs: !proxies.same_way(&ctx.proxy),
     })
@@ -810,19 +878,31 @@ fn running_codex(ctx: &Context) -> Option<Vec<crate::holder::Holding>> {
 /// The check that fails where this process runs as root or under sudo, or elevated on
 /// Windows, or nobody could tell whether it does, since then Pitboard changes nothing: `None`
 /// where it runs as the person themselves.
-fn elevated(os: Os, elevation: crate::host::Elevation) -> Option<Check> {
+fn elevated(
+    os: Os,
+    elevation: crate::host::Elevation,
+    admin_approval: Option<bool>,
+) -> Option<Check> {
     let said = match elevation {
         crate::host::Elevation::Normal => return None,
         crate::host::Elevation::Elevated { why } => words::elevated(os, Some(why)),
         crate::host::Elevation::Unknown => words::elevated(os, None),
+    };
+    // `EnableLUA` 0 says it is User Account Control off, not the built-in Administrator.
+    let way_out = match (elevation, admin_approval) {
+        (crate::host::Elevation::Elevated { why }, Some(false))
+            if why == crate::host::token::IN_EVERY_PROGRAM =>
+        {
+            words::ADMIN_APPROVAL_OFF
+        }
+        _ => said.way_out,
     };
     Some(fail(
         "elevated",
         "runs as",
         said.because,
         format!(
-            "Pitboard changes nothing this way: it reads, and renews and writes nothing. {}",
-            said.way_out
+            "Pitboard changes nothing this way: it reads, and renews and writes nothing. {way_out}"
         ),
     ))
 }
@@ -880,6 +960,101 @@ fn judge_windows_homes(facts: &Facts) -> Vec<Check> {
         ));
     }
     checks
+}
+
+// What changes what Pitboard or a tool does on Windows, each only where it is so.
+fn judge_windows_settings(facts: &Facts) -> Vec<Check> {
+    let mut checks = Vec::new();
+    let settings = facts.windows_settings.clone().unwrap_or_default();
+    if !settings.wsl.is_empty() {
+        checks.push(Check {
+            advice: "Claude Code and Codex installed there are installs of their own, with logins \
+                     of their own, which Pitboard on Windows does not switch. WSL 2 runs them in a \
+                     virtual machine, so Windows' list of processes does not show them running."
+                .into(),
+            ..ok(
+                "wsl",
+                "WSL",
+                format!("WSL holds {}", words::listed(settings.wsl)),
+            )
+        });
+    }
+    if let [first, rest @ ..] = facts.pitboards.as_slice()
+        && !rest.is_empty()
+    {
+        let rest = rest.iter().map(|copy| copy.display().to_string()).collect();
+        checks.push(Check {
+            advice: "A shell runs the first, so updating another changes nothing there. Uninstall \
+                     the copies you do not use."
+                .into(),
+            ..ok(
+                "pitboard_copies",
+                "copies of pitboard",
+                format!("{} on PATH, then {}", first.display(), words::listed(rest)),
+            )
+        });
+    }
+    // hyper-util fills in from Windows' settings only what no variable names.
+    if let Some(server) = &settings.proxy
+        && facts.network.proxy.is_none()
+        && facts.network.passed_over.is_empty()
+    {
+        checks.push(Check {
+            advice: "Codex sends its requests through it. Claude Code and Pitboard follow only the \
+                     proxy variables, so theirs go out directly: set HTTPS_PROXY where this network \
+                     needs the proxy."
+                .into(),
+            ..ok(
+                "system_proxy",
+                "Windows proxy",
+                format!("Windows' proxy settings name {server}, and no proxy variable is set"),
+            )
+        });
+    }
+    checks
+}
+
+fn judge_wsl(wsl: Option<&WslFact>) -> Option<Check> {
+    let wsl = wsl?;
+    let detail = match &wsl.distribution {
+        Some(name) => format!("inside WSL, in {name}"),
+        None => "inside WSL".to_string(),
+    };
+    let mut advice = "Pitboard here switches what is installed in this Linux. Claude Code and \
+                      Codex installed on Windows keep their own logins, which Pitboard here does \
+                      not switch."
+        .to_string();
+    if let Some(home) = &wsl.codex_home_on_windows {
+        let there = on_windows(home).map_or_else(
+            || "on a Windows drive".to_string(),
+            |path| format!("{path} on Windows"),
+        );
+        advice.push_str(&format!(
+            " Codex's home, {}, is {there}, where Codex here starts no shared background \
+             server.",
+            home.display()
+        ));
+    }
+    Some(Check {
+        advice,
+        ..ok("wsl", "WSL", detail)
+    })
+}
+
+// `/mnt/c/x` is `C:\x`, as Codex's `win_path_to_wsl` maps the other way.
+fn on_windows(path: &std::path::Path) -> Option<String> {
+    let rest = path.to_str()?.strip_prefix("/mnt/")?;
+    let mut chars = rest.chars();
+    let drive = chars.next().filter(char::is_ascii_alphabetic)?;
+    let tail = chars.as_str();
+    if !(tail.is_empty() || tail.starts_with('/')) {
+        return None;
+    }
+    Some(format!(
+        "{}:\\{}",
+        drive.to_ascii_uppercase(),
+        tail.trim_start_matches('/').replace('/', "\\")
+    ))
 }
 
 fn too_old(floor: crate::host::Floor) -> Option<Check> {
@@ -961,7 +1136,14 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
 
     // First, in the order the gate asks them: they are why every change here is refused.
     checks.extend(too_old(facts.floor));
-    checks.extend(elevated(facts.os, facts.elevation));
+    checks.extend(elevated(
+        facts.os,
+        facts.elevation,
+        facts
+            .windows_settings
+            .as_ref()
+            .and_then(|settings| settings.admin_approval),
+    ));
 
     if let Some(tool) = facts.os.secrets_tool() {
         checks.push(match &facts.security_tool {
@@ -1337,15 +1519,28 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
                 facts.home.display()
             ),
         ));
+    } else if facts.os == Os::Windows {
+        checks.push(Check {
+            advice: "Pitboard tells this PC apart by it, and a copy of the PC keeps it, such as a \
+                     virtual machine copied whole. Such a copy takes this PC's accounts for its \
+                     own, and both renew the same parked logins: on a copy, forget each account \
+                     and enrol it again with `--sign-in`."
+                .into(),
+            ..ok("machine_id", "machine id", "Windows' MachineGuid")
+        });
     }
 
     checks.extend(judge_windows_homes(facts));
+    checks.extend(judge_windows_settings(facts));
+    checks.extend(judge_wsl(facts.wsl.as_ref()));
     checks.push(judge_storage_v5(facts));
     checks.push(judge_daemon(facts));
     checks.push(judge_pending(facts));
     checks.extend(judge_schedule(facts));
     checks.extend(judge_schedule_proxy(facts));
     checks.push(judge_claude_version(facts));
+    checks.extend(judge_warm_up(facts.os));
+    checks.extend(judge_status_line(facts.status_line.as_ref()));
     checks.push(judge_auth(facts));
     checks.push(judge_asking(facts));
     checks.push(judge_network(&facts.network));
@@ -1366,13 +1561,12 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
         ));
     }
     if let (Some(desktop), Ok(state)) = (&facts.desktop, &facts.state) {
-        checks.extend(judge_desktop(
-            facts.os,
-            desktop,
-            state,
-            &facts.parks,
-            facts.now,
-        ));
+        checks.extend(match facts.os {
+            Os::MacOs | Os::Linux => {
+                judge_desktop(facts.os, desktop, state, &facts.parks, facts.now)
+            }
+            Os::Windows => vec![judge_desktop_on_windows(state)],
+        });
     }
     if !claude_here {
         checks.retain(|check| !CLAUDE_CODES_OWN.contains(&check.code));
@@ -1394,6 +1588,8 @@ const CLAUDE_CODES_OWN: &[&str] = &[
     "storage_v5",
     "daemon",
     "claude_version",
+    "warm_up",
+    "status_line",
     "auth",
 ];
 
@@ -2185,6 +2381,50 @@ fn judge_claude_version(facts: &Facts) -> Check {
     }
 }
 
+// Claude Code's PATH is the one this runs with, as the shell it starts takes it.
+fn judge_status_line(line: Option<&StatusLineFact>) -> Option<Check> {
+    let line = line?;
+    let shell = match &line.git_bash.found {
+        Some(bash) => format!("Git Bash, {}", bash.display()),
+        None => "PowerShell, finding no Git Bash".to_string(),
+    };
+    let passed_over = line
+        .git_bash
+        .passed_over
+        .as_ref()
+        .map_or_else(String::new, |named| {
+            format!(
+                "; it passes over {}, which CLAUDE_CODE_GIT_BASH_PATH names",
+                named.display()
+            )
+        });
+    Some(match &line.pitboard {
+        Some(found) => ok(
+            "status_line",
+            "status line",
+            format!(
+                "Claude Code runs the status line in {shell}; `pitboard` there is {}{passed_over}",
+                found.display()
+            ),
+        ),
+        None => warn(
+            "status_line",
+            "status line",
+            format!(
+                "Claude Code runs the status line in {shell}; no `pitboard` is on its \
+                 PATH{passed_over}"
+            ),
+            "Add the folder pitboard.exe is in to your PATH, then start Claude Code again.",
+        ),
+    })
+}
+
+// Nothing else on Windows says it to somebody who never turned a warm-up on.
+fn judge_warm_up(os: Os) -> Option<Check> {
+    let halt = crate::duty::warm::unbuilt(os)?;
+    Some(ok("warm_up", "warm-up", words::not_warming(&halt)))
+}
+
 /// A name written down before a park was created, still unresolved. Ordinarily there is
 /// nothing here: the next change resolves every one of them. What is left is an item that
 /// could not be read, which on macOS is a locked keychain and nothing worse.
@@ -2212,14 +2452,24 @@ fn judge_pending(facts: &Facts) -> Check {
 fn judge_schedule(facts: &Facts) -> Option<Check> {
     let again = again(facts.os);
     let schedule = facts.schedule.as_ref()?;
-    Some(match &schedule.program {
-        Some(program) if !schedule.program_found => fail(
+    let Some(program) = &schedule.program else {
+        return Some(warn(
+            "schedule",
+            "renewal schedule",
+            format!("{} does not say which Pitboard it runs", schedule.location),
+            again,
+        ));
+    };
+    if !schedule.program_found {
+        return Some(fail(
             "schedule",
             "renewal schedule",
             format!("runs {}, which is not there any more", program.display()),
             again,
-        ),
-        Some(program) if crate::schedule::an_apps_own_program(program) => fail(
+        ));
+    }
+    if crate::schedule::an_apps_own_program(program) {
+        return Some(fail(
             "schedule",
             "renewal schedule",
             format!(
@@ -2227,22 +2477,70 @@ fn judge_schedule(facts: &Facts) -> Option<Check> {
                 program.display()
             ),
             again,
-        ),
-        Some(program) => ok(
-            "schedule",
-            "renewal schedule",
-            format!("daily  ·  runs {}", program.display()),
-        ),
-        None => warn(
+        ));
+    }
+    let runs = format!("daily  ·  runs {}", program.display());
+    let Some(task) = &schedule.task else {
+        return Some(ok("schedule", "renewal schedule", runs));
+    };
+    if !task.drifted.is_empty() {
+        let drifted = task.drifted.iter().map(drift).collect();
+        return Some(warn(
             "schedule",
             "renewal schedule",
             format!(
-                "{} does not say which Pitboard it runs",
-                schedule.path.display()
+                "{runs}, but in Task Scheduler it {}",
+                words::listed(drifted)
             ),
             again,
+        ));
+    }
+    let ago = |at: i64| words::span(facts.now - at);
+    Some(match (task.failed(), task.last_run) {
+        (Some(result), at) => warn(
+            "schedule",
+            "renewal schedule",
+            format!(
+                "{runs}, and its last run{} ended {}",
+                at.map(|at| format!(", {} ago,", ago(at)))
+                    .unwrap_or_default(),
+                ended(result)
+            ),
+            "Run `pitboard renew` to see what it says.",
+        ),
+        (None, Some(at)) => ok(
+            "schedule",
+            "renewal schedule",
+            format!("{runs}  ·  last ran {} ago", ago(at)),
+        ),
+        (None, None) => ok(
+            "schedule",
+            "renewal schedule",
+            format!("{runs}  ·  not run yet"),
         ),
     })
+}
+
+// As Task Scheduler's own settings word each.
+fn drift(drift: &Drift) -> String {
+    match drift {
+        Drift::OnAcPowerOnly => "starts only if the computer is on AC power",
+        Drift::StopsOnBattery => "stops if the computer switches to battery power",
+        Drift::SkipsMissedStarts => {
+            "does not run as soon as possible after a scheduled start is missed"
+        }
+        Drift::Disabled => "is disabled",
+    }
+    .to_string()
+}
+
+// A program's exit code, or one of Task Scheduler's own results.
+fn ended(result: i32) -> String {
+    if (0..=255).contains(&result) {
+        format!("with exit code {result}")
+    } else {
+        format!("with 0x{:08X}", result as u32)
+    }
 }
 
 /// The system starts the schedule's runs with its own environment, not the person's shell,
@@ -2653,6 +2951,28 @@ fn judge_codex_version(facts: &CodexFacts) -> Check {
             }
         },
     )
+}
+
+// An index from a Mac can hold Claude Desktop's accounts, which nothing on Windows changes.
+fn judge_desktop_on_windows(state: &State) -> Check {
+    let held: Vec<String> = state
+        .accounts
+        .iter()
+        .filter(|account| account.provider() == ProviderId::Desktop)
+        .map(|account| format!("`{}`", state.typed(&account.key())))
+        .collect();
+    let holds = match held.is_empty() {
+        true => "folders set aside for Claude Desktop".to_string(),
+        false => words::listed(held),
+    };
+    Check {
+        advice: format!("This index holds {holds}. Nothing here changes them."),
+        ..ok(
+            "desktop_data_folder",
+            "Claude data folder",
+            crate::provider::desktop::paths::MACOS_ONLY,
+        )
+    }
 }
 
 // Claude Desktop's section, after Codex's.
@@ -3176,7 +3496,11 @@ fn unplaced(ctx: &Context, variable: &str, path: &std::path::Path) -> Diagnosis 
     Diagnosis {
         checks: too_old(ctx.host().floor())
             .into_iter()
-            .chain(elevated(crate::host::OS, ctx.host().elevation(ctx)))
+            .chain(elevated(
+                crate::host::OS,
+                ctx.host().elevation(ctx),
+                ctx.host().windows_settings().admin_approval,
+            ))
             .chain(std::iter::once(homes))
             .collect(),
         environment: json!({}),
@@ -3284,6 +3608,15 @@ fn redaction_for(ctx: &Context, facts: &Facts) -> crate::redact::Sheet {
                 .hide(aside.login.clone().unwrap_or_default(), "login");
         }
     }
+    // Windows' proxy names a network as a variable's does: `host:port`, or one per scheme.
+    let system_proxy = facts
+        .windows_settings
+        .as_ref()
+        .and_then(|settings| settings.proxy.as_deref());
+    for server in system_proxy.into_iter().flat_map(|named| named.split(';')) {
+        let server = server.rsplit('=').next().unwrap_or(server).trim();
+        sheet = sheet.hide(server.to_owned(), "proxy");
+    }
     // A proxy's host can name the company whose network it is, as an organisation's name
     // does. Its port goes with it, so that a host that is also a word, such as `proxy`, is
     // hidden where it is the host and nowhere else. One on loopback names nothing. The one
@@ -3312,6 +3645,7 @@ pub fn healthy(checks: &[Check]) -> bool {
 )]
 mod tests {
     use super::*;
+    use crate::schedule::Location;
     use crate::service::Permit;
     use std::sync::Arc;
 
@@ -4078,6 +4412,10 @@ mod tests {
             elevation: crate::host::Elevation::Normal,
             fallback_login: None,
             floor: crate::host::Floor::Met,
+            status_line: None,
+            windows_settings: None,
+            pitboards: Vec::new(),
+            wsl: None,
             now: NOW,
         }
     }
@@ -5135,7 +5473,10 @@ mod tests {
         );
 
         f.schedule = Some(ScheduleFact {
-            path: PathBuf::from("/home/x/Library/LaunchAgents/com.datlechin.pitboard.renew.plist"),
+            location: Location::File(PathBuf::from(
+                "/home/x/Library/LaunchAgents/com.datlechin.pitboard.renew.plist",
+            )),
+            task: None,
             program: Some(PathBuf::from("/opt/homebrew/bin/pitboard")),
             program_found: true,
             network: direct(),
@@ -5154,7 +5495,10 @@ mod tests {
         assert_eq!(gone.advice, again(crate::host::OS));
 
         f.schedule = Some(ScheduleFact {
-            path: PathBuf::from("/home/x/Library/LaunchAgents/com.datlechin.pitboard.renew.plist"),
+            location: Location::File(PathBuf::from(
+                "/home/x/Library/LaunchAgents/com.datlechin.pitboard.renew.plist",
+            )),
+            task: None,
             program: Some(PathBuf::from(
                 "/Applications/Pitboard.app/Contents/MacOS/Pitboard",
             )),
@@ -5190,6 +5534,84 @@ mod tests {
         assert!(!unread.advice.is_empty());
     }
 
+    #[test]
+    fn a_task_is_judged_by_its_settings_and_its_last_run() {
+        let mut f = facts();
+        f.os = Os::Windows;
+        let program = r"C:\Users\x\scoop\apps\pitboard\current\pitboard.exe";
+        let task = |last_run: Option<i64>, last_result: i32, drifted: Vec<Drift>| ScheduleFact {
+            location: Location::Task(r"\Pitboard\Renew S-1-5-21-1".into()),
+            task: Some(Task {
+                last_run,
+                last_result: Some(last_result),
+                drifted,
+            }),
+            program: Some(PathBuf::from(program)),
+            program_found: true,
+            network: direct(),
+            network_differs: false,
+        };
+        let judged = |f: &Facts| {
+            evaluate(f)
+                .into_iter()
+                .find(|c| c.code == "schedule")
+                .expect("the schedule's line")
+        };
+
+        f.schedule = Some(task(None, 0x0004_1303, Vec::new()));
+        let fresh = judged(&f);
+        assert_eq!(fresh.level, Level::Ok);
+        assert_eq!(
+            fresh.detail,
+            format!("daily  ·  runs {program}  ·  not run yet")
+        );
+
+        let an_hour_ago = Some(f.now - 3_660);
+        for fine in [0, 0x0004_1301] {
+            f.schedule = Some(task(an_hour_ago, fine, Vec::new()));
+            let ran = judged(&f);
+            assert_eq!(ran.level, Level::Ok, "{fine:#x}");
+            assert_eq!(
+                ran.detail,
+                format!("daily  ·  runs {program}  ·  last ran 1h 01m ago")
+            );
+        }
+
+        for (result, ended) in [
+            (1, "with exit code 1"),
+            (0x8007_10E0_u32 as i32, "with 0x800710E0"),
+        ] {
+            f.schedule = Some(task(an_hour_ago, result, Vec::new()));
+            let failed = judged(&f);
+            assert_eq!(failed.level, Level::Warn);
+            assert_eq!(
+                failed.detail,
+                format!("daily  ·  runs {program}, and its last run, 1h 01m ago, ended {ended}")
+            );
+            assert!(
+                failed.advice.contains("`pitboard renew`"),
+                "{}",
+                failed.advice
+            );
+        }
+
+        f.schedule = Some(task(
+            an_hour_ago,
+            0,
+            vec![Drift::OnAcPowerOnly, Drift::Disabled],
+        ));
+        let drifted = judged(&f);
+        assert_eq!(drifted.level, Level::Warn);
+        assert_eq!(
+            drifted.detail,
+            format!(
+                "daily  ·  runs {program}, but in Task Scheduler it starts only if the computer \
+                 is on AC power and is disabled"
+            )
+        );
+        assert_eq!(drifted.advice, again(Os::Windows));
+    }
+
     /// The way back works from the command line everywhere, and names the app only where
     /// there is one.
     #[test]
@@ -5210,7 +5632,6 @@ mod tests {
     /// What the check above is given, read off a real disk: a schedule written the way
     /// `pitboard schedule install` writes it, whose Pitboard is then taken away.
     #[test]
-    #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn a_schedule_whose_pitboard_is_gone_is_found_on_the_disk() {
         let scratch = tempfile::tempdir().expect("a scratch home");
         let root = scratch.path().to_path_buf();
@@ -5237,10 +5658,58 @@ mod tests {
         );
     }
 
+    // Through the pretend Task Scheduler, on any system; a reinstall is the fix doctor names.
+    #[test]
+    fn a_task_changed_in_task_scheduler_is_read_where_it_is_kept() {
+        let scratch = tempfile::tempdir().expect("a scratch home");
+        let home = scratch.path().to_string_lossy().into_owned();
+        let program = scratch.path().join("bin").join("pitboard.exe");
+        std::fs::create_dir_all(program.parent().expect("its folder")).expect("a bin");
+        std::fs::write(&program, "").expect("a Pitboard");
+        let env: crate::context::Environment =
+            [("HOME", home.as_str()), ("USERPROFILE", home.as_str())]
+                .into_iter()
+                .collect();
+        let ctx = Context::for_command_line(&env)
+            .with_memory_stores(crate::host::memory::MemoryHost::scheduling_tasks(
+                "S-1-5-21-1",
+            ))
+            .with_schedule_program(program);
+        crate::schedule::install(&ctx, Permit::for_a_test()).expect("installed");
+        let fresh = Task {
+            last_run: None,
+            last_result: Some(0x0004_1303),
+            drifted: Vec::new(),
+        };
+        let read = |ctx: &Context| schedule_fact(ctx).expect("installed").task;
+        assert_eq!(read(&ctx), Some(fresh.clone()));
+
+        let kept = crate::schedule::path(&ctx).expect("the task's file");
+        let xml = std::fs::read_to_string(&kept).expect("written");
+        std::fs::write(
+            &kept,
+            xml.replace(
+                "<StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>",
+                "<StopIfGoingOnBatteries>true</StopIfGoingOnBatteries>",
+            ),
+        )
+        .expect("changed by hand");
+        assert_eq!(
+            read(&ctx).map(|task| task.drifted),
+            Some(vec![Drift::StopsOnBattery])
+        );
+
+        crate::schedule::install(&ctx, Permit::for_a_test()).expect("installed again");
+        assert_eq!(read(&ctx), Some(fresh));
+    }
+
     /// A schedule that runs a Pitboard still there, installed with `network`.
     fn scheduled(network: NetworkFact, network_differs: bool) -> ScheduleFact {
         ScheduleFact {
-            path: PathBuf::from("/home/x/.config/systemd/user/pitboard-renew.timer"),
+            location: Location::File(PathBuf::from(
+                "/home/x/.config/systemd/user/pitboard-renew.timer",
+            )),
+            task: None,
             program: Some(PathBuf::from("/usr/local/bin/pitboard")),
             program_found: true,
             network,
@@ -5400,7 +5869,6 @@ mod tests {
     /// another password, and none. The report a person pastes hides the proxy's host, as it
     /// does this run's.
     #[test]
-    #[cfg_attr(windows, ignore = "W25: Task Scheduler")]
     fn the_schedules_proxy_is_read_from_what_install_wrote() {
         let scratch = tempfile::tempdir().expect("a scratch home");
         let root = scratch.path().to_path_buf();
@@ -5410,10 +5878,11 @@ mod tests {
         let machine = crate::host::memory::MemoryHost::new();
         let home = root.to_string_lossy().into_owned();
         let run = |proxy: Option<&str>| {
-            let env: crate::context::Environment = [("HOME", home.as_str())]
-                .into_iter()
-                .chain(proxy.map(|address| ("HTTPS_PROXY", address)))
-                .collect();
+            let env: crate::context::Environment =
+                [("HOME", home.as_str()), ("USERPROFILE", home.as_str())]
+                    .into_iter()
+                    .chain(proxy.map(|address| ("HTTPS_PROXY", address)))
+                    .collect();
             Context::for_command_line(&env)
                 .with_memory_stores(Arc::clone(&machine))
                 .with_schedule_program(program.clone())
@@ -5786,7 +6255,36 @@ mod tests {
                 .ends_with("Never copy /elsewhere/pitboard between machines."),
             "the folder in use"
         );
-        assert!(evaluate(&facts()).iter().all(|c| c.code != "machine_id"));
+        for os in [Os::MacOs, Os::Linux] {
+            f.os = os;
+            f.machine_id_known = true;
+            assert!(
+                evaluate(&f).iter().all(|c| c.code != "machine_id"),
+                "{os:?}"
+            );
+        }
+    }
+
+    // The sysprep page names the SID it replaces, and not the MachineGuid machine-uid reads.
+    #[test]
+    fn a_windows_pc_is_told_a_copy_of_it_keeps_its_machine_guid() {
+        let mut f = facts();
+        f.os = Os::Windows;
+        let checks = evaluate(&f);
+        let note = check(&checks, "machine_id");
+        assert_eq!(
+            (note.level, note.detail.as_str(), note.advice.as_str()),
+            (
+                Level::Ok,
+                "Windows' MachineGuid",
+                "Pitboard tells this PC apart by it, and a copy of the PC keeps it, such as a \
+                 virtual machine copied whole. Such a copy takes this PC's accounts for its own, \
+                 and both renew the same parked logins: on a copy, forget each account and enrol \
+                 it again with `--sign-in`."
+            )
+        );
+        f.machine_id_known = false;
+        assert_eq!(check(&evaluate(&f), "machine_id").level, Level::Warn);
     }
 
     #[test]
@@ -7166,6 +7664,456 @@ mod tests {
         assert!(!looks_like_a_version("releases"));
         assert!(!looks_like_a_version("0.154"));
         assert!(!looks_like_a_version("v0.154.0"));
+    }
+
+    // Claude Code 2.1.301 runs it in Git Bash where it finds one, else in PowerShell.
+    #[test]
+    fn windows_is_told_which_shell_runs_the_status_line_and_whether_it_finds_pitboard() {
+        let mut facts = facts();
+        facts.os = Os::Windows;
+        assert!(evaluate(&facts).iter().all(|c| c.code != "status_line"));
+        let bash = PathBuf::from(r"C:\Program Files\Git\bin\bash.exe");
+        let pitboard = PathBuf::from(r"C:\Users\x\.cargo\bin\pitboard.exe");
+        let named = PathBuf::from(r"D:\tools\git.exe");
+        let mut said = |found: Option<&PathBuf>, passed_over: Option<&PathBuf>, on_path: bool| {
+            facts.status_line = Some(StatusLineFact {
+                git_bash: claude::GitBash {
+                    found: found.cloned(),
+                    passed_over: passed_over.cloned(),
+                },
+                pitboard: on_path.then(|| pitboard.clone()),
+            });
+            let checks = evaluate(&facts);
+            let line = check(&checks, "status_line");
+            (line.level, line.detail.clone(), line.advice.clone())
+        };
+        assert_eq!(
+            said(Some(&bash), None, true),
+            (
+                Level::Ok,
+                format!(
+                    "Claude Code runs the status line in Git Bash, {}; `pitboard` there is {}",
+                    bash.display(),
+                    pitboard.display()
+                ),
+                String::new()
+            )
+        );
+        assert_eq!(
+            said(None, Some(&named), true),
+            (
+                Level::Ok,
+                format!(
+                    "Claude Code runs the status line in PowerShell, finding no Git Bash; \
+                     `pitboard` there is {}; it passes over {}, which CLAUDE_CODE_GIT_BASH_PATH \
+                     names",
+                    pitboard.display(),
+                    named.display()
+                ),
+                String::new()
+            )
+        );
+        assert_eq!(
+            said(Some(&bash), None, false),
+            (
+                Level::Warn,
+                format!(
+                    "Claude Code runs the status line in Git Bash, {}; no `pitboard` is on its \
+                     PATH",
+                    bash.display()
+                ),
+                "Add the folder pitboard.exe is in to your PATH, then start Claude Code again."
+                    .to_string()
+            )
+        );
+        facts.claude_present = false;
+        facts.codex.present = true;
+        assert!(
+            evaluate(&facts).iter().all(|c| c.code != "status_line"),
+            "a machine with no Claude Code is not told"
+        );
+    }
+
+    // L5 and H9 from Codex 0.163.0's and Claude Code 2.1.301's builds, read as bytes.
+    #[test]
+    fn windows_is_told_what_its_settings_change_for_pitboard_and_the_tools() {
+        let said = |facts: &Facts| -> Vec<(&'static str, Level, String, String)> {
+            evaluate(facts)
+                .into_iter()
+                .filter(|c| ["wsl", "pitboard_copies", "system_proxy"].contains(&c.code))
+                .map(|c| (c.code, c.level, c.detail, c.advice))
+                .collect()
+        };
+        let copy = |folder: &str| PathBuf::from(format!(r"C:\{folder}\pitboard.exe"));
+        let mut facts = facts();
+        facts.os = Os::Windows;
+        facts.windows_settings = Some(crate::host::WindowsSettings::default());
+        facts.pitboards = vec![copy("a")];
+        assert!(said(&facts).is_empty());
+
+        facts.windows_settings = Some(crate::host::WindowsSettings {
+            wsl: vec!["Ubuntu".into(), "Debian".into()],
+            proxy: Some("proxy.example.com:8080".into()),
+            admin_approval: Some(true),
+        });
+        facts.pitboards = vec![copy("a"), copy("b"), copy("c")];
+        assert_eq!(
+            said(&facts),
+            [
+                (
+                    "wsl",
+                    Level::Ok,
+                    "WSL holds Ubuntu and Debian".to_string(),
+                    "Claude Code and Codex installed there are installs of their own, with logins \
+                     of their own, which Pitboard on Windows does not switch. WSL 2 runs them in \
+                     a virtual machine, so Windows' list of processes does not show them running."
+                        .to_string()
+                ),
+                (
+                    "pitboard_copies",
+                    Level::Ok,
+                    r"C:\a\pitboard.exe on PATH, then C:\b\pitboard.exe and C:\c\pitboard.exe"
+                        .to_string(),
+                    "A shell runs the first, so updating another changes nothing there. \
+                     Uninstall the copies you do not use."
+                        .to_string()
+                ),
+                (
+                    "system_proxy",
+                    Level::Ok,
+                    "Windows' proxy settings name proxy.example.com:8080, and no proxy variable \
+                     is set"
+                        .to_string(),
+                    "Codex sends its requests through it. Claude Code and Pitboard follow only \
+                     the proxy variables, so theirs go out directly: set HTTPS_PROXY where this \
+                     network needs the proxy."
+                        .to_string()
+                ),
+            ]
+        );
+
+        let codes = |facts: &Facts| {
+            said(facts)
+                .into_iter()
+                .map(|(code, ..)| code)
+                .collect::<Vec<_>>()
+        };
+        facts.network = by(through(None, &[]));
+        assert_eq!(
+            codes(&facts),
+            ["wsl", "pitboard_copies"],
+            "a variable names one"
+        );
+        facts.network = NetworkFact {
+            proxy: None,
+            passed_over: vec!["HTTPS_PROXY"],
+        };
+        assert_eq!(
+            codes(&facts),
+            ["wsl", "pitboard_copies"],
+            "a variable is set"
+        );
+        facts.windows_settings = None;
+        assert_eq!(codes(&facts), ["pitboard_copies"]);
+    }
+
+    #[test]
+    fn windows_settings_are_read_from_the_host_on_windows_alone() {
+        let host = crate::host::memory::MemoryHost::new();
+        let settings = crate::host::WindowsSettings {
+            wsl: vec!["Ubuntu".into()],
+            proxy: Some("proxy.example.com:8080".into()),
+            admin_approval: Some(false),
+        };
+        host.sets_windows(settings.clone());
+        let ctx = Context::for_unit_test().with_memory_stores(host);
+        assert_eq!(
+            gather(&ctx).windows_settings,
+            (crate::host::OS == Os::Windows).then_some(settings)
+        );
+    }
+
+    // RF-F3: a bare name runs the first a shell finds.
+    #[test]
+    fn every_pitboard_a_windows_shell_finds_is_one_copy_first_first() {
+        let root = tempfile::tempdir().expect("a scratch folder");
+        let (a, b) = (root.path().join("a"), root.path().join("b"));
+        for folder in [&a, &b] {
+            std::fs::create_dir_all(folder).expect("a folder");
+            let program = folder.join("pitboard.exe");
+            std::fs::write(&program, b"MZ").expect("a program");
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755))
+                    .expect("runnable");
+            }
+        }
+        let empty = root.path().join("empty");
+        std::fs::create_dir_all(&empty).expect("a folder");
+        let path = std::env::join_paths([&a, &empty, &b, &a]).expect("a PATH");
+        let ctx = Context::for_unit_test().with_search_path(path.to_string_lossy().into_owned());
+        assert_eq!(
+            pitboards(&ctx),
+            [a.join("pitboard.exe"), b.join("pitboard.exe")]
+        );
+    }
+
+    #[test]
+    fn windows_proxy_setting_is_redacted_from_a_report() {
+        let ctx = Context::new(PathBuf::from("/home/x"));
+        let mut f = facts();
+        f.os = Os::Windows;
+        for (server, hidden) in [
+            ("proxy.example.com:8080", &["proxy.example.com:8080"][..]),
+            (
+                "http=web.example.com:80;https=secure.example.com:443",
+                &["web.example.com:80", "secure.example.com:443"][..],
+            ),
+        ] {
+            f.windows_settings = Some(crate::host::WindowsSettings {
+                proxy: Some(server.into()),
+                ..crate::host::WindowsSettings::default()
+            });
+            let detail = check(&evaluate(&f), "system_proxy").detail.clone();
+            let shown = redaction_for(&ctx, &f).over(&detail);
+            for part in hidden {
+                assert!(detail.contains(part), "{detail}");
+                assert!(!shown.contains(part), "{shown}");
+            }
+            assert!(shown.contains("<proxy "), "{shown}");
+        }
+    }
+
+    // RF-A1 read UAC on on both images, so only Microsoft's word says what off does.
+    #[test]
+    fn windows_says_user_account_control_is_off_where_it_reads_so() {
+        let mut f = facts();
+        f.os = Os::Windows;
+        let advice = |f: &Facts| {
+            evaluate(f)
+                .into_iter()
+                .find(|c| c.code == "elevated")
+                .map(|c| c.advice)
+        };
+        f.elevation = crate::host::Elevation::Elevated {
+            why: crate::host::token::IN_EVERY_PROGRAM,
+        };
+        let before = "Pitboard changes nothing this way: it reads, and renews and writes nothing. \
+                      That is so with User Account Control off and in the built-in Administrator \
+                      account: run it from a standard account, or turn User Account Control on.";
+        for read in [None, Some(true)] {
+            f.windows_settings = Some(crate::host::WindowsSettings {
+                admin_approval: read,
+                ..crate::host::WindowsSettings::default()
+            });
+            assert_eq!(advice(&f).as_deref(), Some(before), "{read:?}");
+        }
+        f.windows_settings = Some(crate::host::WindowsSettings {
+            admin_approval: Some(false),
+            ..crate::host::WindowsSettings::default()
+        });
+        assert_eq!(
+            advice(&f).as_deref(),
+            Some(
+                "Pitboard changes nothing this way: it reads, and renews and writes nothing. \
+                 User Account Control is off on this PC, so every program an administrator \
+                 starts is elevated: turn it on, or run Pitboard from a standard account."
+            )
+        );
+        f.elevation = crate::host::Elevation::Elevated {
+            why: crate::host::token::AS_ADMINISTRATOR,
+        };
+        assert_eq!(
+            advice(&f).as_deref(),
+            Some(
+                "Pitboard changes nothing this way: it reads, and renews and writes nothing. Run \
+                 it from a terminal that is not elevated (not Run as administrator)."
+            )
+        );
+        f.elevation = crate::host::Elevation::Normal;
+        assert_eq!(advice(&f), None);
+    }
+
+    #[test]
+    fn a_claude_desktop_account_in_a_windows_index_is_a_note() {
+        let mut state = State::default();
+        state.accounts.push(desktop_account("work", None));
+        state
+            .accounts
+            .push(desktop_account("home", Some(folder_park("home-1", None))));
+        let mut f = facts();
+        f.desktop = Some(DesktopFacts {
+            root: Err("Pitboard switches Claude Desktop accounts on macOS only".into()),
+            ..desktop()
+        });
+        f.state = Ok(state.clone());
+        f.os = Os::Windows;
+        let desktops: Vec<(&str, Level, String, String)> = evaluate(&f)
+            .into_iter()
+            .filter(|c| section(c.code) == Some(ProviderId::Desktop))
+            .map(|c| (c.code, c.level, c.detail, c.advice))
+            .collect();
+        assert_eq!(
+            desktops,
+            [(
+                "desktop_data_folder",
+                Level::Ok,
+                "Pitboard switches Claude Desktop accounts on macOS only".to_string(),
+                "This index holds `desktop/work` and `desktop/home`. Nothing here changes them."
+                    .to_string()
+            )]
+        );
+
+        state.accounts.clear();
+        assert_eq!(
+            judge_desktop_on_windows(&state).advice,
+            "This index holds folders set aside for Claude Desktop. Nothing here changes them."
+        );
+        f.os = Os::Linux;
+        assert_eq!(
+            check(&evaluate(&f), "desktop_data_folder").level,
+            Level::Fail,
+            "Linux says it as it did"
+        );
+    }
+
+    #[test]
+    fn linux_inside_wsl_is_told_what_pitboard_switches_there() {
+        let mut facts = facts();
+        facts.os = Os::Linux;
+        assert!(evaluate(&facts).iter().all(|c| c.code != "wsl"));
+        let said = |facts: &Facts| {
+            let checks = evaluate(facts);
+            let wsl = check(&checks, "wsl");
+            (wsl.level, wsl.detail.clone(), wsl.advice.clone())
+        };
+        let switched = "Pitboard here switches what is installed in this Linux. Claude Code and \
+                        Codex installed on Windows keep their own logins, which Pitboard here \
+                        does not switch.";
+        facts.wsl = Some(WslFact {
+            distribution: Some("Ubuntu".into()),
+            codex_home_on_windows: None,
+        });
+        assert_eq!(
+            said(&facts),
+            (Level::Ok, "inside WSL, in Ubuntu".into(), switched.into())
+        );
+        facts.wsl = Some(WslFact {
+            distribution: None,
+            codex_home_on_windows: Some(PathBuf::from("/mnt/c/Users/x/.codex")),
+        });
+        assert_eq!(
+            said(&facts),
+            (
+                Level::Ok,
+                "inside WSL".into(),
+                format!(
+                    "{switched} Codex's home, /mnt/c/Users/x/.codex, is C:\\Users\\x\\.codex on \
+                     Windows, where Codex here starts no shared background server."
+                )
+            )
+        );
+        facts.wsl = Some(WslFact {
+            distribution: None,
+            codex_home_on_windows: Some(PathBuf::from("/media/c/codex")),
+        });
+        assert!(said(&facts).2.ends_with(
+            " Codex's home, /media/c/codex, is on a Windows drive, where Codex here starts no \
+             shared background server."
+        ));
+    }
+
+    #[test]
+    fn a_windows_drive_wsl_mounts_is_named_as_windows_names_it() {
+        for (path, windows) in [
+            ("/mnt/c", Some(r"C:\")),
+            ("/mnt/c/Users/x/.codex", Some(r"C:\Users\x\.codex")),
+            ("/mnt/d/", Some(r"D:\")),
+            ("/mnt/cd/x", None),
+            ("/mnt/1/x", None),
+            ("/home/x/.codex", None),
+        ] {
+            assert_eq!(
+                on_windows(std::path::Path::new(path)).as_deref(),
+                windows,
+                "{path}"
+            );
+        }
+    }
+
+    // `codex_wsl`: `WSL_DISTRO_NAME` set, even empty, or `/proc/version` naming Microsoft.
+    #[test]
+    fn wsl_is_read_as_codex_reads_it_and_on_linux_alone() {
+        use crate::context::Environment;
+        let home = tempfile::tempdir().expect("a scratch home");
+        let codex = home.path().join("codex");
+        let read =
+            |os: Os, distribution: Option<&str>, host: &Arc<crate::host::memory::MemoryHost>| {
+                let mut pairs = vec![
+                    ("HOME", home.path().to_string_lossy().into_owned()),
+                    ("USERPROFILE", home.path().to_string_lossy().into_owned()),
+                    ("CODEX_HOME", codex.to_string_lossy().into_owned()),
+                ];
+                pairs.extend(distribution.map(|name| ("WSL_DISTRO_NAME", name.to_owned())));
+                let ctx = Context::read(&Environment::on(os, pairs), "cli")
+                    .with_memory_stores(host.clone());
+                wsl_fact(&ctx).map(|wsl| (wsl.distribution, wsl.codex_home_on_windows))
+            };
+        let host = crate::host::memory::MemoryHost::new();
+        assert_eq!(read(Os::Linux, None, &host), None);
+        assert_eq!(
+            read(Os::Linux, Some("Ubuntu"), &host),
+            Some((Some("Ubuntu".into()), None))
+        );
+        assert_eq!(read(Os::Linux, Some(""), &host), Some((None, None)));
+        for os in [Os::MacOs, Os::Windows] {
+            assert_eq!(read(os, Some("Ubuntu"), &host), None, "{os:?}");
+        }
+        host.runs_in_wsl();
+        host.mounts_a_windows_drive(home.path());
+        assert_eq!(
+            read(Os::Linux, None, &host),
+            Some((None, Some(codex.clone())))
+        );
+        assert_eq!(read(Os::Windows, None, &host), None);
+    }
+
+    // A fact of the system, not a fault: Windows' doctor states it, and stays in order.
+    #[test]
+    fn windows_is_told_a_warm_up_is_not_available_there() {
+        let mut facts = facts();
+        for os in [Os::MacOs, Os::Linux] {
+            facts.os = os;
+            assert!(
+                evaluate(&facts).iter().all(|c| c.code != "warm_up"),
+                "{os:?}"
+            );
+        }
+        facts.os = Os::Windows;
+        let checks = evaluate(&facts);
+        let warm = check(&checks, "warm_up");
+        assert_eq!(
+            (
+                warm.level,
+                warm.name.as_str(),
+                warm.detail.as_str(),
+                warm.advice.as_str()
+            ),
+            (
+                Level::Ok,
+                "warm-up",
+                "warm-ups are not available on Windows, where Claude Code does not read the \
+                 access token a warm-up hands it",
+                ""
+            )
+        );
+        facts.claude_present = false;
+        facts.codex.present = true;
+        assert!(
+            evaluate(&facts).iter().all(|c| c.code != "warm_up"),
+            "a machine with no Claude Code is not told"
+        );
     }
 
     /// A machine that uses only Codex is not told Claude Code is broken, nor to run a

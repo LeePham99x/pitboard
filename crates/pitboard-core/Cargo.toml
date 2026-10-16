@@ -65,6 +65,15 @@ windows-sys = { workspace = true, features = [
     "Win32_System_WindowsProgramming",
     "Win32_UI_Shell",
 ] }
+# Task Scheduler's ITaskService is COM, which windows-sys does not wrap. The daily renewal's
+# task alone.
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_System_Ole",
+    "Win32_System_TaskScheduler",
+    "Win32_System_Variant",
+] }
 
 [dev-dependencies]
 tempfile.workspace = true

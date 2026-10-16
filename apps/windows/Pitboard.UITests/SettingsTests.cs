@@ -78,32 +78,21 @@ public sealed class SettingsTests
         Assert.IsTrue(launched.Gone(found => found.ByAutomationId("settings.autoSwitchStanding")));
     }
 
-    // The fixture's personal is on for warm-ups with no five-hour period running, so it warms up as the app starts.
+    // The fixture's personal is on for warm-ups, and Claude Code on Windows reads no token handed to it, so Settings says why none runs.
     [TestMethod]
-    [Ignore("W-warm: warming up Claude Code accounts on Windows")]
     public void WarmingUpAccounts()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "warmUp");
-        launched.OpenWindow();
-        Assert.IsTrue(Says(launched, "Warms up again at ", TimeSpan.FromSeconds(30)), "personal is not warmed up");
+        OpenSettings(launched);
 
-        launched.Select("SettingsItem");
+        Assert.IsTrue(
+            Says(launched, "Pitboard is not warming up accounts: warm-ups are not available on Windows", TimeSpan.FromSeconds(30)),
+            "Settings does not say why nothing is warmed up");
         Control(launched, "settings.warm").Patterns.ExpandCollapse.Pattern.Expand();
-        var personal = Control(launched, "settings.warm.claude/personal");
-        var work = Control(launched, "settings.warm.claude/work");
-
-        Assert.IsTrue(Enables(personal, true));
-        Assert.AreEqual(ToggleState.On, State(personal));
-        Assert.AreEqual(ToggleState.Off, State(work));
-        Control(launched, "settings.warmFrom");
-        Control(launched, "settings.warmStanding");
-
-        work.Patterns.Toggle.Pattern.Toggle();
-        Assert.IsTrue(Becomes(work, ToggleState.On));
+        Assert.AreEqual(ToggleState.On, State(Control(launched, "settings.warm.claude/personal")));
     }
 
     [TestMethod]
-    [Ignore("W25: Task Scheduler, which renews parked logins daily")]
     public void DailyRenewal()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");

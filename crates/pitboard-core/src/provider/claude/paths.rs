@@ -3,10 +3,12 @@
 use crate::context::{Context, Environment};
 use crate::error::{Error, Result};
 use crate::host::Os;
+use crate::host::program::{Lookup, find_among};
 use crate::provider::claude::daemon;
 use crate::provider::claude::slot;
 use serde_json::Value;
-use std::path::PathBuf;
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
 
 /// `CLAUDE_CONFIG_DIR ?? ~/.claude`, as Claude Code 2.1.289 reads it: set, even empty, it
 /// is the directory, so an empty one is the empty path, which is refused before anything
@@ -109,7 +111,7 @@ fn looks_like_a_version(name: &str) -> bool {
             .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
 }
 
-fn version_in_package_json(path: &std::path::Path) -> Option<String> {
+fn version_in_package_json(path: &Path) -> Option<String> {
     let raw = std::fs::read_to_string(path).ok()?;
     let json: Value = serde_json::from_str(&raw).ok()?;
     let name = json.get("name")?.as_str()?;
@@ -117,6 +119,70 @@ fn version_in_package_json(path: &std::path::Path) -> Option<String> {
         return None;
     }
     Some(json.get("version")?.as_str()?.to_string())
+}
+
+// The Git Bash Claude Code runs a hook and the status line in on Windows, found as it finds one
+// (`windows_statusline_shell`), and `CLAUDE_CODE_GIT_BASH_PATH` where Claude Code passes it over.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct GitBash {
+    pub(crate) found: Option<PathBuf>,
+    pub(crate) passed_over: Option<PathBuf>,
+}
+
+const GIT_BASH_INSTALLS: [&str; 2] = [
+    r"C:\Program Files\Git\bin\bash.exe",
+    r"C:\Program Files (x86)\Git\bin\bash.exe",
+];
+
+pub(crate) fn git_bash(ctx: &Context) -> GitBash {
+    git_bash_among(
+        ctx.git_bash.as_deref(),
+        &ctx.search_path(),
+        &ctx.lookup(),
+        |path| path.exists(),
+    )
+}
+
+fn git_bash_among(
+    named: Option<&Path>,
+    search: &OsStr,
+    lookup: &Lookup,
+    exists: impl Fn(&Path) -> bool,
+) -> GitBash {
+    let takes = |named: &Path| {
+        let name = named.to_string_lossy().to_lowercase();
+        let base = name
+            .trim_end_matches(['\\', '/'])
+            .rsplit(['\\', '/'])
+            .next()
+            .unwrap_or_default();
+        ["bash.exe", "sh.exe", "bash", "sh"].contains(&base) && exists(named)
+    };
+    if let Some(named) = named.filter(|named| takes(named)) {
+        return GitBash {
+            found: Some(named.to_path_buf()),
+            passed_over: None,
+        };
+    }
+    // `where.exe git`'s first, its folder's parent's `bin`.
+    let beside_git = || {
+        let git = find_among(
+            Path::new("git"),
+            std::env::split_paths(search),
+            lookup,
+            &exists,
+        )?;
+        let bash = git.parent()?.parent()?.join("bin").join("bash.exe");
+        exists(&bash).then_some(bash)
+    };
+    GitBash {
+        found: GIT_BASH_INSTALLS
+            .into_iter()
+            .map(PathBuf::from)
+            .find(|bash| exists(bash))
+            .or_else(beside_git),
+        passed_over: named.map(Path::to_path_buf),
+    }
 }
 
 /// The directory whose path string selects the credential slot.
@@ -143,7 +209,7 @@ pub(crate) fn legacy_refresh_lock(ctx: &Context) -> PathBuf {
 
 // `CLAUDE_SECURESTORAGE_CONFIG_DIR`, empty as the home's `.claude`, else the config folder,
 // each in NFC as Claude Code's `Lx` and `Pe` normalise them.
-fn storage_dir_from(secure: Option<&str>, home: &std::path::Path, config_dir: &str) -> String {
+fn storage_dir_from(secure: Option<&str>, home: &Path, config_dir: &str) -> String {
     use unicode_normalization::UnicodeNormalization;
     match secure {
         Some("") => home.join(".claude").to_string_lossy().nfc().collect(),
@@ -335,10 +401,7 @@ mod tests {
         let ctx =
             Context::new(PathBuf::from("/nowhere/home")).with_claude_config_dir(String::new());
         assert_eq!(config_dir(&ctx), PathBuf::new());
-        assert_eq!(
-            config_file(&ctx),
-            std::path::Path::new("/nowhere/home/.claude.json")
-        );
+        assert_eq!(config_file(&ctx), Path::new("/nowhere/home/.claude.json"));
         assert!(is_default_slot(&ctx));
     }
 
@@ -386,7 +449,7 @@ mod tests {
     // string would make every credential and lock path relative to the working directory.
     #[test]
     fn an_empty_storage_dir_means_the_default_directory_not_the_current_one() {
-        let home = std::path::Path::new(match crate::host::OS {
+        let home = Path::new(match crate::host::OS {
             Os::MacOs | Os::Linux => "/home/x",
             Os::Windows => r"C:\Users\x",
         });
@@ -403,7 +466,7 @@ mod tests {
 
     #[test]
     fn the_storage_folder_is_the_config_folder_in_nfc() {
-        let home = std::path::Path::new("/home/x");
+        let home = Path::new("/home/x");
         assert_eq!(storage_dir_from(None, home, "/Cafe\u{301}"), "/Caf\u{e9}");
     }
 
@@ -433,5 +496,54 @@ mod tests {
         let id = config_account(&written).expect("should parse");
         assert_eq!(id.organization_uuid, "o");
         assert_eq!(id.organization_name, None);
+    }
+
+    // As 2.1.301's `x()` finds it, the variable's file taken only where its name is bash or sh.
+    #[test]
+    fn git_bash_is_found_where_claude_code_finds_it() {
+        let windows = Lookup::new(Os::Windows, None);
+        let git = std::env::temp_dir().join("Git");
+        let search = std::env::join_paths([git.join("cmd")]).expect("a search path");
+        let beside_git = git.join("bin").join("bash.exe");
+        let named = |path: &str| Some(PathBuf::from(path));
+        let find = |variable: Option<PathBuf>, there: &[&Path]| {
+            git_bash_among(variable.as_deref(), &search, &windows, |path| {
+                there.contains(&path)
+            })
+        };
+        let installed = Path::new(GIT_BASH_INSTALLS[0]);
+        let x86 = Path::new(GIT_BASH_INSTALLS[1]);
+        let mine = Path::new(r"D:\tools\Bash.EXE");
+        assert_eq!(
+            find(named(r"D:\tools\Bash.EXE"), &[mine, installed]),
+            GitBash {
+                found: Some(mine.to_path_buf()),
+                passed_over: None
+            }
+        );
+        for (variable, there) in [
+            (
+                r"D:\tools\git.exe",
+                vec![Path::new(r"D:\tools\git.exe"), installed],
+            ),
+            (r"D:\tools\bash.exe", vec![installed]),
+        ] {
+            assert_eq!(
+                find(named(variable), &there),
+                GitBash {
+                    found: Some(installed.to_path_buf()),
+                    passed_over: named(variable)
+                },
+                "{variable}"
+            );
+        }
+        assert_eq!(find(None, &[x86]).found.as_deref(), Some(x86));
+        let git_exe = git.join("cmd").join("git.exe");
+        assert_eq!(
+            find(None, &[&git_exe, &beside_git]).found,
+            Some(beside_git.clone())
+        );
+        assert_eq!(find(None, &[&git_exe]).found, None, "no bash beside git");
+        assert_eq!(find(None, &[]).found, None);
     }
 }

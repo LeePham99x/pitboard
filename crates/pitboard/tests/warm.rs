@@ -13,7 +13,10 @@ fn json(text: &str) -> serde_json::Value {
 /// account's access token on descriptor 3 alone, in a home of its own, and records what the
 /// next reading says: its five-hour period running.
 #[test]
-#[cfg_attr(windows, ignore = "a warm-up runs on macOS and Linux")]
+#[cfg_attr(
+    windows,
+    ignore = "a warm-up runs on macOS and Linux: Claude Code on Windows reads no token handed to it"
+)]
 fn warming_up_now_runs_claude_code_with_the_access_token_on_descriptor_three() {
     let mut env = two_accounts("warm-now");
     let (started, handed) = env.install_fake_claude_print();
@@ -83,7 +86,10 @@ fn warming_up_now_runs_claude_code_with_the_access_token_on_descriptor_three() {
 
 /// An account whose period runs already is not warmed up again; it says until when.
 #[test]
-#[cfg_attr(windows, ignore = "a warm-up runs on macOS and Linux")]
+#[cfg_attr(
+    windows,
+    ignore = "a warm-up runs on macOS and Linux: Claude Code on Windows reads no token handed to it"
+)]
 fn warming_up_now_an_account_whose_period_runs_starts_nothing() {
     let mut env = two_accounts("warm-running");
     let (started, _) = env.install_fake_claude_print();

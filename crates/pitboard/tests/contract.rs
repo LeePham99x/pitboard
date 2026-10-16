@@ -266,7 +266,6 @@ fn forget_and_rename() {
 /// with no reading from Anthropic yet waits for one; a span that starts and ends at once is
 /// a usage error.
 #[test]
-#[cfg_attr(windows, ignore = "W-warm: warming up Claude Code accounts on Windows")]
 fn warm() {
     let env = two_accounts("contract-warm");
     let (value, code) = json(&env, &["warm", "on", "beta"]);
@@ -274,7 +273,11 @@ fn warm() {
     let (value, code) = json(&env, &["warm", "range", "07:30", "23:00"]);
     contract!("warm_range", value, code);
     let (value, code) = json(&env, &["warm"]);
-    contract!("warm", value, code);
+    if os::warm_ups_run_here() {
+        contract!("warm", value, code);
+    } else {
+        contract!("warm_unavailable", value, code);
+    }
     let (value, code) = json(&env, &["warm", "range", "06:00", "06:00"]);
     contract!("warm_range_empty", value, code);
 }
@@ -298,10 +301,6 @@ fn statusline() {
 }
 
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W24: how pitboard.exe names itself in a usage error"
-)]
 fn usage_error() {
     let env = Env::new("contract-usage");
     let (value, code) = json(&env, &["use"]);

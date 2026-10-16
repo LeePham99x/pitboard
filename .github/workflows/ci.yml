@@ -128,6 +128,8 @@ jobs:
       # is released, for the lints and the tests (pitboard-core's release.rs); the gate is
       # checked below on a build without it.
       RUSTFLAGS: -D warnings -C target-feature=+crt-static --cfg pitboard_unreleased_windows
+      # Every pitboard.exe built here carries its version resource, whatever the image holds.
+      PITBOARD_REQUIRE_VERSIONINFO: '1'
     defaults:
       run:
         shell: bash
@@ -144,10 +146,11 @@ jobs:
       - uses: ./.github/actions/windows-builds
         with:
           triple: ${{ matrix.triple }}
-      # The gated build is a program for this leg's machine, answers its version, holds its C
-      # runtime and no test's variable, and refuses every command with windows_not_released,
-      # leaving every folder it is pointed at empty. From 1.0.0 it runs as a standard user instead.
-      - name: "The gated build: machine, C runtime, version and the gate"
+      # The gated build is a program for this leg's machine, answers its version, carries its
+      # version resource and manifest, holds its C runtime and no test's variable, and refuses
+      # every command with windows_not_released, leaving every folder it is pointed at empty.
+      # From 1.0.0 it runs as a standard user instead.
+      - name: "The gated build: machine, C runtime, version, resources and the gate"
         shell: pwsh
         env:
           TRIPLE: ${{ matrix.triple }}
