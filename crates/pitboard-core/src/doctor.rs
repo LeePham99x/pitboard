@@ -152,6 +152,14 @@ pub(crate) struct NetworkFact {
     /// The variables before it set to something that is not a proxy's address, which
     /// Pitboard passes over, in the order it reads them.
     pub(crate) passed_over: Vec<&'static str>,
+    // Each proxy variable set to anything, as the tools read the ones they read.
+    pub(crate) set: Vec<&'static str>,
+}
+
+impl NetworkFact {
+    fn sets(&self, any_of: &[&str]) -> Option<&'static str> {
+        self.set.iter().copied().find(|name| any_of.contains(name))
+    }
 }
 
 /// The proxy the environment names.
@@ -627,6 +635,12 @@ fn network_fact(proxies: &crate::proxy::Proxies) -> NetworkFact {
                 exempt: proxies.exempt_hosts(),
             }),
         passed_over: proxies.passed_over().to_vec(),
+        set: proxies
+            .variables()
+            .iter()
+            .filter(|(name, value)| !value.is_empty() && crate::proxy::NAMING.contains(name))
+            .map(|(name, _)| *name)
+            .collect(),
     }
 }
 
@@ -998,24 +1012,124 @@ fn judge_windows_settings(facts: &Facts) -> Vec<Check> {
             )
         });
     }
-    // hyper-util fills in from Windows' settings only what no variable names.
+    // hyper-util fills Codex's https proxy in from Windows' settings wherever HTTPS_PROXY is
+    // unset or empty, whatever HTTP_PROXY and ALL_PROXY say (`codex_windows_system_proxy`).
     if let Some(server) = &settings.proxy
-        && facts.network.proxy.is_none()
-        && facts.network.passed_over.is_empty()
+        && facts
+            .network
+            .sets(&["HTTPS_PROXY", "https_proxy"])
+            .is_none()
     {
+        let entries = system_proxies(server);
+        let shown = entries
+            .iter()
+            .map(SystemProxy::masked)
+            .collect::<Vec<_>>()
+            .join(";");
+        let codex = match entries.as_slice() {
+            [one] if one.protocol.is_none() => "Codex sends its requests through it".to_string(),
+            [one] => format!(
+                "Codex reads the setting as one address, so it sends its requests to a proxy \
+                 named {}, and they fail",
+                one.masked()
+            ),
+            _ => format!(
+                "Codex reads the setting as one address, which a proxy for each protocol is not, \
+                 so its requests go {}",
+                way(facts.network.sets(&["ALL_PROXY", "all_proxy"]))
+            ),
+        };
+        // Claude Code reads no ALL_PROXY (`proxy_from_variables`).
+        let claude = facts.network.sets(&["http_proxy", "HTTP_PROXY"]);
+        let pitboard = facts.network.proxy.as_ref().map(|proxy| proxy.variable);
+        let others = if claude.is_none() && pitboard.is_none() {
+            "Claude Code and Pitboard follow only the proxy variables, so theirs go out directly"
+                .to_string()
+        } else {
+            format!(
+                "Claude Code's go {}, and Pitboard's {}",
+                way(claude),
+                way(pitboard)
+            )
+        };
         checks.push(Check {
-            advice: "Codex sends its requests through it. Claude Code and Pitboard follow only the \
-                     proxy variables, so theirs go out directly: set HTTPS_PROXY where this network \
-                     needs the proxy."
-                .into(),
+            advice: format!(
+                "{codex}. {others}: set HTTPS_PROXY where this network needs the proxy."
+            ),
             ..ok(
                 "system_proxy",
                 "Windows proxy",
-                format!("Windows' proxy settings name {server}, and no proxy variable is set"),
+                format!("Windows' proxy settings name {shown}, and HTTPS_PROXY is not set"),
             )
         });
     }
     checks
+}
+
+fn way(variable: Option<&str>) -> String {
+    match variable {
+        Some(variable) => format!("through the one {variable} names"),
+        None => "out directly".to_string(),
+    }
+}
+
+// One entry of `ProxyServer`: `[protocol=][scheme://][user[:password]@]host:port`. Internet
+// Options writes one entry for every protocol, or one a protocol, apart by `;`.
+struct SystemProxy<'a> {
+    protocol: Option<&'a str>,
+    scheme: Option<&'a str>,
+    signed_in: Option<bool>,
+    server: &'a str,
+}
+
+impl SystemProxy<'_> {
+    // As `proxy::shown` shows a variable's: `***` for a user name and a password.
+    fn masked(&self) -> String {
+        let protocol = self.protocol.map_or_else(String::new, |p| format!("{p}="));
+        let scheme = self.scheme.map_or_else(String::new, |s| format!("{s}://"));
+        let hidden = match self.signed_in {
+            Some(true) => "***:***@",
+            Some(false) => "***@",
+            None => "",
+        };
+        format!("{protocol}{scheme}{hidden}{}", self.server)
+    }
+}
+
+// Only a protocol Internet Options names, so a user name holding `=` stays hidden.
+const PROTOCOLS: [&str; 4] = ["http", "https", "ftp", "socks"];
+
+fn system_proxies(value: &str) -> Vec<SystemProxy<'_>> {
+    let word = |part: &str| !part.is_empty() && part.bytes().all(|b| b.is_ascii_alphanumeric());
+    value
+        .split(';')
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .map(|entry| {
+            let (protocol, rest) = match entry.split_once('=') {
+                Some((protocol, rest))
+                    if PROTOCOLS.iter().any(|p| p.eq_ignore_ascii_case(protocol)) =>
+                {
+                    (Some(protocol), rest)
+                }
+                _ => (None, entry),
+            };
+            let (scheme, rest) = match rest.split_once("://") {
+                Some((scheme, rest)) if word(scheme) => (Some(scheme), rest),
+                _ => (None, rest),
+            };
+            let (signed_in, server) = match rest.rsplit_once('@') {
+                Some((user, server)) => (Some(user.contains(':')), server),
+                None => (None, rest),
+            };
+            SystemProxy {
+                protocol,
+                scheme,
+                signed_in,
+                server,
+            }
+        })
+        .collect()
 }
 
 fn judge_wsl(wsl: Option<&WslFact>) -> Option<Check> {
@@ -3629,14 +3743,13 @@ fn redaction_for(ctx: &Context, facts: &Facts) -> crate::redact::Sheet {
                 .hide(aside.login.clone().unwrap_or_default(), "login");
         }
     }
-    // Windows' proxy names a network as a variable's does: `host:port`, or one per scheme.
+    // Windows' proxy names a network as a variable's does: `host:port`, or one per protocol.
     let system_proxy = facts
         .windows_settings
         .as_ref()
         .and_then(|settings| settings.proxy.as_deref());
-    for server in system_proxy.into_iter().flat_map(|named| named.split(';')) {
-        let server = server.rsplit('=').next().unwrap_or(server).trim();
-        sheet = sheet.hide(server.to_owned(), "proxy");
+    for entry in system_proxy.map(system_proxies).unwrap_or_default() {
+        sheet = sheet.hide(entry.server.to_owned(), "proxy");
     }
     // A proxy's host can name the company whose network it is, as an organisation's name
     // does. Its port goes with it, so that a host that is also a word, such as `proxy`, is
@@ -3683,6 +3796,7 @@ mod tests {
         NetworkFact {
             proxy: None,
             passed_over: Vec::new(),
+            set: Vec::new(),
         }
     }
 
@@ -5741,6 +5855,7 @@ mod tests {
     /// A network whose requests go through `proxy`.
     fn by(proxy: ProxyFact) -> NetworkFact {
         NetworkFact {
+            set: vec![proxy.variable],
             proxy: Some(proxy),
             passed_over: Vec::new(),
         }
@@ -5993,6 +6108,11 @@ mod tests {
     fn network(proxy: Option<ProxyFact>, passed_over: &[&'static str]) -> Check {
         let mut f = facts();
         f.network = NetworkFact {
+            set: passed_over
+                .iter()
+                .copied()
+                .chain(proxy.as_ref().map(|proxy| proxy.variable))
+                .collect(),
             proxy,
             passed_over: passed_over.to_vec(),
         };
@@ -7831,9 +7951,9 @@ mod tests {
                 (
                     "system_proxy",
                     Level::Ok,
-                    "Windows' proxy settings name proxy.example.com:8080, and no proxy variable \
-                     is set"
-                        .to_string(),
+                    "Windows' proxy settings name proxy.example.com:8080, and HTTPS_PROXY is not \
+                     set"
+                    .to_string(),
                     "Codex sends its requests through it. Claude Code and Pitboard follow only \
                      the proxy variables, so theirs go out directly: set HTTPS_PROXY where this \
                      network needs the proxy."
@@ -7841,6 +7961,53 @@ mod tests {
                 ),
             ]
         );
+
+        let advice = |facts: &Facts| check(&evaluate(facts), "system_proxy").advice.clone();
+        let named_by = |variable: &'static str| {
+            by(ProxyFact {
+                variable,
+                ..through(None, &[])
+            })
+        };
+        facts.network = named_by("HTTP_PROXY");
+        assert_eq!(
+            advice(&facts),
+            "Codex sends its requests through it. Claude Code's go through the one HTTP_PROXY \
+             names, and Pitboard's through the one HTTP_PROXY names: set HTTPS_PROXY where this \
+             network needs the proxy."
+        );
+        facts.network = named_by("ALL_PROXY");
+        assert_eq!(
+            advice(&facts),
+            "Codex sends its requests through it. Claude Code's go out directly, and Pitboard's \
+             through the one ALL_PROXY names: set HTTPS_PROXY where this network needs the proxy."
+        );
+        facts.network = direct();
+        let with_server = |facts: &mut Facts, server: &str| {
+            if let Some(settings) = facts.windows_settings.as_mut() {
+                settings.proxy = Some(server.into());
+            }
+        };
+        with_server(
+            &mut facts,
+            "http=web.example.com:80;https=secure.example.com:443",
+        );
+        assert_eq!(
+            advice(&facts),
+            "Codex reads the setting as one address, which a proxy for each protocol is not, so \
+             its requests go out directly. Claude Code and Pitboard follow only the proxy \
+             variables, so theirs go out directly: set HTTPS_PROXY where this network needs the \
+             proxy."
+        );
+        with_server(&mut facts, "https=secure.example.com:443");
+        assert_eq!(
+            advice(&facts),
+            "Codex reads the setting as one address, so it sends its requests to a proxy named \
+             https=secure.example.com:443, and they fail. Claude Code and Pitboard follow only \
+             the proxy variables, so theirs go out directly: set HTTPS_PROXY where this network \
+             needs the proxy."
+        );
+        with_server(&mut facts, "proxy.example.com:8080");
 
         let codes = |facts: &Facts| {
             said(facts)
@@ -7857,6 +8024,7 @@ mod tests {
         facts.network = NetworkFact {
             proxy: None,
             passed_over: vec!["HTTPS_PROXY"],
+            set: vec!["HTTPS_PROXY"],
         };
         assert_eq!(
             codes(&facts),
@@ -7920,6 +8088,10 @@ mod tests {
                 "http=web.example.com:80;https=secure.example.com:443",
                 &["web.example.com:80", "secure.example.com:443"][..],
             ),
+            (
+                "http=alice:p=ss@proxy.example.com:8080",
+                &["proxy.example.com:8080"][..],
+            ),
         ] {
             f.windows_settings = Some(crate::host::WindowsSettings {
                 proxy: Some(server.into()),
@@ -7932,6 +8104,46 @@ mod tests {
                 assert!(!shown.contains(part), "{shown}");
             }
             assert!(shown.contains("<proxy "), "{shown}");
+        }
+    }
+
+    // Codex reads a user name and a password out of `ProxyServer` as out of a variable.
+    #[test]
+    fn a_password_in_windows_proxy_setting_is_never_shown() {
+        let ctx = Context::new(PathBuf::from("/home/x"));
+        let mut f = facts();
+        f.os = Os::Windows;
+        for (server, shown) in [
+            (
+                "http=alice:s3cret@proxy.example.com:8080",
+                "http=***:***@proxy.example.com:8080",
+            ),
+            (
+                "alice:p=ss@proxy.example.com:8080",
+                "***:***@proxy.example.com:8080",
+            ),
+            (
+                "http://alice@proxy.example.com:8080;https=bob:s3cret@secure.example.com:443",
+                "http://***@proxy.example.com:8080;https=***:***@secure.example.com:443",
+            ),
+        ] {
+            f.windows_settings = Some(crate::host::WindowsSettings {
+                proxy: Some(server.into()),
+                ..crate::host::WindowsSettings::default()
+            });
+            let checks = evaluate(&f);
+            let line = check(&checks, "system_proxy");
+            assert_eq!(
+                line.detail,
+                format!("Windows' proxy settings name {shown}, and HTTPS_PROXY is not set")
+            );
+            for said in [&line.detail, &line.advice] {
+                let redacted = redaction_for(&ctx, &f).over(said);
+                for secret in ["alice", "bob", "s3cret", "p=ss"] {
+                    assert!(!said.contains(secret), "{said}");
+                    assert!(!redacted.contains(secret), "{redacted}");
+                }
+            }
         }
     }
 

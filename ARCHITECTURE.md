@@ -3441,9 +3441,13 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
   Codex already runs, since a sign-in open there ends too.
 - Read on 16 October 2026 from 0.163.0's source, reqwest 0.12.28 and hyper-util 0.1.20
   (`codex_windows_system_proxy`): on Windows Codex sends its requests through the proxy the
-  variables name, and where none of them names one, through `ProxyServer` in HKCU's
-  `Internet Settings` where `ProxyEnable` is not 0. Claude Code 2.1.301 and Pitboard follow
-  the variables alone, so doctor says where only Windows' settings name a proxy.
+  variables name, and where `HTTPS_PROXY` and `https_proxy` are unset or empty, its https
+  requests through `ProxyServer` in HKCU's `Internet Settings` where `ProxyEnable` is not 0,
+  whatever `HTTP_PROXY` and `ALL_PROXY` say. It reads `ProxyServer` whole as one address, so
+  a proxy for each protocol reaches it as none, and one such entry alone as a host that
+  fails. Claude Code 2.1.301 and Pitboard follow the variables alone, Claude Code with no
+  `ALL_PROXY`, so wherever `HTTPS_PROXY` is unset doctor says where each one's requests go,
+  with any user name and password in `ProxyServer` shown as `***`.
 - Read on 16 October 2026 from 0.163.0's source and its linux-x64 build (`codex_wsl`): the
   Linux build takes itself to run in WSL where `WSL_DISTRO_NAME` is set or `/proc/version`
   names Microsoft, and there starts no shared background server where its home is on 9p,

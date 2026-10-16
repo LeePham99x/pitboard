@@ -802,23 +802,28 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
     Assumption {
         name: "codex_windows_system_proxy",
         fact: "on Windows Codex sends its requests through the proxy the variables name, and \
-               where none of `HTTPS_PROXY`, `https_proxy`, `HTTP_PROXY` and `http_proxy` names \
-               one, through `ProxyServer` in \
+               where `HTTPS_PROXY` and `https_proxy` are unset or empty, its https requests \
+               through `ProxyServer` in \
                `HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings` where \
-               `ProxyEnable` is not 0, exempting `ProxyOverride`'s hosts where neither \
-               `NO_PROXY` nor `no_proxy` is set. That is reqwest 0.12.28's default proxy, \
-               hyper-util 0.1.20's `Matcher::from_system`. The `respect_system_proxy` feature, \
-               off by default, asks the system's PAC and WPAD before the variables, and \
+               `ProxyEnable` is not 0, whatever `HTTP_PROXY` and `ALL_PROXY` say, exempting \
+               `ProxyOverride`'s hosts where neither `NO_PROXY` nor `no_proxy` is set. It reads \
+               `ProxyServer` whole as one address: a proxy for each protocol, \
+               `http=host:port;https=host:port`, is none it reads, so its requests go out \
+               directly, or through `ALL_PROXY`'s, and one entry alone, `https=host:port`, names \
+               a host called `https=host`, so they fail. That is reqwest 0.12.28's default \
+               proxy, hyper-util 0.1.20's `Matcher::from_system`. The `respect_system_proxy` \
+               feature, off by default, asks the system's PAC and WPAD before the variables, and \
                `system_proxy_fallback`, on by default, sends a sign-in's request again through \
                them after a direct one fails",
-        read_from: "`win::with_system` in hyper-util 0.1.20's src/client/proxy/matcher.rs, \
-                    `Matcher::system` in reqwest 0.12.28's src/proxy.rs, and \
-                    codex-rs/http-client/src/outbound_proxy.rs and codex-rs/features/src/lib.rs \
-                    at tag rust-v0.163.0, read on 2026-10-16. Both win32 builds of 0.163.0 hold \
-                    the key and its three values",
+        read_from: "`win::with_system`, `Builder::build` and `parse_env_uri` in hyper-util \
+                    0.1.20's src/client/proxy/matcher.rs, the http crate's authority parser, \
+                    which refuses a second colon, `Matcher::system` in reqwest 0.12.28's \
+                    src/proxy.rs, and codex-rs/http-client/src/outbound_proxy.rs and \
+                    codex-rs/features/src/lib.rs at tag rust-v0.163.0, read on 2026-10-16. Both \
+                    win32 builds of 0.163.0 hold the key and its three values",
         verified_against: "0.163.0",
-        depends: "doctor's system_proxy note on Windows, which says Codex sends its requests \
-                  through a proxy only Windows' settings name",
+        depends: "doctor's system_proxy note on Windows, which says where Codex's requests go \
+                  while HTTPS_PROXY is unset, and where Claude Code's and Pitboard's go",
         probe: &[
             r"Software\Microsoft\Windows\CurrentVersion\Internet Settings",
             "ProxyEnable",
