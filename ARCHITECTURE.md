@@ -933,6 +933,11 @@ window loads its site, and whatever the site's pages load, as a browser would.
   `x86_64-pc-windows-msvc` and `aarch64-pc-windows-msvc` compile (`lib.rs`). The switch
   that opens a Windows build early is a `cfg` set in `RUSTFLAGS`, never a Cargo feature,
   since crates.io offers a published crate's features to anybody.
+- The Windows app a release ships updates only through the Windows update key. Each Release
+  build carries a key WinSparkle takes and the feed of full releases (`check-windows-app.ps1`),
+  and the key the newest earlier MSI shipped unless `WINDOWS_UPDATE_KEY_ROTATION` names the
+  release (`windows-update-key.sh`). WinSparkle checks no Authenticode signature, so there is
+  no second route.
 - Outside a host's own face, a test or a fixture sets a file's mode, makes a file runnable
   or makes a link only through that face's `fs::testing` (`pitboard_core::testing::fs`),
   never through `std::os::unix`. A link to a directory is asked for as one, `link_dir`, apart
@@ -2680,6 +2685,8 @@ on 15 October 2026, and the MSI's on 16 October 2026. W27 reviews the list.
 | Windows Installer closes a running program through Restart Manager in an upgrade, and starts again after it one that called `RegisterApplicationRestart` | [Using Windows Installer with Restart Manager](https://learn.microsoft.com/en-us/windows/win32/msi/using-windows-installer-with-restart-manager) | No runner installs over a running Pitboard; the session's step A7 does, with `statusline` running from `bin`. |
 | The RemoveRegistry table deletes values when its component is installed, never when it is removed | [RemoveRegistry table](https://learn.microsoft.com/en-us/windows/win32/msi/removeregistry-table) | The session's step A8 removes Pitboard with start at sign-in on, and finds the `Run` value gone through `--unregister`. |
 | An exe custom action after `InstallFinalize`, asynchronous with no wait, starts `Pitboard.exe --updated` as the person once a `/passive` update ends | [Custom action return processing options](https://learn.microsoft.com/en-us/windows/win32/msi/custom-action-return-processing-options) | No runner updates Pitboard; the 1.0 session's P3 does. |
+| `msiexec /a` extracts an MSI only on a machine whose platform its `Template` names, as an install would, so `windows-msi`, `windows-feed-key` and `windows-install` each read the MSI for their own machine | [Template Summary property](https://learn.microsoft.com/en-us/windows/win32/msi/template-summary) | Each runner extracts only its own MSI: no row tries the other's. |
+| Windows Installer compares three fields of `ProductVersion` and ignores a fourth, so beta N's `X.Y.Z.N` and its final's `X.Y.Z` are one version, which `MajorUpgrade` with `AllowSameVersionUpgrades` replaces | [ProductVersion property](https://learn.microsoft.com/en-us/windows/win32/msi/productversion) | No runner installs an MSI; the session's step A7 upgrades one. |
 | A process that `PitboardShare.exe` starts, or that its `LaunchUriAsync` starts, carries none of its package identity, and none of their writes is redirected | [UpdateProcThreadAttribute](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute) | Not yet measured: CF8 measures the probe's sparse package on the runners, and P2 Pitboard's. |
 
 ### One sign-in at a time
@@ -4103,6 +4110,15 @@ Microsoft's documentation.
   callback, and keeps WinSparkle's settings in `updates.json` in the app's data folder, which
   an uninstall removes with the folder. Turned on after a start with them off, automatic
   checks begin at Pitboard's next start. `SparkleUpdatesTests` and `UpdateFeedTests` hold it.
+  An update's MSI is checked whole with orlp's `ed25519_verify`, its signature the base64 of
+  64 bytes (`signatureverifier.cpp`). Sparkle 2.10.0's `sign_update` signs a file that is no
+  feed or release notes whole with the same library, reads the key's base64 seed from
+  standard input with `--ed-key-file -` and prints the signature alone with `-p`
+  (`sign_update/main.swift`, `common_cli/Secret.swift`, read the same day). A rehearsal on
+  16 October 2026 signed two files with a throwaway seed, and `eddsa-verify.swift` took each
+  signature under its public key and refused one another seed made. So `windows-update-sign`
+  signs each MSI with `sign_update` and checks it with `eddsa-verify.swift` before
+  `windows-appcast.py` writes the feed.
 - The .NET 8 SDK adds the commit to `InformationalVersion`, which
   `IncludeSourceRevisionInInformationalVersion` turns off
   ([Source Link included in the .NET SDK](https://learn.microsoft.com/dotnet/core/compatibility/sdk/8.0/source-link),

@@ -60,8 +60,8 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
 - Never sign with a signer's release policy or production credentials outside `release.yml`
   on a `v*` tag. Test signing uses the signer's test policy or sandbox.
 - Never let a job that runs on a pull request or by hand reach the `release`,
-  `windows-signing`, `homebrew-tap`, `scoop-bucket` or `winget` environment. Each must keep a
-  deployment rule for `v*` tags only.
+  `windows-signing`, `windows-update`, `homebrew-tap`, `scoop-bucket` or `winget`
+  environment. Each must keep a deployment rule for `v*` tags only.
 - Never write the Scoop bucket or a `winget-pkgs` branch by hand, past the first commit and
   the first versions RELEASING.md sets out. The release writes them from its own
   `SHA256SUMS`, as it writes the tap.
@@ -74,6 +74,11 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
   bundles that update themselves, and must never reach the real key.
 - Never keep the update key and the Developer ID certificate in one place. With both lost,
   no installed copy accepts another update.
+- Never keep the Windows update key with the signer's account, the macOS update key or the
+  Developer ID certificate, and keep its offline copy apart from all of them. WinSparkle has
+  no second route: with that key lost, every Windows copy is installed again by hand.
+- Never ship an MSI or a `Pitboard.exe` whose Windows update key is missing or one WinSparkle
+  rejects. WinSparkle then installs updates nobody signed.
 
 ### On Windows
 
@@ -121,6 +126,8 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
 - Never install an MSI built from a branch on an account that holds real logins, or on a CI
   runner, which only extracts one with `msiexec /a`. Install it only in the session machine's
   throwaway accounts, and remove it before the session ends.
+- Never install a release's MSI on a CI runner, and never install a release's MSI or zip on a
+  machine that holds logins from a test or a script.
 - Never run the app's UI tests on a machine of your own: they move the mouse and type into
   whatever has focus. They run on CI's runners as a fresh standard user.
 - Never run a test or a script there before pointing `USERPROFILE`, `HOME`, `APPDATA`,
