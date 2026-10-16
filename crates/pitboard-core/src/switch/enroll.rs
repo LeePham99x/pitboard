@@ -160,6 +160,11 @@ pub(crate) fn one_at_a_time(ctx: &Context, permit: Permit) -> Result<File> {
     Ok(one_at_a_time)
 }
 
+// The one folder every program's private sign-in uses, so Claude Code's slot for it is fixed.
+pub(crate) fn signin_dir(ctx: &Context) -> PathBuf {
+    home::dir(ctx).join("signin")
+}
+
 // A program's sign-in: the one-at-a-time lock and the private directory it signs in to. It
 // takes no other lock, so a switch meanwhile goes ahead and a second sign-in is refused.
 fn reserve_signin(
@@ -168,7 +173,7 @@ fn reserve_signin(
     tool: &'static dyn Provider,
 ) -> Result<(SignIn, PathBuf)> {
     let one_at_a_time = one_at_a_time(ctx, permit)?;
-    let dir = home::dir(ctx).join("signin");
+    let dir = signin_dir(ctx);
     // A sign-in that was killed rather than finished never ran its cleanup, so a login can
     // be sitting in the scratch slot with nothing naming it. The directory is always the
     // same one, so the slot is too, and this is the moment it can be cleared safely: the

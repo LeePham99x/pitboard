@@ -77,7 +77,6 @@ macro_rules! doctor_contract {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn status() {
     let env = two_accounts("contract-status");
     let (value, code) = json(&env, &["status"]);
@@ -89,7 +88,6 @@ fn status() {
 /// U+FFFF as its UTF-16 surrogate pair. A program that decodes the bytes as something other
 /// than UTF-8 then parses the same values. Pitboard printed them as raw UTF-8.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn a_label_outside_ascii_is_printed_as_escapes() {
     let mut env = Env::new("contract-ascii");
     let (a, o, b, p) = (env.uuid('a'), env.uuid('o'), env.uuid('b'), env.uuid('p'));
@@ -154,7 +152,6 @@ fn a_label_outside_ascii_is_printed_as_escapes() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn use_switches() {
     let env = two_accounts("contract-use");
     let (value, code) = json(&env, &["use", "beta"]);
@@ -168,7 +165,6 @@ fn use_switches() {
 /// The cause is the field a program reads to decide whether to try again. Without it every
 /// failure that was not a 401 arrived as `identity_unverifiable` and a sentence of prose.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn a_failure_says_what_went_wrong_underneath() {
     let mut env = two_accounts("contract-cause");
     env.profile_trouble(503);
@@ -179,7 +175,6 @@ fn a_failure_says_what_went_wrong_underneath() {
 /// The keychain belongs to the whole machine, so what `repair` finds depends on what else
 /// is on it. The envelope's shape is the contract; the lists are not snapshotted.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn repair() {
     let env = two_accounts("contract-repair");
     let (value, code) = json(&env, &["repair"]);
@@ -207,7 +202,6 @@ fn repair() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn enroll() {
     let mut env = Env::new("contract-enroll");
     let (a, o, b, p) = (env.uuid('a'), env.uuid('o'), env.uuid('b'), env.uuid('p'));
@@ -243,7 +237,6 @@ fn enroll() {
 /// The reading that asks nobody anything: what was last measured, and whose login each tool
 /// has stored, as its service last said. Its envelope is a contract like any other.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn status_offline() {
     let env = two_accounts("contract-offline");
     env.run(&["status"]); // one live read, so there is something remembered to show
@@ -252,7 +245,6 @@ fn status_offline() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn uninstall() {
     let env = two_accounts("contract-uninstall");
     let (value, code) = json(&env, &["uninstall", "--yes"]);
@@ -260,7 +252,6 @@ fn uninstall() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn forget_and_rename() {
     let env = two_accounts("contract-forget");
     let (value, code) = json(&env, &["rename", "beta", "work"]);
@@ -275,7 +266,6 @@ fn forget_and_rename() {
 /// with no reading from Anthropic yet waits for one; a span that starts and ends at once is
 /// a usage error.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn warm() {
     let env = two_accounts("contract-warm");
     let (value, code) = json(&env, &["warm", "on", "beta"]);
@@ -291,7 +281,6 @@ fn warm() {
 /// With nobody to ask and no `--yes`, a command that deletes something refuses before it
 /// changes anything.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn unconfirmed() {
     let env = two_accounts("contract-unconfirmed");
     let (value, code) = json(&env, &["forget", "beta"]);
@@ -301,7 +290,6 @@ fn unconfirmed() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn statusline() {
     let env = two_accounts("contract-statusline");
     let (value, code) = json(&env, &["statusline"]);
@@ -329,7 +317,6 @@ fn usage_error() {
 /// their refresh token, and the snapshot could not catch it because it redacted the whole
 /// array.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn doctor() {
     let env = two_accounts("contract-doctor");
     env.install_fake_codex("0.154.0");
@@ -471,7 +458,6 @@ fn desktop_unsupported() {
 /// for, a Codex account's name is given the way it is typed, and Claude Code's rows are
 /// what they were with two fields added.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn status_with_codex() {
     let mut env = two_accounts("contract-codex");
     let work = env.uuid('w');
@@ -497,7 +483,6 @@ fn status_with_codex() {
 /// A Codex login is in the report too, and is kept out of what is pasted as carefully as
 /// Claude Code's.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn doctor_with_codex() {
     let mut env = two_accounts("contract-doctor-codex");
     env.install_fake_codex("0.154.0");
@@ -564,7 +549,6 @@ fn doctor_with_codex() {
 /// `doctor` says it is a choice rather than a broken login, so a script reading its exit
 /// code is not told to stop switching accounts.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn codex_signed_in_with_an_api_key() {
     let mut env = two_accounts("contract-codex-api-key");
     env.install_fake_codex("0.154.0");
@@ -611,7 +595,6 @@ fn codex_signed_in_with_an_api_key() {
 /// What `watch` decides, once, from what Pitboard measured: a switch it made by itself, and
 /// nothing to do.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn watch() {
     let env = two_accounts("contract-watch");
     env.an_hour_on();
@@ -625,7 +608,6 @@ fn watch() {
 /// Nothing behind the store Claude Code keeps its login in is nothing to put away, and is
 /// not asked about: so on Linux, where the file is that store, always.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn stow_with_nothing_left() {
     let env = two_accounts("contract-stow-nothing");
     let (value, code) = json(&env, &["stow"]);

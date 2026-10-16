@@ -66,12 +66,12 @@ pub(crate) fn app_data_folders() -> (Vec<PathBuf>, Vec<PathBuf>) {
     (Vec::new(), Vec::new())
 }
 
-#[cfg(feature = "test-support")]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn accounts_own_home() -> Option<PathBuf> {
     passwd_home()
 }
 
-#[cfg(feature = "test-support")]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn accounts_own_pitboard_home() -> Option<PathBuf> {
     passwd_home().map(|home| crate::host::OS.default_pitboard_home(&home))
 }

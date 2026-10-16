@@ -117,7 +117,6 @@ impl Drop for Running {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn enrolling_the_current_account_parks_nothing_while_it_stays_signed_in() {
     let env = two_accounts("current");
     assert!(
@@ -141,7 +140,6 @@ fn enrolling_the_current_account_parks_nothing_while_it_stays_signed_in() {
 /// park in `state.json` once it has. The name stays on the list until the next change
 /// resolves it, and doctor counted it as one it could not read.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn doctor_finds_no_park_outstanding_after_a_switch() {
     let env = two_accounts("pending-after-switch");
     let (_, err, code) = env.run(&["use", "beta"]);
@@ -161,7 +159,6 @@ fn doctor_finds_no_park_outstanding_after_a_switch() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn a_full_switch_moves_the_identity_and_nothing_else() {
     let env = two_accounts("full");
     let beta_park = env.parked_service("beta").unwrap();
@@ -199,7 +196,6 @@ fn a_full_switch_moves_the_identity_and_nothing_else() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn switching_back_and_forth_restores_each_account_and_leaves_no_copies_behind() {
     let env = two_accounts("backforth");
     let mut seen = Vec::new();
@@ -223,7 +219,6 @@ fn switching_back_and_forth_restores_each_account_and_leaves_no_copies_behind() 
 /// The state the caller asked for already holds, so a menu bar clicking "switch to X" while
 /// X is active must not report an error.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn switching_to_the_account_already_signed_in_succeeds_and_changes_nothing() {
     let env = two_accounts("already");
     let before = env.state();
@@ -235,7 +230,6 @@ fn switching_to_the_account_already_signed_in_succeeds_and_changes_nothing() {
 
 /// Identity comes from Anthropic, not from Claude Code's config, which can be a day stale.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn a_stale_config_cannot_make_a_switch_file_the_credential_under_the_wrong_account() {
     let env = two_accounts("staleconfig");
     let mut config = env.config();
@@ -256,7 +250,6 @@ fn a_stale_config_cannot_make_a_switch_file_the_credential_under_the_wrong_accou
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn a_switch_writes_claude_json_beside_an_empty_config_json() {
     let env = two_accounts("emptylegacy");
     std::fs::write(env.root.join(".config.json"), "").unwrap();
@@ -272,7 +265,6 @@ fn a_switch_writes_claude_json_beside_an_empty_config_json() {
 /// a Claude Code process started on another login leaves it. Using the account in use writes
 /// that account there again and moves no login.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn using_the_account_in_use_writes_it_into_claude_codes_config_again() {
     let env = two_accounts("namesagain");
     let names_beta = || {
@@ -305,7 +297,6 @@ fn using_the_account_in_use_writes_it_into_claude_codes_config_again() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn switching_away_from_an_account_that_is_not_enrolled_is_refused() {
     let mut env = two_accounts("stranger");
     let (c, q) = (env.uuid('c'), env.uuid('q'));
@@ -322,7 +313,6 @@ fn switching_away_from_an_account_that_is_not_enrolled_is_refused() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn a_used_label_cannot_be_taken_by_another_account() {
     let mut env = two_accounts("labelreuse");
     let (c, q) = (env.uuid('c'), env.uuid('q'));
@@ -333,7 +323,6 @@ fn a_used_label_cannot_be_taken_by_another_account() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn enrolling_an_account_under_a_second_label_points_at_sign_in() {
     let env = two_accounts("dupe");
     let (_, err, code) = env.run(&["enroll", "another"]);
@@ -342,7 +331,6 @@ fn enrolling_an_account_under_a_second_label_points_at_sign_in() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn enrolling_the_signed_in_account_again_is_not_an_error() {
     let env = two_accounts("again");
     let before = env.state();
@@ -372,7 +360,6 @@ fn enrolling_the_signed_in_account_again_is_not_an_error() {
 /// The way back for an account whose parked login was used or expired, and what every
 /// message about one says to run.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn signing_in_to_an_enrolled_account_again_renews_its_parked_login() {
     let mut env = two_accounts("renew");
     let old = env.parked_service("beta").unwrap();
@@ -394,7 +381,6 @@ fn signing_in_to_an_enrolled_account_again_renews_its_parked_login() {
 /// the new login in use and parks nothing, so the next switch away parks the new login and
 /// not the one it replaced.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn signing_in_again_to_the_account_in_use_puts_the_new_login_in_use() {
     let mut env = two_accounts("again-in-use");
     let (a, o) = (env.uuid('a'), env.uuid('o'));
@@ -418,7 +404,6 @@ fn signing_in_again_to_the_account_in_use_puts_the_new_login_in_use() {
 /// A label typed wrong at enroll time is fixed without signing in again, whichever account
 /// it names.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn renaming_keeps_the_login_and_the_new_label_switches() {
     let env = two_accounts("rename");
     let beta_park = env.parked_service("beta").unwrap();
@@ -444,7 +429,6 @@ fn renaming_keeps_the_login_and_the_new_label_switches() {
 /// A program reading `--json` gets exactly one JSON line, whatever Claude Code's sign-in
 /// prints along the way.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn signing_in_keeps_the_json_output_pure() {
     let mut env = two_accounts("pure");
     let (c, q) = (env.uuid('c'), env.uuid('q'));
@@ -464,7 +448,6 @@ fn signing_in_keeps_the_json_output_pure() {
 
 /// A sign-in waits on a person in a browser. Nothing else may wait on it.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn a_sign_in_in_progress_does_not_hold_up_a_switch() {
     let mut env = two_accounts("waiting");
     let (c, q) = (env.uuid('c'), env.uuid('q'));
@@ -506,7 +489,6 @@ fn access_lapsed(env: &Env, label: &str) {
 /// A parked login is Pitboard's alone, so status renews it once its access lapses, stores
 /// it the way Claude Code would, and a later switch installs the renewed login.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn status_renews_a_parked_login_whose_access_has_lapsed() {
     let mut env = two_accounts("renewal");
     let old = env.parked_service("beta").unwrap();
@@ -567,7 +549,6 @@ fn status_renews_a_parked_login_whose_access_has_lapsed() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn a_parked_login_anthropic_refuses_is_dropped_with_the_way_back() {
     let mut env = two_accounts("refused");
     let old = env.parked_service("beta").unwrap();
@@ -597,7 +578,6 @@ fn a_parked_login_anthropic_refuses_is_dropped_with_the_way_back() {
 /// `pitboard renew` says what it did in the sentence the app's Renew Now shows: nothing due
 /// reads as the good answer it is, and one renewal as one.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn renew_says_what_it_did_as_the_app_says_it() {
     let mut env = two_accounts("renew-words");
     let (out, err, code) = env.run(&["renew"]);
@@ -643,7 +623,6 @@ fn tree(dir: &std::path::Path) -> std::collections::BTreeMap<std::path::PathBuf,
 /// relative one followed would show. The same run without the marker renews the home
 /// `PITBOARD_HOME` names, as it did.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn a_scheduled_renewal_renews_the_default_home_whatever_pitboard_home_says() {
     let mut env = two_accounts("renew-scheduled");
     access_lapsed(&env, "beta");
@@ -783,7 +762,6 @@ fn enrolling_by_sign_in_under_sudo_announces_no_sign_in() {
 /// build for tests asks the service manager at all
 /// (`no_build_for_tests_asks_the_systems_service_manager`).
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn every_command_refuses_a_home_that_is_not_a_full_path() {
     let mut env = two_accounts("home-not-absolute");
     access_lapsed(&env, "beta");
@@ -941,7 +919,6 @@ fn status_under_sudo_answers_from_what_was_measured() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn forgetting_the_signed_in_account_is_refused() {
     let env = two_accounts("forget");
     let (_, err, code) = env.run(&["forget", "alpha", "--yes"]);
@@ -950,7 +927,6 @@ fn forgetting_the_signed_in_account_is_refused() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn forgetting_an_account_deletes_its_parked_login() {
     let env = two_accounts("forget-parked");
     let parked = env.parked_service("beta").unwrap();
@@ -972,7 +948,6 @@ fn forgetting_an_account_deletes_its_parked_login() {
 /// login is a refresh token, and two machines taking turns presenting one ends the login
 /// for both. What was missing was a way out that is not "delete everything and start over".
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn a_home_from_another_computer_is_taken_over_rather_than_being_a_dead_end() {
     let env = two_accounts("adopted");
     let parked = env.parked_service("beta").expect("beta is parked");
@@ -1013,7 +988,6 @@ fn a_home_from_another_computer_is_taken_over_rather_than_being_a_dead_end() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn an_account_with_nothing_parked_is_refused_with_the_way_back() {
     let env = two_accounts("exhausted");
     // Nothing parked means nothing parked: the state must not name one, and the vault must
@@ -1044,7 +1018,6 @@ fn an_account_with_nothing_parked_is_refused_with_the_way_back() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn an_expired_parked_login_is_refused_rather_than_installed() {
     let env = two_accounts("expired");
     env.edit_state(|s| {
@@ -1070,7 +1043,6 @@ fn an_expired_parked_login_is_refused_rather_than_installed() {
 /// a kernel lock, so the second waits for the first to finish and then finds beta already
 /// signed in.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn two_switches_at_once_do_not_interleave() {
     let env = two_accounts("concurrent");
     let spawn = || {
@@ -1130,7 +1102,6 @@ fn statusline(env: &Env, session: serde_json::Value) -> std::process::Output {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn the_status_line_names_the_account_in_use_and_the_others() {
     let env = two_accounts("statusline");
     let statusline = |session| statusline(&env, session);
@@ -1163,7 +1134,6 @@ fn the_status_line_names_the_account_in_use_and_the_others() {
 /// A Team seat's answer lists every limit it has, and no weekly limit for all models: the
 /// line leaves that limit out rather than say `?`, which is a limit with no reading.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn the_status_line_leaves_out_a_limit_an_account_does_not_have() {
     let mut env = two_accounts("statusline-seat");
     env.team_seat_usage();
@@ -1183,7 +1153,6 @@ fn the_status_line_leaves_out_a_limit_an_account_does_not_have() {
 /// tokens, and ~/.pitboard is the only index of them. Removing the directory without them
 /// would leave credentials on the machine that nothing can name.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn uninstalling_takes_the_parked_logins_with_it() {
     let env = two_accounts("uninstall-clean");
     let parked = env
@@ -1208,7 +1177,6 @@ fn uninstalling_takes_the_parked_logins_with_it() {
 /// `--json` is no `--yes`. On 10 October 2026 `pitboard stow < /dev/null`, run as a look,
 /// deleted a login file behind the keychain without asking. With `--yes` each acts as before.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn deleting_with_nobody_to_ask_needs_yes() {
     let env = two_accounts("unconfirmed");
     let parked = env.parked_service("beta").expect("beta is parked");
@@ -1266,7 +1234,6 @@ fn deleting_with_nobody_to_ask_needs_yes() {
 /// Where a command would change nothing anyway, it says why as it did, with or without
 /// `--yes`: a label that names no account, and nothing left behind the store.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn nothing_to_delete_is_said_as_before_without_yes() {
     let env = two_accounts("nothing-to-confirm");
 
@@ -1384,7 +1351,6 @@ fn the_argument_line_can_be_refused() {
 /// percentage point, which for a five-hour window is three minutes. Two runs inside that
 /// make one request between them, however many front ends are involved.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn asking_twice_in_a_row_asks_anthropic_once() {
     let mut env = two_accounts("budget");
     // Two accounts, so one pass is two requests. The second pass is none.
@@ -1414,7 +1380,6 @@ fn asking_twice_in_a_row_asks_anthropic_once() {
 /// Asking for it is always allowed: the floor is a default, not a rule about what a person
 /// may do.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn asking_for_a_fresh_reading_asks_anthropic_again() {
     let mut env = two_accounts("budget-fresh");
     env.expect_usage_requests(4);
@@ -1431,7 +1396,6 @@ fn asking_for_a_fresh_reading_asks_anthropic_again() {
 /// account lasts, goes the first time this one reads usage: pace needs one reading. Only
 /// what Pitboard wrote goes, and a file somebody else put there keeps the folder.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn the_readings_an_older_pitboard_kept_go_and_nothing_else_does() {
     let env = two_accounts("retired-readings");
     let readings = env.root.join("pitboard/readings");
@@ -1456,7 +1420,6 @@ fn the_readings_an_older_pitboard_kept_go_and_nothing_else_does() {
 /// says to sign in to it again with `pitboard enroll <label> --sign-in`, and that has to
 /// work for such a label as it did before labels could name a tool.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn an_old_label_with_a_slash_can_be_signed_in_to_again() {
     let mut env = two_accounts("old-slash-label");
     env.edit_state(|state| {
@@ -1475,4 +1438,62 @@ fn an_old_label_with_a_slash_can_be_signed_in_to_again() {
         .find(|a| a["label"] == "team/beta")
         .expect("still enrolled under its old label");
     assert_eq!(renewed["provider"], "claude");
+}
+
+// Held open as Bun opens Claude Code's files, sharing reading, writing and deletion, as std
+// opens one (`windows_open_sharing`).
+#[cfg(windows)]
+#[test]
+fn a_switch_through_credentials_json_keeps_its_access_and_its_time_moves_while_it_is_open() {
+    let env = two_accounts("windows-file-switch");
+    let live = env.root.join(".credentials.json");
+    pitboard_core::testing::fs::open_to_others(&live).expect("opened to others");
+    let long_ago = std::time::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    std::fs::File::options()
+        .write(true)
+        .open(&live)
+        .and_then(|file| file.set_modified(long_ago))
+        .expect("dated");
+    let held = std::fs::File::open(&live).expect("held open");
+
+    let (_, err, code) = env.run(&["use", "beta"]);
+    drop(held);
+    assert_eq!(code, 0, "use beta: {err}");
+    assert_eq!(env.live()["claudeAiOauth"]["refreshToken"], "refresh-b");
+    assert!(
+        !pitboard_core::testing::fs::is_private(&live).expect("its access"),
+        "the access list it had is kept"
+    );
+    let modified = std::fs::metadata(&live)
+        .and_then(|found| found.modified())
+        .expect("its time");
+    assert!(modified > long_ago, "a session reads it again by its time");
+}
+
+// Cached in the test's own config file, the feature turns Credential Manager on for its slot.
+#[cfg(windows)]
+#[test]
+fn a_switch_is_refused_and_writes_nothing_while_credential_manager_is_turned_on() {
+    let env = two_accounts("windows-credman-on");
+    let mut config = env.config();
+    config["cachedGrowthBookFeatures"] = serde_json::json!({"tengu_windows_credman": true});
+    std::fs::write(env.root.join(".claude.json"), config.to_string()).expect("cached");
+    let kept = || {
+        (
+            std::fs::read(env.root.join(".credentials.json")).expect("the login"),
+            std::fs::read(env.root.join(".claude.json")).expect("the config"),
+            env.state(),
+            tree(&env.root.join("pitboard").join("vault")),
+        )
+    };
+    let before = kept();
+
+    let (_, err, code) = env.run(&["use", "beta"]);
+    assert_ne!(code, 0, "{err}");
+    assert!(
+        err.contains("while it keeps its login in Credential Manager"),
+        "{err}"
+    );
+    assert_eq!(kept(), before);
+    assert!(!env.root.join("pitboard").join("journal.json").exists());
 }

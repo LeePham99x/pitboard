@@ -187,7 +187,6 @@ fn a_switch_from_a_login_already_identified_asks_only_about_the_login_going_in()
 /// no login anywhere it looks means Pitboard is looking in the wrong place, and writing a
 /// login there would put it where nobody reads.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn a_login_pitboard_cannot_find_is_not_the_same_as_nobody_being_signed_in() {
     let m = machine("elsewhere");
 

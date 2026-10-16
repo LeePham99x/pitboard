@@ -745,7 +745,6 @@ mod tests {
     /// account signed in, which has room. Nothing is attempted from `here`, which nobody is
     /// on any more, and the activity log says what changed outside Pitboard.
     #[test]
-    #[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
     fn a_sign_in_since_the_last_read_is_judged_as_the_account_it_signed_in() {
         let (m, _) = nearly_out("auto-signed-in-since", 96.0);
         let elsewhere = document("elsewhere-refresh");

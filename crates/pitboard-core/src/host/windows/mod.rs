@@ -5,11 +5,10 @@
 //! A Windows build of a 0.x release refuses before it gets here ([`crate::release`]). A build
 //! opened to Windows, for working on Pitboard and for CI, reaches this face, and finds:
 //!
-//! - no store of secrets for a tool (W23 offers Credential Manager);
+//! - no store of secrets for a tool, only a look at Credential Manager (W23a offers its store);
 //! - no scheduler (W25).
 //!
-//! Which store a tool keeps its login in is the tool's to say, in its provider's code: Codex's
-//! file is read there, and Claude Code's chain refuses (W22, W23).
+//! Which store a tool keeps its login in is the tool's to say, in its provider's code.
 
 mod credman;
 #[allow(
@@ -129,9 +128,7 @@ fn policy(hive: Hive, key: &str, value: &str) -> Administered {
 struct Windows;
 
 impl Host for Windows {
-    /// Credential Manager, where Claude Code may keep its login, is offered by W23. Until
-    /// then there is no store of secrets here, and each tool's chain refuses on Windows in
-    /// its own provider's code, so this answer builds no chain.
+    // Credential Manager as a store is W23a's; until then only `credential_held` looks in it.
     fn foreign_secrets(&self, _ctx: &Context, _account: &str) -> Option<Box<dyn RawStore>> {
         None
     }
@@ -202,6 +199,28 @@ impl Host for Windows {
         }
         credman::names(&format!("{prefix}*")).map_err(|e| e.to_string())
     }
+
+    fn user_environment(&self, name: &str) -> Administered {
+        if !super::administered::READ_BY_REAL_HOSTS {
+            return Administered::Unset;
+        }
+        windows_registry::CURRENT_USER
+            .open("Environment")
+            .ok()
+            .and_then(|key| expanded(key, name))
+            .map_or(Administered::Unset, Administered::Set)
+    }
+
+    fn credential_held(&self, ctx: &Context, target: &str) -> Result<bool, String> {
+        #[cfg(any(test, feature = "test-support"))]
+        if let Some(why) =
+            crate::provider::claude::credman::refused_in_a_build_for_tests(ctx, target)
+        {
+            return Err(why);
+        }
+        let _ = ctx;
+        credman::held(target).map_err(|e| e.to_string())
+    }
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -231,46 +250,85 @@ pub(super) fn pretend_scheduler(
 mod tests {
     use super::*;
     use crate::provider::ProviderId;
-    use crate::store::Error;
 
     /// What a unit test's context reaches here: this face, with every home its own.
     fn ctx() -> Context {
         Context::for_unit_test()
     }
 
-    fn unreadable<T: std::fmt::Debug>(read: Result<T, Error>, why: &str) {
-        match read {
-            Err(Error::Unreadable(said)) => assert_eq!(said, why),
-            other => panic!("expected the store to be unreadable, {why}: {other:?}"),
-        }
-    }
-
-    /// Claude Code's chain on Windows is a store nobody can read yet, never the file alone:
-    /// Claude Code may keep its login in Credential Manager there, and a chain of the file
-    /// alone would read a login that is not the one in use, and write one nothing reads.
-    /// A sign-in's login is refused the same way, and so is taking one away.
+    // Nothing turns Credential Manager on for a test, and it holds nothing at a test's slot.
     #[test]
-    fn claude_codes_chain_is_unreadable_and_never_the_file() {
-        let ctx = ctx();
-        let why = "Pitboard does not switch Claude Code on Windows yet";
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "a test writes a login as Claude Code does"
+    )]
+    fn claude_codes_chain_is_its_file_where_credential_manager_holds_nothing() {
+        let home = tempfile::tempdir().expect("a scratch home");
+        let config = home.path().join(".claude");
+        std::fs::create_dir_all(&config).expect("a config folder");
+        let ctx = Context::new(home.path().to_path_buf())
+            .with_claude_config_dir(config.to_string_lossy().into_owned());
         let live = crate::provider::document(ProviderId::Claude)
             .live(&ctx)
             .expect("a chain");
         assert_eq!(
-            crate::store::resolve(&live.chain, &live.service).map_err(|e| e.to_string()),
-            Err(format!("the credential store could not be read: {why}"))
+            crate::store::read_raw(&live.chain, &live.service).expect("readable"),
+            None
         );
-        unreadable(crate::store::read_raw(&live.chain, &live.service), why);
-        let dir = std::env::temp_dir();
-        unreadable(crate::provider::claude::live::read_signin(&ctx, &dir), why);
-        unreadable(
-            crate::provider::claude::live::discard_signin(
-                &ctx,
-                crate::service::Permit::for_a_test(),
-                &dir,
-            ),
-            why,
+        std::fs::write(config.join(".credentials.json"), r#"{"claudeAiOauth":{}}"#)
+            .expect("a login");
+        assert_eq!(
+            crate::store::resolve(&live.chain, &live.service).expect("readable"),
+            crate::store::Backend::File
         );
+
+        let signin = crate::switch::enroll::signin_dir(&ctx);
+        std::fs::create_dir_all(&signin).expect("a sign-in folder");
+        std::fs::write(signin.join(".credentials.json"), r#"{"claudeAiOauth":{}}"#)
+            .expect("a sign-in's login");
+        assert_eq!(
+            crate::provider::claude::live::read_signin(&ctx, &signin)
+                .expect("readable")
+                .as_deref(),
+            Some(r#"{"claudeAiOauth":{}}"#)
+        );
+        crate::provider::claude::live::discard_signin(
+            &ctx,
+            crate::service::Permit::for_a_test(),
+            &signin,
+        )
+        .expect("discarded");
+        assert!(!signin.join(".credentials.json").exists());
+    }
+
+    // Refused before `CredReadW`: a build for tests never reads a real login's blob into memory.
+    #[test]
+    fn a_build_for_tests_looks_at_its_own_slot_alone() {
+        let home = tempfile::tempdir().expect("a scratch home");
+        let config = home.path().join(".claude");
+        let ctx = Context::new(home.path().to_path_buf())
+            .with_claude_config_dir(config.to_string_lossy().into_owned());
+        let own = crate::provider::claude::slot::service_for_dir(&config.to_string_lossy());
+        assert_eq!(
+            host().credential_held(&ctx, &format!("{own}/claude-code-user")),
+            Ok(false)
+        );
+        assert_eq!(
+            host().credential_held(&ctx, &format!("{own}/claude-code-user#m")),
+            Ok(false)
+        );
+        for live in [
+            "Claude Code-credentials/claude-code-user",
+            "Claude Code-credentials/claude-code-user#m",
+        ] {
+            let refused = host()
+                .credential_held(&Context::new(home.path().to_path_buf()), live)
+                .expect_err("refused");
+            assert!(
+                refused.starts_with("a test must never address"),
+                "{refused}"
+            );
+        }
     }
 
     #[test]

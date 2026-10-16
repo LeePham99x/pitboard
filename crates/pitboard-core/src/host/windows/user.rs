@@ -10,8 +10,8 @@ use windows_sys::Win32::Security::{
 use windows_sys::Win32::System::SystemInformation::OSVERSIONINFOW;
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
-/// The person's account name, as Claude Code reads it where `USER` is unset: not read until
-/// W22, which names Claude Code's store on Windows by it.
+// Windows needs none: Claude Code's Windows build names its item `claude-code-user` whoever
+// runs it (`credman_account_name`).
 pub(crate) fn login_name() -> Option<String> {
     None
 }
@@ -196,12 +196,12 @@ pub(crate) fn app_data_folders() -> (Vec<PathBuf>, Vec<PathBuf>) {
     )
 }
 
-#[cfg(feature = "test-support")]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn accounts_own_home() -> Option<PathBuf> {
     known_folder(&windows_sys::Win32::UI::Shell::FOLDERID_Profile)
 }
 
-#[cfg(feature = "test-support")]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn accounts_own_pitboard_home() -> Option<PathBuf> {
     known_folder(&windows_sys::Win32::UI::Shell::FOLDERID_LocalAppData)
         .map(|data| data.join("Pitboard"))

@@ -76,38 +76,9 @@ pub(crate) fn refuse_a_real_login_place(scratch: &Path) {
 
 // By pattern, never by hashing real homes: how Codex spells its home on Windows is unmeasured.
 pub(crate) fn guard_not_live(name: &str) {
-    if let Some(why) = refusal(name, None) {
+    if let Some(why) = pitboard_core::provider::names::refusal(name, &[]) {
         panic!("{why}");
     }
-}
-
-fn refusal(name: &str, own: Option<&str>) -> Option<String> {
-    let family = pitboard_core::provider::names::family(name)?;
-    (!own.is_some_and(|own| spells(name, own))).then(|| {
-        format!(
-            "a test must never address {name:?}, a {} name a real login may be kept under",
-            family.as_str()
-        )
-    })
-}
-
-fn spells(name: &str, own: &str) -> bool {
-    let whole = match name.rsplit_once('#') {
-        Some((whole, piece))
-            if piece == "m"
-                || piece == "p"
-                || (!piece.is_empty() && piece.bytes().all(|b| b.is_ascii_digit())) =>
-        {
-            whole
-        }
-        _ => name,
-    };
-    let slot =
-        whole.split_once('/').map_or(
-            whole,
-            |(slot, account)| if account.contains('/') { whole } else { slot },
-        );
-    slot.eq_ignore_ascii_case(own)
 }
 
 use pitboard_core::testing::desktop::{self, JarAs, Person};
@@ -365,7 +336,7 @@ impl Env {
     }
 
     pub(crate) fn guard(&self, name: &str) {
-        if let Some(why) = refusal(name, Some(&self.service)) {
+        if let Some(why) = pitboard_core::provider::names::refusal(name, &[&self.service]) {
             panic!("{why}");
         }
     }
@@ -1213,7 +1184,7 @@ impl Drop for Env {
         // in the keychain outlives it, and is deleted by name.
         // Refused names are left with a warning: a panic while unwinding aborts the test binary.
         let ours = |service: &&String| {
-            let why = refusal(service, Some(&self.service));
+            let why = pitboard_core::provider::names::refusal(service, &[&self.service]);
             if let Some(why) = &why {
                 eprintln!("{why}; left as it is");
             }

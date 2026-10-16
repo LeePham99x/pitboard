@@ -46,6 +46,7 @@ const READ: &[&str] = &[
     "CLAUDE_SECURESTORAGE_CONFIG_DIR",
     "CLAUDE_CODE_CUSTOM_OAUTH_URL",
     "CLAUDE_CODE_HOVER_REST",
+    "CLAUDE_CODE_FORCE_WINDOWS_CREDMAN",
     "CODEX_HOME",
     "CODEX_INSTALL_DIR",
     "NO_COLOR",
@@ -352,6 +353,9 @@ pub struct Context {
     pub(crate) agent: crate::api::Agents,
     /// `CLAUDE_CODE_HOVER_REST`, which switches on Claude Code's successor credential backend.
     pub(crate) hover_rest: bool,
+    // `CLAUDE_CODE_FORCE_WINDOWS_CREDMAN` as exactly `1`, which turns Claude Code's Credential
+    // Manager store on (`windows_backend_choice`).
+    pub(crate) credential_manager_forced: bool,
     /// `CODEX_HOME`, which moves everything Codex keeps, including its keyring account.
     pub(crate) codex_home: Option<String>,
     // Windows' `FOLDERID_Profile`, where Codex finds its home with `CODEX_HOME` unset.
@@ -486,6 +490,7 @@ impl Context {
             proxy: crate::proxy::Proxies::default(),
             agent: crate::api::Agents::default(),
             hover_rest: false,
+            credential_manager_forced: false,
             codex_home: None,
             profile: None,
             local_app_data: None,
@@ -832,6 +837,7 @@ impl Context {
             proxy: crate::proxy::Proxies::read(env),
             agent: crate::api::Agents::default(),
             hover_rest: matches!(env.text("CLAUDE_CODE_HOVER_REST"), Some("1" | "true")),
+            credential_manager_forced: env.text("CLAUDE_CODE_FORCE_WINDOWS_CREDMAN") == Some("1"),
             codex_home: owned("CODEX_HOME").filter(|v| !v.is_empty()),
             profile: (env.os() == Os::Windows)
                 .then(crate::host::user::profile)

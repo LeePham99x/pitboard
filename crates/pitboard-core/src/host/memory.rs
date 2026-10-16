@@ -108,6 +108,10 @@ pub struct MemoryHost {
     policies: Mutex<HashMap<(super::Hive, String, String), Administered>>,
     // Credential Manager's names, as a test said.
     credentials: Mutex<Vec<String>>,
+    // Why Credential Manager cannot be asked, where a test said it cannot.
+    credentials_fault: Mutex<Option<String>>,
+    // `HKCU\Environment`, by name in upper case, as a test said.
+    user_environment_values: Mutex<HashMap<String, String>>,
 }
 
 impl Default for MemoryHost {
@@ -153,6 +157,8 @@ impl MemoryHost {
             forced: Mutex::new(HashMap::new()),
             policies: Mutex::new(HashMap::new()),
             credentials: Mutex::new(Vec::new()),
+            credentials_fault: Mutex::new(None),
+            user_environment_values: Mutex::new(HashMap::new()),
         }
     }
 
@@ -340,6 +346,16 @@ impl MemoryHost {
     #[cfg(test)]
     pub(crate) fn keeps_credentials(&self, names: &[&str]) {
         locked(&self.credentials).extend(names.iter().map(|name| (*name).to_owned()));
+    }
+
+    #[cfg(test)]
+    pub(crate) fn credentials_unreadable(&self, why: &str) {
+        *locked(&self.credentials_fault) = Some(why.into());
+    }
+
+    #[cfg(test)]
+    pub(crate) fn sets_user_environment(&self, name: &str, value: &str) {
+        locked(&self.user_environment_values).insert(name.to_uppercase(), value.into());
     }
 
     /// Say an administrator's configuration profile forces `key` of `domain` to `value`, a
@@ -551,6 +567,25 @@ impl Host for MemoryHost {
             .filter(|name| name.to_lowercase().starts_with(&prefix))
             .cloned()
             .collect())
+    }
+
+    fn user_environment(&self, name: &str) -> Administered {
+        locked(&self.user_environment_values)
+            .get(&name.to_uppercase())
+            .map_or(Administered::Unset, |value| {
+                Administered::Set(value.clone())
+            })
+    }
+
+    // In any case, as Credential Manager finds a target.
+    fn credential_held(&self, _ctx: &Context, target: &str) -> Result<bool, String> {
+        if let Some(why) = locked(&self.credentials_fault).clone() {
+            return Err(why);
+        }
+        let target = target.to_lowercase();
+        Ok(locked(&self.credentials)
+            .iter()
+            .any(|name| name.to_lowercase() == target))
     }
 }
 

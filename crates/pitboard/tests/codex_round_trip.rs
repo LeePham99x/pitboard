@@ -175,7 +175,6 @@ fn signing_in_again_to_the_codex_account_in_use_puts_the_new_login_in_use() {
 /// Two tools can each have a `work`. A bare `work` then names two accounts and is refused
 /// with both listed; a prefix names exactly one.
 #[test]
-#[cfg_attr(windows, ignore = "W22: switching Claude Code on Windows")]
 fn the_same_label_on_both_tools_is_two_accounts() {
     let mut env = Env::new("codex-same-label");
     env.codex_usage(10.0, 20.0);

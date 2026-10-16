@@ -13,6 +13,7 @@
 pub(crate) mod api;
 pub(crate) mod assumptions;
 pub(crate) mod configfile;
+pub(crate) mod credman;
 pub(crate) mod daemon;
 pub(crate) mod document;
 pub(crate) mod engine;

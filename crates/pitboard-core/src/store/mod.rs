@@ -30,7 +30,8 @@ pub(crate) enum Backend {
     #[cfg_attr(not(windows), allow(dead_code))]
     SealedFile,
     Absent,
-    // A store whose reader is not written yet: on Windows, until each of its stores is.
+    // A store Pitboard does not read: Claude Code's on Windows wherever Credential Manager may
+    // hold its login.
     Unknown,
 }
 
@@ -46,26 +47,28 @@ impl Backend {
     }
 }
 
-/// A store the part of Pitboard that would read or write it is not written for yet. Every
-/// call says it cannot be read, and why, which no caller takes for a store with nothing in
-/// it: an empty answer would say a login is gone.
-pub(crate) struct Unbuilt {
+// A store Pitboard does not read or write, such as Claude Code's on Windows wherever
+// Credential Manager may hold its login: every call says why it cannot be read, which no
+// caller takes for a store with nothing in it.
+pub(crate) struct Refused {
     kind: Backend,
-    why: &'static str,
+    why: String,
 }
 
-impl Unbuilt {
-    /// One of `kind`, every call to which says `why`.
-    pub(crate) fn new(kind: Backend, why: &'static str) -> Unbuilt {
-        Unbuilt { kind, why }
+impl Refused {
+    pub(crate) fn new(kind: Backend, why: impl Into<String>) -> Refused {
+        Refused {
+            kind,
+            why: why.into(),
+        }
     }
 
     fn refused<T>(&self) -> Result<T, Error> {
-        Err(Error::Unreadable(self.why.into()))
+        Err(Error::Unreadable(self.why.clone()))
     }
 }
 
-impl RawStore for Unbuilt {
+impl RawStore for Refused {
     fn kind(&self) -> Backend {
         self.kind
     }
@@ -585,12 +588,12 @@ mod tests {
         );
     }
 
-    /// A store the part of Pitboard that would read it is not written for answers every call
-    /// as one that cannot be read, saying why, and never as one with nothing in it; a chain
-    /// of it alone resolves to that, never to absent.
+    /// A store Pitboard does not read answers every call as one that cannot be read, saying
+    /// why, and never as one with nothing in it; a chain of it alone resolves to that, never to
+    /// absent.
     #[test]
-    fn a_store_not_built_yet_cannot_be_read() {
-        let store = Unbuilt::new(Backend::Unknown, "not built yet");
+    fn a_store_refused_cannot_be_read() {
+        let store = Refused::new(Backend::Unknown, "not built yet");
         let unreadable = |answer: Result<String, Error>| match answer {
             Err(Error::Unreadable(why)) => assert_eq!(why, "not built yet"),
             other => panic!("{other:?}"),
@@ -603,7 +606,7 @@ mod tests {
         unreadable(store.delete(permit, "svc").map(|()| String::new()));
         unreadable(store.list().map(|l| format!("{l:?}")));
         assert_eq!(store.cost("svc", "x"), None);
-        let live = Live::of(vec![Box::new(Unbuilt::new(
+        let live = Live::of(vec![Box::new(Refused::new(
             Backend::Unknown,
             "not built yet",
         ))]);

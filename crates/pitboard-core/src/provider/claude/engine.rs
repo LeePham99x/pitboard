@@ -42,8 +42,8 @@ fn adoption_on(os: Os, behind: Option<&Behind>) -> Adoption {
         (Os::MacOs, None) => Adoption::PollingWithin(ADOPTION_SECONDS),
         // The file is the store, so nothing is behind it, and a switch changes its mtime.
         (Os::Linux, _) => Adoption::PollingWithin(ADOPTION_SECONDS),
-        // How soon a session takes a new `.credentials.json` there, and one behind Credential
-        // Manager, is W22's reading (`windows_file_adoption`).
+        // The file is the store there too, until session step 6 measures how soon a session
+        // takes it (`windows_file_adoption`); the file behind Credential Manager is W23b's.
         (Os::Windows, _) => Adoption::PollingWithin(ADOPTION_SECONDS),
     }
 }
@@ -374,6 +374,12 @@ mod tests {
             .sign_in(&ctx, Permit::for_a_test(), dir)
             .expect("found");
         assert_eq!(command.get_args().collect::<Vec<_>>(), ["auth", "login"]);
+        // As given: Claude Code hashes the string itself for its slot, as read_signin does.
+        assert!(
+            command
+                .get_envs()
+                .any(|(name, value)| name == "CLAUDE_CONFIG_DIR" && value == Some(dir.as_os_str()))
+        );
         for withheld in [
             "CLAUDE_SECURESTORAGE_CONFIG_DIR",
             "CLAUDE_CODE_FORCE_WINDOWS_CREDMAN",
@@ -512,8 +518,7 @@ mod tests {
     /// Every system's answer, asked on every system. On macOS a session already running
     /// takes a switch within 33 seconds, unless `.credentials.json` sits behind the
     /// keychain, whatever it holds and whether or not it can be read: then at its login's
-    /// next renewal. On Linux the file is the store, and a switch writes it. On Windows it
-    /// waits on W22's reading.
+    /// next renewal. On Linux and Windows the file is the store, and a switch writes it.
     #[test]
     fn sessions_follow_within_33_seconds_unless_a_file_is_behind_the_keychain_on_macos() {
         let file = PathBuf::from("/Users/x/.claude/.credentials.json");

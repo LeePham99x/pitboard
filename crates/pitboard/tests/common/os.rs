@@ -23,8 +23,8 @@ pub(crate) enum Kept {
     Sealed,
 }
 
-/// Where Claude Code keeps the login it uses: an item of the login keychain on macOS, and
-/// `.credentials.json` in its config directory on Linux. Assumed the same on Windows, pending W22.
+// An item of the login keychain on macOS; `.credentials.json` in its config folder on Linux, and
+// on Windows where a test turns Credential Manager on nowhere (`windows_backend_choice`).
 pub(crate) fn claude_code_login() -> Kept {
     match OS {
         Os::MacOs => Kept::InKeychain,

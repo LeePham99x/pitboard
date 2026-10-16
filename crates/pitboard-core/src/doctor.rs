@@ -1075,19 +1075,8 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
                     detail,
                     "Claude Code fell back to a file, which means a keychain write failed at some point.",
                 ),
-                Os::Linux => ok("credential_store", "credential store", detail),
-                // Claude Code has no keychain on Windows: the file is where it keeps the
-                // login unless it uses Credential Manager, which W22 tells apart. Until then
-                // its chain there is a store Pitboard does not read, never the file, so this
-                // is not reached; and the file alone says nothing of which login is in use
-                // while Credential Manager may hold another.
-                Os::Windows => warn(
-                    "credential_store",
-                    "credential store",
-                    detail,
-                    "Claude Code may keep its login in Credential Manager instead, which \
-                     Pitboard does not read yet.",
-                ),
+                // The chain is the file on Windows only where Credential Manager holds no login.
+                Os::Linux | Os::Windows => ok("credential_store", "credential store", detail),
             }
         }
         // No tool keeps its login in Pitboard's sealed files.
@@ -4675,11 +4664,10 @@ mod tests {
         assert_eq!(check(&checks, "storage_v5").level, Level::Ok);
     }
 
-    /// Claude Code's file is the whole answer only where it has no other store: on Linux. On
-    /// macOS it is a fallback after a keychain write failed, and on Windows Credential
-    /// Manager may hold the login in use instead, which Pitboard does not read yet.
+    // On macOS the file is a fallback after a keychain write failed. On Windows the chain is
+    // the file only where nothing turns Credential Manager on and it holds no login.
     #[test]
-    fn a_file_store_is_the_whole_answer_only_on_linux() {
+    fn a_file_store_is_the_whole_answer_on_linux_and_windows() {
         let mut f = facts();
         f.backend = Ok(store::Backend::File);
         for (os, level, advice) in [
@@ -4690,12 +4678,7 @@ mod tests {
                 "Claude Code fell back to a file, which means a keychain write failed at some \
                  point.",
             ),
-            (
-                Os::Windows,
-                Level::Warn,
-                "Claude Code may keep its login in Credential Manager instead, which Pitboard \
-                 does not read yet.",
-            ),
+            (Os::Windows, Level::Ok, ""),
         ] {
             f.os = os;
             let checks = evaluate(&f);

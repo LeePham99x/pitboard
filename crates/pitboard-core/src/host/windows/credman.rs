@@ -1,8 +1,11 @@
-// Names only: CredEnumerateW hands back each item's blob too, which nothing here reads.
+// Names and whether an item is there only: CredEnumerateW and CredReadW hand back each item's
+// blob too, which nothing here reads.
 
 use std::io;
 use windows_sys::Win32::Foundation::ERROR_NOT_FOUND;
-use windows_sys::Win32::Security::Credentials::{CREDENTIALW, CredEnumerateW, CredFree};
+use windows_sys::Win32::Security::Credentials::{
+    CRED_TYPE_GENERIC, CREDENTIALW, CredEnumerateW, CredFree, CredReadW,
+};
 
 // `filter` is a prefix and `*`, as CredEnumerateW takes one.
 pub(crate) fn names(filter: &str) -> io::Result<Vec<String>> {
@@ -36,6 +39,23 @@ pub(crate) fn names(filter: &str) -> io::Result<Vec<String>> {
     Ok(names)
 }
 
+// A generic item named `target`, as `Bun.secrets` writes one.
+pub(crate) fn held(target: &str) -> io::Result<bool> {
+    let target: Vec<u16> = target.encode_utf16().chain([0]).collect();
+    let mut found: *mut CREDENTIALW = std::ptr::null_mut();
+    // SAFETY: a NUL-terminated name, and an out-param of this frame, an item freed below.
+    if unsafe { CredReadW(target.as_ptr(), CRED_TYPE_GENERIC, 0, &raw mut found) } == 0 {
+        let failed = io::Error::last_os_error();
+        return match failed.raw_os_error() {
+            Some(code) if code as u32 == ERROR_NOT_FOUND => Ok(false),
+            _ => Err(failed),
+        };
+    }
+    // SAFETY: the item CredReadW allocated, freed this once.
+    unsafe { CredFree(found.cast()) };
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -47,5 +67,10 @@ mod tests {
             names("pitboard-citest-w21-nothing-*").expect("listed"),
             Vec::<String>::new()
         );
+    }
+
+    #[test]
+    fn an_item_nothing_has_is_not_held() {
+        assert!(!held("pitboard-citest-w22-nothing/claude-code-user").expect("asked"));
     }
 }

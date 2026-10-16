@@ -367,13 +367,7 @@ pub enum Error {
         label: Option<String>,
     },
 
-    #[error(
-        "Claude Code's config says {email} is signed in, but Pitboard cannot find that \
-         login in the keychain or in the file it also reads. It will not write a login \
-         where nobody reads it. This usually means Claude Code has started keeping logins \
-         somewhere Pitboard does not know about yet: check for a Pitboard update, and \
-         report it with `pitboard doctor --json` if there is none."
-    )]
+    #[error("{}", login_elsewhere(crate::host::OS, email))]
     LiveCredentialElsewhere { email: String },
 
     #[error(
@@ -551,7 +545,7 @@ pub enum Error {
          back to find out whether anything changed. Nothing has been deleted and both \
          logins are still here. {} and run `pitboard use {to}` again; it finishes or \
          undoes this before doing anything else.",
-        make_readable(*tool)
+        make_readable(crate::host::OS, *tool)
     )]
     SwitchUnverified {
         tool: ProviderId,
@@ -1154,13 +1148,34 @@ fn session_expired(tool: ProviderId, refused: bool) -> String {
     )
 }
 
-/// What makes a tool's live login readable again, where it could not be read.
-fn make_readable(tool: ProviderId) -> &'static str {
+// What makes a tool's live login readable again, where it could not be read.
+fn make_readable(os: crate::host::Os, tool: ProviderId) -> &'static str {
     match tool {
-        ProviderId::Claude => "Unlock the keychain",
+        ProviderId::Claude => match os {
+            crate::host::Os::MacOs | crate::host::Os::Linux => "Unlock the keychain",
+            crate::host::Os::Windows => {
+                "Check that you can read and change Claude Code's folder and its .credentials.json"
+            }
+        },
         ProviderId::Codex => "Make Codex's auth.json readable to you again",
         ProviderId::Desktop => "Quit Claude",
     }
+}
+
+// Where Claude Code keeps a login on `os`, none of which holds `email`'s.
+fn login_elsewhere(os: crate::host::Os, email: &str) -> String {
+    let places = match os {
+        crate::host::Os::MacOs | crate::host::Os::Linux => {
+            "in the keychain or in the file it also reads"
+        }
+        crate::host::Os::Windows => "in .credentials.json or in Credential Manager",
+    };
+    format!(
+        "Claude Code's config says {email} is signed in, but Pitboard cannot find that login \
+         {places}. It will not write a login where nobody reads it. This usually means Claude \
+         Code has started keeping logins somewhere Pitboard does not know about yet: check for a \
+         Pitboard update, and report it with `pitboard doctor --json` if there is none."
+    )
 }
 
 /// What makes a login smaller, where anything does.
@@ -1478,6 +1493,38 @@ fn recovery_elsewhere(tool: ProviderId, from: &str, to: &str, slot: &str) -> Str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Claude Code keeps no keychain on Windows: its file, or Credential Manager.
+    #[test]
+    fn claude_codes_lost_and_unreadable_logins_are_worded_for_each_system() {
+        use crate::host::Os;
+        for (os, places, readable) in [
+            (
+                Os::MacOs,
+                "in the keychain or in the file it also reads",
+                "Unlock the keychain",
+            ),
+            (
+                Os::Linux,
+                "in the keychain or in the file it also reads",
+                "Unlock the keychain",
+            ),
+            (
+                Os::Windows,
+                "in .credentials.json or in Credential Manager",
+                "Check that you can read and change Claude Code's folder and its .credentials.json",
+            ),
+        ] {
+            assert!(
+                login_elsewhere(os, "a@example.com").starts_with(&format!(
+                    "Claude Code's config says a@example.com is signed in, but Pitboard cannot \
+                     find that login {places}. It will not write a login where nobody reads it."
+                )),
+                "{os:?}"
+            );
+            assert_eq!(make_readable(os, ProviderId::Claude), readable);
+        }
+    }
 
     // Word for word what each said before a tool could be an app.
     #[test]

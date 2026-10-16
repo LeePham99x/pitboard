@@ -329,6 +329,42 @@ pub(crate) fn pitboard_app_on_windows(local: &[PathBuf]) -> Vec<PathBuf> {
         .collect()
 }
 
+// Where this account keeps a real login, or would, and where `started_in` says, for a build for
+// tests to refuse. This account's own are asked of the system, never of the environment.
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn real_login_places(
+    started_in: Option<&Context>,
+) -> std::result::Result<Vec<PathBuf>, String> {
+    let home = user::accounts_own_home().ok_or("this system names no home for this account")?;
+    let pitboard = user::accounts_own_pitboard_home()
+        .ok_or("this system names no Pitboard folder for this account")?;
+    let own = Context::new(home).with_pitboard_home(pitboard);
+    let (roaming, local) = user::app_data_folders();
+    Ok(std::iter::once(&own)
+        .chain(started_in)
+        .flat_map(|ctx| {
+            let mut places = vec![
+                crate::provider::claude::paths::config_dir(ctx),
+                crate::provider::claude::paths::config_file(ctx),
+                crate::provider::codex::paths::home(ctx),
+                ctx.pitboard_home.clone(),
+                ctx.default_pitboard_home(),
+            ];
+            if ctx.os != Os::Windows {
+                places.extend([
+                    ctx.home.join("Library/Application Support/Claude"),
+                    ctx.home.join("Library/Application Support/Claude-3p"),
+                    PathBuf::from("/Applications/Claude.app"),
+                ]);
+            }
+            places
+        })
+        .chain(claude_desktop_on_windows(&roaming, &local))
+        .chain(pitboard_app_on_windows(&local))
+        .filter(|place| place.is_absolute())
+        .collect())
+}
+
 // Is, holds or lies in, for a build for tests to refuse, the same on every system: through
 // every link, one to nothing yet included, and in any case, as macOS's own volumes compare.
 #[cfg(any(test, feature = "test-support"))]
@@ -744,6 +780,18 @@ pub(crate) trait Host: Send + Sync + std::fmt::Debug {
     fn credential_names(&self, _prefix: &str) -> std::result::Result<Vec<String>, String> {
         Ok(Vec::new())
     }
+
+    // As `HKCU\Environment` holds it, which a program started from now on is given; unset
+    // elsewhere, and in a build for tests on the real hosts.
+    fn user_environment(&self, _name: &str) -> Administered {
+        Administered::Unset
+    }
+
+    // Whether Credential Manager holds a generic item named `target`, never what it holds; Err
+    // says why it cannot tell. None is held where there is no Credential Manager.
+    fn credential_held(&self, _ctx: &Context, _target: &str) -> std::result::Result<bool, String> {
+        Ok(false)
+    }
 }
 
 /// The system's own scheduler, which starts `pitboard renew` once a day: launchd on macOS,
@@ -856,7 +904,7 @@ mod tests {
             match OS {
                 Os::MacOs => Some(crate::store::Backend::Keychain),
                 Os::Linux => None,
-                // Credential Manager, which W23 offers.
+                // Credential Manager, which W23a offers.
                 Os::Windows => None,
             }
         );

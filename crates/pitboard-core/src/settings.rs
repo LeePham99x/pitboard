@@ -223,6 +223,38 @@ pub(crate) fn overrides(ctx: &Context) -> Vec<Override> {
     found
 }
 
+// One settings file's or policy's `env` value for a variable.
+pub(crate) struct EnvSetting {
+    pub(crate) layer: String,
+    pub(crate) value: Value,
+    pub(crate) managed: bool,
+}
+
+// Managed settings first, then the person's own, each assigned over the one before
+// (`windows_backend_choice`). A name in any case, as Windows takes one.
+pub(crate) fn env_settings(ctx: &Context, name: &str) -> Vec<EnvSetting> {
+    let managed = managed(ctx).into_iter().map(|layer| (layer, true));
+    let own = own(&claude::config_dir(ctx).join("settings.json")).map(|layer| (layer, false));
+    managed
+        .chain(own)
+        .filter_map(|(layer, managed)| {
+            let json = serde_json::from_str::<Value>(&layer.text).ok()?;
+            let value = json
+                .get("env")?
+                .as_object()?
+                .iter()
+                .find(|(key, _)| key.eq_ignore_ascii_case(name))?
+                .1
+                .clone();
+            Some(EnvSetting {
+                layer: layer.name,
+                value,
+                managed,
+            })
+        })
+        .collect()
+}
+
 // A warm-up's run gets none of this process's environment.
 pub(crate) fn overrides_of_a_run_in(ctx: &Context, config: &std::path::Path) -> Vec<Override> {
     managed(ctx)
