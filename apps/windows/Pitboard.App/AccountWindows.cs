@@ -21,8 +21,7 @@ internal sealed class AccountWindows
         _model = model;
         _web = web;
         _downloads = new Downloads(web, model.Send);
-        _janitor = new StoreJanitor(
-            store => Directory.Exists(web.ProfileFolder(store)), store => web.MarkDeleted(store, hidden), () => web.LayoutKnown);
+        _janitor = new StoreJanitor(new ProfileFolders(web, hidden));
     }
 
     // Opening one again brings the open one forward. A held store opens none: its menu item says why.
@@ -89,7 +88,7 @@ internal sealed class AccountWindows
         }
 
         _janitor.Delete(
-            shown.Deleting,
+            shown.Deleting, shown.Held,
             (store, deleted) => _model.Send(deleted ? new Intent.StoreDeleted(store) : new Intent.StoreHeld(store)));
         FollowLink(shown.Picker);
     }

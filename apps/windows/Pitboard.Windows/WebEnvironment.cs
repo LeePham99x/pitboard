@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Web.WebView2.Core;
@@ -82,10 +83,15 @@ public sealed class WebEnvironment
     // Whether a page of this launch has shown its profile's folder where ProfileFolder says.
     public bool LayoutKnown { get; private set; }
 
+    // The browser processes this launch has started: each environment starts one with its first page.
+    public int Starts { get; private set; }
+
+    public bool Running => _made is not null;
+
     public NavigationPolicy Policy(Site site) => new(site, Scheme);
 
-    // Where WebView2 keeps a profile's data, which goes as its browser process exits once the profile is deleted. Its
-    // name is the profile's after WV2Profile_, as CoreWebView2Profile.ProfilePath read on both runners.
+    // Where WebView2 keeps a profile's data, which goes once the profile is deleted and a later browser process starts.
+    // Its name is the profile's after WV2Profile_, as CoreWebView2Profile.ProfilePath read on both runners.
     public string ProfileFolder(string store) => Path.Combine(UserDataFolder, "EBWebView", $"WV2Profile_{store}");
 
     // A fixture's scheme is registered with the browser process, which keeps its registrations for its life. Once that
@@ -146,11 +152,33 @@ public sealed class WebEnvironment
         profile.Delete();
     }
 
+    // A page of the default profile, kept until gone says so or fifteen seconds pass: a browser process deletes the
+    // folders of profiles deleted before it about five seconds after it starts (run 38842851059).
+    public async Task Sweep(nint parent, Func<bool> gone)
+    {
+        var environment = await Made();
+        var controller = await environment.CreateCoreWebView2ControllerAsync(
+            CoreWebView2ControllerWindowReference.CreateFromWindowHandle((ulong)parent));
+        try
+        {
+            var waited = Stopwatch.StartNew();
+            while (!gone() && waited.Elapsed < TimeSpan.FromSeconds(15))
+            {
+                await Task.Delay(250);
+            }
+        }
+        finally
+        {
+            controller.Close();
+        }
+    }
+
     private void Read(CoreWebView2Profile profile) =>
         LayoutKnown |= string.Equals(profile.ProfilePath, ProfileFolder(profile.ProfileName), StringComparison.OrdinalIgnoreCase);
 
     private async Task<CoreWebView2Environment> Make()
     {
+        Starts++;
         var options = new CoreWebView2EnvironmentOptions();
         if (Scheme == FixtureScheme)
         {

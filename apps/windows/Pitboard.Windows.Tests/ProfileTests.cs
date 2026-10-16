@@ -30,8 +30,8 @@ public sealed class ProfileTests
         Assert.IsEmpty(await other.CookieManager.GetCookiesAsync(site.Address("/")));
     }
 
-    // Microsoft's contract for CoreWebView2Profile.Delete, which StoreJanitor and the model's hold stand on. CF7: what
-    // removes the folder, which outlived its browser process on both runners in run 38825074643.
+    // Microsoft's contract for CoreWebView2Profile.Delete, as the runners keep it: the name is refused at once, and the
+    // folder goes as a browser process starts after the one that held it exited, not as that one exits.
     [UITestMethod]
     public async Task ADeletedProfilesNameIsRefusedUntilItsFolderGoes()
     {
@@ -49,39 +49,18 @@ public sealed class ProfileTests
         Assert.AreEqual(WebEnvironment.DeletePending, refused.HResult, $"0x{refused.HResult:X8}: {refused.Message}");
         Assert.IsTrue(Directory.Exists(folder), "the folder went before the browser process exited");
         Assert.IsTrue(await Task.WhenAny(webs.Exited, Task.Delay(Webs.Patience)) == webs.Exited, "the browser process went on running");
-        var gone = await Goes(folder, TimeSpan.FromSeconds(10));
-        Console.WriteLine($"CF7: after its browser process exited, a deleted profile's folder {Said(gone, folder, 10)}");
-        if (gone is null)
-        {
-            var exited = false;
-            webs.Web.BrowserExited += () => exited = true;
-            var started = Stopwatch.StartNew();
-            await webs.Web.Made();
-            Console.WriteLine(
-                $"CF7: a new environment over the user data folder took {started.ElapsedMilliseconds} ms, and the folder was "
-                + $"{(Directory.Exists(folder) ? "there" : "gone")} as it was made");
-            gone = await Goes(folder, TimeSpan.FromSeconds(20));
-            Console.WriteLine(
-                $"CF7: with that environment and no page, the folder {Said(gone, folder, 20)}; its browser process exited: {exited}");
-        }
+        Console.WriteLine($"CF7: after its browser process exited, a deleted profile's folder {Said(await Goes(folder, TimeSpan.FromSeconds(5)), folder, 5)}");
 
-        if (gone is null)
-        {
-            var made = Stopwatch.StartNew();
-            _ = await webs.Page("other");
-            Console.WriteLine(
-                $"CF7: a page of another profile took {made.ElapsedMilliseconds} ms, and the folder was "
-                + $"{(Directory.Exists(folder) ? "there" : "gone")} as it was made");
-            gone = await Goes(folder, TimeSpan.FromSeconds(20));
-            Console.WriteLine($"CF7: with that page, the folder {Said(gone, folder, 20)}");
-        }
-
+        _ = await webs.Page("other");
+        var gone = await Goes(folder, TimeSpan.FromSeconds(20));
+        Console.WriteLine($"CF7: a page of another profile started a browser process, and the folder {Said(gone, folder, 20)}");
         Assert.IsNotNull(gone, $"the folder stayed, holding {Entries(folder)}");
         Assert.IsTrue(await Webs.Loads(await webs.Page("gone"), site.Address("/")), "the name made no profile once its folder had gone");
         Assert.IsTrue(Directory.Exists(folder));
     }
 
-    // The janitor holds a store until WebView2 has deleted its folder, which the next ask then finds gone.
+    // The janitor holds a store while its folder is there, and sweeps it with a browser process of its own once the one
+    // that marked it has exited.
     [UITestMethod]
     public async Task TheJanitorHoldsAStoreUntilItsFolderGoes()
     {
@@ -90,19 +69,16 @@ public sealed class ProfileTests
         var page = await webs.Page("unused");
         Assert.IsTrue(await Webs.Loads(page, site.Address("/set")), "the stand-in did not load");
         var told = new List<(string Store, bool Deleted)>();
-        var janitor = new StoreJanitor(
-            store => Directory.Exists(webs.Web.ProfileFolder(store)), store => webs.Web.MarkDeleted(store, Webs.Window),
-            () => webs.Web.LayoutKnown);
+        var janitor = new StoreJanitor(new ProfileFolders(webs.Web, Webs.Window));
         var unused = webs.Name("unused");
-        var folder = webs.Web.ProfileFolder(unused);
 
-        janitor.Delete([new Core.StoreDeletion(unused, 1)], (store, deleted) => told.Add((store, deleted)));
+        janitor.Delete([new Core.StoreDeletion(unused, 1)], [], (store, deleted) => told.Add((store, deleted)));
         await Views.Until(() => told.Count == 1, "the janitor did not answer", Webs.Patience);
         Assert.IsTrue(await Task.WhenAny(webs.Exited, Task.Delay(Webs.Patience)) == webs.Exited, "the browser process went on running");
-        Assert.IsNotNull(await Goes(folder, Webs.Patience), $"the folder stayed, holding {Entries(folder)}");
-        janitor.Delete([new Core.StoreDeletion(unused, 2)], (store, deleted) => told.Add((store, deleted)));
+        janitor.Delete([new Core.StoreDeletion(unused, 2)], [unused], (store, deleted) => told.Add((store, deleted)));
+        await Views.Until(() => told.Count == 2, "the janitor did not answer again", Webs.Patience);
 
-        CollectionAssert.AreEqual(new[] { (unused, false), (unused, true) }, told);
+        CollectionAssert.AreEqual(new[] { (unused, false), (unused, true) }, told, Entries(webs.Web.ProfileFolder(unused)));
     }
 
     // How long a folder took to go, or null where it stayed that long.
