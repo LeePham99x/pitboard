@@ -2109,7 +2109,8 @@ while another holds the key hands its launch over, and the running copy reads th
 that launch's command line. A Debug build outside a fixture refuses a `pitboard-debug` link
 before it takes the key or writes anything, since it would run on whatever homes its launch
 has. **Open in browser** goes where a page sent elsewhere goes: to Windows, and in a fixture
-nowhere. The `AccountPickerTests` hand their link over through a second copy.
+nowhere. The three `AccountPickerTests` that need no account hand their link over through a
+second copy; choosing an account and cancelling wait for W23a.
 
 One thing differs from WebKit in how a store goes, read in Microsoft's documentation of
 `CoreWebView2Profile.Delete` for WebView2 1.0.4258.31 on 16 October 2026: deleting a profile
@@ -2171,7 +2172,7 @@ paused download is under way: WebView2 leaves it interrupted and able to resume,
 still under way as its browser process exits ends cancelled. The download list is WebView2's
 own dialog, which Downloads in the command bar opens and which offers each file's folder, so
 no surface of Pitboard's reveals a file: `ASiteDownloadIsListedInTheWindow` looks for its
-Show in folder. `DownloadTests` hold this against the stand-in site,
+Show in folder once W23a lets it run. `DownloadTests` hold this against the stand-in site,
 and print for CF7 the events WebView2 raised around each kind of download.
 
 A window refuses to open, saying why, on a PC whose WebView2 Runtime is older than

@@ -10,6 +10,7 @@ namespace Pitboard.UITests;
 public sealed class AccountsWindowTests
 {
     [TestMethod]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void TheWindowListsEachAccount()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "twoTools");
@@ -21,6 +22,7 @@ public sealed class AccountsWindowTests
 
     // Open is never pressed: it would open the fixture's address in a real browser.
     [TestMethod]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void AddingAClaudeCodeAccount()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
@@ -42,6 +44,7 @@ public sealed class AccountsWindowTests
 
     // A Codex sign-in finishes by itself once the browser is done.
     [TestMethod]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void AddingACodexAccount()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "twoTools");
@@ -57,6 +60,7 @@ public sealed class AccountsWindowTests
 
     // Sign In stays dimmed while a sign-in runs, so a second one finishing shows the first was stopped.
     [TestMethod]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void CancellingASignInAddsNothing()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
@@ -80,6 +84,7 @@ public sealed class AccountsWindowTests
     }
 
     [TestMethod]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void RenamingAnAccount()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
@@ -98,6 +103,7 @@ public sealed class AccountsWindowTests
     }
 
     [TestMethod]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void ForgettingAsksFirst()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
@@ -117,6 +123,7 @@ public sealed class AccountsWindowTests
     }
 
     [TestMethod]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void TheAccountInUseOffersNoForget()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
@@ -130,6 +137,7 @@ public sealed class AccountsWindowTests
     }
 
     [TestMethod]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void UsingACodexAccountSaysSessionsKeepTheOldOne()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "twoTools");
@@ -148,6 +156,7 @@ public sealed class AccountsWindowTests
     }
 
     [TestMethod]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void NamingTheAccountInUse()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "unnamed");
@@ -189,6 +198,7 @@ public sealed class AccountsWindowTests
     }
 
     [TestMethod]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void GivingUpOnAnInterruptedSwitch()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "stuck");
@@ -203,6 +213,7 @@ public sealed class AccountsWindowTests
     }
 
     [TestMethod]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void OneAccountIsOfferedASecondUntilNotNow()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "onlyOne");
@@ -217,6 +228,7 @@ public sealed class AccountsWindowTests
 
     // The window goes to the accounts, where the sheet comes up.
     [TestMethod]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void CtrlNAddsAnAccountFromAnyPane()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
