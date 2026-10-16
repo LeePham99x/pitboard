@@ -237,6 +237,8 @@ export function fileRows(release: Release): FileRow[] {
   const v = release.version;
   const known: [string, string][] = [
     [`Pitboard-v${v}-macos.zip`, "The app, for Apple silicon and Intel"],
+    [`Pitboard-v${v}-windows-x64.msi`, "The app, Windows on x64"],
+    [`Pitboard-v${v}-windows-arm64.msi`, "The app, Windows on ARM64"],
     [`pitboard-v${v}-aarch64-apple-darwin.tar.gz`, "Command line, macOS on Apple silicon"],
     [`pitboard-v${v}-x86_64-apple-darwin.tar.gz`, "Command line, macOS on Intel"],
     [`pitboard-v${v}-x86_64-unknown-linux-musl.tar.gz`, "Command line, Linux on x86_64"],
@@ -246,6 +248,7 @@ export function fileRows(release: Release): FileRow[] {
     ["install.sh", "The install script"],
     ["SHA256SUMS", "Checksums of the app, the command line archives and <code>install.sh</code>"],
     ["appcast.xml", "The feed the app updates from"],
+    ["appcast-windows.xml", "The feed the Windows app updates from"],
   ];
   const byName = new Map(release.assets.map((a) => [a.name, a]));
   for (const a of release.assets) {
