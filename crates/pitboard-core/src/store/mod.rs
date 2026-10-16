@@ -309,6 +309,7 @@ fn take_over_in(
 ) -> Result<(), Error> {
     let held = chain[0].contains(service)?;
     chain[0].write(permit, service, contents)?;
+    crate::fault::point("store.taken_over");
     if !held {
         for rest in &chain[1..] {
             let _ = rest.delete(permit, service);

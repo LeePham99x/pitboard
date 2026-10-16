@@ -665,6 +665,39 @@ fn a_switch_between_logins_in_pieces_killed_after_any_step_recovers_whole() {
     }
 }
 
+// A switch that writes Claude Code's first login into Credential Manager takes `.credentials.json`
+// away after it, as Claude Code does. Killed between the two, the outgoing login stays in the
+// file behind the incoming one, where running sessions keep it until they renew
+// (`fallback_file_pins_session_login`): recovery finishes the switch, and doctor says the file
+// holds a login.
+#[cfg(windows)]
+#[test]
+fn a_switch_killed_before_it_took_the_file_away_leaves_a_login_doctor_names() {
+    let m = machine("taken-over");
+    let login = m.mem.live().peek(&m.service).expect("a live login");
+    m.mem.live().delete_everything();
+    let file = provider::claude::live::credential_file(&m.ctx);
+    m.mem.file_at(file).plant(&m.service, &login);
+    let settled = settle(&m.ctx, Permit::for_a_test(), None)
+        .expect("nothing to recover yet")
+        .0;
+
+    let died = fault::killing("store.taken_over", || switch(settled, &m.key("there")));
+    assert_eq!(died.unwrap_err(), "store.taken_over");
+    let (_, recovered) = settle(&m.ctx, Permit::for_a_test(), None).expect("recovered");
+
+    assert!(recovered.is_some_and(|r| r.finished));
+    assert_eq!(
+        m.live().expect("a login")["claudeAiOauth"]["refreshToken"],
+        "there-refresh"
+    );
+    let behind = provider::claude::live::behind(&m.ctx)
+        .expect("a file behind")
+        .expect("read");
+    assert!(behind.contains("here-refresh"), "{behind}");
+    hold(&m, "killed before the file was taken away");
+}
+
 /// The other window the roadmap named. A renewal reserves a name, writes the fresh login
 /// into it, and records it; killed between the write and the record, the copy is an orphan,
 /// and the renewal runs inside every plain `pitboard`.
