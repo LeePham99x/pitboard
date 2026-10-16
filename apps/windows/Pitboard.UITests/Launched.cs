@@ -255,8 +255,11 @@ internal sealed class Launched : IDisposable
         }
     }
 
+    // WebView2 gives some of a page's text no Name, which reading Name throws for.
     public static IEnumerable<string> Lines(AutomationElement scope) =>
-        scope.FindAllDescendants(found => found.ByControlType(FlaUI.Core.Definitions.ControlType.Text)).Select(text => text.Name);
+        scope.FindAllDescendants(found => found.ByControlType(FlaUI.Core.Definitions.ControlType.Text))
+            .Select(text => text.Properties.Name.ValueOrDefault)
+            .OfType<string>();
 
     // A button or a page's link in the scope given, once it shows.
     public static AutomationElement? Pressable(AutomationElement scope, string name) =>
