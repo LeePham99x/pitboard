@@ -22,6 +22,15 @@ public sealed class LaunchingTests
         Assert.AreEqual(Start.Unregister, start);
     }
 
+    // The MSI's removal of PitboardShare's package, which a 0.x build refuses nothing of.
+    [TestMethod]
+    public void UnregisteringTheShareTargetAsksNeitherTheCoreNorARunningCopy()
+    {
+        var start = Launching.Decide(["--unregister-share"], Release, null, Unasked<ReadFailure?>("the core"), Unasked<bool>("the key"));
+
+        Assert.AreEqual(Start.UnregisterShare, start);
+    }
+
     [TestMethod]
     public void ARefusedLaunchTakesNoKey()
     {

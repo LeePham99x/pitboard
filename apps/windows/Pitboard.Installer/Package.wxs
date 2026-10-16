@@ -11,6 +11,8 @@
 
     <Icon Id="Pitboard.ico" SourceFile="$(App)\Pitboard.ico" />
     <Property Id="ARPPRODUCTICON" Value="Pitboard.ico" />
+    <!-- One feature and no UI: Modify would only install the same files again. -->
+    <Property Id="ARPNOMODIFY" Value="1" />
     <!-- WinSparkle installs an update with /passive LAUNCHAFTERINSTALL=1, after Pitboard quit itself for it. -->
     <Property Id="LAUNCHAFTERINSTALL" Secure="yes" />
 
@@ -94,8 +96,11 @@
     </ComponentGroup>
     <!-- Ignored on failure: an install goes on without the share target, and the same version registered twice fails. -->
     <CustomAction Id="RegisterShare" FileRef="PitboardShareExe" ExeCommand="--register" Execute="deferred" Return="ignore" />
-    <CustomAction Id="UnregisterShare" FileRef="PitboardShareExe" ExeCommand="--unregister" Execute="deferred" Return="ignore" />
+    <!-- Pitboard.exe, which carries no identity: removing a package ends its processes. The rollback runs before InstallFiles' takes Pitboard.exe away. -->
+    <CustomAction Id="UnregisterShare" FileRef="PitboardExe" ExeCommand="--unregister-share" Execute="deferred" Return="ignore" />
+    <CustomAction Id="RegisterShareRollback" FileRef="PitboardExe" ExeCommand="--unregister-share" Execute="rollback" Return="ignore" />
     <InstallExecuteSequence>
+      <Custom Action="RegisterShareRollback" Before="RegisterShare" Condition="NOT REMOVE" />
       <Custom Action="RegisterShare" After="InstallFiles" Condition="NOT REMOVE" />
       <Custom Action="UnregisterShare" Before="RemoveFiles" Condition="REMOVE = &quot;ALL&quot;" />
     </InstallExecuteSequence>

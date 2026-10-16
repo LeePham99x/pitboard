@@ -1,14 +1,11 @@
-# Packs PitboardShare.exe's sparse package, PitboardShare.msix, into the folder it was published
-# to, for CI and the release alike: Pitboard.Share/Package/AppxManifest.xml with -Publisher and
-# -Version written in, packed by makeappx with /nv, since the logos it names are in the external
-# location. It registers nothing and runs none of the files. With -TestCertificate, which only
-# CI passes, it signs the package with a self-signed certificate for -Publisher, made into a PFX
-# file in the job's temporary folder, never into a certificate store, and deleted afterwards.
+# Packs PitboardShare.msix beside PitboardShare.exe, and registers nothing. /nv: the logos it names are in the external
+# location.
 param(
     [Parameter(Mandatory)] [string] $Folder,
     # The subject of the certificate that signs the package, as PitboardShare.exe's manifest names it.
     [Parameter(Mandatory)] [string] $Publisher,
     [Parameter(Mandatory)] [ValidatePattern('^\d+\.\d+\.\d+\.\d+$')] [string] $Version,
+    # CI's: signs it with a throwaway certificate for -Publisher, kept in no certificate store.
     [switch] $TestCertificate
 )
 $ErrorActionPreference = 'Stop'
@@ -49,23 +46,12 @@ if (-not $TestCertificate) { exit 0 }
 
 $temporary = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [IO.Path]::GetTempPath() }
 $pfx = Join-Path $temporary "pitboard-share-test-$([guid]::NewGuid().ToString('N')).pfx"
-$password = [guid]::NewGuid().ToString('N')
-$key = [Security.Cryptography.RSA]::Create(3072)
+. (Join-Path $PSScriptRoot 'test-certificate.ps1')
 try {
-    $request = [Security.Cryptography.X509Certificates.CertificateRequest]::new(
-        $Publisher, $key, [Security.Cryptography.HashAlgorithmName]::SHA256, [Security.Cryptography.RSASignaturePadding]::Pkcs1)
-    $request.CertificateExtensions.Add([Security.Cryptography.X509Certificates.X509BasicConstraintsExtension]::new($false, $false, 0, $true))
-    $request.CertificateExtensions.Add([Security.Cryptography.X509Certificates.X509KeyUsageExtension]::new('DigitalSignature', $true))
-    $codeSigning = [Security.Cryptography.OidCollection]::new()
-    [void] $codeSigning.Add([Security.Cryptography.Oid]::new('1.3.6.1.5.5.7.3.3'))
-    $request.CertificateExtensions.Add([Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension]::new($codeSigning, $false))
-    $now = [DateTimeOffset]::UtcNow
-    $certificate = $request.CreateSelfSigned($now.AddMinutes(-5), $now.AddDays(1))
-    [IO.File]::WriteAllBytes($pfx, $certificate.Export([Security.Cryptography.X509Certificates.X509ContentType]::Pfx, $password))
+    $password = Export-TestCertificate $Publisher $pfx
     & (Join-Path $tools 'signtool.exe') sign /fd SHA256 /f $pfx /p $password $package
     if ($LASTEXITCODE -ne 0) { throw "signtool exited $LASTEXITCODE" }
 } finally {
-    $key.Dispose()
     Remove-Item -LiteralPath $pfx -Force -ErrorAction SilentlyContinue
 }
 Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.ZipFile

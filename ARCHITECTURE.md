@@ -586,18 +586,18 @@ window loads its site, and whatever the site's pages load, as a browser would.
     asks every 10 milliseconds. `tools.rs` plays Claude Code's and Codex's sign-in through
     the core's `SignInScript`, with the person at the browser. `apps.rs` is the fixture's
     other apps and its notifications, which post nothing. Its ChatGPT runs Codex's login and
-    quits when asked, from its bundle on macOS and its Store package on Windows. Its Claude is `testing::desktop::FakeClaude` over the fixture's
-    machine, which writes the data folder as 2.7032.0 does as it quits. It quits when asked,
-    and in `claudeDesktopOpen`, opened in front for a sign-in, it signs in to a third
-    account after 5 seconds and quits 2 seconds later. `pages.rs` is the stand-in pages an
-    account window loads on `pitboard-fixture://`, from the site table. `mod.rs` holds what
-    every build exports of them, the same in each: `PitboardModel::fixture`,
-    `PitboardModel::fixture_in`, `fixture_names` and `fixture_page`, which without the
-    feature refuse, naming it, or name none. `fixture` makes its model over the fixture's
-    apps and notifications; `fixture_in`, for a test of an app's bindings, over the
-    `AppControl` and `Notifications` it is handed, as `new` takes them. `tests.rs` is the
-    macOS app's former `FixtureTests.swift` ported, and what each UI test reads in its
-    world.
+    quits when asked, from its bundle on macOS and its Store package on Windows. Its Claude
+    is `testing::desktop::FakeClaude` over the fixture's machine, which writes the data
+    folder as 2.7032.0 does as it quits. It quits when asked, and in `claudeDesktopOpen`,
+    opened in front for a sign-in, it signs in to a third account after 5 seconds and quits
+    2 seconds later. `pages.rs` is the stand-in pages an account window loads on
+    `pitboard-fixture://`, from the site table. `mod.rs` holds what every build exports of
+    them, the same in each: `PitboardModel::fixture`, `PitboardModel::fixture_in`,
+    `fixture_names` and `fixture_page`, which without the feature refuse, naming it, or name
+    none. `fixture` makes its model over the fixture's apps and notifications; `fixture_in`,
+    for a test of an app's bindings, over the `AppControl` and `Notifications` it is handed,
+    as `new` takes them. `tests.rs` is the macOS app's former `FixtureTests.swift` ported,
+    and what each UI test reads in its world.
 - `crates/pitboard-sites`: the sites an account's window opens, and what a link from outside
   may be. A leaf, with no I/O and nothing of the core, whose one dependency is `url`, for
   IDNA alone.
@@ -646,7 +646,7 @@ window loads its site, and whatever the site's pages load, as a browser would.
   account name replaced, and never hold two keys that differ only in case, which
   PowerShell's `ConvertFrom-Json` refuses. `helpers/` holds the Bun and Node scripts the
   runner facts run beside it, and `sparse/` the sparse-package manifests, script and steps
-  the owner runs in the VM, which the runner facts' CF8 rows register on a runner too.
+  the owner runs in the VM, which the runner facts' CF8 rows try on a runner too.
 - `apps/`: the native apps, one directory for each system.
 - `apps/windows/`: the Windows app. `Pitboard.Core` is the core's C# bindings as an
   assembly of their own, generated into `Generated/` and not committed, and
@@ -703,7 +703,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     `Icon/make-ico.py` writes from the drawings beside it. `Program.Main` decides the
     launch. On `--unregister`, which the MSI's full uninstall runs, `Unregistering` deletes
     the `Run` value naming this `Pitboard.exe` and the notifications' registration, and it
-    exits with no window and no single-instance key. `App` makes the model, over this PC or
+    exits with no window and no single-instance key. On `--unregister-share`, which the
+    MSI's removal and rollback run, `SharePackage` removes `PitboardShare`'s package
+    registered for this folder, the same way. `App` makes the model, over this PC or
     in a Debug build started with `PITBOARD_FIXTURE` a fixture's, keeps the icon, registers
     for notifications, opens the main window when the model asks, and asks for it on a
     launch from Start or a shortcut, since Windows puts a new icon in the overflow; a start
@@ -728,32 +730,36 @@ window loads its site, and whatever the site's pages load, as a browser would.
     element names the sparse package in `Package/`, the publisher written in at build time
     from `WINDOWS_SIGNER_SUBJECT`. Started by the share sheet, it hands `Sharing` the share
     operation through `SystemShareOperation`. For the MSI, `--register` adds the package
-    beside it with its own folder as the external location, and `--unregister` removes it.
-    It loads `pitboard_share_ffi.dll` and none of the core.
+    beside it with its own folder as the external location. `Pitboard.exe --unregister-share`
+    removes the package registered for its folder, since removing a package ends the
+    package's own processes. It loads `pitboard_share_ffi.dll` and none of the core.
   - `Pitboard.Installer` is the MSI, one per architecture, built with WiX v7 from the
     Release publish and `pitboard.exe`. A dual-purpose package, per user unless told
     otherwise, as single package authoring has it, and its launch condition refuses a
     per-machine install, so per user `ProgramFiles64Folder` is `%LOCALAPPDATA%\Programs` and
-    HKMU is HKCU: `Pitboard\` with `Pitboard.exe`, its runtime and `pitboard_ffi.dll`, and the
-    command line in `Pitboard\bin\`, never beside `Pitboard.exe`; `bin` appended to the user
-    `PATH` and taken off on uninstall; the Start menu shortcut with the AppUserModelID
+    HKMU is HKCU: `Pitboard\` with `Pitboard.exe`, its runtime and `pitboard_ffi.dll`, and
+    the command line in `Pitboard\bin\`, never beside `Pitboard.exe`; `bin` appended to the
+    user `PATH` and taken off on uninstall; the Start menu shortcut with the AppUserModelID
     `Pitboard.Pitboard`, its key path under HKCU itself for ICE57; and `pitboard://`.
-    `Manufacturer` is `Pitboard` and the x64 and ARM64 MSIs share one `UpgradeCode`, so either
-    replaces the other.
-    `MajorUpgrade` replaces the same version, since the MSI's version is `X.Y.Z` for a final
-    and `X.Y.Z.N` for beta N and Windows Installer compares three fields. Only a full
-    uninstall, with no `UPGRADINGPRODUCTCODE`, runs `Pitboard.exe --unregister` and removes
-    `%LOCALAPPDATA%\Pitboard App` through WiX's `RemoveFolderEx`; `%LOCALAPPDATA%\Pitboard` is
-    the command line's and stays. `LAUNCHAFTERINSTALL=1`, which WinSparkle's update passes,
-    starts `Pitboard.exe --updated` once the install ends. Built with `PitboardShareSigned`,
-    for a signed `PitboardShare.msix`, it also carries `PitboardShare.exe`, its package and
-    logos, and runs `PitboardShare.exe --register` on each install and `--unregister` on each
-    removal, either ignored on failure. `Pitboard.Installer.Tests` reads the
-    built MSI's tables with WiX's DTF and the administrative image `msiexec /a` extracts.
+    `Manufacturer` is `Pitboard` and the x64 and ARM64 MSIs share one `UpgradeCode`, so
+    either replaces the other. Settings offers no Modify, since there is one feature and no
+    UI. `MajorUpgrade` replaces the same version, since the MSI's version is `X.Y.Z` for a
+    final and `X.Y.Z.N` for beta N, as `windows-versions.sh` gives it, and Windows Installer
+    compares three fields. Only a full uninstall, with no `UPGRADINGPRODUCTCODE`, runs
+    `Pitboard.exe --unregister` and removes `%LOCALAPPDATA%\Pitboard App` through WiX's
+    `RemoveFolderEx`; `%LOCALAPPDATA%\Pitboard` is the command line's and stays.
+    `LAUNCHAFTERINSTALL=1`, which WinSparkle's update passes, starts `Pitboard.exe --updated`
+    once the install ends. Built with `PitboardShareSigned`, for a signed `PitboardShare.msix`,
+    it also carries `PitboardShare.exe`, its package and logos. It runs
+    `PitboardShare.exe --register` on each install, and `Pitboard.exe --unregister-share` on
+    each removal and on the rollback of an install that registered, each ignored on failure.
+    `Pitboard.Installer.Tests` reads the built MSI's tables with WiX's DTF, and asks the
+    `pitboard_ffi.dll` of the administrative image `msiexec /a` extracts whether it opens.
   - `Pitboard.Probe` is never shipped. The session machine runs it to measure the app's
     adapters by hand: it posts a notification through `WindowsNotifications` under an
-    AppUserModelID of its own, waits for its Switch, unregisters, names a process's
-    package, and finds, quits and opens an app by its AUMID through `WindowsApps`. It refuses to run in an account without `pitboard-probe`'s throwaway marker.
+    AppUserModelID of its own, waits for its Switch, unregisters, names a process's package,
+    and finds, quits and opens an app by its AUMID through `WindowsApps`. It refuses to run
+    in an account without `pitboard-probe`'s throwaway marker.
 - `apps/macos/`: the menu bar app, which shows what `pitboard-ffi`'s model says and sends it
   what was asked. The Swift package holds it as libraries its tests load without starting
   it. `PitboardKit` is the bindings and `AppModel.swift`: `AppModel`, which holds the
@@ -834,17 +840,20 @@ window loads its site, and whatever the site's pages load, as a browser would.
     `windows-appcast.py` writes `appcast-windows.xml` for a full release's MSIs and their
     signatures, `windows-versions.sh` gives a Windows build's MSI, file and package numbers,
     `windows-update-key.sh` refuses a Windows update key that changed since the last MSI
-    unless a rotation names the release, `test-msi-version.sh` tests the version the MSI
-    carries for each version `Cargo.toml` may name, and `test-release.py` tests the six, the
-    app's `build-number.sh` and the cargo-binstall metadata in `crates/pitboard/Cargo.toml`.
+    unless a rotation names the release, `windows-update-sign.sh` signs a Windows release's
+    MSIs and checks each signature with the public key, and `test-release.py` tests the
+    seven, the app's `build-number.sh` and the cargo-binstall metadata in
+    `crates/pitboard/Cargo.toml`.
     `package-windows.ps1` zips a Windows build, `check-windows-build.ps1` checks one,
     `verify-windows-signatures.ps1` checks the signature of every program a Windows release
     hands on, in a zip or an MSI, and of a sparse package, and `test-windows-release.ps1`
     tests all three on zips. `check-windows-app.ps1` checks the Windows app's Release build,
     `pack-windows-share.ps1` packs `PitboardShare.exe`'s sparse package beside it,
+    `test-certificate.ps1` makes the throwaway certificate it and the runner facts sign with,
     `extract-msi.ps1` extracts an MSI's administrative image and `check-windows-msi.ps1`
-    checks one, `read-assembly.ps1` reads a value from a .NET assembly's metadata, and
-    `test-windows-app.ps1` tests both checks and the signature check on the MSI and the
+    checks one, `validate-windows-msi.ps1` runs ICE03 on an MSI with the WiX that built it,
+    `read-assembly.ps1` reads a value from a .NET assembly's metadata, and
+    `test-windows-app.ps1` tests the checks and the signature check on the MSI and the
     package.
   - `dependabot.yml` asks for weekly updates of Cargo dependencies, GitHub Actions and the
     .NET SDK in `apps/windows/global.json`.
@@ -1427,8 +1436,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
   for Windows is released, a Windows build below the floor, an elevated process and a home
   that is not a full path. It asks before it judges a link or takes the single-instance key,
   and a refused launch shows the core's sentence and exits with nothing written
-  (`ReleaseGateTests`, over the MSI's Release build). Only `--unregister`, which the MSI's
-  full uninstall runs, is read first, and it asks neither the core nor a running copy.
+  (`ReleaseGateTests`, over the MSI's Release build). Only `--unregister` and
+  `--unregister-share`, which the MSI runs, are read first, and they ask neither the core nor
+  a running copy.
 - The Windows app's own data folder is never in Pitboard's directory. It is `Pitboard App`,
   or `Pitboard App Debug` for a Debug build, beside `Pitboard` in the known folder Local
   AppData, which `Shell.LocalAppData` asks `SHGetKnownFolderPath` for. So neither
@@ -1441,15 +1451,16 @@ window loads its site, and whatever the site's pages load, as a browser would.
   `FixtureStartupItem`, register for no notifications (`WindowsNotifications`) and claim no
   link scheme ([On Windows](#on-windows) under Account windows). The MSI alone writes
   `pitboard` and the user `PATH` entry, and registers `PitboardShare.exe`'s package when it
-  is signed; `Pitboard.exe --unregister` takes back what the app registered itself. CI's
+  is signed; `Pitboard.exe --unregister` takes back what the app registered itself, and
+  `--unregister-share` the package. CI's
   Windows legs fail a run that leaves a link scheme, a notification registration, a start at
   sign-in, a `PATH` entry or a package behind.
 - Only `PitboardShare.exe` has a package identity, which a share target needs. Its manifest
   holds the one `<msix>` element of Pitboard's programs, `check-windows-app.ps1` fails a
   Release build where another program holds one, and it hands a shared page to
   `Pitboard.exe` only as a Pitboard link, which `Pitboard.exe` checks as it checks any. That
-  a process it starts carries none of its identity is Microsoft's contract until CF8 and P2
-  measure it ([Documented, not measured](#documented-not-measured)).
+  a process it starts carries none of its identity is Microsoft's contract until P2
+  measures it ([Documented, not measured](#documented-not-measured)).
 - On macOS, only `/usr/bin/security` reads or writes Claude Code's keychain item and
   Pitboard's parked items. No keychain item is touched through the Security framework. The
   reason is under [macOS](#macos) in Measured facts.
@@ -2228,9 +2239,10 @@ The Windows app's account windows run in WebView2, over the same decisions from 
   arrives, and withdraws it once none waits.
 
 The share sheet reaches Pitboard through `PitboardShare.exe`, the one program of Pitboard's
-with a package identity, which a share target needs. It takes a web link, else text, and
-launches the Pitboard link `share_link` writes, which `Pitboard.exe`, with no identity, checks
-again as any link; a refusal goes to `ReportError`, whose sentence Windows shows. Its sparse
+with a package identity, which a share target needs. It is offered for a web link alone, as
+the macOS extension is for a web URL, and launches the Pitboard link `share_link` writes, which
+`Pitboard.exe`, with no identity, checks again as any link. A refusal, a link it cannot read
+and a launch that fails each go to `ReportError`, whose sentence Windows shows. Its sparse
 package asks for nothing beyond `runFullTrust` and declares no write virtualization, since it
 writes nothing. Only a signed build carries it: a sparse package registers only when signed
 by a certificate the machine trusts, and its Publisher is the signer's subject.
@@ -2700,6 +2712,11 @@ the `runtimes-framework` folders of the Windows App SDK 2.5.1 packages as bytes:
 - ICE57 takes a shortcut in `ProgramMenuFolder` for the user's in a package whose `ALLUSERS`
   is 2, and refuses it an HKMU key path.
 
+The build suppresses ICE03, which checks every column of every table. `validate-windows-msi.ps1`
+runs it on the built MSI and lets through only those eight rows, found by their names: an
+invalid language on either library's `.mui` file in the ug-CN, mi-NZ or gd-gb folder, and a
+language list too long on either library itself.
+
 With ICE03, ICE33 and ICE61 suppressed, WiX v7 builds it on both images in run 38895887782
 with no warning, ICE57 passing. `msiexec /a`, run by the job's user, lays out each image's
 own MSI in `PFiles64\Pitboard`: the Release publish's 284 programs and libraries on
@@ -2784,7 +2801,8 @@ on 15 and 16 October 2026. W27 reviews the list.
 | An exe custom action after `InstallFinalize`, asynchronous with no wait, starts `Pitboard.exe --updated` as the person once a `/passive` update ends | [Custom action return processing options](https://learn.microsoft.com/en-us/windows/win32/msi/custom-action-return-processing-options) | No runner updates Pitboard; the 1.0 session's P3 does. |
 | `msiexec /a` extracts an MSI only on a machine whose platform its `Template` names, as an install would, so `windows-msi`, `windows-feed-key` and `windows-install` each read the MSI for their own machine | [Template Summary property](https://learn.microsoft.com/en-us/windows/win32/msi/template-summary) | Each runner extracts only its own MSI: no row tries the other's. |
 | Windows Installer compares three fields of `ProductVersion` and ignores a fourth, so beta N's `X.Y.Z.N` and its final's `X.Y.Z` are one version, which `MajorUpgrade` with `AllowSameVersionUpgrades` replaces | [ProductVersion property](https://learn.microsoft.com/en-us/windows/win32/msi/productversion) | No runner installs an MSI; the session's step A7 upgrades one. |
-| A process that `PitboardShare.exe` starts, or that its `LaunchUriAsync` starts, carries none of its package identity, and none of their writes is redirected | [UpdateProcThreadAttribute](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute) | Not yet measured: CF8 measures the probe's sparse package on the runners, and P2 Pitboard's. |
+| `RemovePackageAsync` removes the user's registration of a package by its full name from a process without the package's identity, and shuts down every process of the package as it removes it, so `Pitboard.exe --unregister-share` removes PitboardShare's and `PitboardShare.exe` could not | [PackageManager.RemovePackageAsync](https://learn.microsoft.com/en-us/uwp/api/windows.management.deployment.packagemanager.removepackageasync) | No runner registers the package (the row below). P1 uninstalls Pitboard and finds the package gone. |
+| A process that `PitboardShare.exe` starts, or that its `LaunchUriAsync` starts, carries none of its package identity, and none of their writes is redirected | [UpdateProcThreadAttribute](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute) | Not yet measured. CF8 cannot register the probe's sparse package on the runners: with its throwaway certificate in the user's own `TrustedPeople`, `Add-AppxPackage` refused it on both images in run 38882775456 with 0x800B0109, a root the trust provider does not trust, so every row read no identity. P2 measures Pitboard's. |
 
 ### One sign-in at a time
 
@@ -4201,7 +4219,6 @@ Microsoft's documentation.
   app has ended or declined. `IApplicationActivationManager::ActivateApplication`'s reference
   (updated 22 February 2024) offers no option that opens an app behind another window, so
   `WindowsApps` brings Pitboard's window forward after it.
-
 - WinSparkle 0.9.4, read on 16 October 2026 in its source at tag `v0.9.4` and in its NuGet
   package. `win_sparkle_set_eddsa_public_key` returns 0 and keeps no key for anything but the
   base64 of 32 bytes, and with no key the downloader logs "Using unsigned updates!" and
@@ -4232,8 +4249,9 @@ Microsoft's documentation.
   (`sign_update/main.swift`, `common_cli/Secret.swift`, read the same day). A rehearsal on
   16 October 2026 signed two files with a throwaway seed, and `eddsa-verify.swift` took each
   signature under its public key and refused one another seed made. So `windows-update-sign`
-  signs each MSI with `sign_update` and checks it with `eddsa-verify.swift` before
-  `windows-appcast.py` writes the feed.
+  signs each MSI of every Windows release with `sign_update` and checks it with
+  `eddsa-verify.swift`, and for the latest full release `windows-appcast.py` then writes the
+  feed.
 - The .NET 8 SDK adds the commit to `InformationalVersion`, which
   `IncludeSourceRevisionInInformationalVersion` turns off
   ([Source Link included in the .NET SDK](https://learn.microsoft.com/dotnet/core/compatibility/sdk/8.0/source-link),

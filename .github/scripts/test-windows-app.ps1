@@ -1,8 +1,5 @@
-# Tests check-windows-app.ps1's package identity, update key, feed and version checks against the
-# Release folder CI's windows-app job built and packed: each case is a folder of its own with
-# copies of the files those checks read, one thing changed. Then check-windows-msi.ps1 and
-# verify-windows-signatures.ps1 against the job's unsigned MSI and the package it signed with a
-# throwaway certificate. It runs none of them.
+# Tests check-windows-app.ps1 against copies of CI's Release folder, one thing changed in each, and check-windows-msi.ps1,
+# validate-windows-msi.ps1 and verify-windows-signatures.ps1 against its MSI and package. It runs none of them.
 param(
     [Parameter(Mandatory)] [string] $Folder,
     [Parameter(Mandatory)] [ValidateSet('x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc')] [string] $Triple,
@@ -27,6 +24,7 @@ $check = Join-Path $PSScriptRoot 'check-windows-app.ps1'
 $pack = Join-Path $PSScriptRoot 'pack-windows-share.ps1'
 $verify = Join-Path $PSScriptRoot 'verify-windows-signatures.ps1'
 $checkMsi = Join-Path $PSScriptRoot 'check-windows-msi.ps1'
+$validate = Join-Path $PSScriptRoot 'validate-windows-msi.ps1'
 $signPath = 'CN=SignPath Foundation, O=SignPath Foundation, L=Lewes, S=Delaware, C=US'
 $msiPath = (Resolve-Path -LiteralPath $Msi).Path
 $root = (Resolve-Path -LiteralPath $Folder).Path
@@ -75,6 +73,24 @@ function Assert-Thrown([string] $Case, [string] $Script, [hashtable] $Given, [st
     throw "$Case`: $(Split-Path -Leaf $Script) let it through"
 }
 
+# A copy of the MSI under its own name, in a folder of its own, with one change made through Windows Installer.
+function Edit-Msi([string] $Case, [string] $Query) {
+    $folder = Join-Path $work $Case
+    New-Item -ItemType Directory -Path $folder | Out-Null
+    $copy = Join-Path $folder (Split-Path -Leaf $msiPath)
+    Copy-Item -LiteralPath $msiPath -Destination $copy
+    $installer = New-Object -ComObject WindowsInstaller.Installer
+    # msiOpenDatabaseModeTransact
+    $database = $installer.GetType().InvokeMember('OpenDatabase', 'InvokeMethod', $null, $installer, @([string] $copy, 1))
+    $view = $database.GetType().InvokeMember('OpenView', 'InvokeMethod', $null, $database, @($Query))
+    [void] $view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null)
+    [void] $view.GetType().InvokeMember('Close', 'InvokeMethod', $null, $view, $null)
+    [void] $database.GetType().InvokeMember('Commit', 'InvokeMethod', $null, $database, $null)
+    [void] [Runtime.InteropServices.Marshal]::ReleaseComObject($view)
+    [void] [Runtime.InteropServices.Marshal]::ReleaseComObject($database)
+    $copy
+}
+
 New-Item -ItemType Directory -Path $work | Out-Null
 try {
     $whole = @('PitboardShare.exe', 'PitboardShare.msix')
@@ -113,17 +129,30 @@ try {
         "reads its updates from 'https://github\.com/datlechin/pitboard/releases/download/v1\.0\.0/appcast-windows\.xml'"
 
     Assert-Refused 'a version the build was not given' (New-Case 'version' ($whole + 'pitboard_ffi.dll')) $Signer `
-        "names the product 'Pitboard' at '.+', file .+, not Pitboard at 9\.9\.9," -Instead @{ Version = '9.9.9' }
+        "names the product 'Pitboard' by 'Pitboard' at '.+', file .+, not Pitboard by Pitboard at 9\.9\.9," -Instead @{ Version = '9.9.9' }
     Assert-Refused 'a FileVersion windows-versions.sh does not give the version' (New-Case 'file' ($whole + 'pitboard_ffi.dll')) $Signer `
-        "names the product 'Pitboard' at '$([regex]::Escape($Version))', file .+, not Pitboard at .+, file 9\.9\.9\.1000" `
+        "names the product 'Pitboard' by 'Pitboard' at '$([regex]::Escape($Version))', file .+, not Pitboard by Pitboard at .+, file 9\.9\.9\.1000" `
         -Instead @{ FileVersion = '9.9.9.1000' }
+    $foreign = New-Case 'foreign' ($whole + 'pitboard_ffi.dll')
+    Copy-Item -LiteralPath (Join-Path $root 'WinSparkle.dll') -Destination (Join-Path $foreign 'pitboard_other.dll')
+    Assert-Refused 'a library named for Pitboard whose version resource names another product' $foreign $Signer `
+        "pitboard_other\.dll names the product '(?!Pitboard')"
 
-    & $verify -Path $msiPath -Mode unsigned
     $built = Join-Path $work 'built'
     New-Item -ItemType Directory -Path $built | Out-Null
     Copy-Item -LiteralPath $msiPath -Destination $built
-    & $verify -Path $msiPath -Mode unsigned -Built $built | Out-Null
-    Write-Output 'ok: the MSI and each program of Pitboard''s in it are NotSigned, and it holds the files it was built with'
+    & $verify -Path $msiPath -Mode unsigned -Built $built
+    Write-Output 'ok: the MSI and each program of Pitboard''s in it are NotSigned, and it holds the files and tables it was built with'
+    $renamed = Edit-Msi 'renamed' "UPDATE ``File`` SET ``FileName`` = 'other.exe' WHERE ``File`` = 'CommandLineExe'"
+    Assert-Thrown 'an MSI that lays out a file under another name than it was built with' $verify `
+        @{ Path = $renamed; Mode = 'unsigned'; Built = $built } 'holds other files than it was built with'
+    $retitled = Edit-Msi 'retitled' "UPDATE ``Property`` SET ``Value`` = 'Someone Else' WHERE ``Property`` = 'Manufacturer'"
+    Assert-Thrown 'an MSI with a row its build did not write' $verify `
+        @{ Path = $retitled; Mode = 'unsigned'; Built = $built } 'holds other tables than it was built with: Property$'
+
+    & $validate -Msi $msiPath
+    $broken = Edit-Msi 'ice03' "UPDATE ``Registry`` SET ``Root`` = 7 WHERE ``Name`` = 'CommandLineOnPath'"
+    Assert-Thrown 'a row of Pitboard''s own that ICE03 refuses' $validate @{ Msi = $broken } 'fails ICE03 in rows besides WinUI''s own files'
     Assert-Thrown 'an unsigned MSI in a signed release' $verify @{ Path = $msiPath; Mode = 'signed'; Subject = $signPath } `
         'Pitboard\.msi is NotSigned, and every program of a signed release is Valid'
 
@@ -132,10 +161,10 @@ try {
     Assert-Thrown 'an MSI with another command line than the zip''s' $checkMsi $msiGiven 'bin\\pitboard\.exe is not the zip''s' `
         @{ CommandLine = (Join-Path $root 'Pitboard.exe') }
     Assert-Thrown 'a share target in an MSI without a signed package' $checkMsi $msiGiven 'this release has no signed package' @{ Share = $false }
-    $other = Join-Path $work 'other.msix'
-    Copy-Item -LiteralPath (Join-Path $root 'PitboardShare.msix') -Destination $other
-    [IO.File]::AppendAllText($other, 'another')
-    Assert-Thrown 'an MSI whose package is not the signed one' $checkMsi $msiGiven 'PitboardShare\.msix is not the signed one' @{ Package = $other }
+    $otherPackage = Join-Path $work 'other.msix'
+    Copy-Item -LiteralPath (Join-Path $root 'PitboardShare.msix') -Destination $otherPackage
+    [IO.File]::AppendAllText($otherPackage, 'another')
+    Assert-Thrown 'an MSI whose package is not the signed one' $checkMsi $msiGiven 'PitboardShare\.msix is not the signed one' @{ Package = $otherPackage }
 
     $package = Join-Path $root 'PitboardShare.msix'
     & $verify -Path $package -Mode test -Subject $Signer
@@ -148,5 +177,5 @@ try {
 } finally {
     Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
 }
-Write-Output 'check-windows-app.ps1 and check-windows-msi.ps1 refused what they should, and verify-windows-signatures.ps1 read the MSI and the package.'
+Write-Output 'check-windows-app.ps1, check-windows-msi.ps1, validate-windows-msi.ps1 and verify-windows-signatures.ps1 refused what they should.'
 exit 0

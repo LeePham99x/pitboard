@@ -120,14 +120,15 @@ The test runs the script under each of `sh`, `dash`, `bash`, `zsh` and `busybox 
 on `PATH`. `TEST_INSTALL_SHELLS` names the ones that must be found, as CI sets it.
 
 For a change to the release's scripts, `release-kind.sh`, `core-unchanged.sh`,
-`check-winget-hashes.py`, `windows-appcast.py`, `windows-versions.sh` and
-`windows-update-key.sh` in `.github/scripts`, `apps/macos/scripts/build-number.sh`, or the
-cargo-binstall metadata in `crates/pitboard/Cargo.toml`:
+`check-winget-hashes.py`, `windows-appcast.py`, `windows-versions.sh`,
+`windows-update-key.sh` and `windows-update-sign.sh` in `.github/scripts`,
+`apps/macos/scripts/build-number.sh`, or the cargo-binstall metadata in
+`crates/pitboard/Cargo.toml`:
 
 ```sh
 shellcheck -s sh .github/scripts/release-kind.sh .github/scripts/core-unchanged.sh \
   .github/scripts/windows-versions.sh .github/scripts/windows-update-key.sh \
-  apps/macos/scripts/build-number.sh
+  .github/scripts/windows-update-sign.sh apps/macos/scripts/build-number.sh
 python3 .github/scripts/test-release.py
 ```
 
@@ -402,9 +403,9 @@ throwaway certificate, which nothing trusts and nothing registers.
   would not take;
 - a feed other than the latest full release's;
 - a commit in `Pitboard.exe`'s version;
-- a program or library of Pitboard's whose version resource names another product or version
-  than `Cargo.toml`'s, or another file version than `.github/scripts/windows-versions.sh`
-  gives it;
+- a program or library named for Pitboard, as the release hands the signer, whose version
+  resource names another product, company or version than Pitboard and `Cargo.toml`'s, or
+  another file version than `.github/scripts/windows-versions.sh` gives it;
 - a core opened before Windows is released, or one that takes its C runtime from a DLL;
 - a `WinSparkle.dll` for another machine.
 
@@ -418,20 +419,21 @@ Then, as the job's user, it runs the UI test of an elevated launch. It builds `P
 which the session machine runs to measure the app's notifications, and checks that it refuses
 an account without `pitboard-probe`'s throwaway marker.
 
-The job also builds the MSI, `apps/windows/Pitboard.Installer`, with WiX v7 from the Release
-build and the `pitboard.exe` a 0.x release builds, with `PitboardShare.exe` and its package, as
-a signed release carries them, and ICE validates it as it builds. CI never installs an MSI:
-`.github/scripts/extract-msi.ps1` extracts it with `msiexec /a`, `check-windows-app.ps1`
-checks the files it holds, `check-windows-msi.ps1` its version, its layout, the command line
-in `bin` and the package it carries, the UI test of the release gate starts its
-`Pitboard.exe`, and `Pitboard.Installer.Tests` reads its tables. `test-windows-app.ps1` tests
-`check-windows-msi.ps1` too, and runs the release's `verify-windows-signatures.ps1` on the
-unsigned MSI and on the package the job signed. For a change to the version the MSI carries,
-which needs only the .NET SDK:
-
-```sh
-sh .github/scripts/test-msi-version.sh
-```
+The job also builds two MSIs of `apps/windows/Pitboard.Installer` with WiX v7, from the
+Release build and the `pitboard.exe` a 0.x release builds: one with `PitboardShare.exe` and its
+package, as a signed release carries them, and one without, as a release with no signer ships.
+WiX runs ICE validation as it builds, with ICE03 off, and
+`.github/scripts/validate-windows-msi.ps1` runs ICE03 after it and refuses any row but WinUI's
+own files. That script first holds the WiX SDK to nuget.org's hash, so raising
+`WixToolset.Sdk` in `global.json` needs its hash there too. CI never installs an MSI:
+`extract-msi.ps1` extracts each with `msiexec /a`, `check-windows-app.ps1` checks the files
+the signed one holds, `check-windows-msi.ps1` each one's version, layout, command line in `bin`
+and share target, the UI test of the release gate starts the signed one's `Pitboard.exe`, and
+`Pitboard.Installer.Tests` reads each one's tables and asks its `pitboard_ffi.dll` whether it
+opens. `test-windows-app.ps1` tests `check-windows-msi.ps1` and `validate-windows-msi.ps1` too,
+and runs the release's `verify-windows-signatures.ps1` on the signed one's MSI, on copies of
+it with a row changed and on the package the job signed. The MSI takes its version from
+`windows-versions.sh`, which `test-release.py` tests.
 
 The pictures of the Windows app for the docs come from the UI test `ScreenshotTests`, in the
 `twoTools` fixture. The job keeps the ones `windows-2025` takes for seven days, as the artifact

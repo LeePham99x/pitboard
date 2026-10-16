@@ -3,12 +3,9 @@ using Pitboard.Share.Core;
 using Windows.ApplicationModel;
 using Windows.ApplicationModel.Activation;
 
-switch (args)
+if (args is ["--register"])
 {
-    case ["--register"]:
-        return await Registration.RegisterAsync();
-    case ["--unregister"]:
-        return await Registration.UnregisterAsync();
+    return await Registration.RegisterAsync();
 }
 
 if (Activation() is not ShareTargetActivatedEventArgs shared)

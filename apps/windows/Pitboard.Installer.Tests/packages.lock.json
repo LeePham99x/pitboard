@@ -111,6 +111,9 @@
         "type": "Transitive",
         "resolved": "4.5.1",
         "contentHash": "oa0w2QC/T3U+ulUn38AmbWE/wnEMtqSFRb2z277z5SpswqNc/ySWcAVlG1qEWUxzm+NztCjkoeLAn/83gIx3ug=="
+      },
+      "pitboard.core": {
+        "type": "Project"
       }
     },
     "net10.0/win-arm64": {

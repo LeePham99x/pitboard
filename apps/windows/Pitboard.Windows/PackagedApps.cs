@@ -90,7 +90,8 @@ internal static class PackagedApps
             try
             {
                 manager = (IApplicationActivationManager)new ApplicationActivationManager();
-                manager.ActivateApplication(aumid, null!, ACTIVATEOPTIONS.AO_NONE, out _);
+                // A failure reaches the caller, which reports it, and no one may be at the PC after an automatic switch.
+                manager.ActivateApplication(aumid, null!, ACTIVATEOPTIONS.AO_NOERRORUI, out _);
             }
             catch (Exception refused)
             {

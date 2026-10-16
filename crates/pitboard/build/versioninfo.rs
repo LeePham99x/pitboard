@@ -1,5 +1,6 @@
 // The version resource SignPath asks of what it signs, ProductName Pitboard at the build's
-// version, for each build script that includes this file by #[path].
+// version, for each build script that includes this file by #[path]. CompanyName is
+// Pitboard too, where no certificate has to match it.
 
 // Each build script uses the part for its kind of binary, and pitboard-ffi's tests the rest.
 #![allow(dead_code)]
@@ -78,6 +79,7 @@ BEGIN
   BEGIN
     BLOCK "040904B0"
     BEGIN
+      VALUE "CompanyName", "Pitboard"
       VALUE "FileDescription", "{description}"
       VALUE "FileVersion", "{dotted}"
       VALUE "InternalName", "{name}"
@@ -287,6 +289,7 @@ mod tests {
         assert!(library.contains("FILEVERSION 1,0,0,1\n"));
         assert!(library.contains("FILETYPE 2\n"));
         assert!(library.contains(r#"VALUE "ProductName", "Pitboard""#));
+        assert!(library.contains(r#"VALUE "CompanyName", "Pitboard""#));
         assert!(library.contains(r#"VALUE "ProductVersion", "1.0.0-beta.1""#));
         assert!(library.contains(r#"VALUE "FileVersion", "1.0.0.1""#));
         assert!(library.contains(r#"VALUE "OriginalFilename", "pitboard_ffi.dll""#));

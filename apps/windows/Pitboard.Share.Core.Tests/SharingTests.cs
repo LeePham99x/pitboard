@@ -9,11 +9,10 @@ public sealed class SharingTests
 
     private const string NoLink = "There is no claude.ai or chatgpt.com link in what was shared.";
 
-    // A browser shares the page's title as its text beside the link.
     [TestMethod]
     public async Task ASitesPageLaunchesItsPitboardLinkAndCompletes()
     {
-        var share = new RecordedShare(webLink: "https://chat.openai.com/c/x?y=1#z", text: "A chat");
+        var share = new RecordedShare(webLink: "https://chat.openai.com/c/x?y=1#z");
 
         await Sharing.HandOverAsync(share, "pitboard");
 
@@ -22,24 +21,12 @@ public sealed class SharingTests
     }
 
     [TestMethod]
-    public async Task ASitesLinkSharedAsTextIsHandedOverToo()
+    [DataRow("https://claude.ai/magic-link#a:b", SignIn, DisplayName = "a sign-in page")]
+    [DataRow("https://example.com/", "Pitboard opens claude.ai and chatgpt.com links only. This link is on example.com.", DisplayName = "another site")]
+    [DataRow(null, NoLink, DisplayName = "no web link")]
+    public async Task APageItRefusesReportsTheRefusalAndLaunchesNothing(string? webLink, string sentence)
     {
-        var share = new RecordedShare(text: " claude.ai/chat/abc ");
-
-        await Sharing.HandOverAsync(share, "pitboard");
-
-        string[] said = ["started", "launched pitboard://open?url=https%3A%2F%2Fclaude.ai%2Fchat%2Fabc", "completed"];
-        CollectionAssert.AreEqual(said, share.Said);
-    }
-
-    [TestMethod]
-    [DataRow("https://claude.ai/magic-link#a:b", null, SignIn, DisplayName = "a sign-in page")]
-    [DataRow("https://example.com/", "Example", "Pitboard opens claude.ai and chatgpt.com links only. This link is on example.com.", DisplayName = "another site")]
-    [DataRow(null, "Read this later", NoLink, DisplayName = "plain text")]
-    [DataRow(null, null, NoLink, DisplayName = "nothing it reads")]
-    public async Task APageItRefusesReportsTheRefusalAndLaunchesNothing(string? webLink, string? text, string sentence)
-    {
-        var share = new RecordedShare(webLink, text);
+        var share = new RecordedShare(webLink);
 
         await Sharing.HandOverAsync(share, "pitboard");
 
@@ -58,20 +45,43 @@ public sealed class SharingTests
         CollectionAssert.AreEqual(said, share.Said);
     }
 
-    private sealed class RecordedShare(string? webLink = null, string? text = null, bool launches = true) : IShareOperation
+    // The source app gone, or its delayed rendering failed.
+    [TestMethod]
+    public async Task AShareWhoseLinkCannotBeReadIsReportedAsAnError()
+    {
+        var share = new RecordedShare(unreadable: true);
+
+        await Sharing.HandOverAsync(share, "pitboard");
+
+        string[] said = ["started", "error: " + Sharing.NotRead];
+        CollectionAssert.AreEqual(said, share.Said);
+    }
+
+    [TestMethod]
+    public async Task ALaunchThatThrowsIsReportedAsAnError()
+    {
+        var share = new RecordedShare(webLink: "https://chatgpt.com/", launchThrows: true);
+
+        await Sharing.HandOverAsync(share, "pitboard");
+
+        string[] said = ["started", "launched pitboard://open?url=https%3A%2F%2Fchatgpt.com%2F", "error: " + Sharing.NotLaunched];
+        CollectionAssert.AreEqual(said, share.Said);
+    }
+
+    private sealed class RecordedShare(string? webLink = null, bool launches = true, bool unreadable = false, bool launchThrows = false)
+        : IShareOperation
     {
         public List<string> Said { get; } = [];
 
         public void ReportStarted() => Said.Add("started");
 
-        public Task<string?> WebLinkAsync() => Task.FromResult(webLink);
-
-        public Task<string?> TextAsync() => Task.FromResult(text);
+        public Task<string?> WebLinkAsync() =>
+            unreadable ? Task.FromException<string?>(new InvalidOperationException("The data is no longer there.")) : Task.FromResult(webLink);
 
         public Task<bool> LaunchAsync(string link)
         {
             Said.Add("launched " + link);
-            return Task.FromResult(launches);
+            return launchThrows ? Task.FromException<bool>(new InvalidOperationException("No app takes the link.")) : Task.FromResult(launches);
         }
 
         public void ReportCompleted() => Said.Add("completed");
