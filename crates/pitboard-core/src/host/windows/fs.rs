@@ -1181,7 +1181,7 @@ mod tests {
     // is quoted again on the way.
     fn encoded(command: &str) -> String {
         let bytes: Vec<u8> = command.encode_utf16().flat_map(u16::to_le_bytes).collect();
-        crate::provider::jwt::base64(&bytes)
+        crate::base64::encode(&bytes)
     }
 
     // Each line as a person pastes it, into cmd or into PowerShell.

@@ -297,16 +297,27 @@ pub fn store_in_front(os: Os) -> &'static str {
     }
 }
 
-pub(crate) fn reads_only_the_file(os: Os) -> &'static str {
+// What a session cannot do that signs in with the file behind the store a switch writes.
+pub(crate) fn out_of_reach(os: Os) -> &'static str {
     match os {
-        Os::MacOs | Os::Linux => {
-            "a session that cannot read the keychain, such as one started over SSH"
-        }
-        Os::Windows => {
-            "a session that cannot reach Credential Manager, such as one in a sign-in over SSH \
-             with a key"
-        }
+        Os::MacOs | Os::Linux => "cannot read the keychain",
+        Os::Windows => "cannot reach Credential Manager",
     }
+}
+
+// A network logon, which has no Credential Manager (MC-net).
+pub(crate) const SSH_SIGN_IN: &str = "a sign-in over SSH with a key";
+
+pub(crate) fn past_credential_manager(bytes: usize, limit: usize) -> String {
+    format!("{bytes} bytes, past the {limit} Claude Code keeps in Credential Manager")
+}
+
+pub(crate) fn reads_only_the_file(os: Os) -> String {
+    let such_as = match os {
+        Os::MacOs | Os::Linux => "one started over SSH".to_owned(),
+        Os::Windows => format!("one in {SSH_SIGN_IN}"),
+    };
+    format!("a session that {}, such as {such_as}", out_of_reach(os))
 }
 
 pub fn left_lines(os: Os, left: &crate::switch::Left) -> Vec<String> {
@@ -440,8 +451,8 @@ fn once_stowed(os: Os, held_a_login: bool) -> String {
         crate::switch::ADOPTION_CEILING_SECONDS
     );
     let over_ssh = match os {
-        Os::MacOs | Os::Linux => "one over SSH",
-        Os::Windows => "one in a sign-in over SSH with a key",
+        Os::MacOs | Os::Linux => "one over SSH".to_owned(),
+        Os::Windows => format!("one in {SSH_SIGN_IN}"),
     };
     if held_a_login {
         format!(

@@ -289,7 +289,8 @@ release set, it fails.
 
 The whole suite runs on Windows. A Rust test that cannot pass there until a later Windows
 pull request says so with `#[cfg_attr(windows, ignore = "W<id>: <what it waits on>")]`, the id
-`W14` to `W27`, `W23a`, `W23b` or `W-warm`, and in no other way: no filter and no `--skip`.
+`W14` to `W27` with `W23` split into `W23a` and `W23b`, or `W-warm`, and in no other way: no
+filter and no `--skip`.
 
 From a Mac or Linux, `cargo check --target x86_64-pc-windows-msvc` checks only
 `pitboard-sites` and `pitboard-share-ffi`, since ring compiles C against MSVC's headers.
@@ -369,7 +370,7 @@ cannot pass there until a later Windows pull request says so in its Rust counter
 In the projects that build only on Windows, `Pitboard.Windows.Tests` and `Pitboard.UITests`:
 
 ```csharp
-[Ignore("W<n>: <what it waits on>")]
+[Ignore("W<id>: <what it waits on>")]
 ```
 
 The tests that start a fixture's model are skipped against a library built without the

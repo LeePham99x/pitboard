@@ -1233,7 +1233,8 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                where `.config.json` is missing, empty, a folder or a link loop, any other error \
                or a file that is not JSON reading as false. Otherwise the file alone is its \
                store. The variable reaches a session from the environment it starts with, which \
-               Windows makes from `HKCU\\Environment` for one started from Explorer, and from \
+               Windows makes for one started from Explorer from `HKCU\\Environment` over the \
+               machine's `Session Manager\\Environment`, and from \
                the `env` of the config file, of the person's `settings.json` and of managed \
                settings, assigned in that order at start-up, each value coerced to a string. A \
                project's or local settings' `env` passes only a safe list then, which leaves the \
@@ -1246,7 +1247,8 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                     builds of 2.1.301, read as bytes on 2026-10-16",
         verified_against: "2.1.301",
         depends: "claude::credman::turned_on, which reads every signal but a project's and a \
-                  `--settings` file's, and live::chain on Windows, which is the file only \
+                  `--settings` file's, managed settings only from the sources a session takes \
+                  (settings::env_settings), and live::chain on Windows, which is the file only \
                   where none is on and Credential Manager holds nothing at the live target, so \
                   a session a project turned the store on for is caught once it wrote there",
         probe: &[

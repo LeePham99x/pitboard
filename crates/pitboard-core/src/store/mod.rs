@@ -52,23 +52,20 @@ impl Backend {
 }
 
 // A store Pitboard does not read or write, such as Claude Code's on Windows where a login sits
-// in Credential Manager that nothing turns on: every call says why it cannot be read, which no
-// caller takes for a store with nothing in it.
+// in Credential Manager that nothing turns on: every call answers `error`, which no caller takes
+// for a store with nothing in it.
 pub(crate) struct Refused {
     kind: Backend,
-    why: String,
+    error: Error,
 }
 
 impl Refused {
-    pub(crate) fn new(kind: Backend, why: impl Into<String>) -> Refused {
-        Refused {
-            kind,
-            why: why.into(),
-        }
+    pub(crate) fn new(kind: Backend, error: Error) -> Refused {
+        Refused { kind, error }
     }
 
     fn refused<T>(&self) -> Result<T, Error> {
-        Err(Error::Unreadable(self.why.clone()))
+        Err(self.error.clone())
     }
 }
 
@@ -115,7 +112,7 @@ pub(crate) fn locked(os: crate::host::Os) -> &'static str {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
     /// The store could not be interrogated. Never treat this as "no credential".
@@ -126,6 +123,10 @@ pub enum Error {
     /// either, and nothing is wrong with what it holds.
     #[error("the credential store could not be read: {}", locked(crate::host::OS))]
     Locked,
+    /// A write of a login kept in several items stopped partway, and what they hold cannot be
+    /// read until a whole login is written over them. Never "no credential" either.
+    #[error("the credential store could not be read: {0}")]
+    Unfinished(String),
     /// A park sealed to this account is there but does not open in this logon: an
     /// administrator's password reset, a profile restored on another PC, or a logon without
     /// the user's key, as over SSH. `code` is `CryptUnprotectData`'s, where there was one.
@@ -142,7 +143,7 @@ pub enum Error {
 impl Error {
     pub fn code(&self) -> &'static str {
         match self {
-            Error::Unreadable(_) => "credential_store_unreadable",
+            Error::Unreadable(_) | Error::Unfinished(_) => "credential_store_unreadable",
             Error::Locked => "credential_store_locked",
             Error::Sealed { .. } => "credential_sealed",
             Error::Malformed(_) => "credential_not_json",
@@ -213,7 +214,7 @@ pub(crate) trait RawStore: Send + Sync {
     }
 
     /// What a write would cost against this store's ceiling. `None` where there is none,
-    /// which is every store but the keychain.
+    /// which is every store but the keychain and Credential Manager.
     fn cost(&self, _service: &str, _contents: &str) -> Option<Cost> {
         None
     }
@@ -308,6 +309,7 @@ fn take_over_in(
 ) -> Result<(), Error> {
     let held = chain[0].contains(service)?;
     chain[0].write(permit, service, contents)?;
+    crate::fault::point("store.taken_over");
     if !held {
         for rest in &chain[1..] {
             let _ = rest.delete(permit, service);
@@ -600,6 +602,7 @@ mod tests {
 
         let first = store(Backend::CredentialManager);
         first.fault("svc", Fault::FailWrite("unreachable".into()));
+        first.takes_on_stdin(2560);
         let file = holding(Backend::File, "svc", "in the file");
         assert!(matches!(
             write_raw(&live(&first, &file), Permit::for_a_test(), "svc", "lost"),
@@ -612,8 +615,12 @@ mod tests {
         );
         assert_eq!(
             cost(&live(&first, &file), "svc", "x"),
-            None,
-            "the first store's ceiling, whatever holds the login"
+            Some(Cost {
+                needs: 1,
+                limit: 2560,
+                second_route: true
+            }),
+            "the first store's ceiling, while the file holds the login"
         );
     }
 
@@ -695,7 +702,7 @@ mod tests {
     /// absent.
     #[test]
     fn a_store_refused_cannot_be_read() {
-        let store = Refused::new(Backend::Unknown, "not built yet");
+        let store = Refused::new(Backend::Unknown, Error::Unreadable("not built yet".into()));
         let unreadable = |answer: Result<String, Error>| match answer {
             Err(Error::Unreadable(why)) => assert_eq!(why, "not built yet"),
             other => panic!("{other:?}"),
@@ -710,7 +717,7 @@ mod tests {
         assert_eq!(store.cost("svc", "x"), None);
         let live = Live::of(vec![Box::new(Refused::new(
             Backend::Unknown,
-            "not built yet",
+            Error::Unreadable("not built yet".into()),
         ))]);
         unreadable(resolve(&live, "svc").map(|b| b.name().to_string()));
     }

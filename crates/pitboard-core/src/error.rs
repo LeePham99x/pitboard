@@ -1,6 +1,7 @@
 //! Every way Pitboard can fail. Each variant has a message naming the cause and an action,
 //! a stable code for programs to branch on, and an exit code.
 
+use crate::host::Os;
 use crate::provider::ProviderId;
 use crate::state::Key;
 use std::path::PathBuf;
@@ -185,7 +186,7 @@ pub enum Error {
     #[error("{}.", codex_home_missing(path))]
     CodexHomeMissing { path: PathBuf },
 
-    #[error("{}", too_large(*tool, label, *bytes, *limit))]
+    #[error("{}", too_large(crate::host::OS, *tool, label, *bytes, *limit))]
     CredentialTooLarge {
         tool: ProviderId,
         label: String,
@@ -529,6 +530,20 @@ pub enum Error {
 
     #[error("{}", recovery_undetermined(*tool, from, to, detail))]
     RecoveryUndetermined {
+        tool: ProviderId,
+        from: String,
+        to: String,
+        detail: String,
+    },
+
+    #[error(
+        "an earlier switch from `{from}` to `{to}` stopped partway through writing {}'s login, \
+         which nothing reads until a whole login is written over it, and Pitboard could not \
+         write `{to}`'s ({detail}). Nothing was deleted. Fix that, then try again: Pitboard \
+         finishes the switch first.",
+        tool.name()
+    )]
+    RecoveryUnfinished {
         tool: ProviderId,
         from: String,
         to: String,
@@ -993,7 +1008,9 @@ impl Error {
             LiveLoginRefused { .. } => "live_login_refused",
             ReplaceFailed { .. } => "replace_failed",
             AccountOnHold { .. } => "account_on_hold",
-            RecoveryUndetermined { .. } | RecoveryStopped { .. } => "recovery_undetermined",
+            RecoveryUndetermined { .. } | RecoveryUnfinished { .. } | RecoveryStopped { .. } => {
+                "recovery_undetermined"
+            }
             RecoveryElsewhere { .. } => "recovery_elsewhere",
             ProgramNotFound { tool } => match tool {
                 ProviderId::Claude => "claude_not_found",
@@ -1142,15 +1159,18 @@ fn sentence(error: &Error) -> String {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// What Pitboard says of a home that is not a full path: which variable named it, and what
-/// it holds.
 pub(crate) fn codex_home_missing(path: &std::path::Path) -> String {
+    format!("{}. {CODEX_HOME_REMEDY}", codex_home_no_folder(path))
+}
+
+pub(crate) fn codex_home_no_folder(path: &std::path::Path) -> String {
     format!(
-        "CODEX_HOME is {}, which is no folder, so Codex does not start. Make that folder, or \
-         unset CODEX_HOME",
+        "CODEX_HOME is {}, which is no folder, so Codex does not start",
         path.display()
     )
 }
+
+pub(crate) const CODEX_HOME_REMEDY: &str = "Make that folder, or unset CODEX_HOME";
 
 fn temporary_copy(path: &std::path::Path) -> String {
     if crate::schedule::opened_from_a_zip(path) {
@@ -1279,11 +1299,11 @@ fn session_expired(tool: ProviderId, refused: bool) -> String {
 }
 
 // What makes a tool's live login readable again, where it could not be read.
-fn make_readable(os: crate::host::Os, tool: ProviderId) -> &'static str {
+fn make_readable(os: Os, tool: ProviderId) -> &'static str {
     match tool {
         ProviderId::Claude => match os {
-            crate::host::Os::MacOs | crate::host::Os::Linux => "Unlock the keychain",
-            crate::host::Os::Windows => {
+            Os::MacOs | Os::Linux => "Unlock the keychain",
+            Os::Windows => {
                 "Check that you can read and change Claude Code's folder and its .credentials.json"
             }
         },
@@ -1293,12 +1313,10 @@ fn make_readable(os: crate::host::Os, tool: ProviderId) -> &'static str {
 }
 
 // Where Claude Code keeps a login on `os`, none of which holds `email`'s.
-fn login_elsewhere(os: crate::host::Os, email: &str) -> String {
+fn login_elsewhere(os: Os, email: &str) -> String {
     let places = match os {
-        crate::host::Os::MacOs | crate::host::Os::Linux => {
-            "in the keychain or in the file it also reads"
-        }
-        crate::host::Os::Windows => "in .credentials.json or in Credential Manager",
+        Os::MacOs | Os::Linux => "in the keychain or in the file it also reads",
+        Os::Windows => "in .credentials.json or in Credential Manager",
     };
     format!(
         "Claude Code's config says {email} is signed in, but Pitboard cannot find that login \
@@ -1308,24 +1326,24 @@ fn login_elsewhere(os: crate::host::Os, email: &str) -> String {
     )
 }
 
-/// What makes a login smaller, where anything does.
 // A keychain's ceiling is what `security` reads from stdin; Credential Manager's, 256 pieces.
-fn too_large(tool: ProviderId, label: &str, bytes: usize, limit: usize) -> String {
-    match crate::host::OS {
-        crate::host::Os::MacOs | crate::host::Os::Linux => format!(
+fn too_large(os: Os, tool: ProviderId, label: &str, bytes: usize, limit: usize) -> String {
+    match os {
+        Os::MacOs | Os::Linux => format!(
             "the login for `{label}` needs {bytes} bytes and `security` reads {limit} from \
              stdin, so it can only be written on the argument line, which PITBOARD_NO_ARGV \
              forbids. {}",
             smaller(tool)
         ),
-        crate::host::Os::Windows => format!(
-            "the login for `{label}` needs {bytes} bytes, past the {limit} Claude Code keeps in \
-             Credential Manager. Sign out of MCP servers you no longer use to make the login \
-             smaller."
+        Os::Windows => format!(
+            "the login for `{label}` needs {}. Sign out of MCP servers you no longer use to make \
+             the login smaller.",
+            crate::words::past_credential_manager(bytes, limit)
         ),
     }
 }
 
+// What makes a login smaller, where anything does.
 fn smaller(tool: ProviderId) -> &'static str {
     match tool {
         ProviderId::Claude => {
@@ -1655,7 +1673,21 @@ mod tests {
     // Claude Code keeps no keychain on Windows: its file, or Credential Manager.
     #[test]
     fn claude_codes_lost_and_unreadable_logins_are_worded_for_each_system() {
-        use crate::host::Os;
+        let keychain = "the login for `l` needs 9 bytes and `security` reads 4 from stdin, so it \
+                        can only be written on the argument line, which PITBOARD_NO_ARGV \
+                        forbids. Unset it, or sign out of MCP servers you no longer use to make \
+                        the login smaller.";
+        for (os, too_large_said) in [
+            (Os::MacOs, keychain),
+            (Os::Linux, keychain),
+            (
+                Os::Windows,
+                "the login for `l` needs 9 bytes, past the 4 Claude Code keeps in Credential \
+                 Manager. Sign out of MCP servers you no longer use to make the login smaller.",
+            ),
+        ] {
+            assert_eq!(too_large(os, ProviderId::Claude, "l", 9, 4), too_large_said);
+        }
         for (os, places, readable) in [
             (
                 Os::MacOs,

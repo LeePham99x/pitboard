@@ -51,14 +51,37 @@ pub(super) fn login_path(_env: &Environment) -> LoginPath {
     registry_path()
 }
 
+const MACHINE_ENVIRONMENT: &str = r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment";
+const USER_ENVIRONMENT: &str = "Environment";
+
+// What the account's own environment, then the machine's, names `name`, read whatever kind of
+// build this is: a program started from now on is given it, whatever this one was started with.
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn lasting_environment(name: &str) -> Vec<String> {
+    [
+        (windows_registry::CURRENT_USER, USER_ENVIRONMENT),
+        (windows_registry::LOCAL_MACHINE, MACHINE_ENVIRONMENT),
+    ]
+    .into_iter()
+    .filter_map(|(hive, key)| expanded(hive.open(key).ok()?, name))
+    .collect()
+}
+
+fn environment(hive: &windows_registry::Key, key: &str, name: &str) -> Administered {
+    if !super::administered::READ_BY_REAL_HOSTS {
+        return Administered::Unset;
+    }
+    hive.open(key)
+        .ok()
+        .and_then(|key| expanded(key, name))
+        .map_or(Administered::Unset, Administered::Set)
+}
+
 fn registry_path() -> LoginPath {
     use windows_registry::{CURRENT_USER, LOCAL_MACHINE};
     let parts: Vec<String> = [
-        (
-            LOCAL_MACHINE,
-            r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
-        ),
-        (CURRENT_USER, "Environment"),
+        (LOCAL_MACHINE, MACHINE_ENVIRONMENT),
+        (CURRENT_USER, USER_ENVIRONMENT),
     ]
     .into_iter()
     .filter_map(|(hive, key)| expanded(hive.open(key).ok()?, "Path"))
@@ -200,25 +223,22 @@ impl Host for Windows {
     }
 
     fn user_environment(&self, name: &str) -> Administered {
-        if !super::administered::READ_BY_REAL_HOSTS {
-            return Administered::Unset;
-        }
-        windows_registry::CURRENT_USER
-            .open("Environment")
-            .ok()
-            .and_then(|key| expanded(key, name))
-            .map_or(Administered::Unset, Administered::Set)
+        environment(windows_registry::CURRENT_USER, USER_ENVIRONMENT, name)
     }
 
-    fn credential_held(&self, ctx: &Context, target: &str) -> Result<bool, String> {
+    fn machine_environment(&self, name: &str) -> Administered {
+        environment(windows_registry::LOCAL_MACHINE, MACHINE_ENVIRONMENT, name)
+    }
+
+    #[cfg_attr(not(any(test, feature = "test-support")), allow(unused_variables))]
+    fn credential_held(&self, ctx: &Context, target: &str) -> Result<bool, crate::store::Error> {
         #[cfg(any(test, feature = "test-support"))]
         if let Some(why) =
             crate::provider::claude::credman::refused_in_a_build_for_tests(ctx, target)
         {
-            return Err(why);
+            return Err(crate::store::Error::Unreadable(why));
         }
-        let _ = ctx;
-        credman::held(target).map_err(|e| e.to_string())
+        credman::held(target).map_err(|e| credman::failed(&e, crate::store::Error::Unreadable))
     }
 
     fn windows_settings(&self) -> super::WindowsSettings {
@@ -322,21 +342,18 @@ mod tests {
         let ctx = Context::new(home.path().to_path_buf())
             .with_claude_config_dir(config.to_string_lossy().into_owned());
         let own = crate::provider::claude::slot::service_for_dir(&config.to_string_lossy());
-        assert_eq!(
-            host().credential_held(&ctx, &format!("{own}/claude-code-user")),
-            Ok(false)
-        );
-        assert_eq!(
-            host().credential_held(&ctx, &format!("{own}/claude-code-user#m")),
-            Ok(false)
-        );
+        for piece in ["", "#m"] {
+            let held = host().credential_held(&ctx, &format!("{own}/claude-code-user{piece}"));
+            assert!(matches!(held, Ok(false)), "{piece}: {held:?}");
+        }
         for live in [
             "Claude Code-credentials/claude-code-user",
             "Claude Code-credentials/claude-code-user#m",
         ] {
-            let refused = host()
-                .credential_held(&Context::new(home.path().to_path_buf()), live)
-                .expect_err("refused");
+            let held = host().credential_held(&Context::new(home.path().to_path_buf()), live);
+            let Err(crate::store::Error::Unreadable(refused)) = held else {
+                panic!("{live}: {held:?}");
+            };
             assert!(
                 refused.starts_with("a test must never address"),
                 "{refused}"

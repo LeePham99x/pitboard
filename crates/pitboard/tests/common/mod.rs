@@ -374,7 +374,9 @@ impl Env {
     }
 
     pub(crate) fn guard(&self, name: &str) {
-        if let Some(why) = pitboard_core::provider::names::refusal(name, &[&self.service]) {
+        if let Some(why) =
+            pitboard_core::provider::names::refusal(name, std::slice::from_ref(&self.service))
+        {
             panic!("{why}");
         }
     }
@@ -1266,7 +1268,10 @@ impl Drop for Env {
         // in the keychain outlives it, and is deleted by name.
         // Refused names are left with a warning: a panic while unwinding aborts the test binary.
         let ours = |service: &&String| {
-            let why = pitboard_core::provider::names::refusal(service, &[&self.service]);
+            let why = pitboard_core::provider::names::refusal(
+                service,
+                std::slice::from_ref(&self.service),
+            );
             if let Some(why) = &why {
                 eprintln!("{why}; left as it is");
             }

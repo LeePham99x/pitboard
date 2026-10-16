@@ -46,6 +46,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   of calling it unreadable.
 - `pitboard uninstall` deletes a login a stopped sign-in left in the keychain, instead of
   leaving it there with nothing to name it.
+- On Linux, Pitboard finds Claude Code's `.credentials.json` and its locks where
+  `CLAUDE_CONFIG_DIR` spells an accent decomposed, as Claude Code does.
+- `pitboard doctor` quotes the path in the `rm` it gives for a login file it could not read, so
+  the command deletes that file where its path has a space.
 - When Anthropic or OpenAI refuses a request, Pitboard says the reason and request id they gave,
   instead of only the status code.
 - A refusal that asking again would not change says to sign in again, with `refused` as its

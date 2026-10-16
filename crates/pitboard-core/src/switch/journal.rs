@@ -256,6 +256,9 @@ enum Owner {
     Unknown(String),
     /// The record cannot say whose this login is, and the service has not been asked.
     Unasked(Value),
+    /// A write into the store stopped partway, which no read gets past and a whole write
+    /// ends, for this reason.
+    Unfinished(String),
 }
 
 /// Whose the live login is, read off the record and the login without asking anybody, and
@@ -265,7 +268,10 @@ enum Owner {
 /// an interrupted switch recoverable with no network at all.
 fn live_owner(ctx: &Context, tool: &'static dyn Provider, journal: &Journal) -> (Owner, String) {
     match tool.read_live(ctx) {
-        Err(e) => (Owner::Unknown(e.to_string()), String::new()),
+        Err(e) => match left_unfinished(ctx, tool) {
+            Some(why) => (Owner::Unfinished(why), String::new()),
+            None => (Owner::Unknown(e.to_string()), String::new()),
+        },
         // The login going in was never there or is gone again, and its park is all it has.
         Ok(None) if journal.replaces() => (Owner::Is(String::new()), String::new()),
         Ok(None) => (Owner::Unknown("nothing is signed in".into()), String::new()),
@@ -280,6 +286,55 @@ fn live_owner(ctx: &Context, tool: &'static dyn Provider, journal: &Journal) -> 
     }
 }
 
+// Why the tool's store holds a write that stopped partway, where it does: Claude Code's pieces
+// in Credential Manager (`credman_chunking`).
+fn left_unfinished(ctx: &Context, tool: &'static dyn Provider) -> Option<String> {
+    let live = tool.live(ctx).ok()?;
+    match store::read_raw(&live.chain, &live.service) {
+        Err(store::Error::Unfinished(why)) => Some(why),
+        _ => None,
+    }
+}
+
+fn not_finished(state: &State, journal: &Journal, why: &str, detail: impl ToString) -> Error {
+    Error::RecoveryUnfinished {
+        tool: journal.provider,
+        from: state.typed(&journal.from()),
+        to: state.typed(&journal.to()),
+        detail: format!("{why}; {}", detail.to_string()),
+    }
+}
+
+// What ends a write that stopped partway: the login the switch went to, written whole. The
+// part of the outgoing document that is no account's, such as its MCP tokens, no read gets
+// back now, so it is not in it.
+fn finishing(
+    ctx: &Context,
+    state: &State,
+    tool: &'static dyn Provider,
+    journal: &Journal,
+    why: &str,
+) -> Result<String> {
+    let Some(Some(incoming)) = read_park(ctx, &journal.incoming_service) else {
+        return Err(not_finished(
+            state,
+            journal,
+            why,
+            "its parked login could not be read",
+        ));
+    };
+    tool.splice(&Value::Object(serde_json::Map::new()), &incoming)
+        .map(|next| super::to_body(&next))
+        .map_err(|e| not_finished(state, journal, why, e))
+}
+
+// Under the tool's write lock, as a switch writes.
+fn finish(ctx: &Context, permit: Permit, tool: &'static dyn Provider, body: &str) -> Result<()> {
+    let live = tool.live(ctx).map_err(|e| super::shape(tool.id(), e))?;
+    let _guard = super::write_lock(ctx, permit, tool)?;
+    Ok(store::write_raw(&live.chain, permit, &live.service, body)?)
+}
+
 /// The id of the account whose the live login is, with the service asked where only it
 /// can say.
 fn ask(
@@ -290,7 +345,7 @@ fn ask(
 ) -> std::result::Result<String, String> {
     match owner {
         Owner::Is(id) => Ok(id),
-        Owner::Unknown(why) => Err(why),
+        Owner::Unknown(why) | Owner::Unfinished(why) => Err(why),
         Owner::Unasked(live) => identity_of_document(ctx, tool, &live)
             .map(|identity| state.id_for(tool.id(), &identity))
             .map_err(|e| e.to_string()),
@@ -514,16 +569,22 @@ pub(super) fn reconcile(
     permit: Permit,
     state: &mut State,
 ) -> Result<Option<Recovered>> {
-    let Some(Waiting {
+    let Some(mut waiting) = read(ctx, state)? else {
+        return Ok(None);
+    };
+    if let Owner::Unfinished(why) = &waiting.owner {
+        let (tool, journal) = (waiting.tool, &waiting.journal);
+        let body = finishing(ctx, state, tool, journal, why)?;
+        finish(ctx, permit, tool, &body).map_err(|e| not_finished(state, journal, why, e))?;
+        (waiting.owner, waiting.seen.login) = live_owner(ctx, tool, journal);
+    }
+    let Waiting {
         tool,
         journal,
         parked,
         owner,
         seen,
-    }) = read(ctx, state)?
-    else {
-        return Ok(None);
-    };
+    } = waiting;
     let owner = ask(ctx, state, tool, owner);
     let repair = decide(state, tool, &journal, parked, owner)?;
     let finished = repair.landed;
@@ -564,6 +625,9 @@ pub(super) fn refusal(ctx: &Context, state: &State, asking: Asking) -> Option<Er
         owner,
         ..
     } = read(ctx, state).ok()??;
+    if let Owner::Unfinished(why) = &owner {
+        return finishing(ctx, state, tool, &journal, why).err();
+    }
     if asking == Asking::Nobody
         && matches!(owner, Owner::Unasked(_))
         && !tool.identifies_by_itself()

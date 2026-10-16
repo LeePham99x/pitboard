@@ -1,4 +1,5 @@
-// Over-broad on purpose: what a test and CI's leak check refuse, never what Pitboard looks up.
+// Over-broad on purpose: what a test and CI's leak check refuse, and which of Codex's items
+// doctor counts by name; never what Pitboard reads a login from.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Family {
@@ -42,7 +43,7 @@ pub fn family(name: &str) -> Option<Family> {
 }
 
 // `slot`'s own item or one of its pieces, `#<k>`, `#m` and `#p`, with or without its user name.
-pub fn spells(name: &str, slot: &str) -> bool {
+fn spells(name: &str, slot: &str) -> bool {
     let whole = match name.rsplit_once('#') {
         Some((whole, piece))
             if piece == "m"
@@ -62,7 +63,7 @@ pub fn spells(name: &str, slot: &str) -> bool {
 }
 
 // Why a test, or a build for tests, may not address `name`: a family's, and none of `own`'s.
-pub fn refusal(name: &str, own: &[&str]) -> Option<String> {
+pub fn refusal(name: &str, own: &[String]) -> Option<String> {
     let family = family(name)?;
     (!own.iter().any(|own| spells(name, own))).then(|| {
         format!(
@@ -80,7 +81,7 @@ mod tests {
     #[test]
     fn a_tests_own_slot_and_its_pieces_are_let_through_and_nothing_else() {
         let own = service_for_dir("/tmp/pitboard-e2e-1-own");
-        let own = own.as_str();
+        let mine = std::slice::from_ref(&own);
         for name in [
             own.to_owned(),
             format!("{own}/claude-code-user"),
@@ -90,7 +91,7 @@ mod tests {
             format!("{own}/CLAUDE-CODE-USER#p"),
             own.to_uppercase(),
         ] {
-            assert_eq!(refusal(&name, &[own]), None, "{name}");
+            assert_eq!(refusal(&name, mine), None, "{name}");
         }
         for name in [
             LIVE_SERVICE.to_owned(),
@@ -101,7 +102,7 @@ mod tests {
             "cli|0123456789abcdef.Codex Auth".into(),
             "secrets|0123456789abcdef.codex".into(),
         ] {
-            assert!(refusal(&name, &[own]).is_some(), "{name}");
+            assert!(refusal(&name, mine).is_some(), "{name}");
         }
         assert_eq!(refusal("pitboard-citest-anything", &[]), None);
     }

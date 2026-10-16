@@ -3,6 +3,7 @@
 // its blob, enterprise persistence, no comment and no attributes. Names alone for the rest.
 
 use crate::context::Context;
+use crate::provider::claude::pieces::BLOB;
 use crate::service::Permit;
 use crate::store::{Backend, Cost, Error, RawStore};
 use std::io;
@@ -11,9 +12,6 @@ use windows_sys::Win32::Security::Credentials::{
     CRED_PERSIST_ENTERPRISE, CRED_TYPE_GENERIC, CREDENTIALW, CredDeleteW, CredEnumerateW, CredFree,
     CredReadW, CredWriteW,
 };
-
-// CRED_MAX_CREDENTIAL_BLOB_SIZE (MC-cred).
-pub(crate) const BLOB: usize = 5 * 512;
 
 fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain([0]).collect()
@@ -156,7 +154,7 @@ pub(crate) fn delete(target: &str) -> io::Result<bool> {
 
 // What a call failed with, for a store: a network logon has no credential set, which says
 // nothing of what is kept (MC-net).
-fn failed(e: &io::Error, said: impl FnOnce(String) -> Error) -> Error {
+pub(super) fn failed(e: &io::Error, said: impl FnOnce(String) -> Error) -> Error {
     if e.raw_os_error()
         .is_some_and(|code| code as u32 == ERROR_NO_SUCH_LOGON_SESSION)
     {
@@ -191,8 +189,7 @@ impl Generic {
         let target = format!("{service}/{}", self.account);
         #[cfg(any(test, feature = "test-support"))]
         {
-            let own: Vec<&str> = self.own.iter().map(String::as_str).collect();
-            if let Some(why) = crate::provider::names::refusal(&target, &own) {
+            if let Some(why) = crate::provider::names::refusal(&target, &self.own) {
                 let not_own = crate::provider::claude::credman::not_own(&self.ctx);
                 return Err(Error::Unreadable(format!("{why}; {not_own}")));
             }
@@ -276,7 +273,7 @@ mod tests {
         assert!(!held("pitboard-citest-w22-nothing/claude-code-user").expect("asked"));
     }
 
-    // MC-cred: CRED_MAX_CREDENTIAL_BLOB_SIZE, which the store's own check stops at first.
+    // CRED_MAX_CREDENTIAL_BLOB_SIZE, which the store's own check stops at first.
     #[test]
     fn an_item_holds_2560_bytes_and_no_more() {
         let target = format!(

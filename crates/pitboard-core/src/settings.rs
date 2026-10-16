@@ -73,20 +73,25 @@ struct Layer {
     text: String,
 }
 
-// `HKLM` wins over the folder unless they merge, so reading both finds more, never less.
-fn managed(ctx: &Context) -> Vec<Layer> {
-    let host = ctx.host();
+fn managed_files(ctx: &Context) -> Vec<PathBuf> {
     let dir = managed_dir(ctx.os);
     let mut files = vec![dir.join("managed-settings.json")];
-    let mut drop_ins: Vec<PathBuf> = host
+    let mut drop_ins: Vec<PathBuf> = ctx
+        .host()
         .administered_folder(&dir.join("managed-settings.d"))
         .into_iter()
         .filter(|p| p.extension().is_some_and(|e| e == "json"))
         .collect();
     drop_ins.sort();
     files.extend(drop_ins);
+    files
+}
+
+// `HKLM` wins over the folder unless they merge, so reading both finds more, never less.
+fn managed(ctx: &Context) -> Vec<Layer> {
+    let host = ctx.host();
     let mut there = false;
-    let mut layers: Vec<Layer> = files
+    let mut layers: Vec<Layer> = managed_files(ctx)
         .into_iter()
         .filter_map(|path| match host.administered_file(&path) {
             Administered::Set(text) => {
@@ -125,6 +130,55 @@ fn managed(ctx: &Context) -> Vec<Layer> {
         }
     }
     layers
+}
+
+// The managed sources a session takes, as Claude Code picks them: `HKLM` over the folder unless
+// it merges them, `HKCU` where neither holds a policy. Err names one Pitboard cannot read that
+// may be taken.
+fn managed_taken(ctx: &Context) -> Result<Vec<Layer>, String> {
+    let host = ctx.host();
+    let mut folder = Vec::new();
+    let mut unread = None;
+    for path in managed_files(ctx) {
+        match host.administered_file(&path) {
+            Administered::Set(text) => folder.push(Layer {
+                name: path.display().to_string(),
+                text,
+            }),
+            Administered::Unreadable(why) => {
+                unread.get_or_insert(format!("{}: {why}", path.display()));
+            }
+            Administered::Unset => {}
+        }
+    }
+    let folder = || unread.map_or(Ok(folder), Err);
+    if ctx.os != Os::Windows {
+        return folder();
+    }
+    let policy = |hive: Hive| {
+        let name = format!(r"{}\{POLICIES}\{POLICY}", hive.name());
+        match host.policy(hive, POLICIES, POLICY) {
+            Administered::Set(text) if holds_policy(&text) => Ok(Some(Layer { name, text })),
+            Administered::Set(_) | Administered::Unset => Ok(None),
+            Administered::Unreadable(why) => Err(format!("{name}: {why}")),
+        }
+    };
+    if let Some(machine) = policy(Hive::Machine)? {
+        let merges = serde_json::from_str::<Value>(&machine.text)
+            .ok()
+            .and_then(|json| Some(json.get("managedSourcesBehavior")?.as_str()? == "merge"))
+            .unwrap_or(false);
+        let mut taken = vec![machine];
+        if merges {
+            taken.extend(folder()?);
+        }
+        return Ok(taken);
+    }
+    let folder = folder()?;
+    if folder.iter().any(|layer| holds_policy(&layer.text)) {
+        return Ok(folder);
+    }
+    Ok(policy(Hive::User)?.into_iter().collect())
 }
 
 // What keeps `HKCU` out: one Claude Code cannot read, or one that sets more than composition.
@@ -230,12 +284,13 @@ pub(crate) struct EnvSetting {
     pub(crate) managed: bool,
 }
 
-// Managed settings first, then the person's own, each assigned over the one before
-// (`windows_backend_choice`). A name in any case, as Windows takes one.
-pub(crate) fn env_settings(ctx: &Context, name: &str) -> Vec<EnvSetting> {
-    let managed = managed(ctx).into_iter().map(|layer| (layer, true));
+// Highest first: the managed sources a session takes, then the person's own settings.json, which
+// Claude Code assigns before them (`windows_backend_choice`). A name in any case, as Windows
+// takes one. Err names a managed source Pitboard cannot read that may be taken.
+pub(crate) fn env_settings(ctx: &Context, name: &str) -> Result<Vec<EnvSetting>, String> {
+    let managed = managed_taken(ctx)?.into_iter().map(|layer| (layer, true));
     let own = own(&claude::config_dir(ctx).join("settings.json")).map(|layer| (layer, false));
-    managed
+    Ok(managed
         .chain(own)
         .filter_map(|(layer, managed)| {
             let json = serde_json::from_str::<Value>(&layer.text).ok()?;
@@ -252,7 +307,7 @@ pub(crate) fn env_settings(ctx: &Context, name: &str) -> Vec<EnvSetting> {
                 managed,
             })
         })
-        .collect()
+        .collect())
 }
 
 // A warm-up's run gets none of this process's environment.

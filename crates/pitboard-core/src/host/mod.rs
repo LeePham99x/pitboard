@@ -138,7 +138,9 @@ impl Os {
 
     pub(crate) fn remove_file_command(self, path: &Path) -> String {
         match self {
-            Os::MacOs | Os::Linux => format!("rm {}", path.display()),
+            Os::MacOs | Os::Linux => {
+                format!("rm '{}'", path.display().to_string().replace('\'', r"'\''"))
+            }
             Os::Windows => {
                 let mut quoted = String::new();
                 for c in path.display().to_string().chars() {
@@ -391,6 +393,16 @@ pub(crate) fn real_login_places(
         .chain(pitboard_app_on_windows(&local))
         .filter(|place| place.is_absolute())
         .collect())
+}
+
+#[cfg(all(windows, any(test, feature = "test-support")))]
+pub(crate) use windows::lasting_environment;
+
+// What the account's lasting environment names, which a test's own may have inherited: nothing
+// off Windows.
+#[cfg(all(not(windows), any(test, feature = "test-support")))]
+pub(crate) fn lasting_environment(_name: &str) -> Vec<String> {
+    Vec::new()
 }
 
 // Is, holds or lies in, for a build for tests to refuse, the same on every system: through
@@ -826,9 +838,20 @@ pub(crate) trait Host: Send + Sync + std::fmt::Debug {
         Administered::Unset
     }
 
+    // As `HKLM`'s `Session Manager\Environment` holds it, which a program started from now on is
+    // given where `HKCU\Environment` does not name it; unset elsewhere, and in a build for tests
+    // on the real hosts.
+    fn machine_environment(&self, _name: &str) -> Administered {
+        Administered::Unset
+    }
+
     // Whether Credential Manager holds a generic item named `target`, never what it holds; Err
     // says why it cannot tell. None is held where there is no Credential Manager.
-    fn credential_held(&self, _ctx: &Context, _target: &str) -> std::result::Result<bool, String> {
+    fn credential_held(
+        &self,
+        _ctx: &Context,
+        _target: &str,
+    ) -> std::result::Result<bool, crate::store::Error> {
         Ok(false)
     }
 

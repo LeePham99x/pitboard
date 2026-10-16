@@ -46,6 +46,9 @@ pub enum Fault {
     /// says it could not tell, and so does every read after it. The same screen lock as
     /// `LocksOnWrite`, a moment later.
     LocksAfterWrite,
+    /// It is there to a look, and every read of what it holds says a write into it stopped
+    /// partway, until a write lands over it: Credential Manager's pieces on Windows.
+    Unfinished(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -245,6 +248,7 @@ impl MemoryStore {
         match self.fault_for(service) {
             Some(Fault::Unreadable(why)) => Err(Error::Unreadable(why)),
             Some(Fault::UnreadableContents(why)) if contents => Err(Error::Unreadable(why)),
+            Some(Fault::Unfinished(why)) if contents => Err(Error::Unfinished(why)),
             Some(Fault::Locked) => Err(Error::Locked),
             Some(Fault::Vanish) => Ok(None),
             _ => Ok(self.peek(service)),
@@ -286,6 +290,10 @@ impl RawStore for Arc<MemoryStore> {
                 return Err(Error::Locked);
             }
             Some(Fault::CorruptWrite(instead)) => self.plant(service, &instead),
+            Some(Fault::Unfinished(_)) => {
+                self.heal(service);
+                self.plant(service, contents);
+            }
             Some(Fault::DeletedAfterWrite) => {
                 // The write lands and whoever else is writing gets there before the
                 // read-back, so the store reports the item as absent, not as unreadable.

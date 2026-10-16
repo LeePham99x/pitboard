@@ -41,7 +41,7 @@ pub(crate) fn chain(ctx: &Context) -> Live {
         ]),
         Os::Windows => match credman::ambiguity(ctx) {
             None => Live::of(vec![host.file(credential_file(ctx))]),
-            Some(why) => Live::of(vec![Box::new(Refused::new(Backend::Unknown, why))]),
+            Some(refused) => Live::of(vec![Box::new(Refused::new(Backend::Unknown, refused))]),
         },
     }
 }

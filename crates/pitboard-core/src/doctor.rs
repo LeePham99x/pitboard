@@ -268,8 +268,8 @@ pub(crate) enum CodexLoginTrouble {
     NotAnAccount(String),
     /// Unreadable, or read and not one account's login.
     Unusable(String),
-    // `CODEX_HOME` names no folder, so Codex does not start: Windows' alone.
-    NoHome(String),
+    // `CODEX_HOME` names this, which is no folder, so Codex does not start: Windows' alone.
+    NoHome(PathBuf),
 }
 
 pub(crate) struct ParkFact {
@@ -801,8 +801,8 @@ fn codex_login(ctx: &Context) -> Result<Option<CodexLogin>, CodexLoginTrouble> {
     let tool = crate::provider::codex();
     let unusable = |e: crate::provider::ProviderError| CodexLoginTrouble::Unusable(e.to_string());
     let Some(credential) = tool.read_live(ctx).map_err(|e| match e {
-        crate::provider::ProviderError::CodexHomeMissing { .. } => {
-            CodexLoginTrouble::NoHome(e.to_string())
+        crate::provider::ProviderError::CodexHomeMissing { path } => {
+            CodexLoginTrouble::NoHome(path)
         }
         other => unusable(other),
     })?
@@ -1825,9 +1825,9 @@ fn judge_credential(facts: &Facts) -> Check {
             "credential",
             "Credential Manager cannot be reached from this logon",
             format!(
-                "A network logon, as a sign-in over SSH with a key, has no Credential Manager. \
-                 Run Pitboard from a desktop session. A Claude Code session started from this \
-                 logon reads only {}.",
+                "A network logon, as {}, has no Credential Manager. Run Pitboard from a desktop \
+                 session. A Claude Code session started from this logon reads only {}.",
+                words::SSH_SIGN_IN,
                 facts.credential_file.display()
             ),
         ),
@@ -1874,18 +1874,17 @@ fn judge_fallback_login(facts: &Facts) -> Option<Check> {
         "While it is there, Claude Code sessions already running at a switch {}.",
         words::kept_until_renewed()
     );
-    let (cannot, could_not, such_as, as_login) = match facts.os {
+    let cannot = words::out_of_reach(facts.os);
+    let (could_not, such_as, as_login) = match facts.os {
         Os::MacOs | Os::Linux => (
-            "cannot read the keychain",
             "the keychain could not be read",
-            "in a session started over SSH",
-            "`/login` over SSH does",
+            "in a session started over SSH".to_owned(),
+            "`/login` over SSH does".to_owned(),
         ),
         Os::Windows => (
-            "cannot reach Credential Manager",
             "Credential Manager could not be reached",
-            "in a sign-in over SSH with a key",
-            "`/login` does in a sign-in over SSH with a key",
+            format!("in {}", words::SSH_SIGN_IN),
+            format!("`/login` does in {}", words::SSH_SIGN_IN),
         ),
     };
     let (detail, advice) = match &left.fingerprint {
@@ -2119,7 +2118,8 @@ fn judge_pieces(price: store::Cost, parts: &[(String, usize)]) -> Check {
             "credential_size",
             "login size",
             format!(
-                "{bytes} bytes, past the {limit} Claude Code keeps in Credential Manager{}",
+                "{}{}",
+                words::past_credential_manager(bytes, limit),
                 biggest(parts)
             ),
             "Neither Pitboard nor Claude Code can write a login this size there. Sign out of \
@@ -2133,7 +2133,10 @@ fn judge_pieces(price: store::Cost, parts: &[(String, usize)]) -> Check {
         Some(pieces) => ok(
             "credential_size",
             "login size",
-            format!("{bytes} bytes, in {pieces} pieces of 2400 characters"),
+            format!(
+                "{bytes} bytes, in {pieces} pieces of {} characters",
+                crate::provider::claude::pieces::PIECE
+            ),
         ),
     }
 }
@@ -2732,8 +2735,7 @@ fn judge_codex(
                 format!("file ({setting})  ·  {}", facts.auth_file.display()),
             )
         },
-        // Not a choice: Codex 0.160.0 does not start, or Pitboard does not read where the
-        // store is chosen on this system yet.
+        // Not a choice: a layer Codex reads stops it from starting.
         "unknown" => broken(
             "codex_backend",
             "Codex login store",
@@ -2864,11 +2866,11 @@ fn judge_codex(
                  account's. Signing in with `codex` again writes a fresh one."
                     .into(),
             )),
-            Err(CodexLoginTrouble::NoHome(why)) => checks.push(broken(
+            Err(CodexLoginTrouble::NoHome(path)) => checks.push(broken(
                 "codex_login",
                 "Codex login",
-                why.clone(),
-                String::new(),
+                crate::error::codex_home_no_folder(path),
+                format!("{}.", crate::error::CODEX_HOME_REMEDY),
             )),
         }
     }
@@ -4934,7 +4936,7 @@ mod tests {
              put it away. While it is there, Claude Code sessions already running at a switch \
              keep the account they are on until their login is next renewed, or until they are \
              started again. Deleting it lets them follow a switch, and takes whatever it holds \
-             with it: `rm /home/x/.claude/.credentials.json`."
+             with it: `rm '/home/x/.claude/.credentials.json'`."
         );
         assert!(healthy(&checks), "nothing Pitboard does is stopped by it");
 
@@ -4996,7 +4998,13 @@ mod tests {
         assert_eq!(
             Os::MacOs
                 .remove_file_command(std::path::Path::new("/Users/x/.claude/.credentials.json")),
-            "rm /Users/x/.claude/.credentials.json"
+            "rm '/Users/x/.claude/.credentials.json'"
+        );
+        assert_eq!(
+            Os::Linux.remove_file_command(std::path::Path::new(
+                "/home/x/Application Support/it's/.credentials.json"
+            )),
+            r"rm '/home/x/Application Support/it'\''s/.credentials.json'"
         );
     }
 
@@ -7082,20 +7090,24 @@ mod tests {
     // Windows' alone: Codex does not start there where `CODEX_HOME` names no folder.
     #[test]
     fn a_codex_home_that_names_no_folder_is_said_as_it_is() {
-        let why = "CODEX_HOME is C:\\nowhere, which is no folder, so Codex does not start. Make \
-                   that folder, or unset CODEX_HOME";
         for (enrolled, level) in [(1, Level::Fail), (0, Level::Warn)] {
             let facts = CodexFacts {
                 present: false,
                 auth_access: None,
-                login: Err(CodexLoginTrouble::NoHome(why.into())),
+                login: Err(CodexLoginTrouble::NoHome(PathBuf::from(r"C:\nowhere"))),
                 enrolled,
                 ..with_codex()
             };
             let checks = codex_checks(&facts);
             let found = check(&checks, "codex_login");
-            assert_eq!((found.level, found.detail.as_str()), (level, why));
-            assert_eq!(found.advice, "");
+            assert_eq!(
+                (found.level, found.detail.as_str()),
+                (
+                    level,
+                    r"CODEX_HOME is C:\nowhere, which is no folder, so Codex does not start"
+                )
+            );
+            assert_eq!(found.advice, "Make that folder, or unset CODEX_HOME.");
         }
     }
 
@@ -7533,7 +7545,7 @@ mod tests {
         match crate::host::OS {
             Os::MacOs | Os::Linux => assert!(matches!(absent.login, Ok(None))),
             Os::Windows => assert!(
-                matches!(&absent.login, Err(CodexLoginTrouble::NoHome(why)) if why.contains("no folder")),
+                matches!(&absent.login, Err(CodexLoginTrouble::NoHome(path)) if *path == home),
                 "Codex does not start there"
             ),
         }

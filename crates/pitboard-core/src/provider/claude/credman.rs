@@ -33,14 +33,19 @@ fn config(ctx: &Context) -> Option<Value> {
 }
 
 // The variable's value a session would start with: the highest settings layer that sets it,
-// over the config file's `env`, over the environment it was started with.
+// over the config file's `env`, over the environment it was started with. A managed source
+// Pitboard cannot read, or managed sources that disagree, may set it to anything over every
+// other, so nothing turns the store on.
 fn forced(ctx: &Context, config: Option<&Value>) -> Option<String> {
-    let settings = crate::settings::env_settings(ctx, FORCE);
-    let deciding = settings
+    let settings = crate::settings::env_settings(ctx, FORCE).ok()?;
+    let managed: Vec<_> = settings.iter().filter(|set| set.managed).collect();
+    if managed
         .iter()
-        .find(|set| set.managed && is_one(&set.value))
-        .or_else(|| settings.first());
-    if let Some(set) = deciding {
+        .any(|set| is_one(&set.value) != is_one(&managed[0].value))
+    {
+        return None;
+    }
+    if let Some(set) = settings.first() {
         return is_one(&set.value).then(|| format!("`{FORCE}` is 1 in the env of {}", set.layer));
     }
     let in_config = config
@@ -57,12 +62,20 @@ fn forced(ctx: &Context, config: Option<&Value>) -> Option<String> {
     if ctx.credential_manager_forced {
         return Some(format!("`{FORCE}` is 1 in Pitboard's environment"));
     }
-    match ctx.host().user_environment(FORCE) {
-        Administered::Set(value) if value == "1" => {
-            Some(format!(r"`{FORCE}` is 1 in HKCU\Environment"))
-        }
-        _ => None,
-    }
+    let host = ctx.host();
+    let (user, machine) = (
+        host.user_environment(FORCE),
+        host.machine_environment(FORCE),
+    );
+    let (value, place) = match (user, machine) {
+        (Administered::Set(value), _) => (value, r"HKCU\Environment"),
+        (_, Administered::Set(value)) => (
+            value,
+            r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+        ),
+        _ => return None,
+    };
+    (value == "1").then(|| format!("`{FORCE}` is 1 in {place}"))
 }
 
 // Why Claude Code would keep its login in Credential Manager, in words that follow "while".
@@ -83,7 +96,7 @@ pub(crate) fn turned_on(ctx: &Context) -> Option<String> {
 }
 
 // Its item, or the manifest `#m` of one kept in pieces.
-pub(crate) fn holds(ctx: &Context, service: &str) -> Result<bool, String> {
+pub(crate) fn holds(ctx: &Context, service: &str) -> Result<bool, Error> {
     let whole = target(ctx, service);
     for name in [whole.clone(), format!("{whole}#m")] {
         if ctx.host().credential_held(ctx, &name)? {
@@ -95,22 +108,27 @@ pub(crate) fn holds(ctx: &Context, service: &str) -> Result<bool, String> {
 
 // With nothing turning its store on, why Claude Code may still keep its login in Credential
 // Manager; None where `.credentials.json` alone is its store.
-pub(crate) fn ambiguity(ctx: &Context) -> Option<String> {
+pub(crate) fn ambiguity(ctx: &Context) -> Option<Error> {
     let service = claude::live_service(ctx);
     let target = target(ctx, &service);
     match holds(ctx, &service) {
         Ok(false) => None,
-        Ok(true) => Some(format!(
+        // What a person cannot tell either, so the way that loses no login comes first.
+        Ok(true) => Some(Error::Unreadable(format!(
             "Credential Manager holds a Claude Code login under `{target}`, and nothing Pitboard \
-             reads says whether Claude Code uses that store or .credentials.json. If it uses \
-             Credential Manager, set `{FORCE}` to `1` in the env of {}; if not, remove that \
-             item in Credential Manager",
+             reads says whether Claude Code uses that store or .credentials.json. Set `{FORCE}` \
+             to `1` in the env of {}: Claude Code then uses Credential Manager too, and a login \
+             in .credentials.json stays behind it, where `pitboard stow` keeps it. Removing \
+             `{target}`, `{target}#m`, `{target}#p` and `{target}#0` onward from Credential \
+             Manager instead deletes the login they hold, which may be the one Claude Code signs \
+             in with",
             claude::config_dir(ctx).join("settings.json").display()
-        )),
-        Err(why) => Some(format!(
+        ))),
+        Err(Error::Unreadable(why)) => Some(Error::Unreadable(format!(
             "Credential Manager could not say whether it holds a Claude Code login under \
              `{target}` ({why})"
-        )),
+        ))),
+        Err(out_of_reach) => Some(out_of_reach),
     }
 }
 
@@ -214,11 +232,34 @@ fn own_slots(ctx: &Context, real: &[std::path::PathBuf]) -> Vec<String> {
         .collect()
 }
 
+// The places a build for tests refuses: this account's own, and each folder its lasting
+// environment names for Claude Code's login, which a test may have been started with.
+#[cfg(any(test, feature = "test-support"))]
+fn refused_places(own: Vec<std::path::PathBuf>, lasting: &[String]) -> Vec<std::path::PathBuf> {
+    let named = lasting
+        .iter()
+        .filter(|dir| !dir.is_empty())
+        .map(std::path::PathBuf::from);
+    own.into_iter().chain(named).collect()
+}
+
+#[cfg(any(test, feature = "test-support"))]
+fn real_places() -> Result<Vec<std::path::PathBuf>, String> {
+    let lasting: Vec<String> = ["CLAUDE_CONFIG_DIR", "CLAUDE_SECURESTORAGE_CONFIG_DIR"]
+        .into_iter()
+        .flat_map(crate::host::lasting_environment)
+        .collect();
+    Ok(refused_places(
+        crate::host::real_login_places(None)?,
+        &lasting,
+    ))
+}
+
 // What a build for tests may address in Credential Manager, which only Windows' host asks.
 #[cfg(any(test, feature = "test-support"))]
 #[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) fn own_slots_for_tests(ctx: &Context) -> Vec<String> {
-    match crate::host::real_login_places(None) {
+    match real_places() {
         Ok(real) => own_slots(ctx, &real),
         Err(_) => Vec::new(),
     }
@@ -228,9 +269,8 @@ pub(crate) fn own_slots_for_tests(ctx: &Context) -> Vec<String> {
 #[cfg(any(test, feature = "test-support"))]
 #[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) fn refused_in_a_build_for_tests(ctx: &Context, target: &str) -> Option<String> {
-    let own = own_slots_for_tests(ctx);
-    let own: Vec<&str> = own.iter().map(String::as_str).collect();
-    crate::provider::names::refusal(target, &own).map(|why| format!("{why}; {}", not_own(ctx)))
+    crate::provider::names::refusal(target, &own_slots_for_tests(ctx))
+        .map(|why| format!("{why}; {}", not_own(ctx)))
 }
 
 // A test's cleanup: every item Credential Manager lists under `service`, each by name, so no
@@ -256,7 +296,7 @@ pub(crate) fn swept(ctx: &Context, service: &str) -> Result<(), String> {
 #[cfg(any(test, feature = "test-support"))]
 #[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) fn not_own(ctx: &Context) -> String {
-    let real = match crate::host::real_login_places(None) {
+    let real = match real_places() {
         Ok(real) => real,
         Err(why) => return format!("{why}, so no slot is its own"),
     };
@@ -423,6 +463,86 @@ mod tests {
         assert_eq!(on(&scratch), None);
     }
 
+    // `windows_managed_settings`: the policy in `HKLM` is taken over the folder unless it merges
+    // them, and a source Pitboard cannot read may be the one taken.
+    #[test]
+    fn only_the_managed_source_a_session_takes_turns_it_on() {
+        let managed = PathBuf::from(r"C:\Program Files\ClaudeCode").join("managed-settings.json");
+        let machine = |scratch: &Scratch, policy: Value| {
+            scratch.memory.sets_policy(
+                Hive::Machine,
+                r"SOFTWARE\Policies\ClaudeCode",
+                "Settings",
+                &policy.to_string(),
+            );
+        };
+        let scratch = windows(&[]);
+        scratch
+            .memory
+            .administers(&managed, &json!({"env": {FORCE: "1"}}).to_string());
+        machine(&scratch, json!({"permissions": {"deny": ["Bash"]}}));
+        assert_eq!(on(&scratch), None, "the folder is not taken");
+
+        machine(
+            &scratch,
+            json!({"managedSourcesBehavior": "merge", "permissions": {}}),
+        );
+        assert!(on(&scratch).is_some(), "merged, the folder is taken too");
+        machine(
+            &scratch,
+            json!({"managedSourcesBehavior": "merge", "env": {FORCE: "0"}}),
+        );
+        assert_eq!(on(&scratch), None, "merged sources that disagree");
+
+        machine(&scratch, json!({"managedSourcesBehavior": "merge"}));
+        assert!(on(&scratch).is_some(), "no policy in HKLM, so the folder");
+
+        let scratch = windows(&[]);
+        scratch
+            .memory
+            .administers(&managed, &json!({"env": {FORCE: "1"}}).to_string());
+        scratch.memory.policy_unreadable(
+            Hive::Machine,
+            r"SOFTWARE\Policies\ClaudeCode",
+            "Settings",
+            "access is denied",
+        );
+        assert_eq!(on(&scratch), None, "HKLM may be the one taken");
+        let settings = scratch.config.join("settings.json");
+        scratch.write(&settings, &json!({"env": {FORCE: "1"}}));
+        assert_eq!(
+            on(&scratch),
+            None,
+            "and it is assigned over the person's own"
+        );
+
+        let scratch = windows(&[]);
+        scratch.write(
+            &scratch.config.join("settings.json"),
+            &json!({"env": {FORCE: "1"}}),
+        );
+        scratch
+            .memory
+            .administers_unreadably(&managed, "access is denied");
+        assert_eq!(on(&scratch), None, "the folder may say otherwise");
+    }
+
+    // A session's environment is the machine's, the person's own variables assigned over it.
+    #[test]
+    fn the_machines_environment_turns_it_on_unless_the_persons_says_otherwise() {
+        let scratch = windows(&[]);
+        scratch.memory.forgets_user_environment(FORCE);
+        scratch.memory.sets_machine_environment(FORCE, "1");
+        assert_eq!(
+            on(&scratch),
+            Some(format!(
+                r"`{FORCE}` is 1 in HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
+            ))
+        );
+        scratch.memory.sets_user_environment(FORCE, "0");
+        assert_eq!(on(&scratch), None);
+    }
+
     #[test]
     fn the_config_files_env_counts_below_the_persons_settings() {
         let scratch = windows(&[]);
@@ -484,7 +604,7 @@ mod tests {
 
     #[test]
     fn credential_manager_holding_the_live_target_is_ambiguous_with_the_store_off() {
-        assert_eq!(ambiguity(&windows(&[]).ctx), None);
+        assert!(ambiguity(&windows(&[]).ctx).is_none());
         for piece in ["", "#m", "#0"] {
             let scratch = windows(&[]);
             let service = claude::live_service(&scratch.ctx);
@@ -493,14 +613,24 @@ mod tests {
                 .keeps_credentials(&[&format!("{service}/CLAUDE-CODE-USER{piece}")]);
             let said = ambiguity(&scratch.ctx);
             if piece == "#0" {
-                assert_eq!(said, None, "a piece alone is no login");
+                assert!(said.is_none(), "a piece alone is no login");
                 continue;
             }
-            let said = said.expect("refused");
+            let Some(Error::Unreadable(said)) = said else {
+                panic!("{piece}: refused as unreadable");
+            };
+            let target = format!("{service}/claude-code-user");
             assert!(
                 said.starts_with(&format!(
-                    "Credential Manager holds a Claude Code login under \
-                     `{service}/claude-code-user`"
+                    "Credential Manager holds a Claude Code login under `{target}`"
+                )),
+                "{said}"
+            );
+            assert!(said.contains("`pitboard stow` keeps it"), "{said}");
+            assert!(
+                said.contains(&format!(
+                    "Removing `{target}`, `{target}#m`, `{target}#p` and `{target}#0` onward \
+                     from Credential Manager instead deletes the login they hold"
                 )),
                 "{said}"
             );
@@ -533,16 +663,40 @@ mod tests {
         ));
     }
 
+    // A network logon has no credential set (MC-net): out of reach, as every other call there.
     #[test]
-    fn a_look_that_fails_refuses_and_the_store_on_is_followed_without_one() {
+    fn a_look_that_fails_refuses_out_of_reach_or_unreadable() {
         let scratch = windows(&[]);
-        scratch.memory.credentials_unreadable("1312");
-        let said = ambiguity(&scratch.ctx).expect("refused");
+        scratch.memory.credentials_unreachable();
+        let refused = ambiguity(&scratch.ctx).expect("refused");
+        assert_eq!(refused.code(), "credential_store_locked", "{refused}");
+
+        let scratch = windows(&[]);
+        scratch
+            .memory
+            .credentials_unreadable("Access is denied. (os error 5)");
+        let Some(Error::Unreadable(said)) = ambiguity(&scratch.ctx) else {
+            panic!("refused as unreadable");
+        };
         assert!(
             said.starts_with("Credential Manager could not say whether it holds"),
             "{said}"
         );
-        assert!(said.ends_with("(1312)"), "{said}");
+        assert!(said.ends_with("(Access is denied. (os error 5))"), "{said}");
+    }
+
+    // The chain is built for this build's own system.
+    #[cfg(windows)]
+    #[test]
+    fn out_of_a_network_logons_reach_claude_codes_chain_refuses_as_out_of_reach() {
+        let scratch = windows(&[]);
+        scratch.memory.credentials_unreachable();
+        let service = claude::live_service(&scratch.ctx);
+        let chain = super::super::live::chain(&scratch.ctx);
+        assert!(matches!(
+            crate::store::read_raw(&chain, &service),
+            Err(Error::Locked)
+        ));
     }
 
     // The chain is built for this build's own system.
@@ -550,7 +704,7 @@ mod tests {
     #[test]
     fn with_the_store_on_claude_codes_chain_is_credential_manager_then_its_file() {
         let scratch = windows(&[(FORCE, "1")]);
-        scratch.memory.credentials_unreadable("1312");
+        scratch.memory.credentials_unreachable();
         let service = claude::live_service(&scratch.ctx);
         let chain = super::super::live::chain(&scratch.ctx);
         crate::store::write_raw(&chain, Permit::for_a_test(), &service, "{}").expect("written");
@@ -630,7 +784,7 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn a_marker_beside_pieces_or_a_manifest_claude_code_does_not_write_reads_unreadable() {
+    fn a_marker_beside_pieces_reads_unfinished_and_a_bad_manifest_unreadable() {
         use pieces::{MANIFEST, PENDING, login};
         let scratch = scratched();
         let (store, permit) = (Store::of(&scratch.ctx), Permit::for_a_test());
@@ -641,7 +795,7 @@ mod tests {
         items.set(permit, PENDING, "4").expect("a marker");
         assert!(matches!(
             store.read(&scratch.service),
-            Err(Error::Unreadable(_))
+            Err(Error::Unfinished(_))
         ));
         items.delete(permit, PENDING).expect("gone");
         items
@@ -685,6 +839,19 @@ mod tests {
         }
     }
 
+    // A person's `setx CLAUDE_CONFIG_DIR D:\claude` reaches a build for tests started from their
+    // shell, and that folder holds a real login wherever it is.
+    #[test]
+    fn a_folder_the_accounts_lasting_environment_names_is_no_tests_own() {
+        let scratch = windows(&[]);
+        let config = scratch.config.to_string_lossy().into_owned();
+        let own = slot::service_for_dir(&config);
+        assert!(own_slots(&scratch.ctx, &refused_places(Vec::new(), &[])).contains(&own));
+        let places = refused_places(Vec::new(), &[String::new(), config]);
+        assert_eq!(places, std::slice::from_ref(&scratch.config));
+        assert!(!own_slots(&scratch.ctx, &places).contains(&own));
+    }
+
     #[test]
     fn a_build_for_tests_looks_only_at_a_tests_own_slots() {
         let scratch = windows(&[]);
@@ -698,11 +865,8 @@ mod tests {
             1,
             "a folder that is a real login's place has no slot of a test's"
         );
-        let refused = |ctx: &Context, name: &str| {
-            let own = own_slots(ctx, &[]);
-            let own: Vec<&str> = own.iter().map(String::as_str).collect();
-            crate::provider::names::refusal(name, &own)
-        };
+        let refused =
+            |ctx: &Context, name: &str| crate::provider::names::refusal(name, &own_slots(ctx, &[]));
         assert_eq!(
             refused(&scratch.ctx, &format!("{own}/claude-code-user")),
             None

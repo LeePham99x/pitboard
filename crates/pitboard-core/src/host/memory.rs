@@ -86,12 +86,12 @@ impl RawStore for Opened {
         RawStore::list(&self.store)
     }
 
-    // A Credential Manager item holds 2560 bytes and has no other way in.
+    // A Credential Manager item has no other way in.
     fn cost(&self, service: &str, contents: &str) -> Option<Cost> {
         if self.kind() == Backend::CredentialManager {
             return Some(Cost {
                 needs: contents.len(),
-                limit: 5 * 512,
+                limit: crate::provider::claude::pieces::BLOB,
                 second_route: false,
             });
         }
@@ -144,9 +144,10 @@ pub struct MemoryHost {
     // Credential Manager's names, as a test said.
     credentials: Mutex<Vec<String>>,
     // Why Credential Manager cannot be asked, where a test said it cannot.
-    credentials_fault: Mutex<Option<String>>,
+    credentials_fault: Mutex<Option<Error>>,
     // `HKCU\Environment`, by name in upper case, as a test said.
     user_environment_values: Mutex<HashMap<String, String>>,
+    machine_environment_values: Mutex<HashMap<String, String>>,
     windows_settings: Mutex<WindowsSettings>,
     kernel_is_wsl: AtomicBool,
     windows_drives: Mutex<Vec<PathBuf>>,
@@ -219,6 +220,7 @@ impl MemoryHost {
             credentials: Mutex::new(Vec::new()),
             credentials_fault: Mutex::new(None),
             user_environment_values: Mutex::new(gate),
+            machine_environment_values: Mutex::new(HashMap::new()),
             windows_settings: Mutex::new(WindowsSettings::default()),
             kernel_is_wsl: AtomicBool::new(false),
             windows_drives: Mutex::new(Vec::new()),
@@ -425,12 +427,28 @@ impl MemoryHost {
 
     #[cfg(test)]
     pub(crate) fn credentials_unreadable(&self, why: &str) {
-        *locked(&self.credentials_fault) = Some(why.into());
+        *locked(&self.credentials_fault) = Some(Error::Unreadable(why.into()));
+    }
+
+    // As a network logon finds it, with no credential set (MC-net).
+    #[cfg(test)]
+    pub(crate) fn credentials_unreachable(&self) {
+        *locked(&self.credentials_fault) = Some(Error::Locked);
     }
 
     #[cfg(test)]
     pub(crate) fn sets_user_environment(&self, name: &str, value: &str) {
         locked(&self.user_environment_values).insert(name.to_uppercase(), value.into());
+    }
+
+    #[cfg(test)]
+    pub(crate) fn forgets_user_environment(&self, name: &str) {
+        locked(&self.user_environment_values).remove(&name.to_uppercase());
+    }
+
+    #[cfg(test)]
+    pub(crate) fn sets_machine_environment(&self, name: &str, value: &str) {
+        locked(&self.machine_environment_values).insert(name.to_uppercase(), value.into());
     }
 
     #[cfg(test)]
@@ -662,6 +680,14 @@ impl Host for MemoryHost {
             })
     }
 
+    fn machine_environment(&self, name: &str) -> Administered {
+        locked(&self.machine_environment_values)
+            .get(&name.to_uppercase())
+            .map_or(Administered::Unset, |value| {
+                Administered::Set(value.clone())
+            })
+    }
+
     fn windows_settings(&self) -> WindowsSettings {
         locked(&self.windows_settings).clone()
     }
@@ -678,9 +704,9 @@ impl Host for MemoryHost {
 
     // In any case, as Credential Manager finds a target: one a test named, or Claude Code's item
     // the live store holds.
-    fn credential_held(&self, ctx: &Context, target: &str) -> Result<bool, String> {
-        if let Some(why) = locked(&self.credentials_fault).clone() {
-            return Err(why);
+    fn credential_held(&self, ctx: &Context, target: &str) -> Result<bool, Error> {
+        if let Some(fault) = locked(&self.credentials_fault).clone() {
+            return Err(fault);
         }
         let lower = target.to_lowercase();
         if locked(&self.credentials)
@@ -692,9 +718,7 @@ impl Host for MemoryHost {
         let Some((service, account)) = target.rsplit_once('/') else {
             return Ok(false);
         };
-        Opened::of(&self.keychain, ctx, account)
-            .contains(service)
-            .map_err(|e| e.to_string())
+        Opened::of(&self.keychain, ctx, account).contains(service)
     }
 }
 
@@ -730,7 +754,7 @@ fn locked<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 mod tests {
     use super::*;
 
-    // A Credential Manager item holds 2560 bytes (MC-cred), and each piece is an item of its own.
+    // A Credential Manager item holds 2560 bytes, and each piece is an item of its own.
     #[test]
     fn a_credential_manager_item_takes_2560_bytes_and_each_piece_is_its_own() {
         let store =

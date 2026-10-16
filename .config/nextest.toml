@@ -8,12 +8,6 @@ filter = "binary_id(pitboard::keychain_write_is_harmless)"
 threads-required = "num-test-threads"
 priority = 100
 
-# Credential Manager's counterpart, alone as that one runs.
-[[profile.default.overrides]]
-filter = "binary_id(pitboard::credman_write_is_harmless)"
-threads-required = "num-test-threads"
-priority = 100
-
 # 100 pieces, near half of what a runner's Credential Manager takes (ARCHITECTURE.md), alone so
 # no other test's items run it out of room.
 [[profile.default.overrides]]

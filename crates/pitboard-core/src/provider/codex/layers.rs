@@ -376,7 +376,8 @@ fn read(
 /// decodes it (`decode_managed_preferences_base64`).
 fn decoded(forced: Administered) -> Administered {
     match forced {
-        Administered::Set(encoded) => match standard_base64(encoded.trim()) {
+        // As Codex's `BASE64_STANDARD` takes one: canonical padding and nothing else.
+        Administered::Set(encoded) => match crate::base64::decode(encoded.trim()) {
             None => Administered::Unreadable("is not base64".into()),
             Some(bytes) => String::from_utf8(bytes).map_or_else(
                 |_| Administered::Unreadable("does not decode to UTF-8 text".into()),
@@ -663,41 +664,6 @@ pub(crate) fn resolve(
     store(backend, chosen_by, mode, secrets_by, None)
 }
 
-/// Standard base64 with its padding, as Codex decodes a managed preference: the base64
-/// crate's `BASE64_STANDARD`, which takes canonical padding and nothing else.
-///
-/// Written out rather than taken as a dependency, for the reason `jwt`'s base64url is.
-fn standard_base64(text: &str) -> Option<Vec<u8>> {
-    let bytes = text.as_bytes();
-    if !bytes.len().is_multiple_of(4) {
-        return None;
-    }
-    let padding = bytes.iter().rev().take_while(|&&b| b == b'=').count();
-    if padding > 2 {
-        return None;
-    }
-    let mut out = Vec::with_capacity(bytes.len() / 4 * 3);
-    let (mut held, mut bits) = (0u32, 0);
-    for &byte in &bytes[..bytes.len() - padding] {
-        let sextet = match byte {
-            b'A'..=b'Z' => byte - b'A',
-            b'a'..=b'z' => byte - b'a' + 26,
-            b'0'..=b'9' => byte - b'0' + 52,
-            b'+' => 62,
-            b'/' => 63,
-            _ => return None,
-        };
-        held = (held << 6) | u32::from(sextet);
-        bits += 6;
-        if bits >= 8 {
-            bits -= 8;
-            out.push(u8::try_from((held >> bits) & 0xff).expect("masked to one byte"));
-        }
-    }
-    // What is left over is what the padding stands for, and must be zero to be canonical.
-    ((held & ((1u32 << bits) - 1)) == 0).then_some(out)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -751,7 +717,7 @@ mod tests {
     const EPHEMERAL: &str = "cli_auth_credentials_store = \"ephemeral\"\n";
 
     fn base64(text: &str) -> String {
-        crate::provider::jwt::base64(text.as_bytes())
+        crate::base64::encode(text.as_bytes())
     }
 
     /// Nothing set anywhere is Codex's own default, the file.
@@ -1520,24 +1486,6 @@ mod tests {
                 system_dir(os, Some(data.clone())),
                 PathBuf::from("/etc/codex")
             );
-        }
-    }
-
-    /// Canonical standard base64 only, as the base64 crate's `BASE64_STANDARD` decodes it.
-    #[test]
-    fn base64_is_read_as_codex_reads_it() {
-        for text in ["", "f", "fo", "foo", "foob", "fooba", "foobar"] {
-            assert_eq!(
-                standard_base64(&base64(text)),
-                Some(text.as_bytes().to_vec()),
-                "{text}"
-            );
-        }
-        assert_eq!(standard_base64("+/+/"), Some(vec![0xfb, 0xff, 0xbf]));
-        for refused in [
-            "Zg", "Zg=", "Zm9v=", "Zh==", "Z===", "-_-_", "Zm 9v", "Zg==Zg==",
-        ] {
-            assert_eq!(standard_base64(refused), None, "{refused}");
         }
     }
 }
