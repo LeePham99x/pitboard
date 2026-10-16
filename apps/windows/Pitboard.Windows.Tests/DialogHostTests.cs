@@ -1,4 +1,6 @@
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.VisualStudio.TestTools.UnitTesting.AppContainer;
 using Pitboard.Views;
 
@@ -86,5 +88,48 @@ public sealed class DialogHostTests
 
         Assert.AreEqual(ContentDialogResult.None, await firstShown);
         Assert.AreEqual(ContentDialogResult.None, await secondShown);
+    }
+
+    // A switch to dark while Pitboard ran left the Add account sheet light under white text (shots 25 and 28).
+    [UITestMethod]
+    public async Task ADialogTakesItsWindowsThemeAndFollowsIt()
+    {
+        var other = Application.Current.RequestedTheme == ApplicationTheme.Dark ? ElementTheme.Light : ElementTheme.Dark;
+        var content = await Views.Shown(new Grid { RequestedTheme = other });
+        var dialogs = new DialogHost(() => content.XamlRoot);
+        var dialog = new ContentDialog { Title = "Add account", Content = "Sign in as the account you’re adding.", CloseButtonText = "Cancel" };
+        var shown = dialogs.Show(dialog);
+        try
+        {
+            await Views.Until(() => dialogs.Open == dialog && dialog.IsLoaded, "the dialog did not show");
+            Assert.AreEqual(other, dialog.ActualTheme, "the dialog took the app's theme, not its window's");
+            Readable(dialog);
+
+            content.RequestedTheme = other == ElementTheme.Dark ? ElementTheme.Light : ElementTheme.Dark;
+
+            await Views.Until(() => dialog.ActualTheme == content.ActualTheme, "the dialog kept the theme it opened in");
+            Readable(dialog);
+        }
+        finally
+        {
+            dialog.Hide();
+            await shown;
+        }
+    }
+
+    // Light text on a dark ground in the dark theme, and dark on light in the light one.
+    private static void Readable(ContentDialog dialog)
+    {
+        static double Lightness(Brush brush)
+        {
+            var color = ((SolidColorBrush)brush).Color;
+            return (0.2126 * color.R) + (0.7152 * color.G) + (0.0722 * color.B);
+        }
+
+        var text = Lightness(dialog.Foreground);
+        var ground = Lightness(dialog.Background);
+        Assert.AreEqual(
+            dialog.ActualTheme == ElementTheme.Dark, text > ground,
+            $"{dialog.ActualTheme} dialog: text {text:0}, ground {ground:0}");
     }
 }
