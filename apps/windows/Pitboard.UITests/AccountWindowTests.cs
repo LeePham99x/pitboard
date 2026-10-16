@@ -92,7 +92,7 @@ public sealed class AccountWindowTests
     }
 
     // WebView2 names no frame that started a download, so the site's own asks first; WebView2's own list then names it,
-    // and offers its folder, which no surface of Pitboard's does.
+    // and opens the folder it went to, which no surface of Pitboard's does.
     [TestMethod]
     public void ASiteDownloadIsListedInTheWindow()
     {
@@ -108,7 +108,8 @@ public sealed class AccountWindowTests
             TimeSpan.FromSeconds(10), TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
         Assert.IsTrue(listed, "WebView2's download list does not name notes.txt");
         Assert.IsNotNull(
-            Launched.Pressable(window, "Show in folder"), $"WebView2's download list offers no Show in folder: {Launched.Pressables(window)}");
+            Launched.Pressable(window, "Open downloads folder"),
+            $"WebView2's download list does not open the downloads folder: {Launched.Pressables(window)}");
     }
 
     [TestMethod]
