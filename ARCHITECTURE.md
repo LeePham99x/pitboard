@@ -692,6 +692,13 @@ window loads its site, and whatever the site's pages load, as a browser would.
     Neither registers anything with Windows. The icon's menu is held by the view tests,
     `IconMenuTests` and `IconMenuFlyoutTests`, and the click on the icon by the session's
     step A2.
+  - `Pitboard.Share` is `PitboardShare.exe`, the share target: Native AOT, with no window,
+    and the only program of Pitboard's with a package identity. Its manifest's `<msix>`
+    element names the sparse package in `Package/`, the publisher written in at build time
+    from `WINDOWS_SIGNER_SUBJECT`. Started by the share sheet, it hands `Sharing` the share
+    operation through `SystemShareOperation`. For the MSI, `--register` adds the package
+    beside it with its own folder as the external location, and `--unregister` removes it.
+    It loads `pitboard_share_ffi.dll` and none of the core.
   - `Pitboard.Probe` is never shipped. The session machine runs it to measure the app's
     adapters by hand: it posts a notification through `WindowsNotifications` under an
     AppUserModelID of its own, waits for its Switch, unregisters, names a process's
@@ -778,7 +785,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     a Windows build, `check-windows-build.ps1` checks one, `verify-windows-signatures.ps1`
     checks the signature of every program a Windows release hands on, and
     `test-windows-release.ps1` tests all three. `check-windows-app.ps1` checks the Windows app's
-    Release build.
+    Release build, `pack-windows-share.ps1` packs `PitboardShare.exe`'s sparse package beside
+    it, and `test-windows-app.ps1` tests the check's package identity refusals.
   - `dependabot.yml` asks for weekly updates of Cargo dependencies, GitHub Actions and the
     .NET SDK in `apps/windows/global.json`.
   - `zizmor.yml` configures the audit CI runs on the workflows.
@@ -2110,6 +2118,17 @@ The Windows app's account windows run in WebView2, over the same decisions from 
   while one is under way. It brings the **Open link** window forward with each link that
   arrives, and withdraws it once none waits.
 
+The share sheet reaches Pitboard through `PitboardShare.exe`, the one program of Pitboard's
+with a package identity, which a share target needs. It takes a web link, else text, and
+launches the Pitboard link `share_link` writes, which `Pitboard.exe`, with no identity, checks
+again as any link; a refusal goes to `ReportError`, whose sentence Windows shows. Its sparse
+package asks for nothing beyond `runFullTrust` and declares no write virtualization, since it
+writes nothing. Only a signed build carries it: a sparse package registers only when signed
+by a certificate the machine trusts, and its Publisher is the signer's subject.
+`check-windows-app.ps1` fails a Release folder where another program carries an `<msix>`
+element, where `PitboardShare.exe`'s names another publisher, package or application than
+`PitboardShare.msix`, or where the package's Publisher is not the signer's.
+
 A Pitboard link reaches `Pitboard.exe` as its first argument, and a launch with one reads no
 flag after it: Microsoft's guide to URI schemes warns that a link's unencoded quotes or
 spaces split it into more arguments. Only an installer registers `pitboard`, nothing
@@ -2610,6 +2629,10 @@ on 15 October 2026. W27 reviews the list.
 | A self-contained unpackaged app registers for app notifications without the Singleton package | [Deploy self-contained apps](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/self-contained-deploy/deploy-self-contained-apps#dependencies-on-additional-msix-packages) | No runner runs a Release build that registers; the session posts through the app at its step 8 and through `Pitboard.Probe` at its step A5. |
 | A notification with the tag of one Windows still shows takes its place | [ToastNotification.Tag](https://learn.microsoft.com/en-us/uwp/api/windows.ui.notifications.toastnotification.tag) | The same; `Pitboard.Probe` posts twice at the session's step A5. |
 | A click on a notification starts the app again once it called `Unregister` and quit | [AppNotificationManager.Register](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.windows.appnotifications.appnotificationmanager.register) | Only a person clicks a notification: the session's step A5. |
+| A program given identity by a package with an external location gets a share with `AppInstance.GetActivatedEventArgs`, from Windows 10 2004 on | [Get activation info for packaged apps](https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/get-activation-info-for-packaged-apps) | No runner registers Pitboard's package or shares a page; the 1.0 session's P1 shares from Edge, Chrome and Firefox. |
+| The system shows the sentence a share target gives `ShareOperation.ReportError` | [ReportError](https://learn.microsoft.com/en-us/uwp/api/windows.applicationmodel.datatransfer.sharetarget.shareoperation.reporterror) | Only a person shares a page: P1. |
+| A sparse package registers only when signed by a certificate the machine trusts, its Publisher the certificate's subject, and its program's `<msix>` element names the same publisher, package and application | [Grant package identity by packaging with external location](https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/grant-identity-to-nonpackaged-apps) | No runner registers Pitboard's package: CI signs it with a certificate nothing trusts. P1 registers the signed release's. |
+| A process that `PitboardShare.exe` starts, or that its `LaunchUriAsync` starts, carries none of its package identity, and none of their writes is redirected | [UpdateProcThreadAttribute](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute) | Not yet measured: CF8 measures the probe's sparse package on the runners, and P2 Pitboard's. |
 
 ### One sign-in at a time
 

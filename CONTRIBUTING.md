@@ -356,15 +356,22 @@ byte, and runs the C# tests against each the same way.
 
 CI's `windows-app` job builds the app in Debug over `pitboard_ffi.dll` opened with its
 fixtures, and publishes it in Release over the library as a 0.x release builds it, on both
-images. `.github/scripts/check-windows-app.ps1` checks the Release build for fixture text, a
-package identity, a core opened before Windows is released and the core's C runtime. It reads
-each image's WebView2 Runtime, which the account windows need. The job runs
-`Pitboard.Windows.Tests`, a WinUI app that hosts its own tests, its WebView2 tests against a
-stand-in site on the loopback among them, and `Pitboard.UITests`, which drives the built app
-with FlaUI, as a fresh standard user, then the UI test of an elevated launch as the job's user.
-It builds `Pitboard.Probe`, which the session machine runs to measure the app's notifications,
-and checks that it refuses an account without `pitboard-probe`'s throwaway marker. The WinUI
-projects build only there.
+images. Beside it, it publishes `PitboardShare.exe`, the share target, with Native AOT, and
+`.github/scripts/pack-windows-share.ps1` packs its sparse package and signs it with a
+throwaway certificate, which nothing trusts and nothing registers. `PitboardShare.exe` names
+its package's publisher, so its build takes the signer's subject in `WINDOWS_SIGNER_SUBJECT`.
+`.github/scripts/check-windows-app.ps1` checks the Release build for fixture text, a package
+identity on any program but `PitboardShare.exe`, a `PitboardShare.exe` that names another
+identity than its package or a package another publisher than the signer, a core opened
+before Windows is released and the core's C runtime, and `test-windows-app.ps1` tests its
+identity checks. It reads each image's WebView2 Runtime, which the account windows need. The job runs `Pitboard.Windows.Tests`, a WinUI app that hosts
+its own tests, its WebView2 tests against a stand-in site on the loopback among them,
+`Pitboard.UITests`, which drives the built app with FlaUI, and `Pitboard.Share.Core.Tests`
+over `pitboard_share_ffi.dll`, as a fresh standard user, then the UI test of an elevated
+launch as the job's user. It builds `Pitboard.Probe`, which the session machine runs to
+measure the app's notifications, and checks that it refuses an account without
+`pitboard-probe`'s throwaway marker. The WinUI projects and `PitboardShare.exe` build only
+there.
 
 CI's `windows-release` job builds the release's zips with `.github/actions/windows-release`,
 as `release.yml` does from 1.0.0. `.github/scripts/check-windows-build.ps1` checks each

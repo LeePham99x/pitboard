@@ -538,9 +538,10 @@ jobs:
           -Probe target/debug/pitboard-probe.exe
 
   # The Windows app on each image the windows job names: a Debug build over pitboard_ffi.dll
-  # opened with its fixtures, and a Release build over the library as a 0.x release builds it.
-  # Its tests run as a fresh standard user, and an elevated launch as the job's user. Nothing is
-  # uploaded, so no runnable build of a pull request leaves the runner.
+  # opened with its fixtures, and a Release build over the library as a 0.x release builds it,
+  # with PitboardShare.exe and its package, signed with a throwaway certificate and registered
+  # nowhere. Its tests run as a fresh standard user, and an elevated launch as the job's user.
+  # Nothing is uploaded, so no runnable build of a pull request leaves the runner.
   windows-app:
     strategy:
       fail-fast: false
@@ -562,6 +563,8 @@ jobs:
       DOTNET_NOLOGO: 1
       # Where dotnet build puts a WinUI project's Debug build, under the project.
       BUILT: bin/${{ matrix.platform }}/Debug/net10.0-windows10.0.26100.0/${{ matrix.runtime }}
+      # The subject of the throwaway certificate PitboardShare's package is signed with here.
+      SHARE_TEST_SIGNER: CN=Pitboard Share Test
     defaults:
       run:
         shell: bash
@@ -577,24 +580,30 @@ jobs:
         with:
           triple: ${{ matrix.triple }}
           gated-pitboard: 'false'
-      - name: pitboard_ffi.dll as a 0.x release builds it
+      - name: pitboard_ffi.dll and pitboard_share_ffi.dll as a 0.x release builds them
         env:
           RUSTFLAGS: -D warnings -C target-feature=+crt-static
           CARGO_TARGET_DIR: target/gated
-        run: cargo build --locked --release -p pitboard-ffi
+        run: |
+          cargo build --locked --release -p pitboard-ffi
+          cargo build --locked --release -p pitboard-share-ffi
       - name: pitboard_ffi.dll opened, with its fixtures
         run: cargo build --locked --release -p pitboard-ffi --features fixture
-      # csharp-windows checks that both libraries give these bindings, byte for byte.
+      # csharp-windows checks that both libraries give the core's bindings, byte for byte.
       - name: The bindings
         env:
           RUSTFLAGS: -D warnings -C target-feature=+crt-static
           CARGO_TARGET_DIR: target/gated
         run: |
-          mkdir -p apps/windows/Pitboard.Core/Generated
+          mkdir -p apps/windows/Pitboard.Core/Generated apps/windows/Pitboard.Share.Core/Generated
           cargo run --locked --release -p uniffi-bindgen-csharp -- \
             --library target/gated/release/pitboard_ffi.dll \
             --out-dir apps/windows/Pitboard.Core/Generated \
             --config crates/pitboard-ffi/uniffi.toml --no-format
+          cargo run --locked --release -p uniffi-bindgen-csharp -- \
+            --library target/gated/release/pitboard_share_ffi.dll \
+            --out-dir apps/windows/Pitboard.Share.Core/Generated \
+            --config crates/pitboard-share-ffi/uniffi.toml --no-format
       # The build fails on .editorconfig's style rules; this checks the layout too.
       - name: The C# is laid out as .editorconfig says
         working-directory: apps/windows
@@ -603,18 +612,24 @@ jobs:
       # workspace, where the standard user may read and run it. A WinUI Debug build runs from the
       # folder it builds into: a Debug publish leaves out the XAML files it reads beside it (run
       # 38770866775), and -o, which sets OutputPath without its trailing slash, names them
-      # wrong in its PRI file (run 38774669459). The Release build is published, as a release is.
+      # wrong in its PRI file (run 38774669459). The Release build is published, as a release is,
+      # PitboardShare.exe beside Pitboard.exe as the MSI lays them out.
       - name: The app, its unit tests and its UI tests
         working-directory: apps/windows
         env:
           RUNTIME: ${{ matrix.runtime }}
           PLATFORM: ${{ matrix.platform }}
+          WINDOWS_SIGNER_SUBJECT: ${{ env.SHARE_TEST_SIGNER }}
         run: |
           out="$GITHUB_WORKSPACE/target/windows-app"
           dotnet build Pitboard.App -c Debug -r "$RUNTIME" -p:Platform="$PLATFORM" \
             -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/release/pitboard_ffi.dll"
           dotnet publish Pitboard.App -c Release -r "$RUNTIME" -p:Platform="$PLATFORM" -o "$out/release" \
             -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/gated/release/pitboard_ffi.dll"
+          dotnet publish Pitboard.Share -c Release -r "$RUNTIME" -o "$out/release" \
+            -p:PitboardShareNativeLibrary="$GITHUB_WORKSPACE/target/gated/release/pitboard_share_ffi.dll"
+          dotnet publish Pitboard.Share.Core.Tests -c Release -r "$RUNTIME" --self-contained -o "$out/share-tests" \
+            -p:PitboardShareNativeLibrary="$GITHUB_WORKSPACE/target/gated/release/pitboard_share_ffi.dll"
           dotnet build Pitboard.Windows.Tests -c Debug -r "$RUNTIME" -p:Platform="$PLATFORM" --self-contained \
             -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/release/pitboard_ffi.dll"
           dotnet publish Pitboard.UITests -c Debug -r "$RUNTIME" --self-contained -o "$out/uitests" \
@@ -622,8 +637,16 @@ jobs:
           dotnet publish Pitboard.Probe -c Release -r "$RUNTIME" -p:Platform="$PLATFORM" -o "$out/probe"
           cmp "$GITHUB_WORKSPACE/target/release/pitboard_ffi.dll" "Pitboard.App/$BUILT/pitboard_ffi.dll"
           cmp "$GITHUB_WORKSPACE/target/release/pitboard_ffi.dll" "Pitboard.Windows.Tests/$BUILT/pitboard_ffi.dll"
+          cmp "$GITHUB_WORKSPACE/target/gated/release/pitboard_share_ffi.dll" "$out/release/pitboard_share_ffi.dll"
+      # makeappx validates the manifest as it packs. Signing proves the package signs; nothing
+      # trusts the certificate, and nothing registers the package.
+      - name: PitboardShare's package, packed and signed with a throwaway certificate
+        shell: pwsh
+        run: >
+          ./.github/scripts/pack-windows-share.ps1 -Folder target/windows-app/release
+          -Publisher $env:SHARE_TEST_SIGNER -Version '1.0.0.0' -TestCertificate
       # In the environment the gated pitboard_ffi.dll was built in, as a release runs it.
-      - name: "The Release build: no fixture, no package identity, the release gate, the core's C runtime inside it"
+      - name: "The Release build: no fixture, identity on PitboardShare.exe alone, the release gate, the core's C runtime inside it"
         shell: pwsh
         env:
           RUSTFLAGS: -D warnings -C target-feature=+crt-static
@@ -631,7 +654,14 @@ jobs:
           TRIPLE: ${{ matrix.triple }}
         run: >
           ./.github/scripts/check-windows-app.ps1 -Folder target/windows-app/release -Triple $env:TRIPLE
-          -GatedLibrary target/gated/release/pitboard_ffi.dll
+          -GatedLibrary target/gated/release/pitboard_ffi.dll -Signer $env:SHARE_TEST_SIGNER
+      - name: The check refuses a package identity anywhere but on PitboardShare.exe, or another than its package's
+        shell: pwsh
+        env:
+          TRIPLE: ${{ matrix.triple }}
+        run: >
+          ./.github/scripts/test-windows-app.ps1 -Folder target/windows-app/release -Triple $env:TRIPLE
+          -GatedLibrary target/gated/release/pitboard_ffi.dll -Signer $env:SHARE_TEST_SIGNER
       # CF5: the self-contained app needs none of these for the standard user.
       - name: The Windows App Runtime packages this image holds
         shell: pwsh
@@ -662,7 +692,8 @@ jobs:
         shell: pwsh
         run: >
           ./.github/scripts/test-as-standard-user.ps1
-          -Dotnet "apps/windows/Pitboard.Windows.Tests/$env:BUILT/Pitboard.Windows.Tests.exe", target/windows-app/uitests/Pitboard.UITests.exe
+          -Dotnet "apps/windows/Pitboard.Windows.Tests/$env:BUILT/Pitboard.Windows.Tests.exe", target/windows-app/uitests/Pitboard.UITests.exe,
+          target/windows-app/share-tests/Pitboard.Share.Core.Tests.exe
           -Probe target/debug/pitboard-probe.exe
       # The job's user is elevated, so of the UI tests only the elevated launch's runs.
       - name: An elevated launch refuses and writes nothing, as the job user

@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    PitboardShare.exe, Pitboard's share target: the only program of Pitboard's with a package
+    identity, from the sparse package in Package/, registered by the MSI only when that package
+    is signed. Native AOT, so it needs no .NET runtime files, and it loads none of the core.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.26100.0</SupportedOSPlatformVersion>
+    <TargetPlatformMinVersion>10.0.26100.0</TargetPlatformMinVersion>
+    <RootNamespace>Pitboard.Share</RootNamespace>
+    <AssemblyName>PitboardShare</AssemblyName>
+    <ApplicationIcon>../Pitboard.App/Pitboard.ico</ApplicationIcon>
+    <PublishAot>true</PublishAot>
+    <!-- A publish names its runtime, so a restore adds none of the machine restoring to the lock file. -->
+    <UseDefaultPublishRuntimeIdentifier>false</UseDefaultPublishRuntimeIdentifier>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Each trim and AOT warning on its own, and each fails the publish. -->
+    <TrimmerSingleWarn>false</TrimmerSingleWarn>
+    <IlcTreatWarningsAsErrors>true</IlcTreatWarningsAsErrors>
+    <!-- The subject of the certificate that signs the package, which the package's Publisher and this manifest's must equal. -->
+    <PitboardSharePublisher Condition="'$(PitboardSharePublisher)' == ''">$(WINDOWS_SIGNER_SUBJECT)</PitboardSharePublisher>
+    <ApplicationManifest>$(BaseIntermediateOutputPath)PitboardShare.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Pitboard.Share.Core/Pitboard.Share.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The package's logos, which Windows reads from this folder, the package's external location. -->
+    <Content Include="Assets/*.png" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <!-- pitboard_share_ffi.dll from Cargo, as a release builds it. -->
+  <ItemGroup Condition="'$(PitboardShareNativeLibrary)' != ''">
+    <None Include="$(PitboardShareNativeLibrary)" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+
+  <!-- The <msix> element that ties this program to the package: its publisher, and the package's name and application id. -->
+  <Target Name="WriteShareManifest" BeforeTargets="CoreCompile">
+    <Error Condition="'$(PitboardSharePublisher)' == ''" Text="PitboardShare.exe names the publisher of its package: set WINDOWS_SIGNER_SUBJECT to the subject of the certificate that signs the package." />
+    <XmlPeek XmlInputPath="Package/AppxManifest.xml" Query="/m:Package/m:Identity/@Name" Namespaces="&lt;Namespace Prefix='m' Uri='http://schemas.microsoft.com/appx/manifest/foundation/windows10' /&gt;">
+      <Output TaskParameter="Result" PropertyName="_SharePackageName" />
+    </XmlPeek>
+    <XmlPeek XmlInputPath="Package/AppxManifest.xml" Query="/m:Package/m:Applications/m:Application/@Id" Namespaces="&lt;Namespace Prefix='m' Uri='http://schemas.microsoft.com/appx/manifest/foundation/windows10' /&gt;">
+      <Output TaskParameter="Result" PropertyName="_ShareApplicationId" />
+    </XmlPeek>
+    <PropertyGroup>
+      <_SharePublisher>$(PitboardSharePublisher.Replace('&amp;', '&amp;amp;').Replace('"', '&amp;quot;').Replace('&lt;', '&amp;lt;').Replace('&gt;', '&amp;gt;'))</_SharePublisher>
+      <_ShareManifest>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)/PitboardShare.manifest').Replace('{publisher}', '$(_SharePublisher)').Replace('{packageName}', '$(_SharePackageName)').Replace('{applicationId}', '$(_ShareApplicationId)'))</_ShareManifest>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(ApplicationManifest)" Lines="$([MSBuild]::Escape($(_ShareManifest)))" Overwrite="true" WriteOnlyWhenDifferent="true" />
+  </Target>
+</Project>

@@ -1,5 +1,6 @@
-# Writes Pitboard.App/Pitboard.ico from the drawings beside it: python3 make-ico.py, with
-# rsvg-convert and Pillow. Each size comes from the grid it is drawn on, or the nearest.
+# Writes Pitboard.App/Pitboard.ico and the share package's logos in Pitboard.Share/Assets from
+# the drawings beside it: python3 make-ico.py, with rsvg-convert and Pillow. Each size comes
+# from the grid it is drawn on, or the nearest.
 import io
 import struct
 import subprocess
@@ -60,3 +61,8 @@ for size, data in frames:
     directory += struct.pack("<BBBBHHII", size % 256, size % 256, 0, 0, 1, 32, len(data), offset)
     offset += len(data)
 (HERE.parent / "Pitboard.App" / "Pitboard.ico").write_bytes(directory + b"".join(data for _, data in frames))
+
+# Unqualified files: a sparse package has no resources.pri to pick a scale or target size by.
+LOGOS = {"StoreLogo.png": 50, "Square44x44Logo.png": 44, "Square150x150Logo.png": 150}
+for name, size in LOGOS.items():
+    rendered(size, "icon-48.svg").save(HERE.parent / "Pitboard.Share" / "Assets" / name, "PNG", optimize=True)

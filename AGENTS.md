@@ -116,6 +116,8 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
   `AppNotificationManager.Register`, no HKCU `Run`, `Environment` or `Software\Classes` value,
   no package and no certificate in a store. Only a Release build installed by an MSI
   registers, and `Pitboard.Probe` on the session machine.
+- Never give `Pitboard.exe`, `pitboard.exe` or a process they start a package identity. Only
+  `PitboardShare.exe` carries an `<msix>` manifest element.
 - Never run the app's UI tests on a machine of your own: they move the mouse and type into
   whatever has focus. They run on CI's runners as a fresh standard user.
 - Never run a test or a script there before pointing `USERPROFILE`, `HOME`, `APPDATA`,
@@ -167,8 +169,8 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
   Linux, as `pitboard-conformance` does.
 - Never measure a running tool on a Windows machine that holds logins. Use one kept for it,
   with throwaway accounts and scratch homes.
-- Never register the probe's sparse package outside a throwaway account in the VM.
-  Unregister it and remove its certificate before reverting the snapshot.
+- Never trust a test certificate on a machine, or register a sparse package signed with one,
+  outside a disposable runner or a throwaway account on the session machine.
 
 ## Check a change
 
