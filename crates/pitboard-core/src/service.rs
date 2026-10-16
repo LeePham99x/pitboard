@@ -1086,6 +1086,19 @@ impl Pitboard {
         })
     }
 
+    /// What [`switch_to`] does once somebody has agreed to put `typed`'s login in place of a
+    /// login in use its service refuses for good, which it refused over: parks nothing.
+    /// Where the login stored can be told by then, it is a switch.
+    ///
+    /// [`switch_to`]: Pitboard::switch_to
+    pub fn replace_with(&self, typed: &str) -> Changing<Outcome> {
+        let permit = self.permitted()?;
+        let key = self.named(permit, "use", typed)?;
+        self.changing(permit, "use", &key.typed(), Some(key.provider), |settled| {
+            switch::replace(settled, &key)
+        })
+    }
+
     /// What [`switch_to`] does for the account in use, for a front end's button drawn while
     /// `typed` was: recorded as `use`, and refused, moving nothing, where another account's
     /// login is stored by then.

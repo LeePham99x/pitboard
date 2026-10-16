@@ -212,7 +212,10 @@ fn over_the_account_switched_to(error: &Error) -> bool {
         } => !cause.worth_retrying(),
         error => matches!(
             error,
-            Error::AccountUnknown { .. }
+            Error::AccountOnHold {
+                login: crate::error::Unidentified::Parked { .. },
+                ..
+            } | Error::AccountUnknown { .. }
                 | Error::NothingParked { .. }
                 | Error::ParkedLoginExpired { .. }
                 | Error::ParkedLoginRefused { .. }

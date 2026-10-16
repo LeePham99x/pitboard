@@ -465,3 +465,182 @@ fn the_config_is_written_only_while_the_account_is_in_use() {
         ]
     );
 }
+
+fn settled(m: &harness::Machine) -> Settled {
+    settle(&m.ctx, Permit::for_a_test(), None)
+        .expect("nothing to recover")
+        .0
+}
+
+/// `here`'s login in use, lapsed, and refused for good as it is renewed, as Claude Code
+/// leaves a login nobody ran for a month: the switch cannot park it, and says so first.
+fn dead_in_use(name: &str) -> harness::Machine {
+    let m = machine(name);
+    m.sign_in(&harness::lapsed("here-dead"));
+    m.api.renew_trouble("here-dead", Trouble::InvalidGrant);
+    m
+}
+
+#[test]
+fn a_switch_from_a_login_anthropic_refuses_for_good_asks_first_and_moves_nothing() {
+    let m = dead_in_use("replace-asks");
+    let before = m.mem.live().peek(&m.service);
+
+    let asked = switch(settled(&m), &m.key("there")).expect_err("it asks first");
+
+    assert!(
+        matches!(&asked, Error::LiveLoginRefused { label, dead: true, .. } if label == "there"),
+        "{asked:?}"
+    );
+    assert_eq!(asked.code(), "live_login_refused");
+    assert_eq!(m.mem.live().peek(&m.service), before, "nothing moved");
+}
+
+/// Agreed to, the account's login goes in, nothing is parked for the refused one, and the
+/// account is recorded in use.
+#[test]
+fn a_login_anthropic_refuses_for_good_is_replaced_once_agreed_to() {
+    let m = dead_in_use("replace-agreed");
+
+    let (outcome, _) = replace(settled(&m), &m.key("there")).expect("replaced");
+
+    assert!(
+        matches!(&outcome, Outcome::Installed { to, .. } if to == "there"),
+        "{outcome:?}"
+    );
+    assert_eq!(
+        m.live()
+            .and_then(|live| live.pointer("/claudeAiOauth/refreshToken").cloned()),
+        Some(serde_json::json!("there-refresh"))
+    );
+    let state = state::load(&m.ctx).expect("state");
+    assert!(state.get(&m.key("there")).expect("there").parked.is_none());
+    assert!(state.get(&m.key("here")).expect("here").parked.is_none());
+    assert_eq!(
+        state
+            .account_in_use(ProviderId::Claude)
+            .map(|a| a.label.as_str()),
+        Some("there")
+    );
+}
+
+/// A login signed in after the switch refused is told, and parked as any switch parks it,
+/// never written over.
+#[test]
+fn a_login_signed_in_since_the_refusal_is_parked_not_written_over() {
+    let m = dead_in_use("replace-signed-in-since");
+    switch(settled(&m), &m.key("there")).expect_err("it asks first");
+    m.api.owned_by("access-here-again", owner("here"));
+    m.sign_in(&harness::document("here-again"));
+
+    let (outcome, _) = replace(settled(&m), &m.key("there")).expect("a switch");
+
+    assert!(matches!(outcome, Outcome::Switched { .. }), "{outcome:?}");
+    let state = state::load(&m.ctx).expect("state");
+    let parked = state.get(&m.key("here")).and_then(|a| a.parked.clone());
+    assert_eq!(
+        parked.map(|p| p.login),
+        Some(store::fingerprint("here-again")),
+        "the login signed in since is parked"
+    );
+}
+
+/// Neither an account on hold, whose login comes back, nor an outage is a login to replace.
+#[test]
+fn an_account_on_hold_or_an_outage_is_never_offered_a_replacement() {
+    for (trouble, code) in [
+        (Trouble::OnHold, "account_on_hold"),
+        (Trouble::Offline, "identity_unverifiable"),
+    ] {
+        let m = machine(&format!("replace-not-{code}"));
+        m.sign_in(&harness::lapsed("here-held"));
+        m.api.renew_trouble("here-held", trouble);
+        let before = m.mem.live().peek(&m.service);
+
+        let refused = switch(settled(&m), &m.key("there")).expect_err("no switch");
+        assert_eq!(refused.code(), code, "{refused:?}");
+        let refused = replace(settled(&m), &m.key("there")).expect_err("no replacement");
+        assert_eq!(refused.code(), code, "{refused:?}");
+        assert_eq!(
+            m.mem.live().peek(&m.service),
+            before,
+            "{code}: nothing moved"
+        );
+    }
+}
+
+/// A login whose identity Anthropic refuses to give is offered as one that cannot be parked,
+/// not as one that no longer works.
+#[test]
+fn a_login_anthropic_will_not_name_is_offered_as_one_that_cannot_be_parked() {
+    let m = machine("replace-unnamed");
+    m.sign_in(&harness::document("here-unnamed"));
+    m.api.token_trouble(
+        "access-here-unnamed",
+        Trouble::Answered(
+            400,
+            r#"{"error":{"type":"invalid_request_error","message":"no"}}"#,
+        ),
+    );
+
+    let asked = switch(settled(&m), &m.key("there")).expect_err("it asks first");
+
+    assert!(
+        matches!(&asked, Error::LiveLoginRefused { dead: false, .. }),
+        "{asked:?}"
+    );
+    assert!(
+        asked.to_string().contains("signs Claude Code out of it"),
+        "{asked}"
+    );
+}
+
+/// Killed once the account's login is written in place of the refused one, before anything is
+/// recorded: the next change drops the park that is now a copy of the login in use, and the
+/// next read names it.
+#[test]
+fn a_replacement_killed_once_written_leaves_one_copy_of_the_login() {
+    let m = dead_in_use("replace-killed");
+    let died = fault::killing("replace.installed", || {
+        replace(settled(&m), &m.key("there")).map(|_| ())
+    });
+    assert_eq!(died.err().as_deref(), Some("replace.installed"));
+
+    drop(settled(&m));
+    let state = state::load(&m.ctx).expect("state");
+    assert!(
+        state.get(&m.key("there")).expect("there").parked.is_none(),
+        "the park that is a copy of the login in use is dropped"
+    );
+    assert_eq!(
+        m.live()
+            .and_then(|live| live.pointer("/claudeAiOauth/refreshToken").cloned()),
+        Some(serde_json::json!("there-refresh"))
+    );
+}
+
+/// Anthropic names the account of the login in use and will not give its email, and nothing
+/// else names it: the login works, so it is never offered for replacing.
+#[test]
+fn a_login_whose_email_cannot_be_learned_is_not_offered_for_replacing() {
+    let m = machine("replace-unnamed-email");
+    m.sign_in(&harness::document("stranger"));
+    m.api.owned_by("access-stranger", owner("stranger"));
+    m.api.profile_trouble(
+        "access-stranger",
+        Trouble::Answered(400, r#"{"error":{"type":"invalid_request_error"}}"#),
+    );
+
+    let refused = switch(settled(&m), &m.key("there")).expect_err("no switch");
+
+    assert!(
+        matches!(
+            &refused,
+            Error::IdentityUnverifiable {
+                login: crate::error::Unidentified::Unnamed,
+                ..
+            }
+        ),
+        "{refused:?}"
+    );
+}

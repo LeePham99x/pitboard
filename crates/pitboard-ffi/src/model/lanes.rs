@@ -81,6 +81,7 @@ impl Job {
             | Job::ReadLog { .. }
             | Job::LookLeft => Lane::Reads,
             Job::Switch { .. }
+            | Job::Replace { .. }
             | Job::AutoSwitch { .. }
             | Job::Abandon
             | Job::Enrol { .. }
@@ -576,6 +577,11 @@ impl Worker {
                 done: core.switch_to(&qualified),
                 qualified,
                 reopen,
+            },
+            Job::Replace { qualified } => Answer::Switched {
+                done: core.replace_with(&qualified),
+                qualified,
+                reopen: None,
             },
             Job::AutoLook { at } => Answer::AutoLooked {
                 looked: core.auto_look(at),

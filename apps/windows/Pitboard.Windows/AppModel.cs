@@ -92,6 +92,8 @@ public sealed class AppModel : INotifyPropertyChanged
 
     public QuitQuestion? QuitQuestion => Part<QuitQuestion?>();
 
+    public ReplaceQuestion? ReplaceQuestion => Part<ReplaceQuestion?>();
+
     public LastSwitch[] LastSwitches => Part<LastSwitch[]>();
 
     public Abandoned? Abandoned => Part<Abandoned?>();

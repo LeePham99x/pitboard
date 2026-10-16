@@ -20,6 +20,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   to install, with a link, instead of failing once you click **Sign In**.
 - The app looks for Claude Code and Codex each time **Add Account** or **Sign In Again** opens
   and when Pitboard comes to the front, so a tool installed while it runs is found.
+- A switch from a Claude Code login Anthropic refuses for good asks to put the account's login in
+  its place, with **Replace** in the app and `pitboard use --yes`, instead of telling you to sign
+  in to Claude Code first.
 
 ### Security
 

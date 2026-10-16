@@ -402,6 +402,17 @@ fn unidentified(which: ProviderId, error: provider::ProviderError) -> Error {
         other @ (provider::ProviderError::ShapeUnexpected { .. }
         | provider::ProviderError::Unsupported { .. }
         | provider::ProviderError::CodexHomeMissing { .. }) => shape(which, other),
+        provider::ProviderError::OnHold { link, .. } => Error::AccountOnHold {
+            tool: which,
+            login: crate::error::Unidentified::SignedIn,
+            link,
+        },
+        provider::ProviderError::Unnamed { error } => Error::IdentityUnverifiable {
+            tool: which,
+            login: crate::error::Unidentified::Unnamed,
+            cause: crate::error::Cause::of_provider(&error),
+            detail: error.to_string(),
+        },
         other => Error::IdentityUnverifiable {
             tool: which,
             login: crate::error::Unidentified::SignedIn,
@@ -465,6 +476,24 @@ fn read_stored(
 }
 
 pub(crate) fn switch(settled: Settled, key: &Key) -> Result<(Outcome, Vec<Warning>)> {
+    switch_as(settled, key, OnRefusal::Ask)
+}
+
+/// [`switch`], once somebody has agreed to put `key`'s login in place of a login in use its
+/// service refuses for good. Where that login can be told by then, it is a switch.
+pub(crate) fn replace(settled: Settled, key: &Key) -> Result<(Outcome, Vec<Warning>)> {
+    switch_as(settled, key, OnRefusal::Replace)
+}
+
+/// What a switch does where the login in use is one its service refuses for good.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OnRefusal {
+    /// Refuses, saying the switch would put the account's login in its place.
+    Ask,
+    Replace,
+}
+
+fn switch_as(settled: Settled, key: &Key, refused: OnRefusal) -> Result<(Outcome, Vec<Warning>)> {
     let tool = match provider::of(key.provider) {
         LoginKind::Document(tool) => tool,
         LoginKind::Folder(app) => return folder::switch(settled, key, app),
@@ -479,11 +508,29 @@ pub(crate) fn switch(settled: Settled, key: &Key) -> Result<(Outcome, Vec<Warnin
     // Known before taking the tool's own lock so a round trip does not hold up its writes,
     // then confirmed under the lock. Recorded at once, so the record names the account a
     // switch moves out of when it records the one it moves to, whatever it named before.
-    let identify::Live::Login(outgoing) = identify::now(&ctx, permit, &mut state, tool)? else {
-        return Err(Error::LiveCredentialAbsent {
-            tool: key.provider,
-            label: None,
-        });
+    let outgoing = match identify::now(&ctx, permit, &mut state, tool) {
+        Ok(identify::Live::Login(outgoing)) => outgoing,
+        Ok(identify::Live::Nothing) => {
+            return Err(Error::LiveCredentialAbsent {
+                tool: key.provider,
+                label: None,
+            });
+        }
+        Err(error) => {
+            let Some((detail, dead)) = refused_for_good(&error) else {
+                return Err(error);
+            };
+            restorable(&ctx, &state, key, &target)?;
+            return match refused {
+                OnRefusal::Ask => Err(Error::LiveLoginRefused {
+                    tool: key.provider,
+                    label: state.typed(key),
+                    detail,
+                    dead,
+                }),
+                OnRefusal::Replace => replace_refused(state, &ctx, permit, tool, key, &target),
+            };
+        }
     };
     if target.owned_by(&outgoing.owner) {
         let lost = outgoing.lock_warning(key.provider);
@@ -520,6 +567,161 @@ pub(crate) fn update_config(settled: Settled, key: &Key) -> Result<(Outcome, Vec
             label: state.typed(key),
         }),
     }
+}
+
+/// Why nobody could say whose the login in use is, where its service refuses it for good, and
+/// whether the service said it no longer works. Never for an account on hold, whose login
+/// comes back, nor for anything that asking again may answer.
+fn refused_for_good(error: &Error) -> Option<(String, bool)> {
+    match error {
+        Error::SessionExpired { refused: true, .. } => Some((identify::untold(error), true)),
+        Error::IdentityUnverifiable {
+            login: crate::error::Unidentified::SignedIn,
+            cause: crate::error::Cause::Refused,
+            detail,
+            ..
+        } => Some((detail.clone(), false)),
+        _ => None,
+    }
+}
+
+/// `target`'s parked login, where a switch to it could be made now.
+fn restorable(ctx: &Context, state: &State, key: &Key, target: &Account) -> Result<Park> {
+    let held = target.parked.clone().ok_or_else(|| Error::NothingParked {
+        tool: key.provider,
+        label: state.typed(key),
+    })?;
+    if !held.restorable_at(ctx.now()) {
+        return Err(Error::ParkedLoginExpired {
+            label: state.typed(key),
+        });
+    }
+    Ok(held)
+}
+
+/// Puts `key`'s login in place of the one its tool has stored, which its service refuses for
+/// good, parking nothing: there is no account to park it under, and its service will not take
+/// it again. The login stored is read again under the tool's lock, and one that changed
+/// meanwhile, as a sign-in leaves it, is not written over.
+fn replace_refused(
+    mut state: State,
+    ctx: &Context,
+    permit: Permit,
+    tool: &'static dyn Provider,
+    key: &Key,
+    target: &Account,
+) -> Result<(Outcome, Vec<Warning>)> {
+    let which = key.provider;
+    let to = state.typed(key);
+    let from = format!("{}'s refused login", which.name());
+    let held = restorable(ctx, &state, key, target)?;
+    let live = live_store(ctx, tool)?;
+    // Told again from the bytes that would be written over, so a login a sign-in left since
+    // the first telling is never taken for the refused one.
+    let (refused_raw, refused) = read_live(ctx, tool, &live)?;
+    match identify::told(ctx, &state, tool, &refused) {
+        Ok(Some(_)) => return Err(Error::SignedInAccountChanged),
+        Ok(None) | Err(provider::ProviderError::Refused { .. }) => {}
+        Err(error) => return Err(unidentified(which, error)),
+    }
+    let incoming = park::load(ctx, tool, key, &held)?;
+    let (held, incoming) =
+        prove_incoming(ctx, permit, &mut state, tool, key, target, held, incoming)?;
+
+    let refreshing = Refreshing::take(ctx, permit, tool)?;
+    let guard = write_lock(ctx, permit, tool)?;
+    let (before_raw, before) = read_live(ctx, tool, &live)?;
+    if before_raw != refused_raw {
+        return Err(Error::SignedInAccountChanged);
+    }
+    let next = to_body(
+        &tool
+            .splice(&before, &incoming)
+            .map_err(|e| shape(which, e))?,
+    );
+    let on_the_command_line = priced(which, &live, &next, &to)?;
+    install_with(
+        which,
+        |body| store::write_raw(&live.chain, permit, &live.service, body),
+        || store::read_raw(&live.chain, &live.service),
+        &next,
+        &before_raw,
+        &from,
+        &to,
+    )?;
+    fault::point("replace.installed");
+    let lock_lost = guard.as_ref().is_some_and(lock::Guard::compromised);
+    match holds(tool, &live) {
+        Ok(true) => {}
+        Ok(false) => {
+            return Err(Error::SwitchDidNotHold {
+                tool: which,
+                from,
+                to,
+            });
+        }
+        Err(unreadable) => {
+            return Err(Error::SwitchUnverified {
+                tool: which,
+                from,
+                to,
+                detail: unreadable.to_string(),
+            });
+        }
+    }
+
+    state.discard(&held.service, ParkKind::Vault);
+    let named = tool.own_record(ctx);
+    state.identified(
+        which,
+        InUse {
+            owner: Some(target.owner()),
+            login: tool.fingerprint(&incoming),
+            known_at: ctx.now(),
+            named: named
+                .as_ref()
+                .and_then(|named| in_use::naming(which, named)),
+        },
+        ctx.now(),
+    );
+    state::save(ctx, permit, &state)?;
+    drop(guard);
+    let lock_lost = lock_lost | Refreshing::let_go(refreshing);
+    let cache_warning = write_config(
+        ctx,
+        permit,
+        &mut state,
+        tool,
+        target,
+        &named.unwrap_or_else(|| target.owner()),
+    );
+    let parks_pending = purge(ctx, permit, &mut state);
+    let still_running = match still_holding(ctx, which) {
+        StillHolding::Nothing => None,
+        StillHolding::These(holding) => Some(Warning::SessionsStillRunning {
+            from: from.clone(),
+            holding,
+        }),
+        StillHolding::Unknown => Some(Warning::SessionsUnknown {
+            tool: which,
+            from: from.clone(),
+        }),
+    };
+    let warnings = on_the_command_line
+        .into_iter()
+        .chain(still_running)
+        .chain(lock_lost.then_some(Warning::LockCompromised { tool: which }))
+        .chain(cache_warning)
+        .chain((parks_pending > 0).then_some(Warning::ParksPendingRemoval(parks_pending)))
+        .collect();
+    Ok((
+        Outcome::Installed {
+            provider: which,
+            to,
+            adoption: tool.adoption(tool.behind(ctx).as_ref()),
+        },
+        warnings,
+    ))
 }
 
 /// The account enrolled under `key`, or a refusal that lists the labels that are.
@@ -942,11 +1144,27 @@ fn ready(
             .splice(&before, incoming)
             .map_err(|e| shape(which, e))?,
     );
-    // Asked once. The answer is about the backend that would take this write, so a login
-    // living in a fallback file is not told it has the keychain's ceiling.
-    let price = store::cost(&live.chain, &live.service, &next);
-    if price.is_some_and(store::Cost::refused) {
-        let price = price.expect("refused implies a ceiling");
+    let on_the_command_line = priced(which, live, &next, label)?;
+    Ok(Readied {
+        before_raw,
+        before,
+        next,
+        on_the_command_line,
+    })
+}
+
+/// Refuses `next` where the backend that would take it cannot, and says where it goes on the
+/// command line. Asked once: the answer is about that backend, so a login living in a
+/// fallback file is not told it has the keychain's ceiling. Said rather than hidden, since the
+/// same bytes are visible to `ps` for the length of one `security` call.
+fn priced(
+    which: ProviderId,
+    live: &provider::LiveStore,
+    next: &str,
+    label: &str,
+) -> Result<Option<Warning>> {
+    let price = store::cost(&live.chain, &live.service, next);
+    if let Some(price) = price.filter(|price| price.refused()) {
         return Err(Error::CredentialTooLarge {
             tool: which,
             label: label.to_string(),
@@ -954,22 +1172,13 @@ fn ready(
             limit: price.limit,
         });
     }
-    // Said once per write rather than hidden: the same bytes are visible to `ps` for the
-    // length of one `security` call, which is the only way to write a login this size.
-    let on_the_command_line =
-        price
-            .filter(|p| p.on_the_second_route())
-            .map(|p| Warning::WrittenOnTheCommandLine {
-                tool: which,
-                bytes: p.needs,
-                limit: p.limit,
-            });
-    Ok(Readied {
-        before_raw,
-        before,
-        next,
-        on_the_command_line,
-    })
+    Ok(price
+        .filter(|p| p.on_the_second_route())
+        .map(|p| Warning::WrittenOnTheCommandLine {
+            tool: which,
+            bytes: p.needs,
+            limit: p.limit,
+        }))
 }
 
 /// Whether a login of the tool's shape is in its live slot, read back after a write.
@@ -1073,6 +1282,13 @@ fn prove_incoming(
             Err(provider::ProviderError::Unauthorized) => {}
             Err(provider::ProviderError::ShapeUnexpected { detail, .. }) => {
                 return Err(Error::ParkedCredentialCorrupt { label, detail });
+            }
+            Err(provider::ProviderError::OnHold { link, .. }) => {
+                return Err(Error::AccountOnHold {
+                    tool: key.provider,
+                    login: crate::error::Unidentified::Parked { label },
+                    link,
+                });
             }
             Err(e) => {
                 return Err(Error::IdentityUnverifiable {

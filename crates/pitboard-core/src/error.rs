@@ -112,6 +112,7 @@ impl Cause {
             P::Network { .. } => Cause::Unreachable,
             P::Unavailable { .. } => Cause::ServerError,
             P::Refused { .. } | P::OnHold { .. } => Cause::Refused,
+            P::Unnamed { error } => Cause::of_provider(error),
             P::Malformed { .. }
             | P::ShapeUnexpected { .. }
             | P::Unsupported { .. }
@@ -152,6 +153,8 @@ impl Cause {
 pub enum Unidentified {
     /// The one its tool has signed in.
     SignedIn,
+    /// A login whose account its service named, and whose email it would not give.
+    Unnamed,
     /// The one parked for the account typed as `label`.
     Parked { label: String },
 }
@@ -489,6 +492,24 @@ pub enum Error {
 
     #[error("the signed-in account changed while switching. Nothing was moved; try again.")]
     SignedInAccountChanged,
+
+    /// The login in use is one its service refuses for good, so it cannot be parked, and a
+    /// switch to `label` asks first to put that account's login in its place. `dead` where
+    /// the service said the login no longer works, rather than refusing to say whose it is.
+    #[error("{}", live_login_refused(*tool, label, detail, *dead))]
+    LiveLoginRefused {
+        tool: ProviderId,
+        label: String,
+        detail: String,
+        dead: bool,
+    },
+
+    #[error("{}", account_on_hold(*tool, login, link.as_deref()))]
+    AccountOnHold {
+        tool: ProviderId,
+        login: Unidentified,
+        link: Option<String>,
+    },
 
     #[error("{}", recovery_undetermined(*tool, from, to, detail))]
     RecoveryUndetermined {
@@ -953,6 +974,8 @@ impl Error {
             SessionExpired { .. } => "session_expired",
             IdentityUnverifiable { .. } => "identity_unverifiable",
             SignedInAccountChanged => "signed_in_account_changed",
+            LiveLoginRefused { .. } => "live_login_refused",
+            AccountOnHold { .. } => "account_on_hold",
             RecoveryUndetermined { .. } | RecoveryStopped { .. } => "recovery_undetermined",
             RecoveryElsewhere { .. } => "recovery_elsewhere",
             ProgramNotFound { tool } => match tool {
@@ -1007,7 +1030,10 @@ impl Error {
                 Some(*cause)
             }
             RenewalFailed { cause, .. } => *cause,
-            SessionExpired { refused: true, .. } => Some(Cause::LoginRefused),
+            SessionExpired { refused: true, .. } | LiveLoginRefused { dead: true, .. } => {
+                Some(Cause::LoginRefused)
+            }
+            LiveLoginRefused { .. } | AccountOnHold { .. } => Some(Cause::Refused),
             SessionExpired { .. } => Some(Cause::TokenExpired),
             StowStopped { error, .. } | RenewalLost { error, .. } | SaidFirst { error, .. } => {
                 error.cause()
@@ -1150,7 +1176,7 @@ fn identity_unverifiable(
     let next = match (try_again(cause), cause, login) {
         (Some(later), ..) => later.to_owned(),
         (None, Cause::AnswerNotUnderstood, _) => "Check for a Pitboard update.".to_owned(),
-        (None, _, Unidentified::SignedIn) => format!(
+        (None, _, Unidentified::SignedIn | Unidentified::Unnamed) => format!(
             "{}, sign in, then try again.",
             crate::words::sign_in_yourself(tool, true)
         ),
@@ -1167,7 +1193,36 @@ fn identity_unverifiable(
             "Pitboard could not confirm with {service} whose login is parked for `{label}` \
              ({detail}), and will not put in use a login it cannot identify. {next}"
         ),
+        Unidentified::Unnamed => format!(
+            "{service} named the account of {}'s login and would not give its email \
+             ({detail}), and Pitboard keeps every account under its email. {next}",
+            tool.name()
+        ),
     }
+}
+
+/// [`Error::LiveLoginRefused`]'s words.
+fn live_login_refused(tool: ProviderId, label: &str, detail: &str, dead: bool) -> String {
+    format!(
+        "{} Run `pitboard use {label} --yes` to put `{label}`'s login there.",
+        crate::words::replacing(tool, detail, dead)
+    )
+}
+
+/// [`Error::AccountOnHold`]'s words.
+fn account_on_hold(tool: ProviderId, login: &Unidentified, link: Option<&str>) -> String {
+    let service = tool.service();
+    let see = link.map(|link| format!(" ({link})")).unwrap_or_default();
+    let whose = match login {
+        Unidentified::SignedIn | Unidentified::Unnamed => {
+            format!("the account of {}'s login in use", tool.name())
+        }
+        Unidentified::Parked { label } => format!("`{label}`'s account"),
+    };
+    format!(
+        "{service} has put {whose} on hold{see}. Pitboard keeps its login. Follow {service}'s \
+         instructions for the account, then try again."
+    )
 }
 
 /// When asking again is the way on, what to say about it.

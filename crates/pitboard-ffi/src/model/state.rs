@@ -169,6 +169,9 @@ pub(crate) enum Job {
         qualified: String,
         reopen: Option<String>,
     },
+    /// Put the account `qualified` names in place of a login in use its service refuses for
+    /// good, as the person agreed to.
+    Replace { qualified: String },
     /// Ask the core's look whether to switch Claude Code by itself at `at`%, from its files
     /// alone: what stands, or that only a decision under its lock can say. It claims nothing.
     AutoLook { at: u8 },
@@ -830,6 +833,17 @@ struct Quitting {
     then: After,
 }
 
+/// The question a switch asked before replacing a login in use its service refuses for good.
+/// A question closed unanswered is kept, unasked, as [`Quitting`] is, for the answer an app
+/// sends after closing it.
+#[derive(Debug)]
+struct Replacing {
+    qualified: String,
+    /// Why, in the app's words, as the core's refusal said it.
+    message: String,
+    asked: bool,
+}
+
 /// A sign-in under way, as the Swift model's `SigningIn` held it.
 ///
 /// The Swift kept the sheet it was started from, to close only that one once it finished and
@@ -967,6 +981,7 @@ pub(crate) struct State {
     // the moves of an app's login given up on, in the app's words, until somebody has read them
     moves_given_up: Vec<String>,
     quitting: Option<Quitting>,
+    replacing: Option<Replacing>,
     /// What each tool's last switch said that is still true, one per tool at most.
     pub(crate) last_switches: Vec<LastSwitch>,
     /// What giving up on an interrupted switch kept, until somebody has read it.
@@ -1087,6 +1102,7 @@ impl State {
             refused_by: BTreeMap::new(),
             moves_given_up: Vec::new(),
             quitting: None,
+            replacing: None,
             last_switches: Vec::new(),
             abandoned: None,
             left: None,
@@ -1181,10 +1197,22 @@ impl State {
 
     /// The account a switch is running for, or waiting on the quit question for.
     pub(crate) fn switch_under_way(&self) -> Option<&str> {
-        self.switching.as_deref().or(self
-            .asking_for()
-            .filter(|(_, then)| **then == After::Switch)
-            .map(|(question, _)| question.qualified.as_str()))
+        self.switching
+            .as_deref()
+            .or(self
+                .asking_for()
+                .filter(|(_, then)| **then == After::Switch)
+                .map(|(question, _)| question.qualified.as_str()))
+            .or(self.replace_asked().map(|(qualified, _)| qualified))
+    }
+
+    /// The account a switch asks to put in place of a login its service refuses for good,
+    /// and why, while it asks.
+    pub(crate) fn replace_asked(&self) -> Option<(&str, &str)> {
+        self.replacing
+            .as_ref()
+            .filter(|replacing| replacing.asked)
+            .map(|replacing| (replacing.qualified.as_str(), replacing.message.as_str()))
     }
 
     /// Whether the app's preferences have been read, so that a change to them is kept.
@@ -1295,6 +1323,12 @@ impl State {
             ),
             Intent::SwitchTo { qualified } => self.switch_asked(qualified, jobs),
             Intent::QuitAndSwitch { qualified } => self.quit_and_switch(&qualified, jobs),
+            Intent::ReplaceAndSwitch { qualified } => self.replace_and_switch(qualified, jobs),
+            Intent::KeepLogin => {
+                if let Some(replacing) = self.replacing.as_mut() {
+                    replacing.asked = false;
+                }
+            }
             // The question is gone, and nothing was switched. It is kept, unasked, for the
             // answer an app sends after closing it.
             Intent::KeepAppOpen => {
@@ -2645,6 +2679,9 @@ impl State {
                 Job::Switch { qualified, reopen } => {
                     self.switched(&qualified, reopen, Err(None), now, jobs);
                 }
+                Job::Replace { qualified } => {
+                    self.switched(&qualified, None, Err(None), now, jobs);
+                }
                 // Nothing is said of a look that came to nothing: the next is at its time.
                 Job::AutoLook { .. } => self.decide_later(now),
                 // Whether it warmed anything up is not known; the next ask finds out.
@@ -3194,11 +3231,29 @@ impl State {
         // and in place of a question closed unanswered, which no answer takes after this. A
         // sign-in inside the app waiting meanwhile stays until the switch goes on.
         self.drop_question();
+        self.replacing = None;
         self.switching = Some(qualified.clone());
         jobs.push(Job::Holding {
             qualified,
             then: After::Switch,
         });
+    }
+
+    /// The answer to the question a switch asked about replacing a login its service refuses
+    /// for good: taken once, for the account it asked about, whether or not the app closed
+    /// the question first.
+    fn replace_and_switch(&mut self, qualified: String, jobs: &mut Vec<Job>) {
+        if self.switching.is_some()
+            || !self
+                .replacing
+                .as_ref()
+                .is_some_and(|replacing| replacing.qualified == qualified)
+        {
+            return;
+        }
+        self.replacing = None;
+        self.switching = Some(qualified.clone());
+        jobs.push(Job::Replace { qualified });
     }
 
     fn held(
@@ -3383,6 +3438,20 @@ impl State {
                     now,
                     jobs,
                 );
+            }
+            Err(Some(PitboardError::Failed {
+                code,
+                message,
+                warnings,
+            })) if code == "live_login_refused" => {
+                self.switching = None;
+                self.keep(&warnings);
+                self.replacing = Some(Replacing {
+                    qualified: qualified.to_owned(),
+                    message,
+                    asked: true,
+                });
+                self.show_window(Some(Pane::Accounts));
             }
             Err(error) => {
                 self.switching = None;

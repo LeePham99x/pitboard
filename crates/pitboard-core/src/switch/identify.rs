@@ -96,7 +96,14 @@ pub(crate) fn asked(
     match state.named(tool.id(), &identity) {
         Some(owner) => Ok(owner),
         None => {
-            let email = tool.name(ctx, &credential, &identity)?;
+            let email = tool
+                .name(ctx, &credential, &identity)
+                .map_err(|error| match error {
+                    ProviderError::Unauthorized => error,
+                    error => ProviderError::Unnamed {
+                        error: Box::new(error),
+                    },
+                })?;
             Ok(Owner::named(identity, email))
         }
     }
@@ -934,7 +941,7 @@ mod tests {
         let refused = whose(&m.ctx, &state, tool, &document("stranger"))
             .expect_err("a record of another account names nobody");
         assert!(
-            matches!(refused, ProviderError::Refused { .. }),
+            matches!(&refused, ProviderError::Unnamed { error } if matches!(**error, ProviderError::Refused { .. })),
             "{refused:?}"
         );
     }

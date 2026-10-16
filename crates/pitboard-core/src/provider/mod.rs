@@ -291,6 +291,9 @@ pub(crate) enum ProviderError {
         service: &'static str,
         refusal: Box<crate::api::Refusal>,
     },
+    /// The service named the login's account and would not give its email, for `error`.
+    #[error("{error}")]
+    Unnamed { error: Box<ProviderError> },
     /// The account is on hold with its service: the login is kept, and works once that ends.
     #[error("{service} has put this account on hold{}", link.as_ref().map(|link| format!(" ({link})")).unwrap_or_default())]
     OnHold {

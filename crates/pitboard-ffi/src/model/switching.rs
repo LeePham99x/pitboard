@@ -2011,3 +2011,98 @@ fn a_claude_desktop_warning_starts_no_read_that_asks() {
     assert_eq!(model.count(offline_read), 1);
     assert_eq!(model.count(any_read), reads, "no service is asked about it");
 }
+
+const REFUSED_FOR_GOOD: &str = "Anthropic no longer accepts the login Claude Code is using (its login has expired and \
+     cannot be renewed). Putting work’s login in its place loses nothing.";
+
+/// A switch from a login Anthropic refuses for good asks, instead of failing, and moves
+/// nothing until the answer comes.
+#[test]
+fn a_switch_from_a_login_refused_for_good_asks_to_replace_it() {
+    let mut model = Hand::new();
+    let mut machine = Machine::reading(Ok(status(Vec::new())));
+    machine.switched = Err(refusal("live_login_refused", REFUSED_FOR_GOOD, Vec::new()));
+    switch(&mut model, &mut machine, "work");
+
+    let shown = model.shown();
+    assert_eq!(shown.failure, None, "asked, not failed");
+    let asked = shown.replace_question.expect("asked");
+    assert_eq!(asked.qualified, "work");
+    assert_eq!(asked.question.message, REFUSED_FOR_GOOD);
+    assert_eq!(asked.question.confirm, "Replace");
+    assert_eq!(shown.switch_under_way.as_deref(), Some("work"));
+    assert!(machine.replaced_with.is_empty());
+}
+
+/// Agreed to, the account's login goes in, and the question goes.
+#[test]
+fn an_agreed_replacement_is_made_once() {
+    let mut model = Hand::new();
+    let mut machine = Machine::reading(Ok(status(Vec::new())));
+    machine.switched = Err(refusal("live_login_refused", REFUSED_FOR_GOOD, Vec::new()));
+    switch(&mut model, &mut machine, "work");
+    machine.switched = switched("claude", "personal", "work", Vec::new());
+
+    model.send(Intent::ReplaceAndSwitch {
+        qualified: "work".into(),
+    });
+    model.send(Intent::ReplaceAndSwitch {
+        qualified: "work".into(),
+    });
+    model.run(&mut machine);
+
+    assert_eq!(machine.replaced_with, ["work"]);
+    let shown = model.shown();
+    assert_eq!(shown.replace_question, None);
+    assert_eq!(shown.failure, None);
+}
+
+/// An app closes the alert before its button answers, as the quit question's does: the
+/// answer is taken after the close, and nothing is replaced after a close alone.
+#[test]
+fn a_replacement_answered_after_the_question_closed_is_made() {
+    let mut model = Hand::new();
+    let mut machine = Machine::reading(Ok(status(Vec::new())));
+    machine.switched = Err(refusal("live_login_refused", REFUSED_FOR_GOOD, Vec::new()));
+    switch(&mut model, &mut machine, "work");
+
+    model.send(Intent::KeepLogin);
+    model.run(&mut machine);
+    assert_eq!(model.shown().replace_question, None, "closed");
+    assert_eq!(model.shown().switch_under_way, None);
+    assert!(
+        machine.replaced_with.is_empty(),
+        "nothing replaced on a close"
+    );
+
+    machine.switched = switched("claude", "personal", "work", Vec::new());
+    model.send(Intent::ReplaceAndSwitch {
+        qualified: "work".into(),
+    });
+    model.run(&mut machine);
+    assert_eq!(machine.replaced_with, ["work"]);
+
+    model.send(Intent::ReplaceAndSwitch {
+        qualified: "work".into(),
+    });
+    model.run(&mut machine);
+    assert_eq!(machine.replaced_with, ["work"], "taken once");
+}
+
+/// Another switch asked for in its place takes the question away.
+#[test]
+fn another_switch_takes_the_replace_question_away() {
+    let mut model = Hand::new();
+    let mut machine = Machine::reading(Ok(status(Vec::new())));
+    machine.switched = Err(refusal("live_login_refused", REFUSED_FOR_GOOD, Vec::new()));
+    switch(&mut model, &mut machine, "work");
+    model.send(Intent::KeepLogin);
+    machine.switched = Err(refusal("nothing_parked", "nothing parked", Vec::new()));
+    switch(&mut model, &mut machine, "spare");
+
+    model.send(Intent::ReplaceAndSwitch {
+        qualified: "work".into(),
+    });
+    model.run(&mut machine);
+    assert!(machine.replaced_with.is_empty());
+}

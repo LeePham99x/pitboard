@@ -709,6 +709,9 @@ pub(crate) fn present_on(os: Os, state: &State, now: i64, local: &dyn LocalTime)
         installed: state.installed.clone(),
         switch_under_way: state.switch_under_way().map(str::to_owned),
         quit_question: state.asking().cloned(),
+        replace_question: state
+            .replace_asked()
+            .map(|(qualified, why)| sheets::replace_question(&seen, qualified, why)),
         last_switches: state.last_switches.clone(),
         abandoned: state.abandoned.clone(),
         failure: state.presented.clone(),

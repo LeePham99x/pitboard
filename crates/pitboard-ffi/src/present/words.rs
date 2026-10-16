@@ -964,6 +964,31 @@ pub(crate) fn in_app_refusal(os: Os, error: &Error) -> Option<String> {
             "The parked login for {0} is missing. Choose Sign In Again… on {0}’s row.",
             bare(label)
         ),
+        Error::LiveLoginRefused {
+            tool,
+            label,
+            detail,
+            dead: true,
+        } => format!(
+            "{} no longer accepts the login {} is using ({detail}). Putting {}’s login in its \
+             place loses nothing.",
+            tool.service(),
+            tool.name(),
+            bare(label)
+        ),
+        Error::LiveLoginRefused {
+            tool,
+            label,
+            detail,
+            dead: false,
+        } => format!(
+            "{} won’t say which account {}’s login is ({detail}), so Pitboard can’t park it. \
+             Putting {}’s login in its place signs {} out of it.",
+            tool.service(),
+            tool.name(),
+            bare(label),
+            tool.name()
+        ),
         Error::IdentityUnverifiable {
             tool,
             login: Unidentified::Parked { label },
@@ -2080,6 +2105,31 @@ mod tests {
             in_app_refusal(Os::MacOs, &untold(Cause::Unreachable)),
             None,
             "an outage is the core's sentence: try again"
+        );
+    }
+
+    #[test]
+    fn a_login_refused_for_good_says_what_replacing_it_costs() {
+        let refused = |dead| Error::LiveLoginRefused {
+            tool: ProviderId::Claude,
+            label: "work".into(),
+            detail: "Anthropic answered 400".into(),
+            dead,
+        };
+        assert_eq!(
+            in_app_refusal(Os::MacOs, &refused(true)).as_deref(),
+            Some(
+                "Anthropic no longer accepts the login Claude Code is using (Anthropic answered \
+                 400). Putting work’s login in its place loses nothing."
+            )
+        );
+        assert_eq!(
+            in_app_refusal(Os::MacOs, &refused(false)).as_deref(),
+            Some(
+                "Anthropic won’t say which account Claude Code’s login is (Anthropic answered \
+                 400), so Pitboard can’t park it. Putting work’s login in its place signs \
+                 Claude Code out of it."
+            )
         );
     }
 

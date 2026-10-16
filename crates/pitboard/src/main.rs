@@ -105,6 +105,10 @@ enum Command {
     Use {
         #[arg(help = LABEL_TO_USE)]
         label: String,
+        /// Where the service refuses the login in use for good, put this account's login in
+        /// its place without asking; needed without a terminal or with `--json`
+        #[arg(short = 'y', long)]
+        yes: bool,
     },
     /// Drop an account and its parked login
     Forget {
@@ -549,8 +553,36 @@ fn enrolled(pitboard: &Pitboard, label: &str, outcome: Changing<Enrolled>) -> Re
     })
 }
 
-fn use_account(pitboard: &Pitboard, label: &str) -> Report {
-    changed("use", pitboard.switch_to(label), |outcome| match outcome {
+/// `use`, and where the login in use is one its service refuses for good, what `confirm` says
+/// to putting `label`'s login in its place. `None` where the answer was no.
+fn use_account(pitboard: &Pitboard, label: &str, confirm: Confirm) -> Option<Report> {
+    let switched = match pitboard.switch_to(label) {
+        Err(failed) => match (&failed.error, confirm) {
+            (Error::LiveLoginRefused { .. }, Confirm::Go) => pitboard.replace_with(label),
+            (
+                Error::LiveLoginRefused {
+                    tool,
+                    label: typed,
+                    detail,
+                    dead,
+                },
+                Confirm::Ask,
+            ) => {
+                let question = pitboard_core::words::replace_question(*tool, typed, detail, *dead);
+                if !agreed(&question) {
+                    return None;
+                }
+                pitboard.replace_with(label)
+            }
+            _ => Err(failed),
+        },
+        switched => switched,
+    };
+    Some(switched_report(switched))
+}
+
+fn switched_report(switched: Changing<Outcome>) -> Report {
+    changed("use", switched, |outcome| match outcome {
         Outcome::AlreadyActive {
             label,
             config_updated,
@@ -1260,7 +1292,13 @@ fn main() -> ExitCode {
         Command::Enroll { label, .. } => {
             enrolled(&pitboard, &label, pitboard.enroll_current(&label))
         }
-        Command::Use { label } => use_account(&pitboard, &label),
+        Command::Use { label, yes } => {
+            let confirm = Confirm::of(&pitboard, yes, cli.json, terminal());
+            match use_account(&pitboard, &label, confirm) {
+                Some(report) => report,
+                None => return ExitCode::SUCCESS,
+            }
+        }
         Command::Forget { label, yes } => {
             let confirm = match Confirm::of(&pitboard, yes, cli.json, terminal()) {
                 // A label that names no account gets its own error. The core resolves the label
