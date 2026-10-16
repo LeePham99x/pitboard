@@ -30,7 +30,7 @@ const WARNING: Style = AnsiColor::Yellow.on_default().bold();
 /// Switch Claude Code, Codex and Claude Desktop between your own accounts without signing
 /// out, and see what each Claude Code and Codex account has left.
 #[derive(Parser)]
-#[command(name = "pitboard", version)]
+#[command(name = "pitboard", bin_name = "pitboard", version)]
 struct Cli {
     /// Machine-readable output: the same versioned JSON envelope for every command,
     /// whether it succeeds or fails
@@ -1301,6 +1301,27 @@ mod tests {
     #[test]
     fn the_command_line_definition_is_internally_consistent() {
         Cli::command().debug_assert();
+    }
+
+    // clap names the program after how it was started, `pitboard.exe` on Windows.
+    #[test]
+    fn a_usage_error_names_pitboard_however_it_was_started() {
+        for started in [
+            "pitboard",
+            r"C:\Tools\pitboard.exe",
+            "/usr/local/bin/pitboard",
+        ] {
+            let refused = Cli::try_parse_from([started, "use"])
+                .err()
+                .expect("a usage error")
+                .render()
+                .to_string();
+            assert!(
+                refused.contains("Usage: pitboard use <LABEL>"),
+                "{started}: {refused}"
+            );
+            assert!(!refused.contains("pitboard.exe"), "{started}: {refused}");
+        }
     }
 
     #[test]

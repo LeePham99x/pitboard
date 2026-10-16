@@ -301,10 +301,6 @@ fn statusline() {
 }
 
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W24: how pitboard.exe names itself in a usage error"
-)]
 fn usage_error() {
     let env = Env::new("contract-usage");
     let (value, code) = json(&env, &["use"]);
