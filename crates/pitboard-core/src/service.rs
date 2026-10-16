@@ -395,13 +395,13 @@ impl fmt::Display for Warning {
                 held: Held::Login,
             } => write!(
                 f,
-                "{path} holds another {tool} login, which a session that cannot read the \
-                 keychain, such as one started over SSH, signs in with. No switch reaches it. \
-                 While it is there, {tool} sessions already running at a switch {running}. \
-                 `pitboard stow` keeps that login for its account, where Pitboard holds no \
-                 other it can switch to, then deletes the file.",
+                "{path} holds another {tool} login, which {reader} signs in with. No switch \
+                 reaches it. While it is there, {tool} sessions already running at a switch \
+                 {running}. `pitboard stow` keeps that login for its account, where Pitboard \
+                 holds no other it can switch to, then deletes the file.",
                 path = path.display(),
                 tool = tool.name(),
+                reader = crate::words::reads_only_the_file(crate::host::OS),
                 running = crate::words::kept_until_renewed(),
             ),
             Warning::FallbackLogin {

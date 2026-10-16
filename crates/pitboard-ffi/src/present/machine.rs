@@ -312,8 +312,8 @@ fn warm(seen: &Seen) -> WarmShown {
     }
 }
 
-/// Switching Claude Code by itself, from the app's preferences. How soon running sessions
-/// follow is promised only while the last read found no file behind the keychain.
+// How soon running sessions follow is promised only while the last read found no file behind
+// the store.
 fn auto_switch(seen: &Seen) -> AutoSwitchShown {
     let state = seen.state;
     let at = state.preferences.threshold().percent();
@@ -323,8 +323,8 @@ fn auto_switch(seen: &Seen) -> AutoSwitchShown {
         .any(|warning| warning.code == "fallback_login")
     {
         format!(
-            "While a login file is left behind the keychain, Claude Code sessions already \
-             running {}.",
+            "While a login file is left behind {}, Claude Code sessions already running {}.",
+            pitboard_core::words::store_in_front(seen.os),
             pitboard_core::words::kept_until_renewed()
         )
     } else {

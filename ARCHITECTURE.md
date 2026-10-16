@@ -404,8 +404,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
   - `words.rs`: the sentences and column words Pitboard says in more than one place, each
     a function of typed values: spans of time, a limit's names, when it resets, its pace and
     when it runs out, a parked login's life, a renewal run, doctor's summary, and what is
-    left in a file behind the keychain and what putting it away does and did (`left_lines`,
-    `stowed_lines`, `nothing_left`), which `pitboard stow` and the app's sheet both say. It
+    left in a file behind the keychain, or Credential Manager on Windows, and what putting it
+    away does and did (`left_lines`, `stowed_lines`, `nothing_left`, each in the words of the
+    system it is given), which `pitboard stow` and the app's sheet both say. It
     also holds `usage_level`, the steps at which a limit's colour changes. A thing said both
     in a column and in a sentence has a function for each form. The command line calls these
     functions directly, and so does `pitboard-ffi`'s `present/` as it makes the snapshot,

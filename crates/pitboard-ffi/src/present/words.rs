@@ -203,15 +203,16 @@ pub(crate) fn restart_notice(program: &str, from: &str) -> String {
     )
 }
 
-/// A warning's heading, from its code, so the menu can name it in a line. The message under
-/// it is the core's own, which says what to do.
-pub(crate) fn warning_heading(warning: &Warning) -> &'static str {
+pub(crate) fn warning_heading(os: Os, warning: &Warning) -> &'static str {
     match warning.code.as_str() {
         "sessions_still_running" => "Open sessions still use the previous account",
         "sessions_keep_old_login" => "Open sessions still use the old login",
         "sessions_unknown" => "Couldn’t tell which sessions are open",
         "auth_overridden" => "An environment variable overrides the login",
-        "fallback_login" => "A login file is left behind the keychain",
+        "fallback_login" => match os {
+            Os::MacOs | Os::Linux => "A login file is left behind the keychain",
+            Os::Windows => "A login file is left behind Credential Manager",
+        },
         "parked_login_refused" => "A parked login was refused",
         "lock_compromised" => "The login may have been written twice",
         "parks_pending_removal" => "Old parked logins are still there",
@@ -1735,15 +1736,26 @@ mod tests {
             provider: None,
         };
         for (code, heading) in headings {
-            assert_eq!(warning_heading(&warning(code)), heading, "{code}");
+            assert_eq!(
+                warning_heading(Os::MacOs, &warning(code)),
+                heading,
+                "{code}"
+            );
         }
         let distinct: std::collections::BTreeSet<_> = headings.iter().map(|(_, h)| h).collect();
         assert_eq!(distinct.len(), headings.len(), "no two codes read alike");
         assert_eq!(
-            warning_heading(&warning("not_a_code_yet")),
+            warning_heading(Os::MacOs, &warning("not_a_code_yet")),
             "Pitboard has a warning"
         );
-        assert_eq!(warning_heading(&warning("")), "Pitboard has a warning");
+        assert_eq!(
+            warning_heading(Os::MacOs, &warning("")),
+            "Pitboard has a warning"
+        );
+        assert_eq!(
+            warning_heading(Os::Windows, &warning("fallback_login")),
+            "A login file is left behind Credential Manager"
+        );
     }
 
     // Each tool not found says what Pitboard needs of it, on each system in its own name.

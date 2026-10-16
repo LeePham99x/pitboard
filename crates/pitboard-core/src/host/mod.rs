@@ -128,6 +128,23 @@ impl Os {
         }
     }
 
+    pub(crate) fn remove_file_command(self, path: &Path) -> String {
+        match self {
+            Os::MacOs | Os::Linux => format!("rm {}", path.display()),
+            Os::Windows => {
+                let mut quoted = String::new();
+                for c in path.display().to_string().chars() {
+                    // PowerShell takes each of these as a single quote, so each is doubled.
+                    if matches!(c, '\'' | '\u{2018}' | '\u{2019}' | '\u{201a}' | '\u{201b}') {
+                        quoted.push(c);
+                    }
+                    quoted.push(c);
+                }
+                format!("Remove-Item -LiteralPath '{quoted}'")
+            }
+        }
+    }
+
     // Looking in one asks the person whether Pitboard may. Linux and Windows guard none.
     pub(crate) fn guarded_folders(self) -> &'static [&'static str] {
         match self {

@@ -120,15 +120,9 @@ fn the_sheet_says_whose_the_login_is_once_it_is_known() {
 
     model.run(&mut machine);
 
-    let text = model.shown().stow_text.expect("the sheet's words");
-    assert_eq!(
-        text.title,
-        titled(
-            "Put Away the Login Left in a File",
-            "Put away the login left in a file"
-        )
-    );
-    assert_eq!(text.confirm, titled("Put Away", "Put away"));
+    let text = model.on_a_mac().stow_text.expect("the sheet's words");
+    assert_eq!(text.title, "Put Away the Login Left in a File");
+    assert_eq!(text.confirm, "Put Away");
     assert_eq!(text.looking, None);
     assert!(text.can_confirm);
     assert!(!text.saving);
@@ -148,6 +142,21 @@ fn the_sheet_says_whose_the_login_is_once_it_is_known() {
              SSH, is signed out."
                 .to_string(),
         ]
+    );
+    assert!(text.message.contains("in a file behind the keychain"));
+    let text = model.on_windows().stow_text.expect("the sheet's words");
+    assert!(
+        text.message.starts_with(
+            "Claude Code left a login in a file behind Credential Manager, which keeps"
+        ),
+        "{}",
+        text.message
+    );
+    assert!(
+        text.lines[1].ends_with("Claude Code's document in Credential Manager keeps its own.")
+            && text.lines[2].contains("such as one in a sign-in over SSH with a key"),
+        "{:?}",
+        text.lines
     );
 }
 

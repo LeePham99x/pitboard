@@ -1571,8 +1571,11 @@ fn a_switch_that_sessions_take_at_renewal_counts_down_nothing() {
     );
     assert_eq!(left_behind.severity, Severity::Warning);
     assert_eq!(
-        left_behind.title,
-        "A login file is left behind the keychain"
+        [model.on_a_mac(), model.on_windows()].map(|shown| shown.notices[1].title.clone()),
+        [
+            "A login file is left behind the keychain",
+            "A login file is left behind Credential Manager"
+        ]
     );
     assert_eq!(left_behind.lines, [left.message]);
     assert_eq!(left_behind.until, None);

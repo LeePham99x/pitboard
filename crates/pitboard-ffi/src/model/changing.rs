@@ -898,7 +898,13 @@ fn updating_claude_codes_config_is_no_switch() {
     assert_eq!(machine.configs_updated, ["claude/work"]);
     assert!(machine.switched_to.is_empty());
     assert!(model.shown().last_switches.is_empty());
-    assert_eq!(titles(&model), ["A login file is left behind the keychain"]);
+    let titles: Vec<String> = model
+        .on_a_mac()
+        .notices
+        .into_iter()
+        .map(|notice| notice.title)
+        .collect();
+    assert_eq!(titles, ["A login file is left behind the keychain"]);
 }
 
 /// A config that could not be written is said beside the read after the update, which still

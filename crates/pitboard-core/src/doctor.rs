@@ -1668,16 +1668,9 @@ fn judge_credential(facts: &Facts) -> Check {
     }
 }
 
-/// The fallback file behind the keychain, with a login in it, none, or what cannot be read.
-///
-/// Read in 2.1.294: a sign-in where the keychain is locked writes its login to the file and
-/// leaves the keychain's in place (`locked_sign_in_writes_fallback`), and a keychain write
-/// deletes the file only where the keychain held nothing before
-/// (`fallback_outlives_keychain_writes`). So the file stays through every switch, and a
-/// session that cannot read the keychain signs in with a login in it whatever Pitboard
-/// switched to. A session already running watches the file by a look at it, whatever it
-/// holds and whether or not it can be read, and while it is there takes a switch only at
-/// its login's next renewal (`fallback_file_pins_session_login`).
+// What leaves the file and keeps it there: `locked_sign_in_writes_fallback` and
+// `fallback_outlives_keychain_writes` on macOS, `credman_unreachable_writes_file` and
+// `credman_migration` on Windows.
 fn judge_fallback_login(facts: &Facts) -> Option<Check> {
     let left = facts.fallback_login.as_ref()?;
     let path = left.path.display();
@@ -1685,6 +1678,20 @@ fn judge_fallback_login(facts: &Facts) -> Option<Check> {
         "While it is there, Claude Code sessions already running at a switch {}.",
         words::kept_until_renewed()
     );
+    let (cannot, could_not, such_as, as_login) = match facts.os {
+        Os::MacOs | Os::Linux => (
+            "cannot read the keychain",
+            "the keychain could not be read",
+            "in a session started over SSH",
+            "`/login` over SSH does",
+        ),
+        Os::Windows => (
+            "cannot reach Credential Manager",
+            "Credential Manager could not be reached",
+            "in a sign-in over SSH with a key",
+            "`/login` does in a sign-in over SSH with a key",
+        ),
+    };
     let (detail, advice) = match &left.fingerprint {
         Ok(Some(fingerprint)) => (
             format!(
@@ -1696,9 +1703,8 @@ fn judge_fallback_login(facts: &Facts) -> Option<Check> {
                 }
             ),
             format!(
-                "Claude Code signs in with this wherever it cannot read the keychain, such as \
-                 in a session started over SSH, and no switch reaches it. A sign-in made where \
-                 the keychain could not be read leaves one, as `/login` over SSH does. \
+                "Claude Code signs in with this wherever it {cannot}, such as {such_as}, and no \
+                 switch reaches it. A sign-in made where {could_not} leaves one, as {as_login}. \
                  {running} `pitboard stow` keeps this login for its account, where Pitboard \
                  holds no other it can switch to, then deletes the file, which leaves one login \
                  for every session."
@@ -1715,9 +1721,10 @@ fn judge_fallback_login(facts: &Facts) -> Option<Check> {
             format!("{path}  ·  not read: {e}"),
             format!(
                 "Pitboard could not read it, so whether it holds a login, which a session that \
-                 cannot read the keychain signs in with, cannot be told, and `pitboard stow` \
-                 cannot put it away. {running} Deleting it lets them follow a switch, and takes \
-                 whatever it holds with it: `rm {path}`."
+                 {cannot} signs in with, cannot be told, and `pitboard stow` cannot put it away. \
+                 {running} Deleting it lets them follow a switch, and takes whatever it holds \
+                 with it: `{}`.",
+                facts.os.remove_file_command(&left.path)
             ),
         ),
     };
@@ -4484,6 +4491,7 @@ mod tests {
     #[test]
     fn a_login_left_behind_the_keychain_is_said_with_what_reads_it() {
         let mut f = facts();
+        f.os = Os::MacOs;
         assert!(evaluate(&f).iter().all(|c| c.code != "fallback_login"));
 
         f.fallback_login = Some(FallbackLogin {
@@ -4564,6 +4572,7 @@ mod tests {
     #[test]
     fn a_file_behind_the_keychain_that_cannot_be_read_is_said_with_why() {
         let mut f = facts();
+        f.os = Os::MacOs;
         f.fallback_login = Some(FallbackLogin {
             path: f.credential_file.clone(),
             fingerprint: Err(store::Error::Unreadable(
@@ -4589,7 +4598,6 @@ mod tests {
         );
         assert!(healthy(&checks), "nothing Pitboard does is stopped by it");
 
-        f.os = Os::MacOs;
         f.credential = Err(store::Error::Locked);
         let advice = check(&evaluate(&f), "credential").advice.clone();
         assert!(
@@ -4598,6 +4606,57 @@ mod tests {
                  holds cannot be told, since Pitboard could not read it."
             ),
             "{advice}"
+        );
+    }
+
+    // Behind Credential Manager, a network logon is what reads the file, and PowerShell deletes
+    // it, with each single quote in the path doubled.
+    #[test]
+    fn a_file_behind_credential_manager_is_said_in_the_words_of_windows() {
+        let mut f = facts();
+        f.os = Os::Windows;
+        let path = PathBuf::from(r"C:\Users\o'neil\.claude\.credentials.json");
+        f.fallback_login = Some(FallbackLogin {
+            path: path.clone(),
+            fingerprint: Ok(Some("0123456789abcdef".into())),
+        });
+        let said = check(&evaluate(&f), "fallback_login").advice.clone();
+        assert!(
+            said.starts_with(
+                "Claude Code signs in with this wherever it cannot reach Credential Manager, \
+                 such as in a sign-in over SSH with a key, and no switch reaches it. A sign-in \
+                 made where Credential Manager could not be reached leaves one, as `/login` does \
+                 in a sign-in over SSH with a key. While it is there,"
+            ),
+            "{said}"
+        );
+
+        f.fallback_login = Some(FallbackLogin {
+            path,
+            fingerprint: Err(store::Error::Unreadable("access is denied".into())),
+        });
+        let said = check(&evaluate(&f), "fallback_login").advice.clone();
+        assert!(
+            said.starts_with(
+                "Pitboard could not read it, so whether it holds a login, which a session that \
+                 cannot reach Credential Manager signs in with, cannot be told"
+            ),
+            "{said}"
+        );
+        assert!(
+            said.ends_with(
+                r"with it: `Remove-Item -LiteralPath 'C:\Users\o''neil\.claude\.credentials.json'`."
+            ),
+            "{said}"
+        );
+        assert_eq!(
+            Os::Windows.remove_file_command(std::path::Path::new("C:\\it\u{2019}s")),
+            "Remove-Item -LiteralPath 'C:\\it\u{2019}\u{2019}s'"
+        );
+        assert_eq!(
+            Os::MacOs
+                .remove_file_command(std::path::Path::new("/Users/x/.claude/.credentials.json")),
+            "rm /Users/x/.claude/.credentials.json"
         );
     }
 
