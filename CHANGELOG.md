@@ -31,6 +31,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The app refuses a name with a space or a `/` as you enter it, as the command line does, instead
   of enrolling `my work` or failing on `codex/codex/work`.
 - A failure in an account dialog goes once you change the name or the tool.
+- Pitboard reads a Codex login again for a moment when it catches Codex rewriting it, instead
+  of calling it unreadable.
 
 ## [0.14.0] - 2026-10-14
 

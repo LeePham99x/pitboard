@@ -1357,6 +1357,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
   Desktop then takes the data folder's lock.
 - Codex takes no lock on `auth.json`, so a switch reads the file again before replacing
   it. Every switch reads the live login back rather than trusting its own write.
+- Codex truncates `auth.json` and writes it again in place, so a read that finds it empty or
+  not JSON reads it again, up to ten times 10 ms apart, before taking it as it is.
 - Pitboard never answers a failed keychain write by writing Claude Code's plaintext file.
   That demotion is Claude Code's to make.
 - While Claude Code's `.credentials.json` sits behind the keychain, with a login in it,

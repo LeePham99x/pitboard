@@ -11,7 +11,7 @@ use crate::provider::{
     ProviderError, ProviderId, SignInView, jwt,
 };
 use crate::service::Permit;
-use crate::store::{self, Live};
+use crate::store::{self, Live, RawStore};
 use crate::usage::Snapshot;
 use serde_json::Value;
 
@@ -23,7 +23,58 @@ pub(crate) struct Codex;
 
 // The file store alone, on every system: `live` refuses every other one first.
 fn chain(ctx: &Context) -> Live {
-    Live::of(vec![ctx.host().file(paths::auth_file(ctx))])
+    Live::of(vec![Box::new(InPlace(
+        ctx.host().file(paths::auth_file(ctx)),
+    ))])
+}
+
+// Codex truncates `auth.json` and writes it again in place, with no lock, so a read can land
+// between the two (`codex_windows_login_location`).
+struct InPlace(Box<dyn RawStore>);
+
+impl InPlace {
+    const AGAIN: u32 = 10;
+    const APART: std::time::Duration = std::time::Duration::from_millis(10);
+}
+
+impl RawStore for InPlace {
+    fn kind(&self) -> store::Backend {
+        self.0.kind()
+    }
+
+    fn contains(&self, service: &str) -> Result<bool, store::Error> {
+        self.0.contains(service)
+    }
+
+    fn read(&self, service: &str) -> Result<Option<String>, store::Error> {
+        let mut read = self.0.read(service)?;
+        for _ in 0..Self::AGAIN {
+            match &read {
+                Some(text) if serde_json::from_str::<serde::de::IgnoredAny>(text).is_err() => {
+                    std::thread::sleep(Self::APART);
+                    read = self.0.read(service)?;
+                }
+                _ => break,
+            }
+        }
+        Ok(read)
+    }
+
+    fn write(&self, permit: Permit, service: &str, contents: &str) -> Result<(), store::Error> {
+        self.0.write(permit, service, contents)
+    }
+
+    fn delete(&self, permit: Permit, service: &str) -> Result<(), store::Error> {
+        self.0.delete(permit, service)
+    }
+
+    fn list(&self) -> Result<Option<Vec<String>>, store::Error> {
+        self.0.list()
+    }
+
+    fn cost(&self, service: &str, contents: &str) -> Option<store::Cost> {
+        self.0.cost(service, contents)
+    }
 }
 
 // `codex_keychain_stores_are_its_own` and `codex_windows_stores` in the register.
@@ -620,6 +671,73 @@ mod tests {
             Some(login())
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // As Codex 0.163.0 writes it: truncated, then written and flushed in place, with std's
+    // default sharing, here with a pause in the middle that a real write leaves too short to see.
+    #[test]
+    fn a_login_codex_is_writing_in_place_is_read_whole_and_never_torn() {
+        use std::io::Write as _;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let home = tempfile::tempdir().expect("a scratch Codex home");
+        let ctx = Context::new(std::path::PathBuf::from("/nowhere"))
+            .with_codex_home(home.path().to_string_lossy().into_owned());
+        let file = paths::auth_file(&ctx);
+        let logins: Vec<Value> = ["one", "two"]
+            .iter()
+            .map(|refresh| {
+                let mut login = login();
+                login["tokens"]["refresh_token"] = Value::from(*refresh);
+                login
+            })
+            .collect();
+        let texts: Vec<String> = logins
+            .iter()
+            .map(|login| serde_json::to_string_pretty(login).expect("JSON"))
+            .collect();
+        std::fs::write(&file, &texts[0]).expect("a login");
+        let writing = std::sync::Arc::new(AtomicBool::new(true));
+        let writer = {
+            let (file, texts, writing) = (file.clone(), texts.clone(), writing.clone());
+            std::thread::spawn(move || {
+                for round in 0..200 {
+                    let text = texts[round % 2].as_bytes();
+                    let mut open = std::fs::OpenOptions::new()
+                        .truncate(true)
+                        .write(true)
+                        .create(true)
+                        .open(&file)
+                        .expect("Codex's file");
+                    open.write_all(&text[..text.len() / 2]).expect("half");
+                    open.flush().expect("flushed");
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                    open.write_all(&text[text.len() / 2..]).expect("the rest");
+                    open.flush().expect("flushed");
+                    drop(open);
+                    std::thread::sleep(std::time::Duration::from_millis(2));
+                }
+                writing.store(false, Ordering::Release);
+            })
+        };
+        let (mut whole, mut unread) = (0, Vec::new());
+        while writing.load(Ordering::Acquire) {
+            match Codex.read_live(&ctx) {
+                Ok(Some(read)) => {
+                    assert!(logins.contains(&read.raw), "a torn login: {}", read.raw);
+                    whole += 1;
+                }
+                Ok(None) => panic!("Codex never takes its file away"),
+                Err(e) => unread.push(e.to_string()),
+            }
+        }
+        writer.join().expect("the writer");
+        assert!(whole > 0);
+        assert!(
+            unread.is_empty(),
+            "{} reads caught it part way, the first: {:?}",
+            unread.len(),
+            unread.first()
+        );
     }
 
     // Codex does not start there, so nothing under it is read.
