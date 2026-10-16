@@ -76,6 +76,7 @@ public sealed class WindowsAppsTests
     {
         using var restart = new StandInRestartManager { Holds = true };
         var apps = Apps(ChatGptOpen, restart);
+        var caller = Environment.CurrentManagedThreadId;
 
         var quitting = apps.Quit(App);
         Assert.IsTrue(restart.ShutdownAsked.Wait(Patience), "RmShutdown was never asked");
@@ -85,7 +86,7 @@ public sealed class WindowsAppsTests
 
         Assert.AreEqual(0, shut);
         Assert.AreEqual("start, register 20 started 140, shutdown 0, end", string.Join(", ", restart.Asked));
-        Assert.AreNotEqual(Environment.CurrentManagedThreadId, restart.ShutdownThread);
+        Assert.AreNotEqual(caller, restart.ShutdownThread);
         Assert.AreEqual(0u, restart.ShutdownFlags & RmForceShutdown);
     }
 
