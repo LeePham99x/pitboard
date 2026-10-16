@@ -163,14 +163,23 @@ public sealed class AccountWindowTests
         Launched.Shows(launched.Window("spare"), "chatgpt.com stand-in");
     }
 
-    // From its row's shortcut menu, which needs no notification-area icon.
+    // From its row's shortcut menu, which needs no notification-area icon. Ended if it fails here: a Pitboard left
+    // running takes every later launch's hand-over.
     private static Launched OpenChatGPT()
     {
         var launched = Launched.Start(Builds.Debug, fixture: "twoTools");
-        launched.OpenWindow();
-        OpenFromItsRow(launched, "codex/main");
-        Launched.Shows(launched.Window("main"), "chatgpt.com stand-in");
-        return launched;
+        try
+        {
+            launched.OpenWindow();
+            OpenFromItsRow(launched, "codex/main");
+            Launched.Shows(launched.Window("main"), "chatgpt.com stand-in");
+            return launched;
+        }
+        catch
+        {
+            launched.Dispose();
+            throw;
+        }
     }
 
     private static void OpenFromItsRow(Launched launched, string qualified, string site = "chatgpt.com")
