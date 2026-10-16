@@ -179,7 +179,7 @@ jobs:
             "$bin" completions "$shell" > "$out/completions/pitboard.$shell"
           done
           tar -C "$RUNNER_TEMP/dist" -czf "$RUNNER_TEMP/dist/$name.tar.gz" "$name"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist-${{ matrix.target }}
           path: ${{ runner.temp }}/dist/*.tar.gz
@@ -207,7 +207,7 @@ jobs:
           triple: ${{ matrix.triple }}
           version: ${{ needs.guard.outputs.version }}
       # Not dist-, so publish never takes it: only windows-sign hands a Windows zip on.
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: unsigned-${{ matrix.triple }}
           path: ${{ runner.temp }}/dist/*.zip
@@ -339,12 +339,12 @@ jobs:
           }
           Write-Output "For the signer: $($files.Name -join ', ')"
       # Not dist-, so publish never takes them: only windows-sign hands Pitboard's programs on.
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: unsigned-app-${{ matrix.installer }}
           path: ${{ runner.temp }}/ours
           if-no-files-found: error
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: app-windows-${{ matrix.installer }}
           path: ${{ runner.temp }}/app
@@ -369,7 +369,7 @@ jobs:
               -o (Join-Path $env:RUNNER_TEMP 'bom') -fn $name -F Json -spv 1.5 -sn $component -sv $env:BASE
             if ($LASTEXITCODE -ne 0) { throw "dotnet-CycloneDX $project exited $LASTEXITCODE" }
           }
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: bom-windows-${{ matrix.installer }}
           path: ${{ runner.temp }}/bom
@@ -434,25 +434,25 @@ jobs:
           if (($signed -join ', ') -ne ($built -join ', ')) { throw "the signer handed back $($signed -join ', '), not $($built -join ', ')" }
           ./.github/scripts/verify-windows-signatures.ps1 -Path ($signed | ForEach-Object { Join-Path $after $_ }) -Mode $mode -Subject $env:SUBJECT
       # Overwritten, so a windows-sign job run again can hand both over again.
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist-windows-x86_64-pc-windows-msvc
           path: ${{ runner.temp }}/dist/*-x86_64-pc-windows-msvc.zip
           if-no-files-found: error
           overwrite: true
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist-windows-aarch64-pc-windows-msvc
           path: ${{ runner.temp }}/dist/*-aarch64-pc-windows-msvc.zip
           if-no-files-found: error
           overwrite: true
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: signed-app-x64
           path: ${{ runner.temp }}/signed-app/unsigned-app-x64
           if-no-files-found: error
           overwrite: true
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: signed-app-arm64
           path: ${{ runner.temp }}/signed-app/unsigned-app-arm64
@@ -622,7 +622,7 @@ jobs:
           ROTATION: ${{ vars.WINDOWS_UPDATE_KEY_ROTATION }}
         run: sh .github/scripts/windows-update-key.sh "$VERSION" "$NOW" "$PREVIOUS" "$WAS" "$ROTATION"
       # Not dist-: the MSI reaches publish only through windows-sign-msi and windows-msi.
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: unsigned-msi-${{ matrix.installer }}
           path: ${{ runner.temp }}/dist/*.msi
@@ -667,13 +667,13 @@ jobs:
           $expected = @('arm64', 'x64' | ForEach-Object { "Pitboard-$env:GITHUB_REF_NAME-windows-$_.msi" })
           if (($names -join ', ') -ne ($expected -join ', ')) { throw "windows-sign-msi has $($names -join ', ') to hand on" }
       # Not dist-: each MSI's programs are checked on the machine that can extract it, in windows-msi.
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: signed-msi-x64
           path: ${{ runner.temp }}/signed-msi/*-windows-x64.msi
           if-no-files-found: error
           overwrite: true
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: signed-msi-arm64
           path: ${{ runner.temp }}/signed-msi/*-windows-arm64.msi
@@ -725,7 +725,7 @@ jobs:
           $msi = Join-Path $env:RUNNER_TEMP "signed-msi\Pitboard-$env:GITHUB_REF_NAME-windows-$env:INSTALLER.msi"
           ./.github/scripts/verify-windows-signatures.ps1 -Path $msi -Mode $mode -Subject $env:SUBJECT `
             -Built (Join-Path $env:RUNNER_TEMP 'unsigned-msi')
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist-windows-msi-${{ matrix.installer }}
           path: ${{ runner.temp }}/signed-msi/*.msi
@@ -800,7 +800,7 @@ jobs:
             echo "appcast-windows.xml does not carry a signature for each MSI" >&2
             exit 1
           fi
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist-windows-feed
           path: ${{ runner.temp }}/dist/appcast-windows.xml
@@ -939,7 +939,7 @@ jobs:
             echo "does when SPARKLE_PRIVATE_KEY is not the key SPARKLE_PUBLIC_KEY names" >&2
             exit 1
           fi
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist-app
           path: |
@@ -1015,7 +1015,7 @@ jobs:
       # Read back from the release instead, they would be whatever the release held by then,
       # and anyone who could change the release could change a tarball and its line together.
       # Overwritten, so a publish job run again can hand it over again.
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: SHA256SUMS
           path: ${{ runner.temp }}/dist/SHA256SUMS
@@ -1293,7 +1293,7 @@ jobs:
           $out = New-Item -ItemType Directory -Path (Join-Path $env:RUNNER_TEMP 'key')
           [IO.File]::WriteAllText((Join-Path $out "$env:INSTALLER.txt"), $key)
           Write-Output "$name carries the update key $key."
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-feed-key-${{ matrix.installer }}
           path: ${{ runner.temp }}/key
