@@ -380,19 +380,15 @@ fn lock_file(ctx: &Context, permit: Permit) -> Result<(std::fs::File, PathBuf)> 
     Ok((file, path))
 }
 
-/// Whose login this document holds. When this cannot be answered, nothing moves: a login
+/// Which login this document holds. When this cannot be answered, nothing moves: a login
 /// filed under a guessed account takes two accounts with it.
-///
-/// Through the provider, because the answer costs a network round trip for Claude Code and
-/// nothing at all for Codex, whose login carries a signed token naming the account. The
-/// caller wants the answer and should not have to know which.
-pub(super) fn identify_document(
+pub(super) fn identity_of_document(
     ctx: &Context,
     tool: &'static dyn Provider,
     document: &Value,
-) -> Result<provider::Owner> {
+) -> Result<provider::Identity> {
     let credential = provider::Credential::new(tool.id(), document.clone());
-    tool.identify(ctx, &credential)
+    tool.identity(ctx, &credential)
         .map_err(|e| unidentified(tool.id(), e))
 }
 
@@ -706,8 +702,8 @@ fn switch_from(
             .ok()
             .flatten()
             .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
-            .and_then(|document| identify_document(ctx, tool, &document).ok())
-            .is_some_and(|found| found.same_login(&outgoing));
+            .and_then(|document| identity_of_document(ctx, tool, &document).ok())
+            .is_some_and(|found| found == outgoing.identity());
         if still_outgoing {
             state.discard(&parked.service, ParkKind::Vault);
         }
@@ -934,7 +930,7 @@ fn ready(
     // A refresh keeps the account, so an unchanged share of the document needs no second
     // question. A sign-in between the two reads would not keep it.
     if tool.slice(&before).ok() != tool.slice(first).ok()
-        && !identify_document(ctx, tool, &before)?.same_login(signed_in)
+        && identity_of_document(ctx, tool, &before)? != signed_in.identity()
     {
         return Err(Error::SignedInAccountChanged);
     }
@@ -1058,14 +1054,17 @@ fn prove_incoming(
     if held.askable_at(ctx.now()) {
         let credential = provider::Credential::new(key.provider, incoming.clone());
         match tool.verify(ctx, &credential) {
-            Ok(found) if target.owned_by(&found) => return Ok((held, incoming)),
+            Ok(found) if target.holds(&found) => return Ok((held, incoming)),
             Ok(other) => {
+                let email = state
+                    .named(key.provider, &other)
+                    .map(|owner| owner.email)
+                    .or_else(|| tool.name(ctx, &credential, &other).ok());
                 return Err(Error::ParkedLoginBelongsElsewhere {
                     label,
-                    who: crate::words::login(
-                        key.provider,
-                        &other.email,
-                        other.email == target.email,
+                    who: email.map_or_else(
+                        || "another account".to_owned(),
+                        |email| crate::words::login(key.provider, &email, email == target.email),
                     ),
                 });
             }

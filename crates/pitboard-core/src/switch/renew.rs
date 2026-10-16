@@ -417,6 +417,7 @@ mod tests {
             refresh_token_expires_in: Some(30 * 86_400),
             scopes: None,
             at: None,
+            owner: None,
         }
     }
 
@@ -446,6 +447,7 @@ mod tests {
                 refresh_token_expires_in: Some(30 * 86_400),
                 scopes: None,
                 at: Some(server_now),
+                owner: None,
             },
         );
 

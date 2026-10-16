@@ -11,7 +11,7 @@
 use crate::context::Context;
 use crate::provider::Owner;
 use crate::provider::ProviderError;
-use crate::provider::claude::api::{Api, Renewed};
+use crate::provider::claude::api::{Api, Renewed, Validated};
 use crate::provider::codex::api::{Fresh, OpenAi};
 use crate::service::Permit;
 use crate::usage::Snapshot;
@@ -56,6 +56,9 @@ impl<T: Clone> Answer<T> {
 /// One question that was asked, for a test that cares how often.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Asked {
+    /// Which login an access token is.
+    Identity(String),
+    /// Whose profile an access token reads.
     Owner(String),
     Usage(String),
     Renew(String),
@@ -64,6 +67,9 @@ pub enum Asked {
 #[derive(Debug, Default)]
 struct Script {
     owners: HashMap<String, Answer<Owner>>,
+    /// What the profile answers in place of what `owners` says, for a token whose identity
+    /// is told and whose profile is not.
+    profiles: HashMap<String, Answer<Owner>>,
     usage: HashMap<String, Answer<Snapshot>>,
     renewals: HashMap<String, Answer<Renewed>>,
     codex_renewals: HashMap<String, Answer<Fresh>>,
@@ -117,7 +123,15 @@ impl ScriptedApi {
         self
     }
 
-    /// Asking about this access token goes wrong, both questions.
+    /// Asking for this access token's profile goes wrong, and nothing else.
+    pub fn profile_trouble(&self, access_token: &str, trouble: Trouble) -> &ScriptedApi {
+        self.script()
+            .profiles
+            .insert(access_token.into(), Answer::Fail(trouble));
+        self
+    }
+
+    /// Asking about this access token goes wrong, every question.
     pub fn token_trouble(&self, access_token: &str, trouble: Trouble) -> &ScriptedApi {
         let mut script = self.script();
         script
@@ -192,9 +206,21 @@ impl ScriptedApi {
 }
 
 impl Api for ScriptedApi {
+    fn validate(&self, _ctx: &Context, access_token: &str) -> Result<Validated, ProviderError> {
+        self.answer(Asked::Identity(access_token.into()), |s| {
+            s.owners.get(access_token)
+        })
+        .map(|owner| Validated {
+            account_uuid: owner.account_uuid,
+            organization_uuid: Some(owner.organization_uuid),
+        })
+    }
+
     fn owner(&self, _ctx: &Context, access_token: &str) -> Result<Owner, ProviderError> {
         self.answer(Asked::Owner(access_token.into()), |s| {
-            s.owners.get(access_token)
+            s.profiles
+                .get(access_token)
+                .or_else(|| s.owners.get(access_token))
         })
     }
 

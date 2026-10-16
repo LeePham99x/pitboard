@@ -717,7 +717,7 @@ fn a_read_answers_while_the_core_switches() {
             .api
             .asked()
             .iter()
-            .filter(|asked| **asked == Asked::Owner("access-there".into()))
+            .filter(|asked| **asked == Asked::Identity("access-there".into()))
             .count()
     };
     let asked_before = whose();

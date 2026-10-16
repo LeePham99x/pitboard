@@ -5,7 +5,7 @@
 //! survives Claude Code rotating the token. When any fact cannot be read, recovery changes
 //! nothing and keeps the record.
 
-use super::{Error, Result, identify_document};
+use super::{Error, Result, identity_of_document};
 use crate::context::Context;
 use crate::in_use::{self, InUse};
 use crate::provider::{self, LoginKind, Provider, ProviderId};
@@ -280,8 +280,8 @@ fn ask(
     match owner {
         Owner::Is(id) => Ok(id),
         Owner::Unknown(why) => Err(why),
-        Owner::Unasked(live) => identify_document(ctx, tool, &live)
-            .map(|owner| state.id_of(tool.id(), &owner))
+        Owner::Unasked(live) => identity_of_document(ctx, tool, &live)
+            .map(|identity| state.id_for(tool.id(), &identity))
             .map_err(|e| e.to_string()),
     }
 }

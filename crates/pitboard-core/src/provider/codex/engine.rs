@@ -7,8 +7,8 @@ use super::{api, layers, paths};
 use crate::context::Context;
 use crate::host::Os;
 use crate::provider::{
-    Adoption, Behind, Credential, Expiry, Isolation, LiveStore, Owner, ParkSemantics, Provider,
-    ProviderError, ProviderId, SignInView, jwt,
+    Adoption, Behind, Credential, Expiry, Identity, Isolation, LiveStore, Owner, ParkSemantics,
+    Provider, ProviderError, ProviderId, SignInView, jwt,
 };
 use crate::service::Permit;
 use crate::store::{self, Live, RawStore};
@@ -195,6 +195,19 @@ impl Provider for Codex {
         })
     }
 
+    fn identity(&self, ctx: &Context, credential: &Credential) -> Result<Identity, ProviderError> {
+        self.identify(ctx, credential).map(|owner| owner.identity())
+    }
+
+    fn name(
+        &self,
+        ctx: &Context,
+        credential: &Credential,
+        _identity: &Identity,
+    ) -> Result<String, ProviderError> {
+        self.identify(ctx, credential).map(|owner| owner.email)
+    }
+
     /// The ID token names the account, read with no network call.
     fn identifies_by_itself(&self) -> bool {
         true
@@ -262,8 +275,8 @@ impl Provider for Codex {
     /// The ID token names the account whether or not OpenAI still accepts the login, so
     /// that is asked separately, with the cheapest request that answers it: the same usage
     /// read `status` makes, which spends no quota.
-    fn verify(&self, ctx: &Context, credential: &Credential) -> Result<Owner, ProviderError> {
-        let found = self.identify(ctx, credential)?;
+    fn verify(&self, ctx: &Context, credential: &Credential) -> Result<Identity, ProviderError> {
+        let found = self.identity(ctx, credential)?;
         self.usage(ctx, credential)?;
         Ok(found)
     }

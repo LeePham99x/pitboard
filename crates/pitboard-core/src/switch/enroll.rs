@@ -1,5 +1,5 @@
 use super::folder::awaited::{Wait, WaitStep};
-use super::{Error, Readied, Result, Settled, identify, identify_document, purge};
+use super::{Error, Readied, Result, Settled, identify, purge};
 use crate::context::Context;
 use crate::in_use::{self, InUse};
 use crate::provider::Owner;
@@ -52,6 +52,8 @@ impl std::fmt::Debug for SignIn {
 struct Stored<'a> {
     permit: Permit,
     document: &'a Value,
+    // where the sign-in ran, whose own record names the login it made
+    dir: &'a std::path::Path,
 }
 
 enum How {
@@ -93,9 +95,10 @@ impl SignIn {
     #[cfg(test)]
     fn stored(&self) -> Stored<'_> {
         match &self.how {
-            How::Privately { document, .. } => Stored {
+            How::Privately { document, dir, .. } => Stored {
                 permit: self.permit,
                 document,
+                dir,
             },
             How::InItsApp { .. } => panic!("a sign-in inside an app stores no document"),
         }
@@ -656,10 +659,15 @@ pub(crate) fn enroll(
             key.provider.name()
         ))),
         Some(login) => match &login.how {
-            How::Privately { tool, document, .. } => {
+            How::Privately {
+                tool,
+                document,
+                dir,
+            } => {
                 let stored = Stored {
                     permit: login.permit,
                     document,
+                    dir,
                 };
                 from_sign_in(&ctx, *tool, key, &mut state, &stored)
             }
@@ -778,7 +786,8 @@ fn from_sign_in(
     state: &mut State,
     login: &Stored<'_>,
 ) -> Result<(Enrolled, Vec<Warning>)> {
-    let owner = identify_document(ctx, tool, login.document)?;
+    let owner = identify::asked(&ctx.signed_in_at(login.dir), state, tool, login.document)
+        .map_err(|e| super::unidentified(tool.id(), e))?;
     claim(state, key, &owner)?;
     let (now, lost) = signed_in_now(ctx, login.permit, state, tool, &owner);
     let said = |(enrolled, warnings): (Enrolled, Vec<Warning>)| {
@@ -1355,6 +1364,50 @@ mod tests {
         }
     }
 
+    /// A sign-in whose profile Anthropic refuses is named as the sign-in recorded it, in its
+    /// own directory, for the same account and organisation Anthropic named.
+    #[test]
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "a test writes the sign-in's config as Claude Code writes it"
+    )]
+    fn a_sign_in_whose_profile_is_refused_is_named_as_the_sign_in_recorded_it() {
+        let m = machine("named-by-sign-in");
+        m.api
+            .owned_by("access-third-refresh", harness::owner("third"));
+        m.api.profile_trouble(
+            "access-third-refresh",
+            Trouble::Answered(400, r#"{"error":{"type":"invalid_request_error"}}"#),
+        );
+        let recorded = |who: &str| {
+            let owner = harness::owner(who);
+            json!({"oauthAccount": {
+                "accountUuid": owner.account_uuid,
+                "emailAddress": owner.email,
+                "organizationUuid": owner.organization_uuid,
+            }})
+            .to_string()
+        };
+
+        let elsewhere = signed_in(&m, "third", "third-refresh");
+        std::fs::write(
+            elsewhere.stored().dir.join(".claude.json"),
+            recorded("here"),
+        )
+        .expect("the sign-in's config");
+        let refused = enrolled_as(&m, "third", elsewhere).expect_err("nobody to name it by");
+        assert_eq!(refused.code(), "identity_unverifiable");
+
+        let signed = signed_in(&m, "third", "third-refresh");
+        std::fs::write(signed.stored().dir.join(".claude.json"), recorded("third"))
+            .expect("the sign-in's config");
+        let (enrolled, _) = enrolled_as(&m, "third", signed).expect("enrolled");
+        assert!(
+            matches!(&enrolled, Enrolled::SignedIn { email } if email == "third@example.com"),
+            "{enrolled:?}"
+        );
+    }
+
     #[test]
     fn enrolling_records_the_plan_the_login_says() {
         for ((tool, make), plan) in MACHINES.into_iter().zip(["Max 20x", "Pro"]) {
@@ -1531,8 +1584,10 @@ mod tests {
             let key = m.key("here");
             let login = signed_in(&m, "here", "here-refresh-2");
             let login = login.stored();
-            let owner = identify_document(&m.ctx, provider::document(m.which), login.document)
-                .expect("whose");
+            let state = state::load(&m.ctx).expect("state");
+            let owner =
+                identify::asked(&m.ctx, &state, provider::document(m.which), login.document)
+                    .expect("whose");
             let mut state = state::load(&m.ctx).expect("state");
             let (SignedInNow::Theirs(live, first), _) = signed_in_now(
                 &m.ctx,

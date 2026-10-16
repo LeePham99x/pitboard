@@ -2269,7 +2269,7 @@ mod tests {
         assert_eq!(answered.login.usage().err(), Some(Stale::Unreachable));
         assert!(matches!(answered.login.signed_in, Some(Err(_))));
         assert!(answered.learned.is_none() && answered.found.is_none());
-        assert_eq!(api.asked(), [Question::Owner("access-x".into())]);
+        assert_eq!(api.asked(), [Question::Identity("access-x".into())]);
     }
 
     /// Offline, Claude Code's account in use is the one Anthropic last named for its login,

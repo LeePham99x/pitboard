@@ -10,8 +10,8 @@ use super::{configfile, document, live, paths as claude};
 use crate::context::Context;
 use crate::host::{OS, Os};
 use crate::provider::{
-    Adoption, Behind, Credential, Expiry, Held, Isolation, LiveStore, Owner, ParkSemantics,
-    Provider, ProviderError, ProviderId, SignInView,
+    Adoption, Behind, Credential, Expiry, Held, Identity, Isolation, LiveStore, Owner,
+    ParkSemantics, Provider, ProviderError, ProviderId, SignInView,
 };
 use crate::service::Permit;
 use crate::switch;
@@ -68,20 +68,45 @@ impl Provider for Claude {
         })
     }
 
-    /// Asked of Anthropic, never read from Claude Code's config, which can lag the
-    /// credential by a day. That round trip is the reason a switch needs the network at
-    /// all, and it is deliberate: filing a login under the wrong account is worse than
-    /// refusing to file it.
-    fn identify(&self, ctx: &Context, credential: &Credential) -> Result<Owner, ProviderError> {
-        let token =
-            access_token(&credential.raw).ok_or_else(|| ProviderError::ShapeUnexpected {
-                provider: ProviderId::Claude,
-                detail: "it has no claudeAiOauth.accessToken".into(),
-            })?;
-        api::owner(ctx, token)
+    /// Asked of Anthropic as Claude Code asks it where an identity decides something, never
+    /// read from Claude Code's config, which can lag the credential by a day.
+    fn identity(&self, ctx: &Context, credential: &Credential) -> Result<Identity, ProviderError> {
+        let token = token(credential)?;
+        let validated = api::validate(ctx, token)?;
+        match validated.organization_uuid {
+            Some(organization_uuid) => Ok(Identity {
+                account_uuid: validated.account_uuid,
+                organization_uuid,
+            }),
+            // The profile names the organisation every enrolled account was recorded under.
+            None => api::owner(ctx, token).map(|owner| owner.identity()),
+        }
     }
 
-    /// Anthropic's profile endpoint says whose a token is.
+    /// The profile's email, or, where Anthropic will not give the profile, the one Claude
+    /// Code's own record holds for that same account and organisation, which its sign-in
+    /// writes from the profile or else from the token answer.
+    fn name(
+        &self,
+        ctx: &Context,
+        credential: &Credential,
+        identity: &Identity,
+    ) -> Result<String, ProviderError> {
+        match api::owner(ctx, token(credential)?) {
+            Ok(owner) if owner.identity() == *identity => Ok(owner.email),
+            Ok(_) => Err(ProviderError::Malformed {
+                service: ProviderId::Claude.service(),
+                detail: "the profile names another login than the token's".into(),
+            }),
+            Err(ProviderError::Unauthorized) => Err(ProviderError::Unauthorized),
+            Err(refused) => self
+                .own_record(ctx)
+                .filter(|recorded| recorded.identity() == *identity)
+                .map(|recorded| recorded.email)
+                .ok_or(refused),
+        }
+    }
+
     fn identifies_by_itself(&self) -> bool {
         false
     }
@@ -91,12 +116,7 @@ impl Provider for Claude {
         ctx: &Context,
         credential: &Credential,
     ) -> Result<usage::Snapshot, ProviderError> {
-        let token =
-            access_token(&credential.raw).ok_or_else(|| ProviderError::ShapeUnexpected {
-                provider: ProviderId::Claude,
-                detail: "it has no claudeAiOauth.accessToken".into(),
-            })?;
-        api::usage(ctx, token)
+        api::usage(ctx, token(credential)?)
     }
 
     fn renew(
@@ -122,10 +142,12 @@ impl Provider for Claude {
         // Anchored to the answer's own clock where it sent one, so a machine whose clock is
         // wrong does not write an expiry that is wrong with it.
         let at_millis = fresh.at.map_or_else(|| ctx.now_millis(), |at| at * 1000);
-        Ok(Credential::new(
+        let mut renewed = Credential::new(
             ProviderId::Claude,
             document::renewed(&credential.raw, &fresh, at_millis),
-        ))
+        );
+        renewed.named = fresh.owner;
+        Ok(renewed)
     }
 
     fn slot(&self, ctx: &Context) -> String {
@@ -320,6 +342,13 @@ impl Provider for Claude {
             refresh_expires_at: at("refreshTokenExpiresAt"),
         }
     }
+}
+
+fn token(credential: &Credential) -> Result<&str, ProviderError> {
+    access_token(&credential.raw).ok_or_else(|| ProviderError::ShapeUnexpected {
+        provider: ProviderId::Claude,
+        detail: "it has no claudeAiOauth.accessToken".into(),
+    })
 }
 
 pub(super) fn access_token(login: &Value) -> Option<&str> {

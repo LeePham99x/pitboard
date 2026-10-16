@@ -49,6 +49,18 @@ pub struct Renewed {
     ///
     /// `None` where the server sent no `Date`, and then the local clock is all there is.
     pub at: Option<i64>,
+    /// Whose login it is, where the answer names its account, email and organisation (the
+    /// register's `token_answer_names_the_login`).
+    pub owner: Option<Owner>,
+}
+
+/// What `POST /api/oauth/validate` says of an access token (the register's
+/// `validate_names_the_login`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Validated {
+    pub(crate) account_uuid: String,
+    /// `None` where the answer names no organisation.
+    pub(crate) organization_uuid: Option<String>,
 }
 
 /// What Pitboard asks Anthropic, as a seam.
@@ -58,6 +70,7 @@ pub struct Renewed {
 /// behaviour: a request that times out, a 429, a refresh token Anthropic has stopped
 /// accepting. Those are the answers the engine has to be right about.
 pub(crate) trait Api: Send + Sync + std::fmt::Debug {
+    fn validate(&self, ctx: &Context, access_token: &str) -> Result<Validated, ProviderError>;
     fn owner(&self, ctx: &Context, access_token: &str) -> Result<Owner, ProviderError>;
     fn usage(&self, ctx: &Context, access_token: &str) -> Result<Snapshot, ProviderError>;
     /// The token exchange, which spends `refresh_token` as it answers, so it takes the
@@ -77,6 +90,10 @@ pub(crate) trait Api: Send + Sync + std::fmt::Debug {
 pub(crate) struct Anthropic;
 
 impl Api for Anthropic {
+    fn validate(&self, ctx: &Context, access_token: &str) -> Result<Validated, ProviderError> {
+        ask_validate(ctx, access_token)
+    }
+
     fn owner(&self, ctx: &Context, access_token: &str) -> Result<Owner, ProviderError> {
         ask_owner(ctx, access_token)
     }
@@ -98,6 +115,10 @@ impl Api for Anthropic {
 }
 
 /// Ask Anthropic through this context.
+pub(crate) fn validate(ctx: &Context, access_token: &str) -> Result<Validated, ProviderError> {
+    ctx.api().validate(ctx, access_token)
+}
+
 pub(crate) fn owner(ctx: &Context, access_token: &str) -> Result<Owner, ProviderError> {
     ctx.api().owner(ctx, access_token)
 }
@@ -118,12 +139,27 @@ pub(crate) fn renew(
 }
 
 fn get(ctx: &Context, path: &str, access_token: &str) -> Result<Value, ProviderError> {
-    let mut response = agent(ctx)
+    let response = agent(ctx)
         .get(format!("{}{path}", base(ctx)))
         .header("Authorization", format!("Bearer {access_token}"))
         .header("anthropic-beta", "oauth-2025-04-20")
         .call()
         .map_err(network)?;
+    read(response)
+}
+
+// As Claude Code 2.1.301 sends it: no body, and no beta header.
+fn post(ctx: &Context, path: &str, access_token: &str) -> Result<Value, ProviderError> {
+    let response = agent(ctx)
+        .post(format!("{}{path}", base(ctx)))
+        .header("Authorization", format!("Bearer {access_token}"))
+        .header("Content-Type", "application/json")
+        .send_empty()
+        .map_err(network)?;
+    read(response)
+}
+
+fn read(mut response: ureq::http::Response<ureq::Body>) -> Result<Value, ProviderError> {
     match response.status().as_u16() {
         200 => {
             let body = response.body_mut().read_to_string().map_err(network)?;
@@ -254,6 +290,24 @@ fn ask_renew(
 
 fn parse_renewed(body: &Value, at: Option<i64>) -> Result<Renewed, ProviderError> {
     let text = |key: &str| body.get(key).and_then(Value::as_str).map(str::to_owned);
+    let named = |pointer: &str| {
+        body.pointer(pointer)
+            .and_then(Value::as_str)
+            .filter(|text| !text.is_empty())
+            .map(str::to_owned)
+    };
+    let owner = match (
+        named("/account/uuid"),
+        named("/account/email_address"),
+        named("/organization/uuid"),
+    ) {
+        (Some(account_uuid), Some(email), Some(organization_uuid)) => Some(Owner {
+            account_uuid,
+            email,
+            organization_uuid,
+        }),
+        _ => None,
+    };
     Ok(Renewed {
         access_token: text("access_token").ok_or_else(|| malformed("no access_token"))?,
         refresh_token: text("refresh_token"),
@@ -264,6 +318,27 @@ fn parse_renewed(body: &Value, at: Option<i64>) -> Result<Renewed, ProviderError
         refresh_token_expires_in: body.get("refresh_token_expires_in").and_then(Value::as_i64),
         scopes: text("scope").map(|s| s.split_whitespace().map(str::to_owned).collect()),
         at,
+        owner,
+    })
+}
+
+fn ask_validate(ctx: &Context, access_token: &str) -> Result<Validated, ProviderError> {
+    parse_validated(&post(ctx, "/api/oauth/validate", access_token)?)
+}
+
+fn parse_validated(body: &Value) -> Result<Validated, ProviderError> {
+    if body.get("valid").and_then(Value::as_bool) != Some(true) {
+        return Err(ProviderError::Unauthorized);
+    }
+    let text = |key: &str| {
+        body.get(key)
+            .and_then(Value::as_str)
+            .filter(|text| !text.is_empty())
+            .map(str::to_owned)
+    };
+    Ok(Validated {
+        account_uuid: text("account_uuid").ok_or_else(|| malformed("no account_uuid"))?,
+        organization_uuid: text("organization_uuid"),
     })
 }
 
@@ -313,6 +388,7 @@ mod tests {
                 refresh_token_expires_in: Some(2_592_000),
                 scopes: Some(vec!["user:inference".into(), "user:profile".into()]),
                 at: Some(1_790_000_000),
+                owner: None,
             }
         );
         let kept = parse_renewed(&json!({"access_token": "a2", "expires_in": 60}), None).unwrap();
@@ -322,6 +398,68 @@ mod tests {
         );
         assert_eq!(kept.at, None, "no Date header leaves the local clock to it");
         assert!(parse_renewed(&json!({"expires_in": 60}), None).is_err());
+    }
+
+    // As Claude Code 2.1.301 reads it into `tokenAccount`.
+    #[test]
+    fn a_renewal_answer_names_the_login_where_it_names_all_three() {
+        let answer = |extra: Value| {
+            let mut body = json!({"access_token": "a2", "expires_in": 60});
+            body.as_object_mut()
+                .expect("an object")
+                .extend(extra.as_object().expect("an object").clone());
+            parse_renewed(&body, None).expect("read").owner
+        };
+        assert_eq!(
+            answer(json!({
+                "account": {"uuid": "acc", "email_address": "a@b.c"},
+                "organization": {"uuid": "org"}
+            })),
+            Some(Owner {
+                account_uuid: "acc".into(),
+                email: "a@b.c".into(),
+                organization_uuid: "org".into(),
+            })
+        );
+        assert_eq!(
+            answer(json!({"account": {"uuid": "acc", "email_address": "a@b.c"}})),
+            None,
+            "a login named with no organisation is asked about instead"
+        );
+        assert_eq!(answer(json!({})), None);
+    }
+
+    // Keys as measured on 2026-10-16 from a Max login: valid, account_uuid,
+    // organization_uuid, scopes.
+    #[test]
+    fn a_validation_names_the_account_and_its_organisation() {
+        assert_eq!(
+            parse_validated(&json!({
+                "valid": true, "account_uuid": "acc", "organization_uuid": "org",
+                "scopes": ["user:profile"]
+            }))
+            .expect("read"),
+            Validated {
+                account_uuid: "acc".into(),
+                organization_uuid: Some("org".into()),
+            }
+        );
+        assert_eq!(
+            parse_validated(
+                &json!({"valid": true, "account_uuid": "acc", "organization_uuid": null})
+            )
+            .expect("read")
+            .organization_uuid,
+            None
+        );
+        assert!(matches!(
+            parse_validated(&json!({"valid": false})),
+            Err(ProviderError::Unauthorized)
+        ));
+        assert!(matches!(
+            parse_validated(&json!({"valid": true})),
+            Err(ProviderError::Malformed { .. })
+        ));
     }
 
     /// Field names copied from a live response on 2026-09-21.

@@ -50,6 +50,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as no longer accepted.
 - The automatic switch passes over an account whose parked login Anthropic will not name, as it
   passes over one whose login Anthropic refuses.
+- Pitboard tells whose a Claude Code login is by asking Anthropic which account and organisation it
+  is, as Claude Code does, so a switch between accounts you added works when Anthropic refuses the
+  login's profile.
 
 ## [0.14.0] - 2026-10-14
 

@@ -368,16 +368,20 @@ impl Stowing<'_> {
             self.partway = Partway::RenewedUnwritten;
         }
         let renewed = match renewed {
-            Ok(Renewed::Saved(renewed)) => renewed,
+            Ok(Renewed::Saved { held, named }) => (held, named),
             Ok(Renewed::Refused) => return Ok(None),
             Err(Stop::Changed) => return Err(self.changed()),
             Err(Stop::Unrenewed(error)) => return Err(not_identified(&self.path, &error)),
             Err(Stop::Failed(error)) => return Err(error),
         };
+        let (renewed, named) = renewed;
         *held = contents(&renewed)?;
         *raw = renewed;
+        if named.is_some() {
+            return Ok(named);
+        }
         let login = held.slice.clone().expect("a renewed login");
-        tool.identify(self.ctx, &provider::Credential::new(TOOL, login))
+        identify::asked(self.ctx, state, tool, &login)
             .map(Some)
             .map_err(|error| not_identified(&self.path, &error))
     }
@@ -544,7 +548,7 @@ fn judge(
     {
         return Ok(untold());
     }
-    match tool.identify(ctx, &provider::Credential::new(TOOL, slice.clone())) {
+    match identify::asked(ctx, state, tool, slice) {
         Ok(found) => Ok(Whose::Owner(found)),
         // Expired earlier than its own expiry said, or with no access token at all.
         Err(ProviderError::Unauthorized | ProviderError::ShapeUnexpected { .. }) => Ok(untold()),
@@ -986,6 +990,7 @@ mod tests {
                 refresh_token_expires_in: Some(30 * 86_400),
                 scopes: None,
                 at: None,
+                owner: None,
             },
         );
         m.api.owned_by("access-there-renewed", owner("there"));

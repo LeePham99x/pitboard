@@ -456,6 +456,8 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
     answers("refusals_are_final"),
     answers("account_refusals"),
     answers("token_refusals"),
+    answers("validate_names_the_login"),
+    answers("token_answer_names_the_login"),
 ];
 
 pub(crate) const ASSUMPTIONS: &[Assumption] = &[
@@ -946,7 +948,9 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                     fetched, and the readers that stand `acct:` in for a missing organisation",
         verified_against: "2.1.294",
         depends: "Claude's own_record, which names such an account with no organisation, as \
-                  the config wrote it, so in_use::known tells a change of it by the same id",
+                  the config wrote it, so in_use::known tells a change of it by the same id; \
+                  and Claude's name, which takes the email the record holds for the account \
+                  and organisation validate named, where the profile is refused",
         probe: &["tokenAccount", "acct:${"],
         absent: &[],
     },
@@ -1733,6 +1737,40 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         ],
         absent: &[],
     },
+    Assumption {
+        name: "validate_names_the_login",
+        fact: "`POST /api/oauth/validate` with an access token as `Authorization: Bearer`, \
+               `Content-Type: application/json` and no body answers `{\"valid\", \
+               \"account_uuid\", \"organization_uuid\", \"scopes\"}` for a token with \
+               `user:profile`, `user:office` or `user:ccr_inference`. Claude Code asks it where \
+               an identity decides something: whether a login is of an organisation managed \
+               settings require, and which account the browser bridge serves, over the \
+               config's. Its sign-in identifies a login by the profile or else the token \
+               answer, and signs in where the profile cannot be read",
+        read_from: "the validate request and its retry list, the organisation pin's check, the \
+                    browser bridge's account, and the sign-in's identity; the answer's keys \
+                    measured on 16 October 2026 from a Max login",
+        verified_against: "2.1.301",
+        depends: "the Claude provider's identity, which every switch, read and sign-in asks, \
+                  and which needs no profile for an account Pitboard knows",
+        probe: &[
+            "/api/oauth/validate",
+            "resolves to a different claude.ai account than the persisted Claude Code login",
+        ],
+        absent: &[],
+    },
+    Assumption {
+        name: "token_answer_names_the_login",
+        fact: "the token endpoint's answer to a renewal carries `account.uuid`, \
+               `account.email_address` and, where the login has one, `organization.uuid`, \
+               which Claude Code keeps as the login's `tokenAccount`",
+        read_from: "the refresh's answer reader",
+        verified_against: "2.1.301",
+        depends: "the Claude provider's renewal, whose answer names the login renewed where it \
+                  names all three, so nothing is asked about it after",
+        probe: &["account.email_address", "tokenAccount:"],
+        absent: &[],
+    },
 ];
 
 #[cfg(test)]
@@ -1794,6 +1832,8 @@ mod tests {
                 "refusals_are_final",
                 "account_refusals",
                 "token_refusals",
+                "validate_names_the_login",
+                "token_answer_names_the_login",
             ]
         );
         for name in [

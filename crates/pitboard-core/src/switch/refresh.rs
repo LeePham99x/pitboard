@@ -102,8 +102,12 @@ impl Progress {
 }
 
 pub(super) enum Renewed {
-    /// What the place holds now, byte for byte, with the renewed login in it.
-    Saved(String),
+    /// What the place holds now, byte for byte, with the renewed login in it, and whose the
+    /// answer said it is, where it said.
+    Saved {
+        held: String,
+        named: Option<provider::Owner>,
+    },
     /// Anthropic refuses the refresh token for good. Nothing was written.
     Refused,
 }
@@ -173,12 +177,12 @@ pub(super) fn renew(
     fault::point("refresh.checked");
     let sent = tool.fingerprint(login);
     let copy = reserve(ctx, permit, state, which, place, &sent, login)?;
-    let fresh = match tool.renew(
+    let (fresh, named) = match tool.renew(
         ctx,
         permit,
         &provider::Credential::new(which, login.clone()),
     ) {
-        Ok(fresh) => fresh.raw,
+        Ok(fresh) => (fresh.raw, fresh.named),
         Err(error) => {
             if let Some(copy) = &copy {
                 let_go(ctx, permit, state, copy);
@@ -211,7 +215,7 @@ pub(super) fn renew(
     if let Some(copy) = copy.filter(|_| !progress.kept) {
         let_go(ctx, permit, state, &copy);
     }
-    saved.map(Renewed::Saved)
+    saved.map(|held| Renewed::Saved { held, named })
 }
 
 /// Saves each renewed login a run that stopped left in the vault for the slot its tool keeps

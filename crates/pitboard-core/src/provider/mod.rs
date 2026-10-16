@@ -202,12 +202,25 @@ impl std::fmt::Display for ProviderId {
 pub(crate) struct Credential {
     pub(crate) provider: ProviderId,
     pub(crate) raw: Value,
+    /// Whose the service said it is as it issued it, where it said.
+    pub(crate) named: Option<Owner>,
 }
 
 impl Credential {
     pub(crate) fn new(provider: ProviderId, raw: Value) -> Credential {
-        Credential { provider, raw }
+        Credential {
+            provider,
+            raw,
+            named: None,
+        }
     }
+}
+
+/// Which login a credential is, as its service names it: the account, in its organisation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Identity {
+    pub(crate) account_uuid: String,
+    pub(crate) organization_uuid: String,
 }
 
 /// Whose a login is. Unlike a refresh-token fingerprint, it does not change when a tool
@@ -226,9 +239,24 @@ pub struct Owner {
 }
 
 impl Owner {
+    pub(crate) fn named(identity: Identity, email: String) -> Owner {
+        Owner {
+            account_uuid: identity.account_uuid,
+            email,
+            organization_uuid: identity.organization_uuid,
+        }
+    }
+
+    pub(crate) fn identity(&self) -> Identity {
+        Identity {
+            account_uuid: self.account_uuid.clone(),
+            organization_uuid: self.organization_uuid.clone(),
+        }
+    }
+
     /// Whether `other` is this login: the same account in the same organisation.
     pub(crate) fn same_login(&self, other: &Owner) -> bool {
-        self.account_uuid == other.account_uuid && self.organization_uuid == other.organization_uuid
+        self.identity() == other.identity()
     }
 }
 
@@ -462,8 +490,24 @@ pub(crate) trait Provider: Send + Sync + std::fmt::Debug {
             .map_err(store_error)
     }
 
-    /// Whose credential this is.
-    fn identify(&self, ctx: &Context, credential: &Credential) -> Result<Owner, ProviderError>;
+    /// Which login this credential is.
+    fn identity(&self, ctx: &Context, credential: &Credential) -> Result<Identity, ProviderError>;
+
+    /// The email of the login `identity` names, asked only for an account Pitboard does not
+    /// know already.
+    fn name(
+        &self,
+        ctx: &Context,
+        credential: &Credential,
+        identity: &Identity,
+    ) -> Result<String, ProviderError>;
+
+    /// Whose credential this is: its identity, and the name that goes with it.
+    fn identify(&self, ctx: &Context, credential: &Credential) -> Result<Owner, ProviderError> {
+        let identity = self.identity(ctx, credential)?;
+        let email = self.name(ctx, credential, &identity)?;
+        Ok(Owner::named(identity, email))
+    }
 
     /// Whether [`Provider::identify`] answers from the credential alone, asking nobody.
     /// Where it does, whose a login is can be told by a read that sends no request, as
@@ -477,8 +521,8 @@ pub(crate) trait Provider: Send + Sync + std::fmt::Debug {
     /// is without anybody's agreement, and that is not enough before installing it: a login
     /// the service has stopped accepting would be switched to, read back, found present,
     /// and fail the next time the person ran the tool, with nothing parked to go back to.
-    fn verify(&self, ctx: &Context, credential: &Credential) -> Result<Owner, ProviderError> {
-        self.identify(ctx, credential)
+    fn verify(&self, ctx: &Context, credential: &Credential) -> Result<Identity, ProviderError> {
+        self.identity(ctx, credential)
     }
 
     /// What this credential has left, normalised into Pitboard's own shape.

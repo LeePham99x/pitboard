@@ -167,16 +167,31 @@ fn use_switches() {
 #[test]
 fn a_failure_says_what_went_wrong_underneath() {
     let mut env = two_accounts("contract-cause");
-    env.profile_trouble(503);
+    env.identity_trouble(503);
     let (value, code) = json(&env, &["use", "beta"]);
     contract!("use_anthropic_unwell", value, code);
+}
+
+// The report of 16 October 2026: Anthropic answered 400 to the profile of a login it still
+// names. A switch between two enrolled accounts needs no profile.
+#[test]
+fn a_switch_between_enrolled_accounts_needs_no_profile() {
+    let mut env = two_accounts("contract-no-profile");
+    env.profile_answers(
+        400,
+        r#"{"type":"error","error":{"type":"invalid_request_error","message":"This organization cannot be read."}}"#,
+    );
+    let (value, code) = json(&env, &["use", "beta"]);
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(value["data"]["to"], "beta", "{value}");
+    assert_eq!(value["data"]["changed"], true, "{value}");
 }
 
 // The reporter's dialog said only "Anthropic answered 400".
 #[test]
 fn a_refusal_says_why_and_is_not_worth_retrying() {
     let mut env = two_accounts("contract-refused");
-    env.profile_answers(
+    env.identity_answers(
         400,
         r#"{"type":"error","error":{"type":"invalid_request_error","message":"This organization cannot be read."}}"#,
     );

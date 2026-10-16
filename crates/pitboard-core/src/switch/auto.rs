@@ -1349,10 +1349,10 @@ mod tests {
 
         let looked = auto(&m).expect("no failure").value;
         assert!(not_enrolled(&looked), "{looked:?}");
-        assert_eq!(m.api.calls(), 1);
+        assert_eq!(m.api.calls(), 2, "which login, then its name");
         let looked = auto(&m).expect("no failure").value;
         assert!(not_enrolled(&looked), "{looked:?}");
-        assert_eq!(m.api.calls(), 1, "from the record");
+        assert_eq!(m.api.calls(), 2, "from the record");
         assert!(logged(&m).is_empty());
         assert_eq!(live_refresh(&m).as_deref(), Some("stranger-refresh"));
     }

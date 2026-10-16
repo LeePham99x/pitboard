@@ -159,7 +159,7 @@ fn a_park_that_answers_for_its_own_account_is_installed() {
     let asked = m.api.asked();
     assert!(
         asked.iter().any(
-            |q| matches!(q, crate::api::scripted::Asked::Owner(t) if t == "access-there-refresh")
+            |q| matches!(q, crate::api::scripted::Asked::Identity(t) if t == "access-there-refresh")
         ),
         "the login going in is asked about, not only the one coming out: {asked:?}"
     );
@@ -179,7 +179,7 @@ fn a_switch_from_a_login_already_identified_asks_only_about_the_login_going_in()
     assert!(matches!(outcome, Outcome::Switched { .. }), "{outcome:?}");
     assert_eq!(
         m.api.asked(),
-        [crate::api::scripted::Asked::Owner(
+        [crate::api::scripted::Asked::Identity(
             "access-there-refresh".into()
         )]
     );
