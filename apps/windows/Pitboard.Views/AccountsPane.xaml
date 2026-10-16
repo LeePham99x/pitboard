@@ -39,7 +39,7 @@
           </AppBarButton.KeyboardAccelerators>
         </AppBarButton>
         <AppBarButton
-            Label="Add Account"
+            Label="Add account"
             ToolTipService.ToolTip="Sign in to another account and park its login"
             KeyboardAcceleratorTextOverride="Ctrl+N"
             AutomationProperties.AutomationId="accounts.add"
@@ -104,6 +104,7 @@
       <FontIcon
           x:Name="EmptyMark"
           FontSize="40"
+          IsTextScaleFactorEnabled="False"
           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
           AutomationProperties.AccessibilityView="Raw" />
       <ProgressRing x:Name="EmptyProgress" IsActive="False" />

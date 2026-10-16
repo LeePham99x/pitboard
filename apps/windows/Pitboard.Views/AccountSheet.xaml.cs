@@ -11,7 +11,6 @@ using Windows.System;
 
 namespace Pitboard.Views;
 
-// The model's sheet over the main window: adding an account, the sign-in under way, a name, or putting a login away.
 public sealed partial class AccountSheet : ContentDialog, IDisposable
 {
     private static readonly HashSet<string> Parts =
@@ -199,7 +198,7 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
         Refused.Text = text.Refused ?? "";
         Refused.Visibility = Look.Shown(text.Refused is not null);
         CodeNote.Text = text.CodeNote;
-        PrimaryButtonText = running.WantsCode ? "Submit Code" : "";
+        PrimaryButtonText = running.WantsCode ? "Submit code" : "";
         SecondaryButtonText = text.Undo?.Title ?? "";
         DefaultButton = running.WantsCode ? ContentDialogButton.Primary : ContentDialogButton.None;
         Announce(text.Announce);

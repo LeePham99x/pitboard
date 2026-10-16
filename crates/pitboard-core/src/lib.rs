@@ -161,6 +161,7 @@ pub mod testing {
                 places
             })
             .chain(crate::host::claude_desktop_on_windows(&roaming, &local))
+            .chain(crate::host::pitboard_app_on_windows(&local))
             .filter(|place| place.is_absolute())
             .collect())
     }

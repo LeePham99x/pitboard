@@ -19,8 +19,7 @@ public static class Program
     private static int Main(string[] args)
     {
 #if DEBUG
-        // An exception in a DispatcherQueue callback fails Pitboard fast in CoreMessagingXP.dll and reaches no
-        // handler, so a Debug build says each exception as it is thrown, for the UI tests to show.
+        // A DispatcherQueue callback's exception fails fast in CoreMessagingXP.dll and reaches no handler.
         AppDomain.CurrentDomain.FirstChanceException += (_, thrown) => Console.Error.WriteLine(Thrown(thrown.Exception));
 #endif
         WinRT.ComWrappersSupport.InitializeComWrappers();
@@ -36,6 +35,9 @@ public static class Program
         var fixtureFolder = fixture is null ? null : Path.Combine(Path.GetTempPath(), "pitboard-fixture");
         ReadFailure? refusal = null;
         AppInstance? running = null;
+        var handovers = new Handovers();
+        // Connected before the key is held: a launch handed over while Pitboard starts would reach no handler.
+        AppInstance.GetCurrent().Activated += (_, _) => handovers.Arrived();
         var start = Launching.Decide(
             args,
             () => refusal = PitboardFfiMethods.LaunchRefusal(environment),
@@ -58,16 +60,15 @@ public static class Program
         }
 
         var started = new AppStart(
-            Running, environment, fixture, Running.DataFolder(Shell.LocalAppData(), fixtureFolder));
-        App? app = null;
-        DispatcherQueue? queue = null;
-        // Raised on a thread of its own.
-        AppInstance.GetCurrent().Activated += (_, _) => queue?.TryEnqueue(() => app?.Reopened());
-        Application.Start(_ =>
+            Running, environment, fixture, Running.DataFolder(Shell.LocalAppData(), fixtureFolder))
         {
-            queue = DispatcherQueue.GetForCurrentThread();
-            SynchronizationContext.SetSynchronizationContext(new DispatcherQueueSynchronizationContext(queue));
-            app = new App(started);
+            Arguments = args,
+        };
+        Application.Start(p =>
+        {
+            SynchronizationContext.SetSynchronizationContext(
+                new DispatcherQueueSynchronizationContext(DispatcherQueue.GetForCurrentThread()));
+            _ = new App(started, handovers);
         });
         return 0;
     }

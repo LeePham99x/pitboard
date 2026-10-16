@@ -31,7 +31,7 @@ public sealed class SheetPageTests
         var form = (SheetPage.Form)Shown(Snapshots.Read(1) with { Sheet = Add, SheetText = text })!;
 
         Assert.AreEqual("Pitboard opens Codex’s own sign-in in your browser.", form.Message("codex"));
-        Assert.AreEqual("Sign In", form.Confirm("codex"));
+        Assert.AreEqual("Sign in", form.Confirm("codex"));
         Assert.AreEqual(text.Message, form.Message("desktop"), "a tool the picker does not offer");
     }
 

@@ -8,7 +8,7 @@ namespace Pitboard.Windows.Tests;
 [TestClass]
 public sealed class AccountsPaneTests
 {
-    private static readonly Choice Add = new("Add Account…", new Intent.PresentSheet(new Sheet.Add(Provider: null)), Enabled: true);
+    private static readonly Choice Add = new("Add account…", new Intent.PresentSheet(new Sheet.Add(Provider: null)), Enabled: true);
 
     private static (AccountsPane Pane, StandInModel Model, AppModel App) Over(Snapshot snapshot)
     {
@@ -22,12 +22,12 @@ public sealed class AccountsPaneTests
     {
         var (pane, model, _) = Over(Snapshots.Read(1) with
         {
-            AccountsShown = new AccountsShown.NoAccounts("No Accounts", "Sign in to Claude Code or Codex to add one.", Add),
+            AccountsShown = new AccountsShown.NoAccounts("No accounts", "Sign in to Claude Code or Codex to add one.", Add),
         });
         await Views.Shown(pane);
 
-        Assert.Contains("No Accounts", Views.Texts(pane));
-        Views.Press(Views.Button(pane, "Add Account…"));
+        Assert.Contains("No accounts", Views.Texts(pane));
+        Views.Press(Views.Button(pane, "Add account…"));
 
         Assert.Contains(Add.Intent, model.Sent);
     }
@@ -35,15 +35,15 @@ public sealed class AccountsPaneTests
     [UITestMethod]
     public async Task AFailedReadSaysWhyAndHoldsItsRetryBack()
     {
-        var retry = new Choice("Try Again", new Intent.Refresh(Asked: true), Enabled: false);
+        var retry = new Choice("Try again", new Intent.Refresh(Asked: true), Enabled: false);
         var (pane, _, _) = Over(Snapshots.Read(1) with
         {
-            AccountsShown = new AccountsShown.ReadFailed("Couldn’t Read Accounts", "The keychain is locked.", retry),
+            AccountsShown = new AccountsShown.ReadFailed("Couldn’t read accounts", "The keychain is locked.", retry),
         });
         await Views.Shown(pane);
 
         Assert.Contains("The keychain is locked.", Views.Texts(pane));
-        Assert.IsFalse(Views.Button(pane, "Try Again").IsEnabled);
+        Assert.IsFalse(Views.Button(pane, "Try again").IsEnabled);
     }
 
     [UITestMethod]
@@ -114,7 +114,7 @@ public sealed class AccountsPaneTests
     [UITestMethod]
     public async Task ANoticeAndTheSetupStepComeBeforeTheAccounts()
     {
-        var notNow = new Choice("Not Now", new Intent.DeclineSecondAccount("claude"), Enabled: true);
+        var notNow = new Choice("Not now", new Intent.DeclineSecondAccount("claude"), Enabled: true);
         var (pane, model, _) = Over(Snapshots.Read(1) with
         {
             Notices = [Items.Notice("switch/codex", Items.Dismiss("codex"))],
@@ -125,7 +125,7 @@ public sealed class AccountsPaneTests
 
         Views.Element<InfoBar>(pane, "notice.switch/codex");
         Assert.Contains("Add a second account", Views.Texts(pane));
-        Views.Press(Views.Button(pane, "Not Now"));
+        Views.Press(Views.Button(pane, "Not now"));
 
         Assert.Contains(notNow.Intent, model.Sent);
     }

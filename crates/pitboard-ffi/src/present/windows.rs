@@ -5,7 +5,7 @@
 //! stores to delete, the Open Link window's link and accounts, each window's downloads, and
 //! the question asked before quitting stops a download.
 
-use super::{Choice, Question, Seen};
+use super::{Choice, Question, Seen, words};
 use crate::SiteLink;
 use crate::account_windows::records::store_key;
 use crate::account_windows::{
@@ -13,6 +13,7 @@ use crate::account_windows::{
 };
 use crate::model::windows::{Download, Picking};
 use crate::model::{Intent, Sheet};
+use pitboard_core::host::Os;
 
 /// The account windows, as the model has them.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -255,9 +256,9 @@ fn waiting(seen: &Seen) -> WindowWaiting {
         window_title: "Account".into(),
         shown: match (&seen.state.status, seen.problem()) {
             (None, Some(problem)) => WaitingShown::ReadFailed {
-                title: READ_FAILED.into(),
+                title: read_failed(seen.os),
                 detail: problem.to_owned(),
-                retry: retry(),
+                retry: retry(seen.os),
             },
             _ => WaitingShown::Reading {
                 title: READING.into(),
@@ -270,14 +271,16 @@ fn waiting(seen: &Seen) -> WindowWaiting {
 const READING: &str = "Reading accounts…";
 
 /// What they say where the accounts could not be read, and nothing is known.
-const READ_FAILED: &str = "Couldn’t Read Accounts";
+fn read_failed(os: Os) -> String {
+    words::titled(os, "Couldn’t Read Accounts", "Couldn’t read accounts")
+}
 
 /// Reading the accounts again, as somebody asked. Offered while a read runs too, as
 /// AccountWindowView.swift and AccountPicker.swift offered it, where the accounts pane holds
 /// its own back.
-fn retry() -> Choice {
+fn retry(os: Os) -> Choice {
     Choice {
-        title: "Try Again".into(),
+        title: words::titled(os, "Try Again", "Try again"),
         intent: Intent::Refresh { asked: true },
         enabled: true,
     }
@@ -298,26 +301,30 @@ fn picker(seen: &Seen) -> Option<LinkPicker> {
             title: READING.into(),
         },
         Picking::ReadFailed(problem) => PickerShown::ReadFailed {
-            title: READ_FAILED.into(),
+            title: read_failed(seen.os),
             detail: problem,
-            retry: retry(),
+            retry: retry(seen.os),
         },
         Picking::Refused(refusal) => PickerShown::Refused {
-            title: "Can’t Open This Link".into(),
+            title: words::titled(seen.os, "Can’t Open This Link", "Can’t open this link"),
             reason: refusal.to_string(),
         },
         Picking::NoAccount(link) => {
             let name = link.site.name.clone();
             PickerShown::NoAccount {
-                title: format!("No {name} Account"),
+                title: words::titled(
+                    seen.os,
+                    &format!("No {name} Account"),
+                    &format!("No {name} account"),
+                ),
                 link_text: link_text(&link.url),
                 detail: format!(
                     "None of the accounts Pitboard has opens {name}. Add one, and this link \
                      waits here until you choose it."
                 ),
-                in_browser: "Open in Browser".into(),
+                in_browser: words::titled(seen.os, "Open in Browser", "Open in browser"),
                 add: Choice {
-                    title: "Add Account…".into(),
+                    title: words::titled(seen.os, "Add Account…", "Add account…"),
                     intent: Intent::PresentSheet {
                         sheet: Sheet::Add {
                             provider: Some(link.site.provider.clone()),

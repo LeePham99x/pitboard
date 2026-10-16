@@ -41,6 +41,10 @@ public sealed class SettingsPaneTests
         await Views.Until(() => Views.Texts(pane).Contains(inside), $"{automationId} did not open on '{inside}'");
     }
 
+    private static TextBlock Said(SettingsPane pane, string text) =>
+        Views.Visible<TextBlock>(pane).SingleOrDefault(shown => shown.Text == text)
+        ?? throw new AssertFailedException($"'{text}' is not among: {string.Join(", ", Views.Texts(pane))}");
+
     [UITestMethod]
     public async Task ShowingThePageReadsTheScheduleAndLooksForTheCommandLine()
     {
@@ -90,7 +94,20 @@ public sealed class SettingsPaneTests
         toggle.IsOn = true;
 
         Assert.IsFalse(toggle.IsOn);
-        Assert.Contains("Access is denied.", Views.Texts(pane));
+        Assert.AreEqual(AutomationLiveSetting.Assertive, AutomationProperties.GetLiveSetting(Said(pane, "Access is denied.")));
+    }
+
+    // Narrator says only the switch's new state, so the reason is a live region.
+    [UITestMethod]
+    public async Task AScheduleWindowsRefusedIsSaidAloud()
+    {
+        var pane = await Shown(new AppModel(new StandInModel(With(1, machine => machine with
+        {
+            Schedule = machine.Schedule with { Failed = "Task Scheduler refused the task." },
+        }))));
+
+        Assert.AreEqual(
+            AutomationLiveSetting.Assertive, AutomationProperties.GetLiveSetting(Said(pane, "Task Scheduler refused the task.")));
     }
 
     [UITestMethod]
@@ -219,7 +236,7 @@ public sealed class SettingsPaneTests
         Assert.Contains(task, texts);
         Assert.IsTrue(Views.Element<ToggleSwitch>(pane, "settings.renewDaily").IsOn);
 
-        Views.Press(Views.Button(pane, "Renew Now"));
+        Views.Press(Views.Button(pane, "Renew now"));
         Assert.Contains(new Intent.RenewNow(), model.Sent);
 
         Views.Element<ToggleSwitch>(pane, "settings.renewDaily").IsOn = false;
@@ -241,7 +258,7 @@ public sealed class SettingsPaneTests
         Assert.DoesNotContain("Runs", texts);
         Assert.DoesNotContain("Scheduled in", texts);
         Assert.IsFalse(Views.Element<ToggleSwitch>(pane, "settings.renewDaily").IsEnabled);
-        Assert.IsFalse(Views.Button(pane, "Renew Now").IsEnabled);
+        Assert.IsFalse(Views.Button(pane, "Renew now").IsEnabled);
     }
 
     // The installer owns the PATH entry, so the section offers no link even where the model would.
@@ -310,7 +327,7 @@ public sealed class SettingsPaneTests
         var opened = new List<Uri>();
         var pane = await Shown(new AppModel(new StandInModel(Snapshots.Read(1))), version: "1.2.3", open: opened.Add);
 
-        pane.ShowAbout();
+        Views.Element<Expander>(pane, "settings.about").IsExpanded = true;
         await Views.Until(() => Views.Visible<HyperlinkButton>(pane).Any(), "About did not open");
 
         Assert.Contains("1.2.3", Views.Texts(pane));

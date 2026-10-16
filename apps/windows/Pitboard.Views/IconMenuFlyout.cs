@@ -49,11 +49,6 @@ public static class IconMenuFlyout
                     item.Icon = new FontIcon { Glyph = Glyph(mark) };
                 }
 
-                if (command.Shortcut is { } shortcut)
-                {
-                    item.KeyboardAcceleratorTextOverride = shortcut;
-                }
-
                 if (command.Default)
                 {
                     item.FontWeight = FontWeights.SemiBold;

@@ -8,6 +8,7 @@ public sealed partial class HiddenWindowTests
     private const uint ParentOf = 1;
     private const uint Close = 0x0010;
     private const uint EndSession = 0x0016;
+    private const nint CloseApp = 0x1;
 
     private static HiddenWindow Made(
         Action? sessionEnding = null, Action? closing = null, Action<IconEvent>? icon = null, Action? taskbarCreated = null) =>
@@ -73,6 +74,18 @@ public sealed partial class HiddenWindowTests
         SendMessage(hidden.Handle, EndSession, 1, 0);
 
         Assert.AreEqual(1, ended);
+    }
+
+    // As Restart Manager asks a program to end, to replace its files, and then waits for it to exit.
+    [TestMethod]
+    public void RestartManagersEndOfSessionEndsPitboard()
+    {
+        var (closed, ended) = (0, 0);
+        var hidden = Made(sessionEnding: () => ended++, closing: () => closed++);
+
+        SendMessage(hidden.Handle, EndSession, 1, CloseApp);
+
+        Assert.AreEqual((1, 0), (closed, ended));
     }
 
     [LibraryImport("user32.dll", EntryPoint = "SendMessageW")]

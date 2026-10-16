@@ -39,8 +39,25 @@ public sealed class LaunchingTests
         Assert.AreEqual(Start.Run, Launching.Decide(["--updated"], () => null, () => true));
     }
 
-    // COM starts a copy for a click only when no running copy registered for clicks, and gives its arguments
-    // to the copy that registers: a second copy has nothing to hand over.
+    // Windows starts Pitboard at sign-in through the Run value, before the person asked for anything.
+    [TestMethod]
+    public void AStartAtSignInIsDroppedByARunningCopy()
+    {
+        Assert.AreEqual(Start.Dropped, Launching.Decide(["--sign-in"], () => null, () => false));
+        Assert.AreEqual(Start.Run, Launching.Decide(["--sign-in"], () => null, () => true));
+    }
+
+    // A new icon goes to the overflow, so a launch from Start or a shortcut that opened no window would show nothing.
+    [TestMethod]
+    public void OnlyALaunchThePersonAskedForOpensTheWindow()
+    {
+        Assert.IsTrue(Launching.OpensWindow([]));
+        Assert.IsFalse(Launching.OpensWindow(["--sign-in"]));
+        Assert.IsFalse(Launching.OpensWindow(["--updated"]));
+        Assert.IsFalse(Launching.OpensWindow(["----AppNotificationActivated:", "-Embedding"]));
+    }
+
+    // COM gives a click's arguments only to the copy that registered for clicks.
     [TestMethod]
     public void AClickOnANotificationIsDroppedByASecondCopy()
     {

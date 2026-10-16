@@ -7,7 +7,6 @@ using Pitboard.Core;
 
 namespace Pitboard.Windows;
 
-// The model's notifications as Windows app notifications, which only a Release build registers for.
 public sealed class WindowsNotifications(Build build, Func<IAppNotifications> system, string icon) : Notifications
 {
     public const string DisplayName = "Pitboard";

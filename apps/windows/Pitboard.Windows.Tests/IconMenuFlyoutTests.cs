@@ -56,7 +56,7 @@ public sealed class IconMenuFlyoutTests
 
         Assert.AreEqual(
             "An interrupted switch is waiting | - | Claude Code | (x) work | ( ) personal | - | Codex | (x) main | - "
-            + "| Add Account… | Refresh | - | Open Pitboard | Settings | - | About Pitboard | Pitboard Help | Exit",
+            + "| Add account… | Refresh | - | Open Pitboard | Settings | - | Pitboard help | Exit",
             Said(menu));
     }
 
@@ -104,14 +104,13 @@ public sealed class IconMenuFlyoutTests
         Assert.IsNull(ToolTipService.GetToolTip(Item(menu, "Exit")));
     }
 
+    // The window's keys do nothing in this menu, and the menu guidance shows a context menu no shortcuts.
     [UITestMethod]
-    public void TheMenuSaysTheWindowsShortcuts()
+    public void TheMenuShowsNoShortcuts()
     {
-        var menu = Menu(TwoTools());
+        var shown = Menu(TwoTools()).Items.OfType<MenuFlyoutItem>().Where(item => !string.IsNullOrEmpty(item.KeyboardAcceleratorTextOverride));
 
-        Assert.AreEqual("Ctrl+N", Item(menu, "Add Account…").KeyboardAcceleratorTextOverride);
-        Assert.AreEqual("Ctrl+R", Item(menu, "Refresh").KeyboardAcceleratorTextOverride);
-        Assert.AreEqual("Ctrl+,", Item(menu, "Settings").KeyboardAcceleratorTextOverride);
+        Assert.AreEqual("", string.Join(", ", shown.Select(item => item.Text)));
     }
 
     [UITestMethod]
@@ -128,7 +127,7 @@ public sealed class IconMenuFlyoutTests
     {
         var mark = Item(Menu(TwoTools()), "An interrupted switch is waiting").Icon as FontIcon;
 
-        Assert.AreEqual("", mark?.Glyph);
+        Assert.AreEqual("\uE7BA", mark?.Glyph);
     }
 
     [UITestMethod]
@@ -143,7 +142,7 @@ public sealed class IconMenuFlyoutTests
         var chosen = new List<IconCommand>();
         var menu = Menu(TwoTools(), chosen);
 
-        new MenuFlyoutItemAutomationPeer(Item(menu, "Add Account…")).Invoke();
+        new MenuFlyoutItemAutomationPeer(Item(menu, "Add account…")).Invoke();
         Toggle(Item(menu, "personal"));
         new MenuFlyoutItemAutomationPeer(Item(menu, "Exit")).Invoke();
 

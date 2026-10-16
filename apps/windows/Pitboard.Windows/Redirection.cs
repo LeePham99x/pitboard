@@ -12,11 +12,11 @@ public static class Redirection
     {
         var activated = AppInstance.GetCurrent().GetActivatedEventArgs();
         using var redirected = new ManualResetEvent(false);
-        _ = Task.Run(() =>
+        var redirecting = Task.Run(() =>
         {
             try
             {
-                running.RedirectActivationToAsync(activated).AsTask().Wait();
+                running.RedirectActivationToAsync(activated).AsTask().GetAwaiter().GetResult();
             }
             finally
             {
@@ -25,5 +25,7 @@ public static class Redirection
         });
         HANDLE[] handles = [(HANDLE)redirected.SafeWaitHandle.DangerousGetHandle()];
         PInvoke.CoWaitForMultipleObjects((uint)CWMO_FLAGS.CWMO_DEFAULT, PInvoke.INFINITE, handles, out _).ThrowOnFailure();
+        // A launch the running copy never got fails, rather than quits as if it had.
+        redirecting.GetAwaiter().GetResult();
     }
 }

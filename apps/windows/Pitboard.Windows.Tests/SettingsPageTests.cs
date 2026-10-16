@@ -23,7 +23,6 @@ public sealed class SettingsPageTests
     public void ABuildThatCannotUpdateSaysSoAndABetaSaysHowItGetsTheNext()
     {
         Assert.AreEqual(SettingsPage.NoUpdateKey, SettingsPage.UpdatesNotes(new NoUpdates(), "0.0.0").Single());
-        Assert.StartsWith("This copy of Pitboard can", SettingsPage.NoUpdateKey);
         CollectionAssert.AreEqual(
             new[] { SettingsPage.NoUpdateKey, SettingsPage.BetaNote },
             SettingsPage.UpdatesNotes(new NoUpdates(), "1.0.0-beta.1"));

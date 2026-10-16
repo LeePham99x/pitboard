@@ -15,7 +15,7 @@ use super::switching::{a_read_that_started_before, switch};
 use super::testing::{
     CLAUDE, Hand, Machine, StandInApps, a_look, a_look_or_a_read, a_switch, any_read, claude,
     codex_account, desktop_machine, enrolled_as, offline_read, refusal, status, still_running,
-    switched, warned, warning,
+    switched, titled, warned, warning,
 };
 use super::{Intent, Sheet};
 use crate::present::testing::account;
@@ -843,7 +843,9 @@ fn the_update(model: &Hand) -> Intent {
         .notices
         .into_iter()
         .flat_map(|notice| notice.actions)
-        .find(|action| action.title == "Update Claude Code’s Config")
+        .find(|action| {
+            action.title == titled("Update Claude Code’s Config", "Update Claude Code’s config")
+        })
         .expect("offered")
         .intent
 }

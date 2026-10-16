@@ -29,7 +29,7 @@ public sealed class AccountRowTests
             Assert.Contains(said, texts);
         }
 
-        Assert.DoesNotContain("In Use", texts);
+        Assert.DoesNotContain("In use", texts);
         var use = Views.Button(row, "Use");
         Assert.AreEqual("Use spare (Codex)", AutomationProperties.GetName(use));
         Views.Press(use);
@@ -41,7 +41,7 @@ public sealed class AccountRowTests
     {
         var row = await Views.Shown(new AccountRow { Item = Items.Account("claude", "work", inUse: true) });
 
-        Assert.Contains("In Use", Views.Texts(row));
+        Assert.Contains("In use", Views.Texts(row));
         Assert.IsFalse(Views.Visible<Button>(row).Any(), "a button on the account in use");
     }
 

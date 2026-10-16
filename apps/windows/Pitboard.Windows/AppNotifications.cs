@@ -3,7 +3,6 @@ using Microsoft.Windows.AppNotifications;
 
 namespace Pitboard.Windows;
 
-// Windows' app notifications for this process, which tests replace.
 public interface IAppNotifications
 {
     bool IsSupported();

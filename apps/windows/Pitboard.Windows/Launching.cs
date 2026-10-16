@@ -17,6 +17,9 @@ public static class Launching
 
     public const string Updated = "--updated";
 
+    // What the Run value starts Pitboard with, as Windows signs the person in.
+    public const string SignIn = "--sign-in";
+
     // What COM starts Pitboard.exe with for a click on its notification, as Register writes it.
     public const string Notified = "----AppNotificationActivated:";
 
@@ -38,8 +41,13 @@ public static class Launching
             return Start.Run;
         }
 
-        // The MSI starts Pitboard after an update, which a copy already running has no use for. A click's
-        // arguments reach only a copy that registers, so a second copy has none to hand over.
-        return given.Contains(Updated) || given.Contains(Notified) ? Start.Dropped : Start.Redirect;
+        // A click's arguments reach only the copy that registered, and nobody asked for the other two.
+        return Unasked(given) ? Start.Dropped : Start.Redirect;
     }
+
+    public static bool OpensWindow(IEnumerable<string> arguments) =>
+        !Unasked(arguments.ToHashSet(StringComparer.OrdinalIgnoreCase));
+
+    private static bool Unasked(HashSet<string> given) =>
+        given.Contains(SignIn) || given.Contains(Updated) || given.Contains(Notified);
 }

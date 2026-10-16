@@ -9,8 +9,7 @@ using WinRT.Interop;
 
 namespace Pitboard.App;
 
-// A pixel of a window at the click, the foreground window while the icon's menu is open, as TrackPopupMenu
-// asks of a notification icon's menu: WinUI closes a flyout as its window loses activation.
+// The foreground window under the icon's menu, as TrackPopupMenu asks: WinUI closes a flyout as its window deactivates.
 internal sealed partial class MenuHost : Window
 {
     private readonly Grid _root = new();
@@ -19,7 +18,7 @@ internal sealed partial class MenuHost : Window
 
     public MenuHost()
     {
-        Title = "Pitboard Menu";
+        Title = "Pitboard menu";
         Content = _root;
         var presenter = OverlappedPresenter.CreateForContextMenu();
         presenter.SetBorderAndTitleBar(hasBorder: false, hasTitleBar: false);

@@ -141,7 +141,7 @@ fn in_app_form(seen: &Seen, sheet: &Sheet, provider: &str) -> (String, String) {
                     "{app} is signed out. Pitboard waits while you sign in to {label} in {app}, \
                      and records it once {app} quits."
                 ),
-                "Start Sign-In".into(),
+                words::titled(seen.os, "Start Sign-In", "Start sign-in"),
             ),
         },
         _ if current && first => (
@@ -149,7 +149,7 @@ fn in_app_form(seen: &Seen, sheet: &Sheet, provider: &str) -> (String, String) {
                 "Pitboard records the account {app} is signed in to under this name. Check which \
                  account {app} shows first: Pitboard can’t ask claude.ai whose it is."
             ),
-            "Add Account".into(),
+            words::titled(seen.os, "Add Account", "Add account"),
         ),
         _ if current => match awaiting {
             Some(awaiting) => (
@@ -158,7 +158,11 @@ fn in_app_form(seen: &Seen, sheet: &Sheet, provider: &str) -> (String, String) {
                      {} is parked. Sign in to it in {app} and quit {app}, then add it here.",
                     split(&awaiting.put_back).1
                 ),
-                format!("Add the Account {app} Shows"),
+                words::titled(
+                    seen.os,
+                    &format!("Add the Account {app} Shows"),
+                    &format!("Add the account {app} shows"),
+                ),
             ),
             None => (
                 format!(
@@ -166,7 +170,11 @@ fn in_app_form(seen: &Seen, sheet: &Sheet, provider: &str) -> (String, String) {
                      account it shows, and quit it. Pitboard records that account under this \
                      name: one you added, or a new one."
                 ),
-                format!("Add the Account {app} Shows"),
+                words::titled(
+                    seen.os,
+                    &format!("Add the Account {app} Shows"),
+                    &format!("Add the account {app} shows"),
+                ),
             ),
         },
         _ => match park {
@@ -183,7 +191,7 @@ fn in_app_form(seen: &Seen, sheet: &Sheet, provider: &str) -> (String, String) {
                     "{app} is signed out. Pitboard waits while you sign in to the account you’re \
                      adding in {app}, and adds it once {app} quits."
                 ),
-                "Start Sign-In".into(),
+                words::titled(seen.os, "Start Sign-In", "Start sign-in"),
             ),
         },
     }
@@ -200,7 +208,7 @@ fn form_words(seen: &Seen, sheet: &Sheet, tool: &str) -> (String, String) {
     };
     (
         sign_in_message(&seen.tool_name(tool), again),
-        "Sign In".into(),
+        words::titled(seen.os, "Sign In", "Sign in"),
     )
 }
 
@@ -249,7 +257,7 @@ pub(crate) fn sheet_text(seen: &Seen) -> Option<SheetText> {
                 .map(|awaiting| awaiting.label.clone())
                 .unwrap_or_default();
             SheetText {
-                title: "Add Account".into(),
+                title: words::titled(seen.os, "Add Account", "Add account"),
                 message,
                 tools: (seen.tools.iter())
                     .map(|offered| sheet_tool(seen, sheet, offered))
@@ -266,7 +274,11 @@ pub(crate) fn sheet_text(seen: &Seen) -> Option<SheetText> {
         Sheet::SignInAgain { label, .. } => {
             let (message, confirm) = form_words(seen, sheet, &tool);
             SheetText {
-                title: format!("Sign In to {label} Again"),
+                title: words::titled(
+                    seen.os,
+                    &format!("Sign In to {label} Again"),
+                    &format!("Sign in to {label} again"),
+                ),
                 message,
                 tools: (seen.tools.iter())
                     .filter(|own| own.code == tool)
@@ -282,7 +294,7 @@ pub(crate) fn sheet_text(seen: &Seen) -> Option<SheetText> {
             }
         }
         Sheet::Name { email, .. } => SheetText {
-            title: "Name This Account".into(),
+            title: words::titled(seen.os, "Name This Account", "Name this account"),
             message: format!(
                 "{email} is signed in to {}. Pitboard parks its login under this name whenever \
                  you switch to another account.",
@@ -340,14 +352,18 @@ pub(crate) fn stow_text(seen: &Seen) -> Option<StowText> {
         ),
     };
     Some(StowText {
-        title: "Put Away the Login Left in a File".into(),
+        title: words::titled(
+            seen.os,
+            "Put Away the Login Left in a File",
+            "Put away the login left in a file",
+        ),
         message: "Claude Code left a login in a file behind the keychain, which keeps sessions \
                   already running from following a switch. Pitboard keeps that login for its \
                   account where it holds none it can switch to, then deletes the file."
             .into(),
         lines,
         looking,
-        confirm: "Put Away".into(),
+        confirm: words::titled(seen.os, "Put Away", "Put away"),
         can_confirm,
         saving,
     })
@@ -371,7 +387,11 @@ pub(crate) fn signing_in_text(seen: &Seen) -> Option<SigningInText> {
         escape_cancels: true,
         undo: None,
         announce: None,
-        title: format!("Signing In to {tool}"),
+        title: words::titled(
+            seen.os,
+            &format!("Signing In to {tool}"),
+            &format!("Signing in to {tool}"),
+        ),
         message: format!(
             "Finish signing in as {} in your browser. This closes once {tool} says you’re in.",
             signing.name
@@ -429,9 +449,13 @@ fn in_app_signing_in_text(seen: &Seen, signing: &crate::model::state::SigningIn)
     let announce = (signing.started && asks_again).then(|| message.clone());
     SigningInText {
         title: if signing.again {
-            format!("Sign In to {} Again", signing.name)
+            words::titled(
+                seen.os,
+                &format!("Sign In to {} Again", signing.name),
+                &format!("Sign in to {} again", signing.name),
+            )
         } else {
-            "Add Account".into()
+            words::titled(seen.os, "Add Account", "Add account")
         },
         message,
         code_note: String::new(),
@@ -450,7 +474,11 @@ fn in_app_signing_in_text(seen: &Seen, signing: &crate::model::state::SigningIn)
         },
         escape_cancels: signing.started && put_back.is_none(),
         undo: put_back.map(|qualified| Choice {
-            title: format!("Put {} Back", split(qualified).1),
+            title: words::titled(
+                seen.os,
+                &format!("Put {} Back", split(qualified).1),
+                &format!("Put {} back", split(qualified).1),
+            ),
             intent: Intent::SwitchTo {
                 qualified: qualified.to_owned(),
             },
@@ -470,7 +498,11 @@ pub(crate) fn quit_confirmation(seen: &Seen, question: &QuitQuestion, then: &Aft
                 "{name} keeps using the account it started with until it quits. Pitboard quits \
                  it, switches, and opens it again."
             ),
-            confirm: format!("Quit {name} and Switch"),
+            confirm: words::titled(
+                seen.os,
+                &format!("Quit {name} and Switch"),
+                &format!("Quit {name} and switch"),
+            ),
         };
     }
     let only_while_closed = |does: &str| format!("Pitboard {does} only while {name} is closed.");
@@ -481,7 +513,11 @@ pub(crate) fn quit_confirmation(seen: &Seen, question: &QuitQuestion, then: &Aft
                 "{} It quits {name}, switches to {label}, and opens it again.",
                 only_while_closed(&format!("moves {name}’s login"))
             ),
-            confirm: format!("Quit {name} and Switch"),
+            confirm: words::titled(
+                seen.os,
+                &format!("Quit {name} and Switch"),
+                &format!("Quit {name} and switch"),
+            ),
         },
         After::SignIn { from, .. } => {
             let title = match from {
@@ -501,7 +537,11 @@ pub(crate) fn quit_confirmation(seen: &Seen, question: &QuitQuestion, then: &Aft
                          sign in.",
                         only_while_closed(&format!("parks {work}"))
                     ),
-                    confirm: format!("Quit {name} and Park {work}"),
+                    confirm: words::titled(
+                        seen.os,
+                        &format!("Quit {name} and Park {work}"),
+                        &format!("Quit {name} and park {work}"),
+                    ),
                 },
                 None => Question {
                     title,
@@ -509,7 +549,11 @@ pub(crate) fn quit_confirmation(seen: &Seen, question: &QuitQuestion, then: &Aft
                         "{} It quits {name} and opens it again for you to sign in.",
                         only_while_closed("starts waiting for a sign-in")
                     ),
-                    confirm: format!("Quit {name} and Start Sign-In"),
+                    confirm: words::titled(
+                        seen.os,
+                        &format!("Quit {name} and Start Sign-In"),
+                        &format!("Quit {name} and start sign-in"),
+                    ),
                 },
             }
         }
@@ -522,7 +566,11 @@ pub(crate) fn quit_confirmation(seen: &Seen, question: &QuitQuestion, then: &Aft
                         "{reads} It quits {name}, records that account as {label}’s login, and \
                          opens it again."
                     ),
-                    confirm: format!("Quit {name} and Record"),
+                    confirm: words::titled(
+                        seen.os,
+                        &format!("Quit {name} and Record"),
+                        &format!("Quit {name} and record"),
+                    ),
                 },
                 _ => Question {
                     title: format!("Quit {name} to add {label}?"),
@@ -530,7 +578,11 @@ pub(crate) fn quit_confirmation(seen: &Seen, question: &QuitQuestion, then: &Aft
                         "{reads} It quits {name}, records that account as {label}, and opens it \
                          again."
                     ),
-                    confirm: format!("Quit {name} and Add"),
+                    confirm: words::titled(
+                        seen.os,
+                        &format!("Quit {name} and Add"),
+                        &format!("Quit {name} and add"),
+                    ),
                 },
             }
         }

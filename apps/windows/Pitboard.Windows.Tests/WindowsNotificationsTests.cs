@@ -189,8 +189,7 @@ public sealed class WindowsNotificationsTests
         Assert.AreEqual("switch=claude/work", (string?)toast.Descendants("action").Single().Attribute("arguments"));
     }
 
-    // As the Windows App SDK 2.5.1 reads AppNotificationActivatedEventArgs.Arguments: pairs split at ';', each at its
-    // first '=', then %25, %3B and %3D decoded.
+    // As the Windows App SDK 2.5.1 reads Arguments: pairs at ';', each at its first '=', then %25, %3B and %3D.
     private static Dictionary<string, string> Decoded(string arguments)
     {
         static string Decode(string value) =>

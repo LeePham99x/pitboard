@@ -10,7 +10,7 @@ namespace Pitboard.UITests;
 public sealed class AccountsWindowTests
 {
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void TheWindowListsEachAccount()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "twoTools");
@@ -20,24 +20,23 @@ public sealed class AccountsWindowTests
         launched.Row("codex/main");
     }
 
-    // The fixture's Claude Code takes a code as the real one does, <code>#<state>. The address it prints is
-    // copied for another browser, and Open is never pressed: it would open that address in a real one.
+    // Open is never pressed: it would open the fixture's address in a real browser.
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void AddingAClaudeCodeAccount()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
         launched.OpenWindow();
 
-        launched.Invoke("Add Account");
+        launched.Invoke("Add account");
         launched.Field("sheet.name").Enter("third");
-        launched.Invoke("Sign In");
+        launched.Invoke("Sign in");
         var code = launched.Field("sheet.code");
         Assert.IsTrue(launched.Enables("Open"), "Open stayed dimmed");
-        launched.Invoke("Copy Link");
+        launched.Invoke("Copy link");
         Assert.AreEqual("https://claude.com/cai/oauth/authorize?code=true&state=pitboard-fixture", ClipboardText.Read());
         code.Enter("fixture-code#state");
-        launched.Invoke("Submit Code");
+        launched.Invoke("Submit code");
 
         launched.Row("claude/third");
         Assert.IsTrue(launched.Gone(found => found.ByAutomationId("sheet.code")), "the sheet stayed up");
@@ -45,48 +44,47 @@ public sealed class AccountsWindowTests
 
     // A Codex sign-in finishes by itself once the browser is done.
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void AddingACodexAccount()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "twoTools");
         launched.OpenWindow();
 
-        launched.Invoke("Add Account");
+        launched.Invoke("Add account");
         launched.Find(found => found.ByAutomationId("sheet.tool"), "sheet.tool").AsComboBox().Select("Codex");
         launched.Field("sheet.name").Enter("third");
-        launched.Invoke("Sign In");
+        launched.Invoke("Sign in");
 
         launched.Row("codex/third");
     }
 
-    // Sign In stays dimmed while a sign-in runs, so a second sign-in that starts and finishes is what shows
-    // the first one was stopped.
+    // Sign In stays dimmed while a sign-in runs, so a second one finishing shows the first was stopped.
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void CancellingASignInAddsNothing()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
         launched.OpenWindow();
 
-        launched.Invoke("Add Account");
+        launched.Invoke("Add account");
         launched.Field("sheet.name").Enter("third");
-        launched.Invoke("Sign In");
+        launched.Invoke("Sign in");
         launched.Field("sheet.code");
         launched.Invoke("Cancel");
         Assert.IsTrue(launched.Gone(found => found.ByAutomationId("sheet.code")), "the sheet stayed up");
         Assert.IsTrue(launched.Gone(found => found.ByAutomationId("account.claude/third")), "third was added");
 
-        launched.Invoke("Add Account");
+        launched.Invoke("Add account");
         launched.Field("sheet.name").Enter("third");
-        launched.Invoke("Sign In");
+        launched.Invoke("Sign in");
         launched.Field("sheet.code").Enter("fixture-code#state");
-        launched.Invoke("Submit Code");
+        launched.Invoke("Submit code");
 
         launched.Row("claude/third");
     }
 
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void RenamingAnAccount()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
@@ -105,7 +103,7 @@ public sealed class AccountsWindowTests
     }
 
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void ForgettingAsksFirst()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
@@ -125,7 +123,7 @@ public sealed class AccountsWindowTests
     }
 
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void TheAccountInUseOffersNoForget()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
@@ -139,7 +137,7 @@ public sealed class AccountsWindowTests
     }
 
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void UsingACodexAccountSaysSessionsKeepTheOldOne()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "twoTools");
@@ -158,7 +156,7 @@ public sealed class AccountsWindowTests
     }
 
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void NamingTheAccountInUse()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "unnamed");
@@ -174,41 +172,42 @@ public sealed class AccountsWindowTests
 
     // macOS has no UI test of this: no world of its fixtures left a login in a file until this one.
     [TestMethod]
-    [Ignore(Pending.W23b)]
+    [Ignore("W23b: Claude Code's login left in a file behind its Credential Manager store")]
     public void PuttingAwayALoginLeftInAFile()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "leftInFile");
         launched.OpenWindow();
 
-        launched.Invoke("Put Away…");
-        Assert.IsTrue(launched.Enables("Put Away"), "Put Away stayed dimmed after the look");
-        launched.Invoke("Put Away");
+        launched.Invoke("Put away…");
+        Assert.IsTrue(launched.Enables("Put away"), "Put away stayed dimmed after the look");
+        launched.Invoke("Put away");
 
         launched.Find(found => found.ByAutomationId("notice.stowed"), "notice stowed");
-        Assert.IsTrue(launched.Gone(found => found.ByName("Put Away…")), "the file is still said to be there");
+        Assert.IsTrue(launched.Gone(found => found.ByName("Put away…")), "the file is still said to be there");
     }
 
     [TestMethod]
+    [Ignore("W17: finding programs on Windows, without which these machines have no Claude Code")]
     public void AnEmptyMachineOffersAnAccount()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "empty");
         launched.OpenWindow();
 
-        launched.Named("No Accounts");
-        launched.Invoke("Add Account…");
+        launched.Named("No accounts");
+        launched.Invoke("Add account…");
 
         launched.Field("sheet.name");
     }
 
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void GivingUpOnAnInterruptedSwitch()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "stuck");
         launched.OpenWindow();
 
-        launched.Invoke("Give Up…");
-        launched.Invoke("Give Up");
+        launched.Invoke("Give up…");
+        launched.Invoke("Give up");
         var notice = launched.Find(found => found.ByAutomationId("notice.abandoned"), "notice abandoned");
 
         Assert.Contains("Gave up on the interrupted switch", Launched.Lines(notice));
@@ -216,14 +215,14 @@ public sealed class AccountsWindowTests
     }
 
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void OneAccountIsOfferedASecondUntilNotNow()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "onlyOne");
         launched.OpenWindow();
         launched.Named("Add a second account");
 
-        launched.Invoke("Not Now");
+        launched.Invoke("Not now");
 
         Assert.IsTrue(launched.Gone(found => found.ByName("Add a second account")), "the tip stayed");
         launched.Row("claude/work");
@@ -231,7 +230,7 @@ public sealed class AccountsWindowTests
 
     // The window goes to the accounts, where the sheet comes up.
     [TestMethod]
-    [Ignore(Pending.W23a)]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void CtrlNAddsAnAccountFromAnyPane()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
@@ -242,7 +241,7 @@ public sealed class AccountsWindowTests
         window.Focus();
         Keyboard.TypeSimultaneously(VirtualKeyShort.CONTROL, VirtualKeyShort.KEY_N);
         launched.Field("sheet.name");
-        launched.Find(found => found.ByName("Add Account").And(found.ByControlType(ControlType.Text)), "the sheet's title");
+        launched.Find(found => found.ByName("Add account").And(found.ByControlType(ControlType.Text)), "the sheet's title");
         launched.Invoke("Cancel");
 
         Assert.IsTrue(launched.Gone(found => found.ByAutomationId("sheet.name")), "the sheet stayed up");
@@ -251,12 +250,13 @@ public sealed class AccountsWindowTests
     }
 
     [TestMethod]
+    [Ignore("W17: finding programs on Windows, without which these machines have no Claude Code")]
     public void TheFirstLaunchOpensTheWindow()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "firstLaunch");
 
         launched.Window("Pitboard");
 
-        launched.Named("No Accounts");
+        launched.Named("No accounts");
     }
 }

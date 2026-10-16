@@ -18,7 +18,7 @@ public static class AccountMenu
         if (item.Email.Length > 0)
         {
             Separate(menu);
-            var copy = new MenuFlyoutItem { Text = "Copy Email Address" };
+            var copy = new MenuFlyoutItem { Text = "Copy email address" };
             copy.Click += (_, _) =>
             {
                 var package = new DataPackage();

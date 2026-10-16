@@ -12,7 +12,6 @@ public enum IconMark
     Error,
 }
 
-// Most entries send the model an intent; the rest are the app's own.
 public abstract record IconCommand
 {
     private IconCommand()
@@ -24,8 +23,6 @@ public abstract record IconCommand
     public sealed record OpenLink(string Url) : IconCommand;
 
     public sealed record ShowSettings : IconCommand;
-
-    public sealed record ShowAbout : IconCommand;
 
     public sealed record CheckForUpdates : IconCommand;
 
@@ -46,8 +43,6 @@ public abstract record IconMenuEntry
         public bool Enabled { get; init; } = true;
 
         public IconMark? Mark { get; init; }
-
-        public string? Shortcut { get; init; }
 
         // What a click on the icon does, which a Windows context menu shows in bold.
         public bool Default { get; init; }
@@ -76,25 +71,20 @@ public static class IconMenu
             Attention(model.MenuNotices, updates),
             .. Accounts(model),
             [
-                new IconMenuEntry.Command("Add Account…", new IconCommand.Send(new Intent.PresentSheet(new Sheet.Add(Provider: null))))
-                {
-                    Shortcut = "Ctrl+N",
-                },
+                new IconMenuEntry.Command("Add account…", new IconCommand.Send(new Intent.PresentSheet(new Sheet.Add(Provider: null)))),
                 new IconMenuEntry.Command("Refresh", new IconCommand.Send(new Intent.Refresh(Asked: true)))
                 {
                     Detail = model.UpdatedMenu,
                     Enabled = !model.Reading,
-                    Shortcut = "Ctrl+R",
                 },
             ],
             [
                 new IconMenuEntry.Command("Open Pitboard", new IconCommand.Send(new Intent.ShowWindow(Pane: null))) { Default = true },
-                new IconMenuEntry.Command("Settings", new IconCommand.ShowSettings()) { Shortcut = "Ctrl+," },
-                .. updates.Available ? [new IconMenuEntry.Command("Check for Updates", new IconCommand.CheckForUpdates())] : Array.Empty<IconMenuEntry>(),
+                new IconMenuEntry.Command("Settings", new IconCommand.ShowSettings()),
+                .. updates.Available ? [new IconMenuEntry.Command("Check for updates", new IconCommand.CheckForUpdates())] : Array.Empty<IconMenuEntry>(),
             ],
             [
-                new IconMenuEntry.Command("About Pitboard", new IconCommand.ShowAbout()),
-                new IconMenuEntry.Command("Pitboard Help", new IconCommand.OpenLink(HelpLink)),
+                new IconMenuEntry.Command("Pitboard help", new IconCommand.OpenLink(HelpLink)),
                 new IconMenuEntry.Command("Exit", new IconCommand.Quit()),
             ],
         ];

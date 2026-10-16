@@ -6,7 +6,7 @@ namespace Pitboard.Windows.Tests;
 public sealed class WindowAlertTests
 {
     private static readonly AlertText Failure = new("Couldn’t switch to spare", "Claude Code is signing in.");
-    private static readonly Question QuitChatGPT = new("Quit ChatGPT to switch?", "ChatGPT signs in again.", "Quit ChatGPT and Switch");
+    private static readonly Question QuitChatGPT = new("Quit ChatGPT to switch?", "ChatGPT signs in again.", "Quit ChatGPT and switch");
     private static readonly QuitQuestion Asked = new(Qualified: "codex/spare", AppId: "com.openai.chat", Name: "ChatGPT");
 
     private static AppModel Model(Snapshot snapshot) => new(snapshot);

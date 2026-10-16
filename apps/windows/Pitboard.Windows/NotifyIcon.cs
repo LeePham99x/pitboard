@@ -19,7 +19,6 @@ public interface INotificationArea
     bool Send(IconMessage message, IconData icon);
 }
 
-// Pitboard's icon in the notification area, its tooltip what Narrator says of it.
 public sealed class NotifyIcon(INotificationArea area, nint window, nint image, Guid? iconGuid)
 {
     public const uint Id = 1;
@@ -36,7 +35,6 @@ public sealed class NotifyIcon(INotificationArea area, nint window, nint image, 
     public static string Tip(string spoken) =>
         spoken.Length <= TipLength ? spoken : spoken[..(char.IsHighSurrogate(spoken[TipLength - 1]) ? TipLength - 1 : TipLength)];
 
-    // Adds the icon, or says the new tip once it is there.
     public void Show(string spoken)
     {
         _tip = Tip(spoken);

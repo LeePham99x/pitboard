@@ -23,13 +23,18 @@ internal sealed class Launched : IDisposable
     private readonly DirectoryInfo _root;
     private readonly string _exe;
     private readonly string? _fixture;
+    private readonly string[] _arguments;
+    private readonly bool _ownsHomes;
     private readonly StringBuilder _said = new();
 
-    private Launched(DirectoryInfo root, string exe, string? fixture, Dictionary<string, string> homes)
+    private Launched(
+        DirectoryInfo root, string exe, string? fixture, string[] arguments, Dictionary<string, string> homes, bool ownsHomes)
     {
         _root = root;
         _exe = exe;
         _fixture = fixture;
+        _arguments = arguments;
+        _ownsHomes = ownsHomes;
         HomeFolders = homes;
         var start = StartInfo();
         start.RedirectStandardError = true;
@@ -57,25 +62,49 @@ internal sealed class Launched : IDisposable
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Pitboard App Debug"),
     ];
 
-    public static Launched Start(string exe, string? fixture = null)
+    public static Launched Start(string exe, string? fixture = null, params string[] arguments)
     {
         var root = Directory.CreateTempSubdirectory("pitboard-ui-");
         var homes = Homes.ToDictionary(home => home, home => root.CreateSubdirectory(home).FullName);
-        return new Launched(root, exe, fixture, homes);
+        return new Launched(root, exe, fixture, arguments, homes, ownsHomes: true);
     }
 
-    // A second launch in the same homes, as from Start, which the running copy answers with its window.
+    // Launched again now, in the same homes, as from Start.
+    public Launched Again() => new(_root, _exe, _fixture, [], HomeFolders, ownsHomes: false);
+
+    // A second launch once Pitboard runs, as from Start, which the running copy answers with its window.
     public Window OpenWindow()
     {
-        using var again = Process.Start(StartInfo())!;
-        if (!again.WaitForExit(Patience))
+        Running();
+        using (var again = Again())
         {
-            again.Kill();
-            throw new AssertFailedException($"a second launch did not hand over to the first within {Patience}");
+            if (!again.HandedOver(out var why))
+            {
+                throw new AssertFailedException($"a second launch did not hand over to the first: {why}");
+            }
         }
 
         return Window("Pitboard");
     }
+
+    // Pitboard makes its hidden window as it starts, before it can open another.
+    public void Running()
+    {
+        if (!Retry.WhileFalse(() => HiddenWindows.Of(Process).Any(), Patience, TimeSpan.FromMilliseconds(250)).Result)
+        {
+            throw new AssertFailedException($"Pitboard did not start within {Patience}: {State()}");
+        }
+    }
+
+    public bool HandedOver(out string why)
+    {
+        var quit = Process.WaitForExit(Patience);
+        why = quit ? State() : $"it went on running after {Patience}";
+        return quit && Process.ExitCode == 0;
+    }
+
+    public Window[] Windows(string title) =>
+        FlaUI.Core.Application.Attach(Process).GetAllTopLevelWindows(Automation).Where(window => window.Title == title).ToArray();
 
     public Window Window(string title)
     {
@@ -87,7 +116,7 @@ internal sealed class Launched : IDisposable
     }
 
     // A WinUI app that fails fast exits 0xC000027B and leaves only what it wrote to its standard error.
-    private string State()
+    public string State()
     {
         string state;
         if (Process.HasExited)
@@ -134,19 +163,6 @@ internal sealed class Launched : IDisposable
     public bool Enables(string name) =>
         Retry.WhileFalse(() => Look(found => found.ByName(name))?.IsEnabled == true, Shortly, TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
 
-    // Pitboard's icon, in Explorer's notification area.
-    public AutomationElement Icon() =>
-        NotificationArea.Icon(Automation) ?? throw new AssertFailedException($"Pitboard's icon is not in the notification area within {Shortly}");
-
-    // The icon's menu, from a right click.
-    public void OpenMenu()
-    {
-        Icon().RightClick();
-        Find(found => found.ByName("Open Pitboard"), "menu");
-    }
-
-    public void Choose(string item) => Named(item).Click();
-
     public void Select(string pane) =>
         Find(found => found.ByAutomationId(pane), pane).Patterns.SelectionItem.Pattern.Select();
 
@@ -162,9 +178,8 @@ internal sealed class Launched : IDisposable
     public static IEnumerable<string> Lines(AutomationElement scope) =>
         scope.FindAllDescendants(found => found.ByControlType(FlaUI.Core.Definitions.ControlType.Text)).Select(text => text.Name);
 
-    public static void Dismiss(Window box) =>
-        box.FindFirstDescendant(found => found.ByControlType(FlaUI.Core.Definitions.ControlType.Button))!
-            .AsButton().Invoke();
+    // OK through UI Automation is a BM_CLICK, which may fail on an inactive box (E_UNEXPECTED on windows-2025).
+    public static void Dismiss(Window box) => box.Patterns.Window.Pattern.Close();
 
     private AutomationElement? Look(Func<ConditionFactory, ConditionBase> condition) =>
         FlaUI.Core.Application.Attach(Process).GetAllTopLevelWindows(Automation)
@@ -173,7 +188,7 @@ internal sealed class Launched : IDisposable
 
     private ProcessStartInfo StartInfo()
     {
-        var start = new ProcessStartInfo(_exe) { UseShellExecute = false, WorkingDirectory = _root.FullName };
+        var start = new ProcessStartInfo(_exe, _arguments) { UseShellExecute = false, WorkingDirectory = _root.FullName };
         foreach (var (home, folder) in HomeFolders)
         {
             start.Environment[home] = folder;
@@ -198,7 +213,7 @@ internal sealed class Launched : IDisposable
     {
         if (!Process.HasExited)
         {
-            NotificationArea.AskToEnd(Process);
+            HiddenWindows.AskToEnd(Process);
             if (!Process.WaitForExit(Shortly))
             {
                 Process.Kill(entireProcessTree: true);
@@ -208,6 +223,9 @@ internal sealed class Launched : IDisposable
 
         Process.Dispose();
         Automation.Dispose();
-        _root.Delete(recursive: true);
+        if (_ownsHomes)
+        {
+            _root.Delete(recursive: true);
+        }
     }
 }

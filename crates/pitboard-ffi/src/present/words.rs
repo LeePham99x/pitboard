@@ -33,6 +33,17 @@ pub(crate) fn capitalised(phrase: &str) -> String {
     }
 }
 
+/// A button's, a menu item's or a heading's words as each system writes them: title case
+/// on macOS, as Apple's guidelines have it, and sentence case on Windows, which Microsoft's
+/// writing guidance gives all of an app's text.
+pub(crate) fn titled(os: Os, title_case: &str, sentence_case: &str) -> String {
+    match os {
+        Os::Windows => sentence_case,
+        Os::MacOs | Os::Linux => title_case,
+    }
+    .to_owned()
+}
+
 /// How many characters a person counts in `text`: extended grapheme clusters, as Swift counts
 /// a `String`'s `Character`s. "é" written as "e" and a combining accent is one, and so is a
 /// flag of two regional indicators or a family joined by zero-width joiners.
@@ -389,21 +400,29 @@ pub(crate) fn missing(os: Os, tool: &str) -> Option<super::Missing> {
             format!("Pitboard can’t find Claude Code on {here}."),
             "Adding a Claude Code account runs Claude Code’s own sign-in. Install it, then come \
              back to this window.",
-            "How to Install Claude Code",
+            titled(
+                os,
+                "How to Install Claude Code",
+                "How to install Claude Code",
+            ),
             super::notices::INSTALL_CLAUDE_CODE,
         ),
         "codex" => (
             format!("Pitboard can’t find the Codex CLI on {here}."),
             "Adding a Codex account runs the Codex CLI’s own sign-in. Pitboard doesn’t use \
              the copy inside the ChatGPT app. Install the CLI, then come back to this window.",
-            "How to Install the Codex CLI",
+            titled(
+                os,
+                "How to Install the Codex CLI",
+                "How to install the Codex CLI",
+            ),
             INSTALL_CODEX_CLI,
         ),
         "desktop" => (
             format!("Pitboard can’t find Claude Desktop on {here}."),
             "Pitboard finds Claude Desktop by the data it keeps once it has been opened. Open \
              Claude, sign in, then come back to this window.",
-            "Download Claude",
+            "Download Claude".to_owned(),
             DOWNLOAD_CLAUDE,
         ),
         _ => return None,
@@ -411,7 +430,7 @@ pub(crate) fn missing(os: Os, tool: &str) -> Option<super::Missing> {
     Some(super::Missing {
         title,
         detail: detail.into(),
-        link_title: link_title.into(),
+        link_title,
         link: link.into(),
     })
 }
@@ -514,8 +533,12 @@ fn readable(code: &str) -> String {
 }
 
 /// What stands in for the activity list while it has nothing in it: its title, and why.
-pub(crate) const NO_ACTIVITY: (&str, &str) =
-    ("No Activity", "Pitboard lists every change it makes here.");
+pub(crate) fn no_activity(os: Os) -> (String, &'static str) {
+    (
+        titled(os, "No Activity", "No activity"),
+        "Pitboard lists every change it makes here.",
+    )
+}
 
 /// What Renew Now is beside before it has been pressed: what it does.
 pub(crate) const RENEWS_WHAT_IS_DUE: &str = "Renew every parked login that is due.";
@@ -1728,7 +1751,7 @@ mod tests {
     fn a_tool_not_found_says_what_to_install() {
         let codex = missing(Os::Windows, "codex").expect("codex");
         assert_eq!(codex.title, "Pitboard can’t find the Codex CLI on this PC.");
-        assert_eq!(codex.link_title, "How to Install the Codex CLI");
+        assert_eq!(codex.link_title, "How to install the Codex CLI");
         let claude = missing(Os::MacOs, "claude").expect("claude");
         assert_eq!(claude.title, "Pitboard can’t find Claude Code on this Mac.");
         assert_eq!(

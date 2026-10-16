@@ -10,6 +10,7 @@ use super::{
 use crate::account_windows::{forget_message_on, windows_of_account};
 use crate::model::{Intent, Sheet};
 use crate::{Account, Limit, Tool};
+use pitboard_core::host::Os;
 use pitboard_core::usage::pace::{self, Pace, Standing};
 use pitboard_core::words as said;
 use std::cmp::Ordering;
@@ -187,7 +188,13 @@ pub(crate) fn item(seen: &Seen, account: &Account) -> AccountItem {
             .unwrap_or_else(|| account.email.clone())
     };
     let spoken_name = seen.name_of(account);
-    let action = action(account, switching_for.is_some(), busy, &spoken_name);
+    let action = action(
+        seen.os,
+        account,
+        switching_for.is_some(),
+        busy,
+        &spoken_name,
+    );
     let problem = if account.unplaced || (!account.switchable && !account.signed_in) {
         account.stale_explanation.clone()
     } else {
@@ -243,7 +250,7 @@ pub(crate) fn item(seen: &Seen, account: &Account) -> AccountItem {
         needs_sign_in,
         unplaced: account.unplaced,
         switching,
-        offers: offers(account, action.as_ref(), busy)
+        offers: offers(seen.os, account, action.as_ref(), busy)
             .into_iter()
             .chain(warm_offers(seen, account))
             .collect(),
@@ -286,7 +293,7 @@ pub(crate) fn item(seen: &Seen, account: &Account) -> AccountItem {
 ///
 /// AccountsPane.swift's shortcut menu as it was at c1be7c3: its `offeredInItsMenu`, and the
 /// items it worded and sent from `renamable` and `busy`.
-fn offers(account: &Account, action: Option<&ItemAction>, busy: bool) -> Vec<ItemOffer> {
+fn offers(os: Os, account: &Account, action: Option<&ItemAction>, busy: bool) -> Vec<ItemOffer> {
     let offer = |title: String, intent: Intent, enabled: bool| ItemOffer {
         title,
         intent,
@@ -313,7 +320,7 @@ fn offers(account: &Account, action: Option<&ItemAction>, busy: bool) -> Vec<Ite
             let label = label.to_owned();
             [
                 offer(
-                    "Sign In Again…".into(),
+                    words::titled(os, "Sign In Again…", "Sign in again…"),
                     Intent::PresentSheet {
                         sheet: Sheet::SignInAgain {
                             provider: provider.clone(),
@@ -365,7 +372,7 @@ fn warm_offers(seen: &Seen, account: &Account) -> Vec<ItemOffer> {
         .is_some_and(|overview| overview.halted.is_some());
     vec![
         ItemOffer {
-            title: "Warm Up Now".into(),
+            title: words::titled(seen.os, "Warm Up Now", "Warm up now"),
             intent: Intent::WarmNow {
                 qualified: choice.qualified.clone(),
             },
@@ -376,7 +383,7 @@ fn warm_offers(seen: &Seen, account: &Account) -> Vec<ItemOffer> {
             checked: None,
         },
         ItemOffer {
-            title: "Warm Up Automatically".into(),
+            title: words::titled(seen.os, "Warm Up Automatically", "Warm up automatically"),
             intent: Intent::SetWarm {
                 qualified: choice.qualified.clone(),
                 on: !choice.on,
@@ -436,7 +443,13 @@ fn forget(seen: &Seen, account: &Account, spoken_name: &str) -> Option<ItemOffer
 /// A switch under way holds everything back, since each change waits for the one before. A
 /// sign-in under way holds back only another sign-in: it waits on a person in a browser, and
 /// switching meanwhile is theirs to do.
-fn action(account: &Account, switching: bool, busy: bool, spoken: &str) -> Option<ItemAction> {
+fn action(
+    os: Os,
+    account: &Account,
+    switching: bool,
+    busy: bool,
+    spoken: &str,
+) -> Option<ItemAction> {
     if account.unplaced || switching {
         return None;
     }
@@ -467,8 +480,12 @@ fn action(account: &Account, switching: bool, busy: bool, spoken: &str) -> Optio
         });
     }
     (!busy).then(|| ItemAction {
-        title: "Sign In Again…".into(),
-        spoken: format!("Sign In to {spoken} Again…"),
+        title: words::titled(os, "Sign In Again…", "Sign in again…"),
+        spoken: words::titled(
+            os,
+            &format!("Sign In to {spoken} Again…"),
+            &format!("Sign in to {spoken} again…"),
+        ),
         intent: Intent::PresentSheet {
             sheet: Sheet::SignInAgain {
                 provider: account.provider.clone(),

@@ -6,7 +6,7 @@
 //! asks while downloads run.
 
 use super::state::Job;
-use super::testing::{DANA, Hand, Machine, refusal, status};
+use super::testing::{DANA, Hand, Machine, refusal, status, titled};
 use super::windows::{LINK_SCHEME, WEB_SCHEME};
 use super::{DownloadEnd, EarlierWindowRecords, Intent};
 use crate::account_windows::records::{Entry, Records};
@@ -239,7 +239,7 @@ fn the_picker_says_what_stands_in_the_way() {
     assert_eq!(
         picker(&model).shown,
         PickerShown::Refused {
-            title: "Can’t Open This Link".into(),
+            title: titled("Can’t Open This Link", "Can’t open this link"),
             reason: "Pitboard opens claude.ai and chatgpt.com links only. This link is on \
                      example.com."
                 .into(),
@@ -267,9 +267,12 @@ fn the_picker_says_what_stands_in_the_way() {
     else {
         panic!("the read that failed");
     };
-    assert_eq!(title, "Couldn’t Read Accounts");
+    assert_eq!(
+        title,
+        titled("Couldn’t Read Accounts", "Couldn’t read accounts")
+    );
     assert_eq!(detail, "No network.");
-    assert_eq!(retry.title, "Try Again");
+    assert_eq!(retry.title, titled("Try Again", "Try again"));
     assert_eq!(retry.intent, Intent::Refresh { asked: true });
 
     let mut codex_only =
@@ -287,15 +290,18 @@ fn the_picker_says_what_stands_in_the_way() {
     else {
         panic!("no account");
     };
-    assert_eq!(title, "No claude.ai Account");
+    assert_eq!(
+        title,
+        titled("No claude.ai Account", "No claude.ai account")
+    );
     assert_eq!(link_text, "claude.ai/");
     assert_eq!(
         detail,
         "None of the accounts Pitboard has opens claude.ai. Add one, and this link waits here \
          until you choose it."
     );
-    assert_eq!(in_browser, "Open in Browser");
-    assert_eq!(add.title, "Add Account…");
+    assert_eq!(in_browser, titled("Open in Browser", "Open in browser"));
+    assert_eq!(add.title, titled("Add Account…", "Add account…"));
     assert_eq!(
         add.intent,
         Intent::PresentSheet {
@@ -329,7 +335,7 @@ fn the_inbox_takes_pitboard_links_of_its_own_scheme() {
     assert_eq!(
         second.shown,
         PickerShown::Refused {
-            title: "Can’t Open This Link".into(),
+            title: titled("Can’t Open This Link", "Can’t open this link"),
             reason: crate::LinkRefusal::Unreadable.to_string(),
         },
         "another build's scheme"
@@ -474,10 +480,10 @@ fn a_window_that_cannot_show_its_page_says_why_in_the_models_words() {
         WindowWaiting {
             window_title: "Account".into(),
             shown: WaitingShown::ReadFailed {
-                title: "Couldn’t Read Accounts".into(),
+                title: titled("Couldn’t Read Accounts", "Couldn’t read accounts"),
                 detail: "could not read Pitboard's account list".into(),
                 retry: Choice {
-                    title: "Try Again".into(),
+                    title: titled("Try Again", "Try again"),
                     intent: Intent::Refresh { asked: true },
                     enabled: true,
                 },

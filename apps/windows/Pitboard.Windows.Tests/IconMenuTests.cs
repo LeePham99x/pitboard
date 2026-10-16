@@ -61,7 +61,7 @@ public sealed class IconMenuTests
         Assert.AreEqual(
             "Claude Code isn’t installed | Switch Claude Code to personal | An interrupted switch is waiting | - "
             + "| # Claude Code | (x) work | ( ) personal | - | # Codex | (x) main | - "
-            + "| Add Account… | Refresh | - | Open Pitboard | Settings | - | About Pitboard | Pitboard Help | Exit",
+            + "| Add account… | Refresh | - | Open Pitboard | Settings | - | Pitboard help | Exit",
             Said(entries));
     }
 
@@ -83,7 +83,7 @@ public sealed class IconMenuTests
         });
 
         Assert.AreEqual(
-            "(x) work | - | Add Account… | Refresh | - | Open Pitboard | Settings | - | About Pitboard | Pitboard Help | Exit",
+            "(x) work | - | Add account… | Refresh | - | Open Pitboard | Settings | - | Pitboard help | Exit",
             Said(IconMenu.Entries(model, new NoUpdates())));
     }
 
@@ -98,7 +98,7 @@ public sealed class IconMenuTests
 
         var entries = IconMenu.Entries(model, new NoUpdates());
 
-        Assert.StartsWith("> Couldn’t read usage | - | Add Account…", Said(entries));
+        Assert.StartsWith("> Couldn’t read usage | - | Add account…", Said(entries));
         Assert.IsEmpty(entries.OfType<IconMenuEntry.Account>());
     }
 
@@ -131,7 +131,7 @@ public sealed class IconMenuTests
     {
         var expired = Items.Account("claude", "old") with
         {
-            Action = new ItemAction("Sign In", "Sign in to old again", new Intent.PresentSheet(new Sheet.SignInAgain("claude", "old"))),
+            Action = new ItemAction("Sign in", "Sign in to old again", new Intent.PresentSheet(new Sheet.SignInAgain("claude", "old"))),
         };
         var unusable = Items.Account("claude", "broken") with { Action = null };
         var model = Model(snapshot => snapshot with
@@ -183,25 +183,12 @@ public sealed class IconMenuTests
     {
         var entries = IconMenu.Entries(TwoTools(), new NoUpdates());
 
-        Assert.AreEqual(new IconCommand.Send(new Intent.PresentSheet(new Sheet.Add(Provider: null))), Command(entries, "Add Account…").Does);
+        Assert.AreEqual(new IconCommand.Send(new Intent.PresentSheet(new Sheet.Add(Provider: null))), Command(entries, "Add account…").Does);
         Assert.AreEqual(new IconCommand.Send(new Intent.Refresh(Asked: true)), Command(entries, "Refresh").Does);
         Assert.AreEqual(new IconCommand.Send(new Intent.ShowWindow(Pane: null)), Command(entries, "Open Pitboard").Does);
         Assert.AreEqual(new IconCommand.ShowSettings(), Command(entries, "Settings").Does);
-        Assert.AreEqual(new IconCommand.ShowAbout(), Command(entries, "About Pitboard").Does);
-        Assert.AreEqual(new IconCommand.OpenLink("https://docs.usepitboard.com"), Command(entries, "Pitboard Help").Does);
+        Assert.AreEqual(new IconCommand.OpenLink("https://docs.usepitboard.com"), Command(entries, "Pitboard help").Does);
         Assert.AreEqual(new IconCommand.Quit(), Command(entries, "Exit").Does);
-    }
-
-    // The window takes these keys; the menu says them.
-    [TestMethod]
-    public void TheMenuSaysTheWindowsShortcuts()
-    {
-        var entries = IconMenu.Entries(TwoTools(), new NoUpdates());
-
-        Assert.AreEqual("Ctrl+N", Command(entries, "Add Account…").Shortcut);
-        Assert.AreEqual("Ctrl+R", Command(entries, "Refresh").Shortcut);
-        Assert.AreEqual("Ctrl+,", Command(entries, "Settings").Shortcut);
-        Assert.IsNull(Command(entries, "Exit").Shortcut);
     }
 
     [TestMethod]
@@ -215,12 +202,12 @@ public sealed class IconMenuTests
     [TestMethod]
     public void CheckForUpdatesShowsOnlyWhileTheUpdaterIsOn()
     {
-        Assert.DoesNotContain("Check for Updates", Said(IconMenu.Entries(TwoTools(), new NoUpdates())));
+        Assert.DoesNotContain("Check for updates", Said(IconMenu.Entries(TwoTools(), new NoUpdates())));
 
         var entries = IconMenu.Entries(TwoTools(), new StandInUpdates(waiting: null));
 
-        Assert.AreEqual(new IconCommand.CheckForUpdates(), Command(entries, "Check for Updates").Does);
-        Assert.Contains("Open Pitboard | Settings | Check for Updates | -", Said(entries));
+        Assert.AreEqual(new IconCommand.CheckForUpdates(), Command(entries, "Check for updates").Does);
+        Assert.Contains("Open Pitboard | Settings | Check for updates | -", Said(entries));
     }
 
     [TestMethod]

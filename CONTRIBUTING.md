@@ -276,17 +276,24 @@ cannot pass there until a later Windows pull request says so in its Rust counter
 [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows, IgnoreMessage = "W<n>: <what it waits on>")]
 ```
 
+In the projects that build only on Windows, `Pitboard.Windows.Tests` and `Pitboard.UITests`:
+
+```csharp
+[Ignore("W<n>: <what it waits on>")]
+```
+
 The tests that start a fixture's model are skipped against a library built without the
 `fixture` feature. To run them, build the library with
 `cargo build --locked -p pitboard-ffi --features fixture` before `dotnet test`. The bindings
 need not be generated again.
 
 Each project restores only the packages its `packages.lock.json` pins, at the versions
-`Directory.Packages.props` names, with the exact .NET SDK `global.json` names: `Pitboard.Core`'s
-lock file holds that SDK's trimming analyzers. After changing a package or the SDK, run
-`dotnet restore --force-evaluate` on both solutions, with `-p:EnableWindowsTargeting=true` on
-macOS and Linux, and commit the lock files. The build fails on the style rules in `apps/windows/.editorconfig`, and CI checks the
-layout with `dotnet format whitespace --folder --verify-no-changes apps/windows`.
+`Directory.Packages.props` names, with the exact .NET SDK `global.json` names:
+`Pitboard.Core`'s lock file holds that SDK's trimming analyzers. After changing a package or
+the SDK, run `dotnet restore --force-evaluate` on both solutions, with
+`-p:EnableWindowsTargeting=true` on macOS and Linux, and commit the lock files. The build
+fails on the style rules in `apps/windows/.editorconfig`, and CI checks the layout with
+`dotnet format whitespace --folder --verify-no-changes apps/windows`.
 
 ## Windows
 
@@ -343,7 +350,7 @@ byte, and runs the C# tests against each the same way.
 CI's `windows-app` job builds the app in Debug over `pitboard_ffi.dll` opened with its
 fixtures, and publishes it in Release over the library as a 0.x release builds it, on both
 images. `.github/scripts/check-windows-app.ps1` checks the Release build for fixture text, a
-package identity and the core's C runtime. The job runs `Pitboard.Windows.Tests`, a WinUI app
+package identity, a core opened before Windows is released and the core's C runtime. The job runs `Pitboard.Windows.Tests`, a WinUI app
 that hosts its own tests, and `Pitboard.UITests`, which drives the built app with FlaUI, as a
 fresh standard user, then the UI test of an elevated launch as the job's user. It builds
 `Pitboard.Probe`, which the session machine runs to measure the app's notifications, and checks
@@ -366,28 +373,30 @@ the run. `ARCHITECTURE.md` records what it measured.
 Read [the rules for the app in AGENTS.md](AGENTS.md#on-windows) first. Build the bindings as
 [The C# bindings](#the-c-bindings) says, from a library built with
 `--cfg pitboard_unreleased_windows` and `--features fixture`, then build the app in Debug and
-start its executable in a fixture, with scratch homes set after building. Build it rather than
-publish it: a Debug publish leaves out the XAML files the app reads beside it. From PowerShell:
+start its executable in a fixture, with scratch homes set after building. Build it into its
+own folder, without `-o`, and do not publish it: a Debug publish leaves out the XAML files the
+app reads beside it, and `-o` names them wrong in its PRI file. From PowerShell:
 
 ```powershell
 cd apps\windows
-dotnet build Pitboard.App -c Debug -r win-arm64 -p:Platform=ARM64 -o ..\..\target\windows-app\debug `
+dotnet build Pitboard.App -c Debug -r win-arm64 -p:Platform=ARM64 `
   -p:PitboardNativeLibrary="$PWD\..\..\target\debug\pitboard_ffi.dll"
 $scratch = (New-Item -ItemType Directory (Join-Path $env:TEMP "pitboard-$(New-Guid)")).FullName
-$app = [Diagnostics.ProcessStartInfo]::new((Resolve-Path ..\..\target\windows-app\debug\Pitboard.exe).Path)
-$app.Environment['PITBOARD_FIXTURE'] = 'twoTools'
+$app = [Diagnostics.ProcessStartInfo]::new(
+  (Resolve-Path Pitboard.App\bin\ARM64\Debug\net10.0-windows10.0.26100.0\win-arm64\Pitboard.exe).Path)
+$app.Environment['PITBOARD_FIXTURE'] = 'firstLaunch'
 foreach ($name in 'USERPROFILE', 'HOME', 'APPDATA', 'LOCALAPPDATA', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'PITBOARD_HOME') {
   $app.Environment[$name] = (New-Item -ItemType Directory (Join-Path $scratch $name)).FullName
 }
 [Diagnostics.Process]::Start($app)
 ```
 
-Only the `firstLaunch` fixture opens the window as it starts. Click Pitboard's icon in the
-notification area to bring the window forward, or run the last line again: the second copy
-hands its launch to the first and quits. Exit in the icon's menu ends it.
+The worlds that seed Claude Code wait for W23a on Windows. Started again, the second copy hands
+its launch to the first, which brings its window forward, and quits. Exit in the icon's menu
+ends it.
 
-On x64, build with `-r win-x64 -p:Platform=x64`. A Debug build keeps apart from an installed
-Release:
+On x64, build with `-r win-x64 -p:Platform=x64`, which builds into `bin\x64\...\win-x64`. A
+Debug build keeps apart from an installed Release:
 
 | | Debug build | Release build |
 | --- | --- | --- |

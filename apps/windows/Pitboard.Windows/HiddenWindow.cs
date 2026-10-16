@@ -6,8 +6,7 @@ using Windows.Win32.UI.WindowsAndMessaging;
 
 namespace Pitboard.Windows;
 
-// Never shown, and not message-only: a message-only window gets no broadcast, such as WM_ENDSESSION or TaskbarCreated.
-// It lives as long as the process.
+// Not message-only: a message-only window gets no WM_ENDSESSION or TaskbarCreated.
 public sealed unsafe class HiddenWindow
 {
     private const string ClassName = "Pitboard.HiddenWindow";
@@ -96,9 +95,17 @@ public sealed unsafe class HiddenWindow
     {
         switch (message)
         {
-            // The process may end as soon as this returns.
+            // Restart Manager waits for the process to exit; at a sign-out Windows may end it as soon as this returns.
             case PInvoke.WM_ENDSESSION when wParam.Value != 0:
-                _sessionEnding();
+                if ((lParam.Value & PInvoke.ENDSESSION_CLOSEAPP) != 0)
+                {
+                    _closing();
+                }
+                else
+                {
+                    _sessionEnding();
+                }
+
                 return true;
             // As taskkill without /f asks a program to end.
             case PInvoke.WM_CLOSE:

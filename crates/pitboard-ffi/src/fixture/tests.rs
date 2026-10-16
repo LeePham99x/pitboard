@@ -13,6 +13,7 @@ use crate::model::{
     PlatformError, QuitQuestion, RunOutNotice, Sheet, Snapshot,
 };
 use crate::present::testing::Utc;
+use crate::present::words::titled;
 use crate::present::{AccountsShown, Footing};
 use crate::{
     Adoption, AppCore, Enrolled, EnrolledAs, FoundCommandLine, PitboardError, Schedule, Status,
@@ -1687,12 +1688,25 @@ fn a_machine_nobody_is_signed_in_on_offers_an_account() {
         let launched = made(world);
         let (model, told) = started(&launched);
         let shown = told.until("the accounts read", read_in);
-        assert!(
-            matches!(&shown.accounts_shown, AccountsShown::NoAccounts { title, .. } if title == "No Accounts"),
-            "{}: {:?}",
-            world.name(),
-            shown.accounts_shown
-        );
+        match world {
+            World::NoClaudeCode => {
+                assert_eq!(shown.footing, Footing::NoClaudeCode);
+                assert_eq!(
+                    shown
+                        .menu_notices
+                        .install
+                        .as_ref()
+                        .map(|item| item.title.as_str()),
+                    Some("Claude Code isn’t installed")
+                );
+            }
+            _ => assert!(
+                matches!(&shown.accounts_shown, AccountsShown::NoAccounts { title, .. } if *title == titled(OS, "No Accounts", "No accounts")),
+                "{}: {:?}",
+                world.name(),
+                shown.accounts_shown
+            ),
+        }
         // The window is asked for once the preferences say the app has never been seen, and
         // they are read on a lane of their own, so the accounts can be read first: in 2 of
         // 800 copies of this test run 16 at a time on Linux, firstLaunch's had not yet asked.
@@ -1751,8 +1765,9 @@ fn the_login_in_use_is_offered_a_name() {
 fn the_login_left_in_a_file_is_put_away_from_its_sheet() {
     let launched = made(World::LeftInFile);
     let (model, told) = started(&launched);
+    let put_away = titled(OS, "Put Away…", "Put away…");
     told.until("the file said, with Put Away…", |snapshot| {
-        actions_of(snapshot, "warning/fallback_login/") == ["Put Away…"]
+        actions_of(snapshot, "warning/fallback_login/") == [put_away.as_str()]
     });
 
     model.send(Intent::PresentSheet { sheet: Sheet::Stow });
@@ -2054,26 +2069,24 @@ fn accounts_are_renamed_and_forgotten_as_the_window_offers() {
         })
         .collect();
     let titles = |titles: &[&str]| titles.iter().map(|&title| title.to_owned()).collect();
+    let again = titled(OS, "Sign In Again…", "Sign in again…");
+    let now = titled(OS, "Warm Up Now", "Warm up now");
+    let automatically = titled(OS, "Warm Up Automatically", "Warm up automatically");
     assert_eq!(
         menus,
         [
             (
                 "work".into(),
-                titles(&[
-                    "Sign In Again…",
-                    "Rename…",
-                    "Warm Up Now",
-                    "Warm Up Automatically"
-                ])
+                titles(&[&again, "Rename…", &now, &automatically])
             ),
             (
                 "personal".into(),
                 titles(&[
                     "Use personal",
-                    "Sign In Again…",
+                    &again,
                     "Rename…",
-                    "Warm Up Now",
-                    "Warm Up Automatically",
+                    &now,
+                    &automatically,
                     "Forget…"
                 ])
             ),
@@ -2190,10 +2203,10 @@ fn a_failed_read_is_said_in_the_menu_and_in_the_window() {
     assert_eq!(
         shown.accounts_shown,
         AccountsShown::ReadFailed {
-            title: "Couldn’t Read Accounts".into(),
+            title: titled(OS, "Couldn’t Read Accounts", "Couldn’t read accounts"),
             detail: failure.message,
             retry: crate::present::Choice {
-                title: "Try Again".into(),
+                title: titled(OS, "Try Again", "Try again"),
                 intent: Intent::Refresh { asked: true },
                 enabled: true,
             },
@@ -2270,14 +2283,14 @@ fn an_interrupted_switch_is_offered_a_way_out_as_the_app_starts() {
         ("stuck", "An interrupted switch is waiting")
     );
     let give_up = notice.actions.first().expect("an action");
-    assert_eq!(give_up.title, "Give Up…");
+    assert_eq!(give_up.title, titled(OS, "Give Up…", "Give up…"));
     assert_eq!(give_up.intent, Intent::AbandonStuckSwitch);
     assert_eq!(
         give_up
             .confirm
             .as_ref()
-            .map(|question| question.confirm.as_str()),
-        Some("Give Up")
+            .map(|question| question.confirm.clone()),
+        Some(titled(OS, "Give Up", "Give up"))
     );
     let item = shown.menu_notices.others.expect("an item");
     assert_eq!(item.title, "An interrupted switch is waiting");
@@ -2539,7 +2552,10 @@ fn the_account_windows_are_what_their_ui_tests_read() {
     else {
         unreachable!()
     };
-    assert_eq!(title, "Can’t Open This Link");
+    assert_eq!(
+        title,
+        titled(OS, "Can’t Open This Link", "Can’t open this link")
+    );
     assert!(reason.contains("This link is on example.com."), "{reason}");
     model.shutdown();
 }

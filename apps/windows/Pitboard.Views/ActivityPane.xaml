@@ -43,11 +43,11 @@
         <ColumnDefinition Width="90" />
         <ColumnDefinition Width="110" />
       </Grid.ColumnDefinitions>
-      <TextBlock Text="Date" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-      <TextBlock Grid.Column="1" Text="Change" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-      <TextBlock Grid.Column="2" Text="Account" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-      <TextBlock Grid.Column="3" Text="Result" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-      <TextBlock Grid.Column="4" Text="Asked By" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+      <TextBlock Text="Date" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="WrapWholeWords" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+      <TextBlock Grid.Column="1" Text="Change" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="WrapWholeWords" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+      <TextBlock Grid.Column="2" Text="Account" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="WrapWholeWords" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+      <TextBlock Grid.Column="3" Text="Result" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="WrapWholeWords" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+      <TextBlock Grid.Column="4" Text="Asked by" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="WrapWholeWords" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
     </Grid>
     <ListView
         x:Name="Lines"
@@ -71,14 +71,15 @@
               <ColumnDefinition Width="90" />
               <ColumnDefinition Width="110" />
             </Grid.ColumnDefinitions>
-            <TextBlock Text="{x:Bind Date}" VerticalAlignment="Center" />
-            <TextBlock Grid.Column="1" Text="{x:Bind Change}" VerticalAlignment="Center" />
-            <TextBlock Grid.Column="2" Text="{x:Bind Account}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-            <TextBlock x:Name="ResultText" Grid.Column="3" Text="{x:Bind Result}" VerticalAlignment="Center" />
+            <TextBlock Text="{x:Bind Date}" VerticalAlignment="Center" TextWrapping="WrapWholeWords" />
+            <TextBlock Grid.Column="1" Text="{x:Bind Change}" VerticalAlignment="Center" TextWrapping="WrapWholeWords" />
+            <TextBlock Grid.Column="2" Text="{x:Bind Account}" VerticalAlignment="Center" TextWrapping="WrapWholeWords" />
+            <TextBlock x:Name="ResultText" Grid.Column="3" Text="{x:Bind Result}" VerticalAlignment="Center" TextWrapping="WrapWholeWords" />
             <TextBlock
                 Grid.Column="4"
                 Text="{x:Bind AskedBy}"
                 VerticalAlignment="Center"
+                TextWrapping="WrapWholeWords"
                 Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
           </Grid>
         </DataTemplate>
@@ -95,8 +96,10 @@
         Spacing="12"
         Visibility="Collapsed">
       <FontIcon
+          x:Name="EmptyMark"
           Glyph="&#xE81C;"
           FontSize="40"
+          IsTextScaleFactorEnabled="False"
           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
           AutomationProperties.AccessibilityView="Raw" />
       <TextBlock x:Name="EmptyTitle" HorizontalAlignment="Center" Style="{StaticResource SubtitleTextBlockStyle}" TextAlignment="Center" />

@@ -218,7 +218,7 @@ public sealed class ModelTests
             Assert.AreEqual("Renew every parked login that is due.", first.Machine.Renewal.Note);
             Assert.IsEmpty(first.Machine.Checks.Lines);
             Assert.StartsWith("Checking ", first.Machine.Checks.Waiting!);
-            Assert.AreEqual("No Activity", first.Machine.Activity.Empty?.Title);
+            Assert.AreEqual(OperatingSystem.IsWindows() ? "No activity" : "No Activity", first.Machine.Activity.Empty?.Title);
             Assert.IsNull(first.Machine.CommandLine.Found);
             Assert.AreEqual(0UL, model.Snapshot().Revision);
             Assert.IsEmpty(keeping.Told);

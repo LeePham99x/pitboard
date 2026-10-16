@@ -12,6 +12,7 @@ namespace Pitboard.App;
 public partial class App : Application
 {
     private readonly AppStart _start;
+    private readonly Handovers _handovers;
     private readonly WindowRequests _requests = new();
     private readonly NoUpdates _updates = new();
     private readonly string _version = SettingsPage.Version(typeof(App).Assembly);
@@ -23,12 +24,12 @@ public partial class App : Application
     private MenuHost? _menu;
     private MainWindow? _window;
 
-    public App(AppStart start)
+    public App(AppStart start, Handovers handovers)
     {
         _start = start;
+        _handovers = handovers;
 #if DEBUG
-        // Unhandled, it fails Pitboard fast with 0xC000027B: the UI tests read why from here, in WinUI's own
-        // words too, with any theme resource it could not find.
+        // Unhandled, it fails fast with 0xC000027B and says nothing: the UI tests read why from here.
         UnhandledException += (_, args) => Console.Error.WriteLine($"{args.Message}{Environment.NewLine}{args.Exception}");
         DebugSettings.IsXamlResourceReferenceTracingEnabled = true;
         DebugSettings.XamlResourceReferenceFailed += (_, args) => Console.Error.WriteLine(args.Message);
@@ -63,10 +64,17 @@ public partial class App : Application
         {
             model.Send(launchedBy);
         }
-    }
 
-    // A second launch, which brings the window forward.
-    public void Reopened() => ShowWindow();
+        // Windows puts a new icon in the overflow, so a launch from Start shows only through its window.
+        if (Launching.OpensWindow(_start.Arguments))
+        {
+            model.Send(new Intent.ShowWindow(Pane: null));
+        }
+
+        // A second launch's handover arrives on a thread of its own.
+        var queue = DispatcherQueue.GetForCurrentThread();
+        _handovers.Ready(() => queue.TryEnqueue(ShowWindow));
+    }
 
     private AppModel? Model(DispatcherQueue queue, Notifications notifications)
     {
@@ -156,11 +164,6 @@ public partial class App : Application
             case IconCommand.ShowSettings:
                 ShowWindow();
                 _window?.Select(null);
-                break;
-            // About is a section of the settings page, as Microsoft's settings guidance places it.
-            case IconCommand.ShowAbout:
-                ShowWindow();
-                _window?.ShowAbout();
                 break;
             case IconCommand.CheckForUpdates:
                 _updates.Check();

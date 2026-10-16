@@ -4,7 +4,7 @@
 //! is due, and what a warm-up runs, are the core's own and have their own tests.
 
 use super::state::{Answer, Job};
-use super::testing::{Hand, Machine, Refusal, refusal, status};
+use super::testing::{Hand, Machine, Refusal, refusal, status, titled};
 use super::{Intent, RunOutNotice};
 use crate::Account;
 use crate::present::testing::{LimitExt, account, window};
@@ -342,17 +342,21 @@ fn a_row_says_where_its_warm_up_stands_and_its_menu_offers_it() {
         .find(|item| item.title == "personal")
         .expect("personal");
     assert_eq!(item.warm_note.as_deref(), Some("Warms up again at 10:00"));
-    let warm: Vec<(&str, bool, Option<bool>)> = item
+    let warm: Vec<(String, bool, Option<bool>)> = item
         .offers
         .iter()
         .filter(|offer| offer.title.starts_with("Warm"))
-        .map(|offer| (offer.title.as_str(), offer.enabled, offer.checked))
+        .map(|offer| (offer.title.clone(), offer.enabled, offer.checked))
         .collect();
     assert_eq!(
         warm,
         [
-            ("Warm Up Now", false, None),
-            ("Warm Up Automatically", true, Some(true))
+            (titled("Warm Up Now", "Warm up now"), false, None),
+            (
+                titled("Warm Up Automatically", "Warm up automatically"),
+                true,
+                Some(true)
+            )
         ],
         "its period runs, so nothing to start now"
     );

@@ -621,7 +621,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     Release build registers, and a click comes back as the intent the Switch button or the
     notification itself asks for. `NoUpdates` is the updater of a build that cannot update.
     `StartAtSignIn` is the settings' start at sign-in over an `IStartupItem`: `RunValue`,
-    which writes the `Run` value through `IRunKey`, sent to the registry by `RegistryRunKey`
+    which writes the `Run` value, `"<exe>" --sign-in`, through `IRunKey`, sent to the
+    registry by `RegistryRunKey`
     and replaced in tests, refuses in a Debug build, and a fixture gets
     `FixtureStartupItem`. `SettingsPage` is what the settings page says and sends beyond the
     model's words. `Keyed` keeps a shown row while the model lists it, so `ShownAccount`
@@ -643,15 +644,17 @@ window loads its site, and whatever the site's pages load, as a browser would.
     `Icon/make-ico.py` writes from the drawings beside it. `Program.Main` decides the
     launch, and `App` makes the model, over this PC or in a Debug build started with
     `PITBOARD_FIXTURE` a fixture's, keeps the icon, registers for notifications, opens the
-    main window when the model asks, and stops the model and unregisters as the session ends
-    or on Exit. `MenuHost` is the pixel of a window the icon's menu opens from. `MainWindow`
-    shows a pane for each of the model's `Pane`s and its settings page, and takes Ctrl+N and
-    Ctrl+comma from any of them.
+    main window when the model asks, and asks for it on a launch from Start or a shortcut,
+    since Windows puts a new icon in the overflow; a start at sign-in, after an update or from
+    a notification opens none. It stops the model and unregisters on Exit, and as the session
+    ends stops the model, or ends where Restart Manager asks. `MenuHost` is the pixel of a
+    window the icon's menu opens from. `MainWindow` shows a pane for each of the model's
+    `Pane`s and its settings page, and takes Ctrl+N and Ctrl+comma from any of them.
   - `Pitboard.Windows.Tests` is a WinUI app that hosts its own tests, the views' among them
     over snapshots made in C#, and `Pitboard.UITests` drives the built app with FlaUI.
-    Neither registers anything with Windows, but for the notification-area icon of its own
-    that `NotificationAreaTests` adds and removes by a GUID wherever Explorer takes the
-    user's icons, which no runner does.
+    Neither registers anything with Windows. The icon's menu is held by the view tests,
+    `IconMenuTests` and `IconMenuFlyoutTests`, and the click on the icon by the session's
+    step A2.
   - `Pitboard.Probe` is never shipped. The session machine runs it to measure the app's
     adapters by hand: it posts a notification through `WindowsNotifications` under an
     AppUserModelID of its own, waits for its Switch, unregisters, and names a process's
@@ -2095,8 +2098,25 @@ Accounts and tokens:
 - That user's programs run in the job user's session, 2, and start inside a job already.
 - Explorer, the job user's, takes no notification-area icon of that user's: `NIM_ADD` fails
   for an icon named by its window and id and for one named by a GUID (CI run 38753437460).
-  So the UI tests that click Pitboard's icon, `NotificationAreaTests` and `MenuBarTests`, run
-  only where Explorer takes it, and the session's step A2 clicks it.
+  So no UI test clicks Pitboard's icon: the view tests hold its menu, and the session's step
+  A2 clicks it.
+- A window of that user's program comes to the front and takes a click on windows-2025. On
+  windows-11-arm a full-screen `Microsoft account` window, a `Windows.UI.Core.CoreWindow` of
+  `WWAHost` in the job user's session, holds the foreground, and Windows keeps it there for a
+  program the tests start, as `SetForegroundWindow` documents for a process not started by
+  the one in front (runs 38795330950 and 38800569975). A click at Pitboard's window reaches
+  that window (run 38797997319). So the test of the first launch is inconclusive where the
+  window in front before the launch keeps the foreground, and no test there gives Pitboard
+  real input.
+- FlaUI.UIA3 5.0.0, run as that user, finds that user's WinUI elements by AutomationId and
+  selects a NavigationView item through its SelectionItem pattern (CF2,
+  `LifecycleTests.AWinUIElementIsFoundAndInvokedByItsAutomationId`, run 38804714545).
+- The self-contained Debug app, started by that user, has its window up 1194 ms after the
+  start on windows-11-arm (CF5, run 38804714545). Both images hold the Windows App Runtime
+  2.5.1.0 package for some user, so that the app needs none is not measured here.
+- The WinUI projects build in Debug and publish in Release for win-arm64 on windows-11-arm,
+  XAML compiler included, so each architecture is built where it runs (CF6, runs
+  38782142541 and 38804714545).
 - Developer Mode is on, and that user makes file and directory symbolic links as it is. It
   makes them with the symbolic-link right granted too, but Developer Mode was on for that run
   as well, so the right alone is not measured.
@@ -2335,13 +2355,14 @@ on 15 October 2026. W27 reviews the list.
 | winget puts a portable package's install folder on `PATH`, not a link in Links, for a standard user without Developer Mode | [winget-pkgs FAQ](https://github.com/microsoft/winget-pkgs/blob/master/doc/FAQ.md) | Both images have Developer Mode on, and the job's user is an administrator. A standard user's install is the session's. |
 | Since winget 1.29, an MSI wins over a portable installer whatever the manifest's order | [winget-cli 1.29.380](https://github.com/microsoft/winget-cli/releases/tag/v1.29.380) | windows-2025's winget is 1.11.510, and no runner installs from winget's sources. |
 | A broadcast, such as `WM_ENDSESSION`, reaches a top-level window that is never shown, and no message-only window | [Message-only windows](https://learn.microsoft.com/en-us/windows/win32/winmsg/window-features#message-only-windows) | A runner's session never ends while a job runs; CF9 sends one. |
-| A second instance redirects its launch off the STA thread, which waits without blocking COM | [App instancing](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/applifecycle/applifecycle-instancing) | No test starts a second copy until APP-12's links. |
+| Restart Manager asks a program to end with `WM_ENDSESSION` and `ENDSESSION_CLOSEAPP`, which it should end on, then waits for it to exit, sending `WM_CLOSE` to one that does not | [Guidelines for Applications](https://learn.microsoft.com/en-us/windows/win32/rstmgr/guidelines-for-applications) | No runner installs over a running Pitboard; CF9 sends the message, and the session's step A7 upgrades a running copy. |
 | A new notification-area icon goes to the overflow, where only the person promotes it | [Notifications and the notification area](https://learn.microsoft.com/en-us/windows/win32/shell/notification-area) | No runner's Explorer takes the test user's icon; the session's step A2 records where it starts. |
 | A notification icon's menu closes on a click elsewhere only when its window was made the foreground window first | [TrackPopupMenu](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-trackpopupmenu) | Only a person clicks elsewhere: the session's step A2. |
 | A GUID icon is tied to the path of the exe that added it, unless both are signed by one company | [NOTIFYICONDATAW](https://learn.microsoft.com/en-us/windows/win32/api/shellapi/ns-shellapi-notifyicondataw) | No Release build runs from two paths on a runner; the 1.0 session's P4 upgrades one. |
 | A MenuFlyout with `ShouldConstrainToRootBounds` false draws whole outside the window it opens from | [ShouldConstrainToRootBounds](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.controls.primitives.flyoutbase.shouldconstraintorootbounds) | No runner opens the menu from the icon; the session's step A2 opens it and looks at it. |
 | A `Run` value under HKCU starts its program as that person signs in, with no promise how soon | [Run and RunOnce registry keys](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys) | No runner signs in again, and no test writes the `Run` key; the session's step A6 signs in with it on. |
 | Settings > Apps > Startup lists a program a `Run` value starts and turns it off | [Configure startup applications in Windows](https://support.microsoft.com/en-us/windows/configure-startup-applications-in-windows-115a420a-0bff-4a6f-90e0-1934c844e473) | Only a person uses that page: the session's step A6 turns Pitboard off there and records what the app's switch then shows. |
+| A self-contained unpackaged app runs without the Windows App Runtime's packages | [Deploy self-contained apps](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/self-contained-deploy/deploy-self-contained-apps) | Both images hold the 2.5.1.0 package (run 38804714545); the session's step A5 records `Get-AppxPackage *WindowsAppRuntime*` on a clean PC. |
 | A self-contained unpackaged app registers for app notifications without the Singleton package | [Deploy self-contained apps](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/self-contained-deploy/deploy-self-contained-apps#dependencies-on-additional-msix-packages) | No runner runs a Release build that registers; the session posts through the app at its step 8 and through `Pitboard.Probe` at its step A5. |
 | A notification with the tag of one Windows still shows takes its place | [ToastNotification.Tag](https://learn.microsoft.com/en-us/uwp/api/windows.ui.notifications.toastnotification.tag) | The same; `Pitboard.Probe` posts twice at the session's step A5. |
 | A click on a notification starts the app again once it called `Unregister` and quit | [AppNotificationManager.Register](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.windows.appnotifications.appnotificationmanager.register) | Only a person clicks a notification: the session's step A5. |
@@ -3389,7 +3410,26 @@ Microsoft's documentation.
   Debug build and a Release in other folders never meet, and the fixture's folder in a Debug
   build's key keeps two fixtures of one build apart. `RedirectActivationToAsync` queues the
   launch for the running copy from a background thread and calls `AllowSetForegroundWindow`
-  for it, so the running copy may bring its window forward.
+  for it, so the running copy may bring its window forward. The running copy raises
+  `Activated` for it once, on a thread pool thread, to the handlers connected then, and only
+  then lets the second copy quit (`ProcessRedirectionRequests`). So `Program` connects its
+  handler before it takes the key, and `Handovers` keeps a launch that arrives before the
+  window can open: connected after, a launch handed over while the first copy started was lost
+  without a word from either copy (run 38789385677). A second copy hands its launch over off
+  the STA thread, as Microsoft's [App instancing](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/applifecycle/applifecycle-instancing)
+  does it, to a copy that runs and to one that is starting, on both images (`LifecycleTests`,
+  run 38795330950).
+- Under `DispatcherShutdownMode.OnExplicitShutdown`, closing the main window leaves
+  Pitboard.exe running ([DispatcherShutdownMode](https://learn.microsoft.com/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.application.dispatchershutdownmode)),
+  on both images (`LifecycleTests.ClosingTheWindowLeavesPitboardRunning`, run 38804714545).
+- Microsoft's NavigationApp template (WindowsAppSDK main,
+  `dev/Templates/Source/ProjectTemplates/Desktop/CSharp/NavigationApp`, read on 16 October
+  2026) puts a `TitleBar` with the app's icon and the pane toggle above a `NavigationView`
+  under `MicaBackdrop`, extends the content into the title bar, asks for the tall one and calls
+  `AppWindow.SetIcon`. `MainWindow` does the same, so Mica reaches the title bar, and its
+  icon names the window in the title bar and Alt+Tab (`LifecycleTests.TheWindowCarriesPitboardsIcon`).
+  The PRI file indexes `Pitboard.ico` as `Files/Pitboard.ico` (run 38774669459), which
+  `ms-appx:///Pitboard.ico` reads.
 - Rust's `std::env::temp_dir` (Rust 1.98.1, `library/std/src/sys/paths/windows.rs`) and
   .NET's `Path.GetTempPath` (dotnet/runtime v10.0.13, `Path.Windows.cs`) both ask
   `GetTempPath2W`, .NET falling back to `GetTempPathW` where it is missing. So the app finds
@@ -3440,17 +3480,20 @@ Microsoft's documentation.
   return on `TaskbarCreated`.
 - The notification area guidance (updated 15 April 2025) has a right click bring up a normal
   shortcut menu and a left click show what the person expects, the program window among
-  them, and prefers the standard tooltip. The Windows 7 menu guidance (updated 26 July 2026)
-  names Exit, puts no ellipsis on About, Help or Settings, shows a context menu's default
-  command in bold, and lets a program keep title-style capitalization rather than mix
-  styles, as the model's strings are. So the icon's menu says Exit, bolds Open Pitboard,
-  and keeps the macOS menu's words otherwise.
+  them, and prefers the standard tooltip. Its Windows 7 page (updated 11 March 2025) gives
+  the icon's menu no About command where the program has a window. The Windows 7 menu
+  guidance (updated 26 July 2026) names Exit, puts no ellipsis on Help or Settings, shows a
+  context menu's default command in bold and no shortcut keys, and writes labels in
+  sentence-style capitalization, keeping title style for a legacy program that would
+  otherwise mix styles. So the icon's menu says Exit, bolds Open Pitboard, shows no shortcuts
+  and leaves About to the settings page, and the Windows app writes all its text in sentence
+  case: its own, and the model's buttons, menu items and headings, which `words::titled`
+  words for each system, title case on macOS as Apple's guidelines have it.
 - Read in microsoft-ui-xaml at `winui3/release/2.5.1`: a light-dismiss popup hides its
   flyout when its window is deactivated (`Popup_Partial.cpp`), so `MenuHost` is made the
   foreground window before the menu opens; a `MenuFlyoutItem` raises `Click` before it closes
-  its menu, and shows `KeyboardAcceleratorTextOverride` while a keyboard is present
-  (`MenuFlyoutItem_Partial.cpp`), so a choice runs once the menu has closed and the menu says
-  the window's shortcuts; a `RadioMenuFlyoutItem` is a `ToggleMenuFlyoutItem` inside that
+  its menu (`MenuFlyoutItem_Partial.cpp`), so a choice runs once the menu has closed; a
+  `RadioMenuFlyoutItem` is a `ToggleMenuFlyoutItem` inside that
   undoes an uncheck by choosing (`RadioMenuFlyoutItem.cpp`); and NavigationView names its
   settings item `SettingsItem` (`NavigationView.cpp`), which the UI tests select.
   `OverlappedPresenter.CreateForContextMenu` keeps a border (Microsoft Learn, updated 28 July

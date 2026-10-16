@@ -43,7 +43,7 @@
         <StackPanel VerticalAlignment="Center" Spacing="2">
           <TextBlock Text="Start when you sign in to Windows" TextWrapping="Wrap" />
           <TextBlock x:Name="StartupNote" Style="{StaticResource Explanatory}" />
-          <TextBlock x:Name="StartupFailed" Style="{StaticResource Explanatory}" />
+          <TextBlock x:Name="StartupFailed" Style="{StaticResource Explanatory}" AutomationProperties.LiveSetting="Assertive" />
         </StackPanel>
         <ToggleSwitch
             x:Name="StartAtSignInSwitch"
@@ -135,7 +135,7 @@
         <StackPanel VerticalAlignment="Center" Spacing="2">
           <TextBlock Text="Renew parked logins daily" TextWrapping="Wrap" />
           <TextBlock x:Name="ScheduleNote" Style="{StaticResource Explanatory}" />
-          <TextBlock x:Name="ScheduleFailed" Style="{StaticResource Explanatory}" />
+          <TextBlock x:Name="ScheduleFailed" Style="{StaticResource Explanatory}" AutomationProperties.LiveSetting="Assertive" />
         </StackPanel>
         <ToggleSwitch
             x:Name="RenewDaily"
@@ -170,13 +170,13 @@
             x:Name="RenewNow"
             Grid.Column="1"
             MinWidth="120"
-            Content="Renew Now"
+            Content="Renew now"
             AutomationProperties.AutomationId="settings.renewNow"
             Click="OnRenewNow" />
       </Grid>
       <TextBlock x:Name="RenewalAbout" Style="{StaticResource Footnote}" />
 
-      <TextBlock Style="{StaticResource Section}" Text="Command Line" />
+      <TextBlock Style="{StaticResource Section}" Text="Command line" />
       <Grid Style="{StaticResource Card}">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="Auto" />
@@ -218,7 +218,7 @@
             x:Name="CheckNow"
             Grid.Column="1"
             MinWidth="120"
-            Content="Check Now"
+            Content="Check now"
             AutomationProperties.AutomationId="settings.checkNow"
             Click="OnCheckNow" />
       </Grid>

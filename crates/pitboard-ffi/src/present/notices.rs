@@ -95,7 +95,7 @@ fn awaiting(seen: &Seen) -> Vec<PanelNotice> {
             let (title, finish, sheet) = if awaiting.again {
                 (
                     format!("Signing in to {} again isn’t finished", awaiting.label),
-                    "Finish Signing In…",
+                    words::titled(seen.os, "Finish Signing In…", "Finish signing in…"),
                     Sheet::SignInAgain {
                         provider: provider.clone(),
                         label: awaiting.label.clone(),
@@ -107,7 +107,7 @@ fn awaiting(seen: &Seen) -> Vec<PanelNotice> {
                         "Adding a {} account isn’t finished",
                         seen.tool_name(provider)
                     ),
-                    "Finish Adding…",
+                    words::titled(seen.os, "Finish Adding…", "Finish adding…"),
                     Sheet::Add {
                         provider: Some(provider.clone()),
                     },
@@ -120,7 +120,7 @@ fn awaiting(seen: &Seen) -> Vec<PanelNotice> {
                 words::awaiting_lines(app, &awaiting.label, put_back, awaiting.again),
                 vec![
                     NoticeAction {
-                        title: finish.into(),
+                        title: finish,
                         intent: Intent::PresentSheet { sheet },
                         dismisses: false,
                         switches: false,
@@ -128,7 +128,11 @@ fn awaiting(seen: &Seen) -> Vec<PanelNotice> {
                         confirm: None,
                     },
                     NoticeAction {
-                        title: format!("Put {put_back} Back"),
+                        title: words::titled(
+                            seen.os,
+                            &format!("Put {put_back} Back"),
+                            &format!("Put {put_back} back"),
+                        ),
                         ..switch_action(seen, &awaiting.put_back, put_back)
                     },
                 ],
@@ -219,7 +223,7 @@ pub(crate) fn notices(seen: &Seen, footing: &Footing) -> Vec<PanelNotice> {
             "An interrupted switch is waiting".into(),
             lines,
             vec![NoticeAction {
-                title: "Give Up…".into(),
+                title: words::titled(seen.os, "Give Up…", "Give up…"),
                 intent: Intent::AbandonStuckSwitch,
                 dismisses: false,
                 switches: false,
@@ -227,7 +231,7 @@ pub(crate) fn notices(seen: &Seen, footing: &Footing) -> Vec<PanelNotice> {
                 confirm: Some(Question {
                     title: "Give up on the interrupted switch?".into(),
                     message: words::give_up_stuck(&moving),
-                    confirm: "Give Up".into(),
+                    confirm: words::titled(seen.os, "Give Up", "Give up"),
                 }),
             }],
         ));
@@ -341,7 +345,7 @@ fn warning_actions(seen: &Seen, warning: &Warning) -> Vec<NoticeAction> {
         "config_names_another" => update_config_action(seen),
         "fallback_login" if warning.held != Some(Held::Unreadable) => {
             vec![NoticeAction {
-                title: "Put Away…".into(),
+                title: words::titled(seen.os, "Put Away…", "Put away…"),
                 intent: Intent::PresentSheet { sheet: Sheet::Stow },
                 dismisses: false,
                 switches: false,
@@ -363,7 +367,11 @@ fn in_app_actions(seen: &Seen, provider: &str, code: &str) -> Vec<NoticeAction> 
     }
     let app = seen.program_of(provider);
     let mut actions = vec![NoticeAction {
-        title: format!("Add the Account {app} Shows…"),
+        title: words::titled(
+            seen.os,
+            &format!("Add the Account {app} Shows…"),
+            &format!("Add the account {app} shows…"),
+        ),
         intent: Intent::PresentSheet {
             sheet: Sheet::Add {
                 provider: Some(provider.to_owned()),
@@ -380,7 +388,7 @@ fn in_app_actions(seen: &Seen, provider: &str, code: &str) -> Vec<NoticeAction> 
     );
     if code == "move_waiting" && stopped {
         actions.push(NoticeAction {
-            title: "Give Up…".into(),
+            title: words::titled(seen.os, "Give Up…", "Give up…"),
             intent: Intent::AbandonStuckSwitch,
             dismisses: false,
             switches: false,
@@ -391,7 +399,7 @@ fn in_app_actions(seen: &Seen, provider: &str, code: &str) -> Vec<NoticeAction> 
                     "Every folder is kept and nothing is deleted. Whatever is in {app}’s folder \
                      stays there."
                 ),
-                confirm: "Give Up".into(),
+                confirm: words::titled(seen.os, "Give Up", "Give up"),
             }),
         });
     }
@@ -406,7 +414,11 @@ fn update_config_action(seen: &Seen) -> Vec<NoticeAction> {
         .find(|account| account.provider == ProviderId::Claude.code() && account.signed_in)
         .and_then(|account| account.qualified.clone())
         .map(|qualified| NoticeAction {
-            title: "Update Claude Code’s Config".into(),
+            title: words::titled(
+                seen.os,
+                "Update Claude Code’s Config",
+                "Update Claude Code’s config",
+            ),
             intent: Intent::UpdateConfig { qualified },
             dismisses: false,
             switches: false,

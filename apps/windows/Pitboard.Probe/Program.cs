@@ -6,12 +6,10 @@ using Pitboard.Windows;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.System.Threading;
-using Windows.Win32.UI.Shell;
 
 namespace Pitboard.Probe;
 
-// The app's own adapters, measured by hand on the session machine, under an AppUserModelID of the probe's own so
-// an installed Pitboard keeps its notification registration.
+// An AppUserModelID of its own, so an installed Pitboard keeps its notification registration.
 public static class Program
 {
     private const string Aumid = "Pitboard.Probe";
@@ -29,7 +27,7 @@ public static class Program
 
     private static int Main(string[] args)
     {
-        if (!File.Exists(Path.Combine(Profile(), Marker)))
+        if (!File.Exists(Path.Combine(Shell.KnownFolder(PInvoke.FOLDERID_Profile), Marker)))
         {
             Console.Error.WriteLine(
                 $"This account carries no {Marker} in its profile folder: Pitboard.Probe runs only in a throwaway account the owner marked.");
@@ -177,19 +175,5 @@ public static class Program
     {
         Console.Error.WriteLine(said);
         return 2;
-    }
-
-    // The known folder, which no variable moves.
-    private static unsafe string Profile()
-    {
-        PInvoke.SHGetKnownFolderPath(PInvoke.FOLDERID_Profile, KNOWN_FOLDER_FLAG.KF_FLAG_DONT_VERIFY, null, out var path).ThrowOnFailure();
-        try
-        {
-            return path.ToString();
-        }
-        finally
-        {
-            PInvoke.CoTaskMemFree(path);
-        }
     }
 }
