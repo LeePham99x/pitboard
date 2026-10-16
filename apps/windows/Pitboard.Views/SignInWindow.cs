@@ -39,6 +39,8 @@ public sealed partial class SignInWindow : Window
         Closed += (_, _) => _view.Close();
     }
 
+    internal CoreWebView2? WebPage => _view.CoreWebView2;
+
     // Before it has loaded anything, as WebView2 takes a new window's page.
     public async Task<CoreWebView2> Page(CoreWebView2Environment environment, CoreWebView2ControllerOptions options)
     {

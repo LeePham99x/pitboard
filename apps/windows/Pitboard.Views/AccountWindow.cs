@@ -102,6 +102,8 @@ public sealed partial class AccountWindow : Window, ISessionWindow
     // Its account's store, which is also its identity: one window per account.
     public string Store { get; }
 
+    internal SignInWindow? SignIn => _signIn;
+
     // The window's page, until WebView2 closes it with its browser process.
     private CoreWebView2? Page => _session is { PageClosed: true } ? null : _view?.CoreWebView2;
 
@@ -215,10 +217,21 @@ public sealed partial class AccountWindow : Window, ISessionWindow
 
         var session = new WebSession(open, _web, _downloads, this);
         _session = session;
-        var page = await NewPage();
-        session.Attach(page);
-        Watch(page);
-        ShowSession();
+        try
+        {
+            var page = await NewPage();
+            session.Attach(page);
+            Watch(page);
+            ShowSession();
+        }
+        catch (Exception failed)
+        {
+            _session = null;
+            if (!_closed)
+            {
+                Unopened(failed.Message);
+            }
+        }
     }
 
     // A page of its own each time, so after its data was removed Back cannot bring the signed-in page back.
@@ -299,7 +312,7 @@ public sealed partial class AccountWindow : Window, ISessionWindow
 
         _note.Message = session.Note is { } note ? PitboardFfiMethods.WindowNote(note, session.Account) : "";
         _note.IsOpen = session.Note is not null;
-        _removeData.IsEnabled = true;
+        _removeData.IsEnabled = !session.PageClosed;
         _reload.IsEnabled = true;
         ShowHistory();
         if (session.Failure is { } failure)
@@ -336,7 +349,7 @@ public sealed partial class AccountWindow : Window, ISessionWindow
             Watch(page);
             ShowSession();
         }
-        catch (Exception failed) when (failed is COMException or InvalidOperationException)
+        catch (Exception failed)
         {
             if (!_closed)
             {
@@ -374,16 +387,35 @@ public sealed partial class AccountWindow : Window, ISessionWindow
             return;
         }
 
-        await session.RemoveWebsiteData();
+        try
+        {
+            await session.RemoveWebsiteData();
+        }
+        // Its page closed meanwhile, with the window or its browser process, and its data stays.
+        catch (Exception closed) when (closed is COMException or InvalidOperationException)
+        {
+            return;
+        }
+
         _send(new Intent.WebsiteDataRemoved(Store));
         if (_closed)
         {
             return;
         }
 
-        var page = await NewPage();
-        session.StartOver(page);
-        Watch(page);
-        ShowSession();
+        try
+        {
+            var page = await NewPage();
+            session.StartOver(page);
+            Watch(page);
+            ShowSession();
+        }
+        catch (Exception failed)
+        {
+            if (!_closed)
+            {
+                Unopened(failed.Message);
+            }
+        }
     }
 }

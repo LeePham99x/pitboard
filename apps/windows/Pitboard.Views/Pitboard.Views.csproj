@@ -14,4 +14,7 @@
     <ProjectReference Include="../Pitboard.Core/Pitboard.Core.csproj" />
     <ProjectReference Include="../Pitboard.Windows/Pitboard.Windows.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Pitboard.Windows.Tests" />
+  </ItemGroup>
 </Project>

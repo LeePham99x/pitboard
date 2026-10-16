@@ -212,9 +212,17 @@ internal sealed class StandInWindow(Webs webs, WindowAccount account, bool answe
     // Done as each question is asked, before it is answered.
     public Action<AlertText>? Asking { get; init; }
 
+    // Whether a sign-in window fails as one closed while its page was made does.
+    public bool SignInFails { get; init; }
+
     public async Task<CoreWebView2?> OpenSignIn(SignInWindowSize size)
     {
         Sizes.Add(size);
+        if (SignInFails)
+        {
+            throw new ObjectDisposedException("SignInWindow", "The sign-in window closed while its page was made.");
+        }
+
         SignIn = await webs.Page(account.Store);
         return SignIn;
     }

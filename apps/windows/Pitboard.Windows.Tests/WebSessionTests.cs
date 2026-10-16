@@ -152,6 +152,25 @@ public sealed class WebSessionTests
         return Task.CompletedTask;
     }
 
+    // A sign-in window that closed while its page was made answers the page's window.open with no window.
+    [UITestMethod]
+    public async Task ASignInWindowThatCannotBeMadeLeavesThePageAsItWas()
+    {
+        await using var webs = await Webs.Make();
+        var window = new StandInWindow(webs, Main) { SignInFails = true };
+        var session = new WebSession(webs.Opened(Main, Home), webs.Web, webs.Downloads, window);
+        var page = await webs.Page(Main.Store);
+        Assert.IsTrue(await Webs.Attached(session, page), "the fixture's page did not load");
+        var host = Main.Site.SignInHosts[0];
+
+        var opened = await page.ExecuteScriptAsync(
+            $"window.open('{WebEnvironment.FixtureScheme}://{host}/sign-in', 'sign-in', 'width=480,height=600') === null");
+
+        Assert.AreEqual("true", opened, "the page's window.open got a window");
+        Assert.HasCount(1, window.Sizes);
+        Assert.AreEqual("chatgpt.com stand-in", page.DocumentTitle);
+    }
+
     // Each profile's data comes from the stand-in, which only a page outside any session can load.
     [UITestMethod]
     public async Task RemovingWebsiteDataEmptiesTheWindowsProfileAlone()

@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Microsoft.Web.WebView2.Core;
 using Pitboard.Core;
 
@@ -224,10 +225,19 @@ public sealed class WebSession
                         args.NewWindow = signIn;
                         _web.Serve(signIn);
                     }
-                }
-                finally
-                {
+
                     deferral.Complete();
+                }
+                // The sign-in window or its opener closed meanwhile: the page's window.open gets no window.
+                catch (Exception closed) when (closed is COMException or InvalidOperationException)
+                {
+                    try
+                    {
+                        deferral.Complete();
+                    }
+                    catch (Exception gone) when (gone is COMException or InvalidOperationException)
+                    {
+                    }
                 }
 
                 break;
