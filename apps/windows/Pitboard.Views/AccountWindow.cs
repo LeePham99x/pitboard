@@ -80,6 +80,7 @@ public sealed partial class AccountWindow : Window, ISessionWindow
         root.Children.Add(_note);
         root.Children.Add(_page);
         Content = root;
+        WindowChrome.Apply(this);
         _dialogs = new DialogHost(() => root.XamlRoot);
         var scale = Shell.Scale(WindowNative.GetWindowHandle(this));
         AppWindow.Resize(new SizeInt32((int)(1100 * scale), (int)(800 * scale)));

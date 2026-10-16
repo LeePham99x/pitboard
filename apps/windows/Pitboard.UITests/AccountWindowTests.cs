@@ -198,7 +198,7 @@ public sealed class AccountWindowTests
         }
     }
 
-    private static void OpenFromItsRow(Launched launched, string qualified, string site = "chatgpt.com")
+    internal static void OpenFromItsRow(Launched launched, string qualified, string site = "chatgpt.com")
     {
         launched.OpenMenu(launched.Row(qualified));
         var label = qualified[(qualified.IndexOf('/', StringComparison.Ordinal) + 1)..];

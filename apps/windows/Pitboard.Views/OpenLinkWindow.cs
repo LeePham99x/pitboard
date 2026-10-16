@@ -57,6 +57,7 @@ public sealed partial class OpenLinkWindow : Window
         _root.Loaded += (_, _) => Fit(center: true);
         Content = _root;
         AppWindow.SetPresenter(OverlappedPresenter.CreateForDialog());
+        WindowChrome.Apply(this);
         Closed += (_, _) =>
         {
             if (_picker is { } picker)

@@ -65,6 +65,22 @@ public sealed partial class LifecycleTests
     }
 
     [TestMethod]
+    public void TheAccountAndOpenLinkWindowsCarryPitboardsIcon()
+    {
+        using var launched = Launched.Start(Builds.Debug, fixture: "twoTools");
+        launched.OpenWindow();
+        AccountWindowTests.OpenFromItsRow(launched, "codex/main");
+        var account = launched.Window("main");
+        var picker = launched.Share("https://chatgpt.com/c/shared");
+
+        foreach (var window in new[] { account, picker })
+        {
+            var handle = window.Properties.NativeWindowHandle.Value;
+            Assert.AreNotEqual(0, SendMessage(handle, GetIcon, BigIcon, 0), $"the {window.Title} window has no icon of its own");
+        }
+    }
+
+    [TestMethod]
     public void ClosingTheWindowLeavesPitboardRunning()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "firstLaunch");

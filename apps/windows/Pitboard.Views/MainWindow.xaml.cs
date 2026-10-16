@@ -26,8 +26,7 @@ public sealed partial class MainWindow : Window
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
         AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
-        // WinUI's window class carries no icon, and only an installed build's shortcut gives the taskbar one.
-        AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, WindowsNotifications.IconFile));
+        WindowChrome.Apply(this);
         _dialogs = new DialogHost(() => Navigation.XamlRoot);
         _accounts = new AccountsPane(model, _dialogs, openWindow: openWindow);
         _activity = new ActivityPane(model);
