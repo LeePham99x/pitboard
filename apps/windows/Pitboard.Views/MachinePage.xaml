@@ -32,8 +32,8 @@
         <!-- When the checks were made, where Accounts says when it read them. -->
         <StackPanel Orientation="Horizontal" Spacing="8">
           <ProgressRing
-              Width="12"
-              Height="12"
+              Width="16"
+              Height="16"
               IsActive="{x:Bind ViewModel.Checking, Mode=OneWay}"
               Visibility="{x:Bind ViewModel.Checking, Mode=OneWay}"
               AutomationProperties.Name="Checking" />
