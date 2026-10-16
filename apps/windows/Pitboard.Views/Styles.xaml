@@ -32,6 +32,11 @@
     <Setter Property="AutomationProperties.HeadingLevel" Value="Level2" />
   </Style>
   <x:Double x:Key="SettingsCardSpacing">4</x:Double>
+  <!-- NavigationView's guidance: a page's content 24 epx from its sides, 12 in Minimal, which the main window sets. -->
+  <Thickness x:Key="PageHeaderMargin">24,0,24,0</Thickness>
+  <Thickness x:Key="PageHeaderMarginMinimal">12,0,12,0</Thickness>
+  <Thickness x:Key="PageContentPadding">24,0,24,16</Thickness>
+  <Thickness x:Key="PageContentPaddingMinimal">12,0,12,16</Thickness>
   <!-- A card in a SettingsExpander's ItemsHeader or ItemsFooter, drawn as the toolkit draws one of its items. -->
   <Style x:Key="SettingsExpanderItemCardStyle" TargetType="toolkit:SettingsCard">
     <Setter Property="BorderThickness" Value="0,1,0,0" />

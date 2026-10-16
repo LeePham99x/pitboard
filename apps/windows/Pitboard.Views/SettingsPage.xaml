@@ -6,15 +6,14 @@
     xmlns:shown="using:Pitboard.Windows"
     xmlns:toolkit="using:CommunityToolkit.WinUI.Controls"
     NavigationCacheMode="Required">
-  <!-- NavigationView's guidance: 24 epx sides, 12 in Minimal, which the main window sets. -->
   <Grid Padding="0,16,0,0" RowSpacing="24">
     <VisualStateManager.VisualStateGroups>
       <VisualStateGroup x:Name="Sides">
         <VisualState x:Name="Wide" />
         <VisualState x:Name="Minimal">
           <VisualState.Setters>
-            <Setter Target="PageHeader.Margin" Value="12,0,12,0" />
-            <Setter Target="Scroller.Padding" Value="12,0,12,24" />
+            <Setter Target="PageHeader.Margin" Value="{StaticResource PageHeaderMarginMinimal}" />
+            <Setter Target="Scroller.Padding" Value="{StaticResource PageContentPaddingMinimal}" />
           </VisualState.Setters>
         </VisualState>
       </VisualStateGroup>
@@ -23,9 +22,9 @@
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
     </Grid.RowDefinitions>
-    <TextBlock x:Name="PageHeader" MaxWidth="1064" Margin="24,0,24,0" Text="Settings" Style="{StaticResource PageTitleTextBlockStyle}" />
+    <TextBlock x:Name="PageHeader" MaxWidth="1064" Margin="{StaticResource PageHeaderMargin}" Text="Settings" Style="{StaticResource PageTitleTextBlockStyle}" />
     <!-- The WinUI Gallery's settings page: SettingsCards and SettingsExpanders in sections, the switch at each card's right. -->
-    <ScrollViewer x:Name="Scroller" Grid.Row="1" Padding="24,0,24,24">
+    <ScrollViewer x:Name="Scroller" Grid.Row="1" Padding="{StaticResource PageContentPadding}">
       <StackPanel MaxWidth="1064" Spacing="{StaticResource SettingsCardSpacing}">
         <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" Margin="1,0,0,6" Text="General" />
         <toolkit:SettingsCard Header="Start when you sign in to Windows">

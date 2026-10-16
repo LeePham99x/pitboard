@@ -4128,10 +4128,10 @@ Microsoft's documentation.
   the NavigationView page (updated 2 October 2026) recommends 12 epx margins for the content
   in Minimal and 24 otherwise, and navigates its frame only to a page not shown already. So
   `MainWindow` sets no `Header`: each page carries its title as a Level1 heading, its content
-  24 epx under it and the sides the window sets from `DisplayModeChanged`, and the lists and
-  the settings' scroll viewer reach the window's edges and pad what they hold, which keeps a
-  scroll bar at the edge. Its pages are kept (`NavigationCacheMode.Required`), with no back
-  stack (`MainWindowTests`).
+  24 epx under it and the sides the window sets from `DisplayModeChanged`, whose thicknesses
+  `Styles.xaml` holds, and the lists and the settings' scroll viewer reach the window's edges
+  and pad what they hold, which keeps a scroll bar at the edge. Its pages are kept
+  (`NavigationCacheMode.Required`), with no back stack (`MainWindowTests`).
 - `AppWindowTitleBar.PreferredTheme`'s reference gives `Legacy` as its default, and WinUI's
   window class carries no icon. So `WindowChrome` gives every window of Pitboard's
   `UseDefaultAppMode` and the app's icon (`WindowChromeTests`,
