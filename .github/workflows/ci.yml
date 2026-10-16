@@ -103,7 +103,7 @@ jobs:
           shellcheck -s sh packaging/install.sh .github/scripts/fill-template.sh
           .github/scripts/core-unchanged.sh .github/scripts/release-kind.sh
           .github/scripts/windows-versions.sh .github/scripts/windows-update-key.sh
-          apps/macos/scripts/build-number.sh
+          .github/scripts/windows-update-sign.sh apps/macos/scripts/build-number.sh
       - env:
           TEST_INSTALL_SHELLS: ${{ matrix.shells }}
         run: python3 .github/scripts/test-install.py

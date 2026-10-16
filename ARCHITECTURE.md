@@ -839,8 +839,10 @@ window loads its site, and whatever the site's pages load, as a browser would.
     `windows-appcast.py` writes `appcast-windows.xml` for a full release's MSIs and their
     signatures, `windows-versions.sh` gives a Windows build's MSI, file and package numbers,
     `windows-update-key.sh` refuses a Windows update key that changed since the last MSI
-    unless a rotation names the release, and `test-release.py` tests the six, the app's
-    `build-number.sh` and the cargo-binstall metadata in `crates/pitboard/Cargo.toml`.
+    unless a rotation names the release, `windows-update-sign.sh` signs a Windows release's
+    MSIs and checks each signature with the public key, and `test-release.py` tests the
+    seven, the app's `build-number.sh` and the cargo-binstall metadata in
+    `crates/pitboard/Cargo.toml`.
     `package-windows.ps1` zips a Windows build, `check-windows-build.ps1` checks one,
     `verify-windows-signatures.ps1` checks the signature of every program a Windows release
     hands on, in a zip or an MSI, and of a sparse package, and `test-windows-release.ps1`
@@ -4245,8 +4247,9 @@ Microsoft's documentation.
   (`sign_update/main.swift`, `common_cli/Secret.swift`, read the same day). A rehearsal on
   16 October 2026 signed two files with a throwaway seed, and `eddsa-verify.swift` took each
   signature under its public key and refused one another seed made. So `windows-update-sign`
-  signs each MSI with `sign_update` and checks it with `eddsa-verify.swift` before
-  `windows-appcast.py` writes the feed.
+  signs each MSI of every Windows release with `sign_update` and checks it with
+  `eddsa-verify.swift`, and for the latest full release `windows-appcast.py` then writes the
+  feed.
 - The .NET 8 SDK adds the commit to `InformationalVersion`, which
   `IncludeSourceRevisionInInformationalVersion` turns off
   ([Source Link included in the .NET SDK](https://learn.microsoft.com/dotnet/core/compatibility/sdk/8.0/source-link),

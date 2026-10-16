@@ -52,8 +52,8 @@ The first release with Claude Desktop waits until the hand measurements M1 to M1
    A release candidate builds, signs and attests everything, and runs its own install script
    on each target. It also exchanges the crates.io token, so a wrong Trusted Publishing
    registration fails here, where it costs nothing. It uploads nothing to crates.io, has no
-   release notes or update feeds, and skips the `feed`, `windows-update-sign`,
-   `windows-feed`, `tap`, `brew`, `scoop` and `winget` jobs.
+   release notes or update feeds, and skips the `feed`, `windows-feed-key`, `windows-feed`,
+   `tap`, `brew`, `scoop` and `winget` jobs.
 
 8. Tag the same commit `v<version>` and push the tag.
 
@@ -73,7 +73,7 @@ The first release with Claude Desktop waits until the hand measurements M1 to M1
 | --- | --- | --- |
 | `windows-sign` | Anywhere | Re-run it. SignPath evaluates at most three re-runs of a run, and fails the fourth |
 | `windows-sign-msi` | Anywhere | Re-run it, as `windows-sign` |
-| `windows-update-sign` | Anywhere | Re-run it. It signs the MSIs `windows-msi` checked again and replaces the feed it handed on |
+| `windows-update-sign` | Anywhere | Re-run it. It signs the MSIs `windows-msi` checked again and, for the latest full release, replaces the feed it handed on |
 | `publish` | After the crates reached crates.io | Re-run it. It skips each crate whose version is there |
 | `tap` | At the push | Re-run it. It reads the run's own `SHA256SUMS`. Never write the tap by hand: its checksums would come from a second download |
 | `scoop` | At the push | Re-run it, as `tap`. Never write the bucket by hand |
@@ -397,10 +397,11 @@ Before the first 1.x tag:
 3. Keep an offline copy of the private key apart from the signer's account, the macOS update
    key and the Developer ID certificate.
 
-WinSparkle's keys and signatures are Sparkle's Ed25519 in base64. `windows-update-sign` signs
-each MSI with `sign_update` from that release archive, pinned by its SHA-256 in `release.yml`,
-checks each signature with `WINDOWS_UPDATE_PUBLIC_KEY`, and writes the feed with
-`.github/scripts/windows-appcast.py`.
+WinSparkle's keys and signatures are Sparkle's Ed25519 in base64. For every Windows release,
+betas and release candidates included, `windows-update-sign` signs each MSI with `sign_update`
+from that release archive, pinned by its SHA-256 in `release.yml`, and checks each signature
+with `WINDOWS_UPDATE_PUBLIC_KEY`, so a private key that is not its pair fails the first beta.
+For the latest full release it then writes the feed with `.github/scripts/windows-appcast.py`.
 
 ### Rotate the Windows update key
 
