@@ -18,7 +18,7 @@ public sealed partial class LifecycleTests
     [TestMethod]
     public void TheFirstLaunchWindowComesToTheFrontAndTakesAClick()
     {
-        var before = GetForegroundWindow();
+        var before = Foreground.Window();
         var clock = Stopwatch.StartNew();
         using var launched = Launched.Start(Builds.Debug, fixture: "firstLaunch");
 
@@ -26,13 +26,13 @@ public sealed partial class LifecycleTests
         TestContext.WriteLine($"CF5: the window was up {clock.ElapsedMilliseconds} ms after the start");
         var activity = window.FindFirstDescendant(found => found.ByAutomationId("pane.activity"))!;
         var handle = window.Properties.NativeWindowHandle.Value;
-        var inFront = Retry.WhileFalse(() => GetForegroundWindow() == handle, TimeSpan.FromSeconds(5)).Result;
-        if (!inFront && before != 0 && GetForegroundWindow() == before)
+        var inFront = Retry.WhileFalse(() => Foreground.Window() == handle, TimeSpan.FromSeconds(5)).Result;
+        if (!inFront && before != 0 && Foreground.Window() == before)
         {
-            Assert.Inconclusive($"CF1: {InFront()} kept the foreground it held before the launch, over {window.BoundingRectangle}");
+            Assert.Inconclusive($"CF1: {Foreground.Holder()} kept the foreground it held before the launch, over {window.BoundingRectangle}");
         }
 
-        Assert.IsTrue(inFront, $"CF1: the window is not in front, {InFront()} is");
+        Assert.IsTrue(inFront, $"CF1: the window is not in front, {Foreground.Holder()} is");
         Mouse.Click(activity.GetClickablePoint());
 
         var selected = Retry.WhileFalse(
@@ -123,58 +123,6 @@ public sealed partial class LifecycleTests
             $"a start at sign-in opened the window: {launched.State()}");
     }
 
-    private static unsafe string InFront()
-    {
-        var window = GetForegroundWindow();
-        if (window == 0)
-        {
-            return "no window";
-        }
-
-        var name = stackalloc char[256];
-        var length = GetClassName(window, name, 256);
-        var title = stackalloc char[256];
-        var titled = GetWindowText(window, title, 256);
-        _ = GetWindowRect(window, out var place);
-        _ = GetWindowThreadProcessId(window, out var owner);
-        string process;
-        try
-        {
-            process = Process.GetProcessById((int)owner).ProcessName;
-        }
-        catch (ArgumentException)
-        {
-            process = $"process {owner}";
-        }
-
-        return $"{new string(name, 0, length)} '{new string(title, 0, titled)}' of {process} at {place.Left},{place.Top} to {place.Right},{place.Bottom}";
-    }
-
-    [LibraryImport("user32.dll")]
-    private static partial nint GetForegroundWindow();
-
     [LibraryImport("user32.dll", EntryPoint = "SendMessageW")]
     private static partial nint SendMessage(nint window, uint message, nuint wParam, nint lParam);
-
-    [LibraryImport("user32.dll", EntryPoint = "GetClassNameW")]
-    private static unsafe partial int GetClassName(nint window, char* name, int capacity);
-
-    [LibraryImport("user32.dll")]
-    private static partial uint GetWindowThreadProcessId(nint window, out uint process);
-
-    [LibraryImport("user32.dll", EntryPoint = "GetWindowTextW")]
-    private static unsafe partial int GetWindowText(nint window, char* text, int capacity);
-
-    [LibraryImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool GetWindowRect(nint window, out Rect place);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct Rect
-    {
-        public int Left;
-        public int Top;
-        public int Right;
-        public int Bottom;
-    }
 }

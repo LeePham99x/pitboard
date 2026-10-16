@@ -27,13 +27,13 @@ public sealed class AccountsWindowTests
         launched.OpenWindow();
 
         launched.Invoke("Add account");
-        launched.Field("sheet.name").Enter("third");
+        Launched.Type(launched.Field("sheet.name"), "third");
         launched.Invoke("Sign in");
         var code = launched.Field("sheet.code");
         Assert.IsTrue(launched.Enables("Open"), "Open stayed dimmed");
         launched.Invoke("Copy link");
         Assert.AreEqual("https://claude.com/cai/oauth/authorize?code=true&state=pitboard-fixture", ClipboardText.Read());
-        code.Enter("fixture-code#state");
+        Launched.Type(code, "fixture-code#state");
         launched.Invoke("Submit code");
 
         launched.Row("claude/third");
@@ -49,7 +49,7 @@ public sealed class AccountsWindowTests
 
         launched.Invoke("Add account");
         launched.Find(found => found.ByAutomationId("sheet.tool"), "sheet.tool").AsComboBox().Select("Codex");
-        launched.Field("sheet.name").Enter("third");
+        Launched.Type(launched.Field("sheet.name"), "third");
         launched.Invoke("Sign in");
 
         launched.Row("codex/third");
@@ -63,7 +63,7 @@ public sealed class AccountsWindowTests
         launched.OpenWindow();
 
         launched.Invoke("Add account");
-        launched.Field("sheet.name").Enter("third");
+        Launched.Type(launched.Field("sheet.name"), "third");
         launched.Invoke("Sign in");
         launched.Field("sheet.code");
         launched.Invoke("Cancel");
@@ -71,9 +71,9 @@ public sealed class AccountsWindowTests
         Assert.IsTrue(launched.Gone(found => found.ByAutomationId("account.claude/third")), "third was added");
 
         launched.Invoke("Add account");
-        launched.Field("sheet.name").Enter("third");
+        Launched.Type(launched.Field("sheet.name"), "third");
         launched.Invoke("Sign in");
-        launched.Field("sheet.code").Enter("fixture-code#state");
+        Launched.Type(launched.Field("sheet.code"), "fixture-code#state");
         launched.Invoke("Submit code");
 
         launched.Row("claude/third");
@@ -85,13 +85,13 @@ public sealed class AccountsWindowTests
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
         launched.OpenWindow();
 
-        launched.Row("claude/personal").RightClick();
-        launched.Named("Rename…").Click();
+        launched.OpenMenu(launched.Row("claude/personal"));
+        launched.Invoke("Rename…");
         var name = launched.Field("sheet.name");
-        name.Enter("work");
+        Launched.Type(name, "work");
         launched.Invoke("Rename");
         launched.Named("Couldn’t rename personal");
-        name.Enter("home");
+        Launched.Type(name, "home");
         launched.Invoke("Rename");
 
         launched.Row("claude/home");
@@ -104,14 +104,14 @@ public sealed class AccountsWindowTests
         launched.OpenWindow();
         var row = launched.Row("claude/personal");
 
-        row.RightClick();
-        launched.Named("Forget…").Click();
+        launched.OpenMenu(row);
+        launched.Invoke("Forget…");
         launched.Named("Forget");
         launched.Invoke("Cancel");
         Assert.IsTrue(row.IsAvailable, "forgotten after Cancel");
 
-        row.RightClick();
-        launched.Named("Forget…").Click();
+        launched.OpenMenu(row);
+        launched.Invoke("Forget…");
         launched.Invoke("Forget");
         Assert.IsTrue(launched.Gone(found => found.ByAutomationId("account.claude/personal")), "personal is still listed");
     }
@@ -122,7 +122,7 @@ public sealed class AccountsWindowTests
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
         launched.OpenWindow();
 
-        launched.Row("claude/work").RightClick();
+        launched.OpenMenu(launched.Row("claude/work"));
         launched.Named("Rename…");
 
         Assert.IsTrue(launched.Gone(found => found.ByName("Forget…")), "the account in use offers Forget…");
@@ -155,7 +155,7 @@ public sealed class AccountsWindowTests
 
         launched.Named("Give this account a name");
         launched.Invoke("Name…");
-        launched.Field("sheet.name").Enter("work");
+        Launched.Type(launched.Field("sheet.name"), "work");
         launched.Invoke("Save");
 
         launched.Row("claude/work");
@@ -224,7 +224,7 @@ public sealed class AccountsWindowTests
         launched.Select("pane.activity");
         launched.Named("Switch");
 
-        window.Focus();
+        Foreground.Require(window);
         Keyboard.TypeSimultaneously(VirtualKeyShort.CONTROL, VirtualKeyShort.KEY_N);
         launched.Field("sheet.name");
         launched.Find(found => found.ByName("Add account").And(found.ByControlType(ControlType.Text)), "the sheet's title");
