@@ -324,6 +324,10 @@ impl LocalTime for Utc {
     fn date_and_time(&self, epoch: i64) -> Result<String, PlatformError> {
         self.clock(epoch, true)
     }
+
+    fn time_of_day(&self, minutes: u16) -> Result<String, PlatformError> {
+        Ok(format!("{:02}:{:02}", minutes / 60, minutes % 60))
+    }
 }
 
 /// A person's clock that the app's own code cannot read, as one whose formatter throws.
@@ -343,6 +347,12 @@ impl LocalTime for Unreadable {
     }
 
     fn date_and_time(&self, _epoch: i64) -> Result<String, PlatformError> {
+        Err(PlatformError::Failed {
+            reason: "no formatter".into(),
+        })
+    }
+
+    fn time_of_day(&self, _minutes: u16) -> Result<String, PlatformError> {
         Err(PlatformError::Failed {
             reason: "no formatter".into(),
         })

@@ -10,7 +10,7 @@
 //! failed.
 
 use crate::model::state::in_its_app;
-use crate::present::words::{in_app_given_up, in_app_refusal, in_app_warning};
+use crate::present::words::{in_app_given_up, in_app_refusal, in_app_warning, sentence};
 use crate::{
     Abandoned, Account, Awaiting, FoundCommandLine, Level, Limit, Parked, Schedule, Source, Status,
     Tool, Usage, Warning, found_command_line, tool,
@@ -48,7 +48,7 @@ impl From<pitboard_core::error::Error> for PitboardError {
         PitboardError::Failed {
             code: error.code().to_string(),
             message: in_app_refusal(pitboard_core::host::OS, &error)
-                .unwrap_or_else(|| error.to_string()),
+                .unwrap_or_else(|| sentence(&error.to_string())),
             warnings: Vec::new(),
         }
     }
@@ -59,7 +59,7 @@ impl From<service::Failed> for PitboardError {
         PitboardError::Failed {
             code: failed.error.code().to_string(),
             message: in_app_refusal(pitboard_core::host::OS, &failed.error)
-                .unwrap_or_else(|| failed.error.to_string()),
+                .unwrap_or_else(|| sentence(&failed.error.to_string())),
             warnings: warnings(&failed.warnings),
         }
     }
@@ -70,7 +70,8 @@ fn warnings(found: &[service::Warning]) -> Vec<Warning> {
         .iter()
         .map(|w| Warning {
             code: w.code().to_string(),
-            message: in_app_warning(pitboard_core::host::OS, w).unwrap_or_else(|| w.to_string()),
+            message: in_app_warning(pitboard_core::host::OS, w)
+                .unwrap_or_else(|| sentence(&w.to_string())),
             provider: w.tool().map(|tool| tool.code().into()),
             account: match w {
                 service::Warning::LoginReplaced { tool, id, .. } => Some(account_id(*tool, id)),
@@ -579,7 +580,7 @@ impl SignInSession {
     pub(crate) fn paste(&self, line: &str) -> Result<(), PitboardError> {
         let mut held = self.watched.lock().map_err(|_| PitboardError::Failed {
             code: "sign_in_gone".into(),
-            message: "this sign-in is no longer running".into(),
+            message: "This sign-in is no longer running.".into(),
             warnings: Vec::new(),
         })?;
         match held.as_mut() {
@@ -597,7 +598,7 @@ impl SignInSession {
             .and_then(|mut held| held.take())
             .ok_or_else(|| PitboardError::Failed {
                 code: "sign_in_gone".into(),
-                message: "this sign-in is no longer running".into(),
+                message: "This sign-in is no longer running.".into(),
                 warnings: Vec::new(),
             })?;
         let login = watched.finish()?;
@@ -1331,6 +1332,44 @@ mod tests {
         };
         assert_eq!(code, "schedule_program_unnamed");
         assert!(message.contains("command line"), "{message}");
+    }
+
+    // Shot 19 of 16 October 2026: "the credential store could not be read: ..." in an error
+    // InfoBar.
+    #[test]
+    fn a_core_failure_without_an_app_sentence_starts_with_a_capital_and_ends_with_a_period() {
+        use pitboard_core::error::Error;
+        let said = |error: Error| {
+            let PitboardError::Failed { message, .. } = error.into();
+            message
+        };
+        assert_eq!(
+            said(Error::ScheduleRefused {
+                detail: "access denied".into()
+            }),
+            "The scheduler refused: access denied."
+        );
+        assert_eq!(
+            said(Error::SignInIncomplete),
+            "The sign-in did not finish, so nothing was enrolled."
+        );
+        let PitboardError::Failed {
+            message, warnings, ..
+        } = service::Failed {
+            error: Error::SignInIncomplete,
+            warnings: vec![service::Warning::ParksPendingRemoval(2)],
+            said_first: 0,
+        }
+        .into();
+        assert_eq!(
+            message,
+            "The sign-in did not finish, so nothing was enrolled."
+        );
+        assert_eq!(
+            warnings[0].message,
+            "2 parked login(s) no longer in use could not be removed yet; Pitboard tries again \
+             on its next change."
+        );
     }
 
     #[test]

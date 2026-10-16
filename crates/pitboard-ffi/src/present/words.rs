@@ -480,6 +480,65 @@ pub(crate) fn spoken_level(level: Level) -> &'static str {
     }
 }
 
+// A clock says a day's end as the next day's 00:00, which a span ending then does not mean.
+pub(crate) fn warm_hours(
+    from: u16,
+    to: u16,
+    time_of_day: impl Fn(u16) -> Option<String>,
+) -> Option<String> {
+    const DAY: u16 = 24 * 60;
+    if from == 0 && to == DAY {
+        return Some("All day".into());
+    }
+    let to = if to == DAY {
+        "midnight".to_owned()
+    } else {
+        time_of_day(to)?
+    };
+    Some(format!("{} to {to}", time_of_day(from)?))
+}
+
+// The command line keeps doctor's own names, which maintenance-commands.mdx documents.
+pub(crate) fn check_name(code: &str, name: &str) -> String {
+    match code {
+        "storage_v5" => "Claude Code’s new login storage".into(),
+        "machine_id" => "Machine ID".into(),
+        _ => capitalised(name),
+    }
+}
+
+pub(crate) fn check_text(text: &str) -> String {
+    prose_capitalised(text).replace('`', "")
+}
+
+// The command line prints the core's words after "error:"; an app shows them on their own,
+// without a terminal's backticks.
+pub(crate) fn sentence(text: &str) -> String {
+    let text = prose_capitalised(text).replace('`', "");
+    if text.is_empty() || text.ends_with(['.', '!', '?', '…']) {
+        text
+    } else {
+        format!("{text}.")
+    }
+}
+
+// Only a first word of lowercase letters, "warm-ups" included, is prose: a path, an email, a
+// file name, a figure or a backticked name keeps its case.
+fn prose_capitalised(text: &str) -> String {
+    let first = text
+        .split(|c: char| c.is_whitespace() || matches!(c, ',' | ';' | ':'))
+        .next()
+        .unwrap_or_default();
+    if first
+        .split('-')
+        .all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_lowercase()))
+    {
+        capitalised(text)
+    } else {
+        text.to_owned()
+    }
+}
+
 /// A change as the activity list names it, by the verb the log keeps: "Switch", "Enrol", and
 /// one it does not know yet by the verb itself made readable rather than not at all. The
 /// core logs a switch as `use`, after the command that makes one.
@@ -1264,6 +1323,36 @@ mod tests {
         assert_eq!(capitalised("5-hour 12%"), "5-hour 12%");
         assert_eq!(capitalised("éclair"), "Éclair");
         assert_eq!(capitalised("e\u{301}clair"), "E\u{301}clair");
+    }
+
+    #[test]
+    fn the_cores_words_read_as_a_sentence_in_the_apps() {
+        assert_eq!(
+            sentence("the scheduler refused: access denied"),
+            "The scheduler refused: access denied."
+        );
+        assert_eq!(
+            sentence("the sign-in did not finish, so nothing was enrolled."),
+            "The sign-in did not finish, so nothing was enrolled."
+        );
+        assert_eq!(
+            sentence("/Users/dana/Dropbox looks like it is inside Dropbox"),
+            "/Users/dana/Dropbox looks like it is inside Dropbox."
+        );
+        assert_eq!(
+            sentence("`work` is signed in; switch to another account before forgetting it."),
+            "work is signed in; switch to another account before forgetting it."
+        );
+        assert_eq!(
+            sentence("`codex/main` already refers to main@example.com in another workspace"),
+            "codex/main already refers to main@example.com in another workspace."
+        );
+        assert_eq!(
+            sentence("2 parked login(s) could not be removed yet"),
+            "2 parked login(s) could not be removed yet."
+        );
+        assert_eq!(sentence("Is it there?"), "Is it there?");
+        assert_eq!(sentence(""), "");
     }
 
     /// VoiceOver reads the column's "30m" as thirty meters and "5h" as letters, so a limit

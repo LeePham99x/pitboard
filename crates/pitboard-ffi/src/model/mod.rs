@@ -717,6 +717,8 @@ pub trait LocalTime: Send + Sync {
     /// it, a date abbreviated and a time short. Where it throws, a change's own time is said
     /// instead, as the log keeps it and `pitboard log` prints it.
     fn date_and_time(&self, epoch: i64) -> Result<String, PlatformError>;
+    // `minutes` past midnight, under a day, as the person's clock says it: "06:00", "6:00 AM".
+    fn time_of_day(&self, minutes: u16) -> Result<String, PlatformError>;
 }
 
 /// Told of every snapshot, by the app.

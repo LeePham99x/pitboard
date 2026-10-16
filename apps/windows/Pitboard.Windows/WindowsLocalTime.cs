@@ -21,4 +21,6 @@ public sealed class WindowsLocalTime(CultureInfo? culture = null, TimeZoneInfo? 
     public bool SameDay(long first, long second) => At(first).Date == At(second).Date;
 
     public string DateAndTime(long epoch) => At(epoch).ToString("g", Culture);
+
+    public string TimeOfDay(ushort minutes) => DateTime.MinValue.AddMinutes(minutes).ToString("t", Culture);
 }

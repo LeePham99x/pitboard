@@ -267,7 +267,7 @@ fn an_account_turned_on_is_warmed_up_as_the_app_starts() {
         personal(shown).is_some_and(|note| note.starts_with("Warms up again at "))
     });
     let warm = &shown.machine.warm;
-    assert_eq!(warm.range_label, "00:00 to 24:00");
+    assert_eq!(warm.range_label, "All day");
     assert!(
         warm.accounts
             .iter()
@@ -1916,6 +1916,38 @@ fn accounts_are_added_through_each_tools_sign_in() {
     model.shutdown();
 }
 
+// Shots 16 and 31 of 16 October 2026: every world named a CODEX_HOME it never made, which
+// Codex on Windows refuses, so adding a Codex account there was refused.
+#[test]
+fn adding_codex_in_first_launch_reaches_its_sign_in() {
+    let launched = made(World::FirstLaunch);
+    assert!(
+        launched.machine.home().join(".codex").is_dir(),
+        "the world names a Codex home it did not make"
+    );
+    let (model, told) = started(&launched);
+    model.send(Intent::PresentSheet {
+        sheet: Sheet::Add { provider: None },
+    });
+    model.send(Intent::SignIn {
+        provider: "codex".into(),
+        name: "work".into(),
+    });
+    let ended = told.until("the account listed or refused", |snapshot| {
+        snapshot.sheet_failure.is_some()
+            || (snapshot.signing_in.is_none()
+                && read_in(snapshot)
+                && snapshot.status.as_ref().is_some_and(|status| {
+                    status
+                        .accounts
+                        .iter()
+                        .any(|account| account.qualified.as_deref() == Some("codex/work"))
+                }))
+    });
+    assert_eq!(ended.sheet_failure, None);
+    model.shutdown();
+}
+
 /// Cancel and then Sign In at once, as a person can press one after the other: the new
 /// sign-in waits, shown as starting, until the one cancelled before it has stopped and let go
 /// of the core's one sign-in at a time, then asks for the code, and nothing on the way is
@@ -2091,7 +2123,7 @@ fn a_failed_read_is_said_in_the_menu_and_in_the_window() {
     assert!(
         failure
             .message
-            .starts_with("could not read Pitboard's account list at "),
+            .starts_with("Could not read Pitboard's account list at "),
         "{failure:?}"
     );
 
@@ -2184,7 +2216,7 @@ fn a_service_out_of_reach_leaves_the_last_numbers_and_says_why_on_each_account()
 /// testGivingUpOnAnInterruptedSwitch and MenuBarTests.swift's
 /// testShowingANoticeOpensTheWindowOnTheAccounts read in stuck. That second test first waits,
 /// on This Mac, for a check called "Keychain", which the core's doctor has none of; there it
-/// has "interrupted switch", worth looking at, beside personal's parked login.
+/// has "Interrupted switch", worth looking at, beside personal's parked login.
 #[test]
 fn an_interrupted_switch_is_offered_a_way_out_as_the_app_starts() {
     let launched = made(World::Stuck);
@@ -2226,7 +2258,7 @@ fn an_interrupted_switch_is_offered_a_way_out_as_the_app_starts() {
         .checks
         .lines
         .iter()
-        .find(|line| line.name == "interrupted switch")
+        .find(|line| line.name == "Interrupted switch")
         .expect("doctor's check");
     assert_eq!(interrupted.level, crate::Level::Warn);
     assert!(
@@ -2307,7 +2339,7 @@ fn this_mac_shows_the_cores_checks() {
         .collect();
     assert_eq!(
         worth_looking_at,
-        [("parked_login", "account personal")],
+        [("parked_login", "Account personal")],
         "{:#?}",
         checks.lines
     );
@@ -2325,10 +2357,10 @@ fn this_mac_shows_the_cores_checks() {
     let personal = checks
         .lines
         .iter()
-        .find(|line| line.name == "account personal")
+        .find(|line| line.name == "Account personal")
         .expect("personal's");
     assert!(
-        personal.detail.starts_with("its parked login expires in "),
+        personal.detail.starts_with("Its parked login expires in "),
         "{personal:?}"
     );
     assert_eq!(

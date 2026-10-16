@@ -19,7 +19,7 @@ public sealed class TextSizeTests
             Lines: [new ActivityLine(0, "15/01/2027 09:00", "Switch", "claude/work", "done", Done: true, AskedBy: "pitboard")],
             Empty: null);
         var snapshot = Snapshots.Read(1);
-        var pane = await Views.Shown(new ActivityPane(new AppModel(new StandInModel(
+        var pane = await Views.Navigated<ActivityPage>(Views.Context(new AppModel(new StandInModel(
             snapshot with { Machine = snapshot.Machine with { Activity = activity } }))));
 
         var cells = Views.Descendants((Grid)pane.FindName("Columns"))
@@ -40,18 +40,17 @@ public sealed class TextSizeTests
             Summary: "", Checking: false, Checked: "Checked at 09:00", Waiting: null);
         FrameworkElement[] views =
         [
-            await Views.Shown(new AccountRow { Item = Items.Account("claude", "work", inUse: true) }),
-            await Views.Shown(new ActivityPane(new AppModel(new StandInModel(snapshot)))),
-            await Views.Shown(new MachinePane(new AppModel(new StandInModel(
+            await Views.Shown(new AccountRow { Account = new ShownAccount(Items.Account("claude", "work", inUse: true), _ => { }) }),
+            await Views.Navigated<ActivityPage>(Views.Context(new AppModel(new StandInModel(snapshot)))),
+            await Views.Navigated<MachinePage>(Views.Context(new AppModel(new StandInModel(
                 snapshot with { Machine = snapshot.Machine with { Checks = checks } })))),
-            await Views.Shown(new AccountsPane(
+            await Views.Navigated<AccountsPage>(Views.Context(
                 new AppModel(new StandInModel(snapshot with
                 {
                     AccountsShown = new AccountsShown.NoAccounts(
                         "No accounts", "Sign in to add one.",
                         new Choice("Add account…", new Intent.PresentSheet(new Sheet.Add(Provider: null)), Enabled: true)),
-                })),
-                new DialogHost(() => UnitTestApp.Window?.Content?.XamlRoot))),
+                })))),
         ];
 
         foreach (var view in views)

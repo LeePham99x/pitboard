@@ -1,0 +1,283 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Pitboard.Views.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:shown="using:Pitboard.Windows"
+    xmlns:toolkit="using:CommunityToolkit.WinUI.Controls"
+    NavigationCacheMode="Required">
+  <!-- NavigationView's guidance: 24 epx sides, 12 in Minimal, which the main window sets. -->
+  <Grid Padding="0,16,0,0" RowSpacing="24">
+    <VisualStateManager.VisualStateGroups>
+      <VisualStateGroup x:Name="Sides">
+        <VisualState x:Name="Wide" />
+        <VisualState x:Name="Minimal">
+          <VisualState.Setters>
+            <Setter Target="PageHeader.Margin" Value="12,0,12,0" />
+            <Setter Target="Scroller.Padding" Value="12,0,12,24" />
+          </VisualState.Setters>
+        </VisualState>
+      </VisualStateGroup>
+    </VisualStateManager.VisualStateGroups>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+    <TextBlock x:Name="PageHeader" MaxWidth="1064" Margin="24,0,24,0" Text="Settings" Style="{StaticResource PageTitleTextBlockStyle}" />
+    <!-- The WinUI Gallery's settings page: SettingsCards and SettingsExpanders in sections, the switch at each card's right. -->
+    <ScrollViewer x:Name="Scroller" Grid.Row="1" Padding="24,0,24,24">
+      <StackPanel MaxWidth="1064" Spacing="{StaticResource SettingsCardSpacing}">
+        <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" Margin="1,0,0,6" Text="General" />
+        <toolkit:SettingsCard Header="Start when you sign in to Windows">
+          <toolkit:SettingsCard.Description>
+            <StackPanel>
+              <TextBlock Text="{x:Bind ViewModel.StartupNote, Mode=OneWay}" />
+              <TextBlock
+                  x:Name="StartupFailed"
+                  Style="{StaticResource CriticalCaptionTextBlockStyle}"
+                  Visibility="Collapsed"
+                  AutomationProperties.LiveSetting="Assertive" />
+            </StackPanel>
+          </toolkit:SettingsCard.Description>
+          <ToggleSwitch
+              IsOn="{x:Bind ViewModel.StartsAtSignIn, Mode=OneWay}"
+              IsEnabled="{x:Bind ViewModel.CanStartAtSignIn, Mode=OneWay}"
+              AutomationProperties.AutomationId="settings.startAtSignIn"
+              AutomationProperties.Name="Start when you sign in to Windows"
+              Toggled="OnStartAtSignInToggled" />
+        </toolkit:SettingsCard>
+        <toolkit:SettingsCard
+            Header="Notifications"
+            Description="{x:Bind ViewModel.NotificationsOff}"
+            Visibility="{x:Bind ViewModel.HasNotificationsOff}"
+            AutomationProperties.AutomationId="settings.notifications" />
+
+        <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" Text="Limits" />
+        <toolkit:SettingsExpander Header="Switch Claude Code automatically" AutomationProperties.AutomationId="settings.autoSwitchGroup">
+          <toolkit:SettingsExpander.Description>
+            <StackPanel>
+              <TextBlock
+                  Text="{x:Bind ViewModel.AutoSwitchStanding, Mode=OneWay}"
+                  Visibility="{x:Bind ViewModel.HasAutoSwitchStanding, Mode=OneWay}"
+                  AutomationProperties.AutomationId="settings.autoSwitchStanding" />
+              <TextBlock Text="{x:Bind ViewModel.AutoSwitchNote, Mode=OneWay}" />
+            </StackPanel>
+          </toolkit:SettingsExpander.Description>
+          <ToggleSwitch
+              IsOn="{x:Bind ViewModel.AutoSwitch, Mode=OneWay}"
+              IsEnabled="{x:Bind ViewModel.CanAutoSwitch, Mode=OneWay}"
+              AutomationProperties.AutomationId="settings.autoSwitch"
+              AutomationProperties.Name="Switch Claude Code automatically"
+              Toggled="OnAutoSwitchToggled" />
+          <toolkit:SettingsExpander.Items>
+            <toolkit:SettingsCard
+                Header="Switch when a limit reaches"
+                Description="{x:Bind ViewModel.ShareRange, Mode=OneWay}"
+                IsEnabled="{x:Bind ViewModel.CanSetShare, Mode=OneWay}">
+              <NumberBox
+                  MinWidth="120"
+                  Minimum="{x:Bind ViewModel.LowestShare, Mode=OneWay}"
+                  Maximum="{x:Bind ViewModel.HighestShare, Mode=OneWay}"
+                  Value="{x:Bind ViewModel.Share, Mode=OneWay}"
+                  IsEnabled="{x:Bind ViewModel.CanSetShare, Mode=OneWay}"
+                  SmallChange="1"
+                  LargeChange="5"
+                  SpinButtonPlacementMode="Inline"
+                  AutomationProperties.AutomationId="settings.autoSwitchAt"
+                  AutomationProperties.Name="{x:Bind ViewModel.ShareLabel, Mode=OneWay}"
+                  ValueChanged="OnShareChanged" />
+            </toolkit:SettingsCard>
+          </toolkit:SettingsExpander.Items>
+        </toolkit:SettingsExpander>
+        <!-- Expandable while warm-ups are unavailable, its hours and accounts dimmed: the standing says why. -->
+        <toolkit:SettingsExpander
+            Header="Warm up limits"
+            ItemsSource="{x:Bind ViewModel.WarmAccounts}"
+            AutomationProperties.AutomationId="settings.warm">
+          <toolkit:SettingsExpander.Description>
+            <StackPanel>
+              <TextBlock Text="{x:Bind ViewModel.WarmRange, Mode=OneWay}" />
+              <TextBlock
+                  Text="{x:Bind ViewModel.WarmStanding, Mode=OneWay}"
+                  Visibility="{x:Bind ViewModel.HasWarmStanding, Mode=OneWay}"
+                  AutomationProperties.AutomationId="settings.warmStanding" />
+            </StackPanel>
+          </toolkit:SettingsExpander.Description>
+          <toolkit:SettingsExpander.ItemsHeader>
+            <StackPanel>
+              <toolkit:SettingsCard Header="From" Style="{StaticResource SettingsExpanderItemCardStyle}" IsEnabled="{x:Bind ViewModel.CanWarm, Mode=OneWay}">
+                <TimePicker
+                    x:Name="WarmFrom"
+                    SelectedTime="{x:Bind ViewModel.WarmFrom, Mode=OneWay}"
+                    IsEnabled="{x:Bind ViewModel.CanWarm, Mode=OneWay}"
+                    AutomationProperties.AutomationId="settings.warmFrom"
+                    AutomationProperties.Name="Warm up from"
+                    SelectedTimeChanged="OnWarmRangeChanged" />
+              </toolkit:SettingsCard>
+              <toolkit:SettingsCard Header="To" Style="{StaticResource SettingsExpanderItemCardStyle}" IsEnabled="{x:Bind ViewModel.CanWarm, Mode=OneWay}">
+                <TimePicker
+                    x:Name="WarmTo"
+                    SelectedTime="{x:Bind ViewModel.WarmTo, Mode=OneWay}"
+                    IsEnabled="{x:Bind ViewModel.CanWarm, Mode=OneWay}"
+                    AutomationProperties.AutomationId="settings.warmTo"
+                    AutomationProperties.Name="Warm up to"
+                    SelectedTimeChanged="OnWarmRangeChanged" />
+              </toolkit:SettingsCard>
+            </StackPanel>
+          </toolkit:SettingsExpander.ItemsHeader>
+          <toolkit:SettingsExpander.ItemTemplate>
+            <DataTemplate x:DataType="shown:WarmAccountRow">
+              <toolkit:SettingsCard
+                  Header="{x:Bind Title, Mode=OneWay}"
+                  Description="{x:Bind Standing, Mode=OneWay}"
+                  IsEnabled="{x:Bind Enabled, Mode=OneWay}">
+                <ToggleSwitch
+                    Tag="{x:Bind Qualified}"
+                    IsOn="{x:Bind On, Mode=OneWay}"
+                    IsEnabled="{x:Bind Enabled, Mode=OneWay}"
+                    AutomationProperties.AutomationId="{x:Bind AutomationId}"
+                    AutomationProperties.Name="{x:Bind Title, Mode=OneWay}"
+                    Toggled="OnWarmToggled" />
+              </toolkit:SettingsCard>
+            </DataTemplate>
+          </toolkit:SettingsExpander.ItemTemplate>
+          <toolkit:SettingsExpander.ItemsFooter>
+            <StackPanel>
+              <toolkit:SettingsCard
+                  x:Name="NoWarmAccount"
+                  Style="{StaticResource SettingsExpanderItemCardStyle}"
+                  Visibility="{x:Bind ViewModel.NoWarmAccounts, Mode=OneWay}" />
+              <toolkit:SettingsCard
+                  ContentAlignment="Left"
+                  Style="{StaticResource SettingsExpanderItemCardStyle}">
+                <TextBlock Text="{x:Bind ViewModel.WarmNote, Mode=OneWay}" Style="{StaticResource SecondaryCaptionTextBlockStyle}" />
+              </toolkit:SettingsCard>
+            </StackPanel>
+          </toolkit:SettingsExpander.ItemsFooter>
+        </toolkit:SettingsExpander>
+
+        <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" Text="Renewal" />
+        <toolkit:SettingsCard Header="Renew parked logins daily">
+          <toolkit:SettingsCard.Description>
+            <StackPanel>
+              <TextBlock
+                  Text="{x:Bind ViewModel.ScheduleNote, Mode=OneWay}"
+                  Visibility="{x:Bind ViewModel.HasScheduleNote, Mode=OneWay}" />
+              <TextBlock
+                  x:Name="ScheduleFailed"
+                  Style="{StaticResource CriticalCaptionTextBlockStyle}"
+                  Visibility="Collapsed"
+                  AutomationProperties.LiveSetting="Assertive" />
+              <TextBlock Text="{x:Bind ViewModel.RenewalAbout, Mode=OneWay}" />
+            </StackPanel>
+          </toolkit:SettingsCard.Description>
+          <ToggleSwitch
+              IsOn="{x:Bind ViewModel.RenewsDaily, Mode=OneWay}"
+              IsEnabled="{x:Bind ViewModel.CanRenewDaily, Mode=OneWay}"
+              AutomationProperties.AutomationId="settings.renewDaily"
+              AutomationProperties.Name="Renew parked logins daily"
+              Toggled="OnRenewDailyToggled" />
+        </toolkit:SettingsCard>
+        <toolkit:SettingsCard Header="Runs" Visibility="{x:Bind ViewModel.HasRuns, Mode=OneWay}">
+          <TextBlock Text="{x:Bind ViewModel.Runs, Mode=OneWay}" Style="{StaticResource SecondaryTextBlockStyle}" />
+        </toolkit:SettingsCard>
+        <!-- As Settings > System > About copies its specifications: a Copy button, and the text selectable. -->
+        <toolkit:SettingsCard Header="Scheduled in" Visibility="{x:Bind ViewModel.HasScheduledIn, Mode=OneWay}">
+          <toolkit:SettingsCard.Description>
+            <TextBlock Text="{x:Bind ViewModel.ScheduledIn, Mode=OneWay}" IsTextSelectionEnabled="True" />
+          </toolkit:SettingsCard.Description>
+          <Button
+              Content="Copy"
+              AutomationProperties.AutomationId="settings.copyScheduledIn"
+              AutomationProperties.Name="Copy where renewal is scheduled"
+              Click="OnCopyScheduledIn" />
+        </toolkit:SettingsCard>
+        <toolkit:SettingsCard Header="{x:Bind ViewModel.RenewalNote, Mode=OneWay}">
+          <Button
+              MinWidth="120"
+              Content="Renew now"
+              IsEnabled="{x:Bind ViewModel.CanRenewNow, Mode=OneWay}"
+              AutomationProperties.AutomationId="settings.renewNow"
+              Click="OnRenewNow" />
+        </toolkit:SettingsCard>
+
+        <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" Text="Command line" />
+        <!-- No button: the installer puts the command line on the PATH, and takes it off again. -->
+        <toolkit:SettingsCard Header="In your terminal" ContentAlignment="Vertical" HorizontalContentAlignment="Left">
+          <toolkit:SettingsCard.Description>
+            <StackPanel>
+              <TextBlock Text="{x:Bind ViewModel.UpdateNote, Mode=OneWay}" Visibility="{x:Bind ViewModel.HasUpdateNote, Mode=OneWay}" />
+              <TextBlock Text="{x:Bind ViewModel.TerminalNote, Mode=OneWay}" Visibility="{x:Bind ViewModel.HasTerminalNote, Mode=OneWay}" />
+              <TextBlock x:Name="WhatItDoes" />
+            </StackPanel>
+          </toolkit:SettingsCard.Description>
+          <Grid>
+            <TextBlock
+                Text="{x:Bind ViewModel.InTerminal, Mode=OneWay}"
+                Style="{StaticResource BodyTextBlockStyle}"
+                IsTextSelectionEnabled="True"
+                AutomationProperties.AutomationId="settings.inTerminal" />
+            <ProgressRing
+                Width="16"
+                Height="16"
+                HorizontalAlignment="Left"
+                IsActive="{x:Bind ViewModel.LookingForCommandLine, Mode=OneWay}"
+                Visibility="{x:Bind ViewModel.LookingForCommandLine, Mode=OneWay}"
+                AutomationProperties.Name="Looking for pitboard" />
+          </Grid>
+        </toolkit:SettingsCard>
+
+        <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" Text="Updates" />
+        <toolkit:SettingsCard Header="Check for updates automatically" Visibility="{x:Bind ViewModel.UpdatesAvailable, Mode=OneWay}">
+          <ToggleSwitch
+              IsOn="{x:Bind ViewModel.ChecksAutomatically, Mode=OneWay}"
+              AutomationProperties.AutomationId="settings.checkAutomatically"
+              AutomationProperties.Name="Check for updates automatically"
+              Toggled="OnAutomaticChecksToggled" />
+        </toolkit:SettingsCard>
+        <toolkit:SettingsCard Header="Check for updates">
+          <toolkit:SettingsCard.Description>
+            <StackPanel>
+              <TextBlock Text="{x:Bind ViewModel.UpdatesState, Mode=OneWay}" />
+              <ItemsControl ItemsSource="{x:Bind ViewModel.UpdatesNoteLines}" IsTabStop="False">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="x:String">
+                    <TextBlock Text="{x:Bind}" TextWrapping="Wrap" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </toolkit:SettingsCard.Description>
+          <Button
+              MinWidth="120"
+              Content="Check now"
+              IsEnabled="{x:Bind ViewModel.UpdatesAvailable, Mode=OneWay}"
+              AutomationProperties.AutomationId="settings.checkNow"
+              Click="OnCheckNow" />
+        </toolkit:SettingsCard>
+
+        <TextBlock Style="{StaticResource SettingsSectionHeaderTextBlockStyle}" Text="About" />
+        <!-- As the WinUI Gallery's About: the app's icon, name and copyright, its version, and its links under it. -->
+        <toolkit:SettingsExpander
+            x:Name="About"
+            Margin="0,0,0,12"
+            Header="Pitboard"
+            AutomationProperties.AutomationId="settings.about"
+            AutomationProperties.Name="About Pitboard">
+          <toolkit:SettingsExpander.HeaderIcon>
+            <ImageIcon Source="ms-appx:///Pitboard.ico" />
+          </toolkit:SettingsExpander.HeaderIcon>
+          <TextBlock
+              Text="{x:Bind ViewModel.Version, Mode=OneWay}"
+              Style="{StaticResource SecondaryTextBlockStyle}"
+              IsTextSelectionEnabled="True" />
+          <toolkit:SettingsExpander.Items>
+            <toolkit:SettingsCard HorizontalContentAlignment="Left" ContentAlignment="Left">
+              <StackPanel x:Name="Links" Margin="-12,0,0,0" />
+            </toolkit:SettingsCard>
+          </toolkit:SettingsExpander.Items>
+        </toolkit:SettingsExpander>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</Page>

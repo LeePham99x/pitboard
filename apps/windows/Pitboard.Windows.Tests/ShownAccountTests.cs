@@ -6,7 +6,7 @@ public sealed class ShownAccountTests
     [TestMethod]
     public void NarratorReadsTheRowAsTheModelSaysIt()
     {
-        var shown = new ShownAccount(Items.Account("claude", "work", inUse: true));
+        var shown = new ShownAccount(Items.Account("claude", "work", inUse: true), _ => { });
 
         Assert.AreEqual("work, in use", shown.ToString());
     }
@@ -14,7 +14,7 @@ public sealed class ShownAccountTests
     [TestMethod]
     public void TheRowIsToldOnlyWhenItsAccountChanged()
     {
-        var shown = new ShownAccount(Items.Account("claude", "work"));
+        var shown = new ShownAccount(Items.Account("claude", "work"), _ => { });
         var told = new List<string?>();
         shown.PropertyChanged += (_, changed) => told.Add(changed.PropertyName);
 

@@ -451,7 +451,8 @@ Read [the rules for the app in AGENTS.md](AGENTS.md#on-windows) first. Build the
 `--cfg pitboard_unreleased_windows` and `--features fixture`, then build the app in Debug and
 start its executable in a fixture, with scratch homes set after building. Build it into its
 own folder, without `-o`, and do not publish it: a Debug publish leaves out the XAML files the
-app reads beside it, and `-o` names them wrong in its PRI file. From PowerShell:
+app reads beside it, and `-o` names them wrong in its PRI file. From Windows PowerShell or
+PowerShell 7:
 
 ```powershell
 cd apps\windows
@@ -460,6 +461,7 @@ dotnet build Pitboard.App -c Debug -r win-arm64 -p:Platform=ARM64 `
 $scratch = (New-Item -ItemType Directory (Join-Path $env:TEMP "pitboard-$(New-Guid)")).FullName
 $app = [Diagnostics.ProcessStartInfo]::new(
   (Resolve-Path Pitboard.App\bin\ARM64\Debug\net10.0-windows10.0.26100.0\win-arm64\Pitboard.exe).Path)
+$app.UseShellExecute = $false
 $app.Environment['PITBOARD_FIXTURE'] = 'firstLaunch'
 foreach ($name in 'USERPROFILE', 'HOME', 'APPDATA', 'LOCALAPPDATA', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'PITBOARD_HOME') {
   $app.Environment[$name] = (New-Item -ItemType Directory (Join-Path $scratch $name)).FullName
@@ -473,13 +475,15 @@ and quits. Exit in the icon's menu ends it.
 To open a link, start a second copy with a Pitboard link of the Debug build:
 
 ```powershell
-$app.ArgumentList.Add('pitboard-debug://open?url=' + [Uri]::EscapeDataString('https://chatgpt.com/'))
+$app.Arguments = 'pitboard-debug://open?url=' + [Uri]::EscapeDataString('https://chatgpt.com/')
 [Diagnostics.Process]::Start($app)
-$app.ArgumentList.Clear()
+$app.Arguments = ''
 ```
 
 The first copy asks which account opens it, and the last line has `$app` start plain launches
-again. Outside a fixture a Debug build refuses a link.
+again. Outside a fixture a Debug build refuses a link. Windows PowerShell's .NET Framework
+starts a process through the shell unless told not to, and then refuses `Environment`, so
+`UseShellExecute` is turned off; it has no `ArgumentList`, so the link goes in `Arguments`.
 
 On x64, build with `-r win-x64 -p:Platform=x64`, which builds into `bin\x64\...\win-x64`. A
 Debug build keeps apart from an installed Release:

@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Pitboard.Core;
 using Pitboard.Windows;
 using Windows.System;
 
@@ -10,7 +11,7 @@ public sealed partial class WindowSheets : IDisposable
     private readonly AppModel _model;
     private readonly DialogHost _dialogs;
     private readonly Action<Uri> _open;
-    private string? _dismissed;
+    private Sheet? _dismissed;
 
     public WindowSheets(AppModel model, DialogHost dialogs, Action<Uri>? open = null)
     {
@@ -40,19 +41,19 @@ public sealed partial class WindowSheets : IDisposable
     // Closed by the person, a sheet stays down until the model has heard and moved on.
     private void Follow()
     {
-        var key = _model.Sheet is { } sheet ? SheetPage.Key(sheet) : null;
-        if (key != _dismissed)
+        var sheet = _model.Sheet;
+        if (sheet != _dismissed)
         {
             _dismissed = null;
         }
 
-        if (key == Shown?.Key || (key is not null && key == _dismissed))
+        if (sheet == Shown?.Sheet || (sheet is not null && sheet == _dismissed))
         {
             return;
         }
 
         Shown?.Withdraw();
-        Shown = key is null ? null : new AccountSheet(_model, key, _open);
+        Shown = sheet is null ? null : new AccountSheet(_model, sheet, _open);
         if (Shown is { } shown)
         {
             Present(shown);
@@ -66,7 +67,7 @@ public sealed partial class WindowSheets : IDisposable
         if (Shown == sheet)
         {
             Shown = null;
-            _dismissed = closed ? sheet.Key : null;
+            _dismissed = closed ? sheet.Sheet : null;
         }
 
         var told = closed ? sheet.Dismissed() : [];

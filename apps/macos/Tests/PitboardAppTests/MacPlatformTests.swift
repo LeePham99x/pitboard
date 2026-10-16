@@ -111,6 +111,21 @@ private final class Opened: @unchecked Sendable {
     #expect(try !twentyFour.sameDay(first: at, second: at + 10 * 3600), "past midnight in UTC")
 }
 
+/// The warm-up hours are said on the clock the time pickers beside them show.
+@Test func aTimeOfDayIsTheClocks() throws {
+    let utc = TimeZone(identifier: "UTC")!
+    let twelve = MacLocalTime(
+        locale: Locale(identifier: "en_US"), calendar: Calendar(identifier: .gregorian),
+        timeZone: utc)
+    let twentyFour = MacLocalTime(
+        locale: Locale(identifier: "en_US@hours=h23"),
+        calendar: Calendar(identifier: .gregorian), timeZone: utc)
+
+    #expect(try twelve.timeOfDay(minutes: 22 * 60 + 30) == "10:30\u{202F}PM")
+    #expect(try twelve.timeOfDay(minutes: 0) == "12:00\u{202F}AM")
+    #expect(try twentyFour.timeOfDay(minutes: 6 * 60) == "06:00")
+}
+
 @Test func aRunOutIsPostedWithTheAccountItsButtonSwitchesTo() {
     let content = MacNotifications.content(
         of: RunOutNotice(

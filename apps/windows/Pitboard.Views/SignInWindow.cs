@@ -22,6 +22,8 @@ public sealed partial class SignInWindow : Window
         // What UI Automation finds the window by, since its title is its page's.
         AutomationProperties.SetAutomationId(_view, "sign-in");
         Content = _view;
+        WindowChrome.Apply(this);
+        Shell.Own(WindowNative.GetWindowHandle(this), WindowNative.GetWindowHandle(over));
         var scale = Shell.Scale(WindowNative.GetWindowHandle(this));
         var physical = new SizeInt32((int)(size.Width * scale), (int)(size.Height * scale));
         var parent = over.AppWindow;

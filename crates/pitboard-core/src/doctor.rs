@@ -80,6 +80,8 @@ pub(crate) struct Facts {
     pub(crate) pending_parks: Vec<String>,
     /// Which Claude Code is installed here, read off disk.
     pub(crate) claude_version: Option<String>,
+    // Whether a `claude` program is found where Pitboard looks for one.
+    pub(crate) claude_program: bool,
     /// Every reason a session here would authenticate as something other than the stored
     /// login, read from settings files as well as from this process's environment.
     pub(crate) auth_overrides: Vec<crate::settings::Override>,
@@ -521,6 +523,7 @@ pub(crate) fn gather(ctx: &Context) -> Facts {
         daemon: daemon::read(ctx),
         pending_parks: crate::pending::outstanding(ctx, state.as_ref().ok()),
         claude_version: claude::installed_version(ctx),
+        claude_program: claude::program(ctx).is_some(),
         auth_overrides: crate::settings::overrides(ctx),
         asking_held: crate::usage::budget::holds(ctx),
         in_use: state
@@ -1249,6 +1252,15 @@ fn running(said: &[String]) -> String {
     commands(said).map_or_else(|| ".".into(), |commands| format!(": {commands}."))
 }
 
+// Claude Code writes its config and its account once it has run.
+fn run_claude_once(facts: &Facts) -> &'static str {
+    if facts.claude_program {
+        "Run `claude` once."
+    } else {
+        "Install Claude Code, then run `claude` once."
+    }
+}
+
 pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
     let mut checks = Vec::new();
     // Claude Code's own checks, where there is a Claude Code, or where there is no other
@@ -1290,11 +1302,20 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
                 v.as_object().map_or(0, serde_json::Map::len)
             ),
         ),
+        Err(Error::ClaudeConfigMissing { path }) if !facts.claude_program => fail(
+            "config_file",
+            "config file",
+            format!(
+                "Claude Code is not installed where Pitboard looks, and {} does not exist",
+                path.display()
+            ),
+            run_claude_once(facts),
+        ),
         Err(e) => fail(
             "config_file",
             "config file",
             e.to_string(),
-            "Run `claude` once.",
+            run_claude_once(facts),
         ),
     });
 
@@ -1308,7 +1329,10 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
             "identity",
             "identity",
             "Claude Code has not recorded a signed-in account",
-            "It writes this after its first successful call. Run `claude` once.",
+            format!(
+                "It writes this after its first successful call. {}",
+                run_claude_once(facts)
+            ),
         ),
     });
     checks.extend(judge_in_use(facts));
@@ -4539,6 +4563,7 @@ mod tests {
             daemon: None,
             pending_parks: Vec::new(),
             claude_version: Some(crate::provider::claude::assumptions::VERIFIED_AGAINST.into()),
+            claude_program: true,
             auth_overrides: Vec::new(),
             asking_held: Vec::new(),
             state: Ok(State::default()),
@@ -8416,6 +8441,58 @@ mod tests {
         assert!(
             evaluate(&facts).iter().all(|c| c.code != "warm_up"),
             "a machine with no Claude Code is not told"
+        );
+    }
+
+    // Shots 35 and 37 of 16 October 2026: Add account said Claude Code was not installed, and
+    // This PC said to run it.
+    #[test]
+    fn a_machine_without_claude_code_is_told_to_install_it() {
+        let mut facts = facts();
+        facts.claude_program = false;
+        facts.config = Err(Error::ClaudeConfigMissing {
+            path: PathBuf::from("/home/x/.claude.json"),
+        });
+        facts.config_account = None;
+        let checks = evaluate(&facts);
+        let said = |code: &str| {
+            let check = checks.iter().find(|c| c.code == code).expect(code);
+            (check.detail.clone(), check.advice.clone())
+        };
+        assert_eq!(
+            said("config_file"),
+            (
+                "Claude Code is not installed where Pitboard looks, and /home/x/.claude.json does \
+                 not exist"
+                    .into(),
+                "Install Claude Code, then run `claude` once.".into()
+            )
+        );
+        assert_eq!(
+            said("identity").1,
+            "It writes this after its first successful call. Install Claude Code, then run \
+             `claude` once."
+        );
+    }
+
+    #[test]
+    fn a_machine_where_claude_code_never_ran_is_told_to_run_it() {
+        let mut facts = facts();
+        let missing = Error::ClaudeConfigMissing {
+            path: PathBuf::from("/home/x/.claude.json"),
+        };
+        let detail = missing.to_string();
+        facts.config = Err(missing);
+        facts.config_account = None;
+        let checks = evaluate(&facts);
+        let said = |code: &str| {
+            let check = checks.iter().find(|c| c.code == code).expect(code);
+            (check.detail.clone(), check.advice.clone())
+        };
+        assert_eq!(said("config_file"), (detail, "Run `claude` once.".into()));
+        assert_eq!(
+            said("identity").1,
+            "It writes this after its first successful call. Run `claude` once."
         );
     }
 

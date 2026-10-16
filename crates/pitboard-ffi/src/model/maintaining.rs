@@ -607,7 +607,7 @@ fn doctors_checks_are_shown_with_when_they_were_made() {
                 name: "Keychain".into(),
                 level: Level::Ok,
                 spoken_level: "Passed".into(),
-                detail: "login keychain, unlocked".into(),
+                detail: "Login keychain, unlocked".into(),
                 advice: None,
             },
             CheckLine {
@@ -616,7 +616,7 @@ fn doctors_checks_are_shown_with_when_they_were_made() {
                 name: "Daily renewal".into(),
                 level: Level::Warn,
                 spoken_level: "Worth looking at".into(),
-                detail: "not scheduled".into(),
+                detail: "Not scheduled".into(),
                 advice: Some("Turn on daily renewal in Pitboard's settings.".into()),
             },
         ]
@@ -704,9 +704,9 @@ fn each_check_is_a_line_of_its_own_though_two_share_a_code() {
     assert_eq!(
         ids,
         [
-            (0, "account work"),
-            (1, "account personal"),
-            (2, "account codex/main")
+            (0, "Account work"),
+            (1, "Account personal"),
+            (2, "Account codex/main")
         ]
     );
     assert_eq!(lines[0].code, lines[1].code, "as doctor names them");

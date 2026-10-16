@@ -48,3 +48,6 @@ IApplicationActivationManager
 ApplicationActivationManager
 WIN32_ERROR
 RegisterApplicationRestart
+GetWindowPlacement
+SetWindowPlacement
+SetWindowLongPtr

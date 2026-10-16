@@ -70,7 +70,7 @@ public sealed class SparkleUpdatesTests
             var updates = Made(sparkle, build, key);
 
             Assert.IsFalse(updates.Available);
-            Assert.AreEqual(SettingsPage.NoUpdateKey, updates.Refusal);
+            Assert.AreEqual(NoUpdates.NoKey, updates.Refusal);
             Assert.IsNull(sparkle.Key, "WinSparkle was handed a key");
         }
     }
@@ -83,7 +83,7 @@ public sealed class SparkleUpdatesTests
         var updates = Made(sparkle);
 
         Assert.IsFalse(updates.Available);
-        Assert.AreEqual(SettingsPage.BadUpdateKey, updates.Refusal);
+        Assert.AreEqual(NoUpdates.BadKey, updates.Refusal);
         Assert.IsFalse(sparkle.Started);
     }
 
@@ -93,7 +93,7 @@ public sealed class SparkleUpdatesTests
     {
         var updates = SparkleUpdates.For(Build.Release, "not a key", "1.0.0", DataFolder(), _ => true, () => Task.FromResult(true), () => { });
 
-        Assert.AreEqual(SettingsPage.BadUpdateKey, updates.Refusal);
+        Assert.AreEqual(NoUpdates.BadKey, updates.Refusal);
         Assert.AreEqual(0, new WinSparkle().SetKey(Convert.ToBase64String(new byte[31])));
         Assert.AreEqual(1, new WinSparkle().SetKey(Key));
     }
@@ -210,8 +210,8 @@ public sealed class SparkleUpdatesTests
 
         var asked = Task.Run(sparkle.Events!.MayShutDown);
         Assert.IsTrue(asking.Wait(TimeSpan.FromSeconds(10)), "the question was never asked");
-        updates.Stop();
-        updates.Stop();
+        updates.Shutdown();
+        updates.Shutdown();
 
         Assert.IsTrue(asked.Wait(TimeSpan.FromSeconds(10)));
         Assert.IsFalse(asked.Result);
@@ -225,7 +225,7 @@ public sealed class SparkleUpdatesTests
         var sparkle = new StandInSparkle();
         var updates = (SparkleUpdates)Made(sparkle);
 
-        updates.Stop();
+        updates.Shutdown();
         updates.Check();
 
         Assert.AreEqual(0, sparkle.Stops);

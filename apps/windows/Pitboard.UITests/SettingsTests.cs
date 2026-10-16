@@ -20,6 +20,16 @@ public sealed class SettingsTests
     private static AutomationElement Control(Launched launched, string automationId) =>
         launched.Find(found => found.ByAutomationId(automationId), automationId);
 
+    // A SettingsExpander's own peer is a group with no ExpandCollapse, and its template gives the Expander inside it its
+    // name, not its id.
+    private static void Expand(Launched launched, string automationId)
+    {
+        var group = Control(launched, automationId);
+        var expander = group.FindAllDescendants().FirstOrDefault(found => found.Patterns.ExpandCollapse.IsSupported)
+            ?? throw new AssertFailedException($"{automationId} holds nothing that expands");
+        expander.Patterns.ExpandCollapse.Pattern.Expand();
+    }
+
     private static ToggleState State(AutomationElement toggle) => toggle.Patterns.Toggle.Pattern.ToggleState.Value;
 
     // The model answers a change after the click, so each read after one waits.
@@ -55,6 +65,7 @@ public sealed class SettingsTests
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
         OpenSettings(launched);
         var toggle = Control(launched, "settings.autoSwitch");
+        Expand(launched, "settings.autoSwitchGroup");
         var share = Control(launched, "settings.autoSwitchAt");
 
         // Both are held back until the app's preferences have been read.
@@ -88,7 +99,7 @@ public sealed class SettingsTests
         Assert.IsTrue(
             Says(launched, "Pitboard is not warming up accounts: warm-ups are not available on Windows", TimeSpan.FromSeconds(30)),
             "Settings does not say why nothing is warmed up");
-        Control(launched, "settings.warm").Patterns.ExpandCollapse.Pattern.Expand();
+        Expand(launched, "settings.warm");
         Assert.AreEqual(ToggleState.On, State(Control(launched, "settings.warm.claude/personal")));
     }
 

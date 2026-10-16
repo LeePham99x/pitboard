@@ -21,7 +21,7 @@ final class PanesAndSettingsTests: FixtureTestCase {
         let app = launch(.oneTool)
         app.openWindow()
         app.descendants(matching: .any)["sidebar.machine"].click()
-        XCTAssertTrue(app.staticTexts["account personal"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Account personal"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["One thing is worth looking at."].exists)
     }
 

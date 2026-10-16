@@ -32,18 +32,19 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
     private string? _announced;
     private bool _told;
 
-    public AccountSheet(AppModel model, string key, Action<Uri> open)
+    public AccountSheet(AppModel model, Sheet sheet, Action<Uri> open)
     {
         _model = model;
         _open = open;
-        Key = key;
+        Sheet = sheet;
         InitializeComponent();
         AlertSpace.Content = new AlertBar(model);
         model.PropertyChanged += OnModelChanged;
         Show();
     }
 
-    public string Key { get; }
+    // The model's sheet it shows: another one, even of the same kind, is put up afresh.
+    public Sheet Sheet { get; }
 
     public CancellationToken Withdrawn => _withdrawn.Token;
 
@@ -80,7 +81,7 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
     // Another sheet's words never reach this one, and one on its way out keeps what it showed.
     private void Show()
     {
-        if (_model.Sheet is not { } sheet || SheetPage.Key(sheet) != Key || SheetPage.Of(_model, _page) is not { } page)
+        if (_model.Sheet is not { } sheet || sheet != Sheet || SheetPage.Of(_model, _page) is not { } page)
         {
             return;
         }
@@ -93,7 +94,7 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
         var stowing = page as SheetPage.Stowing;
         var asked = signingIn is { SignIn.WantsCode: true } && CodePart.Visibility == Visibility.Collapsed;
         ToolPicker.Visibility = Look.Shown(form is { Text.Tools.Length: > 1 });
-        AccountField.Visibility = Look.Shown(form is { Text.Account: not null });
+        AccountPart.Visibility = Look.Shown(form is { Text.Account: not null });
         NameField.Visibility = Look.Shown(page is SheetPage.Naming || form is { Text.Account: null });
         Working.Visibility = Look.Shown((form?.Text.Progress ?? stowing?.Text.Looking) is not null);
         Lines.Visibility = Look.Shown(stowing is { Text.Lines.Length: > 0 });
@@ -122,7 +123,7 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
         // Appears once the tool asks, with the code on the clipboard to paste.
         if (asked)
         {
-            DispatcherQueue.TryEnqueue(() => CodeField.Focus(FocusState.Programmatic));
+            DispatcherQueue.TryEnqueue(Ui.Guarded(() => CodeField.Focus(FocusState.Programmatic)));
         }
 
         ShowFailure(_model.SheetFailure);
@@ -158,18 +159,20 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
             ToolPicker.Items.Clear();
             foreach (var tool in text.Tools)
             {
-                ToolPicker.Items.Add(new ComboBoxItem { Content = tool.Name, Tag = tool.Code });
+                var choice = new RadioButton { Content = tool.Name, Tag = tool.Code };
+                AutomationProperties.SetAutomationId(choice, $"sheet.tool.{tool.Code}");
+                ToolPicker.Items.Add(choice);
             }
 
             ToolPicker.SelectedIndex = Array.FindIndex(text.Tools, tool => tool.Code == _tool);
         }
 
         ToolPicker.IsEnabled = !text.Saving;
-        AccountField.Text = text.Account ?? "";
+        AccountText.Text = text.Account ?? "";
         NameField.PlaceholderText = text.Prompt;
         NameField.IsEnabled = !text.Saving;
         WorkingText.Text = text.Progress ?? "";
-        NameField.Description = form.Problem(NameField.Text);
+        Describe(NameField, form.Problem(NameField.Text));
         ShowMissing(form.NotFound(_tool));
         Message.Text = form.Message(_tool);
         PrimaryButtonText = form.Confirm(_tool);
@@ -189,7 +192,7 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
         Message.Text = text.Message;
         NameField.PlaceholderText = text.Prompt;
         NameField.IsEnabled = !text.Saving;
-        NameField.Description = naming.Problem(NameField.Text);
+        Describe(NameField, naming.Problem(NameField.Text));
         PrimaryButtonText = text.Confirm;
         SecondaryButtonText = "";
         DefaultButton = ContentDialogButton.Primary;
@@ -206,9 +209,10 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
         CopyLink.IsEnabled = signingIn.Page is not null;
         OpenLink.IsEnabled = signingIn.Page is not null;
         ToolTipService.SetToolTip(OpenLink, running.Url);
-        Refused.Text = text.Refused ?? "";
-        Refused.Visibility = Look.Shown(text.Refused is not null);
-        CodeNote.Text = text.CodeNote;
+        RefusedBar.Message = text.Refused ?? "";
+        RefusedBar.Margin = new Thickness(0, text.Refused is null ? 0 : 8, 0, 0);
+        RefusedBar.IsOpen = text.Refused is not null;
+        Describe(CodeField, text.CodeNote);
         PrimaryButtonText = running.WantsCode ? "Submit code" : "";
         SecondaryButtonText = text.Undo?.Title ?? "";
         DefaultButton = running.WantsCode ? ContentDialogButton.Primary : ContentDialogButton.None;
@@ -251,10 +255,11 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
         MissingLink.Content = missing.LinkTitle;
     }
 
-    // The InfoBar announces itself as it opens; a failure after another, with the bar already open, is said here.
+    // The InfoBar announces itself as it opens, so a failure after another opens it again. Focus goes back to the field
+    // the failure is about, so Enter tries again.
     private void ShowFailure(Failure? failure)
     {
-        var said = failure is not null && FailureBar.IsOpen && failure.Id != _failureShown;
+        var fresh = failure is not null && failure.Id != _failureShown;
         _failureShown = failure?.Id;
         if (failure is null)
         {
@@ -273,11 +278,13 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
 
         Warnings.Visibility = Look.Shown(failure.Warnings.Length > 0);
         FailureBar.Margin = new Thickness(0, 12, 0, 0);
-        FailureBar.IsOpen = true;
-        if (said)
+        if (fresh)
         {
-            Say(FailureBar, $"{failure.Title}. {failure.Message}");
+            FailureBar.IsOpen = false;
+            DispatcherQueue.TryEnqueue(Ui.Guarded(FocusField));
         }
+
+        FailureBar.IsOpen = true;
     }
 
     private void Enable()
@@ -311,7 +318,7 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
 
     private void OnToolChanged(object sender, SelectionChangedEventArgs args)
     {
-        if (ToolPicker.SelectedItem is ComboBoxItem { Tag: string tool } && _page is SheetPage.Form form)
+        if (ToolPicker.SelectedItem is RadioButton { Tag: string tool } && _page is SheetPage.Form form)
         {
             // The picker is filled again when what is found changes, which picks the same tool.
             if (tool != _tool)
@@ -327,14 +334,31 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
         }
     }
 
+    // TextBox's template shows a string description on one line; a TextBlock of its own wraps under the field.
+    private static void Describe(TextBox field, string? text)
+    {
+        if (text is null)
+        {
+            field.Description = null;
+        }
+        else if (field.Description is TextBlock note)
+        {
+            note.Text = text;
+        }
+        else
+        {
+            field.Description = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap };
+        }
+    }
+
     private void OnNameChanged(object sender, TextChangedEventArgs args)
     {
-        NameField.Description = _page switch
+        Describe(NameField, _page switch
         {
             SheetPage.Form form => form.Problem(NameField.Text),
             SheetPage.Naming naming => naming.Problem(NameField.Text),
             _ => null,
-        };
+        });
         Edited();
         Enable();
     }
@@ -420,7 +444,9 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
         }
     }
 
-    private void OnOpened(ContentDialog sender, ContentDialogOpenedEventArgs args)
+    private void OnOpened(ContentDialog sender, ContentDialogOpenedEventArgs args) => FocusField();
+
+    private void FocusField()
     {
         if (NameField.Visibility == Visibility.Visible && NameField.IsEnabled)
         {

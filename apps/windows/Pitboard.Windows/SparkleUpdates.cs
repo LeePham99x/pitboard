@@ -45,7 +45,7 @@ public sealed class SparkleUpdates : IUpdates
 
     public string? Refusal => null;
 
-    public bool Beta => SettingsPage.IsBeta(_version);
+    public bool Beta => Versions.IsBeta(_version);
 
     public string? Waiting { get; private set; }
 
@@ -81,12 +81,12 @@ public sealed class SparkleUpdates : IUpdates
         {
             if (sparkle.SetKey(key) == 0)
             {
-                return new NoUpdates(SettingsPage.BadUpdateKey);
+                return new NoUpdates(NoUpdates.BadKey);
             }
         }
         catch (DllNotFoundException)
         {
-            return new NoUpdates(SettingsPage.NoWinSparkle);
+            return new NoUpdates(NoUpdates.NoWinSparkle);
         }
 
         var settings = new UpdateSettings(Path.Combine(dataFolder, "updates.json"));
@@ -122,8 +122,8 @@ public sealed class SparkleUpdates : IUpdates
         }
     }
 
-    // A question WinSparkle still waits on is answered no, so its thread lets Stop join it.
-    public void Stop()
+    // A question WinSparkle still waits on is answered no, so its thread lets Shutdown join it.
+    public void Shutdown()
     {
         lock (_lock)
         {

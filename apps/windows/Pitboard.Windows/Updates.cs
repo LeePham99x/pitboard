@@ -17,11 +17,27 @@ public interface IUpdates
 
     bool ChecksAutomatically { get; set; }
 
+    // Once Pitboard's icon is in the notification area.
+    void Start();
+
     void Check();
+
+    void Shutdown();
 }
 
-public sealed class NoUpdates(string refusal = SettingsPage.NoUpdateKey) : IUpdates
+public sealed class NoUpdates(string refusal = NoUpdates.NoKey) : IUpdates
 {
+    public const string NoKey =
+        "This copy of Pitboard can’t update itself: it was built from source and carries no update key. "
+        + "A copy from a release keeps itself up to date.";
+
+    public const string BadKey =
+        "This copy of Pitboard can’t update itself: the update key it was built with is not a valid key. "
+        + "Install a later version by hand.";
+
+    public const string NoWinSparkle =
+        "This copy of Pitboard can’t update itself: WinSparkle.dll, which updates it, is missing. Install Pitboard again.";
+
     public event EventHandler? Changed
     {
         add { }
@@ -42,7 +58,15 @@ public sealed class NoUpdates(string refusal = SettingsPage.NoUpdateKey) : IUpda
         set { }
     }
 
+    public void Start()
+    {
+    }
+
     public void Check()
+    {
+    }
+
+    public void Shutdown()
     {
     }
 }

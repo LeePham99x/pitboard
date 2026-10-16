@@ -44,6 +44,20 @@ public sealed class WindowsLocalTimeTests
         Assert.AreEqual("Fri 08:00", time.Clock(At, withWeekday: true));
     }
 
+    // The warm-up hours' summary sat in 24 hours beside time pickers in AM and PM (shot 12).
+    [TestMethod]
+    public void ATimeOfDayIsTheClocks()
+    {
+        var culture = (CultureInfo)new CultureInfo("en-US", useUserOverride: false).Clone();
+        culture.DateTimeFormat.ShortTimePattern = "HH:mm";
+
+        StringAssert.Matches(In("en-US").TimeOfDay(6 * 60), new(@"^6:00\sAM$"));
+        StringAssert.Matches(In("en-US").TimeOfDay((22 * 60) + 30), new(@"^10:30\sPM$"));
+        StringAssert.Matches(In("en-US").TimeOfDay(0), new(@"^12:00\sAM$"));
+        Assert.AreEqual("06:00", In("en-GB").TimeOfDay(6 * 60));
+        Assert.AreEqual("22:30", new WindowsLocalTime(culture, TimeZoneInfo.Utc).TimeOfDay((22 * 60) + 30));
+    }
+
     [TestMethod]
     public void ADayIsTheOneInThePersonsTimeZone()
     {

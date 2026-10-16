@@ -193,4 +193,14 @@ final class MacLocalTime: LocalTime {
         Date(timeIntervalSince1970: TimeInterval(epoch))
             .formatted(style(date: .abbreviated, time: .shortened))
     }
+
+    // On a day with no clock change, so every time of day is one.
+    func timeOfDay(minutes: UInt16) throws -> String {
+        let day = DateComponents(
+            year: 2001, month: 1, day: 1, hour: Int(minutes / 60), minute: Int(minutes % 60))
+        guard let date = calendar.date(from: day) else {
+            throw PlatformError.Failed(reason: "no time \(minutes) minutes into a day")
+        }
+        return date.formatted(style(date: .omitted, time: .shortened))
+    }
 }

@@ -1,4 +1,5 @@
 using Microsoft.UI.Text;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
@@ -20,7 +21,21 @@ public static class IconMenuFlyout
         return menu;
     }
 
+    // WinUI pads a row narrow when a mouse, pen or keyboard opened its menu, and wider otherwise. Explorer's
+    // WM_CONTEXTMENU says nothing of the device, so each row takes the narrow padding whatever opened the menu before.
     private static MenuFlyoutItemBase Item(IconMenuEntry entry, Action<IconCommand> chosen)
+    {
+        var item = Made(entry, chosen);
+        if (item is not MenuFlyoutSeparator
+            && Application.Current.Resources.TryGetValue("MenuFlyoutItemThemePaddingNarrow", out var narrow) && narrow is Thickness padding)
+        {
+            item.Padding = padding;
+        }
+
+        return item;
+    }
+
+    private static MenuFlyoutItemBase Made(IconMenuEntry entry, Action<IconCommand> chosen)
     {
         switch (entry)
         {

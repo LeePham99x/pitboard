@@ -45,6 +45,7 @@ public sealed class DialogHost(Func<XamlRoot?> root)
 
             Open = dialog;
             using (withdrawn.Register(dialog.Hide))
+            using (new Theming(dialog, shownIn.Content as FrameworkElement))
             {
                 return await dialog.ShowAsync();
             }
@@ -64,4 +65,33 @@ public sealed class DialogHost(Func<XamlRoot?> root)
             PrimaryButtonText = question.Confirm,
             CloseButtonText = "Cancel",
         }) == ContentDialogResult.Primary;
+
+    // A dialog draws in a popup, which takes no theme from its window's content, so it is given the content's, as the WinUI
+    // Gallery gives one its page's, and follows it while it is up.
+    private sealed class Theming : IDisposable
+    {
+        private readonly ContentDialog _dialog;
+        private readonly FrameworkElement? _root;
+
+        public Theming(ContentDialog dialog, FrameworkElement? root)
+        {
+            _dialog = dialog;
+            _root = root;
+            if (root is not null)
+            {
+                dialog.RequestedTheme = root.ActualTheme;
+                root.ActualThemeChanged += OnThemeChanged;
+            }
+        }
+
+        public void Dispose()
+        {
+            if (_root is not null)
+            {
+                _root.ActualThemeChanged -= OnThemeChanged;
+            }
+        }
+
+        private void OnThemeChanged(FrameworkElement sender, object args) => _dialog.RequestedTheme = sender.ActualTheme;
+    }
 }

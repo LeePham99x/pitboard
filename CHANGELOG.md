@@ -69,6 +69,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   saying **No accounts** while Claude Code is signed in.
 - An account you add while Pitboard cannot identify the login in use says it was parked, not put
   in use, on a first run too.
+- **This Mac** names each check in sentence case, starts what a check says with a capital and
+  shows commands without backticks.
+- The app shows a failure or warning it has no words of its own for as a sentence, with a
+  capital, a full stop and no backticks.
+- `pitboard doctor` and **This Mac** say to install Claude Code where it is missing, not to run
+  `claude`.
 - On Linux, `pitboard doctor` notes the Claude Desktop accounts in a Pitboard directory brought
   from a Mac, which nothing there changes, instead of failing its Claude data folder check.
 

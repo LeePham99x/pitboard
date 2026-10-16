@@ -27,6 +27,9 @@ public sealed class ModelTests
 
         public string DateAndTime(long epoch) =>
             At(epoch).ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+
+        public string TimeOfDay(ushort minutes) =>
+            TimeSpan.FromMinutes(minutes).ToString(@"hh\:mm", CultureInfo.InvariantCulture);
     }
 
     private sealed class Posting : Notifications

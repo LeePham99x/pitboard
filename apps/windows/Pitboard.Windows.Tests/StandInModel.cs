@@ -31,9 +31,9 @@ internal sealed class StandInModel(Snapshot first) : IPitboardModel
         Told?.Invoke(intent);
     }
 
-    public void Shutdown()
-    {
-    }
+    public bool ShutDown { get; private set; }
+
+    public void Shutdown() => ShutDown = true;
 
     public Snapshot Snapshot() => first;
 }

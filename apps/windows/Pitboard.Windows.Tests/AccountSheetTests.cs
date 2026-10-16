@@ -1,6 +1,9 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
+using Microsoft.UI.Xaml.Automation.Provider;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.VisualStudio.TestTools.UnitTesting.AppContainer;
 using Pitboard.Core;
@@ -23,7 +26,7 @@ public sealed class AccountSheetTests
             Sheet = Add,
             SheetText = Items.AddAccount(Items.Tool("claude", "Claude Code"), Items.Tool("codex", "Codex")),
         });
-        var picker = up.Element<ComboBox>("sheet.tool");
+        var picker = up.Element<RadioButtons>("sheet.tool");
         Assert.AreEqual("Add account", up.Sheet.Title);
         Assert.AreEqual(0, picker.SelectedIndex);
         Assert.IsFalse(up.Sheet.IsPrimaryButtonEnabled, "Sign in with no name");
@@ -56,8 +59,9 @@ public sealed class AccountSheetTests
         await Views.Until(() => up.Model.Sent.Contains(new Intent.Rename("claude", "personal", "home")), "no rename to home");
     }
 
+    // Microsoft's text box guidance: text that is never editable is a TextBlock, not a read-only box that looks like a field.
     [UITestMethod]
-    public async Task SigningInAgainShowsTheAccountInPlaceOfAName()
+    public async Task SigningInAgainShowsTheAccountAsText()
     {
         await using var up = await Up.Over(Snapshots.Read(1) with
         {
@@ -65,7 +69,10 @@ public sealed class AccountSheetTests
             SheetText = Items.AddAccount() with { Title = "Sign in to work again", Account = "work" },
         });
         Assert.IsFalse(up.Visible("sheet.name"), "a name field for an account that has one");
-        Assert.IsTrue(Views.Visible<TextBox>(up.Sheet).Any(field => field.Text == "work"), "the account it signs in to");
+        Assert.IsFalse(Views.Visible<TextBox>(up.Sheet).Any(field => field.Text == "work"), "the account in a field");
+        var account = Views.Visible<TextBlock>(up.Sheet).FirstOrDefault(text => text.Text == "work");
+        Assert.IsNotNull(account, "the account it signs in to");
+        Assert.IsTrue(account.IsTextSelectionEnabled, "the account cannot be copied");
 
         Views.Press(up.Part("PrimaryButton"));
 
@@ -89,6 +96,84 @@ public sealed class AccountSheetTests
         Assert.AreEqual("work", up.Element<TextBox>("sheet.name").Text);
     }
 
+    // Microsoft's InfoBar guidance closes and opens the bar again for a new message, which Narrator hears as the bar opens.
+    [UITestMethod]
+    public async Task ASecondFailureReopensItsInfoBar()
+    {
+        var renaming = Snapshots.Read(1) with { Sheet = new Sheet.Rename("claude", "personal"), SheetText = Items.Rename("personal") };
+        await using var up = await Up.Over(renaming);
+        var bar = up.Element<InfoBar>("sheet.failure");
+        up.App.Apply(renaming with
+        {
+            Revision = 2,
+            SheetFailure = new Failure(7, "Couldn’t rename personal", "work is already the name of another account.", "name_taken", []),
+        });
+        await Views.Until(() => bar.IsOpen, "the failure was not said");
+        var opened = new List<bool>();
+        bar.RegisterPropertyChangedCallback(InfoBar.IsOpenProperty, (_, _) => opened.Add(bar.IsOpen));
+
+        up.App.Apply(renaming with
+        {
+            Revision = 3,
+            SheetFailure = new Failure(8, "Couldn’t rename personal", "home is already the name of another account.", "name_taken", []),
+        });
+
+        await Views.Until(() => bar.Message == "home is already the name of another account.", "the second failure was not said");
+        Assert.AreEqual("closed, opened", string.Join(", ", opened.Select(open => open ? "opened" : "closed")));
+    }
+
+    // The sign-in ended back at the form: the name typed is there to correct, and Enter tries again.
+    [UITestMethod]
+    public async Task AfterAFailedSignInTheNameHasFocusAndSignInIsTheDefault()
+    {
+        var signingIn = Snapshots.Read(1) with
+        {
+            Sheet = Add,
+            SheetText = Items.AddAccount() with { Name = "third" },
+            SigningIn = Items.Running("claude", Address),
+            SigningInText = Items.SigningIn("Claude Code"),
+        };
+        await using var up = await Up.Over(signingIn);
+
+        up.App.Apply(signingIn with
+        {
+            Revision = 2,
+            SigningIn = null,
+            SigningInText = null,
+            SheetFailure = new Failure(
+                9, "Couldn’t add third", "The sign-in did not finish, so nothing was enrolled.", "sign_in_incomplete", []),
+        });
+
+        var name = up.Element<TextBox>("sheet.name");
+        await Views.Until(() => ReferenceEquals(FocusManager.GetFocusedElement(up.Sheet.XamlRoot), name), "the name field did not take focus");
+        Assert.AreEqual(ContentDialogButton.Primary, up.Sheet.DefaultButton);
+        Assert.IsTrue(up.Sheet.IsPrimaryButtonEnabled, "Sign in with the name typed");
+    }
+
+    // Microsoft's InfoBar guidance gives an error its own bar, where a line of plain text was (shot 18).
+    [UITestMethod]
+    public async Task ARefusedCodeIsAnErrorInfoBar()
+    {
+        var refused = "Claude Code didn’t take that code. Copy the whole code your browser shows, and paste it again.";
+        var signingIn = Snapshots.Read(1) with
+        {
+            Sheet = Add,
+            SheetText = Items.AddAccount(),
+            SigningIn = Items.Running("claude", Address, wantsCode: true),
+            SigningInText = Items.SigningIn("Claude Code"),
+        };
+        await using var up = await Up.Over(signingIn);
+        var bar = up.Element<InfoBar>("sheet.refused");
+        Assert.IsFalse(bar.IsOpen, "a refusal before any code");
+
+        up.App.Apply(signingIn with { Revision = 2, SigningInText = Items.SigningIn("Claude Code") with { Refused = refused } });
+
+        await Views.Until(() => bar.IsOpen, "the refusal was not said");
+        Assert.AreEqual(InfoBarSeverity.Error, bar.Severity);
+        Assert.AreEqual(refused, bar.Message);
+        Assert.IsFalse(bar.IsClosable);
+    }
+
     // A tool Pitboard did not find says what it needs and links to how, and cannot be signed in to.
     [UITestMethod]
     public async Task AToolPitboardDidNotFindSaysWhatToInstall()
@@ -102,7 +187,7 @@ public sealed class AccountSheetTests
         var bar = up.Element<InfoBar>("sheet.missing");
         Assert.IsFalse(bar.IsOpen, "Claude Code is here");
 
-        up.Element<ComboBox>("sheet.tool").SelectedIndex = 1;
+        up.Element<RadioButtons>("sheet.tool").SelectedIndex = 1;
         await up.Type("sheet.name", "third");
 
         await Views.Until(() => bar.IsOpen, "the missing CLI was not said");
@@ -110,6 +195,93 @@ public sealed class AccountSheetTests
         Assert.IsFalse(up.Sheet.IsPrimaryButtonEnabled, "Sign in to a tool not here");
         new Microsoft.UI.Xaml.Automation.Peers.HyperlinkButtonAutomationPeer(up.Element<HyperlinkButton>("sheet.missing.link")).Invoke();
         CollectionAssert.AreEqual(new[] { new Uri(missing.Link) }, up.Opened);
+    }
+
+    // Shots 13 and 15 of 16 October 2026: the dialog was as wide as its widest line, so it changed width with the tool.
+    [UITestMethod]
+    public async Task TheSheetKeepsOneWidthWhateverItShows()
+    {
+        var adding = Snapshots.Read(1) with
+        {
+            Sheet = Add,
+            SheetText = Items.AddAccount(Items.Tool("claude", "Claude Code"), Items.Tool("codex", "Codex")),
+        };
+        await using var up = await Up.Over(adding);
+        var widths = new List<double> { up.Width() };
+
+        up.Element<RadioButtons>("sheet.tool").SelectedIndex = 1;
+        widths.Add(up.Width());
+        up.App.Apply(adding with
+        {
+            Revision = 2,
+            SheetText = Items.AddAccount(Items.Tool("claude", "Claude Code"), Items.Tool("codex", "Codex", Items.CodexCliMissing())),
+        });
+        await Views.Until(() => up.Element<InfoBar>("sheet.missing").IsOpen, "the missing CLI was not said");
+        widths.Add(up.Width());
+
+        var widest = (double)Application.Current.Resources["ContentDialogMaxWidth"];
+        CollectionAssert.AreEqual(new[] { widest, widest, widest }, widths, "Claude Code, Codex, then Codex missing");
+    }
+
+    // Microsoft's combo box guidance: fewer than five items to pick one of are radio buttons.
+    [UITestMethod]
+    public async Task TheToolsAreRadioButtons()
+    {
+        await using var up = await Up.Over(Snapshots.Read(1) with
+        {
+            Sheet = Add,
+            SheetText = Items.AddAccount(Items.Tool("claude", "Claude Code"), Items.Tool("codex", "Codex")),
+        });
+        var picker = up.Element<RadioButtons>("sheet.tool");
+        await Views.Until(() => Views.Descendants(picker).OfType<RadioButton>().Count() == 2, "the tools were not shown");
+        var claude = up.Element<RadioButton>("sheet.tool.claude");
+        var codex = up.Element<RadioButton>("sheet.tool.codex");
+        Assert.AreEqual("Tool", picker.Header);
+        Assert.AreEqual("Claude Code", claude.Content);
+        Assert.IsTrue(claude.IsChecked);
+
+        ((ISelectionItemProvider)new RadioButtonAutomationPeer(codex)).Select();
+
+        await Views.Until(() => picker.SelectedIndex == 1, "Codex was not picked");
+        Assert.Contains("Pitboard opens Codex’s own sign-in in your browser.", Views.Texts(up.Sheet));
+    }
+
+    // A code is no word to check or predict, and what to paste is said under the field, as a field's description.
+    [UITestMethod]
+    public async Task TheCodeFieldChecksNoSpellingAndHasItsNoteAsItsDescription()
+    {
+        await using var up = await Up.Over(Snapshots.Read(1) with
+        {
+            Sheet = Add,
+            SheetText = Items.AddAccount(),
+            SigningIn = Items.Running("claude", Address, wantsCode: true),
+            SigningInText = Items.SigningIn("Claude Code"),
+        });
+        var field = up.Element<TextBox>("sheet.code");
+
+        Assert.IsFalse(field.IsSpellCheckEnabled);
+        Assert.IsFalse(field.IsTextPredictionEnabled);
+        Assert.AreEqual(
+            "Claude Code takes the code shown after you sign in, whether or not your browser came back to it.", Views.Description(field));
+    }
+
+    // TextBox's template shows a string description on one line, which ran past the dialog's edge (after-shot 17).
+    [UITestMethod]
+    public async Task ACodeNoteLongerThanItsFieldWrapsUnderIt()
+    {
+        await using var up = await Up.Over(Snapshots.Read(1) with
+        {
+            Sheet = Add,
+            SheetText = Items.AddAccount(),
+            SigningIn = Items.Running("claude", Address, wantsCode: true),
+            SigningInText = Items.SigningIn("Claude Code"),
+        });
+        var field = up.Element<TextBox>("sheet.code");
+        var note = Assert.IsInstanceOfType<TextBlock>(field.Description);
+        await Views.Until(() => note.ActualWidth > 0, "the note was not laid out");
+
+        Assert.AreEqual(TextWrapping.Wrap, note.TextWrapping);
+        Assert.IsTrue(note.ActualWidth <= field.ActualWidth, $"the note is {note.ActualWidth} wide under a field {field.ActualWidth} wide");
     }
 
     // The name field says under itself why what is typed cannot be a name, and a failure goes once it changes.
@@ -121,7 +293,7 @@ public sealed class AccountSheetTests
         var field = up.Element<TextBox>("sheet.name");
 
         await up.Type("sheet.name", "a/b");
-        Assert.AreEqual("A name can’t contain “/”.", field.Description);
+        Assert.AreEqual("A name can’t contain “/”.", Views.Description(field));
         Assert.IsFalse(up.Sheet.IsPrimaryButtonEnabled);
 
         var failure = new Failure(7, "Couldn’t rename personal", "work is already the name of another account.", "name_taken", []);
@@ -129,7 +301,7 @@ public sealed class AccountSheetTests
         await Views.Until(() => up.Element<InfoBar>("sheet.failure").IsOpen, "the failure was not said");
         await up.Type("sheet.name", "home");
 
-        Assert.IsNull(field.Description);
+        Assert.IsNull(Views.Description(field));
         await Views.Until(() => up.Model.Sent.Contains(new Intent.DismissSheetFailure()), "the failure stayed with the name");
     }
 
@@ -233,8 +405,10 @@ public sealed class AccountSheetTests
 
         Assert.IsFalse(up.Part("CloseButton").IsEnabled, "Cancel while saving");
         Assert.IsFalse(up.Element<TextBox>("sheet.name").IsEnabled);
+        var closing = new TaskCompletionSource();
+        up.Sheet.Closing += (_, _) => closing.TrySetResult();
         up.Sheet.Hide();
-        await Task.Delay(300);
+        await closing.Task.WaitAsync(TimeSpan.FromSeconds(10));
 
         Assert.AreSame(up.Sheet, up.Dialogs.Open, "the sheet closed while saving");
         Assert.IsEmpty(up.Model.Sent);
@@ -267,6 +441,27 @@ public sealed class AccountSheetTests
 
         await Views.Until(() => up.Dialogs.Open is AccountSheet next && next != first, "the rename sheet did not replace the first");
         Assert.AreEqual("Rename “work”", up.Sheet.Title);
+        Assert.IsEmpty(up.Model.Sent);
+    }
+
+    // The model's Sheet records compare by value, so the same sheet keeps its dialog and a login of another address being
+    // named is a new one.
+    [UITestMethod]
+    public async Task SheetsAreToldApartByTheModelsSheet()
+    {
+        var naming = Snapshots.Read(1) with
+        {
+            Sheet = new Sheet.Name("claude", "dana@work.example"),
+            SheetText = Items.Rename("") with { Title = "Name this account", Confirm = "Save" },
+        };
+        await using var up = await Up.Over(naming);
+        var first = up.Sheet;
+
+        up.App.Apply(naming with { Revision = 2, Sheet = new Sheet.Name("claude", "dana@work.example"), SheetText = Items.Rename("dana") });
+        Assert.AreSame(first, up.Dialogs.Open, "the same sheet was put up again");
+        up.App.Apply(naming with { Revision = 3, Sheet = new Sheet.Name("claude", "dana@home.example") });
+
+        await Views.Until(() => up.Dialogs.Open is AccountSheet next && next != first, "the sheet for another login kept its dialog");
         Assert.IsEmpty(up.Model.Sent);
     }
 
@@ -326,6 +521,13 @@ public sealed class AccountSheetTests
 
         public bool Visible(string automationId) =>
             Views.Visible<TextBox>(Sheet).Any(found => AutomationProperties.GetAutomationId(found) == automationId);
+
+        // The dialog's own box, its template's part, laid out with what the sheet shows now.
+        public double Width()
+        {
+            Sheet.UpdateLayout();
+            return Views.Descendants(Sheet).OfType<Border>().Single(border => border.Name == "BackgroundElement").ActualWidth;
+        }
 
         // The dialog's own buttons, its template's parts. The sheet's InfoBars have a CloseButton of their own.
         public Button Part(string name) =>

@@ -1,7 +1,10 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using FlaUI.Core.AutomationElements;
+using FlaUI.Core.Definitions;
 using FlaUI.Core.Input;
 using FlaUI.Core.Tools;
+using FlaUI.Core.WindowsAPI;
 
 namespace Pitboard.UITests;
 
@@ -65,6 +68,22 @@ public sealed partial class LifecycleTests
     }
 
     [TestMethod]
+    public void TheAccountAndOpenLinkWindowsCarryPitboardsIcon()
+    {
+        using var launched = Launched.Start(Builds.Debug, fixture: "twoTools");
+        launched.OpenWindow();
+        AccountWindowTests.OpenFromItsRow(launched, "codex/main");
+        var account = launched.Window("main");
+        var picker = launched.Share("https://chatgpt.com/c/shared");
+
+        foreach (var window in new[] { account, picker })
+        {
+            var handle = window.Properties.NativeWindowHandle.Value;
+            Assert.AreNotEqual(0, SendMessage(handle, GetIcon, BigIcon, 0), $"the {window.Title} window has no icon of its own");
+        }
+    }
+
+    [TestMethod]
     public void ClosingTheWindowLeavesPitboardRunning()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "firstLaunch");
@@ -74,6 +93,84 @@ public sealed partial class LifecycleTests
 
         Assert.IsTrue(Retry.WhileTrue(() => window.IsAvailable, TimeSpan.FromSeconds(10)).Result, "the window stayed open");
         Assert.IsFalse(launched.Process.WaitForExit(TimeSpan.FromSeconds(3)), "Pitboard quit with its window");
+    }
+
+    [TestMethod]
+    public void AClosedWindowOpensWhereItWasAtItsSize()
+    {
+        using var launched = Launched.Start(Builds.Debug, fixture: "firstLaunch");
+        var window = launched.Window("Pitboard");
+        var transform = window.Patterns.Transform.Pattern;
+        transform.Move(120, 90);
+        transform.Resize(900, 640);
+        var placed = window.BoundingRectangle;
+        Close(window);
+
+        var again = launched.OpenWindow();
+
+        Assert.AreEqual(placed, again.BoundingRectangle);
+    }
+
+    [TestMethod]
+    public void AMaximizedWindowOpensMaximizedAgain()
+    {
+        using var launched = Launched.Start(Builds.Debug, fixture: "firstLaunch");
+        var window = launched.Window("Pitboard");
+        Show(window, WindowVisualState.Maximized);
+        Close(window);
+
+        var again = launched.OpenWindow();
+
+        Assert.IsTrue(Shows(again, WindowVisualState.Maximized), $"it opened {again.Patterns.Window.Pattern.WindowVisualState.Value}");
+    }
+
+    // A second launch brings the window forward as a click on its taskbar button would.
+    [TestMethod]
+    public void AWindowMinimizedFromMaximizedComesBackMaximized()
+    {
+        using var launched = Launched.Start(Builds.Debug, fixture: "firstLaunch");
+        var window = launched.Window("Pitboard");
+        Show(window, WindowVisualState.Maximized);
+        Show(window, WindowVisualState.Minimized);
+
+        var again = launched.OpenWindow();
+
+        Assert.IsTrue(Shows(again, WindowVisualState.Maximized), $"it came back {again.Patterns.Window.Pattern.WindowVisualState.Value}");
+    }
+
+    [TestMethod]
+    public void CtrlWClosesTheWindowAndPitboardKeepsRunning()
+    {
+        using var launched = Launched.Start(Builds.Debug, fixture: "firstLaunch");
+        var window = launched.Window("Pitboard");
+        Foreground.Require(window);
+
+        Keyboard.TypeSimultaneously(VirtualKeyShort.CONTROL, VirtualKeyShort.KEY_W);
+
+        Assert.IsTrue(Retry.WhileTrue(() => window.IsAvailable, TimeSpan.FromSeconds(10)).Result, "the window stayed open");
+        Assert.IsFalse(launched.Process.WaitForExit(TimeSpan.FromSeconds(3)), "Pitboard quit with its window");
+    }
+
+    // firstLaunch's page starts with its command bar's buttons, accounts.refresh and accounts.add.
+    [TestMethod]
+    public void F6MovesFocusBetweenThePaneAndThePage()
+    {
+        using var launched = Launched.Start(Builds.Debug, fixture: "firstLaunch");
+        var window = launched.Window("Pitboard");
+        Foreground.Require(window);
+        window.FindFirstDescendant(found => found.ByAutomationId("pane.accounts"))!.Focus();
+        string Focused() => launched.Automation.FocusedElement()?.Properties.AutomationId.ValueOrDefault ?? "";
+        bool Reaches(Func<string, bool> place) =>
+            Retry.WhileFalse(() => place(Focused()), TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(100)).Result;
+
+        Keyboard.Type(VirtualKeyShort.F6);
+        Assert.IsTrue(Reaches(id => id.StartsWith("accounts.", StringComparison.Ordinal)), $"F6 left the focus on '{Focused()}'");
+
+        Keyboard.TypeSimultaneously(VirtualKeyShort.SHIFT, VirtualKeyShort.F6);
+        Assert.IsTrue(Reaches(id => id == "pane.accounts"), $"Shift+F6 left the focus on '{Focused()}'");
+
+        Keyboard.Type(VirtualKeyShort.F6);
+        Assert.IsTrue(Reaches(id => id.StartsWith("accounts.", StringComparison.Ordinal)), $"F6 again left the focus on '{Focused()}'");
     }
 
     [TestMethod]
@@ -121,6 +218,23 @@ public sealed partial class LifecycleTests
         Assert.IsFalse(
             Retry.WhileFalse(() => launched.Windows("Pitboard").Length > 0, TimeSpan.FromSeconds(10)).Result,
             $"a start at sign-in opened the window: {launched.State()}");
+    }
+
+    private static bool Shows(Window window, WindowVisualState state) =>
+        Retry.WhileFalse(
+            () => window.Patterns.Window.Pattern.WindowVisualState.Value == state, TimeSpan.FromSeconds(10),
+            TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
+
+    private static void Show(Window window, WindowVisualState state)
+    {
+        window.Patterns.Window.Pattern.SetWindowVisualState(state);
+        Assert.IsTrue(Shows(window, state), $"the window did not become {state}");
+    }
+
+    private static void Close(Window window)
+    {
+        window.Close();
+        Assert.IsTrue(Retry.WhileTrue(() => window.IsAvailable, TimeSpan.FromSeconds(10)).Result, "the window stayed open");
     }
 
     [LibraryImport("user32.dll", EntryPoint = "SendMessageW")]

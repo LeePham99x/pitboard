@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- The main window's panes, in a library so the WinUI test app shows them as Pitboard.exe does. -->
+  <!-- Every window and page, in a library so the WinUI test app shows them as Pitboard.exe does. -->
   <PropertyGroup>
     <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
     <SupportedOSPlatformVersion>10.0.26100.0</SupportedOSPlatformVersion>
@@ -9,6 +9,10 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" />
+    <!-- SettingsCard and SettingsExpander, which Microsoft's app settings guidance names. -->
+    <PackageReference Include="CommunityToolkit.WinUI.Controls.SettingsControls" />
+    <!-- ControlSizeTrigger, which sets a page's layout by its own width as SettingsCard sets its own. -->
+    <PackageReference Include="CommunityToolkit.WinUI.Triggers" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Pitboard.Core/Pitboard.Core.csproj" />

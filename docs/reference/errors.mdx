@@ -82,7 +82,8 @@ A Claude Code or Codex switch that was interrupted, and that the next change can
 | `pitboard status` | A warning. |
 | Each read in the app | The notice **An interrupted switch is waiting**, with a **Give Up** button. |
 | `pitboard status --offline` | A warning. |
-| `pitboard doctor` and the app's **This Mac** pane | Listed under `interrupted switch`. |
+| `pitboard doctor` | Listed under `interrupted switch`. |
+| The app's **This Mac** pane | Listed under **Interrupted switch**. |
 
 When only Anthropic can identify the login in use, the last two rows show nothing.
 
@@ -154,7 +155,7 @@ An error that says the refresh token stored is spent keeps the code of what stop
 
 A change to a Claude Desktop account can stop with these codes. So can `abandon` while a move waits, and `uninstall` while Pitboard holds a Claude Desktop login or a move of one waits. Where another section lists the same code, such as `live_credential_absent`, this table gives its Claude Desktop meaning.
 
-An interrupted Claude Desktop move shows `move_waiting` on each read, as [Warning codes](#warning-codes) lists. `pitboard doctor` and the app's **This Mac** pane list it under `interrupted Claude Desktop move`. A Claude Desktop change stops only where it cannot settle the move.
+An interrupted Claude Desktop move shows `move_waiting` on each read, as [Warning codes](#warning-codes) lists. `pitboard doctor` lists it under `interrupted Claude Desktop move`, and the app's **This Mac** pane under **Interrupted Claude Desktop move**. A Claude Desktop change stops only where it cannot settle the move.
 
 | Code | Exit | Meaning | What to do |
 | --- | --- | --- | --- |

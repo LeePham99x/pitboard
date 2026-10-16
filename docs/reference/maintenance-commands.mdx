@@ -286,7 +286,7 @@ Claude Desktop's checks read the folders in `~/.pitboard/parks`, open no cookie 
   | `elevated` | `runs as` | Only as root, with `sudo`, or when Pitboard cannot tell. Always fails: see [Pitboard changes nothing as root](/troubleshooting#pitboard-changes-nothing-as-root). |
   | `homes` | `homes` | Only when a variable naming a home is empty or not a full path. Always fails, and nothing after it is checked. |
   | `security_tool` | `security tool` | macOS only. `/usr/bin/security`, which reads the keychain, is there. |
-  | `config_file` | `config file` | Claude Code's config file can be read. Fails where Claude Code has never run. |
+  | `config_file` | `config file` | Claude Code's config file can be read. Fails where Claude Code has never run, and says to install it first where Pitboard finds no `claude`. |
   | `identity` | `identity` | The account Claude Code's config names. Warns when it names none. |
   | `in_use` | `in use` | The account whose login Claude Code has stored, as Anthropic last named it. Warns when Anthropic has not been asked, or the config names another account. |
   | `slot` | `slot` | Which of Claude Code's login entries Pitboard reads. Always `ok`. |

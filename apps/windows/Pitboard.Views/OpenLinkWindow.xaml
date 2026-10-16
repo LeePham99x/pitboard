@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Open link window: what the model says of the link waiting, the accounts that can open it, and its buttons in a
+     dialog's order. Every link from outside waits here until somebody chooses, even with one account, so no page can open
+     an account's window by handing Pitboard a link. -->
+<Window
+    x:Class="Pitboard.Views.OpenLinkWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:core="using:Pitboard.Core"
+    xmlns:local="using:Pitboard.Views"
+    Title="Open link">
+  <Window.SystemBackdrop>
+    <MicaBackdrop />
+  </Window.SystemBackdrop>
+  <Grid
+      x:Name="Root"
+      Padding="24"
+      RowSpacing="24"
+      AutomationProperties.AutomationId="account-picker"
+      Loaded="OnLoaded">
+    <Grid.KeyboardAccelerators>
+      <KeyboardAccelerator Key="Escape" Invoked="OnEscape" />
+    </Grid.KeyboardAccelerators>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+    <StackPanel Spacing="12">
+      <local:EmptyState x:Name="Unavailable" Glyph="&#xE774;" Title="No link to open" />
+      <StackPanel x:Name="Waiting" Orientation="Horizontal" Spacing="12">
+        <ProgressRing x:Name="WaitingRing" Width="20" Height="20" />
+        <TextBlock x:Name="WaitingText" VerticalAlignment="Center" />
+      </StackPanel>
+      <TextBlock x:Name="Heading" Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="Wrap" />
+      <!-- On one line; the whole link is its tooltip, and what Narrator reads after it. -->
+      <TextBlock
+          x:Name="LinkLine"
+          FontFamily="Cascadia Mono, Consolas"
+          TextTrimming="CharacterEllipsis"
+          IsTextSelectionEnabled="True" />
+      <TextBlock x:Name="Explanation" Style="{StaticResource SecondaryTextBlockStyle}" />
+      <ListView
+          x:Name="AccountList"
+          MinHeight="96"
+          MaxHeight="360"
+          SelectionMode="Single"
+          AutomationProperties.AutomationId="picker.accounts"
+          AutomationProperties.Name="Accounts"
+          DoubleTapped="OnAccountDoubleTapped"
+          KeyDown="OnAccountKeyDown">
+        <ListView.ItemTemplate>
+          <DataTemplate x:DataType="core:PickerAccount">
+            <StackPanel Padding="0,6,0,6" Spacing="2">
+              <TextBlock Text="{x:Bind Window.Label}" />
+              <TextBlock Text="{x:Bind Detail}" Style="{StaticResource SecondaryCaptionTextBlockStyle}" />
+            </StackPanel>
+          </DataTemplate>
+        </ListView.ItemTemplate>
+      </ListView>
+    </StackPanel>
+    <StackPanel Grid.Row="1" HorizontalAlignment="Right" Orientation="Horizontal" Spacing="8">
+      <Button x:Name="PrimaryButton" MinWidth="96" Style="{StaticResource AccentButtonStyle}" Click="OnPrimary" />
+      <Button x:Name="SecondaryButton" MinWidth="96" Click="OnSecondary" />
+      <Button x:Name="CancelButton" MinWidth="96" Content="Cancel" Click="OnCancel" />
+    </StackPanel>
+  </Grid>
+</Window>
