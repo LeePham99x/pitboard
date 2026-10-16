@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Windows.Win32.Foundation;
 
 namespace Pitboard.Windows.Tests;
@@ -58,9 +59,15 @@ public sealed class WindowsAppsTests
         var apps = standIn.Apps();
         Assert.AreEqual(StandInApp.Id, apps.Running(StandInApp.Id));
 
+        var timer = Stopwatch.StartNew();
         var shut = await apps.Quit(StandInApp.Id).WaitAsync(Patience);
+        var took = timer.ElapsedMilliseconds;
+        var ended = standIn.App.WaitForExit(Patience);
+        Console.WriteLine(
+            $"CF9: RmShutdown gave {shut} after {took} ms; the stand-in that honours ENDSESSION_CLOSEAPP "
+            + $"{(ended ? $"exited {standIn.App.ExitCode}" : "runs on")}, its console child {(standIn.Child.HasExited ? "ended" : "runs on")}");
 
-        Assert.IsTrue(standIn.App.WaitForExit(Patience), $"the stand-in runs on after RmShutdown gave {shut}");
+        Assert.IsTrue(ended, $"the stand-in runs on after RmShutdown gave {shut}");
         Assert.AreEqual(WIN32_ERROR.ERROR_SUCCESS, shut);
         Assert.IsNull(apps.Running(StandInApp.Id));
         Assert.IsFalse(standIn.Child.HasExited, "its console child was ended");
@@ -72,7 +79,11 @@ public sealed class WindowsAppsTests
         using var standIn = StandInApp.Start(honours: false);
         var apps = standIn.Apps();
 
+        var timer = Stopwatch.StartNew();
         var shut = await apps.Quit(StandInApp.Id).WaitAsync(Patience);
+        Console.WriteLine(
+            $"CF9: RmShutdown gave {shut} after {timer.ElapsedMilliseconds} ms; the stand-in that refuses "
+            + $"{(standIn.App.HasExited ? "ended" : "runs on")}, its console child {(standIn.Child.HasExited ? "ended" : "runs on")}");
 
         Assert.IsFalse(standIn.App.HasExited, $"the stand-in ended, and RmShutdown gave {shut}");
         Assert.AreEqual(WIN32_ERROR.ERROR_FAIL_SHUTDOWN, shut);

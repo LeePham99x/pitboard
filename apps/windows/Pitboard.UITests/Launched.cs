@@ -179,8 +179,10 @@ internal sealed class Launched : IDisposable
     public bool Gone(Func<ConditionFactory, ConditionBase> condition) =>
         Retry.WhileTrue(() => Look(condition) is not null, Shortly, TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
 
+    // A row hides its button while it switches and shows it again on the model's next snapshot.
     public static AutomationElement Within(AutomationElement scope, Func<ConditionFactory, ConditionBase> condition, string what) =>
-        scope.FindFirstDescendant(condition) ?? throw new AssertFailedException($"no {what} in {scope.Name}");
+        Retry.WhileNull(() => scope.FindFirstDescendant(condition), Shortly, TimeSpan.FromMilliseconds(250), ignoreException: true).Result
+        ?? throw new AssertFailedException($"no {what} in {scope.Name} within {Shortly}: {Listed(scope)}");
 
     public AutomationElement Row(string qualified) => Find(found => found.ByAutomationId($"account.{qualified}"), $"row {qualified}");
 
