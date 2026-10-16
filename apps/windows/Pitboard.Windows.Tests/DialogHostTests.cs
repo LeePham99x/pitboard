@@ -90,7 +90,7 @@ public sealed class DialogHostTests
         Assert.AreEqual(ContentDialogResult.None, await secondShown);
     }
 
-    // A switch to dark while Pitboard ran left the Add account sheet light under white text (shots 25 and 28).
+    // A switch to dark while Pitboard ran left the Add account sheet light under white text.
     [UITestMethod]
     public async Task ADialogTakesItsWindowsThemeAndFollowsIt()
     {

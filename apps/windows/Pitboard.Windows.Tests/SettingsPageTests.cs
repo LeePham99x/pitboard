@@ -416,7 +416,7 @@ public sealed class SettingsPageTests
         Assert.AreEqual(new Uri("https://github.com/datlechin/pitboard/issues"), opened.Single());
     }
 
-    // A switch sat about 100 epx in from its card's edge with "Off" after it (shots 06 and 33). Windows Settings puts it at
+    // A switch sat about 100 epx in from its card's edge with "Off" after it. Windows Settings puts it at
     // the edge with its state before it, as the SettingsCard's own toggle style does.
     [UITestMethod]
     public async Task EachSwitchIsAtItsCardsRightEdgeWithItsStateBeforeIt()

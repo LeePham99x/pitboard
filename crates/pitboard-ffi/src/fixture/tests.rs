@@ -1916,8 +1916,8 @@ fn accounts_are_added_through_each_tools_sign_in() {
     model.shutdown();
 }
 
-// Shots 16 and 31 of 16 October 2026: every world named a CODEX_HOME it never made, which
-// Codex on Windows refuses, so adding a Codex account there was refused.
+// Every world named a CODEX_HOME it never made, which Codex on Windows refuses, so adding a
+// Codex account there was refused.
 #[test]
 fn adding_codex_in_first_launch_reaches_its_sign_in() {
     let launched = made(World::FirstLaunch);

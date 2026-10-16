@@ -96,8 +96,8 @@ public sealed class MainWindowTests
         }
     }
 
-    // NavigationView's header sat 40 epx right of its pane's content (shots 01, 06 and 34). Its guidance gives content
-    // 24 epx sides, 12 in Minimal.
+    // NavigationView's header sat 40 epx right of its pane's content. Its guidance gives content 24 epx sides, 12 in
+    // Minimal.
     [UITestMethod]
     public async Task EachPagesTitleLinesUpWithItsContent()
     {
@@ -157,7 +157,7 @@ public sealed class MainWindowTests
         }
     }
 
-    // Scrolled content went under a title that stayed put, cut off with no room between (shots 05, 08 and 11).
+    // Scrolled content went under a title that stayed put, cut off with no room between.
     [UITestMethod]
     public async Task ThePageScrollsBelowItsTitle()
     {

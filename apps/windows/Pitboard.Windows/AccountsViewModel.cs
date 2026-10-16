@@ -18,7 +18,6 @@ public sealed record EmptyShown(EmptyKind Kind, string Title, string Detail, str
     public static readonly EmptyShown None = new(EmptyKind.None, "", "", "", Prominent: false, Enabled: false);
 }
 
-// What the accounts page shows of the model, told part by part as the model tells its own.
 public sealed partial class AccountsViewModel(AppModel model, Action<Uri> open) : INotifyPropertyChanged
 {
     private static readonly Dictionary<string, string[]> Told = new()

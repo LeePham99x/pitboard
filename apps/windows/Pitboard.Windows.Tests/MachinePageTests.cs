@@ -72,7 +72,7 @@ public sealed class MachinePageTests
         Assert.Contains("Checking this PC…", Views.Texts(page));
     }
 
-    // The summary was a band fixed over the list, which the rows slid under (shots 05, 08 and 11).
+    // The summary was a band fixed over the list, which the rows slid under.
     [UITestMethod]
     public async Task TheSummaryScrollsWithTheChecks()
     {
@@ -100,7 +100,7 @@ public sealed class MachinePageTests
         Assert.AreEqual(InfoBarSeverity.Error, await Said(Level.Fail));
     }
 
-    // The detail sat right-aligned in a column of its own and broke a path mid-word (shot 03).
+    // The detail sat right-aligned in a column of its own and broke a path mid-word.
     [UITestMethod]
     public async Task ACheckSaysItsDetailUnderItsNameLeftAligned()
     {

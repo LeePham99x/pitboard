@@ -98,7 +98,7 @@ public sealed class AccountRowTests
     }
 
     // The XAML compiler calls an x:Bind function only for a value that is not null, so a row the list gave another
-    // account kept the plan tag of the one before, empty (after-shot 21).
+    // account kept the plan tag of the one before, empty.
     [UITestMethod]
     public async Task ARowGivenAnAccountWithoutAPlanHasNoTag()
     {

@@ -8444,8 +8444,7 @@ mod tests {
         );
     }
 
-    // Shots 35 and 37 of 16 October 2026: Add account said Claude Code was not installed, and
-    // This PC said to run it.
+    // Add account said Claude Code was not installed, and This PC said to run it.
     #[test]
     fn a_machine_without_claude_code_is_told_to_install_it() {
         let mut facts = facts();

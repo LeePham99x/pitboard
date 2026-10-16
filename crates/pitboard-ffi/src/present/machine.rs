@@ -615,7 +615,7 @@ mod tests {
             .range_label
     }
 
-    // The summary said 06:00 to 22:00 beside time pickers in AM and PM (shot 12).
+    // The summary said 06:00 to 22:00 beside time pickers in AM and PM.
     #[test]
     fn the_range_is_said_on_the_persons_clock() {
         assert_eq!(hours(6 * 60, 22 * 60, &Twelve), "6:00 AM to 10:00 PM");
@@ -700,7 +700,7 @@ mod tests {
         lines(&checks).into_iter().map(|line| line.name).collect()
     }
 
-    // Doctor names a check for a terminal's table: "account personal", "config file" (shot 05).
+    // Doctor names a check for a terminal's table: "account personal", "config file".
     #[test]
     fn each_check_is_named_in_sentence_case() {
         assert_eq!(
@@ -799,7 +799,7 @@ mod tests {
         );
     }
 
-    // A terminal marks a command with backticks; an app shows them as typed (shot 03).
+    // A terminal marks a command with backticks; an app shows them as typed.
     #[test]
     fn no_check_line_says_a_backtick() {
         let shown = lines(&[

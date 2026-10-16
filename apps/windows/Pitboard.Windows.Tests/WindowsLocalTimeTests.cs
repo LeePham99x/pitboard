@@ -44,7 +44,7 @@ public sealed class WindowsLocalTimeTests
         Assert.AreEqual("Fri 08:00", time.Clock(At, withWeekday: true));
     }
 
-    // The warm-up hours' summary sat in 24 hours beside time pickers in AM and PM (shot 12).
+    // The warm-up hours' summary sat in 24 hours beside time pickers in AM and PM.
     [TestMethod]
     public void ATimeOfDayIsTheClocks()
     {

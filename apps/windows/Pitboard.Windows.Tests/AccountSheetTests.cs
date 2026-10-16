@@ -150,7 +150,7 @@ public sealed class AccountSheetTests
         Assert.IsTrue(up.Sheet.IsPrimaryButtonEnabled, "Sign in with the name typed");
     }
 
-    // Microsoft's InfoBar guidance gives an error its own bar, where a line of plain text was (shot 18).
+    // Microsoft's InfoBar guidance gives an error its own bar, where a line of plain text was.
     [UITestMethod]
     public async Task ARefusedCodeIsAnErrorInfoBar()
     {
@@ -197,7 +197,7 @@ public sealed class AccountSheetTests
         CollectionAssert.AreEqual(new[] { new Uri(missing.Link) }, up.Opened);
     }
 
-    // Shots 13 and 15 of 16 October 2026: the dialog was as wide as its widest line, so it changed width with the tool.
+    // The dialog was as wide as its widest line, so it changed width with the tool.
     [UITestMethod]
     public async Task TheSheetKeepsOneWidthWhateverItShows()
     {
@@ -265,7 +265,7 @@ public sealed class AccountSheetTests
             "Claude Code takes the code shown after you sign in, whether or not your browser came back to it.", Views.Description(field));
     }
 
-    // TextBox's template shows a string description on one line, which ran past the dialog's edge (after-shot 17).
+    // TextBox's template shows a string description on one line, which ran past the dialog's edge.
     [UITestMethod]
     public async Task ACodeNoteLongerThanItsFieldWrapsUnderIt()
     {
