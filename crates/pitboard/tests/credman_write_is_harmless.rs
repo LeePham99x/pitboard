@@ -104,7 +104,14 @@ fn a_test_build_never_addresses_a_real_login() {
             "{name}"
         );
     }
-    let ctx = common::ctx();
-    assert!(credman::read(&ctx, "Claude Code-credentials").is_err());
-    assert!(credman::discard(&ctx, "Claude Code-credentials").is_err());
+    // Homes of its own, so the gate lets the discard through to the guard.
+    let env = common::Env::new("credman-refused");
+    let ctx = env.context();
+    for refused in [
+        credman::read(&ctx, "Claude Code-credentials").map(drop),
+        credman::discard(&ctx, "Claude Code-credentials"),
+    ] {
+        let why = refused.expect_err("refused").to_string();
+        assert!(why.contains("a test must never address"), "{why}");
+    }
 }
