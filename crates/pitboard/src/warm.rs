@@ -187,31 +187,54 @@ fn now(pitboard: &Pitboard, label: &str) -> Report {
     })
 }
 
+// The setting is kept where nothing is warmed up, so the app's toggle and `--json` stay as
+// they are, and only what is said changes.
+fn unbuilt(pitboard: &Pitboard) -> Option<Halt> {
+    pitboard
+        .warm_overview()
+        .ok()?
+        .halted
+        .filter(|halt| *halt == Halt::Unbuilt)
+}
+
 fn turn(pitboard: &Pitboard, label: &str, on: bool) -> Report {
     changed("warm", pitboard.warm_turn(label, on), |changed| {
-        let human = match (on, changed) {
-            (true, true) => format!(
-                "Pitboard warms up {} from now on, within the span `pitboard warm` shows.\n",
-                paint(BOLD, label)
-            ),
-            (true, false) => format!("{} was warmed up already.\n", paint(BOLD, label)),
-            (false, true) => format!("Pitboard no longer warms up {}.\n", paint(BOLD, label)),
-            (false, false) => format!("{} was not warmed up.\n", paint(BOLD, label)),
-        };
         (
             json!({ "label": label, "on": on, "changed": changed }),
-            human,
+            turned(label, on, changed, unbuilt(pitboard).as_ref()),
         )
     })
+}
+
+fn turned(label: &str, on: bool, changed: bool, halted: Option<&Halt>) -> String {
+    if let (true, Some(halt @ Halt::Unbuilt)) = (on, halted) {
+        return format!("{}\n", halted_line(halt));
+    }
+    match (on, changed) {
+        (true, true) => format!(
+            "Pitboard warms up {} from now on, within the span `pitboard warm` shows.\n",
+            paint(BOLD, label)
+        ),
+        (true, false) => format!("{} was warmed up already.\n", paint(BOLD, label)),
+        (false, true) => format!("Pitboard no longer warms up {}.\n", paint(BOLD, label)),
+        (false, false) => format!("{} was not warmed up.\n", paint(BOLD, label)),
+    }
 }
 
 fn range_set(pitboard: &Pitboard, range: Range) -> Report {
     changed("warm", pitboard.warm_range(range), |range| {
         (
             json!({ "range": range_json(range) }),
-            format!("Pitboard warms up accounts from {range}.\n"),
+            ranged(range, unbuilt(pitboard).as_ref()),
         )
     })
+}
+
+fn ranged(range: Range, halted: Option<&Halt>) -> String {
+    match halted {
+        Some(halt @ Halt::Unbuilt) => format!("{}\n", halted_line(halt)),
+        _ => format!("Pitboard warms up accounts from {range}.\n"),
+    }
 }
 
 #[cfg(test)]
@@ -248,6 +271,32 @@ mod tests {
         assert!(
             elsewhere.starts_with("Pitboard warms up these accounts from 06:00 to 22:00"),
             "{elsewhere}"
+        );
+    }
+
+    #[test]
+    fn on_windows_warm_on_and_warm_range_say_why_nothing_is_warmed_up() {
+        let plain = |said: String| anstream::adapter::strip_str(&said).to_string();
+        let windows = "Pitboard is not warming up accounts: warm-ups are not available on \
+                       Windows, where Claude Code does not read the access token a warm-up hands \
+                       it.\n";
+        let unbuilt = Some(&Halt::Unbuilt);
+        assert_eq!(plain(turned("work", true, true, unbuilt)), windows);
+        assert_eq!(plain(turned("work", true, false, unbuilt)), windows);
+        assert_eq!(
+            plain(turned("work", false, true, unbuilt)),
+            "Pitboard no longer warms up work.\n"
+        );
+        assert_eq!(plain(ranged(Range::DEFAULT, unbuilt)), windows);
+
+        let missing = Some(&Halt::ProgramMissing);
+        assert_eq!(
+            plain(turned("work", true, true, missing)),
+            "Pitboard warms up work from now on, within the span `pitboard warm` shows.\n"
+        );
+        assert_eq!(
+            plain(ranged(Range::DEFAULT, missing)),
+            "Pitboard warms up accounts from 06:00 to 22:00.\n"
         );
     }
 }
