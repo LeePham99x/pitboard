@@ -428,6 +428,14 @@ which needs only the .NET SDK:
 sh .github/scripts/test-msi-version.sh
 ```
 
+The pictures of the Windows app for the docs come from the UI test `ScreenshotTests`, in the
+`twoTools` fixture. The job keeps the ones `windows-2025` takes for seven days, as the artifact
+`windows-app-pictures`:
+
+```sh
+gh run download <run id> -n windows-app-pictures
+```
+
 ### Run the Windows debug build
 
 Read [the rules for the app in AGENTS.md](AGENTS.md#on-windows) first. Build the bindings as

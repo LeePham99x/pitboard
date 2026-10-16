@@ -10,6 +10,9 @@ param(
     # Self-contained test programs, such as a published Microsoft.Testing.Platform one, inside
     # the workspace.
     [string[]] $Dotnet,
+    # Where each of them leaves its results, in a folder named after it: a TRX report and the
+    # files its tests kept with TestContext.AddResultFile, which only a TRX report copies there.
+    [string] $Results,
     [string] $Exe,
     # Its argument lines, run in turn; an empty one runs it with none.
     [string[]] $Commands = @(''),
@@ -375,11 +378,19 @@ try {
         # Otherwise Microsoft.Testing.Platform's results go beside the program, where the user may only read.
         # A run that outlasts its timeout is cancelled and says which tests were under way, before the job's own
         # timeout would end it with nothing said.
-        $arguments = @('--results-directory', (Join-Path $runDir "results-$i"), '--timeout', '12m')
+        $resultsDir = Join-Path $runDir "results-$i"
+        $arguments = @('--results-directory', $resultsDir, '--timeout', '12m')
+        if ($Results) { $arguments += '--report-trx' }
         $run = Start-AsUser $programs[$i] $arguments $runDir $userEnv "dotnet-$i" -Alone
         Write-Output "::group::$($programs[$i]), as the standard user: $(if ($run.Exit -eq 0) { 'passed' } else { "exited $($run.Exit)" })"
         Show-Run $run
         Write-Output '::endgroup::'
+        # The run's folder is removed with the user.
+        if ($Results -and (Test-Path -LiteralPath $resultsDir)) {
+            New-Item -ItemType Directory -Force -Path $Results | Out-Null
+            $kept = Join-Path $Results ([IO.Path]::GetFileNameWithoutExtension($programs[$i]))
+            Copy-Item -Recurse -Force -LiteralPath $resultsDir -Destination $kept
+        }
         if ($run.Exit -ne 0) { $failed.Add("$($programs[$i]) exited $($run.Exit)") }
     }
     if ($failed.Count -gt 0) {

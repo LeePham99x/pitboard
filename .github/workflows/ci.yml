@@ -786,7 +786,17 @@ jobs:
           ./.github/scripts/test-as-standard-user.ps1
           -Dotnet "apps/windows/Pitboard.Windows.Tests/$env:BUILT/Pitboard.Windows.Tests.exe", target/windows-app/uitests/Pitboard.UITests.exe,
           target/windows-app/share-tests/Pitboard.Share.Core.Tests.exe, target/windows-app/installer-tests/Pitboard.Installer.Tests.exe
-          -Probe target/debug/pitboard-probe.exe
+          -Results "$env:RUNNER_TEMP/app-tests" -Probe target/debug/pitboard-probe.exe
+      # ScreenshotTests' pictures of the window and the icon's menu in the twoTools fixture, for the docs. On
+      # windows-11-arm a window of the job user's keeps the foreground (CF1), so the test takes none there.
+      - name: The docs' pictures of the app
+        if: matrix.os == 'windows-2025'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-app-pictures
+          path: ${{ runner.temp }}/app-tests/Pitboard.UITests/**/*.png
+          if-no-files-found: error
+          retention-days: 7
       # The job's user is elevated, so of the UI tests only the elevated launch's runs.
       - name: An elevated launch refuses and writes nothing, as the job user
         shell: pwsh
