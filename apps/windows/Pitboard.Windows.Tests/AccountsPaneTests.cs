@@ -111,6 +111,34 @@ public sealed class AccountsPaneTests
         Assert.AreEqual("spare 12%", selected.Item.Title);
     }
 
+    // A rename keeps the account's id, so the row stays the same object in the same container.
+    [UITestMethod]
+    public async Task ARenamedRowIsFoundByItsNewName()
+    {
+        var personal = Items.Account("claude", "personal") with { Id = "claude:same" };
+        var first = Snapshots.Read(1) with
+        {
+            Sections = [Items.Section("claude", null, Items.Account("claude", "work", inUse: true), personal)],
+        };
+        var (pane, _, app) = Over(first);
+        await Views.Shown(pane);
+        Views.Element<ListViewItem>(pane, "account.claude/personal");
+
+        app.Apply(first with
+        {
+            Revision = 2,
+            Sections =
+            [
+                Items.Section(
+                    "claude", null, Items.Account("claude", "work", inUse: true),
+                    personal with { Qualified = "claude/home", Title = "home" }),
+            ],
+        });
+        pane.UpdateLayout();
+
+        Views.Element<ListViewItem>(pane, "account.claude/home");
+    }
+
     [UITestMethod]
     public async Task ANoticeAndTheSetupStepComeBeforeTheAccounts()
     {
