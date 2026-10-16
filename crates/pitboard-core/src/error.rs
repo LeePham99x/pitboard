@@ -1215,9 +1215,9 @@ fn too_large(os: Os, tool: ProviderId, label: &str, bytes: usize, limit: usize) 
             smaller(tool)
         ),
         Os::Windows => format!(
-            "the login for `{label}` needs {bytes} bytes, past the {limit} Claude Code keeps in \
-             Credential Manager. Sign out of MCP servers you no longer use to make the login \
-             smaller."
+            "the login for `{label}` needs {}. Sign out of MCP servers you no longer use to make \
+             the login smaller.",
+            crate::words::past_credential_manager(bytes, limit)
         ),
     }
 }

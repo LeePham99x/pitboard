@@ -1825,9 +1825,9 @@ fn judge_credential(facts: &Facts) -> Check {
             "credential",
             "Credential Manager cannot be reached from this logon",
             format!(
-                "A network logon, as a sign-in over SSH with a key, has no Credential Manager. \
-                 Run Pitboard from a desktop session. A Claude Code session started from this \
-                 logon reads only {}.",
+                "A network logon, as {}, has no Credential Manager. Run Pitboard from a desktop \
+                 session. A Claude Code session started from this logon reads only {}.",
+                words::SSH_SIGN_IN,
                 facts.credential_file.display()
             ),
         ),
@@ -1874,18 +1874,17 @@ fn judge_fallback_login(facts: &Facts) -> Option<Check> {
         "While it is there, Claude Code sessions already running at a switch {}.",
         words::kept_until_renewed()
     );
-    let (cannot, could_not, such_as, as_login) = match facts.os {
+    let cannot = words::out_of_reach(facts.os);
+    let (could_not, such_as, as_login) = match facts.os {
         Os::MacOs | Os::Linux => (
-            "cannot read the keychain",
             "the keychain could not be read",
-            "in a session started over SSH",
-            "`/login` over SSH does",
+            "in a session started over SSH".to_owned(),
+            "`/login` over SSH does".to_owned(),
         ),
         Os::Windows => (
-            "cannot reach Credential Manager",
             "Credential Manager could not be reached",
-            "in a sign-in over SSH with a key",
-            "`/login` does in a sign-in over SSH with a key",
+            format!("in {}", words::SSH_SIGN_IN),
+            format!("`/login` does in {}", words::SSH_SIGN_IN),
         ),
     };
     let (detail, advice) = match &left.fingerprint {
@@ -2119,7 +2118,8 @@ fn judge_pieces(price: store::Cost, parts: &[(String, usize)]) -> Check {
             "credential_size",
             "login size",
             format!(
-                "{bytes} bytes, past the {limit} Claude Code keeps in Credential Manager{}",
+                "{}{}",
+                words::past_credential_manager(bytes, limit),
                 biggest(parts)
             ),
             "Neither Pitboard nor Claude Code can write a login this size there. Sign out of \

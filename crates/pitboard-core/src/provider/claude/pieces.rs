@@ -186,8 +186,8 @@ pub(crate) fn write(
         .map_or(0, |n| n.min(MOST_PIECES));
     let steps = steps(manifest(items)?, left, contents).ok_or_else(|| {
         Error::Write(format!(
-            "this login is {} bytes, past the {MOST_BYTES} Claude Code keeps in Credential Manager",
-            contents.len()
+            "this login is {}",
+            crate::words::past_credential_manager(contents.len(), MOST_BYTES)
         ))
     })?;
     let in_pieces = matches!(steps.first(), Some(Step::Set(name, _)) if name == PENDING);
