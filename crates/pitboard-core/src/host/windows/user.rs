@@ -176,15 +176,20 @@ pub(crate) fn lies_in_the_accounts_own(path: &std::path::Path, below: &str) -> b
         .is_some_and(|home| crate::host::lies_in(path, &home.join(below)))
 }
 
-// The known folders, and the ones this test process was started with, which can be others.
+// The known folders, and with `as_started` the ones this process was started with, which can be
+// others.
 #[cfg(any(test, feature = "test-support"))]
 #[allow(
     clippy::disallowed_methods,
     reason = "the folders this process was started with, which a test's guard refuses too"
 )]
-pub(crate) fn app_data_folders() -> (Vec<PathBuf>, Vec<PathBuf>) {
+pub(crate) fn app_data_folders(as_started: bool) -> (Vec<PathBuf>, Vec<PathBuf>) {
     use windows_sys::Win32::UI::Shell::{FOLDERID_LocalAppData, FOLDERID_RoamingAppData};
-    let started = |name: &str| std::env::var_os(name).map(PathBuf::from);
+    let started = |name: &str| {
+        std::env::var_os(name)
+            .filter(|_| as_started)
+            .map(PathBuf::from)
+    };
     let roaming = [known_folder(&FOLDERID_RoamingAppData), started("APPDATA")];
     let local = [
         known_folder(&FOLDERID_LocalAppData),

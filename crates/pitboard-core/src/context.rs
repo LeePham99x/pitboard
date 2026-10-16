@@ -262,7 +262,7 @@ pub(crate) fn refuse_a_real_claude(path: &std::path::Path) {
                 || crate::host::lies_in(path, std::path::Path::new("/Applications/Claude.app"))
         }
         Os::Windows => {
-            let (mut roaming, mut local) = user::app_data_folders();
+            let (mut roaming, mut local) = user::app_data_folders(true);
             if let Some(home) = &fake {
                 roaming.push(home.join("AppData").join("Roaming"));
                 local.push(home.join("AppData").join("Local"));
@@ -1055,7 +1055,7 @@ mod tests {
             })
             .is_err()
         };
-        let (roaming, local) = crate::host::user::app_data_folders();
+        let (roaming, local) = crate::host::user::app_data_folders(true);
         assert!(!roaming.is_empty() && !local.is_empty());
         for dir in &roaming {
             assert!(named(dir.join("Claude").join("pitboard-test-never-made")));

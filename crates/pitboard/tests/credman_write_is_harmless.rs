@@ -27,19 +27,21 @@ fn as_bun_writes(item: &Item, user: &str) {
 }
 
 // Taken away by name however the test ends: the leak check after the run finds none.
-struct Discarded(String);
+struct Discarded(pitboard_core::context::Context, String);
 
 impl Drop for Discarded {
     fn drop(&mut self) {
-        let _ = credman::discard(&common::ctx(), &self.0);
+        let _ = credman::discard(&self.0, &self.1);
     }
 }
 
 #[test]
 fn writing_leaves_each_item_as_bun_writes_one() {
     let svc = service();
-    let _discarded = Discarded(svc.clone());
-    let ctx = common::ctx();
+    // Homes of its own: the gate refuses the test's environment, which withholds USERPROFILE.
+    let env = common::Env::new("credman-write");
+    let ctx = env.context();
+    let _discarded = Discarded(ctx.clone(), svc.clone());
     let whole = format!("{svc}/claude-code-user");
     credman::write_as_bun(&whole, "claude-code-user", r#"{"seed":true}"#).expect("seeded");
     as_bun_writes(

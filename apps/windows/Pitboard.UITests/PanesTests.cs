@@ -6,6 +6,7 @@ public sealed class PanesTests
 {
     // Newest first: the fixture's two switches are newer than both its enrolments.
     [TestMethod]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void ActivityListsChanges()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
@@ -20,6 +21,7 @@ public sealed class PanesTests
 
     // The one thing worth looking at in this fixture is personal's parked login, which lapses soon.
     [TestMethod]
+    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void ThisPCShowsTheChecks()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");

@@ -6382,10 +6382,14 @@ mod tests {
             assert!(found.detail.contains(store), "{}", found.detail);
             assert!(found.detail.contains("file store"), "{}", found.detail);
         }
+        let leaves = match crate::host::OS {
+            Os::MacOs | Os::Linux => "will not touch",
+            Os::Windows => "does not follow Codex",
+        };
         for store in ["keyring", "auto", "secrets"] {
             let found = judged(store, 1);
             let advice = &check(&found, "codex_backend").advice;
-            assert!(advice.contains("will not touch"), "{advice}");
+            assert!(advice.contains(leaves), "{advice}");
         }
     }
 

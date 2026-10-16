@@ -680,16 +680,10 @@ impl Env {
                 .iter()
                 .fold(prefix.clone(), |at, part| at.join(part))
                 .join(platform);
-                std::fs::create_dir_all(&package).unwrap();
+                let vendored = package.join("vendor").join(triple).join("bin");
+                std::fs::create_dir_all(&vendored).unwrap();
                 std::fs::write(package.join("package.json"), "{}").unwrap();
-                put_stand_in(
-                    &package
-                        .join("vendor")
-                        .join(triple)
-                        .join("bin")
-                        .join("codex.exe"),
-                    &fake_codex_login(login),
-                );
+                put_stand_in(&vendored.join("codex.exe"), &fake_codex_login(login));
                 let program = prefix.join("codex.cmd");
                 write(&program, &npm_shim("fakenode", &target.join("\\")));
                 program

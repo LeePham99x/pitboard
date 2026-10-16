@@ -3795,7 +3795,8 @@ mod tests {
     /// Everything on a machine a change could leave different: every directory and file
     /// under its home, the audit log among them and the scheduler's files with them, every
     /// item in its keychain, every login parked and the one in use. The private directory
-    /// a sign-in made before is not counted: dropping that sign-in takes it away again.
+    /// a sign-in made before is not counted: dropping that sign-in takes it away again. Nor
+    /// is the lock that sign-in holds, which Windows lets nobody else read.
     type Everything = (
         BTreeMap<String, Option<Vec<u8>>>,
         Vec<(String, Option<String>)>,
@@ -3807,14 +3808,15 @@ mod tests {
         fn walk(dir: &std::path::Path, into: &mut BTreeMap<String, Option<Vec<u8>>>) {
             for entry in std::fs::read_dir(dir).expect("a directory to read") {
                 let path = entry.expect("an entry").path();
-                if path.ends_with(".pitboard/signin") {
+                if path.ends_with(".pitboard/signin") || path.ends_with(".pitboard/signin.lock") {
                     continue;
                 }
                 if path.is_dir() {
                     into.insert(path.display().to_string(), None);
                     walk(&path, into);
                 } else {
-                    let body = std::fs::read(&path).expect("a file to read");
+                    let body = std::fs::read(&path)
+                        .unwrap_or_else(|e| panic!("{} to read: {e}", path.display()));
                     into.insert(path.display().to_string(), Some(body));
                 }
             }

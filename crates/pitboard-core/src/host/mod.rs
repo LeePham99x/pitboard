@@ -358,7 +358,8 @@ pub(crate) fn real_login_places(
     let pitboard = user::accounts_own_pitboard_home()
         .ok_or("this system names no Pitboard folder for this account")?;
     let own = Context::new(home).with_pitboard_home(pitboard);
-    let (roaming, local) = user::app_data_folders();
+    // A test's child is started with scratch app data folders inside its own config folder.
+    let (roaming, local) = user::app_data_folders(started_in.is_some());
     Ok(std::iter::once(&own)
         .chain(started_in)
         .flat_map(|ctx| {
