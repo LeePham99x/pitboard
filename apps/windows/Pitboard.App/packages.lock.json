@@ -153,8 +153,15 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.WindowsAppSDK": "[2.5.1, )",
-          "Pitboard.Core": "[1.0.0, )"
+          "Pitboard.Core": "[1.0.0, )",
+          "WinSparkle": "[0.9.4, )"
         }
+      },
+      "WinSparkle": {
+        "type": "CentralTransitive",
+        "requested": "[0.9.4, )",
+        "resolved": "0.9.4",
+        "contentHash": "QIXyuSiT5nMXfqL3ypM8SHc+SZ7n2jUi9PQVVYv19kkTYx+6HfPbLeNOkQRn/6J1xFFMyidIOiF5wp+tiYzFDA=="
       }
     },
     "net10.0-windows10.0.26100/win-arm64": {
@@ -179,6 +186,12 @@
           "Microsoft.WindowsAppSDK.Base": "2.0.4",
           "Microsoft.WindowsAppSDK.InteractiveExperiences": "2.1.8"
         }
+      },
+      "WinSparkle": {
+        "type": "CentralTransitive",
+        "requested": "[0.9.4, )",
+        "resolved": "0.9.4",
+        "contentHash": "QIXyuSiT5nMXfqL3ypM8SHc+SZ7n2jUi9PQVVYv19kkTYx+6HfPbLeNOkQRn/6J1xFFMyidIOiF5wp+tiYzFDA=="
       }
     },
     "net10.0-windows10.0.26100/win-x64": {
@@ -203,6 +216,12 @@
           "Microsoft.WindowsAppSDK.Base": "2.0.4",
           "Microsoft.WindowsAppSDK.InteractiveExperiences": "2.1.8"
         }
+      },
+      "WinSparkle": {
+        "type": "CentralTransitive",
+        "requested": "[0.9.4, )",
+        "resolved": "0.9.4",
+        "contentHash": "QIXyuSiT5nMXfqL3ypM8SHc+SZ7n2jUi9PQVVYv19kkTYx+6HfPbLeNOkQRn/6J1xFFMyidIOiF5wp+tiYzFDA=="
       }
     }
   }

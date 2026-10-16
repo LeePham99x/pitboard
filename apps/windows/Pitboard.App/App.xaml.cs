@@ -15,8 +15,8 @@ public partial class App : Application
     private readonly AppStart _start;
     private readonly Handovers _handovers;
     private readonly WindowRequests _requests = new();
-    private readonly NoUpdates _updates = new();
     private readonly string _version = SettingsPage.Version(typeof(App).Assembly);
+    private IUpdates _updates = new NoUpdates();
     private AppModel? _model;
     private WindowsNotifications? _notifications;
     private StartAtSignIn? _startAtSignIn;
@@ -60,6 +60,11 @@ public partial class App : Application
         _icon.Show(model.MenuBar.Spoken);
         _accountWindows = new AccountWindows(model, Web(), _hidden.Handle);
         _accountWindows.Follow(model.AccountWindows);
+        _updates = SparkleUpdates.For(
+            _start.Identity.Build, SparkleUpdates.Key(typeof(App).Assembly), _version, _start.DataFolder,
+            action => queue.TryEnqueue(() => action()),
+            () => _accountWindows?.MayQuit() ?? Task.FromResult(true),
+            End);
         PowerManager.SystemSuspendStatusChanged += OnSuspendStatusChanged;
         Follow(model.WindowRequest);
         // A click arrives on a thread of COM's; the model takes a message from any.
@@ -82,6 +87,7 @@ public partial class App : Application
 
         // A second launch's handover arrives on a thread of its own.
         _handovers.Ready(handed => queue.TryEnqueue(() => Handed(handed)));
+        (_updates as SparkleUpdates)?.Start();
     }
 
     // Another copy's launch: its link waits for an account, and one without a link brings the window forward.
@@ -217,6 +223,7 @@ public partial class App : Application
     private void EndSession()
     {
         _icon?.Remove();
+        (_updates as SparkleUpdates)?.Stop();
         _model?.Shutdown();
         _notifications?.Stop();
     }

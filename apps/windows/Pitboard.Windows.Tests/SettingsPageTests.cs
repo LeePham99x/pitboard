@@ -26,7 +26,9 @@ public sealed class SettingsPageTests
         CollectionAssert.AreEqual(
             new[] { SettingsPage.NoUpdateKey, SettingsPage.BetaNote },
             SettingsPage.UpdatesNotes(new NoUpdates(), "1.0.0-beta.1"));
-        Assert.IsEmpty(SettingsPage.UpdatesNotes(new Updating(), "1.0.0"));
+        Assert.IsEmpty(SettingsPage.UpdatesNotes(new StandInUpdates(), "1.0.0"));
+        Assert.AreEqual(
+            SettingsPage.BadUpdateKey, SettingsPage.UpdatesNotes(new NoUpdates(SettingsPage.BadUpdateKey), "1.0.0").Single());
     }
 
     // The model's span runs to 24:00, which a time picker cannot hold.
@@ -57,16 +59,5 @@ public sealed class SettingsPageTests
         Assert.AreEqual(SettingsPage.NewTerminals, SettingsPage.TerminalNote(Found(new FoundCommandLine.Nowhere())));
         Assert.IsNull(SettingsPage.TerminalNote(Found(new FoundCommandLine.Bundled(@"C:\Pitboard\bin\pitboard.exe"))));
         Assert.IsNull(SettingsPage.TerminalNote(new CommandLineShown(null, null, null, false, null)), "not looked for yet");
-    }
-
-    private sealed class Updating : IUpdates
-    {
-        public bool Available => true;
-
-        public string? Waiting => null;
-
-        public void Check()
-        {
-        }
     }
 }

@@ -31,6 +31,12 @@
           "Microsoft.WindowsAppSDK.WinUI": "2.3.9"
         }
       },
+      "WinSparkle": {
+        "type": "Direct",
+        "requested": "[0.9.4, )",
+        "resolved": "0.9.4",
+        "contentHash": "QIXyuSiT5nMXfqL3ypM8SHc+SZ7n2jUi9PQVVYv19kkTYx+6HfPbLeNOkQRn/6J1xFFMyidIOiF5wp+tiYzFDA=="
+      },
       "Microsoft.Web.WebView2": {
         "type": "Transitive",
         "resolved": "1.0.3719.77",
@@ -172,6 +178,12 @@
       }
     },
     "net10.0-windows10.0.26100/win-arm64": {
+      "WinSparkle": {
+        "type": "Direct",
+        "requested": "[0.9.4, )",
+        "resolved": "0.9.4",
+        "contentHash": "QIXyuSiT5nMXfqL3ypM8SHc+SZ7n2jUi9PQVVYv19kkTYx+6HfPbLeNOkQRn/6J1xFFMyidIOiF5wp+tiYzFDA=="
+      },
       "Microsoft.Web.WebView2": {
         "type": "Transitive",
         "resolved": "1.0.3719.77",
@@ -196,6 +208,12 @@
       }
     },
     "net10.0-windows10.0.26100/win-x64": {
+      "WinSparkle": {
+        "type": "Direct",
+        "requested": "[0.9.4, )",
+        "resolved": "0.9.4",
+        "contentHash": "QIXyuSiT5nMXfqL3ypM8SHc+SZ7n2jUi9PQVVYv19kkTYx+6HfPbLeNOkQRn/6J1xFFMyidIOiF5wp+tiYzFDA=="
+      },
       "Microsoft.Web.WebView2": {
         "type": "Transitive",
         "resolved": "1.0.3719.77",

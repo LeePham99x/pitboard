@@ -271,6 +271,15 @@ public sealed class IconMenuTests
         Assert.Contains("Open Pitboard | Settings | Check for updates | -", Said(entries));
     }
 
+    // A beta finds no later beta, so the menu offers no check; it still says when 1.0.0 is found.
+    [TestMethod]
+    public void ABetaOffersNoCheckForUpdates()
+    {
+        Assert.DoesNotContain("Check for updates", Said(IconMenu.Entries(TwoTools(), new StandInUpdates(beta: true))));
+        Assert.StartsWith(
+            "Install Pitboard 1.0.0…", Said(IconMenu.Entries(TwoTools(), new StandInUpdates(waiting: "1.0.0", beta: true))));
+    }
+
     [TestMethod]
     public void AnUpdateWaitingIsOfferedFirst()
     {
@@ -278,16 +287,5 @@ public sealed class IconMenuTests
 
         Assert.StartsWith("Install Pitboard 1.2.0… | - | # Claude Code", Said(entries));
         Assert.AreEqual(IconMark.Update, Command(entries, "Install Pitboard 1.2.0…").Mark);
-    }
-
-    private sealed class StandInUpdates(string? waiting) : IUpdates
-    {
-        public bool Available => true;
-
-        public string? Waiting => waiting;
-
-        public void Check()
-        {
-        }
     }
 }

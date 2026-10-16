@@ -205,6 +205,19 @@
       <TextBlock x:Name="WhatItDoes" Style="{StaticResource Footnote}" />
 
       <TextBlock Style="{StaticResource Section}" Text="Updates" />
+      <Grid x:Name="AutomaticChecksCard" Style="{StaticResource Card}">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <TextBlock VerticalAlignment="Center" Text="Check for updates automatically" TextWrapping="Wrap" />
+        <ToggleSwitch
+            x:Name="AutomaticChecks"
+            Grid.Column="1"
+            AutomationProperties.AutomationId="settings.checkAutomatically"
+            AutomationProperties.Name="Check for updates automatically"
+            Toggled="OnAutomaticChecksToggled" />
+      </Grid>
       <Grid Style="{StaticResource Card}">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" />

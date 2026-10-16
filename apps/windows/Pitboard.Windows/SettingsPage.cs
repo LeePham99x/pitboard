@@ -16,6 +16,13 @@ public static class SettingsPage
         "This copy of Pitboard can’t update itself: it was built from source and carries no update key. "
         + "A copy from a release keeps itself up to date.";
 
+    public const string BadUpdateKey =
+        "This copy of Pitboard can’t update itself: the update key it was built with is not a valid key. "
+        + "Install a later version by hand.";
+
+    public const string NoWinSparkle =
+        "This copy of Pitboard can’t update itself: WinSparkle.dll, which updates it, is missing. Install Pitboard again.";
+
     public const string BetaNote = "A beta updates itself to 1.0.0 once that is out. Install a later beta by hand.";
 
     public const string NewTerminals = "Pitboard’s installer puts pitboard on your PATH, which terminals opened after it ran see.";
@@ -45,7 +52,7 @@ public static class SettingsPage
     public static bool IsBeta(string version) => version.Contains('-', StringComparison.Ordinal);
 
     public static string[] UpdatesNotes(IUpdates updates, string version) =>
-        [.. updates.Available ? [] : new[] { NoUpdateKey }, .. IsBeta(version) ? new[] { BetaNote } : []];
+        [.. updates.Refusal is { } refusal ? new[] { refusal } : [], .. IsBeta(version) ? new[] { BetaNote } : []];
 
     public static string? TerminalNote(CommandLineShown shown) => shown.Found is FoundCommandLine.Nowhere ? NewTerminals : null;
 

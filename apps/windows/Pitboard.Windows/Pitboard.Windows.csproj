@@ -13,6 +13,8 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" />
     <PackageReference Include="Microsoft.Windows.CsWin32" PrivateAssets="all" />
+    <!-- Its x64 and ARM64 WinSparkle.dll, which a build for each runtime copies beside Pitboard.exe. -->
+    <PackageReference Include="WinSparkle" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Pitboard.Core/Pitboard.Core.csproj" />

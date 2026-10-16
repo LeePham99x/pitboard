@@ -89,7 +89,9 @@ public static class IconMenu
             [
                 new IconMenuEntry.Command("Open Pitboard", new IconCommand.Send(new Intent.ShowWindow(Pane: null))) { Default = true },
                 new IconMenuEntry.Command("Settings", new IconCommand.ShowSettings()),
-                .. updates.Available ? [new IconMenuEntry.Command("Check for updates", new IconCommand.CheckForUpdates())] : Array.Empty<IconMenuEntry>(),
+                .. updates.Available && !updates.Beta
+                    ? [new IconMenuEntry.Command("Check for updates", new IconCommand.CheckForUpdates())]
+                    : Array.Empty<IconMenuEntry>(),
             ],
             [
                 new IconMenuEntry.Command("Pitboard help", new IconCommand.OpenLink(HelpLink)),

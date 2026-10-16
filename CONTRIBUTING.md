@@ -431,6 +431,7 @@ Debug build keeps apart from an installed Release:
 | Data folder | `%LOCALAPPDATA%\Pitboard App Debug`, or the fixture's | `%LOCALAPPDATA%\Pitboard App` |
 | Link scheme | `pitboard-debug://`, never registered | `pitboard://` |
 | Notifications | never registers, posts none | registers as Pitboard |
+| Updates | says it cannot update | WinSparkle, over the feed of full releases, with the key `WINDOWS_UPDATE_PUBLIC_KEY` gave it |
 
 The data folder is the known folder Local AppData, which `LOCALAPPDATA` does not move. Under a
 fixture the app keeps its data in the fixture's folder, `pitboard-fixture` in the temporary

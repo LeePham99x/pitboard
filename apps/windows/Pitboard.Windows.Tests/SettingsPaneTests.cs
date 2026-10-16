@@ -313,6 +313,38 @@ public sealed class SettingsPaneTests
         Assert.IsFalse(Views.Element<Button>(pane, "settings.checkNow").IsEnabled);
     }
 
+    // As the macOS settings: automatic checks only where the build can update, and Check now beside them.
+    [UITestMethod]
+    public async Task AutomaticChecksShowWhileTheUpdaterIsOnAndTurnOff()
+    {
+        var updates = new StandInUpdates();
+        var pane = await Shown(new AppModel(new StandInModel(Snapshots.Read(1))), updates: updates);
+        var toggle = Views.Element<ToggleSwitch>(pane, "settings.checkAutomatically");
+
+        Assert.IsTrue(toggle.IsOn);
+        toggle.IsOn = false;
+        Assert.IsFalse(updates.ChecksAutomatically);
+
+        Views.Press(Views.Element<Button>(pane, "settings.checkNow"));
+        Assert.AreEqual(1, updates.Checks);
+
+        var off = await Shown(new AppModel(new StandInModel(Snapshots.Read(1))));
+        Assert.IsFalse(
+            Views.Visible<ToggleSwitch>(off).Any(shown => AutomationProperties.GetAutomationId(shown) == "settings.checkAutomatically"),
+            "a build that cannot update offers automatic checks");
+    }
+
+    [UITestMethod]
+    public async Task AnUpdateFoundShowsAtOnce()
+    {
+        var updates = new StandInUpdates();
+        var pane = await Shown(new AppModel(new StandInModel(Snapshots.Read(1))), updates: updates);
+
+        updates.Found("1.0.1");
+
+        Assert.Contains("Pitboard 1.0.1 is ready to install.", Views.Texts(pane));
+    }
+
     [UITestMethod]
     public async Task ABetaSaysHowItGetsTheNextBeta()
     {

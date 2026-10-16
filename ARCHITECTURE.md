@@ -652,7 +652,11 @@ window loads its site, and whatever the site's pages load, as a browser would.
     notification itself asks for. `WindowsApps` is the model's `AppControl`: through
     `PackagedApps` it finds the process of a Store app's package that owns a top-level
     window, asks Restart Manager to end it, never forced, and opens the app by its AUMID
-    through the activation manager. `NoUpdates` is the updater of a build that cannot update.
+    through the activation manager. `SparkleUpdates` is a Release build's updater: WinSparkle,
+    through `ISparkle`, which `WinSparkle` sends to `WinSparkle.dll` and tests replace, over
+    the feed of full releases, with WinSparkle's settings in `UpdateSettings`'s file in the
+    app's data folder and the version of an update it finds read from the feed by
+    `UpdateFeed`. `NoUpdates` is the updater of a build that cannot update, and says why.
     `StartAtSignIn` is the settings' start at sign-in over an `IStartupItem`: `RunValue`,
     which writes the `Run` value, `"<exe>" --sign-in`, through `IRunKey`, sent to the
     registry by `RegistryRunKey`
@@ -2633,6 +2637,7 @@ on 15 October 2026. W27 reviews the list.
 | A program given identity by a package with an external location gets a share with `AppInstance.GetActivatedEventArgs`, from Windows 10 2004 on | [Get activation info for packaged apps](https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/get-activation-info-for-packaged-apps) | No runner registers Pitboard's package or shares a page; the 1.0 session's P1 shares from Edge, Chrome and Firefox. |
 | The system shows the sentence a share target gives `ShareOperation.ReportError` | [ReportError](https://learn.microsoft.com/en-us/uwp/api/windows.applicationmodel.datatransfer.sharetarget.shareoperation.reporterror) | Only a person shares a page: P1. |
 | A sparse package registers only when signed by a certificate the machine trusts, its Publisher the certificate's subject, and its program's `<msix>` element names the same publisher, package and application | [Grant package identity by packaging with external location](https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/grant-identity-to-nonpackaged-apps) | No runner registers Pitboard's package: CI signs it with a certificate nothing trusts. P1 registers the signed release's. |
+| `VerifyVersionInfoW` compares with the running Windows only in a program whose manifest names Windows 10, and with Windows 8 in one without a manifest, so WinSparkle reads a feed's `minimumSystemVersion` against the real build only there | [VerifyVersionInfoW](https://learn.microsoft.com/windows/win32/api/winbase/nf-winbase-verifyversioninfow) | No runner checks for an update; the 1.0 session's P3 is the first. |
 | A process that `PitboardShare.exe` starts, or that its `LaunchUriAsync` starts, carries none of its package identity, and none of their writes is redirected | [UpdateProcThreadAttribute](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute) | Not yet measured: CF8 measures the probe's sparse package on the runners, and P2 Pitboard's. |
 
 ### One sign-in at a time
@@ -4032,6 +4037,30 @@ Microsoft's documentation.
   app has ended or declined. `IApplicationActivationManager::ActivateApplication`'s reference
   (updated 22 February 2024) offers no option that opens an app behind another window, so
   `WindowsApps` brings Pitboard's window forward after it.
+
+- WinSparkle 0.9.4, read on 16 October 2026 in its source at tag `v0.9.4` and in its NuGet
+  package. `win_sparkle_set_eddsa_public_key` returns 0 and keeps no key for anything but the
+  base64 of 32 bytes, and with no key the downloader logs "Using unsigned updates!" and
+  installs anyway (`dll_api.cpp`, `signatureverifier.cpp`, `updatedownloader.cpp`).
+  Versions compare by Sparkle's comparator, which sorts `1.0.0-beta.1` and `1.0.0+<commit>`
+  below `1.0.0`, against the build version where one is set (`updatechecker.cpp`,
+  `settings.h`). The feed's parser takes an enclosure whose `sparkle:os` is empty,
+  `windows` or the DLL's own `windows-x64` or `windows-arm64`, and `minimumSystemVersion`
+  only as an element of the item, checked with `VerifyVersionInfoW` (`appcast.cpp`). The
+  did-find-update callback names no version (`appcontroller.cpp`). A check that fails shows
+  nothing unless WinSparkle's window is already open (`ui.cpp`). `win_sparkle_init` asks
+  whether to check at the second launch unless `CheckForUpdates` is set, and starts the daily
+  checks only where it is on (`dll_api.cpp`, `updatechecker.cpp`). The can-shutdown callback
+  runs on WinSparkle's thread before the installer starts, and the shutdown request once it
+  has (`ui.cpp`). Settings go to `HKCU\Software\<company>\<app>\WinSparkle` unless the
+  app gives its own config methods (`settings.cpp`). The package's `runtimes/win-x64` and
+  `win-arm64` DLLs are AMD64 and ARM64, import only system DLLs and export the API by its C
+  names (llvm-readobj 22). So `SparkleUpdates` starts WinSparkle only with a key it takes and
+  the version without a commit, turns automatic checks on before the first start, reads the
+  version of an update found from the feed, asks the downloads question in the can-shutdown
+  callback, and keeps WinSparkle's settings in `updates.json` in the app's data folder, which
+  an uninstall removes with the folder. Turned on after a start with them off, automatic
+  checks begin at Pitboard's next start. `SparkleUpdatesTests` and `UpdateFeedTests` hold it.
 
 ### The model's timers
 
