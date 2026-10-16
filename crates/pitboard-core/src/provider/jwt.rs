@@ -73,13 +73,10 @@ fn base64url(text: &str) -> Option<Vec<u8>> {
     ((held & ((1u32 << bits) - 1)) == 0).then_some(out)
 }
 
-#[cfg(test)]
-pub(crate) use crate::base64::encode as base64;
-
 // Unpadded base64url, the inverse of what `claims` decodes.
 #[cfg(test)]
 fn part(bytes: &[u8]) -> String {
-    base64(bytes)
+    crate::base64::encode(bytes)
         .trim_end_matches('=')
         .replace('+', "-")
         .replace('/', "_")

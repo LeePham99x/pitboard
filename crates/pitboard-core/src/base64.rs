@@ -1,5 +1,7 @@
-// Standard base64 with padding, as Node's `Buffer` writes it: Claude Code keeps a login too
-// large for one Credential Manager item in pieces of it. Written out, as jwt.rs's decode is.
+// Standard base64 with padding, as Node's `Buffer` writes it and Codex's `BASE64_STANDARD`
+// reads it: Claude Code keeps a login too large for one Credential Manager item in pieces of
+// it, and a managed preference forces Codex's settings in it. Written out, as jwt.rs's decode
+// is.
 
 const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
@@ -58,6 +60,7 @@ mod tests {
             (b"foo", "Zm9v"),
             ("Đạt".as_bytes(), "xJDhuqF0"),
             (&[0xff, 0xfe, 0x00][..], "//4A"),
+            (&[0xfb, 0xff, 0xbf][..], "+/+/"),
         ] {
             assert_eq!(encode(bytes), written);
             assert_eq!(decode(written).as_deref(), Some(bytes));
@@ -66,7 +69,20 @@ mod tests {
 
     #[test]
     fn what_it_would_not_write_is_not_read() {
-        for text in ["Zg=", "Zg===", "Z===", "Zh==", "Zm9v!", "Zm-v", "Zm9v Zm9v"] {
+        for text in [
+            "Zg",
+            "Zg=",
+            "Zg===",
+            "Z===",
+            "Zh==",
+            "Zm9v=",
+            "Zm9v!",
+            "Zm-v",
+            "-_-_",
+            "Zm 9v",
+            "Zm9v Zm9v",
+            "Zg==Zg==",
+        ] {
             assert_eq!(decode(text), None, "{text}");
         }
     }
