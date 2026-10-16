@@ -22,7 +22,7 @@ use std::fmt;
 /// Everything that changes anything takes one as an argument: the durable write of a file,
 /// every private file or directory made and every one removed, a write to or a delete from
 /// any store of logins, the keychain among them, a change to the system's scheduler, a
-/// tool's sign-in started, and the token exchange that renews a parked login. So a change
+/// tool's sign-in or warm-up run started, and the token exchange that renews a parked login. So a change
 /// that did not ask the gate does not compile, and nothing rotates a refresh token it could
 /// not then write down.
 #[derive(Debug, Clone, Copy)]

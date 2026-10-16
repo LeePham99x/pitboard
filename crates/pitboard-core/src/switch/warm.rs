@@ -134,7 +134,7 @@ pub(crate) fn warm_up(settled: Settled, target: Target) -> Result<(WarmUp, Vec<W
     // The tool runs for seconds; nothing else waits on Pitboard's lock meanwhile.
     drop(exclusive);
     let came = handed.and_then(|handed| {
-        let ran = run::run(ctx, handed.headless);
+        let ran = run::run(ctx, permit, handed.headless);
         let started = ran
             .map_err(|error| Failure::Failed(error.to_string()))
             .and_then(|ran| {

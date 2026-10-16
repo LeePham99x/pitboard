@@ -1041,16 +1041,16 @@ window loads its site, and whatever the site's pages load, as a browser would.
   and everything that changes anything takes one as an argument: `atomic::write`, every
   function in `host::fs` that makes, moves or removes a file or a directory,
   `RawStore::write` and `delete` (the keychain among the stores), `Scheduler::put` and
-  `remove` and the service manager they ask, a tool's sign-in started, and the token
-  exchange, `Provider::renew` down to the request. So a change that skips the gate does
-  not compile, and nothing rotates a refresh token it could not then write down. Every
-  change asks the gate before it reads, locks or records anything, so a refused one leaves
-  even the audit log as it was. Where the gate refuses, `status` answers what
-  `status_offline` answers, with a `read_only` warning, the status line writes neither
-  sessions nor readings, `doctor` fails its `system_too_old` or `elevated` check, first and
-  in the gate's order, and an app writes no file of its own, since `app::write_file` takes a
-  permit too. What each says, on each system, is written once, in `words::elevated` and
-  `words::too_old`.
+  `remove` and the service manager they ask, a tool's sign-in or warm-up run started
+  (`host::proc::run_within`), and the token exchange, `Provider::renew` down to the request.
+  So a change that skips the gate does not compile, and nothing rotates a refresh token it
+  could not then write down. Every change asks the gate before it reads, locks or records
+  anything, so a refused one leaves even the audit log as it was. Where the gate refuses,
+  `status` answers what `status_offline` answers, with a `read_only` warning, the status
+  line writes neither sessions nor readings, `doctor` fails its `system_too_old` or
+  `elevated` check, first and in the gate's order, and an app writes no file of its own,
+  since `app::write_file` takes a permit too. What each says, on each system, is written
+  once, in `words::elevated` and `words::too_old`.
 - A run of the daily renewal schedule renews the default home, whatever `PITBOARD_HOME`
   says, since the schedule is that home's alone: `Pitboard::renew` renews in the context
   `schedule::for_its_run` gives it. Such a run is told apart by what the scheduler says,

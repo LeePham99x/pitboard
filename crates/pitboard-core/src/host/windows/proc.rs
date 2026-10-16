@@ -467,13 +467,14 @@ pub(crate) fn product_name(path: &Path) -> Option<String> {
 /// Runs no program: a warm-up, the only run with a ceiling, stops on Windows before it
 /// starts one.
 pub(crate) fn run_within(
+    _: crate::service::Permit,
     _command: std::process::Command,
     _handed: Option<&[u8]>,
     _ceiling: std::time::Duration,
 ) -> std::io::Result<crate::host::Ran> {
     Err(std::io::Error::new(
         std::io::ErrorKind::Unsupported,
-        "no program is run with a ceiling on Windows yet",
+        "no program is run with a ceiling on Windows",
     ))
 }
 
