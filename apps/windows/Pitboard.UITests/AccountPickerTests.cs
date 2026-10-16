@@ -4,14 +4,12 @@ using FlaUI.Core.Tools;
 namespace Pitboard.UITests;
 
 // The macOS AccountPickerTests. Each link goes to a second Debug copy in the same fixture, which hands it to the one
-// running. A refusal, or a site with no account, needs no account, so those run over empty, which W16 opened; the macOS
-// tests use twoTools and onlyOne, which wait for W23a here.
+// running.
 [TestClass]
 [Elevated(ConditionMode.Exclude)]
 public sealed class AccountPickerTests
 {
     [TestMethod]
-    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void ASharedLinkAsksWhichAccountOpensIt()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "twoTools");
@@ -51,7 +49,6 @@ public sealed class AccountPickerTests
     }
 
     [TestMethod]
-    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void CancellingOpensNothing()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "onlyOne");

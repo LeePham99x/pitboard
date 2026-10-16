@@ -13,7 +13,6 @@ namespace Pitboard.UITests;
 public sealed class AccountWindowTests
 {
     [TestMethod]
-    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void OpeningAClaudeAccountsWindowFromItsRow()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "onlyOne");
@@ -25,7 +24,6 @@ public sealed class AccountWindowTests
     }
 
     [TestMethod]
-    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void OpeningAWindowAgainBringsTheSameOneForward()
     {
         using var launched = OpenChatGPT();
@@ -39,7 +37,6 @@ public sealed class AccountWindowTests
 
     // The link asks for a new window, which WebView2 asks the app for, and the page set there loads it.
     [TestMethod]
-    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void ASignInLinkOpensASignInWindowThatClosesItself()
     {
         using var launched = OpenChatGPT();
@@ -54,7 +51,6 @@ public sealed class AccountWindowTests
     }
 
     [TestMethod]
-    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void ASignInScriptOpensASignInWindow()
     {
         using var launched = OpenChatGPT();
@@ -67,7 +63,6 @@ public sealed class AccountWindowTests
     }
 
     [TestMethod]
-    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void ClosingTheAccountsWindowClosesItsSignInWindow()
     {
         using var launched = OpenChatGPT();
@@ -82,7 +77,6 @@ public sealed class AccountWindowTests
     }
 
     [TestMethod]
-    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void GoogleSignInIsStoppedInTheWindow()
     {
         using var launched = OpenChatGPT();
@@ -97,7 +91,6 @@ public sealed class AccountWindowTests
     // WebView2 names no frame that started a download, so the site's own asks first; WebView2's own list then names it,
     // and offers its folder, which no surface of Pitboard's does.
     [TestMethod]
-    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void ASiteDownloadIsListedInTheWindow()
     {
         using var launched = OpenChatGPT();
@@ -115,7 +108,6 @@ public sealed class AccountWindowTests
     }
 
     [TestMethod]
-    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void FindShowsTheFindBar()
     {
         using var launched = OpenChatGPT();
@@ -132,7 +124,6 @@ public sealed class AccountWindowTests
     }
 
     [TestMethod]
-    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void RemovingWebsiteDataAsksFirstAndStartsOver()
     {
         using var launched = OpenChatGPT();
@@ -152,7 +143,6 @@ public sealed class AccountWindowTests
     }
 
     [TestMethod]
-    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void AnAccountsShortcutMenuOpensItsWindow()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "twoTools");
