@@ -48,7 +48,7 @@ public sealed class AccountsWindowTests
         launched.OpenWindow();
 
         launched.Invoke("Add account");
-        launched.Find(found => found.ByAutomationId("sheet.tool"), "sheet.tool").AsComboBox().Select("Codex");
+        launched.Find(found => found.ByAutomationId("sheet.tool.codex"), "sheet.tool.codex").Patterns.SelectionItem.Pattern.Select();
         Launched.Type(launched.Field("sheet.name"), "third");
         launched.Invoke("Sign in");
 

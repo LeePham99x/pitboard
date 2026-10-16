@@ -15,13 +15,11 @@
     <Style x:Key="HeldBack" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
       <Setter Property="IsEnabled" Value="False" />
     </Style>
-    <Style x:Key="Note" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
-      <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
-      <Setter Property="TextWrapping" Value="Wrap" />
-    </Style>
+    <!-- Lightweight styling of the dialog's template: as wide as it can be whatever it shows, so it keeps one width as the tool changes. -->
+    <StaticResource x:Key="ContentDialogMinWidth" ResourceKey="ContentDialogMaxWidth" />
   </ContentDialog.Resources>
   <!-- The InfoBars stay in the tree while closed, so Narrator hears each as it opens; outside the spaced stack, a closed one takes no room. -->
-  <StackPanel MinWidth="320">
+  <StackPanel>
     <ContentControl x:Name="AlertSpace" HorizontalContentAlignment="Stretch" IsTabStop="False" />
     <StackPanel Spacing="12">
       <Grid ColumnSpacing="12">
@@ -39,13 +37,19 @@
             IsActive="False"
             Visibility="Collapsed" />
       </Grid>
-      <ComboBox
+      <RadioButtons
           x:Name="ToolPicker"
           Header="Tool"
-          HorizontalAlignment="Stretch"
           AutomationProperties.AutomationId="sheet.tool"
           SelectionChanged="OnToolChanged" />
-      <TextBox x:Name="AccountField" Header="Account" IsReadOnly="True" />
+      <StackPanel x:Name="AccountPart">
+        <!-- Labelled as a field's header is, and selectable as read-only text is: Microsoft's text box guidance. -->
+        <TextBlock
+            Text="Account"
+            Margin="{StaticResource TextBoxTopHeaderMargin}"
+            Foreground="{ThemeResource TextControlHeaderForeground}" />
+        <TextBlock x:Name="AccountText" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
+      </StackPanel>
       <TextBox
           x:Name="NameField"
           Header="Name"
@@ -68,10 +72,11 @@
             x:Name="CodeField"
             Header="Code"
             PlaceholderText="Paste the code from your browser"
+            IsSpellCheckEnabled="False"
+            IsTextPredictionEnabled="False"
             AutomationProperties.AutomationId="sheet.code"
             TextChanged="OnCodeChanged" />
         <TextBlock x:Name="Refused" TextWrapping="Wrap" />
-        <TextBlock x:Name="CodeNote" Style="{StaticResource Note}" />
       </StackPanel>
     </StackPanel>
     <InfoBar

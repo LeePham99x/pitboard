@@ -1,5 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
+using Microsoft.UI.Xaml.Automation.Provider;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.VisualStudio.TestTools.UnitTesting.AppContainer;
@@ -23,7 +25,7 @@ public sealed class AccountSheetTests
             Sheet = Add,
             SheetText = Items.AddAccount(Items.Tool("claude", "Claude Code"), Items.Tool("codex", "Codex")),
         });
-        var picker = up.Element<ComboBox>("sheet.tool");
+        var picker = up.Element<RadioButtons>("sheet.tool");
         Assert.AreEqual("Add account", up.Sheet.Title);
         Assert.AreEqual(0, picker.SelectedIndex);
         Assert.IsFalse(up.Sheet.IsPrimaryButtonEnabled, "Sign in with no name");
@@ -56,8 +58,9 @@ public sealed class AccountSheetTests
         await Views.Until(() => up.Model.Sent.Contains(new Intent.Rename("claude", "personal", "home")), "no rename to home");
     }
 
+    // Microsoft's text box guidance: text that is never editable is a TextBlock, not a read-only box that looks like a field.
     [UITestMethod]
-    public async Task SigningInAgainShowsTheAccountInPlaceOfAName()
+    public async Task SigningInAgainShowsTheAccountAsText()
     {
         await using var up = await Up.Over(Snapshots.Read(1) with
         {
@@ -65,7 +68,10 @@ public sealed class AccountSheetTests
             SheetText = Items.AddAccount() with { Title = "Sign in to work again", Account = "work" },
         });
         Assert.IsFalse(up.Visible("sheet.name"), "a name field for an account that has one");
-        Assert.IsTrue(Views.Visible<TextBox>(up.Sheet).Any(field => field.Text == "work"), "the account it signs in to");
+        Assert.IsFalse(Views.Visible<TextBox>(up.Sheet).Any(field => field.Text == "work"), "the account in a field");
+        var account = Views.Visible<TextBlock>(up.Sheet).FirstOrDefault(text => text.Text == "work");
+        Assert.IsNotNull(account, "the account it signs in to");
+        Assert.IsTrue(account.IsTextSelectionEnabled, "the account cannot be copied");
 
         Views.Press(up.Part("PrimaryButton"));
 
@@ -102,7 +108,7 @@ public sealed class AccountSheetTests
         var bar = up.Element<InfoBar>("sheet.missing");
         Assert.IsFalse(bar.IsOpen, "Claude Code is here");
 
-        up.Element<ComboBox>("sheet.tool").SelectedIndex = 1;
+        up.Element<RadioButtons>("sheet.tool").SelectedIndex = 1;
         await up.Type("sheet.name", "third");
 
         await Views.Until(() => bar.IsOpen, "the missing CLI was not said");
@@ -110,6 +116,74 @@ public sealed class AccountSheetTests
         Assert.IsFalse(up.Sheet.IsPrimaryButtonEnabled, "Sign in to a tool not here");
         new Microsoft.UI.Xaml.Automation.Peers.HyperlinkButtonAutomationPeer(up.Element<HyperlinkButton>("sheet.missing.link")).Invoke();
         CollectionAssert.AreEqual(new[] { new Uri(missing.Link) }, up.Opened);
+    }
+
+    // Shots 13 and 15 of 16 October 2026: the dialog was as wide as its widest line, so it changed width with the tool.
+    [UITestMethod]
+    public async Task TheSheetKeepsOneWidthWhateverItShows()
+    {
+        var adding = Snapshots.Read(1) with
+        {
+            Sheet = Add,
+            SheetText = Items.AddAccount(Items.Tool("claude", "Claude Code"), Items.Tool("codex", "Codex")),
+        };
+        await using var up = await Up.Over(adding);
+        var widths = new List<double> { up.Width() };
+
+        up.Element<RadioButtons>("sheet.tool").SelectedIndex = 1;
+        widths.Add(up.Width());
+        up.App.Apply(adding with
+        {
+            Revision = 2,
+            SheetText = Items.AddAccount(Items.Tool("claude", "Claude Code"), Items.Tool("codex", "Codex", Items.CodexCliMissing())),
+        });
+        await Views.Until(() => up.Element<InfoBar>("sheet.missing").IsOpen, "the missing CLI was not said");
+        widths.Add(up.Width());
+
+        var widest = (double)Application.Current.Resources["ContentDialogMaxWidth"];
+        CollectionAssert.AreEqual(new[] { widest, widest, widest }, widths, "Claude Code, Codex, then Codex missing");
+    }
+
+    // Microsoft's combo box guidance: fewer than five items to pick one of are radio buttons.
+    [UITestMethod]
+    public async Task TheToolsAreRadioButtons()
+    {
+        await using var up = await Up.Over(Snapshots.Read(1) with
+        {
+            Sheet = Add,
+            SheetText = Items.AddAccount(Items.Tool("claude", "Claude Code"), Items.Tool("codex", "Codex")),
+        });
+        var picker = up.Element<RadioButtons>("sheet.tool");
+        await Views.Until(() => Views.Descendants(picker).OfType<RadioButton>().Count() == 2, "the tools were not shown");
+        var claude = up.Element<RadioButton>("sheet.tool.claude");
+        var codex = up.Element<RadioButton>("sheet.tool.codex");
+        Assert.AreEqual("Tool", picker.Header);
+        Assert.AreEqual("Claude Code", claude.Content);
+        Assert.IsTrue(claude.IsChecked);
+
+        ((ISelectionItemProvider)new RadioButtonAutomationPeer(codex)).Select();
+
+        await Views.Until(() => picker.SelectedIndex == 1, "Codex was not picked");
+        Assert.Contains("Pitboard opens Codex’s own sign-in in your browser.", Views.Texts(up.Sheet));
+    }
+
+    // A code is no word to check or predict, and what to paste is said under the field, as a field's description.
+    [UITestMethod]
+    public async Task TheCodeFieldChecksNoSpellingAndHasItsNoteAsItsDescription()
+    {
+        await using var up = await Up.Over(Snapshots.Read(1) with
+        {
+            Sheet = Add,
+            SheetText = Items.AddAccount(),
+            SigningIn = Items.Running("claude", Address, wantsCode: true),
+            SigningInText = Items.SigningIn("Claude Code"),
+        });
+        var field = up.Element<TextBox>("sheet.code");
+
+        Assert.IsFalse(field.IsSpellCheckEnabled);
+        Assert.IsFalse(field.IsTextPredictionEnabled);
+        Assert.AreEqual(
+            "Claude Code takes the code shown after you sign in, whether or not your browser came back to it.", field.Description);
     }
 
     // The name field says under itself why what is typed cannot be a name, and a failure goes once it changes.
@@ -326,6 +400,13 @@ public sealed class AccountSheetTests
 
         public bool Visible(string automationId) =>
             Views.Visible<TextBox>(Sheet).Any(found => AutomationProperties.GetAutomationId(found) == automationId);
+
+        // The dialog's own box, its template's part, laid out with what the sheet shows now.
+        public double Width()
+        {
+            Sheet.UpdateLayout();
+            return Views.Descendants(Sheet).OfType<Border>().Single(border => border.Name == "BackgroundElement").ActualWidth;
+        }
 
         // The dialog's own buttons, its template's parts. The sheet's InfoBars have a CloseButton of their own.
         public Button Part(string name) =>

@@ -4180,13 +4180,23 @@ Microsoft's documentation.
 - A sheet is a ContentDialog, which Microsoft's guidance gives for a question that asks for
   input, with its "do it" actions as the primary and secondary buttons and a safe close
   button that Esc presses ([Dialog controls](https://learn.microsoft.com/windows/apps/design/controls/dialogs-and-flyouts/dialogs),
-  updated 15 July 2026). The tool is a ComboBox starting on the tool the sheet is about, as
-  the radio button guidance has a combo box show the option recommended
-  ([Radio buttons](https://learn.microsoft.com/windows/apps/design/controls/radio-button),
-  updated 25 June 2026), and a sign-in waits under an indeterminate ProgressRing, the control
-  that guidance names for "Signing in..."
+  updated 15 July 2026). The tool is a RadioButtons group starting on the tool the sheet is
+  about, as the combo box guidance gives fewer than five items to pick one of as radio
+  buttons ([Combo box and list box](https://learn.microsoft.com/windows/apps/develop/ui/controls/combo-box),
+  updated 21 September 2026). The account signed in to again is selectable text under a
+  label, and the code field checks no spelling and predicts no text, as the text box guidance
+  gives text never edited to a TextBlock and names `IsSpellCheckEnabled` and
+  `IsTextPredictionEnabled` ([Text box](https://learn.microsoft.com/windows/apps/develop/ui/controls/text-box),
+  updated 17 July 2026). A sign-in waits under an indeterminate ProgressRing, the control that
+  the progress guidance names for "Signing in..."
   ([Progress controls](https://learn.microsoft.com/windows/apps/design/controls/progress-controls),
   updated 8 July 2026).
+- WinUI 2.3.9's `Themes/generic.xaml` sizes a ContentDialog's `BackgroundElement` between
+  `ContentDialogMinWidth` (320) and `ContentDialogMaxWidth` (548), so the Add account sheet
+  was as wide as its widest line and changed width with the tool picked (shots 13 and 15 of
+  16 October 2026). `AccountSheet` sets its own `ContentDialogMinWidth` to the maximum, the
+  lightweight styling Microsoft's XAML styles page describes, and keeps one width
+  (`AccountSheetTests.TheSheetKeepsOneWidthWhateverItShows`).
 - Read in microsoft-ui-xaml at `winui3/release/2.5.1`, the WinUI of Windows App SDK 2.5.1.
   `ContentDialog_Partial.cpp`: Esc clicks the close button where it is enabled and
   otherwise hides the dialog through a `Closing` it may cancel; Enter clicks the default

@@ -93,7 +93,7 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
         var stowing = page as SheetPage.Stowing;
         var asked = signingIn is { SignIn.WantsCode: true } && CodePart.Visibility == Visibility.Collapsed;
         ToolPicker.Visibility = Look.Shown(form is { Text.Tools.Length: > 1 });
-        AccountField.Visibility = Look.Shown(form is { Text.Account: not null });
+        AccountPart.Visibility = Look.Shown(form is { Text.Account: not null });
         NameField.Visibility = Look.Shown(page is SheetPage.Naming || form is { Text.Account: null });
         Working.Visibility = Look.Shown((form?.Text.Progress ?? stowing?.Text.Looking) is not null);
         Lines.Visibility = Look.Shown(stowing is { Text.Lines.Length: > 0 });
@@ -158,14 +158,16 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
             ToolPicker.Items.Clear();
             foreach (var tool in text.Tools)
             {
-                ToolPicker.Items.Add(new ComboBoxItem { Content = tool.Name, Tag = tool.Code });
+                var choice = new RadioButton { Content = tool.Name, Tag = tool.Code };
+                AutomationProperties.SetAutomationId(choice, $"sheet.tool.{tool.Code}");
+                ToolPicker.Items.Add(choice);
             }
 
             ToolPicker.SelectedIndex = Array.FindIndex(text.Tools, tool => tool.Code == _tool);
         }
 
         ToolPicker.IsEnabled = !text.Saving;
-        AccountField.Text = text.Account ?? "";
+        AccountText.Text = text.Account ?? "";
         NameField.PlaceholderText = text.Prompt;
         NameField.IsEnabled = !text.Saving;
         WorkingText.Text = text.Progress ?? "";
@@ -208,7 +210,7 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
         ToolTipService.SetToolTip(OpenLink, running.Url);
         Refused.Text = text.Refused ?? "";
         Refused.Visibility = Look.Shown(text.Refused is not null);
-        CodeNote.Text = text.CodeNote;
+        CodeField.Description = text.CodeNote;
         PrimaryButtonText = running.WantsCode ? "Submit code" : "";
         SecondaryButtonText = text.Undo?.Title ?? "";
         DefaultButton = running.WantsCode ? ContentDialogButton.Primary : ContentDialogButton.None;
@@ -311,7 +313,7 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
 
     private void OnToolChanged(object sender, SelectionChangedEventArgs args)
     {
-        if (ToolPicker.SelectedItem is ComboBoxItem { Tag: string tool } && _page is SheetPage.Form form)
+        if (ToolPicker.SelectedItem is RadioButton { Tag: string tool } && _page is SheetPage.Form form)
         {
             // The picker is filled again when what is found changes, which picks the same tool.
             if (tool != _tool)
