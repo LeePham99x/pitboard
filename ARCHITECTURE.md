@@ -815,8 +815,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     `pitboard-core` that changed under a version crates.io already has,
     `check-winget-hashes.py` holds komac's winget manifests to a release's `SHA256SUMS`,
     `windows-appcast.py` writes `appcast-windows.xml` for a full release's MSIs and their
-    signatures, `test-msi-version.sh` tests the version the MSI carries for each version
-    `Cargo.toml` may name, and `test-release.py` tests the four, the app's `build-number.sh` and the
+    signatures, `windows-versions.sh` gives a Windows build's MSI, file and package numbers,
+    `test-msi-version.sh` tests the version the MSI carries for each version `Cargo.toml` may
+    name, and `test-release.py` tests the five, the app's `build-number.sh` and the
     cargo-binstall metadata in `crates/pitboard/Cargo.toml`. `package-windows.ps1` zips
     a Windows build, `check-windows-build.ps1` checks one, `verify-windows-signatures.ps1`
     checks the signature of every program a Windows release hands on, and

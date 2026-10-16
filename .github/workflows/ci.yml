@@ -102,7 +102,7 @@ jobs:
         run: >
           shellcheck -s sh packaging/install.sh .github/scripts/fill-template.sh
           .github/scripts/core-unchanged.sh .github/scripts/release-kind.sh
-          apps/macos/scripts/build-number.sh
+          .github/scripts/windows-versions.sh apps/macos/scripts/build-number.sh
       - env:
           TEST_INSTALL_SHELLS: ${{ matrix.shells }}
         run: python3 .github/scripts/test-install.py
@@ -589,10 +589,12 @@ jobs:
         with:
           triple: ${{ matrix.triple }}
           gated-pitboard: 'false'
+      # Cargo.toml's version, and the MSI, file and package numbers a release gives it.
       - id: manifest
         run: |
           version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          sh .github/scripts/windows-versions.sh "$version" >> "$GITHUB_OUTPUT"
       # pitboard.exe for the MSI's bin folder.
       - name: pitboard_ffi.dll, pitboard_share_ffi.dll and pitboard.exe as a 0.x release builds them
         env:
@@ -635,6 +637,7 @@ jobs:
           RUNTIME: ${{ matrix.runtime }}
           PLATFORM: ${{ matrix.platform }}
           VERSION: ${{ steps.manifest.outputs.version }}
+          FILE_VERSION: ${{ steps.manifest.outputs.file }}
           WINDOWS_SIGNER_SUBJECT: ${{ env.SHARE_TEST_SIGNER }}
         run: |
           out="$GITHUB_WORKSPACE/target/windows-app"
@@ -642,8 +645,9 @@ jobs:
             -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/release/pitboard_ffi.dll"
           dotnet publish Pitboard.App -c Release -r "$RUNTIME" -p:Platform="$PLATFORM" -o "$out/release" \
             -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/gated/release/pitboard_ffi.dll" \
-            -p:WINDOWS_UPDATE_PUBLIC_KEY="$UPDATE_TEST_KEY" -p:Version="$VERSION"
+            -p:WINDOWS_UPDATE_PUBLIC_KEY="$UPDATE_TEST_KEY" -p:Version="$VERSION" -p:FileVersion="$FILE_VERSION"
           dotnet publish Pitboard.Share -c Release -r "$RUNTIME" -o "$out/release" -p:Version="$VERSION" \
+            -p:FileVersion="$FILE_VERSION" \
             -p:PitboardShareNativeLibrary="$GITHUB_WORKSPACE/target/gated/release/pitboard_share_ffi.dll"
           dotnet publish Pitboard.Share.Core.Tests -c Release -r "$RUNTIME" --self-contained -o "$out/share-tests" \
             -p:PitboardShareNativeLibrary="$GITHUB_WORKSPACE/target/gated/release/pitboard_share_ffi.dll"
@@ -657,9 +661,11 @@ jobs:
       # trusts the certificate, and nothing registers the package.
       - name: PitboardShare's package, packed and signed with a throwaway certificate
         shell: pwsh
+        env:
+          PACKAGE_VERSION: ${{ steps.manifest.outputs.package }}
         run: >
           ./.github/scripts/pack-windows-share.ps1 -Folder target/windows-app/release
-          -Publisher $env:SHARE_TEST_SIGNER -Version '1.0.0.0' -TestCertificate
+          -Publisher $env:SHARE_TEST_SIGNER -Version $env:PACKAGE_VERSION -TestCertificate
       # In the environment the gated pitboard_ffi.dll was built in, as a release runs it.
       - name: "The Release build: no fixture, identity on PitboardShare.exe alone, its update key, one version, the release gate, the core's C runtime inside it"
         shell: pwsh
@@ -668,10 +674,11 @@ jobs:
           CARGO_TARGET_DIR: target/gated
           TRIPLE: ${{ matrix.triple }}
           VERSION: ${{ steps.manifest.outputs.version }}
+          FILE_VERSION: ${{ steps.manifest.outputs.file }}
         run: >
           ./.github/scripts/check-windows-app.ps1 -Folder target/windows-app/release -Triple $env:TRIPLE
           -GatedLibrary target/gated/release/pitboard_ffi.dll -Signer $env:SHARE_TEST_SIGNER -UpdateKey $env:UPDATE_TEST_KEY
-          -Version $env:VERSION
+          -Version $env:VERSION -FileVersion $env:FILE_VERSION
       - name: The check refuses a package identity anywhere but on PitboardShare.exe, or another than its package's, another update key and another version
         shell: pwsh
         env:
@@ -679,10 +686,11 @@ jobs:
           CARGO_TARGET_DIR: target/gated
           TRIPLE: ${{ matrix.triple }}
           VERSION: ${{ steps.manifest.outputs.version }}
+          FILE_VERSION: ${{ steps.manifest.outputs.file }}
         run: >
           ./.github/scripts/test-windows-app.ps1 -Folder target/windows-app/release -Triple $env:TRIPLE
           -GatedLibrary target/gated/release/pitboard_ffi.dll -Signer $env:SHARE_TEST_SIGNER -UpdateKey $env:UPDATE_TEST_KEY
-          -Version $env:VERSION
+          -Version $env:VERSION -FileVersion $env:FILE_VERSION
       # ICE validates the MSI as it builds. CI never installs one: msiexec /a extracts its files
       # and registers nothing. The image is Pitboard as an install lays it out, which the UI
       # tests start in place of the Release folder (CF10). The package above is signed, so the
@@ -721,11 +729,12 @@ jobs:
           CARGO_TARGET_DIR: target/gated
           TRIPLE: ${{ matrix.triple }}
           VERSION: ${{ steps.manifest.outputs.version }}
+          FILE_VERSION: ${{ steps.manifest.outputs.file }}
           IMAGE: ${{ steps.msi.outputs.folder }}
         run: >
           ./.github/scripts/check-windows-app.ps1 -Folder $env:IMAGE -Triple $env:TRIPLE
           -GatedLibrary target/gated/release/pitboard_ffi.dll -Signer $env:SHARE_TEST_SIGNER -UpdateKey $env:UPDATE_TEST_KEY
-          -Version $env:VERSION
+          -Version $env:VERSION -FileVersion $env:FILE_VERSION
       - name: The UI tests over the MSI's Pitboard.exe, and the MSI's own tests
         working-directory: apps/windows
         env:

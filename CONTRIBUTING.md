@@ -120,13 +120,13 @@ The test runs the script under each of `sh`, `dash`, `bash`, `zsh` and `busybox 
 on `PATH`. `TEST_INSTALL_SHELLS` names the ones that must be found, as CI sets it.
 
 For a change to the release's scripts, `release-kind.sh`, `core-unchanged.sh`,
-`check-winget-hashes.py` and `windows-appcast.py` in `.github/scripts`,
-`apps/macos/scripts/build-number.sh`, or the cargo-binstall metadata in
+`check-winget-hashes.py`, `windows-appcast.py` and `windows-versions.sh` in
+`.github/scripts`, `apps/macos/scripts/build-number.sh`, or the cargo-binstall metadata in
 `crates/pitboard/Cargo.toml`:
 
 ```sh
 shellcheck -s sh .github/scripts/release-kind.sh .github/scripts/core-unchanged.sh \
-  apps/macos/scripts/build-number.sh
+  .github/scripts/windows-versions.sh apps/macos/scripts/build-number.sh
 python3 .github/scripts/test-release.py
 ```
 
@@ -366,7 +366,8 @@ identity on any program but `PitboardShare.exe`, a `PitboardShare.exe` that name
 identity than its package or a package another publisher than the signer, an update key in
 `Pitboard.dll` other than the one the build was given, a commit in `Pitboard.exe`'s version,
 a program or library of Pitboard's whose version resource names another product or version
-than `Cargo.toml`'s, a core opened before Windows is released, the core's C runtime and a
+than `Cargo.toml`'s or another file version than `.github/scripts/windows-versions.sh` gives
+it, a core opened before Windows is released, the core's C runtime and a
 `WinSparkle.dll` for another machine, and `test-windows-app.ps1` tests its identity, key and
 version checks. The job sets `PITBOARD_REQUIRE_VERSIONINFO=1`, so a `pitboard_ffi.dll` or
 `pitboard_share_ffi.dll` built without its version resource fails the build. The Release

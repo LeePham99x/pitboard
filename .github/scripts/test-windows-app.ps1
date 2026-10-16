@@ -9,8 +9,9 @@ param(
     [Parameter(Mandatory)] [string] $Signer,
     # The update key the Release build was given.
     [Parameter(Mandatory)] [string] $UpdateKey,
-    # The version the Release build was given.
-    [Parameter(Mandatory)] [string] $Version
+    # The version the Release build was given, and its FileVersion.
+    [Parameter(Mandatory)] [string] $Version,
+    [Parameter(Mandatory)] [string] $FileVersion
 )
 $ErrorActionPreference = 'Stop'
 
@@ -20,7 +21,7 @@ $root = (Resolve-Path -LiteralPath $Folder).Path
 $work = Join-Path ([IO.Path]::GetTempPath()) "test-windows-app-$([guid]::NewGuid().ToString('N'))"
 $other = 'CN=Someone Else'
 # Read here, at the script's level: PSScriptAnalyzer does not count a use inside a function.
-$checked = @{ Triple = $Triple; GatedLibrary = $GatedLibrary; Version = $Version }
+$checked = @{ Triple = $Triple; GatedLibrary = $GatedLibrary; Version = $Version; FileVersion = $FileVersion }
 $givenKey = $UpdateKey
 
 function New-Case([string] $Name, [string[]] $Files) {
@@ -70,7 +71,10 @@ try {
     Assert-Refused 'an update key the build was not given' (New-Case 'keyless' $whole) $Signer 'and the build was given none' ''
 
     Assert-Refused 'a version the build was not given' (New-Case 'version' ($whole + 'pitboard_ffi.dll')) $Signer `
-        "names the product 'Pitboard' at '.+', not Pitboard at 9\.9\.9" -Instead @{ Version = '9.9.9' }
+        "names the product 'Pitboard' at '.+', file .+, not Pitboard at 9\.9\.9," -Instead @{ Version = '9.9.9' }
+    Assert-Refused 'a FileVersion windows-versions.sh does not give the version' (New-Case 'file' ($whole + 'pitboard_ffi.dll')) $Signer `
+        "names the product 'Pitboard' at '$([regex]::Escape($Version))', file .+, not Pitboard at .+, file 9\.9\.9\.1000" `
+        -Instead @{ FileVersion = '9.9.9.1000' }
 } finally {
     Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
 }

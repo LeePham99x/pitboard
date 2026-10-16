@@ -15,7 +15,9 @@ param(
     # The Windows update public key the build was given in WINDOWS_UPDATE_PUBLIC_KEY, if any.
     [string] $UpdateKey,
     # The version Cargo.toml names, which the app's build was given too.
-    [Parameter(Mandatory)] [string] $Version
+    [Parameter(Mandatory)] [string] $Version,
+    # The FileVersion windows-versions.sh gives that version.
+    [Parameter(Mandatory)] [ValidatePattern('^\d+\.\d+\.\d+\.\d+$')] [string] $FileVersion
 )
 $ErrorActionPreference = 'Stop'
 
@@ -226,11 +228,12 @@ $ours = @('Pitboard.exe', 'pitboard_ffi.dll', 'PitboardShare.exe', 'pitboard_sha
     Where-Object { Test-Path -LiteralPath (Join-Path $root $_) -PathType Leaf }
 foreach ($name in $ours) {
     $info = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $root $name))
-    if ($info.ProductName -cne 'Pitboard' -or $info.ProductVersion -cne $Version) {
-        throw "$name names the product '$($info.ProductName)' at '$($info.ProductVersion)', not Pitboard at $Version"
+    $file = '{0}.{1}.{2}.{3}' -f $info.FileMajorPart, $info.FileMinorPart, $info.FileBuildPart, $info.FilePrivatePart
+    if ($info.ProductName -cne 'Pitboard' -or $info.ProductVersion -cne $Version -or $file -ne $FileVersion) {
+        throw "$name names the product '$($info.ProductName)' at '$($info.ProductVersion)', file $file, not Pitboard at $Version, file $FileVersion"
     }
 }
-Write-Output "$($ours -join ', ') name Pitboard at $Version."
+Write-Output "$($ours -join ', ') name Pitboard at $Version, file $FileVersion."
 
 $machine = @{ 'x86_64-pc-windows-msvc' = 'AMD64'; 'aarch64-pc-windows-msvc' = 'ARM64' }[$Triple]
 $readobj = Get-Command llvm-readobj -ErrorAction SilentlyContinue

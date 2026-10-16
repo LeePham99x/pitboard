@@ -20,6 +20,7 @@ RELEASE_KIND = REPO / ".github" / "scripts" / "release-kind.sh"
 BUILD_NUMBER = REPO / "apps" / "macos" / "scripts" / "build-number.sh"
 WINGET_HASHES = REPO / ".github" / "scripts" / "check-winget-hashes.py"
 WINDOWS_APPCAST = REPO / ".github" / "scripts" / "windows-appcast.py"
+WINDOWS_VERSIONS = REPO / ".github" / "scripts" / "windows-versions.sh"
 WINDOWS_APP = REPO / "apps" / "windows" / "Pitboard.App" / "Pitboard.App.csproj"
 PACKAGE_WINDOWS = REPO / ".github" / "scripts" / "package-windows.ps1"
 WINDOWS_TARGETS = ("x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc")
@@ -51,6 +52,10 @@ default-features = false
 NO_BUILD_NUMBER = (
     "has no build number: it takes X.Y.Z or X.Y.Z-beta.N, with Y and Z at most 99 and N from 1 "
     "to 98"
+)
+NO_WINDOWS_VERSIONS = (
+    "has no Windows version numbers: it takes X.Y.Z or X.Y.Z-beta.N, with X and Y at most 255, "
+    "Z at most 65535 and N from 1 to 999"
 )
 
 
@@ -753,6 +758,76 @@ class BuildNumber(unittest.TestCase):
 
     def test_it_takes_one_argument(self):
         done = run(BUILD_NUMBER)
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("usage:", done.stderr)
+
+
+class WindowsVersions(unittest.TestCase):
+    # Cargo.toml's version: the MSI's ProductVersion, the version resource's FileVersion, the
+    # sparse package's version. In release order.
+    NUMBERS = {
+        "1.0.0-beta.1": ("1.0.0.1", "1.0.0.1", "1.0.0.1"),
+        "1.0.0": ("1.0.0", "1.0.0.1000", "1.0.0.1000"),
+        "1.0.1": ("1.0.1", "1.0.1.1000", "1.0.1.1000"),
+        "1.1.0-beta.2": ("1.1.0.2", "1.1.0.2", "1.1.0.2"),
+    }
+
+    def numbers(self, version):
+        done = run(WINDOWS_VERSIONS, version)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stderr, "")
+        pairs = [line.split("=", 1) for line in done.stdout.splitlines()]
+        self.assertEqual([key for key, _ in pairs], ["msi", "file", "package"])
+        return tuple(value for _, value in pairs)
+
+    @staticmethod
+    def fields(number):
+        return tuple(int(field) for field in number.split("."))
+
+    def test_each_version_has_its_numbers(self):
+        for version, numbers in {
+            **self.NUMBERS,
+            "0.15.0": ("0.15.0", "0.15.0.1000", "0.15.0.1000"),
+            "255.255.65535-beta.999": ("255.255.65535.999",) * 3,
+        }.items():
+            with self.subTest(version=version):
+                self.assertEqual(self.numbers(version), numbers)
+
+    def test_each_number_rises_with_the_version(self):
+        rows = [self.numbers(version) for version in self.NUMBERS]
+        for before, after in zip(rows, rows[1:]):
+            with self.subTest(before=before, after=after):
+                msi, file, package = (self.fields(n) for n in after)
+                self.assertGreater(file, self.fields(before[1]))
+                self.assertGreater(package, self.fields(before[2]))
+                # Windows Installer compares three fields, so a beta and its final are one version
+                # there, which the MSI's MajorUpgrade replaces all the same.
+                self.assertGreaterEqual(msi[:3], self.fields(before[0])[:3])
+        self.assertEqual(self.fields(rows[0][0])[:3], self.fields(rows[1][0])[:3])
+
+    def test_a_version_windows_cannot_number_is_refused(self):
+        for version in (
+            "256.0.0",
+            "1.256.0",
+            "1.0.65536",
+            "1.0.0-beta.0",
+            "1.0.0-beta.1000",
+            "1.0.0-rc1",
+            "1.0.0-alpha.1",
+            "01.0.0",
+            "1.0",
+            "1.0.0.1",
+            "",
+            "1.0.0\n2.0.0",
+        ):
+            with self.subTest(version=version):
+                done = run(WINDOWS_VERSIONS, version)
+                self.assertEqual(done.returncode, 1)
+                self.assertEqual(done.stdout, "")
+                self.assertIn(NO_WINDOWS_VERSIONS, done.stderr)
+
+    def test_it_takes_one_argument(self):
+        done = run(WINDOWS_VERSIONS)
         self.assertEqual(done.returncode, 2)
         self.assertIn("usage:", done.stderr)
 
