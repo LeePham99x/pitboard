@@ -571,6 +571,21 @@ fn a_switch_that_cannot_read_the_store_back_keeps_every_copy_and_its_record() {
     hold(&m, "unverified, then unlocked");
 }
 
+// A write of a login in pieces killed after its manifest where the live store keeps pieces, and
+// a fault that reads the same where it does not.
+fn leave_unfinished(m: &harness::Machine) {
+    if cfg!(windows) {
+        let mut login = document("here-refresh");
+        login["mcpOAuth"]["some-server"]["token"] = json!("t".repeat(3000));
+        let pieces =
+            provider::claude::pieces::pieces_for(login.to_string().len()).expect("it fits");
+        let died = fault::killing_nth("credman.step", pieces + 2, || m.sign_in(&login));
+        assert_eq!(died.unwrap_err(), "credman.step");
+    } else {
+        m.fault_live(Fault::Unfinished("a write left `#p`".into()));
+    }
+}
+
 // A write that stopped partway into a store kept in pieces, Claude Code's Credential Manager on
 // Windows, leaves what no read gets past, Claude Code's own included, until a whole login is
 // written over it. The next change writes the login the switch went to, and a read says
@@ -585,7 +600,7 @@ fn a_switch_whose_write_stopped_partway_is_finished_by_writing_its_login_whole()
             .0;
         let died = fault::killing("switch.park_recorded", || switch(settled, &m.key("there")));
         assert_eq!(died.unwrap_err(), "switch.park_recorded");
-        m.fault_live(Fault::Unfinished("a write left `#p`".into()));
+        leave_unfinished(&m);
         if park_unreadable {
             let incoming = recorded(&m, "incoming_service").expect("a record");
             m.mem
