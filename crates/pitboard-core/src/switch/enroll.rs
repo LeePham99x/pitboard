@@ -165,6 +165,18 @@ pub(crate) fn signin_dir(ctx: &Context) -> PathBuf {
     home::dir(ctx).join("signin")
 }
 
+// Each tool's login a sign-in in `dir` may have left in its slot, with the one-at-a-time lock
+// held.
+pub(crate) fn discard_signins(ctx: &Context, permit: Permit, dir: &std::path::Path) {
+    for &which in ProviderId::ALL {
+        match provider::of(which) {
+            LoginKind::Document(each) => each.discard_signin(ctx, permit, dir),
+            // No private directory is an app's.
+            LoginKind::Folder(_) => {}
+        }
+    }
+}
+
 // A program's sign-in: the one-at-a-time lock and the private directory it signs in to. It
 // takes no other lock, so a switch meanwhile goes ahead and a second sign-in is refused.
 fn reserve_signin(
@@ -179,13 +191,7 @@ fn reserve_signin(
     // same one, so the slot is too, and this is the moment it can be cleared safely: the
     // lock above means no other sign-in is using it. Every tool's leftovers, because the
     // one that was killed need not be the one starting now.
-    for &which in ProviderId::ALL {
-        match provider::of(which) {
-            LoginKind::Document(each) => each.discard_signin(ctx, permit, &dir),
-            // No private directory is an app's.
-            LoginKind::Folder(_) => {}
-        }
-    }
+    discard_signins(ctx, permit, &dir);
     let _ = crate::host::fs::remove_dir_all(permit, &dir);
     crate::host::fs::create_private_dir(permit, &dir).map_err(|source| Error::HomeUnwritable {
         path: dir.clone(),

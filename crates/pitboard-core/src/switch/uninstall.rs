@@ -152,12 +152,7 @@ fn discard_signins(ctx: &Context, permit: Permit) {
     let Ok(_one_at_a_time) = super::enroll::one_at_a_time(ctx, permit) else {
         return;
     };
-    let dir = super::enroll::signin_dir(ctx);
-    for &which in ProviderId::ALL {
-        if let LoginKind::Document(tool) = provider::of(which) {
-            tool.discard_signin(ctx, permit, &dir);
-        }
-    }
+    super::enroll::discard_signins(ctx, permit, &super::enroll::signin_dir(ctx));
 }
 
 /// The schedule, where it is this home's. One that renews another home is that home's to
