@@ -51,7 +51,8 @@
         <Shortcut Id="StartMenuShortcut" Name="Pitboard" Target="[INSTALLFOLDER]Pitboard.exe" WorkingDirectory="INSTALLFOLDER">
           <ShortcutProperty Key="System.AppUserModel.ID" Value="Pitboard.Pitboard" />
         </Shortcut>
-        <RegistryValue Root="HKMU" Key="Software\Pitboard" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
+        <!-- HKCU, not HKMU: ICE57 takes a shortcut in ProgramMenuFolder for the user's, and refuses a key path that may be the machine's. -->
+        <RegistryValue Root="HKCU" Key="Software\Pitboard" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
       </Component>
 
       <Component Id="LinkScheme" Directory="INSTALLFOLDER">

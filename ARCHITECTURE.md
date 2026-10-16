@@ -719,11 +719,12 @@ window loads its site, and whatever the site's pages load, as a browser would.
     Release publish and `pitboard.exe`. A dual-purpose package, per user unless told
     otherwise, as single package authoring has it, and its launch condition refuses a
     per-machine install, so per user `ProgramFiles64Folder` is `%LOCALAPPDATA%\Programs` and
-    every registry row's HKMU is HKCU: `Pitboard\` with `Pitboard.exe`, its runtime and
-    `pitboard_ffi.dll`, and the command line in `Pitboard\bin\`, never beside `Pitboard.exe`;
-    `bin` appended to the user `PATH` and taken off on uninstall; the Start menu shortcut with
-    the AppUserModelID `Pitboard.Pitboard`; and `pitboard://`. `Manufacturer` is `Pitboard`
-    and the x64 and ARM64 MSIs share one `UpgradeCode`, so either replaces the other.
+    HKMU is HKCU: `Pitboard\` with `Pitboard.exe`, its runtime and `pitboard_ffi.dll`, and the
+    command line in `Pitboard\bin\`, never beside `Pitboard.exe`; `bin` appended to the user
+    `PATH` and taken off on uninstall; the Start menu shortcut with the AppUserModelID
+    `Pitboard.Pitboard`, its key path under HKCU itself for ICE57; and `pitboard://`.
+    `Manufacturer` is `Pitboard` and the x64 and ARM64 MSIs share one `UpgradeCode`, so either
+    replaces the other.
     `MajorUpgrade` replaces the same version, since the MSI's version is `X.Y.Z` for a final
     and `X.Y.Z.N` for beta N and Windows Installer compares three fields. Only a full
     uninstall, with no `UPGRADINGPRODUCTCODE`, runs `Pitboard.exe --unregister` and removes
@@ -2643,6 +2644,17 @@ protection, which neither image has, so they judged nothing.
 both in CI run 38741365089. Each is `Valid`, with a `TimeStamperCertificate` and this
 `SignerCertificate.Subject`, the form `WINDOWS_SIGNER_SUBJECT` takes:
 `CN=SignPath Foundation, O=SignPath Foundation, L=Lewes, S=Delaware, C=US`.
+
+WiX v7's ICE validation of `Pitboard.msi` on both images in CI run 38882810828, read against
+the `runtimes-framework` folders of the Windows App SDK 2.5.1 packages as bytes:
+
+- ICE03 refuses as invalid the languages of WinUI's MUI files for ug-CN (1152), mi-NZ (1153)
+  and gd-gb (1169), the only files there whose primary language is past 0x7F.
+- ICE03 finds the languages Windows Installer reads from `Microsoft.ui.xaml.dll` and
+  `Microsoft.UI.Xaml.Phone.dll` longer than the File table's 20 characters, though each
+  file's own version resource names 1033 alone.
+- ICE57 takes a shortcut in `ProgramMenuFolder` for the user's in a package whose `ALLUSERS`
+  is 2, and refuses it an HKMU key path.
 
 The images:
 

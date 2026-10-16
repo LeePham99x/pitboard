@@ -12,9 +12,11 @@
     <!--
       ICE61 warns that MajorUpgrade replaces the same version, which AllowSameVersionUpgrades asks for: a beta and
       its final share three fields. ICE33 warns of pitboard://'s verb in the Registry table, warnings Microsoft calls
-      obsolete, and a URL scheme has no table of its own.
+      obsolete, and a URL scheme has no table of its own. ICE03 refuses the File table's languages for WinUI's own
+      files: its MUI files for ug-CN, mi-NZ and gd-gb, whose primary language is past 0x7F, and the list Windows
+      Installer reads from Microsoft.ui.xaml.dll and Microsoft.UI.Xaml.Phone.dll, longer than the column's 20 characters.
     -->
-    <SuppressIces>ICE33;ICE61</SuppressIces>
+    <SuppressIces>ICE03;ICE33;ICE61</SuppressIces>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="WixToolset.Util.wixext" />

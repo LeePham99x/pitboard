@@ -17,6 +17,8 @@ public sealed class PackageTests
     private const int AsyncNoWait = 0xC0;
     private const int ExeFromInstalledFile = 18;
 
+    private static readonly string[] UsersRegistryRoots = ["-1", "1"];
+
     private static Database Open() => new(Built.Msi, DatabaseOpenMode.ReadOnly);
 
     private static List<string?[]> Rows(Database database, string query, int columns)
@@ -111,11 +113,16 @@ public sealed class PackageTests
     {
         using var database = Open();
 
-        var shortcut = Rows(database, "SELECT `Shortcut`, `Directory_`, `Target` FROM `Shortcut`", 3).Single();
+        var shortcut = Rows(database, "SELECT `Shortcut`, `Directory_`, `Target`, `Component_` FROM `Shortcut`", 4).Single();
         Assert.AreEqual("ProgramMenuFolder", shortcut[1]);
         Assert.AreEqual("[INSTALLFOLDER]Pitboard.exe", shortcut[2]);
         var property = Rows(database, "SELECT `Shortcut_`, `PropertyKey`, `PropVariantValue` FROM `MsiShortcutProperty`", 3).Single();
         Assert.AreEqual($"{shortcut[0]} System.AppUserModel.ID Pitboard.Pitboard", string.Join(' ', property));
+        var keyPath = Rows(
+            database,
+            $"SELECT `Registry`.`Root` FROM `Component`, `Registry` WHERE `Component`.`Component` = '{shortcut[3]}' AND `Component`.`KeyPath` = `Registry`.`Registry`",
+            1).Single();
+        Assert.AreEqual("1", keyPath[0], "HKCU, since ICE57 takes a shortcut in ProgramMenuFolder for the user's");
     }
 
     [TestMethod]
@@ -187,7 +194,7 @@ public sealed class PackageTests
         using var database = Open();
 
         var roots = Rows(database, "SELECT `Root` FROM `Registry`", 1).Select(row => row[0]).Distinct().ToList();
-        Assert.AreEqual("-1", string.Join(", ", roots), "HKMU alone, which a per-user install writes under HKCU");
+        CollectionAssert.IsSubsetOf(roots, UsersRegistryRoots, "HKMU, which a per-user install writes under HKCU, and HKCU");
         if (database.Tables.Contains("RemoveRegistry"))
         {
             var removed = Rows(database, "SELECT `Root`, `Key` FROM `RemoveRegistry`", 2);
