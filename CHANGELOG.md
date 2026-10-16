@@ -9,8 +9,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- Inside WSL, `pitboard doctor` says that Pitboard switches only the Claude Code and Codex
-  installed in that Linux.
+- Inside WSL, `pitboard doctor` says that Pitboard switches the Claude Code and Codex installed
+  in that Linux, and Codex on Windows too where both use one home on a Windows drive.
 - A switch from a Claude Code login whose refresh token Anthropic refuses for good asks to put the
   account's login in its place, with **Replace** in the app and `pitboard use --yes`.
 

@@ -1138,21 +1138,25 @@ fn judge_wsl(wsl: Option<&WslFact>) -> Option<Check> {
         Some(name) => format!("inside WSL, in {name}"),
         None => "inside WSL".to_string(),
     };
-    let mut advice = "Pitboard here switches what is installed in this Linux. Claude Code and \
-                      Codex installed on Windows keep their own logins, which Pitboard here does \
-                      not switch."
-        .to_string();
-    if let Some(home) = &wsl.codex_home_on_windows {
-        let there = on_windows(home).map_or_else(
-            || "on a Windows drive".to_string(),
-            |path| format!("{path} on Windows"),
-        );
-        advice.push_str(&format!(
-            " Codex's home, {}, is {there}, where Codex here starts no shared background \
-             server.",
-            home.display()
-        ));
-    }
+    let advice = match &wsl.codex_home_on_windows {
+        None => "Pitboard here switches what is installed in this Linux. Claude Code and Codex \
+                 installed on Windows keep their own logins, which Pitboard here does not switch."
+            .to_string(),
+        // The ChatGPT app's WSL mode shares that folder with Codex on Windows (H9).
+        Some(home) => {
+            let (there, uses) = match on_windows(home) {
+                Some(path) => (format!("{path} on Windows"), path),
+                None => ("on a Windows drive".to_string(), "that folder".to_string()),
+            };
+            format!(
+                "Pitboard here switches what is installed in this Linux. Claude Code installed \
+                 on Windows keeps its own login, which Pitboard here does not switch. Codex's \
+                 home, {}, is {there}, where Codex here starts no shared background server. \
+                 Where Codex on Windows uses {uses}, a switch here changes its login too.",
+                home.display()
+            )
+        }
+    };
     Some(Check {
         advice,
         ..ok("wsl", "WSL", detail)
@@ -8250,17 +8254,23 @@ mod tests {
             let wsl = check(&checks, "wsl");
             (wsl.level, wsl.detail.clone(), wsl.advice.clone())
         };
-        let switched = "Pitboard here switches what is installed in this Linux. Claude Code and \
-                        Codex installed on Windows keep their own logins, which Pitboard here \
-                        does not switch.";
         facts.wsl = Some(WslFact {
             distribution: Some("Ubuntu".into()),
             codex_home_on_windows: None,
         });
         assert_eq!(
             said(&facts),
-            (Level::Ok, "inside WSL, in Ubuntu".into(), switched.into())
+            (
+                Level::Ok,
+                "inside WSL, in Ubuntu".into(),
+                "Pitboard here switches what is installed in this Linux. Claude Code and Codex \
+                 installed on Windows keep their own logins, which Pitboard here does not switch."
+                    .into()
+            )
         );
+        let shared = "Pitboard here switches what is installed in this Linux. Claude Code \
+                      installed on Windows keeps its own login, which Pitboard here does not \
+                      switch.";
         facts.wsl = Some(WslFact {
             distribution: None,
             codex_home_on_windows: Some(PathBuf::from("/mnt/c/Users/x/.codex")),
@@ -8271,8 +8281,9 @@ mod tests {
                 Level::Ok,
                 "inside WSL".into(),
                 format!(
-                    "{switched} Codex's home, /mnt/c/Users/x/.codex, is C:\\Users\\x\\.codex on \
-                     Windows, where Codex here starts no shared background server."
+                    "{shared} Codex's home, /mnt/c/Users/x/.codex, is C:\\Users\\x\\.codex on \
+                     Windows, where Codex here starts no shared background server. Where Codex \
+                     on Windows uses C:\\Users\\x\\.codex, a switch here changes its login too."
                 )
             )
         );
@@ -8280,10 +8291,14 @@ mod tests {
             distribution: None,
             codex_home_on_windows: Some(PathBuf::from("/media/c/codex")),
         });
-        assert!(said(&facts).2.ends_with(
-            " Codex's home, /media/c/codex, is on a Windows drive, where Codex here starts no \
-             shared background server."
-        ));
+        assert_eq!(
+            said(&facts).2,
+            format!(
+                "{shared} Codex's home, /media/c/codex, is on a Windows drive, where Codex here \
+                 starts no shared background server. Where Codex on Windows uses that folder, a \
+                 switch here changes its login too."
+            )
+        );
     }
 
     #[test]
