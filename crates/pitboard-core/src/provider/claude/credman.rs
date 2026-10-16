@@ -232,11 +232,34 @@ fn own_slots(ctx: &Context, real: &[std::path::PathBuf]) -> Vec<String> {
         .collect()
 }
 
+// The places a build for tests refuses: this account's own, and each folder its lasting
+// environment names for Claude Code's login, which a test may have been started with.
+#[cfg(any(test, feature = "test-support"))]
+fn refused_places(own: Vec<std::path::PathBuf>, lasting: &[String]) -> Vec<std::path::PathBuf> {
+    let named = lasting
+        .iter()
+        .filter(|dir| !dir.is_empty())
+        .map(std::path::PathBuf::from);
+    own.into_iter().chain(named).collect()
+}
+
+#[cfg(any(test, feature = "test-support"))]
+fn real_places() -> Result<Vec<std::path::PathBuf>, String> {
+    let lasting: Vec<String> = ["CLAUDE_CONFIG_DIR", "CLAUDE_SECURESTORAGE_CONFIG_DIR"]
+        .into_iter()
+        .flat_map(crate::host::lasting_environment)
+        .collect();
+    Ok(refused_places(
+        crate::host::real_login_places(None)?,
+        &lasting,
+    ))
+}
+
 // What a build for tests may address in Credential Manager, which only Windows' host asks.
 #[cfg(any(test, feature = "test-support"))]
 #[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) fn own_slots_for_tests(ctx: &Context) -> Vec<String> {
-    match crate::host::real_login_places(None) {
+    match real_places() {
         Ok(real) => own_slots(ctx, &real),
         Err(_) => Vec::new(),
     }
@@ -274,7 +297,7 @@ pub(crate) fn swept(ctx: &Context, service: &str) -> Result<(), String> {
 #[cfg(any(test, feature = "test-support"))]
 #[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) fn not_own(ctx: &Context) -> String {
-    let real = match crate::host::real_login_places(None) {
+    let real = match real_places() {
         Ok(real) => real,
         Err(why) => return format!("{why}, so no slot is its own"),
     };
@@ -815,6 +838,19 @@ mod tests {
                 Err(()) => {}
             }
         }
+    }
+
+    // A person's `setx CLAUDE_CONFIG_DIR D:\claude` reaches a build for tests started from their
+    // shell, and that folder holds a real login wherever it is.
+    #[test]
+    fn a_folder_the_accounts_lasting_environment_names_is_no_tests_own() {
+        let scratch = windows(&[]);
+        let config = scratch.config.to_string_lossy().into_owned();
+        let own = slot::service_for_dir(&config);
+        assert!(own_slots(&scratch.ctx, &refused_places(Vec::new(), &[])).contains(&own));
+        let places = refused_places(Vec::new(), &[String::new(), config]);
+        assert_eq!(places, std::slice::from_ref(&scratch.config));
+        assert!(!own_slots(&scratch.ctx, &places).contains(&own));
     }
 
     #[test]

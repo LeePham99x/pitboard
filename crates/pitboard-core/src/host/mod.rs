@@ -393,6 +393,16 @@ pub(crate) fn real_login_places(
         .collect())
 }
 
+#[cfg(all(windows, any(test, feature = "test-support")))]
+pub(crate) use windows::lasting_environment;
+
+// What the account's lasting environment names, which a test's own may have inherited: nothing
+// off Windows.
+#[cfg(all(not(windows), any(test, feature = "test-support")))]
+pub(crate) fn lasting_environment(_name: &str) -> Vec<String> {
+    Vec::new()
+}
+
 // Is, holds or lies in, for a build for tests to refuse, the same on every system: through
 // every link, one to nothing yet included, and in any case, as macOS's own volumes compare.
 #[cfg(any(test, feature = "test-support"))]

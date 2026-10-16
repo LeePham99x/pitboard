@@ -54,6 +54,19 @@ pub(super) fn login_path(_env: &Environment) -> LoginPath {
 const MACHINE_ENVIRONMENT: &str = r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment";
 const USER_ENVIRONMENT: &str = "Environment";
 
+// What the account's own environment, then the machine's, names `name`, read whatever kind of
+// build this is: a program started from now on is given it, whatever this one was started with.
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn lasting_environment(name: &str) -> Vec<String> {
+    [
+        (windows_registry::CURRENT_USER, USER_ENVIRONMENT),
+        (windows_registry::LOCAL_MACHINE, MACHINE_ENVIRONMENT),
+    ]
+    .into_iter()
+    .filter_map(|(hive, key)| expanded(hive.open(key).ok()?, name))
+    .collect()
+}
+
 fn environment(hive: &windows_registry::Key, key: &str, name: &str) -> Administered {
     if !super::administered::READ_BY_REAL_HOSTS {
         return Administered::Unset;
