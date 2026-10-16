@@ -42,7 +42,8 @@ public sealed class MainWindowTests
                     Empty: null),
                 Checks = new ChecksShown(
                     Lines: [new CheckLine(0, "claude", "Claude Code", Level.Ok, "Passed", "2.1.299", Advice: null)],
-                    Summary: "Everything looks right.", Checking: false, Checked: "Checked at 09:00", Waiting: null),
+                    Summary: "Everything looks right.", Level: Level.Ok, Checking: false, Checked: "Checked at 09:00",
+                    Waiting: null),
             },
         };
     }

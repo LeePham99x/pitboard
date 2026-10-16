@@ -20,7 +20,7 @@ public sealed class MachinePageTests
                 @"C:\Users\dana\AppData\Local\Temp\pitboard-fixture\home\AppData\Local\Pitboard is readable by others",
                 "Make it yours alone."),
         ],
-        Summary: "One thing is worth looking at.", Checking: false, Checked: "Checked at 09:00", Waiting: null);
+        Summary: "One thing is worth looking at.", Level: Level.Warn, Checking: false, Checked: "Checked at 09:00", Waiting: null);
 
     private static Snapshot With(Snapshot snapshot, ChecksShown checks) =>
         snapshot with { Machine = snapshot.Machine with { Checks = checks } };
@@ -40,7 +40,7 @@ public sealed class MachinePageTests
                 new CheckLine(0, "claude", "Claude Code", Level.Ok, "Passed", "2.1.299", Advice: null),
                 new CheckLine(1, "parked_login", "account personal", Level.Warn, "Warning", "lapses in 2 days", "Use it to renew it."),
             ],
-            Summary: "One thing is worth looking at.", Checking: false, Checked: "Checked at 09:00", Waiting: null);
+            Summary: "One thing is worth looking at.", Level: Level.Warn, Checking: false, Checked: "Checked at 09:00", Waiting: null);
         var model = new StandInModel(With(Snapshots.Read(1), checks));
         var page = await Views.Navigated<MachinePage>(Views.Context(new AppModel(model)));
 
@@ -57,7 +57,7 @@ public sealed class MachinePageTests
     [UITestMethod]
     public async Task CheckAgainIsHeldBackWhileTheChecksRun()
     {
-        var checks = new ChecksShown(Lines: [], Summary: "Everything looks right.", Checking: true, Checked: null, Waiting: null);
+        var checks = new ChecksShown(Lines: [], Summary: "Everything looks right.", Level: Level.Ok, Checking: true, Checked: null, Waiting: null);
         var page = await Views.Navigated<MachinePage>(Views.Context(new AppModel(new StandInModel(With(Snapshots.Read(1), checks)))));
 
         Assert.IsFalse(Views.Element<AppBarButton>(page, "machine.check").IsEnabled);
@@ -85,19 +85,19 @@ public sealed class MachinePageTests
         Assert.IsFalse(summary.IsClosable);
     }
 
+    // The model says how bad the summary is, as it says the summary's words.
     [UITestMethod]
-    public async Task TheSummarySaysTheWorstLevel()
+    public async Task TheSummaryIsAsBadAsTheModelSays()
     {
-        static async Task<InfoBarSeverity> Said(params Level[] levels)
+        static async Task<InfoBarSeverity> Said(Level level)
         {
-            var lines = levels.Select((level, at) => new CheckLine((ulong)at, "check", $"Check {at}", level, $"{level}", "read", null)).ToArray();
-            var page = await Shown(TwoChecks with { Lines = lines });
+            var page = await Shown(TwoChecks with { Level = level });
             return Views.Element<InfoBar>(page, "machine.summary").Severity;
         }
 
-        Assert.AreEqual(InfoBarSeverity.Success, await Said(Level.Ok, Level.Ok));
-        Assert.AreEqual(InfoBarSeverity.Warning, await Said(Level.Ok, Level.Warn));
-        Assert.AreEqual(InfoBarSeverity.Error, await Said(Level.Warn, Level.Fail, Level.Ok));
+        Assert.AreEqual(InfoBarSeverity.Success, await Said(Level.Ok));
+        Assert.AreEqual(InfoBarSeverity.Warning, await Said(Level.Warn));
+        Assert.AreEqual(InfoBarSeverity.Error, await Said(Level.Fail));
     }
 
     // The detail sat right-aligned in a column of its own and broke a path mid-word (shot 03).

@@ -7,7 +7,6 @@ using Pitboard.Windows;
 
 namespace Pitboard.Views;
 
-// The checks pitboard doctor makes of this PC, for when a failed switch's one line is not enough to act on.
 public sealed partial class MachinePage : Page
 {
     public MachinePage()
@@ -20,7 +19,7 @@ public sealed partial class MachinePage : Page
 
     public MachineViewModel? ViewModel { get; private set; }
 
-    public static InfoBarSeverity Severity(Level worst) => worst switch
+    public static InfoBarSeverity Severity(Level level) => level switch
     {
         Level.Fail => InfoBarSeverity.Error,
         Level.Warn => InfoBarSeverity.Warning,

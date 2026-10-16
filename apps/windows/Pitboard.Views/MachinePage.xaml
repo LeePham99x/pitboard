@@ -78,7 +78,7 @@
             IsClosable="False"
             IsOpen="{x:Bind ViewModel.HasSummary, Mode=OneWay}"
             Title="{x:Bind ViewModel.Summary, Mode=OneWay}"
-            Severity="{x:Bind local:MachinePage.Severity(ViewModel.Worst), Mode=OneWay}"
+            Severity="{x:Bind local:MachinePage.Severity(ViewModel.Level), Mode=OneWay}"
             AutomationProperties.AutomationId="machine.summary" />
       </ListView.Header>
       <ListView.ItemContainerStyle>

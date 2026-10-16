@@ -394,6 +394,18 @@ pub(crate) fn doctor_summary(checks: &[Check]) -> String {
     }))
 }
 
+// One failure outweighs every warning, as in the summary's words.
+pub(crate) fn doctor_level(checks: &[Check]) -> Level {
+    let has = |level| checks.iter().any(|c| c.level == level);
+    if has(Level::Fail) {
+        Level::Fail
+    } else if has(Level::Warn) {
+        Level::Warn
+    } else {
+        Level::Ok
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
