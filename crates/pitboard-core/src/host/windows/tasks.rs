@@ -18,17 +18,18 @@ use windows::core::BSTR;
 #[derive(Debug)]
 pub(super) struct System;
 
-// HRESULT_FROM_WIN32 of ERROR_FILE_NOT_FOUND and ERROR_PATH_NOT_FOUND.
+// RF-E1 read ERROR_FILE_NOT_FOUND's for a missing folder and a missing task (run
+// 38922866517); ERROR_PATH_NOT_FOUND's says the same.
 const NOT_FOUND: [u32; 2] = [0x8007_0002, 0x8007_0003];
-// ERROR_ALREADY_EXISTS: another process made the folder first.
+// ERROR_ALREADY_EXISTS: another process made the folder first (RF-E1, run 38922866517).
 const ALREADY_THERE: u32 = 0x8007_00B7;
 
 const ASKED_IN_A_TEST: &str = "a build for tests asked Task Scheduler itself";
 
 impl Service for System {
-    fn read(&self, ctx: &Context, name: &str) -> Option<Registered> {
+    fn read(&self, ctx: &Context, name: &str) -> Result<Option<Registered>> {
         if cfg!(any(test, feature = "test-support")) {
-            return None;
+            return Ok(None);
         }
         let (name, zone) = (name.to_owned(), ctx.zone());
         in_the_mta(move |service| {
@@ -52,8 +53,6 @@ impl Service for System {
                 }))
             }
         })
-        .ok()
-        .flatten()
     }
 
     // TASK_CREATE_OR_UPDATE with an interactive token and no user: the person registering it.
@@ -99,7 +98,7 @@ impl Service for System {
                     Err(e) if !not_found(&e) => return Err(e),
                     _ => {}
                 }
-                // Refused while another person's task is in it.
+                // Refused, ERROR_DIR_NOT_EMPTY, while another person's task is in it (RF-E1c).
                 let _ = service
                     .GetFolder(&BSTR::from(r"\"))
                     .and_then(|root| root.DeleteFolder(&BSTR::from(&FOLDER[1..]), 0));

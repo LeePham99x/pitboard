@@ -1128,7 +1128,10 @@ window loads its site, and whatever the site's pages load, as a browser would.
   there since (`task::drifted`). A result that is neither 0 nor Task Scheduler's own for a
   run not yet made or under way is a warning that names `pitboard renew`. A changed setting
   is a warning whose fix is turning daily renewal off and on again, which writes the task as
-  Pitboard writes it; nothing rewrites it unasked, since the change may be the person's.
+  Pitboard writes it; nothing rewrites it unasked, since the change may be the person's. A
+  read Task Scheduler answers with an error, not with no such task, stops an install and an
+  uninstall before either changes anything, so an uninstall never leaves the task running;
+  the status and doctor take it for no task.
 - No test starts the person's own login shell. A test names a shell of its own in `SHELL`,
   one that is not there, or hands in what a shell said.
 - A test never reaches the system's own scheduler. A test context schedules through
@@ -2617,6 +2620,11 @@ Tasks:
 - A standard user can make `\Pitboard\` and register a task with an interactive token there
   or in the root. With no signed-in session of its own, the task never starts: its last
   result is 0x00041303.
+- `GetFolder` of a missing folder and `GetTask` of a missing task fail with 0x80070002, and
+  `CreateFolder` of a folder there with 0x800700B7. A second standard user opens and
+  registers in a `\Pitboard\` the first made; the first's `DeleteFolder` fails with
+  0x80070091 while the second's task is in it, and succeeds once it is gone (RF-E1 and
+  RF-E1c, run 38922866517).
 - The job user's task in either folder runs, with last result 0.
 
 Processes and jobs:
