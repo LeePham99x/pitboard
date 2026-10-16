@@ -642,6 +642,8 @@ jobs:
           WINDOWS_SIGNER_SUBJECT: ${{ env.SHARE_TEST_SIGNER }}
         run: |
           out="$GITHUB_WORKSPACE/target/windows-app"
+          # Main's Cargo cache keeps target, and with it what the run that saved it built here.
+          rm -rf "$out"
           dotnet build Pitboard.App -c Debug -r "$RUNTIME" -p:Platform="$PLATFORM" \
             -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/release/pitboard_ffi.dll"
           dotnet publish Pitboard.App -c Release -r "$RUNTIME" -p:Platform="$PLATFORM" -o "$out/release" \
