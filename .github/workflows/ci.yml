@@ -422,8 +422,6 @@ jobs:
           dotnet test --solution Pitboard.slnx
           -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/release/libpitboard_ffi.so"
           -p:PitboardShareNativeLibrary="$GITHUB_WORKSPACE/target/release/libpitboard_share_ffi.so"
-      # The version the MSI carries for each version Cargo.toml may name, through MSBuild alone.
-      - run: sh .github/scripts/test-msi-version.sh
       # The same library with its fixtures, which a debug build of either app launches into.
       # Its bindings must be the very ones generated without them, which is what lets one
       # set serve both, and the library without them must hold none of a fixture's text.
@@ -695,14 +693,14 @@ jobs:
         working-directory: apps/windows
         env:
           INSTALLER: ${{ matrix.installer }}
-          VERSION: ${{ steps.manifest.outputs.version }}
+          MSI_VERSION: ${{ steps.manifest.outputs.msi }}
         run: |
           $ErrorActionPreference = 'Stop'
           $out = Join-Path $env:GITHUB_WORKSPACE 'target\windows-app'
           $app = Join-Path $out 'release'
           $commandLine = Join-Path $env:GITHUB_WORKSPACE 'target\gated\release\pitboard.exe'
           dotnet build Pitboard.Installer -c Release -o (Join-Path $out 'msi') "-p:InstallerPlatform=$env:INSTALLER" `
-            "-p:PitboardApp=$app" "-p:PitboardCommandLine=$commandLine" "-p:PitboardVersion=$env:VERSION" -p:PitboardShareSigned=true
+            "-p:PitboardApp=$app" "-p:PitboardCommandLine=$commandLine" "-p:PitboardMsiVersion=$env:MSI_VERSION" -p:PitboardShareSigned=true
           if ($LASTEXITCODE -ne 0) { throw "dotnet build exited $LASTEXITCODE" }
           $msi = Join-Path $out 'msi\Pitboard.msi'
           $folder = & "$env:GITHUB_WORKSPACE/.github/scripts/extract-msi.ps1" -Msi $msi -Destination (Join-Path $out 'msi-image')

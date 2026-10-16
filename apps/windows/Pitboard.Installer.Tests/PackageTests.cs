@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text.RegularExpressions;
 using WixToolset.Dtf.WindowsInstaller;
 
 namespace Pitboard.Installer.Tests;
@@ -54,14 +53,14 @@ public sealed class PackageTests
         CollectionAssert.Contains(conditions, "NOT ALLUSERS OR ACTION = \"ADMIN\"");
     }
 
-    // Beta N of X.Y.Z is X.Y.Z.N, and a beta and its final upgrade each other, since Windows Installer compares three fields.
+    // A beta and its final upgrade each other, since Windows Installer compares three fields. check-windows-msi.ps1 holds
+    // ProductVersion to windows-versions.sh.
     [TestMethod]
-    public void ItCarriesCargoTomlsVersionAndReplacesTheSameVersion()
+    public void ItReplacesTheSameVersion()
     {
         using var database = Open();
-        var expected = Regex.Replace(Built.CargoVersion(), @"^(\d+\.\d+\.\d+)-beta\.(\d+)$", "$1.$2");
+        var expected = Property(database, "ProductVersion");
 
-        Assert.AreEqual(expected, Property(database, "ProductVersion"));
         var upgrades = Rows(database, "SELECT `UpgradeCode`, `VersionMax`, `Attributes` FROM `Upgrade` WHERE `VersionMax` IS NOT NULL", 3);
         var upgrade = upgrades.Single();
         Assert.AreEqual(UpgradeCode, upgrade[0]);

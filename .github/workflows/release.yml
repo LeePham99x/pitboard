@@ -522,7 +522,7 @@ jobs:
         env:
           INSTALLER: ${{ matrix.installer }}
           TRIPLE: ${{ matrix.triple }}
-          BASE: ${{ needs.guard.outputs.base }}
+          MSI_VERSION: ${{ steps.numbers.outputs.msi }}
           SIGNED: ${{ needs.guard.outputs.signed }}
         run: |
           $app = Join-Path $env:RUNNER_TEMP 'app'
@@ -532,7 +532,7 @@ jobs:
           $commandLine = Join-Path $env:RUNNER_TEMP "zip\$top\pitboard.exe"
           $out = Join-Path $env:RUNNER_TEMP 'msi'
           dotnet build Pitboard.Installer -c Release -o $out "-p:InstallerPlatform=$env:INSTALLER" "-p:PitboardApp=$app" `
-            "-p:PitboardCommandLine=$commandLine" "-p:PitboardVersion=$env:BASE" "-p:PitboardShareSigned=$env:SIGNED"
+            "-p:PitboardCommandLine=$commandLine" "-p:PitboardMsiVersion=$env:MSI_VERSION" "-p:PitboardShareSigned=$env:SIGNED"
           if ($LASTEXITCODE -ne 0) { throw "dotnet build exited $LASTEXITCODE" }
           $dist = New-Item -ItemType Directory -Path (Join-Path $env:RUNNER_TEMP 'dist')
           $msi = Join-Path $dist "Pitboard-$env:GITHUB_REF_NAME-windows-$env:INSTALLER.msi"

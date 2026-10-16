@@ -426,12 +426,8 @@ checks the files it holds, `check-windows-msi.ps1` its version, its layout, the 
 in `bin` and the package it carries, the UI test of the release gate starts its
 `Pitboard.exe`, and `Pitboard.Installer.Tests` reads its tables. `test-windows-app.ps1` tests
 `check-windows-msi.ps1` too, and runs the release's `verify-windows-signatures.ps1` on the
-unsigned MSI and on the package the job signed. For a change to the version the MSI carries,
-which needs only the .NET SDK:
-
-```sh
-sh .github/scripts/test-msi-version.sh
-```
+unsigned MSI and on the package the job signed. The MSI takes its version from
+`windows-versions.sh`, which `test-release.py` tests.
 
 The pictures of the Windows app for the docs come from the UI test `ScreenshotTests`, in the
 `twoTools` fixture. The job keeps the ones `windows-2025` takes for seven days, as the artifact

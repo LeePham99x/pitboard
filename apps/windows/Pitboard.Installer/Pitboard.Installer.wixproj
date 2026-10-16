@@ -4,8 +4,6 @@
     <OutputName>Pitboard</OutputName>
     <!-- The owner accepted WiX v7's Open Source Maintenance Fee EULA on 2026-10-15. -->
     <AcceptEula>wix7</AcceptEula>
-    <!-- Windows Installer compares three fields and takes no suffix, so beta N of X.Y.Z is X.Y.Z.N. -->
-    <PitboardMsiVersion>$([System.Text.RegularExpressions.Regex]::Replace('$(PitboardVersion)', '^(\d+\.\d+\.\d+)-beta\.(\d+)$', '$1.$2'))</PitboardMsiVersion>
     <!-- PitboardShare.exe and its package go in only when the package is signed, since only a signed one registers. -->
     <PitboardShareSigned Condition="'$(PitboardShareSigned)' != 'true'">false</PitboardShareSigned>
     <DefineConstants>ProductVersion=$(PitboardMsiVersion);App=$(PitboardApp);CommandLine=$(PitboardCommandLine);ShareSigned=$(PitboardShareSigned)</DefineConstants>
@@ -23,18 +21,6 @@
   </ItemGroup>
   <Target Name="CheckPitboardMsiInputs" BeforeTargets="CoreCompile">
     <Error Condition="'$(PitboardApp)' == '' or '$(PitboardCommandLine)' == ''" Text="Pass the Release publish of Pitboard.App as PitboardApp and its pitboard.exe as PitboardCommandLine." />
-  </Target>
-  <Target Name="CheckPitboardMsiVersion" BeforeTargets="CoreCompile">
-    <PropertyGroup>
-      <_Numbered>$([System.Text.RegularExpressions.Regex]::IsMatch('$(PitboardMsiVersion)', '^\d{1,5}\.\d{1,5}\.\d{1,5}(\.\d{1,5})?$'))</_Numbered>
-    </PropertyGroup>
-    <Error Condition="'$(_Numbered)' != 'True'" Text="'$(PitboardVersion)' is neither X.Y.Z nor X.Y.Z-beta.N, the versions an MSI numbers." />
-    <PropertyGroup>
-      <_Major>$([System.Text.RegularExpressions.Regex]::Replace('$(PitboardMsiVersion)', '^(\d+)\..*$', '$1'))</_Major>
-      <_Minor>$([System.Text.RegularExpressions.Regex]::Replace('$(PitboardMsiVersion)', '^\d+\.(\d+)\..*$', '$1'))</_Minor>
-      <_Build>$([System.Text.RegularExpressions.Regex]::Replace('$(PitboardMsiVersion)', '^\d+\.\d+\.(\d+).*$', '$1'))</_Build>
-      <_Fourth>$([System.Text.RegularExpressions.Regex]::Replace('$(PitboardMsiVersion)', '^\d+\.\d+\.\d+\.?(\d*)$', '$1'))</_Fourth>
-    </PropertyGroup>
-    <Error Condition="$(_Major) &gt; 255 or $(_Minor) &gt; 255 or $(_Build) &gt; 65535 or ('$(_Fourth)' != '' and $(_Fourth) &gt; 65535)" Text="An MSI's version goes up to 255.255.65535.65535, and '$(PitboardVersion)' is past it." />
+    <Error Condition="'$(PitboardMsiVersion)' == ''" Text="Pass the msi line .github/scripts/windows-versions.sh prints for Cargo.toml's version as PitboardMsiVersion." />
   </Target>
 </Project>
