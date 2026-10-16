@@ -103,10 +103,25 @@ public sealed class AccountWindowTests
         launched.Invoke("Download");
         Launched.Press(window, "Downloads");
 
+        // Opened again where it is not up, as a person would: it named nothing in runs 38874616742 and 38879058247.
         var listed = Retry.WhileFalse(
-            () => Launched.Lines(window).Any(line => line.Contains("notes.txt", StringComparison.Ordinal)),
-            TimeSpan.FromSeconds(10), TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
-        Assert.IsTrue(listed, "WebView2's download list does not name notes.txt");
+            () =>
+            {
+                if (Launched.Lines(window).Any(line => line.Contains("notes.txt", StringComparison.Ordinal)))
+                {
+                    return true;
+                }
+
+                if (window.FindFirstDescendant(found => found.ByName("Open downloads folder")) is null)
+                {
+                    window.FindFirstDescendant(found => found.ByName("Downloads").And(found.ByControlType(ControlType.Button)))
+                        ?.Patterns.Invoke.Pattern.Invoke();
+                }
+
+                return false;
+            },
+            TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(1), ignoreException: true).Result;
+        Assert.IsTrue(listed, $"WebView2's download list does not name notes.txt: {Launched.Pressables(window)}");
         Assert.IsNotNull(
             Launched.Pressable(window, "Open downloads folder"),
             $"WebView2's download list does not open the downloads folder: {Launched.Pressables(window)}");
