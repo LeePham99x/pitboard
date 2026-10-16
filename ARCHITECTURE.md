@@ -1388,6 +1388,34 @@ window loads its site, and whatever the site's pages load, as a browser would.
   account windows' records, `webStores` and `windowPages`, the same way, in
   `WindowsLaunch::earlier`, and takes them out once `windows.json` is in the app's own
   folder.
+- The Windows app asks the core's gate before anything else a launch does. `Launching` asks
+  `launch_refusal`, which refuses where every change is refused: a release before Pitboard
+  for Windows is released, a Windows build below the floor, an elevated process and a home
+  that is not a full path. It asks before it judges a link or takes the single-instance key,
+  and a refused launch shows the core's sentence and exits with nothing written
+  (`ReleaseGateTests`, over the MSI's Release build). Only `--unregister`, which the MSI's
+  full uninstall runs, is read first, and it asks neither the core nor a running copy.
+- The Windows app's own data folder is never in Pitboard's directory. It is `Pitboard App`,
+  or `Pitboard App Debug` for a Debug build, beside `Pitboard` in the known folder Local
+  AppData, which `Shell.LocalAppData` asks `SHGetKnownFolderPath` for. So neither
+  `PITBOARD_HOME` nor `LOCALAPPDATA` moves it, and `pitboard uninstall` never deletes the
+  account windows' sign-ins. Under a fixture it is the fixture's own folder. A build for
+  tests refuses both folders as real login places, compared by component, so `Pitboard App`
+  never lies in `Pitboard` (`host::pitboard_app_on_windows`).
+- Only a Release build an MSI installed registers anything with Windows. A Debug build and a
+  fixture write no `Run` value, since `RunValue` refuses in a Debug build and a fixture gets
+  `FixtureStartupItem`, register for no notifications (`WindowsNotifications`) and claim no
+  link scheme ([On Windows](#on-windows) under Account windows). The MSI alone writes
+  `pitboard` and the user `PATH` entry, and registers `PitboardShare.exe`'s package when it
+  is signed; `Pitboard.exe --unregister` takes back what the app registered itself. CI's
+  Windows legs fail a run that leaves a link scheme, a notification registration, a start at
+  sign-in, a `PATH` entry or a package behind.
+- Only `PitboardShare.exe` has a package identity, which a share target needs. Its manifest
+  holds the one `<msix>` element of Pitboard's programs, `check-windows-app.ps1` fails a
+  Release build where another program holds one, and it hands a shared page to
+  `Pitboard.exe` only as a Pitboard link, which `Pitboard.exe` checks as it checks any. That
+  a process it starts carries none of its identity is Microsoft's contract until CF8 and P2
+  measure it ([Documented, not measured](#documented-not-measured)).
 - On macOS, only `/usr/bin/security` reads or writes Claude Code's keychain item and
   Pitboard's parked items. No keychain item is touched through the Security framework. The
   reason is under [macOS](#macos) in Measured facts.
