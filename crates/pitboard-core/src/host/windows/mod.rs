@@ -11,6 +11,7 @@
 //! Which store a tool keeps its login in is the tool's to say, in its provider's code: Codex's
 //! file is read there, and Claude Code's chain refuses (W22, W23).
 
+mod credman;
 #[allow(
     clippy::disallowed_methods,
     reason = "the face every file and folder Pitboard makes is made through"
@@ -192,6 +193,14 @@ impl Host for Windows {
 
     fn program_data(&self) -> Option<PathBuf> {
         user::program_data()
+    }
+
+    // The account's own items: no test's business, as what an administrator set is not.
+    fn credential_names(&self, prefix: &str) -> Result<Vec<String>, String> {
+        if !super::administered::READ_BY_REAL_HOSTS {
+            return Ok(Vec::new());
+        }
+        credman::names(&format!("{prefix}*")).map_err(|e| e.to_string())
     }
 }
 

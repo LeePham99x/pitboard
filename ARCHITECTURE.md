@@ -3038,7 +3038,10 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
   in `secrets\codex_auth.age` under a passphrase in Credential Manager
   (`secrets|<16 hex>.codex`), or, with `secret_auth_storage` off, as
   `cli|<16 hex>.Codex Auth` itself. Pitboard switches the file and refuses the others, naming
-  the line that puts the login in the file.
+  the line that puts the login in the file. While Codex keeps the file, doctor counts the
+  `cli|` and `secrets|` items Credential Manager lists by prefix, by name alone, since a
+  setting Pitboard does not read, such as a cloud configuration, can put a session's login
+  there. `<key>.Codex MCP Credentials` cannot be listed by prefix and is not looked for.
 - `keyring` and `auto` keep the login in a keychain item, `Codex Auth`, that Codex makes
   through the Security framework. With either of those, the `secret_auth_storage` feature
   keeps it in `secrets/codex_auth.age` instead, under a keychain key.

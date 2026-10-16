@@ -106,6 +106,8 @@ pub struct MemoryHost {
     forced: Mutex<HashMap<(String, String), Administered>>,
     // The registry's policies, by hive, key and value, as a test said.
     policies: Mutex<HashMap<(super::Hive, String, String), Administered>>,
+    // Credential Manager's names, as a test said.
+    credentials: Mutex<Vec<String>>,
 }
 
 impl Default for MemoryHost {
@@ -150,6 +152,7 @@ impl MemoryHost {
             administered: Mutex::new(HashMap::new()),
             forced: Mutex::new(HashMap::new()),
             policies: Mutex::new(HashMap::new()),
+            credentials: Mutex::new(Vec::new()),
         }
     }
 
@@ -332,6 +335,11 @@ impl MemoryHost {
                 (hive, key.to_string(), value.to_string()),
                 Administered::Unreadable(why.into()),
             );
+    }
+
+    #[cfg(test)]
+    pub(crate) fn keeps_credentials(&self, names: &[&str]) {
+        locked(&self.credentials).extend(names.iter().map(|name| (*name).to_owned()));
     }
 
     /// Say an administrator's configuration profile forces `key` of `domain` to `value`, a
@@ -533,6 +541,16 @@ impl Host for MemoryHost {
             .get(&(hive, key.to_string(), value.to_string()))
             .cloned()
             .unwrap_or(Administered::Unset)
+    }
+
+    // In any case, as Credential Manager's filter takes a prefix.
+    fn credential_names(&self, prefix: &str) -> Result<Vec<String>, String> {
+        let prefix = prefix.to_lowercase();
+        Ok(locked(&self.credentials)
+            .iter()
+            .filter(|name| name.to_lowercase().starts_with(&prefix))
+            .cloned()
+            .collect())
     }
 }
 

@@ -268,7 +268,8 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                     on 2026-10-16. Both win32 builds hold every name and both prefixes",
         verified_against: "0.163.0",
         depends: "provider::codex::engine's refusal of `keyring`, `auto` and the secret store \
-                  on Windows",
+                  on Windows, and doctor's `codex_credential_manager`, which counts `cli|` and \
+                  `secrets|` items by name while Codex keeps the file",
         probe: &[
             "Codex Auth",
             "cli|",

@@ -738,6 +738,12 @@ pub(crate) trait Host: Send + Sync + std::fmt::Debug {
     fn program_data(&self) -> Option<PathBuf> {
         None
     }
+
+    // The names of Credential Manager's items that begin `prefix`, never what they hold; none
+    // elsewhere, and none in a build for tests on the real hosts.
+    fn credential_names(&self, _prefix: &str) -> std::result::Result<Vec<String>, String> {
+        Ok(Vec::new())
+    }
 }
 
 /// The system's own scheduler, which starts `pitboard renew` once a day: launchd on macOS,

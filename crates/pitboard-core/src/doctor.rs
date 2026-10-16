@@ -207,6 +207,9 @@ pub(crate) struct CodexFacts {
     /// Every `codex` running as this user, by where it runs from. `None` where that could
     /// not be asked.
     pub(crate) running: Option<Vec<crate::holder::Holding>>,
+    // Credential Manager's `cli|` and `secrets|` items of Codex's, counted by name while it
+    // keeps its login in the file (`codex_windows_stores`).
+    pub(crate) stored_elsewhere: (usize, usize),
 }
 
 // What Windows says of the account's folders, beside the home Pitboard reads them from.
@@ -672,9 +675,29 @@ fn codex_facts(ctx: &Context, state: Option<&State>) -> CodexFacts {
         version: program.as_deref().and_then(codex_version),
         program,
         running: running_codex(ctx),
+        stored_elsewhere: if backend == codex::Backend::File {
+            stored_elsewhere(ctx)
+        } else {
+            (0, 0)
+        },
         auth_file,
         home,
     }
+}
+
+// A setting Pitboard does not read, such as an enterprise's cloud configuration, can still keep
+// a session's login there. By name alone, so no item's secret is ever read.
+fn stored_elsewhere(ctx: &Context) -> (usize, usize) {
+    use crate::provider::names::{Family, family};
+    let count = |prefix: &str, of: Family| {
+        ctx.host().credential_names(prefix).map_or(0, |names| {
+            names.iter().filter(|name| family(name) == Some(of)).count()
+        })
+    };
+    (
+        count("cli|", Family::CodexCli),
+        count("secrets|", Family::CodexSecrets),
+    )
 }
 
 /// Codex's own word for where it keeps its login, as `cli_auth_credentials_store` spells
@@ -2476,6 +2499,30 @@ fn judge_codex(
         }
     }
 
+    let (cli, secrets) = facts.stored_elsewhere;
+    if file && cli + secrets > 0 {
+        let items = [(cli, "`cli|`"), (secrets, "`secrets|`")]
+            .into_iter()
+            .filter(|&(count, _)| count > 0)
+            .map(|(count, prefix)| match count {
+                1 => format!("1 {prefix} item"),
+                many => format!("{many} {prefix} items"),
+            })
+            .collect();
+        checks.push(Check {
+            advice: "Codex keeps its login there where a setting Pitboard does not read, such as \
+                     an enterprise's cloud configuration in a session of `codex`, chooses \
+                     `keyring` or `auto`. A `secrets|` item also keeps the key of Codex's MCP \
+                     logins. Pitboard switches only auth.json."
+                .into(),
+            ..ok(
+                "codex_credential_manager",
+                "Codex in Credential Manager",
+                words::listed(items),
+            )
+        });
+    }
+
     // Each Codex account, the way Claude Code's are judged, in this section and under this
     // section's codes.
     checks.extend(parks.iter().map(|p| judge_park(p, now)));
@@ -3993,6 +4040,7 @@ mod tests {
             program: None,
             version: None,
             running: Some(Vec::new()),
+            stored_elsewhere: (0, 0),
         }
     }
 
@@ -6238,6 +6286,44 @@ mod tests {
             "Pitboard reads only Codex's file store, auth.json, and does not follow Codex into \
              a store it uses only when told to, so no enrolled Codex account can be switched \
              to. To use the file store, set it."
+        );
+    }
+
+    // By name alone, so no item's hex or secret is said, and only while Codex keeps the file.
+    #[test]
+    fn codexs_items_in_credential_manager_are_a_note_counted_by_name() {
+        let host = crate::host::memory::MemoryHost::new();
+        let home = tempfile::tempdir().expect("a Codex home, which Windows' Codex needs");
+        let ctx = Context::for_unit_test()
+            .with_codex_home(home.path().to_string_lossy().into_owned())
+            .with_memory_stores(host.clone());
+        host.keeps_credentials(&[
+            "CLI|0123456789abcdef.Codex Auth",
+            "secrets|0123456789abcdef.codex",
+            "secrets|0123456789abcdef|gateway-oauth.codex",
+            "cli|0123456789abcdef.Codex MCP Credentials",
+            "Claude Code-credentials",
+            "GitHub - https://github.com",
+        ]);
+        let facts = codex_facts(&ctx, None);
+        assert_eq!(facts.stored_elsewhere, (1, 2));
+        let checks = codex_checks(&facts);
+        let note = check(&checks, "codex_credential_manager");
+        assert_eq!(note.level, Level::Ok);
+        assert_eq!(note.detail, "1 `cli|` item and 2 `secrets|` items");
+        assert!(note.advice.ends_with("Pitboard switches only auth.json."));
+        assert!(!format!("{}{}", note.detail, note.advice).contains("0123456789abcdef"));
+
+        std::fs::write(
+            home.path().join("config.toml"),
+            "cli_auth_credentials_store = \"ephemeral\"\n",
+        )
+        .expect("a config");
+        assert_eq!(codex_facts(&ctx, None).stored_elsewhere, (0, 0));
+        assert!(
+            codex_checks(&with_codex())
+                .iter()
+                .all(|c| c.code != "codex_credential_manager")
         );
     }
 
