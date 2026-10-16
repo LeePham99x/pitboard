@@ -141,12 +141,14 @@ pub(crate) fn legacy_refresh_lock(ctx: &Context) -> PathBuf {
     std::fs::canonicalize(&dir).map_or(dir, crate::host::without_verbatim_prefix)
 }
 
+// `CLAUDE_SECURESTORAGE_CONFIG_DIR`, empty as the home's `.claude`, else the config folder,
+// each in NFC as Claude Code's `Lx` and `Pe` normalise them.
 fn storage_dir_from(secure: Option<&str>, home: &std::path::Path, config_dir: &str) -> String {
     use unicode_normalization::UnicodeNormalization;
     match secure {
         Some("") => home.join(".claude").to_string_lossy().nfc().collect(),
         Some(v) => v.nfc().collect(),
-        None => config_dir.to_string(),
+        None => config_dir.nfc().collect(),
     }
 }
 
@@ -380,19 +382,29 @@ mod tests {
         assert_eq!(config_file(&ctx), home.path().join(".claude.json"));
     }
 
-    /// Claude Code: `if (n !== undefined) return (n || join(homedir(), ".claude"))`. The
-    /// empty string would make every credential and lock path relative to the working
-    /// directory.
+    // Claude Code: `if (n !== undefined) return (n || join(homedir(), ".claude"))`. The empty
+    // string would make every credential and lock path relative to the working directory.
     #[test]
-    #[cfg_attr(windows, ignore = "W22: Claude Code's storage folder on Windows")]
     fn an_empty_storage_dir_means_the_default_directory_not_the_current_one() {
-        let home = std::path::Path::new("/home/x");
-        assert_eq!(storage_dir_from(Some(""), home, "/cfg"), "/home/x/.claude");
+        let home = std::path::Path::new(match crate::host::OS {
+            Os::MacOs | Os::Linux => "/home/x",
+            Os::Windows => r"C:\Users\x",
+        });
+        assert_eq!(
+            storage_dir_from(Some(""), home, "/cfg"),
+            home.join(".claude").to_string_lossy()
+        );
         assert_eq!(
             storage_dir_from(Some("/elsewhere"), home, "/cfg"),
             "/elsewhere"
         );
         assert_eq!(storage_dir_from(None, home, "/cfg"), "/cfg");
+    }
+
+    #[test]
+    fn the_storage_folder_is_the_config_folder_in_nfc() {
+        let home = std::path::Path::new("/home/x");
+        assert_eq!(storage_dir_from(None, home, "/Cafe\u{301}"), "/Caf\u{e9}");
     }
 
     #[test]
