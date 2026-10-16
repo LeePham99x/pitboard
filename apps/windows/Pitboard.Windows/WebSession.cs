@@ -150,8 +150,10 @@ public sealed class WebSession
         var navigations = new PageNavigations();
         page.NavigationStarting += (_, args) => navigations.Starting(args.NavigationId, args.Uri, frame: false, args.Cancel);
         page.FrameNavigationStarting += (_, args) => navigations.Starting(args.NavigationId, args.Uri, frame: true, args.Cancel);
-        page.NavigationCompleted += (_, args) => navigations.Completed(args.NavigationId, frame: false);
-        page.FrameNavigationCompleted += (_, args) => navigations.Completed(args.NavigationId, frame: true);
+        page.NavigationCompleted += (_, args) =>
+            navigations.Completed(args.NavigationId, frame: false, args.IsSuccess, args.WebErrorStatus);
+        page.FrameNavigationCompleted += (_, args) =>
+            navigations.Completed(args.NavigationId, frame: true, args.IsSuccess, args.WebErrorStatus);
         page.DownloadStarting += (_, args) => Download(role, navigations, args);
         // What a frame loads is the page's to decide, and an address it loads that WebView2 hands to another app never
         // leaves through Pitboard.

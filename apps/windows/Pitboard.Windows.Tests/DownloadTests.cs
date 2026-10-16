@@ -37,15 +37,16 @@ public sealed class DownloadTests
         Directory.CreateDirectory(webs.Web.Downloads);
         var failures = new List<string>();
 
-        foreach (var (kind, name, saved, content, script) in new[]
+        // A download the page's own navigation became is the page's; one a script starts names no frame, so it asks.
+        foreach (var (kind, name, saved, content, asks, script) in new[]
         {
-            ("<a download> of the site's own address", "page.txt", "page (1).txt", PitboardFfiMethods.FixturePage(own),
+            ("<a download> of the site's own address", "page.txt", "page (1).txt", PitboardFfiMethods.FixturePage(own), true,
                 $"const a = document.createElement('a'); a.download = 'page.txt'; a.href = '{own}'; document.body.append(a); a.click()"),
-            ("blob:", "blob.txt", "blob (1).txt", "blob",
+            ("blob:", "blob.txt", "blob (1).txt", "blob", true,
                 "const a = document.createElement('a'); a.download = 'blob.txt'; a.href = URL.createObjectURL(new Blob(['blob'])); "
                 + "document.body.append(a); a.click()"),
-            ("data:", "notes.txt", "notes (1).txt", "notes", "document.getElementById('download').click()"),
-            ("Content-Disposition: attachment", "report.pdf", "report (1).pdf", "report", $"location.href = '{Report}'"),
+            ("data:", "notes.txt", "notes (1).txt", "notes", true, "document.getElementById('download').click()"),
+            ("Content-Disposition: attachment", "report.pdf", "report (1).pdf", "report", false, $"location.href = '{Report}'"),
         })
         {
             File.WriteAllText(Path.Combine(webs.Web.Downloads, name), "taken");
@@ -60,6 +61,7 @@ public sealed class DownloadTests
             {
                 var (file, end) = await Ended(webs, from, kind, events);
                 Console.WriteLine($"CF7: {kind}: {string.Join(", ", events)}; asked: {window.Questions.Count > asked}");
+                Assert.AreEqual(asks, window.Questions.Count > asked, $"{kind} asked");
                 Assert.IsInstanceOfType<DownloadEnd.Finished>(end, kind);
                 Assert.AreEqual(Path.Combine(webs.Web.Downloads, saved), file, kind);
                 Assert.AreEqual(content, File.ReadAllText(file!), kind);
