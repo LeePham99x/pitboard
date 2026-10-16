@@ -234,13 +234,17 @@ internal sealed class Launched : IDisposable
     public static string Said(AutomationElement scope) =>
         string.Join(" ", Lines(scope));
 
-    public static void Shows(AutomationElement scope, string text, bool exact = true)
+    public static void Shows(AutomationElement scope, string text, bool exact = true, TimeSpan? within = null)
     {
         var shown = Retry.WhileFalse(
             () => Lines(scope).Any(line => exact ? line == text : line.StartsWith(text, StringComparison.Ordinal)),
-            Shortly, TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
+            within ?? Shortly, TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
         Assert.IsTrue(shown, $"{scope.Name} does not show '{text}': {Listed(scope)}");
     }
+
+    // An account window's first page, which the run's first browser process took more than Shortly to show on
+    // windows-2025 (run 38877054096).
+    public static void Loads(AutomationElement window, string text, bool exact = true) => Shows(window, text, exact, Patience);
 
     // What can be pressed in it, by control type and name.
     public static string Pressables(AutomationElement scope)

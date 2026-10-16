@@ -20,7 +20,7 @@ public sealed class AccountWindowTests
 
         OpenFromItsRow(launched, "claude/work", "claude.ai");
 
-        Launched.Shows(launched.Window("work"), "claude.ai stand-in");
+        Launched.Loads(launched.Window("work"), "claude.ai stand-in");
     }
 
     [TestMethod]
@@ -156,7 +156,7 @@ public sealed class AccountWindowTests
 
         OpenFromItsRow(launched, "codex/spare");
 
-        Launched.Shows(launched.Window("spare"), "chatgpt.com stand-in");
+        Launched.Loads(launched.Window("spare"), "chatgpt.com stand-in");
     }
 
     // From its row's shortcut menu, which needs no notification-area icon. Ended if it fails here: a Pitboard left
@@ -168,7 +168,7 @@ public sealed class AccountWindowTests
         {
             launched.OpenWindow();
             OpenFromItsRow(launched, "codex/main");
-            Launched.Shows(launched.Window("main"), "chatgpt.com stand-in");
+            Launched.Loads(launched.Window("main"), "chatgpt.com stand-in");
             return launched;
         }
         catch
