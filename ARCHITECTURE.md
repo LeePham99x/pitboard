@@ -2408,6 +2408,17 @@ Accounts and tokens:
   then `DownloadStarting` for the file. A download whose page was the last to close raised
   no `StateChanged`, and its browser process exited; one whose page closed while another
   kept the browser process was still in progress five seconds later.
+- CF9, Restart Manager, as the fresh standard user on both images in run 38895887782:
+  `RmShutdown` without `RmForceShutdown`, given only `Pitboard.StandInApp.exe`'s GUI
+  process, ended a stand-in that answers `WM_QUERYENDSESSION` with `TRUE` and quits on
+  `WM_ENDSESSION` with `ENDSESSION_CLOSEAPP`, and gave `ERROR_SUCCESS` after 37 ms on
+  windows-2025 and 46 ms on windows-11-arm. A stand-in that answers `FALSE` ran on with its
+  window, and `RmShutdown` gave `ERROR_FAIL_SHUTDOWN` after 15 and 19 ms. Each stand-in's
+  console child, a `cmd.exe` never registered, ran on.
+- A process that gave `RegisterApplicationRestart` `--updated` with `RESTART_NO_CRASH`,
+  `RESTART_NO_HANG` and `RESTART_NO_REBOOT` reads them back through
+  `GetApplicationRestartSettings`, which gives `HRESULT_FROM_WIN32(ERROR_NOT_FOUND)` before
+  it registers (run 38895887782).
 - Explorer, the job user's, takes no notification-area icon of that user's: `NIM_ADD` fails
   for an icon named by its window and id and for one named by a GUID (CI run 38753437460).
   So no UI test clicks Pitboard's icon: the view tests hold its menu, `ScreenshotTests` opens
@@ -2658,6 +2669,12 @@ the `runtimes-framework` folders of the Windows App SDK 2.5.1 packages as bytes:
 - ICE57 takes a shortcut in `ProgramMenuFolder` for the user's in a package whose `ALLUSERS`
   is 2, and refuses it an HKMU key path.
 
+With ICE03, ICE33 and ICE61 suppressed, WiX v7 builds it on both images in run 38895887782
+with no warning, ICE57 passing. `msiexec /a`, run by the job's user, lays out each image's
+own MSI in `PFiles64\Pitboard`: the Release publish's 284 programs and libraries on
+windows-2025 and 283 on windows-11-arm, no `.pdb`, and `bin\pitboard.exe`. The fresh
+standard user opens the MSI read only through `msi.dll`, as `Pitboard.Installer.Tests` does.
+
 The images:
 
 - Defender's real-time protection is off on windows-2025 and on, with behaviour monitoring
@@ -2705,7 +2722,7 @@ on 15 October 2026, and the MSI's on 16 October 2026. W27 reviews the list.
 | winget puts a portable package's install folder on `PATH`, not a link in Links, for a standard user without Developer Mode | [winget-pkgs FAQ](https://github.com/microsoft/winget-pkgs/blob/master/doc/FAQ.md) | Both images have Developer Mode on, and the job's user is an administrator. A standard user's install is the session's. |
 | Since winget 1.29, an MSI wins over a portable installer whatever the manifest's order | [winget-cli 1.29.380](https://github.com/microsoft/winget-cli/releases/tag/v1.29.380) | windows-2025's winget is 1.11.510, and no runner installs from winget's sources. |
 | A broadcast, such as `WM_ENDSESSION`, reaches a top-level window that is never shown, and no message-only window | [Message-only windows](https://learn.microsoft.com/en-us/windows/win32/winmsg/window-features#message-only-windows) | A runner's session never ends while a job runs; CF9 sends one. |
-| Restart Manager asks a program to end with `WM_ENDSESSION` and `ENDSESSION_CLOSEAPP`, which it should end on, then waits for it to exit, sending `WM_CLOSE` to one that does not; without `RmForceShutdown`, one that answers `WM_QUERYENDSESSION` with `FALSE` runs on and `RmShutdown` gives `ERROR_FAIL_SHUTDOWN` | [Guidelines for Applications](https://learn.microsoft.com/en-us/windows/win32/rstmgr/guidelines-for-applications), [RmShutdown](https://learn.microsoft.com/en-us/windows/win32/api/restartmanager/nf-restartmanager-rmshutdown) | No runner installs over a running Pitboard. CF9's `WindowsAppsTests` ask it to end a stand-in that agrees and one that declines; the session's step A7 upgrades a running copy. |
+| Restart Manager sends `WM_CLOSE` to a program that agreed to end and has not exited | [Guidelines for Applications](https://learn.microsoft.com/en-us/windows/win32/rstmgr/guidelines-for-applications) | CF9's stand-in that agrees ends on `WM_ENDSESSION`; the session's step A7 upgrades a running copy. |
 | `GetApplicationUserModelId` gives a packaged process's AUMID, and `APPMODEL_ERROR_NO_APPLICATION` for one without an app | [GetApplicationUserModelId](https://learn.microsoft.com/en-us/windows/win32/api/appmodel/nf-appmodel-getapplicationusermodelid) | No runner starts a packaged process; the session's step A4 reads ChatGPT's through `Pitboard.Probe app-control running`. |
 | `IApplicationActivationManager::ActivateApplication` opens a Store app by its AUMID from an unpackaged process | [IApplicationActivationManager](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-iapplicationactivationmanager) | No runner holds a Store app the test user may open; the session's step A4 opens ChatGPT through `Pitboard.Probe app-control reopen`. |
 | Windows may refuse to bring a window forward once another app took the foreground | [SetForegroundWindow](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setforegroundwindow) | Only a person's session opens ChatGPT behind Pitboard: the session's step A4 records which window ends in front. |
