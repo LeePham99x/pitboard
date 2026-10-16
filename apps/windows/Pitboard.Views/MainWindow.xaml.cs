@@ -30,7 +30,7 @@ public sealed partial class MainWindow : Window
         AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
         WindowChrome.Apply(this);
         WindowChrome.MinimumSize(this, 640, 500);
-        // Where it was closed, or at Windows' own place for a new application window.
+        // Where it was closed, partly under the taskbar too, or at Windows' own place for a new application window.
         var handle = WindowNative.GetWindowHandle(this);
         var saved = placement.Saved();
         if (saved is not null)
@@ -41,10 +41,6 @@ public sealed partial class MainWindow : Window
         {
             var scale = Shell.Scale(handle);
             AppWindow.Resize(new SizeInt32((int)(1100 * scale), (int)(720 * scale)));
-        }
-
-        if (saved is not { Maximized: true })
-        {
             WindowChrome.Fit(this);
         }
 

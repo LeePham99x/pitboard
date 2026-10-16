@@ -42,7 +42,7 @@ internal static class WindowChrome
     }
 
     // Whole within the work area of the screen it is nearest, moved and if need be made smaller, as Microsoft's window
-    // management guidance asks of a window's first place and of one its screens no longer hold.
+    // management guidance asks of a window's first place.
     public static void Fit(Window window)
     {
         var area = DisplayArea.GetFromWindowId(window.AppWindow.Id, DisplayAreaFallback.Nearest).WorkArea;
