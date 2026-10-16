@@ -55,7 +55,7 @@ public sealed class DownloadTests
             events.Clear();
 
             // In a block of its own: a const a script declares at the top stays declared for the next script.
-            await page.ExecuteScriptAsync($"{{ {script} }} 0");
+            await page.Script($"{{ {script} }} 0");
 
             // Every kind is tried, so one run measures each.
             try
@@ -99,7 +99,7 @@ public sealed class DownloadTests
             var (from, asked) = (webs.Sent.Count, window.Questions.Count);
             events.Clear();
 
-            await page.ExecuteScriptAsync($"{script}; 0");
+            await page.Script($"{script}; 0");
 
             var (file, end) = await Ended(webs, from, kind, events);
             Console.WriteLine($"CF7: {kind}: {string.Join(", ", events)}");
@@ -120,13 +120,13 @@ public sealed class DownloadTests
         var window = new StandInWindow(webs, Main, answer: true);
         var page = await Open(webs, window);
         var host = Main.Site.SignInHosts[0];
-        await page.ExecuteScriptAsync(
+        await page.Script(
             $"window.open('{WebEnvironment.FixtureScheme}://{host}/sign-in', 'sign-in', 'width=480,height=600'); 0");
         await Views.Until(() => window.SignIn?.DocumentTitle == $"{host} sign-in stand-in", "no sign-in window loaded its page", Webs.Patience);
         var cancelled = new TaskCompletionSource<bool>();
         window.SignIn!.DownloadStarting += (_, args) => cancelled.TrySetResult(args.Cancel);
 
-        await window.SignIn.ExecuteScriptAsync(
+        await window.SignIn.Script(
             "const a = document.createElement('a'); a.download = 'x.txt'; a.href = 'data:text/plain,x'; document.body.append(a); a.click(); 0");
 
         Assert.IsTrue(await cancelled.Task.WaitAsync(Webs.Patience), "the sign-in window's download went on");
@@ -160,7 +160,7 @@ public sealed class DownloadTests
         };
         var page = await Open(webs, window);
         var from = webs.Sent.Count;
-        await page.ExecuteScriptAsync($"document.body.insertAdjacentHTML('beforeend', '<iframe src=\"{archive}\"></iframe>'); 0");
+        await page.Script($"document.body.insertAdjacentHTML('beforeend', '<iframe src=\"{archive}\"></iframe>'); 0");
 
         var (file, end) = await Ended(webs, from, "a window's archive.tar.gz");
         Assert.IsInstanceOfType<DownloadEnd.Finished>(end);
@@ -216,7 +216,7 @@ public sealed class DownloadTests
         var answer = new TaskCompletionSource<bool>();
         var window = new StandInWindow(webs, Main, answer: true) { Pending = answer.Task };
         var page = await Open(webs, window);
-        await page.ExecuteScriptAsync(
+        await page.Script(
             $"document.body.insertAdjacentHTML('beforeend', '<iframe src=\"{site.Address("/attachment/late.bin")}\"></iframe>'); 0");
         await Views.Until(() => window.Questions.Count == 1, "the download was not asked about", Webs.Patience);
 
@@ -280,7 +280,7 @@ public sealed class DownloadTests
     private static async Task Stall(Webs webs, CoreWebView2 page, StandInSite site, string name)
     {
         var from = webs.Sent.Count;
-        await page.ExecuteScriptAsync(
+        await page.Script(
             $"document.body.insertAdjacentHTML('beforeend', '<iframe src=\"{site.Address($"/stalled/{name}")}\"></iframe>'); 0");
         await Views.Until(() => webs.Sent.Skip(from).OfType<Intent.DownloadSaving>().Any(), $"{name} did not start saving", Webs.Patience);
     }

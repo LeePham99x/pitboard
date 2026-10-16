@@ -65,17 +65,17 @@ public sealed class WebSessionTests
                 seen.Add($"NavigationCompleted {args.IsSuccess} {args.WebErrorStatus}");
             }
         };
-        await page.ExecuteScriptAsync($"location.href = '{leave}'");
+        await page.Script($"location.href = '{leave}'");
         await Views.Until(() => webs.Elsewhere.Count == 1, "a page outside the site was not handed to the browser", Webs.Patience);
         Assert.AreEqual(away, webs.Elsewhere[0]);
         Console.WriteLine($"CF7: a page's own script leaving is user-initiated: {awayClicked}");
         Assert.IsInstanceOfType<WindowNoteKind.OpenedInBrowser>(session.Note, $"user-initiated: {awayClicked}");
 
-        await page.ExecuteScriptAsync("location.href = 'https://accounts.google.com/o/oauth2/v2/auth'");
+        await page.Script("location.href = 'https://accounts.google.com/o/oauth2/v2/auth'");
         await Views.Until(() => session.Note is WindowNoteKind.GoogleRefused, "Google's sign-in was not refused", Webs.Patience);
 
         var chat = $"{WebEnvironment.FixtureScheme}://chatgpt.com/chat/fixture";
-        Assert.IsTrue(await Webs.Loads(page, async () => await page.ExecuteScriptAsync($"location.href = '{chat}'")));
+        Assert.IsTrue(await Webs.Loads(page, async () => await page.Script($"location.href = '{chat}'")));
         Assert.AreEqual(chat, page.Source);
         CollectionAssert.Contains(window.Pages, chat);
         Assert.HasCount(1, webs.Elsewhere);
@@ -94,13 +94,13 @@ public sealed class WebSessionTests
         Assert.IsTrue(await Webs.Attached(session, page), "the fixture's page did not load");
         var host = Main.Site.SignInHosts[0];
 
-        await page.ExecuteScriptAsync(
+        await page.Script(
             $"window.open('{WebEnvironment.FixtureScheme}://{host}/sign-in', 'sign-in', 'width=480,height=600'); 0");
 
         await Views.Until(() => window.SignIn?.DocumentTitle == $"{host} sign-in stand-in", "no sign-in window loaded its page", Webs.Patience);
         Assert.AreEqual(new SignInWindowSize(480, 600), window.Sizes.Single());
-        Assert.AreEqual("true", await window.SignIn!.ExecuteScriptAsync("window.opener !== null"));
-        await window.SignIn.ExecuteScriptAsync("document.getElementById('done').click()");
+        Assert.AreEqual("true", await window.SignIn!.Script("window.opener !== null"));
+        await window.SignIn!.Script("document.getElementById('done').click()");
         await Views.Until(() => window.Closed == 1, "the sign-in page's Done did not close its window", Webs.Patience);
         Assert.AreEqual(1, window.Closed);
     }
@@ -181,7 +181,7 @@ public sealed class WebSessionTests
         Assert.IsTrue(await Webs.Attached(session, page), "the fixture's page did not load");
         var host = Main.Site.SignInHosts[0];
 
-        var opened = await page.ExecuteScriptAsync(
+        var opened = await page.Script(
             $"window.open('{WebEnvironment.FixtureScheme}://{host}/sign-in', 'sign-in', 'width=480,height=600') === null");
 
         Assert.AreEqual("true", opened, "the page's window.open got a window");
@@ -203,7 +203,7 @@ public sealed class WebSessionTests
         var session = new WebSession(webs.Opened(Main, Home), webs.Web, webs.Downloads, new StandInWindow(webs, Main));
         Assert.IsTrue(await Webs.Attached(session, page), "the fixture's page did not load");
 
-        await session.RemoveWebsiteData();
+        await session.RemoveWebsiteData().WaitAsync(Webs.Patience);
 
         Assert.IsEmpty(await page.CookieManager.GetCookiesAsync(site.Address("/")));
         Assert.AreEqual("who", (await other.CookieManager.GetCookiesAsync(site.Address("/"))).Single().Name);

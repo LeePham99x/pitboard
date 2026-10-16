@@ -43,7 +43,7 @@ public sealed class ProfileTests
         var folder = webs.Web.ProfileFolder(name);
         Assert.AreEqual(folder, page.Profile.ProfilePath, ignoreCase: true, "where WebView2 keeps a profile");
 
-        await webs.Web.MarkDeleted(name, Webs.Window);
+        await webs.Web.MarkDeleted(name, Webs.Window).WaitAsync(Webs.Patience);
 
         var refused = await Assert.ThrowsAsync<Exception>(() => webs.Page("gone"));
         Assert.AreEqual(WebEnvironment.DeletePending, refused.HResult, $"0x{refused.HResult:X8}: {refused.Message}");

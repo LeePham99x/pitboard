@@ -360,7 +360,9 @@ try {
     }
     for ($i = 0; $i -lt $programs.Count; $i++) {
         # Otherwise Microsoft.Testing.Platform's results go beside the program, where the user may only read.
-        $arguments = @('--results-directory', (Join-Path $runDir "results-$i"))
+        # A run that outlasts its timeout is cancelled and says which tests were under way, before the job's own
+        # timeout would end it with nothing said.
+        $arguments = @('--results-directory', (Join-Path $runDir "results-$i"), '--timeout', '12m')
         $run = Start-AsUser $programs[$i] $arguments $runDir $userEnv "dotnet-$i"
         Write-Output "::group::$($programs[$i]), as the standard user: $(if ($run.Exit -eq 0) { 'passed' } else { "exited $($run.Exit)" })"
         Show-Run $run

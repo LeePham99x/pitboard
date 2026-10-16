@@ -169,9 +169,10 @@ internal sealed class Webs : IAsyncDisposable
             }
         }
 
+        // A test that needs the browser process gone waits for it itself.
         if (_pages.Count > 0)
         {
-            await Task.WhenAny(Exited, Task.Delay(Patience));
+            await Task.WhenAny(Exited, Task.Delay(TimeSpan.FromSeconds(10)));
         }
 
         try
@@ -182,6 +183,13 @@ internal sealed class Webs : IAsyncDisposable
         {
         }
     }
+}
+
+internal static class Pages
+{
+    // A page's script, given a minute: a page held up, as by a window.open WebView2 waits on, fails its test alone.
+    public static Task<string> Script(this CoreWebView2 page, string script) =>
+        page.ExecuteScriptAsync(script).AsTask().WaitAsync(Webs.Patience);
 }
 
 // Deletes the run's user data folder after the last test.

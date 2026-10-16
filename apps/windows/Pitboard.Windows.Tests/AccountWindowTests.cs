@@ -191,17 +191,17 @@ public sealed class AccountWindowTests
             await Views.Until(() => sent.Contains(new Intent.PageShown(store, Home)), "the page did not load", Webs.Patience);
             var host = Main.Site.SignInHosts[0];
 
-            await Page(window)!.ExecuteScriptAsync(
+            await Page(window)!.Script(
                 $"window.open('{WebEnvironment.FixtureScheme}://{host}/sign-in', 'sign-in', 'width=480,height=600'); 0");
 
             await Views.Until(
                 () => window.SignIn?.WebPage?.DocumentTitle == $"{host} sign-in stand-in", "no sign-in window loaded its page",
                 Webs.Patience);
             var signIn = window.SignIn!;
-            Assert.AreEqual("true", await signIn.WebPage!.ExecuteScriptAsync("window.opener !== null"));
+            Assert.AreEqual("true", await signIn.WebPage!.Script("window.opener !== null"));
             var closed = false;
             signIn.Closed += (_, _) => closed = true;
-            await signIn.WebPage.ExecuteScriptAsync("document.getElementById('done').click()");
+            await signIn.WebPage!.Script("document.getElementById('done').click()");
             await Views.Until(() => closed, "the sign-in page's Done did not close its window", Webs.Patience);
             Assert.IsNull(window.SignIn);
         }
