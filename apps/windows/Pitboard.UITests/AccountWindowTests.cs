@@ -72,7 +72,8 @@ public sealed class AccountWindowTests
 
         window.Close();
 
-        Assert.IsFalse(
+        // A wait's Result is whether what it waited for came.
+        Assert.IsTrue(
             Retry.WhileTrue(() => Windows(launched, "main") > 0, TimeSpan.FromSeconds(10), ignoreException: true).Result,
             $"the account's window stayed: {launched.Shown()}");
         Assert.IsTrue(launched.Gone(found => found.ByAutomationId("sign-in")), $"the sign-in window stayed: {launched.Shown()}");
