@@ -36,7 +36,8 @@ pub(crate) struct Registered {
 
 // Task Scheduler, or a test's machine's stand-in for it, asked for one task in `FOLDER`.
 pub(crate) trait Service: Send + Sync + std::fmt::Debug {
-    fn read(&self, ctx: &Context, name: &str) -> Option<Registered>;
+    // `None` where there is no such task; an error where Task Scheduler could not say.
+    fn read(&self, ctx: &Context, name: &str) -> Result<Option<Registered>>;
     fn register(&self, permit: Permit, ctx: &Context, name: &str, xml: &str) -> Result<()>;
     fn delete(&self, permit: Permit, ctx: &Context, name: &str) -> Result<()>;
 }
@@ -268,7 +269,7 @@ impl Tasks {
         Tasks { sid, service }
     }
 
-    fn registered(&self, ctx: &Context) -> Option<Registered> {
+    fn registered(&self, ctx: &Context) -> Result<Option<Registered>> {
         self.service.read(ctx, &name(&self.sid))
     }
 }
@@ -279,11 +280,11 @@ impl Scheduler for Tasks {
     }
 
     fn installed(&self, ctx: &Context) -> bool {
-        self.registered(ctx).is_some()
+        self.registered(ctx).is_ok_and(|task| task.is_some())
     }
 
     fn program(&self, ctx: &Context) -> Option<PathBuf> {
-        program(&self.registered(ctx)?.xml)
+        program(&self.registered(ctx).ok()??.xml)
     }
 
     fn environment(&self, ctx: &Context) -> Vec<(String, String)> {
@@ -301,6 +302,7 @@ impl Scheduler for Tasks {
         program: &Path,
         environment: &[(String, String)],
     ) -> Result<()> {
+        let previous = self.registered(ctx)?;
         let before = std::fs::read_to_string(environment_file(ctx)).ok();
         let given: Vec<(String, String)> = environment
             .iter()
@@ -309,7 +311,6 @@ impl Scheduler for Tasks {
             .collect();
         let text = (!given.is_empty()).then(|| environment_text(&given));
         keep_environment(permit, ctx, text.as_deref())?;
-        let previous = self.registered(ctx);
         let named = name(&self.sid);
         let xml = definition(program, &first_start(ctx));
         if let Err(refused) = self.service.register(permit, ctx, &named, &xml) {
@@ -323,8 +324,10 @@ impl Scheduler for Tasks {
         Ok(())
     }
 
+    // A task Task Scheduler cannot say is there or not stops an uninstall, which would leave
+    // it running every day.
     fn remove(&self, ctx: &Context, permit: Permit) -> Result<bool> {
-        let there = self.installed(ctx);
+        let there = self.registered(ctx)?.is_some();
         if there {
             self.service.delete(permit, ctx, &name(&self.sid))?;
         }
@@ -344,7 +347,7 @@ impl Scheduler for Tasks {
     }
 
     fn task(&self, ctx: &Context) -> Option<Task> {
-        let registered = self.registered(ctx)?;
+        let registered = self.registered(ctx).ok()??;
         Some(Task {
             last_run: registered
                 .last_run
@@ -379,12 +382,18 @@ impl Pretend {
 
 #[cfg(any(test, feature = "test-support"))]
 impl Service for Pretend {
-    fn read(&self, ctx: &Context, name: &str) -> Option<Registered> {
-        Some(Registered {
-            xml: std::fs::read_to_string(Pretend::file(ctx, name)).ok()?,
-            last_run: None,
-            last_result: Some(NOT_RUN_YET),
-        })
+    fn read(&self, ctx: &Context, name: &str) -> Result<Option<Registered>> {
+        match std::fs::read_to_string(Pretend::file(ctx, name)) {
+            Ok(xml) => Ok(Some(Registered {
+                xml,
+                last_run: None,
+                last_result: Some(NOT_RUN_YET),
+            })),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(Error::ScheduleRefused {
+                detail: format!("Task Scheduler said {e}"),
+            }),
+        }
     }
 
     // The task inherits its folder's access, as the system's store gives one.
@@ -684,6 +693,25 @@ mod tests {
         assert_eq!(schedule::status(&proxied), Installed::No);
         assert!(!schedule::path(&proxied).expect("where").exists());
         assert!(!schedule::uninstall(&proxied, Permit::for_a_test()).expect("nothing there"));
+    }
+
+    #[test]
+    fn a_task_task_scheduler_cannot_read_stops_its_removal() {
+        let machine = Machine::new();
+        let proxied = machine.ctx(&PROXIED);
+        schedule::install(&proxied, Permit::for_a_test()).expect("installed");
+        let task = schedule::path(&proxied).expect("the task");
+        std::fs::remove_file(&task).expect("taken out");
+        std::fs::create_dir(&task).expect("put back as nothing Task Scheduler can read");
+        let refused = schedule::uninstall(&proxied, Permit::for_a_test()).expect_err("unknown");
+        assert_eq!(refused.code(), "schedule_refused");
+        assert!(
+            task.exists() && environment_file(&proxied).exists(),
+            "nothing taken away"
+        );
+        let refused = schedule::install(&proxied, Permit::for_a_test()).expect_err("unknown");
+        assert_eq!(refused.code(), "schedule_refused");
+        assert!(environment_file(&proxied).exists(), "nothing written");
     }
 
     #[test]

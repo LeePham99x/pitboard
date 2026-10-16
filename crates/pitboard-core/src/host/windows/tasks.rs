@@ -26,9 +26,9 @@ const ALREADY_THERE: u32 = 0x8007_00B7;
 const ASKED_IN_A_TEST: &str = "a build for tests asked Task Scheduler itself";
 
 impl Service for System {
-    fn read(&self, ctx: &Context, name: &str) -> Option<Registered> {
+    fn read(&self, ctx: &Context, name: &str) -> Result<Option<Registered>> {
         if cfg!(any(test, feature = "test-support")) {
-            return None;
+            return Ok(None);
         }
         let (name, zone) = (name.to_owned(), ctx.zone());
         in_the_mta(move |service| {
@@ -52,8 +52,6 @@ impl Service for System {
                 }))
             }
         })
-        .ok()
-        .flatten()
     }
 
     // TASK_CREATE_OR_UPDATE with an interactive token and no user: the person registering it.

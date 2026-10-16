@@ -1128,7 +1128,10 @@ window loads its site, and whatever the site's pages load, as a browser would.
   there since (`task::drifted`). A result that is neither 0 nor Task Scheduler's own for a
   run not yet made or under way is a warning that names `pitboard renew`. A changed setting
   is a warning whose fix is turning daily renewal off and on again, which writes the task as
-  Pitboard writes it; nothing rewrites it unasked, since the change may be the person's.
+  Pitboard writes it; nothing rewrites it unasked, since the change may be the person's. A
+  read Task Scheduler answers with an error, not with no such task, stops an install and an
+  uninstall before either changes anything, so an uninstall never leaves the task running;
+  the status and doctor take it for no task.
 - No test starts the person's own login shell. A test names a shell of its own in `SHELL`,
   one that is not there, or hands in what a shell said.
 - A test never reaches the system's own scheduler. A test context schedules through
