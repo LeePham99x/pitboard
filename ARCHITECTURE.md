@@ -646,7 +646,7 @@ window loads its site, and whatever the site's pages load, as a browser would.
   account name replaced, and never hold two keys that differ only in case, which
   PowerShell's `ConvertFrom-Json` refuses. `helpers/` holds the Bun and Node scripts the
   runner facts run beside it, and `sparse/` the sparse-package manifests, script and steps
-  the owner runs in the VM, which the runner facts' CF8 rows register on a runner too.
+  the owner runs in the VM, which the runner facts' CF8 rows try on a runner too.
 - `apps/`: the native apps, one directory for each system.
 - `apps/windows/`: the Windows app. `Pitboard.Core` is the core's C# bindings as an
   assembly of their own, generated into `Generated/` and not committed, and
@@ -1457,8 +1457,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
   holds the one `<msix>` element of Pitboard's programs, `check-windows-app.ps1` fails a
   Release build where another program holds one, and it hands a shared page to
   `Pitboard.exe` only as a Pitboard link, which `Pitboard.exe` checks as it checks any. That
-  a process it starts carries none of its identity is Microsoft's contract until CF8 and P2
-  measure it ([Documented, not measured](#documented-not-measured)).
+  a process it starts carries none of its identity is Microsoft's contract until P2
+  measures it ([Documented, not measured](#documented-not-measured)).
 - On macOS, only `/usr/bin/security` reads or writes Claude Code's keychain item and
   Pitboard's parked items. No keychain item is touched through the Security framework. The
   reason is under [macOS](#macos) in Measured facts.
@@ -2799,7 +2799,7 @@ on 15 and 16 October 2026. W27 reviews the list.
 | An exe custom action after `InstallFinalize`, asynchronous with no wait, starts `Pitboard.exe --updated` as the person once a `/passive` update ends | [Custom action return processing options](https://learn.microsoft.com/en-us/windows/win32/msi/custom-action-return-processing-options) | No runner updates Pitboard; the 1.0 session's P3 does. |
 | `msiexec /a` extracts an MSI only on a machine whose platform its `Template` names, as an install would, so `windows-msi`, `windows-feed-key` and `windows-install` each read the MSI for their own machine | [Template Summary property](https://learn.microsoft.com/en-us/windows/win32/msi/template-summary) | Each runner extracts only its own MSI: no row tries the other's. |
 | Windows Installer compares three fields of `ProductVersion` and ignores a fourth, so beta N's `X.Y.Z.N` and its final's `X.Y.Z` are one version, which `MajorUpgrade` with `AllowSameVersionUpgrades` replaces | [ProductVersion property](https://learn.microsoft.com/en-us/windows/win32/msi/productversion) | No runner installs an MSI; the session's step A7 upgrades one. |
-| A process that `PitboardShare.exe` starts, or that its `LaunchUriAsync` starts, carries none of its package identity, and none of their writes is redirected | [UpdateProcThreadAttribute](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute) | Not yet measured: CF8 measures the probe's sparse package on the runners, and P2 Pitboard's. |
+| A process that `PitboardShare.exe` starts, or that its `LaunchUriAsync` starts, carries none of its package identity, and none of their writes is redirected | [UpdateProcThreadAttribute](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute) | Not yet measured. CF8 cannot register the probe's sparse package on the runners: with its throwaway certificate in the user's own `TrustedPeople`, `Add-AppxPackage` refused it on both images in run 38882775456 with 0x800B0109, a root the trust provider does not trust, so every row read no identity. P2 measures Pitboard's. |
 
 ### One sign-in at a time
 

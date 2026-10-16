@@ -1101,8 +1101,9 @@ function Find-SdkTool([string] $Name) {
 
 # CF8: the probe's sparse package as $User, with each manifest in sparse/. A throwaway
 # certificate for CN=PitboardProbe is made into a PFX here and trusted in the user's own
-# TrustedPeople, the package is registered for the user with the probe's folder as its external
-# location, and the pitboard-probe-cf8 link scheme is put under the user's
+# TrustedPeople, which Add-AppxPackage does not take (0x800B0109 in run 38882775456), so the
+# package is offered for the user with the probe's folder as its external location and refused,
+# and the pitboard-probe-cf8 link scheme is put under the user's
 # HKCU\Software\Classes, its handler the plain probe. The identity process writes, starts its
 # children and opens the link through LaunchUriAsync, as PitboardShare.exe hands a page on; a
 # process without identity reads back what each wrote. The user's part runs in its own Windows
