@@ -131,7 +131,8 @@ public sealed class AccountWindowTests
         Launched.Shows(window, "chatgpt.com stand-in");
     }
 
-    // WebView2 names no frame that started a download, so the site's own asks first; WebView2's own list then names it.
+    // WebView2 names no frame that started a download, so the site's own asks first; WebView2's own list then names it,
+    // and offers its folder, which no surface of Pitboard's does.
     [TestMethod]
     [Ignore(Pending.W23a)]
     public void ASiteDownloadIsListedInTheWindow()
@@ -147,6 +148,7 @@ public sealed class AccountWindowTests
             () => Launched.Lines(window).Any(line => line.Contains("notes.txt", StringComparison.Ordinal)),
             TimeSpan.FromSeconds(10), TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
         Assert.IsTrue(listed, "WebView2's download list does not name notes.txt");
+        Assert.IsNotNull(Launched.Pressable(window, "Show in folder"), "WebView2's download list offers no Show in folder");
     }
 
     [TestMethod]

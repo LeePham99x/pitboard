@@ -209,6 +209,8 @@ public sealed class OpenLinkWindowTests
         }
     }
 
+    // Pending P1: the macOS wording, until P1 measures browsers' share targets and the Windows entry for a link is
+    // decided. The app opens this window only with a link waiting; the state is kept as the macOS window has it.
     [UITestMethod]
     public async Task WithNoLinkItSaysHowToShareOne()
     {
