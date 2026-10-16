@@ -102,7 +102,7 @@ public sealed partial class MainWindow : Window
         var page = Selected switch
         {
             Pane.Accounts => typeof(AccountsPage),
-            Pane.Activity => typeof(ActivityPane),
+            Pane.Activity => typeof(ActivityPage),
             Pane.Machine => typeof(MachinePane),
             _ => typeof(SettingsPane),
         };

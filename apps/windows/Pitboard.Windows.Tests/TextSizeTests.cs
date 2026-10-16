@@ -19,7 +19,7 @@ public sealed class TextSizeTests
             Lines: [new ActivityLine(0, "15/01/2027 09:00", "Switch", "claude/work", "done", Done: true, AskedBy: "pitboard")],
             Empty: null);
         var snapshot = Snapshots.Read(1);
-        var pane = await Views.Navigated<ActivityPane>(Views.Context(new AppModel(new StandInModel(
+        var pane = await Views.Navigated<ActivityPage>(Views.Context(new AppModel(new StandInModel(
             snapshot with { Machine = snapshot.Machine with { Activity = activity } }))));
 
         var cells = Views.Descendants((Grid)pane.FindName("Columns"))
@@ -41,7 +41,7 @@ public sealed class TextSizeTests
         FrameworkElement[] views =
         [
             await Views.Shown(new AccountRow { Account = new ShownAccount(Items.Account("claude", "work", inUse: true), _ => { }) }),
-            await Views.Navigated<ActivityPane>(Views.Context(new AppModel(new StandInModel(snapshot)))),
+            await Views.Navigated<ActivityPage>(Views.Context(new AppModel(new StandInModel(snapshot)))),
             await Views.Navigated<MachinePane>(Views.Context(new AppModel(new StandInModel(
                 snapshot with { Machine = snapshot.Machine with { Checks = checks } })))),
             await Views.Navigated<AccountsPage>(Views.Context(

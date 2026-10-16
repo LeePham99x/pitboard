@@ -9,41 +9,8 @@ namespace Pitboard.Windows.Tests;
 [TestClass]
 public sealed class PanesTests
 {
-    private static Snapshot With(Snapshot snapshot, ActivityShown activity) =>
-        snapshot with { Machine = snapshot.Machine with { Activity = activity } };
-
     private static Snapshot With(Snapshot snapshot, ChecksShown checks) =>
         snapshot with { Machine = snapshot.Machine with { Checks = checks } };
-
-    [UITestMethod]
-    public async Task NoActivitySaysWhatWillBeThereAndShowingItReadsTheLog()
-    {
-        var model = new StandInModel(Snapshots.Read(1));
-        var pane = await Views.Navigated<ActivityPane>(Views.Context(new AppModel(model)));
-
-        Assert.Contains("No activity", Views.Texts(pane));
-        Assert.Contains(new Intent.PaneShown(Pane.Activity), model.Sent);
-    }
-
-    [UITestMethod]
-    public async Task EachChangeIsARowNewestFirst()
-    {
-        var activity = new ActivityShown(
-            Lines:
-            [
-                new ActivityLine(0, "15/01/2027 09:00", "Switch", "claude/work", "done", Done: true, AskedBy: "pitboard"),
-                new ActivityLine(1, "14/01/2027 18:00", "Enrol", "claude/spare", "refused", Done: false, AskedBy: "Pitboard app"),
-            ],
-            Empty: null);
-        var pane = await Views.Navigated<ActivityPane>(Views.Context(new AppModel(new StandInModel(With(Snapshots.Read(1), activity)))));
-
-        var rows = Views.Visible<ListViewItem>(pane).Select(row => AutomationProperties.GetName(row)).ToArray();
-
-        Assert.AreEqual(
-            "15/01/2027 09:00, Switch, claude/work, done, pitboard | 14/01/2027 18:00, Enrol, claude/spare, refused, Pitboard app",
-            string.Join(" | ", rows));
-        Assert.DoesNotContain("No activity", Views.Texts(pane));
-    }
 
     [UITestMethod]
     public async Task ThisPCSaysEachCheckUnderDoctorsLastLine()

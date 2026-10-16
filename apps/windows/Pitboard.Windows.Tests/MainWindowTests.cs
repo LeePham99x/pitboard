@@ -197,7 +197,7 @@ public sealed class MainWindowTests
             await Showing(window, Pane.Accounts);
             frame.Navigated -= Navigated;
 
-            Assert.AreEqual("ActivityPane, SettingsPane, AccountsPage", string.Join(", ", navigated));
+            Assert.AreEqual("ActivityPage, SettingsPane, AccountsPage", string.Join(", ", navigated));
             Assert.AreSame(accounts, frame.Content, "the accounts page was made again");
             Assert.IsEmpty(frame.BackStack);
         }

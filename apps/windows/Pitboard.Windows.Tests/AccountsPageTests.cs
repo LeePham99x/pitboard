@@ -109,7 +109,7 @@ public sealed class AccountsPageTests
         Assert.AreEqual("spare 12%", selected.Item.Title);
 
         var frame = page.Frame;
-        await Views.Navigate<ActivityPane>(frame, Views.Context(app));
+        await Views.Navigate<ActivityPage>(frame, Views.Context(app));
         app.Apply(first with
         {
             Revision = 3,

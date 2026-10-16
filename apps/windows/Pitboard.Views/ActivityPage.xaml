@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Pitboard.Views.ActivityPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:core="using:Pitboard.Core"
+    xmlns:local="using:Pitboard.Views"
+    xmlns:toolkit="using:CommunityToolkit.WinUI"
+    NavigationCacheMode="Required">
+  <Page.Resources>
+    <!-- Microsoft's list item templates: a table's columns, each wrapping as text grows. -->
+    <DataTemplate x:Key="TableLine" x:DataType="core:ActivityLine">
+      <Grid ColumnSpacing="12">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="170" />
+          <ColumnDefinition Width="90" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="90" />
+          <ColumnDefinition Width="110" />
+        </Grid.ColumnDefinitions>
+        <TextBlock Text="{x:Bind Date}" VerticalAlignment="Center" TextWrapping="WrapWholeWords" />
+        <TextBlock Grid.Column="1" Text="{x:Bind Change}" VerticalAlignment="Center" TextWrapping="WrapWholeWords" />
+        <TextBlock Grid.Column="2" Text="{x:Bind Account}" VerticalAlignment="Center" TextWrapping="WrapWholeWords" />
+        <TextBlock
+            Grid.Column="3"
+            Text="{x:Bind Result}"
+            Style="{x:Bind local:ActivityPage.ResultStyle(Done)}"
+            VerticalAlignment="Center"
+            TextWrapping="WrapWholeWords" />
+        <TextBlock
+            Grid.Column="4"
+            Text="{x:Bind AskedBy}"
+            Style="{StaticResource SecondaryTextBlockStyle}"
+            VerticalAlignment="Center"
+            TextWrapping="WrapWholeWords" />
+      </Grid>
+    </DataTemplate>
+    <!-- Narrow, each change stacks under its date, as a three-line list item. -->
+    <DataTemplate x:Key="StackedLine" x:DataType="core:ActivityLine">
+      <Grid Padding="0,8" ColumnSpacing="12" RowSpacing="2">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <TextBlock Grid.ColumnSpan="2" Text="{x:Bind Date}" Style="{StaticResource SecondaryCaptionTextBlockStyle}" TextWrapping="WrapWholeWords" />
+        <TextBlock Grid.Row="1" Text="{x:Bind Change}" Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="WrapWholeWords" />
+        <TextBlock Grid.Row="1" Grid.Column="1" Text="{x:Bind Account}" TextWrapping="WrapWholeWords" />
+        <TextBlock Grid.Row="2" Text="{x:Bind Result}" Style="{x:Bind local:ActivityPage.ResultStyle(Done)}" TextWrapping="WrapWholeWords" />
+        <TextBlock
+            Grid.Row="2"
+            Grid.Column="1"
+            Text="{x:Bind AskedBy}"
+            Style="{StaticResource SecondaryTextBlockStyle}"
+            TextWrapping="WrapWholeWords" />
+      </Grid>
+    </DataTemplate>
+  </Page.Resources>
+  <!-- NavigationView's guidance: 24 epx sides, 12 in Minimal, which the main window sets. -->
+  <Grid x:Name="Root" Padding="0,16,0,0" RowSpacing="24">
+    <VisualStateManager.VisualStateGroups>
+      <VisualStateGroup x:Name="Sides">
+        <VisualState x:Name="Wide" />
+        <VisualState x:Name="Minimal">
+          <VisualState.Setters>
+            <Setter Target="Heading.Margin" Value="12,0,12,0" />
+            <Setter Target="Lines.Padding" Value="12,0,12,16" />
+          </VisualState.Setters>
+        </VisualState>
+      </VisualStateGroup>
+      <!-- Below 720 epx the account column would be narrower than the change column. -->
+      <VisualStateGroup x:Name="Layout">
+        <VisualState x:Name="Table" />
+        <VisualState x:Name="Stacked">
+          <VisualState.StateTriggers>
+            <toolkit:ControlSizeTrigger MaxWidth="720" TargetElement="{Binding ElementName=Root}" />
+          </VisualState.StateTriggers>
+          <VisualState.Setters>
+            <Setter Target="Lines.ItemTemplate" Value="{StaticResource StackedLine}" />
+            <Setter Target="Columns.Visibility" Value="Collapsed" />
+          </VisualState.Setters>
+        </VisualState>
+      </VisualStateGroup>
+    </VisualStateManager.VisualStateGroups>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+    <Grid x:Name="Heading" Margin="24,0,24,0" ColumnSpacing="12">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+      <TextBlock VerticalAlignment="Center" Text="Activity" Style="{StaticResource PageTitleTextBlockStyle}" />
+      <CommandBar
+          Grid.Column="1"
+          VerticalAlignment="Center"
+          Background="Transparent"
+          DefaultLabelPosition="Right"
+          OverflowButtonVisibility="Collapsed">
+        <AppBarButton
+            Label="Refresh"
+            ToolTipService.ToolTip="Read the log again"
+            AutomationProperties.AutomationId="activity.refresh"
+            Click="OnRefresh">
+          <AppBarButton.Icon>
+            <SymbolIcon Symbol="Refresh" />
+          </AppBarButton.Icon>
+          <AppBarButton.KeyboardAccelerators>
+            <KeyboardAccelerator Key="F5" />
+            <KeyboardAccelerator Key="R" Modifiers="Control" />
+          </AppBarButton.KeyboardAccelerators>
+        </AppBarButton>
+      </CommandBar>
+    </Grid>
+    <ListView
+        x:Name="Lines"
+        Grid.Row="1"
+        Padding="24,0,24,16"
+        SelectionMode="None"
+        ItemsSource="{x:Bind ViewModel.Lines, Mode=OneWay}"
+        ItemTemplate="{StaticResource TableLine}"
+        Visibility="{x:Bind ViewModel.Listed, Mode=OneWay}"
+        AutomationProperties.AutomationId="activity"
+        AutomationProperties.Name="Activity">
+      <!-- A list with column headers is how WinUI shows a table. The padding is a list item's own. -->
+      <ListView.Header>
+        <Grid x:Name="Columns" Padding="16,0,12,4" ColumnSpacing="12">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="170" />
+            <ColumnDefinition Width="90" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="90" />
+            <ColumnDefinition Width="110" />
+          </Grid.ColumnDefinitions>
+          <TextBlock Text="Date" Style="{StaticResource SecondaryCaptionTextBlockStyle}" TextWrapping="WrapWholeWords" />
+          <TextBlock Grid.Column="1" Text="Change" Style="{StaticResource SecondaryCaptionTextBlockStyle}" TextWrapping="WrapWholeWords" />
+          <TextBlock Grid.Column="2" Text="Account" Style="{StaticResource SecondaryCaptionTextBlockStyle}" TextWrapping="WrapWholeWords" />
+          <TextBlock Grid.Column="3" Text="Result" Style="{StaticResource SecondaryCaptionTextBlockStyle}" TextWrapping="WrapWholeWords" />
+          <TextBlock Grid.Column="4" Text="Asked by" Style="{StaticResource SecondaryCaptionTextBlockStyle}" TextWrapping="WrapWholeWords" />
+        </Grid>
+      </ListView.Header>
+      <ListView.ItemContainerStyle>
+        <Style TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
+          <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        </Style>
+      </ListView.ItemContainerStyle>
+    </ListView>
+    <local:EmptyState
+        Grid.Row="1"
+        Glyph="&#xE81C;"
+        Visibility="{x:Bind ViewModel.ShowsEmpty, Mode=OneWay}"
+        Title="{x:Bind ViewModel.EmptyTitle, Mode=OneWay}"
+        Detail="{x:Bind ViewModel.EmptyDetail, Mode=OneWay}" />
+  </Grid>
+</Page>

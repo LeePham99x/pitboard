@@ -698,8 +698,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
     registry by `RegistryRunKey`
     and replaced in tests, refuses in a Debug build, and a fixture gets
     `FixtureStartupItem`. `SettingsPage` is what the settings page says and sends beyond the
-    model's words. `AccountsViewModel` is what the accounts page binds to, told part by part
-    as `AppModel` tells its own. `Keyed` keeps a shown row while the model lists it, so
+    model's words. `AccountsViewModel` and `ActivityViewModel` are what the accounts and
+    activity pages bind to, told part by part as `AppModel` tells its own. `Keyed` keeps a shown row while the model lists it, so
     `ShownAccount` keeps its selection across snapshots, and sends its row's action. `WindowAlert` is the failure or quit question in
     front of the window, `SheetPage` what the sheet over it shows and sends, and `Countdown`
     a notice's timer. `IconCommands` turns the icon's click, its menu and each choice there
@@ -715,8 +715,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     settings page, each navigated to with a `PaneContext` and kept for the next visit; it
     takes Ctrl+N, Ctrl+comma, Ctrl+W, F6 and Shift+F6 from any of them. `AccountsPage` lists
     the accounts under their notices and setup step, each an `AccountRow` with an
-    `AccountMenu`, and shows an `EmptyState` in place of an empty list; `ActivityPane` and
-    `MachinePane` are the log and this PC's checks, and
+    `AccountMenu`, and shows an `EmptyState` in place of an empty list; `ActivityPage` is the
+    log, a table whose column headers are its list's header, each change stacked under its
+    date on a page narrower than 720 epx; `MachinePane` is this PC's checks, and
     `SettingsPane` the settings page, in the macOS Settings' sections, each warm-up account
     a `WarmRow`. A notice is a `NoticeBar`, an InfoBar. `DialogHost` shows the ContentDialogs
     of every window one at a time, each in its window's theme, and `WindowAlerts` puts the
