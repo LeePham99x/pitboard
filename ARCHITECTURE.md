@@ -439,8 +439,7 @@ window loads its site, and whatever the site's pages load, as a browser would.
 - `crates/pitboard`: the command line. Arguments, rendering for people, the man page, and
   the `--json` contract, pinned by the snapshots in `crates/pitboard/tests/snapshots`.
   `build.rs` gives a Windows build its manifest, which the linker embeds, and its version
-  resource, which `rc.exe` or `llvm-rc` compiles. Both are in `build/`, the resource's writer
-  in `resources.rs`, one file so `pitboard-ffi`'s build script can include it too.
+  resource, which `rc.exe` or `llvm-rc` compiles, both through `build/versioninfo.rs`.
   `json.rs` is the one writer of that JSON, for every command and every error. Its example
   `stand-in` is the program every test starts in place of a tool: `claude`, `codex` and
   Claude's own program under a test's scratch `Claude.app`, which `ps` lists as Claude.
@@ -470,12 +469,13 @@ window loads its site, and whatever the site's pages load, as a browser would.
   says each warm-up, each reason an account is held back once until it warms up, and why
   nothing is warmed up here once until that ends. No warm-up error ends it. `warm.rs` is
   `pitboard warm`. `build/versioninfo.rs` is the Windows version resource SignPath asks of
-  what it signs: ProductName `Pitboard` and the crate's version. The build scripts of
-  `pitboard-ffi` and `pitboard-share-ffi` include it by `#[path]` and link it into their
-  DLLs, compiled by the Windows SDK's `rc.exe` or by `llvm-rc`. Its FileVersion is
-  `X.Y.Z.N` for beta N and `X.Y.Z.1000` otherwise, so each version numbers above the one
-  before. A build without a resource compiler warns and goes on, unless
-  `PITBOARD_REQUIRE_VERSIONINFO=1`, which CI's `windows-app` job sets.
+  what it signs: ProductName `Pitboard`, CompanyName `Pitboard` and the crate's version, and
+  `pitboard.exe`'s manifest. The build scripts of `pitboard-ffi` and `pitboard-share-ffi`
+  include it by `#[path]` and link the resource into their DLLs, compiled by the Windows
+  SDK's `rc.exe` or by `llvm-rc`. Its FileVersion is `X.Y.Z.N` for beta N and `X.Y.Z.1000`
+  otherwise, so each version numbers above the one before. A build without a resource
+  compiler warns and goes on, unless `PITBOARD_REQUIRE_VERSIONINFO=1`, which CI's `windows`
+  and `windows-app` jobs and the release set.
 - `crates/pitboard-ffi`: the core as UniFFI bindings, for the apps: a static library for
   the macOS app, a dynamic one for the Windows app. An app reaches the core through the
   model alone.
@@ -964,7 +964,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
   The app asks in its own dialogs and does not go through `Confirm`. On Windows std's
   `is_terminal` also takes a pipe named as an msys or cygwin pty for a terminal (`msys_tty_on`
   in Rust 1.98.1's `library/std/src/sys/io/is_terminal/windows.rs`), so under mintty, Git
-  Bash's own terminal, they ask as in a console.
+  Bash's own terminal, they ask as in a console, since mintty sets `TERM` (`xterm` by
+  default). Without it anstream 1.0.0 writes through the console API, which the pipe refuses
+  (run 38901801954).
 - A Windows build of a release before Pitboard for Windows is released does nothing
   (`release.rs`). The gate every change passes asks first, so no file is written, no store
   of logins changed and no token renewed even by a caller that forgot to ask; every read
@@ -3167,8 +3169,10 @@ treated, and only the macOS build shows it. The run reads both builds since.
   session. It hands bash the command as written, so a path with backslashes breaks there,
   while the bare `pitboard statusline` runs in either. Doctor's `status_line` check finds
   Git Bash as Claude Code does and says whether a `pitboard.exe` is on the PATH it runs
-  with, which a session started from the same shell hands its status line too. Session
-  step 12 confirms which PowerShell runs.
+  with, which a session started from the same shell hands its status line too. It warns of
+  none only where `statusLine.command` in the managed settings or the person's own starts
+  with a bare `pitboard`: a full path, or a script of the person's, needs no such PATH.
+  Session step 12 confirms which PowerShell runs.
 - Read on 15 October 2026 from the win32-x64 and win32-arm64 builds of 2.1.300
   (`windows_managed_settings`): on Windows managed settings are in `C:\Program
   Files\ClaudeCode`, as on the other systems in their folder, and in the value `Settings` of
@@ -3468,9 +3472,13 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
   Codex already runs, since a sign-in open there ends too.
 - Read on 16 October 2026 from 0.163.0's source, reqwest 0.12.28 and hyper-util 0.1.20
   (`codex_windows_system_proxy`): on Windows Codex sends its requests through the proxy the
-  variables name, and where none of them names one, through `ProxyServer` in HKCU's
-  `Internet Settings` where `ProxyEnable` is not 0. Claude Code 2.1.301 and Pitboard follow
-  the variables alone, so doctor says where only Windows' settings name a proxy.
+  variables name, and where `HTTPS_PROXY` and `https_proxy` are unset or empty, its https
+  requests through `ProxyServer` in HKCU's `Internet Settings` where `ProxyEnable` is not 0,
+  whatever `HTTP_PROXY` and `ALL_PROXY` say. It reads `ProxyServer` whole as one address, so
+  a proxy for each protocol reaches it as none, and one such entry alone as a host that
+  fails. Claude Code 2.1.301 and Pitboard follow the variables alone, Claude Code with no
+  `ALL_PROXY`, so wherever `HTTPS_PROXY` is unset doctor says where each one's requests go,
+  with any user name and password in `ProxyServer` shown as `***`.
 - Read on 16 October 2026 from 0.163.0's source and its linux-x64 build (`codex_wsl`): the
   Linux build takes itself to run in WSL where `WSL_DISTRO_NAME` is set or `/proc/version`
   names Microsoft, and there starts no shared background server where its home is on 9p,

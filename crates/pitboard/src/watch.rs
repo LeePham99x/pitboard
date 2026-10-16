@@ -13,7 +13,7 @@
 use crate::{Report, emit, followed, ui};
 use pitboard_core::duty::autoswitch::{Auto, Blind, Look, Skip, Threshold};
 use pitboard_core::duty::cadence::{DECIDE_EVERY_SECONDS, Refusals};
-use pitboard_core::duty::warm::{Overview, Standing};
+use pitboard_core::duty::warm::{Halt, Overview, Standing};
 use pitboard_core::error::{self, Error};
 use pitboard_core::provider::ProviderId;
 use pitboard_core::service::{Changing, Done, Failed, Pitboard};
@@ -207,7 +207,7 @@ impl Told {
 /// the span of the day, where any is turned on.
 fn watching_json(threshold: Threshold, warming: Option<&Overview>) -> Value {
     let mut data = json!({ "event": "watching", "threshold": threshold.percent() });
-    if let Some(overview) = warming.filter(|overview| overview.accounts.iter().any(|c| c.on)) {
+    if let Some(overview) = warming.filter(|overview| warms_any(overview)) {
         data["warm"] = json!({
             "range": crate::warm::range_json(overview.range),
             "accounts": overview
@@ -224,20 +224,25 @@ fn watching_json(threshold: Threshold, warming: Option<&Overview>) -> Value {
 /// What it warms up, as the start line's last clause says it: ", and warms up work and
 /// personal from 06:00 to 22:00", or nothing where no account is turned on.
 fn warms(overview: &Overview) -> String {
+    if !warms_any(overview) {
+        return String::new();
+    }
     let on: Vec<String> = overview
         .accounts
         .iter()
         .filter(|choice| choice.on)
         .map(|choice| ui::paint(ui::BOLD, &choice.account))
         .collect();
-    if on.is_empty() {
-        return String::new();
-    }
     format!(
         ", and warms up {} from {}",
         words::listed(on),
         overview.range
     )
+}
+
+// Windows warms up nothing, whatever is turned on, and the first look says why.
+fn warms_any(overview: &Overview) -> bool {
+    overview.halted != Some(Halt::Unbuilt) && overview.accounts.iter().any(|choice| choice.on)
 }
 
 /// What `watch` has said of warming up: each reason it held an account back or could not warm
@@ -1085,6 +1090,23 @@ mod tests {
             assert_eq!(
                 events(&told.untold(stands(overview(Some(Halt::Unbuilt), None)))),
                 ["\"warm_up_halted\""]
+            );
+        }
+
+        #[test]
+        fn on_windows_watch_does_not_start_by_saying_what_it_warms_up() {
+            let windows = overview(Some(Halt::Unbuilt), None);
+            assert_eq!(warms(&windows), "");
+            assert_eq!(
+                watching_json(Threshold::DEFAULT, Some(&windows)).get("warm"),
+                None
+            );
+            let elsewhere = overview(Some(Halt::ProgramMissing), None);
+            let said = anstream::adapter::strip_str(&warms(&elsewhere)).to_string();
+            assert_eq!(said, ", and warms up work from 06:00 to 22:00");
+            assert_eq!(
+                watching_json(Threshold::DEFAULT, Some(&elsewhere))["warm"]["accounts"],
+                json!(["work"])
             );
         }
 

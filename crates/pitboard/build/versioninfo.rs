@@ -1,8 +1,8 @@
 // The version resource SignPath asks of what it signs, ProductName Pitboard at the build's
-// version, for each build script that includes this file by #[path]. CompanyName is
-// Pitboard too, where no certificate has to match it.
+// version and CompanyName Pitboard, where no certificate has to match it, and pitboard.exe's
+// manifest, for each build script that includes this file by #[path].
 
-// Each build script uses the part for its kind of binary, and pitboard-ffi's tests the rest.
+// Each build script uses the part for its kind of binary, and pitboard's tests the rest.
 #![allow(dead_code)]
 
 use std::env;
@@ -24,17 +24,32 @@ pub(crate) enum Compiler {
     LlvmRc(PathBuf),
 }
 
-// Beta N of X.Y.Z is X.Y.Z.N and any other X.Y.Z is X.Y.Z.1000, so each version numbers above
-// the one before it.
+pub(crate) fn required(value: Option<&str>) -> Result<bool, String> {
+    match value {
+        None | Some("") => Ok(false),
+        Some("1") => Ok(true),
+        Some(other) => Err(format!("{REQUIRED} takes 1, not {other:?}")),
+    }
+}
+
+// Part 3's "Version numbers": beta N of X.Y.Z is X.Y.Z.N and any other X.Y.Z is X.Y.Z.1000, so
+// each version numbers above the one before it. Numbers are written as windows-versions.sh
+// takes them, with no leading zero.
 pub(crate) fn file_version(version: &str) -> Result<[u16; 4], String> {
     let refused = || {
         format!("{version} is neither X.Y.Z nor X.Y.Z-beta.N, the versions a Windows build numbers")
+    };
+    let number = |part: &str| {
+        let canonical = !part.is_empty()
+            && part.bytes().all(|b| b.is_ascii_digit())
+            && (part == "0" || !part.starts_with('0'));
+        canonical.then(|| part.parse::<u16>().ok()).flatten()
     };
     let (release, fourth) = match version.split_once('-') {
         Some((release, pre)) => (
             release,
             pre.strip_prefix("beta.")
-                .and_then(|n| n.parse::<u16>().ok())
+                .and_then(number)
                 .filter(|n| (1..1000).contains(n))
                 .ok_or_else(refused)?,
         ),
@@ -42,9 +57,9 @@ pub(crate) fn file_version(version: &str) -> Result<[u16; 4], String> {
     };
     let fields = release
         .split('.')
-        .map(str::parse::<u16>)
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| refused())?;
+        .map(number)
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(refused)?;
     match fields[..] {
         [major, minor, patch] => Ok([major, minor, patch, fourth]),
         _ => Err(refused()),
@@ -123,20 +138,24 @@ pub(crate) fn find_compiler(host: &str, path: Option<&std::ffi::OsStr>) -> Optio
         .or_else(|| on_path(&["llvm-rc", "llvm-rc.exe"]).map(Compiler::LlvmRc))
 }
 
+// The SDK's installer writes the key in either registry view, as embed-resource looks for it.
 fn windows_kits() -> Option<PathBuf> {
-    let said = Command::new("reg")
-        .args([
-            "query",
-            r"HKLM\SOFTWARE\Microsoft\Windows Kits\Installed Roots",
-            "/v",
-            "KitsRoot10",
-        ])
-        .output()
-        .ok()?;
-    String::from_utf8_lossy(&said.stdout)
-        .lines()
-        .find_map(|line| line.split_once("REG_SZ"))
-        .map(|(_, root)| PathBuf::from(root.trim()))
+    ["/reg:32", "/reg:64"].into_iter().find_map(|view| {
+        let said = Command::new("reg")
+            .args([
+                "query",
+                r"HKLM\SOFTWARE\Microsoft\Windows Kits\Installed Roots",
+                "/v",
+                "KitsRoot10",
+                view,
+            ])
+            .output()
+            .ok()?;
+        String::from_utf8_lossy(&said.stdout)
+            .lines()
+            .find_map(|line| line.trim().strip_prefix("KitsRoot10")?.split_once("REG_SZ"))
+            .map(|(_, root)| PathBuf::from(root.trim()))
+    })
 }
 
 // The newest SDK's rc.exe for this machine, else one that runs on it under emulation.
@@ -203,17 +222,40 @@ pub(crate) fn compile(
     }
 }
 
+// A build script reads what Cargo sets, not Pitboard's context.
+#[allow(clippy::disallowed_methods)]
+fn for_msvc() -> bool {
+    env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
+        && env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc")
+}
+
+// A program's own manifest, which the linker embeds; lld-link takes the same arguments.
+pub(crate) fn manifest(file: &Path) {
+    println!("cargo:rerun-if-changed={}", file.display());
+    if !for_msvc() {
+        return;
+    }
+    println!("cargo:rustc-link-arg-bins=/MANIFEST:EMBED");
+    println!(
+        "cargo:rustc-link-arg-bins=/MANIFESTINPUT:{}",
+        file.display()
+    );
+    // Ours carries asInvoker, so the linker adds no trustInfo of its own beside it.
+    println!("cargo:rustc-link-arg-bins=/MANIFESTUAC:NO");
+}
+
 // The build script's whole part: on a Windows target, the resource linked into the binary.
 // A build script reads what Cargo sets, not Pitboard's context.
 #[allow(clippy::disallowed_methods)]
 pub(crate) fn embed(kind: Kind, name: &str, description: &str) {
     println!("cargo:rerun-if-env-changed={REQUIRED}");
-    if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
+    let required =
+        required(env::var(REQUIRED).ok().as_deref()).unwrap_or_else(|why| panic!("{why}"));
+    if !for_msvc() {
         return;
     }
     let version = env::var("CARGO_PKG_VERSION").expect("Cargo sets CARGO_PKG_VERSION");
     let file = file_version(&version).unwrap_or_else(|refused| panic!("{refused}"));
-    let required = env::var(REQUIRED).as_deref() == Ok("1");
     let host = env::var("HOST").unwrap_or_default();
     let Some(compiler) = find_compiler(&host, env::var_os("PATH").as_deref()) else {
         match without_compiler(required) {
@@ -239,89 +281,4 @@ pub(crate) fn embed(kind: Kind, name: &str, description: &str) {
         "cargo:rustc-link-arg-{linked}={}",
         out.join(resource_name).display()
     );
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // Part 3's table of version numbers, its VERSIONINFO FileVersion row.
-    #[test]
-    fn each_version_numbers_above_the_one_before_it() {
-        let table = [
-            ("0.15.0", [0, 15, 0, 1000]),
-            ("1.0.0-beta.1", [1, 0, 0, 1]),
-            ("1.0.0", [1, 0, 0, 1000]),
-            ("1.0.1", [1, 0, 1, 1000]),
-            ("1.1.0-beta.2", [1, 1, 0, 2]),
-        ];
-        for (version, expected) in table {
-            assert_eq!(file_version(version), Ok(expected), "{version}");
-        }
-        assert!(table.windows(2).all(|pair| pair[0].1 < pair[1].1));
-    }
-
-    #[test]
-    fn a_version_windows_cannot_number_is_refused() {
-        for version in [
-            "1.0.0-rc.1",
-            "1.0.0-beta.0",
-            "1.0.0-beta.1000",
-            "1.0.0-beta",
-            "1.0.0+abc",
-            "1.0",
-            "1.0.0.0",
-            "1.65536.0",
-        ] {
-            assert!(file_version(version).is_err(), "{version}");
-        }
-    }
-
-    #[test]
-    fn the_resource_names_pitboard_and_the_version_once() {
-        let library = script(
-            Kind::Library,
-            "1.0.0-beta.1",
-            [1, 0, 0, 1],
-            "pitboard_ffi",
-            "Pitboard core",
-        );
-        assert!(library.contains("FILEVERSION 1,0,0,1\n"));
-        assert!(library.contains("FILETYPE 2\n"));
-        assert!(library.contains(r#"VALUE "ProductName", "Pitboard""#));
-        assert!(library.contains(r#"VALUE "CompanyName", "Pitboard""#));
-        assert!(library.contains(r#"VALUE "ProductVersion", "1.0.0-beta.1""#));
-        assert!(library.contains(r#"VALUE "FileVersion", "1.0.0.1""#));
-        assert!(library.contains(r#"VALUE "OriginalFilename", "pitboard_ffi.dll""#));
-        assert!(!library.contains("#include"));
-
-        let program = script(
-            Kind::Program,
-            "1.0.0",
-            [1, 0, 0, 1000],
-            "pitboard",
-            "Pitboard",
-        );
-        assert!(program.contains("FILETYPE 1\n"));
-        assert!(program.contains(r#"VALUE "OriginalFilename", "pitboard.exe""#));
-    }
-
-    #[test]
-    fn a_build_without_a_resource_compiler_warns_unless_one_is_required() {
-        assert!(without_compiler(false).is_ok_and(|said| said.contains(REQUIRED)));
-        assert!(without_compiler(true).is_err());
-    }
-
-    #[test]
-    fn a_resource_compiler_on_path_is_found_where_no_sdk_is() {
-        let folder = env::temp_dir().join(format!("pitboard-versioninfo-{}", std::process::id()));
-        std::fs::create_dir_all(&folder).unwrap();
-        let path = folder.as_os_str();
-        assert_eq!(find_compiler("aarch64-apple-darwin", Some(path)), None);
-
-        std::fs::write(folder.join("llvm-rc"), "").unwrap();
-        let found = find_compiler("aarch64-apple-darwin", Some(path));
-        std::fs::remove_dir_all(&folder).unwrap();
-        assert_eq!(found, Some(Compiler::LlvmRc(folder.join("llvm-rc"))));
-    }
 }

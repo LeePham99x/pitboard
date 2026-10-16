@@ -13,6 +13,7 @@ use crate::model::machine::ScheduleFailure;
 use crate::model::state::AutoStanding;
 use crate::{AutoSwitched, FoundCommandLine, Level, Schedule};
 use pitboard_core::duty::autoswitch::Threshold;
+use pitboard_core::duty::warm::Halt;
 
 /// What the app shows of this machine rather than its accounts. Not called `Machine`, the
 /// name the model's tests give the core they script.
@@ -275,9 +276,11 @@ fn warm(seen: &Seen) -> WarmShown {
         })
         .unwrap_or_default();
     let unreadable = state.warm.unreadable.as_deref().map(words::capitalised);
+    // Windows warms up nothing, which is worth saying before anything is turned on.
+    let unbuilt = overview.is_some_and(|overview| overview.halted == Some(Halt::Unbuilt));
     let standing = unreadable.or_else(|| {
         overview
-            .filter(|_| state.warm.any_on())
+            .filter(|_| state.warm.any_on() || unbuilt)
             .and_then(|overview| {
                 if let Some(halt) = &overview.halted {
                     return Some(format!(
@@ -302,12 +305,15 @@ fn warm(seen: &Seen) -> WarmShown {
         range_label: range.to_string(),
         accounts,
         standing,
-        note: "Pitboard starts the five-hour period of each account turned on as soon as the \
-               last one resets, within these hours, while the app is open, so it resets as \
-               early as it can. Claude Code sends one short request with that account's own \
-               login. Pitboard warms up Claude Code accounts only, and none with a limit used \
-               up."
-        .into(),
+        note: if unbuilt {
+            "Pitboard keeps what you turn on here, and warms up nothing on this PC.".into()
+        } else {
+            "Pitboard starts the five-hour period of each account turned on as soon as the last \
+             one resets, within these hours, while the app is open, so it resets as early as it \
+             can. Claude Code sends one short request with that account's own login. Pitboard \
+             warms up Claude Code accounts only, and none with a limit used up."
+                .into()
+        },
         enabled: overview.is_some(),
     }
 }
@@ -585,6 +591,48 @@ mod tests {
                 desktop_account("work", true)
             ]),
             format!("{claude_code_alone} A parked Claude Desktop login is never renewed.")
+        );
+    }
+
+    #[test]
+    fn on_windows_settings_say_why_nothing_is_warmed_up_with_nothing_turned_on() {
+        use pitboard_core::duty::warm::{Choice, Halt, Overview, Range, Standing};
+        let mut state = read(
+            status(vec![account(Some("work")).signed_in().build()], Vec::new()),
+            vec![claude_code()],
+        );
+        let overview = |halted| Overview {
+            range: Range::DEFAULT,
+            halted,
+            accounts: vec![Choice {
+                account: "work".into(),
+                qualified: "claude/work".into(),
+                on: false,
+                standing: None,
+                now: Standing::Due,
+            }],
+        };
+        state.warm.overview = Some(overview(Some(Halt::Unbuilt)));
+        let windows = present_on(Os::Windows, &state, 0, &Utc).machine.warm;
+        assert_eq!(
+            windows.standing.as_deref(),
+            Some(
+                "Pitboard is not warming up accounts: warm-ups are not available on Windows, \
+                 where Claude Code does not read the access token a warm-up hands it."
+            )
+        );
+        assert_eq!(
+            windows.note,
+            "Pitboard keeps what you turn on here, and warms up nothing on this PC."
+        );
+
+        state.warm.overview = Some(overview(None));
+        let mac = present_on(Os::MacOs, &state, 0, &Utc).machine.warm;
+        assert_eq!(mac.standing, None, "nothing is turned on");
+        assert!(
+            mac.note.starts_with("Pitboard starts the five-hour period"),
+            "{}",
+            mac.note
         );
     }
 }

@@ -571,9 +571,10 @@ function Measure-LockFileEx($User, [string] $Folder, [string] $Label) {
     }
 }
 
-# RF-E1, RF-E3 and RF-D2's tasks: a probe task registered in $TaskFolder, run, read and
-# deleted, by the job's user or by $User, with $In as the probe's scratch folder. With
-# $Expect, the report the task's action writes there is waited for and read.
+# RF-E1, RF-E3 and RF-D2's tasks: a probe task read before it is there, then registered in
+# $TaskFolder, run, read and deleted, by the job's user or by $User, with $In as the probe's
+# scratch folder. With $Expect, the report the task's action writes there is waited for and
+# read.
 function Measure-Task($User, [string] $In, [string] $Label, [string] $TaskFolder, [string] $Action, [switch] $SidSuffix, [int] $WaitSeconds = 5, [string] $Expect = '') {
     $base = @('task', '--scratch', $In, '--label', $Label, '--folder', $TaskFolder)
     if ($SidSuffix) { $base += '--sid-suffix' }
@@ -582,7 +583,8 @@ function Measure-Task($User, [string] $In, [string] $Label, [string] $TaskFolder
         $all = $base + @('--action', $Step) + $More
         if ($User) { Invoke-AsUser $User "task-$Label-$TaskFolder-$Step" $all } else { Invoke-Probe "task-$Label-$TaskFolder-$Step" $all }
     }
-    $result = [ordered]@{ register = (& $call 'register' @('--args', $Action)) }
+    $result = [ordered]@{ read_before = (& $call 'read' @()) }
+    $result.register = & $call 'register' @('--args', $Action)
     $result.run = & $call 'run' @()
     if ($Expect) { $result.output_appeared = Wait-File $Expect $WaitSeconds } else { Start-Sleep -Seconds $WaitSeconds }
     $result.read = & $call 'read' @()
@@ -1256,12 +1258,35 @@ function Measure-PasswordChanges($User, $Result) {
     }
 }
 
-# RF-B2: a second user whose name is not ASCII: pb, D with stroke, a with dot below, t.
-function Measure-NonAsciiUser($Result, [string] $Bun) {
+# RF-E1c: $Second registers its task in a \Pitboard\ $First made, then $First deletes its own
+# and tries the folder with $Second's still in it, then $Second deletes its own and $First the
+# folder.
+function Measure-SharedTaskFolder($First, $Second) {
+    $step = {
+        param($User, [string] $Step, [string[]] $More)
+        $all = @('task', '--scratch', (Join-Path $User.Scratch 'e1c'), '--label', 'e1c', '--folder', 'pitboard', '--sid-suffix', '--action', $Step) + $More
+        Invoke-AsUser $User "task-e1c-$Step" $all
+    }
+    $r = [ordered]@{}
+    $r.first_register = & $step $First 'register' @('--args', 'logon')
+    $r.second_read = & $step $Second 'read' @()
+    $r.second_register = & $step $Second 'register' @('--args', 'logon')
+    $r.first_delete = & $step $First 'delete' @()
+    $r.second_delete = & $step $Second 'delete' @()
+    $r.first_delete_again = & $step $First 'delete' @()
+    $r
+}
+
+# RF-B2: a second user whose name is not ASCII: pb, D with stroke, a with dot below, t. With
+# $Fresh, the first fresh user still there, RF-E1c between the two.
+function Measure-NonAsciiUser($Result, [string] $Bun, $Fresh) {
     $user = $null
     try {
         $name = 'pb' + [char] 0x0110 + [char] 0x1EA1 + 't' + (Get-Random -Minimum 10000 -Maximum 99999)
         $user = New-ThrowawayUser 'nonascii' $name @($usersSid) $Result
+        if ($user.ProfileDir -and $Fresh) {
+            Invoke-Row $Result 'rf_e1c' { Measure-SharedTaskFolder $Fresh $user }
+        }
         if ($user.ProfileDir) {
             $s = $user.Scratch
             $codex = Join-Path $s 'codex'
@@ -1862,6 +1887,8 @@ try {
     Save-Report
 
     $report.fresh_standard_user = [ordered]@{}
+    $report.non_ascii_user = [ordered]@{}
+    $nonAsciiMeasured = $false
     $report.refs = [ordered]@{}
     $report.smb_share = [ordered]@{}
     $report.cf8 = [ordered]@{}
@@ -1888,6 +1915,8 @@ try {
                 if ($opensshHome) { Uninstall-OpenSsh $opensshHome $report.openssh }
             }
             Save-Report
+            Measure-NonAsciiUser $report.non_ascii_user $bun $fresh
+            $nonAsciiMeasured = $true
             Measure-PasswordChanges $fresh $report.fresh_standard_user
         }
     } catch {
@@ -1897,8 +1926,7 @@ try {
         Save-Report
     }
 
-    $report.non_ascii_user = [ordered]@{}
-    Measure-NonAsciiUser $report.non_ascii_user $bun
+    if (-not $nonAsciiMeasured) { Measure-NonAsciiUser $report.non_ascii_user $bun $null }
     $report.fresh_admin = [ordered]@{}
     Measure-FreshAdmin $report.fresh_admin
 

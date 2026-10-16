@@ -1,25 +1,29 @@
 // What the build script decides, and on Windows what pitboard.exe carries once built.
 
-#[allow(dead_code)]
-#[path = "../build/resources.rs"]
-mod resources;
+#[path = "../build/versioninfo.rs"]
+mod versioninfo;
 
+use versioninfo::{Compiler, Kind};
+
+// Part 3's table of version numbers, its VERSIONINFO FileVersion row.
 #[test]
 fn the_file_version_is_the_release_tables() {
-    for (version, file_version) in [
+    let table = [
+        ("0.15.0", [0, 15, 0, 1000]),
         ("1.0.0-beta.1", [1, 0, 0, 1]),
         ("1.0.0", [1, 0, 0, 1000]),
         ("1.0.1", [1, 0, 1, 1000]),
         ("1.1.0-beta.2", [1, 1, 0, 2]),
-        ("0.15.0", [0, 15, 0, 1000]),
         ("2.10.3-beta.999", [2, 10, 3, 999]),
-    ] {
+    ];
+    for (version, expected) in table {
         assert_eq!(
-            resources::file_version(version),
-            Some(file_version),
+            versioninfo::file_version(version),
+            Ok(expected),
             "{version}"
         );
     }
+    assert!(table.windows(2).all(|pair| pair[0].1 < pair[1].1));
     for refused in [
         "",
         "1.0",
@@ -34,50 +38,57 @@ fn the_file_version_is_the_release_tables() {
         "1.0.0+build",
         "65536.0.0",
     ] {
-        assert_eq!(resources::file_version(refused), None, "{refused}");
+        assert!(versioninfo::file_version(refused).is_err(), "{refused}");
     }
+    let shipped = env!("CARGO_PKG_VERSION");
     assert_eq!(
-        resources::file_version(env!("CARGO_PKG_VERSION")).map(|parts| parts[3]),
-        Some(1000),
-        "a 0.x release follows the final rule"
+        versioninfo::file_version(shipped).map(|parts| parts[3] == 1000),
+        Ok(!shipped.contains('-')),
+        "{shipped}"
     );
 }
 
 #[test]
 fn without_a_resource_compiler_a_build_warns_unless_one_is_required() {
-    assert_eq!(resources::required(None), Ok(false));
-    assert_eq!(resources::required(Some("")), Ok(false));
-    assert_eq!(resources::required(Some("1")), Ok(true));
-    assert!(resources::required(Some("yes")).is_err());
-    match resources::without_a_compiler(false) {
-        resources::Without::Warn(said) => assert!(
-            said.contains("PITBOARD_REQUIRE_VERSIONINFO=1 makes this an error"),
-            "{said}"
-        ),
-        resources::Without::Fail(why) => panic!("{why}"),
-    }
-    match resources::without_a_compiler(true) {
-        resources::Without::Fail(why) => assert!(
-            why.starts_with("PITBOARD_REQUIRE_VERSIONINFO=1, and there is no resource compiler"),
-            "{why}"
-        ),
-        resources::Without::Warn(said) => panic!("{said}"),
-    }
+    assert_eq!(versioninfo::required(None), Ok(false));
+    assert_eq!(versioninfo::required(Some("")), Ok(false));
+    assert_eq!(versioninfo::required(Some("1")), Ok(true));
+    assert!(versioninfo::required(Some("yes")).is_err());
+    assert!(
+        versioninfo::without_compiler(false)
+            .is_ok_and(|said| said.contains("PITBOARD_REQUIRE_VERSIONINFO=1"))
+    );
+    assert!(versioninfo::without_compiler(true).is_err());
+}
+
+#[test]
+fn a_resource_compiler_on_path_is_found_where_no_sdk_is() {
+    let folder = tempfile::tempdir().expect("a scratch folder");
+    let path = folder.path().as_os_str();
+    assert_eq!(
+        versioninfo::find_compiler("aarch64-apple-darwin", Some(path)),
+        None
+    );
+    std::fs::write(folder.path().join("llvm-rc"), "").expect("a stand-in");
+    assert_eq!(
+        versioninfo::find_compiler("aarch64-apple-darwin", Some(path)),
+        Some(Compiler::LlvmRc(folder.path().join("llvm-rc")))
+    );
 }
 
 #[test]
 fn the_version_resource_names_pitboard_its_version_and_the_mapped_file_version() {
-    let manifest = std::path::Path::new("pitboard.exe.manifest");
-    let resource = resources::Resource {
-        file_name: "pitboard.exe",
-        description: "Pitboard command line",
-        version: "1.1.0-beta.2",
-        manifest,
-    };
-    let script = resources::script(&resource, [1, 1, 0, 2]);
+    let program = versioninfo::script(
+        Kind::Program,
+        "1.1.0-beta.2",
+        [1, 1, 0, 2],
+        "pitboard",
+        "Pitboard command line",
+    );
     for line in [
         "FILEVERSION 1,1,0,2",
         "PRODUCTVERSION 1,1,0,2",
+        "FILETYPE 1",
         r#"VALUE "CompanyName", "Pitboard""#,
         r#"VALUE "FileDescription", "Pitboard command line""#,
         r#"VALUE "FileVersion", "1.1.0.2""#,
@@ -88,8 +99,27 @@ fn the_version_resource_names_pitboard_its_version_and_the_mapped_file_version()
         "VALUE \"Translation\", 0x409, 1200",
     ] {
         assert!(
-            script.lines().any(|said| said.trim() == line),
-            "{line}: {script}"
+            program.lines().any(|said| said.trim() == line),
+            "{line}: {program}"
+        );
+    }
+    assert!(!program.contains("#include"));
+
+    let library = versioninfo::script(
+        Kind::Library,
+        "1.0.0",
+        [1, 0, 0, 1000],
+        "pitboard_ffi",
+        "Pitboard's core for the Windows app",
+    );
+    for line in [
+        "FILETYPE 2",
+        r#"VALUE "CompanyName", "Pitboard""#,
+        r#"VALUE "OriginalFilename", "pitboard_ffi.dll""#,
+    ] {
+        assert!(
+            library.lines().any(|said| said.trim() == line),
+            "{line}: {library}"
         );
     }
 }
@@ -165,7 +195,7 @@ mod built {
     #[test]
     fn pitboard_exe_carries_its_version_resource() {
         let version = env!("CARGO_PKG_VERSION");
-        let mapped = super::resources::file_version(version).expect("a version the table maps");
+        let mapped = super::versioninfo::file_version(version).expect("a version the table maps");
         assert_eq!(read::file_version(pitboard()), Some(mapped));
         assert_eq!(read::product_version(pitboard()), Some(mapped));
         for (name, value) in [

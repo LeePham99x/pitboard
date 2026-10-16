@@ -301,7 +301,7 @@ Claude Desktop's checks read the folders in `~/.pitboard/parks`, open no cookie 
   | `interrupted_switch` | `interrupted switch` | Only when a switch did not finish. Always warns. Suggests `pitboard abandon` when the next change cannot finish it. |
   | `discarded` | `old parked logins` | Only when parked logins are waiting to be deleted. Always warns. |
   | `machine_id` | `machine id` | Only when this machine has no stable identifier. Always warns. |
-  | `wsl` | `WSL` | Linux only, inside WSL. Says Pitboard switches only what is installed in that Linux. Where Codex's home is on a Windows drive, it adds that Codex starts no shared background server there, as read in Codex 0.163.0. Always `ok`. |
+  | `wsl` | `WSL` | Linux only, inside WSL. Says Pitboard switches only what is installed in that Linux. Where Codex's home is on a Windows drive, it adds that Codex starts no shared background server there, as read in Codex 0.163.0, and that a switch there changes the login of Codex on Windows where it uses the same folder. Always `ok`. |
   | `storage_v5` | `storage v5` | Claude Code's storage v5 flag. Warns when it is on and the login is in a file. |
   | `claude_daemon` | `Claude Code daemon` | Whether Claude Code's daemon has run here, and whether it runs. Always `ok`. |
   | `pending_parks` | `parks being reclaimed` | Parked logins Pitboard started to write and has not accounted for. Warns when one cannot be read. |

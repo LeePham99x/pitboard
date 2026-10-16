@@ -34,11 +34,6 @@ use std::path::{Path, PathBuf};
 
 uniffi::setup_scaffolding!();
 
-// The build script's version resource, here for its tests.
-#[cfg(test)]
-#[path = "../../pitboard/build/versioninfo.rs"]
-mod versioninfo;
-
 mod sites;
 pub use sites::{
     Conjunction, LinkRefusal, Site, SiteLink, read_pitboard_link, site_link, site_names, sites,

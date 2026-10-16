@@ -5,7 +5,7 @@ use crate::context::Context;
 use crate::error::{Error, Result};
 use crate::host::task::{FOLDER, Registered, Service, from_ole_date};
 use crate::service::Permit;
-use windows::Win32::Foundation::{E_FAIL, RPC_E_CHANGED_MODE};
+use windows::Win32::Foundation::RPC_E_CHANGED_MODE;
 use windows::Win32::System::Com::{
     CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx, CoUninitialize,
 };
@@ -80,7 +80,6 @@ impl Service for System {
             }
             .map(drop)
         })
-        .map_err(refused)
     }
 
     fn delete(&self, _: Permit, _ctx: &Context, name: &str) -> Result<()> {
@@ -107,32 +106,32 @@ impl Service for System {
             }
             Ok(())
         })
-        .map_err(refused)
     }
 }
 
-fn refused(e: windows::core::Error) -> Error {
-    Error::ScheduleRefused {
-        detail: format!("Task Scheduler said {e}"),
-    }
+fn refused(detail: String) -> Error {
+    Error::ScheduleRefused { detail }
 }
 
 fn not_found(e: &windows::core::Error) -> bool {
     NOT_FOUND.contains(&(e.code().0 as u32))
 }
 
+// An error is made text here: it holds the IErrorInfo Task Scheduler set, a COM object of this
+// thread's that must not outlive CoUninitialize.
 fn in_the_mta<T: Send>(
     work: impl FnOnce(&ITaskService) -> windows::core::Result<T> + Send,
-) -> windows::core::Result<T> {
+) -> Result<T> {
+    let said = |e: windows::core::Error| refused(format!("Task Scheduler said {e}"));
     std::thread::scope(|scope| {
         scope
             .spawn(|| {
                 // SAFETY: this thread's own apartment, left below where this call joined it.
                 let joined = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
                 if joined.is_err() && joined != RPC_E_CHANGED_MODE {
-                    return Err(joined.into());
+                    return Err(said(joined.into()));
                 }
-                let done = connected().and_then(|service| work(&service));
+                let done = connected().and_then(|service| work(&service)).map_err(said);
                 if joined.is_ok() {
                     // SAFETY: after every interface this thread made is released.
                     unsafe { CoUninitialize() };
@@ -140,7 +139,7 @@ fn in_the_mta<T: Send>(
                 done
             })
             .join()
-            .unwrap_or_else(|_| Err(E_FAIL.into()))
+            .unwrap_or_else(|_| Err(refused("Task Scheduler's thread panicked".into())))
     })
 }
 
@@ -167,22 +166,20 @@ fn folder(service: &ITaskService) -> windows::core::Result<Option<ITaskFolder>> 
     }
 }
 
-// RF-E1: a standard user may make `\Pitboard\`.
+// RF-E1: a standard user may make `\Pitboard\`, and its probe made it after any error of
+// GetFolder's, as this does.
 fn made_folder(service: &ITaskService) -> windows::core::Result<ITaskFolder> {
-    if let Some(folder) = folder(service)? {
-        return Ok(folder);
-    }
     // SAFETY: a connected service, and the root folder it gave.
-    let made = unsafe {
-        service
+    unsafe {
+        if let Ok(folder) = service.GetFolder(&BSTR::from(FOLDER)) {
+            return Ok(folder);
+        }
+        let made = service
             .GetFolder(&BSTR::from(r"\"))?
-            .CreateFolder(&BSTR::from(&FOLDER[1..]), &VARIANT::default())
-    };
-    match made {
-        Err(e) if e.code().0 as u32 == ALREADY_THERE => match folder(service)? {
-            Some(folder) => Ok(folder),
-            None => Err(e),
-        },
-        made => made,
+            .CreateFolder(&BSTR::from(&FOLDER[1..]), &VARIANT::default());
+        match made {
+            Err(e) if e.code().0 as u32 == ALREADY_THERE => service.GetFolder(&BSTR::from(FOLDER)),
+            made => made,
+        }
     }
 }
