@@ -375,10 +375,6 @@ mod tests {
     /// running sessions take it, and that the file is there.
     #[test]
     #[cfg_attr(
-        windows,
-        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-    )]
-    #[cfg_attr(
         target_os = "linux",
         ignore = "on Linux the file is Claude Code's only store, never behind a keychain"
     )]

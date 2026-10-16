@@ -1362,12 +1362,13 @@ window loads its site, and whatever the site's pages load, as a browser would.
   not JSON reads it again, up to ten times 10 ms apart, before taking it as it is.
 - Pitboard never answers a failed keychain write by writing Claude Code's plaintext file.
   That demotion is Claude Code's to make.
-- While Claude Code's `.credentials.json` sits behind the keychain, with a login in it,
-  none, or what Pitboard cannot read, a session already running keeps its account after a
-  switch until its login is next renewed. Pitboard tells the file by a look at it, as the
-  session does, not by reading it. A switch, by hand or by itself, says so in place of a
-  number of seconds (`Adoption::AtRenewal`), and every read that reads the keychain and
-  every change warns while the file is there (`fallback_login`). The automatic switch still
+- While Claude Code's `.credentials.json` sits behind the keychain, or behind Credential
+  Manager on Windows, with a login in it, none, or what Pitboard cannot read, a session
+  already running keeps its account after a switch until its login is next renewed.
+  Pitboard tells the file by a look at it, as the session does, not by reading it. A switch,
+  by hand or by itself, says so in place of a number of seconds (`Adoption::AtRenewal`), and
+  every read that reads that store and every change warns while the file is there
+  (`fallback_login`). The automatic switch still
   switches: new sessions take the account switched to at once, and running ones at their
   next renewal. A read and a switch never touch the file.
 - Only `pitboard stow`, and the app's **Put Away** after its sheet, write or delete

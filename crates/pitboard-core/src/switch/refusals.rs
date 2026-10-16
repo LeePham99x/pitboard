@@ -238,10 +238,6 @@ fn a_login_pitboard_cannot_find_is_not_the_same_as_nobody_being_signed_in() {
 /// it takes without one, also where Pitboard cannot read what the file holds.
 #[test]
 #[cfg_attr(
-    windows,
-    ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
-)]
-#[cfg_attr(
     target_os = "linux",
     ignore = "on Linux the file is Claude Code's only store, never behind a keychain"
 )]
