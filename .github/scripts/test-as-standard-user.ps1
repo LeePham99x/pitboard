@@ -147,7 +147,10 @@ New-Item -ItemType Directory -Force -Path $logs | Out-Null
 # At the drive root, as runner-facts.ps1 ran it: a folder it cannot open fails with ERROR_DIRECTORY.
 $runDir = Join-Path "$env:SystemDrive\" "pitboard-test-as-$name"
 
-function Start-AsUser([string] $Program, [string[]] $Arguments, [string] $In, [hashtable] $Environment, [string] $Label) {
+# -Wait waits for every process the program started too. With -Alone the program alone is waited on, and what
+# it left running is named and ended: a WebView2 browser process held by a dialog would hold the job until its
+# timeout, with nothing said.
+function Start-AsUser([string] $Program, [string[]] $Arguments, [string] $In, [hashtable] $Environment, [string] $Label, [switch] $Alone) {
     $out = Join-Path $logs "$Label.out.txt"
     $err = Join-Path $logs "$Label.err.txt"
     $start = @{
@@ -155,7 +158,7 @@ function Start-AsUser([string] $Program, [string[]] $Arguments, [string] $In, [h
         Credential = $cred
         LoadUserProfile = $true
         WorkingDirectory = $In
-        Wait = $true
+        Wait = -not $Alone
         PassThru = $true
         RedirectStandardOutput = $out
         RedirectStandardError = $err
@@ -168,6 +171,16 @@ function Start-AsUser([string] $Program, [string[]] $Arguments, [string] $In, [h
         # Out-Host, as the caller would take the lines for its result.
         Show-LogonFailures $userMade | Out-Host
         throw
+    }
+    if ($Alone) {
+        # Read while it runs, so its exit code stays readable once it has gone.
+        $null = $process.Handle
+        $process.WaitForExit()
+        foreach ($left in @(Get-CimInstance Win32_Process -Filter "ParentProcessId = $($process.Id)" -ErrorAction SilentlyContinue)) {
+            $title = (Get-Process -Id $left.ProcessId -ErrorAction SilentlyContinue).MainWindowTitle
+            "$Label left $($left.Name) running$(if ($title) { ", showing '$title'" }), and it is ended" | Out-Host
+            & "$env:SystemRoot\System32\taskkill.exe" /T /F /PID $left.ProcessId 2>&1 | Out-Null
+        }
     }
     [pscustomobject]@{ Exit = $process.ExitCode; Out = $out; Err = $err }
 }
@@ -363,7 +376,7 @@ try {
         # A run that outlasts its timeout is cancelled and says which tests were under way, before the job's own
         # timeout would end it with nothing said.
         $arguments = @('--results-directory', (Join-Path $runDir "results-$i"), '--timeout', '12m')
-        $run = Start-AsUser $programs[$i] $arguments $runDir $userEnv "dotnet-$i"
+        $run = Start-AsUser $programs[$i] $arguments $runDir $userEnv "dotnet-$i" -Alone
         Write-Output "::group::$($programs[$i]), as the standard user: $(if ($run.Exit -eq 0) { 'passed' } else { "exited $($run.Exit)" })"
         Show-Run $run
         Write-Output '::endgroup::'

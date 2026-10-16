@@ -148,22 +148,22 @@ public sealed class AccountWindowTests
         }
     }
 
-    // A window whose web view cannot be made says why, rather than staying blank.
+    // A window whose web view cannot be made says why, rather than staying blank: WebView2 takes no profile name that
+    // ends with a period. A user data folder it cannot write would leave its browser process up behind an error dialog.
     [UITestMethod]
     public async Task AWindowWhoseWebViewCannotBeMadeSaysWhy()
     {
+        await using var webs = await Webs.Make();
         var sent = new List<Intent>();
-        var file = Path.GetTempFileName();
-        var web = new WebEnvironment(
-            WebEnvironment.FixtureScheme, Path.Combine(file, "WebView2"), Path.Combine(file, "Downloads"), devTools: false, _ => { });
-        var window = await Views.Activated(new AccountWindow(Main.Store, web, new Downloads(web, sent.Add), sent.Add));
+        var refused = Main with { Store = "no profile name." };
+        var window = await Views.Activated(new AccountWindow(refused.Store, webs.Web, webs.Downloads, sent.Add));
         try
         {
             window.Follow(Shown(
                 new WaitingShown.Reading("Reading accounts…"),
                 new OpenWindow(
-                    Store: Main.Store, Account: Main, Load: new PageLoad(1, Home), Note: null,
-                    ClearDownloads: new Choice("Clear", new Intent.ClearDownloads(Main.Store), Enabled: false))));
+                    Store: refused.Store, Account: refused, Load: new PageLoad(1, Home), Note: null,
+                    ClearDownloads: new Choice("Clear", new Intent.ClearDownloads(refused.Store), Enabled: false))));
 
             await Views.Until(
                 () => Views.Texts(window.Content).Contains("Couldn’t Open This Window"), "the window did not say it could not open",
@@ -172,7 +172,6 @@ public sealed class AccountWindowTests
         finally
         {
             window.Close();
-            File.Delete(file);
         }
     }
 
