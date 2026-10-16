@@ -128,6 +128,29 @@ public sealed partial class MainWindow : Window
 
     private void OnPaneToggleRequested(TitleBar sender, object args) => Navigation.IsPaneOpen = !Navigation.IsPaneOpen;
 
+    // Two regions, the navigation pane and the page, so Shift+F6's reverse cycle is F6's. A pane Minimal keeps closed is
+    // reached through the title bar's toggle.
+    private void OnNextRegion(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        args.Handled = true;
+        var focused = FocusManager.GetFocusedElement(Root.XamlRoot) as DependencyObject;
+        if (Look.Ancestor<Frame>(focused) != Pages)
+        {
+            (FocusManager.FindFirstFocusableElement(Pages) as UIElement)?.Focus(FocusState.Keyboard);
+        }
+        else if (Navigation.SelectedItem is not UIElement selected || !selected.Focus(FocusState.Keyboard))
+        {
+            (FocusManager.FindFirstFocusableElement(AppTitleBar) as UIElement)?.Focus(FocusState.Keyboard);
+        }
+    }
+
+    // As the caption's close does: Pitboard goes on running.
+    private void OnClose(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        args.Handled = true;
+        Close();
+    }
+
     // Ctrl+N adds an account from any pane; the model then shows the accounts.
     private void OnAddAccount(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     {

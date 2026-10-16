@@ -8,7 +8,13 @@
     <MicaBackdrop />
   </Window.SystemBackdrop>
   <!-- Microsoft's NavigationApp template: Mica reaches the title bar only once the content extends into it. -->
-  <Grid>
+  <Grid x:Name="Root">
+    <!-- Microsoft's keyboard guidance: F6 and Shift+F6 go to the next and previous pane, and Ctrl+W closes. -->
+    <Grid.KeyboardAccelerators>
+      <KeyboardAccelerator Key="F6" Invoked="OnNextRegion" />
+      <KeyboardAccelerator Key="F6" Modifiers="Shift" Invoked="OnNextRegion" />
+      <KeyboardAccelerator Key="W" Modifiers="Control" Invoked="OnClose" />
+    </Grid.KeyboardAccelerators>
     <Grid.RowDefinitions>
       <RowDefinition Height="48" />
       <RowDefinition Height="*" />

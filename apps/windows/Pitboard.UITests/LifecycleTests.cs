@@ -4,6 +4,7 @@ using FlaUI.Core.AutomationElements;
 using FlaUI.Core.Definitions;
 using FlaUI.Core.Input;
 using FlaUI.Core.Tools;
+using FlaUI.Core.WindowsAPI;
 
 namespace Pitboard.UITests;
 
@@ -135,6 +136,41 @@ public sealed partial class LifecycleTests
         var again = launched.OpenWindow();
 
         Assert.IsTrue(Shows(again, WindowVisualState.Maximized), $"it came back {again.Patterns.Window.Pattern.WindowVisualState.Value}");
+    }
+
+    [TestMethod]
+    public void CtrlWClosesTheWindowAndPitboardKeepsRunning()
+    {
+        using var launched = Launched.Start(Builds.Debug, fixture: "firstLaunch");
+        var window = launched.Window("Pitboard");
+        Foreground.Require(window);
+
+        Keyboard.TypeSimultaneously(VirtualKeyShort.CONTROL, VirtualKeyShort.KEY_W);
+
+        Assert.IsTrue(Retry.WhileTrue(() => window.IsAvailable, TimeSpan.FromSeconds(10)).Result, "the window stayed open");
+        Assert.IsFalse(launched.Process.WaitForExit(TimeSpan.FromSeconds(3)), "Pitboard quit with its window");
+    }
+
+    // firstLaunch's page starts with its command bar's buttons, accounts.refresh and accounts.add.
+    [TestMethod]
+    public void F6MovesFocusBetweenThePaneAndThePage()
+    {
+        using var launched = Launched.Start(Builds.Debug, fixture: "firstLaunch");
+        var window = launched.Window("Pitboard");
+        Foreground.Require(window);
+        window.FindFirstDescendant(found => found.ByAutomationId("pane.accounts"))!.Focus();
+        string Focused() => launched.Automation.FocusedElement()?.Properties.AutomationId.ValueOrDefault ?? "";
+        bool Reaches(Func<string, bool> place) =>
+            Retry.WhileFalse(() => place(Focused()), TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(100)).Result;
+
+        Keyboard.Type(VirtualKeyShort.F6);
+        Assert.IsTrue(Reaches(id => id.StartsWith("accounts.", StringComparison.Ordinal)), $"F6 left the focus on '{Focused()}'");
+
+        Keyboard.TypeSimultaneously(VirtualKeyShort.SHIFT, VirtualKeyShort.F6);
+        Assert.IsTrue(Reaches(id => id == "pane.accounts"), $"Shift+F6 left the focus on '{Focused()}'");
+
+        Keyboard.Type(VirtualKeyShort.F6);
+        Assert.IsTrue(Reaches(id => id.StartsWith("accounts.", StringComparison.Ordinal)), $"F6 again left the focus on '{Focused()}'");
     }
 
     [TestMethod]
