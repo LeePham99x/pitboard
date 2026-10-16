@@ -14,8 +14,9 @@ use windows_sys::Win32::System::Threading::{CREATE_NO_WINDOW, DETACHED_PROCESS};
 const GIT_BASH: &str = r"C:\Program Files\Git\bin\bash.exe";
 const PWSH: &str = r"C:\Program Files\PowerShell\7\pwsh.exe";
 
-// What a shell started from Explorer has, which the harness withholds since Pitboard reads it.
-const PATHEXT: &str = ".COM;.EXE;.BAT;.CMD";
+// Windows' default, which RF-B1 read on both images and a shell started from Explorer has. The
+// harness withholds it, since Pitboard reads it.
+const PATHEXT: &str = ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.CPL";
 
 // Claude Code waits 300 ms after a change before it runs the line, and its next run cancels one
 // still going (2.1.301's status line), so a run within that keeps the line up to date.
@@ -408,18 +409,16 @@ fn forget_asks_under_mintty_as_in_a_console_and_a_refusal_names_yes() {
         }
     });
     let mut question = Vec::new();
-    let started = Instant::now();
-    while !String::from_utf8_lossy(&question).ends_with("[y/N] ") {
-        assert!(
-            started.elapsed() < Duration::from_secs(30),
-            "no question after 30 s: {:?}",
-            String::from_utf8_lossy(&question)
-        );
-        std::thread::sleep(Duration::from_millis(50));
+    // A failed test's output shows what came before the timeout.
+    wait_for("question", || {
         while let Ok(chunk) = heard.try_recv() {
+            println!("heard {:?}", String::from_utf8_lossy(&chunk));
             question.extend(chunk);
         }
-    }
+        String::from_utf8_lossy(&question)
+            .ends_with("[y/N] ")
+            .then_some(())
+    });
     answer.write_all(b"n\n").expect("answered");
     drop(answer);
     let out = child.wait_with_output().expect("ended");
