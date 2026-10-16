@@ -36,7 +36,6 @@ public sealed class SettingsTests
 
     // The fixture's stand-in takes it, so nothing is written to the Run key.
     [TestMethod]
-    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void StartAtSignIn()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
@@ -51,7 +50,6 @@ public sealed class SettingsTests
     }
 
     [TestMethod]
-    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void SwitchingBeforeAnAccountRunsOut()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
@@ -119,7 +117,6 @@ public sealed class SettingsTests
 
     // The fixture puts no pitboard where a terminal looks, and the installer, not the app, puts one on the PATH.
     [TestMethod]
-    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void TheCommandLineSectionSaysWherePitboardIs()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");
@@ -132,7 +129,6 @@ public sealed class SettingsTests
 
     // A Debug build carries no update key, and the Updates section says so.
     [TestMethod]
-    [Ignore("W23a: Claude Code's Credential Manager store, which a machine in memory plays")]
     public void UpdatesSayWhenTheBuildCannotUpdate()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "oneTool");

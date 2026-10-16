@@ -156,7 +156,21 @@ internal sealed class Launched : IDisposable
     public AutomationElement Find(Func<ConditionFactory, ConditionBase> condition, string what)
     {
         var found = Retry.WhileNull(() => Look(condition), Shortly, TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
-        return found ?? throw new AssertFailedException($"Pitboard showed no {what} within {Shortly}");
+        return found ?? throw new AssertFailedException($"Pitboard showed no {what} within {Shortly}: {Shown()}");
+    }
+
+    // Each window's title and lines, for a failure to say what was there instead.
+    public string Shown()
+    {
+        try
+        {
+            var windows = FlaUI.Core.Application.Attach(Process).GetAllTopLevelWindows(Automation);
+            return string.Join("; ", windows.Select(window => $"'{window.Title}': {Listed(window)}"));
+        }
+        catch (Exception unread)
+        {
+            return $"its windows could not be read: {unread.Message}; {State()}";
+        }
     }
 
     public bool Gone(Func<ConditionFactory, ConditionBase> condition) =>
@@ -194,7 +208,19 @@ internal sealed class Launched : IDisposable
         var shown = Retry.WhileFalse(
             () => Lines(scope).Any(line => exact ? line == text : line.StartsWith(text, StringComparison.Ordinal)),
             Shortly, TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
-        Assert.IsTrue(shown, $"{scope.Name} does not show '{text}'");
+        Assert.IsTrue(shown, $"{scope.Name} does not show '{text}': {Listed(scope)}");
+    }
+
+    private static string Listed(AutomationElement scope)
+    {
+        try
+        {
+            return string.Join(" | ", Lines(scope));
+        }
+        catch (Exception unread)
+        {
+            return $"its lines could not be read: {unread.Message}";
+        }
     }
 
     public static IEnumerable<string> Lines(AutomationElement scope) =>

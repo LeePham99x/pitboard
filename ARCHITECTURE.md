@@ -2109,8 +2109,7 @@ while another holds the key hands its launch over, and the running copy reads th
 that launch's command line. A Debug build outside a fixture refuses a `pitboard-debug` link
 before it takes the key or writes anything, since it would run on whatever homes its launch
 has. **Open in browser** goes where a page sent elsewhere goes: to Windows, and in a fixture
-nowhere. The three `AccountPickerTests` that need no account hand their link over through a
-second copy; choosing an account and cancelling wait for W23a.
+nowhere. The `AccountPickerTests` hand their link over through a second copy.
 
 One thing differs from WebKit in how a store goes, read in Microsoft's documentation of
 `CoreWebView2Profile.Delete` for WebView2 1.0.4258.31 on 16 October 2026: deleting a profile
@@ -2172,7 +2171,7 @@ paused download is under way: WebView2 leaves it interrupted and able to resume,
 still under way as its browser process exits ends cancelled. The download list is WebView2's
 own dialog, which Downloads in the command bar opens and which offers each file's folder, so
 no surface of Pitboard's reveals a file: `ASiteDownloadIsListedInTheWindow` looks for its
-Show in folder once W23a lets it run. `DownloadTests` hold this against the stand-in site,
+Show in folder. `DownloadTests` hold this against the stand-in site,
 and print for CF7 the events WebView2 raised around each kind of download.
 
 A window refuses to open, saying why, on a PC whose WebView2 Runtime is older than
@@ -2893,17 +2892,19 @@ treated, and only the macOS build shows it. The run reads both builds since.
   Pitboard writes in Claude Code's order with one step of its own: while it replaces pieces
   in place, the manifest names a length no base64 has, so Claude Code's read fails, and a
   session keeps the login it has, rather than read a mix. It reads a manifest Claude Code
-  would pass over, or `#p` beside one, as unreadable. On both runners Credential Manager
-  refused a piece between `#121` and `#237` of a 256-piece write with `ERROR_NOT_ENOUGH_MEMORY`
-  (run 38856939312), so a login that large fails there, and the runner tests write at most 100
-  pieces. Every write goes to Credential Manager first, and deletes `.credentials.json` only
-  where Credential Manager held no login before, as Claude Code's wrapper does; where
-  Credential Manager fails, Claude Code writes the file instead and Pitboard writes nothing
-  more, leaving the switch to the journal's recovery. A session reads the item again 30
-  seconds after it last did, and a session whose start-up look at `Bun.secrets` fails within
-  10 seconds reads only the file for its life. A network logon has no credential set: every
-  call fails 1312, which Pitboard reads as out of reach (`credential_store_locked`), never as
-  no login.
+  would pass over, or `#p` beside one, as unreadable. Every write goes to Credential Manager
+  first, and deletes `.credentials.json` only where Credential Manager held no login before,
+  as Claude Code's wrapper does; where Credential Manager fails, Claude Code writes the file
+  instead and Pitboard writes nothing more, leaving the switch to the journal's recovery. A
+  session reads the item again 30 seconds after it last did, and a session whose start-up
+  look at `Bun.secrets` fails within 10 seconds reads only the file for its life. A network
+  logon has no credential set: every call fails 1312, which Pitboard reads as out of reach
+  (`credential_store_locked`), never as no login.
+- Measured on both runner images on 16 October 2026 (runs 38856939312 and 38858363708): a
+  fresh standard user's Credential Manager takes about 237 pieces of 2400 characters, then
+  `CredWriteW` fails with `ERROR_NOT_ENOUGH_MEMORY`, and pieces a failed run left count
+  against that. A login near Claude Code's 256 pieces fails there, so the runner tests write
+  at most 100 pieces, and a round trip over items in memory holds the 256-piece edge.
 - Read on 16 October 2026 from the same builds (`credman_unreachable_writes_file`,
   `fallback_file_pins_session_login`): a session whose start-up look failed, as one in a
   network logon does, reads no login in Credential Manager and fails every write there, so

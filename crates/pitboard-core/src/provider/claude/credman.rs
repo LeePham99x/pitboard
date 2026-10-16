@@ -553,7 +553,7 @@ mod tests {
         let (store, permit) = (Store::of(&scratch.ctx), Permit::for_a_test());
         let items = store.items(&scratch.service);
         let there = |name: &str| items.get(name).expect("asked").is_some();
-        // 100 pieces: both runners refused a piece between #121 and #237 of 256 with error 8.
+        // 100 pieces: a runner's Credential Manager holds about 237 (ARCHITECTURE.md).
         for bytes in [2399, 2400, 2401, 30_000, 180_000, 2400, 100] {
             let text = login(bytes);
             store
