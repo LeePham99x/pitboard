@@ -1115,15 +1115,18 @@ fn sentence(error: &Error) -> String {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// What Pitboard says of a home that is not a full path: which variable named it, and what
-/// it holds.
 pub(crate) fn codex_home_missing(path: &std::path::Path) -> String {
+    format!("{}. {CODEX_HOME_REMEDY}", codex_home_no_folder(path))
+}
+
+pub(crate) fn codex_home_no_folder(path: &std::path::Path) -> String {
     format!(
-        "CODEX_HOME is {}, which is no folder, so Codex does not start. Make that folder, or \
-         unset CODEX_HOME",
+        "CODEX_HOME is {}, which is no folder, so Codex does not start",
         path.display()
     )
 }
+
+pub(crate) const CODEX_HOME_REMEDY: &str = "Make that folder, or unset CODEX_HOME";
 
 fn temporary_copy(path: &std::path::Path) -> String {
     if crate::schedule::opened_from_a_zip(path) {

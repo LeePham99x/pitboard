@@ -268,8 +268,8 @@ pub(crate) enum CodexLoginTrouble {
     NotAnAccount(String),
     /// Unreadable, or read and not one account's login.
     Unusable(String),
-    // `CODEX_HOME` names no folder, so Codex does not start: Windows' alone.
-    NoHome(String),
+    // `CODEX_HOME` names this, which is no folder, so Codex does not start: Windows' alone.
+    NoHome(PathBuf),
 }
 
 pub(crate) struct ParkFact {
@@ -801,8 +801,8 @@ fn codex_login(ctx: &Context) -> Result<Option<CodexLogin>, CodexLoginTrouble> {
     let tool = crate::provider::codex();
     let unusable = |e: crate::provider::ProviderError| CodexLoginTrouble::Unusable(e.to_string());
     let Some(credential) = tool.read_live(ctx).map_err(|e| match e {
-        crate::provider::ProviderError::CodexHomeMissing { .. } => {
-            CodexLoginTrouble::NoHome(e.to_string())
+        crate::provider::ProviderError::CodexHomeMissing { path } => {
+            CodexLoginTrouble::NoHome(path)
         }
         other => unusable(other),
     })?
@@ -2732,8 +2732,7 @@ fn judge_codex(
                 format!("file ({setting})  ·  {}", facts.auth_file.display()),
             )
         },
-        // Not a choice: Codex 0.160.0 does not start, or Pitboard does not read where the
-        // store is chosen on this system yet.
+        // Not a choice: a layer Codex reads stops it from starting.
         "unknown" => broken(
             "codex_backend",
             "Codex login store",
@@ -2864,11 +2863,11 @@ fn judge_codex(
                  account's. Signing in with `codex` again writes a fresh one."
                     .into(),
             )),
-            Err(CodexLoginTrouble::NoHome(why)) => checks.push(broken(
+            Err(CodexLoginTrouble::NoHome(path)) => checks.push(broken(
                 "codex_login",
                 "Codex login",
-                why.clone(),
-                String::new(),
+                crate::error::codex_home_no_folder(path),
+                format!("{}.", crate::error::CODEX_HOME_REMEDY),
             )),
         }
     }
@@ -7082,20 +7081,24 @@ mod tests {
     // Windows' alone: Codex does not start there where `CODEX_HOME` names no folder.
     #[test]
     fn a_codex_home_that_names_no_folder_is_said_as_it_is() {
-        let why = "CODEX_HOME is C:\\nowhere, which is no folder, so Codex does not start. Make \
-                   that folder, or unset CODEX_HOME";
         for (enrolled, level) in [(1, Level::Fail), (0, Level::Warn)] {
             let facts = CodexFacts {
                 present: false,
                 auth_access: None,
-                login: Err(CodexLoginTrouble::NoHome(why.into())),
+                login: Err(CodexLoginTrouble::NoHome(PathBuf::from(r"C:\nowhere"))),
                 enrolled,
                 ..with_codex()
             };
             let checks = codex_checks(&facts);
             let found = check(&checks, "codex_login");
-            assert_eq!((found.level, found.detail.as_str()), (level, why));
-            assert_eq!(found.advice, "");
+            assert_eq!(
+                (found.level, found.detail.as_str()),
+                (
+                    level,
+                    r"CODEX_HOME is C:\nowhere, which is no folder, so Codex does not start"
+                )
+            );
+            assert_eq!(found.advice, "Make that folder, or unset CODEX_HOME.");
         }
     }
 
@@ -7533,7 +7536,7 @@ mod tests {
         match crate::host::OS {
             Os::MacOs | Os::Linux => assert!(matches!(absent.login, Ok(None))),
             Os::Windows => assert!(
-                matches!(&absent.login, Err(CodexLoginTrouble::NoHome(why)) if why.contains("no folder")),
+                matches!(&absent.login, Err(CodexLoginTrouble::NoHome(path)) if *path == home),
                 "Codex does not start there"
             ),
         }
