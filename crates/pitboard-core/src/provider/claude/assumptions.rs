@@ -69,6 +69,17 @@ const fn of_the_service(name: &'static str) -> PerSystem {
     }
 }
 
+/// A fact about what Anthropic answers and how Claude Code reads it, read on 16 October 2026
+/// from 2.1.301's macOS, Linux and both Windows builds as bytes, whose code here is the same.
+const fn answers(name: &'static str) -> PerSystem {
+    PerSystem {
+        name,
+        macos: Read("2.1.301"),
+        linux: Read("2.1.301"),
+        windows: Read("2.1.301"),
+    }
+}
+
 /// What each fact below is on each system. The Windows readings are a reading of the
 /// Windows builds' code for each fact, and of every literal its entry probes for, which
 /// both Windows builds hold. Where Claude Code does something else on Windows, that is a
@@ -442,6 +453,9 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
     of_the_service("request_starts_the_five_hour_period"),
     of_the_service("weekly_period_is_a_fixed_cycle"),
     of_the_service("used_up_limit_refuses_every_request"),
+    answers("refusals_are_final"),
+    answers("account_refusals"),
+    answers("token_refusals"),
 ];
 
 pub(crate) const ASSUMPTIONS: &[Assumption] = &[
@@ -1662,6 +1676,63 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         probe: &[],
         absent: &[],
     },
+    Assumption {
+        name: "refusals_are_final",
+        fact: "Claude Code asks Anthropic again after a network failure, a timeout, a 5xx, a \
+               408, a 409 or a 429, and takes any other 4xx as final. An error answer from \
+               `api.anthropic.com` is `{\"type\":\"error\",\"error\":{\"type\",\"message\", \
+               \"details\"},\"request_id\"}`, and Claude Code shows `error.message` where \
+               `details.error_visibility` is `user_facing`",
+        read_from: "the retry rule the OAuth requests share and the profile, validate and \
+                    roles requests' error handling; the envelope measured on 16 October 2026 \
+                    from a 401 and a 405 of `/api/oauth/profile`",
+        verified_against: "2.1.301",
+        depends: "Refusal::is_final, which makes a final 4xx a refusal that is not worth \
+                  retrying and keeps its message and request id",
+        probe: &["error_visibility", "user_facing"],
+        absent: &[],
+    },
+    Assumption {
+        name: "account_refusals",
+        fact: "a 403 `permission_error` whose `details.error_code` is `verification_required`, \
+               and a 401 or 403 whose message says `OAuth authentication is currently not \
+               allowed for this organization`, refuse the account, not an expired token: \
+               Claude Code shows the message and does not renew",
+        read_from: "the verification check of the API key and API errors, and the \
+                    organisation check of the API errors",
+        verified_against: "2.1.301",
+        depends: "the Claude provider's reading of a 401 or 403, which takes these two as \
+                  refusals and every other as a token to renew",
+        probe: &[
+            "verification_required",
+            "OAuth authentication is currently not allowed for this organization",
+        ],
+        absent: &[],
+    },
+    Assumption {
+        name: "token_refusals",
+        fact: "the token endpoint's error answer is `{\"error\", \"error_description\", \
+               \"error_uri\"}`, `error` a string or `{type}`. A 400, 401 or 403 whose `error` is \
+               `invalid_grant` or `access_denied` and whose description is `account_on_hold` is \
+               an account on hold: Claude Code keeps the login and shows the `error_uri`, only \
+               an https page on `portal.anthropic.com`, `claude.ai` or `platform.claude.com`. \
+               A 400 or 401 `invalid_grant` otherwise is a refresh token spent for good. \
+               Descriptions it knows: `Refresh token expired`, `Refresh token not found or \
+               invalid`, `No organization associated with this token`, `No account \
+               associated with this token`",
+        read_from: "the refresh's error readers: the on-hold check, the dead-token check, the \
+                    invalid-scope fallback and the descriptions its failure event names, and \
+                    the link check of the on-hold notice",
+        verified_against: "2.1.301",
+        depends: "the Claude provider's renewal, which keeps a park of an account on hold and \
+                  drops one only for `invalid_grant`",
+        probe: &[
+            "account_on_hold",
+            "No organization associated with this token",
+            "portal.anthropic.com",
+        ],
+        absent: &[],
+    },
 ];
 
 #[cfg(test)]
@@ -1720,6 +1791,9 @@ mod tests {
                 "request_starts_the_five_hour_period",
                 "weekly_period_is_a_fixed_cycle",
                 "used_up_limit_refuses_every_request",
+                "refusals_are_final",
+                "account_refusals",
+                "token_refusals",
             ]
         );
         for name in [

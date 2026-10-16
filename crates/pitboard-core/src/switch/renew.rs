@@ -546,6 +546,25 @@ mod tests {
         assert!(m.mem.vault().services().is_empty());
     }
 
+    #[test]
+    fn a_login_of_an_account_on_hold_is_kept() {
+        let m = machine("on-hold");
+        let before = with_park(&m, "work", "old", NOW - 1);
+        m.api.renew_trouble("old", Trouble::OnHold);
+
+        let outcomes = renew_parked(&m.ctx, Permit::for_a_test());
+
+        assert_eq!(outcome(&outcomes, "work"), "renewal_failed");
+        let state = state::load(&m.ctx).expect("state");
+        let kept = state
+            .get(&Key::new(crate::provider::ProviderId::Claude, "work"))
+            .expect("account")
+            .parked
+            .clone();
+        assert_eq!(kept.as_ref().map(|p| &p.service), Some(&before.service));
+        assert_eq!(m.mem.vault().services(), vec![before.service]);
+    }
+
     /// Being unreachable, or being asked to slow down, must change nothing at all: the park
     /// that is still there is the one thing standing between the user and a browser.
     #[test]

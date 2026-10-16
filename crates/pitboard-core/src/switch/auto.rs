@@ -204,16 +204,23 @@ fn mended_by_waiting(error: &Error) -> bool {
 /// is not one: the size that matters is of the document the machine keeps, whichever account
 /// goes in, so it is counted against the limit's attempts as any other refusal is.
 fn over_the_account_switched_to(error: &Error) -> bool {
-    matches!(
-        error,
-        Error::AccountUnknown { .. }
-            | Error::NothingParked { .. }
-            | Error::ParkedLoginExpired { .. }
-            | Error::ParkedLoginRefused { .. }
-            | Error::ParkedLoginBelongsElsewhere { .. }
-            | Error::ParkedCredentialMissing { .. }
-            | Error::ParkedCredentialCorrupt { .. }
-    )
+    match error {
+        Error::IdentityUnverifiable {
+            login: crate::error::Unidentified::Parked { .. },
+            cause,
+            ..
+        } => !cause.worth_retrying(),
+        error => matches!(
+            error,
+            Error::AccountUnknown { .. }
+                | Error::NothingParked { .. }
+                | Error::ParkedLoginExpired { .. }
+                | Error::ParkedLoginRefused { .. }
+                | Error::ParkedLoginBelongsElsewhere { .. }
+                | Error::ParkedCredentialMissing { .. }
+                | Error::ParkedCredentialCorrupt { .. }
+        ),
+    }
 }
 
 #[cfg(test)]
@@ -1032,6 +1039,43 @@ mod tests {
         assert_eq!(to, "other");
         assert_eq!(live_refresh(&m).as_deref(), Some("other-refresh"));
         hold(&m, "after passing one account over");
+    }
+
+    /// A parked login Anthropic will not name is passed over as a refused one is, rather than
+    /// tried again and again as an outage is.
+    #[test]
+    fn an_account_anthropic_will_not_name_is_passed_over_for_the_next() {
+        let (m, clock) = nearly_out("auto-unnamed", 96.0);
+        let parked = park::reserve(&m.ctx, Permit::for_a_test(), "other").expect("a name");
+        let parked = park::store_at(
+            &m.ctx,
+            Permit::for_a_test(),
+            provider::document(ProviderId::Claude),
+            &parked,
+            &harness::oauth("other-refresh", 30),
+        )
+        .expect("parked");
+        let mut state = state::load(&m.ctx).expect("state");
+        state
+            .accounts
+            .push(harness::account("other", "other", Some(parked)));
+        state::save(&m.ctx, Permit::for_a_test(), &state).expect("saved");
+        m.api.owned_by("access-other-refresh", owner("other"));
+        measured(&m, "other", 40.0, 40.0);
+        m.api.token_trouble(
+            "access-there-refresh",
+            Trouble::Answered(400, r#"{"error":{"type":"invalid_request_error"}}"#),
+        );
+
+        let failed = auto(&m).expect_err("a login nobody can name is not a switch");
+        assert_eq!(failed.error.code(), "identity_unverifiable");
+        assert_eq!(failed.error.cause(), Some(crate::error::Cause::Refused));
+        clock.advance(RETRY_SECONDS);
+        let Auto::Switched { to, .. } = auto(&m).expect("a switch").value else {
+            panic!("a switch to the other account");
+        };
+        assert_eq!(to, "other");
+        hold(&m, "after passing an account Anthropic would not name");
     }
 
     #[test]

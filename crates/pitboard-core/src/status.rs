@@ -14,7 +14,6 @@ use crate::error::Cause;
 use crate::in_use::{self, InUse};
 use crate::park;
 use crate::provider::Owner;
-use crate::provider::claude::api::ApiError;
 use crate::provider::claude::paths as claude;
 use crate::provider::{LoginKind, Provider, ProviderError, ProviderId};
 use crate::service::Permit;
@@ -55,6 +54,10 @@ pub enum Stale {
     Unreachable,
     /// The service answered badly and may answer well later.
     ServerError,
+    /// The service refused, and asked again would refuse the same way.
+    Refused,
+    /// The service has put the account on hold.
+    OnHold,
     /// The service's answer was not in a shape Pitboard understands, which means the shape
     /// moved. Asking again produces the same thing.
     AnswerNotUnderstood,
@@ -76,13 +79,17 @@ impl Stale {
     /// Three answers used to arrive here as one. A front end deciding whether to ask
     /// again needs to tell a bad morning at the service from an answer whose shape moved
     /// from a login that is finished, and could not.
-    fn of(error: &ApiError, signed_in: bool) -> Stale {
-        match Cause::of(error) {
+    fn of(error: &ProviderError, signed_in: bool) -> Stale {
+        if matches!(error, ProviderError::OnHold { .. }) {
+            return Stale::OnHold;
+        }
+        match Cause::of_provider(error) {
             Cause::TokenExpired if signed_in => Stale::SessionExpired,
             Cause::TokenExpired => Stale::ParkedAccessExpired,
             Cause::RateLimited => Stale::RateLimited,
             Cause::Unreachable => Stale::Unreachable,
             Cause::ServerError => Stale::ServerError,
+            Cause::Refused => Stale::Refused,
             Cause::AnswerNotUnderstood => Stale::AnswerNotUnderstood,
             Cause::LoginRefused => Stale::LoginRefused,
         }
@@ -102,6 +109,8 @@ impl Stale {
             Stale::RateLimited => "rate_limited",
             Stale::Unreachable => "unreachable",
             Stale::ServerError => "server_error",
+            Stale::Refused => "refused",
+            Stale::OnHold => "on_hold",
             Stale::AnswerNotUnderstood => "answer_not_understood",
             Stale::LoginRefused => "login_refused",
             Stale::AskedRecently => "asked_recently",
@@ -160,6 +169,14 @@ impl Stale {
             Stale::ServerError => per_tool(
                 "Anthropic answered with an error; try again later",
                 "OpenAI answered with an error; try again later",
+            ),
+            Stale::Refused => per_tool(
+                "Anthropic refused to answer for this login",
+                "OpenAI refused to answer for this login",
+            ),
+            Stale::OnHold => per_tool(
+                "Anthropic has put this account on hold",
+                "OpenAI has put this account on hold",
             ),
             Stale::AnswerNotUnderstood => per_tool(
                 "Anthropic's answer was not understood",
@@ -499,23 +516,6 @@ impl Answered {
     }
 }
 
-/// A provider's failure as the usage path has always classified one.
-fn to_api(error: ProviderError) -> ApiError {
-    use crate::provider::ProviderError as P;
-    match error {
-        P::Unauthorized => ApiError::Unauthorized,
-        P::RateLimited { retry_after, .. } => ApiError::RateLimited { retry_after },
-        P::Network { detail, .. } => ApiError::Network(detail),
-        P::Unexpected { status, .. } => ApiError::Unexpected { status },
-        P::Malformed { detail, .. }
-        | P::ShapeUnexpected { detail, .. }
-        | P::Unsupported { reason: detail, .. } => ApiError::Malformed(detail),
-        P::NoLogin { .. } => ApiError::Malformed("nothing is signed in".into()),
-        missing @ P::CodexHomeMissing { .. } => ApiError::Malformed(missing.to_string()),
-        P::InvalidGrant { .. } => ApiError::InvalidGrant,
-    }
-}
-
 /// The account filed under `id` asked about now with `document`, past the floor between asks
 /// but not past a wait the service asked for, and its answer recorded as a read records it:
 /// what Pitboard holds of it then, where the service answered. For a warm-up, to see the
@@ -569,13 +569,12 @@ fn ask_usage(
     if !signed_in && matches!(answer, Err(ProviderError::ShapeUnexpected { .. })) {
         return (Err(Stale::ParkUnreadable), None);
     }
-    let answer = answer.map_err(to_api);
     let learned = match &answer {
         Ok(_) => Some(budget::Outcome::Answered),
-        Err(ApiError::RateLimited { retry_after }) => {
+        Err(ProviderError::RateLimited { retry_after, .. }) => {
             Some(budget::Outcome::RateLimited(*retry_after))
         }
-        Err(ApiError::Network(_) | ApiError::Unexpected { .. }) => {
+        Err(ProviderError::Network { .. } | ProviderError::Unavailable { .. }) => {
             Some(budget::Outcome::Unreachable)
         }
         // A token that is refused, or an answer that is not understood, is not a reason to
@@ -667,7 +666,6 @@ fn ask_live(
     let (renewed, found) = match identify::told_by_a_read(ctx, permit, state, tool, document) {
         Ok(told) => told,
         Err(error) => {
-            let error = to_api(error);
             return Answered::learning_nothing(LiveLogin {
                 signed_in: Some(Err(error.to_string())),
                 known: recorded(),
@@ -1298,6 +1296,8 @@ mod tests {
             Stale::RateLimited,
             Stale::Unreachable,
             Stale::ServerError,
+            Stale::Refused,
+            Stale::OnHold,
             Stale::AnswerNotUnderstood,
             Stale::LoginRefused,
             Stale::Interrupted,
@@ -1312,30 +1312,63 @@ mod tests {
     /// their parked login is finished.
     #[test]
     fn anthropics_failures_are_told_apart() {
-        use crate::provider::claude::api::ApiError;
-        let parked = |e: &ApiError| Stale::of(e, false);
+        let service = "Anthropic";
+        let parked = |e: &ProviderError| Stale::of(e, false);
+        let answered = |status: u16| Box::new(crate::api::Refusal::read(status, ""));
         assert_eq!(
-            parked(&ApiError::Unexpected { status: 503 }),
+            parked(&ProviderError::Unavailable {
+                service,
+                refusal: answered(503)
+            }),
             Stale::ServerError
         );
         assert_eq!(
-            parked(&ApiError::Malformed("no windows".into())),
+            parked(&ProviderError::Refused {
+                service,
+                refusal: answered(400)
+            }),
+            Stale::Refused
+        );
+        assert_eq!(
+            parked(&ProviderError::OnHold {
+                service,
+                link: None
+            }),
+            Stale::OnHold
+        );
+        assert_eq!(
+            parked(&ProviderError::Malformed {
+                service,
+                detail: "no windows".into()
+            }),
             Stale::AnswerNotUnderstood
         );
-        assert_eq!(parked(&ApiError::InvalidGrant), Stale::LoginRefused);
         assert_eq!(
-            parked(&ApiError::RateLimited { retry_after: None }),
+            parked(&ProviderError::InvalidGrant { service }),
+            Stale::LoginRefused
+        );
+        assert_eq!(
+            parked(&ProviderError::RateLimited {
+                service,
+                retry_after: None
+            }),
             Stale::RateLimited
         );
         assert_eq!(
-            parked(&ApiError::Network("down".into())),
+            parked(&ProviderError::Network {
+                service,
+                detail: "down".into()
+            }),
             Stale::Unreachable
         );
 
         // The same token failure means different things for a live login and a parked one.
-        assert_eq!(parked(&ApiError::Unauthorized), Stale::ParkedAccessExpired);
         assert_eq!(
-            Stale::of(&ApiError::Unauthorized, true),
+            parked(&ProviderError::Unauthorized),
+            Stale::ParkedAccessExpired
+        );
+        assert_eq!(
+            Stale::of(&ProviderError::Unauthorized, true),
             Stale::SessionExpired
         );
     }
@@ -1735,7 +1768,7 @@ mod tests {
     }
 
     /// Every stale reason, for the tests that hold each one to something.
-    const EVERY_STALE: [Stale; 17] = [
+    const EVERY_STALE: [Stale; 19] = [
         Stale::NothingSignedIn,
         Stale::LoginUnreadable,
         Stale::LoginUnusable,
@@ -1747,6 +1780,8 @@ mod tests {
         Stale::RateLimited,
         Stale::Unreachable,
         Stale::ServerError,
+        Stale::Refused,
+        Stale::OnHold,
         Stale::AnswerNotUnderstood,
         Stale::LoginRefused,
         Stale::AskedRecently,
@@ -1782,6 +1817,8 @@ mod tests {
                 "Claude Code's login is not one Pitboard can park or switch; run `pitboard doctor`",
             ),
             Stale::NoUsage => Some("Pitboard reads no usage for Claude Desktop"),
+            Stale::Refused => Some("Anthropic refused to answer for this login"),
+            Stale::OnHold => Some("Anthropic has put this account on hold"),
         };
         for stale in EVERY_STALE {
             assert_eq!(

@@ -172,6 +172,18 @@ fn a_failure_says_what_went_wrong_underneath() {
     contract!("use_anthropic_unwell", value, code);
 }
 
+// The reporter's dialog said only "Anthropic answered 400".
+#[test]
+fn a_refusal_says_why_and_is_not_worth_retrying() {
+    let mut env = two_accounts("contract-refused");
+    env.profile_answers(
+        400,
+        r#"{"type":"error","error":{"type":"invalid_request_error","message":"This organization cannot be read."}}"#,
+    );
+    let (value, code) = json(&env, &["use", "beta"]);
+    contract!("use_anthropic_refuses", value, code);
+}
+
 /// The keychain belongs to the whole machine, so what `repair` finds depends on what else
 /// is on it. The envelope's shape is the contract; the lists are not snapshotted.
 #[test]

@@ -54,7 +54,7 @@ These come from a Claude Code or Codex switch. A Claude Desktop switch has its o
 | `switch_unverified` | 3 | Writing the incoming login failed, and Pitboard could not read the login back to see what changed. Nothing was deleted. | Unlock the keychain, or make `.credentials.json` or `auth.json` readable to you. Then run the same `pitboard use` again. |
 | `switch_corrupted` | 3 | Pitboard could not write the incoming login or put the outgoing one back. The outgoing login is still parked. | Sign in to any enrolled account with `claude` or `codex login`, then run `pitboard use` with the account you switched from. |
 | `signed_in_account_changed` | 1 | The account in use changed during the switch. Nothing moved. | Try again. |
-| `identity_unverifiable` | 1 | Pitboard could not confirm with Anthropic or OpenAI whose login it was about to move, so it moved nothing. | Check the connection and try again. If the message names a SOCKS proxy, set that variable to an HTTP proxy or unset it, as [Proxies](/reference/files#proxies) describes. |
+| `identity_unverifiable` | 1 | Pitboard could not confirm with Anthropic or OpenAI whose login it was about to move, so it moved nothing. The message names the login, the one signed in or the one parked for the account switched to, and what the service answered. | Do what the message says. If the message names a SOCKS proxy, set that variable to an HTTP proxy or unset it, as [Proxies](/reference/files#proxies) describes. |
 | `session_expired` | 1 | The tool's login in use has expired, so Pitboard cannot identify it. If the message says `cannot be renewed`, Pitboard tried to renew it, and Anthropic no longer accepts it or it has no refresh token. | Run `claude` or `codex` once so it renews its login, then try again. If the message says `cannot be renewed`, run `claude` and sign in. |
 
 ## Signing in
@@ -243,6 +243,8 @@ An interrupted Claude Desktop move shows `move_waiting` on each read, as [Warnin
 | `interrupted` | `the check did not finish` | Run the command again. |
 | `unreachable` | `Anthropic could not be reached` | Check the connection, then run `pitboard status --fresh`. |
 | `server_error` | `Anthropic answered with an error; try again later` | Run `pitboard status --fresh` later. |
+| `refused` | `Anthropic refused to answer for this login` | [Sign in to the account again](/guides/sign-in-again). |
+| `on_hold` | `Anthropic has put this account on hold` | Follow Anthropic's instructions for the account. Pitboard keeps its parked login. |
 | `rate_limited` | `Anthropic is rate limiting usage checks` | Wait. Pitboard waits before it asks again, and `--fresh` waits too. |
 | `answer_not_understood` | `Anthropic's answer was not understood` | [Report a problem](/troubleshooting#report-a-problem). |
 | `session_expired` | ``Claude Code's session has expired; `claude` renews it`` | The tool renews its login in use at its next request. Run `claude` once. |
@@ -278,6 +280,7 @@ Every other error has `null`. `checks_failed` and `output_is_not_a_report` have 
 | `unreachable` | `true` | Anthropic or OpenAI could not be reached. |
 | `rate_limited` | `true` | Anthropic or OpenAI asked for fewer requests. |
 | `server_error` | `true` | Anthropic or OpenAI answered with an error. |
+| `refused` | `false` | Anthropic or OpenAI refused the request, and would refuse it again. |
 | `answer_not_understood` | `false` | Pitboard did not understand the answer. |
 | `login_refused` | `false` | The login was revoked, or already used somewhere else. |
 | `token_expired` | `false` | The login's access token has expired. |

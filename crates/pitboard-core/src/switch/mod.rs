@@ -408,6 +408,7 @@ fn unidentified(which: ProviderId, error: provider::ProviderError) -> Error {
         | provider::ProviderError::CodexHomeMissing { .. }) => shape(which, other),
         other => Error::IdentityUnverifiable {
             tool: which,
+            login: crate::error::Unidentified::SignedIn,
             cause: crate::error::Cause::of_provider(&other),
             detail: other.to_string(),
         },
@@ -1077,6 +1078,9 @@ fn prove_incoming(
             Err(e) => {
                 return Err(Error::IdentityUnverifiable {
                     tool: key.provider,
+                    login: crate::error::Unidentified::Parked {
+                        label: label.clone(),
+                    },
                     cause: crate::error::Cause::of_provider(&e),
                     detail: e.to_string(),
                 });
@@ -1088,9 +1092,12 @@ fn prove_incoming(
     let Some(fresh) = renew::renew_one(ctx, permit, state, tool, key, &held)? else {
         return Err(Error::IdentityUnverifiable {
             tool: key.provider,
+            login: crate::error::Unidentified::Parked {
+                label: label.clone(),
+            },
             cause: crate::error::Cause::Unreachable,
             detail: format!(
-                "`{label}`'s parked login needs renewing and {} did not answer",
+                "it needs renewing and {} did not answer",
                 key.provider.service()
             ),
         });

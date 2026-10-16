@@ -114,7 +114,7 @@ impl ProviderId {
     /// Not the same as the tool: `claude` talks to Anthropic, `codex` to OpenAI. Messages
     /// about a failed request name this, because "could not reach OpenAI" is something
     /// somebody can act on and "could not reach the service" is not.
-    pub fn service(self) -> &'static str {
+    pub const fn service(self) -> &'static str {
         match self {
             ProviderId::Claude | ProviderId::Desktop => "Anthropic",
             ProviderId::Codex => "OpenAI",
@@ -251,8 +251,24 @@ pub(crate) enum ProviderError {
         service: &'static str,
         detail: String,
     },
-    #[error("{service} answered {status}")]
-    Unexpected { service: &'static str, status: u16 },
+    /// Asked again, the service will answer the same.
+    #[error("{service} answered {refusal}")]
+    Refused {
+        service: &'static str,
+        refusal: Box<crate::api::Refusal>,
+    },
+    /// The service failed to answer, and may answer later.
+    #[error("{service} answered {refusal}")]
+    Unavailable {
+        service: &'static str,
+        refusal: Box<crate::api::Refusal>,
+    },
+    /// The account is on hold with its service: the login is kept, and works once that ends.
+    #[error("{service} has put this account on hold{}", link.as_ref().map(|link| format!(" ({link})")).unwrap_or_default())]
+    OnHold {
+        service: &'static str,
+        link: Option<String>,
+    },
     #[error("{service}'s answer was not understood: {detail}")]
     Malformed {
         service: &'static str,
@@ -279,6 +295,19 @@ pub(crate) enum ProviderError {
     NoLogin { provider: ProviderId },
     #[error("{}", crate::error::codex_home_missing(path))]
     CodexHomeMissing { path: std::path::PathBuf },
+}
+
+impl ProviderError {
+    /// `service`'s answer in place of the one asked for: refused where asking again would be
+    /// answered the same, unavailable otherwise.
+    pub(crate) fn answered(service: &'static str, refusal: crate::api::Refusal) -> ProviderError {
+        let refusal = Box::new(refusal);
+        if refusal.is_final() {
+            ProviderError::Refused { service, refusal }
+        } else {
+            ProviderError::Unavailable { service, refusal }
+        }
+    }
 }
 
 /// When a session that is already running picks a switch up.

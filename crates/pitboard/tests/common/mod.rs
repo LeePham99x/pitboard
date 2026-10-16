@@ -596,11 +596,17 @@ impl Env {
     /// Anthropic answers, badly. The switch that cannot identify the signed-in account
     /// must say so in a way a program can act on, rather than as one code and a sentence.
     pub(crate) fn profile_trouble(&mut self, status: usize) {
+        self.profile_answers(status, r#"{"type":"error","error":{"type":"api_error"}}"#);
+    }
+
+    /// Anthropic answers every profile request with `status` and `body`, as request `req_test`.
+    pub(crate) fn profile_answers(&mut self, status: usize, body: &str) {
         let mock = self
             .server
             .mock("GET", "/api/oauth/profile")
             .with_status(status)
-            .with_body(r#"{"type":"error","error":{"type":"api_error"}}"#)
+            .with_header("request-id", "req_test")
+            .with_body(body)
             .create();
         self.mocks.push(mock);
     }

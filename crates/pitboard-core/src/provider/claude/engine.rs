@@ -5,7 +5,7 @@
 //! can actually sit behind, which is worth knowing before a second tool is written against
 //! it rather than after.
 
-use super::api::{self, ApiError};
+use super::api;
 use super::{configfile, document, live, paths as claude};
 use crate::context::Context;
 use crate::host::{OS, Os};
@@ -78,7 +78,7 @@ impl Provider for Claude {
                 provider: ProviderId::Claude,
                 detail: "it has no claudeAiOauth.accessToken".into(),
             })?;
-        api::owner(ctx, token).map_err(from_api)
+        api::owner(ctx, token)
     }
 
     /// Anthropic's profile endpoint says whose a token is.
@@ -96,7 +96,7 @@ impl Provider for Claude {
                 provider: ProviderId::Claude,
                 detail: "it has no claudeAiOauth.accessToken".into(),
             })?;
-        api::usage(ctx, token).map_err(from_api)
+        api::usage(ctx, token)
     }
 
     fn renew(
@@ -118,7 +118,7 @@ impl Provider for Claude {
             scopes = switch::renew::DEFAULT_SCOPES.map(str::to_owned).to_vec();
         }
         let client_id = oauth["clientId"].as_str();
-        let fresh = api::renew(ctx, permit, refresh, &scopes, client_id).map_err(from_api)?;
+        let fresh = api::renew(ctx, permit, refresh, &scopes, client_id)?;
         // Anchored to the answer's own clock where it sent one, so a machine whose clock is
         // wrong does not write an expiry that is wrong with it.
         let at_millis = fresh.at.map_or_else(|| ctx.now_millis(), |at| at * 1000);
@@ -327,31 +327,6 @@ pub(super) fn access_token(login: &Value) -> Option<&str> {
         .get("accessToken")
         .and_then(Value::as_str)
         .filter(|token| !token.is_empty())
-}
-
-fn from_api(error: ApiError) -> ProviderError {
-    match error {
-        ApiError::Unauthorized => ProviderError::Unauthorized,
-        ApiError::RateLimited { retry_after } => ProviderError::RateLimited {
-            service: ProviderId::Claude.service(),
-            retry_after,
-        },
-        ApiError::Network(detail) => ProviderError::Network {
-            service: ProviderId::Claude.service(),
-            detail,
-        },
-        ApiError::Unexpected { status } => ProviderError::Unexpected {
-            service: ProviderId::Claude.service(),
-            status,
-        },
-        ApiError::Malformed(detail) => ProviderError::Malformed {
-            service: ProviderId::Claude.service(),
-            detail,
-        },
-        ApiError::InvalidGrant => ProviderError::InvalidGrant {
-            service: ProviderId::Claude.service(),
-        },
-    }
 }
 
 #[cfg(test)]

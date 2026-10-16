@@ -91,6 +91,8 @@ pub enum Cause {
     RateLimited,
     /// Anthropic answered, badly, and may answer well later.
     ServerError,
+    /// Anthropic refused the request, and asked again would refuse it the same way.
+    Refused,
     /// Anthropic answered something Pitboard does not understand, which means its shape
     /// moved. Trying again will produce the same thing.
     AnswerNotUnderstood,
@@ -102,26 +104,14 @@ pub enum Cause {
 }
 
 impl Cause {
-    pub(crate) fn of(error: &crate::provider::claude::api::ApiError) -> Cause {
-        use crate::provider::claude::api::ApiError;
-        match error {
-            ApiError::Unauthorized => Cause::TokenExpired,
-            ApiError::RateLimited { .. } => Cause::RateLimited,
-            ApiError::Network(_) => Cause::Unreachable,
-            ApiError::Unexpected { .. } => Cause::ServerError,
-            ApiError::Malformed(_) => Cause::AnswerNotUnderstood,
-            ApiError::InvalidGrant => Cause::LoginRefused,
-        }
-    }
-
-    /// The same question asked of a provider rather than of Anthropic directly.
     pub(crate) fn of_provider(error: &crate::provider::ProviderError) -> Cause {
         use crate::provider::ProviderError as P;
         match error {
             P::Unauthorized => Cause::TokenExpired,
             P::RateLimited { .. } => Cause::RateLimited,
             P::Network { .. } => Cause::Unreachable,
-            P::Unexpected { .. } => Cause::ServerError,
+            P::Unavailable { .. } => Cause::ServerError,
+            P::Refused { .. } | P::OnHold { .. } => Cause::Refused,
             P::Malformed { .. }
             | P::ShapeUnexpected { .. }
             | P::Unsupported { .. }
@@ -137,6 +127,7 @@ impl Cause {
             Cause::Unreachable => "unreachable",
             Cause::RateLimited => "rate_limited",
             Cause::ServerError => "server_error",
+            Cause::Refused => "refused",
             Cause::AnswerNotUnderstood => "answer_not_understood",
             Cause::LoginRefused => "login_refused",
             Cause::TokenExpired => "token_expired",
@@ -148,9 +139,21 @@ impl Cause {
     pub fn worth_retrying(self) -> bool {
         match self {
             Cause::Unreachable | Cause::RateLimited | Cause::ServerError => true,
-            Cause::AnswerNotUnderstood | Cause::LoginRefused | Cause::TokenExpired => false,
+            Cause::Refused
+            | Cause::AnswerNotUnderstood
+            | Cause::LoginRefused
+            | Cause::TokenExpired => false,
         }
     }
+}
+
+/// The login whose account Pitboard could not confirm.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Unidentified {
+    /// The one its tool has signed in.
+    SignedIn,
+    /// The one parked for the account typed as `label`.
+    Parked { label: String },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -476,13 +479,10 @@ pub enum Error {
     #[error("{}", session_expired(*tool, *refused))]
     SessionExpired { tool: ProviderId, refused: bool },
 
-    #[error(
-        "Pitboard could not confirm with {} which account is signed in ({detail}), and will \
-         not move a login it cannot identify. Check the connection and try again.",
-        tool.service()
-    )]
+    #[error("{}", identity_unverifiable(*tool, login, *cause, detail))]
     IdentityUnverifiable {
         tool: ProviderId,
+        login: Unidentified,
         cause: Cause,
         detail: String,
     },
@@ -671,10 +671,10 @@ pub enum Error {
     },
 
     #[error(
-        "Pitboard could not ask {} whose the login left in {} is ({detail}). Check the \
-         connection and try again.",
+        "Pitboard could not ask {} whose the login left in {} is ({detail}). {}",
         ProviderId::Claude.service(),
-        path.display()
+        path.display(),
+        try_again(*cause).unwrap_or("Run `pitboard doctor`.")
     )]
     LeftLoginUnidentified {
         path: PathBuf,
@@ -1137,6 +1137,49 @@ fn not_absolute(variable: &str, path: &std::path::Path) -> String {
          runs. Set it to a full path, or unset it; Pitboard reads and changes nothing until \
          then."
     )
+}
+
+/// [`Error::IdentityUnverifiable`]'s words: what to do follows from why.
+fn identity_unverifiable(
+    tool: ProviderId,
+    login: &Unidentified,
+    cause: Cause,
+    detail: &str,
+) -> String {
+    let service = tool.service();
+    let next = match (try_again(cause), cause, login) {
+        (Some(later), ..) => later.to_owned(),
+        (None, Cause::AnswerNotUnderstood, _) => "Check for a Pitboard update.".to_owned(),
+        (None, _, Unidentified::SignedIn) => format!(
+            "{}, sign in, then try again.",
+            crate::words::sign_in_yourself(tool, true)
+        ),
+        (None, _, Unidentified::Parked { label }) => {
+            format!("Sign in to it again with `pitboard enroll {label} --sign-in`.")
+        }
+    };
+    match login {
+        Unidentified::SignedIn => format!(
+            "Pitboard could not confirm with {service} which account is signed in ({detail}), \
+             and will not move a login it cannot identify. {next}"
+        ),
+        Unidentified::Parked { label } => format!(
+            "Pitboard could not confirm with {service} whose login is parked for `{label}` \
+             ({detail}), and will not put in use a login it cannot identify. {next}"
+        ),
+    }
+}
+
+/// When asking again is the way on, what to say about it.
+fn try_again(cause: Cause) -> Option<&'static str> {
+    match cause {
+        Cause::Unreachable => Some("Check the connection and try again."),
+        Cause::RateLimited => Some("Try again in a few minutes."),
+        Cause::ServerError => Some("Try again later."),
+        Cause::Refused | Cause::AnswerNotUnderstood | Cause::LoginRefused | Cause::TokenExpired => {
+            None
+        }
+    }
 }
 
 /// [`Error::SessionExpired`]'s words.
@@ -2110,6 +2153,7 @@ mod tests {
 
         let unverifiable = Error::IdentityUnverifiable {
             tool: ProviderId::Codex,
+            login: Unidentified::SignedIn,
             cause: Cause::Unreachable,
             detail: "offline".into(),
         }
@@ -2118,11 +2162,61 @@ mod tests {
 
         let claude = Error::IdentityUnverifiable {
             tool: ProviderId::Claude,
+            login: Unidentified::SignedIn,
             cause: Cause::Unreachable,
             detail: "offline".into(),
         }
         .to_string();
         assert!(claude.contains("confirm with Anthropic"), "{claude}");
+    }
+
+    // A 400 used to say "check the connection", which no connection mends.
+    #[test]
+    fn a_refusal_says_to_sign_in_again_and_an_outage_to_try_again() {
+        let said = |cause| {
+            Error::IdentityUnverifiable {
+                tool: ProviderId::Claude,
+                login: Unidentified::SignedIn,
+                cause,
+                detail: "Anthropic answered 400: No organization associated with this token".into(),
+            }
+            .to_string()
+        };
+        assert_eq!(
+            said(Cause::Refused),
+            "Pitboard could not confirm with Anthropic which account is signed in (Anthropic \
+             answered 400: No organization associated with this token), and will not move a \
+             login it cannot identify. Run `claude`, sign in, then try again."
+        );
+        assert!(said(Cause::Unreachable).ends_with("Check the connection and try again."));
+        assert!(said(Cause::ServerError).ends_with("Try again later."));
+        assert!(Cause::ServerError.worth_retrying());
+        assert!(!Cause::Refused.worth_retrying());
+    }
+
+    // The reporter's dialog said "which account is signed in" when it may have been the
+    // parked login of the account being switched to that failed.
+    #[test]
+    fn the_parked_login_that_failed_is_named() {
+        let said = |cause| {
+            Error::IdentityUnverifiable {
+                tool: ProviderId::Claude,
+                login: Unidentified::Parked {
+                    label: "dtg".into(),
+                },
+                cause,
+                detail: "Anthropic answered 400".into(),
+            }
+            .to_string()
+        };
+        assert_eq!(
+            said(Cause::Refused),
+            "Pitboard could not confirm with Anthropic whose login is parked for `dtg` \
+             (Anthropic answered 400), and will not put in use a login it cannot identify. Sign \
+             in to it again with `pitboard enroll dtg --sign-in`."
+        );
+        assert!(said(Cause::Unreachable).ends_with("Check the connection and try again."));
+        assert!(!said(Cause::Refused).contains("signed in ("));
     }
 
     /// The codes of the two tools' missing programs stay distinct, and Claude Code's keep

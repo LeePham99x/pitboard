@@ -40,6 +40,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   of calling it unreadable.
 - `pitboard uninstall` deletes a login a stopped sign-in left in the keychain, instead of
   leaving it there with nothing to name it.
+- When Anthropic or OpenAI refuses a request, Pitboard says the reason and request id they gave,
+  instead of only the status code.
+- A refusal that asking again would not change says to sign in again, with `refused` as its
+  cause, instead of telling you to check the connection.
+- A switch that cannot confirm whose login is parked for the account switched to says so, instead
+  of saying it could not tell which account is signed in.
+- Pitboard keeps the parked login of an account Anthropic has put on hold, instead of dropping it
+  as no longer accepted.
+- The automatic switch passes over an account whose parked login Anthropic will not name, as it
+  passes over one whose login Anthropic refuses.
 
 ## [0.14.0] - 2026-10-14
 

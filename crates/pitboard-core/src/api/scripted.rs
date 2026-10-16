@@ -11,7 +11,7 @@
 use crate::context::Context;
 use crate::provider::Owner;
 use crate::provider::ProviderError;
-use crate::provider::claude::api::{Api, ApiError, Renewed};
+use crate::provider::claude::api::{Api, Renewed};
 use crate::provider::codex::api::{Fresh, OpenAi};
 use crate::service::Permit;
 use crate::usage::Snapshot;
@@ -28,24 +28,13 @@ pub enum Trouble {
     RateLimitedFor(i64),
     /// No route to Anthropic at all: a plane, a captive portal, a bad morning.
     Offline,
+    /// The service answered this status with this body.
+    Answered(u16, &'static str),
     Server(u16),
     /// The refresh token was refused for good, which is the answer that ends a park.
     InvalidGrant,
-}
-
-impl From<Trouble> for ApiError {
-    fn from(t: Trouble) -> ApiError {
-        match t {
-            Trouble::Unauthorized => ApiError::Unauthorized,
-            Trouble::RateLimited => ApiError::RateLimited { retry_after: None },
-            Trouble::RateLimitedFor(seconds) => ApiError::RateLimited {
-                retry_after: Some(seconds),
-            },
-            Trouble::Offline => ApiError::Network("no route to host".into()),
-            Trouble::Server(status) => ApiError::Unexpected { status },
-            Trouble::InvalidGrant => ApiError::InvalidGrant,
-        }
-    }
+    /// The account is on hold, which ends nothing.
+    OnHold,
 }
 
 /// What a scripted endpoint does when it is asked.
@@ -56,10 +45,10 @@ pub enum Answer<T> {
 }
 
 impl<T: Clone> Answer<T> {
-    fn take(&self) -> Result<T, ApiError> {
+    fn take(&self, service: &'static str) -> Result<T, ProviderError> {
         match self {
             Answer::Give(value) => Ok(value.clone()),
-            Answer::Fail(trouble) => Err((*trouble).into()),
+            Answer::Fail(trouble) => Err(trouble.of(service)),
         }
     }
 }
@@ -191,25 +180,25 @@ impl ScriptedApi {
         &self,
         asked: Asked,
         pick: impl FnOnce(&Script) -> Option<&Answer<T>>,
-    ) -> Result<T, ApiError> {
+    ) -> Result<T, ProviderError> {
         let mut script = self.script();
         script.asked.push(asked);
         match pick(&script) {
-            Some(answer) => answer.take(),
+            Some(answer) => answer.take(crate::provider::ProviderId::Claude.service()),
             // An unknown token is exactly what Anthropic refuses.
-            None => Err(ApiError::Unauthorized),
+            None => Err(ProviderError::Unauthorized),
         }
     }
 }
 
 impl Api for ScriptedApi {
-    fn owner(&self, _ctx: &Context, access_token: &str) -> Result<Owner, ApiError> {
+    fn owner(&self, _ctx: &Context, access_token: &str) -> Result<Owner, ProviderError> {
         self.answer(Asked::Owner(access_token.into()), |s| {
             s.owners.get(access_token)
         })
     }
 
-    fn usage(&self, _ctx: &Context, access_token: &str) -> Result<Snapshot, ApiError> {
+    fn usage(&self, _ctx: &Context, access_token: &str) -> Result<Snapshot, ProviderError> {
         self.answer(Asked::Usage(access_token.into()), |s| {
             s.usage.get(access_token)
         })
@@ -222,7 +211,7 @@ impl Api for ScriptedApi {
         refresh_token: &str,
         _scopes: &[String],
         _client_id: Option<&str>,
-    ) -> Result<Renewed, ApiError> {
+    ) -> Result<Renewed, ProviderError> {
         let answer = self.answer(Asked::Renew(refresh_token.into()), |s| {
             s.renewals.get(refresh_token)
         });
@@ -234,25 +223,32 @@ impl Api for ScriptedApi {
     }
 }
 
-/// A scripted failure as OpenAI's side of the boundary reports it.
-fn from_trouble(trouble: Trouble) -> ProviderError {
-    let service = crate::provider::ProviderId::Codex.service();
-    match trouble {
-        Trouble::Unauthorized => ProviderError::Unauthorized,
-        Trouble::RateLimited => ProviderError::RateLimited {
-            service,
-            retry_after: None,
-        },
-        Trouble::RateLimitedFor(seconds) => ProviderError::RateLimited {
-            service,
-            retry_after: Some(seconds),
-        },
-        Trouble::Offline => ProviderError::Network {
-            service,
-            detail: "no route to host".into(),
-        },
-        Trouble::Server(status) => ProviderError::Unexpected { service, status },
-        Trouble::InvalidGrant => ProviderError::InvalidGrant { service },
+impl Trouble {
+    /// This failure as `service`'s side of the boundary reports it.
+    fn of(self, service: &'static str) -> ProviderError {
+        let answered = |refusal| ProviderError::answered(service, refusal);
+        match self {
+            Trouble::Unauthorized => ProviderError::Unauthorized,
+            Trouble::RateLimited => ProviderError::RateLimited {
+                service,
+                retry_after: None,
+            },
+            Trouble::RateLimitedFor(seconds) => ProviderError::RateLimited {
+                service,
+                retry_after: Some(seconds),
+            },
+            Trouble::Offline => ProviderError::Network {
+                service,
+                detail: "no route to host".into(),
+            },
+            Trouble::Answered(status, body) => answered(crate::api::Refusal::read(status, body)),
+            Trouble::Server(status) => answered(crate::api::Refusal::read(status, "")),
+            Trouble::InvalidGrant => ProviderError::InvalidGrant { service },
+            Trouble::OnHold => ProviderError::OnHold {
+                service,
+                link: None,
+            },
+        }
     }
 }
 
@@ -270,7 +266,9 @@ impl OpenAi for ScriptedApi {
         script.asked.push(Asked::Usage(access_token.into()));
         match script.usage.get(access_token) {
             Some(Answer::Give(snapshot)) => Ok(snapshot.clone()),
-            Some(Answer::Fail(trouble)) => Err(from_trouble(*trouble)),
+            Some(Answer::Fail(trouble)) => {
+                Err(trouble.of(crate::provider::ProviderId::Codex.service()))
+            }
             None => Err(ProviderError::Unauthorized),
         }
     }
@@ -286,7 +284,7 @@ impl OpenAi for ScriptedApi {
         script.asked.push(Asked::Renew(refresh_token.into()));
         match script.codex_renewals.get(refresh_token) {
             Some(Answer::Give(fresh)) => Ok(fresh.clone()),
-            Some(Answer::Fail(trouble)) => Err(from_trouble(*trouble)),
+            Some(Answer::Fail(trouble)) => Err(trouble.of(service)),
             None => Err(ProviderError::InvalidGrant { service }),
         }
     }
@@ -316,7 +314,7 @@ mod tests {
         );
         assert!(matches!(
             api.owner(&ctx, "someone else"),
-            Err(ApiError::Unauthorized)
+            Err(ProviderError::Unauthorized)
         ));
     }
 
@@ -329,15 +327,15 @@ mod tests {
 
         assert!(matches!(
             api.owner(&ctx, "live"),
-            Err(ApiError::RateLimited { .. })
+            Err(ProviderError::RateLimited { .. })
         ));
         assert!(matches!(
             Api::usage(&*api, &ctx, "live"),
-            Err(ApiError::RateLimited { .. })
+            Err(ProviderError::RateLimited { .. })
         ));
         assert!(matches!(
             Api::renew(&*api, &ctx, Permit::for_a_test(), "stale", &[], None),
-            Err(ApiError::InvalidGrant)
+            Err(ProviderError::InvalidGrant { .. })
         ));
     }
 
