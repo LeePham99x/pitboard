@@ -5,6 +5,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <!-- SignPath signs only programs whose version resource names one product at one version. The SDK's defaults are each assembly's name. -->
+    <Product>Pitboard</Product>
+    <Company>Pitboard</Company>
+    <!-- WinSparkle compares Pitboard.exe's version, and 1.0.0+<commit> sorts below 1.0.0. -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <!-- dotnet format cannot load a WinUI project without its XAML, so the build holds .editorconfig's style. -->
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <!-- A lock file holds the graph of each runtime it names, so both are named wherever a project restores. -->

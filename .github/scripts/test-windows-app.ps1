@@ -113,10 +113,14 @@ try {
         "reads its updates from 'https://github\.com/datlechin/pitboard/releases/download/v1\.0\.0/appcast-windows\.xml'"
 
     Assert-Refused 'a version the build was not given' (New-Case 'version' ($whole + 'pitboard_ffi.dll')) $Signer `
-        "names the product 'Pitboard' at '.+', file .+, not Pitboard at 9\.9\.9," -Instead @{ Version = '9.9.9' }
+        "names the product 'Pitboard' by 'Pitboard' at '.+', file .+, not Pitboard by Pitboard at 9\.9\.9," -Instead @{ Version = '9.9.9' }
     Assert-Refused 'a FileVersion windows-versions.sh does not give the version' (New-Case 'file' ($whole + 'pitboard_ffi.dll')) $Signer `
-        "names the product 'Pitboard' at '$([regex]::Escape($Version))', file .+, not Pitboard at .+, file 9\.9\.9\.1000" `
+        "names the product 'Pitboard' by 'Pitboard' at '$([regex]::Escape($Version))', file .+, not Pitboard by Pitboard at .+, file 9\.9\.9\.1000" `
         -Instead @{ FileVersion = '9.9.9.1000' }
+    $foreign = New-Case 'foreign' ($whole + 'pitboard_ffi.dll')
+    Copy-Item -LiteralPath (Join-Path $root 'WinSparkle.dll') -Destination (Join-Path $foreign 'pitboard_other.dll')
+    Assert-Refused 'a library named for Pitboard whose version resource names another product' $foreign $Signer `
+        "pitboard_other\.dll names the product '(?!Pitboard')"
 
     & $verify -Path $msiPath -Mode unsigned
     $built = Join-Path $work 'built'

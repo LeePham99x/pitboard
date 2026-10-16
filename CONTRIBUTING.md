@@ -402,9 +402,9 @@ throwaway certificate, which nothing trusts and nothing registers.
   would not take;
 - a feed other than the latest full release's;
 - a commit in `Pitboard.exe`'s version;
-- a program or library of Pitboard's whose version resource names another product or version
-  than `Cargo.toml`'s, or another file version than `.github/scripts/windows-versions.sh`
-  gives it;
+- a program or library named for Pitboard, as the release hands the signer, whose version
+  resource names another product, company or version than Pitboard and `Cargo.toml`'s, or
+  another file version than `.github/scripts/windows-versions.sh` gives it;
 - a core opened before Windows is released, or one that takes its C runtime from a DLL;
 - a `WinSparkle.dll` for another machine.
 
