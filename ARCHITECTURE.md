@@ -50,15 +50,22 @@ window loads its site, and whatever the site's pages load, as a browser would.
       login, whose it is, how to renew it, what it has left and what its sign-in prints,
       which `provider::sign_in_view` reads for both apps, and when a session already running
       takes a switch made now (`Adoption`), which for Claude Code turns on whether a file
-      sits behind the keychain or Credential Manager (`behind`). `provider/codex/holders.rs` names where a running
-      `codex` can be, and what makes each take a switch. `provider/codex/layers.rs` reads
-      which store Codex keeps its login in from every layer of configuration Codex reads
-      outside a project, in Codex's order, for a switch and for a sign-in.
-      `provider/printed.rs` reads what a tool printed as a terminal does: the text it shows,
-      and where each hyperlink goes. Behind npm's `.cmd` shim, `provider::command` starts
-      the program the shim would: the `claude.exe` it names, or the `codex.exe` its
-      `codex.js` starts, with what that sets, and the `.cmd` itself only where neither is
-      there.
+      sits behind the keychain or Credential Manager (`behind`). `provider/codex/holders.rs`
+      names where a running `codex` can be, and what makes each take a switch.
+      `provider/codex/layers.rs` reads which store Codex keeps its login in from every layer
+      of configuration Codex reads outside a project, in Codex's order, for a switch and for
+      a sign-in. `provider/printed.rs` reads what a tool printed as a terminal does: the
+      text it shows, and where each hyperlink goes. Behind npm's `.cmd` shim,
+      `provider::command` starts the program the shim would: the `claude.exe` it names, or
+      the `codex.exe` its `codex.js` starts, with what that sets, and the `.cmd` itself only
+      where neither is there. On Windows, `provider/claude/credman.rs` says whether Claude
+      Code keeps its login in Credential Manager (`windows_backend_choice`) and builds its
+      chain there: Credential Manager with `.credentials.json` behind it where anything
+      turns that store on, the file alone where nothing does and Credential Manager holds no
+      login at the live target. `provider/claude/pieces.rs` writes and reads a login in that
+      store's pieces, in Claude Code's order (`credman_chunking`). `provider/names.rs` names
+      the families of items a real login may be kept under, which a test and a build for
+      tests never address, and by which doctor counts Codex's items.
     - Claude Desktop keeps items of Claude's data folder and keys of its settings file, and
       `desktop` implements the `Folder` trait in `provider/folder.rs`. Its files say where
       the data folder is (`paths.rs`), which first-level entries are an account's
@@ -70,14 +77,17 @@ window loads its site, and whatever the site's pages load, as a browser would.
     its program runs from, or on Windows by the package it runs in. A switch's warning,
     `doctor` and the app's offer to quit an app all read it, so they cannot disagree.
   - `host/`: the machine, behind one seam. The `Host` trait is what a test replaces: the
-    system's store of secrets, files, the vault, this user's processes in any session, each
-    with its parent (`listing`), a Chromium cookie jar's rows, read only (`cookies`), an app
-    bundle's version and identifier (`app_version`, `app_id`), the scheduler, whether this
-    process runs as the person (`elevation`), whether the system is one Pitboard changes
-    things on by its version (`floor`, `host::Floor`), and what an administrator set for a
-    program outside every home (`administered_file`, `administered_folder`,
-    `managed_preference`, which `macos/preferences.rs` reads, and `policy`, a value under
-    the Windows registry's `HKLM` or `HKCU`), reached through `Context` and faked by
+    system's store of secrets, Credential Manager's names under a prefix and whether it
+    holds an item (`credential_names`, `credential_held`), files, the vault, this user's
+    processes in any session, each with its parent (`listing`), a Chromium cookie jar's
+    rows, read only (`cookies`), an app bundle's version and identifier (`app_version`,
+    `app_id`), the scheduler, whether this process runs as the person (`elevation`), whether
+    the system is one Pitboard changes things on by its version (`floor`, `host::Floor`),
+    and what an administrator set for a program outside every home (`administered_file`,
+    `administered_folder`, `managed_preference`, which `macos/preferences.rs` reads, and
+    `policy`, a value under the Windows registry's `HKLM` or `HKCU`), the environment a
+    Windows program started now is given (`user_environment`, `machine_environment`) and
+    Windows' `ProgramData` (`program_data`), reached through `Context` and faked by
     `host/memory.rs`, which plays every answer. In a build for tests the real hosts read
     nothing an administrator set (`host/administered.rs`) and no app installed on the
     machine. `fs`, `proc` and `user` are plain functions for what the system does whoever
@@ -103,25 +113,27 @@ window loads its site, and whatever the site's pages load, as a browser would.
     both, or `windows/`. Linux and Windows refuse Claude Desktop's data folder before
     anything else is asked, so neither reads a cookie jar, and Linux lists no process with
     its parent.
-    `windows/` is the face that refuses whatever of Windows is not built yet: no store of
-    secrets, and none of the four calls that move Claude Desktop's data folder. It seals
-    each park with DPAPI under the person's own key (`windows/seal.rs`). It registers daily
-    renewal's task through `ITaskService`, on a thread of its own in COM's multithreaded
-    apartment, and a build for tests asks Task Scheduler nothing (`windows/tasks.rs`);
-    `task.rs` writes and reads the task on every system, and keeps the proxy it is given in
-    `schedule.env`, since a task's definition holds no environment. The task runs the path
-    the command line was started by where an upgrade keeps it: Scoop's
-    `apps\<app>\current`, never a version's folder, and winget's link in `WinGet\Links`
-    (`program::lasting`). It lists processes from a Toolhelp snapshot, for their parents,
-    and keeps this account's in any session: whose each is, WTS says without opening it, a
-    process in another user's session is passed over unopened, and the rest's tokens are
-    read (`owner.rs`). A program whose owner or path does not read makes `processes` unknown,
-    since it may be any kind of holder. It finds programs as a Windows shell does, an app
-    execution alias in a `WindowsApps` folder by its reparse tag, and reads the `Path` a
-    program started now is given from the registry, the machine's and then the person's,
-    which a build for tests reads in its own test alone, as it does the settings doctor
-    names (`windows/settings.rs`): the distributions WSL holds, Windows' own proxy as
-    hyper-util reads it for Codex, and `EnableLUA`. It starts a sign-in's tool
+    `windows/` is the face that refuses whatever of Windows is not built yet: none of the
+    four calls that move Claude Desktop's data folder. It keeps Credential Manager's generic
+    items as `Bun.secrets` writes Claude Code's, and reads, writes, deletes and lists them
+    by name (`windows/credman.rs`); in a build for tests it refuses every family's name but
+    the test's own slots. It seals each park with DPAPI under the person's own key
+    (`windows/seal.rs`). It registers daily renewal's task through `ITaskService`, on a
+    thread of its own in COM's multithreaded apartment, and a build for tests asks Task
+    Scheduler nothing (`windows/tasks.rs`); `task.rs` writes and reads the task on every
+    system, and keeps the proxy it is given in `schedule.env`, since a task's definition
+    holds no environment. The task runs the path the command line was started by where an
+    upgrade keeps it: Scoop's `apps\<app>\current`, never a version's folder, and winget's
+    link in `WinGet\Links` (`program::lasting`). It lists processes from a Toolhelp
+    snapshot, for their parents, and keeps this account's in any session: whose each is, WTS
+    says without opening it, a process in another user's session is passed over unopened,
+    and the rest's tokens are read (`owner.rs`). A program whose owner or path does not read
+    makes `processes` unknown, since it may be any kind of holder. It finds programs as a
+    Windows shell does, an app execution alias in a `WindowsApps` folder by its reparse tag,
+    and reads the `Path` a program started now is given from the registry, the machine's and
+    then the person's, which a build for tests reads in its own test alone, as it does the
+    settings doctor names (`windows/settings.rs`): the distributions WSL holds, Windows' own
+    proxy as hyper-util reads it for Codex, and `EnableLUA`. It starts a sign-in's tool
     suspended, puts it in a job of its own that lets a program break away, as Codex starts
     its daemons, then resumes it, so nothing it starts is outside the job
     (`windows/job.rs`). A cancel, and a sign-in let go of unfinished, end the job's
@@ -184,30 +196,30 @@ window loads its site, and whatever the site's pages load, as a browser would.
   - `switch/`: every change to Pitboard's index (switching, by hand or by itself in
     `auto.rs`, enrolling, adopting, renaming, forgetting, renewing, repairing, abandoning,
     uninstalling, and putting away a login Claude Code left in a file behind the keychain or
-    Credential Manager in `stow.rs`), and the journal that finishes an interrupted switch of a Claude Code or
-    Codex login (`journal.rs`). `identify.rs` says whose login Claude Code or Codex has
-    stored: the record's owner where the login's refresh token has the fingerprint the
-    record was made for, which asks nobody, and the tool's service otherwise (`whose`). A
-    login whose access token has expired is never asked about with it, and one the service
-    refuses is not asked about again (`told`): a change renews it first, and so does a read,
-    where it takes `state.lock` without waiting and no switch waits to be finished
-    (`told_by_a_read`); usage alone renews nothing, and a Codex login names its account by
-    itself. `refresh.rs` is the one renewal of a login of Claude Code's where Claude Code
-    keeps it, which that and `pitboard stow` both use, with `Refreshing`, Claude Code's
-    refresh lock held, and `finish`, which saves a renewal a stopped run left in the vault,
-    and `finished`, the same for one tool, which stops what acts on its login while a copy
-    cannot be saved. A store with no login is recorded as holding none only where the tool's
-    own record names nobody either; where it names somebody, the login is somewhere Pitboard
-    does not look, and nothing is recorded. A change records what it finds under the lock it
-    holds (`now`, or `look` then `record` where enrolling the account found names it first,
-    or `look` then `keep` where the automatic switch has its own to do when it cannot be
-    told); a read records it afterwards (`record_read`), only where it changed, only where
-    it takes the lock without waiting, never while a switch waits to be finished, and only
-    where the tool's own record names what it named and the store holds the login it asked
-    about, both read again under the lock. Each writes an `in-use` line in the activity log
-    for what changed outside Pitboard. With `test-support`, a context may hold a
-    `SignInScript`, which plays a tool's own sign-in in place of its program, for a test or
-    a fixture that may start none; everything around it is the core's own.
+    Credential Manager in `stow.rs`), and the journal that finishes an interrupted switch of
+    a Claude Code or Codex login (`journal.rs`). `identify.rs` says whose login Claude Code
+    or Codex has stored: the record's owner where the login's refresh token has the
+    fingerprint the record was made for, which asks nobody, and the tool's service otherwise
+    (`whose`). A login whose access token has expired is never asked about with it, and one
+    the service refuses is not asked about again (`told`): a change renews it first, and so
+    does a read, where it takes `state.lock` without waiting and no switch waits to be
+    finished (`told_by_a_read`); usage alone renews nothing, and a Codex login names its
+    account by itself. `refresh.rs` is the one renewal of a login of Claude Code's where
+    Claude Code keeps it, which that and `pitboard stow` both use, with `Refreshing`, Claude
+    Code's refresh lock held, and `finish`, which saves a renewal a stopped run left in the
+    vault, and `finished`, the same for one tool, which stops what acts on its login while a
+    copy cannot be saved. A store with no login is recorded as holding none only where the
+    tool's own record names nobody either; where it names somebody, the login is somewhere
+    Pitboard does not look, and nothing is recorded. A change records what it finds under
+    the lock it holds (`now`, or `look` then `record` where enrolling the account found
+    names it first, or `look` then `keep` where the automatic switch has its own to do when
+    it cannot be told); a read records it afterwards (`record_read`), only where it changed,
+    only where it takes the lock without waiting, never while a switch waits to be finished,
+    and only where the tool's own record names what it named and the store holds the login
+    it asked about, both read again under the lock. Each writes an `in-use` line in the
+    activity log for what changed outside Pitboard. With `test-support`, a context may hold
+    a `SignInScript`, which plays a tool's own sign-in in place of its program, for a test
+    or a fixture that may start none; everything around it is the core's own.
   - `switch/folder/`: every change to a tool whose login is its app's files. It names no
     tool: `provider::folder::Folder` is all it knows. A change asks the process list that
     the app is closed, holds the data folder, settles a move an earlier run left
@@ -513,41 +525,42 @@ window loads its site, and whatever the site's pages load, as a browser would.
     Pitboard. `state.rs` holds what the model knows and decides what follows each message.
     What follows an answer to the quit question is `After`, private to the model: a switch,
     a sign-in inside an app, or recording the account an app is signed in to. `advice.rs`
-    says which account to offer once the one in use has run out, `preferences.rs`
-    what the app's own preferences are, `machine.rs` what the model knows of this machine
-    rather than its accounts, and `windows.rs` the account windows' bookkeeping; `lanes.rs`
-    runs what it decides, on a lane of reads, which reads the schedule, doctor's checks and
-    the log too and asks the core's look whether to switch Claude Code by itself, a lane of
-    changes, one at a time, which also repairs and changes the schedule and renews, a lane
-    that lists processes and asks the app's `AppControl` about other apps, a lane that asks
-    what is installed and looks for the `pitboard` a terminal runs, a thread of its own for
-    each sign-in, a lane that types a code back to one or stops it, a lane that reads and
-    writes what the model keeps, in Pitboard's directory and the windows' records in the
-    app's own, and one that posts through the app's `Notifications`, and tells the listener
-    on a thread of its own; `mod.rs` holds the exported types and the actor thread that owns
-    the state. So far the model reads the accounts, looks every two seconds for a change
-    made elsewhere, asks which tools are installed, switches, quits the app holding a tool's
+    says which account to offer once the one in use has run out, `preferences.rs` what the
+    app's own preferences are, `machine.rs` what the model knows of this machine rather than
+    its accounts, and `windows.rs` the account windows' bookkeeping; `lanes.rs` runs what it
+    decides, on a lane of reads, which reads the schedule, doctor's checks and the log too
+    and asks the core's look whether to switch Claude Code by itself, a lane of changes, one
+    at a time, which also repairs and changes the schedule and renews, a lane that lists
+    processes and asks the app's `AppControl` about other apps, a lane that asks what is
+    installed and looks for the `pitboard` a terminal runs, a thread of its own for each
+    sign-in, a lane that types a code back to one or stops it, a lane that reads and writes
+    what the model keeps, in Pitboard's directory and the windows' records in the app's own,
+    and one that posts through the app's `Notifications`, and tells the listener on a thread
+    of its own; `mod.rs` holds the exported types and the actor thread that owns the state.
+    So far the model reads the accounts, looks every two seconds for a change made
+    elsewhere, asks which tools are installed, switches, quits the app holding a tool's
     login when the person lets it and opens again the copy it quit, gives up on a stuck
     switch, keeps what each tool's last switch said, runs Claude Code's and Codex's own
     sign-in, parks the account in use for a sign-in inside Claude and waits for Claude to
     quit signed in, enrols the login signed in now, renames and forgets, writes the account
-    in use into Claude Code's config, puts away a login left in a file behind the keychain or
-    Credential Manager from a sheet that looks first, keeps the sheet over the main window, says which account
-    to switch to once the one in use has run out, notified once for each reset, switches
-    Claude Code by itself with its setting on, asking the core's look after every read and
-    every 30 seconds and saying under the setting what it came to, warms up the accounts
-    turned on on a lane of its own, asking after every read and every 30 seconds, with every
-    read's `Overview` of them, or why it cannot be read, and a notification once for the
-    words of a warm-up by itself that came to nothing, keeps the app's own preferences, and
-    keeps the daily renewal schedule, renews now, makes doctor's checks, reads the activity
-    log and finds the `pitboard` a terminal runs. It keeps the account windows' books too:
-    which store is whose and each window's last page, which windows close and which stores
-    go after a read, the link waiting for an account, with the wait before it can be opened,
-    and the downloads. Its tests are files of their own there: `reading.rs`, `switching.rs`,
-    `automatic.rs`, `signing.rs`, `changing.rs`, `stowing.rs`, `advising.rs`, `keeping.rs`,
-    `maintaining.rs`, `presenting.rs`, `windowing.rs`, `warming.rs` and `cadence.rs` drive
-    the state by hand, `lanes.rs` has the lanes' own, and `threaded.rs` drives the model
-    through its threads over the real core.
+    in use into Claude Code's config, puts away a login left in a file behind the keychain
+    or Credential Manager from a sheet that looks first, keeps the sheet over the main
+    window, says which account to switch to once the one in use has run out, notified once
+    for each reset, switches Claude Code by itself with its setting on, asking the core's
+    look after every read and every 30 seconds and saying under the setting what it came to,
+    warms up the accounts turned on on a lane of its own, asking after every read and every
+    30 seconds, with every read's `Overview` of them, or why it cannot be read, and a
+    notification once for the words of a warm-up by itself that came to nothing, keeps the
+    app's own preferences, and keeps the daily renewal schedule, renews now, makes doctor's
+    checks, reads the activity log and finds the `pitboard` a terminal runs. It keeps the
+    account windows' books too: which store is whose and each window's last page, which
+    windows close and which stores go after a read, the link waiting for an account, with
+    the wait before it can be opened, and the downloads. Its tests are files of their own
+    there: `reading.rs`, `switching.rs`, `automatic.rs`, `signing.rs`, `changing.rs`,
+    `stowing.rs`, `advising.rs`, `keeping.rs`, `maintaining.rs`, `presenting.rs`,
+    `windowing.rs`, `warming.rs` and `cadence.rs` drive the state by hand, `lanes.rs` has
+    the lanes' own, and `threaded.rs` drives the model through its threads over the real
+    core.
   - `present/` makes each `Snapshot` from the model's state: `present` takes the state and
     the moment, and builds every sentence and row the menu bar, the menu and the window
     show, so a view decides nothing. `accounts.rs` is the menu bar's words and the
@@ -920,15 +933,14 @@ window loads its site, and whatever the site's pages load, as a browser would.
   The command line asks it before every command but `completions`, `manpage`, `doctor` and
   `renew`, which the gate refuses, so `log`, `schedule status` and the status line refuse it
   too. Nothing is resolved against the folder Pitboard runs in.
-- Which system Pitboard runs on is decided in `host/mod.rs` and nowhere else. Anything
-  that differs by system is either the host's to answer or a `match` on `host::OS`, so a
-  system added to `host::Os` does not compile until it is said for every one. No such
-  `match` has a `_` arm. Where a fact of Windows is not read yet, its arm refuses through
+- Which system Pitboard runs on is decided in `host/mod.rs` and nowhere else. Anything that
+  differs by system is either the host's to answer or a `match` on `host::OS`, so a system
+  added to `host::Os` does not compile until it is said for every one. No such `match` has a
+  `_` arm. Where Pitboard cannot tell what a tool does on Windows, its arm refuses through
   an answer its callers already have, never one that would let Pitboard act: Claude Code's
-  live chain on Windows is Credential Manager with its file behind where anything turns that
-  store on, its file alone where nothing does and Credential Manager holds no login at the
-  live target, and otherwise one store whose every call cannot be read (`store::Refused`),
-  and the Windows face answers as `host/windows` says.
+  live chain there is one store whose every call cannot be read (`store::Refused`) while
+  Credential Manager holds a login nothing Pitboard reads turned on, and the Windows face
+  answers as `host/windows` says.
 - A context carries the system its environment was read as, so where the home and
   Pitboard's default folder are, and how a variable's name compares, are tested for
   Windows on every system.
@@ -1951,9 +1963,10 @@ and is the same in all four: `usage_cache_stamp_is_the_configs`,
 `status_reads_the_config_usage_the_token`, `config_identity_is_the_last_writers`,
 `status_line_input_names_no_account` and `fallback_file_pins_session_login`, read in the
 macOS build on the 8th, and `refresh_lock`, read in all four on the 9th. The fallback file's
-fact is read on macOS alone: on Linux the file is Claude Code's only store, and on Windows
-it is too unless Credential Manager is turned on (`windows_backend_choice`). The checker finds every
-fact each build was read for.
+fact was read on macOS alone that day: on Linux the file is Claude Code's only store, and
+its Windows reading came on 16 October from both Windows builds of 2.1.301, where the file
+sits behind Credential Manager wherever that store is on
+(`credman_unreachable_writes_file`). The checker finds every fact each build was read for.
 
 On 12 October 2026 the checker was run by hand on the `app.asar` of an installed Claude
 Desktop 2.7032.0, without running Claude. The register's 19 facts that name literals hold
@@ -2629,6 +2642,9 @@ Handing a descriptor:
 
 Credential Manager:
 
+- A generic item's blob holds 2560 bytes, `CRED_MAX_CREDENTIAL_BLOB_SIZE`, and `CredWriteW`
+  refuses 2561, as the fresh standard user (run 38858363708,
+  `host::windows::credman::tests::an_item_holds_2560_bytes_and_no_more`).
 - `Bun.secrets.set`, called as Claude Code 2.1.300 calls it, writes a generic item named
   `<service>/<name>`, with the name as its user name, enterprise persistence, no comment and
   no attributes, and the value's UTF-8 bytes as its blob: 30 UTF-16 units holding `Đ` and `ạ`
@@ -2736,7 +2752,6 @@ on 15 and 16 October 2026. W27 reviews the list.
 | A running program sees a variable changed in the registry only after `WM_SETTINGCHANGE` | [Environment variables](https://learn.microsoft.com/en-us/windows/win32/procthread/environment-variables) | Only a task started after `setx` was measured. |
 | WTS lists another session's processes to Administrators only | [WTSEnumerateProcessesExW](https://learn.microsoft.com/en-us/windows/win32/api/wtsapi32/nf-wtsapi32-wtsenumerateprocessesexw) | No row looked at another user's process in another session. A standard user's listing held session 0's processes. |
 | `GetProcessTimes` gives a process's creation time | [GetProcessTimes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesstimes) | Only the tests read it, of their own process. |
-| A generic credential's blob holds at most 2560 bytes | [CREDENTIALW](https://learn.microsoft.com/en-us/windows/win32/api/wincred/ns-wincred-credentialw) | The largest blob written was a 2400-byte piece. |
 | Reserved device names, and trailing dots and spaces, in a file name | [Naming files](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file) | No row makes such a name. |
 | `longPathAware` in a manifest lifts the 260-character limit | [Application manifests](https://learn.microsoft.com/en-us/windows/win32/sbscs/application-manifests) | No row uses a long path. |
 | `StartWhenAvailable` runs a start that was missed | [StartWhenAvailable](https://learn.microsoft.com/en-us/windows/win32/taskschd/tasksettings-startwhenavailable) | A runner never sleeps through a trigger. |
@@ -3061,41 +3076,51 @@ treated, and only the macOS build shows it. The run reads both builds since.
   `.credentials.json` behind it, where `CLAUDE_CODE_FORCE_WINDOWS_CREDMAN` is exactly `1` in
   its environment, asked on every store access, or where its config file caches
   `tengu_windows_credman` as true, read once a process; otherwise in the file alone. The
-  variable reaches a session from the environment it starts with, `HKCU\Environment` for
-  one started from Explorer, and from the `env` of the config file, of `settings.json` and
-  of managed settings, in that order, at start-up. A project's settings pass it only once
-  the folder is trusted, or in print mode. Pitboard reads every signal but a project's and a
-  `--settings` file's, and takes Claude Code's chain for the file only where none is on and
+  variable reaches a session from the environment it starts with, `HKCU\Environment` over
+  the machine's `Session Manager\Environment` for one started from Explorer, and from the
+  `env` of the config file, of `settings.json` and of the managed settings it takes,
+  `HKLM`'s policy over the folder unless that merges them (`windows_managed_settings`), in
+  that order, at start-up. A project's settings pass it only once the folder is trusted, or
+  in print mode. Pitboard reads every signal but a project's and a `--settings` file's, and
+  takes managed sources that disagree, or one it cannot read that a session may take, as
+  turning nothing on. It takes Claude Code's chain for the file only where none is on and
   Credential Manager holds nothing at the live target, `<service>/claude-code-user` or its
   manifest `#m` (`credman_account_name`). Where a signal turns the store on, Pitboard
   follows it, below. Where a login sits there that nothing Pitboard reads turned on, it
-  refuses, since it cannot tell which store sessions read. A session a project turned the
-  store on for is caught that way once it wrote there.
+  refuses, since it cannot tell which store sessions read, and names every piece of that
+  login and how to keep it. A session a project turned the store on for is caught that way
+  once it wrote there.
 - Read on 16 October 2026 from the same builds, with Bun 1.4.3's `Bun.secrets` as embedded
   (`credman_target`, `credman_chunking`, `credman_attributes`, `credman_migration`,
-  `credman_probe`, `windows_credman_cache`): Claude Code's item is `<service>/claude-code-user`,
-  the service hashed from the folder's string as given, so `C:\x` and `C:/x` are two items.
-  `Bun.secrets` writes it generic, with the name as its user name, the UTF-8 text as its blob,
-  enterprise persistence, no comment and no attributes (RF-G3, run 38704825885). Up to 2400
-  bytes the login is the item's value; above that, base64 pieces `#0` on of 2400 characters,
-  at most 256, a manifest `#m` and a marker `#p`, each an item of its own. Claude Code reads
-  pieces under a manifest that names their count and length, and never reads `#p`, so pieces
-  replaced in place under a manifest of the same length can read half old and half new.
-  Pitboard writes in Claude Code's order with one step of its own: while it replaces pieces
-  in place, the manifest names a length no base64 has, so Claude Code's read fails, and a
-  session keeps the login it has, rather than read a mix. It reads a manifest Claude Code
-  would pass over, or `#p` beside one, as unreadable. Only a whole write ends a write that
-  stopped there: a switch whose write failed partway writes the login that was there back,
-  and one killed partway is finished by the next change, which writes the incoming login
-  whole, without the outgoing document's part that is no account's, such as MCP tokens,
-  since nothing reads that back. Every write goes to Credential Manager
-  first, and deletes `.credentials.json` only where Credential Manager held no login before,
-  as Claude Code's wrapper does; where Credential Manager fails, Claude Code writes the file
-  instead and Pitboard writes nothing more, leaving the switch to the journal's recovery. A
-  session reads the item again 30 seconds after it last did, and a session whose start-up
-  look at `Bun.secrets` fails within 10 seconds reads only the file for its life. A network
-  logon has no credential set: every call fails 1312, which Pitboard reads as out of reach
-  (`credential_store_locked`), never as no login.
+  `credman_probe`, `windows_credman_cache`): Claude Code's item is
+  `<service>/claude-code-user`, the service hashed from the folder's string as given, so
+  `C:\x` and `C:/x` are two items. `Bun.secrets` writes it generic, with the name as its
+  user name, the UTF-8 text as its blob, enterprise persistence, no comment and no
+  attributes (RF-G3, run 38704825885). Up to 2400 bytes the login is the item's value; above
+  that, base64 pieces `#0` on of 2400 characters, at most 256, a manifest `#m` and a marker
+  `#p`, each an item of its own. Claude Code reads pieces under a manifest that names their
+  count and length, and never reads `#p`, so pieces replaced in place under a manifest of
+  the same length can read half old and half new. Pitboard writes in Claude Code's order
+  with one step of its own: while it replaces pieces in place, the manifest names a length
+  no base64 has, and as many pieces as the write may leave, so Claude Code's read fails, and
+  a session keeps the login it has, rather than read a mix. A write takes away every piece
+  the manifest or a `#p` a stopped write left counts. Pitboard reads a manifest Claude Code
+  would pass over, or `#p` beside one, as unreadable, and only a whole write ends a write
+  that stopped there: a switch whose write failed partway writes the login that was there
+  back, and one killed partway is finished by the next change, which writes the incoming
+  login whole, without the outgoing document's part that is no account's, such as MCP
+  tokens, since nothing reads that back. Every write goes to Credential Manager first, and
+  deletes `.credentials.json` only where Credential Manager held no login before, as Claude
+  Code's wrapper does; where Credential Manager fails, Claude Code writes the file instead
+  and Pitboard does not, leaving the switch to its rollback and the journal's recovery. A
+  session reads the item again 30 seconds after it last did (`windows_credman_cache`, read,
+  pending session step 7), and a session whose start-up look at `Bun.secrets` fails, or
+  gives no answer within 10 seconds, reads only the file for its life. Where the file is the
+  store, a session reads it again once its modification time changes
+  (`windows_file_adoption`, read, pending session step 6). A network logon has no credential
+  set: every call fails 1312, the look at the live target before the chain is built
+  included, which Pitboard reads as out of reach (`credential_store_locked`), never as no
+  login.
 - Measured on both runner images on 16 October 2026 (runs 38856939312 and 38858363708): a
   fresh standard user's Credential Manager takes about 237 pieces of 2400 characters, then
   `CredWriteW` fails with `ERROR_NOT_ENOUGH_MEMORY`, and pieces a failed run left count
