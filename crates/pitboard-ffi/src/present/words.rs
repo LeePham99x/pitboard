@@ -7,7 +7,7 @@
 
 use crate::model::state::in_its_app;
 use crate::{Level, Warning};
-use pitboard_core::error::{Error, LoginDoubt, Then};
+use pitboard_core::error::{Cause, Error, LoginDoubt, Then, Unidentified};
 use pitboard_core::host::{Os, Private};
 use pitboard_core::label::Unusable;
 use pitboard_core::provider::ProviderId;
@@ -283,8 +283,13 @@ pub(crate) fn give_up_stuck(moving: &[(String, &str)]) -> String {
 
 /// What giving up on an interrupted switch kept.
 pub(crate) fn gave_up(from: &str, to: &str, kept: u32) -> String {
+    let from = if from.is_empty() {
+        String::new()
+    } else {
+        format!(" from {from}")
+    };
     format!(
-        "The switch from {from} to {to} was given up. {} kept, and nothing was deleted.",
+        "The switch{from} to {to} was given up. {} kept, and nothing was deleted.",
         logins(kept)
     )
 }
@@ -962,6 +967,28 @@ pub(crate) fn in_app_refusal(os: Os, error: &Error) -> Option<String> {
         ),
         Error::ParkedCredentialMissing { label } if inside_label(label) => format!(
             "The parked login for {0} is missing. Choose Sign In Again… on {0}’s row.",
+            bare(label)
+        ),
+        Error::LiveLoginRefused {
+            tool,
+            label,
+            detail,
+        } => format!(
+            "{} no longer accepts the login {} is using ({detail}). Putting {}’s login in its \
+             place loses nothing.",
+            tool.service(),
+            tool.name(),
+            bare(label)
+        ),
+        Error::IdentityUnverifiable {
+            tool,
+            login: Unidentified::Parked { label },
+            cause,
+            detail,
+        } if !cause.worth_retrying() && *cause != Cause::AnswerNotUnderstood => format!(
+            "Pitboard couldn’t confirm with {} whose login is parked for {1} ({detail}), so \
+             nothing has changed. Choose Sign In Again… on {1}’s row.",
+            tool.service(),
             bare(label)
         ),
         Error::ParkedCredentialCorrupt { label, detail } if inside_label(label) => format!(
@@ -2044,6 +2071,48 @@ mod tests {
             ),
             None,
             "Claude Code's says the core's sentence"
+        );
+    }
+
+    #[test]
+    fn a_parked_login_anthropic_will_not_name_is_signed_in_to_again_on_its_row() {
+        let untold = |cause| Error::IdentityUnverifiable {
+            tool: ProviderId::Claude,
+            login: Unidentified::Parked {
+                label: "dtg".into(),
+            },
+            cause,
+            detail: "Anthropic answered 400".into(),
+        };
+        assert_eq!(
+            in_app_refusal(Os::MacOs, &untold(Cause::Refused)).as_deref(),
+            Some(
+                "Pitboard couldn’t confirm with Anthropic whose login is parked for dtg \
+                 (Anthropic answered 400), so nothing has changed. Choose Sign In Again… on \
+                 dtg’s row."
+            )
+        );
+        assert_eq!(
+            in_app_refusal(Os::MacOs, &untold(Cause::Unreachable)),
+            None,
+            "an outage is the core's sentence: try again"
+        );
+    }
+
+    #[test]
+    fn a_login_refused_for_good_says_replacing_it_loses_nothing() {
+        let refused = Error::LiveLoginRefused {
+            tool: ProviderId::Claude,
+            label: "work".into(),
+            detail: "its login has expired and cannot be renewed".into(),
+        };
+        assert_eq!(
+            in_app_refusal(Os::MacOs, &refused).as_deref(),
+            Some(
+                "Anthropic no longer accepts the login Claude Code is using (its login has \
+                 expired and cannot be renewed). Putting work’s login in its place loses \
+                 nothing."
+            )
         );
     }
 

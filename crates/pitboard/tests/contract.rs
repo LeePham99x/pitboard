@@ -167,9 +167,88 @@ fn use_switches() {
 #[test]
 fn a_failure_says_what_went_wrong_underneath() {
     let mut env = two_accounts("contract-cause");
-    env.profile_trouble(503);
+    env.identity_trouble(503);
     let (value, code) = json(&env, &["use", "beta"]);
     contract!("use_anthropic_unwell", value, code);
+}
+
+// The report of 16 October 2026: Anthropic answered 400 to the profile of a login it still
+// names. A switch between two enrolled accounts needs no profile.
+#[test]
+fn a_switch_between_enrolled_accounts_needs_no_profile() {
+    let mut env = two_accounts("contract-no-profile");
+    env.profile_answers(
+        400,
+        r#"{"type":"error","error":{"type":"invalid_request_error","message":"This organization cannot be read."}}"#,
+    );
+    let (value, code) = json(&env, &["use", "beta"]);
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(value["data"]["to"], "beta", "{value}");
+    assert_eq!(value["data"]["changed"], true, "{value}");
+}
+
+// A login Anthropic no longer accepts cannot be parked: the switch says so and asks, and
+// `--yes` puts the account's login in its place.
+#[test]
+fn a_switch_from_a_login_anthropic_no_longer_accepts_asks_and_replaces_it_with_yes() {
+    let mut env = two_accounts("contract-dead-login");
+    let mut dead = common::credential("refresh-dead");
+    dead["claudeAiOauth"]["expiresAt"] = serde_json::json!(1_000);
+    env.replace_live(&dead);
+    let _refused = env.answers_renewal(
+        "refresh-dead",
+        400,
+        serde_json::json!({"error": "invalid_grant", "error_description": "Refresh token not found or invalid"}),
+    );
+
+    let (value, code) = json(&env, &["use", "beta"]);
+    assert_eq!(code, 1, "{value}");
+    assert_eq!(value["error"]["code"], "live_login_refused", "{value}");
+    assert!(
+        value["error"]["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("pitboard use beta --yes")),
+        "{value}"
+    );
+
+    let (value, code) = json(&env, &["use", "beta", "--yes"]);
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(value["data"]["to"], "beta", "{value}");
+    assert!(value["data"]["from"].is_null(), "{value}");
+}
+
+// A request Anthropic no longer takes is a change on its side, which no sign-in mends.
+#[test]
+fn a_request_anthropic_no_longer_takes_says_to_update_pitboard() {
+    let mut env = two_accounts("contract-not-found");
+    env.identity_answers(
+        404,
+        r#"{"type":"error","error":{"type":"not_found_error","message":"Not Found"}}"#,
+    );
+    let (value, code) = json(&env, &["use", "beta"]);
+    assert_eq!(code, 1, "{value}");
+    assert_eq!(
+        value["error"]["cause"]["code"], "answer_not_understood",
+        "{value}"
+    );
+    assert!(
+        value["error"]["message"]
+            .as_str()
+            .is_some_and(|m| m.ends_with("Check for a Pitboard update.")),
+        "{value}"
+    );
+}
+
+// The reporter's dialog said only "Anthropic answered 400".
+#[test]
+fn a_refusal_says_why_and_is_not_worth_retrying() {
+    let mut env = two_accounts("contract-refused");
+    env.identity_answers(
+        400,
+        r#"{"type":"error","error":{"type":"invalid_request_error","message":"This organization cannot be read."}}"#,
+    );
+    let (value, code) = json(&env, &["use", "beta"]);
+    contract!("use_anthropic_refuses", value, code);
 }
 
 /// The keychain belongs to the whole machine, so what `repair` finds depends on what else

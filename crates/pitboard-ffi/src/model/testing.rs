@@ -482,6 +482,8 @@ pub(super) struct Machine {
     pub switched: Result<Switched, Refusal>,
     /// Every account switched to, as the model named it.
     pub switched_to: Vec<String>,
+    /// Each account a replacement was asked for, in order, answered as a switch is.
+    pub replaced_with: Vec<String>,
     /// What the core's look at whether to switch Claude Code by itself gives.
     pub look: Result<AutoLooked, Refusal>,
     /// The share each look was asked at, in order.
@@ -626,6 +628,7 @@ impl Machine {
             found: vec![claude_code()],
             switched: already_active("work", Vec::new()),
             switched_to: Vec::new(),
+            replaced_with: Vec::new(),
             look: Ok(AutoLooked::Stands(watching("work"))),
             looked_at: Vec::new(),
             auto: Ok(watching("work")),
@@ -840,6 +843,14 @@ impl Machine {
                 Answer::Switched {
                     qualified,
                     reopen,
+                    done: self.switched.clone().map_err(|refused| refused.error()),
+                }
+            }
+            Job::Replace { qualified } => {
+                self.replaced_with.push(qualified.clone());
+                Answer::Switched {
+                    qualified,
+                    reopen: None,
                     done: self.switched.clone().map_err(|refused| refused.error()),
                 }
             }

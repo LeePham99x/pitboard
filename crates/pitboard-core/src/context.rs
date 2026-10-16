@@ -561,6 +561,14 @@ impl Context {
         self
     }
 
+    /// Where a sign-in Pitboard ran keeps Claude Code's config, as `CLAUDE_CONFIG_DIR` named
+    /// it for that sign-in, for reading what the sign-in recorded.
+    pub(crate) fn signed_in_at(&self, dir: &std::path::Path) -> Context {
+        let mut ctx = self.clone();
+        ctx.claude_config_dir = Some(dir.to_string_lossy().into_owned());
+        ctx
+    }
+
     /// Empty is set, and pins the default slot, as Claude Code reads
     /// `CLAUDE_SECURESTORAGE_CONFIG_DIR`.
     #[cfg(test)]

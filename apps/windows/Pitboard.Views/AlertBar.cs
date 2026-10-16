@@ -44,7 +44,7 @@ public sealed partial class AlertBar : UserControl
         _shown = alert;
         _bar.IsOpen = alert is not null;
         _buttons.Children.Clear();
-        _buttons.Visibility = Look.Shown(alert is WindowAlert.QuitAsked);
+        _buttons.Visibility = Look.Shown(alert is WindowAlert.QuitAsked or WindowAlert.ReplaceAsked);
         switch (alert)
         {
             case WindowAlert.Failed failed:
@@ -54,6 +54,14 @@ public sealed partial class AlertBar : UserControl
                 _bar.IsClosable = true;
                 break;
             case WindowAlert.QuitAsked asked:
+                _bar.Severity = InfoBarSeverity.Warning;
+                _bar.Title = asked.Question.Title;
+                _bar.Message = asked.Question.Message;
+                _bar.IsClosable = false;
+                _buttons.Children.Add(Answer(asked.Question.Confirm, asked, confirmed: true));
+                _buttons.Children.Add(Answer("Cancel", asked, confirmed: false));
+                break;
+            case WindowAlert.ReplaceAsked asked:
                 _bar.Severity = InfoBarSeverity.Warning;
                 _bar.Title = asked.Question.Title;
                 _bar.Message = asked.Question.Message;

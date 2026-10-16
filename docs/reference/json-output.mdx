@@ -173,7 +173,7 @@ The `environment` of `doctor`. It is `{}` where a variable naming a folder is em
 | `slot` | object | The Claude Code login this output is about. `service` names its keychain item on macOS, and no item on Linux. `default` is `true` for `Claude Code-credentials`, the item used when no [environment variable](/reference/files#environment-variables) picks another. |
 | `signed_in` | object or null | The Claude Code account in use: `account_uuid`, `email` and `organization_uuid`. With `--offline`, the account Anthropic last named for the login stored. |
 | `signed_in_error` | string or null | Why `signed_in` is `null`, such as `nothing is signed in` or `not asked`. |
-| `accounts` | array | One object per enrolled account, Claude Code's first, and the account in use first within each tool. A login in use that no account matches gets one too, and so does a login Pitboard could not read or use. |
+| `accounts` | array | One object per enrolled account, Claude Code's first, and the account in use first within each tool. A login in use that no account matches gets one too, and so does a login Pitboard could not read, use or identify. |
 | `awaiting` | array | One object per sign-in inside Claude left halfway with an account parked for it, or empty. |
 
 For Codex and Claude Desktop, the account in use is the object in `accounts` with that `provider` and `signed_in` set to `true`.
@@ -196,6 +196,7 @@ Each object in `accounts`:
 | `qualified` | string or null | The label with its tool, such as `claude/work`. `null` for a login nobody enrolled. |
 | `plan` | string or null | The plan the account's login last said it is on, such as `Max 20x`, `Team 5x` or `Plus`. Pitboard records it when it enrols the account and each time it reads the account's login. `null` where no login Pitboard read said one. |
 | `read_at` | integer or null | On the Claude Desktop account in use, when Pitboard last read it in use. `null` on every other account. |
+| `reason` | string or null | On a login Pitboard could not read, use or identify, why, as its store or service said. `null` on every other account. |
 
 Which expiries `parked` gives depends on the tool. A time is `null` where it is unknown.
 

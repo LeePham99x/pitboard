@@ -8,8 +8,8 @@
 use crate::context::Context;
 use crate::error::{Error, Result};
 use crate::in_use::{Identified, InUse, Replaced};
-use crate::provider::Owner;
 use crate::provider::ProviderId;
+use crate::provider::{Identity, Owner};
 use crate::service::Permit;
 use crate::{atomic, home};
 use serde::{Deserialize, Serialize};
@@ -312,12 +312,17 @@ impl Account {
 
     /// Whether `owner`'s login is this account's.
     pub(crate) fn owned_by(&self, owner: &Owner) -> bool {
-        self.account_uuid == owner.account_uuid
+        self.holds(&owner.identity())
+    }
+
+    /// Whether `identity` is this account's login.
+    pub(crate) fn holds(&self, identity: &Identity) -> bool {
+        self.account_uuid == identity.account_uuid
             && match &self.detail {
                 // One person in two organisations holds two logins, each on its own plan.
                 Detail::Claude {
                     organization_uuid, ..
-                } => *organization_uuid == owner.organization_uuid,
+                } => *organization_uuid == identity.organization_uuid,
                 // Codex's account id already joins the workspace with the person in it.
                 Detail::Codex { .. } => true,
                 // One claude.ai session covers the person's organisations.
@@ -581,11 +586,34 @@ impl State {
             .find(|a| a.provider() == provider && a.owned_by(owner))
     }
 
+    /// Whose `identity` is, where Pitboard knows the account: enrolled, or the one its record
+    /// last named in use.
+    pub(crate) fn named(&self, provider: ProviderId, identity: &Identity) -> Option<Owner> {
+        let enrolled = self
+            .accounts
+            .iter()
+            .find(|a| a.provider() == provider && a.holds(identity))
+            .map(|a| Owner::named(identity.clone(), a.email.clone()));
+        enrolled.or_else(|| {
+            self.in_use(provider)?
+                .owner
+                .clone()
+                .filter(|owner| owner.identity() == *identity)
+        })
+    }
+
     /// What `owner`'s login is filed under: its account's id, or the one it would be
     /// enrolled with.
     pub(crate) fn id_of(&self, provider: ProviderId, owner: &Owner) -> String {
-        self.account_of(provider, owner)
-            .map_or_else(|| new_id(provider, owner), |a| a.id.clone())
+        self.id_for(provider, &owner.identity())
+    }
+
+    /// [`State::id_of`], for a login known by its identity alone.
+    pub(crate) fn id_for(&self, provider: ProviderId, identity: &Identity) -> String {
+        self.accounts
+            .iter()
+            .find(|a| a.provider() == provider && a.holds(identity))
+            .map_or_else(|| identity_id(provider, identity), |a| a.id.clone())
     }
 
     /// This tool's account filed under `id`.
@@ -858,10 +886,14 @@ impl State {
 /// account uuid is the person and each of their organisations is a login of its own. `_`
 /// is in neither uuid, and is safe in a park's name and a readings file.
 pub(crate) fn new_id(provider: ProviderId, owner: &Owner) -> String {
+    identity_id(provider, &owner.identity())
+}
+
+pub(crate) fn identity_id(provider: ProviderId, identity: &Identity) -> String {
     match provider {
-        ProviderId::Claude => format!("{}_{}", owner.account_uuid, owner.organization_uuid),
-        ProviderId::Codex => owner.account_uuid.clone(),
-        ProviderId::Desktop => format!("desktop_{}", owner.account_uuid),
+        ProviderId::Claude => format!("{}_{}", identity.account_uuid, identity.organization_uuid),
+        ProviderId::Codex => identity.account_uuid.clone(),
+        ProviderId::Desktop => format!("desktop_{}", identity.account_uuid),
     }
 }
 

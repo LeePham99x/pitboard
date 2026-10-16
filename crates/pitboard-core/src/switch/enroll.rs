@@ -1,5 +1,5 @@
 use super::folder::awaited::{Wait, WaitStep};
-use super::{Error, Readied, Result, Settled, identify, identify_document, purge};
+use super::{Error, Readied, Result, Settled, identify, purge};
 use crate::context::Context;
 use crate::in_use::{self, InUse};
 use crate::provider::Owner;
@@ -52,6 +52,8 @@ impl std::fmt::Debug for SignIn {
 struct Stored<'a> {
     permit: Permit,
     document: &'a Value,
+    // where the sign-in ran, whose own record names the login it made
+    dir: &'a std::path::Path,
 }
 
 enum How {
@@ -93,9 +95,10 @@ impl SignIn {
     #[cfg(test)]
     fn stored(&self) -> Stored<'_> {
         match &self.how {
-            How::Privately { document, .. } => Stored {
+            How::Privately { document, dir, .. } => Stored {
                 permit: self.permit,
                 document,
+                dir,
             },
             How::InItsApp { .. } => panic!("a sign-in inside an app stores no document"),
         }
@@ -656,10 +659,15 @@ pub(crate) fn enroll(
             key.provider.name()
         ))),
         Some(login) => match &login.how {
-            How::Privately { tool, document, .. } => {
+            How::Privately {
+                tool,
+                document,
+                dir,
+            } => {
                 let stored = Stored {
                     permit: login.permit,
                     document,
+                    dir,
                 };
                 from_sign_in(&ctx, *tool, key, &mut state, &stored)
             }
@@ -778,7 +786,13 @@ fn from_sign_in(
     state: &mut State,
     login: &Stored<'_>,
 ) -> Result<(Enrolled, Vec<Warning>)> {
-    let owner = identify_document(ctx, tool, login.document)?;
+    let owner = identify::asked(&ctx.signed_in_at(login.dir), state, tool, login.document)
+        .map_err(|e| {
+            let login = crate::error::Unidentified::SignIn {
+                label: state.typed(key),
+            };
+            super::unidentified_as(tool.id(), login, e)
+        })?;
     claim(state, key, &owner)?;
     let (now, lost) = signed_in_now(ctx, login.permit, state, tool, &owner);
     let said = |(enrolled, warnings): (Enrolled, Vec<Warning>)| {
@@ -791,12 +805,15 @@ fn from_sign_in(
         SignedInNow::NotTheirs => park_signed_in(ctx, tool, key, state, login, &owner).map(said),
         SignedInNow::Untold(why) => {
             // Somebody signing in to the account Pitboard last saw in use most likely wants
-            // its broken login replaced, and parking is not that, so it is said.
-            let last_in_use = state
-                .account_in_use(key.provider)
-                .is_some_and(|account| account.is(key));
+            // its broken login replaced, and somebody adding an account while nobody can name
+            // the login in use, as on a first run, may expect it in use. Parking is neither,
+            // so it is said. Signing in again to another parked account renews its park.
+            let renews_a_park = state.get(key).is_some()
+                && !state
+                    .account_in_use(key.provider)
+                    .is_some_and(|account| account.is(key));
             let (enrolled, mut warnings) = park_signed_in(ctx, tool, key, state, login, &owner)?;
-            if last_in_use {
+            if !renews_a_park {
                 warnings.push(Warning::SignInParkedNotInUse {
                     tool: key.provider,
                     label: state.typed(key),
@@ -1355,6 +1372,50 @@ mod tests {
         }
     }
 
+    /// A sign-in whose profile Anthropic refuses is named as the sign-in recorded it, in its
+    /// own directory, for the same account and organisation Anthropic named.
+    #[test]
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "a test writes the sign-in's config as Claude Code writes it"
+    )]
+    fn a_sign_in_whose_profile_is_refused_is_named_as_the_sign_in_recorded_it() {
+        let m = machine("named-by-sign-in");
+        m.api
+            .owned_by("access-third-refresh", harness::owner("third"));
+        m.api.profile_trouble(
+            "access-third-refresh",
+            Trouble::Answered(400, r#"{"error":{"type":"invalid_request_error"}}"#),
+        );
+        let recorded = |who: &str| {
+            let owner = harness::owner(who);
+            json!({"oauthAccount": {
+                "accountUuid": owner.account_uuid,
+                "emailAddress": owner.email,
+                "organizationUuid": owner.organization_uuid,
+            }})
+            .to_string()
+        };
+
+        let elsewhere = signed_in(&m, "third", "third-refresh");
+        std::fs::write(
+            elsewhere.stored().dir.join(".claude.json"),
+            recorded("here"),
+        )
+        .expect("the sign-in's config");
+        let refused = enrolled_as(&m, "third", elsewhere).expect_err("nobody to name it by");
+        assert_eq!(refused.code(), "identity_unverifiable");
+
+        let signed = signed_in(&m, "third", "third-refresh");
+        std::fs::write(signed.stored().dir.join(".claude.json"), recorded("third"))
+            .expect("the sign-in's config");
+        let (enrolled, _) = enrolled_as(&m, "third", signed).expect("enrolled");
+        assert!(
+            matches!(&enrolled, Enrolled::SignedIn { email } if email == "third@example.com"),
+            "{enrolled:?}"
+        );
+    }
+
     #[test]
     fn enrolling_records_the_plan_the_login_says() {
         for ((tool, make), plan) in MACHINES.into_iter().zip(["Max 20x", "Pro"]) {
@@ -1439,6 +1500,34 @@ mod tests {
         }
     }
 
+    /// The report of 16 October 2026: Claude Code was signed in before Pitboard, to a login
+    /// Anthropic would not name, and each account added was parked without a word.
+    #[test]
+    fn an_account_added_while_the_login_in_use_cannot_be_named_says_it_was_parked() {
+        let m = machine("first-run-untold");
+        state::save(&m.ctx, Permit::for_a_test(), &State::default()).expect("a first run");
+        m.api.token_trouble(
+            "access-here-refresh",
+            Trouble::Answered(400, r#"{"error":{"type":"invalid_request_error"}}"#),
+        );
+        m.api
+            .owned_by("access-third-refresh", harness::owner("third"));
+
+        let (enrolled, warnings) =
+            enrolled_as(&m, "third", signed_in(&m, "third", "third-refresh")).expect("parked");
+
+        assert!(
+            matches!(enrolled, Enrolled::SignedIn { .. }),
+            "{enrolled:?}"
+        );
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.code() == "sign_in_parked_not_in_use"),
+            "{warnings:?}"
+        );
+    }
+
     /// Claude Code's config names `here` and Pitboard finds no login where it reads: the
     /// login is somewhere Pitboard does not look, so whose it is cannot be told, and `here`
     /// is still the account Pitboard last saw in use. A sign-in to `here` is parked and said
@@ -1474,8 +1563,8 @@ mod tests {
         assert!(harness::audit_lines(&m, "in-use").is_empty());
     }
 
-    /// Only the account Pitboard last saw in use is warned about. Signing in again to a
-    /// parked account renews its park whoever is signed in, as it always did.
+    /// Signing in again to a parked account renews its park whoever is signed in, as it
+    /// always did, and is not warned about.
     #[test]
     fn a_sign_in_to_a_parked_account_is_not_warned_about_the_login_in_use() {
         let m = machine("untold-parked");
@@ -1531,8 +1620,10 @@ mod tests {
             let key = m.key("here");
             let login = signed_in(&m, "here", "here-refresh-2");
             let login = login.stored();
-            let owner = identify_document(&m.ctx, provider::document(m.which), login.document)
-                .expect("whose");
+            let state = state::load(&m.ctx).expect("state");
+            let owner =
+                identify::asked(&m.ctx, &state, provider::document(m.which), login.document)
+                    .expect("whose");
             let mut state = state::load(&m.ctx).expect("state");
             let (SignedInNow::Theirs(live, first), _) = signed_in_now(
                 &m.ctx,

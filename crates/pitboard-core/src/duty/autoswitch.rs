@@ -852,6 +852,7 @@ mod tests {
             stale: None,
             plan: None,
             read_at: None,
+            reason: None,
         }
     }
 

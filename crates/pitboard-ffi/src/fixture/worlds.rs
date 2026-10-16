@@ -561,6 +561,7 @@ impl Machine {
                         refresh_token_expires_in: Some(30 * DAY),
                         scopes: None,
                         at: None,
+                        owner: None,
                     },
                 );
                 let document = json!({

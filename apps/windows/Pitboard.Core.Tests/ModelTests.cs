@@ -91,7 +91,7 @@ public sealed class ModelTests
             Revision: revision, Now: At, Reading: false, UpdatedAt: At,
             Status: new Status(At, [work], [], []), Warnings: [], ReadFailure: null, Stuck: false,
             Installed: [new Tool(Code: "claude", Name: "Claude Code", Program: "claude", Service: "Anthropic")],
-            SwitchUnderWay: null, QuitQuestion: null,
+            SwitchUnderWay: null, QuitQuestion: null, ReplaceQuestion: null,
             LastSwitches: [], Abandoned: null, Failure: null,
             WindowRequest: new WindowRequest(Serial: 0, Pane: null),
             SigningIn: null, Sheet: null, SheetFailure: null,

@@ -583,31 +583,67 @@ impl Env {
 
     /// Make the fake Anthropic answer as it does for an expired session.
     pub(crate) fn expire(&mut self, access_token: &str) {
-        let mock = self
-            .server
-            .mock("GET", "/api/oauth/profile")
-            .match_header("authorization", format!("Bearer {access_token}").as_str())
-            .with_status(401)
-            .with_body(r#"{"type":"error","error":{"type":"authentication_error"}}"#)
-            .create();
-        self.mocks.push(mock);
+        for (method, path) in WHOSE {
+            let mock = self
+                .server
+                .mock(method, path)
+                .match_header("authorization", format!("Bearer {access_token}").as_str())
+                .with_status(401)
+                .with_body(r#"{"type":"error","error":{"type":"authentication_error"}}"#)
+                .create();
+            self.mocks.push(mock);
+        }
     }
 
     /// Anthropic answers, badly. The switch that cannot identify the signed-in account
     /// must say so in a way a program can act on, rather than as one code and a sentence.
-    pub(crate) fn profile_trouble(&mut self, status: usize) {
+    pub(crate) fn identity_trouble(&mut self, status: usize) {
+        self.identity_answers(status, r#"{"type":"error","error":{"type":"api_error"}}"#);
+    }
+
+    /// Anthropic answers every question of whose a token is with `status` and `body`, as
+    /// request `req_test`.
+    pub(crate) fn identity_answers(&mut self, status: usize, body: &str) {
+        for (method, path) in WHOSE {
+            let mock = self
+                .server
+                .mock(method, path)
+                .with_status(status)
+                .with_header("request-id", "req_test")
+                .with_body(body)
+                .create();
+            self.mocks.push(mock);
+        }
+    }
+
+    /// Anthropic answers every profile request with `status` and `body`, and nothing else.
+    pub(crate) fn profile_answers(&mut self, status: usize, body: &str) {
         let mock = self
             .server
             .mock("GET", "/api/oauth/profile")
             .with_status(status)
-            .with_body(r#"{"type":"error","error":{"type":"api_error"}}"#)
+            .with_body(body)
             .create();
         self.mocks.push(mock);
     }
 
     /// Teach the fake Anthropic who a token belongs to.
     pub(crate) fn owns(&mut self, access_token: &str, uuid: &str, email: &str, org: &str) {
-        let mock = self
+        let validated = self
+            .server
+            .mock("POST", "/api/oauth/validate")
+            .match_header("authorization", format!("Bearer {access_token}").as_str())
+            .with_status(200)
+            .with_body(
+                serde_json::json!({
+                    "valid": true, "account_uuid": uuid, "organization_uuid": org,
+                    "scopes": ["user:inference", "user:profile"],
+                })
+                .to_string(),
+            )
+            .create();
+        self.mocks.push(validated);
+        let profile = self
             .server
             .mock("GET", "/api/oauth/profile")
             .match_header("authorization", format!("Bearer {access_token}").as_str())
@@ -620,7 +656,7 @@ impl Env {
                 .to_string(),
             )
             .create();
-        self.mocks.push(mock);
+        self.mocks.push(profile);
     }
 
     pub(crate) fn sign_in(&mut self, uuid: &str, email: &str, org: &str, refresh: &str) {
@@ -1380,3 +1416,9 @@ pub(crate) fn credential(refresh: &str) -> serde_json::Value {
         "slackTag": {"machineBound": true}
     })
 }
+
+// The two requests that ask Anthropic whose a token is.
+const WHOSE: [(&str, &str); 2] = [
+    ("POST", "/api/oauth/validate"),
+    ("GET", "/api/oauth/profile"),
+];

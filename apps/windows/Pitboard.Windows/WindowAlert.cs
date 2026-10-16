@@ -11,6 +11,7 @@ public abstract record WindowAlert
     public static WindowAlert? Of(AppModel model) =>
         model.FailureAlert is { } failure ? new Failed(failure)
         : (model.QuitConfirmation, model.QuitQuestion) is ({ } question, { } asked) ? new QuitAsked(question, asked.Qualified)
+        : model.ReplaceQuestion is { } replace ? new ReplaceAsked(replace.Question, replace.Qualified)
         : null;
 
     // One ContentDialog shows per thread at a time, and a sheet is one, so its alert is said in the sheet.
@@ -27,5 +28,11 @@ public abstract record WindowAlert
     {
         public override Intent Answered(bool confirmed) =>
             confirmed ? new Intent.QuitAndSwitch(Qualified) : new Intent.KeepAppOpen();
+    }
+
+    public sealed record ReplaceAsked(Question Question, string Qualified) : WindowAlert
+    {
+        public override Intent Answered(bool confirmed) =>
+            confirmed ? new Intent.ReplaceAndSwitch(Qualified) : new Intent.KeepLogin();
     }
 }

@@ -11,7 +11,7 @@ use super::{
 use crate::Tool;
 use crate::account_windows::AlertText;
 use crate::model::state::{After, InAppAdd, Leftover, Recording, in_its_app, split, trimmed};
-use crate::model::{Failure, Intent, QuitQuestion, Sheet};
+use crate::model::{Failure, Intent, QuitQuestion, ReplaceQuestion, Sheet};
 use pitboard_core::label;
 use pitboard_core::provider::ProviderId;
 use pitboard_core::switch::{Foreseen, WaitStep};
@@ -484,6 +484,24 @@ fn in_app_signing_in_text(seen: &Seen, signing: &crate::model::state::SigningIn)
             enabled: seen.state.switch_under_way().is_none(),
         }),
         announce,
+    }
+}
+
+/// What a switch to `qualified` asks before it puts that account's login in place of a login
+/// its tool has in use, which its service refuses for good, for `why`.
+pub(crate) fn replace_question(seen: &Seen, qualified: &str, why: &str) -> ReplaceQuestion {
+    let tool = seen.tool_name(split(qualified).0);
+    ReplaceQuestion {
+        qualified: qualified.to_owned(),
+        question: Question {
+            title: words::titled(
+                seen.os,
+                &format!("Replace {tool}’s Login?"),
+                &format!("Replace {tool}’s login?"),
+            ),
+            message: why.to_owned(),
+            confirm: "Replace".into(),
+        },
     }
 }
 
@@ -1049,5 +1067,17 @@ mod tests {
             alert.message,
             "Nothing is parked.\n\nANTHROPIC_API_KEY is set"
         );
+    }
+
+    #[test]
+    fn the_replace_question_is_titled_as_each_system_titles_one() {
+        let state = read(status(Vec::new(), Vec::new()), vec![claude_code()]);
+        let titled = |os| {
+            replace_question(&Seen::new(&state, 0, &Utc, os), "work", "why")
+                .question
+                .title
+        };
+        assert_eq!(titled(Os::MacOs), "Replace Claude Code’s Login?");
+        assert_eq!(titled(Os::Windows), "Replace Claude Code’s login?");
     }
 }

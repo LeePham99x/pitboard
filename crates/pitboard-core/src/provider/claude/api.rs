@@ -5,9 +5,9 @@
 //! signed in is Claude Code's to renew: two holders renewing one refresh chain would break
 //! it for both.
 
-use crate::api::{agent, retry_after, server_time, test_base};
+use crate::api::{Refusal, agent, retry_after, server_time, test_base};
 use crate::context::Context;
-use crate::provider::Owner;
+use crate::provider::{Owner, ProviderError, ProviderId};
 use crate::service::Permit;
 use crate::usage::{self, Snapshot};
 use serde_json::Value;
@@ -26,24 +26,7 @@ fn auth_base(ctx: &Context) -> String {
     test_base(ctx).unwrap_or_else(|| AUTH_BASE.to_string())
 }
 
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum ApiError {
-    /// The access token has expired or been revoked.
-    #[error("the session has expired")]
-    Unauthorized,
-    /// `retry_after` is what Anthropic said to wait, in seconds, where it said anything.
-    #[error("Anthropic is rate limiting this request")]
-    RateLimited { retry_after: Option<i64> },
-    #[error("could not reach Anthropic: {0}")]
-    Network(String),
-    #[error("Anthropic answered {status}")]
-    Unexpected { status: u16 },
-    #[error("Anthropic's answer was not understood: {0}")]
-    Malformed(String),
-    /// The refresh token was refused for good: revoked, or already used elsewhere.
-    #[error("Anthropic no longer accepts this login")]
-    InvalidGrant,
-}
+const SERVICE: &str = ProviderId::Claude.service();
 
 /// Fresh tokens for a parked login, as the token endpoint returns them.
 #[cfg_attr(not(feature = "test-support"), allow(unreachable_pub))]
@@ -66,6 +49,18 @@ pub struct Renewed {
     ///
     /// `None` where the server sent no `Date`, and then the local clock is all there is.
     pub at: Option<i64>,
+    /// Whose login it is, where the answer names its account, email and organisation (the
+    /// register's `token_answer_names_the_login`).
+    pub owner: Option<Owner>,
+}
+
+/// What `POST /api/oauth/validate` says of an access token (the register's
+/// `validate_names_the_login`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Validated {
+    pub(crate) account_uuid: String,
+    /// `None` where the answer names no organisation.
+    pub(crate) organization_uuid: Option<String>,
 }
 
 /// What Pitboard asks Anthropic, as a seam.
@@ -75,8 +70,9 @@ pub struct Renewed {
 /// behaviour: a request that times out, a 429, a refresh token Anthropic has stopped
 /// accepting. Those are the answers the engine has to be right about.
 pub(crate) trait Api: Send + Sync + std::fmt::Debug {
-    fn owner(&self, ctx: &Context, access_token: &str) -> Result<Owner, ApiError>;
-    fn usage(&self, ctx: &Context, access_token: &str) -> Result<Snapshot, ApiError>;
+    fn validate(&self, ctx: &Context, access_token: &str) -> Result<Validated, ProviderError>;
+    fn owner(&self, ctx: &Context, access_token: &str) -> Result<Owner, ProviderError>;
+    fn usage(&self, ctx: &Context, access_token: &str) -> Result<Snapshot, ProviderError>;
     /// The token exchange, which spends `refresh_token` as it answers, so it takes the
     /// [`Permit`] only the one gate every change passes makes.
     fn renew(
@@ -86,7 +82,7 @@ pub(crate) trait Api: Send + Sync + std::fmt::Debug {
         refresh_token: &str,
         scopes: &[String],
         client_id: Option<&str>,
-    ) -> Result<Renewed, ApiError>;
+    ) -> Result<Renewed, ProviderError>;
 }
 
 /// Anthropic, over the network. What every real context uses.
@@ -94,11 +90,15 @@ pub(crate) trait Api: Send + Sync + std::fmt::Debug {
 pub(crate) struct Anthropic;
 
 impl Api for Anthropic {
-    fn owner(&self, ctx: &Context, access_token: &str) -> Result<Owner, ApiError> {
+    fn validate(&self, ctx: &Context, access_token: &str) -> Result<Validated, ProviderError> {
+        ask_validate(ctx, access_token)
+    }
+
+    fn owner(&self, ctx: &Context, access_token: &str) -> Result<Owner, ProviderError> {
         ask_owner(ctx, access_token)
     }
 
-    fn usage(&self, ctx: &Context, access_token: &str) -> Result<Snapshot, ApiError> {
+    fn usage(&self, ctx: &Context, access_token: &str) -> Result<Snapshot, ProviderError> {
         ask_usage(ctx, access_token)
     }
 
@@ -109,17 +109,21 @@ impl Api for Anthropic {
         refresh_token: &str,
         scopes: &[String],
         client_id: Option<&str>,
-    ) -> Result<Renewed, ApiError> {
+    ) -> Result<Renewed, ProviderError> {
         ask_renew(ctx, permit, refresh_token, scopes, client_id)
     }
 }
 
 /// Ask Anthropic through this context.
-pub(crate) fn owner(ctx: &Context, access_token: &str) -> Result<Owner, ApiError> {
+pub(crate) fn validate(ctx: &Context, access_token: &str) -> Result<Validated, ProviderError> {
+    ctx.api().validate(ctx, access_token)
+}
+
+pub(crate) fn owner(ctx: &Context, access_token: &str) -> Result<Owner, ProviderError> {
     ctx.api().owner(ctx, access_token)
 }
 
-pub(crate) fn usage(ctx: &Context, access_token: &str) -> Result<Snapshot, ApiError> {
+pub(crate) fn usage(ctx: &Context, access_token: &str) -> Result<Snapshot, ProviderError> {
     ctx.api().usage(ctx, access_token)
 }
 
@@ -129,31 +133,114 @@ pub(crate) fn renew(
     refresh_token: &str,
     scopes: &[String],
     client_id: Option<&str>,
-) -> Result<Renewed, ApiError> {
+) -> Result<Renewed, ProviderError> {
     ctx.api()
         .renew(ctx, permit, refresh_token, scopes, client_id)
 }
 
-fn get(ctx: &Context, path: &str, access_token: &str) -> Result<Value, ApiError> {
-    let mut response = agent(ctx)
+fn get(ctx: &Context, path: &str, access_token: &str) -> Result<Value, ProviderError> {
+    let response = agent(ctx)
         .get(format!("{}{path}", base(ctx)))
         .header("Authorization", format!("Bearer {access_token}"))
         .header("anthropic-beta", "oauth-2025-04-20")
         .call()
-        .map_err(|e| ApiError::Network(e.to_string()))?;
+        .map_err(network)?;
+    read(response)
+}
+
+// As Claude Code 2.1.301 sends it: no body, and no beta header.
+fn post(ctx: &Context, path: &str, access_token: &str) -> Result<Value, ProviderError> {
+    let response = agent(ctx)
+        .post(format!("{}{path}", base(ctx)))
+        .header("Authorization", format!("Bearer {access_token}"))
+        .header("Content-Type", "application/json")
+        .send_empty()
+        .map_err(network)?;
+    read(response)
+}
+
+fn read(mut response: ureq::http::Response<ureq::Body>) -> Result<Value, ProviderError> {
     match response.status().as_u16() {
         200 => {
-            let body = response
-                .body_mut()
-                .read_to_string()
-                .map_err(|e| ApiError::Network(e.to_string()))?;
-            serde_json::from_str(&body).map_err(|e| ApiError::Malformed(e.to_string()))
+            let body = response.body_mut().read_to_string().map_err(network)?;
+            serde_json::from_str(&body).map_err(malformed)
         }
-        401 | 403 => Err(ApiError::Unauthorized),
-        429 => Err(ApiError::RateLimited {
+        429 => Err(ProviderError::RateLimited {
+            service: SERVICE,
             retry_after: retry_after(response.headers()),
         }),
-        status => Err(ApiError::Unexpected { status }),
+        401 | 403 => {
+            let refusal = Refusal::of(&mut response);
+            if refuses_the_account(&refusal) {
+                Err(ProviderError::Refused {
+                    service: SERVICE,
+                    refusal: Box::new(refusal),
+                })
+            } else {
+                Err(ProviderError::Unauthorized)
+            }
+        }
+        _ => Err(ProviderError::answered(SERVICE, Refusal::of(&mut response))),
+    }
+}
+
+// A 401 or 403 that no renewal mends, as Claude Code 2.1.301 tells one apart (the register's
+// `account_refusals`): the account must be verified, or its organisation allows no OAuth.
+fn refuses_the_account(refusal: &Refusal) -> bool {
+    let verification = refusal.status == 403
+        && refusal.kind.as_deref() == Some("permission_error")
+        && refusal.code.as_deref() == Some("verification_required");
+    let organisation = refusal.message.as_deref().is_some_and(|message| {
+        message.contains("OAuth authentication is currently not allowed for this organization")
+    });
+    verification || organisation
+}
+
+// As Claude Code 2.1.301 reads the token endpoint (the register's `token_refusals`): an
+// account on hold answers `invalid_grant` or `access_denied` with `account_on_hold`, and keeps
+// its login; only `invalid_grant` otherwise is a refresh token spent for good.
+fn token_refused(refusal: Refusal) -> ProviderError {
+    let error = refusal.oauth_error();
+    if matches!(refusal.status, 400 | 401 | 403)
+        && matches!(error, Some("invalid_grant" | "access_denied"))
+        && refusal.message.as_deref() == Some("account_on_hold")
+    {
+        return ProviderError::OnHold {
+            service: SERVICE,
+            link: refusal.link.as_deref().and_then(anthropic_page),
+        };
+    }
+    if matches!(refusal.status, 400 | 401) && error == Some("invalid_grant") {
+        return ProviderError::InvalidGrant { service: SERVICE };
+    }
+    ProviderError::answered(SERVICE, refusal)
+}
+
+// Only a page of Anthropic's own, as Claude Code 2.1.301 opens one.
+fn anthropic_page(link: &str) -> Option<String> {
+    let uri = link.parse::<ureq::http::Uri>().ok()?;
+    let authority = uri.authority()?;
+    let plain = !authority.as_str().contains('@') && authority.port().is_none();
+    (uri.scheme_str() == Some("https")
+        && plain
+        && matches!(
+            authority.host(),
+            "portal.anthropic.com" | "claude.ai" | "platform.claude.com"
+        ))
+    .then(|| link.to_owned())
+}
+
+fn network(error: impl std::fmt::Display) -> ProviderError {
+    ProviderError::Network {
+        service: SERVICE,
+        detail: error.to_string(),
+    }
+}
+
+fn malformed(error: impl std::fmt::Display) -> ProviderError {
+    ProviderError::Malformed {
+        service: SERVICE,
+        detail: error.to_string(),
     }
 }
 
@@ -168,7 +255,7 @@ fn ask_renew(
     refresh_token: &str,
     scopes: &[String],
     client_id: Option<&str>,
-) -> Result<Renewed, ApiError> {
+) -> Result<Renewed, ProviderError> {
     let body = serde_json::json!({
         "grant_type": "refresh_token",
         "refresh_token": refresh_token,
@@ -179,61 +266,99 @@ fn ask_renew(
         .post(format!("{}/v1/oauth/token", auth_base(ctx)))
         .header("Content-Type", "application/json")
         .send(body.to_string())
-        .map_err(|e| ApiError::Network(e.to_string()))?;
+        .map_err(network)?;
     let status = response.status().as_u16();
     let at = server_time(response.headers());
     let rate_limit_wait = retry_after(response.headers());
-    let text = response
-        .body_mut()
-        .read_to_string()
-        .map_err(|e| ApiError::Network(e.to_string()))?;
+    let text = response.body_mut().read_to_string().map_err(network)?;
     match status {
         200 => {
-            let body: Value =
-                serde_json::from_str(&text).map_err(|e| ApiError::Malformed(e.to_string()))?;
+            let body: Value = serde_json::from_str(&text).map_err(malformed)?;
             parse_renewed(&body, at)
         }
-        429 => Err(ApiError::RateLimited {
+        429 => Err(ProviderError::RateLimited {
+            service: SERVICE,
             retry_after: rate_limit_wait,
         }),
-        400..=499 if text.contains("invalid_grant") => Err(ApiError::InvalidGrant),
-        status => Err(ApiError::Unexpected { status }),
+        status => Err(token_refused(Refusal::answered(
+            status,
+            response.headers(),
+            &text,
+        ))),
     }
 }
 
-fn parse_renewed(body: &Value, at: Option<i64>) -> Result<Renewed, ApiError> {
+fn parse_renewed(body: &Value, at: Option<i64>) -> Result<Renewed, ProviderError> {
     let text = |key: &str| body.get(key).and_then(Value::as_str).map(str::to_owned);
+    let named = |pointer: &str| {
+        body.pointer(pointer)
+            .and_then(Value::as_str)
+            .filter(|text| !text.is_empty())
+            .map(str::to_owned)
+    };
+    let owner = match (
+        named("/account/uuid"),
+        named("/account/email_address"),
+        named("/organization/uuid"),
+    ) {
+        (Some(account_uuid), Some(email), Some(organization_uuid)) => Some(Owner {
+            account_uuid,
+            email,
+            organization_uuid,
+        }),
+        _ => None,
+    };
     Ok(Renewed {
-        access_token: text("access_token")
-            .ok_or_else(|| ApiError::Malformed("no access_token".into()))?,
+        access_token: text("access_token").ok_or_else(|| malformed("no access_token"))?,
         refresh_token: text("refresh_token"),
         expires_in: body
             .get("expires_in")
             .and_then(Value::as_i64)
-            .ok_or_else(|| ApiError::Malformed("no expires_in".into()))?,
+            .ok_or_else(|| malformed("no expires_in"))?,
         refresh_token_expires_in: body.get("refresh_token_expires_in").and_then(Value::as_i64),
         scopes: text("scope").map(|s| s.split_whitespace().map(str::to_owned).collect()),
         at,
+        owner,
     })
 }
 
-fn ask_owner(ctx: &Context, access_token: &str) -> Result<Owner, ApiError> {
+fn ask_validate(ctx: &Context, access_token: &str) -> Result<Validated, ProviderError> {
+    parse_validated(&post(ctx, "/api/oauth/validate", access_token)?)
+}
+
+fn parse_validated(body: &Value) -> Result<Validated, ProviderError> {
+    if body.get("valid").and_then(Value::as_bool) != Some(true) {
+        return Err(ProviderError::Unauthorized);
+    }
+    let text = |key: &str| {
+        body.get(key)
+            .and_then(Value::as_str)
+            .filter(|text| !text.is_empty())
+            .map(str::to_owned)
+    };
+    Ok(Validated {
+        account_uuid: text("account_uuid").ok_or_else(|| malformed("no account_uuid"))?,
+        organization_uuid: text("organization_uuid"),
+    })
+}
+
+fn ask_owner(ctx: &Context, access_token: &str) -> Result<Owner, ProviderError> {
     let body = get(ctx, "/api/oauth/profile", access_token)?;
     parse_owner(&body)
 }
 
-fn ask_usage(ctx: &Context, access_token: &str) -> Result<Snapshot, ApiError> {
+fn ask_usage(ctx: &Context, access_token: &str) -> Result<Snapshot, ProviderError> {
     let body = get(ctx, "/api/oauth/usage", access_token)?;
     Ok(usage::from_usage_object(&body, ctx.now()))
 }
 
-fn parse_owner(body: &Value) -> Result<Owner, ApiError> {
-    let text = |path: &[&str]| -> Result<String, ApiError> {
+fn parse_owner(body: &Value) -> Result<Owner, ProviderError> {
+    let text = |path: &[&str]| -> Result<String, ProviderError> {
         path.iter()
             .try_fold(body, |v, key| v.get(key))
             .and_then(Value::as_str)
             .map(str::to_owned)
-            .ok_or_else(|| ApiError::Malformed(format!("no {}", path.join("."))))
+            .ok_or_else(|| malformed(format!("no {}", path.join("."))))
     };
     Ok(Owner {
         account_uuid: text(&["account", "uuid"])?,
@@ -263,6 +388,7 @@ mod tests {
                 refresh_token_expires_in: Some(2_592_000),
                 scopes: Some(vec!["user:inference".into(), "user:profile".into()]),
                 at: Some(1_790_000_000),
+                owner: None,
             }
         );
         let kept = parse_renewed(&json!({"access_token": "a2", "expires_in": 60}), None).unwrap();
@@ -272,6 +398,68 @@ mod tests {
         );
         assert_eq!(kept.at, None, "no Date header leaves the local clock to it");
         assert!(parse_renewed(&json!({"expires_in": 60}), None).is_err());
+    }
+
+    // As Claude Code 2.1.301 reads it into `tokenAccount`.
+    #[test]
+    fn a_renewal_answer_names_the_login_where_it_names_all_three() {
+        let answer = |extra: Value| {
+            let mut body = json!({"access_token": "a2", "expires_in": 60});
+            body.as_object_mut()
+                .expect("an object")
+                .extend(extra.as_object().expect("an object").clone());
+            parse_renewed(&body, None).expect("read").owner
+        };
+        assert_eq!(
+            answer(json!({
+                "account": {"uuid": "acc", "email_address": "a@b.c"},
+                "organization": {"uuid": "org"}
+            })),
+            Some(Owner {
+                account_uuid: "acc".into(),
+                email: "a@b.c".into(),
+                organization_uuid: "org".into(),
+            })
+        );
+        assert_eq!(
+            answer(json!({"account": {"uuid": "acc", "email_address": "a@b.c"}})),
+            None,
+            "a login named with no organisation is asked about instead"
+        );
+        assert_eq!(answer(json!({})), None);
+    }
+
+    // Keys as measured on 2026-10-16 from a Max login: valid, account_uuid,
+    // organization_uuid, scopes.
+    #[test]
+    fn a_validation_names_the_account_and_its_organisation() {
+        assert_eq!(
+            parse_validated(&json!({
+                "valid": true, "account_uuid": "acc", "organization_uuid": "org",
+                "scopes": ["user:profile"]
+            }))
+            .expect("read"),
+            Validated {
+                account_uuid: "acc".into(),
+                organization_uuid: Some("org".into()),
+            }
+        );
+        assert_eq!(
+            parse_validated(
+                &json!({"valid": true, "account_uuid": "acc", "organization_uuid": null})
+            )
+            .expect("read")
+            .organization_uuid,
+            None
+        );
+        assert!(matches!(
+            parse_validated(&json!({"valid": false})),
+            Err(ProviderError::Unauthorized)
+        ));
+        assert!(matches!(
+            parse_validated(&json!({"valid": true})),
+            Err(ProviderError::Malformed { .. })
+        ));
     }
 
     /// Field names copied from a live response on 2026-09-21.
@@ -298,11 +486,104 @@ mod tests {
         );
     }
 
+    fn refused(status: u16, body: &str) -> ProviderError {
+        token_refused(Refusal::read(status, body))
+    }
+
+    // Shapes from Claude Code 2.1.301's readers of the token endpoint's errors.
+    #[test]
+    fn an_account_on_hold_keeps_its_login() {
+        let on_hold = |error: &str, link: &str| {
+            refused(
+                400,
+                &json!({"error": error, "error_description": "account_on_hold", "error_uri": link})
+                    .to_string(),
+            )
+        };
+        assert!(matches!(
+            on_hold("invalid_grant", "https://claude.ai/settings/hold"),
+            ProviderError::OnHold { link: Some(link), .. } if link == "https://claude.ai/settings/hold"
+        ));
+        assert!(matches!(
+            on_hold("access_denied", "https://evil.example/claude.ai"),
+            ProviderError::OnHold { link: None, .. }
+        ));
+        for elsewhere in [
+            "http://claude.ai/x",
+            "https://claude.ai:8443/x",
+            "https://someone@claude.ai/x",
+            "https://claude.ai.example.com/x",
+        ] {
+            assert!(
+                matches!(
+                    on_hold("invalid_grant", elsewhere),
+                    ProviderError::OnHold { link: None, .. }
+                ),
+                "{elsewhere}"
+            );
+        }
+    }
+
+    #[test]
+    fn only_invalid_grant_ends_a_refresh_token() {
+        assert!(matches!(
+            refused(
+                400,
+                r#"{"error":"invalid_grant","error_description":"Refresh token not found or invalid"}"#
+            ),
+            ProviderError::InvalidGrant { .. }
+        ));
+        assert!(matches!(
+            refused(401, r#"{"error":{"type":"invalid_grant"}}"#),
+            ProviderError::InvalidGrant { .. }
+        ));
+        let kept = refused(403, r#"{"error":"invalid_grant"}"#);
+        assert!(matches!(kept, ProviderError::Refused { .. }), "{kept:?}");
+        let no_organisation = refused(
+            400,
+            r#"{"error":"invalid_request","error_description":"No organization associated with this token"}"#,
+        );
+        assert_eq!(
+            no_organisation.to_string(),
+            "Anthropic answered 400: No organization associated with this token"
+        );
+        assert!(matches!(no_organisation, ProviderError::Refused { .. }));
+        assert!(matches!(
+            refused(503, ""),
+            ProviderError::Unavailable { .. }
+        ));
+    }
+
+    // Claude Code 2.1.301's `Wqn` and `Xqt`.
+    #[test]
+    fn a_refusal_of_the_account_is_not_an_expired_token() {
+        let verification = Refusal::read(
+            403,
+            r#"{"type":"error","error":{"type":"permission_error","message":"Verify your account","details":{"error_code":"verification_required"}}}"#,
+        );
+        assert!(refuses_the_account(&verification));
+        let organisation = Refusal::read(
+            401,
+            r#"{"type":"error","error":{"type":"authentication_error","message":"OAuth authentication is currently not allowed for this organization."}}"#,
+        );
+        assert!(refuses_the_account(&organisation));
+        let expired = Refusal::read(
+            401,
+            r#"{"type":"error","error":{"type":"authentication_error","message":"OAuth access token is invalid."}}"#,
+        );
+        assert!(!refuses_the_account(&expired));
+        let scope = Refusal::read(
+            403,
+            r#"{"type":"error","error":{"type":"permission_error","message":"OAuth token does not meet scope requirement user:profile"}}"#,
+        );
+        assert!(!refuses_the_account(&scope));
+    }
+
     #[test]
     fn a_profile_missing_the_account_is_malformed_rather_than_guessed() {
         assert!(matches!(
             parse_owner(&json!({"organization": {"uuid": "org"}})),
-            Err(ApiError::Malformed(_))
+            Err(ProviderError::Malformed { .. })
         ));
     }
 }

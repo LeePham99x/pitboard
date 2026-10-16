@@ -185,7 +185,7 @@ fn a_document_switch_touches_its_stores_in_the_order_it_always_did() {
                 ("live", "contains", LIVE),
                 (CLAUDE_FILE, "contains", LIVE),
             ],
-            asked: vec![Asked::Owner("access-there-refresh".into())],
+            asked: vec![Asked::Identity("access-there-refresh".into())],
             at_journal: &[
                 ".claude.lock/",
                 ".claude/",
@@ -233,7 +233,11 @@ fn a_document_switch_touches_its_stores_in_the_order_it_always_did() {
                 ("live", "contains", LIVE),
                 ("live", "read", LIVE),
             ],
-            asked: vec![Asked::Owner("access-third-refresh".into())],
+            // Which login, then the name of an account Pitboard does not know yet.
+            asked: vec![
+                Asked::Identity("access-third-refresh".into()),
+                Asked::Owner("access-third-refresh".into()),
+            ],
             at_journal: &[],
             made: &[".pitboard/audit.log", ".pitboard/state.lock"],
             gone: &[".pitboard/pending"],
@@ -262,7 +266,7 @@ fn a_document_switch_touches_its_stores_in_the_order_it_always_did() {
                 ("live", "read", LIVE),
                 ("vault", "delete", CLAUDE_HERE),
             ],
-            asked: vec![Asked::Owner("access-there-refresh".into())],
+            asked: vec![Asked::Identity("access-there-refresh".into())],
             at_journal: &[
                 ".claude.lock/",
                 ".claude/",

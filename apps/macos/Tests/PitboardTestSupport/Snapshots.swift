@@ -42,7 +42,8 @@ package func snapshot(
     Snapshot(
         revision: revision, now: Int64(revision), reading: reading, updatedAt: nil,
         status: status, warnings: [], readFailure: nil, stuck: false, installed: nil,
-        switchUnderWay: nil, quitQuestion: nil, lastSwitches: [], abandoned: nil, failure: nil,
+        switchUnderWay: nil, quitQuestion: nil, replaceQuestion: nil, lastSwitches: [],
+        abandoned: nil, failure: nil,
         windowRequest: WindowRequest(serial: 0, pane: nil), signingIn: nil, sheet: nil,
         sheetFailure: nil,
         menuBar: MenuBarText(nameAndUsage: "", usage: "", spoken: "Pitboard"), sections: [],
