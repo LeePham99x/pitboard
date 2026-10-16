@@ -171,6 +171,8 @@ pub(super) struct Generic {
     // A build for tests addresses only its own scratch slots (AGENTS.md, Credential Manager).
     #[cfg(any(test, feature = "test-support"))]
     own: Vec<String>,
+    #[cfg(any(test, feature = "test-support"))]
+    ctx: Context,
 }
 
 impl Generic {
@@ -180,6 +182,8 @@ impl Generic {
             account: account.to_owned(),
             #[cfg(any(test, feature = "test-support"))]
             own: crate::provider::claude::credman::own_slots_for_tests(ctx),
+            #[cfg(any(test, feature = "test-support"))]
+            ctx: ctx.clone(),
         }
     }
 
@@ -189,7 +193,8 @@ impl Generic {
         {
             let own: Vec<&str> = self.own.iter().map(String::as_str).collect();
             if let Some(why) = crate::provider::names::refusal(&target, &own) {
-                return Err(Error::Unreadable(why));
+                let not_own = crate::provider::claude::credman::not_own(&self.ctx);
+                return Err(Error::Unreadable(format!("{why}; {not_own}")));
             }
         }
         Ok(target)

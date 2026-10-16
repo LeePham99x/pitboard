@@ -176,8 +176,8 @@ pub(crate) fn lies_in_the_accounts_own(path: &std::path::Path, below: &str) -> b
         .is_some_and(|home| crate::host::lies_in(path, &home.join(below)))
 }
 
-// The known folders, and with `as_started` the ones this process was started with, which can be
-// others.
+// The account's own, and with `as_started` the known folders and the ones this process was
+// started with, which can be others: a test's child is started with them inside its own folder.
 #[cfg(any(test, feature = "test-support"))]
 #[allow(
     clippy::disallowed_methods,
@@ -190,9 +190,15 @@ pub(crate) fn app_data_folders(as_started: bool) -> (Vec<PathBuf>, Vec<PathBuf>)
             .filter(|_| as_started)
             .map(PathBuf::from)
     };
-    let roaming = [known_folder(&FOLDERID_RoamingAppData), started("APPDATA")];
+    let known = |id| as_started.then(|| known_folder(id)).flatten();
+    let roaming = [
+        accounts_own_app_data(ROAMING),
+        known(&FOLDERID_RoamingAppData),
+        started("APPDATA"),
+    ];
     let local = [
-        known_folder(&FOLDERID_LocalAppData),
+        accounts_own_app_data(LOCAL),
+        known(&FOLDERID_LocalAppData),
         started("LOCALAPPDATA"),
     ];
     (
@@ -203,13 +209,52 @@ pub(crate) fn app_data_folders(as_started: bool) -> (Vec<PathBuf>, Vec<PathBuf>)
 
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn accounts_own_home() -> Option<PathBuf> {
-    known_folder(&windows_sys::Win32::UI::Shell::FOLDERID_Profile)
+    profile_directory().or_else(|| known_folder(&windows_sys::Win32::UI::Shell::FOLDERID_Profile))
 }
 
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn accounts_own_pitboard_home() -> Option<PathBuf> {
-    known_folder(&windows_sys::Win32::UI::Shell::FOLDERID_LocalAppData)
-        .map(|data| data.join("Pitboard"))
+    accounts_own_app_data(LOCAL).map(|data| data.join("Pitboard"))
+}
+
+// Each shell folder's value, and where the profile keeps it unless that names another.
+#[cfg(any(test, feature = "test-support"))]
+const ROAMING: (&str, &str) = ("AppData", r"AppData\Roaming");
+#[cfg(any(test, feature = "test-support"))]
+const LOCAL: (&str, &str) = ("Local AppData", r"AppData\Local");
+
+// As the account's own environment expands its shell folder, which no variable this process was
+// started with moves.
+#[cfg(any(test, feature = "test-support"))]
+fn accounts_own_app_data((name, in_profile): (&str, &str)) -> Option<PathBuf> {
+    let named = || {
+        let key = windows_registry::CURRENT_USER
+            .open(r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders")
+            .ok()?;
+        expanded_for_this_account(&key.get_hstring(name).ok()?.to_string_lossy())
+    };
+    named().or_else(|| accounts_own_home().map(|home| home.join(in_profile)))
+}
+
+#[cfg(any(test, feature = "test-support"))]
+fn expanded_for_this_account(text: &str) -> Option<PathBuf> {
+    use windows_sys::Win32::Security::{TOKEN_DUPLICATE, TOKEN_IMPERSONATE};
+    use windows_sys::Win32::System::Environment::ExpandEnvironmentStringsForUserW;
+    let token = Opened::this_process_with(TOKEN_QUERY | TOKEN_IMPERSONATE | TOKEN_DUPLICATE)?;
+    let source: Vec<u16> = text.encode_utf16().chain([0]).collect();
+    let mut out = vec![0u16; 32_768];
+    // SAFETY: an open token with the access the call needs, a NUL-terminated source, and a
+    // buffer of the length given.
+    let done = unsafe {
+        ExpandEnvironmentStringsForUserW(
+            token.0,
+            source.as_ptr(),
+            out.as_mut_ptr(),
+            out.len() as u32,
+        )
+    };
+    let path = (done != 0).then(|| path_of(&out))?;
+    (path.is_absolute() && !path.to_string_lossy().contains('%')).then_some(path)
 }
 
 // KF_FLAG_DONT_VERIFY: a folder not made yet is still where a login would go.
@@ -256,9 +301,13 @@ struct Opened(HANDLE);
 
 impl Opened {
     fn this_process() -> Option<Opened> {
+        Opened::this_process_with(TOKEN_QUERY)
+    }
+
+    fn this_process_with(access: u32) -> Option<Opened> {
         let mut handle: HANDLE = std::ptr::null_mut();
         // SAFETY: a pseudo-handle needs no closing; `handle` is written only on success.
-        let opened = unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut handle) };
+        let opened = unsafe { OpenProcessToken(GetCurrentProcess(), access, &mut handle) };
         (opened != 0).then_some(Opened(handle))
     }
 
