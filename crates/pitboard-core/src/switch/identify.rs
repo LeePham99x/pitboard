@@ -72,12 +72,41 @@ pub(crate) fn whose(
     if let Some(found) = recorded(state, tool, document) {
         return Ok(found);
     }
-    let owner = tool.identify(ctx, &provider::Credential::new(tool.id(), document.clone()))?;
+    let owner = asked(ctx, state, tool, document)?;
     Ok(Found {
         owner,
         login: tool.fingerprint(document),
         known_at: ctx.now(),
     })
+}
+
+/// Whose `document` is, as its service says: which login, and its name where Pitboard does
+/// not know that account already.
+pub(crate) fn asked(
+    ctx: &Context,
+    state: &State,
+    tool: &'static dyn Provider,
+    document: &Value,
+) -> std::result::Result<Owner, ProviderError> {
+    let credential = provider::Credential::new(tool.id(), document.clone());
+    if tool.identifies_by_itself() {
+        return tool.identify(ctx, &credential);
+    }
+    let identity = tool.identity(ctx, &credential)?;
+    match state.named(tool.id(), &identity) {
+        Some(owner) => Ok(owner),
+        None => {
+            let email = tool
+                .name(ctx, &credential, &identity)
+                .map_err(|error| match error {
+                    ProviderError::Unauthorized => error,
+                    error => ProviderError::Unnamed {
+                        error: Box::new(error),
+                    },
+                })?;
+            Ok(Owner::named(identity, email))
+        }
+    }
 }
 
 /// Whose `document` is where it is the very login the record was made for.
@@ -219,12 +248,13 @@ fn renewed_under_the_lock(
             &login,
             &mut progress,
         ) {
-            Ok(Renewed::Saved(saved)) => {
-                let renewed: Value = serde_json::from_str(&saved)
+            Ok(Renewed::Saved { held, named }) => {
+                let renewed: Value = serde_json::from_str(&held)
                     .map_err(|e| failed(store::Error::Malformed(e.to_string()).into()))?;
-                let owner = tool
-                    .identify(ctx, &provider::Credential::new(which, renewed.clone()))
-                    .map_err(Unrenewed::Asked)?;
+                let owner = match named {
+                    Some(owner) => owner,
+                    None => asked(ctx, state, tool, &renewed).map_err(Unrenewed::Asked)?,
+                };
                 let found = Found {
                     owner,
                     login: tool.fingerprint(&renewed),
@@ -861,7 +891,81 @@ mod tests {
         .expect("named");
 
         assert_eq!(found.owner, owner("here"));
-        assert_eq!(m.api.asked(), [Asked::Owner("access-here-refresh".into())]);
+        assert_eq!(
+            m.api.asked(),
+            [Asked::Identity("access-here-refresh".into())]
+        );
+    }
+
+    const NO_PROFILE: &str = r#"{"type":"error","error":{"type":"invalid_request_error"}}"#;
+
+    /// The report of 16 October 2026: a login Claude Code signed in, whose profile Anthropic
+    /// answers 400. Which login it is comes from `validate`, and an enrolled account needs
+    /// no profile at all.
+    #[test]
+    fn a_login_whose_profile_is_refused_is_told_by_its_identity() {
+        let m = machine("identify-no-profile");
+        m.api.owned_by("access-here-again", owner("here"));
+        m.api
+            .profile_trouble("access-here-again", Trouble::Answered(400, NO_PROFILE));
+        let state = state::load(&m.ctx).expect("state");
+
+        let found = whose(
+            &m.ctx,
+            &state,
+            provider::document(ProviderId::Claude),
+            &document("here-again"),
+        )
+        .expect("named");
+
+        assert_eq!(found.owner, owner("here"));
+        assert_eq!(m.api.asked(), [Asked::Identity("access-here-again".into())]);
+    }
+
+    /// An account Pitboard does not know, whose profile Anthropic refuses, is named as
+    /// Claude Code's own record names that same account and organisation.
+    #[test]
+    fn an_unknown_login_whose_profile_is_refused_is_named_by_claude_codes_record() {
+        let m = machine("identify-named-by-record");
+        m.api.owned_by("access-stranger", owner("stranger"));
+        m.api
+            .profile_trouble("access-stranger", Trouble::Answered(400, NO_PROFILE));
+        config_names(&m, "stranger");
+        let state = state::load(&m.ctx).expect("state");
+        let tool = provider::document(ProviderId::Claude);
+
+        let found = whose(&m.ctx, &state, tool, &document("stranger")).expect("named");
+        assert_eq!(found.owner, owner("stranger"));
+
+        config_names(&m, "here");
+        let refused = whose(&m.ctx, &state, tool, &document("stranger"))
+            .expect_err("a record of another account names nobody");
+        assert!(
+            matches!(&refused, ProviderError::Unnamed { error } if matches!(**error, ProviderError::Refused { .. })),
+            "{refused:?}"
+        );
+    }
+
+    /// A renewal whose answer names the login is not followed by a question about it.
+    #[test]
+    fn a_renewal_that_names_the_login_asks_nothing_after_it() {
+        let m = machine("identify-named-by-renewal");
+        m.sign_in(&lapsed("here-renewed"));
+        m.api.renews(
+            "here-renewed",
+            provider::claude::api::Renewed {
+                access_token: "access-here-again".into(),
+                refresh_token: Some("here-again".into()),
+                expires_in: 3600,
+                refresh_token_expires_in: Some(30 * 86_400),
+                scopes: None,
+                at: None,
+                owner: Some(owner("here")),
+            },
+        );
+
+        assert_eq!(owner_told(told_now(&m)), owner("here"));
+        assert_eq!(m.api.asked(), [Asked::Renew("here-renewed".into())]);
     }
 
     /// `here`'s login renewed since Anthropic last named it, and lapsed since, as Claude Code
@@ -991,7 +1095,7 @@ mod tests {
             m.api.asked(),
             [
                 Asked::Renew("here-renewed".into()),
-                Asked::Owner("access-here-again".into())
+                Asked::Identity("access-here-again".into())
             ]
         );
         let state = state::load(&m.ctx).expect("state");
@@ -1509,7 +1613,7 @@ mod tests {
             .expect("the account last named");
         assert_eq!(here.stale, Some(crate::status::Stale::LoginRefused));
         assert_eq!(
-            here.explanation(),
+            here.explanation().as_deref(),
             Some("Claude Code's login is no longer accepted; run `claude` and sign in again")
         );
         assert_eq!(m.live(), stored);
@@ -1538,7 +1642,7 @@ mod tests {
             .expect("the account last named");
         assert_eq!(here.stale, Some(crate::status::Stale::LoginRefused));
         assert_eq!(
-            here.explanation(),
+            here.explanation().as_deref(),
             Some("Claude Code's login is no longer accepted; run `claude` and sign in again")
         );
         assert_eq!(renewals(&m), [Asked::Renew("here-renewed".into())]);

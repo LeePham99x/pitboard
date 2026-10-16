@@ -143,8 +143,8 @@ pub enum Warning {
         tool: ProviderId,
         label: String,
     },
-    /// A sign-in to the account Pitboard last recorded in use was parked rather than put in
-    /// use, because nobody could say whose login the tool has in use, for `why`.
+    /// A sign-in was parked rather than put in use, because nobody could say whose login the
+    /// tool has in use, for `why`.
     SignInParkedNotInUse {
         tool: ProviderId,
         label: String,
@@ -1083,6 +1083,19 @@ impl Pitboard {
         let key = self.named(permit, "use", typed)?;
         self.changing(permit, "use", &key.typed(), Some(key.provider), |settled| {
             switch::switch(settled, &key)
+        })
+    }
+
+    /// What [`switch_to`] does once somebody has agreed to put `typed`'s login in place of a
+    /// login in use its service refuses for good, which it refused over: parks nothing.
+    /// Where the login stored can be told by then, it is a switch.
+    ///
+    /// [`switch_to`]: Pitboard::switch_to
+    pub fn replace_with(&self, typed: &str) -> Changing<Outcome> {
+        let permit = self.permitted()?;
+        let key = self.named(permit, "use", typed)?;
+        self.changing(permit, "use", &key.typed(), Some(key.provider), |settled| {
+            switch::replace(settled, &key)
         })
     }
 

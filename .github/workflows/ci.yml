@@ -103,7 +103,7 @@ jobs:
           shellcheck -s sh packaging/install.sh .github/scripts/fill-template.sh
           .github/scripts/core-unchanged.sh .github/scripts/release-kind.sh
           .github/scripts/windows-versions.sh .github/scripts/windows-update-key.sh
-          apps/macos/scripts/build-number.sh
+          .github/scripts/windows-update-sign.sh apps/macos/scripts/build-number.sh
       - env:
           TEST_INSTALL_SHELLS: ${{ matrix.shells }}
         run: python3 .github/scripts/test-install.py
@@ -422,8 +422,6 @@ jobs:
           dotnet test --solution Pitboard.slnx
           -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/release/libpitboard_ffi.so"
           -p:PitboardShareNativeLibrary="$GITHUB_WORKSPACE/target/release/libpitboard_share_ffi.so"
-      # The version the MSI carries for each version Cargo.toml may name, through MSBuild alone.
-      - run: sh .github/scripts/test-msi-version.sh
       # The same library with its fixtures, which a debug build of either app launches into.
       # Its bindings must be the very ones generated without them, which is what lets one
       # set serve both, and the library without them must hold none of a fixture's text.
@@ -688,26 +686,37 @@ jobs:
       # ICE validates the MSI as it builds. CI never installs one: msiexec /a extracts its files
       # and registers nothing. The image is Pitboard as an install lays it out, which the UI
       # tests start in place of the Release folder (CF10). The package above is signed, so the
-      # MSI carries PitboardShare.exe, as a signed release's does.
-      - name: The MSI and its administrative image
+      # MSI carries PitboardShare.exe, as a signed release's does. The unsigned MSI is built from
+      # the folder a release without a signer publishes, which holds no share target.
+      - name: The MSIs and their administrative images
         id: msi
         shell: pwsh
         working-directory: apps/windows
         env:
           INSTALLER: ${{ matrix.installer }}
-          VERSION: ${{ steps.manifest.outputs.version }}
+          MSI_VERSION: ${{ steps.manifest.outputs.msi }}
         run: |
           $ErrorActionPreference = 'Stop'
           $out = Join-Path $env:GITHUB_WORKSPACE 'target\windows-app'
-          $app = Join-Path $out 'release'
           $commandLine = Join-Path $env:GITHUB_WORKSPACE 'target\gated\release\pitboard.exe'
-          dotnet build Pitboard.Installer -c Release -o (Join-Path $out 'msi') "-p:InstallerPlatform=$env:INSTALLER" `
-            "-p:PitboardApp=$app" "-p:PitboardCommandLine=$commandLine" "-p:PitboardVersion=$env:VERSION" -p:PitboardShareSigned=true
-          if ($LASTEXITCODE -ne 0) { throw "dotnet build exited $LASTEXITCODE" }
-          $msi = Join-Path $out 'msi\Pitboard.msi'
-          $folder = & "$env:GITHUB_WORKSPACE/.github/scripts/extract-msi.ps1" -Msi $msi -Destination (Join-Path $out 'msi-image')
-          Write-Output "Extracted $msi into $folder."
-          "folder=$folder" >> $env:GITHUB_OUTPUT
+          $unsigned = Join-Path $out 'release-unsigned'
+          Copy-Item -LiteralPath (Join-Path $out 'release') -Destination $unsigned -Recurse
+          $share = @(Get-ChildItem -LiteralPath $unsigned -File -Filter 'PitboardShare.*') +
+            @('pitboard_share_ffi.dll', 'Assets\Square150x150Logo.png', 'Assets\Square44x44Logo.png', 'Assets\StoreLogo.png' |
+              ForEach-Object { Get-Item -LiteralPath (Join-Path $unsigned $_) })
+          $share | Remove-Item
+          # An intermediate folder each, so neither build takes the other's output for its own.
+          foreach ($kind in @{ Name = 'msi'; App = 'release'; Signed = 'true' }, @{ Name = 'msi-unsigned'; App = 'release-unsigned'; Signed = 'false' }) {
+            dotnet build Pitboard.Installer -c Release -o (Join-Path $out $kind.Name) "-p:IntermediateOutputPath=obj\$($kind.Name)\" `
+              "-p:InstallerPlatform=$env:INSTALLER" "-p:PitboardApp=$(Join-Path $out $kind.App)" "-p:PitboardCommandLine=$commandLine" `
+              "-p:PitboardMsiVersion=$env:MSI_VERSION" "-p:PitboardShareSigned=$($kind.Signed)"
+            if ($LASTEXITCODE -ne 0) { throw "dotnet build exited $LASTEXITCODE" }
+            $msi = Join-Path $out "$($kind.Name)\Pitboard.msi"
+            & "$env:GITHUB_WORKSPACE/.github/scripts/validate-windows-msi.ps1" -Msi $msi
+            $folder = & "$env:GITHUB_WORKSPACE/.github/scripts/extract-msi.ps1" -Msi $msi -Destination (Join-Path $out "$($kind.Name)-image")
+            Write-Output "Extracted $msi into $folder."
+            "$($kind.Name)-folder=$folder" >> $env:GITHUB_OUTPUT
+          }
       - name: "The MSI's files: the checks of the Release build"
         shell: pwsh
         env:
@@ -716,20 +725,25 @@ jobs:
           TRIPLE: ${{ matrix.triple }}
           VERSION: ${{ steps.manifest.outputs.version }}
           FILE_VERSION: ${{ steps.manifest.outputs.file }}
-          IMAGE: ${{ steps.msi.outputs.folder }}
+          IMAGE: ${{ steps.msi.outputs.msi-folder }}
         run: >
           ./.github/scripts/check-windows-app.ps1 -Folder $env:IMAGE -Triple $env:TRIPLE
           -GatedLibrary target/gated/release/pitboard_ffi.dll -Signer $env:SHARE_TEST_SIGNER -UpdateKey $env:UPDATE_TEST_KEY
           -Version $env:VERSION -FileVersion $env:FILE_VERSION
-      - name: "The MSI as a release ships it: its version, its layout, the zip's command line and the signed package"
+      - name: "The MSIs as a release ships them: their version, their layout, the zip's command line and the signed package"
         shell: pwsh
         env:
           MSI_VERSION: ${{ steps.manifest.outputs.msi }}
-          IMAGE: ${{ steps.msi.outputs.folder }}
-        run: >
-          ./.github/scripts/check-windows-msi.ps1 -Msi target/windows-app/msi/Pitboard.msi -Folder $env:IMAGE
-          -MsiVersion $env:MSI_VERSION -CommandLine target/gated/release/pitboard.exe
-          -Share -Package target/windows-app/release/PitboardShare.msix
+          IMAGE: ${{ steps.msi.outputs.msi-folder }}
+          UNSIGNED_IMAGE: ${{ steps.msi.outputs.msi-unsigned-folder }}
+        run: |
+          ./.github/scripts/check-windows-msi.ps1 -Msi target/windows-app/msi/Pitboard.msi -Folder $env:IMAGE `
+            -MsiVersion $env:MSI_VERSION -CommandLine target/gated/release/pitboard.exe `
+            -Share -Package target/windows-app/release/PitboardShare.msix
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./.github/scripts/check-windows-msi.ps1 -Msi target/windows-app/msi-unsigned/Pitboard.msi -Folder $env:UNSIGNED_IMAGE `
+            -MsiVersion $env:MSI_VERSION -CommandLine target/gated/release/pitboard.exe
+          exit $LASTEXITCODE
       # The MSI unsigned and its package signed with the throwaway certificate, as a signed release
       # carries one, both read by the release's signature check.
       - name: "The checks refuse a package identity anywhere but on PitboardShare.exe, or another than its package's, another update key, feed, version or MSI, and the signature check reads the MSI and the package"
@@ -741,23 +755,26 @@ jobs:
           VERSION: ${{ steps.manifest.outputs.version }}
           FILE_VERSION: ${{ steps.manifest.outputs.file }}
           MSI_VERSION: ${{ steps.manifest.outputs.msi }}
-          IMAGE: ${{ steps.msi.outputs.folder }}
+          IMAGE: ${{ steps.msi.outputs.msi-folder }}
         run: >
           ./.github/scripts/test-windows-app.ps1 -Folder target/windows-app/release -Triple $env:TRIPLE
           -GatedLibrary target/gated/release/pitboard_ffi.dll -Signer $env:SHARE_TEST_SIGNER -UpdateKey $env:UPDATE_TEST_KEY
           -Version $env:VERSION -FileVersion $env:FILE_VERSION -Msi target/windows-app/msi/Pitboard.msi -MsiImage $env:IMAGE
           -MsiVersion $env:MSI_VERSION -CommandLine target/gated/release/pitboard.exe
-      - name: The UI tests over the MSI's Pitboard.exe, and the MSI's own tests
+      - name: The UI tests over the MSI's Pitboard.exe, and each MSI's own tests
         working-directory: apps/windows
         env:
           RUNTIME: ${{ matrix.runtime }}
-          IMAGE: ${{ steps.msi.outputs.folder }}
+          IMAGE: ${{ steps.msi.outputs.msi-folder }}
+          UNSIGNED_IMAGE: ${{ steps.msi.outputs.msi-unsigned-folder }}
         run: |
           out="$GITHUB_WORKSPACE/target/windows-app"
           dotnet publish Pitboard.UITests -c Debug -r "$RUNTIME" --self-contained -o "$out/uitests" \
             -p:PitboardAppDebug="$GITHUB_WORKSPACE/apps/windows/Pitboard.App/$BUILT/Pitboard.exe" -p:PitboardAppRelease="$IMAGE/Pitboard.exe"
           dotnet publish Pitboard.Installer.Tests -c Release -r "$RUNTIME" --self-contained -o "$out/installer-tests" \
             -p:PitboardMsi="$out/msi/Pitboard.msi" -p:PitboardMsiImage="$IMAGE" -p:PitboardShareSigned=true
+          dotnet publish Pitboard.Installer.Tests -c Release -r "$RUNTIME" --self-contained -o "$out/installer-tests-unsigned" \
+            -p:PitboardMsi="$out/msi-unsigned/Pitboard.msi" -p:PitboardMsiImage="$UNSIGNED_IMAGE" -p:PitboardShareSigned=false
       # CF5: the self-contained app needs none of these for the standard user.
       - name: The Windows App Runtime packages this image holds
         shell: pwsh
@@ -790,7 +807,8 @@ jobs:
         run: >
           ./.github/scripts/test-as-standard-user.ps1
           -Dotnet "apps/windows/Pitboard.Windows.Tests/$env:BUILT/Pitboard.Windows.Tests.exe", target/windows-app/uitests/Pitboard.UITests.exe,
-          target/windows-app/share-tests/Pitboard.Share.Core.Tests.exe, target/windows-app/installer-tests/Pitboard.Installer.Tests.exe
+          target/windows-app/share-tests/Pitboard.Share.Core.Tests.exe, target/windows-app/installer-tests/Pitboard.Installer.Tests.exe,
+          target/windows-app/installer-tests-unsigned/Pitboard.Installer.Tests.exe
           -Results "$env:RUNNER_TEMP/app-tests" -Probe target/debug/pitboard-probe.exe
       # ScreenshotTests' pictures of the window and the icon's menu in the twoTools fixture, for the docs. On
       # windows-11-arm a window of the job user's keeps the foreground (CF1), so the test takes none there.

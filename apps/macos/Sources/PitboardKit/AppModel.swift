@@ -41,6 +41,8 @@ public final class AppModel {
     public private(set) var switchUnderWay: String?
     /// A switch waiting for the person to let Pitboard quit an app first.
     public private(set) var quitQuestion: QuitQuestion?
+    /// A switch waiting for the person to let Pitboard replace a login its service refuses.
+    public private(set) var replaceQuestion: ReplaceQuestion?
     /// What each tool's last switch said that is still true.
     public private(set) var lastSwitches: [LastSwitch]
     /// What giving up on an interrupted switch kept, until somebody has read it.
@@ -115,6 +117,7 @@ public final class AppModel {
         installed = first.installed
         switchUnderWay = first.switchUnderWay
         quitQuestion = first.quitQuestion
+        replaceQuestion = first.replaceQuestion
         lastSwitches = first.lastSwitches
         abandoned = first.abandoned
         failure = first.failure
@@ -191,6 +194,7 @@ public final class AppModel {
         update(\.installed, snapshot.installed)
         update(\.switchUnderWay, snapshot.switchUnderWay)
         update(\.quitQuestion, snapshot.quitQuestion)
+        update(\.replaceQuestion, snapshot.replaceQuestion)
         update(\.lastSwitches, snapshot.lastSwitches)
         update(\.abandoned, snapshot.abandoned)
         update(\.failure, snapshot.failure)

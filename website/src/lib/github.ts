@@ -246,7 +246,7 @@ export function fileRows(release: Release): FileRow[] {
     [`pitboard-v${v}-x86_64-pc-windows-msvc.zip`, "Command line, Windows on x64"],
     [`pitboard-v${v}-aarch64-pc-windows-msvc.zip`, "Command line, Windows on ARM64"],
     ["install.sh", "The install script"],
-    ["SHA256SUMS", "Checksums of the app, the command line archives and <code>install.sh</code>"],
+    ["SHA256SUMS", "Checksums of the apps, the command line archives and <code>install.sh</code>"],
     ["appcast.xml", "The feed the app updates from"],
     ["appcast-windows.xml", "The feed the Windows app updates from"],
   ];

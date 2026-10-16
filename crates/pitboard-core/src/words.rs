@@ -1087,6 +1087,25 @@ pub fn forget_question(tool: Option<crate::provider::ProviderId>, label: &str) -
     }
 }
 
+/// Why putting another login in place of `tool`'s login in use loses nothing, where its
+/// service refuses that login's refresh token for good.
+pub fn replacing(tool: crate::provider::ProviderId, detail: &str) -> String {
+    format!(
+        "{} no longer accepts {}'s login in use ({detail}), so putting another login in its \
+         place loses nothing.",
+        tool.service(),
+        tool.name()
+    )
+}
+
+/// What `pitboard use` asks before it puts `label`'s login in place of that one.
+pub fn replace_question(tool: crate::provider::ProviderId, label: &str, detail: &str) -> String {
+    format!(
+        "{}\nPut {label}'s login in its place? [y/N] ",
+        replacing(tool, detail)
+    )
+}
+
 // What `adopt` says of the Claude Desktop logins it set aside, each account as typed.
 pub fn adopted_folders(labels: &[String]) -> String {
     let named = listed(labels.iter().map(|label| format!("`{label}`")).collect());

@@ -205,11 +205,14 @@ Enrolled work (me@company.com). Switch to it with: pitboard use work
 Usage: pitboard use [OPTIONS] <LABEL>
 ```
 
-| Argument | Description |
+| Argument or option | Description |
 | --- | --- |
 | `<LABEL>` | The account's label, such as `work`, `codex/work` or `desktop/work` |
+| `-y, --yes` | Where the service refuses the login in use for good, put this account's login in its place without asking; needed without a terminal or with `--json` |
 
 `use` parks the login the label's tool has stored and puts the account's parked login in its place.
+
+A Claude Code login whose refresh token Anthropic refuses for good no longer works, and cannot be parked. `use` says why, and asks before it puts the account's login in its place, which loses nothing. `use` never asks about a login Anthropic will not name, an account on hold, or when Anthropic cannot be reached.
 
 | Tool | Before a switch |
 | --- | --- |
@@ -226,7 +229,9 @@ Before anything moves, `use` refuses with:
 | `parked_login_expired` | Claude Code, Codex | The parked login's refresh token has expired. |
 | `parked_login_refused` | Claude Code, Codex | Anthropic or OpenAI no longer accepts the parked login. |
 | `parked_login_belongs_elsewhere` | Claude Code, Codex | The parked login is another account's. |
-| `identity_unverifiable` | Claude Code, Codex | Anthropic or OpenAI could not be reached to check a login. |
+| `identity_unverifiable` | Claude Code, Codex | Anthropic or OpenAI could not confirm whose a login is. |
+| `live_login_refused` | Claude Code | Anthropic refuses the refresh token of the login in use for good, and you did not agree to replace it. |
+| `account_on_hold` | Claude Code | Anthropic has put the account of the login in use, or of the account switched to, on hold. |
 | A code in [Claude Desktop](/reference/errors#claude-desktop), such as `app_open` | Claude Desktop | Claude is open, its data folder is in a state Pitboard moves no login in, or Pitboard cannot identify the login Claude holds. |
 
 [Switching](/reference/errors#switching) lists what else can stop a switch.

@@ -380,34 +380,58 @@ fn lock_file(ctx: &Context, permit: Permit) -> Result<(std::fs::File, PathBuf)> 
     Ok((file, path))
 }
 
-/// Whose login this document holds. When this cannot be answered, nothing moves: a login
+/// Which login this document holds. When this cannot be answered, nothing moves: a login
 /// filed under a guessed account takes two accounts with it.
-///
-/// Through the provider, because the answer costs a network round trip for Claude Code and
-/// nothing at all for Codex, whose login carries a signed token naming the account. The
-/// caller wants the answer and should not have to know which.
-pub(super) fn identify_document(
+pub(super) fn identity_of_document(
     ctx: &Context,
     tool: &'static dyn Provider,
     document: &Value,
-) -> Result<provider::Owner> {
+) -> Result<provider::Identity> {
     let credential = provider::Credential::new(tool.id(), document.clone());
-    tool.identify(ctx, &credential)
+    tool.identity(ctx, &credential)
         .map_err(|e| unidentified(tool.id(), e))
 }
 
 /// Why nobody could say whose a login of `which` is, as a change refuses over it.
 fn unidentified(which: ProviderId, error: provider::ProviderError) -> Error {
+    unidentified_as(which, crate::error::Unidentified::SignedIn, error)
+}
+
+/// [`unidentified`], for `login`: the one signed in, or the one a sign-in made.
+pub(super) fn unidentified_as(
+    which: ProviderId,
+    login: crate::error::Unidentified,
+    error: provider::ProviderError,
+) -> Error {
+    use crate::error::Unidentified;
     match error {
-        provider::ProviderError::Unauthorized => Error::SessionExpired {
-            tool: which,
-            refused: false,
-        },
+        provider::ProviderError::Unauthorized if login == Unidentified::SignedIn => {
+            Error::SessionExpired {
+                tool: which,
+                refused: false,
+            }
+        }
         other @ (provider::ProviderError::ShapeUnexpected { .. }
         | provider::ProviderError::Unsupported { .. }
         | provider::ProviderError::CodexHomeMissing { .. }) => shape(which, other),
+        provider::ProviderError::OnHold { link, .. } => Error::AccountOnHold {
+            tool: which,
+            login,
+            link,
+        },
+        provider::ProviderError::Unnamed { error } => Error::IdentityUnverifiable {
+            tool: which,
+            login: if login == Unidentified::SignedIn {
+                Unidentified::Unnamed
+            } else {
+                login
+            },
+            cause: crate::error::Cause::of_provider(&error),
+            detail: error.to_string(),
+        },
         other => Error::IdentityUnverifiable {
             tool: which,
+            login,
             cause: crate::error::Cause::of_provider(&other),
             detail: other.to_string(),
         },
@@ -468,6 +492,24 @@ fn read_stored(
 }
 
 pub(crate) fn switch(settled: Settled, key: &Key) -> Result<(Outcome, Vec<Warning>)> {
+    switch_as(settled, key, OnRefusal::Ask)
+}
+
+/// [`switch`], once somebody has agreed to put `key`'s login in place of a login in use its
+/// service refuses for good. Where that login can be told by then, it is a switch.
+pub(crate) fn replace(settled: Settled, key: &Key) -> Result<(Outcome, Vec<Warning>)> {
+    switch_as(settled, key, OnRefusal::Replace)
+}
+
+/// What a switch does where the login in use is one its service refuses for good.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OnRefusal {
+    /// Refuses, saying the switch would put the account's login in its place.
+    Ask,
+    Replace,
+}
+
+fn switch_as(settled: Settled, key: &Key, refused: OnRefusal) -> Result<(Outcome, Vec<Warning>)> {
     let tool = match provider::of(key.provider) {
         LoginKind::Document(tool) => tool,
         LoginKind::Folder(app) => return folder::switch(settled, key, app),
@@ -482,11 +524,28 @@ pub(crate) fn switch(settled: Settled, key: &Key) -> Result<(Outcome, Vec<Warnin
     // Known before taking the tool's own lock so a round trip does not hold up its writes,
     // then confirmed under the lock. Recorded at once, so the record names the account a
     // switch moves out of when it records the one it moves to, whatever it named before.
-    let identify::Live::Login(outgoing) = identify::now(&ctx, permit, &mut state, tool)? else {
-        return Err(Error::LiveCredentialAbsent {
-            tool: key.provider,
-            label: None,
-        });
+    let outgoing = match identify::now(&ctx, permit, &mut state, tool) {
+        Ok(identify::Live::Login(outgoing)) => outgoing,
+        Ok(identify::Live::Nothing) => {
+            return Err(Error::LiveCredentialAbsent {
+                tool: key.provider,
+                label: None,
+            });
+        }
+        Err(error) => {
+            let Some(detail) = refused_for_good(&error) else {
+                return Err(error);
+            };
+            restorable(&ctx, &state, key, &target)?;
+            return match refused {
+                OnRefusal::Ask => Err(Error::LiveLoginRefused {
+                    tool: key.provider,
+                    label: state.typed(key),
+                    detail,
+                }),
+                OnRefusal::Replace => replace_refused(state, &ctx, permit, tool, key, &target),
+            };
+        }
     };
     if target.owned_by(&outgoing.owner) {
         let lost = outgoing.lock_warning(key.provider);
@@ -523,6 +582,192 @@ pub(crate) fn update_config(settled: Settled, key: &Key) -> Result<(Outcome, Vec
             label: state.typed(key),
         }),
     }
+}
+
+/// Why the login in use no longer works, where its service refuses its refresh token for
+/// good, as Claude Code 2.1.301 takes `invalid_grant` alone to mean (the register's
+/// `token_refusals`), or it has none. Never for any other refusal: a login its service will
+/// not name may work, and one on hold comes back.
+fn refused_for_good(error: &Error) -> Option<String> {
+    matches!(error, Error::SessionExpired { refused: true, .. }).then(|| identify::untold(error))
+}
+
+/// `target`'s parked login, where a switch to it could be made now.
+fn restorable(ctx: &Context, state: &State, key: &Key, target: &Account) -> Result<Park> {
+    let held = target.parked.clone().ok_or_else(|| Error::NothingParked {
+        tool: key.provider,
+        label: state.typed(key),
+    })?;
+    if !held.restorable_at(ctx.now()) {
+        return Err(Error::ParkedLoginExpired {
+            label: state.typed(key),
+        });
+    }
+    Ok(held)
+}
+
+/// Puts `key`'s login in place of the one its tool has stored, whose refresh token its service
+/// refuses for good, parking nothing: that login no longer works. The login stored is read
+/// again under the tool's lock, and one that changed meanwhile, as a sign-in leaves it, is not
+/// written over. Journaled as a switch is, with no login going out.
+fn replace_refused(
+    mut state: State,
+    ctx: &Context,
+    permit: Permit,
+    tool: &'static dyn Provider,
+    key: &Key,
+    target: &Account,
+) -> Result<(Outcome, Vec<Warning>)> {
+    let which = key.provider;
+    let to = state.typed(key);
+    let from = format!("{}'s refused login", which.name());
+    let held = restorable(ctx, &state, key, target)?;
+    let live = live_store(ctx, tool)?;
+    // Told again from the bytes that would be written over, so a login a sign-in left since
+    // the first telling is never taken for the refused one.
+    let (refused_raw, refused) = read_live(ctx, tool, &live)?;
+    match identify::told(ctx, &state, tool, &refused) {
+        Ok(None) => {}
+        Ok(Some(_)) => return Err(Error::SignedInAccountChanged),
+        Err(error) => return Err(unidentified(which, error)),
+    }
+    let incoming = park::load(ctx, tool, key, &held)?;
+    let (held, incoming) =
+        prove_incoming(ctx, permit, &mut state, tool, key, target, held, incoming)?;
+
+    let refreshing = Refreshing::take(ctx, permit, tool)?;
+    let guard = write_lock(ctx, permit, tool)?;
+    let (before_raw, before) = read_live(ctx, tool, &live)?;
+    if before_raw != refused_raw {
+        return Err(Error::SignedInAccountChanged);
+    }
+    let next = to_body(
+        &tool
+            .splice(&before, &incoming)
+            .map_err(|e| shape(which, e))?,
+    );
+    let on_the_command_line = priced(which, &live, &next, &to)?;
+    // While it waits, nothing renews the park going in, which a session may have renewed
+    // in the slot by then, and the next change finishes or undoes it as a switch's.
+    write_journal(
+        ctx,
+        permit,
+        &Journal {
+            provider: which,
+            started_at: ctx.now(),
+            from_label: String::new(),
+            from_id: String::new(),
+            to_label: key.label.to_string(),
+            to_id: target.id.clone(),
+            park_service: String::new(),
+            incoming_service: held.service.clone(),
+            from_fingerprint: tool.fingerprint(&before),
+            to_fingerprint: held.login.clone(),
+            slot: Some(tool.slot(ctx)),
+        },
+    )?;
+    fault::point("replace.journal_written");
+    // The park going in is kept until the slot is seen to hold it, so a write that did not
+    // land loses nothing; only a slot nobody can read keeps the record, for the next change.
+    let failed = |detail: String| Error::ReplaceFailed {
+        tool: which,
+        label: to.clone(),
+        detail,
+    };
+    if let Err(e) = install_with(
+        which,
+        |body| store::write_raw(&live.chain, permit, &live.service, body),
+        || store::read_raw(&live.chain, &live.service),
+        &next,
+        &before_raw,
+        &from,
+        &to,
+    ) {
+        return Err(match e {
+            Error::SwitchUnverified { .. } => e,
+            Error::SwitchRolledBack { detail, .. } | Error::SwitchCorrupted { detail, .. } => {
+                clear_journal(ctx, permit);
+                failed(detail)
+            }
+            other => {
+                clear_journal(ctx, permit);
+                failed(other.to_string())
+            }
+        });
+    }
+    fault::point("replace.installed");
+    let lock_lost = guard.as_ref().is_some_and(lock::Guard::compromised);
+    match holds(tool, &live) {
+        Ok(true) => {}
+        Ok(false) => {
+            clear_journal(ctx, permit);
+            return Err(failed(
+                "the login was gone again before Pitboard finished".into(),
+            ));
+        }
+        Err(unreadable) => {
+            return Err(Error::SwitchUnverified {
+                tool: which,
+                from,
+                to,
+                detail: unreadable.to_string(),
+            });
+        }
+    }
+
+    state.discard(&held.service, ParkKind::Vault);
+    let named = tool.own_record(ctx);
+    state.identified(
+        which,
+        InUse {
+            owner: Some(target.owner()),
+            login: tool.fingerprint(&incoming),
+            known_at: ctx.now(),
+            named: named
+                .as_ref()
+                .and_then(|named| in_use::naming(which, named)),
+        },
+        ctx.now(),
+    );
+    state::save(ctx, permit, &state)?;
+    drop(guard);
+    let lock_lost = lock_lost | Refreshing::let_go(refreshing);
+    let cache_warning = write_config(
+        ctx,
+        permit,
+        &mut state,
+        tool,
+        target,
+        &named.unwrap_or_else(|| target.owner()),
+    );
+    let parks_pending = purge(ctx, permit, &mut state);
+    clear_journal(ctx, permit);
+    let still_running = match still_holding(ctx, which) {
+        StillHolding::Nothing => None,
+        StillHolding::These(holding) => Some(Warning::SessionsStillRunning {
+            from: from.clone(),
+            holding,
+        }),
+        StillHolding::Unknown => Some(Warning::SessionsUnknown {
+            tool: which,
+            from: from.clone(),
+        }),
+    };
+    let warnings = on_the_command_line
+        .into_iter()
+        .chain(still_running)
+        .chain(lock_lost.then_some(Warning::LockCompromised { tool: which }))
+        .chain(cache_warning)
+        .chain((parks_pending > 0).then_some(Warning::ParksPendingRemoval(parks_pending)))
+        .collect();
+    Ok((
+        Outcome::Installed {
+            provider: which,
+            to,
+            adoption: tool.adoption(tool.behind(ctx).as_ref()),
+        },
+        warnings,
+    ))
 }
 
 /// The account enrolled under `key`, or a refusal that lists the labels that are.
@@ -705,8 +950,8 @@ fn switch_from(
             .ok()
             .flatten()
             .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
-            .and_then(|document| identify_document(ctx, tool, &document).ok())
-            .is_some_and(|found| found.same_login(&outgoing));
+            .and_then(|document| identity_of_document(ctx, tool, &document).ok())
+            .is_some_and(|found| found == outgoing.identity());
         if still_outgoing {
             state.discard(&parked.service, ParkKind::Vault);
         }
@@ -933,7 +1178,7 @@ fn ready(
     // A refresh keeps the account, so an unchanged share of the document needs no second
     // question. A sign-in between the two reads would not keep it.
     if tool.slice(&before).ok() != tool.slice(first).ok()
-        && !identify_document(ctx, tool, &before)?.same_login(signed_in)
+        && identity_of_document(ctx, tool, &before)? != signed_in.identity()
     {
         return Err(Error::SignedInAccountChanged);
     }
@@ -945,11 +1190,27 @@ fn ready(
             .splice(&before, incoming)
             .map_err(|e| shape(which, e))?,
     );
-    // Asked once. The answer is about the backend that would take this write, so a login
-    // living in a fallback file is not told it has the keychain's ceiling.
-    let price = store::cost(&live.chain, &live.service, &next);
-    if price.is_some_and(store::Cost::refused) {
-        let price = price.expect("refused implies a ceiling");
+    let on_the_command_line = priced(which, live, &next, label)?;
+    Ok(Readied {
+        before_raw,
+        before,
+        next,
+        on_the_command_line,
+    })
+}
+
+/// Refuses `next` where the backend that would take it cannot, and says where it goes on the
+/// command line. Asked once: the answer is about that backend, so a login living in a
+/// fallback file is not told it has the keychain's ceiling. Said rather than hidden, since the
+/// same bytes are visible to `ps` for the length of one `security` call.
+fn priced(
+    which: ProviderId,
+    live: &provider::LiveStore,
+    next: &str,
+    label: &str,
+) -> Result<Option<Warning>> {
+    let price = store::cost(&live.chain, &live.service, next);
+    if let Some(price) = price.filter(|price| price.refused()) {
         return Err(Error::CredentialTooLarge {
             tool: which,
             label: label.to_string(),
@@ -957,22 +1218,13 @@ fn ready(
             limit: price.limit,
         });
     }
-    // Said once per write rather than hidden: the same bytes are visible to `ps` for the
-    // length of one `security` call, which is the only way to write a login this size.
-    let on_the_command_line =
-        price
-            .filter(|p| p.on_the_second_route())
-            .map(|p| Warning::WrittenOnTheCommandLine {
-                tool: which,
-                bytes: p.needs,
-                limit: p.limit,
-            });
-    Ok(Readied {
-        before_raw,
-        before,
-        next,
-        on_the_command_line,
-    })
+    Ok(price
+        .filter(|p| p.on_the_second_route())
+        .map(|p| Warning::WrittenOnTheCommandLine {
+            tool: which,
+            bytes: p.needs,
+            limit: p.limit,
+        }))
 }
 
 /// Whether a login of the tool's shape is in its live slot, read back after a write.
@@ -1057,14 +1309,17 @@ fn prove_incoming(
     if held.askable_at(ctx.now()) {
         let credential = provider::Credential::new(key.provider, incoming.clone());
         match tool.verify(ctx, &credential) {
-            Ok(found) if target.owned_by(&found) => return Ok((held, incoming)),
+            Ok(found) if target.holds(&found) => return Ok((held, incoming)),
             Ok(other) => {
+                let email = state
+                    .named(key.provider, &other)
+                    .map(|owner| owner.email)
+                    .or_else(|| tool.name(ctx, &credential, &other).ok());
                 return Err(Error::ParkedLoginBelongsElsewhere {
                     label,
-                    who: crate::words::login(
-                        key.provider,
-                        &other.email,
-                        other.email == target.email,
+                    who: email.map_or_else(
+                        || "another account".to_owned(),
+                        |email| crate::words::login(key.provider, &email, email == target.email),
                     ),
                 });
             }
@@ -1074,9 +1329,19 @@ fn prove_incoming(
             Err(provider::ProviderError::ShapeUnexpected { detail, .. }) => {
                 return Err(Error::ParkedCredentialCorrupt { label, detail });
             }
+            Err(provider::ProviderError::OnHold { link, .. }) => {
+                return Err(Error::AccountOnHold {
+                    tool: key.provider,
+                    login: crate::error::Unidentified::Parked { label },
+                    link,
+                });
+            }
             Err(e) => {
                 return Err(Error::IdentityUnverifiable {
                     tool: key.provider,
+                    login: crate::error::Unidentified::Parked {
+                        label: label.clone(),
+                    },
                     cause: crate::error::Cause::of_provider(&e),
                     detail: e.to_string(),
                 });
@@ -1088,9 +1353,12 @@ fn prove_incoming(
     let Some(fresh) = renew::renew_one(ctx, permit, state, tool, key, &held)? else {
         return Err(Error::IdentityUnverifiable {
             tool: key.provider,
+            login: crate::error::Unidentified::Parked {
+                label: label.clone(),
+            },
             cause: crate::error::Cause::Unreachable,
             detail: format!(
-                "`{label}`'s parked login needs renewing and {} did not answer",
+                "it needs renewing and {} did not answer",
                 key.provider.service()
             ),
         });

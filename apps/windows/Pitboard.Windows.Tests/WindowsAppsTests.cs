@@ -6,7 +6,7 @@ namespace Pitboard.Windows.Tests;
 [TestClass]
 public sealed class WindowsAppsTests
 {
-    private const string Family = "Vendor.App_0000000000000";
+    private const string Family = StandInApp.Family;
 
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(60);
 

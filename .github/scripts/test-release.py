@@ -22,6 +22,7 @@ WINGET_HASHES = REPO / ".github" / "scripts" / "check-winget-hashes.py"
 WINDOWS_APPCAST = REPO / ".github" / "scripts" / "windows-appcast.py"
 WINDOWS_VERSIONS = REPO / ".github" / "scripts" / "windows-versions.sh"
 WINDOWS_UPDATE_KEY = REPO / ".github" / "scripts" / "windows-update-key.sh"
+WINDOWS_UPDATE_SIGN = REPO / ".github" / "scripts" / "windows-update-sign.sh"
 WINDOWS_APP = REPO / "apps" / "windows" / "Pitboard.App" / "Pitboard.App.csproj"
 PACKAGE_WINDOWS = REPO / ".github" / "scripts" / "package-windows.ps1"
 WINDOWS_TARGETS = ("x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc")
@@ -885,6 +886,88 @@ class WindowsUpdateKey(unittest.TestCase):
 
     def test_it_takes_five_arguments(self):
         done = run(WINDOWS_UPDATE_KEY, "1.0.0", self.KEY, "", "")
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("usage:", done.stderr)
+
+
+# sign_update and eddsa-verify.swift, which run only on macOS, as this file's Ed25519.
+STAND_IN_SIGNER = """import base64, importlib.util, sys
+spec = importlib.util.spec_from_file_location("release", {tests!r})
+release = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(release)
+if sys.argv[1] == "sign":
+    seed = base64.b64decode(sys.stdin.read().strip())
+    print(base64.b64encode(release.ed_sign(seed, open(sys.argv[-1], "rb").read())).decode())
+else:
+    public, signature, path = (base64.b64decode(sys.argv[2]), base64.b64decode(sys.argv[3]), sys.argv[4])
+    sys.exit(0 if release.ed_verify(public, open(path, "rb").read(), signature) else 1)
+"""
+
+
+class WindowsUpdateSign(unittest.TestCase):
+    DOWNLOADS = "https://github.com/datlechin/pitboard/releases/download/{tag}/"
+
+    def setUp(self):
+        self.work = Path(tempfile.mkdtemp())
+        self.seed = os.urandom(32)
+        self.public = base64.b64encode(ed_public(self.seed)).decode()
+        stand_in = self.work / "stand-in.py"
+        stand_in.write_text(STAND_IN_SIGNER.format(tests=str(Path(__file__).resolve())))
+        self.sign = self.work / "sign_update"
+        self.sign.write_text(f'#!/bin/sh\nexec "{sys.executable}" -B "{stand_in}" sign "$@"\n')
+        self.sign.chmod(0o755)
+        self.verifier = [sys.executable, "-B", str(stand_in), "verify"]
+        self.feed = self.work / "appcast-windows.xml"
+
+    def tearDown(self):
+        shutil.rmtree(self.work)
+
+    def signed(self, tag, latest, private=None, public=None):
+        for arch in ("x64", "arm64"):
+            (self.work / f"Pitboard-{tag}-windows-{arch}.msi").write_bytes(os.urandom(200))
+        private = base64.b64encode(self.seed).decode() if private is None else private
+        return subprocess.run(
+            ["sh", WINDOWS_UPDATE_SIGN, tag, latest, public or self.public, self.work,
+             self.DOWNLOADS.format(tag=tag), self.feed, self.sign, *self.verifier],
+            input=private + "\n",
+            capture_output=True,
+            text=True,
+        )
+
+    def test_a_beta_and_a_release_candidate_check_both_msis_and_write_no_feed(self):
+        for tag in ("v1.0.0-beta.1", "v1.0.0-rc1"):
+            with self.subTest(tag=tag):
+                done = self.signed(tag, "false")
+                self.assertEqual(done.returncode, 0, done.stderr)
+                self.assertIn("Only the latest full release has a feed", done.stdout)
+                self.assertFalse(self.feed.exists())
+
+    def test_a_private_key_that_is_not_the_public_keys_pair_fails_a_beta(self):
+        other = base64.b64encode(ed_public(os.urandom(32))).decode()
+        done = self.signed("v1.0.0-beta.1", "false", public=other)
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("is not WINDOWS_UPDATE_PUBLIC_KEY's pair", done.stderr)
+        self.assertFalse(self.feed.exists())
+
+    def test_the_latest_full_release_writes_a_feed_whose_signatures_the_public_key_verifies(self):
+        done = self.signed("v1.0.1", "true")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        sparkle = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
+        items = ElementTree.parse(self.feed).getroot().find("channel").findall("item")
+        self.assertEqual(len(items), 2)
+        for item, arch in zip(items, ("x64", "arm64")):
+            enclosure = item.find("enclosure")
+            msi = (self.work / f"Pitboard-v1.0.1-windows-{arch}.msi").read_bytes()
+            signature = base64.b64decode(enclosure.get(f"{sparkle}edSignature"))
+            self.assertTrue(ed_verify(ed_public(self.seed), msi, signature))
+
+    def test_no_private_key_is_refused(self):
+        done = self.signed("v1.0.0-beta.1", "false", private="")
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("WINDOWS_UPDATE_PRIVATE_KEY is not set", done.stderr)
+
+    def test_it_takes_its_arguments(self):
+        done = run(WINDOWS_UPDATE_SIGN, "v1.0.0", "true", self.public, self.work)
         self.assertEqual(done.returncode, 2)
         self.assertIn("usage:", done.stderr)
 

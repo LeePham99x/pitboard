@@ -4337,6 +4337,7 @@ fn a_folder_move_waiting_does_not_stop_a_claude_code_switch() {
             refresh_token_expires_in: Some(30 * 86_400),
             scopes: None,
             at: None,
+            owner: None,
         },
     );
     let renewed = crate::switch::renew::renew_due(

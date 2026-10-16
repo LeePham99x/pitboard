@@ -221,6 +221,14 @@ pub enum Intent {
     /// The person kept the app open, or the question was closed some other way: the quit
     /// question goes, and nothing is switched.
     KeepAppOpen,
+    /// The person agreed to put the account `qualified` names in place of a login in use its
+    /// service refuses for good, which the switch to it asked about. It names the question
+    /// it answers, and is taken before or after `KeepLogin` closed that question, as
+    /// `QuitAndSwitch` is.
+    ReplaceAndSwitch { qualified: String },
+    /// The person kept the login in use, or the question was closed some other way: the
+    /// question goes, and nothing is switched.
+    KeepLogin,
     /// Somebody has read what `provider`'s tool's last switch said, and put it away.
     DismissSwitch { provider: String },
     /// Somebody keeps one account of `provider`'s tool on purpose: "Not Now" to the nudge to
@@ -452,6 +460,14 @@ pub struct QuitQuestion {
     pub name: String,
 }
 
+/// What a switch asks before it puts an account's login in place of a login in use its
+/// service refuses for good, which cannot be parked.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ReplaceQuestion {
+    pub qualified: String,
+    pub question: Question,
+}
+
 /// What a switch means for a tool's running sessions, for a tool whose sessions never pick
 /// a switch up: they keep the account they started with until they are started again.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -569,6 +585,8 @@ pub struct Snapshot {
     /// landed. Nothing else is switched meanwhile, so the menu and the rows hold back.
     pub switch_under_way: Option<String>,
     pub quit_question: Option<QuitQuestion>,
+    /// The question a switch asks before it replaces a login its service refuses for good.
+    pub replace_question: Option<ReplaceQuestion>,
     /// What each tool's last switch said that is still true, one per tool at most: a tool's
     /// newer switch takes the place of what its last said, and one kept once the last was put
     /// away goes after every other tool's. Apart from `warnings`, which the read after every

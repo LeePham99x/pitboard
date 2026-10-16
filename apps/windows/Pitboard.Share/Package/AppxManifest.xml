@@ -39,7 +39,6 @@
         <uap:Extension Category="windows.shareTarget">
           <uap:ShareTarget Description="Open in Pitboard">
             <uap:DataFormat>WebLink</uap:DataFormat>
-            <uap:DataFormat>Uri</uap:DataFormat>
           </uap:ShareTarget>
         </uap:Extension>
       </Extensions>

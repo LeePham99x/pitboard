@@ -54,7 +54,10 @@ These come from a Claude Code or Codex switch. A Claude Desktop switch has its o
 | `switch_unverified` | 3 | Writing the incoming login failed, and Pitboard could not read the login back to see what changed. Nothing was deleted. | Unlock the keychain, or make `.credentials.json` or `auth.json` readable to you. Then run the same `pitboard use` again. |
 | `switch_corrupted` | 3 | Pitboard could not write the incoming login or put the outgoing one back. The outgoing login is still parked. | Sign in to any enrolled account with `claude` or `codex login`, then run `pitboard use` with the account you switched from. |
 | `signed_in_account_changed` | 1 | The account in use changed during the switch. Nothing moved. | Try again. |
-| `identity_unverifiable` | 1 | Pitboard could not confirm with Anthropic or OpenAI whose login it was about to move, so it moved nothing. | Check the connection and try again. If the message names a SOCKS proxy, set that variable to an HTTP proxy or unset it, as [Proxies](/reference/files#proxies) describes. |
+| `identity_unverifiable` | 1 | Pitboard could not confirm with Anthropic or OpenAI whose login it was about to move, so it moved nothing. The message names the login, the one signed in or the one parked for the account switched to, and what the service answered. | Do what the message says. If the message names a SOCKS proxy, set that variable to an HTTP proxy or unset it, as [Proxies](/reference/files#proxies) describes. |
+| `live_login_refused` | 1 | Anthropic refuses the refresh token of Claude Code's login in use for good, so that login no longer works and Pitboard cannot park it. | Run `pitboard use <label> --yes` to put the account's login in its place, or sign in to Claude Code again. In the app, choose **Replace** when Pitboard asks. |
+| `account_on_hold` | 1 | Anthropic has put the account on hold. Pitboard keeps its login. | Follow Anthropic's instructions for the account, at the link the message gives, then try again. |
+| `replace_failed` | 1 | Pitboard could not put the account's login in place of the refused one. The account's login is still parked. | Run the switch again. If it keeps failing, run `pitboard doctor`. |
 | `session_expired` | 1 | The tool's login in use has expired, so Pitboard cannot identify it. If the message says `cannot be renewed`, Pitboard tried to renew it, and Anthropic no longer accepts it or it has no refresh token. | Run `claude` or `codex` once so it renews its login, then try again. If the message says `cannot be renewed`, run `claude` and sign in. |
 
 ## Signing in
@@ -243,6 +246,8 @@ An interrupted Claude Desktop move shows `move_waiting` on each read, as [Warnin
 | `interrupted` | `the check did not finish` | Run the command again. |
 | `unreachable` | `Anthropic could not be reached` | Check the connection, then run `pitboard status --fresh`. |
 | `server_error` | `Anthropic answered with an error; try again later` | Run `pitboard status --fresh` later. |
+| `refused` | `Anthropic refused to answer for this login` | [Sign in to the account again](/guides/sign-in-again). |
+| `on_hold` | `Anthropic has put this account on hold` | Follow Anthropic's instructions for the account. Pitboard keeps its parked login. |
 | `rate_limited` | `Anthropic is rate limiting usage checks` | Wait. Pitboard waits before it asks again, and `--fresh` waits too. |
 | `answer_not_understood` | `Anthropic's answer was not understood` | [Report a problem](/troubleshooting#report-a-problem). |
 | `session_expired` | ``Claude Code's session has expired; `claude` renews it`` | The tool renews its login in use at its next request. Run `claude` once. |
@@ -265,6 +270,8 @@ An interrupted Claude Desktop move shows `move_waiting` on each read, as [Warnin
 | --- | --- |
 | `identity_unverifiable` | Always |
 | `left_login_unidentified` | Always |
+| `live_login_refused` | `login_refused` |
+| `account_on_hold` | `refused` |
 | `session_expired` | `token_expired`, or `login_refused` where the message says `cannot be renewed` |
 | `renewal_failed` | When known |
 | An error that stops `pitboard stow` | That error's own |
@@ -278,6 +285,7 @@ Every other error has `null`. `checks_failed` and `output_is_not_a_report` have 
 | `unreachable` | `true` | Anthropic or OpenAI could not be reached. |
 | `rate_limited` | `true` | Anthropic or OpenAI asked for fewer requests. |
 | `server_error` | `true` | Anthropic or OpenAI answered with an error. |
+| `refused` | `false` | Anthropic or OpenAI refused the request, and would refuse it again. |
 | `answer_not_understood` | `false` | Pitboard did not understand the answer. |
 | `login_refused` | `false` | The login was revoked, or already used somewhere else. |
 | `token_expired` | `false` | The login's access token has expired. |
@@ -310,7 +318,7 @@ A warning does not stop the command or change its exit status. In the Pitboard w
 | `sessions_still_running` | **Open sessions still use the previous account** | After a Codex switch, Codex processes started before it still use the previous account. The message names them. | Start each again, as [Restart what runs Codex](/guides/switch#restart-what-runs-codex) says. Do not sign out in any: that revokes the parked login. |
 | `sessions_keep_old_login` | **Open sessions still use the old login** | After you sign in again to a Codex account, Codex processes started before still use the old login. | Start each again. Otherwise one can put the old login back when it renews. |
 | `sessions_unknown` | **Couldn't tell which sessions are open** | After a Codex switch or sign-in, Pitboard could not read the list of processes. | Start each Codex process again. Do not sign out in any. |
-| `sign_in_parked_not_in_use` | **The new login was parked, not put in use** | After a sign-in again, Pitboard could not identify the login the tool has in use, so it parked the new one. | See [If Pitboard cannot identify the login in use](/guides/sign-in-again#if-pitboard-cannot-identify-the-login-in-use). |
+| `sign_in_parked_not_in_use` | **The new login was parked, not put in use** | After a sign-in, Pitboard could not identify the login the tool has in use, so it parked the new one. | See [If Pitboard cannot identify the login in use](/guides/sign-in-again#if-pitboard-cannot-identify-the-login-in-use). |
 | `sign_in_awaited` | None: the notice **Adding a Claude Desktop account isn't finished**, or **Signing in to home again isn't finished**, says it | Claude is signed out for a sign-in, and the account that was in use is parked. | Finish or undo it, as [Finish or undo an add or a sign-in again](/guides/claude-desktop#finish-or-undo-an-add-or-a-sign-in-again) says. |
 | `login_replaced` | **A login was replaced outside Pitboard** | A sign-in outside Pitboard, such as `/login` in Claude Code, replaced the only login of the account the message names. | Run `pitboard enroll <label> --sign-in`, or forget the account. See [An account reads `login replaced outside Pitboard`](/troubleshooting#an-account-reads-login-replaced-outside-pitboard). |
 | `login_replaced` | **A login was replaced outside Pitboard** | The Claude Desktop account the message names was signed out in Claude, which ends its login at claude.ai. Pitboard holds no login for it. | Run `pitboard enroll desktop/<label> --sign-in`. |

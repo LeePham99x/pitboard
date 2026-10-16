@@ -3,7 +3,7 @@
 //! Read from codex-cli 0.154.0. Two requests: one to exchange a refresh token, one to ask
 //! how much of a plan is left. Neither is a model request and neither costs quota.
 
-use crate::api::{agent, retry_after, server_time, test_base};
+use crate::api::{Refusal, agent, retry_after, server_time, test_base};
 use crate::context::Context;
 use crate::provider::{ProviderError, ProviderId};
 use crate::service::Permit;
@@ -42,13 +42,6 @@ fn malformed(detail: String) -> ProviderError {
     ProviderError::Malformed {
         service: ProviderId::Codex.service(),
         detail,
-    }
-}
-
-fn unexpected(status: u16) -> ProviderError {
-    ProviderError::Unexpected {
-        service: ProviderId::Codex.service(),
-        status,
     }
 }
 
@@ -172,7 +165,10 @@ fn ask_renew(ctx: &Context, _: Permit, refresh_token: &str) -> Result<Fresh, Pro
         other if refused_for_good(other, &text) => Err(ProviderError::InvalidGrant {
             service: ProviderId::Codex.service(),
         }),
-        other => Err(unexpected(other)),
+        other => Err(ProviderError::answered(
+            ProviderId::Codex.service(),
+            Refusal::answered(other, response.headers(), &text),
+        )),
     }
 }
 
@@ -237,7 +233,10 @@ fn ask_usage(
             service: ProviderId::Codex.service(),
             retry_after: retry_after(response.headers()),
         }),
-        other => Err(unexpected(other)),
+        _ => Err(ProviderError::answered(
+            ProviderId::Codex.service(),
+            Refusal::of(&mut response),
+        )),
     }
 }
 

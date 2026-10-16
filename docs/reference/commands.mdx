@@ -122,6 +122,8 @@ With nobody to ask, these answer as they do with `--yes`:
 
 With nobody to ask, a refusal found only once the command runs shows only with `--yes`. Without it, the answer is `confirmation_needed`. Forgetting the account in use is one, with `cannot_forget_active_account`. `identity_unverifiable`, `custom_oauth_endpoint` and `app_open` are others.
 
+`pitboard use` asks only where Anthropic refuses the refresh token of Claude Code's login in use for good, before it puts the account's login in its place. It asks and takes `--yes` as these do. With nobody to ask and no `--yes`, it changes nothing and exits 1 with [`live_login_refused`](/reference/errors#switching).
+
 ## Exit codes
 
 | Code | Meaning |

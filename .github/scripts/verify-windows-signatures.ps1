@@ -1,8 +1,5 @@
-# Checks the Authenticode signature of every program a Windows release hands on: each program
-# and sparse package given, each program inside each zip given, and each MSI given with each
-# program of Pitboard's inside it. The .NET runtime's, the Windows App SDK's and WinSparkle.dll in
-# an MSI go through as their makers shipped them. It reads the files and runs none of them: an MSI
-# is extracted with msiexec /a, which installs nothing.
+# Checks the Authenticode signature of every program a Windows release hands on, and runs none of them. Of an MSI it
+# checks the programs named for Pitboard, and with -Built, that signing changed none of its files or tables.
 param(
     [Parameter(Mandatory)] [string[]] $Path,
     # signed: each signature is Valid, by -Subject, with a timestamp. unsigned: none is signed.
@@ -65,6 +62,43 @@ function Get-ImageFiles([string] $Image) {
     return @(Get-ChildItem -LiteralPath $Image -Recurse -File | ForEach-Object { $_.FullName.Substring($prefix) } | Sort-Object)
 }
 
+function Invoke-Com($Target, [string] $Name, [string] $Kind, [object[]] $Arguments) {
+    $Target.GetType().InvokeMember($Name, $Kind, $null, $Target, $Arguments)
+}
+
+# Each table of an MSI as Windows Installer exports it, the .idt files and the streams of its binary columns.
+function Export-Tables([string] $Msi, [string] $To) {
+    New-Item -ItemType Directory -Path $To | Out-Null
+    $installer = New-Object -ComObject WindowsInstaller.Installer
+    $database = Invoke-Com $installer 'OpenDatabase' 'InvokeMethod' @($Msi, 0)
+    $view = Invoke-Com $database 'OpenView' 'InvokeMethod' @('SELECT `Name` FROM `_Tables`')
+    Invoke-Com $view 'Execute' 'InvokeMethod' $null | Out-Null
+    $tables = @(while (($record = Invoke-Com $view 'Fetch' 'InvokeMethod' $null)) { Invoke-Com $record 'StringData' 'GetProperty' @(1) })
+    Invoke-Com $view 'Close' 'InvokeMethod' $null | Out-Null
+    foreach ($table in $tables) {
+        Invoke-Com $database 'Export' 'InvokeMethod' @([string] $table, $To, "$table.idt") | Out-Null
+    }
+    [void] [Runtime.InteropServices.Marshal]::ReleaseComObject($view)
+    [void] [Runtime.InteropServices.Marshal]::ReleaseComObject($database)
+}
+
+# The tables of two MSIs that differ, by name.
+function Compare-Tables([string] $Msi, [string] $Built) {
+    $mine = Join-Path $work ([guid]::NewGuid().ToString('N'))
+    $theirs = Join-Path $work ([guid]::NewGuid().ToString('N'))
+    Export-Tables $Msi $mine
+    Export-Tables $Built $theirs
+    $names = @(Get-ImageFiles $mine) + @(Get-ImageFiles $theirs) | Sort-Object -Unique
+    foreach ($name in $names) {
+        $a = Join-Path $mine $name
+        $b = Join-Path $theirs $name
+        if (-not (Test-Path -LiteralPath $a) -or -not (Test-Path -LiteralPath $b) -or
+            (Get-FileHash -LiteralPath $a).Hash -ne (Get-FileHash -LiteralPath $b).Hash) {
+            ($name -split '[\\.]')[0]
+        }
+    }
+}
+
 function Get-EntryNames([string] $Zip) {
     $archive = [IO.Compression.ZipFile]::OpenRead($Zip)
     try {
@@ -116,6 +150,13 @@ try {
                 $imageBuilt = Join-Path $work ([guid]::NewGuid().ToString('N'))
                 & $extract -Msi $before -Destination $imageBuilt | Out-Null
                 if (($files -join ', ') -ne ((Get-ImageFiles $imageBuilt) -join ', ')) { throw "$leaf holds other files than it was built with" }
+                # Signing an MSI adds its signature and changes none of its files or tables. msiexec /a writes a copy of the
+                # MSI of its own beside them, whose tables Compare-Tables reads from the MSI itself.
+                $changed = @($files | Where-Object { $_ -ne $leaf } | Where-Object {
+                    (Get-FileHash -LiteralPath (Join-Path $image $_)).Hash -ne (Get-FileHash -LiteralPath (Join-Path $imageBuilt $_)).Hash })
+                if ($changed) { throw "$leaf holds another $($changed -join ', ') than it was built with" }
+                $tables = @(Compare-Tables $file $before | Sort-Object -Unique)
+                if ($tables) { throw "$leaf holds other tables than it was built with: $($tables -join ', ')" }
             }
             $programs = 0
             foreach ($inside in $files) {

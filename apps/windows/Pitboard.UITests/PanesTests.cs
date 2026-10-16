@@ -18,7 +18,8 @@ public sealed class PanesTests
         Assert.IsLessThan(enrolled.BoundingRectangle.Top, switched.BoundingRectangle.Top, "newest first");
     }
 
-    // The one thing worth looking at in this fixture is personal's parked login, which lapses soon.
+    // Worth looking at in this fixture: personal's parked login, which lapses soon, and the status
+    // line, since nothing on the fixture's PATH is found.
     [TestMethod]
     public void ThisPCShowsTheChecks()
     {
@@ -27,6 +28,7 @@ public sealed class PanesTests
         launched.Select("pane.machine");
 
         launched.Named("account personal");
-        launched.Named("One thing is worth looking at.");
+        launched.Named("status line");
+        launched.Named("2 things are worth looking at.");
     }
 }

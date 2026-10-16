@@ -14,7 +14,6 @@ use crate::error::Cause;
 use crate::in_use::{self, InUse};
 use crate::park;
 use crate::provider::Owner;
-use crate::provider::claude::api::ApiError;
 use crate::provider::claude::paths as claude;
 use crate::provider::{LoginKind, Provider, ProviderError, ProviderId};
 use crate::service::Permit;
@@ -55,6 +54,10 @@ pub enum Stale {
     Unreachable,
     /// The service answered badly and may answer well later.
     ServerError,
+    /// The service refused, and asked again would refuse the same way.
+    Refused,
+    /// The service has put the account on hold.
+    OnHold,
     /// The service's answer was not in a shape Pitboard understands, which means the shape
     /// moved. Asking again produces the same thing.
     AnswerNotUnderstood,
@@ -76,13 +79,17 @@ impl Stale {
     /// Three answers used to arrive here as one. A front end deciding whether to ask
     /// again needs to tell a bad morning at the service from an answer whose shape moved
     /// from a login that is finished, and could not.
-    fn of(error: &ApiError, signed_in: bool) -> Stale {
-        match Cause::of(error) {
+    fn of(error: &ProviderError, signed_in: bool) -> Stale {
+        if matches!(error, ProviderError::OnHold { .. }) {
+            return Stale::OnHold;
+        }
+        match Cause::of_provider(error) {
             Cause::TokenExpired if signed_in => Stale::SessionExpired,
             Cause::TokenExpired => Stale::ParkedAccessExpired,
             Cause::RateLimited => Stale::RateLimited,
             Cause::Unreachable => Stale::Unreachable,
             Cause::ServerError => Stale::ServerError,
+            Cause::Refused => Stale::Refused,
             Cause::AnswerNotUnderstood => Stale::AnswerNotUnderstood,
             Cause::LoginRefused => Stale::LoginRefused,
         }
@@ -102,6 +109,8 @@ impl Stale {
             Stale::RateLimited => "rate_limited",
             Stale::Unreachable => "unreachable",
             Stale::ServerError => "server_error",
+            Stale::Refused => "refused",
+            Stale::OnHold => "on_hold",
             Stale::AnswerNotUnderstood => "answer_not_understood",
             Stale::LoginRefused => "login_refused",
             Stale::AskedRecently => "asked_recently",
@@ -161,6 +170,14 @@ impl Stale {
                 "Anthropic answered with an error; try again later",
                 "OpenAI answered with an error; try again later",
             ),
+            Stale::Refused => per_tool(
+                "Anthropic refused to answer for this login",
+                "OpenAI refused to answer for this login",
+            ),
+            Stale::OnHold => per_tool(
+                "Anthropic has put this account on hold",
+                "OpenAI has put this account on hold",
+            ),
             Stale::AnswerNotUnderstood => per_tool(
                 "Anthropic's answer was not understood",
                 "OpenAI's answer was not understood",
@@ -206,6 +223,9 @@ pub struct Row {
     pub plan: Option<String>,
     // when Pitboard last read this login in use, for a tool no read asks: Claude Desktop's
     pub read_at: Option<i64>,
+    /// Why the login on an [unplaced](Row::unplaced) row is pinned on no account, as its
+    /// tool's store or service said it.
+    pub reason: Option<String>,
 }
 
 impl Row {
@@ -237,13 +257,33 @@ impl Row {
 
     /// What to tell a person about [`Row::stale`], in the words of this row's own tool. A
     /// login in use that is refused is not a parked one, and its tool signs in again.
-    pub fn explanation(&self) -> Option<&'static str> {
-        match (self.stale, self.provider) {
-            (Some(Stale::LoginRefused), ProviderId::Claude) if self.signed_in => {
-                Some("Claude Code's login is no longer accepted; run `claude` and sign in again")
-            }
-            (stale, provider) => stale.and_then(|stale| stale.explanation_for(provider)),
+    pub fn explanation(&self) -> Option<String> {
+        if self.untold()
+            && let Some(reason) = &self.reason
+        {
+            return Some(format!(
+                "Pitboard could not tell which account {}'s login is ({reason})",
+                self.provider.name()
+            ));
         }
+        match (self.stale, self.provider) {
+            (Some(Stale::LoginRefused), ProviderId::Claude) if self.signed_in => Some(
+                "Claude Code's login is no longer accepted; run `claude` and sign in again".into(),
+            ),
+            (stale, provider) => stale
+                .and_then(|stale| stale.explanation_for(provider))
+                .map(str::to_owned),
+        }
+    }
+
+    /// An [unplaced](Row::unplaced) login that was read, and whose account its service could
+    /// not be asked or would not say.
+    pub fn untold(&self) -> bool {
+        self.unplaced()
+            && !matches!(
+                self.stale,
+                Some(Stale::LoginUnreadable | Stale::LoginUnusable)
+            )
     }
 
     /// A tool's live login that Pitboard could not pin on any account: one it could not
@@ -251,12 +291,7 @@ impl Row {
     /// type about it but `pitboard doctor`, so a front end says what it is rather than
     /// showing it as an account nobody has enrolled.
     pub fn unplaced(&self) -> bool {
-        self.label.is_none()
-            && !self.signed_in
-            && matches!(
-                self.stale,
-                Some(Stale::LoginUnreadable | Stale::LoginUnusable)
-            )
+        self.label.is_none() && !self.signed_in && self.account_uuid.is_empty()
     }
 }
 
@@ -499,23 +534,6 @@ impl Answered {
     }
 }
 
-/// A provider's failure as the usage path has always classified one.
-fn to_api(error: ProviderError) -> ApiError {
-    use crate::provider::ProviderError as P;
-    match error {
-        P::Unauthorized => ApiError::Unauthorized,
-        P::RateLimited { retry_after, .. } => ApiError::RateLimited { retry_after },
-        P::Network { detail, .. } => ApiError::Network(detail),
-        P::Unexpected { status, .. } => ApiError::Unexpected { status },
-        P::Malformed { detail, .. }
-        | P::ShapeUnexpected { detail, .. }
-        | P::Unsupported { reason: detail, .. } => ApiError::Malformed(detail),
-        P::NoLogin { .. } => ApiError::Malformed("nothing is signed in".into()),
-        missing @ P::CodexHomeMissing { .. } => ApiError::Malformed(missing.to_string()),
-        P::InvalidGrant { .. } => ApiError::InvalidGrant,
-    }
-}
-
 /// The account filed under `id` asked about now with `document`, past the floor between asks
 /// but not past a wait the service asked for, and its answer recorded as a read records it:
 /// what Pitboard holds of it then, where the service answered. For a warm-up, to see the
@@ -569,15 +587,18 @@ fn ask_usage(
     if !signed_in && matches!(answer, Err(ProviderError::ShapeUnexpected { .. })) {
         return (Err(Stale::ParkUnreadable), None);
     }
-    let answer = answer.map_err(to_api);
     let learned = match &answer {
         Ok(_) => Some(budget::Outcome::Answered),
-        Err(ApiError::RateLimited { retry_after }) => {
+        Err(ProviderError::RateLimited { retry_after, .. }) => {
             Some(budget::Outcome::RateLimited(*retry_after))
         }
-        Err(ApiError::Network(_) | ApiError::Unexpected { .. }) => {
-            Some(budget::Outcome::Unreachable)
-        }
+        // A refusal waits as an outage does, as every status but 200, 401, 403 and 429 did:
+        // asked again at once, it is answered the same.
+        Err(
+            ProviderError::Network { .. }
+            | ProviderError::Unavailable { .. }
+            | ProviderError::Refused { .. },
+        ) => Some(budget::Outcome::Unreachable),
         // A token that is refused, or an answer that is not understood, is not a reason to
         // wait: waiting fixes neither.
         Err(_) => None,
@@ -667,7 +688,6 @@ fn ask_live(
     let (renewed, found) = match identify::told_by_a_read(ctx, permit, state, tool, document) {
         Ok(told) => told,
         Err(error) => {
-            let error = to_api(error);
             return Answered::learning_nothing(LiveLogin {
                 signed_in: Some(Err(error.to_string())),
                 known: recorded(),
@@ -1043,6 +1063,7 @@ fn assemble(
                 stale,
                 plan,
                 read_at: read_at(state, which, signed_in),
+                reason: None,
             }
         })
         .collect();
@@ -1076,16 +1097,19 @@ fn assemble(
                 stale,
                 plan,
                 read_at: read_at(state, which, true),
+                reason: None,
             });
             continue;
         }
-        // A login that could not be read, or was read and is not one account's, and that
-        // nothing pins on any account. Said, rather than left out, because leaving it out
-        // reads as nobody being signed in; but only for a tool somebody uses through
-        // Pitboard, so a machine that has never enrolled a Codex account sees nothing about
-        // Codex at all.
-        let enrolled = state.accounts.iter().any(|a| a.provider() == which);
-        if live.out_of_reach && enrolled {
+        // A login that could not be read, was read and is not one account's, or whose account
+        // could not be told, and that nothing pins on any account. Said, rather than left
+        // out, because leaving it out reads as nobody being signed in; but only for the tool a
+        // bare label means and for a tool somebody uses through Pitboard, so a machine that
+        // has never enrolled a Codex account sees nothing about Codex at all.
+        let used =
+            which == crate::label::DEFAULT || state.accounts.iter().any(|a| a.provider() == which);
+        let untold = matches!(live.signed_in, Some(Err(_)));
+        if (live.out_of_reach || untold) && used {
             rows.push(Row {
                 provider: which,
                 label: None,
@@ -1099,6 +1123,7 @@ fn assemble(
                 stale: live.usage().err(),
                 plan: None,
                 read_at: None,
+                reason: live.signed_in.clone().and_then(Result::err),
             });
         }
     }
@@ -1298,6 +1323,8 @@ mod tests {
             Stale::RateLimited,
             Stale::Unreachable,
             Stale::ServerError,
+            Stale::Refused,
+            Stale::OnHold,
             Stale::AnswerNotUnderstood,
             Stale::LoginRefused,
             Stale::Interrupted,
@@ -1312,30 +1339,63 @@ mod tests {
     /// their parked login is finished.
     #[test]
     fn anthropics_failures_are_told_apart() {
-        use crate::provider::claude::api::ApiError;
-        let parked = |e: &ApiError| Stale::of(e, false);
+        let service = "Anthropic";
+        let parked = |e: &ProviderError| Stale::of(e, false);
+        let answered = |status: u16| Box::new(crate::api::Refusal::read(status, ""));
         assert_eq!(
-            parked(&ApiError::Unexpected { status: 503 }),
+            parked(&ProviderError::Unavailable {
+                service,
+                refusal: answered(503)
+            }),
             Stale::ServerError
         );
         assert_eq!(
-            parked(&ApiError::Malformed("no windows".into())),
+            parked(&ProviderError::Refused {
+                service,
+                refusal: answered(400)
+            }),
+            Stale::Refused
+        );
+        assert_eq!(
+            parked(&ProviderError::OnHold {
+                service,
+                link: None
+            }),
+            Stale::OnHold
+        );
+        assert_eq!(
+            parked(&ProviderError::Malformed {
+                service,
+                detail: "no windows".into()
+            }),
             Stale::AnswerNotUnderstood
         );
-        assert_eq!(parked(&ApiError::InvalidGrant), Stale::LoginRefused);
         assert_eq!(
-            parked(&ApiError::RateLimited { retry_after: None }),
+            parked(&ProviderError::InvalidGrant { service }),
+            Stale::LoginRefused
+        );
+        assert_eq!(
+            parked(&ProviderError::RateLimited {
+                service,
+                retry_after: None
+            }),
             Stale::RateLimited
         );
         assert_eq!(
-            parked(&ApiError::Network("down".into())),
+            parked(&ProviderError::Network {
+                service,
+                detail: "down".into()
+            }),
             Stale::Unreachable
         );
 
         // The same token failure means different things for a live login and a parked one.
-        assert_eq!(parked(&ApiError::Unauthorized), Stale::ParkedAccessExpired);
         assert_eq!(
-            Stale::of(&ApiError::Unauthorized, true),
+            parked(&ProviderError::Unauthorized),
+            Stale::ParkedAccessExpired
+        );
+        assert_eq!(
+            Stale::of(&ProviderError::Unauthorized, true),
             Stale::SessionExpired
         );
     }
@@ -1735,7 +1795,7 @@ mod tests {
     }
 
     /// Every stale reason, for the tests that hold each one to something.
-    const EVERY_STALE: [Stale; 17] = [
+    const EVERY_STALE: [Stale; 19] = [
         Stale::NothingSignedIn,
         Stale::LoginUnreadable,
         Stale::LoginUnusable,
@@ -1747,6 +1807,8 @@ mod tests {
         Stale::RateLimited,
         Stale::Unreachable,
         Stale::ServerError,
+        Stale::Refused,
+        Stale::OnHold,
         Stale::AnswerNotUnderstood,
         Stale::LoginRefused,
         Stale::AskedRecently,
@@ -1782,6 +1844,8 @@ mod tests {
                 "Claude Code's login is not one Pitboard can park or switch; run `pitboard doctor`",
             ),
             Stale::NoUsage => Some("Pitboard reads no usage for Claude Desktop"),
+            Stale::Refused => Some("Anthropic refused to answer for this login"),
+            Stale::OnHold => Some("Anthropic has put this account on hold"),
         };
         for stale in EVERY_STALE {
             assert_eq!(
@@ -1833,7 +1897,10 @@ mod tests {
             parked: asked_about(&[("work-acc", Err(Stale::Unreachable))]),
         };
         let rows = assemble(&s, &f, nothing_remembered, NOW);
-        assert_eq!(rows[0].explanation(), Some("OpenAI could not be reached"));
+        assert_eq!(
+            rows[0].explanation().as_deref(),
+            Some("OpenAI could not be reached")
+        );
     }
 
     fn codex_account(label: &str, uuid: &str) -> Account {
@@ -2036,6 +2103,54 @@ mod tests {
         assert_eq!(alpha.usage.as_ref().unwrap().windows[0].percent, 30.0);
     }
 
+    // A refusal used to arrive as an unexpected status, which waited before the next ask.
+    #[test]
+    fn a_refused_usage_check_waits_as_an_outage_does() {
+        let home = tempfile::tempdir().expect("a scratch home");
+        let (ctx, _mem, api) = machine(home.path(), None);
+        api.token_trouble(
+            "access-x",
+            Trouble::Answered(400, r#"{"error":{"type":"invalid_request_error"}}"#),
+        );
+
+        let (answer, learned) = ask_usage(
+            &ctx,
+            crate::provider::document(ProviderId::Claude),
+            "acc-x",
+            &json!({"claudeAiOauth": {"accessToken": "access-x"}}),
+            false,
+            None,
+            true,
+        );
+
+        assert_eq!(answer.err(), Some(Stale::Refused));
+        assert!(
+            matches!(learned, Some((_, budget::Outcome::Unreachable))),
+            "{learned:?}"
+        );
+
+        // A request the service no longer takes waits too, and says the answer was not
+        // understood rather than that the login was refused.
+        api.token_trouble(
+            "access-x",
+            Trouble::Answered(404, r#"{"error":{"type":"not_found_error"}}"#),
+        );
+        let (answer, learned) = ask_usage(
+            &ctx,
+            crate::provider::document(ProviderId::Claude),
+            "acc-x",
+            &json!({"claudeAiOauth": {"accessToken": "access-x"}}),
+            false,
+            None,
+            true,
+        );
+        assert_eq!(answer.err(), Some(Stale::AnswerNotUnderstood));
+        assert!(
+            matches!(learned, Some((_, budget::Outcome::Unreachable))),
+            "{learned:?}"
+        );
+    }
+
     /// Claude Code's `/logout` deletes the login and leaves the document behind, still
     /// holding the machine's MCP tokens. That is nobody signed in. It used to be sent to
     /// Anthropic to identify, and the row read as Anthropic answering badly.
@@ -2098,7 +2213,7 @@ mod tests {
         );
         assert_eq!(alpha.stale, Some(Stale::LoginUnreadable));
         assert_eq!(
-            alpha.explanation(),
+            alpha.explanation().as_deref(),
             Some("Claude Code's login could not be read; run `pitboard doctor`")
         );
         let why = report.signed_in.expect_err("nobody could say whose it is");
@@ -2153,6 +2268,41 @@ mod tests {
         assert_eq!(beta.stale, Some(Stale::NothingParked));
     }
 
+    /// The report of 16 October 2026, first run: Claude Code signed in to a login Anthropic
+    /// would not name, and the window said "No accounts". The login gets a row saying why.
+    #[test]
+    fn a_login_whose_account_cannot_be_told_gets_a_row_from_the_first_run() {
+        let facts = Facts {
+            live: [(
+                ProviderId::Claude,
+                LiveLogin {
+                    signed_in: Some(Err("Anthropic answered 400: No organization".into())),
+                    usage: Some(Err(Stale::Refused)),
+                    ..LiveLogin::default()
+                },
+            )]
+            .into_iter()
+            .collect(),
+            asked: true,
+            plans: BTreeMap::new(),
+            parked: BTreeMap::new(),
+        };
+
+        let rows = assemble(&State::default(), &facts, nothing_remembered, NOW);
+
+        let [row] = &rows[..] else {
+            panic!("one row: {rows:?}");
+        };
+        assert!(row.unplaced() && row.untold() && !row.signed_in, "{row:?}");
+        assert_eq!(
+            row.explanation().as_deref(),
+            Some(
+                "Pitboard could not tell which account Claude Code's login is (Anthropic \
+                 answered 400: No organization)"
+            )
+        );
+    }
+
     /// A tool whose login could not be read, and whose account in use as Pitboard last
     /// recorded it is none of its accounts, gets a row of its own, so its silence is not read
     /// as nobody signed in. Only for a tool somebody uses through Pitboard: a machine that has
@@ -2198,7 +2348,7 @@ mod tests {
         assert_eq!(said.stale, Some(Stale::LoginUnreadable));
         assert!(!said.signed_in && !said.switchable(NOW));
         assert_eq!(
-            said.explanation(),
+            said.explanation().as_deref(),
             Some("Codex's login could not be read; run `pitboard doctor`")
         );
         let work = rows
@@ -2232,7 +2382,7 @@ mod tests {
         assert_eq!(answered.login.usage().err(), Some(Stale::Unreachable));
         assert!(matches!(answered.login.signed_in, Some(Err(_))));
         assert!(answered.learned.is_none() && answered.found.is_none());
-        assert_eq!(api.asked(), [Question::Owner("access-x".into())]);
+        assert_eq!(api.asked(), [Question::Identity("access-x".into())]);
     }
 
     /// Offline, Claude Code's account in use is the one Anthropic last named for its login,
@@ -2401,7 +2551,7 @@ mod tests {
         assert!(a.signed_in, "the tokens are a's, as its own record says");
         assert_eq!(a.stale, Some(Stale::LoginUnusable));
         assert_eq!(
-            a.explanation(),
+            a.explanation().as_deref(),
             Some("Codex's login is not one Pitboard can park or switch; run `pitboard doctor`")
         );
         assert!(!codex_row(&report, "b").signed_in);
@@ -2627,6 +2777,7 @@ mod tests {
             stale: Some(Stale::LoginUnreadable),
             plan: None,
             read_at: None,
+            reason: None,
         };
         assert!(row.unplaced());
         row.stale = Some(Stale::LoginUnusable);

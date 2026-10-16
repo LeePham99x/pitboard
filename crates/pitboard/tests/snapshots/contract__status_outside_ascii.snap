@@ -1,5 +1,6 @@
 ---
 source: crates/pitboard/tests/contract.rs
+assertion_line: 116
 expression: "serde_json :: json! ({ \"exit\" : code, \"envelope\" : value })"
 ---
 {
@@ -59,7 +60,8 @@ expression: "serde_json :: json! ({ \"exit\" : code, \"envelope\" : value })"
           "provider": "claude",
           "qualified": "claude/Đạt",
           "plan": "Max",
-          "read_at": null
+          "read_at": null,
+          "reason": null
         },
         {
           "label": "🏁",
@@ -105,7 +107,8 @@ expression: "serde_json :: json! ({ \"exit\" : code, \"envelope\" : value })"
           "provider": "claude",
           "qualified": "claude/🏁",
           "plan": "Max",
-          "read_at": null
+          "read_at": null,
+          "reason": null
         }
       ],
       "awaiting": []

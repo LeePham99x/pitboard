@@ -160,7 +160,7 @@ fn a_park_that_answers_for_its_own_account_is_installed() {
     let asked = m.api.asked();
     assert!(
         asked.iter().any(
-            |q| matches!(q, crate::api::scripted::Asked::Owner(t) if t == "access-there-refresh")
+            |q| matches!(q, crate::api::scripted::Asked::Identity(t) if t == "access-there-refresh")
         ),
         "the login going in is asked about, not only the one coming out: {asked:?}"
     );
@@ -180,7 +180,7 @@ fn a_switch_from_a_login_already_identified_asks_only_about_the_login_going_in()
     assert!(matches!(outcome, Outcome::Switched { .. }), "{outcome:?}");
     assert_eq!(
         m.api.asked(),
-        [crate::api::scripted::Asked::Owner(
+        [crate::api::scripted::Asked::Identity(
             "access-there-refresh".into()
         )]
     );
@@ -465,4 +465,274 @@ fn the_config_is_written_only_while_the_account_is_in_use() {
             ("here".to_string(), "account_not_in_use".to_string()),
         ]
     );
+}
+
+fn settled(m: &harness::Machine) -> Settled {
+    settle(&m.ctx, Permit::for_a_test(), None)
+        .expect("nothing to recover")
+        .0
+}
+
+/// `here`'s login in use, lapsed, and refused for good as it is renewed, as Claude Code
+/// leaves a login nobody ran for a month: the switch cannot park it, and says so first.
+fn dead_in_use(name: &str) -> harness::Machine {
+    let m = machine(name);
+    m.sign_in(&harness::lapsed("here-dead"));
+    m.api.renew_trouble("here-dead", Trouble::InvalidGrant);
+    m
+}
+
+#[test]
+fn a_switch_from_a_login_anthropic_refuses_for_good_asks_first_and_moves_nothing() {
+    let m = dead_in_use("replace-asks");
+    let before = m.mem.live().peek(&m.service);
+
+    let asked = switch(settled(&m), &m.key("there")).expect_err("it asks first");
+
+    assert!(
+        matches!(&asked, Error::LiveLoginRefused { label, .. } if label == "there"),
+        "{asked:?}"
+    );
+    assert_eq!(asked.code(), "live_login_refused");
+    assert_eq!(m.mem.live().peek(&m.service), before, "nothing moved");
+}
+
+/// Agreed to, the account's login goes in, nothing is parked for the refused one, and the
+/// account is recorded in use.
+#[test]
+fn a_login_anthropic_refuses_for_good_is_replaced_once_agreed_to() {
+    let m = dead_in_use("replace-agreed");
+
+    let (outcome, _) = replace(settled(&m), &m.key("there")).expect("replaced");
+
+    assert!(
+        matches!(&outcome, Outcome::Installed { to, .. } if to == "there"),
+        "{outcome:?}"
+    );
+    assert_eq!(
+        m.live()
+            .and_then(|live| live.pointer("/claudeAiOauth/refreshToken").cloned()),
+        Some(serde_json::json!("there-refresh"))
+    );
+    let state = state::load(&m.ctx).expect("state");
+    assert!(state.get(&m.key("there")).expect("there").parked.is_none());
+    assert!(state.get(&m.key("here")).expect("here").parked.is_none());
+    assert_eq!(
+        state
+            .account_in_use(ProviderId::Claude)
+            .map(|a| a.label.as_str()),
+        Some("there")
+    );
+}
+
+/// A login signed in after the switch refused is told, and parked as any switch parks it,
+/// never written over.
+#[test]
+fn a_login_signed_in_since_the_refusal_is_parked_not_written_over() {
+    let m = dead_in_use("replace-signed-in-since");
+    switch(settled(&m), &m.key("there")).expect_err("it asks first");
+    m.api.owned_by("access-here-again", owner("here"));
+    m.sign_in(&harness::document("here-again"));
+
+    let (outcome, _) = replace(settled(&m), &m.key("there")).expect("a switch");
+
+    assert!(matches!(outcome, Outcome::Switched { .. }), "{outcome:?}");
+    let state = state::load(&m.ctx).expect("state");
+    let parked = state.get(&m.key("here")).and_then(|a| a.parked.clone());
+    assert_eq!(
+        parked.map(|p| p.login),
+        Some(store::fingerprint("here-again")),
+        "the login signed in since is parked"
+    );
+}
+
+/// Neither an account on hold, whose login comes back, nor an outage is a login to replace.
+#[test]
+fn an_account_on_hold_or_an_outage_is_never_offered_a_replacement() {
+    for (trouble, code) in [
+        (Trouble::OnHold, "account_on_hold"),
+        (Trouble::Offline, "identity_unverifiable"),
+    ] {
+        let m = machine(&format!("replace-not-{code}"));
+        m.sign_in(&harness::lapsed("here-held"));
+        m.api.renew_trouble("here-held", trouble);
+        let before = m.mem.live().peek(&m.service);
+
+        let refused = switch(settled(&m), &m.key("there")).expect_err("no switch");
+        assert_eq!(refused.code(), code, "{refused:?}");
+        let refused = replace(settled(&m), &m.key("there")).expect_err("no replacement");
+        assert_eq!(refused.code(), code, "{refused:?}");
+        assert_eq!(
+            m.mem.live().peek(&m.service),
+            before,
+            "{code}: nothing moved"
+        );
+    }
+}
+
+/// A login Anthropic will not name may still work: only a refresh token refused for good is
+/// a login to replace, as Claude Code takes `invalid_grant` alone to end one.
+#[test]
+fn a_login_anthropic_will_not_name_is_never_offered_for_replacing() {
+    let m = machine("replace-unnamed");
+    m.sign_in(&harness::document("here-unnamed"));
+    m.api.token_trouble(
+        "access-here-unnamed",
+        Trouble::Answered(
+            400,
+            r#"{"error":{"type":"invalid_request_error","message":"no"}}"#,
+        ),
+    );
+    let before = m.mem.live().peek(&m.service);
+
+    for change in [switch, replace] {
+        let refused = change(settled(&m), &m.key("there")).expect_err("no switch");
+        assert_eq!(refused.code(), "identity_unverifiable", "{refused:?}");
+    }
+    assert_eq!(m.mem.live().peek(&m.service), before, "nothing moved");
+}
+
+/// A lapsed login renewed, whose renewed access token `validate` then refuses: the login
+/// Anthropic has just renewed is never written over.
+#[test]
+fn a_login_renewed_then_refused_a_name_is_never_written_over() {
+    let m = machine("replace-renewed-then-refused");
+    m.sign_in(&harness::lapsed("here-lapsed"));
+    harness::renews(&m, "here-lapsed", "here-renewed");
+    m.api.token_trouble(
+        "access-here-renewed",
+        Trouble::Answered(404, r#"{"error":{"type":"not_found_error"}}"#),
+    );
+
+    let refused = replace(settled(&m), &m.key("there")).expect_err("no replacement");
+
+    assert_eq!(refused.code(), "identity_unverifiable", "{refused:?}");
+    assert_eq!(
+        m.live()
+            .and_then(|live| live.pointer("/claudeAiOauth/refreshToken").cloned()),
+        Some(serde_json::json!("here-renewed")),
+        "the renewed login is where the renewal saved it"
+    );
+}
+
+/// `validate` names the account and no organisation, and the profile is refused: the
+/// organisation comes from Claude Code's own record of that account, and the switch is made.
+#[test]
+fn a_login_validated_without_an_organisation_is_told_by_claude_codes_record() {
+    let m = machine("validate-unorganised");
+    m.sign_in(&harness::document("here-again"));
+    m.api.owned_by("access-here-again", owner("here"));
+    m.api.validated_without_organisation("access-here-again");
+    m.api.profile_trouble(
+        "access-here-again",
+        Trouble::Answered(400, r#"{"error":{"type":"invalid_request_error"}}"#),
+    );
+
+    let (outcome, _) = switch(settled(&m), &m.key("there")).expect("a switch");
+
+    assert!(matches!(outcome, Outcome::Switched { .. }), "{outcome:?}");
+}
+
+/// Killed once the account's login is written in place of the refused one, before anything is
+/// recorded: the journal holds every renewal of the park going in back, and the next change
+/// finishes it, whether or not Claude Code renewed the login in the slot meanwhile.
+#[test]
+fn a_replacement_killed_once_written_is_finished_by_the_next_change() {
+    for rotated in [false, true] {
+        let m = dead_in_use(&format!("replace-killed-{rotated}"));
+        let died = fault::killing("replace.installed", || {
+            replace(settled(&m), &m.key("there")).map(|_| ())
+        });
+        assert_eq!(died.err().as_deref(), Some("replace.installed"));
+        if rotated {
+            m.api.owned_by("access-there-rotated", owner("there"));
+            m.sign_in(&harness::document("there-rotated"));
+        }
+
+        assert!(
+            journal::pending(&m.ctx),
+            "{rotated}: the replacement waits, which holds every renewal of a park back"
+        );
+        assert!(
+            renew_due(&m.ctx, Permit::for_a_test(), Due::ToStayAlive).is_empty(),
+            "{rotated}"
+        );
+
+        drop(settled(&m));
+        let state = state::load(&m.ctx).expect("state");
+        assert!(
+            state.get(&m.key("there")).expect("there").parked.is_none(),
+            "{rotated}: the park now in use is dropped"
+        );
+        assert_eq!(
+            state
+                .account_in_use(ProviderId::Claude)
+                .map(|a| a.label.as_str()),
+            Some("there"),
+            "{rotated}"
+        );
+    }
+}
+
+/// Anthropic names the account of the login in use and will not give its email, and nothing
+/// else names it: the login works, so it is never offered for replacing.
+#[test]
+fn a_login_whose_email_cannot_be_learned_is_not_offered_for_replacing() {
+    let m = machine("replace-unnamed-email");
+    m.sign_in(&harness::document("stranger"));
+    m.api.owned_by("access-stranger", owner("stranger"));
+    m.api.profile_trouble(
+        "access-stranger",
+        Trouble::Answered(400, r#"{"error":{"type":"invalid_request_error"}}"#),
+    );
+
+    let refused = switch(settled(&m), &m.key("there")).expect_err("no switch");
+
+    assert!(
+        matches!(
+            &refused,
+            Error::IdentityUnverifiable {
+                login: crate::error::Unidentified::Unnamed,
+                ..
+            }
+        ),
+        "{refused:?}"
+    );
+}
+
+/// A login with no refresh token cannot be renewed, so it is replaced as a refused one is.
+/// Killed with the record written and nothing installed, the next change finds a slot whose
+/// login has no refresh token, which the login going in has, and settles it as not finished,
+/// keeping the park, rather than asking Anthropic about a login it cannot name.
+#[test]
+fn a_replacement_of_a_login_with_no_refresh_token_killed_before_its_write_is_undone() {
+    let m = machine("replace-no-refresh");
+    let mut lapsed = harness::lapsed("here-none");
+    lapsed["claudeAiOauth"]
+        .as_object_mut()
+        .expect("a login")
+        .remove("refreshToken");
+    m.sign_in(&lapsed);
+
+    let asked = switch(settled(&m), &m.key("there")).expect_err("it asks first");
+    assert_eq!(asked.code(), "live_login_refused", "{asked:?}");
+    let died = fault::killing("replace.journal_written", || {
+        replace(settled(&m), &m.key("there")).map(|_| ())
+    });
+    assert_eq!(died.err().as_deref(), Some("replace.journal_written"));
+
+    let (settled, warnings) = settle(&m.ctx, Permit::for_a_test(), None).expect("settled");
+    drop(settled);
+    let said: Vec<String> = warnings.iter().map(ToString::to_string).collect();
+    assert!(
+        said.iter()
+            .any(|w| w.starts_with("an earlier switch to `there` was interrupted; it had not")),
+        "{said:?}"
+    );
+    let state = state::load(&m.ctx).expect("state");
+    assert!(
+        state.get(&m.key("there")).expect("there").parked.is_some(),
+        "the park going in is kept"
+    );
+    assert!(!journal::pending(&m.ctx));
 }

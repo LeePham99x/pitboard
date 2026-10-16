@@ -30,6 +30,19 @@ public sealed class WindowAlertTests
     }
 
     [TestMethod]
+    public void TheReplaceQuestionNamesTheAccountItPutsInPlace()
+    {
+        var replace = new ReplaceQuestion(
+            Qualified: "claude/work",
+            Question: new Question("Replace Claude Code’s login?", "Anthropic no longer accepts it.", "Replace"));
+        var alert = WindowAlert.Of(Model(Snapshots.Read(1) with { ReplaceQuestion = replace }))!;
+
+        Assert.AreEqual(new WindowAlert.ReplaceAsked(replace.Question, "claude/work"), alert);
+        Assert.AreEqual(new Intent.ReplaceAndSwitch("claude/work"), alert.Answered(confirmed: true));
+        Assert.AreEqual(new Intent.KeepLogin(), alert.Answered(confirmed: false));
+    }
+
+    [TestMethod]
     public void ClosingAFailureDismissesIt()
     {
         Assert.AreEqual(new Intent.DismissFailure(), new WindowAlert.Failed(Failure).Answered(confirmed: false));

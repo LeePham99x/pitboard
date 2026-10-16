@@ -14,6 +14,8 @@ Pitboard reads the account from the login itself, with no request, as read in Co
 
 Pitboard asks Anthropic, because Claude Code's config can name another account than the login's. As read in Claude Code 2.1.294, a sign-in writes its account there. So does any process that starts while `profileFetchedAt` is missing or over 24 hours old. A switch removes that field, so a process started on another login, as over SSH, writes that login's account.
 
+Pitboard asks which account and organisation the login is. Claude Code asks the same question where an identity decides something, as read in 2.1.301. Pitboard asks for the email only for an account it does not know yet. Where Anthropic will not give that profile, Pitboard takes the email Claude Code's sign-in recorded for that same account and organisation. A renewal's answer that names the account, its email and its organisation needs no question after it.
+
 Pitboard records each answer with the login's fingerprint, and asks again only once that changes, as after a renewal or a sign-in. A switch and `pitboard forget` also ask once it has changed. Reads that send no request, such as `pitboard status --offline`, use the record.
 
 When the config has named another account since Anthropic last answered, something may have signed in. Reads that send no request then warn with `in_use_unconfirmed`. `pitboard status` settles it, and the app starts such a read once by itself.

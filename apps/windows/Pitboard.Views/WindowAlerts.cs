@@ -29,7 +29,7 @@ public sealed partial class WindowAlerts : IDisposable
     private void OnModelChanged(object? sender, PropertyChangedEventArgs args)
     {
         if (args.PropertyName is nameof(AppModel.FailureAlert) or nameof(AppModel.QuitConfirmation)
-            or nameof(AppModel.QuitQuestion) or nameof(AppModel.Sheet))
+            or nameof(AppModel.QuitQuestion) or nameof(AppModel.ReplaceQuestion) or nameof(AppModel.Sheet))
         {
             Follow();
         }
@@ -77,6 +77,13 @@ public sealed partial class WindowAlerts : IDisposable
             CloseButtonText = "OK",
         },
         WindowAlert.QuitAsked asked => new ContentDialog
+        {
+            Title = asked.Question.Title,
+            Content = asked.Question.Message,
+            PrimaryButtonText = asked.Question.Confirm,
+            CloseButtonText = "Cancel",
+        },
+        WindowAlert.ReplaceAsked asked => new ContentDialog
         {
             Title = asked.Question.Title,
             Content = asked.Question.Message,

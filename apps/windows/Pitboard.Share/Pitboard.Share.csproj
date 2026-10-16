@@ -11,9 +11,6 @@
     <TargetPlatformMinVersion>10.0.26100.0</TargetPlatformMinVersion>
     <RootNamespace>Pitboard.Share</RootNamespace>
     <AssemblyName>PitboardShare</AssemblyName>
-    <!-- Its version resource names Pitboard and the version alone, as every program of Pitboard's a release signs does. -->
-    <Product>Pitboard</Product>
-    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <ApplicationIcon>../Pitboard.App/Pitboard.ico</ApplicationIcon>
     <PublishAot>true</PublishAot>
     <!-- A publish names its runtime, so a restore adds none of the machine restoring to the lock file. -->

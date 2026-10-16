@@ -5,7 +5,7 @@
 //! survives Claude Code rotating the token. When any fact cannot be read, recovery changes
 //! nothing and keeps the record.
 
-use super::{Error, Result, identify_document};
+use super::{Error, Result, identity_of_document};
 use crate::context::Context;
 use crate::in_use::{self, InUse};
 use crate::provider::{self, LoginKind, Provider, ProviderId};
@@ -74,10 +74,14 @@ impl Recovered {
 
 impl std::fmt::Display for Recovered {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let from = if self.from.is_empty() {
+            String::new()
+        } else {
+            format!(" from `{}`", self.from)
+        };
         write!(
             f,
-            "an earlier switch from `{}` to `{}` was interrupted; {}",
-            self.from,
+            "an earlier switch{from} to `{}` was interrupted; {}",
             self.to,
             if self.finished {
                 "it had in fact finished, and Pitboard has recorded that"
@@ -99,6 +103,11 @@ impl Journal {
 
     fn to(&self) -> Key {
         Key::new(self.provider, self.to_label.clone())
+    }
+
+    /// Put a login in place of one its service refused for good, parking nothing going out.
+    fn replaces(&self) -> bool {
+        self.from_id.is_empty()
     }
 }
 
@@ -263,6 +272,8 @@ fn live_owner(ctx: &Context, tool: &'static dyn Provider, journal: &Journal) -> 
             Some(why) => (Owner::Unfinished(why), String::new()),
             None => (Owner::Unknown(e.to_string()), String::new()),
         },
+        // The login going in was never there or is gone again, and its park is all it has.
+        Ok(None) if journal.replaces() => (Owner::Is(String::new()), String::new()),
         Ok(None) => (Owner::Unknown("nothing is signed in".into()), String::new()),
         Ok(Some(live)) => {
             let login = tool.fingerprint(&live.raw);
@@ -335,8 +346,8 @@ fn ask(
     match owner {
         Owner::Is(id) => Ok(id),
         Owner::Unknown(why) | Owner::Unfinished(why) => Err(why),
-        Owner::Unasked(live) => identify_document(ctx, tool, &live)
-            .map(|owner| state.id_of(tool.id(), &owner))
+        Owner::Unasked(live) => identity_of_document(ctx, tool, &live)
+            .map(|identity| state.id_for(tool.id(), &identity))
             .map_err(|e| e.to_string()),
     }
 }
@@ -354,6 +365,11 @@ fn ask(
 /// of an interrupted switch leaves a fingerprint matching neither side, which is exactly
 /// when this says nothing and Anthropic is asked after all.
 fn live_owner_by_fingerprint(journal: &Journal, found: &str) -> Option<String> {
+    // The login going in has a refresh token, so a slot whose login has none, as a refused one
+    // may, holds what was there before.
+    if journal.replaces() && found.is_empty() {
+        return Some(journal.from_id.clone());
+    }
     if journal.from_fingerprint.is_empty() || journal.to_fingerprint.is_empty() {
         return None;
     }
@@ -510,9 +526,15 @@ fn read(ctx: &Context, state: &State) -> Result<Option<Waiting>> {
 
     let named = in_use::named(ctx, journal.provider);
     let (owner, login) = live_owner(ctx, tool, &journal);
+    // A replacement parks no login going out, so nothing parked is what there is to find.
+    let parked = if journal.park_service.is_empty() {
+        Some(None)
+    } else {
+        read_park(ctx, &journal.park_service)
+    };
     Ok(Some(Waiting {
         tool,
-        parked: read_park(ctx, &journal.park_service),
+        parked,
         journal,
         owner,
         seen: Seen { named, login },

@@ -376,7 +376,7 @@ fn account(row: status::Row, now: i64) -> Account {
         switchable: row.switchable(now),
         stale: row.stale.map(|s| s.code().to_string()),
         // In the row's own tool's words: a Codex row is not about Anthropic.
-        stale_explanation: row.explanation().map(str::to_owned),
+        stale_explanation: row.explanation(),
         plan: row.plan,
         read_at: row.read_at,
         parked: row.parked.map(|p| Parked {
@@ -411,6 +411,36 @@ fn account(row: status::Row, now: i64) -> Account {
         account_id: row.id,
         signed_in: row.signed_in,
     }
+}
+
+fn switched(changing: Changing<switch::Outcome>) -> Result<Switched, PitboardError> {
+    changed(changing, |outcome, warnings| Switched {
+        outcome: match outcome {
+            switch::Outcome::Switched {
+                provider,
+                from,
+                to,
+                adoption,
+                ..
+            } => Switch::Switched {
+                provider: provider.code().into(),
+                from,
+                to,
+                adoption: adoption_of(adoption),
+            },
+            switch::Outcome::Installed {
+                provider,
+                to,
+                adoption,
+            } => Switch::Installed {
+                provider: provider.code().into(),
+                to,
+                adoption: adoption_of(adoption),
+            },
+            switch::Outcome::AlreadyActive { label, .. } => Switch::AlreadyActive { label },
+        },
+        warnings,
+    })
 }
 
 fn status_of(done: service::Done<status::Report>) -> Status {
@@ -881,35 +911,13 @@ impl AppCore {
     }
 
     pub(crate) fn switch_to(&self, label: &str) -> Result<Switched, PitboardError> {
-        changed(self.core().core.switch_to(label), |outcome, warnings| {
-            Switched {
-                outcome: match outcome {
-                    switch::Outcome::Switched {
-                        provider,
-                        from,
-                        to,
-                        adoption,
-                        ..
-                    } => Switch::Switched {
-                        provider: provider.code().into(),
-                        from,
-                        to,
-                        adoption: adoption_of(adoption),
-                    },
-                    switch::Outcome::Installed {
-                        provider,
-                        to,
-                        adoption,
-                    } => Switch::Installed {
-                        provider: provider.code().into(),
-                        to,
-                        adoption: adoption_of(adoption),
-                    },
-                    switch::Outcome::AlreadyActive { label, .. } => Switch::AlreadyActive { label },
-                },
-                warnings,
-            }
-        })
+        switched(self.core().core.switch_to(label))
+    }
+
+    /// What `switch_to` does once somebody has agreed to put `label`'s login in place of a
+    /// login in use its service refuses for good.
+    pub(crate) fn replace_with(&self, label: &str) -> Result<Switched, PitboardError> {
+        switched(self.core().core.replace_with(label))
     }
 
     /// Writes the account `label` names into its tool's config where that names another

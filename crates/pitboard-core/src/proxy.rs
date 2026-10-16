@@ -925,7 +925,10 @@ mod tests {
             );
             let asked = crate::provider::claude::api::owner(&ctx, "a-token").expect_err("refused");
             assert_eq!(
-                (asked.to_string(), crate::error::Cause::of(&asked).code()),
+                (
+                    asked.to_string(),
+                    crate::error::Cause::of_provider(&asked).code()
+                ),
                 (
                     format!("could not reach Anthropic: {}", failing_with(variable)),
                     "unreachable"

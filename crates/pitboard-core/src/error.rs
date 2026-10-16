@@ -92,6 +92,8 @@ pub enum Cause {
     RateLimited,
     /// Anthropic answered, badly, and may answer well later.
     ServerError,
+    /// Anthropic refused the request, and asked again would refuse it the same way.
+    Refused,
     /// Anthropic answered something Pitboard does not understand, which means its shape
     /// moved. Trying again will produce the same thing.
     AnswerNotUnderstood,
@@ -103,26 +105,19 @@ pub enum Cause {
 }
 
 impl Cause {
-    pub(crate) fn of(error: &crate::provider::claude::api::ApiError) -> Cause {
-        use crate::provider::claude::api::ApiError;
-        match error {
-            ApiError::Unauthorized => Cause::TokenExpired,
-            ApiError::RateLimited { .. } => Cause::RateLimited,
-            ApiError::Network(_) => Cause::Unreachable,
-            ApiError::Unexpected { .. } => Cause::ServerError,
-            ApiError::Malformed(_) => Cause::AnswerNotUnderstood,
-            ApiError::InvalidGrant => Cause::LoginRefused,
-        }
-    }
-
-    /// The same question asked of a provider rather than of Anthropic directly.
     pub(crate) fn of_provider(error: &crate::provider::ProviderError) -> Cause {
         use crate::provider::ProviderError as P;
         match error {
             P::Unauthorized => Cause::TokenExpired,
             P::RateLimited { .. } => Cause::RateLimited,
             P::Network { .. } => Cause::Unreachable,
-            P::Unexpected { .. } => Cause::ServerError,
+            P::Unavailable { .. } => Cause::ServerError,
+            // The request is not one the service takes any more, which no sign-in mends.
+            P::Refused { refusal, .. } if matches!(refusal.status, 404 | 405) => {
+                Cause::AnswerNotUnderstood
+            }
+            P::Refused { .. } | P::OnHold { .. } => Cause::Refused,
+            P::Unnamed { error } => Cause::of_provider(error),
             P::Malformed { .. }
             | P::ShapeUnexpected { .. }
             | P::Unsupported { .. }
@@ -138,6 +133,7 @@ impl Cause {
             Cause::Unreachable => "unreachable",
             Cause::RateLimited => "rate_limited",
             Cause::ServerError => "server_error",
+            Cause::Refused => "refused",
             Cause::AnswerNotUnderstood => "answer_not_understood",
             Cause::LoginRefused => "login_refused",
             Cause::TokenExpired => "token_expired",
@@ -149,9 +145,25 @@ impl Cause {
     pub fn worth_retrying(self) -> bool {
         match self {
             Cause::Unreachable | Cause::RateLimited | Cause::ServerError => true,
-            Cause::AnswerNotUnderstood | Cause::LoginRefused | Cause::TokenExpired => false,
+            Cause::Refused
+            | Cause::AnswerNotUnderstood
+            | Cause::LoginRefused
+            | Cause::TokenExpired => false,
         }
     }
+}
+
+/// The login whose account Pitboard could not confirm.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Unidentified {
+    /// The one its tool has signed in.
+    SignedIn,
+    /// A login whose account its service named, and whose email it would not give.
+    Unnamed,
+    /// The one a sign-in for the account typed as `label` made.
+    SignIn { label: String },
+    /// The one parked for the account typed as `label`.
+    Parked { label: String },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -477,19 +489,44 @@ pub enum Error {
     #[error("{}", session_expired(*tool, *refused))]
     SessionExpired { tool: ProviderId, refused: bool },
 
-    #[error(
-        "Pitboard could not confirm with {} which account is signed in ({detail}), and will \
-         not move a login it cannot identify. Check the connection and try again.",
-        tool.service()
-    )]
+    #[error("{}", identity_unverifiable(*tool, login, *cause, detail))]
     IdentityUnverifiable {
         tool: ProviderId,
+        login: Unidentified,
         cause: Cause,
         detail: String,
     },
 
     #[error("the signed-in account changed while switching. Nothing was moved; try again.")]
     SignedInAccountChanged,
+
+    /// The service refuses the refresh token of the login in use for good, so that login no
+    /// longer works and cannot be parked, and a switch to `label` asks first to put that
+    /// account's login in its place.
+    #[error("{}", live_login_refused(*tool, label, detail))]
+    LiveLoginRefused {
+        tool: ProviderId,
+        label: String,
+        detail: String,
+    },
+
+    #[error(
+        "could not put `{label}`'s login in place of {}'s refused login ({detail}). `{label}`'s \
+         login is still parked, and nothing was lost.",
+        tool.name()
+    )]
+    ReplaceFailed {
+        tool: ProviderId,
+        label: String,
+        detail: String,
+    },
+
+    #[error("{}", account_on_hold(*tool, login, link.as_deref()))]
+    AccountOnHold {
+        tool: ProviderId,
+        login: Unidentified,
+        link: Option<String>,
+    },
 
     #[error("{}", recovery_undetermined(*tool, from, to, detail))]
     RecoveryUndetermined {
@@ -686,10 +723,10 @@ pub enum Error {
     },
 
     #[error(
-        "Pitboard could not ask {} whose the login left in {} is ({detail}). Check the \
-         connection and try again.",
+        "Pitboard could not ask {} whose the login left in {} is ({detail}). {}",
         ProviderId::Claude.service(),
-        path.display()
+        path.display(),
+        try_again(*cause).unwrap_or("Run `pitboard doctor`.")
     )]
     LeftLoginUnidentified {
         path: PathBuf,
@@ -968,6 +1005,9 @@ impl Error {
             SessionExpired { .. } => "session_expired",
             IdentityUnverifiable { .. } => "identity_unverifiable",
             SignedInAccountChanged => "signed_in_account_changed",
+            LiveLoginRefused { .. } => "live_login_refused",
+            ReplaceFailed { .. } => "replace_failed",
+            AccountOnHold { .. } => "account_on_hold",
             RecoveryUndetermined { .. } | RecoveryUnfinished { .. } | RecoveryStopped { .. } => {
                 "recovery_undetermined"
             }
@@ -1024,7 +1064,10 @@ impl Error {
                 Some(*cause)
             }
             RenewalFailed { cause, .. } => *cause,
-            SessionExpired { refused: true, .. } => Some(Cause::LoginRefused),
+            SessionExpired { refused: true, .. } | LiveLoginRefused { .. } => {
+                Some(Cause::LoginRefused)
+            }
+            AccountOnHold { .. } => Some(Cause::Refused),
             SessionExpired { .. } => Some(Cause::TokenExpired),
             StowStopped { error, .. } | RenewalLost { error, .. } | SaidFirst { error, .. } => {
                 error.cause()
@@ -1157,6 +1200,84 @@ fn not_absolute(variable: &str, path: &std::path::Path) -> String {
          runs. Set it to a full path, or unset it; Pitboard reads and changes nothing until \
          then."
     )
+}
+
+/// [`Error::IdentityUnverifiable`]'s words: what to do follows from why.
+fn identity_unverifiable(
+    tool: ProviderId,
+    login: &Unidentified,
+    cause: Cause,
+    detail: &str,
+) -> String {
+    let service = tool.service();
+    let next = match (try_again(cause), cause, login) {
+        (Some(later), ..) => later.to_owned(),
+        (None, Cause::AnswerNotUnderstood, _) => "Check for a Pitboard update.".to_owned(),
+        (None, _, Unidentified::SignedIn | Unidentified::Unnamed) => format!(
+            "{}, sign in, then try again.",
+            crate::words::sign_in_yourself(tool, true)
+        ),
+        (None, _, Unidentified::Parked { label } | Unidentified::SignIn { label }) => {
+            format!("Sign in to it again with `pitboard enroll {label} --sign-in`.")
+        }
+    };
+    match login {
+        Unidentified::SignedIn => format!(
+            "Pitboard could not confirm with {service} which account is signed in ({detail}), \
+             and will not move a login it cannot identify. {next}"
+        ),
+        Unidentified::Parked { label } => format!(
+            "Pitboard could not confirm with {service} whose login is parked for `{label}` \
+             ({detail}), and will not put in use a login it cannot identify. {next}"
+        ),
+        Unidentified::SignIn { label } => format!(
+            "Pitboard could not confirm with {service} whose login the sign-in for `{label}` \
+             made ({detail}), and keeps no login it cannot identify. {next}"
+        ),
+        Unidentified::Unnamed => format!(
+            "{service} named the account of {}'s login and would not give its email \
+             ({detail}), and Pitboard keeps every account under its email. {next}",
+            tool.name()
+        ),
+    }
+}
+
+/// [`Error::LiveLoginRefused`]'s words.
+fn live_login_refused(tool: ProviderId, label: &str, detail: &str) -> String {
+    format!(
+        "{} Run `pitboard use {label} --yes` to put `{label}`'s login there.",
+        crate::words::replacing(tool, detail)
+    )
+}
+
+/// [`Error::AccountOnHold`]'s words.
+fn account_on_hold(tool: ProviderId, login: &Unidentified, link: Option<&str>) -> String {
+    let service = tool.service();
+    let see = link.map(|link| format!(" ({link})")).unwrap_or_default();
+    let whose = match login {
+        Unidentified::SignedIn | Unidentified::Unnamed => {
+            format!("the account of {}'s login in use", tool.name())
+        }
+        Unidentified::Parked { label } | Unidentified::SignIn { label } => {
+            format!("`{label}`'s account")
+        }
+    };
+    format!(
+        "{service} has put {whose} on hold{see}. Pitboard keeps its login. Follow {service}'s \
+         instructions for the account, then try again."
+    )
+}
+
+/// When asking again is the way on, what to say about it.
+fn try_again(cause: Cause) -> Option<&'static str> {
+    match cause {
+        Cause::Unreachable => Some("Check the connection and try again."),
+        Cause::RateLimited => Some("Try again in a few minutes."),
+        Cause::ServerError => Some("Try again later."),
+        Cause::Refused | Cause::AnswerNotUnderstood | Cause::LoginRefused | Cause::TokenExpired => {
+            None
+        }
+    }
 }
 
 /// [`Error::SessionExpired`]'s words.
@@ -1500,12 +1621,22 @@ fn warm_up_unsupported(tool: ProviderId, label: &str) -> String {
     }
 }
 
+/// "from `work` to `home`", or "to `home`" for a replacement, which has no account going out.
+fn between(from: &str, to: &str) -> String {
+    if from.is_empty() {
+        format!("to `{to}`")
+    } else {
+        format!("from `{from}` to `{to}`")
+    }
+}
+
 fn recovery_undetermined(tool: ProviderId, from: &str, to: &str, detail: &str) -> String {
     match tool {
         ProviderId::Claude | ProviderId::Codex => format!(
-            "an earlier switch from `{from}` to `{to}` was interrupted, and Pitboard cannot yet \
+            "an earlier switch {} was interrupted, and Pitboard cannot yet \
              tell whether it finished ({detail}). Nothing was changed. {} once so its session \
              is current, then try again.",
+            between(from, to),
             crate::words::run_it(tool, true)
         ),
         ProviderId::Desktop => format!(
@@ -1519,11 +1650,12 @@ fn recovery_undetermined(tool: ProviderId, from: &str, to: &str, detail: &str) -
 fn recovery_elsewhere(tool: ProviderId, from: &str, to: &str, slot: &str) -> String {
     match tool {
         ProviderId::Claude | ProviderId::Codex => format!(
-            "an earlier switch of {} from `{from}` to `{to}` was interrupted while its login was \
-             at {slot}, and this run reads it from somewhere else, so it cannot tell what that \
-             switch did. Nothing was changed. {} to finish it, or `pitboard abandon` to keep \
-             every login it names and move on.",
+            "an earlier switch of {} {} was interrupted while its login was at {slot}, and \
+             this run reads it from somewhere else, so it cannot tell what that switch did. \
+             Nothing was changed. {} to finish it, or `pitboard abandon` to keep every login \
+             it names and move on.",
             tool.name(),
+            between(from, to),
             crate::words::pointing_where_it_did(tool)
         ),
         ProviderId::Desktop => format!(
@@ -2142,6 +2274,7 @@ mod tests {
 
         let unverifiable = Error::IdentityUnverifiable {
             tool: ProviderId::Codex,
+            login: Unidentified::SignedIn,
             cause: Cause::Unreachable,
             detail: "offline".into(),
         }
@@ -2150,11 +2283,81 @@ mod tests {
 
         let claude = Error::IdentityUnverifiable {
             tool: ProviderId::Claude,
+            login: Unidentified::SignedIn,
             cause: Cause::Unreachable,
             detail: "offline".into(),
         }
         .to_string();
         assert!(claude.contains("confirm with Anthropic"), "{claude}");
+    }
+
+    // A 400 used to say "check the connection", which no connection mends.
+    #[test]
+    fn a_refusal_says_to_sign_in_again_and_an_outage_to_try_again() {
+        let said = |cause| {
+            Error::IdentityUnverifiable {
+                tool: ProviderId::Claude,
+                login: Unidentified::SignedIn,
+                cause,
+                detail: "Anthropic answered 400: No organization associated with this token".into(),
+            }
+            .to_string()
+        };
+        assert_eq!(
+            said(Cause::Refused),
+            "Pitboard could not confirm with Anthropic which account is signed in (Anthropic \
+             answered 400: No organization associated with this token), and will not move a \
+             login it cannot identify. Run `claude`, sign in, then try again."
+        );
+        assert!(said(Cause::Unreachable).ends_with("Check the connection and try again."));
+        assert!(said(Cause::ServerError).ends_with("Try again later."));
+        assert!(Cause::ServerError.worth_retrying());
+        assert!(!Cause::Refused.worth_retrying());
+    }
+
+    // The reporter's dialog said "which account is signed in" when it may have been the
+    // parked login of the account being switched to that failed.
+    #[test]
+    fn the_parked_login_that_failed_is_named() {
+        let said = |cause| {
+            Error::IdentityUnverifiable {
+                tool: ProviderId::Claude,
+                login: Unidentified::Parked {
+                    label: "dtg".into(),
+                },
+                cause,
+                detail: "Anthropic answered 400".into(),
+            }
+            .to_string()
+        };
+        assert_eq!(
+            said(Cause::Refused),
+            "Pitboard could not confirm with Anthropic whose login is parked for `dtg` \
+             (Anthropic answered 400), and will not put in use a login it cannot identify. Sign \
+             in to it again with `pitboard enroll dtg --sign-in`."
+        );
+        assert!(said(Cause::Unreachable).ends_with("Check the connection and try again."));
+        assert!(!said(Cause::Refused).contains("signed in ("));
+    }
+
+    // A refused sign-in used to be told to run `claude` and sign in to the tool itself.
+    #[test]
+    fn a_sign_in_that_cannot_be_identified_is_signed_in_again_through_pitboard() {
+        let said = Error::IdentityUnverifiable {
+            tool: ProviderId::Claude,
+            login: Unidentified::SignIn {
+                label: "dtg".into(),
+            },
+            cause: Cause::Refused,
+            detail: "Anthropic answered 400".into(),
+        }
+        .to_string();
+        assert_eq!(
+            said,
+            "Pitboard could not confirm with Anthropic whose login the sign-in for `dtg` made \
+             (Anthropic answered 400), and keeps no login it cannot identify. Sign in to it \
+             again with `pitboard enroll dtg --sign-in`."
+        );
     }
 
     /// The codes of the two tools' missing programs stay distinct, and Claude Code's keep

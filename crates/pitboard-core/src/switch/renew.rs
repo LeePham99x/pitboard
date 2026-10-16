@@ -196,6 +196,12 @@ fn ask(
             renewed: None,
             refused: true,
         }),
+        // Kept, as Claude Code keeps it: the login works again once the hold ends.
+        Err(crate::provider::ProviderError::OnHold { link, .. }) => Err(Error::AccountOnHold {
+            tool: key.provider,
+            login: crate::error::Unidentified::Parked { label: key.typed() },
+            link,
+        }),
         // Unreachable or asked to slow down: nothing is written and the next run tries.
         Err(
             crate::provider::ProviderError::Network { .. }
@@ -417,6 +423,7 @@ mod tests {
             refresh_token_expires_in: Some(30 * 86_400),
             scopes: None,
             at: None,
+            owner: None,
         }
     }
 
@@ -446,6 +453,7 @@ mod tests {
                 refresh_token_expires_in: Some(30 * 86_400),
                 scopes: None,
                 at: Some(server_now),
+                owner: None,
             },
         );
 
@@ -544,6 +552,25 @@ mod tests {
                 .is_none()
         );
         assert!(m.mem.vault().services().is_empty());
+    }
+
+    #[test]
+    fn a_login_of_an_account_on_hold_is_kept() {
+        let m = machine("on-hold");
+        let before = with_park(&m, "work", "old", NOW - 1);
+        m.api.renew_trouble("old", Trouble::OnHold);
+
+        let outcomes = renew_parked(&m.ctx, Permit::for_a_test());
+
+        assert_eq!(outcome(&outcomes, "work"), "account_on_hold");
+        let state = state::load(&m.ctx).expect("state");
+        let kept = state
+            .get(&Key::new(crate::provider::ProviderId::Claude, "work"))
+            .expect("account")
+            .parked
+            .clone();
+        assert_eq!(kept.as_ref().map(|p| &p.service), Some(&before.service));
+        assert_eq!(m.mem.vault().services(), vec![before.service]);
     }
 
     /// Being unreachable, or being asked to slow down, must change nothing at all: the park

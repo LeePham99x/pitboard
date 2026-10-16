@@ -21,7 +21,8 @@ Pitboard has no server of its own and sends no request for a Claude Desktop acco
 
 | Request | Carries | Used for |
 | --- | --- | --- |
-| `api.anthropic.com/api/oauth/profile` | An access token | Identifying a Claude Code login |
+| `api.anthropic.com/api/oauth/validate` | An access token | Identifying a Claude Code login |
+| `api.anthropic.com/api/oauth/profile` | An access token | The email of a Claude Code account Pitboard does not know yet |
 | `api.anthropic.com/api/oauth/usage` | An access token | A Claude Code account's usage |
 | `platform.claude.com/v1/oauth/token` | A refresh token and the client id it was issued to | Renewing a Claude Code parked login, or the login in use in the [three cases](/concepts/identity#when-pitboard-renews-a-login-in-use) where Pitboard does |
 | `chatgpt.com/backend-api/wham/usage` | An access token and the ChatGPT account id | A Codex account's usage, and checking a login before a switch to it |

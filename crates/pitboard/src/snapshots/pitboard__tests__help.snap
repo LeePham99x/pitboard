@@ -88,6 +88,9 @@ Options:
       --json
           Machine-readable output: the same versioned JSON envelope for every command, whether it succeeds or fails
 
+  -y, --yes
+          Where the service refuses the login in use for good, put this account's login in its place without asking; needed without a terminal or with `--json`
+
   -h, --help
           Print help
 

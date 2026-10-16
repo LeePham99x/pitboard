@@ -760,6 +760,7 @@ fn renewing_killed_between_the_write_and_the_record_leaves_nothing_unnamed() {
             refresh_token_expires_in: Some(30 * 86_400),
             scopes: None,
             at: None,
+            owner: None,
         },
     );
 
@@ -823,6 +824,7 @@ fn a_renewal_that_cannot_record_its_answer_keeps_it_for_the_next_run() {
             refresh_token_expires_in: Some(30 * 86_400),
             scopes: None,
             at: None,
+            owner: None,
         },
     );
 

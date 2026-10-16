@@ -1,11 +1,5 @@
-# Checks the Windows app as a Release publish lays it out, for CI and the release alike: no
-# fixture in any of its programs, a package identity on PitboardShare.exe alone and the same one
-# in its package, published by the signer, the update key the build was given, which WinSparkle
-# takes, the feed of full releases and a version WinSparkle can compare, one product name and
-# version on every program of Pitboard's, and both libraries built without the cfg that opens
-# the core before Windows is released or a feature for tests, for this machine and with the C
-# runtime inside. It reads the files and runs none of them, in the environment the core was
-# built in.
+# Reads a Release publish, or the MSI's image of one, for CI and the release, and runs none of it.
+# CONTRIBUTING.md lists what it refuses.
 param(
     [Parameter(Mandatory)] [string] $Folder,
     [Parameter(Mandatory)] [ValidateSet('x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc')] [string] $Triple,
@@ -207,17 +201,19 @@ if ((Get-FileHash -LiteralPath $library).Hash -ne (Get-FileHash -LiteralPath $ga
 }
 Write-Output 'pitboard_ffi.dll is the one built here, and neither library has the cfg or a feature for tests.'
 
-# SignPath signs only programs whose version resource names their product and one version.
-$ours = @('Pitboard.exe', 'pitboard_ffi.dll', 'PitboardShare.exe', 'pitboard_share_ffi.dll') |
-    Where-Object { Test-Path -LiteralPath (Join-Path $root $_) -PathType Leaf }
-foreach ($name in $ours) {
-    $info = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $root $name))
+# What release.yml hands the signer, which signs only programs whose version resource names one product at one
+# version. bin\pitboard.exe is the command line's, signed with its zip.
+$ours = @(Get-ChildItem -LiteralPath $root -Recurse -File |
+    Where-Object { $_.Name -like 'pitboard*' -and $_.Extension -in '.exe', '.dll' -and $_.DirectoryName -ne (Join-Path $root 'bin') })
+foreach ($program in $ours) {
+    $info = [Diagnostics.FileVersionInfo]::GetVersionInfo($program.FullName)
     $file = '{0}.{1}.{2}.{3}' -f $info.FileMajorPart, $info.FileMinorPart, $info.FileBuildPart, $info.FilePrivatePart
-    if ($info.ProductName -cne 'Pitboard' -or $info.ProductVersion -cne $Version -or $file -ne $FileVersion) {
-        throw "$name names the product '$($info.ProductName)' at '$($info.ProductVersion)', file $file, not Pitboard at $Version, file $FileVersion"
+    if ($info.ProductName -cne 'Pitboard' -or $info.CompanyName -cne 'Pitboard' -or $info.ProductVersion -cne $Version -or $file -ne $FileVersion) {
+        throw ("$($program.Name) names the product '$($info.ProductName)' by '$($info.CompanyName)' at '$($info.ProductVersion)', " +
+            "file $file, not Pitboard by Pitboard at $Version, file $FileVersion")
     }
 }
-Write-Output "$($ours -join ', ') name Pitboard at $Version, file $FileVersion."
+Write-Output "$($ours.Name -join ', ') name Pitboard by Pitboard at $Version, file $FileVersion."
 
 $machine = @{ 'x86_64-pc-windows-msvc' = 'AMD64'; 'aarch64-pc-windows-msvc' = 'ARM64' }[$Triple]
 $readobj = Get-Command llvm-readobj -ErrorAction SilentlyContinue

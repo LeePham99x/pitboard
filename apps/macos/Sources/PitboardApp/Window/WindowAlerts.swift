@@ -40,6 +40,21 @@ private struct WindowAlerts: ViewModifier {
             } message: { asked in
                 Text(asked.question.message)
             }
+            // Answered as the quit question is: the close it also sends may arrive first.
+            .alert(
+                model.replaceQuestion?.question.title ?? "",
+                isPresented: Binding(
+                    get: { shown && model.replaceQuestion != nil },
+                    set: { if !$0 { model.send(.keepLogin) } }),
+                presenting: model.replaceQuestion
+            ) { asked in
+                Button(asked.question.confirm) {
+                    model.send(.replaceAndSwitch(qualified: asked.qualified))
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: { asked in
+                Text(asked.question.message)
+            }
     }
 
     private var quitAsked: QuitAsked? {
