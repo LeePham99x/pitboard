@@ -1346,6 +1346,7 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
     checks.extend(judge_schedule(facts));
     checks.extend(judge_schedule_proxy(facts));
     checks.push(judge_claude_version(facts));
+    checks.extend(judge_warm_up(facts.os));
     checks.push(judge_auth(facts));
     checks.push(judge_asking(facts));
     checks.push(judge_network(&facts.network));
@@ -1394,6 +1395,7 @@ const CLAUDE_CODES_OWN: &[&str] = &[
     "storage_v5",
     "daemon",
     "claude_version",
+    "warm_up",
     "auth",
 ];
 
@@ -2183,6 +2185,12 @@ fn judge_claude_version(facts: &Facts) -> Check {
             format!("{installed} installed; Pitboard's facts were read from {verified}"),
         ),
     }
+}
+
+// Nothing else on Windows says it to somebody who never turned a warm-up on.
+fn judge_warm_up(os: Os) -> Option<Check> {
+    let halt = crate::duty::warm::unbuilt(os)?;
+    Some(ok("warm_up", "warm-up", words::not_warming(&halt)))
 }
 
 /// A name written down before a park was created, still unresolved. Ordinarily there is
@@ -7166,6 +7174,43 @@ mod tests {
         assert!(!looks_like_a_version("releases"));
         assert!(!looks_like_a_version("0.154"));
         assert!(!looks_like_a_version("v0.154.0"));
+    }
+
+    // A fact of the system, not a fault: Windows' doctor states it, and stays in order.
+    #[test]
+    fn windows_is_told_a_warm_up_is_not_available_there() {
+        let mut facts = facts();
+        for os in [Os::MacOs, Os::Linux] {
+            facts.os = os;
+            assert!(
+                evaluate(&facts).iter().all(|c| c.code != "warm_up"),
+                "{os:?}"
+            );
+        }
+        facts.os = Os::Windows;
+        let checks = evaluate(&facts);
+        let warm = check(&checks, "warm_up");
+        assert_eq!(
+            (
+                warm.level,
+                warm.name.as_str(),
+                warm.detail.as_str(),
+                warm.advice.as_str()
+            ),
+            (
+                Level::Ok,
+                "warm-up",
+                "warm-ups are not available on Windows, where Claude Code does not read the \
+                 access token a warm-up hands it",
+                ""
+            )
+        );
+        facts.claude_present = false;
+        facts.codex.present = true;
+        assert!(
+            evaluate(&facts).iter().all(|c| c.code != "warm_up"),
+            "a machine with no Claude Code is not told"
+        );
     }
 
     /// A machine that uses only Codex is not told Claude Code is broken, nor to run a
