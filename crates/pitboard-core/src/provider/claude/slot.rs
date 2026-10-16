@@ -16,7 +16,7 @@ pub const LIVE_SERVICE: &str = "Claude Code-credentials";
 pub(crate) const CRED_FILE: &str = ".credentials.json";
 
 /// Claude Code's fallback when no usable name can be found at all.
-const FALLBACK_ACCOUNT: &str = "claude-code-user";
+pub(crate) const FALLBACK_ACCOUNT: &str = "claude-code-user";
 
 /// The keychain account name Claude Code stores under.
 ///

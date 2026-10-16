@@ -3195,8 +3195,10 @@ fn redaction_for(ctx: &Context, facts: &Facts) -> crate::redact::Sheet {
     let mut sheet = crate::redact::Sheet::of(
         ctx,
         format!("{}:{}", crate::state::machine_id(), ctx.now_millis()),
-    )
-    .hide(facts.account.clone(), "user");
+    );
+    if facts.account != slot::FALLBACK_ACCOUNT {
+        sheet = sheet.hide(facts.account.clone(), "user");
+    }
 
     if let Some(id) = &facts.config_account {
         sheet = sheet
@@ -5680,6 +5682,21 @@ mod tests {
     /// which can name the company whose network it is, as it does an organisation's name.
     /// A proxy on loopback names nothing beyond this machine, and is shown. The report a
     /// person reads on their own machine hides neither.
+    /// Claude Code's Windows build names its Credential Manager item with a literal, as its
+    /// macOS build does where no login name passes its screen. A report hides a person's login
+    /// name there, and shows the literal, which names nobody.
+    #[test]
+    fn the_literal_claude_code_names_its_item_with_is_shown_in_a_report() {
+        let ctx = Context::new(PathBuf::from("/home/x"));
+        let mut f = facts();
+        f.account = "claude-code-user".into();
+        let detail = "Credential Manager  ·  Claude Code-credentials-0123abcd/claude-code-user";
+        assert_eq!(redaction_for(&ctx, &f).over(detail), detail);
+        f.account = "dana".into();
+        let hidden = redaction_for(&ctx, &f).over("Claude Code-credentials, account dana");
+        assert!(!hidden.contains("dana"), "{hidden}");
+    }
+
     #[test]
     fn a_proxys_host_is_redacted_from_a_report_unless_it_is_on_loopback() {
         let ctx = Context::new(PathBuf::from("/home/x"));
