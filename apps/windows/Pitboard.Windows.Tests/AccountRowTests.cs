@@ -95,4 +95,16 @@ public sealed class AccountRowTests
         Assert.IsFalse(((TextBlock)row.FindName("TitleText")).IsTextTrimmed);
         Assert.AreEqual(8.0, tag.Left - name.Right, 0.5, "the tag is not beside the name");
     }
+
+    // The XAML compiler calls an x:Bind function only for a value that is not null, so a row the list gave another
+    // account kept the plan tag of the one before, empty (after-shot 21).
+    [UITestMethod]
+    public async Task ARowGivenAnAccountWithoutAPlanHasNoTag()
+    {
+        var row = await Shown(Items.Account("codex", "main") with { Plan = "Pro" }, width: 480);
+        row.Account = new ShownAccount(Items.Account("claude", "work"), _ => { });
+        await Views.Drained();
+
+        Assert.AreEqual(Visibility.Collapsed, ((FrameworkElement)row.FindName("PlanTag")).Visibility);
+    }
 }

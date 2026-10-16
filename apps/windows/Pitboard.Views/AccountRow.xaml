@@ -65,7 +65,7 @@
             Padding="6,0"
             CornerRadius="{StaticResource ControlCornerRadius}"
             Background="{ThemeResource ControlFillColorSecondaryBrush}"
-            Visibility="{x:Bind local:AccountRow.Shows(Account.Item.Plan), Mode=OneWay}">
+            Visibility="{x:Bind local:AccountRow.PlanShown(Account.Item), Mode=OneWay}">
           <TextBlock x:Name="PlanText" Text="{x:Bind Account.Item.Plan, Mode=OneWay}" Style="{StaticResource SecondaryCaptionTextBlockStyle}" TextWrapping="NoWrap" />
         </Border>
       </Grid>

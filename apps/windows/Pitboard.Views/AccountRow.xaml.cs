@@ -33,7 +33,9 @@ public sealed partial class AccountRow : UserControl
 
     public Style MarkStyle(bool inUse) => (Style)Resources[inUse ? "InUseMark" : "AccountMark"];
 
-    public static Visibility Shows(string? text) => text is null ? Visibility.Collapsed : Visibility.Visible;
+    // Given the item, not its plan: x:Bind skips a function whose argument changes to null, so the tag stayed.
+    public static Visibility PlanShown(AccountItem item) =>
+        string.IsNullOrEmpty(item.Plan) ? Visibility.Collapsed : Visibility.Visible;
 
     public static Visibility EmailShown(AccountItem item) =>
         item.Email.Length > 0 && item.Email != item.Title ? Visibility.Visible : Visibility.Collapsed;
