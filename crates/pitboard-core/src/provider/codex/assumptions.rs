@@ -201,6 +201,21 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         ),
     },
     everywhere("codex_login_takes_a_store_override", "0.160.0"),
+    PerSystem {
+        name: "codex_windows_system_proxy",
+        macos: NotRead(
+            "Pitboard says nothing of a system proxy on macOS, where Codex fills in the one System \
+             Settings names the same way",
+        ),
+        linux: NotRead("Linux has no system proxy setting Codex reads"),
+        windows: Read("0.163.0"),
+    },
+    PerSystem {
+        name: "codex_wsl",
+        macos: NotRead("WSL runs Codex's Linux build"),
+        linux: Read("0.163.0"),
+        windows: NotRead("WSL runs Codex's Linux build"),
+    },
 ];
 
 pub(crate) const ASSUMPTIONS: &[Assumption] = &[
@@ -784,6 +799,58 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         ],
         absent: &[],
     },
+    Assumption {
+        name: "codex_windows_system_proxy",
+        fact: "on Windows Codex sends its requests through the proxy the variables name, and \
+               where none of `HTTPS_PROXY`, `https_proxy`, `HTTP_PROXY` and `http_proxy` names \
+               one, through `ProxyServer` in \
+               `HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings` where \
+               `ProxyEnable` is not 0, exempting `ProxyOverride`'s hosts where neither \
+               `NO_PROXY` nor `no_proxy` is set. That is reqwest 0.12.28's default proxy, \
+               hyper-util 0.1.20's `Matcher::from_system`. The `respect_system_proxy` feature, \
+               off by default, asks the system's PAC and WPAD before the variables, and \
+               `system_proxy_fallback`, on by default, sends a sign-in's request again through \
+               them after a direct one fails",
+        read_from: "`win::with_system` in hyper-util 0.1.20's src/client/proxy/matcher.rs, \
+                    `Matcher::system` in reqwest 0.12.28's src/proxy.rs, and \
+                    codex-rs/http-client/src/outbound_proxy.rs and codex-rs/features/src/lib.rs \
+                    at tag rust-v0.163.0, read on 2026-10-16. Both win32 builds of 0.163.0 hold \
+                    the key and its three values",
+        verified_against: "0.163.0",
+        depends: "doctor's system_proxy note on Windows, which says Codex sends its requests \
+                  through a proxy only Windows' settings name",
+        probe: &[
+            r"Software\Microsoft\Windows\CurrentVersion\Internet Settings",
+            "ProxyEnable",
+            "ProxyServer",
+            "system_proxy_fallback",
+        ],
+        absent: &[],
+    },
+    Assumption {
+        name: "codex_wsl",
+        fact: "Codex's Linux build takes itself to run in WSL where `WSL_DISTRO_NAME` is set or \
+               `/proc/version` names Microsoft, in any case. There, or where `WSL_INTEROP` is set, \
+               it starts no shared background server where the first folder of its home that \
+               opens is on a 9p file system, as WSL 2 mounts Windows' drives. It compares paths \
+               under `/mnt/<drive>` in any case, and runs its updater with a Windows path \
+               `C:\\x` as `/mnt/c/x`",
+        read_from: "`is_wsl` in codex-rs/utils/path-utils/src/env.rs, `uses_wsl_drvfs` in \
+                    codex-rs/tui/src/daemon_startup.rs and where the TUI and `remote-control` ask \
+                    it, and codex-rs/cli/src/wsl_paths.rs, at tag rust-v0.163.0, read on \
+                    2026-10-16. The linux-x64 build of 0.163.0 holds both variables, \
+                    `/proc/version` and the exclusion's words",
+        verified_against: "0.163.0",
+        depends: "doctor's wsl check on Linux, which reads WSL as Codex does and says where \
+                  Codex's home is on a Windows drive",
+        probe: &[
+            "WSL_DISTRO_NAME",
+            "WSL_INTEROP",
+            "/proc/version",
+            "a Windows-mounted WSL CODEX_HOME (DrvFS/9p)",
+        ],
+        absent: &[],
+    },
 ];
 
 #[cfg(test)]
@@ -820,6 +887,7 @@ mod tests {
                 "codex_login_prints_its_address",
                 "codex_windows_store_layers",
                 "codex_login_takes_a_store_override",
+                "codex_windows_system_proxy",
             ]
         );
     }
@@ -836,8 +904,12 @@ mod tests {
             "codex_windows_install_places",
             "codex_windows_version",
             "codex_windows_store_layers",
+            "codex_windows_system_proxy",
         ];
-        for line in PER_SYSTEM.iter().filter(|l| !windows.contains(&l.name)) {
+        for line in PER_SYSTEM
+            .iter()
+            .filter(|l| !windows.contains(&l.name) && l.name != "codex_wsl")
+        {
             assert!(matches!(line.on(Platform::MacOs), Read(_)), "{}", line.name);
             assert_eq!(
                 matches!(line.on(Platform::Linux), Read(_)),
@@ -846,6 +918,9 @@ mod tests {
                 line.name
             );
         }
+        let wsl = PER_SYSTEM.iter().find(|l| l.name == "codex_wsl").unwrap();
+        assert_eq!(wsl.on(Platform::Linux), Read("0.163.0"));
+        assert!(matches!(wsl.on(Platform::MacOs), NotRead(_)));
     }
 
     /// Each fact re-read from 0.160.0 for which store Codex keeps its login in, and the two

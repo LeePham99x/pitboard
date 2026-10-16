@@ -430,6 +430,12 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
                     pwsh 7 and with it, session step 12",
         },
     },
+    PerSystem {
+        name: "proxy_from_variables",
+        macos: Read("2.1.301"),
+        linux: Read("2.1.301"),
+        windows: Read("2.1.301"),
+    },
     warm_up("headless_token_descriptor"),
     warm_up("headless_print_mode"),
     warm_up("headless_result"),
@@ -1536,6 +1542,26 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         absent: &[],
     },
     Assumption {
+        name: "proxy_from_variables",
+        fact: "Claude Code sends its requests through the proxy the first of `https_proxy`, \
+               `HTTPS_PROXY`, `http_proxy` and `HTTP_PROXY` that is set names, and exempts the \
+               hosts `no_proxy` and `NO_PROXY` name, both where both are set. It reads no proxy \
+               the system names: on Windows neither `Internet Settings` nor WinHTTP, so a proxy \
+               only Windows' settings name carries none of its requests",
+        read_from: "the proxy module's variable list, `getProxyUrlWithSource`, `getNoProxy` and \
+                    `noProxyUnion`, in the darwin-arm64, linux-x64, win32-x64 and win32-arm64 \
+                    builds of 2.1.301, read as bytes on 2026-10-16. None of the four holds \
+                    `Internet Settings`, `ProxyEnable` or any `WinHttp` call",
+        verified_against: "2.1.301",
+        depends: "doctor's system_proxy note on Windows, which says Claude Code's requests go out \
+                  directly where only Windows' settings name a proxy",
+        probe: &[
+            r#""https_proxy","HTTPS_PROXY","http_proxy","HTTP_PROXY""#,
+            "Proxy settings must be a complete URL including the scheme",
+        ],
+        absent: &["Internet Settings", "WinHttpOpen"],
+    },
+    Assumption {
         name: "headless_token_descriptor",
         fact: "where `CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR` names a descriptor, Claude Code \
                reads an OAuth access token from it, an inherited pipe until a newline or its \
@@ -1690,6 +1716,7 @@ mod tests {
                 "windows_browser_open",
                 "windows_token_handover",
                 "windows_statusline_shell",
+                "proxy_from_variables",
                 "request_starts_the_five_hour_period",
                 "weekly_period_is_a_fixed_cycle",
                 "used_up_limit_refuses_every_request",
