@@ -266,6 +266,7 @@ fn forget_and_rename() {
 /// with no reading from Anthropic yet waits for one; a span that starts and ends at once is
 /// a usage error.
 #[test]
+#[cfg_attr(windows, ignore = "W-warm: warming up Claude Code accounts on Windows")]
 fn warm() {
     let env = two_accounts("contract-warm");
     let (value, code) = json(&env, &["warm", "on", "beta"]);
