@@ -24,13 +24,15 @@ public abstract record WindowAlert
         public override Intent Answered(bool confirmed) => new Intent.DismissFailure();
     }
 
-    public sealed record QuitAsked(Question Question, string Qualified) : WindowAlert
+    public abstract record Asking(Question Question, string Qualified) : WindowAlert;
+
+    public sealed record QuitAsked(Question Question, string Qualified) : Asking(Question, Qualified)
     {
         public override Intent Answered(bool confirmed) =>
             confirmed ? new Intent.QuitAndSwitch(Qualified) : new Intent.KeepAppOpen();
     }
 
-    public sealed record ReplaceAsked(Question Question, string Qualified) : WindowAlert
+    public sealed record ReplaceAsked(Question Question, string Qualified) : Asking(Question, Qualified)
     {
         public override Intent Answered(bool confirmed) =>
             confirmed ? new Intent.ReplaceAndSwitch(Qualified) : new Intent.KeepLogin();

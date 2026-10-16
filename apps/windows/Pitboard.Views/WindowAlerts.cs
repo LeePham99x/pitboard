@@ -76,14 +76,7 @@ public sealed partial class WindowAlerts : IDisposable
             Content = failed.Text.Message,
             CloseButtonText = "OK",
         },
-        WindowAlert.QuitAsked asked => new ContentDialog
-        {
-            Title = asked.Question.Title,
-            Content = asked.Question.Message,
-            PrimaryButtonText = asked.Question.Confirm,
-            CloseButtonText = "Cancel",
-        },
-        WindowAlert.ReplaceAsked asked => new ContentDialog
+        WindowAlert.Asking asked => new ContentDialog
         {
             Title = asked.Question.Title,
             Content = asked.Question.Message,
