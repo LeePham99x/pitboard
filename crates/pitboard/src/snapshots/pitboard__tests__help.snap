@@ -1,0 +1,437 @@
+---
+source: crates/pitboard/src/main.rs
+expression: every_help()
+---
+== pitboard
+Switch Claude Code, Codex and Claude Desktop between your own accounts without signing out, and see what each Claude Code and Codex account has left
+
+Usage: pitboard [OPTIONS] [COMMAND]
+
+Commands:
+  status       What is signed in, and how much each Claude Code and Codex account has left (the default)
+  enroll       Add an account: the one signed in now, or with --sign-in, another one
+  use          Switch a tool to an enrolled account
+  forget       Drop an account and its parked login
+  stow         Put away the login Claude Code left in a file behind the keychain, then delete the file
+  abandon      Give up on an interrupted switch that cannot be finished, keeping every login
+  repair       Ask the credential store what parked logins are here, and account for every one
+  adopt        Take over a Pitboard directory another computer wrote, keeping the accounts
+  renew        Renew every parked login that is due, and nothing else
+  schedule     Keep parked logins alive without running anything yourself
+  log          What Pitboard has changed, and when
+  uninstall    Delete every parked login this Pitboard wrote, the daily renewal schedule and Pitboard's own files
+  rename       Change the label an account is enrolled under
+  doctor       Check that what Pitboard relies on still holds on this machine
+  statusline   One line for Claude Code's status bar; reads its session JSON on stdin
+  warm         Start the five-hour period of the accounts you choose as soon as the last one resets, while the app or `pitboard watch` runs
+  watch        Switch Claude Code to another of your accounts before the one in use runs out, and warm up the accounts `pitboard warm on` turned on, for as long as this runs
+  completions  Print a shell completion script
+  help         Print this message or the help of the given subcommand(s)
+
+Options:
+      --json
+          Machine-readable output: the same versioned JSON envelope for every command, whether it succeeds or fails
+
+  -h, --help
+          Print help
+
+  -V, --version
+          Print version
+
+== pitboard status
+What is signed in, and how much each Claude Code and Codex account has left (the default)
+
+Usage: pitboard status [OPTIONS]
+
+Options:
+      --json
+          Machine-readable output: the same versioned JSON envelope for every command, whether it succeeds or fails
+
+      --offline
+          Answer from what was last measured, without asking anyone
+
+      --fresh
+          Ask about every account, even one asked about moments ago
+
+  -h, --help
+          Print help
+
+== pitboard enroll
+Add an account: the one signed in now, or with --sign-in, another one
+
+Usage: pitboard enroll [OPTIONS] <LABEL>
+
+Arguments:
+  <LABEL>
+          A short name for this account, such as `personal` or `work`. `codex/work` names a Codex account, `desktop/work` a Claude Desktop one; a bare name means Claude Code
+
+Options:
+      --json
+          Machine-readable output: the same versioned JSON envelope for every command, whether it succeeds or fails
+
+      --sign-in
+          For Claude Code and Codex, sign in through the tool's own sign-in, without signing out of the account in use: for the account in use, this puts its new login in use, and for another enrolled label, it renews its parked login. For Claude Desktop, Pitboard parks the account in use, leaving Claude signed out, waits while you sign in inside Claude and quit it, then puts that login in use under the label
+
+  -h, --help
+          Print help
+
+== pitboard use
+Switch a tool to an enrolled account
+
+Usage: pitboard use [OPTIONS] <LABEL>
+
+Arguments:
+  <LABEL>
+          The label the account was enrolled under, such as `work`, `codex/work` or `desktop/work`
+
+Options:
+      --json
+          Machine-readable output: the same versioned JSON envelope for every command, whether it succeeds or fails
+
+  -h, --help
+          Print help
+
+== pitboard forget
+Drop an account and its parked login
+
+Usage: pitboard forget [OPTIONS] <LABEL>
+
+Arguments:
+  <LABEL>
+          The label to drop
+
+Options:
+      --json
+          Machine-readable output: the same versioned JSON envelope for every command, whether it succeeds or fails
+
+  -y, --yes
+          Do not ask first; needed without a terminal or with `--json`
+
+  -h, --help
+          Print help
+
+== pitboard stow
+Put away the login Claude Code left in a file behind the keychain, then delete the file
+
+Usage: pitboard stow [OPTIONS]
+
+Options:
+      --json
+          Machine-readable output: the same versioned JSON envelope for every command, whether it succeeds or fails
+
+  -y, --yes
+          Do not ask first; needed without a terminal or with `--json`
+
+  -h, --help
+          Print help
+
+== pitboard abandon
+Give up on an interrupted switch that cannot be finished, keeping every login
+
+Usage: pitboard abandon [OPTIONS]
+
+Options:
+      --json
+          Machine-readable output: the same versioned JSON envelope for every command, whether it succeeds or fails
+
+  -h, --help
+          Print help
+
+== pitboard repair
+Ask the credential store what parked logins are here, and account for every one
+
+Usage: pitboard repair [OPTIONS]
+
+Options:
+      --json
+          Machine-readable output: the same versioned JSON envelope for every command, whether it succeeds or fails
+
+  -h, --help
+          Print help
+
+== pitboard adopt
+Take over a Pitboard directory another computer wrote, keeping the accounts
+
+Usage: pitboard adopt [OPTIONS]
+
+Options:
+      --json
+          Machine-readable output: the same versioned JSON envelope for every command, whether it succeeds or fails
+
+  -h, --help
+          Print help
+
+== pitboard renew
+Renew every parked login that is due, and nothing else
+
+Usage: pitboard renew [OPTIONS]
+
+Options:
+      --json
+          Machine-readable output: the same versioned JSON envelope for every command, whether it succeeds or fails
+
+  -h, --help
+          Print help
+
+== pitboard schedule
+Keep parked logins alive without running anything yourself
+
+Usage: pitboard schedule [OPTIONS] <COMMAND>
+
+Commands:
+  install    Ask this computer's own scheduler to renew parked logins daily
+  status     Say whether it is installed
+  uninstall  Take it away
+  help       Print this message or the help of the given subcommand(s)
+
+Options:
+      --json
+          Machine-readable output: the same versioned JSON envelope for every command, whether it succeeds or fails
+
+  -h, --help
+          Print help
+
+== pitboard schedule install
+Ask this computer's own scheduler to renew parked logins daily
+
+Usage: pitboard schedule install [OPTIONS]
+
+Options:
+      --json
+          Machine-readable output: the same versioned JSON envelope for every command, whether it succeeds or fails
+
+  -h, --help
+          Print help
+
+== pitboard schedule status
+Say whether it is installed
+
+Usage: pitboard schedule status [OPTIONS]
+
+Options:
+      --json
+          Machine-readable output: the same versioned JSON envelope for every command, whether it succeeds or fails
+
+  -h, --help
+          Print help
+
+== pitboard schedule uninstall
+Take it away
+
+Usage: pitboard schedule uninstall [OPTIONS]
+
+Options:
+      --json
+          Machine-readable output: the same versioned JSON envelope for every command, whether it succeeds or fails
+
+  -h, --help
+          Print help
+
+== pitboard log
+What Pitboard has changed, and when
+
+Usage: pitboard log [OPTIONS]
+
+Options:
+      --json
+          Machine-readable output: the same versioned JSON envelope for every command, whether it succeeds or fails
+
+  -n, --lines <LINES>
+          How many changes to show
+          
+          [default: 20]
+
+  -h, --help
+          Print help
+
+== pitboard uninstall
+Delete every parked login this Pitboard wrote, the daily renewal schedule and Pitboard's own files
+
+Usage: pitboard uninstall [OPTIONS]
+
+Options:
+      --json
+          Machine-readable output: the same versioned JSON envelope for every command, whether it succeeds or fails
+
+  -y, --yes
+          Do not ask first; needed without a terminal or with `--json`
+
+  -h, --help
+          Print help
+
+== pitboard rename
+Change the label an account is enrolled under
+
+Usage: pitboard rename [OPTIONS] <FROM> <TO>
+
+Arguments:
+  <FROM>
+          The label it has now
+
+  <TO>
+          The label it should have
+
+Options:
+      --json
+          Machine-readable output: the same versioned JSON envelope for every command, whether it succeeds or fails
+
+  -h, --help
+          Print help
+
+== pitboard doctor
+Check that what Pitboard relies on still holds on this machine
+
+Usage: pitboard doctor [OPTIONS]
+
+Options:
+      --json
+          Machine-readable output: the same versioned JSON envelope for every command, whether it succeeds or fails
+
+  -h, --help
+          Print help
+
+== pitboard statusline
+One line for Claude Code's status bar; reads its session JSON on stdin
+
+Usage: pitboard statusline [OPTIONS]
+
+Options:
+      --json
+          Machine-readable output: the same versioned JSON envelope for every command, whether it succeeds or fails
+
+  -h, --help
+          Print help
+
+== pitboard warm
+Start the five-hour period of the accounts you choose as soon as the last one resets, while the app or `pitboard watch` runs
+
+Usage: pitboard warm [OPTIONS] [COMMAND]
+
+Commands:
+  now    Start an account's five-hour period now, whatever the span, through one short request Claude Code makes with that account's login
+  on     Warm up an account from now on, within the span `range` sets
+  off    Stop warming up an account
+  range  Warm up accounts only between these times of each day, in this computer's time zone
+  help   Print this message or the help of the given subcommand(s)
+
+Options:
+      --json
+          Machine-readable output: the same versioned JSON envelope for every command, whether it succeeds or fails
+
+  -h, --help
+          Print help
+
+== pitboard warm now
+Start an account's five-hour period now, whatever the span, through one short request Claude Code makes with that account's login
+
+Usage: pitboard warm now [OPTIONS] <LABEL>
+
+Arguments:
+  <LABEL>
+          The label the account was enrolled under, such as `work`
+
+Options:
+      --json
+          Machine-readable output: the same versioned JSON envelope for every command, whether it succeeds or fails
+
+  -h, --help
+          Print help
+
+== pitboard warm on
+Warm up an account from now on, within the span `range` sets
+
+Usage: pitboard warm on [OPTIONS] <LABEL>
+
+Arguments:
+  <LABEL>
+          The label the account was enrolled under, such as `work`
+
+Options:
+      --json
+          Machine-readable output: the same versioned JSON envelope for every command, whether it succeeds or fails
+
+  -h, --help
+          Print help
+
+== pitboard warm off
+Stop warming up an account
+
+Usage: pitboard warm off [OPTIONS] <LABEL>
+
+Arguments:
+  <LABEL>
+          The label the account was enrolled under
+
+Options:
+      --json
+          Machine-readable output: the same versioned JSON envelope for every command, whether it succeeds or fails
+
+  -h, --help
+          Print help
+
+== pitboard warm range
+Warm up accounts only between these times of each day, in this computer's time zone
+
+Usage: pitboard warm range [OPTIONS] <FROM> <TO>
+
+Arguments:
+  <FROM>
+          When to start, such as 06:00
+
+  <TO>
+          When to stop, such as 22:00; 00:00 and 24:00 are midnight, and a time before FROM runs past it
+
+Options:
+      --json
+          Machine-readable output: the same versioned JSON envelope for every command, whether it succeeds or fails
+
+  -h, --help
+          Print help
+
+== pitboard watch
+Switch Claude Code to another of your accounts before the one in use runs out, and warm up the accounts `pitboard warm on` turned on, for as long as this runs
+
+Usage: pitboard watch [OPTIONS]
+
+Options:
+      --at <PERCENT>
+          Switch once a limit of the account in use reaches this share, from 50 to 99
+          
+          [default: 95]
+
+      --json
+          Machine-readable output: the same versioned JSON envelope for every command, whether it succeeds or fails
+
+      --once
+          Decide once whether to switch, from the usage Pitboard last measured, asking no service for usage, and stop. Warms nothing up
+
+  -h, --help
+          Print help
+
+== pitboard completions
+Print a shell completion script
+
+Usage: pitboard completions [OPTIONS] <SHELL>
+
+Arguments:
+  <SHELL>
+          [possible values: bash, elvish, fish, powershell, zsh]
+
+Options:
+      --json
+          Machine-readable output: the same versioned JSON envelope for every command, whether it succeeds or fails
+
+  -h, --help
+          Print help
+
+== pitboard manpage
+Print the man page
+
+Usage: pitboard manpage [OPTIONS]
+
+Options:
+      --json
+          Machine-readable output: the same versioned JSON envelope for every command, whether it succeeds or fails
+
+  -h, --help
+          Print help
