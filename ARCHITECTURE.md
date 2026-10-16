@@ -4136,10 +4136,13 @@ Microsoft's documentation.
   window class carries no icon. So `WindowChrome` gives every window of Pitboard's
   `UseDefaultAppMode` and the app's icon (`WindowChromeTests`,
   `LifecycleTests.TheAccountAndOpenLinkWindowsCarryPitboardsIcon`).
-  Whether the main window's caption buttons, over content extended into the title bar,
-  follow a switch of mode while Pitboard runs is still to be read in pitboard-win; they
-  stayed black on dark before (shots 21, 23 and 24 of 16 October 2026). The WinUI Gallery
-  sets their colours from `ActualThemeChanged` in its `TitleBarHelper`.
+  The WinUI Gallery's `TitleBarHelper` (`WinUIGallery/Helpers/TitleBarHelper.cs`, read on 17
+  October 2026) sets the caption buttons' glyph and hover colours from the content's
+  `ActualTheme`, on `Loaded` and `ActualThemeChanged`, because `AppWindowTitleBar` does not
+  change them when the mode changes while the app runs, and WinUI's own TableView sample says
+  the system draws them black whatever the content's theme. So `WindowChrome` does the same
+  for a window whose content extends into its title bar, the main window
+  (`WindowChromeTests.TheMainWindowsCaptionButtonsFollowItsTheme`).
 - Microsoft's Manage app windows page (updated 14 October 2026) gives a window that belongs
   to another an owner window, set through Win32 interop, and the WinUI Gallery's
   `ModalWindow.xaml.cs` sets it with `SetWindowLongPtr(GWLP_HWNDPARENT)`. An owned window

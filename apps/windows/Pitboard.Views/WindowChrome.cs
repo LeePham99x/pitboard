@@ -1,3 +1,4 @@
+using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Pitboard.Windows;
@@ -14,6 +15,22 @@ internal static class WindowChrome
     {
         window.AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, WindowsNotifications.IconFile));
         window.AppWindow.TitleBar.PreferredTheme = TitleBarTheme.UseDefaultAppMode;
+        if (window.ExtendsContentIntoTitleBar && window.Content is FrameworkElement root)
+        {
+            root.Loaded += (_, _) => Caption(window.AppWindow.TitleBar, root.ActualTheme);
+            root.ActualThemeChanged += (changed, _) => Caption(window.AppWindow.TitleBar, changed.ActualTheme);
+        }
+    }
+
+    // The WinUI Gallery's TitleBarHelper: over content extended into the title bar, the caption buttons keep the colours
+    // of the mode they were first drawn in.
+    private static void Caption(AppWindowTitleBar bar, ElementTheme theme)
+    {
+        var dark = theme == ElementTheme.Dark;
+        var glyph = dark ? Colors.White : Colors.Black;
+        bar.ButtonForegroundColor = glyph;
+        bar.ButtonHoverForegroundColor = glyph;
+        bar.ButtonHoverBackgroundColor = dark ? ColorHelper.FromArgb(24, 255, 255, 255) : ColorHelper.FromArgb(24, 0, 0, 0);
     }
 
     // In effective pixels, at the scale of the screen the window is on, and again when it moves to one of another.
