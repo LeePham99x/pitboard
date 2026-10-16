@@ -90,7 +90,8 @@ fn same_file(os: Os, one: &Path, other: &Path) -> bool {
 }
 
 // As `FilePath::Extension` splits a download's name for WebView2 to number it, read in
-// Chromium 155.0.8059.87's `base/files/file_path.cc`.
+// Chromium 155.0.8059.87's `base/files/file_path.cc`. Its distance between the two dots
+// counts the UTF-16 units of a Windows path.
 fn split_as_chromium(name: &str) -> (&str, Option<&str>) {
     const COMPRESSED: [&str; 9] = ["bz", "bz2", "gz", "lz", "lzma", "lzo", "xz", "z", "zst"];
     if matches!(name, "." | "..") {
@@ -102,7 +103,7 @@ fn split_as_chromium(name: &str) -> (&str, Option<&str>) {
     let dot = match name[..last].rfind('.') {
         Some(before) if name[before + 1..].eq_ignore_ascii_case("user.js") => before,
         Some(before)
-            if (2..=5).contains(&(last - before))
+            if (2..=5).contains(&name[before..last].encode_utf16().count())
                 && COMPRESSED
                     .iter()
                     .any(|suffix| name[last + 1..].eq_ignore_ascii_case(suffix)) =>
@@ -256,8 +257,8 @@ mod tests {
         assert_eq!(name, Path::new("/d/report 2.pdf"));
     }
 
-    /// Windows numbers a copy as Explorer does, as the owner decided: in brackets, from one,
-    /// so the second `report.pdf` is `report (1).pdf`.
+    /// Windows numbers a copy in brackets from one, as the owner decided and as WebView2
+    /// numbers a download, so the second `report.pdf` is `report (1).pdf`.
     #[test]
     fn windows_numbers_a_copy_in_brackets_from_one() {
         let on_windows = |suggested: &str, taken: &[&str]| {
@@ -280,7 +281,7 @@ mod tests {
         assert_eq!(on_windows("", &["Download"]), Path::new("/d/Download (1)"));
     }
 
-    // A compressor's extension keeps one of up to four characters before it.
+    // A compressor's extension keeps one of up to four UTF-16 units before it.
     #[test]
     fn windows_splits_a_name_as_webview2_does() {
         for (suggested, second) in [
@@ -291,6 +292,9 @@ mod tests {
             ("script.user.js", "script (1).user.js"),
             ("dump.sql5.gz", "dump (1).sql5.gz"),
             ("dump.mysql.gz", "dump.mysql (1).gz"),
+            ("a.日本.gz", "a (1).日本.gz"),
+            ("a.абвг.gz", "a (1).абвг.gz"),
+            ("a.абвгд.gz", "a.абвгд (1).gz"),
             ("a..gz", "a. (1).gz"),
             ("archive.tar.zip", "archive.tar (1).zip"),
             ("a.b c", "a (1).b c"),
