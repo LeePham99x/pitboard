@@ -991,7 +991,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
   Claude, and reads no installed app's `Info.plist`. CI's Windows legs check after each run,
   with the probe and as the user the tests ran as, that no item of those families or
   `pitboard-citest-*` is in its Credential Manager, that Task Scheduler's `\Pitboard\` is
-  empty, and that no real login folder appeared.
+  empty, and that no real login folder appeared. A test that writes Credential Manager's
+  items is in nextest's `credential-manager` group, which runs one at a time: two writers at
+  once in one logon session can leave an item deleted for the next logon to find.
 - Every program the command line's tests and `pitboard-ffi`'s tests start in place of a
   tool, or put where one is looked for, is one compiled program, the `pitboard` crate's
   example `stand-in`, playing the script written beside its copy

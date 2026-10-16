@@ -21,6 +21,22 @@ filter = "binary_id(pitboard-core) & test(=provider::claude::credman::tests::cla
 threads-required = "num-test-threads"
 priority = 100
 
+# Two writers at once in one logon session can leave an item one of them deleted for the next
+# logon to find, and a read miss what was just written (runs 38886714381, 38888292424). One at a
+# time, neither happened.
+[test-groups]
+credential-manager = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = """
+(binary_id(pitboard-core) & (test(/^host::windows::credman::/) | test(/^provider::claude::credman::/)))
+| binary_id(pitboard::credman_write_is_harmless)
+| (binary_id(pitboard::switch_round_trip) & test(/credential_manager/))
+| (binary_id(pitboard::watch) & test(=a_warning_is_printed_though_the_line_it_comes_with_was_printed_before))
+| (binary_id(pitboard::contract) & test(=stow))
+"""
+test-group = "credential-manager"
+
 [profile.ci]
 fail-fast = false
 # A retry tells a flaky test from a failing one, and a flaky test still fails the run.
