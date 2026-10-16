@@ -2,6 +2,7 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Navigation;
 using Pitboard.Core;
 using Pitboard.Windows;
 using Windows.Graphics;
@@ -14,10 +15,7 @@ public sealed partial class MainWindow : Window
 {
     private readonly AppModel _model;
     private readonly DialogHost _dialogs;
-    private readonly AccountsPane _accounts;
-    private readonly ActivityPane _activity;
-    private readonly MachinePane _machine;
-    private readonly SettingsPane _settings;
+    private readonly PaneContext _context;
     private WindowAlerts? _alerts;
     private WindowSheets? _sheets;
 
@@ -51,10 +49,7 @@ public sealed partial class MainWindow : Window
         }
 
         _dialogs = new DialogHost(() => Navigation.XamlRoot);
-        _accounts = new AccountsPane(model, _dialogs, openWindow: openWindow);
-        _activity = new ActivityPane(model);
-        _machine = new MachinePane(model);
-        _settings = new SettingsPane(model, startAtSignIn, updates, version);
+        _context = new PaneContext(model, _dialogs, startAtSignIn, updates, version) { OpenWindow = openWindow };
         // A dialog needs the window's XamlRoot, which its content has once loaded.
         Navigation.Loaded += (_, _) =>
         {
@@ -101,16 +96,34 @@ public sealed partial class MainWindow : Window
             ? Navigation.MenuItems.OfType<NavigationViewItem>().First(item => item.Tag as string == shown.ToString())
             : Navigation.SettingsItem;
 
+    // As NavigationView's own guidance navigates its frame: once, and only to a page not shown already.
     private void OnSelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
-        Navigation.Header = (args.SelectedItemContainer as NavigationViewItem)?.Content;
-        Navigation.Content = Selected switch
+        var page = Selected switch
         {
-            Pane.Accounts => _accounts,
-            Pane.Activity => _activity,
-            Pane.Machine => _machine,
-            _ => _settings,
+            Pane.Accounts => typeof(AccountsPane),
+            Pane.Activity => typeof(ActivityPane),
+            Pane.Machine => typeof(MachinePane),
+            _ => typeof(SettingsPane),
         };
+        if (Pages.CurrentSourcePageType != page)
+        {
+            Pages.Navigate(page, _context, args.RecommendedNavigationTransitionInfo);
+        }
+    }
+
+    private void OnNavigated(object sender, NavigationEventArgs args) => ShowSides(Navigation.DisplayMode);
+
+    private void OnDisplayModeChanged(NavigationView sender, NavigationViewDisplayModeChangedEventArgs args) =>
+        ShowSides(args.DisplayMode);
+
+    // Each page's sides: NavigationView's guidance gives its content 12 epx in Minimal and 24 otherwise.
+    private void ShowSides(NavigationViewDisplayMode mode)
+    {
+        if (Pages.Content is Page page)
+        {
+            VisualStateManager.GoToState(page, mode == NavigationViewDisplayMode.Minimal ? "Minimal" : "Wide", useTransitions: false);
+        }
     }
 
     private void OnPaneToggleRequested(TitleBar sender, object args) => Navigation.IsPaneOpen = !Navigation.IsPaneOpen;

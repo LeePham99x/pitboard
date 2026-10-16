@@ -2,33 +2,42 @@ using System.ComponentModel;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Navigation;
 using Pitboard.Core;
 using Pitboard.Windows;
 
 namespace Pitboard.Views;
 
 // Pitboard's log, newest first, whichever front end made each change.
-public sealed partial class ActivityPane : UserControl
+public sealed partial class ActivityPane : Page
 {
-    private readonly AppModel _model;
+    private PaneContext? _context;
     private ActivityShown? _shown;
 
-    public ActivityPane(AppModel model)
+    public ActivityPane()
     {
-        _model = model;
         InitializeComponent();
         Loaded += OnLoaded;
-        Unloaded += (_, _) => _model.PropertyChanged -= OnModelChanged;
-        Show();
+        Unloaded += (_, _) => Model.PropertyChanged -= OnModelChanged;
     }
 
-    // Every visit: the log is read each time the pane is shown.
+    private AppModel Model =>
+        _context?.Model ?? throw new InvalidOperationException("The page was shown before its frame navigated to it.");
+
+    // Every visit: the log is read each time the page is shown.
+    protected override void OnNavigatedTo(NavigationEventArgs e)
+    {
+        base.OnNavigatedTo(e);
+        _context ??= (PaneContext)e.Parameter;
+        Show();
+        Model.Send(new Intent.PaneShown(Pane.Activity));
+    }
+
     private void OnLoaded(object sender, RoutedEventArgs args)
     {
-        _model.PropertyChanged -= OnModelChanged;
-        _model.PropertyChanged += OnModelChanged;
+        Model.PropertyChanged -= OnModelChanged;
+        Model.PropertyChanged += OnModelChanged;
         Show();
-        _model.Send(new Intent.PaneShown(Pane.Activity));
     }
 
     private void OnModelChanged(object? sender, PropertyChangedEventArgs args)
@@ -41,7 +50,7 @@ public sealed partial class ActivityPane : UserControl
 
     private void Show()
     {
-        var activity = _model.Machine.Activity;
+        var activity = Model.Machine.Activity;
         if (Structural.Equal(activity, _shown))
         {
             return;
@@ -72,5 +81,5 @@ public sealed partial class ActivityPane : UserControl
         }
     }
 
-    private void OnRefresh(object sender, RoutedEventArgs args) => _model.Send(new Intent.PaneShown(Pane.Activity));
+    private void OnRefresh(object sender, RoutedEventArgs args) => Model.Send(new Intent.PaneShown(Pane.Activity));
 }

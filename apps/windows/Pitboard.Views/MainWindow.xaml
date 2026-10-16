@@ -29,6 +29,7 @@
         IsBackButtonVisible="Collapsed"
         IsPaneToggleButtonVisible="False"
         KeyboardAcceleratorPlacementMode="Hidden"
+        DisplayModeChanged="OnDisplayModeChanged"
         SelectionChanged="OnSelectionChanged">
       <NavigationView.KeyboardAccelerators>
         <KeyboardAccelerator Key="N" Modifiers="Control" Invoked="OnAddAccount" />
@@ -50,6 +51,8 @@
           </NavigationViewItem.Icon>
         </NavigationViewItem>
       </NavigationView.MenuItems>
+      <!-- Each page owns its title, as the NavigationApp template's do, and is kept for the next visit. -->
+      <Frame x:Name="Pages" IsNavigationStackEnabled="False" Navigated="OnNavigated" />
     </NavigationView>
   </Grid>
 </Window>

@@ -3,62 +3,69 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Navigation;
 using Pitboard.Core;
 using Pitboard.Windows;
-using Launcher = Windows.System.Launcher;
 
 namespace Pitboard.Views;
 
-public sealed partial class SettingsPane : UserControl
+public sealed partial class SettingsPane : Page
 {
-    private readonly AppModel _model;
-    private readonly StartAtSignIn _startAtSignIn;
-    private readonly IUpdates _updates;
-    private readonly string _version;
-    private readonly Action<Uri> _open;
+    private PaneContext? _context;
 
     // A control set to what the model says raises its change event as a person's change would.
     private bool _showing;
 
-    public SettingsPane(AppModel model, StartAtSignIn startAtSignIn, IUpdates updates, string version, Action<Uri>? open = null)
+    public SettingsPane()
     {
-        _model = model;
-        _startAtSignIn = startAtSignIn;
-        _updates = updates;
-        _version = version;
-        _open = open ?? (page => _ = Launcher.LaunchUriAsync(page));
         InitializeComponent();
         WhatItDoes.Text = SettingsPage.WhatItDoes;
         Copyright.Text = SettingsPage.Copyright;
         foreach (var link in SettingsPage.Links)
         {
             var button = new HyperlinkButton { Content = link.Title };
-            button.Click += (_, _) => _open(new Uri(link.Url));
+            button.Click += (_, _) => Context.Open(new Uri(link.Url));
             Links.Children.Add(button);
         }
 
         Loaded += OnLoaded;
         Unloaded += (_, _) =>
         {
-            _model.PropertyChanged -= OnModelChanged;
-            _startAtSignIn.Changed -= OnStartAtSignInChanged;
-            _updates.Changed -= OnUpdatesChanged;
+            Model.PropertyChanged -= OnModelChanged;
+            StartAtSignIn.Changed -= OnStartAtSignInChanged;
+            Updates.Changed -= OnUpdatesChanged;
         };
-        Show();
     }
 
+    private PaneContext Context =>
+        _context ?? throw new InvalidOperationException("The page was shown before its frame navigated to it.");
+
+    private AppModel Model => Context.Model;
+
+    private StartAtSignIn StartAtSignIn => Context.StartAtSignIn;
+
+    private IUpdates Updates => Context.Updates;
+
     // Every visit: a terminal can change the schedule and the command line, and another program the Run key.
+    protected override void OnNavigatedTo(NavigationEventArgs e)
+    {
+        base.OnNavigatedTo(e);
+        _context ??= (PaneContext)e.Parameter;
+        StartAtSignIn.Read();
+        Show();
+        Model.Send(new Intent.ReadSchedule());
+        Model.Send(new Intent.LookForCommandLine());
+    }
+
     private void OnLoaded(object sender, RoutedEventArgs args)
     {
-        _model.PropertyChanged -= OnModelChanged;
-        _model.PropertyChanged += OnModelChanged;
-        _startAtSignIn.Changed -= OnStartAtSignInChanged;
-        _startAtSignIn.Changed += OnStartAtSignInChanged;
-        _updates.Changed -= OnUpdatesChanged;
-        _updates.Changed += OnUpdatesChanged;
-        _startAtSignIn.Read();
-        _model.Send(new Intent.ReadSchedule());
-        _model.Send(new Intent.LookForCommandLine());
+        Model.PropertyChanged -= OnModelChanged;
+        Model.PropertyChanged += OnModelChanged;
+        StartAtSignIn.Changed -= OnStartAtSignInChanged;
+        StartAtSignIn.Changed += OnStartAtSignInChanged;
+        Updates.Changed -= OnUpdatesChanged;
+        Updates.Changed += OnUpdatesChanged;
+        Show();
     }
 
     private void OnModelChanged(object? sender, PropertyChangedEventArgs args)
@@ -78,7 +85,7 @@ public sealed partial class SettingsPane : UserControl
         _showing = true;
         try
         {
-            var machine = _model.Machine;
+            var machine = Model.Machine;
             ShowStartAtSignIn();
             ShowLimits(machine.AutoSwitch, machine.Warm);
             ShowRenewal(machine.Schedule, machine.Renewal);
@@ -93,10 +100,10 @@ public sealed partial class SettingsPane : UserControl
 
     private void ShowStartAtSignIn()
     {
-        StartAtSignInSwitch.IsOn = _startAtSignIn.On;
-        StartAtSignInSwitch.IsEnabled = _startAtSignIn.Refusal is null;
-        StartupNote.Text = _startAtSignIn.Refusal ?? SettingsPage.StartupNote;
-        Announce(StartupFailed, _startAtSignIn.Failed);
+        StartAtSignInSwitch.IsOn = StartAtSignIn.On;
+        StartAtSignInSwitch.IsEnabled = StartAtSignIn.Refusal is null;
+        StartupNote.Text = StartAtSignIn.Refusal ?? SettingsPage.StartupNote;
+        Announce(StartupFailed, StartAtSignIn.Failed);
     }
 
     private void ShowLimits(AutoSwitchShown auto, WarmShown warm)
@@ -163,19 +170,19 @@ public sealed partial class SettingsPane : UserControl
 
     private void ShowUpdates()
     {
-        AutomaticChecksCard.Visibility = Look.Shown(_updates.Available);
-        AutomaticChecks.IsOn = _updates.ChecksAutomatically;
-        UpdatesState.Text = _updates.Waiting is { } waiting
+        AutomaticChecksCard.Visibility = Look.Shown(Updates.Available);
+        AutomaticChecks.IsOn = Updates.ChecksAutomatically;
+        UpdatesState.Text = Updates.Waiting is { } waiting
             ? $"Pitboard {waiting} is ready to install."
-            : SettingsPage.Named(_version);
-        CheckNow.IsEnabled = _updates.Available;
+            : SettingsPage.Named(Context.Version);
+        CheckNow.IsEnabled = Updates.Available;
         UpdatesNotes.Children.Clear();
-        foreach (var note in SettingsPage.UpdatesNotes(_updates, _version))
+        foreach (var note in SettingsPage.UpdatesNotes(Updates, Context.Version))
         {
             UpdatesNotes.Children.Add(new TextBlock { Text = note, Style = (Style)Resources["Footnote"] });
         }
 
-        AboutVersion.Text = _version;
+        AboutVersion.Text = Context.Version;
     }
 
     private static void Say(TextBlock text, string? said)
@@ -200,7 +207,7 @@ public sealed partial class SettingsPane : UserControl
     {
         if (!_showing)
         {
-            _startAtSignIn.Set(StartAtSignInSwitch.IsOn);
+            StartAtSignIn.Set(StartAtSignInSwitch.IsOn);
         }
     }
 
@@ -208,7 +215,7 @@ public sealed partial class SettingsPane : UserControl
     {
         if (!_showing)
         {
-            _model.Send(new Intent.SetAutoSwitch(AutoSwitchSwitch.IsOn, _model.Machine.AutoSwitch.At));
+            Model.Send(new Intent.SetAutoSwitch(AutoSwitchSwitch.IsOn, Model.Machine.AutoSwitch.At));
         }
     }
 
@@ -219,10 +226,10 @@ public sealed partial class SettingsPane : UserControl
             return;
         }
 
-        var auto = _model.Machine.AutoSwitch;
+        var auto = Model.Machine.AutoSwitch;
         if (SettingsPage.Share(args.NewValue, auto) is { } at)
         {
-            _model.Send(new Intent.SetAutoSwitch(auto.On, at));
+            Model.Send(new Intent.SetAutoSwitch(auto.On, at));
         }
         else
         {
@@ -239,16 +246,16 @@ public sealed partial class SettingsPane : UserControl
             return;
         }
 
-        var warm = _model.Machine.Warm;
+        var warm = Model.Machine.Warm;
         var minutes = SettingsPage.Minutes(picked);
-        _model.Send(sender == WarmFrom ? new Intent.SetWarmRange(minutes, warm.To) : new Intent.SetWarmRange(warm.From, minutes));
+        Model.Send(sender == WarmFrom ? new Intent.SetWarmRange(minutes, warm.To) : new Intent.SetWarmRange(warm.From, minutes));
     }
 
     private void OnWarmTurned(string qualified, bool on)
     {
         if (!_showing)
         {
-            _model.Send(new Intent.SetWarm(qualified, on));
+            Model.Send(new Intent.SetWarm(qualified, on));
         }
     }
 
@@ -256,19 +263,19 @@ public sealed partial class SettingsPane : UserControl
     {
         if (!_showing)
         {
-            _model.Send(new Intent.SetSchedule(RenewDaily.IsOn));
+            Model.Send(new Intent.SetSchedule(RenewDaily.IsOn));
         }
     }
 
-    private void OnRenewNow(object sender, RoutedEventArgs args) => _model.Send(new Intent.RenewNow());
+    private void OnRenewNow(object sender, RoutedEventArgs args) => Model.Send(new Intent.RenewNow());
 
     private void OnAutomaticChecksToggled(object sender, RoutedEventArgs args)
     {
         if (!_showing)
         {
-            _updates.ChecksAutomatically = AutomaticChecks.IsOn;
+            Updates.ChecksAutomatically = AutomaticChecks.IsOn;
         }
     }
 
-    private void OnCheckNow(object sender, RoutedEventArgs args) => _updates.Check();
+    private void OnCheckNow(object sender, RoutedEventArgs args) => Updates.Check();
 }

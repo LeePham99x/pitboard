@@ -6,13 +6,14 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Navigation;
 using Pitboard.Core;
 using Pitboard.Windows;
 using Windows.System;
 
 namespace Pitboard.Views;
 
-public sealed partial class AccountsPane : UserControl
+public sealed partial class AccountsPane : Page
 {
     private static readonly HashSet<string> Parts =
     [
@@ -20,39 +21,44 @@ public sealed partial class AccountsPane : UserControl
         nameof(AppModel.Sections), nameof(AppModel.UpdatedWindow), nameof(AppModel.Reading),
     ];
 
-    private readonly AppModel _model;
-    private readonly DialogHost _dialogs;
-    private readonly TimeProvider _time;
-    private readonly Action<WindowAccount>? _openWindow;
     private readonly ObservableCollection<ShownAccount> _rows = [];
     private readonly ObservableCollection<ShownSection> _sections = [];
     private readonly CollectionViewSource _grouped;
+    private PaneContext? _context;
     private bool _grouping;
     private Action? _emptyChoice;
     private SetupStep? _setup;
 
-    public AccountsPane(AppModel model, DialogHost dialogs, TimeProvider? time = null, Action<WindowAccount>? openWindow = null)
+    public AccountsPane()
     {
-        _model = model;
-        _dialogs = dialogs;
-        _time = time ?? TimeProvider.System;
-        _openWindow = openWindow;
         InitializeComponent();
         _grouped = new CollectionViewSource { IsSourceGrouped = true, Source = _sections };
         AccountList.ItemsSource = _rows;
         // An item's own Enter and Delete come here too, after the list has looked at them.
         AccountList.AddHandler(KeyDownEvent, new KeyEventHandler(OnListKeyDown), handledEventsToo: true);
         Loaded += OnLoaded;
-        Unloaded += (_, _) => _model.PropertyChanged -= OnModelChanged;
+        Unloaded += (_, _) => Model.PropertyChanged -= OnModelChanged;
+    }
+
+    private PaneContext Context =>
+        _context ?? throw new InvalidOperationException("The page was shown before its frame navigated to it.");
+
+    private AppModel Model => Context.Model;
+
+    // Every visit: the model reads the accounts whose numbers are old.
+    protected override void OnNavigatedTo(NavigationEventArgs e)
+    {
+        base.OnNavigatedTo(e);
+        _context ??= (PaneContext)e.Parameter;
         Show();
+        Model.Send(new Intent.PaneShown(Pane.Accounts));
     }
 
     private void OnLoaded(object sender, RoutedEventArgs args)
     {
-        _model.PropertyChanged -= OnModelChanged;
-        _model.PropertyChanged += OnModelChanged;
+        Model.PropertyChanged -= OnModelChanged;
+        Model.PropertyChanged += OnModelChanged;
         Show();
-        _model.Send(new Intent.PaneShown(Pane.Accounts));
     }
 
     private void OnModelChanged(object? sender, PropertyChangedEventArgs args)
@@ -65,9 +71,9 @@ public sealed partial class AccountsPane : UserControl
 
     private void Show()
     {
-        Updated.Text = _model.UpdatedWindow;
-        RefreshButton.IsEnabled = !_model.Reading;
-        var shown = _model.AccountsShown;
+        Updated.Text = Model.UpdatedWindow;
+        RefreshButton.IsEnabled = !Model.Reading;
+        var shown = Model.AccountsShown;
         AccountList.Visibility = Look.Shown(shown is AccountsShown.List);
         Empty.Visibility = Look.Shown(shown is not AccountsShown.List);
         switch (shown)
@@ -84,12 +90,12 @@ public sealed partial class AccountsPane : UserControl
             case AccountsShown.ReadFailed failed:
                 ShowEmpty(
                     Glyphs.Problem, failed.Title, failed.Detail, failed.Retry.Title, prominent: false, failed.Retry.Enabled,
-                    () => _model.Send(failed.Retry.Intent));
+                    () => Model.Send(failed.Retry.Intent));
                 break;
             case AccountsShown.NoAccounts none:
                 ShowEmpty(
                     Glyphs.Accounts, none.Title, none.Detail, none.Add.Title, prominent: true, none.Add.Enabled,
-                    () => _model.Send(none.Add.Intent));
+                    () => Model.Send(none.Add.Intent));
                 break;
             case AccountsShown.Reading reading:
                 ShowReading(reading.Title);
@@ -131,14 +137,14 @@ public sealed partial class AccountsPane : UserControl
 
     private void ShowNotices() =>
         Keyed.Sync<PanelNotice, UIElement>(
-            Notices.Children, _model.Notices, notice => notice.Id, shown => ((NoticeBar)shown).Key,
-            notice => new NoticeBar(notice, action => Ask(action.Confirm, action.Intent), _time),
+            Notices.Children, Model.Notices, notice => notice.Id, shown => ((NoticeBar)shown).Key,
+            notice => new NoticeBar(notice, action => Ask(action.Confirm, action.Intent), Context.Time),
             (shown, notice) => ((NoticeBar)shown).Show(notice));
 
     private void ShowSetup()
     {
-        Setup.IsOpen = _model.Setup is not null;
-        if (_model.Setup is not { } step || Structural.Equal(step, _setup))
+        Setup.IsOpen = Model.Setup is not null;
+        if (Model.Setup is not { } step || Structural.Equal(step, _setup))
         {
             return;
         }
@@ -146,7 +152,7 @@ public sealed partial class AccountsPane : UserControl
         _setup = step;
         Setup.Title = step.Title;
         Setup.Message = step.Detail;
-        SetupIcon.Glyph = _model.Footing is Footing.Unnamed ? Glyphs.Name : Glyphs.Switch;
+        SetupIcon.Glyph = Model.Footing is Footing.Unnamed ? Glyphs.Name : Glyphs.Switch;
         SetupChoices.Children.Clear();
         for (var index = 0; index < step.Actions.Length; index++)
         {
@@ -157,7 +163,7 @@ public sealed partial class AccountsPane : UserControl
                 button.Style = (Style)Resources["Prominent"];
             }
 
-            button.Click += (_, _) => _model.Send(choice.Intent);
+            button.Click += (_, _) => Model.Send(choice.Intent);
             SetupChoices.Children.Add(button);
         }
     }
@@ -165,7 +171,7 @@ public sealed partial class AccountsPane : UserControl
     // A heading per tool once there is more than one, and no group at all before: an empty header still takes room.
     private void ShowSections()
     {
-        var sections = _model.Sections;
+        var sections = Model.Sections;
         var grouping = sections.Any(section => section.Heading is not null);
         if (grouping)
         {
@@ -217,7 +223,7 @@ public sealed partial class AccountsPane : UserControl
         AutomationProperties.SetAutomationId(args.ItemContainer, RowId(shown));
         if (args.ItemContainer.ContentTemplateRoot is AccountRow row)
         {
-            row.Perform = _model.Send;
+            row.Perform = Model.Send;
         }
     }
 
@@ -229,7 +235,7 @@ public sealed partial class AccountsPane : UserControl
             return;
         }
 
-        var menu = AccountMenu.For(shown.Item, Ask, _openWindow, _model.AccountWindows.Held);
+        var menu = AccountMenu.For(shown.Item, Ask, Context.OpenWindow, Model.AccountWindows.Held);
         if (args.TryGetPosition(item, out var point))
         {
             menu.ShowAt(item, point);
@@ -249,7 +255,7 @@ public sealed partial class AccountsPane : UserControl
             && Look.Ancestor<ListViewItem>(source) is { Content: ShownAccount { Item.Action: { } action } })
         {
             args.Handled = true;
-            _model.Send(action.Intent);
+            Model.Send(action.Intent);
         }
     }
 
@@ -269,16 +275,16 @@ public sealed partial class AccountsPane : UserControl
 
     private async void Ask(Question? question, Intent intent)
     {
-        if (question is null || await _dialogs.Confirm(question))
+        if (question is null || await Context.Dialogs.Confirm(question))
         {
-            _model.Send(intent);
+            Model.Send(intent);
         }
     }
 
-    private void OnRefresh(object sender, RoutedEventArgs args) => _model.Send(new Intent.Refresh(Asked: true));
+    private void OnRefresh(object sender, RoutedEventArgs args) => Model.Send(new Intent.Refresh(Asked: true));
 
     private void OnAdd(object sender, RoutedEventArgs args) =>
-        _model.Send(new Intent.PresentSheet(new Sheet.Add(Provider: null)));
+        Model.Send(new Intent.PresentSheet(new Sheet.Add(Provider: null)));
 
     private void OnEmptyChoice(object sender, RoutedEventArgs args) => _emptyChoice?.Invoke();
 }

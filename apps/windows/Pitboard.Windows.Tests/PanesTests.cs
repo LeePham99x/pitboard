@@ -19,7 +19,7 @@ public sealed class PanesTests
     public async Task NoActivitySaysWhatWillBeThereAndShowingItReadsTheLog()
     {
         var model = new StandInModel(Snapshots.Read(1));
-        var pane = await Views.Shown(new ActivityPane(new AppModel(model)));
+        var pane = await Views.Navigated<ActivityPane>(Views.Context(new AppModel(model)));
 
         Assert.Contains("No activity", Views.Texts(pane));
         Assert.Contains(new Intent.PaneShown(Pane.Activity), model.Sent);
@@ -35,7 +35,7 @@ public sealed class PanesTests
                 new ActivityLine(1, "14/01/2027 18:00", "Enrol", "claude/spare", "refused", Done: false, AskedBy: "Pitboard app"),
             ],
             Empty: null);
-        var pane = await Views.Shown(new ActivityPane(new AppModel(new StandInModel(With(Snapshots.Read(1), activity)))));
+        var pane = await Views.Navigated<ActivityPane>(Views.Context(new AppModel(new StandInModel(With(Snapshots.Read(1), activity)))));
 
         var rows = Views.Visible<ListViewItem>(pane).Select(row => AutomationProperties.GetName(row)).ToArray();
 
@@ -56,7 +56,7 @@ public sealed class PanesTests
             ],
             Summary: "One thing is worth looking at.", Checking: false, Checked: "Checked at 09:00", Waiting: null);
         var model = new StandInModel(With(Snapshots.Read(1), checks));
-        var pane = await Views.Shown(new MachinePane(new AppModel(model)));
+        var pane = await Views.Navigated<MachinePane>(Views.Context(new AppModel(model)));
 
         var texts = Views.Texts(pane);
         foreach (var said in new[] { "One thing is worth looking at.", "Checked at 09:00", "account personal", "Use it to renew it.", "lapses in 2 days" })
@@ -72,7 +72,7 @@ public sealed class PanesTests
     public async Task CheckAgainIsHeldBackWhileTheChecksRun()
     {
         var checks = new ChecksShown(Lines: [], Summary: "Everything looks right.", Checking: true, Checked: null, Waiting: null);
-        var pane = await Views.Shown(new MachinePane(new AppModel(new StandInModel(With(Snapshots.Read(1), checks)))));
+        var pane = await Views.Navigated<MachinePane>(Views.Context(new AppModel(new StandInModel(With(Snapshots.Read(1), checks)))));
 
         Assert.IsFalse(Views.Element<AppBarButton>(pane, "machine.check").IsEnabled);
         Assert.IsTrue(Views.Visible<ProgressRing>(pane).Single().IsActive);
@@ -81,7 +81,7 @@ public sealed class PanesTests
     [UITestMethod]
     public async Task BeforeTheFirstCheckThePaneSaysItIsChecking()
     {
-        var pane = await Views.Shown(new MachinePane(new AppModel(new StandInModel(Snapshots.Read(1)))));
+        var pane = await Views.Navigated<MachinePane>(Views.Context(new AppModel(new StandInModel(Snapshots.Read(1)))));
 
         Assert.Contains("Checking this PC…", Views.Texts(pane));
     }

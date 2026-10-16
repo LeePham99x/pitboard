@@ -22,9 +22,7 @@ public sealed partial class WindowChromeTests
         var account = new AccountWindow(Items.Window("codex", "main").Store, web, new Downloads(web, _ => { }), _ => { });
         Window[] windows =
         [
-            new MainWindow(
-                new AppModel(new StandInModel(Snapshots.Read(1))), new StartAtSignIn(new FixtureStartupItem()), new NoUpdates(),
-                "0.0.0", _ => { }, new WindowPlacement(Path.Combine(Path.GetTempPath(), $"pitboard-{Guid.NewGuid()}.json"))),
+            MainWindowTests.Made(Snapshots.Read(1)),
             account,
             new SignInWindow(new SignInWindowSize(480, 640), account, "Sign in"),
             new OpenLinkWindow(_ => { }, _ => { }, _ => { }),

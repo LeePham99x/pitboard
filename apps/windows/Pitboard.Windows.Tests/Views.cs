@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Pitboard.Views;
 
 namespace Pitboard.Windows.Tests;
 
@@ -21,6 +22,39 @@ internal static class Views
         view.UpdateLayout();
         return view;
     }
+
+    // A page of the main window, in a frame of the test app's window, navigated to as the window's own frame does.
+    public static async Task<T> Navigated<T>(PaneContext context)
+        where T : Page =>
+        await Navigate<T>(await Shown(new Frame { IsNavigationStackEnabled = false }), context);
+
+    public static async Task<T> Navigate<T>(Frame frame, PaneContext context)
+        where T : Page
+    {
+        Assert.IsTrue(frame.Navigate(typeof(T), context), $"the frame did not navigate to {typeof(T).Name}");
+        var page = (T)frame.Content;
+        if (!page.IsLoaded)
+        {
+            var loaded = new TaskCompletionSource();
+            page.Loaded += (_, _) => loaded.TrySetResult();
+            await loaded.Task.WaitAsync(Patience);
+        }
+
+        page.UpdateLayout();
+        return page;
+    }
+
+    // What the main window navigates its pages with, over a model the test made.
+    public static PaneContext Context(
+        AppModel model, StartAtSignIn? start = null, IUpdates? updates = null, string version = "0.0.0",
+        Action<Uri>? open = null, TimeProvider? time = null) =>
+        new(
+            model, new DialogHost(() => UnitTestApp.Window?.Content?.XamlRoot), start ?? new StartAtSignIn(new FixtureStartupItem()),
+            updates ?? new NoUpdates(), version)
+        {
+            Open = open ?? (_ => { }),
+            Time = time ?? TimeProvider.System,
+        };
 
     public static IEnumerable<DependencyObject> Descendants(DependencyObject root)
     {
@@ -66,7 +100,11 @@ internal static class Views
         return window;
     }
 
-    public static async Task Until(Func<bool> condition, string what, TimeSpan? patience = null)
+    public static Task Until(Func<bool> condition, string what, TimeSpan? patience = null) =>
+        Until(condition, () => what, patience);
+
+    // What failed is said as it stood at the end.
+    public static async Task Until(Func<bool> condition, Func<string> what, TimeSpan? patience = null)
     {
         var waited = patience ?? Patience;
         var deadline = DateTime.UtcNow + waited;
@@ -74,7 +112,7 @@ internal static class Views
         {
             if (DateTime.UtcNow > deadline)
             {
-                throw new AssertFailedException($"{what}, not within {waited}");
+                throw new AssertFailedException($"{what()}, not within {waited}");
             }
 
             await Task.Delay(50);

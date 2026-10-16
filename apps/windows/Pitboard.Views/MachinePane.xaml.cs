@@ -2,33 +2,42 @@ using System.ComponentModel;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Navigation;
 using Pitboard.Core;
 using Pitboard.Windows;
 
 namespace Pitboard.Views;
 
 // The checks pitboard doctor makes of this PC, for when a failed switch's one line is not enough to act on.
-public sealed partial class MachinePane : UserControl
+public sealed partial class MachinePane : Page
 {
-    private readonly AppModel _model;
+    private PaneContext? _context;
     private ChecksShown? _shown;
 
-    public MachinePane(AppModel model)
+    public MachinePane()
     {
-        _model = model;
         InitializeComponent();
         Loaded += OnLoaded;
-        Unloaded += (_, _) => _model.PropertyChanged -= OnModelChanged;
-        Show();
+        Unloaded += (_, _) => Model.PropertyChanged -= OnModelChanged;
     }
 
+    private AppModel Model =>
+        _context?.Model ?? throw new InvalidOperationException("The page was shown before its frame navigated to it.");
+
     // Every visit: a check fixed in a terminal since would otherwise still read as failing.
+    protected override void OnNavigatedTo(NavigationEventArgs e)
+    {
+        base.OnNavigatedTo(e);
+        _context ??= (PaneContext)e.Parameter;
+        Show();
+        Model.Send(new Intent.PaneShown(Pane.Machine));
+    }
+
     private void OnLoaded(object sender, RoutedEventArgs args)
     {
-        _model.PropertyChanged -= OnModelChanged;
-        _model.PropertyChanged += OnModelChanged;
+        Model.PropertyChanged -= OnModelChanged;
+        Model.PropertyChanged += OnModelChanged;
         Show();
-        _model.Send(new Intent.PaneShown(Pane.Machine));
     }
 
     private void OnModelChanged(object? sender, PropertyChangedEventArgs args)
@@ -41,7 +50,7 @@ public sealed partial class MachinePane : UserControl
 
     private void Show()
     {
-        var checks = _model.Machine.Checks;
+        var checks = Model.Machine.Checks;
         if (Structural.Equal(checks, _shown))
         {
             return;
@@ -54,7 +63,7 @@ public sealed partial class MachinePane : UserControl
 
         _shown = checks;
         CheckAgain.IsEnabled = !checks.Checking;
-        Heading.Visibility = Look.Shown(checks.Summary is not null);
+        SummaryRow.Visibility = Look.Shown(checks.Summary is not null);
         Summary.Text = checks.Summary ?? "";
         Checking.IsActive = checks.Checking;
         Checking.Visibility = Look.Shown(checks.Checking);
@@ -97,5 +106,5 @@ public sealed partial class MachinePane : UserControl
         }
     }
 
-    private void OnCheckAgain(object sender, RoutedEventArgs args) => _model.Send(new Intent.PaneShown(Pane.Machine));
+    private void OnCheckAgain(object sender, RoutedEventArgs args) => Model.Send(new Intent.PaneShown(Pane.Machine));
 }

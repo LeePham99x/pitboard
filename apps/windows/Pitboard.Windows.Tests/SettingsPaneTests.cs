@@ -29,8 +29,7 @@ public sealed class SettingsPaneTests
 
     private static Task<SettingsPane> Shown(
         AppModel model, StartAtSignIn? start = null, IUpdates? updates = null, string version = "0.0.0", Action<Uri>? open = null) =>
-        Views.Shown(new SettingsPane(
-            model, start ?? new StartAtSignIn(new FixtureStartupItem()), updates ?? new NoUpdates(), version, open ?? (_ => { })));
+        Views.Navigated<SettingsPane>(Views.Context(model, start, updates, version, open));
 
     private static bool Shows(SettingsPane pane, string automationId) =>
         Views.Visible<TextBlock>(pane).Any(text => AutomationProperties.GetAutomationId(text) == automationId);

@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<UserControl
+<Page
     x:Class="Pitboard.Views.SettingsPane"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-  <UserControl.Resources>
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    NavigationCacheMode="Required">
+  <Page.Resources>
     <!-- The Windows Community Toolkit's SettingsCard, which Microsoft's settings guidance shows, drawn with WinUI's own resources. -->
     <Style x:Key="Card" TargetType="Grid">
       <Setter Property="MinHeight" Value="68" />
@@ -31,236 +32,255 @@
       <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
       <Setter Property="IsTextSelectionEnabled" Value="True" />
     </Style>
-  </UserControl.Resources>
-  <ScrollViewer Padding="16,0,16,24">
-    <StackPanel MaxWidth="1064" Spacing="4">
-      <TextBlock Style="{StaticResource Section}" Margin="1,8,0,6" Text="General" />
-      <Grid Style="{StaticResource Card}">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="Auto" />
-        </Grid.ColumnDefinitions>
-        <StackPanel VerticalAlignment="Center" Spacing="2">
-          <TextBlock Text="Start when you sign in to Windows" TextWrapping="Wrap" />
-          <TextBlock x:Name="StartupNote" Style="{StaticResource Explanatory}" />
-          <TextBlock x:Name="StartupFailed" Style="{StaticResource Explanatory}" AutomationProperties.LiveSetting="Assertive" />
-        </StackPanel>
-        <ToggleSwitch
-            x:Name="StartAtSignInSwitch"
-            Grid.Column="1"
-            AutomationProperties.AutomationId="settings.startAtSignIn"
-            AutomationProperties.Name="Start when you sign in to Windows"
-            Toggled="OnStartAtSignInToggled" />
-      </Grid>
+  </Page.Resources>
+  <!-- NavigationView's guidance: 24 epx sides, 12 in Minimal, which the main window sets. -->
+  <Grid Padding="0,16,0,0" RowSpacing="24">
+    <VisualStateManager.VisualStateGroups>
+      <VisualStateGroup x:Name="Sides">
+        <VisualState x:Name="Wide" />
+        <VisualState x:Name="Minimal">
+          <VisualState.Setters>
+            <Setter Target="Heading.Margin" Value="12,0,12,0" />
+            <Setter Target="Scroller.Padding" Value="12,0,12,24" />
+          </VisualState.Setters>
+        </VisualState>
+      </VisualStateGroup>
+    </VisualStateManager.VisualStateGroups>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+    <TextBlock x:Name="Heading" MaxWidth="1064" Margin="24,0,24,0" Text="Settings" Style="{StaticResource PageTitleTextBlockStyle}" />
+    <ScrollViewer x:Name="Scroller" Grid.Row="1" Padding="24,0,24,24">
+      <StackPanel MaxWidth="1064" Spacing="4">
+        <TextBlock Style="{StaticResource Section}" Margin="1,0,0,6" Text="General" />
+        <Grid Style="{StaticResource Card}">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <StackPanel VerticalAlignment="Center" Spacing="2">
+            <TextBlock Text="Start when you sign in to Windows" TextWrapping="Wrap" />
+            <TextBlock x:Name="StartupNote" Style="{StaticResource Explanatory}" />
+            <TextBlock x:Name="StartupFailed" Style="{StaticResource Explanatory}" AutomationProperties.LiveSetting="Assertive" />
+          </StackPanel>
+          <ToggleSwitch
+              x:Name="StartAtSignInSwitch"
+              Grid.Column="1"
+              AutomationProperties.AutomationId="settings.startAtSignIn"
+              AutomationProperties.Name="Start when you sign in to Windows"
+              Toggled="OnStartAtSignInToggled" />
+        </Grid>
 
-      <TextBlock Style="{StaticResource Section}" Text="Limits" />
-      <Grid Style="{StaticResource Card}">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="Auto" />
-        </Grid.ColumnDefinitions>
-        <StackPanel VerticalAlignment="Center" Spacing="2">
-          <TextBlock Text="Switch Claude Code automatically" TextWrapping="Wrap" />
-          <TextBlock
-              x:Name="AutoSwitchStanding"
-              Style="{StaticResource Explanatory}"
-              AutomationProperties.AutomationId="settings.autoSwitchStanding" />
-        </StackPanel>
-        <ToggleSwitch
-            x:Name="AutoSwitchSwitch"
-            Grid.Column="1"
-            AutomationProperties.AutomationId="settings.autoSwitch"
-            AutomationProperties.Name="Switch Claude Code automatically"
-            Toggled="OnAutoSwitchToggled" />
-      </Grid>
-      <Grid Style="{StaticResource Card}">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="Auto" />
-        </Grid.ColumnDefinitions>
-        <TextBlock x:Name="AutoSwitchAt" VerticalAlignment="Center" TextWrapping="Wrap" />
-        <NumberBox
-            x:Name="AutoSwitchShare"
-            Grid.Column="1"
-            MinWidth="120"
-            VerticalAlignment="Center"
-            SmallChange="1"
-            LargeChange="5"
-            SpinButtonPlacementMode="Inline"
-            AutomationProperties.AutomationId="settings.autoSwitchAt"
-            ValueChanged="OnShareChanged" />
-      </Grid>
-      <TextBlock x:Name="AutoSwitchNote" Style="{StaticResource Footnote}" />
-      <!-- Microsoft's settings guidance reveals a setting's sub-options on demand, under an expander. -->
-      <Expander
-          HorizontalAlignment="Stretch"
-          HorizontalContentAlignment="Stretch"
-          AutomationProperties.AutomationId="settings.warm"
-          AutomationProperties.Name="Warm up limits">
-        <Expander.Header>
-          <StackPanel Padding="0,12" Spacing="2">
-            <TextBlock Text="Warm up limits" TextWrapping="Wrap" />
-            <TextBlock x:Name="WarmRange" Style="{StaticResource Explanatory}" />
+        <TextBlock Style="{StaticResource Section}" Text="Limits" />
+        <Grid Style="{StaticResource Card}">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <StackPanel VerticalAlignment="Center" Spacing="2">
+            <TextBlock Text="Switch Claude Code automatically" TextWrapping="Wrap" />
             <TextBlock
-                x:Name="WarmStanding"
+                x:Name="AutoSwitchStanding"
                 Style="{StaticResource Explanatory}"
-                AutomationProperties.AutomationId="settings.warmStanding" />
+                AutomationProperties.AutomationId="settings.autoSwitchStanding" />
           </StackPanel>
-        </Expander.Header>
-        <StackPanel Spacing="12">
-          <StackPanel Orientation="Horizontal" Spacing="12">
-            <TimePicker
-                x:Name="WarmFrom"
-                Header="From"
-                AutomationProperties.AutomationId="settings.warmFrom"
-                SelectedTimeChanged="OnWarmRangeChanged" />
-            <TimePicker
-                x:Name="WarmTo"
-                Header="To"
-                AutomationProperties.AutomationId="settings.warmTo"
-                SelectedTimeChanged="OnWarmRangeChanged" />
-          </StackPanel>
-          <TextBlock x:Name="WarmEmpty" Style="{StaticResource Explanatory}" Text="No Claude Code account is enrolled yet." />
-          <StackPanel x:Name="WarmAccounts" Spacing="8" />
-          <TextBlock x:Name="WarmNote" Style="{StaticResource Explanatory}" />
-        </StackPanel>
-      </Expander>
-
-      <TextBlock Style="{StaticResource Section}" Text="Renewal" />
-      <Grid Style="{StaticResource Card}">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="Auto" />
-        </Grid.ColumnDefinitions>
-        <StackPanel VerticalAlignment="Center" Spacing="2">
-          <TextBlock Text="Renew parked logins daily" TextWrapping="Wrap" />
-          <TextBlock x:Name="ScheduleNote" Style="{StaticResource Explanatory}" />
-          <TextBlock x:Name="ScheduleFailed" Style="{StaticResource Explanatory}" AutomationProperties.LiveSetting="Assertive" />
-        </StackPanel>
-        <ToggleSwitch
-            x:Name="RenewDaily"
-            Grid.Column="1"
-            AutomationProperties.AutomationId="settings.renewDaily"
-            AutomationProperties.Name="Renew parked logins daily"
-            Toggled="OnRenewDailyToggled" />
-      </Grid>
-      <Grid x:Name="RunsCard" Style="{StaticResource Card}">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
-        <TextBlock VerticalAlignment="Center" Text="Runs" />
-        <TextBlock x:Name="Runs" Grid.Column="1" Style="{StaticResource Value}" />
-      </Grid>
-      <Grid x:Name="ScheduledInCard" Style="{StaticResource Card}">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
-        <TextBlock VerticalAlignment="Center" Text="Scheduled in" />
-        <TextBlock x:Name="ScheduledIn" Grid.Column="1" Style="{StaticResource Value}" TextTrimming="CharacterEllipsis" />
-      </Grid>
-      <Grid Style="{StaticResource Card}">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="Auto" />
-        </Grid.ColumnDefinitions>
-        <TextBlock x:Name="RenewalNote" VerticalAlignment="Center" TextWrapping="Wrap" />
-        <Button
-            x:Name="RenewNow"
-            Grid.Column="1"
-            MinWidth="120"
-            Content="Renew now"
-            AutomationProperties.AutomationId="settings.renewNow"
-            Click="OnRenewNow" />
-      </Grid>
-      <TextBlock x:Name="RenewalAbout" Style="{StaticResource Footnote}" />
-
-      <TextBlock Style="{StaticResource Section}" Text="Command line" />
-      <Grid Style="{StaticResource Card}">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
-        <StackPanel VerticalAlignment="Center" Spacing="2">
-          <TextBlock Text="In your terminal" />
-          <TextBlock x:Name="UpdateNote" Style="{StaticResource Explanatory}" />
-        </StackPanel>
-        <TextBlock
-            x:Name="InTerminal"
-            Grid.Column="1"
-            Style="{StaticResource Value}"
-            TextWrapping="Wrap"
-            AutomationProperties.AutomationId="settings.inTerminal" />
-        <ProgressRing
-            x:Name="LookingForCommandLine"
-            Grid.Column="1"
-            Width="16"
-            Height="16"
-            HorizontalAlignment="Right"
-            IsActive="False"
-            AutomationProperties.Name="Looking for pitboard" />
-      </Grid>
-      <TextBlock x:Name="TerminalNote" Style="{StaticResource Footnote}" />
-      <TextBlock x:Name="WhatItDoes" Style="{StaticResource Footnote}" />
-
-      <TextBlock Style="{StaticResource Section}" Text="Updates" />
-      <Grid x:Name="AutomaticChecksCard" Style="{StaticResource Card}">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="Auto" />
-        </Grid.ColumnDefinitions>
-        <TextBlock VerticalAlignment="Center" Text="Check for updates automatically" TextWrapping="Wrap" />
-        <ToggleSwitch
-            x:Name="AutomaticChecks"
-            Grid.Column="1"
-            AutomationProperties.AutomationId="settings.checkAutomatically"
-            AutomationProperties.Name="Check for updates automatically"
-            Toggled="OnAutomaticChecksToggled" />
-      </Grid>
-      <Grid Style="{StaticResource Card}">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="Auto" />
-        </Grid.ColumnDefinitions>
-        <StackPanel VerticalAlignment="Center" Spacing="2">
-          <TextBlock Text="Check for updates" />
-          <TextBlock x:Name="UpdatesState" Style="{StaticResource Explanatory}" />
-        </StackPanel>
-        <Button
-            x:Name="CheckNow"
-            Grid.Column="1"
-            MinWidth="120"
-            Content="Check now"
-            AutomationProperties.AutomationId="settings.checkNow"
-            Click="OnCheckNow" />
-      </Grid>
-      <StackPanel x:Name="UpdatesNotes" />
-
-      <TextBlock Style="{StaticResource Section}" Text="About" />
-      <!-- At the bottom, an expander showing the app's name and version, as Microsoft's settings guidance places About. -->
-      <Expander
-          x:Name="About"
-          Margin="0,0,0,12"
-          HorizontalAlignment="Stretch"
-          HorizontalContentAlignment="Stretch"
-          AutomationProperties.AutomationId="settings.about"
-          AutomationProperties.Name="About Pitboard">
-        <Expander.Header>
-          <Grid Padding="0,12" ColumnSpacing="24">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="*" />
-              <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <StackPanel Spacing="2">
-              <TextBlock Text="Pitboard" />
-              <TextBlock x:Name="Copyright" Style="{StaticResource Explanatory}" />
+          <ToggleSwitch
+              x:Name="AutoSwitchSwitch"
+              Grid.Column="1"
+              AutomationProperties.AutomationId="settings.autoSwitch"
+              AutomationProperties.Name="Switch Claude Code automatically"
+              Toggled="OnAutoSwitchToggled" />
+        </Grid>
+        <Grid Style="{StaticResource Card}">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <TextBlock x:Name="AutoSwitchAt" VerticalAlignment="Center" TextWrapping="Wrap" />
+          <NumberBox
+              x:Name="AutoSwitchShare"
+              Grid.Column="1"
+              MinWidth="120"
+              VerticalAlignment="Center"
+              SmallChange="1"
+              LargeChange="5"
+              SpinButtonPlacementMode="Inline"
+              AutomationProperties.AutomationId="settings.autoSwitchAt"
+              ValueChanged="OnShareChanged" />
+        </Grid>
+        <TextBlock x:Name="AutoSwitchNote" Style="{StaticResource Footnote}" />
+        <!-- Microsoft's settings guidance reveals a setting's sub-options on demand, under an expander. -->
+        <Expander
+            HorizontalAlignment="Stretch"
+            HorizontalContentAlignment="Stretch"
+            AutomationProperties.AutomationId="settings.warm"
+            AutomationProperties.Name="Warm up limits">
+          <Expander.Header>
+            <StackPanel Padding="0,12" Spacing="2">
+              <TextBlock Text="Warm up limits" TextWrapping="Wrap" />
+              <TextBlock x:Name="WarmRange" Style="{StaticResource Explanatory}" />
+              <TextBlock
+                  x:Name="WarmStanding"
+                  Style="{StaticResource Explanatory}"
+                  AutomationProperties.AutomationId="settings.warmStanding" />
             </StackPanel>
-            <TextBlock x:Name="AboutVersion" Grid.Column="1" Style="{StaticResource Value}" />
-          </Grid>
-        </Expander.Header>
-        <StackPanel x:Name="Links" Spacing="4" />
-      </Expander>
-    </StackPanel>
-  </ScrollViewer>
-</UserControl>
+          </Expander.Header>
+          <StackPanel Spacing="12">
+            <StackPanel Orientation="Horizontal" Spacing="12">
+              <TimePicker
+                  x:Name="WarmFrom"
+                  Header="From"
+                  AutomationProperties.AutomationId="settings.warmFrom"
+                  SelectedTimeChanged="OnWarmRangeChanged" />
+              <TimePicker
+                  x:Name="WarmTo"
+                  Header="To"
+                  AutomationProperties.AutomationId="settings.warmTo"
+                  SelectedTimeChanged="OnWarmRangeChanged" />
+            </StackPanel>
+            <TextBlock x:Name="WarmEmpty" Style="{StaticResource Explanatory}" Text="No Claude Code account is enrolled yet." />
+            <StackPanel x:Name="WarmAccounts" Spacing="8" />
+            <TextBlock x:Name="WarmNote" Style="{StaticResource Explanatory}" />
+          </StackPanel>
+        </Expander>
+
+        <TextBlock Style="{StaticResource Section}" Text="Renewal" />
+        <Grid Style="{StaticResource Card}">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <StackPanel VerticalAlignment="Center" Spacing="2">
+            <TextBlock Text="Renew parked logins daily" TextWrapping="Wrap" />
+            <TextBlock x:Name="ScheduleNote" Style="{StaticResource Explanatory}" />
+            <TextBlock x:Name="ScheduleFailed" Style="{StaticResource Explanatory}" AutomationProperties.LiveSetting="Assertive" />
+          </StackPanel>
+          <ToggleSwitch
+              x:Name="RenewDaily"
+              Grid.Column="1"
+              AutomationProperties.AutomationId="settings.renewDaily"
+              AutomationProperties.Name="Renew parked logins daily"
+              Toggled="OnRenewDailyToggled" />
+        </Grid>
+        <Grid x:Name="RunsCard" Style="{StaticResource Card}">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <TextBlock VerticalAlignment="Center" Text="Runs" />
+          <TextBlock x:Name="Runs" Grid.Column="1" Style="{StaticResource Value}" />
+        </Grid>
+        <Grid x:Name="ScheduledInCard" Style="{StaticResource Card}">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <TextBlock VerticalAlignment="Center" Text="Scheduled in" />
+          <TextBlock x:Name="ScheduledIn" Grid.Column="1" Style="{StaticResource Value}" TextTrimming="CharacterEllipsis" />
+        </Grid>
+        <Grid Style="{StaticResource Card}">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <TextBlock x:Name="RenewalNote" VerticalAlignment="Center" TextWrapping="Wrap" />
+          <Button
+              x:Name="RenewNow"
+              Grid.Column="1"
+              MinWidth="120"
+              Content="Renew now"
+              AutomationProperties.AutomationId="settings.renewNow"
+              Click="OnRenewNow" />
+        </Grid>
+        <TextBlock x:Name="RenewalAbout" Style="{StaticResource Footnote}" />
+
+        <TextBlock Style="{StaticResource Section}" Text="Command line" />
+        <Grid Style="{StaticResource Card}">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <StackPanel VerticalAlignment="Center" Spacing="2">
+            <TextBlock Text="In your terminal" />
+            <TextBlock x:Name="UpdateNote" Style="{StaticResource Explanatory}" />
+          </StackPanel>
+          <TextBlock
+              x:Name="InTerminal"
+              Grid.Column="1"
+              Style="{StaticResource Value}"
+              TextWrapping="Wrap"
+              AutomationProperties.AutomationId="settings.inTerminal" />
+          <ProgressRing
+              x:Name="LookingForCommandLine"
+              Grid.Column="1"
+              Width="16"
+              Height="16"
+              HorizontalAlignment="Right"
+              IsActive="False"
+              AutomationProperties.Name="Looking for pitboard" />
+        </Grid>
+        <TextBlock x:Name="TerminalNote" Style="{StaticResource Footnote}" />
+        <TextBlock x:Name="WhatItDoes" Style="{StaticResource Footnote}" />
+
+        <TextBlock Style="{StaticResource Section}" Text="Updates" />
+        <Grid x:Name="AutomaticChecksCard" Style="{StaticResource Card}">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <TextBlock VerticalAlignment="Center" Text="Check for updates automatically" TextWrapping="Wrap" />
+          <ToggleSwitch
+              x:Name="AutomaticChecks"
+              Grid.Column="1"
+              AutomationProperties.AutomationId="settings.checkAutomatically"
+              AutomationProperties.Name="Check for updates automatically"
+              Toggled="OnAutomaticChecksToggled" />
+        </Grid>
+        <Grid Style="{StaticResource Card}">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <StackPanel VerticalAlignment="Center" Spacing="2">
+            <TextBlock Text="Check for updates" />
+            <TextBlock x:Name="UpdatesState" Style="{StaticResource Explanatory}" />
+          </StackPanel>
+          <Button
+              x:Name="CheckNow"
+              Grid.Column="1"
+              MinWidth="120"
+              Content="Check now"
+              AutomationProperties.AutomationId="settings.checkNow"
+              Click="OnCheckNow" />
+        </Grid>
+        <StackPanel x:Name="UpdatesNotes" />
+
+        <TextBlock Style="{StaticResource Section}" Text="About" />
+        <!-- At the bottom, an expander showing the app's name and version, as Microsoft's settings guidance places About. -->
+        <Expander
+            x:Name="About"
+            Margin="0,0,0,12"
+            HorizontalAlignment="Stretch"
+            HorizontalContentAlignment="Stretch"
+            AutomationProperties.AutomationId="settings.about"
+            AutomationProperties.Name="About Pitboard">
+          <Expander.Header>
+            <Grid Padding="0,12" ColumnSpacing="24">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <StackPanel Spacing="2">
+                <TextBlock Text="Pitboard" />
+                <TextBlock x:Name="Copyright" Style="{StaticResource Explanatory}" />
+              </StackPanel>
+              <TextBlock x:Name="AboutVersion" Grid.Column="1" Style="{StaticResource Value}" />
+            </Grid>
+          </Expander.Header>
+          <StackPanel x:Name="Links" Spacing="4" />
+        </Expander>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</Page>
