@@ -1,4 +1,7 @@
 @import "tailwindcss";
+/* Tailwind would take words in the link preview images' copy, such as "fixed", for classes */
+@source not "../lib/card.ts";
+@source not "../lib/og.ts";
 
 @custom-variant js (&:where(.js *));
 @custom-variant no-js (&:where(:root:not(.js) *));

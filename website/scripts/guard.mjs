@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
@@ -17,7 +18,12 @@ const BUDGETS = {
   css: 20_000,
   js: 10_000,
   fonts: { files: 2, bytes: 90_000, preloads: 2 },
+  // WhatsApp drops a larger preview image
+  image: 300_000,
 };
+const IMAGE = { width: 1200, height: 630 };
+// X's limit for twitter:image:alt
+const ALT_LENGTH = 420;
 
 // `key` is banned as an adjective only, which a word match cannot tell.
 export function bannedFromDocs(markdown) {
@@ -100,7 +106,18 @@ export function checkPage(name, html, rules) {
   if (!noindex && !all.some((e) => e.tag === "link" && e.attrs.rel === "canonical"))
     fail("has no canonical");
   if (!meta("property", "og:image")?.attrs.content) fail("has no og:image");
-  if (!meta("property", "og:image:alt")?.attrs.content) fail("has no og:image:alt");
+  if (meta("property", "og:image:type")?.attrs.content !== "image/png")
+    fail("has no og:image:type image/png");
+  for (const side of ["width", "height"]) {
+    if (meta("property", `og:image:${side}`)?.attrs.content !== String(IMAGE[side]))
+      fail(`has no og:image:${side} ${IMAGE[side]}`);
+  }
+  const alt = meta("property", "og:image:alt")?.attrs.content;
+  if (!alt) fail("has no og:image:alt");
+  else if (alt.length > ALT_LENGTH) fail(`has an og:image:alt over ${ALT_LENGTH} characters`);
+  const twitterAlt = meta("name", "twitter:image:alt")?.attrs.content;
+  if (!twitterAlt) fail("has no twitter:image:alt");
+  else if (twitterAlt !== alt) fail("has a twitter:image:alt other than its og:image:alt");
   if (meta("name", "twitter:card")?.attrs.content !== "summary_large_image")
     fail("has no twitter:card");
   if (!all.some((e) => e.tag === "main" && e.attrs.id === "main"))
@@ -130,6 +147,7 @@ export function checkPage(name, html, rules) {
     ...texts.map((n) => n.value),
     ...attrText,
     meta("name", "description")?.attrs.content ?? "",
+    alt ?? "",
   ]) {
     if (/[–—]/.test(t)) fail(`an en or em dash in "${t.trim().slice(0, 60)}"`);
   }
@@ -210,8 +228,53 @@ export function checkVersions(pages) {
   return problems;
 }
 
+// width, height and whether any pixel can be transparent, from the header and the chunks
+// before the image data
+export function pngFacts(bytes) {
+  if (bytes.length < 33 || bytes.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a") return null;
+  const colour = bytes[25];
+  let alpha = colour === 4 || colour === 6;
+  for (let at = 8; at + 8 <= bytes.length; at += 12 + bytes.readUInt32BE(at)) {
+    const type = bytes.toString("latin1", at + 4, at + 8);
+    if (type === "tRNS") alpha = true;
+    if (type === "IDAT") break;
+  }
+  return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20), alpha };
+}
+
+// og:image is a file in dist named by its hash, so a changed image gets a new address
+export function checkImage(name, all, read) {
+  const content = all.find((e) => e.tag === "meta" && e.attrs.property === "og:image")?.attrs
+    .content;
+  if (!content) return [];
+  const url = URL.parse(content);
+  const m = /^\/og\/[a-z]+-([0-9a-f]{8})\.png$/.exec(url?.pathname ?? "");
+  if (url?.origin !== "https://usepitboard.com" || !m)
+    return [`${name}: og:image ${content} is not a hashed image under /og/`];
+  const bytes = read(url.pathname.slice(1));
+  if (!bytes) return [`${name}: og:image ${url.pathname} is not in dist`];
+  const problems = [];
+  const fail = (msg) => problems.push(`${name}: ${url.pathname} ${msg}`);
+  const png = pngFacts(bytes);
+  if (!png) fail("is not a PNG");
+  else {
+    if (png.width !== IMAGE.width || png.height !== IMAGE.height)
+      fail(`is ${png.width}x${png.height}, not ${IMAGE.width}x${IMAGE.height}`);
+    if (png.alpha) fail("can be transparent");
+  }
+  if (bytes.length > BUDGETS.image) fail(`is ${bytes.length} bytes, over ${BUDGETS.image}`);
+  if (createHash("sha256").update(bytes).digest("hex").slice(0, 8) !== m[1])
+    fail("is not named by its hash");
+  return problems;
+}
+
 function gz(file) {
   return gzipSync(readFileSync(file)).length;
+}
+
+function readDist(path) {
+  const file = join(DIST, path);
+  return existsSync(file) && statSync(file).isFile() ? readFileSync(file) : null;
 }
 
 function main() {
@@ -272,7 +335,7 @@ function main() {
     if (budget === undefined) problems.push(`${f} has no HTML budget`);
     else if (size > budget) problems.push(`${f} is ${size} bytes gzipped, over ${budget}`);
     const page = checkPage(f, html, rules);
-    problems.push(...page.problems);
+    problems.push(...page.problems, ...checkImage(f, page.all, readDist));
     pages.set(f, page);
     report.push(`${f} ${size}`);
   }

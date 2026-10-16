@@ -1,15 +1,21 @@
-"""Make the site's two font files, and the list of code points each one draws.
+"""Make the site's two font files, the list of code points each one draws, and the single
+weights the link preview images are drawn with.
 
 Local only; the outputs are committed. Needs fontTools and brotli.
 
     python3 scripts/fonts.py subset Inter[opsz,wght].ttf src/assets/fonts/Inter-4.1-opsz-wght.woff2
     python3 scripts/fonts.py subset JetBrainsMono[wght].ttf src/assets/fonts/JetBrainsMono-2.304-wght.woff2
     python3 scripts/fonts.py codepoints src/assets/fonts/*.woff2
+    python3 scripts/fonts.py instance src/assets/fonts/Inter-4.1-opsz-wght.woff2 400 src/assets/fonts/Inter-4.1-400.ttf
 
 Inputs are the upstream variable fonts: Inter 4.1 and JetBrains Mono 2.304, both OFL. The
 faces carry no unicode-range, so the terminal's block glyphs and the menu's key symbols are
 drawn by these files and never by a system font; guard.mjs checks every character the pages
 show against the lists written here.
+
+Satori, which draws the link preview images, reads no WOFF2 and no variable axes. `instance`
+pins a committed WOFF2 at one weight, and Inter at its text optical size, as a TTF with the
+same glyphs.
 """
 
 import io
@@ -80,9 +86,22 @@ def make(src, dst):
     write_codepoints(dst)
 
 
+def instance(src, weight, dst):
+    # the source's timestamp, so the same WOFF2 gives the same bytes
+    font = TTFont(src, recalcTimestamp=False)
+    axes = {a.axisTag: a.minValue for a in font["fvar"].axes}
+    axes["wght"] = float(weight)
+    font = instancer.instantiateVariableFont(font, axes, updateFontNames=False)
+    font.flavor = None
+    font.save(dst)
+    print(f"{dst}: {os.path.getsize(dst)} bytes")
+
+
 def main(argv):
     if len(argv) == 3 and argv[0] == "subset":
         make(argv[1], argv[2])
+    elif len(argv) == 4 and argv[0] == "instance":
+        instance(argv[1], argv[2], argv[3])
     elif len(argv) >= 2 and argv[0] == "codepoints":
         for path in argv[1:]:
             write_codepoints(path)
