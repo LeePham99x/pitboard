@@ -62,7 +62,7 @@ fn passwd_home() -> Option<PathBuf> {
 
 // Claude Desktop keeps nothing in Windows' app data folders here.
 #[cfg(any(test, feature = "test-support"))]
-pub(crate) fn app_data_folders() -> (Vec<PathBuf>, Vec<PathBuf>) {
+pub(crate) fn app_data_folders(_as_started: bool) -> (Vec<PathBuf>, Vec<PathBuf>) {
     (Vec::new(), Vec::new())
 }
 
