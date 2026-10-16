@@ -83,7 +83,7 @@ pub(crate) fn turned_on(ctx: &Context) -> Option<String> {
 }
 
 // Its item, or the manifest `#m` of one kept in pieces.
-pub(crate) fn holds(ctx: &Context, service: &str) -> Result<bool, String> {
+pub(crate) fn holds(ctx: &Context, service: &str) -> Result<bool, Error> {
     let whole = target(ctx, service);
     for name in [whole.clone(), format!("{whole}#m")] {
         if ctx.host().credential_held(ctx, &name)? {
@@ -95,22 +95,23 @@ pub(crate) fn holds(ctx: &Context, service: &str) -> Result<bool, String> {
 
 // With nothing turning its store on, why Claude Code may still keep its login in Credential
 // Manager; None where `.credentials.json` alone is its store.
-pub(crate) fn ambiguity(ctx: &Context) -> Option<String> {
+pub(crate) fn ambiguity(ctx: &Context) -> Option<Error> {
     let service = claude::live_service(ctx);
     let target = target(ctx, &service);
     match holds(ctx, &service) {
         Ok(false) => None,
-        Ok(true) => Some(format!(
+        Ok(true) => Some(Error::Unreadable(format!(
             "Credential Manager holds a Claude Code login under `{target}`, and nothing Pitboard \
              reads says whether Claude Code uses that store or .credentials.json. If it uses \
              Credential Manager, set `{FORCE}` to `1` in the env of {}; if not, remove that \
              item in Credential Manager",
             claude::config_dir(ctx).join("settings.json").display()
-        )),
-        Err(why) => Some(format!(
+        ))),
+        Err(Error::Unreadable(why)) => Some(Error::Unreadable(format!(
             "Credential Manager could not say whether it holds a Claude Code login under \
              `{target}` ({why})"
-        )),
+        ))),
+        Err(out_of_reach) => Some(out_of_reach),
     }
 }
 
@@ -484,7 +485,7 @@ mod tests {
 
     #[test]
     fn credential_manager_holding_the_live_target_is_ambiguous_with_the_store_off() {
-        assert_eq!(ambiguity(&windows(&[]).ctx), None);
+        assert!(ambiguity(&windows(&[]).ctx).is_none());
         for piece in ["", "#m", "#0"] {
             let scratch = windows(&[]);
             let service = claude::live_service(&scratch.ctx);
@@ -493,10 +494,12 @@ mod tests {
                 .keeps_credentials(&[&format!("{service}/CLAUDE-CODE-USER{piece}")]);
             let said = ambiguity(&scratch.ctx);
             if piece == "#0" {
-                assert_eq!(said, None, "a piece alone is no login");
+                assert!(said.is_none(), "a piece alone is no login");
                 continue;
             }
-            let said = said.expect("refused");
+            let Some(Error::Unreadable(said)) = said else {
+                panic!("{piece}: refused as unreadable");
+            };
             assert!(
                 said.starts_with(&format!(
                     "Credential Manager holds a Claude Code login under \
@@ -533,16 +536,40 @@ mod tests {
         ));
     }
 
+    // A network logon has no credential set (MC-net): out of reach, as every other call there.
     #[test]
-    fn a_look_that_fails_refuses_and_the_store_on_is_followed_without_one() {
+    fn a_look_that_fails_refuses_out_of_reach_or_unreadable() {
         let scratch = windows(&[]);
-        scratch.memory.credentials_unreadable("1312");
-        let said = ambiguity(&scratch.ctx).expect("refused");
+        scratch.memory.credentials_unreachable();
+        let refused = ambiguity(&scratch.ctx).expect("refused");
+        assert_eq!(refused.code(), "credential_store_locked", "{refused}");
+
+        let scratch = windows(&[]);
+        scratch
+            .memory
+            .credentials_unreadable("Access is denied. (os error 5)");
+        let Some(Error::Unreadable(said)) = ambiguity(&scratch.ctx) else {
+            panic!("refused as unreadable");
+        };
         assert!(
             said.starts_with("Credential Manager could not say whether it holds"),
             "{said}"
         );
-        assert!(said.ends_with("(1312)"), "{said}");
+        assert!(said.ends_with("(Access is denied. (os error 5))"), "{said}");
+    }
+
+    // The chain is built for this build's own system.
+    #[cfg(windows)]
+    #[test]
+    fn out_of_a_network_logons_reach_claude_codes_chain_refuses_as_out_of_reach() {
+        let scratch = windows(&[]);
+        scratch.memory.credentials_unreachable();
+        let service = claude::live_service(&scratch.ctx);
+        let chain = super::super::live::chain(&scratch.ctx);
+        assert!(matches!(
+            crate::store::read_raw(&chain, &service),
+            Err(Error::Locked)
+        ));
     }
 
     // The chain is built for this build's own system.
@@ -550,7 +577,7 @@ mod tests {
     #[test]
     fn with_the_store_on_claude_codes_chain_is_credential_manager_then_its_file() {
         let scratch = windows(&[(FORCE, "1")]);
-        scratch.memory.credentials_unreadable("1312");
+        scratch.memory.credentials_unreachable();
         let service = claude::live_service(&scratch.ctx);
         let chain = super::super::live::chain(&scratch.ctx);
         crate::store::write_raw(&chain, Permit::for_a_test(), &service, "{}").expect("written");

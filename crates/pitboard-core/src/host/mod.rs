@@ -828,7 +828,11 @@ pub(crate) trait Host: Send + Sync + std::fmt::Debug {
 
     // Whether Credential Manager holds a generic item named `target`, never what it holds; Err
     // says why it cannot tell. None is held where there is no Credential Manager.
-    fn credential_held(&self, _ctx: &Context, _target: &str) -> std::result::Result<bool, String> {
+    fn credential_held(
+        &self,
+        _ctx: &Context,
+        _target: &str,
+    ) -> std::result::Result<bool, crate::store::Error> {
         Ok(false)
     }
 

@@ -52,23 +52,20 @@ impl Backend {
 }
 
 // A store Pitboard does not read or write, such as Claude Code's on Windows where a login sits
-// in Credential Manager that nothing turns on: every call says why it cannot be read, which no
-// caller takes for a store with nothing in it.
+// in Credential Manager that nothing turns on: every call answers `error`, which no caller takes
+// for a store with nothing in it.
 pub(crate) struct Refused {
     kind: Backend,
-    why: String,
+    error: Error,
 }
 
 impl Refused {
-    pub(crate) fn new(kind: Backend, why: impl Into<String>) -> Refused {
-        Refused {
-            kind,
-            why: why.into(),
-        }
+    pub(crate) fn new(kind: Backend, error: Error) -> Refused {
+        Refused { kind, error }
     }
 
     fn refused<T>(&self) -> Result<T, Error> {
-        Err(Error::Unreadable(self.why.clone()))
+        Err(self.error.clone())
     }
 }
 
@@ -115,7 +112,7 @@ pub(crate) fn locked(os: crate::host::Os) -> &'static str {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
     /// The store could not be interrogated. Never treat this as "no credential".
@@ -695,7 +692,7 @@ mod tests {
     /// absent.
     #[test]
     fn a_store_refused_cannot_be_read() {
-        let store = Refused::new(Backend::Unknown, "not built yet");
+        let store = Refused::new(Backend::Unknown, Error::Unreadable("not built yet".into()));
         let unreadable = |answer: Result<String, Error>| match answer {
             Err(Error::Unreadable(why)) => assert_eq!(why, "not built yet"),
             other => panic!("{other:?}"),
@@ -710,7 +707,7 @@ mod tests {
         assert_eq!(store.cost("svc", "x"), None);
         let live = Live::of(vec![Box::new(Refused::new(
             Backend::Unknown,
-            "not built yet",
+            Error::Unreadable("not built yet".into()),
         ))]);
         unreadable(resolve(&live, "svc").map(|b| b.name().to_string()));
     }

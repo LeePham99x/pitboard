@@ -144,7 +144,7 @@ pub struct MemoryHost {
     // Credential Manager's names, as a test said.
     credentials: Mutex<Vec<String>>,
     // Why Credential Manager cannot be asked, where a test said it cannot.
-    credentials_fault: Mutex<Option<String>>,
+    credentials_fault: Mutex<Option<Error>>,
     // `HKCU\Environment`, by name in upper case, as a test said.
     user_environment_values: Mutex<HashMap<String, String>>,
     windows_settings: Mutex<WindowsSettings>,
@@ -425,7 +425,13 @@ impl MemoryHost {
 
     #[cfg(test)]
     pub(crate) fn credentials_unreadable(&self, why: &str) {
-        *locked(&self.credentials_fault) = Some(why.into());
+        *locked(&self.credentials_fault) = Some(Error::Unreadable(why.into()));
+    }
+
+    // As a network logon finds it, with no credential set (MC-net).
+    #[cfg(test)]
+    pub(crate) fn credentials_unreachable(&self) {
+        *locked(&self.credentials_fault) = Some(Error::Locked);
     }
 
     #[cfg(test)]
@@ -678,9 +684,9 @@ impl Host for MemoryHost {
 
     // In any case, as Credential Manager finds a target: one a test named, or Claude Code's item
     // the live store holds.
-    fn credential_held(&self, ctx: &Context, target: &str) -> Result<bool, String> {
-        if let Some(why) = locked(&self.credentials_fault).clone() {
-            return Err(why);
+    fn credential_held(&self, ctx: &Context, target: &str) -> Result<bool, Error> {
+        if let Some(fault) = locked(&self.credentials_fault).clone() {
+            return Err(fault);
         }
         let lower = target.to_lowercase();
         if locked(&self.credentials)
@@ -692,9 +698,7 @@ impl Host for MemoryHost {
         let Some((service, account)) = target.rsplit_once('/') else {
             return Ok(false);
         };
-        Opened::of(&self.keychain, ctx, account)
-            .contains(service)
-            .map_err(|e| e.to_string())
+        Opened::of(&self.keychain, ctx, account).contains(service)
     }
 }
 
