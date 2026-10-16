@@ -187,7 +187,6 @@ public sealed class AccountsWindowTests
     }
 
     [TestMethod]
-    [Ignore("W17: finding programs on Windows, without which these machines have no Claude Code")]
     public void AnEmptyMachineOffersAnAccount()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "empty");
@@ -250,7 +249,6 @@ public sealed class AccountsWindowTests
     }
 
     [TestMethod]
-    [Ignore("W17: finding programs on Windows, without which these machines have no Claude Code")]
     public void TheFirstLaunchOpensTheWindow()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "firstLaunch");

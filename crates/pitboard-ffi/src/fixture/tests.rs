@@ -1679,10 +1679,6 @@ fn a_machine_without_claude_code_says_so_first() {
 /// testAnEmptyMachineOffersAnAccount reads it, and only the first launch ever opens the
 /// window by itself, as its testTheFirstLaunchOpensTheWindow reads it.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "W17: finding programs on Windows, without which these machines have no Claude Code"
-)]
 fn a_machine_nobody_is_signed_in_on_offers_an_account() {
     for world in [World::Empty, World::FirstLaunch] {
         let launched = made(world);
