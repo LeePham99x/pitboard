@@ -156,9 +156,7 @@ public sealed class WebEnvironment
     // folders of profiles deleted before it about five seconds after it starts (run 38842851059).
     public async Task Sweep(nint parent, Func<bool> gone)
     {
-        var environment = await Made();
-        var controller = await environment.CreateCoreWebView2ControllerAsync(
-            CoreWebView2ControllerWindowReference.CreateFromWindowHandle((ulong)parent));
+        var keeper = await Keeper(parent);
         try
         {
             var waited = Stopwatch.StartNew();
@@ -169,8 +167,50 @@ public sealed class WebEnvironment
         }
         finally
         {
-            controller.Close();
+            keeper.Close();
         }
+    }
+
+    // A page of a store's profile, which make makes. A browser process started after a profile's deletion refused its
+    // name for its first seconds, even where the folder had gone as the last one exited (run 38852781290), so until it
+    // takes the name a page of the default profile keeps it running, for thirty seconds at most.
+    public async Task<T> Reusing<T>(nint parent, Func<Task<T>> make)
+    {
+        try
+        {
+            return await make();
+        }
+        catch (Exception refused) when (refused.HResult == DeletePending)
+        {
+        }
+
+        var keeper = await Keeper(parent);
+        try
+        {
+            var waited = Stopwatch.StartNew();
+            while (true)
+            {
+                await Task.Delay(250);
+                try
+                {
+                    return await make();
+                }
+                catch (Exception refused) when (refused.HResult == DeletePending && waited.Elapsed < TimeSpan.FromSeconds(30))
+                {
+                }
+            }
+        }
+        finally
+        {
+            keeper.Close();
+        }
+    }
+
+    private async Task<CoreWebView2Controller> Keeper(nint parent)
+    {
+        var environment = await Made();
+        return await environment.CreateCoreWebView2ControllerAsync(
+            CoreWebView2ControllerWindowReference.CreateFromWindowHandle((ulong)parent));
     }
 
     private void Read(CoreWebView2Profile profile) =>

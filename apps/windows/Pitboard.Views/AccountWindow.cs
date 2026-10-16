@@ -209,7 +209,8 @@ public sealed partial class AccountWindow : Window, ISessionWindow
         _session = session;
         try
         {
-            var page = await NewPage();
+            var page = await _web.Reusing(
+                WindowNative.GetWindowHandle(this), () => _closed ? throw new ObjectDisposedException(nameof(AccountWindow)) : NewPage());
             session.Attach(page);
             Watch(page);
             ShowSession();
