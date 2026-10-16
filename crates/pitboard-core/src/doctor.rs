@@ -8073,7 +8073,13 @@ mod tests {
         }
         let empty = root.path().join("empty");
         std::fs::create_dir_all(&empty).expect("a folder");
-        let path = std::env::join_paths([&a, &empty, &b, &a]).expect("a PATH");
+        // As winget's Links entry leads to its package's copy.
+        let link = root.path().join("link");
+        std::fs::create_dir_all(&link).expect("a folder");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(a.join("pitboard.exe"), link.join("pitboard.exe"))
+            .expect("a link");
+        let path = std::env::join_paths([&a, &empty, &link, &b, &a]).expect("a PATH");
         let ctx = Context::for_unit_test().with_search_path(path.to_string_lossy().into_owned());
         assert_eq!(
             pitboards(&ctx),
