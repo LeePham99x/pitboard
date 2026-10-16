@@ -81,7 +81,7 @@ function Edit-Msi([string] $Case, [string] $Query) {
     Copy-Item -LiteralPath $msiPath -Destination $copy
     $installer = New-Object -ComObject WindowsInstaller.Installer
     # msiOpenDatabaseModeTransact
-    $database = $installer.GetType().InvokeMember('OpenDatabase', 'InvokeMethod', $null, $installer, @($copy, 1))
+    $database = $installer.GetType().InvokeMember('OpenDatabase', 'InvokeMethod', $null, $installer, @([string] $copy, 1))
     $view = $database.GetType().InvokeMember('OpenView', 'InvokeMethod', $null, $database, @($Query))
     [void] $view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null)
     [void] $view.GetType().InvokeMember('Close', 'InvokeMethod', $null, $view, $null)

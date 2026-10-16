@@ -76,7 +76,7 @@ function Export-Tables([string] $Msi, [string] $To) {
     $tables = @(while (($record = Invoke-Com $view 'Fetch' 'InvokeMethod' $null)) { Invoke-Com $record 'StringData' 'GetProperty' @(1) })
     Invoke-Com $view 'Close' 'InvokeMethod' $null | Out-Null
     foreach ($table in $tables) {
-        Invoke-Com $database 'Export' 'InvokeMethod' @($table, $To, "$table.idt") | Out-Null
+        Invoke-Com $database 'Export' 'InvokeMethod' @([string] $table, $To, "$table.idt") | Out-Null
     }
     [void] [Runtime.InteropServices.Marshal]::ReleaseComObject($view)
     [void] [Runtime.InteropServices.Marshal]::ReleaseComObject($database)

@@ -40,7 +40,8 @@ function Get-Row([string] $Query) {
         $record = Invoke-Com $view 'Fetch' 'InvokeMethod' $null
         if (-not $record) { return $null }
         $count = Invoke-Com $record 'FieldCount' 'GetProperty' $null
-        return , @(1..$count | ForEach-Object { Invoke-Com $record 'StringData' 'GetProperty' @($_) })
+        # COM takes no PSObject, which a pipeline's $_ is.
+        return , @(1..$count | ForEach-Object { Invoke-Com $record 'StringData' 'GetProperty' @([int] $_) })
     } finally {
         Invoke-Com $view 'Close' 'InvokeMethod' $null | Out-Null
     }
