@@ -2130,8 +2130,10 @@ sign-in note. Another directory's record of a held store does not keep it either
 deletion is made already. A window whose name WebView2 still refuses keeps a page of the
 default profile running and tries again, for thirty seconds at most, so one opened as
 Pitboard starts waits for that start to let the name go. `ProfileTests` holds the contract
-and the sweep on both images (run 38846774768), and `TwoProfilesKeepTheirCookiesApart` that
-one profile's cookies are not another's. On macOS a store WebKit kept holding is still whole, its sign-in included, so an
+and the sweep on both images (runs 38846774768 and 38856204289),
+`AWindowWhoseProfileIsStillBeingDeletedOpensOnceWebView2TakesItsName` that a window waits
+for the name, and `TwoProfilesKeepTheirCookiesApart` that one profile's cookies are not
+another's. On macOS a store WebKit kept holding is still whole, its sign-in included, so an
 account enrolled again keeps it and its window opens on it.
 
 **Remove website data** leaves the page for a blank one, clears the profile with
@@ -2269,6 +2271,13 @@ Accounts and tokens:
   process exited, and the next browser process refused the name at once all the same; on
   windows-11-arm it outlived its browser process, holding `DIPS`, `DashTrackerDatabase` and
   `Network Action Predictor` files, and went 5127 ms after the next one started.
+- CF7, a deleted profile, on both images in runs 38854886274 and 38856204289: with a page of
+  another profile keeping the next browser process, that process refused the name for 5.2 to
+  5.9 s after it started, took it again as the folder went or just after, and made a profile
+  with none of the old one's cookies.
+- WinUI's `WebView2` reported a page it could not make, a profile name WebView2 refused,
+  only through `CoreWebView2Initialized`, and left `CoreWebView2` null once
+  `EnsureCoreWebView2Async` had returned, on both images in run 38854886274.
 - CF7, on both images in runs 38842851059 and 38846774768: a navigation that
   `NavigationStarting` cancelled still sent its own request, from a page of the fixture's
   scheme and from one on http, with `Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: document`
