@@ -149,8 +149,11 @@ internal sealed class Launched : IDisposable
         }
     }
 
+    // A window closing as it is read has no title left to give.
     public string[] Titles() =>
-        [.. FlaUI.Core.Application.Attach(Process).GetAllTopLevelWindows(Automation).Select(window => window.Title)];
+        [.. FlaUI.Core.Application.Attach(Process).GetAllTopLevelWindows(Automation)
+            .Select(window => window.Properties.Name.ValueOrDefault)
+            .OfType<string>()];
 
     // Looked for in every window of Pitboard's, since a menu or a dialog may draw in a window of its own.
     public AutomationElement Find(Func<ConditionFactory, ConditionBase> condition, string what)
@@ -237,6 +240,24 @@ internal sealed class Launched : IDisposable
             () => Lines(scope).Any(line => exact ? line == text : line.StartsWith(text, StringComparison.Ordinal)),
             Shortly, TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
         Assert.IsTrue(shown, $"{scope.Name} does not show '{text}': {Listed(scope)}");
+    }
+
+    // What can be pressed in it, by control type and name.
+    public static string Pressables(AutomationElement scope)
+    {
+        try
+        {
+            var kinds = new[] { FlaUI.Core.Definitions.ControlType.Button, FlaUI.Core.Definitions.ControlType.Hyperlink, FlaUI.Core.Definitions.ControlType.MenuItem, FlaUI.Core.Definitions.ControlType.ListItem };
+            return string.Join(
+                " | ",
+                scope.FindAllDescendants()
+                    .Where(found => kinds.Contains(found.Properties.ControlType.ValueOrDefault))
+                    .Select(found => $"{found.Properties.ControlType.ValueOrDefault} '{found.Properties.Name.ValueOrDefault}'"));
+        }
+        catch (Exception unread)
+        {
+            return $"its controls could not be read: {unread.Message}";
+        }
     }
 
     // Its lines, and the AutomationIds of its list's items.
