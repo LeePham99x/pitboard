@@ -46,9 +46,9 @@ pub fn window_note(kind: WindowNoteKind, account: WindowAccount) -> String {
         WindowNoteKind::OtherApp { scheme } => {
             format!("This window doesn’t open links to other apps, such as this {scheme}: link.")
         }
-        // WebView2 deletes a profile's folder as its browser process exits.
-        WindowNoteKind::StoreHeld => "What this window kept before is deleted when Pitboard \
-                                      quits. It opens after Pitboard starts again."
+        // WebView2 deletes the folder as the next browser process starts (run 38842851059).
+        WindowNoteKind::StoreHeld => "What this window kept before is deleted once every account \
+                                      window has closed. It opens after that."
             .into(),
     }
 }
@@ -139,8 +139,8 @@ mod tests {
     fn a_window_whose_old_store_is_held_says_when_it_opens() {
         assert_eq!(
             window_note(WindowNoteKind::StoreHeld, window("work", "claude")),
-            "What this window kept before is deleted when Pitboard quits. It opens after \
-             Pitboard starts again."
+            "What this window kept before is deleted once every account window has closed. It \
+             opens after that."
         );
     }
 

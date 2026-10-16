@@ -248,7 +248,7 @@ public sealed class IconMenuTests
 
         Assert.IsFalse(entry.Enabled);
         Assert.AreEqual(
-            "What this window kept before is deleted when Pitboard quits. It opens after Pitboard starts again.",
+            "What this window kept before is deleted once every account window has closed. It opens after that.",
             entry.Detail);
     }
 

@@ -98,6 +98,6 @@ public sealed class AccountMenuTests
 
         var entry = menu.Items.OfType<MenuFlyoutItem>().Single(found => found.Text == "Open chatgpt.com");
         Assert.IsFalse(entry.IsEnabled);
-        StringAssert.StartsWith((string)ToolTipService.GetToolTip(entry), "What this window kept before is deleted when Pitboard quits.");
+        StringAssert.StartsWith((string)ToolTipService.GetToolTip(entry), "What this window kept before is deleted once every account window has closed.");
     }
 }
