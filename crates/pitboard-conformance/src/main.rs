@@ -59,7 +59,7 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let strings = assumptions::printable_runs(&bytes, 6);
+    let strings = assumptions::printable_runs(&bytes, assumptions::SHORTEST_RUN);
     let sorted = Sorted::of(args.provider, platform, &strings);
 
     if args.json {
@@ -409,7 +409,7 @@ mod tests {
             platform_of(&archive, ProviderId::Desktop),
             Ok(Platform::MacOs)
         );
-        let strings = assumptions::printable_runs(&archive, 6);
+        let strings = assumptions::printable_runs(&archive, assumptions::SHORTEST_RUN);
         let sorted = Sorted::of(ProviderId::Desktop, Platform::MacOs, &strings);
         assert!(sorted.moved().is_empty(), "{:?}", names(&sorted.readings));
 

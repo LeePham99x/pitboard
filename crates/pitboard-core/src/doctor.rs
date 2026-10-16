@@ -1141,6 +1141,7 @@ fn judge_wsl(wsl: Option<&WslFact>) -> Option<Check> {
         Some(name) => format!("inside WSL, in {name}"),
         None => "inside WSL".to_string(),
     };
+    // Names no Pitboard for Windows until 1.0.0 is released.
     let advice = match &wsl.codex_home_on_windows {
         None => "Pitboard here switches what is installed in this Linux. Claude Code and Codex \
                  installed on Windows keep their own logins, which Pitboard here does not switch."
@@ -1707,11 +1708,11 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
         ));
     }
     if let (Some(desktop), Ok(state)) = (&facts.desktop, &facts.state) {
-        checks.extend(match facts.os {
-            Os::MacOs | Os::Linux => {
+        checks.extend(match (facts.os, &desktop.root) {
+            (Os::MacOs, _) | (Os::Linux, Ok(_)) => {
                 judge_desktop(facts.os, desktop, state, &facts.parks, facts.now)
             }
-            Os::Windows => vec![judge_desktop_on_windows(state)],
+            (Os::Linux, Err(_)) | (Os::Windows, _) => vec![judge_desktop_off_macos(state)],
         });
     }
     if !claude_here {
@@ -3118,8 +3119,9 @@ fn judge_codex_version(facts: &CodexFacts) -> Check {
     )
 }
 
-// An index from a Mac can hold Claude Desktop's accounts, which nothing on Windows changes.
-fn judge_desktop_on_windows(state: &State) -> Check {
+// An index from a Mac can hold Claude Desktop's accounts, which nothing on Windows or Linux
+// changes. Only a build for tests gives Linux a Claude data folder.
+fn judge_desktop_off_macos(state: &State) -> Check {
     let held: Vec<String> = state
         .accounts
         .iter()
@@ -8244,8 +8246,9 @@ mod tests {
         assert_eq!(advice(&f), None);
     }
 
+    // An index brought from a Mac.
     #[test]
-    fn a_claude_desktop_account_in_a_windows_index_is_a_note() {
+    fn a_claude_desktop_account_in_an_index_off_macos_is_a_note() {
         let mut state = State::default();
         state.accounts.push(desktop_account("work", None));
         state
@@ -8257,33 +8260,38 @@ mod tests {
             ..desktop()
         });
         f.state = Ok(state.clone());
-        f.os = Os::Windows;
-        let desktops: Vec<(&str, Level, String, String)> = evaluate(&f)
-            .into_iter()
-            .filter(|c| section(c.code) == Some(ProviderId::Desktop))
-            .map(|c| (c.code, c.level, c.detail, c.advice))
-            .collect();
+        for os in [Os::Windows, Os::Linux] {
+            f.os = os;
+            let desktops: Vec<(&str, Level, String, String)> = evaluate(&f)
+                .into_iter()
+                .filter(|c| section(c.code) == Some(ProviderId::Desktop))
+                .map(|c| (c.code, c.level, c.detail, c.advice))
+                .collect();
+            assert_eq!(
+                desktops,
+                [(
+                    "desktop_data_folder",
+                    Level::Ok,
+                    "Pitboard switches Claude Desktop accounts on macOS only".to_string(),
+                    "This index holds `desktop/work` and `desktop/home`. Nothing here changes \
+                     them."
+                        .to_string()
+                )],
+                "{os:?}"
+            );
+        }
+
+        f.desktop = Some(desktop());
         assert_eq!(
-            desktops,
-            [(
-                "desktop_data_folder",
-                Level::Ok,
-                "Pitboard switches Claude Desktop accounts on macOS only".to_string(),
-                "This index holds `desktop/work` and `desktop/home`. Nothing here changes them."
-                    .to_string()
-            )]
+            check(&evaluate(&f), "desktop_data_folder").detail,
+            "/Users/dana/Library/Application Support/Claude",
+            "a scratch data folder on Linux is read as on macOS"
         );
 
         state.accounts.clear();
         assert_eq!(
-            judge_desktop_on_windows(&state).advice,
+            judge_desktop_off_macos(&state).advice,
             "This index holds folders set aside for Claude Desktop. Nothing here changes them."
-        );
-        f.os = Os::Linux;
-        assert_eq!(
-            check(&evaluate(&f), "desktop_data_folder").level,
-            Level::Fail,
-            "Linux says it as it did"
         );
     }
 

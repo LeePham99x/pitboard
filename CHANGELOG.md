@@ -75,6 +75,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   capital, a full stop and no backticks.
 - `pitboard doctor` and **This Mac** say to install Claude Code where it is missing, not to run
   `claude`.
+- On Linux, `pitboard doctor` notes the Claude Desktop accounts in a Pitboard directory brought
+  from a Mac, which nothing there changes, instead of failing its Claude data folder check.
 
 ## [0.14.0] - 2026-10-14
 

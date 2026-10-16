@@ -1148,7 +1148,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
   there since (`task::drifted`). A result that is neither 0 nor Task Scheduler's own for a
   run not yet made or under way is a warning that names `pitboard renew`. A changed setting
   is a warning whose fix is turning daily renewal off and on again, which writes the task as
-  Pitboard writes it; nothing rewrites it unasked, since the change may be the person's. A
+  Pitboard writes it; nothing rewrites it unasked, since the change may be the person's. The
+  app's start-up repair (`schedule::repair`) points a task at the command line inside the app
+  only where the Pitboard it runs is gone and its settings are as Pitboard wrote them. A
   read Task Scheduler answers with an error, not with no such task, stops an install and an
   uninstall before either changes anything, so an uninstall never leaves the task running;
   the status and doctor take it for no task.
@@ -1371,13 +1373,14 @@ window loads its site, and whatever the site's pages load, as a browser would.
   temporary copy macOS runs an app from, by the core's own rule in `schedule.rs`, or one
   nobody may run. Turning it off never is. Whether that command line lasts is read from its
   file on the lanes, with the schedule, a change to it, the repair and the command line
-  found, never as a snapshot is made. A schedule an older app wrote is repaired once a
-  launch, as the model starts, and read again only where it was. Renew Now runs one renewal
-  at a time, and is over once the read after it, asking every service, is. Doctor's checks
-  and the activity log are read each time their pane is shown, the checks counted while they
-  run, as reads are. Opening at login and linking the command line onto the `PATH` with an
-  administrator's password are each app's own, and once an app has linked it, it sends
-  `Intent::LookForCommandLine` for the model to look for the command line again.
+  found, never as a snapshot is made. A schedule an older app wrote, or on Windows a task
+  whose Pitboard is gone, is repaired once a launch, as the model starts, and read again only
+  where it was. Renew Now runs one renewal at a time, and is over once the read after it,
+  asking every service, is. Doctor's checks and the activity log are read each time their
+  pane is shown, the checks counted while they run, as reads are. Opening at login and
+  linking the command line onto the `PATH` with an administrator's password are each app's
+  own, and once an app has linked it, it sends `Intent::LookForCommandLine` for the model to
+  look for the command line again.
 - `AppControl` names an app by one string, the id the core's holder detection gives it:
   on macOS its bundle id, on Windows its Application User Model ID. The ChatGPT app's are
   in `provider/codex/holders.rs`, and Claude's in `provider/desktop/mod.rs` (`HOLDER`).
