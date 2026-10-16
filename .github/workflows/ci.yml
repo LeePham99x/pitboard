@@ -565,6 +565,8 @@ jobs:
       BUILT: bin/${{ matrix.platform }}/Debug/net10.0-windows10.0.26100.0/${{ matrix.runtime }}
       # The subject of the throwaway certificate PitboardShare's package is signed with here.
       SHARE_TEST_SIGNER: CN=Pitboard Share Test
+      # The Release build's update key: 32 bytes no private key was made for, so it accepts no update.
+      UPDATE_TEST_KEY: q1exPQ+LBkab+sdFuHAN+8eRpiHNak3rq4kpW8aH2G4=
     defaults:
       run:
         shell: bash
@@ -625,7 +627,8 @@ jobs:
           dotnet build Pitboard.App -c Debug -r "$RUNTIME" -p:Platform="$PLATFORM" \
             -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/release/pitboard_ffi.dll"
           dotnet publish Pitboard.App -c Release -r "$RUNTIME" -p:Platform="$PLATFORM" -o "$out/release" \
-            -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/gated/release/pitboard_ffi.dll"
+            -p:PitboardNativeLibrary="$GITHUB_WORKSPACE/target/gated/release/pitboard_ffi.dll" \
+            -p:WINDOWS_UPDATE_PUBLIC_KEY="$UPDATE_TEST_KEY"
           dotnet publish Pitboard.Share -c Release -r "$RUNTIME" -o "$out/release" \
             -p:PitboardShareNativeLibrary="$GITHUB_WORKSPACE/target/gated/release/pitboard_share_ffi.dll"
           dotnet publish Pitboard.Share.Core.Tests -c Release -r "$RUNTIME" --self-contained -o "$out/share-tests" \
@@ -646,7 +649,7 @@ jobs:
           ./.github/scripts/pack-windows-share.ps1 -Folder target/windows-app/release
           -Publisher $env:SHARE_TEST_SIGNER -Version '1.0.0.0' -TestCertificate
       # In the environment the gated pitboard_ffi.dll was built in, as a release runs it.
-      - name: "The Release build: no fixture, identity on PitboardShare.exe alone, the release gate, the core's C runtime inside it"
+      - name: "The Release build: no fixture, identity on PitboardShare.exe alone, its update key, the release gate, the core's C runtime inside it"
         shell: pwsh
         env:
           RUSTFLAGS: -D warnings -C target-feature=+crt-static
@@ -654,14 +657,14 @@ jobs:
           TRIPLE: ${{ matrix.triple }}
         run: >
           ./.github/scripts/check-windows-app.ps1 -Folder target/windows-app/release -Triple $env:TRIPLE
-          -GatedLibrary target/gated/release/pitboard_ffi.dll -Signer $env:SHARE_TEST_SIGNER
-      - name: The check refuses a package identity anywhere but on PitboardShare.exe, or another than its package's
+          -GatedLibrary target/gated/release/pitboard_ffi.dll -Signer $env:SHARE_TEST_SIGNER -UpdateKey $env:UPDATE_TEST_KEY
+      - name: The check refuses a package identity anywhere but on PitboardShare.exe, or another than its package's, and another update key
         shell: pwsh
         env:
           TRIPLE: ${{ matrix.triple }}
         run: >
           ./.github/scripts/test-windows-app.ps1 -Folder target/windows-app/release -Triple $env:TRIPLE
-          -GatedLibrary target/gated/release/pitboard_ffi.dll -Signer $env:SHARE_TEST_SIGNER
+          -GatedLibrary target/gated/release/pitboard_ffi.dll -Signer $env:SHARE_TEST_SIGNER -UpdateKey $env:UPDATE_TEST_KEY
       # CF5: the self-contained app needs none of these for the standard user.
       - name: The Windows App Runtime packages this image holds
         shell: pwsh

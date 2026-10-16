@@ -1,15 +1,18 @@
 # Checks the Windows app as a Release publish lays it out, for CI and the release alike: no
 # fixture in any of its programs, a package identity on PitboardShare.exe alone and the same one
-# in its package, published by the signer, and the core built without the cfg that opens it
-# before Windows is released, for this machine and with its C runtime inside it. It reads the
-# files and runs none of them, in the environment the core was built in.
+# in its package, published by the signer, the update key the build was given and a version
+# WinSparkle can compare, and the core built without the cfg that opens it before Windows is
+# released, for this machine and with its C runtime inside it. It reads the files and runs none
+# of them, in the environment the core was built in.
 param(
     [Parameter(Mandatory)] [string] $Folder,
     [Parameter(Mandatory)] [ValidateSet('x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc')] [string] $Triple,
     # pitboard_ffi.dll as Cargo built it in this environment, which the publish must carry unchanged.
     [Parameter(Mandatory)] [string] $GatedLibrary,
     # The subject of the certificate that signs PitboardShare.msix, where the folder holds one.
-    [string] $Signer
+    [string] $Signer,
+    # The Windows update public key the build was given in WINDOWS_UPDATE_PUBLIC_KEY, if any.
+    [string] $UpdateKey
 )
 $ErrorActionPreference = 'Stop'
 
@@ -150,6 +153,50 @@ if (Test-Path -LiteralPath $share -PathType Leaf) {
     throw 'PitboardShare.msix is here without PitboardShare.exe'
 }
 
+# With no key WinSparkle installs updates nobody signed, so Pitboard.dll carries the key it was given.
+Add-Type -TypeDefinition @'
+using System.IO;
+using System.Reflection.Metadata;
+using System.Reflection.PortableExecutable;
+
+public static class PitboardAssembly
+{
+    // An AssemblyMetadata value, read from the metadata of an assembly that is never loaded.
+    public static string Metadata(string path, string key)
+    {
+        using (var stream = File.OpenRead(path))
+        using (var pe = new PEReader(stream))
+        {
+            var reader = pe.GetMetadataReader();
+            foreach (var handle in reader.GetAssemblyDefinition().GetCustomAttributes())
+            {
+                var attribute = reader.GetCustomAttribute(handle);
+                if (attribute.Constructor.Kind != HandleKind.MemberReference) continue;
+                var parent = reader.GetMemberReference((MemberReferenceHandle)attribute.Constructor).Parent;
+                if (parent.Kind != HandleKind.TypeReference) continue;
+                var type = reader.GetTypeReference((TypeReferenceHandle)parent);
+                if (reader.GetString(type.Namespace) != "System.Reflection" || reader.GetString(type.Name) != "AssemblyMetadataAttribute") continue;
+                var blob = reader.GetBlobReader(attribute.Value);
+                if (blob.ReadUInt16() == 1 && blob.ReadSerializedString() == key) return blob.ReadSerializedString();
+            }
+            return null;
+        }
+    }
+}
+'@
+$carried = [PitboardAssembly]::Metadata((Join-Path $root 'Pitboard.dll'), 'WindowsUpdatePublicKey')
+$given = if ($UpdateKey) { $UpdateKey } else { $null }
+if ($carried -cne $given) {
+    $has = if ($carried) { "the update key '$carried'" } else { 'no update key' }
+    throw "Pitboard.dll carries $has, and the build was given $(if ($given) { "'$given'" } else { 'none' })"
+}
+# WinSparkle sorts 1.0.0+<commit> below 1.0.0, and would offer a build its own version again and again.
+$version = [Diagnostics.FileVersionInfo]::GetVersionInfo($exe).ProductVersion
+if (-not $version -or $version.Contains('+')) {
+    throw "Pitboard.exe's version is '$version': WinSparkle compares it, so it carries no commit"
+}
+Write-Output "Pitboard $version carries $(if ($carried) { "the update key $carried" } else { 'no update key' })."
+
 # RUSTFLAGS gives way only to CARGO_ENCODED_RUSTFLAGS. A dev-dependency's features are in
 # cargo tree's features edges unless the edge kinds are named.
 foreach ($name in 'RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS') {
@@ -187,4 +234,14 @@ if ($imports -match '(?i)vcruntime|api-ms-win-crt') {
     throw 'pitboard_ffi.dll takes its C runtime from a DLL: it was built without +crt-static'
 }
 Write-Output "pitboard_ffi.dll is for $machine, with the C runtime inside it."
+
+$sparkle = Join-Path $root 'WinSparkle.dll'
+if (-not (Test-Path -LiteralPath $sparkle -PathType Leaf)) { throw 'no WinSparkle.dll beside Pitboard.exe: the app could not update itself' }
+$headers = & $readobj --file-headers $sparkle | Out-String
+if ($LASTEXITCODE -ne 0) { throw 'llvm-readobj could not read WinSparkle.dll' }
+if ($headers -notmatch "Machine: IMAGE_FILE_MACHINE_$machine\b") {
+    Write-Output $headers
+    throw "WinSparkle.dll is not a library for $machine"
+}
+Write-Output "WinSparkle.dll is for $machine."
 exit 0

@@ -8,6 +8,8 @@
     <AssemblyName>Pitboard</AssemblyName>
     <!-- What the settings' About says, until a release's build passes its own, as the macOS project's MARKETING_VERSION. -->
     <Version>0.0.0</Version>
+    <!-- WinSparkle compares the exe's version, and 1.0.0+<commit> sorts below 1.0.0. -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- Drawn in ../Icon and written by its make-ico.py. -->
     <ApplicationIcon>Pitboard.ico</ApplicationIcon>
@@ -28,6 +30,10 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" />
+  </ItemGroup>
+  <!-- The Windows update key a release passes. Not WinSparkle's EdDSAPub resource: a Win32Resource drops the compiler's VERSIONINFO and cannot sit beside app.manifest. -->
+  <ItemGroup Condition="'$(WINDOWS_UPDATE_PUBLIC_KEY)' != ''">
+    <AssemblyMetadata Include="WindowsUpdatePublicKey" Value="$(WINDOWS_UPDATE_PUBLIC_KEY)" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Pitboard.Core/Pitboard.Core.csproj" />

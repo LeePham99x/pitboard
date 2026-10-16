@@ -791,7 +791,7 @@ window loads its site, and whatever the site's pages load, as a browser would.
     checks the signature of every program a Windows release hands on, and
     `test-windows-release.ps1` tests all three. `check-windows-app.ps1` checks the Windows app's
     Release build, `pack-windows-share.ps1` packs `PitboardShare.exe`'s sparse package beside
-    it, and `test-windows-app.ps1` tests the check's package identity refusals.
+    it, and `test-windows-app.ps1` tests the check's package identity and update key refusals.
   - `dependabot.yml` asks for weekly updates of Cargo dependencies, GitHub Actions and the
     .NET SDK in `apps/windows/global.json`.
   - `zizmor.yml` configures the audit CI runs on the workflows.
@@ -4061,6 +4061,17 @@ Microsoft's documentation.
   callback, and keeps WinSparkle's settings in `updates.json` in the app's data folder, which
   an uninstall removes with the folder. Turned on after a start with them off, automatic
   checks begin at Pitboard's next start. `SparkleUpdatesTests` and `UpdateFeedTests` hold it.
+- The .NET 8 SDK adds the commit to `InformationalVersion`, which
+  `IncludeSourceRevisionInInformationalVersion` turns off
+  ([Source Link included in the .NET SDK](https://learn.microsoft.com/dotnet/core/compatibility/sdk/8.0/source-link),
+  updated 26 July 2025), and a `Win32Resource` takes the place of the version information
+  the compiler writes and cannot be given with a `Win32Manifest`
+  ([Resource options](https://learn.microsoft.com/dotnet/csharp/language-reference/compiler-options/resources),
+  updated 28 May 2026). So `Pitboard.App` turns the commit off, and carries the update key as
+  `AssemblyMetadata("WindowsUpdatePublicKey")` from `WINDOWS_UPDATE_PUBLIC_KEY` rather than
+  WinSparkle's `EdDSAPub` resource. `check-windows-app.ps1` refuses a Release build whose
+  `Pitboard.exe` version carries a commit or whose `Pitboard.dll` carries another key than
+  the one it was given, and a `WinSparkle.dll` for another machine.
 
 ### The model's timers
 
