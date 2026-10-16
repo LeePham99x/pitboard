@@ -46,15 +46,26 @@ const fn everywhere(name: &'static str, build: &'static str) -> PerSystem {
     }
 }
 
-/// A fact a warm-up stands on, read on 12 October 2026 from 2.1.296's macOS build, and from
-/// its Linux build as bytes, and measured on the macOS build with real accounts. Pitboard
-/// warms up no account on Windows.
+// Read on 12 October 2026 from 2.1.296's macOS and Linux builds, and measured on macOS.
 const fn warm_up(name: &'static str) -> PerSystem {
     PerSystem {
         name,
         macos: Read("2.1.296"),
         linux: Read("2.1.296"),
-        windows: NotRead("Pitboard warms up no account on Windows"),
+        windows: NotRead(
+            "Pitboard warms up no account on Windows, where Claude Code reads no token handed to \
+             it: windows_token_handover",
+        ),
+    }
+}
+
+// Anthropic's, not the build's, so the same whatever system sends the request.
+const fn of_the_service(name: &'static str) -> PerSystem {
+    PerSystem {
+        name,
+        macos: Read("2.1.296"),
+        linux: Read("2.1.296"),
+        windows: Read("2.1.296"),
     }
 }
 
@@ -393,12 +404,18 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         ),
         windows: Read("2.1.300"),
     },
+    PerSystem {
+        name: "windows_token_handover",
+        macos: NotRead("macOS and Linux hand a descriptor as headless_token_descriptor says"),
+        linux: NotRead("macOS and Linux hand a descriptor as headless_token_descriptor says"),
+        windows: Read("2.1.301"),
+    },
     warm_up("headless_token_descriptor"),
     warm_up("headless_print_mode"),
     warm_up("headless_result"),
-    warm_up("request_starts_the_five_hour_period"),
-    warm_up("weekly_period_is_a_fixed_cycle"),
-    warm_up("used_up_limit_refuses_every_request"),
+    of_the_service("request_starts_the_five_hour_period"),
+    of_the_service("weekly_period_is_a_fixed_cycle"),
+    of_the_service("used_up_limit_refuses_every_request"),
 ];
 
 pub(crate) const ASSUMPTIONS: &[Assumption] = &[
@@ -1433,6 +1450,28 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         absent: &[],
     },
     Assumption {
+        name: "windows_token_handover",
+        fact: "on Windows Claude Code reads no token handed to it on a descriptor. Its reader of \
+               `CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR` reads the descriptor directly only where \
+               `fstat` calls it a socket; otherwise it opens `/proc/self/fd/<n>`, and reads \
+               directly only where that fails with EACCES or EPERM. Bun 1.4.3 calls a pipe or a \
+               socket handed as descriptor 3 through `STARTUPINFOW.lpReserved2` a FIFO, and \
+               opening `/proc/self/fd/3` fails with ENOENT: RF-WW1, runs 38797729796 and \
+               38821312770",
+        read_from: "the descriptor reader and its socket check in the win32-x64 and win32-arm64 \
+                    builds of 2.1.301, which embed Bun 1.4.3, read as bytes on 2026-10-16. The \
+                    path is fixed when a build is made: the macOS build of 2.1.296 opens \
+                    `/dev/fd/<n>`, which takes a pipe",
+        verified_against: "2.1.301",
+        depends: "warm::unbuilt, which warms up no account on Windows, and doctor's warm_up check",
+        probe: &[
+            "descriptor_by_path",
+            "file_after_socket",
+            "file_after_failed_read",
+        ],
+        absent: &[],
+    },
+    Assumption {
         name: "headless_token_descriptor",
         fact: "where `CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR` names a descriptor, Claude Code \
                reads an OAuth access token from it, an inherited pipe until a newline or its \
@@ -1585,12 +1624,19 @@ mod tests {
                 "credman_unreachable_writes_file",
                 "credman_attributes",
                 "windows_browser_open",
+                "windows_token_handover",
+                "request_starts_the_five_hour_period",
+                "weekly_period_is_a_fixed_cycle",
+                "used_up_limit_refuses_every_request",
             ]
         );
         for name in [
             "keychain_write_route",
             "keychain_absence_codes",
             "no_keyring_off_macos",
+            "headless_token_descriptor",
+            "headless_print_mode",
+            "headless_result",
         ] {
             let line = PER_SYSTEM.iter().find(|l| l.name == name).unwrap();
             assert!(matches!(line.on(Platform::Windows), NotRead(_)), "{name}");
