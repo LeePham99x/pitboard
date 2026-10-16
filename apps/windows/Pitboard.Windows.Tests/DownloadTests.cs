@@ -19,8 +19,8 @@ public sealed class DownloadTests
     [UITestMethod]
     public async Task EachKindOfDownloadSavesAtTheNumberedPath()
     {
-        await using var webs = await Webs.Make(WebEnvironment.FixtureScheme);
-        var window = new StandInWindow(webs, answer: true);
+        await using var webs = await Webs.Make();
+        var window = new StandInWindow(webs, Main, answer: true);
         var page = await Open(webs, window);
         var events = Events(page);
         // The site's own file, as the site serves one: after the fixture's pages, so this answer is the one taken.
@@ -79,8 +79,8 @@ public sealed class DownloadTests
     public async Task AFramesDownloadAndOneFromAnotherHostAskAndSaveNothingOnCancel()
     {
         using var site = new StandInSite();
-        await using var webs = await Webs.Make(WebEnvironment.FixtureScheme);
-        var window = new StandInWindow(webs, answer: false);
+        await using var webs = await Webs.Make();
+        var window = new StandInWindow(webs, Main, answer: false);
         var page = await Open(webs, window);
         var events = Events(page);
 
@@ -105,21 +105,21 @@ public sealed class DownloadTests
             Assert.IsNull(file, kind);
         }
 
-        await Webs.Until(
+        await Views.Until(
             () => !Directory.Exists(webs.Web.Downloads) || Directory.GetFiles(webs.Web.Downloads).Length == 0,
-            "a download refused left a file");
+            "a download refused left a file", Webs.Patience);
     }
 
     [UITestMethod]
     public async Task ASignInWindowSavesNothing()
     {
-        await using var webs = await Webs.Make(WebEnvironment.FixtureScheme);
-        var window = new StandInWindow(webs, answer: true);
+        await using var webs = await Webs.Make();
+        var window = new StandInWindow(webs, Main, answer: true);
         var page = await Open(webs, window);
         var host = Main.Site.SignInHosts[0];
         await page.ExecuteScriptAsync(
             $"window.open('{WebEnvironment.FixtureScheme}://{host}/sign-in', 'sign-in', 'width=480,height=600'); 0");
-        await Webs.Until(() => window.SignIn?.DocumentTitle == $"{host} sign-in stand-in", "no sign-in window loaded its page");
+        await Views.Until(() => window.SignIn?.DocumentTitle == $"{host} sign-in stand-in", "no sign-in window loaded its page", Webs.Patience);
         var cancelled = new TaskCompletionSource<bool>();
         window.SignIn!.DownloadStarting += (_, args) => cancelled.TrySetResult(args.Cancel);
 
@@ -136,7 +136,7 @@ public sealed class DownloadTests
     public async Task ASecondArchiveIsNamedAsWebView2NamesOne()
     {
         using var site = new StandInSite();
-        await using var webs = await Webs.Make(WebEnvironment.FixtureScheme);
+        await using var webs = await Webs.Make();
         var archive = site.Address("/attachment/archive.tar.gz");
         var plain = await webs.Page("plain");
         var own = Directory.CreateDirectory(Path.Combine(webs.Web.Downloads, "plain")).FullName;
@@ -146,11 +146,11 @@ public sealed class DownloadTests
         plain.DownloadStarting += (_, args) => offered.TrySetResult((args.ResultFilePath, args.DownloadOperation));
         plain.Navigate(archive);
         var (proposed, operation) = await offered.Task.WaitAsync(Webs.Patience);
-        await Webs.Until(() => operation.State == CoreWebView2DownloadState.Completed, "WebView2's own download did not finish");
+        await Views.Until(() => operation.State == CoreWebView2DownloadState.Completed, "WebView2's own download did not finish", Webs.Patience);
         Console.WriteLine($"CF7: WebView2 offers {proposed} for a second archive.tar.gz and saves {operation.ResultFilePath}");
         Assert.AreEqual("archive (1).tar.gz", Path.GetFileName(operation.ResultFilePath));
 
-        var window = new StandInWindow(webs, answer: true);
+        var window = new StandInWindow(webs, Main, answer: true);
         var page = await Open(webs, window);
         File.WriteAllText(Path.Combine(webs.Web.Downloads, "archive.tar.gz"), "taken");
         var from = webs.Sent.Count;
@@ -167,8 +167,8 @@ public sealed class DownloadTests
     public async Task TheQuitQuestionAsksWhileADownloadIsUnderWay()
     {
         using var site = new StandInSite();
-        await using var webs = await Webs.Make(WebEnvironment.FixtureScheme);
-        var window = new StandInWindow(webs, answer: true);
+        await using var webs = await Webs.Make();
+        var window = new StandInWindow(webs, Main, answer: true);
         var page = await Open(webs, window);
         var operations = new List<CoreWebView2DownloadOperation>();
         page.DownloadStarting += (_, args) => operations.Add(args.DownloadOperation);
@@ -177,13 +177,13 @@ public sealed class DownloadTests
         await Stall(webs, page, site, "paused.bin");
         var paused = operations.Single();
         paused.Pause();
-        await Webs.Until(() => paused.State == CoreWebView2DownloadState.Interrupted, "the download did not pause");
+        await Views.Until(() => paused.State == CoreWebView2DownloadState.Interrupted, "the download did not pause", Webs.Patience);
         Console.WriteLine($"CF7: a paused download is {paused.State}, {paused.InterruptReason}, can resume: {paused.CanResume}");
         Assert.AreEqual("A download is in progress. Quit anyway?", webs.Downloads.QuitQuestion?.Title);
-        CollectionAssert.AreEqual(new[] { Main.Store }, webs.Downloads.Stores.ToArray());
+        CollectionAssert.AreEqual(new[] { webs.Own(Main).Store }, webs.Downloads.Stores.ToArray());
 
         paused.Cancel();
-        await Webs.Until(() => webs.Sent.OfType<Intent.DownloadEnded>().Any(), "the model did not hear the download stopped");
+        await Views.Until(() => webs.Sent.OfType<Intent.DownloadEnded>().Any(), "the model did not hear the download stopped", Webs.Patience);
         Assert.IsInstanceOfType<DownloadEnd.Cancelled>(webs.Sent.OfType<Intent.DownloadEnded>().Single().End);
         Assert.IsNull(webs.Downloads.QuitQuestion);
 
@@ -197,7 +197,7 @@ public sealed class DownloadTests
         Assert.HasCount(2, webs.Sent.OfType<Intent.DownloadEnded>());
         // On windows-11-arm the file was still there as the download said it stopped (run 38822700418).
         var file = webs.Sent.OfType<Intent.DownloadSaving>().Last().File;
-        await Webs.Until(() => !File.Exists(file), "the stopped download left its file");
+        await Views.Until(() => !File.Exists(file), "the stopped download left its file", Webs.Patience);
     }
 
     // A window closed while it asks answers no, and the closed page takes its download with it.
@@ -205,18 +205,18 @@ public sealed class DownloadTests
     public async Task ADownloadWhosePageClosedWhileAskedIsCancelled()
     {
         using var site = new StandInSite();
-        await using var webs = await Webs.Make(WebEnvironment.FixtureScheme);
+        await using var webs = await Webs.Make();
         var answer = new TaskCompletionSource<bool>();
-        var window = new StandInWindow(webs, answer: true) { Pending = answer.Task };
+        var window = new StandInWindow(webs, Main, answer: true) { Pending = answer.Task };
         var page = await Open(webs, window);
         await page.ExecuteScriptAsync(
             $"document.body.insertAdjacentHTML('beforeend', '<iframe src=\"{site.Address("/attachment/late.bin")}\"></iframe>'); 0");
-        await Webs.Until(() => window.Questions.Count == 1, "the download was not asked about");
+        await Views.Until(() => window.Questions.Count == 1, "the download was not asked about", Webs.Patience);
 
         webs.Close(page);
         answer.SetResult(false);
 
-        await Webs.Until(() => webs.Sent.OfType<Intent.DownloadEnded>().Any(), "the model did not hear the download ended");
+        await Views.Until(() => webs.Sent.OfType<Intent.DownloadEnded>().Any(), "the model did not hear the download ended", Webs.Patience);
         Assert.AreEqual(new DownloadEnd.Cancelled(), webs.Sent.OfType<Intent.DownloadEnded>().Single().End);
         Assert.IsEmpty(webs.Sent.OfType<Intent.DownloadSaving>());
     }
@@ -227,21 +227,15 @@ public sealed class DownloadTests
         var from = webs.Sent.Count;
         await page.ExecuteScriptAsync(
             $"document.body.insertAdjacentHTML('beforeend', '<iframe src=\"{site.Address($"/stalled/{name}")}\"></iframe>'); 0");
-        await Webs.Until(() => webs.Sent.Skip(from).OfType<Intent.DownloadSaving>().Any(), $"{name} did not start saving");
+        await Views.Until(() => webs.Sent.Skip(from).OfType<Intent.DownloadSaving>().Any(), $"{name} did not start saving", Webs.Patience);
     }
 
     // The account's window at the fixture's chatgpt.com, which gives one profile a second download without asking.
     private static async Task<CoreWebView2> Open(Webs webs, StandInWindow window)
     {
-        var session = new WebSession(Webs.Opened(Main, Home), webs.Web, webs.Downloads, window);
+        var session = new WebSession(webs.Opened(Main, Home), webs.Web, webs.Downloads, window);
         var page = await webs.Page(Main.Store);
-        Assert.IsTrue(
-            await Webs.Loads(page, () =>
-            {
-                session.Attach(page);
-                return Task.CompletedTask;
-            }),
-            "the fixture's page did not load");
+        Assert.IsTrue(await Webs.Attached(session, page), "the fixture's page did not load");
         page.PermissionRequested += (_, args) =>
         {
             if (args.PermissionKind == CoreWebView2PermissionKind.MultipleAutomaticDownloads)
@@ -271,7 +265,7 @@ public sealed class DownloadTests
     {
         try
         {
-            await Webs.Until(() => webs.Sent.Skip(from).OfType<Intent.DownloadEnded>().Any(), $"{what} did not end");
+            await Views.Until(() => webs.Sent.Skip(from).OfType<Intent.DownloadEnded>().Any(), $"{what} did not end", Webs.Patience);
         }
         catch (AssertFailedException late)
         {
@@ -283,39 +277,5 @@ public sealed class DownloadTests
         var ended = webs.Sent.Skip(from).OfType<Intent.DownloadEnded>().First();
         var saving = webs.Sent.Skip(from).OfType<Intent.DownloadSaving>().SingleOrDefault(saving => saving.Id == ended.Id);
         return (saving?.File, ended.End);
-    }
-
-    private sealed class StandInWindow(Webs webs, bool answer) : ISessionWindow
-    {
-        public List<AlertText> Questions { get; } = [];
-
-        public CoreWebView2? SignIn { get; private set; }
-
-        // An answer still to come, in place of the one given.
-        public Task<bool>? Pending { get; init; }
-
-        public async Task<CoreWebView2?> OpenSignIn(SignInWindowSize size)
-        {
-            SignIn = await webs.Page(Main.Store);
-            return SignIn;
-        }
-
-        public void CloseSignIn()
-        {
-        }
-
-        public Task<bool> AllowDownload(AlertText question)
-        {
-            Questions.Add(question);
-            return Pending ?? Task.FromResult(answer);
-        }
-
-        public void Shown(string address)
-        {
-        }
-
-        public void Changed()
-        {
-        }
     }
 }

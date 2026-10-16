@@ -33,6 +33,9 @@ public sealed class WebEnvironment
         _openElsewhere = openElsewhere;
     }
 
+    // Raised once every page of the browser process has closed or it has failed, and it has let go of the folder.
+    public event Action? BrowserExited;
+
     public string Scheme { get; }
 
     public string UserDataFolder { get; }
@@ -147,7 +150,11 @@ public sealed class WebEnvironment
         }
 
         var made = await CoreWebView2Environment.CreateWithOptionsAsync("", UserDataFolder, options);
-        made.BrowserProcessExited += (_, _) => _made = null;
+        made.BrowserProcessExited += (_, _) =>
+        {
+            _made = null;
+            BrowserExited?.Invoke();
+        };
         return made;
     }
 

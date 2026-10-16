@@ -21,22 +21,12 @@ public sealed class AccountWindowTests
             Id: "1", Store: store, Name: "notes.txt", State: new DownloadState.Finished(@"C:\Downloads\notes.txt"),
             Said: "Downloaded", Running: false);
 
-    private static async Task<AccountWindow> Up(AccountWindow window)
-    {
-        var root = (FrameworkElement)window.Content;
-        var loaded = new TaskCompletionSource();
-        root.Loaded += (_, _) => loaded.TrySetResult();
-        window.Activate();
-        await loaded.Task.WaitAsync(Webs.Patience);
-        return window;
-    }
-
     [UITestMethod]
     public async Task UntilItsPageCanShowItSaysWhatItWaitsFor()
     {
         var sent = new List<Intent>();
         var web = WebEnvironment.Fixture(Path.GetTempPath());
-        var window = await Up(new AccountWindow(Main.Store, web, new Downloads(web.Downloads, sent.Add), sent.Add));
+        var window = await Views.Activated(new AccountWindow(Main.Store, web, new Downloads(web.Downloads, sent.Add), sent.Add));
         try
         {
             window.Follow(Shown(new WaitingShown.Reading("Reading accounts…")));
@@ -62,7 +52,7 @@ public sealed class AccountWindowTests
     {
         var sent = new List<Intent>();
         var web = WebEnvironment.Fixture(Path.GetTempPath());
-        var window = await Up(new AccountWindow(Main.Store, web, new Downloads(web.Downloads, sent.Add), sent.Add));
+        var window = await Views.Activated(new AccountWindow(Main.Store, web, new Downloads(web.Downloads, sent.Add), sent.Add));
         try
         {
             var reading = Shown(new WaitingShown.Reading("Reading accounts…"));
@@ -88,7 +78,7 @@ public sealed class AccountWindowTests
     {
         var sent = new List<Intent>();
         var web = WebEnvironment.Fixture(Path.GetTempPath());
-        var window = await Up(new AccountWindow(Main.Store, web, new Downloads(web.Downloads, sent.Add), sent.Add));
+        var window = await Views.Activated(new AccountWindow(Main.Store, web, new Downloads(web.Downloads, sent.Add), sent.Add));
         var root = window.Content.XamlRoot;
         var question = PitboardFfiMethods.DownloadQuestion("notes.txt", "chatgpt.com");
         var shown = window.AllowDownload(question);
@@ -105,17 +95,18 @@ public sealed class AccountWindowTests
     [UITestMethod]
     public async Task AnOpenWindowShowsItsPageAndHowToSignIn()
     {
-        await using var webs = await Webs.Make(WebEnvironment.FixtureScheme);
+        await using var webs = await Webs.Make();
         var sent = new List<Intent>();
-        var window = await Up(new AccountWindow(Main.Store, webs.Web, webs.Downloads, sent.Add));
+        var store = webs.Name(Main.Store);
+        var window = await Views.Activated(new AccountWindow(store, webs.Web, webs.Downloads, sent.Add));
         try
         {
             var home = $"{WebEnvironment.FixtureScheme}://chatgpt.com/";
             window.Follow(Shown(
                 new WaitingShown.Reading("Reading accounts…"),
-                Webs.Opened(Main, home) with { Note = new WindowNoteKind.SignIn() }));
+                webs.Opened(Main, home) with { Note = new WindowNoteKind.SignIn() }));
 
-            await Webs.Until(() => sent.Contains(new Intent.PageShown(Main.Store, home)), "the model was not told the page");
+            await Views.Until(() => sent.Contains(new Intent.PageShown(store, home)), "the model was not told the page", Webs.Patience);
             var note = Views.Element<InfoBar>(window.Content, "window.note");
             Assert.IsTrue(note.IsOpen);
             StringAssert.StartsWith(note.Message, "Sign in to chatgpt.com as main@example.com.");

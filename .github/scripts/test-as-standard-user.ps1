@@ -225,19 +225,6 @@ function Show-LogonFailures([datetime] $Since) {
     }
 }
 
-# `net accounts` says Never for a threshold of 0.
-function Get-LockoutThreshold {
-    $line = net accounts | Where-Object { $_ -match '^Lockout threshold:' } | Select-Object -First 1
-    if ($LASTEXITCODE -ne 0 -or -not $line) { throw "net accounts gave no lockout threshold (exit $LASTEXITCODE)" }
-    $value = ($line -split ':', 2)[1].Trim()
-    if ($value -eq 'Never') { 0 } else { [int] $value }
-}
-
-function Set-LockoutThreshold([int] $Threshold) {
-    $said = net accounts "/lockoutthreshold:$Threshold" 2>&1 | Out-String
-    if ($LASTEXITCODE -ne 0) { throw "net accounts could not set the lockout threshold to $Threshold (exit $LASTEXITCODE): $said" }
-}
-
 # SIDs are compared and written back, never printed.
 function Get-SymlinkHolders {
     $export = Join-Path $logs 'rights.inf'
@@ -284,18 +271,12 @@ $userMade = Get-Date
 $user = New-LocalUser -Name $name -Password $secure -AccountNeverExpires -PasswordNeverExpires
 $sid = $user.SID.Value
 $holders = $null
-$lockout = $null
 $vhd = $null
 $volumePath = $null
 $granted = [System.Collections.Generic.List[string]]::new()
 $failed = [System.Collections.Generic.List[string]]::new()
 try {
     Add-LocalGroupMember -Group 'Users' -Member $name -ErrorAction SilentlyContinue
-    # WebView2 tries the user's password blank once for each new user data folder, as Chromium's
-    # CheckBlankPasswordWithPrefs calls LogonUser with "", and the WinUI tests make one each: in
-    # run 38822700418 ten such failed logons locked the user out on both images.
-    $lockout = Get-LockoutThreshold
-    if ($lockout -ne 0) { Set-LockoutThreshold 0 }
 
     New-Item -ItemType Directory -Force -Path $runDir | Out-Null
     Set-UserRights $runDir 'M'
@@ -460,9 +441,6 @@ try {
     }
     $failed.AddRange($leaked)
 } finally {
-    if ($lockout) {
-        try { Set-LockoutThreshold $lockout } catch { $failed.Add($_.Exception.Message) }
-    }
     if ($null -ne $holders) {
         Set-SymlinkHolders $holders
         if ((Get-SymlinkHolders) -ne $holders) { $failed.Add('the symbolic-link right was not set back as it was') }

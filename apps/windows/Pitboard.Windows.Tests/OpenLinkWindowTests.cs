@@ -25,16 +25,6 @@ public sealed class OpenLinkWindowTests
             ],
             Chosen: Main.Store, Open: "Open"));
 
-    private static async Task<OpenLinkWindow> Up(OpenLinkWindow window)
-    {
-        var root = (FrameworkElement)window.Content;
-        var loaded = new TaskCompletionSource();
-        root.Loaded += (_, _) => loaded.TrySetResult();
-        window.Activate();
-        await loaded.Task.WaitAsync(Webs.Patience);
-        return window;
-    }
-
     private static string? Selected(OpenLinkWindow window) =>
         (Views.Element<ListView>(window.Content, "picker.accounts").SelectedItem as ListViewItem)?.Tag is WindowAccount account
             ? account.Label
@@ -51,7 +41,7 @@ public sealed class OpenLinkWindowTests
     {
         var sent = new List<Intent>();
         var opened = new List<WindowAccount>();
-        var window = await Up(new OpenLinkWindow(sent.Add, opened.Add, _ => Assert.Fail("a browser opened")));
+        var window = await Views.Activated(new OpenLinkWindow(sent.Add, opened.Add, _ => Assert.Fail("a browser opened")));
         try
         {
             window.Follow(Choose(3, armed: false));
@@ -81,7 +71,7 @@ public sealed class OpenLinkWindowTests
     [UITestMethod]
     public async Task ALinkThatArrivesAgainIsChosenAfresh()
     {
-        var window = await Up(new OpenLinkWindow(_ => { }, _ => { }, _ => { }));
+        var window = await Views.Activated(new OpenLinkWindow(_ => { }, _ => { }, _ => { }));
         try
         {
             window.Follow(Choose(3, armed: true));
@@ -101,7 +91,7 @@ public sealed class OpenLinkWindowTests
     public async Task CancellingOrClosingDismissesTheLink()
     {
         var sent = new List<Intent>();
-        var window = await Up(new OpenLinkWindow(sent.Add, _ => Assert.Fail("a window opened"), _ => { }));
+        var window = await Views.Activated(new OpenLinkWindow(sent.Add, _ => Assert.Fail("a window opened"), _ => { }));
         window.Follow(Choose(5, armed: true));
 
         Views.Press(Views.Button(window.Content, "Cancel"));
@@ -115,7 +105,7 @@ public sealed class OpenLinkWindowTests
     public async Task AWithdrawnWindowDismissesNothing()
     {
         var sent = new List<Intent>();
-        var window = await Up(new OpenLinkWindow(sent.Add, _ => { }, _ => { }));
+        var window = await Views.Activated(new OpenLinkWindow(sent.Add, _ => { }, _ => { }));
         window.Follow(Choose(6, armed: true));
 
         window.Withdraw();
@@ -127,7 +117,7 @@ public sealed class OpenLinkWindowTests
     public async Task ARefusedLinkSaysWhy()
     {
         var sent = new List<Intent>();
-        var window = await Up(new OpenLinkWindow(sent.Add, _ => { }, _ => { }));
+        var window = await Views.Activated(new OpenLinkWindow(sent.Add, _ => { }, _ => { }));
         try
         {
             window.Follow(new LinkPicker(7, false, new PickerShown.Refused("Can’t Open This Link", "This link is on example.com.")));
@@ -149,7 +139,7 @@ public sealed class OpenLinkWindowTests
     {
         var sent = new List<Intent>();
         var browsed = new List<string>();
-        var window = await Up(new OpenLinkWindow(sent.Add, _ => { }, browsed.Add));
+        var window = await Views.Activated(new OpenLinkWindow(sent.Add, _ => { }, browsed.Add));
         try
         {
             var add = new Choice("Add Account…", new Intent.PresentSheet(new Sheet.Add(Provider: "codex")), Enabled: true);
@@ -173,7 +163,7 @@ public sealed class OpenLinkWindowTests
     public async Task UntilTheAccountsAreReadItSaysSoAndOffersToTryAgain()
     {
         var sent = new List<Intent>();
-        var window = await Up(new OpenLinkWindow(sent.Add, _ => { }, _ => { }));
+        var window = await Views.Activated(new OpenLinkWindow(sent.Add, _ => { }, _ => { }));
         try
         {
             window.Follow(new LinkPicker(9, false, new PickerShown.Reading("Reading accounts…")));
@@ -196,7 +186,7 @@ public sealed class OpenLinkWindowTests
     public async Task WithNoLinkItSaysHowToShareOne()
     {
         var sent = new List<Intent>();
-        var window = await Up(new OpenLinkWindow(sent.Add, _ => { }, _ => { }));
+        var window = await Views.Activated(new OpenLinkWindow(sent.Add, _ => { }, _ => { }));
         var closed = false;
         window.Closed += (_, _) => closed = true;
 

@@ -2225,12 +2225,16 @@ Accounts and tokens:
   the workspace. This is how CI runs every Windows test, through
   `.github/scripts/test-as-standard-user.ps1`.
 - That user's programs run in the job user's session, 2, and start inside a job already.
-- WebView2 154.0.4258.62 tries that user's password blank once for each new user data
-  folder: `msedgewebview2.exe` calls `LogonUser` with an empty password, logon type 2, as
-  Chromium's `CheckBlankPasswordWithPrefs` does, and the Security log records a failed logon
-  (0xC000006A). The WinUI tests make a user data folder each, and in run 38822700418 the user
-  was locked out on both images after ten, so `test-as-standard-user.ps1` sets the lockout
-  threshold to never for its run and puts it back after.
+- WebView2 tries that user's password blank once for each new user data folder:
+  `msedgewebview2.exe` calls `LogonUser` with an empty password, logon type 2, as Chromium's
+  `CheckBlankPasswordWithPrefs` does, and the Security log records a failed logon
+  (0xC000006A). Read on 154.0.4258.62 on windows-2025 and 155.0.4283.45 on windows-11-arm, in
+  run 38825074643 thirteen folders made thirteen. With a folder per WinUI test the user was
+  locked out on both images after ten in run 38822700418, so those tests share one user data
+  folder for the run, each under profiles of its own.
+- CF4: the WebView2 Runtime is 154.0.4258.62 on windows-2025 and 155.0.4283.45 on
+  windows-11-arm, read from `pv` under the machine's EdgeUpdate client key in run
+  38825074643.
 - Explorer, the job user's, takes no notification-area icon of that user's: `NIM_ADD` fails
   for an icon named by its window and id and for one named by a GUID (CI run 38753437460).
   So no UI test clicks Pitboard's icon: the view tests hold its menu, and the session's step

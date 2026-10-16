@@ -18,12 +18,12 @@ public sealed class WebSessionTests
     public async Task APageGoesWhereThePolicySays()
     {
         using var site = new StandInSite();
-        await using var webs = await Webs.Make(WebEnvironment.FixtureScheme);
-        var window = new StandInWindow(webs);
-        var session = new WebSession(Webs.Opened(Main, Home), webs.Web, webs.Downloads, window);
+        await using var webs = await Webs.Make();
+        var window = new StandInWindow(webs, Main);
+        var session = new WebSession(webs.Opened(Main, Home), webs.Web, webs.Downloads, window);
         var page = await webs.Page(Main.Store);
 
-        Assert.IsTrue(await Webs.Loads(page, () => Attach(session, page)), "the fixture's page did not load");
+        Assert.IsTrue(await Webs.Attached(session, page), "the fixture's page did not load");
         Assert.AreEqual("chatgpt.com stand-in", page.DocumentTitle);
 
         // WebView2 counts a navigation a host's script starts as the person's, so the page's own script leaves.
@@ -48,13 +48,13 @@ public sealed class WebSessionTests
             }
         };
         await page.ExecuteScriptAsync($"location.href = '{leave}'");
-        await Webs.Until(() => webs.Elsewhere.Count == 1, "a page outside the site was not handed to the browser");
+        await Views.Until(() => webs.Elsewhere.Count == 1, "a page outside the site was not handed to the browser", Webs.Patience);
         Assert.AreEqual(away, webs.Elsewhere[0]);
         Console.WriteLine($"CF7: a page's own script leaving is user-initiated: {awayClicked}");
         Assert.IsInstanceOfType<WindowNoteKind.OpenedInBrowser>(session.Note, $"user-initiated: {awayClicked}");
 
         await page.ExecuteScriptAsync("location.href = 'https://accounts.google.com/o/oauth2/v2/auth'");
-        await Webs.Until(() => session.Note is WindowNoteKind.GoogleRefused, "Google's sign-in was not refused");
+        await Views.Until(() => session.Note is WindowNoteKind.GoogleRefused, "Google's sign-in was not refused", Webs.Patience);
 
         var chat = $"{WebEnvironment.FixtureScheme}://chatgpt.com/chat/fixture";
         Assert.IsTrue(await Webs.Loads(page, async () => await page.ExecuteScriptAsync($"location.href = '{chat}'")));
@@ -68,21 +68,21 @@ public sealed class WebSessionTests
     [UITestMethod]
     public async Task ASignInWindowKeepsItsOpenerAndClosesWhenItsPageIsDone()
     {
-        await using var webs = await Webs.Make(WebEnvironment.FixtureScheme);
-        var window = new StandInWindow(webs);
-        var session = new WebSession(Webs.Opened(Main, Home), webs.Web, webs.Downloads, window);
+        await using var webs = await Webs.Make();
+        var window = new StandInWindow(webs, Main);
+        var session = new WebSession(webs.Opened(Main, Home), webs.Web, webs.Downloads, window);
         var page = await webs.Page(Main.Store);
-        Assert.IsTrue(await Webs.Loads(page, () => Attach(session, page)), "the fixture's page did not load");
+        Assert.IsTrue(await Webs.Attached(session, page), "the fixture's page did not load");
         var host = Main.Site.SignInHosts[0];
 
         await page.ExecuteScriptAsync(
             $"window.open('{WebEnvironment.FixtureScheme}://{host}/sign-in', 'sign-in', 'width=480,height=600'); 0");
 
-        await Webs.Until(() => window.SignIn?.DocumentTitle == $"{host} sign-in stand-in", "no sign-in window loaded its page");
+        await Views.Until(() => window.SignIn?.DocumentTitle == $"{host} sign-in stand-in", "no sign-in window loaded its page", Webs.Patience);
         Assert.AreEqual(new SignInWindowSize(480, 600), window.Sizes.Single());
         Assert.AreEqual("true", await window.SignIn!.ExecuteScriptAsync("window.opener !== null"));
         await window.SignIn.ExecuteScriptAsync("document.getElementById('done').click()");
-        await Webs.Until(() => window.Closed == 1, "the sign-in page's Done did not close its window");
+        await Views.Until(() => window.Closed == 1, "the sign-in page's Done did not close its window", Webs.Patience);
         Assert.AreEqual(1, window.Closed);
     }
 
@@ -91,52 +91,18 @@ public sealed class WebSessionTests
     public async Task RemovingWebsiteDataEmptiesTheWindowsProfileAlone()
     {
         using var site = new StandInSite();
-        await using var webs = await Webs.Make(WebEnvironment.FixtureScheme);
+        await using var webs = await Webs.Make();
         var spare = Items.Window("codex", "spare");
         var page = await webs.Page(Main.Store);
         var other = await webs.Page(spare.Store);
         Assert.IsTrue(await Webs.Loads(page, site.Address("/set")), "the stand-in did not load");
         Assert.IsTrue(await Webs.Loads(other, site.Address("/set")), "the stand-in did not load in the other profile");
-        var session = new WebSession(Webs.Opened(Main, Home), webs.Web, webs.Downloads, new StandInWindow(webs));
-        Assert.IsTrue(await Webs.Loads(page, () => Attach(session, page)), "the fixture's page did not load");
+        var session = new WebSession(webs.Opened(Main, Home), webs.Web, webs.Downloads, new StandInWindow(webs, Main));
+        Assert.IsTrue(await Webs.Attached(session, page), "the fixture's page did not load");
 
         await session.RemoveWebsiteData();
 
         Assert.IsEmpty(await page.CookieManager.GetCookiesAsync(site.Address("/")));
         Assert.AreEqual("who", (await other.CookieManager.GetCookiesAsync(site.Address("/"))).Single().Name);
-    }
-
-    private static Task Attach(WebSession session, CoreWebView2 page)
-    {
-        session.Attach(page);
-        return Task.CompletedTask;
-    }
-
-    private sealed class StandInWindow(Webs webs) : ISessionWindow
-    {
-        public List<SignInWindowSize> Sizes { get; } = [];
-
-        public CoreWebView2? SignIn { get; private set; }
-
-        public int Closed { get; private set; }
-
-        public List<string> Pages { get; } = [];
-
-        public async Task<CoreWebView2?> OpenSignIn(SignInWindowSize size)
-        {
-            Sizes.Add(size);
-            SignIn = await webs.Page(Main.Store);
-            return SignIn;
-        }
-
-        public void CloseSignIn() => Closed++;
-
-        public Task<bool> AllowDownload(AlertText question) => Task.FromResult(false);
-
-        public void Shown(string address) => Pages.Add(address);
-
-        public void Changed()
-        {
-        }
     }
 }
