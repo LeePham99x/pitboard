@@ -1241,7 +1241,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_switch_after_a_sign_in_outside_puts_the_account_it_goes_to_in_use() {
         let m = harness::machine("records-both-logins");
@@ -1294,7 +1294,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_session_renewing_the_outgoing_login_during_a_switch_waits_for_it() {
         use harness::{Session, lock_dir, renews_meanwhile, saves};

@@ -16,7 +16,7 @@ use crate::service::Permit;
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_parked_login_anthropic_refuses_is_not_installed() {
     let m = machine("refused-park");
@@ -74,7 +74,7 @@ fn a_parked_login_anthropic_refuses_is_not_installed() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_parked_login_that_belongs_to_another_account_is_refused() {
     let m = machine("misfiled-park");
@@ -107,7 +107,7 @@ fn a_parked_login_that_belongs_to_another_account_is_refused() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_switch_will_not_install_a_login_it_could_not_ask_about() {
     let m = machine("offline-in");
@@ -139,7 +139,7 @@ fn a_switch_will_not_install_a_login_it_could_not_ask_about() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_park_that_answers_for_its_own_account_is_installed() {
     let m = machine("proved");
@@ -165,7 +165,7 @@ fn a_park_that_answers_for_its_own_account_is_installed() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_switch_from_a_login_already_identified_asks_only_about_the_login_going_in() {
     let m = machine("known-going-out");
@@ -236,7 +236,7 @@ fn a_login_pitboard_cannot_find_is_not_the_same_as_nobody_being_signed_in() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
 )]
 #[cfg_attr(
     target_os = "linux",
@@ -303,7 +303,7 @@ fn config_names_now(m: &harness::Machine) -> String {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn using_the_account_in_use_writes_claude_codes_config_again() {
     let m = machine("use-names-again");
@@ -367,7 +367,7 @@ fn using_the_account_in_use_writes_claude_codes_config_again() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_config_that_could_not_be_written_again_is_said() {
     let m = machine("use-names-again-refused");
@@ -410,7 +410,7 @@ fn a_config_that_could_not_be_written_again_is_said() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_switch_whose_config_could_not_be_written_is_said_to_name_another() {
     let m = machine("switch-config-refused");
@@ -438,7 +438,7 @@ fn a_switch_whose_config_could_not_be_written_is_said_to_name_another() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn the_config_is_written_only_while_the_account_is_in_use() {
     let m = machine("name-again");

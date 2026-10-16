@@ -128,7 +128,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn the_account_in_use_is_told_by_its_organisation() {
         let m = two_organisations("forget-by-organisation", "team", Some("org-here"));
@@ -144,7 +144,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_config_naming_no_organisation_decides_nothing() {
         let m = two_organisations("forget-no-organisation", "here", None);
@@ -161,7 +161,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn the_account_in_use_cannot_be_forgotten_whatever_the_config_names() {
         let m = machine("forget-drift");
@@ -180,7 +180,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn with_nobody_to_say_whose_the_login_is_an_account_with_nothing_parked_is_kept() {
         let m = machine("forget-unidentified");

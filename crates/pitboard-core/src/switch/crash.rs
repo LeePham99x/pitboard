@@ -57,7 +57,7 @@ macro_rules! each_tool_and_step {
             #[test]
             #[cfg_attr(
                 windows,
-                ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+                ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
             )]
             fn $case() {
                 $check(stringify!($case), $make, $point);
@@ -105,7 +105,7 @@ fn recovers_whole(at: &str, make: Make, point: &'static str) {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_switch_killed_with_nobody_to_ask_is_recovered_from_the_record() {
     for point in POINTS {
@@ -155,7 +155,7 @@ fn a_switch_killed_with_nobody_to_ask_is_recovered_from_the_record() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_switch_whose_token_rotated_while_it_was_interrupted_still_needs_anthropic() {
     let m = machine("rotated-offline");
@@ -205,7 +205,7 @@ fn a_switch_whose_token_rotated_while_it_was_interrupted_still_needs_anthropic()
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_switch_between_two_organisations_is_settled_by_the_organisation_anthropic_names() {
     let m = machine("two-organisations-rotated");
@@ -461,7 +461,7 @@ fn enrolling_killed_between_the_write_and_the_record_leaves_nothing_unnamed() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn signing_in_again_killed_at_any_step_recovers_to_something_whole() {
     let machines: [(&str, Make); 2] = [("claude", machine), ("codex", codex_machine)];
@@ -504,7 +504,7 @@ fn signing_in_again_killed_at_any_step_recovers_to_something_whole() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_switch_whose_login_was_removed_again_does_not_report_a_switch() {
     let m = machine("did-not-hold");
@@ -554,7 +554,7 @@ fn a_switch_whose_login_was_removed_again_does_not_report_a_switch() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_switch_that_cannot_read_the_store_back_keeps_every_copy_and_its_record() {
     let m = machine("unverified");

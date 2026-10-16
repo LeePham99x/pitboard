@@ -84,7 +84,7 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         macos: Read(VERIFIED_AGAINST),
         linux: NO_KEYCHAIN_ON_LINUX,
         windows: Pending {
-            by: &["W23"],
+            by: &["W23a"],
             reads: "credman_target: the Credential Manager target Claude Code keeps the login \
                     under on Windows, once it uses that store",
         },
@@ -133,7 +133,7 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
     later_on_windows(
         "credential_cache",
         "2.1.278",
-        &["W23"],
+        &["W23a"],
         "windows_credman_cache (W23a): how long a session keeps a login read from Credential \
          Manager; how soon it takes a new `.credentials.json` is windows_file_adoption's",
     ),
@@ -219,7 +219,7 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         macos: Read("2.1.294"),
         linux: NO_KEYCHAIN_ON_LINUX,
         windows: Pending {
-            by: &["W23"],
+            by: &["W23b"],
             reads: "the file behind Credential Manager (W23b): whether a session keeps the \
                     login it holds while `.credentials.json` sits behind that store; where the \
                     file is the store, how soon a session takes it is windows_file_adoption's",

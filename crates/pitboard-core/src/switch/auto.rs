@@ -313,7 +313,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn an_account_at_the_share_is_switched_from_and_the_switch_is_recorded_as_automatic() {
         let (m, _) = nearly_out("auto-switches", 96.0);
@@ -359,7 +359,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn the_account_anthropic_names_is_the_one_switched_from() {
         let (m, _) = nearly_out("auto-config-names-another", 96.0);
@@ -384,7 +384,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     #[cfg_attr(
         target_os = "linux",
@@ -439,7 +439,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn with_no_account_to_go_to_nothing_moves() {
         let (m, _) = nearly_out("auto-no-room", 97.0);
@@ -505,7 +505,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn no_room_is_recorded_once_for_a_limit_and_its_reset() {
         let (m, _) = nearly_out("auto-no-room-once", 97.0);
@@ -536,7 +536,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_reason_is_told_of_the_window_it_was_recorded_under() {
         let (m, _) = nearly_out("auto-said-window", 97.0);
@@ -572,7 +572,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_reason_said_is_kept_while_a_later_answer_of_its_window_runs() {
         let (m, clock) = nearly_out("auto-said-past-reset", 97.0);
@@ -616,7 +616,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_reason_said_of_a_limit_with_no_reset_is_kept_for_a_week() {
         let (m, clock) = nearly_out("auto-said-no-reset", 97.0);
@@ -672,7 +672,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_usage_cache_in_claude_codes_config_moves_nothing() {
         let (m, _) = nearly_out("auto-cache", 10.0);
@@ -687,7 +687,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn two_front_ends_that_decided_one_switch_make_it_once() {
         let (m, _) = nearly_out("auto-twice", 96.0);
@@ -804,7 +804,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_doubt_is_settled_under_the_lock_once() {
         let (m, _) = nearly_out("auto-doubt", 94.0);
@@ -847,7 +847,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_login_too_large_to_write_counts_as_an_attempt() {
         let (mut m, clock) = nearly_out("auto-too-large", 96.0);
@@ -925,7 +925,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn the_attempts_spent_are_recorded_once_no_limit_is_left_to_try() {
         let (mut m, clock) = nearly_out("auto-spent-two-limits", 96.0);
@@ -967,7 +967,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_login_claude_code_renews_partway_through_is_not_written_over() {
         let (m, clock) = nearly_out("auto-renewed-meanwhile", 96.0);
@@ -1033,7 +1033,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn an_outage_does_not_use_up_the_attempts() {
         let (m, clock) = nearly_out("auto-outage", 96.0);
@@ -1059,7 +1059,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn an_account_whose_login_is_refused_is_passed_over_for_the_next() {
         let (m, clock) = nearly_out("auto-refused", 96.0);
@@ -1101,7 +1101,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_switch_waiting_to_be_finished_is_left_to_the_change_that_finishes_it() {
         let (m, _) = nearly_out("auto-interrupted", 96.0);
@@ -1136,7 +1136,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_switch_under_way_in_another_run_is_not_one_interrupted() {
         let (m, _) = nearly_out("auto-under-way", 96.0);
@@ -1189,7 +1189,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn under_a_custom_oauth_endpoint_nothing_is_watched() {
         let (m, _) = nearly_out("auto-custom-oauth", 96.0);
@@ -1223,7 +1223,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn an_identification_that_fails_is_said_and_waited_on() {
         let (m, clock) = nearly_out("auto-unidentified", 96.0);
@@ -1287,7 +1287,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_lapsed_stored_login_is_renewed_to_tell_whose_it_is_and_the_switch_decided() {
         let (m, _) = nearly_out("auto-lapsed", 96.0);
@@ -1318,7 +1318,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_read_that_tells_whose_the_login_is_ends_the_failures_in_a_row() {
         let (m, clock) = nearly_out("auto-told-by-a-read", 96.0);
@@ -1353,7 +1353,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_keychain_one_front_end_cannot_read_holds_back_no_other() {
         let (m, _) = nearly_out("auto-locked-here", 96.0);
@@ -1383,7 +1383,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn an_account_nobody_enrolled_in_use_is_not_watched() {
         let (m, _) = nearly_out("auto-not-enrolled", 96.0);
@@ -1413,7 +1413,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn with_no_login_stored_nothing_is_watched() {
         let (m, _) = nearly_out("auto-signed-out", 96.0);
@@ -1448,7 +1448,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn claude_code_signed_in_some_other_way_is_not_switched() {
         let (m, _) = nearly_out("auto-overridden", 96.0);
@@ -1498,7 +1498,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_sign_in_to_the_account_it_would_switch_to_writes_no_config() {
         let (m, _) = nearly_out("auto-signed-in-to-target", 96.0);

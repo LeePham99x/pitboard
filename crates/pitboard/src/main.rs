@@ -1396,7 +1396,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn stow_refuses_a_login_of_an_account_not_enrolled_as_the_look_found_it() {
         use pitboard_core::provider::Owner;

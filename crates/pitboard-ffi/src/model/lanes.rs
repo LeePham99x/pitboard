@@ -950,7 +950,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_read_takes_the_stamps_as_they_stood_before_it() {
         let world = World::new("stamps");

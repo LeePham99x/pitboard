@@ -123,7 +123,7 @@ fn repair_here(m: &Machine) -> Reclaimed {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_park_repair_gave_back_outlives_a_switch_away_from_its_account() {
     for make in MACHINES {
@@ -241,7 +241,7 @@ fn uninstalling_leaves_a_park_repair_gave_back_and_says_so() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_park_repair_gave_back_is_deleted_once_a_switch_installs_it() {
     for make in MACHINES {
@@ -374,7 +374,7 @@ fn a_park_repair_gave_back_that_the_service_refuses_is_let_go_and_left() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_park_this_pitboard_wrote_down_and_lost_is_still_deleted_when_replaced() {
     for make in MACHINES {
@@ -434,7 +434,7 @@ fn lost(m: &Machine, who: &str, document: &Value) -> Park {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_park_found_in_a_vault_of_this_homes_own_is_this_pitboards() {
     for make in MACHINES {

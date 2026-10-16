@@ -4523,7 +4523,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_login_left_behind_the_keychain_is_found_in_its_file() {
         use crate::host::memory::MemoryHost;
@@ -5921,7 +5921,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn the_account_in_use_is_the_one_anthropic_named() {
         use crate::switch::harness::{NOW, config_names, machine};
@@ -5961,7 +5961,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_renewed_login_is_not_a_warning() {
         use crate::switch::harness::{NOW, document, machine};
@@ -5990,7 +5990,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_config_that_moved_since_is_a_warning() {
         use crate::switch::harness::{NOW, config_names, machine};

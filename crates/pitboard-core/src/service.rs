@@ -2598,7 +2598,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_switch_says_a_login_is_left_where_it_does_not_reach() {
         let m = machine("switch-fallback-login");
@@ -2657,7 +2657,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_read_says_a_file_is_behind_the_keychain() {
         let m = machine("read-fallback-login");
@@ -2726,7 +2726,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn an_empty_file_behind_the_keychain_is_said_too() {
         let m = machine("read-empty-fallback");
@@ -2762,7 +2762,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_file_behind_the_keychain_that_cannot_be_read_is_said_too() {
         let m = machine("read-unreadable-fallback");
@@ -2805,7 +2805,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_read_says_an_interrupted_switch_it_cannot_finish_is_waiting() {
         for (tool, make) in MACHINES {
@@ -2836,7 +2836,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_read_asks_whose_the_login_is_where_only_the_service_can_say() {
         let m = stuck_unless_asked("read-stuck-asked");
@@ -2863,7 +2863,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_read_says_nothing_of_a_switch_the_next_change_finishes() {
         for (tool, make) in MACHINES {
@@ -2887,7 +2887,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_read_says_a_switch_is_waiting_only_where_a_change_would_stop_at_it() {
         for (tool, make) in MACHINES {
@@ -2939,7 +2939,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_read_that_asks_nobody_says_a_switch_is_waiting_wherever_it_can_tell() {
         for (tool, make) in MACHINES {
@@ -2978,7 +2978,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn what_claude_code_cached_is_never_an_accounts_reading() {
         use crate::switch::harness::{NOW, cache_usage, usage_answer};
@@ -3020,7 +3020,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_login_already_identified_is_not_asked_about_again() {
         use crate::api::scripted::Asked;
@@ -3047,7 +3047,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_sign_in_outside_pitboard_is_said_recorded_and_shown_on_its_row() {
         use crate::switch::harness::NOW;
@@ -3175,7 +3175,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_read_that_finds_nothing_new_writes_nothing() {
         let m = machine("read-nothing-new");
@@ -3196,7 +3196,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_read_under_another_claude_config_dir_keeps_this_ones_record() {
         use crate::switch::harness::{NOW, account, document, owner};
@@ -3251,7 +3251,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_login_still_stored_under_another_claude_config_dir_is_not_said_replaced() {
         use crate::switch::harness::{NOW, account, document, owner};
@@ -3334,7 +3334,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_read_that_cannot_find_the_login_claude_code_names_records_nothing() {
         let m = machine("read-login-elsewhere");
@@ -3369,7 +3369,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn an_offline_read_names_the_account_anthropic_named_whatever_the_config_says() {
         let m = machine("offline-config-moved");
@@ -3399,7 +3399,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn an_offline_read_of_a_record_never_asked_about_says_the_config_names_another() {
         let m = machine("offline-never-asked");
@@ -3440,7 +3440,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn an_offline_read_of_a_record_never_asked_about_says_nothing_where_the_config_agrees() {
         let m = machine("offline-never-asked-agrees");
@@ -3474,7 +3474,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_read_settles_it_and_says_the_config_names_another() {
         use crate::api::scripted::Asked;
@@ -3607,7 +3607,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn doctor_says_a_switch_is_stuck_where_it_can_tell_without_asking() {
         for (tool, make) in MACHINES {
@@ -3669,7 +3669,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_change_refused_over_its_name_still_recovers_an_interrupted_switch() {
         for (tool, make) in MACHINES {
@@ -3733,7 +3733,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_new_login_parked_after_it_did_not_hold_says_how_it_was_parked() {
         for (tool, make) in MACHINES {
@@ -3759,7 +3759,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_custom_claude_endpoint_stops_only_the_recovery_of_a_claude_code_switch() {
         let codex = interrupted(codex_machine, "refused-custom-codex");
@@ -3948,7 +3948,7 @@ mod tests {
                     #[test]
                     #[cfg_attr(
                         windows,
-                        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+                        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
                     )]
                     fn $case() {
                         every_change_is_refused(stringify!($case), $make, $refused);

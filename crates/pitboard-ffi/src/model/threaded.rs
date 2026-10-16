@@ -186,7 +186,7 @@ fn last_revision(told: &Told) -> Option<u64> {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_started_model_reads_the_accounts_and_tells_its_listener_in_order() {
     let world = World::new("reads");
@@ -223,7 +223,7 @@ fn a_started_model_reads_the_accounts_and_tells_its_listener_in_order() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_change_another_front_end_makes_is_told_without_asking_anyone() {
     let world = World::new("elsewhere");
@@ -251,7 +251,7 @@ fn a_change_another_front_end_makes_is_told_without_asking_anyone() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_listener_may_call_the_model_while_it_is_told() {
     let world = World::new("inside");
@@ -289,7 +289,7 @@ fn a_listener_may_call_the_model_while_it_is_told() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn snapshots_made_while_many_threads_send_arrive_in_order() {
     let world = World::new("many");
@@ -324,7 +324,7 @@ fn snapshots_made_while_many_threads_send_arrive_in_order() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn shutdown_stops_the_timers_the_lanes_and_the_listener() {
     let world = World::new("shutdown");
@@ -362,7 +362,7 @@ fn shutdown_stops_the_timers_the_lanes_and_the_listener() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_listener_may_shut_the_model_down_while_it_is_told() {
     let world = World::new("shut-inside");
@@ -405,7 +405,7 @@ fn a_listener_may_shut_the_model_down_while_it_is_told() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn dropping_the_model_waits_for_nothing() {
     let world = World::new("drop");
@@ -683,7 +683,7 @@ fn a_switch_on_a_process_list_nobody_could_read_says_so_and_asks_nothing() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_read_answers_while_a_switch_waits() {
     let world = World::new("read-while-switching");
@@ -735,7 +735,7 @@ fn a_read_answers_while_a_switch_waits() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_read_answers_while_the_core_switches() {
     let world = World::new("read-while-the-core-switches");
@@ -873,7 +873,7 @@ fn paste(code: &str) -> Intent {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_code_claude_code_refused_is_typed_again_into_the_same_sign_in() {
     let at = signing_in_world("paste-again");
@@ -924,7 +924,7 @@ fn a_code_claude_code_refused_is_typed_again_into_the_same_sign_in() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn signing_in_again_to_the_account_in_use_puts_its_new_login_in_use() {
     let at = signing_in_world("sign-in-again");
@@ -971,7 +971,7 @@ fn signing_in_again_to_the_account_in_use_puts_its_new_login_in_use() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn cancelling_a_sign_in_stops_its_tool() {
     let at = signing_in_world("cancel");
@@ -1003,7 +1003,7 @@ fn cancelling_a_sign_in_stops_its_tool() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_sign_in_asked_for_at_once_after_a_cancel_starts_once_that_one_has_stopped() {
     let at = signing_in_world("cancel-then-sign-in");
@@ -1045,7 +1045,7 @@ fn a_sign_in_asked_for_at_once_after_a_cancel_starts_once_that_one_has_stopped()
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_sign_in_after_a_cancel_waits_for_no_output_the_tool_stopped_left_open() {
     let at = signing_in_world_with(
@@ -1099,7 +1099,7 @@ fn a_sign_in_after_a_cancel_waits_for_no_output_the_tool_stopped_left_open() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn shutting_down_stops_a_sign_in_under_way() {
     let at = signing_in_world("shutdown-signing-in");
@@ -1123,7 +1123,7 @@ fn shutting_down_stops_a_sign_in_under_way() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_tool_the_core_cannot_find_is_said_missing_in_its_sheet() {
     let world = World::new("no-claude");
@@ -1281,7 +1281,7 @@ fn read_and_said(told: &[Snapshot]) -> bool {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn the_persons_clock_is_asked_with_no_lock_held() {
     let world = World::new("clock-inside");
@@ -1302,7 +1302,7 @@ fn the_persons_clock_is_asked_with_no_lock_held() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn the_minute_tick_makes_what_is_shown_again() {
     let world = World::new("tick");
@@ -1332,7 +1332,7 @@ fn the_minute_tick_makes_what_is_shown_again() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn renaming_and_forgetting_reach_the_core() {
     let world = World::new("rename-forget");
@@ -1370,7 +1370,7 @@ fn renaming_and_forgetting_reach_the_core() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
 )]
 fn putting_away_a_login_left_in_a_file_reaches_the_core() {
     let world = World::new("stow");
@@ -1420,7 +1420,7 @@ fn putting_away_a_login_left_in_a_file_reaches_the_core() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn naming_the_login_signed_in_now_enrols_it() {
     let world = World::new("name");
@@ -1509,7 +1509,7 @@ fn with_a_look_behind_a_read(
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_rename_is_read_after_it_whatever_the_poll_finds_meanwhile() {
     let world = World::new("rename-looked-at");
@@ -1535,7 +1535,7 @@ fn a_rename_is_read_after_it_whatever_the_poll_finds_meanwhile() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn naming_the_login_in_use_is_read_after_it_whatever_the_poll_finds_meanwhile() {
     let world = World::new("name-looked-at");
@@ -1565,7 +1565,7 @@ fn naming_the_login_in_use_is_read_after_it_whatever_the_poll_finds_meanwhile() 
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_sign_in_is_read_after_it_enrols_whatever_the_poll_finds_meanwhile() {
     let mut world = World::new("sign-in-looked-at");
@@ -1628,7 +1628,7 @@ fn advised(told: &[Snapshot]) -> bool {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_run_out_is_notified_once_across_a_relaunch() {
     let world = World::new("run-out");
@@ -1685,7 +1685,7 @@ fn a_run_out_is_notified_once_across_a_relaunch() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn an_account_at_its_share_is_switched_from_by_itself_on_the_real_core() {
     let world = World::new("auto-switch");
@@ -1736,7 +1736,7 @@ fn an_account_at_its_share_is_switched_from_by_itself_on_the_real_core() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn preferences_that_cannot_be_read_are_not_a_first_launch() {
     let world = World::new("prefs-unreadable");
@@ -1766,7 +1766,7 @@ fn preferences_that_cannot_be_read_are_not_a_first_launch() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn the_apps_preferences_follow_its_pitboard_directory() {
     let one = World::new("prefs-one");
@@ -1942,7 +1942,7 @@ fn the_machine_is_kept_over_the_real_core() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn an_account_enrolled_by_0_8_0_keeps_its_window() {
     let world = World::new("windows-0-8-0");
@@ -1979,7 +1979,7 @@ fn an_account_enrolled_by_0_8_0_keeps_its_window() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn the_windows_records_are_kept_in_the_apps_own_directory() {
     use super::{DownloadEnd, EarlierWindowRecords, WindowsLaunch, WindowsPlace};
@@ -2114,7 +2114,7 @@ fn the_windows_records_are_kept_in_the_apps_own_directory() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn the_windows_records_are_not_written_where_pitboard_may_change_nothing() {
     use super::{EarlierWindowRecords, WindowsLaunch, WindowsPlace};

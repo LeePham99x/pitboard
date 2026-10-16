@@ -766,7 +766,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn the_login_claude_code_has_stored_goes_with_the_file() {
         let m = machine("stow-stored");
@@ -791,7 +791,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_login_pitboard_keeps_parked_goes_with_the_file() {
         let m = machine("stow-already-parked");
@@ -819,7 +819,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_login_whose_park_does_not_read_back_is_parked_in_its_place() {
         let m = machine("stow-park-gone");
@@ -851,7 +851,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn another_login_of_the_account_in_use_is_dropped_as_a_second_sign_in() {
         let m = machine("stow-second-sign-in");
@@ -876,7 +876,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_login_of_an_account_with_nothing_parked_is_parked_before_the_file_goes() {
         let m = machine("stow-parks");
@@ -922,7 +922,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_login_of_an_account_whose_park_has_expired_takes_its_place() {
         let m = machine("stow-expired-park");
@@ -958,7 +958,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn an_account_with_a_park_it_can_switch_to_keeps_that_park() {
         let m = machine("stow-park-kept");
@@ -986,7 +986,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_park_it_can_switch_to_is_kept_though_the_files_login_is_newer() {
         let kept = Kept::ParkKept {
@@ -1041,7 +1041,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_login_parked_from_the_file_is_kept_once_that_file_has_gone() {
         let m = machine("stow-parked-then-kept");
@@ -1081,7 +1081,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_copy_a_killed_run_never_recorded_is_not_kept_over_the_login_renewed_since() {
         let m = machine("stow-killed-unrecorded");
@@ -1119,7 +1119,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn the_login_of_an_account_not_enrolled_is_refused_and_named() {
         let m = machine("stow-not-enrolled");
@@ -1159,7 +1159,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_file_with_no_login_in_it_is_deleted() {
         let mcp = json!({"mcpOAuth": {"some-server": {"token": "t"}}}).to_string();
@@ -1201,7 +1201,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_login_anthropic_refuses_for_good_goes_with_the_file() {
         let m = machine("stow-refused");
@@ -1223,7 +1223,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn an_expired_login_is_renewed_and_written_back_before_anything_else() {
         let m = machine("stow-renewed");
@@ -1269,7 +1269,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn with_anthropic_out_of_reach_nothing_changes() {
         let m = machine("stow-offline");
@@ -1302,7 +1302,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_locked_keychain_or_an_unreadable_file_changes_nothing() {
         let m = machine("stow-locked");
@@ -1341,7 +1341,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_file_that_changed_since_it_was_confirmed_is_left_alone() {
         let m = machine("stow-changed");
@@ -1367,7 +1367,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_file_rewritten_meanwhile_is_left_as_it_was_written() {
         // Before Claude Code's lock, a login that would be parked; before the file goes, one
@@ -1408,7 +1408,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_sign_in_before_the_file_goes_keeps_the_file_whose_login_it_counted_on() {
         for (name, left) in [
@@ -1445,7 +1445,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_refusal_after_the_login_was_renewed_or_parked_says_so() {
         let m = machine("stow-renewed-then-offline");
@@ -1536,7 +1536,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_write_lock_held_before_a_renewal_stops_it_with_the_refresh_token_unsent() {
         let m = lapsed_login_left("stow-write-lock-before");
@@ -1573,7 +1573,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_write_lock_held_once_the_refresh_token_is_spent_is_waited_for() {
         let m = lapsed_login_left("stow-write-lock-after");
@@ -1604,7 +1604,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_write_lock_never_let_go_of_does_not_cost_the_renewed_login() {
         let m = lapsed_login_left("stow-write-lock-stuck");
@@ -1641,7 +1641,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_file_whose_other_keys_were_written_meanwhile_takes_the_renewed_login() {
         let m = machine("stow-other-keys-written");
@@ -1675,7 +1675,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_keychain_that_locks_while_the_login_is_renewed_does_not_lose_it() {
         let m = lapsed_login_left("stow-locks-while-renewing");
@@ -1709,7 +1709,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_renewed_login_that_cannot_be_written_back_is_said_to_be_spent() {
         const SPENT: &str = "Pitboard deleted nothing. It renewed the login the file held and \
@@ -1743,7 +1743,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_renewed_login_the_file_cannot_take_yet_is_kept_for_the_next_change() {
         const KEPT: &str = "Pitboard deleted nothing. It renewed the login the file held and \
@@ -1787,7 +1787,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn nothing_behind_the_store_is_nothing_to_put_away() {
         let m = machine("stow-nothing");
@@ -1804,7 +1804,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn the_look_says_what_putting_away_would_do_and_changes_nothing() {
         let m = machine("stow-look");
@@ -1839,7 +1839,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn killed_anywhere_the_login_is_left_somewhere_and_putting_away_again_finishes() {
         for point in ["stow.identified", "refresh.saved", "stow.kept"] {
@@ -1882,7 +1882,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn killed_before_the_renewed_login_reached_the_file_the_next_change_writes_it_there() {
         let m = lapsed_login_left("stow-killed-after-the-exchange");
@@ -1927,7 +1927,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_renewal_left_unsaved_is_saved_before_the_file_is_put_away() {
         let m = lapsed_login_left("stow-left-unsaved");
@@ -1961,7 +1961,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_file_whose_renewal_waits_is_not_put_away_once_its_login_is_named() {
         let m = machine("stow-renewal-waits-named");
@@ -2011,7 +2011,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn putting_away_is_recorded_in_the_activity_log() {
         let m = machine("stow-audit");
@@ -2060,7 +2060,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_login_renewed_in_the_file_after_a_run_stopped_takes_the_spent_parks_place() {
         for stop in ["killed", "locked"] {
@@ -2139,7 +2139,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_session_renewing_the_login_in_the_file_meanwhile_waits_for_it() {
         for (point, left, parked) in [
@@ -2211,7 +2211,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_login_of_an_account_not_enrolled_is_named_without_asking_whose_the_login_stored_is() {
         let m = machine("stow-not-enrolled-stored-unknown");
@@ -2245,7 +2245,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_lapsed_stored_login_is_renewed_to_tell_whose_it_is_and_the_file_put_away() {
         let kept = Kept::ParkKept {
@@ -2290,7 +2290,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_renewal_of_the_login_stored_that_stops_stow_is_said() {
         for lost in [false, true] {
@@ -2342,7 +2342,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn a_login_with_no_refresh_token_left_to_expire_is_dead() {
         let m = machine("stow-no-refresh-token");
@@ -2368,7 +2368,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23b: Claude Code's login left in a file behind its Credential Manager store"
     )]
     fn putting_away_says_what_signs_claude_code_in_some_other_way() {
         let m = machine("stow-overridden");

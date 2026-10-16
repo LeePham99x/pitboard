@@ -1170,7 +1170,7 @@ fn giving_up_on_a_switch_says_what_was_kept_until_put_away() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn the_cores_own_read_of_a_stuck_switch_offers_to_give_up_on_it() {
     let world = super::testing::World::new("stuck-read");

@@ -636,7 +636,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn an_answer_about_a_login_replaced_meanwhile_is_not_recorded() {
         let m = signed_in_outside("identify-meanwhile");
@@ -670,7 +670,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn what_a_read_saw_the_config_name_before_it_was_written_is_not_recorded() {
         let m = machine("identify-config-written-meanwhile");
@@ -771,7 +771,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_plan_read_off_a_login_replaced_meanwhile_is_not_recorded() {
         let m = machine("identify-plan-parked-meanwhile");
@@ -831,7 +831,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_read_while_a_switch_is_interrupted_records_nothing() {
         let m = machine("identify-interrupted");
@@ -860,7 +860,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_login_with_no_fingerprint_is_always_asked_about() {
         let m = machine("identify-no-fingerprint");
@@ -990,7 +990,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_lapsed_login_is_renewed_under_the_refresh_lock_and_named() {
         let m = lapsed_stored("identify-renews");
@@ -1033,7 +1033,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_login_a_session_renewed_meanwhile_is_told_and_nothing_is_sent() {
         let m = lapsed_stored("identify-renewed-meanwhile");
@@ -1064,7 +1064,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_lapsed_login_anthropic_refuses_says_sign_in_again_and_writes_nothing() {
         let m = machine("identify-refused");
@@ -1093,7 +1093,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_login_the_keychain_could_not_take_back_is_not_renewed() {
         let mut m = lapsed_stored("identify-too-large");
@@ -1114,7 +1114,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_write_lock_held_once_the_refresh_token_is_spent_is_waited_for() {
         let m = lapsed_stored("identify-write-lock-after");
@@ -1140,7 +1140,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn killed_once_anthropic_answered_the_renewed_login_is_saved_or_kept() {
         for (point, next) in [
@@ -1196,7 +1196,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_renewed_login_that_cannot_be_saved_yet_is_kept_for_the_next_change() {
         for (fault, code) in [
@@ -1244,7 +1244,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_renewal_left_unsaved_is_saved_before_anything_is_sent() {
         let m = lapsed_stored("identify-left-unsaved");
@@ -1280,7 +1280,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_renewal_left_for_another_slot_is_kept_for_it() {
         let m = lapsed_stored("identify-two-slots");
@@ -1324,7 +1324,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_switch_parks_nothing_while_a_renewal_of_the_login_stored_waits() {
         let m = lapsed_stored("identify-switch-waits");
@@ -1375,7 +1375,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_keychain_locked_before_the_refresh_token_is_sent_stops_the_renewal() {
         let m = lapsed_stored("identify-locked-before-sending");
@@ -1400,7 +1400,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_keychain_locked_while_anthropic_answers_says_the_renewal_is_lost() {
         const LOST: &str = "Pitboard renewed Claude Code's login and could not save the renewed \
@@ -1424,7 +1424,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_copy_written_and_not_read_back_is_kept_for_the_next_change() {
         let m = lapsed_stored("identify-copy-not-read-back");
@@ -1456,7 +1456,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_renewal_saved_without_the_write_lock_is_said() {
         let m = lapsed_stored("identify-lock-lost");
@@ -1481,7 +1481,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_read_renews_a_lapsed_login_to_tell_whose_it_is() {
         let m = lapsed_stored("identify-read-renews");
@@ -1524,7 +1524,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_read_never_renews_a_lapsed_login_it_knows_for_its_usage() {
         let m = machine("identify-read-known-lapsed");
@@ -1550,7 +1550,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_read_says_sign_in_again_where_the_login_is_refused_for_good() {
         let m = machine("identify-read-refused");
@@ -1580,7 +1580,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn a_read_that_loses_the_renewal_says_sign_in_again() {
         let m = lapsed_stored("identify-read-lost");

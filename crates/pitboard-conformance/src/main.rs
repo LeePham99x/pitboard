@@ -613,7 +613,7 @@ mod tests {
         ));
         assert!(
             text.contains(
-                "  pending  credential_service_name  (its windows reading waits on W23)\n"
+                "  pending  credential_service_name  (its windows reading waits on W23a)\n"
             )
         );
         assert!(!text.contains("MOVED    credential_service_name"));

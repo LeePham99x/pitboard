@@ -322,7 +322,7 @@ mod tests {
     #[test]
     #[cfg_attr(
         windows,
-        ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
     )]
     fn uninstalling_keeps_a_renewed_login_not_saved_yet() {
         use super::super::harness::{lapsed, owner, renews};

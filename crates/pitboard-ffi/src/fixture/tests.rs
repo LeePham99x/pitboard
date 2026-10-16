@@ -124,7 +124,7 @@ fn sign_in_to_the_end(core: &AppCore, label: &str) -> Result<Enrolled, PitboardE
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn each_fixture_starts_where_its_tests_expect() {
     let work = "claude/work, in use";
@@ -254,7 +254,7 @@ fn the_ui_tests_name_every_fixture_as_the_app_does() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn an_account_turned_on_is_warmed_up_as_the_app_starts() {
     let launched = made(World::WarmUp);
@@ -299,7 +299,7 @@ fn an_account_turned_on_is_warmed_up_as_the_app_starts() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_switch_moves_who_is_in_use_within_its_own_tool() {
     let launched = made(World::TwoTools);
@@ -371,7 +371,7 @@ fn a_switch_moves_who_is_in_use_within_its_own_tool() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn an_expired_parked_login_stays_unusable_across_switches() {
     let launched = made(World::TwoTools);
@@ -404,7 +404,7 @@ fn an_expired_parked_login_stays_unusable_across_switches() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_switch_names_the_accounts_as_the_core_types_them() {
     {
@@ -460,7 +460,7 @@ fn a_switch_names_the_accounts_as_the_core_types_them() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn the_login_signed_in_now_is_named_with_a_name_not_taken() {
     let launched = made(World::Unnamed);
@@ -497,7 +497,7 @@ fn the_login_signed_in_now_is_named_with_a_name_not_taken() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn only_an_account_not_in_use_is_forgotten() {
     let launched = made(World::TwoTools);
@@ -527,7 +527,7 @@ fn only_an_account_not_in_use_is_forgotten() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_rename_needs_a_name_its_tool_has_not_given() {
     let launched = made(World::TwoTools);
@@ -560,7 +560,7 @@ fn a_rename_needs_a_name_its_tool_has_not_given() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_claude_code_sign_in_waits_for_the_code_and_then_parks_the_account() {
     let launched = made(World::OneTool);
@@ -614,7 +614,7 @@ fn a_claude_code_sign_in_waits_for_the_code_and_then_parks_the_account() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn claude_code_refuses_a_code_without_both_halves_and_reads_another() {
     let launched = made(World::OneTool);
@@ -657,7 +657,7 @@ fn claude_code_refuses_a_code_without_both_halves_and_reads_another() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_refused_code_is_said_in_the_sheet_and_another_is_asked_for() {
     let launched = made(World::OneTool);
@@ -715,7 +715,7 @@ fn a_refused_code_is_said_in_the_sheet_and_another_is_asked_for() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_codex_sign_in_finishes_by_itself() {
     let launched = made(World::TwoTools);
@@ -751,7 +751,7 @@ fn a_codex_sign_in_finishes_by_itself() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_stopped_sign_in_enrols_nothing() {
     let launched = made(World::OneTool);
@@ -780,7 +780,7 @@ fn a_stopped_sign_in_enrols_nothing() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn signing_in_again_to_an_expired_account_makes_it_switchable() {
     let launched = made(World::TwoTools);
@@ -819,7 +819,7 @@ fn signing_in_again_to_an_expired_account_makes_it_switchable() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn signing_in_again_to_the_account_in_use_keeps_it_in_use() {
     let launched = made(World::OneTool);
@@ -856,7 +856,7 @@ fn signing_in_again_to_the_account_in_use_keeps_it_in_use() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn giving_up_on_the_interrupted_switch_happens_once() {
     let launched = made(World::Stuck);
@@ -920,7 +920,7 @@ fn giving_up_on_the_interrupted_switch_happens_once() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn the_log_records_changes_newest_last_as_they_are_typed() {
     let launched = made(World::TwoTools);
@@ -1013,7 +1013,7 @@ fn the_schedule_turns_on_and_off() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn every_launch_starts_where_the_last_one_did() {
     use pitboard_core::app::AppFile;
@@ -1086,7 +1086,7 @@ fn every_launch_starts_where_the_last_one_did() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_launch_keeps_its_command_line_in_its_own_folder() {
     let launched = made(World::OneTool);
@@ -1180,7 +1180,7 @@ fn started(launched: &Launched) -> (Arc<PitboardModel>, Arc<Told>) {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_launch_reads_without_being_asked() {
     let launched = made(World::TwoTools);
@@ -1201,7 +1201,7 @@ fn a_launch_reads_without_being_asked() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn the_chatgpt_fixture_is_quit_for_a_codex_switch_and_opened_again() {
     let launched = made(World::ChatGptOpen);
@@ -1591,7 +1591,7 @@ fn a_move_the_give_up_settles_is_said_as_finished() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn chatgpt_leaves_the_process_list_as_it_quits() {
     use crate::model::AppControl;
@@ -1619,7 +1619,7 @@ fn chatgpt_leaves_the_process_list_as_it_quits() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn the_menu_lists_every_account_under_its_tool() {
     let launched = made(World::TwoTools);
@@ -1723,7 +1723,7 @@ fn a_machine_nobody_is_signed_in_on_offers_an_account() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn the_login_in_use_is_offered_a_name() {
     let launched = made(World::Unnamed);
@@ -1756,7 +1756,7 @@ fn the_login_in_use_is_offered_a_name() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn the_login_left_in_a_file_is_put_away_from_its_sheet() {
     let launched = made(World::LeftInFile);
@@ -1797,7 +1797,7 @@ fn the_login_left_in_a_file_is_put_away_from_its_sheet() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn one_account_is_offered_a_second_until_not_now() {
     let launched = made(World::OnlyOne);
@@ -1831,7 +1831,7 @@ fn one_account_is_offered_a_second_until_not_now() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn activity_lists_every_switch_above_every_enrolment() {
     let launched = made(World::OneTool);
@@ -1879,7 +1879,7 @@ fn daily_renewal_turns_on_and_renew_now_says_what_it_did() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_codex_switch_says_sessions_keep_the_old_account() {
     let launched = made(World::TwoTools);
@@ -1912,7 +1912,7 @@ fn a_codex_switch_says_sessions_keep_the_old_account() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn accounts_are_added_through_each_tools_sign_in() {
     let launched = made(World::OneTool);
@@ -1985,7 +1985,7 @@ fn accounts_are_added_through_each_tools_sign_in() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_sign_in_asked_for_at_once_after_a_cancel_asks_for_the_code() {
     let launched = made(World::OneTool);
@@ -2043,7 +2043,7 @@ fn a_sign_in_asked_for_at_once_after_a_cancel_asks_for_the_code() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn accounts_are_renamed_and_forgotten_as_the_window_offers() {
     let launched = made(World::OneTool);
@@ -2150,7 +2150,7 @@ fn accounts_are_renamed_and_forgotten_as_the_window_offers() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_failed_read_is_said_in_the_menu_and_in_the_window() {
     let launched = made(World::ReadFailure);
@@ -2219,7 +2219,7 @@ fn a_failed_read_is_said_in_the_menu_and_in_the_window() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_service_out_of_reach_leaves_the_last_numbers_and_says_why_on_each_account() {
     let launched = made(World::OneTool);
@@ -2266,7 +2266,7 @@ fn a_service_out_of_reach_leaves_the_last_numbers_and_says_why_on_each_account()
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn an_interrupted_switch_is_offered_a_way_out_as_the_app_starts() {
     let launched = made(World::Stuck);
@@ -2368,7 +2368,7 @@ fn an_interrupted_switch_is_offered_a_way_out_as_the_app_starts() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn this_mac_shows_the_cores_checks() {
     let launched = made(World::OneTool);
@@ -2436,7 +2436,7 @@ fn this_mac_shows_the_cores_checks() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn the_account_windows_are_what_their_ui_tests_read() {
     use crate::SiteMenu;
@@ -2658,7 +2658,7 @@ const EXPORTED_CHILD: &str = "PITBOARD_TEST_EXPORTED_FIXTURE_CHILD";
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 #[allow(
     clippy::disallowed_methods,
@@ -2741,7 +2741,7 @@ fn an_exported_fixture_is_made_in_the_temporary_directory() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn an_exported_fixture_in_a_directory_of_its_own_is_made_there() {
     let own = Folder::own("exported-in").expect("a folder");
@@ -2822,7 +2822,7 @@ fn uses(snapshot: &Snapshot, qualified: &str) -> bool {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_codex_switch_quits_and_reopens_chatgpt_through_the_apps_fixture_in_is_given() {
     let own = Folder::own("given-apps").expect("a folder");
@@ -2867,7 +2867,7 @@ fn a_codex_switch_quits_and_reopens_chatgpt_through_the_apps_fixture_in_is_given
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_refusal_to_quit_from_the_apps_fixture_in_is_given_stops_the_switch() {
     let own = Folder::own("refusing-apps").expect("a folder");
@@ -2906,7 +2906,7 @@ fn a_refusal_to_quit_from_the_apps_fixture_in_is_given_stops_the_switch() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "W23: Claude Code's Credential Manager store, which a machine in memory plays"
+    ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
 )]
 fn a_run_out_is_posted_through_the_notifications_fixture_in_is_given() {
     let own = Folder::own("given-notifications").expect("a folder");
