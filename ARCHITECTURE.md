@@ -2051,27 +2051,29 @@ rests on are under [WebKit and SwiftUI](#webkit-and-swiftui) and
 
 The Windows app's account windows run in WebView2, over the same decisions from the model.
 
-- `apps/windows/Pitboard.Windows`: `WebEnvironment` is the world a launch's windows run
-  in, decided once: the sites over `https`, with pages sent elsewhere opened by Windows, or
-  a fixture's stand-ins on `pitboard-fixture`, served from `fixture_page` and sent
-  nowhere. One `CoreWebView2Environment` serves every window, over `WebView2` in the app's
-  data folder, the fixture's own folder in a fixture, so a fixture's scheme registration,
-  which a browser process keeps for its life, never meets a real folder. A store is a
-  WebView2 profile named by the store id. `WebSession` is one open window: its page and
-  the sign-in window one of its pages opened, each under its role. It turns
-  `NavigationStarting`, `FrameNavigationStarting` and `NewWindowRequested` into what
-  `decide_navigation` reads through `PageRequests`, and does what it decides: a sign-in
-  window's page is made in the same environment and profile and set as `NewWindow` before
-  it loads, which keeps `window.opener`; `LoadInPage` loads the link in the window's own
-  page, and a page sent elsewhere goes to `Launcher`. It answers `WindowCloseRequested`
-  with `page_may_close`, `PermissionRequested` with `page_may_use`, leaving anything else
-  to WebView2's own prompt, a render process that ended with `after_content_process_ended`,
-  and cancels every launch of another app's scheme. It hands `DownloadStarting` to
-  `decide_response`, with `PageNavigations` saying whether the page's own navigation
-  started it, and `Downloads` keeps every window's downloads. `StoreJanitor` answers each
-  deletion the model asks for, and `HeldStores` says why a held store's entry opens nothing.
-  `Launching` finds a launch's Pitboard link, and the one in a launch another copy hands
-  over, and `Handovers` keeps what is handed over until the app has its model.
+- `apps/windows/Pitboard.Windows`: `WebEnvironment` is the world a launch's windows run in,
+  decided once: the sites over `https`, with pages sent elsewhere opened by Windows, or a
+  fixture's stand-ins on `pitboard-fixture`, served from `fixture_page` and sent nowhere.
+  One `CoreWebView2Environment` serves every window, over `WebView2` in the app's data
+  folder, the fixture's own folder in a fixture, so a fixture's scheme registration, which a
+  browser process keeps for its life, never meets a real folder. A store is a WebView2
+  profile named by the store id. `WebSession` is one open window: its page and the sign-in
+  window one of its pages opened, each under its role. It turns `NavigationStarting`,
+  `FrameNavigationStarting` and `NewWindowRequested` into what `decide_navigation` reads
+  through `PageRequests`, and does what it decides: a sign-in window's page is made in the
+  same environment and profile and set as `NewWindow` before it loads, which keeps
+  `window.opener`; `LoadInPage` loads the link in the window's own page, and a page sent
+  elsewhere goes to `Launcher`. A navigation it stops still sent its request on the runners,
+  so it answers that document request itself, empty, through `WebResourceRequested`. It
+  answers `WindowCloseRequested` with `page_may_close`, `PermissionRequested` with
+  `page_may_use`, leaving anything else to WebView2's own prompt, a render process that
+  ended with `after_content_process_ended`, and cancels every launch of another app's
+  scheme. It hands `DownloadStarting` to `decide_response`, with `PageNavigations` saying
+  whether the page's own navigation started it, and `Downloads` keeps every window's
+  downloads. `StoreJanitor` answers each deletion the model asks for, and `HeldStores` says
+  why a held store's entry opens nothing. `Launching` finds a launch's Pitboard link, and
+  the one in a launch another copy hands over, and `Handovers` keeps what is handed over
+  until the app has its model.
 - `apps/windows/Pitboard.Views`: `AccountWindow` is the window, a command bar of Back,
   Forward, Reload or Stop, and Downloads once the model lists a download of the window,
   with **Remove Website Data…** under More, the window's note in an InfoBar, and the page,
@@ -2107,23 +2109,27 @@ folder is deleted only as the browser process exits, or at a later start where s
 still held its files. Making a profile of the same name before then fails with
 `HRESULT_FROM_WIN32(ERROR_DELETE_PENDING)`. A profile's folder is
 `EBWebView\WV2Profile_<name>` under the user data folder, as
-`CoreWebView2Profile.ProfilePath` read on both runners in run 38819589926. So `StoreJanitor`
-answers `StoreDeleted` where the store's folder is not there, once a page of the launch has
-shown its `ProfilePath` there, and otherwise deletes the profile through a page of its own,
-made in the app's hidden window, and answers `StoreHeld`. That keeps the store recorded and
-has the next read ask again. On both runners the folder outlived its browser process by a
-minute (run 38825074643), so what removes it is CF7's to read. A window of an account
-enrolled again meanwhile would fail to make its profile, so on Windows the model holds a
-store answered `StoreHeld` until `StoreDeleted` comes: it asks for it again after every
-read, enrolled again or not, opens no window of it, and lists it in
-`AccountWindowsShown.held`, whose menu items say why with `WindowNoteKind::StoreHeld`. It
-keeps these in `windows.json` too, as `held` beside this directory's stores, so after a
-restart the first read asks for them again and their windows wait until the app answers
-`StoreDeleted`, then open with the sign-in note. Another directory's record of a held store
-does not keep it either, since its deletion is made already. `ProfileTests` reads the
-contract on the runners, and `TwoProfilesKeepTheirCookiesApart` holds that one profile's
-cookies are not another's. On macOS a store WebKit kept holding is still whole, its sign-in
-included, so an account enrolled again keeps it and its window opens on it.
+`CoreWebView2Profile.ProfilePath` read on both runners in run 38819589926. On both runners
+the folder outlived its browser process and went as the next one started (CF7 under
+[Windows](#windows)). So `StoreJanitor` answers `StoreDeleted` where the store's folder is
+not there, once a page of the launch has shown its `ProfilePath` there, and otherwise
+answers `StoreHeld`, which keeps the store recorded and has the next read ask again. A store
+not yet marked it deletes through a page of its own, made in the app's hidden window. Once
+no browser process runs, it sweeps: a page of the default profile starts one, kept until the
+folder goes or for fifteen seconds. A store held at an earlier launch is swept rather than
+marked first, as making its profile after a start had deleted the folder would make it anew,
+and one a start has left since its mark is marked again. A window of an account enrolled
+again meanwhile would fail to make its profile, so on Windows the model holds a store
+answered `StoreHeld` until `StoreDeleted` comes: it asks for it again after every read,
+enrolled again or not, opens no window of it, and lists it in `AccountWindowsShown.held`,
+whose menu items say why with `WindowNoteKind::StoreHeld`. It keeps these in `windows.json`
+too, as `held` beside this directory's stores, so after a restart the first read asks for
+them again and their windows wait until the app answers `StoreDeleted`, then open with the
+sign-in note. Another directory's record of a held store does not keep it either, since its
+deletion is made already. `ProfileTests` reads the contract on the runners, and
+`TwoProfilesKeepTheirCookiesApart` holds that one profile's cookies are not another's. On
+macOS a store WebKit kept holding is still whole, its sign-in included, so an account
+enrolled again keeps it and its window opens on it.
 
 **Remove Website Data** leaves the page for a blank one, clears the profile with
 `ClearBrowsingDataAsync`, tells the model `WebsiteDataRemoved`, and opens the site's home
@@ -2249,6 +2255,22 @@ Accounts and tokens:
   `Interrupted`, `UserPaused`, and can resume.
 - CF7: a page's own script that leaves the site raises `NavigationStarting` with
   `IsUserInitiated` false, on both images in run 38825074643.
+- CF7, a deleted profile, on both images in run 38842851059: `CoreWebView2Profile.Delete`
+  had the name refused with `ERROR_DELETE_PENDING` at once, and the folder outlived its
+  browser process, holding `Platform Notifications` and `WebStorage` files on windows-2025
+  and `DIPS`, `DashTrackerDatabase` and `Network Action Predictor` ones on windows-11-arm. A
+  new environment over the user data folder left it for 20 s; a page of another profile
+  started a browser process, and the folder went 5.1 s later. Microsoft's reference has it
+  go as the browser process exits, or at a later start where something held its files.
+- CF7, on both images in run 38842851059: a navigation from a page of the fixture's scheme
+  that `NavigationStarting` cancelled still sent its own request, with
+  `Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: document` and no `Sec-Purpose`, which
+  `WebResourceRequested` raised as a `Document` request.
+- CF7, downloads, on both images in run 38842851059: an `<a download>` in a frame of the
+  stand-in site raised `FrameNavigationStarting`, a successful `FrameNavigationCompleted`,
+  then `DownloadStarting` for the file. A download whose page was the last to close raised
+  no `StateChanged`, and its browser process exited; one whose page closed while another
+  kept the browser process was still in progress five seconds later.
 - Explorer, the job user's, takes no notification-area icon of that user's: `NIM_ADD` fails
   for an icon named by its window and id and for one named by a GUID (CI run 38753437460).
   So no UI test clicks Pitboard's icon: the view tests hold its menu, and the session's step
@@ -2521,7 +2543,6 @@ on 15 October 2026. W27 reviews the list.
 | `StartWhenAvailable` runs a start that was missed | [StartWhenAvailable](https://learn.microsoft.com/en-us/windows/win32/taskschd/tasksettings-startwhenavailable) | A runner never sleeps through a trigger. |
 | WSL 2's processes run in a utility VM | [Comparing WSL versions](https://learn.microsoft.com/en-us/windows/wsl/compare-versions) | No runner has WSL. |
 | `QueryUnbiasedInterruptTimePrecise` leaves out sleep and hibernation, which `QueryPerformanceCounter` counts | [QueryUnbiasedInterruptTimePrecise](https://learn.microsoft.com/en-us/windows/win32/api/realtimeapiset/nf-realtimeapiset-queryunbiasedinterrupttimeprecise), [Acquiring high-resolution time stamps](https://learn.microsoft.com/en-us/windows/win32/sysinfo/acquiring-high-resolution-time-stamps) | A runner never sleeps. |
-| A deleted WebView2 profile's folder goes as the browser process exits, and its name is refused with `ERROR_DELETE_PENDING` until then | [CoreWebView2Profile.Delete](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/winrt/microsoft_web_webview2_core/corewebview2profile#delete) | The name was refused, but the folder outlived its browser process by a minute on both images (run 38825074643); CF7 reads what removes it. |
 | A program ended by an unhandled exception exits with the exception's code, such as `0xC0000005` | [GetExitCodeProcess](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getexitcodeprocess) | No row crashes a program. |
 | `GetPackageFamilyName` gives a packaged process's family, and `APPMODEL_ERROR_NO_PACKAGE` for an unpackaged one | [GetPackageFamilyName](https://learn.microsoft.com/en-us/windows/win32/api/appmodel/nf-appmodel-getpackagefamilyname) | No row starts a packaged process; session step 10 reads ChatGPT's. |
 | A `CryptProtectData` blob opens only for the same user's credentials on the same computer | [CryptProtectData](https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata) | The runners have one account per logon and one machine each. |
