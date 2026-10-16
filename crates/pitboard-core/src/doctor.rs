@@ -4933,7 +4933,7 @@ mod tests {
              put it away. While it is there, Claude Code sessions already running at a switch \
              keep the account they are on until their login is next renewed, or until they are \
              started again. Deleting it lets them follow a switch, and takes whatever it holds \
-             with it: `rm /home/x/.claude/.credentials.json`."
+             with it: `rm '/home/x/.claude/.credentials.json'`."
         );
         assert!(healthy(&checks), "nothing Pitboard does is stopped by it");
 
@@ -4995,7 +4995,13 @@ mod tests {
         assert_eq!(
             Os::MacOs
                 .remove_file_command(std::path::Path::new("/Users/x/.claude/.credentials.json")),
-            "rm /Users/x/.claude/.credentials.json"
+            "rm '/Users/x/.claude/.credentials.json'"
+        );
+        assert_eq!(
+            Os::Linux.remove_file_command(std::path::Path::new(
+                "/home/x/Application Support/it's/.credentials.json"
+            )),
+            r"rm '/home/x/Application Support/it'\''s/.credentials.json'"
         );
     }
 

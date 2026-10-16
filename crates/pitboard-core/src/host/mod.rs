@@ -138,7 +138,9 @@ impl Os {
 
     pub(crate) fn remove_file_command(self, path: &Path) -> String {
         match self {
-            Os::MacOs | Os::Linux => format!("rm {}", path.display()),
+            Os::MacOs | Os::Linux => {
+                format!("rm '{}'", path.display().to_string().replace('\'', r"'\''"))
+            }
             Os::Windows => {
                 let mut quoted = String::new();
                 for c in path.display().to_string().chars() {

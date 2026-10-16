@@ -42,6 +42,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   leaving it there with nothing to name it.
 - On Linux, Pitboard finds Claude Code's `.credentials.json` and its locks where
   `CLAUDE_CONFIG_DIR` spells an accent decomposed, as Claude Code does.
+- `pitboard doctor` quotes the path in the `rm` it gives for a login file it could not read, so
+  the command deletes that file where its path has a space.
 
 ## [0.14.0] - 2026-10-14
 
