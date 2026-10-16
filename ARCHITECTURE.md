@@ -2126,10 +2126,10 @@ whose menu items say why with `WindowNoteKind::StoreHeld`. It keeps these in `wi
 too, as `held` beside this directory's stores, so after a restart the first read asks for
 them again and their windows wait until the app answers `StoreDeleted`, then open with the
 sign-in note. Another directory's record of a held store does not keep it either, since its
-deletion is made already. `ProfileTests` reads the contract on the runners, and
-`TwoProfilesKeepTheirCookiesApart` holds that one profile's cookies are not another's. On
-macOS a store WebKit kept holding is still whole, its sign-in included, so an account
-enrolled again keeps it and its window opens on it.
+deletion is made already. `ProfileTests` holds the contract and the sweep on both images
+(run 38846774768), and `TwoProfilesKeepTheirCookiesApart` that one profile's cookies are not
+another's. On macOS a store WebKit kept holding is still whole, its sign-in included, so an
+account enrolled again keeps it and its window opens on it.
 
 **Remove Website Data** leaves the page for a blank one, clears the profile with
 `ClearBrowsingDataAsync`, tells the model `WebsiteDataRemoved`, and opens the site's home
@@ -2262,10 +2262,12 @@ Accounts and tokens:
   new environment over the user data folder left it for 20 s; a page of another profile
   started a browser process, and the folder went 5.1 s later. Microsoft's reference has it
   go as the browser process exits, or at a later start where something held its files.
-- CF7, on both images in run 38842851059: a navigation from a page of the fixture's scheme
-  that `NavigationStarting` cancelled still sent its own request, with
-  `Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: document` and no `Sec-Purpose`, which
-  `WebResourceRequested` raised as a `Document` request.
+- CF7, on both images in runs 38842851059 and 38846774768: a navigation that
+  `NavigationStarting` cancelled still sent its own request, from a page of the fixture's
+  scheme and from one on http, with `Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: document`
+  and no `Sec-Purpose`. WebView2 raised `NavigationStarting` first, then
+  `WebResourceRequested` for it as a `Document` request, where the window's answer kept it
+  from the stand-in site.
 - CF7, downloads, on both images in run 38842851059: an `<a download>` in a frame of the
   stand-in site raised `FrameNavigationStarting`, a successful `FrameNavigationCompleted`,
   then `DownloadStarting` for the file. A download whose page was the last to close raised
