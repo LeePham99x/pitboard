@@ -248,6 +248,7 @@ fn the_ui_tests_name_every_fixture_as_the_app_does() {
 /// the app starts, through the core's own warm-up with the run played: its row then says when
 /// it warms up again, and the activity log has the warm-up.
 #[test]
+#[cfg_attr(windows, ignore = "W-warm: warming up Claude Code accounts on Windows")]
 fn an_account_turned_on_is_warmed_up_as_the_app_starts() {
     let launched = made(World::WarmUp);
     let (model, told) = started(&launched);
