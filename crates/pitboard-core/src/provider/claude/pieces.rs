@@ -544,7 +544,7 @@ mod tests {
     }
 
     #[test]
-    fn a_manifest_claude_code_does_not_write_or_an_unfinished_write_reads_unreadable() {
+    fn a_marker_beside_pieces_reads_unfinished_and_a_bad_manifest_unreadable() {
         let items = Kept::default();
         write(&items, Permit::for_a_test(), &login(9000), "t").unwrap();
         items.set(Permit::for_a_test(), PENDING, "4").unwrap();

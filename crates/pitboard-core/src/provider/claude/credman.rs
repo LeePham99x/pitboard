@@ -784,7 +784,7 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn a_marker_beside_pieces_or_a_manifest_claude_code_does_not_write_reads_unreadable() {
+    fn a_marker_beside_pieces_reads_unfinished_and_a_bad_manifest_unreadable() {
         use pieces::{MANIFEST, PENDING, login};
         let scratch = scratched();
         let (store, permit) = (Store::of(&scratch.ctx), Permit::for_a_test());
@@ -795,7 +795,7 @@ mod tests {
         items.set(permit, PENDING, "4").expect("a marker");
         assert!(matches!(
             store.read(&scratch.service),
-            Err(Error::Unreadable(_))
+            Err(Error::Unfinished(_))
         ));
         items.delete(permit, PENDING).expect("gone");
         items
