@@ -27,6 +27,8 @@ public sealed partial class MenuHost : Window
         _handle = WindowNative.GetWindowHandle(this);
     }
 
+    internal MenuFlyout? Menu => _open;
+
     // A click on the menu was this process's last input, so a window a choice opens may still come forward.
     public void Show(IReadOnlyList<IconMenuEntry> entries, PointInt32 at, Action opened, Action<IconCommand> chosen, Action cancelled)
     {

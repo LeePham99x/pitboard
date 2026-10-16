@@ -4252,6 +4252,14 @@ Microsoft's documentation.
   settings item `SettingsItem` (`NavigationView.cpp`), which the UI tests select.
   `OverlappedPresenter.CreateForContextMenu` keeps a border (Microsoft Learn, updated 28 July
   2026), which `MenuHost` turns off.
+- A `MenuFlyoutItem` goes to its `NarrowPadding` state only when a mouse, pen or keyboard
+  opened its menu (`MenuFlyoutItemBase_Partial.cpp` at `winui3/release/2.5.1`), and WinUI
+  2.3.9's `Themes/generic.xaml` pads it `11,8,11,9` otherwise and `11,4,11,5` then.
+  `WM_CONTEXTMENU` from the notification area names no device, so the icon's rows were
+  taller in one opening than in another (shots 20 and 26 of 16 October 2026).
+  `IconMenuFlyout` gives each row `MenuFlyoutItemThemePaddingNarrow`, which the template
+  binds the row's padding to outside that state, so every opening draws the rows a mouse
+  would (`IconMenuFlyoutTests.EachRowIsPaddedAsAMouseOpenedMenu`).
 - The .NET SDK 10.0.401 numbers an `ApplicationIcon` 32512, `IDI_APPLICATION`'s number, and
   copies it into the apphost on any system (dotnet/runtime v10.0.13,
   `src/installer/managed/Microsoft.NET.HostModel/AppHost/HostWriter.cs`): `llvm-readobj

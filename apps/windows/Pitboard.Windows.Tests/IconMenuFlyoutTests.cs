@@ -1,4 +1,5 @@
 using Microsoft.UI.Text;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Automation.Provider;
@@ -16,7 +17,9 @@ public sealed class IconMenuFlyoutTests
         "An interrupted switch is waiting", null, "Pitboard can finish it or give it up.", null,
         new Intent.ShowWindow(Pane.Accounts), null, true);
 
-    private static AppModel TwoTools(bool reading = false) => new(Snapshots.Read(1) with
+    private static AppModel TwoTools(bool reading = false) => new(TwoToolsRead(reading));
+
+    private static Snapshot TwoToolsRead(bool reading = false) => Snapshots.Read(1) with
     {
         Reading = reading,
         MenuNotices = new MenuNotices(null, [], Stuck),
@@ -28,7 +31,7 @@ public sealed class IconMenuFlyoutTests
                 Items.Account("claude", "personal")),
             Items.Section("codex", "Codex", Items.Account("codex", "main", inUse: true)),
         ],
-    });
+    };
 
     private static MenuFlyout Menu(AppModel model, List<IconCommand>? chosen = null) =>
         IconMenuFlyout.For(IconMenu.Entries(model, new NoUpdates()), command => chosen?.Add(command));
@@ -177,6 +180,32 @@ public sealed class IconMenuFlyoutTests
                 new IconCommand.Quit(),
             },
             chosen);
+    }
+
+    // Shots 20 and 26 of 16 October 2026: rows were taller in one opening of the menu than in another.
+    [UITestMethod]
+    public void EachRowIsPaddedAsAMouseOpenedMenu()
+    {
+        var narrow = (Thickness)Application.Current.Resources["MenuFlyoutItemThemePaddingNarrow"];
+        var main = Items.Window("codex", "main");
+        var spare = Items.Window("codex", "spare");
+        var read = TwoToolsRead();
+        var model = new AppModel(read with
+        {
+            AccountWindows = read.AccountWindows with { Menus = [new SiteMenu.Several("Open chatgpt.com", main.Site, [main, spare])] },
+        });
+
+        var rows = Rows(Menu(model).Items).ToArray();
+
+        Assert.IsTrue(rows.OfType<MenuFlyoutSubItem>().Any(), "no submenu to look in");
+        foreach (var row in rows)
+        {
+            Assert.AreEqual(narrow, row.Padding, row is MenuFlyoutItem item ? item.Text : ((MenuFlyoutSubItem)row).Text);
+        }
+
+        static IEnumerable<MenuFlyoutItemBase> Rows(IEnumerable<MenuFlyoutItemBase> items) =>
+            items.Where(item => item is not MenuFlyoutSeparator)
+                .SelectMany(item => item is MenuFlyoutSubItem sub ? Rows(sub.Items).Prepend(sub) : [item]);
     }
 
     // The account in use has nothing to do, and choosing it again does nothing.
