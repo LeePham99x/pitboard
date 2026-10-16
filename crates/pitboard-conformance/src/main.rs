@@ -613,10 +613,10 @@ mod tests {
         ));
         assert!(
             text.contains(
-                "  pending  live_chain_order  (its windows reading waits on W22 and W23)\n"
+                "  pending  credential_service_name  (its windows reading waits on W23)\n"
             )
         );
-        assert!(!text.contains("MOVED    live_chain_order"));
+        assert!(!text.contains("MOVED    credential_service_name"));
     }
 
     /// `--json` lists the facts it does not read in two keys, `not_read_here` and

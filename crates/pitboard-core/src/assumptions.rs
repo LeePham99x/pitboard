@@ -358,14 +358,20 @@ mod tests {
         );
     }
 
-    /// Every fact is read from at least one build. One read from none would never be
-    /// checked, and nothing would say so.
+    /// Every fact is read from at least one build, or waits on a pull request to be. One read
+    /// from none and waiting on none would never be checked, and nothing would say so.
     #[test]
-    fn every_fact_is_read_from_some_build() {
+    fn every_fact_is_read_from_some_build_or_waits_to_be() {
         for &provider in ProviderId::ALL {
             for a in of(provider) {
+                let waits = Platform::EACH.into_iter().any(|platform| {
+                    matches!(
+                        on(provider, a.name, platform),
+                        Some(OnSystem::Pending { .. })
+                    )
+                });
                 assert!(
-                    !read_on(provider, a.name).is_empty(),
+                    !read_on(provider, a.name).is_empty() || waits,
                     "{} is read from no build",
                     a.name
                 );
@@ -475,7 +481,7 @@ mod tests {
     fn the_readings_still_to_come_are_listed() {
         let waiting = pending();
         assert!(waiting.iter().all(|&(_, _, p)| p == Platform::Windows));
-        for (provider, count) in [(ProviderId::Claude, 6), (ProviderId::Codex, 2)] {
+        for (provider, count) in [(ProviderId::Claude, 4), (ProviderId::Codex, 2)] {
             let names: Vec<&str> = waiting
                 .iter()
                 .filter(|&&(p, _, _)| p == provider)

@@ -847,9 +847,11 @@ window loads its site, and whatever the site's pages load, as a browser would.
   that differs by system is either the host's to answer or a `match` on `host::OS`, so a
   system added to `host::Os` does not compile until it is said for every one. No such
   `match` has a `_` arm. Where a fact of Windows is not read yet, its arm refuses through
-  an answer its callers already have, never one that would let Pitboard act: each tool's
-  live chain on Windows is one store whose every call cannot be read (`store::Unbuilt`),
-  never Claude Code's file alone, and the Windows face answers as `host/windows` says.
+  an answer its callers already have, never one that would let Pitboard act: Claude Code's
+  live chain on Windows is its file alone only where nothing turns Credential Manager on and
+  Credential Manager holds no login at the live target, and otherwise one store whose every
+  call cannot be read (`store::Refused`), and the Windows face answers as `host/windows`
+  says.
 - A context carries the system its environment was read as, so where the home and
   Pitboard's default folder are, and how a variable's name compares, are tested for
   Windows on every system.
@@ -878,10 +880,8 @@ window loads its site, and whatever the site's pages load, as a browser would.
   links a directory otherwise than a file, says how in its own face and nowhere else. The
   integration tests' harness says what differs by system in
   `crates/pitboard/tests/common/os.rs`, one `match` on `host::OS` for each fact: where
-  Claude Code keeps the login it uses (on Windows the harness assumes `.credentials.json`,
-  as on Linux, pending W22: Claude Code's register has `no_keyring_off_macos` unread on
-  Windows, and which store its Windows build chooses, `windows_backend_choice`, is not read
-  yet, so no test that plants a Claude Code login runs there before W22), where Pitboard
+  Claude Code keeps the login it uses (`.credentials.json` on Windows, as on Linux, since no
+  test turns Credential Manager on: `windows_backend_choice`), where Pitboard
   parks one (sealed to the person on Windows, which only the core's vault writes, so the
   harness parks through it), which variables a command is passed on, which folders
   of a person's account it is given as scratch ones of its own, what its `PATH` holds after
@@ -1818,7 +1818,7 @@ and is the same in all four: `usage_cache_stamp_is_the_configs`,
 `status_line_input_names_no_account` and `fallback_file_pins_session_login`, read in the
 macOS build on the 8th, and `refresh_lock`, read in all four on the 9th. The fallback file's
 fact is read on macOS alone: on Linux the file is Claude Code's only store, and on Windows
-it is too unless Credential Manager is turned on, which W22 reads. The checker finds every
+it is too unless Credential Manager is turned on (`windows_backend_choice`). The checker finds every
 fact each build was read for.
 
 On 12 October 2026 the checker was run by hand on the `app.asar` of an installed Claude
@@ -2845,11 +2845,32 @@ treated, and only the macOS build shows it. The run reads both builds since.
   `claude auth login` prints its prompts whatever its output is, reads a pasted code with
   readline and trims it, so a line ended by `\r\n` reads as one ended by `\n`, and opens
   its page with `rundll32 url,OpenURL <address>`, a child of its own, unless its settings
-  or `BROWSER` name a program. Its store is Credential Manager where
-  `CLAUDE_CODE_FORCE_WINDOWS_CREDMAN` is `1`, or where the `.config.json` or `.claude.json`
-  of its config folder caches `tengu_windows_credman` as true, and its file otherwise. So
-  a private sign-in withholds that variable, and its fresh folder caches nothing, so the
-  login lands in that folder's `.credentials.json`.
+  or `BROWSER` name a program. A private sign-in withholds
+  `CLAUDE_CODE_FORCE_WINDOWS_CREDMAN`, and its fresh folder caches no feature, so the login
+  lands in that folder's `.credentials.json` (`windows_backend_choice`, below).
+- Read on 16 October 2026 from the win32-x64 and win32-arm64 builds of 2.1.301
+  (`windows_backend_choice`): Claude Code keeps its login in Credential Manager, with
+  `.credentials.json` behind it, where `CLAUDE_CODE_FORCE_WINDOWS_CREDMAN` is exactly `1` in
+  its environment, asked on every store access, or where its config file caches
+  `tengu_windows_credman` as true, read once a process; otherwise in the file alone. The
+  variable reaches a session from the environment it starts with, `HKCU\Environment` for
+  one started from Explorer, and from the `env` of the config file, of `settings.json` and
+  of managed settings, in that order, at start-up. A project's settings pass it only once
+  the folder is trusted, or in print mode. Pitboard reads every signal but a project's and a
+  `--settings` file's, and takes Claude Code's chain for the file only where none is on and
+  Credential Manager holds nothing at the live target, `<service>/claude-code-user` or its
+  manifest `#m` (`credman_account_name`). Anything else refuses: a store turned on, which
+  W23a follows, or a login there that nothing Pitboard reads turned on, where it cannot tell
+  which store sessions read. A session a project turned the store on for is caught that way
+  once it wrote there.
+- Read on 16 October 2026 from the same builds, with Bun 1.4.3 and libuv 8023581 as
+  embedded (`windows_plaintext_write`, `windows_plaintext_strict_read`): Claude Code writes
+  `.credentials.json` by a temporary file renamed over it with `MoveFileExW`, then `chmod`
+  0600, which on Windows only clears the read-only attribute, and sets no access list. Its
+  write fails over a read-only file, which Pitboard refuses too. Before a write it reads the
+  file strictly, and any error but a missing file, a folder or a path through a file, a
+  sharing violation's included, skips the write. So Pitboard's reads share reading, writing
+  and deletion and are never held across Claude Code's lock.
 - Read on 15 October 2026 from the win32-x64 and win32-arm64 builds of 2.1.300
   (`windows_managed_settings`): on Windows managed settings are in `C:\Program
   Files\ClaudeCode`, as on the other systems in their folder, and in the value `Settings` of

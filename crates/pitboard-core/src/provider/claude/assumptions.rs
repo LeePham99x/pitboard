@@ -93,19 +93,20 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         name: "keychain_account_name",
         macos: Read(VERIFIED_AGAINST),
         linux: NO_KEYCHAIN_ON_LINUX,
-        windows: Pending {
-            by: &["W22"],
-            reads: "credman_account_name: the user name on Claude Code's Credential Manager \
-                    item",
-        },
+        windows: NotRead(
+            "the Windows build names its Credential Manager item's user with a literal, which \
+             credman_account_name reads",
+        ),
     },
-    later_on_windows(
-        "live_chain_order",
-        VERIFIED_AGAINST,
-        &["W22", "W23"],
-        "windows_backend_choice (W22): which store Claude Code keeps the login in on Windows, \
-         and credman_migration (W23): how it moves the login into Credential Manager",
-    ),
+    PerSystem {
+        name: "live_chain_order",
+        macos: Read(VERIFIED_AGAINST),
+        linux: Read(VERIFIED_AGAINST),
+        windows: NotRead(
+            "which store Claude Code keeps the login in on Windows is windows_backend_choice's, \
+             and how it moves the login into Credential Manager is W23a's credman_migration",
+        ),
+    },
     PerSystem {
         name: "keychain_write_route",
         macos: Read(VERIFIED_AGAINST),
@@ -132,16 +133,15 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
     later_on_windows(
         "credential_cache",
         "2.1.278",
-        &["W22", "W23"],
-        "windows_file_adoption (W22): how soon a running session takes a new \
-         `.credentials.json` on Windows, and windows_credman_cache (W23): how long it keeps a \
-         login read from Credential Manager",
+        &["W23"],
+        "windows_credman_cache (W23a): how long a session keeps a login read from Credential \
+         Manager; how soon it takes a new `.credentials.json` is windows_file_adoption's",
     ),
     PerSystem {
         name: "config_file_location",
-        macos: Read("2.1.300"),
-        linux: Read("2.1.300"),
-        windows: Read("2.1.300"),
+        macos: Read("2.1.301"),
+        linux: Read("2.1.301"),
+        windows: Read("2.1.301"),
     },
     everywhere("oauth_client", VERIFIED_AGAINST),
     PerSystem {
@@ -187,13 +187,15 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
              windows_install_layout reads",
         ),
     },
-    later_on_windows(
-        "plaintext_credential_mode",
-        VERIFIED_AGAINST,
-        &["W22"],
-        "windows_plaintext_write: how Claude Code writes `.credentials.json` on Windows, and \
-         what keeps others out of it there",
-    ),
+    PerSystem {
+        name: "plaintext_credential_mode",
+        macos: Read(VERIFIED_AGAINST),
+        linux: Read(VERIFIED_AGAINST),
+        windows: NotRead(
+            "a mode keeps nobody out of a file on Windows; how Claude Code writes \
+             `.credentials.json` there is windows_plaintext_write's",
+        ),
+    },
     PerSystem {
         name: "locked_keychain_keeps_last_login",
         macos: Read("2.1.294"),
@@ -217,10 +219,10 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         macos: Read("2.1.294"),
         linux: NO_KEYCHAIN_ON_LINUX,
         windows: Pending {
-            by: &["W22"],
-            reads: "windows_file_adoption: how soon a running session takes a new \
-                    `.credentials.json` on Windows, where it is the store and where it sits \
-                    behind Credential Manager",
+            by: &["W23"],
+            reads: "the file behind Credential Manager (W23b): whether a session keeps the \
+                    login it holds while `.credentials.json` sits behind that store; where the \
+                    file is the store, how soon a session takes it is windows_file_adoption's",
         },
     },
     PerSystem {
@@ -308,6 +310,46 @@ pub(crate) const PER_SYSTEM: &[PerSystem] = &[
         macos: NotRead("off Windows the daemon records `procStart`, which Pitboard does not read"),
         linux: NotRead("off Windows the daemon records `procStart`, which Pitboard does not read"),
         windows: Read("2.1.300"),
+    },
+    PerSystem {
+        name: "windows_backend_choice",
+        macos: NotRead("macOS's chain is live_chain_order's"),
+        linux: NotRead("Linux's store is the file alone, which no_keyring_off_macos reads"),
+        windows: Read("2.1.301"),
+    },
+    PerSystem {
+        name: "windows_plaintext_strict_read",
+        macos: NotRead(
+            "off Windows no reader keeps another out of a file, and a refused read is no login",
+        ),
+        linux: NotRead(
+            "off Windows no reader keeps another out of a file, and a refused read is no login",
+        ),
+        windows: Read("2.1.301"),
+    },
+    PerSystem {
+        name: "windows_plaintext_write",
+        macos: NotRead("how macOS's file is written is plaintext_credential_mode's"),
+        linux: NotRead("how Linux's file is written is plaintext_credential_mode's"),
+        windows: Read("2.1.301"),
+    },
+    PerSystem {
+        name: "windows_file_adoption",
+        macos: NotRead(
+            "on macOS the file sits behind the keychain, fallback_file_pins_session_login's",
+        ),
+        linux: NotRead("how soon a session takes a new login off Windows is credential_cache's"),
+        windows: Pending {
+            by: &["W27"],
+            reads: "how soon a running session takes a `.credentials.json` a switch wrote, \
+                    session step 6",
+        },
+    },
+    PerSystem {
+        name: "credman_account_name",
+        macos: NotRead("macOS's account is keychain_account_name's"),
+        linux: NotRead("Linux keeps the login in a file, which has no user name"),
+        windows: Read("2.1.301"),
     },
     PerSystem {
         name: "windows_browser_open",
@@ -519,10 +561,12 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         read_from: "the config path resolution, and the config dir the secure storage module \
                     shares",
         // Read on 2026-10-15 from the darwin-arm64, linux-x64, win32-x64 and win32-arm64 builds
-        // of 2.1.299 and 2.1.300, whose code for both paths is the same.
-        verified_against: "2.1.300",
+        // of 2.1.299 and 2.1.300, and on 2026-10-16 from those of 2.1.301, whose code for both
+        // paths is the same.
+        verified_against: "2.1.301",
         depends: "claude::config_file and claude::config_dir, which read CLAUDE_CONFIG_DIR \
-                  the two ways, and home::check_absolute, which refuses an empty one",
+                  the two ways, home::check_absolute, which refuses an empty one, and \
+                  claude::credman's read of the cached feature, from the file config_file names",
         probe: &[".config.json", "CLAUDE_CONFIG_DIR"],
         absent: &[],
     },
@@ -977,18 +1021,16 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
                deletion, so a POSIX rename lands over one it holds open. It writes \
                `.credentials.json` by staging `<file>.tmp.<8 hex>` beside it and renaming that \
                over, trying the rename four times 50ms apart on EPERM, EBUSY and EACCES, and \
-               then rewriting the file in place on EXDEV, EPERM, EEXIST or EBUSY. Its strict \
-               read of the login takes any error but a missing file for a failed read there, \
-               a sharing violation's EBUSY included, which skips its write \
-               (`read_failed_skip_write`)",
+               then rewriting the file in place on EXDEV, EPERM, EEXIST or EBUSY. What its \
+               strict read makes of a file held without sharing is \
+               windows_plaintext_strict_read's",
         read_from: "Bun 1.4.3's `openat_windows`, which calls `NtCreateFile` with \
                     `FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE`, in src/sys/lib.rs \
                     at bun-v1.4.3, its errno table, which makes a sharing violation EBUSY, in \
                     src/errno/windows_errno.rs, and libuv's `uv_fs_open`, which shares all three but under \
                     `UV_FS_O_EXLOCK`, in src/win/fs.c at oven-sh/libuv 8023581, as embedded in \
                     Claude Code 2.1.300; the file write's staging, its retries and its \
-                    in-place arm, and the plaintext store's strict read, in the win32-x64 and \
-                    win32-arm64 builds; read on 2026-10-15",
+                    in-place arm, in the win32-x64 and win32-arm64 builds; read on 2026-10-15",
         verified_against: "2.1.300",
         depends: "host::windows::fs::rename, which renames over Claude Code's files the POSIX \
                   way where the volume has it and waits out a file held without sharing its \
@@ -1083,6 +1125,117 @@ pub(crate) const ASSUMPTIONS: &[Assumption] = &[
         verified_against: "2.1.300",
         depends: "claude::daemon's running, through host::proc::started",
         probe: &["procStartFt", "\\\\.\\pipe\\cc-daemon-"],
+        absent: &[],
+    },
+    Assumption {
+        name: "windows_backend_choice",
+        fact: "on Windows Claude Code keeps its login in Credential Manager, with \
+               `.credentials.json` behind it, where `CLAUDE_CODE_FORCE_WINDOWS_CREDMAN` is \
+               exactly `1` in its environment, which it asks on every store access, or where its \
+               config file caches `tengu_windows_credman` as true, which it reads once a process: \
+               a non-empty `<config dir>\\.config.json`, else `<CLAUDE_CONFIG_DIR || home>\\.claude.json` \
+               where `.config.json` is missing, empty, a folder or a link loop, any other error \
+               or a file that is not JSON reading as false. Otherwise the file alone is its \
+               store. The variable reaches a session from the environment it starts with, which \
+               Windows makes from `HKCU\\Environment` for one started from Explorer, and from \
+               the `env` of the config file, of the person's `settings.json` and of managed \
+               settings, assigned in that order at start-up, each value coerced to a string. A \
+               project's or local settings' `env` passes only a safe list then, which leaves the \
+               variable out, but is assigned whole once the folder is trusted, or in print \
+               mode, so a project can turn the store on for its own sessions from then on",
+        read_from: "`getSecureStorage`, the backend gate beside it with its memo and its read \
+                    of the cached feature, the backend list, and \
+                    applySafeConfigEnvironmentVariables, applyConfigEnvironmentVariables, the \
+                    project-scope filter and the safe list, in the win32-x64 and win32-arm64 \
+                    builds of 2.1.301, read as bytes on 2026-10-16",
+        verified_against: "2.1.301",
+        depends: "claude::credman::turned_on, which reads every signal but a project's and a \
+                  `--settings` file's, and live::chain on Windows, which is the file only \
+                  where none is on and Credential Manager holds nothing at the live target, so \
+                  a session a project turned the store on for is caught once it wrote there",
+        probe: &[
+            "tengu_windows_credman",
+            "CLAUDE_CODE_FORCE_WINDOWS_CREDMAN",
+            r#"["keychain","plaintext","windows-credman"]"#,
+            "applySafeConfigEnvironmentVariables",
+        ],
+        absent: &[],
+    },
+    Assumption {
+        name: "windows_plaintext_strict_read",
+        fact: "on Windows Claude Code reads `.credentials.json` strictly before it writes: a \
+               missing file, a folder in its place or a path through a file is no login, a \
+               file that is not JSON is no login either, and any other error is a failed read, \
+               EACCES, EPERM and a sharing violation's EBUSY included, which skips its write \
+               (`read_failed_skip_write`). So a read that held the file without sharing it \
+               would have Claude Code drop a renewal",
+        read_from: "the plaintext store's strict read and its error mapping, called with \
+                    `win32`, and the store mutation that skips its write on a failed read, in \
+                    the win32-x64 and win32-arm64 builds of 2.1.301, read as bytes on 2026-10-16",
+        verified_against: "2.1.301",
+        depends: "Pitboard's reads of Claude Code's files on Windows, which share reading, \
+                  writing and deletion as std opens a file and are never held across Claude \
+                  Code's lock (windows_open_sharing)",
+        probe: &["read_failed_skip_write"],
+        absent: &[],
+    },
+    Assumption {
+        name: "windows_plaintext_write",
+        fact: "on Windows Claude Code writes `.credentials.json` in its storage folder, making \
+               the folder first, by a temporary file renamed over it (windows_open_sharing), \
+               then `chmod` 0600, which there only clears the read-only attribute. It sets no \
+               access list, so a file it makes takes its folder's inherited one. Its rename is \
+               `MoveFileExW` with `MOVEFILE_REPLACE_EXISTING`, which fails over a read-only \
+               file, and its in-place arm cannot open one to write, so its write fails there. \
+               The file's modification time changes with every write",
+        read_from: "the plaintext store's write, which calls the file write helper with 384 \
+                    and then chmod 384, in the win32-x64 and win32-arm64 builds of 2.1.301; Bun \
+                    1.4.3's `chmod` and `rename` in src/sys/sys_uv.rs and \
+                    src/runtime/node/node_fs.rs, which call libuv's `uv_fs_chmod`, \
+                    `_wchmod`, and `uv_fs_rename`, `MoveFileExW`, in src/win/fs.c at \
+                    oven-sh/libuv 8023581, as embedded in Claude Code 2.1.301; read on \
+                    2026-10-16",
+        verified_against: "2.1.301",
+        depends: "store::file on Windows, which writes the file by a temporary file renamed \
+                  over it, keeps the access list it had (host::windows::fs::copy_access) and \
+                  refuses a read-only one, as Claude Code's own write fails there",
+        probe: &[
+            ".credentials.json",
+            "Warning: Storing credentials in plaintext.",
+        ],
+        absent: &[],
+    },
+    Assumption {
+        name: "windows_file_adoption",
+        fact: "on Windows, where `.credentials.json` is Claude Code's store, a running session \
+               looks at its modification time before each request and reads it again where it \
+               has changed, so a switch, which changes it, is taken at the session's next \
+               request. Read, not measured against a running session",
+        read_from: "the check before each API client, which compares the file's modification \
+                    time with the one it last saw, in the win32-x64 and win32-arm64 builds of \
+                    2.1.301, read as bytes on 2026-10-16",
+        verified_against: "2.1.301",
+        depends: "Claude's adoption on Windows, which says 33 seconds as on Linux until \
+                  session step 6 measures it",
+        probe: &["lastCredentialsMtimeMs"],
+        absent: &[],
+    },
+    Assumption {
+        name: "credman_account_name",
+        fact: "on Windows Claude Code names its Credential Manager item's user \
+               `claude-code-user` whoever runs it, so its item is \
+               `Claude Code-credentials[-<8 hex>]/claude-code-user` as `Bun.secrets` names one, \
+               and the pieces of one too large for an item `#<k>`, `#m` and `#p` after it",
+        read_from: "the secure storage module's account name, a literal in the win32-x64 and \
+                    win32-arm64 builds of 2.1.301 where the others read `USER`, and the store \
+                    that passes it to `Bun.secrets` with the service name; Bun 1.4.3's \
+                    `Bun.secrets` in src/jsc/bindings/SecretsWindows.cpp, which names a \
+                    generic item `<service>/<name>`, as embedded in Claude Code 2.1.301; read on \
+                    2026-10-16",
+        verified_against: "2.1.301",
+        depends: "slot::account_name on Windows, and claude::credman's look at the live target \
+                  and its manifest",
+        probe: &["claude-code-user", "Bun.secrets.get"],
         absent: &[],
     },
     Assumption {
@@ -1242,6 +1395,10 @@ mod tests {
                 "windows_version_resource",
                 "windows_managed_settings",
                 "windows_daemon_identity",
+                "windows_backend_choice",
+                "windows_plaintext_strict_read",
+                "windows_plaintext_write",
+                "credman_account_name",
                 "windows_browser_open",
             ]
         );
