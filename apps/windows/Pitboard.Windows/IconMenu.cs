@@ -176,7 +176,7 @@ public static class IconMenu
             }),
         ];
 
-    private static IconMenuEntry.Command Window(string text, WindowAccount window, string[]? held)
+    private static IconMenuEntry.Command Window(string text, WindowAccount window, string[] held)
     {
         var note = HeldStores.Note(window, held);
         return new IconMenuEntry.Command(text, new IconCommand.OpenWindow(window))

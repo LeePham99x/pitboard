@@ -23,7 +23,7 @@ public static class AccountMenu
             Separate(menu);
             foreach (var offer in item.Windows)
             {
-                menu.Items.Add(Window(offer, open, held));
+                menu.Items.Add(Window(offer, open, held ?? []));
             }
         }
 
@@ -59,7 +59,7 @@ public static class AccountMenu
         return entry;
     }
 
-    private static MenuFlyoutItem Window(WindowOffer offer, Action<WindowAccount> open, IReadOnlyCollection<string>? held)
+    private static MenuFlyoutItem Window(WindowOffer offer, Action<WindowAccount> open, IReadOnlyCollection<string> held)
     {
         var entry = new MenuFlyoutItem { Text = offer.Title };
         AutomationProperties.SetAutomationId(entry, IconMenu.WindowId(offer.Window));

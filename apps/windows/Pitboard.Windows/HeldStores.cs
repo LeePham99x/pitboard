@@ -6,8 +6,8 @@ namespace Pitboard.Windows;
 // would open it says why.
 public static class HeldStores
 {
-    public static string? Note(WindowAccount window, IReadOnlyCollection<string>? held) =>
-        held?.Contains(window.Store, StringComparer.OrdinalIgnoreCase) == true
+    public static string? Note(WindowAccount window, IReadOnlyCollection<string> held) =>
+        held.Contains(window.Store, StringComparer.OrdinalIgnoreCase)
             ? PitboardFfiMethods.WindowNote(new WindowNoteKind.StoreHeld(), window)
             : null;
 }
