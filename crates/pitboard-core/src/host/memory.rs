@@ -147,6 +147,7 @@ pub struct MemoryHost {
     credentials_fault: Mutex<Option<Error>>,
     // `HKCU\Environment`, by name in upper case, as a test said.
     user_environment_values: Mutex<HashMap<String, String>>,
+    machine_environment_values: Mutex<HashMap<String, String>>,
     windows_settings: Mutex<WindowsSettings>,
     kernel_is_wsl: AtomicBool,
     windows_drives: Mutex<Vec<PathBuf>>,
@@ -219,6 +220,7 @@ impl MemoryHost {
             credentials: Mutex::new(Vec::new()),
             credentials_fault: Mutex::new(None),
             user_environment_values: Mutex::new(gate),
+            machine_environment_values: Mutex::new(HashMap::new()),
             windows_settings: Mutex::new(WindowsSettings::default()),
             kernel_is_wsl: AtomicBool::new(false),
             windows_drives: Mutex::new(Vec::new()),
@@ -437,6 +439,16 @@ impl MemoryHost {
     #[cfg(test)]
     pub(crate) fn sets_user_environment(&self, name: &str, value: &str) {
         locked(&self.user_environment_values).insert(name.to_uppercase(), value.into());
+    }
+
+    #[cfg(test)]
+    pub(crate) fn forgets_user_environment(&self, name: &str) {
+        locked(&self.user_environment_values).remove(&name.to_uppercase());
+    }
+
+    #[cfg(test)]
+    pub(crate) fn sets_machine_environment(&self, name: &str, value: &str) {
+        locked(&self.machine_environment_values).insert(name.to_uppercase(), value.into());
     }
 
     #[cfg(test)]
@@ -662,6 +674,14 @@ impl Host for MemoryHost {
 
     fn user_environment(&self, name: &str) -> Administered {
         locked(&self.user_environment_values)
+            .get(&name.to_uppercase())
+            .map_or(Administered::Unset, |value| {
+                Administered::Set(value.clone())
+            })
+    }
+
+    fn machine_environment(&self, name: &str) -> Administered {
+        locked(&self.machine_environment_values)
             .get(&name.to_uppercase())
             .map_or(Administered::Unset, |value| {
                 Administered::Set(value.clone())

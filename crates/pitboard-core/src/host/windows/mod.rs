@@ -51,14 +51,24 @@ pub(super) fn login_path(_env: &Environment) -> LoginPath {
     registry_path()
 }
 
+const MACHINE_ENVIRONMENT: &str = r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment";
+const USER_ENVIRONMENT: &str = "Environment";
+
+fn environment(hive: &windows_registry::Key, key: &str, name: &str) -> Administered {
+    if !super::administered::READ_BY_REAL_HOSTS {
+        return Administered::Unset;
+    }
+    hive.open(key)
+        .ok()
+        .and_then(|key| expanded(key, name))
+        .map_or(Administered::Unset, Administered::Set)
+}
+
 fn registry_path() -> LoginPath {
     use windows_registry::{CURRENT_USER, LOCAL_MACHINE};
     let parts: Vec<String> = [
-        (
-            LOCAL_MACHINE,
-            r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
-        ),
-        (CURRENT_USER, "Environment"),
+        (LOCAL_MACHINE, MACHINE_ENVIRONMENT),
+        (CURRENT_USER, USER_ENVIRONMENT),
     ]
     .into_iter()
     .filter_map(|(hive, key)| expanded(hive.open(key).ok()?, "Path"))
@@ -200,14 +210,11 @@ impl Host for Windows {
     }
 
     fn user_environment(&self, name: &str) -> Administered {
-        if !super::administered::READ_BY_REAL_HOSTS {
-            return Administered::Unset;
-        }
-        windows_registry::CURRENT_USER
-            .open("Environment")
-            .ok()
-            .and_then(|key| expanded(key, name))
-            .map_or(Administered::Unset, Administered::Set)
+        environment(windows_registry::CURRENT_USER, USER_ENVIRONMENT, name)
+    }
+
+    fn machine_environment(&self, name: &str) -> Administered {
+        environment(windows_registry::LOCAL_MACHINE, MACHINE_ENVIRONMENT, name)
     }
 
     #[cfg_attr(not(any(test, feature = "test-support")), allow(unused_variables))]

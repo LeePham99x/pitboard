@@ -826,6 +826,13 @@ pub(crate) trait Host: Send + Sync + std::fmt::Debug {
         Administered::Unset
     }
 
+    // As `HKLM`'s `Session Manager\Environment` holds it, which a program started from now on is
+    // given where `HKCU\Environment` does not name it; unset elsewhere, and in a build for tests
+    // on the real hosts.
+    fn machine_environment(&self, _name: &str) -> Administered {
+        Administered::Unset
+    }
+
     // Whether Credential Manager holds a generic item named `target`, never what it holds; Err
     // says why it cannot tell. None is held where there is no Credential Manager.
     fn credential_held(

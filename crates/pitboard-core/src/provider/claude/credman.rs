@@ -33,14 +33,19 @@ fn config(ctx: &Context) -> Option<Value> {
 }
 
 // The variable's value a session would start with: the highest settings layer that sets it,
-// over the config file's `env`, over the environment it was started with.
+// over the config file's `env`, over the environment it was started with. A managed source
+// Pitboard cannot read, or managed sources that disagree, may set it to anything over every
+// other, so nothing turns the store on.
 fn forced(ctx: &Context, config: Option<&Value>) -> Option<String> {
-    let settings = crate::settings::env_settings(ctx, FORCE);
-    let deciding = settings
+    let settings = crate::settings::env_settings(ctx, FORCE).ok()?;
+    let managed: Vec<_> = settings.iter().filter(|set| set.managed).collect();
+    if managed
         .iter()
-        .find(|set| set.managed && is_one(&set.value))
-        .or_else(|| settings.first());
-    if let Some(set) = deciding {
+        .any(|set| is_one(&set.value) != is_one(&managed[0].value))
+    {
+        return None;
+    }
+    if let Some(set) = settings.first() {
         return is_one(&set.value).then(|| format!("`{FORCE}` is 1 in the env of {}", set.layer));
     }
     let in_config = config
@@ -57,12 +62,20 @@ fn forced(ctx: &Context, config: Option<&Value>) -> Option<String> {
     if ctx.credential_manager_forced {
         return Some(format!("`{FORCE}` is 1 in Pitboard's environment"));
     }
-    match ctx.host().user_environment(FORCE) {
-        Administered::Set(value) if value == "1" => {
-            Some(format!(r"`{FORCE}` is 1 in HKCU\Environment"))
-        }
-        _ => None,
-    }
+    let host = ctx.host();
+    let (user, machine) = (
+        host.user_environment(FORCE),
+        host.machine_environment(FORCE),
+    );
+    let (value, place) = match (user, machine) {
+        (Administered::Set(value), _) => (value, r"HKCU\Environment"),
+        (_, Administered::Set(value)) => (
+            value,
+            r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+        ),
+        _ => return None,
+    };
+    (value == "1").then(|| format!("`{FORCE}` is 1 in {place}"))
 }
 
 // Why Claude Code would keep its login in Credential Manager, in words that follow "while".
@@ -421,6 +434,86 @@ mod tests {
         ] {
             scratch.write(&file, &json!({"env": {FORCE: "1"}}));
         }
+        assert_eq!(on(&scratch), None);
+    }
+
+    // `windows_managed_settings`: the policy in `HKLM` is taken over the folder unless it merges
+    // them, and a source Pitboard cannot read may be the one taken.
+    #[test]
+    fn only_the_managed_source_a_session_takes_turns_it_on() {
+        let managed = PathBuf::from(r"C:\Program Files\ClaudeCode").join("managed-settings.json");
+        let machine = |scratch: &Scratch, policy: Value| {
+            scratch.memory.sets_policy(
+                Hive::Machine,
+                r"SOFTWARE\Policies\ClaudeCode",
+                "Settings",
+                &policy.to_string(),
+            );
+        };
+        let scratch = windows(&[]);
+        scratch
+            .memory
+            .administers(&managed, &json!({"env": {FORCE: "1"}}).to_string());
+        machine(&scratch, json!({"permissions": {"deny": ["Bash"]}}));
+        assert_eq!(on(&scratch), None, "the folder is not taken");
+
+        machine(
+            &scratch,
+            json!({"managedSourcesBehavior": "merge", "permissions": {}}),
+        );
+        assert!(on(&scratch).is_some(), "merged, the folder is taken too");
+        machine(
+            &scratch,
+            json!({"managedSourcesBehavior": "merge", "env": {FORCE: "0"}}),
+        );
+        assert_eq!(on(&scratch), None, "merged sources that disagree");
+
+        machine(&scratch, json!({"managedSourcesBehavior": "merge"}));
+        assert!(on(&scratch).is_some(), "no policy in HKLM, so the folder");
+
+        let scratch = windows(&[]);
+        scratch
+            .memory
+            .administers(&managed, &json!({"env": {FORCE: "1"}}).to_string());
+        scratch.memory.policy_unreadable(
+            Hive::Machine,
+            r"SOFTWARE\Policies\ClaudeCode",
+            "Settings",
+            "access is denied",
+        );
+        assert_eq!(on(&scratch), None, "HKLM may be the one taken");
+        let settings = scratch.config.join("settings.json");
+        scratch.write(&settings, &json!({"env": {FORCE: "1"}}));
+        assert_eq!(
+            on(&scratch),
+            None,
+            "and it is assigned over the person's own"
+        );
+
+        let scratch = windows(&[]);
+        scratch.write(
+            &scratch.config.join("settings.json"),
+            &json!({"env": {FORCE: "1"}}),
+        );
+        scratch
+            .memory
+            .administers_unreadably(&managed, "access is denied");
+        assert_eq!(on(&scratch), None, "the folder may say otherwise");
+    }
+
+    // A session's environment is the machine's, the person's own variables assigned over it.
+    #[test]
+    fn the_machines_environment_turns_it_on_unless_the_persons_says_otherwise() {
+        let scratch = windows(&[]);
+        scratch.memory.forgets_user_environment(FORCE);
+        scratch.memory.sets_machine_environment(FORCE, "1");
+        assert_eq!(
+            on(&scratch),
+            Some(format!(
+                r"`{FORCE}` is 1 in HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
+            ))
+        );
+        scratch.memory.sets_user_environment(FORCE, "0");
         assert_eq!(on(&scratch), None);
     }
 
