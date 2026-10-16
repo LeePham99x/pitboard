@@ -2360,7 +2360,9 @@ Accounts and tokens:
   (0xC000006A). Read on 154.0.4258.62 on windows-2025 and 155.0.4283.45 on windows-11-arm, in
   run 38825074643 thirteen folders made thirteen. With a folder per WinUI test the user was
   locked out on both images after ten in run 38822700418, so those tests share one user data
-  folder for the run, each under profiles of its own.
+  folder for the run, each under profiles of its own. The UI tests' launches share one too,
+  named to a Debug build in `PITBOARD_FIXTURE_WEBVIEW2`: a fixture's own folder per launch
+  locked the user out on both images in run 38874616742.
 - CF4: the WebView2 Runtime is 154.0.4258.62 on windows-2025 and 155.0.4283.45 on
   windows-11-arm, read from `pv` under the machine's EdgeUpdate client key in run
   38825074643.

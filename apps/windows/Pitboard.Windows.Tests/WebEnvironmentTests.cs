@@ -36,4 +36,14 @@ public sealed class WebEnvironmentTests
         Assert.AreEqual(Path.Combine("temp", "pitboard-fixture", "Downloads"), fixture.Downloads, "a fixture saves in its own folder");
         Assert.AreEqual(Shell.Downloads(), live.Downloads);
     }
+
+    // The UI tests' launches share one for their run: WebView2 tries the user's password blank once for each new folder.
+    [TestMethod]
+    public void AFixtureTakesTheUserDataFolderItIsGiven()
+    {
+        var fixture = WebEnvironment.Fixture(Path.Combine("temp", "pitboard-fixture"), Path.Combine("temp", "run", "WebView2"));
+
+        Assert.AreEqual(Path.Combine("temp", "run", "WebView2"), fixture.UserDataFolder);
+        Assert.AreEqual(Path.Combine("temp", "pitboard-fixture", "Downloads"), fixture.Downloads, "it saves in its own folder");
+    }
 }

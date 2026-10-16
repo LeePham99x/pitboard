@@ -138,13 +138,14 @@ public partial class App : Application
             listener => new PitboardModel(launch, listener, apps, notifications, new WindowsLocalTime()));
     }
 
-    // A fixture's windows show its stand-in pages, in a user data folder of the fixture's own.
+    // A fixture's windows show its stand-in pages, in a user data folder of the fixture's own, or of the UI tests' run.
     private WebEnvironment Web()
     {
 #if DEBUG
         if (_start.Fixture is not null)
         {
-            return WebEnvironment.Fixture(_start.DataFolder);
+            var shared = _start.Environment.GetValueOrDefault("PITBOARD_FIXTURE_WEBVIEW2");
+            return WebEnvironment.Fixture(_start.DataFolder, string.IsNullOrEmpty(shared) ? null : shared);
         }
 #endif
         return WebEnvironment.Live(_start.DataFolder, devTools: _start.Identity.Build is Build.Debug);

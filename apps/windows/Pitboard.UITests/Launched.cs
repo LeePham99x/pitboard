@@ -234,13 +234,17 @@ internal sealed class Launched : IDisposable
     public static string Said(AutomationElement scope) =>
         string.Join(" ", Lines(scope));
 
-    public static void Shows(AutomationElement scope, string text, bool exact = true)
+    public static void Shows(AutomationElement scope, string text, bool exact = true, TimeSpan? within = null)
     {
         var shown = Retry.WhileFalse(
             () => Lines(scope).Any(line => exact ? line == text : line.StartsWith(text, StringComparison.Ordinal)),
-            Shortly, TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
+            within ?? Shortly, TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
         Assert.IsTrue(shown, $"{scope.Name} does not show '{text}': {Listed(scope)}");
     }
+
+    // An account window's first page, which the run's first browser process took more than Shortly to show on
+    // windows-2025 (run 38877054096).
+    public static void Loads(AutomationElement window, string text, bool exact = true) => Shows(window, text, exact, Patience);
 
     // What can be pressed in it, by control type and name.
     public static string Pressables(AutomationElement scope)
@@ -311,12 +315,46 @@ internal sealed class Launched : IDisposable
         }
 
         start.Environment.Remove("PITBOARD_FIXTURE");
+        start.Environment.Remove("PITBOARD_FIXTURE_WEBVIEW2");
         if (_fixture is not null)
         {
             start.Environment["PITBOARD_FIXTURE"] = _fixture;
+            start.Environment["PITBOARD_FIXTURE_WEBVIEW2"] = Web.Value.FullName;
         }
 
         return start;
+    }
+
+    // One user data folder for the run's windows: WebView2 tries the user's password blank once for each new folder, and
+    // a folder per launch locked the user out on both images after ten (run 38874616742).
+    private static readonly Lazy<DirectoryInfo> Web = new(() => Directory.CreateTempSubdirectory("pitboard-uitests-webview2-"));
+
+    public static void RemoveWeb()
+    {
+        if (!Web.IsValueCreated)
+        {
+            return;
+        }
+
+        Retry.WhileFalse(() => Emptied(Web.Value.FullName), Shortly, TimeSpan.FromMilliseconds(250));
+    }
+
+    // Chromium holds it while a browser process runs over the folder.
+    private static bool LetGo(string folder)
+    {
+        try
+        {
+            File.Delete(Path.Combine(folder, "EBWebView", "lockfile"));
+            return true;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return true;
+        }
+        catch (Exception held) when (held is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     public string[] Written() =>
@@ -337,13 +375,11 @@ internal sealed class Launched : IDisposable
             }
         }
 
-        // WebView2's browser process outlives Pitboard for a moment, holding the fixture's user data folder, which the
-        // next launch's fixture empties first. A copy launched again leaves it to the first, which may still use it.
+        // WebView2's browser process outlives Pitboard for a moment, holding the run's user data folder, which the next
+        // launch would join as it goes. A copy launched again leaves it to the first, which may still use it.
         if (_fixture is not null && _ownsHomes)
         {
-            Retry.WhileFalse(
-                () => Emptied(Path.Combine(Path.GetTempPath(), "pitboard-fixture", "WebView2")),
-                Shortly, TimeSpan.FromMilliseconds(250));
+            Retry.WhileFalse(() => LetGo(Web.Value.FullName), Shortly, TimeSpan.FromMilliseconds(250));
         }
 
         Process.Dispose();

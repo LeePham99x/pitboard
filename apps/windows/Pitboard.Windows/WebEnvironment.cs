@@ -47,8 +47,10 @@ public sealed class WebEnvironment
     public static WebEnvironment Live(string dataFolder, bool devTools) =>
         new("https", Path.Combine(dataFolder, "WebView2"), Shell.Downloads(), devTools, OpenWithWindows);
 
-    public static WebEnvironment Fixture(string dataFolder) =>
-        new(FixtureScheme, Path.Combine(dataFolder, "WebView2"), Path.Combine(dataFolder, "Downloads"), devTools: true, _ => { });
+    public static WebEnvironment Fixture(string dataFolder, string? userDataFolder = null) =>
+        new(
+            FixtureScheme, userDataFolder ?? Path.Combine(dataFolder, "WebView2"), Path.Combine(dataFolder, "Downloads"), devTools: true,
+            _ => { });
 
     // Why this PC cannot show an account window, given the Runtime it has, if any; null where it can. A version
     // string may carry its channel after a space.
