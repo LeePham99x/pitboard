@@ -13,7 +13,7 @@
         <VisualState x:Name="Wide" />
         <VisualState x:Name="Minimal">
           <VisualState.Setters>
-            <Setter Target="Heading.Margin" Value="12,0,12,0" />
+            <Setter Target="PageHeader.Margin" Value="12,0,12,0" />
             <Setter Target="Scroller.Padding" Value="12,0,12,24" />
           </VisualState.Setters>
         </VisualState>
@@ -23,7 +23,7 @@
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
     </Grid.RowDefinitions>
-    <TextBlock x:Name="Heading" MaxWidth="1064" Margin="24,0,24,0" Text="Settings" Style="{StaticResource PageTitleTextBlockStyle}" />
+    <TextBlock x:Name="PageHeader" MaxWidth="1064" Margin="24,0,24,0" Text="Settings" Style="{StaticResource PageTitleTextBlockStyle}" />
     <!-- The WinUI Gallery's settings page: SettingsCards and SettingsExpanders in sections, the switch at each card's right. -->
     <ScrollViewer x:Name="Scroller" Grid.Row="1" Padding="24,0,24,24">
       <StackPanel MaxWidth="1064" Spacing="{StaticResource SettingsCardSpacing}">

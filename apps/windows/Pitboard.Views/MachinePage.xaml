@@ -13,7 +13,7 @@
         <VisualState x:Name="Wide" />
         <VisualState x:Name="Minimal">
           <VisualState.Setters>
-            <Setter Target="Heading.Margin" Value="12,0,12,0" />
+            <Setter Target="PageHeader.Margin" Value="12,0,12,0" />
             <Setter Target="Lines.Padding" Value="12,0,12,16" />
           </VisualState.Setters>
         </VisualState>
@@ -23,7 +23,7 @@
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
     </Grid.RowDefinitions>
-    <Grid x:Name="Heading" Margin="24,0,24,0" ColumnSpacing="12">
+    <Grid x:Name="PageHeader" Margin="24,0,24,0" ColumnSpacing="12">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="*" />
         <ColumnDefinition Width="Auto" />
