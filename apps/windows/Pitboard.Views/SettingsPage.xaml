@@ -239,7 +239,13 @@
           <toolkit:SettingsCard.Description>
             <StackPanel>
               <TextBlock Text="{x:Bind ViewModel.UpdatesState, Mode=OneWay}" />
-              <TextBlock Text="{x:Bind ViewModel.UpdatesNote, Mode=OneWay}" Visibility="{x:Bind ViewModel.HasUpdatesNote, Mode=OneWay}" />
+              <ItemsControl ItemsSource="{x:Bind ViewModel.UpdatesNoteLines}" IsTabStop="False">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="x:String">
+                    <TextBlock Text="{x:Bind}" TextWrapping="Wrap" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
             </StackPanel>
           </toolkit:SettingsCard.Description>
           <Button

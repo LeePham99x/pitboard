@@ -155,9 +155,7 @@ public sealed partial class SettingsViewModel : INotifyPropertyChanged
 
     public string UpdatesState => _updates.Waiting is { } waiting ? $"Pitboard {waiting} is ready to install." : Versions.Named(Version);
 
-    public string UpdatesNote => string.Join(Environment.NewLine, UpdatesNotes(_updates, Version));
-
-    public bool HasUpdatesNote => UpdatesNotes(_updates, Version).Length > 0;
+    public string[] UpdatesNoteLines => UpdatesNotes(_updates, Version);
 
     public string Version { get; }
 
