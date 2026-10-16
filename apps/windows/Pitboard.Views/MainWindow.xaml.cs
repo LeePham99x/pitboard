@@ -4,7 +4,9 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Pitboard.Core;
 using Pitboard.Windows;
+using Windows.Graphics;
 using Windows.System;
+using WinRT.Interop;
 
 namespace Pitboard.Views;
 
@@ -19,7 +21,9 @@ public sealed partial class MainWindow : Window
     private WindowAlerts? _alerts;
     private WindowSheets? _sheets;
 
-    public MainWindow(AppModel model, StartAtSignIn startAtSignIn, IUpdates updates, string version, Action<WindowAccount> openWindow)
+    public MainWindow(
+        AppModel model, StartAtSignIn startAtSignIn, IUpdates updates, string version, Action<WindowAccount> openWindow,
+        WindowPlacement placement)
     {
         _model = model;
         InitializeComponent();
@@ -27,6 +31,25 @@ public sealed partial class MainWindow : Window
         SetTitleBar(AppTitleBar);
         AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
         WindowChrome.Apply(this);
+        WindowChrome.MinimumSize(this, 640, 500);
+        // Where it was closed, or at Windows' own place for a new application window.
+        var handle = WindowNative.GetWindowHandle(this);
+        var saved = placement.Saved();
+        if (saved is not null)
+        {
+            WindowPlacement.Restore(handle, saved);
+        }
+        else
+        {
+            var scale = Shell.Scale(handle);
+            AppWindow.Resize(new SizeInt32((int)(1100 * scale), (int)(720 * scale)));
+        }
+
+        if (saved is not { Maximized: true })
+        {
+            WindowChrome.Fit(this);
+        }
+
         _dialogs = new DialogHost(() => Navigation.XamlRoot);
         _accounts = new AccountsPane(model, _dialogs, openWindow: openWindow);
         _activity = new ActivityPane(model);
@@ -40,6 +63,11 @@ public sealed partial class MainWindow : Window
         };
         Closed += (_, _) =>
         {
+            if (WindowPlacement.Of(handle) is { } closed)
+            {
+                placement.Save(closed);
+            }
+
             _sheets?.Dispose();
             _alerts?.Dispose();
         };

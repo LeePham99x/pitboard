@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using FlaUI.Core.AutomationElements;
+using FlaUI.Core.Definitions;
 using FlaUI.Core.Input;
 using FlaUI.Core.Tools;
 
@@ -93,6 +95,49 @@ public sealed partial class LifecycleTests
     }
 
     [TestMethod]
+    public void AClosedWindowOpensWhereItWasAtItsSize()
+    {
+        using var launched = Launched.Start(Builds.Debug, fixture: "firstLaunch");
+        var window = launched.Window("Pitboard");
+        var transform = window.Patterns.Transform.Pattern;
+        transform.Move(120, 90);
+        transform.Resize(900, 640);
+        var placed = window.BoundingRectangle;
+        Close(window);
+
+        var again = launched.OpenWindow();
+
+        Assert.AreEqual(placed, again.BoundingRectangle);
+    }
+
+    [TestMethod]
+    public void AMaximizedWindowOpensMaximizedAgain()
+    {
+        using var launched = Launched.Start(Builds.Debug, fixture: "firstLaunch");
+        var window = launched.Window("Pitboard");
+        Show(window, WindowVisualState.Maximized);
+        Close(window);
+
+        var again = launched.OpenWindow();
+
+        Assert.IsTrue(Shows(again, WindowVisualState.Maximized), $"it opened {again.Patterns.Window.Pattern.WindowVisualState.Value}");
+    }
+
+    // A second launch brings the window forward as a click on its taskbar button would.
+    [TestMethod]
+    public void AWindowMinimizedFromMaximizedComesBackMaximized()
+    {
+        using var launched = Launched.Start(Builds.Debug, fixture: "firstLaunch");
+        var window = launched.Window("Pitboard");
+        Show(window, WindowVisualState.Maximized);
+        Show(window, WindowVisualState.Minimized);
+
+        var again = launched.OpenWindow();
+
+        Assert.IsTrue(Shows(again, WindowVisualState.Maximized), $"it came back {again.Patterns.Window.Pattern.WindowVisualState.Value}");
+    }
+
+    [TestMethod]
     public void ASecondLaunchOpensTheWindowAgain()
     {
         using var launched = Launched.Start(Builds.Debug, fixture: "firstLaunch");
@@ -137,6 +182,23 @@ public sealed partial class LifecycleTests
         Assert.IsFalse(
             Retry.WhileFalse(() => launched.Windows("Pitboard").Length > 0, TimeSpan.FromSeconds(10)).Result,
             $"a start at sign-in opened the window: {launched.State()}");
+    }
+
+    private static bool Shows(Window window, WindowVisualState state) =>
+        Retry.WhileFalse(
+            () => window.Patterns.Window.Pattern.WindowVisualState.Value == state, TimeSpan.FromSeconds(10),
+            TimeSpan.FromMilliseconds(250), ignoreException: true).Result;
+
+    private static void Show(Window window, WindowVisualState state)
+    {
+        window.Patterns.Window.Pattern.SetWindowVisualState(state);
+        Assert.IsTrue(Shows(window, state), $"the window did not become {state}");
+    }
+
+    private static void Close(Window window)
+    {
+        window.Close();
+        Assert.IsTrue(Retry.WhileTrue(() => window.IsAvailable, TimeSpan.FromSeconds(10)).Result, "the window stayed open");
     }
 
     [LibraryImport("user32.dll", EntryPoint = "SendMessageW")]

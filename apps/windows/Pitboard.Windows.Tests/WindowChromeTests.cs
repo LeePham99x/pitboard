@@ -24,7 +24,7 @@ public sealed partial class WindowChromeTests
         [
             new MainWindow(
                 new AppModel(new StandInModel(Snapshots.Read(1))), new StartAtSignIn(new FixtureStartupItem()), new NoUpdates(),
-                "0.0.0", _ => { }),
+                "0.0.0", _ => { }, new WindowPlacement(Path.Combine(Path.GetTempPath(), $"pitboard-{Guid.NewGuid()}.json"))),
             account,
             new SignInWindow(new SignInWindowSize(480, 640), account, "Sign in"),
             new OpenLinkWindow(_ => { }, _ => { }, _ => { }),

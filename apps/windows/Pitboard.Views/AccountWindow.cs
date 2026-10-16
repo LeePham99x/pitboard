@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
@@ -84,11 +83,7 @@ public sealed partial class AccountWindow : Window, ISessionWindow
         _dialogs = new DialogHost(() => root.XamlRoot);
         var scale = Shell.Scale(WindowNative.GetWindowHandle(this));
         AppWindow.Resize(new SizeInt32((int)(1100 * scale), (int)(800 * scale)));
-        if (AppWindow.Presenter is OverlappedPresenter presenter)
-        {
-            presenter.PreferredMinimumWidth = (int)(480 * scale);
-            presenter.PreferredMinimumHeight = (int)(360 * scale);
-        }
+        WindowChrome.MinimumSize(this, 480, 360);
 
         Closed += (_, _) =>
         {

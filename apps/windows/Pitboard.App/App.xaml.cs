@@ -71,7 +71,7 @@ public partial class App : Application, IIconTargets
         _updates = SparkleUpdates.For(
             _start.Identity.Build, SparkleUpdates.Key(typeof(App).Assembly), _version, _start.DataFolder,
             action => queue.TryEnqueue(() => action()), accountWindows.MayQuit, () => _lifetime?.End());
-        _lifetime = new Lifetime(model, _icon, _updates, notifications, accountWindows.StopDownloads, Exit);
+        _lifetime = new Lifetime(model, _icon, _updates, notifications, accountWindows.StopDownloads, CloseAndExit);
         _commands = new IconCommands(model, _updates, this);
         PowerManager.SystemSuspendStatusChanged += OnSuspendStatusChanged;
         Follow(model.WindowRequest);
@@ -223,12 +223,21 @@ public partial class App : Application, IIconTargets
 
         if (_window is null)
         {
-            var window = new MainWindow(_model, _startAtSignIn, _updates, _version, account => _accountWindows?.Open(account));
+            var window = new MainWindow(
+                _model, _startAtSignIn, _updates, _version, account => _accountWindows?.Open(account),
+                new WindowPlacement(Path.Combine(_start.DataFolder, "placement.json")));
             window.Closed += (_, _) => _window = null;
             _window = window;
         }
 
         _window.Bring();
+    }
+
+    // Closed first, where the main window keeps its placement.
+    private void CloseAndExit()
+    {
+        _window?.Close();
+        Exit();
     }
 
     // On the system's thread; the model takes a message from any.
