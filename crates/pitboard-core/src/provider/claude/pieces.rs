@@ -64,12 +64,13 @@ pub(crate) enum Step {
     Forget(String),
 }
 
-// Claude Code's write over what `old` names, None past 256 pieces. One step is Pitboard's own:
-// where pieces are replaced in place, the manifest first names a length no base64 has, so
-// Claude Code's read fails and keeps the login it holds rather than join old pieces and new.
-pub(crate) fn steps(old: Option<Manifest>, contents: &str) -> Option<Vec<Step>> {
+// Claude Code's write over what `old` names and the `left` pieces a stopped write's `#p` names,
+// None past 256 pieces. One step is Pitboard's own: where pieces are replaced in place, the
+// manifest first names a length no base64 has, so Claude Code's read fails and keeps the login
+// it holds rather than join old pieces and new.
+pub(crate) fn steps(old: Option<Manifest>, left: usize, contents: &str) -> Option<Vec<Step>> {
     let set = |name: &str, value: String| Step::Set(name.to_owned(), value);
-    let old_n = old.map_or(0, |old| old.n);
+    let old_n = old.map_or(0, |old| old.n).max(left);
     let pieces = pieces_for(contents.len())?;
     if pieces == 0 {
         let mut steps = vec![set(WHOLE, contents.to_owned())];
@@ -84,7 +85,8 @@ pub(crate) fn steps(old: Option<Manifest>, contents: &str) -> Option<Vec<Step>> 
     let encoded = crate::base64::encode(contents.as_bytes());
     let mut steps = vec![set(PENDING, old_n.max(pieces).to_string())];
     if old.is_some() {
-        steps.push(set(MANIFEST, Manifest { n: pieces, l: 1 }.text()));
+        let n = old_n.max(pieces);
+        steps.push(set(MANIFEST, Manifest { n, l: 1 }.text()));
     }
     steps.extend(
         encoded
@@ -174,7 +176,10 @@ pub(crate) fn write(
     contents: &str,
     target: &str,
 ) -> Result<(), Error> {
-    let steps = steps(manifest(items)?, contents).ok_or_else(|| {
+    let left = found(items, PENDING)?
+        .and_then(|text| text.trim().parse::<usize>().ok())
+        .map_or(0, |n| n.min(MOST_PIECES));
+    let steps = steps(manifest(items)?, left, contents).ok_or_else(|| {
         Error::Write(format!(
             "this login is {} bytes, past the {MOST_BYTES} Claude Code keeps in Credential Manager",
             contents.len()
@@ -383,9 +388,9 @@ mod tests {
                 })
                 .collect()
         };
-        assert_eq!(small(steps(None, "{}").unwrap()), ["set "]);
+        assert_eq!(small(steps(None, 0, "{}").unwrap()), ["set "]);
         assert_eq!(
-            small(steps(Some(Manifest { n: 2, l: 3204 }), "{}").unwrap()),
+            small(steps(Some(Manifest { n: 2, l: 3204 }), 0, "{}").unwrap()),
             [
                 "set ",
                 "set #p",
@@ -396,7 +401,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            small(steps(None, &login(2401)).unwrap()),
+            small(steps(None, 0, &login(2401)).unwrap()),
             [
                 "set #p",
                 "set #0",
@@ -407,7 +412,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            small(steps(Some(Manifest { n: 3, l: 7200 }), &login(2401)).unwrap()),
+            small(steps(Some(Manifest { n: 3, l: 7200 }), 0, &login(2401)).unwrap()),
             [
                 "set #p",
                 "set #m",
@@ -419,9 +424,24 @@ mod tests {
                 "forget #p"
             ]
         );
+        let shrinking = steps(Some(Manifest { n: 3, l: 7200 }), 0, &login(2401)).unwrap();
+        assert_eq!(shrinking[0], Step::Set(PENDING.into(), "3".into()));
         assert_eq!(
-            steps(Some(Manifest { n: 3, l: 7200 }), &login(2401)).unwrap()[0],
-            Step::Set(PENDING.into(), "3".into())
+            shrinking[1],
+            Step::Set(MANIFEST.into(), r#"{"n":3,"l":1}"#.into())
+        );
+        assert_eq!(
+            small(steps(None, 4, &login(2401)).unwrap()),
+            [
+                "set #p",
+                "set #0",
+                "set #1",
+                "set #m",
+                "forget ",
+                "forget #2",
+                "forget #3",
+                "forget #p"
+            ]
         );
     }
 
@@ -475,6 +495,39 @@ mod tests {
                         Err(other) => panic!("{other:?}"),
                     }
                 }
+            }
+        }
+    }
+
+    // A stopped write that was to end with fewer pieces, or that began with none, leaves pieces
+    // past the count the next write reads; that write takes every one of them away.
+    #[test]
+    fn a_write_after_a_stopped_one_leaves_no_piece_behind() {
+        for (before, after) in [(login(9000), login(2401)), (login(100), login(9000))] {
+            let steps = {
+                let items = Kept::default();
+                write(&items, Permit::for_a_test(), &before, "t").unwrap();
+                crate::fault::counting("credman.step", || {
+                    write(&items, Permit::for_a_test(), &after, "t")
+                })
+                .1
+            };
+            for stop in 1..steps {
+                let items = Kept::default();
+                write(&items, Permit::for_a_test(), &before, "t").unwrap();
+                let _ = crate::fault::killing_nth("credman.step", stop, || {
+                    write(&items, Permit::for_a_test(), &after, "t")
+                });
+                let next = login(2401);
+                write(&items, Permit::for_a_test(), &next, "t").unwrap();
+                assert_eq!(read(&items, "t").unwrap(), Some(next));
+                assert_eq!(
+                    items.names(),
+                    ["#0", "#1", MANIFEST],
+                    "{} to {} stopped at {stop}",
+                    before.len(),
+                    after.len()
+                );
             }
         }
     }
