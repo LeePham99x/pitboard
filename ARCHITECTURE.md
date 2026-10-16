@@ -4160,8 +4160,9 @@ Microsoft's documentation.
   data folder, and `MainWindow` puts them back with `SetWindowPlacement` before its first
   activation, which shows a window already maximized maximized (microsoft-ui-xaml at
   `winui3/release/2.5.1`, `DesktopWindowImpl.cpp` `ActivateImpl`). With none saved it opens
-  at Windows' own place, 1100 by 720 epx. Either way `WindowChrome` then fits it within its
-  screen's work area, and keeps it at 640 by 500 epx at least at its screen's scale, as the
+  at Windows' own place, 1100 by 720 epx, which `WindowChrome` fits within its screen's work
+  area. A saved place is put back as it was, even partly under the taskbar, as the person left
+  it. `WindowChrome` keeps the window at 640 by 500 epx at least at its screen's scale, as the
   WinUI Gallery's main window does. Exit closes the window first, so it is kept then too
   (`WindowPlacementTests`, the `LifecycleTests` of placement).
 - Microsoft's keyboard accelerator page names F6 and Shift+F6 for the next and previous pane

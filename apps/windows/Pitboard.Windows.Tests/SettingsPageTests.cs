@@ -380,7 +380,11 @@ public sealed class SettingsPageTests
         var opened = new List<Uri>();
         var page = await Shown(new AppModel(new StandInModel(Snapshots.Read(1))), version: "1.2.3", open: opened.Add);
 
-        Views.Element<SettingsExpander>(page, "settings.about").IsExpanded = true;
+        // Scrolled to first, as a person does: the expander's ItemsRepeater makes no item far below the view, where About
+        // is on CI's smaller screens.
+        var about = Views.Element<SettingsExpander>(page, "settings.about");
+        about.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false });
+        about.IsExpanded = true;
         await Views.Until(() => Views.Visible<HyperlinkButton>(page).Any(), "About did not open");
 
         Assert.Contains("1.2.3", Views.Texts(page));

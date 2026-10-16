@@ -93,7 +93,8 @@ public sealed class AccountRowTests
         var tag = Bounds((FrameworkElement)row.FindName("PlanTag"), row);
 
         Assert.IsFalse(((TextBlock)row.FindName("TitleText")).IsTextTrimmed);
-        Assert.AreEqual(8.0, tag.Left - name.Right, 0.5, "the tag is not beside the name");
+        // Layout rounding gives the name's column whole pixels, up to one more than the text: 8.52 at 100% on CI.
+        Assert.AreEqual(8.0, tag.Left - name.Right, 1 / row.XamlRoot.RasterizationScale, "the tag is not beside the name");
     }
 
     // The XAML compiler calls an x:Bind function only for a value that is not null, so a row the list gave another

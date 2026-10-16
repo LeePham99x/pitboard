@@ -188,10 +188,12 @@ internal sealed class Launched : IDisposable
 
     public AutomationElement Named(string name) => Find(found => found.ByName(name), $"'{name}'");
 
-    // As a person presses it once it can be pressed.
+    // As a person presses it once it can be pressed. A SettingsCard that cannot be clicked takes the name of the button
+    // it holds, so only what can be invoked is looked for.
     public void Invoke(string name)
     {
-        var found = Named(name);
+        var pressable = new PropertyCondition(Automation.PropertyLibrary.PatternAvailability.IsInvokePatternAvailable, true);
+        var found = Find(found => found.ByName(name).And(pressable), $"'{name}' to press");
         if (!Retry.WhileFalse(() => found.IsEnabled, Shortly, TimeSpan.FromMilliseconds(250), ignoreException: true).Result)
         {
             throw new AssertFailedException($"'{name}', a {found.ControlType} {found.AutomationId}, stayed dimmed for {Shortly}: {Shown()}");
