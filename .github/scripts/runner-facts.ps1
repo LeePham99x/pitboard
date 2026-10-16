@@ -1148,10 +1148,12 @@ function Measure-SparseIdentity($User, $Result) {
         Set-Content -Path $userScript -Encoding ascii -Value @'
 $ErrorActionPreference = 'Stop'
 $key = 'HKCU:\Software\Classes\pitboard-probe-cf8'
-$certificates = 'Cert:\CurrentUser\TrustedPeople'
+# Windows PowerShell started this way has no Cert: drive (run 38878569423), so .NET opens the store.
+$certificates = [Security.Cryptography.X509Certificates.X509Store]::new('TrustedPeople', 'CurrentUser')
 try {
+    $certificates.Open('ReadWrite')
     if ($env:PITBOARD_PROBE_CF8_STEP -eq 'register') {
-        Import-Certificate -FilePath $env:PITBOARD_PROBE_CF8_CER -CertStoreLocation $certificates | Out-Null
+        $certificates.Add([Security.Cryptography.X509Certificates.X509Certificate2]::new($env:PITBOARD_PROBE_CF8_CER))
         New-Item -Path "$key\shell\open\command" -Force | Out-Null
         Set-ItemProperty -LiteralPath $key -Name '(default)' -Value 'URL:pitboard-probe-cf8'
         Set-ItemProperty -LiteralPath $key -Name 'URL Protocol' -Value ''
@@ -1161,17 +1163,19 @@ try {
         "registered: $($package.Status), signature $($package.SignatureKind)"
     } else {
         Get-AppxPackage -Name 'PitboardProbe' | Remove-AppxPackage
-        Get-ChildItem -Path $certificates | Where-Object { $_.Subject -eq 'CN=PitboardProbe' } | Remove-Item
+        $certificates.Certificates | Where-Object { $_.Subject -eq 'CN=PitboardProbe' } | ForEach-Object { $certificates.Remove($_) }
         if (Test-Path -LiteralPath $key) { Remove-Item -LiteralPath $key -Recurse -Force }
         $left = @()
         if (Get-AppxPackage -Name 'PitboardProbe') { $left += 'package' }
-        if (Get-ChildItem -Path $certificates | Where-Object { $_.Subject -eq 'CN=PitboardProbe' }) { $left += 'certificate' }
+        if ($certificates.Certificates | Where-Object { $_.Subject -eq 'CN=PitboardProbe' }) { $left += 'certificate' }
         if (Test-Path -LiteralPath $key) { $left += 'scheme' }
         "unregistered, left: $($left -join ', ')"
     }
 } catch {
     $message = $_.Exception.Message.Replace($env:USERPROFILE, '<profile>').Replace($env:USERNAME, '<user>') -replace 'S-1-5-21-[0-9-]+', '<sid>'
     'failed 0x{0:X8}: {1}' -f $_.Exception.HResult, $message
+} finally {
+    $certificates.Close()
 }
 '@
         $userArgs = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $userScript)
