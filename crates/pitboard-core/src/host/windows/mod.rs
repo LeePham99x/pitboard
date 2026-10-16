@@ -16,6 +16,7 @@ pub(crate) mod fs;
 mod job;
 pub(crate) mod proc;
 pub(super) mod seal;
+mod settings;
 mod tasks;
 pub(crate) mod user;
 
@@ -218,6 +219,14 @@ impl Host for Windows {
         }
         let _ = ctx;
         credman::held(target).map_err(|e| e.to_string())
+    }
+
+    fn windows_settings(&self) -> super::WindowsSettings {
+        if super::administered::READ_BY_REAL_HOSTS {
+            settings::read()
+        } else {
+            super::WindowsSettings::default()
+        }
     }
 }
 

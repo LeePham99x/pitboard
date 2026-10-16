@@ -7,6 +7,7 @@
 
 use super::{
     Administered, Cookie, Elevation, Floor, Host, Jar, JarError, Listed, Process, Scheduler,
+    WindowsSettings,
 };
 use crate::context::Context;
 use crate::provider::claude::credman::FORCE;
@@ -146,6 +147,7 @@ pub struct MemoryHost {
     credentials_fault: Mutex<Option<String>>,
     // `HKCU\Environment`, by name in upper case, as a test said.
     user_environment_values: Mutex<HashMap<String, String>>,
+    windows_settings: Mutex<WindowsSettings>,
 }
 
 impl Default for MemoryHost {
@@ -215,6 +217,7 @@ impl MemoryHost {
             credentials: Mutex::new(Vec::new()),
             credentials_fault: Mutex::new(None),
             user_environment_values: Mutex::new(gate),
+            windows_settings: Mutex::new(WindowsSettings::default()),
         }
     }
 
@@ -424,6 +427,11 @@ impl MemoryHost {
     #[cfg(test)]
     pub(crate) fn sets_user_environment(&self, name: &str, value: &str) {
         locked(&self.user_environment_values).insert(name.to_uppercase(), value.into());
+    }
+
+    #[cfg(test)]
+    pub(crate) fn sets_windows(&self, settings: WindowsSettings) {
+        *locked(&self.windows_settings) = settings;
     }
 
     /// Say an administrator's configuration profile forces `key` of `domain` to `value`, a
@@ -637,6 +645,10 @@ impl Host for MemoryHost {
             .map_or(Administered::Unset, |value| {
                 Administered::Set(value.clone())
             })
+    }
+
+    fn windows_settings(&self) -> WindowsSettings {
+        locked(&self.windows_settings).clone()
     }
 
     // In any case, as Credential Manager finds a target: one a test named, or Claude Code's item

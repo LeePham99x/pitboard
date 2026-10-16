@@ -1115,6 +1115,11 @@ pub(crate) struct ChangesNothing {
     pub(crate) to_ask_again: &'static str,
 }
 
+// Doctor's alone, where `EnableLUA` reads 0: the gate reads no setting.
+pub(crate) const ADMIN_APPROVAL_OFF: &str = "User Account Control is off on this PC, so every \
+     program an administrator starts is elevated: turn it on, or run Pitboard from a standard \
+     account.";
+
 // On macOS and Linux root and sudo share one refusal, since the way out is the same.
 pub(crate) fn elevated(os: Os, why: Option<&'static str>) -> ChangesNothing {
     let because = |cannot_tell: &str| match why {

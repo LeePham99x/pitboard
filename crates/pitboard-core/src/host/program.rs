@@ -105,12 +105,22 @@ pub(crate) fn find_among(
     named: &Path,
     dirs: impl IntoIterator<Item = PathBuf>,
     lookup: &Lookup,
-    mut runnable: impl FnMut(&Path) -> bool,
+    runnable: impl FnMut(&Path) -> bool,
 ) -> Option<PathBuf> {
+    every_among(named, dirs, lookup, runnable).next()
+}
+
+// Every one a shell would come to, first first.
+pub(crate) fn every_among(
+    named: &Path,
+    dirs: impl IntoIterator<Item = PathBuf>,
+    lookup: &Lookup,
+    mut runnable: impl FnMut(&Path) -> bool,
+) -> impl Iterator<Item = PathBuf> {
     dirs.into_iter()
         .filter(|dir| dir.is_absolute())
-        .flat_map(|dir| lookup.spellings(&dir.join(named)))
-        .find(|candidate| runnable(candidate))
+        .flat_map(move |dir| lookup.spellings(&dir.join(named)))
+        .filter(move |candidate| runnable(candidate))
 }
 
 // The last file an npm shim names in its own folder comes after the `node.exe` it runs it with.

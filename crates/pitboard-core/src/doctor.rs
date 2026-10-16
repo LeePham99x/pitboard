@@ -119,6 +119,10 @@ pub(crate) struct Facts {
     pub(crate) floor: crate::host::Floor,
     // Windows' alone, where a shell decides whether `pitboard statusline` is found.
     pub(crate) status_line: Option<StatusLineFact>,
+    // Windows' alone.
+    pub(crate) windows_settings: Option<crate::host::WindowsSettings>,
+    // Windows' alone: each `pitboard.exe` a shell finds on PATH, the one it runs first.
+    pub(crate) pitboards: Vec<PathBuf>,
     pub(crate) now: i64,
 }
 
@@ -447,6 +451,10 @@ fn desktop_facts(ctx: &Context, state: &State) -> Option<DesktopFacts> {
 }
 
 pub(crate) fn gather(ctx: &Context) -> Facts {
+    let pitboards = match ctx.os {
+        Os::Windows => pitboards(ctx),
+        Os::MacOs | Os::Linux => Vec::new(),
+    };
     let config = claude::load_config(ctx);
     let state = crate::state::load(ctx);
     let service = claude::live_service(ctx);
@@ -534,15 +542,32 @@ pub(crate) fn gather(ctx: &Context) -> Facts {
         floor: ctx.host().floor(),
         status_line: (ctx.os == Os::Windows).then(|| StatusLineFact {
             git_bash: claude::git_bash(ctx),
-            pitboard: crate::host::program::find_among(
-                std::path::Path::new("pitboard"),
-                std::env::split_paths(&ctx.search_path()),
-                &crate::host::program::Lookup::new(Os::Windows, Some(".EXE".as_ref())),
-                crate::host::proc::can_run,
-            ),
+            pitboard: pitboards.first().cloned(),
         }),
+        windows_settings: (ctx.os == Os::Windows).then(|| ctx.host().windows_settings()),
+        pitboards,
         now: ctx.now(),
     }
+}
+
+// One file two folders lead to, such as winget's link and its package, is one copy.
+fn pitboards(ctx: &Context) -> Vec<PathBuf> {
+    let lookup = crate::host::program::Lookup::new(Os::Windows, Some(".EXE".as_ref()));
+    let mut files: Vec<PathBuf> = Vec::new();
+    let mut copies = Vec::new();
+    for found in crate::host::program::every_among(
+        std::path::Path::new("pitboard"),
+        std::env::split_paths(&ctx.search_path()),
+        &lookup,
+        crate::host::proc::can_run,
+    ) {
+        let file = std::fs::canonicalize(&found).unwrap_or_else(|_| found.clone());
+        if !files.iter().any(|seen| Os::Windows.same_path(seen, &file)) {
+            files.push(file);
+            copies.push(found);
+        }
+    }
+    copies
 }
 
 /// Claude Code's fallback file, where it is behind the keychain, and the login it holds.
@@ -831,19 +856,31 @@ fn running_codex(ctx: &Context) -> Option<Vec<crate::holder::Holding>> {
 /// The check that fails where this process runs as root or under sudo, or elevated on
 /// Windows, or nobody could tell whether it does, since then Pitboard changes nothing: `None`
 /// where it runs as the person themselves.
-fn elevated(os: Os, elevation: crate::host::Elevation) -> Option<Check> {
+fn elevated(
+    os: Os,
+    elevation: crate::host::Elevation,
+    admin_approval: Option<bool>,
+) -> Option<Check> {
     let said = match elevation {
         crate::host::Elevation::Normal => return None,
         crate::host::Elevation::Elevated { why } => words::elevated(os, Some(why)),
         crate::host::Elevation::Unknown => words::elevated(os, None),
+    };
+    // `EnableLUA` 0 says it is User Account Control off, not the built-in Administrator.
+    let way_out = match (elevation, admin_approval) {
+        (crate::host::Elevation::Elevated { why }, Some(false))
+            if why == crate::host::token::IN_EVERY_PROGRAM =>
+        {
+            words::ADMIN_APPROVAL_OFF
+        }
+        _ => said.way_out,
     };
     Some(fail(
         "elevated",
         "runs as",
         said.because,
         format!(
-            "Pitboard changes nothing this way: it reads, and renews and writes nothing. {}",
-            said.way_out
+            "Pitboard changes nothing this way: it reads, and renews and writes nothing. {way_out}"
         ),
     ))
 }
@@ -899,6 +936,58 @@ fn judge_windows_homes(facts: &Facts) -> Vec<Check> {
              to, as their Credential Manager items do. Pitboard's own folder, in AppData\\Local, \
              stays on this one.",
         ));
+    }
+    checks
+}
+
+// What changes what Pitboard or a tool does on Windows, each only where it is so.
+fn judge_windows_settings(facts: &Facts) -> Vec<Check> {
+    let mut checks = Vec::new();
+    let settings = facts.windows_settings.clone().unwrap_or_default();
+    if !settings.wsl.is_empty() {
+        checks.push(Check {
+            advice: "Claude Code and Codex installed there are installs of their own, with logins \
+                     of their own, which Pitboard on Windows does not switch. WSL 2 runs them in a \
+                     virtual machine, so Windows' list of processes does not show them running."
+                .into(),
+            ..ok(
+                "wsl",
+                "WSL",
+                format!("WSL holds {}", words::listed(settings.wsl)),
+            )
+        });
+    }
+    if let [first, rest @ ..] = facts.pitboards.as_slice()
+        && !rest.is_empty()
+    {
+        let rest = rest.iter().map(|copy| copy.display().to_string()).collect();
+        checks.push(Check {
+            advice: "A shell runs the first, so updating another changes nothing there. Uninstall \
+                     the copies you do not use."
+                .into(),
+            ..ok(
+                "pitboard_copies",
+                "copies of pitboard",
+                format!("{} on PATH, then {}", first.display(), words::listed(rest)),
+            )
+        });
+    }
+    // hyper-util fills in from Windows' settings only what no variable names.
+    if let Some(server) = &settings.proxy
+        && facts.network.proxy.is_none()
+        && facts.network.passed_over.is_empty()
+    {
+        checks.push(Check {
+            advice: "Codex sends its requests through it. Claude Code and Pitboard follow only the \
+                     proxy variables, so theirs go out directly: set HTTPS_PROXY where this network \
+                     needs the proxy."
+                .into(),
+            ..ok(
+                "system_proxy",
+                "Windows proxy",
+                format!("Windows' proxy settings name {server}, and no proxy variable is set"),
+            )
+        });
     }
     checks
 }
@@ -982,7 +1071,14 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
 
     // First, in the order the gate asks them: they are why every change here is refused.
     checks.extend(too_old(facts.floor));
-    checks.extend(elevated(facts.os, facts.elevation));
+    checks.extend(elevated(
+        facts.os,
+        facts.elevation,
+        facts
+            .windows_settings
+            .as_ref()
+            .and_then(|settings| settings.admin_approval),
+    ));
 
     if let Some(tool) = facts.os.secrets_tool() {
         checks.push(match &facts.security_tool {
@@ -1358,9 +1454,19 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
                 facts.home.display()
             ),
         ));
+    } else if facts.os == Os::Windows {
+        checks.push(Check {
+            advice: "Pitboard tells this PC apart by it, and a copy of the PC keeps it, such as a \
+                     virtual machine copied whole. Such a copy takes this PC's accounts for its \
+                     own, and both renew the same parked logins: on a copy, forget each account \
+                     and enrol it again with `--sign-in`."
+                .into(),
+            ..ok("machine_id", "machine id", "Windows' MachineGuid")
+        });
     }
 
     checks.extend(judge_windows_homes(facts));
+    checks.extend(judge_windows_settings(facts));
     checks.push(judge_storage_v5(facts));
     checks.push(judge_daemon(facts));
     checks.push(judge_pending(facts));
@@ -1389,13 +1495,12 @@ pub(crate) fn evaluate(facts: &Facts) -> Vec<Check> {
         ));
     }
     if let (Some(desktop), Ok(state)) = (&facts.desktop, &facts.state) {
-        checks.extend(judge_desktop(
-            facts.os,
-            desktop,
-            state,
-            &facts.parks,
-            facts.now,
-        ));
+        checks.extend(match facts.os {
+            Os::MacOs | Os::Linux => {
+                judge_desktop(facts.os, desktop, state, &facts.parks, facts.now)
+            }
+            Os::Windows => vec![judge_desktop_on_windows(state)],
+        });
     }
     if !claude_here {
         checks.retain(|check| !CLAUDE_CODES_OWN.contains(&check.code));
@@ -2782,6 +2887,28 @@ fn judge_codex_version(facts: &CodexFacts) -> Check {
     )
 }
 
+// An index from a Mac can hold Claude Desktop's accounts, which nothing on Windows changes.
+fn judge_desktop_on_windows(state: &State) -> Check {
+    let held: Vec<String> = state
+        .accounts
+        .iter()
+        .filter(|account| account.provider() == ProviderId::Desktop)
+        .map(|account| format!("`{}`", state.typed(&account.key())))
+        .collect();
+    let holds = match held.is_empty() {
+        true => "folders set aside for Claude Desktop".to_string(),
+        false => words::listed(held),
+    };
+    Check {
+        advice: format!("This index holds {holds}. Nothing here changes them."),
+        ..ok(
+            "desktop_data_folder",
+            "Claude data folder",
+            crate::provider::desktop::paths::MACOS_ONLY,
+        )
+    }
+}
+
 // Claude Desktop's section, after Codex's.
 fn judge_desktop(
     os: Os,
@@ -3303,7 +3430,11 @@ fn unplaced(ctx: &Context, variable: &str, path: &std::path::Path) -> Diagnosis 
     Diagnosis {
         checks: too_old(ctx.host().floor())
             .into_iter()
-            .chain(elevated(crate::host::OS, ctx.host().elevation(ctx)))
+            .chain(elevated(
+                crate::host::OS,
+                ctx.host().elevation(ctx),
+                ctx.host().windows_settings().admin_approval,
+            ))
             .chain(std::iter::once(homes))
             .collect(),
         environment: json!({}),
@@ -3410,6 +3541,15 @@ fn redaction_for(ctx: &Context, facts: &Facts) -> crate::redact::Sheet {
                 .hide(aside.name.clone(), "park")
                 .hide(aside.login.clone().unwrap_or_default(), "login");
         }
+    }
+    // Windows' proxy names a network as a variable's does: `host:port`, or one per scheme.
+    let system_proxy = facts
+        .windows_settings
+        .as_ref()
+        .and_then(|settings| settings.proxy.as_deref());
+    for server in system_proxy.into_iter().flat_map(|named| named.split(';')) {
+        let server = server.rsplit('=').next().unwrap_or(server).trim();
+        sheet = sheet.hide(server.to_owned(), "proxy");
     }
     // A proxy's host can name the company whose network it is, as an organisation's name
     // does. Its port goes with it, so that a host that is also a word, such as `proxy`, is
@@ -4207,6 +4347,8 @@ mod tests {
             fallback_login: None,
             floor: crate::host::Floor::Met,
             status_line: None,
+            windows_settings: None,
+            pitboards: Vec::new(),
             now: NOW,
         }
     }
@@ -6046,7 +6188,36 @@ mod tests {
                 .ends_with("Never copy /elsewhere/pitboard between machines."),
             "the folder in use"
         );
-        assert!(evaluate(&facts()).iter().all(|c| c.code != "machine_id"));
+        for os in [Os::MacOs, Os::Linux] {
+            f.os = os;
+            f.machine_id_known = true;
+            assert!(
+                evaluate(&f).iter().all(|c| c.code != "machine_id"),
+                "{os:?}"
+            );
+        }
+    }
+
+    // The sysprep page names the SID it replaces, and not the MachineGuid machine-uid reads.
+    #[test]
+    fn a_windows_pc_is_told_a_copy_of_it_keeps_its_machine_guid() {
+        let mut f = facts();
+        f.os = Os::Windows;
+        let checks = evaluate(&f);
+        let note = check(&checks, "machine_id");
+        assert_eq!(
+            (note.level, note.detail.as_str(), note.advice.as_str()),
+            (
+                Level::Ok,
+                "Windows' MachineGuid",
+                "Pitboard tells this PC apart by it, and a copy of the PC keeps it, such as a \
+                 virtual machine copied whole. Such a copy takes this PC's accounts for its own, \
+                 and both renew the same parked logins: on a copy, forget each account and enrol \
+                 it again with `--sign-in`."
+            )
+        );
+        f.machine_id_known = false;
+        assert_eq!(check(&evaluate(&f), "machine_id").level, Level::Warn);
     }
 
     #[test]
@@ -7493,6 +7664,250 @@ mod tests {
         assert!(
             evaluate(&facts).iter().all(|c| c.code != "status_line"),
             "a machine with no Claude Code is not told"
+        );
+    }
+
+    // L5 and H9 from Codex 0.163.0's and Claude Code 2.1.301's builds, read as bytes.
+    #[test]
+    fn windows_is_told_what_its_settings_change_for_pitboard_and_the_tools() {
+        let said = |facts: &Facts| -> Vec<(&'static str, Level, String, String)> {
+            evaluate(facts)
+                .into_iter()
+                .filter(|c| ["wsl", "pitboard_copies", "system_proxy"].contains(&c.code))
+                .map(|c| (c.code, c.level, c.detail, c.advice))
+                .collect()
+        };
+        let copy = |folder: &str| PathBuf::from(format!(r"C:\{folder}\pitboard.exe"));
+        let mut facts = facts();
+        facts.os = Os::Windows;
+        facts.windows_settings = Some(crate::host::WindowsSettings::default());
+        facts.pitboards = vec![copy("a")];
+        assert!(said(&facts).is_empty());
+
+        facts.windows_settings = Some(crate::host::WindowsSettings {
+            wsl: vec!["Ubuntu".into(), "Debian".into()],
+            proxy: Some("proxy.example.com:8080".into()),
+            admin_approval: Some(true),
+        });
+        facts.pitboards = vec![copy("a"), copy("b"), copy("c")];
+        assert_eq!(
+            said(&facts),
+            [
+                (
+                    "wsl",
+                    Level::Ok,
+                    "WSL holds Ubuntu and Debian".to_string(),
+                    "Claude Code and Codex installed there are installs of their own, with logins \
+                     of their own, which Pitboard on Windows does not switch. WSL 2 runs them in \
+                     a virtual machine, so Windows' list of processes does not show them running."
+                        .to_string()
+                ),
+                (
+                    "pitboard_copies",
+                    Level::Ok,
+                    r"C:\a\pitboard.exe on PATH, then C:\b\pitboard.exe and C:\c\pitboard.exe"
+                        .to_string(),
+                    "A shell runs the first, so updating another changes nothing there. \
+                     Uninstall the copies you do not use."
+                        .to_string()
+                ),
+                (
+                    "system_proxy",
+                    Level::Ok,
+                    "Windows' proxy settings name proxy.example.com:8080, and no proxy variable \
+                     is set"
+                        .to_string(),
+                    "Codex sends its requests through it. Claude Code and Pitboard follow only \
+                     the proxy variables, so theirs go out directly: set HTTPS_PROXY where this \
+                     network needs the proxy."
+                        .to_string()
+                ),
+            ]
+        );
+
+        let codes = |facts: &Facts| {
+            said(facts)
+                .into_iter()
+                .map(|(code, ..)| code)
+                .collect::<Vec<_>>()
+        };
+        facts.network = by(through(None, &[]));
+        assert_eq!(
+            codes(&facts),
+            ["wsl", "pitboard_copies"],
+            "a variable names one"
+        );
+        facts.network = NetworkFact {
+            proxy: None,
+            passed_over: vec!["HTTPS_PROXY"],
+        };
+        assert_eq!(
+            codes(&facts),
+            ["wsl", "pitboard_copies"],
+            "a variable is set"
+        );
+        facts.windows_settings = None;
+        assert_eq!(codes(&facts), ["pitboard_copies"]);
+    }
+
+    #[test]
+    fn windows_settings_are_read_from_the_host_on_windows_alone() {
+        let host = crate::host::memory::MemoryHost::new();
+        let settings = crate::host::WindowsSettings {
+            wsl: vec!["Ubuntu".into()],
+            proxy: Some("proxy.example.com:8080".into()),
+            admin_approval: Some(false),
+        };
+        host.sets_windows(settings.clone());
+        let ctx = Context::for_unit_test().with_memory_stores(host);
+        assert_eq!(
+            gather(&ctx).windows_settings,
+            (crate::host::OS == Os::Windows).then_some(settings)
+        );
+    }
+
+    // RF-F3: a bare name runs the first a shell finds.
+    #[test]
+    fn every_pitboard_a_windows_shell_finds_is_one_copy_first_first() {
+        let root = tempfile::tempdir().expect("a scratch folder");
+        let (a, b) = (root.path().join("a"), root.path().join("b"));
+        for folder in [&a, &b] {
+            std::fs::create_dir_all(folder).expect("a folder");
+            let program = folder.join("pitboard.exe");
+            std::fs::write(&program, b"MZ").expect("a program");
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755))
+                    .expect("runnable");
+            }
+        }
+        let empty = root.path().join("empty");
+        std::fs::create_dir_all(&empty).expect("a folder");
+        let path = std::env::join_paths([&a, &empty, &b, &a]).expect("a PATH");
+        let ctx = Context::for_unit_test().with_search_path(path.to_string_lossy().into_owned());
+        assert_eq!(
+            pitboards(&ctx),
+            [a.join("pitboard.exe"), b.join("pitboard.exe")]
+        );
+    }
+
+    #[test]
+    fn windows_proxy_setting_is_redacted_from_a_report() {
+        let ctx = Context::new(PathBuf::from("/home/x"));
+        let mut f = facts();
+        f.os = Os::Windows;
+        for (server, hidden) in [
+            ("proxy.example.com:8080", &["proxy.example.com:8080"][..]),
+            (
+                "http=web.example.com:80;https=secure.example.com:443",
+                &["web.example.com:80", "secure.example.com:443"][..],
+            ),
+        ] {
+            f.windows_settings = Some(crate::host::WindowsSettings {
+                proxy: Some(server.into()),
+                ..crate::host::WindowsSettings::default()
+            });
+            let detail = check(&evaluate(&f), "system_proxy").detail.clone();
+            let shown = redaction_for(&ctx, &f).over(&detail);
+            for part in hidden {
+                assert!(detail.contains(part), "{detail}");
+                assert!(!shown.contains(part), "{shown}");
+            }
+            assert!(shown.contains("<proxy "), "{shown}");
+        }
+    }
+
+    // RF-A1 read UAC on on both images, so only Microsoft's word says what off does.
+    #[test]
+    fn windows_says_user_account_control_is_off_where_it_reads_so() {
+        let mut f = facts();
+        f.os = Os::Windows;
+        let advice = |f: &Facts| {
+            evaluate(f)
+                .into_iter()
+                .find(|c| c.code == "elevated")
+                .map(|c| c.advice)
+        };
+        f.elevation = crate::host::Elevation::Elevated {
+            why: crate::host::token::IN_EVERY_PROGRAM,
+        };
+        let before = "Pitboard changes nothing this way: it reads, and renews and writes nothing. \
+                      That is so with User Account Control off and in the built-in Administrator \
+                      account: run it from a standard account, or turn User Account Control on.";
+        for read in [None, Some(true)] {
+            f.windows_settings = Some(crate::host::WindowsSettings {
+                admin_approval: read,
+                ..crate::host::WindowsSettings::default()
+            });
+            assert_eq!(advice(&f).as_deref(), Some(before), "{read:?}");
+        }
+        f.windows_settings = Some(crate::host::WindowsSettings {
+            admin_approval: Some(false),
+            ..crate::host::WindowsSettings::default()
+        });
+        assert_eq!(
+            advice(&f).as_deref(),
+            Some(
+                "Pitboard changes nothing this way: it reads, and renews and writes nothing. \
+                 User Account Control is off on this PC, so every program an administrator \
+                 starts is elevated: turn it on, or run Pitboard from a standard account."
+            )
+        );
+        f.elevation = crate::host::Elevation::Elevated {
+            why: crate::host::token::AS_ADMINISTRATOR,
+        };
+        assert_eq!(
+            advice(&f).as_deref(),
+            Some(
+                "Pitboard changes nothing this way: it reads, and renews and writes nothing. Run \
+                 it from a terminal that is not elevated (not Run as administrator)."
+            )
+        );
+        f.elevation = crate::host::Elevation::Normal;
+        assert_eq!(advice(&f), None);
+    }
+
+    #[test]
+    fn a_claude_desktop_account_in_a_windows_index_is_a_note() {
+        let mut state = State::default();
+        state.accounts.push(desktop_account("work", None));
+        state
+            .accounts
+            .push(desktop_account("home", Some(folder_park("home-1", None))));
+        let mut f = facts();
+        f.desktop = Some(DesktopFacts {
+            root: Err("Pitboard switches Claude Desktop accounts on macOS only".into()),
+            ..desktop()
+        });
+        f.state = Ok(state.clone());
+        f.os = Os::Windows;
+        let desktops: Vec<(&str, Level, String, String)> = evaluate(&f)
+            .into_iter()
+            .filter(|c| section(c.code) == Some(ProviderId::Desktop))
+            .map(|c| (c.code, c.level, c.detail, c.advice))
+            .collect();
+        assert_eq!(
+            desktops,
+            [(
+                "desktop_data_folder",
+                Level::Ok,
+                "Pitboard switches Claude Desktop accounts on macOS only".to_string(),
+                "This index holds `desktop/work` and `desktop/home`. Nothing here changes them."
+                    .to_string()
+            )]
+        );
+
+        state.accounts.clear();
+        assert_eq!(
+            judge_desktop_on_windows(&state).advice,
+            "This index holds folders set aside for Claude Desktop. Nothing here changes them."
+        );
+        f.os = Os::Linux;
+        assert_eq!(
+            check(&evaluate(&f), "desktop_data_folder").level,
+            Level::Fail,
+            "Linux says it as it did"
         );
     }
 

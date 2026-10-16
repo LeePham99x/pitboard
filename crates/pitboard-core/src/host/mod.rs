@@ -574,6 +574,17 @@ pub enum Floor {
     Unknown,
 }
 
+// What Windows' settings say that changes what Pitboard or a tool does there.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct WindowsSettings {
+    // The distributions WSL holds for this account, by `DistributionName` under HKCU's `Lxss`.
+    pub(crate) wsl: Vec<String>,
+    // `ProxyServer` where `ProxyEnable` is not 0, as hyper-util 0.1.20 reads them for Codex.
+    pub(crate) proxy: Option<String>,
+    // `EnableLUA`, which runs administrators in Admin Approval Mode where it is not 0.
+    pub(crate) admin_approval: Option<bool>,
+}
+
 // Windows 11 24H2's build, which Windows Server 2025 shares.
 pub(crate) const WINDOWS_FLOOR: u32 = 26100;
 
@@ -819,6 +830,11 @@ pub(crate) trait Host: Send + Sync + std::fmt::Debug {
     // says why it cannot tell. None is held where there is no Credential Manager.
     fn credential_held(&self, _ctx: &Context, _target: &str) -> std::result::Result<bool, String> {
         Ok(false)
+    }
+
+    // None elsewhere, and none in a build for tests on the real hosts.
+    fn windows_settings(&self) -> WindowsSettings {
+        WindowsSettings::default()
     }
 }
 
