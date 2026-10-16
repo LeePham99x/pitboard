@@ -116,6 +116,24 @@ mod tests {
         assert_ne!(dir_hash("/Users/x/.claude"), dir_hash("/Users/x/.claude/"));
     }
 
+    // `credman_target`: the string is hashed as given on Windows too, so each spelling of one
+    // folder is an item of its own, and the home's own `.claude` named outright is one too.
+    #[test]
+    fn each_spelling_of_a_windows_folder_is_a_slot_of_its_own() {
+        let spelled: std::collections::BTreeSet<String> = [r"C:\x", "C:/x", r"c:\x", r"C:\x\"]
+            .into_iter()
+            .map(dir_hash)
+            .collect();
+        assert_eq!(spelled.len(), 4);
+        let named = Context::new(std::path::PathBuf::from(r"C:\Users\x"))
+            .with_claude_config_dir(r"C:\Users\x\.claude".into());
+        assert!(!super::super::paths::is_default_slot(&named));
+        assert_eq!(
+            super::super::paths::live_service(&named),
+            service_for_dir(r"C:\Users\x\.claude")
+        );
+    }
+
     #[test]
     fn windows_names_every_persons_item_claude_code_user() {
         let ctx = |os: Os| {

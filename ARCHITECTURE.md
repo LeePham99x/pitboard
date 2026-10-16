@@ -848,10 +848,10 @@ window loads its site, and whatever the site's pages load, as a browser would.
   system added to `host::Os` does not compile until it is said for every one. No such
   `match` has a `_` arm. Where a fact of Windows is not read yet, its arm refuses through
   an answer its callers already have, never one that would let Pitboard act: Claude Code's
-  live chain on Windows is its file alone only where nothing turns Credential Manager on and
-  Credential Manager holds no login at the live target, and otherwise one store whose every
-  call cannot be read (`store::Refused`), and the Windows face answers as `host/windows`
-  says.
+  live chain on Windows is Credential Manager with its file behind where anything turns that
+  store on, its file alone where nothing does and Credential Manager holds no login at the
+  live target, and otherwise one store whose every call cannot be read (`store::Refused`),
+  and the Windows face answers as `host/windows` says.
 - A context carries the system its environment was read as, so where the home and
   Pitboard's default folder are, and how a variable's name compares, are tested for
   Windows on every system.
@@ -880,8 +880,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
   links a directory otherwise than a file, says how in its own face and nowhere else. The
   integration tests' harness says what differs by system in
   `crates/pitboard/tests/common/os.rs`, one `match` on `host::OS` for each fact: where
-  Claude Code keeps the login it uses (`.credentials.json` on Windows, as on Linux, since no
-  test turns Credential Manager on: `windows_backend_choice`), where Pitboard
+  Claude Code keeps the login it uses (`.credentials.json` on Windows, as on Linux, unless a
+  test turns Credential Manager on, whose items in its own slot the harness deletes by name:
+  `windows_backend_choice`), where Pitboard
   parks one (sealed to the person on Windows, which only the core's vault writes, so the
   harness parks through it), which variables a command is passed on, which folders
   of a person's account it is given as scratch ones of its own, what its `PATH` holds after
@@ -1763,7 +1764,8 @@ the fact is on macOS, on Linux and on Windows (`assumptions::OnSystem`):
   supports Claude Desktop on macOS alone, so every one of its facts is `NotRead` on Linux
   and Windows.
 - `Pending { by, reads }`: to be read there by a later pull request of the Windows work,
-  `W2` to `W27`, which says what that pull request reads. `assumptions::pending` lists
+  `W2` to `W27` with `W23` split into `W23a` and `W23b`, or `W-warm`, which says what that
+  pull request reads. `assumptions::pending` lists
   these, and the Windows work is not done while the list has anything in it.
 
 Where a tool does something else on Windows, the Windows behaviour is a fact of its own,
@@ -2859,10 +2861,31 @@ treated, and only the macOS build shows it. The run reads both builds since.
   the folder is trusted, or in print mode. Pitboard reads every signal but a project's and a
   `--settings` file's, and takes Claude Code's chain for the file only where none is on and
   Credential Manager holds nothing at the live target, `<service>/claude-code-user` or its
-  manifest `#m` (`credman_account_name`). Anything else refuses: a store turned on, which
-  W23a follows, or a login there that nothing Pitboard reads turned on, where it cannot tell
-  which store sessions read. A session a project turned the store on for is caught that way
-  once it wrote there.
+  manifest `#m` (`credman_account_name`). Where a signal turns the store on, Pitboard
+  follows it, below. Where a login sits there that nothing Pitboard reads turned on, it
+  refuses, since it cannot tell which store sessions read. A session a project turned the
+  store on for is caught that way once it wrote there.
+- Read on 16 October 2026 from the same builds, with Bun 1.4.3's `Bun.secrets` as embedded
+  (`credman_target`, `credman_chunking`, `credman_attributes`, `credman_migration`,
+  `credman_probe`, `windows_credman_cache`): Claude Code's item is `<service>/claude-code-user`,
+  the service hashed from the folder's string as given, so `C:\x` and `C:/x` are two items.
+  `Bun.secrets` writes it generic, with the name as its user name, the UTF-8 text as its blob,
+  enterprise persistence, no comment and no attributes (RF-G3, run 38704825885). Up to 2400
+  bytes the login is the item's value; above that, base64 pieces `#0` on of 2400 characters,
+  at most 256, a manifest `#m` and a marker `#p`, each an item of its own. Claude Code reads
+  pieces under a manifest that names their count and length, and never reads `#p`, so pieces
+  replaced in place under a manifest of the same length can read half old and half new.
+  Pitboard writes in Claude Code's order with one step of its own: while it replaces pieces
+  in place, the manifest names a length no base64 has, so Claude Code's read fails, and a
+  session keeps the login it has, rather than read a mix. It reads a manifest Claude Code
+  would pass over, or `#p` beside one, as unreadable. Every write goes to Credential Manager
+  first, and deletes `.credentials.json` only where Credential Manager held no login before,
+  as Claude Code's wrapper does; where Credential Manager fails, Claude Code writes the file
+  instead and Pitboard writes nothing more, leaving the switch to the journal's recovery. A
+  session reads the item again 30 seconds after it last did, and a session whose start-up
+  look at `Bun.secrets` fails within 10 seconds reads only the file for its life. A network
+  logon has no credential set: every call fails 1312, which Pitboard reads as out of reach
+  (`credential_store_locked`), never as no login.
 - Read on 16 October 2026 from the same builds, with Bun 1.4.3 and libuv 8023581 as
   embedded (`windows_plaintext_write`, `windows_plaintext_strict_read`): Claude Code writes
   `.credentials.json` by a temporary file renamed over it with `MoveFileExW`, then `chmod`

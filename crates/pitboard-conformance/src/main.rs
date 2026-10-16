@@ -611,12 +611,10 @@ mod tests {
         assert!(text.starts_with(
             "claude.exe\na windows build; Pitboard's facts about claude were read from 2.1.289\n\n"
         ));
-        assert!(
-            text.contains(
-                "  pending  credential_service_name  (its windows reading waits on W23a)\n"
-            )
-        );
-        assert!(!text.contains("MOVED    credential_service_name"));
+        assert!(text.contains(
+            "  pending  fallback_file_pins_session_login  (its windows reading waits on W23b)\n"
+        ));
+        assert!(!text.contains("MOVED    fallback_file_pins_session_login"));
     }
 
     /// `--json` lists the facts it does not read in two keys, `not_read_here` and

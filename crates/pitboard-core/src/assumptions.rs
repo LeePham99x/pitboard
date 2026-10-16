@@ -496,7 +496,7 @@ mod tests {
     fn the_readings_still_to_come_are_listed() {
         let waiting = pending();
         assert!(waiting.iter().all(|&(_, _, p)| p == Platform::Windows));
-        for (provider, count) in [(ProviderId::Claude, 4), (ProviderId::Codex, 2)] {
+        for (provider, count) in [(ProviderId::Claude, 3), (ProviderId::Codex, 2)] {
             let names: Vec<&str> = waiting
                 .iter()
                 .filter(|&&(p, _, _)| p == provider)
