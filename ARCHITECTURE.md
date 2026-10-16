@@ -98,9 +98,11 @@ window loads its site, and whatever the site's pages load, as a browser would.
     is never handed to std's `Command`, which would look beside Pitboard first. `mod.rs`
     chooses the system, once: `macos/` (the keychain through `security`, `ps`, a cookie jar
     through the system's SQLite in `sqlite.rs`, a bundle's `Info.plist` in `bundle.rs`,
-    launchd) or `linux/` (`/proc`, systemd), each with what `unix/` holds for both, or
-    `windows/`. Linux and Windows refuse Claude Desktop's data folder before anything else
-    is asked, so neither reads a cookie jar, and Linux lists no process with its parent.
+    launchd) or `linux/` (`/proc`, systemd, and whether it runs in WSL as Codex tells, which
+    a build for tests reads from `WSL_DISTRO_NAME` alone), each with what `unix/` holds for
+    both, or `windows/`. Linux and Windows refuse Claude Desktop's data folder before
+    anything else is asked, so neither reads a cookie jar, and Linux lists no process with
+    its parent.
     `windows/` is the face that refuses whatever of Windows is not built yet: no store of
     secrets, and none of the four calls that move Claude Desktop's data folder. It seals
     each park with DPAPI under the person's own key (`windows/seal.rs`). It registers daily
@@ -117,7 +119,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     since it may be any kind of holder. It finds programs as a Windows shell does, an app
     execution alias in a `WindowsApps` folder by its reparse tag, and reads the `Path` a
     program started now is given from the registry, the machine's and then the person's,
-    which a build for tests reads in its own test alone. It starts a sign-in's tool
+    which a build for tests reads in its own test alone, as it does the settings doctor
+    names (`windows/settings.rs`): the distributions WSL holds, Windows' own proxy as
+    hyper-util reads it for Codex, and `EnableLUA`. It starts a sign-in's tool
     suspended, puts it in a job of its own that lets a program break away, as Codex starts
     its daemons, then resumes it, so nothing it starts is outside the job
     (`windows/job.rs`). A cancel, and a sign-in let go of unfinished, end the job's
@@ -2740,6 +2744,8 @@ on 15 and 16 October 2026. W27 reviews the list.
 | A task's `LastTaskResult` is its program's exit code, or one of Task Scheduler's `SCHED_S_` and `SCHED_E_` codes, such as `SCHED_S_TASK_RUNNING` (`0x00041301`) and `SCHED_S_TASK_QUEUED` (`0x00041325`) | [Task Scheduler error and success constants](https://learn.microsoft.com/en-us/windows/win32/taskschd/task-scheduler-error-and-success-constants) | RF-E1 read only 0 and `SCHED_S_TASK_HAS_NOT_RUN` (`0x00041303`); the session's step 13 reads a run's. |
 | A task's `LastRunTime` is a `DATE`, days since 30 December 1899, on the machine's own clock | [get_LastRunTime](https://learn.microsoft.com/en-us/windows/win32/api/taskschd/nf-taskschd-iregisteredtask-get_lastruntime), [DATE](https://learn.microsoft.com/en-us/cpp/atl-mfc-shared/date-type) | The runners' clocks are UTC, which reads the same either way; the session's step 13 reads one. |
 | WSL 2's processes run in a utility VM | [Comparing WSL versions](https://learn.microsoft.com/en-us/windows/wsl/compare-versions) | No runner has WSL. |
+| Each subkey of `HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss` is a distribution WSL holds for the account, named by its `DistributionName` | [How to manage WSL disk space](https://learn.microsoft.com/en-us/windows/wsl/disk-space) | No runner has WSL. |
+| `EnableLUA` 0 turns Admin Approval Mode off, so every program an administrator starts runs elevated; 1 is the default | [User Account Control settings and configuration](https://learn.microsoft.com/en-us/windows/security/application-security/application-control/user-account-control/settings-and-configuration) | Both images have UAC on (RF-A1). |
 | `QueryUnbiasedInterruptTimePrecise` leaves out sleep and hibernation, which `QueryPerformanceCounter` counts | [QueryUnbiasedInterruptTimePrecise](https://learn.microsoft.com/en-us/windows/win32/api/realtimeapiset/nf-realtimeapiset-queryunbiasedinterrupttimeprecise), [Acquiring high-resolution time stamps](https://learn.microsoft.com/en-us/windows/win32/sysinfo/acquiring-high-resolution-time-stamps) | A runner never sleeps. |
 | A program ended by an unhandled exception exits with the exception's code, such as `0xC0000005` | [GetExitCodeProcess](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getexitcodeprocess) | No row crashes a program. |
 | `GetPackageFamilyName` gives a packaged process's family, and `APPMODEL_ERROR_NO_PACKAGE` for an unpackaged one | [GetPackageFamilyName](https://learn.microsoft.com/en-us/windows/win32/api/appmodel/nf-appmodel-getpackagefamilyname) | No row starts a packaged process; session step 10 reads ChatGPT's. |
@@ -3413,6 +3419,15 @@ real `auth.json` that build wrote. The register is `provider/codex/assumptions.r
   was not running starts in Pitboard's job, and a `codex login` a killed Pitboard left
   running is ended by the next one. Before a Codex sign-in on Windows, Pitboard says what
   Codex already runs, since a sign-in open there ends too.
+- Read on 16 October 2026 from 0.163.0's source, reqwest 0.12.28 and hyper-util 0.1.20
+  (`codex_windows_system_proxy`): on Windows Codex sends its requests through the proxy the
+  variables name, and where none of them names one, through `ProxyServer` in HKCU's
+  `Internet Settings` where `ProxyEnable` is not 0. Claude Code 2.1.301 and Pitboard follow
+  the variables alone, so doctor says where only Windows' settings name a proxy.
+- Read on 16 October 2026 from 0.163.0's source and its linux-x64 build (`codex_wsl`): the
+  Linux build takes itself to run in WSL where `WSL_DISTRO_NAME` is set or `/proc/version`
+  names Microsoft, and there starts no shared background server where its home is on 9p,
+  as WSL 2 mounts Windows' drives. Doctor reads WSL the same way.
 - Read on 15 October 2026 from the win32 builds of 0.162.1 (`codex_windows_version`):
   `codex.exe` has no version resource. The package it runs from, npm's vendored one or a
   standalone release, holds `codex-package.json` beside its `bin`, whose `version` doctor

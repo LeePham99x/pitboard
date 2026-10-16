@@ -102,6 +102,9 @@ a mistake here can sign someone out of a paid account. These rules apply to peop
 - Never run a `pitboard.exe` built from a branch on a Windows account that holds real
   logins. Never put one on a `PATH`, in `%LOCALAPPDATA%\Programs`, in WinGet's Links or
   behind a Scoop shim, but as `runner-facts.ps1` does on a runner, below.
+- Never use WSL to reach a real Windows login. When the ChatGPT app's WSL mode hands the
+  Windows `CODEX_HOME` to a Linux codex, a Linux build run in WSL with that home writes the
+  Windows login.
 - Never start a `Pitboard.exe` you built on a Windows account that holds real logins. Run the
   Debug build's executable directly with `PITBOARD_FIXTURE`, and `USERPROFILE`, `HOME`,
   `APPDATA`, `LOCALAPPDATA`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME` and `PITBOARD_HOME` at fresh
