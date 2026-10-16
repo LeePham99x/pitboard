@@ -6,7 +6,8 @@ using System.Text;
 namespace Pitboard.Windows.Tests;
 
 // A web site on this PC's loopback for the WebView2 tests, so nothing reaches the network: every path is a page, /set
-// sets a cookie, /attachment/<name> is a file to save as <name>, /stalled/<name> one that never finishes, and it says
+// sets a cookie, /attachment/<name> is a file to save as <name>, /stalled/<name> one that never finishes, /file/<name>
+// a text file it does not say to save, and /anchor/<name> a page that saves that file through an <a download>. It says
 // which paths it was asked for.
 internal sealed class StandInSite : IDisposable
 {
@@ -62,23 +63,39 @@ internal sealed class StandInSite : IDisposable
                 }
 
                 Asked.Enqueue(path);
-                if (path.Split('/') is ["", var kind and ("attachment" or "stalled"), var name])
+                switch (path.Split('/'))
                 {
-                    await Attach(stream, name, stalled: kind == "stalled");
-                    return;
+                    case ["", var kind and ("attachment" or "stalled"), var name]:
+                        await Attach(stream, name, stalled: kind == "stalled");
+                        return;
+                    case ["", "file", var name]:
+                        await Send(stream, "text/plain; charset=utf-8", Uri.UnescapeDataString(name));
+                        return;
+                    case ["", "anchor", var name]:
+                        await Send(
+                            stream, "text/html; charset=utf-8",
+                            $"<!doctype html><title>anchor</title><a id=\"save\" download href=\"/file/{name}\">{name}</a>"
+                            + "<script>document.getElementById('save').click()</script>");
+                        return;
                 }
 
                 var cookie = path == "/set" ? "Set-Cookie: who=here; Path=/\r\n" : "";
-                var body = "<!doctype html><html><head><title>stand-in</title></head><body><p>A stand-in page.</p></body></html>";
-                var answer =
-                    $"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {Encoding.UTF8.GetByteCount(body)}\r\n"
-                    + $"{cookie}Connection: close\r\n\r\n{body}";
-                await stream.WriteAsync(Encoding.UTF8.GetBytes(answer));
+                await Send(
+                    stream, "text/html; charset=utf-8",
+                    "<!doctype html><html><head><title>stand-in</title></head><body><p>A stand-in page.</p></body></html>", cookie);
             }
             catch (Exception ended) when (ended is IOException or OperationCanceledException or ObjectDisposedException)
             {
             }
         }
+    }
+
+    private static async Task Send(NetworkStream stream, string type, string body, string headers = "")
+    {
+        var answer =
+            $"HTTP/1.1 200 OK\r\nContent-Type: {type}\r\nContent-Length: {Encoding.UTF8.GetByteCount(body)}\r\n"
+            + $"{headers}Connection: close\r\n\r\n{body}";
+        await stream.WriteAsync(Encoding.UTF8.GetBytes(answer));
     }
 
     // Its content is its name. A stalled one says it is a megabyte and sends a kilobyte, until the site stops.

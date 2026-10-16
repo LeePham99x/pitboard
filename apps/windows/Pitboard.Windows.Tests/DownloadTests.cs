@@ -19,6 +19,7 @@ public sealed class DownloadTests
     [UITestMethod]
     public async Task EachKindOfDownloadSavesAtTheNumberedPath()
     {
+        using var site = new StandInSite();
         await using var webs = await Webs.Make();
         var window = new StandInWindow(webs, Main, answer: true);
         var page = await Open(webs, window);
@@ -33,15 +34,15 @@ public sealed class DownloadTests
                     "Content-Type: application/pdf\r\nContent-Disposition: attachment; filename=\"report.pdf\"");
             }
         };
-        var own = $"{WebEnvironment.FixtureScheme}://chatgpt.com/files/page.txt";
         Directory.CreateDirectory(webs.Web.Downloads);
         var failures = new List<string>();
 
         // A download the page's own navigation became is the page's; one a script starts names no frame, so it asks.
         foreach (var (kind, name, saved, content, asks, script) in new[]
         {
-            ("<a download> of the site's own address", "page.txt", "page (1).txt", PitboardFfiMethods.FixturePage(own), true,
-                $"const a = document.createElement('a'); a.download = 'page.txt'; a.href = '{own}'; document.body.append(a); a.click()"),
+            // WebView2 starts no download for an <a download> of the fixture's scheme (run 38825074643).
+            ("<a download> in a frame", "page.txt", "page (1).txt", "page.txt", true,
+                $"document.body.insertAdjacentHTML('beforeend', '<iframe src=\"{site.Address("/anchor/page.txt")}\"></iframe>')"),
             ("blob:", "blob.txt", "blob (1).txt", "blob", true,
                 "const a = document.createElement('a'); a.download = 'blob.txt'; a.href = URL.createObjectURL(new Blob(['blob'])); "
                 + "document.body.append(a); a.click()"),
