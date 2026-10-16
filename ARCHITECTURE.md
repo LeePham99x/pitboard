@@ -727,9 +727,11 @@ window loads its site, and whatever the site's pages load, as a browser would.
     model's alerts in one, or leaves them to the sheet's `AlertBar` while a sheet is up.
     `WindowSheets` puts the model's sheet up as an `AccountSheet`, a ContentDialog that adds
     an account, follows its sign-in, names, renames or puts away a login left in a file, and
-    tells the model when somebody closes it. `IconMenuFlyout` is the icon's menu as a
-    MenuFlyout, and `MenuHost` the pixel of a window it opens from. `AccountWindow` and
-    `SignInWindow` are the account windows, which `AccountWindows` opens. `WindowChrome`
+    tells the model when somebody closes it, telling one sheet from another by the model's
+    `Sheet`. `IconMenuFlyout` is the icon's menu as a MenuFlyout, its rows at one height, and
+    `MenuHost` the pixel of a window it opens from. `AccountWindow`, with the `SignInWindow`s
+    it owns, and `OpenLinkWindow` are the account windows and the **Open link** window, which
+    `AccountWindows` opens. `WindowChrome`
     gives each window the app's icon, a title bar in the app mode and a minimum size, and
     `Styles.xaml` holds the styles the views share.
   - `Pitboard.App` is `Pitboard.exe`, unpackaged and self-contained, carrying the icon that
