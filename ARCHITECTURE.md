@@ -586,18 +586,18 @@ window loads its site, and whatever the site's pages load, as a browser would.
     asks every 10 milliseconds. `tools.rs` plays Claude Code's and Codex's sign-in through
     the core's `SignInScript`, with the person at the browser. `apps.rs` is the fixture's
     other apps and its notifications, which post nothing. Its ChatGPT runs Codex's login and
-    quits when asked, from its bundle on macOS and its Store package on Windows. Its Claude is `testing::desktop::FakeClaude` over the fixture's
-    machine, which writes the data folder as 2.7032.0 does as it quits. It quits when asked,
-    and in `claudeDesktopOpen`, opened in front for a sign-in, it signs in to a third
-    account after 5 seconds and quits 2 seconds later. `pages.rs` is the stand-in pages an
-    account window loads on `pitboard-fixture://`, from the site table. `mod.rs` holds what
-    every build exports of them, the same in each: `PitboardModel::fixture`,
-    `PitboardModel::fixture_in`, `fixture_names` and `fixture_page`, which without the
-    feature refuse, naming it, or name none. `fixture` makes its model over the fixture's
-    apps and notifications; `fixture_in`, for a test of an app's bindings, over the
-    `AppControl` and `Notifications` it is handed, as `new` takes them. `tests.rs` is the
-    macOS app's former `FixtureTests.swift` ported, and what each UI test reads in its
-    world.
+    quits when asked, from its bundle on macOS and its Store package on Windows. Its Claude
+    is `testing::desktop::FakeClaude` over the fixture's machine, which writes the data
+    folder as 2.7032.0 does as it quits. It quits when asked, and in `claudeDesktopOpen`,
+    opened in front for a sign-in, it signs in to a third account after 5 seconds and quits
+    2 seconds later. `pages.rs` is the stand-in pages an account window loads on
+    `pitboard-fixture://`, from the site table. `mod.rs` holds what every build exports of
+    them, the same in each: `PitboardModel::fixture`, `PitboardModel::fixture_in`,
+    `fixture_names` and `fixture_page`, which without the feature refuse, naming it, or name
+    none. `fixture` makes its model over the fixture's apps and notifications; `fixture_in`,
+    for a test of an app's bindings, over the `AppControl` and `Notifications` it is handed,
+    as `new` takes them. `tests.rs` is the macOS app's former `FixtureTests.swift` ported,
+    and what each UI test reads in its world.
 - `crates/pitboard-sites`: the sites an account's window opens, and what a link from outside
   may be. A leaf, with no I/O and nothing of the core, whose one dependency is `url`, for
   IDNA alone.
@@ -757,8 +757,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     `pitboard_ffi.dll` of the administrative image `msiexec /a` extracts whether it opens.
   - `Pitboard.Probe` is never shipped. The session machine runs it to measure the app's
     adapters by hand: it posts a notification through `WindowsNotifications` under an
-    AppUserModelID of its own, waits for its Switch, unregisters, names a process's
-    package, and finds, quits and opens an app by its AUMID through `WindowsApps`. It refuses to run in an account without `pitboard-probe`'s throwaway marker.
+    AppUserModelID of its own, waits for its Switch, unregisters, names a process's package,
+    and finds, quits and opens an app by its AUMID through `WindowsApps`. It refuses to run
+    in an account without `pitboard-probe`'s throwaway marker.
 - `apps/macos/`: the menu bar app, which shows what `pitboard-ffi`'s model says and sends it
   what was asked. The Swift package holds it as libraries its tests load without starting
   it. `PitboardKit` is the bindings and `AppModel.swift`: `AppModel`, which holds the
@@ -4217,7 +4218,6 @@ Microsoft's documentation.
   app has ended or declined. `IApplicationActivationManager::ActivateApplication`'s reference
   (updated 22 February 2024) offers no option that opens an app behind another window, so
   `WindowsApps` brings Pitboard's window forward after it.
-
 - WinSparkle 0.9.4, read on 16 October 2026 in its source at tag `v0.9.4` and in its NuGet
   package. `win_sparkle_set_eddsa_public_key` returns 0 and keeps no key for anything but the
   base64 of 32 bytes, and with no key the downloader logs "Using unsigned updates!" and
