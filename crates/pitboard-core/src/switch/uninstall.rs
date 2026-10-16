@@ -120,6 +120,7 @@ fn take_away(
     // refers to nothing. The home goes next, and an index of names with no home is noise.
     if pending == 0 {
         crate::pending::clear(ctx, permit);
+        discard_signins(ctx, permit);
     }
     let home = (pending == 0).then(|| remove_home(ctx, permit, exclusive));
     Ok(Removed {
@@ -142,6 +143,21 @@ enum Home {
     Removed,
     WarmingUp,
     Kept(Vec<std::path::PathBuf>),
+}
+
+// A sign-in killed before its cleanup left its login in its tool's slot for the sign-in's
+// folder, which a keychain or Credential Manager keeps once the folder is gone. One under way
+// keeps its own.
+fn discard_signins(ctx: &Context, permit: Permit) {
+    let Ok(_one_at_a_time) = super::enroll::one_at_a_time(ctx, permit) else {
+        return;
+    };
+    let dir = super::enroll::signin_dir(ctx);
+    for &which in ProviderId::ALL {
+        if let LoginKind::Document(tool) = provider::of(which) {
+            tool.discard_signin(ctx, permit, &dir);
+        }
+    }
 }
 
 /// The schedule, where it is this home's. One that renews another home is that home's to
@@ -239,6 +255,27 @@ mod tests {
     }
 
     #[test]
+    fn uninstalling_takes_a_killed_sign_ins_login_with_it_and_none_in_use() {
+        let m = machine("uninstall-signin-left");
+        let dir = super::super::enroll::signin_dir(&m.ctx);
+        let left = provider::claude::slot::service_for_dir(&dir.to_string_lossy());
+        m.mem.live().plant(&left, r#"{"claudeAiOauth":{}}"#);
+        let in_use = m.mem.live().peek(&m.service);
+
+        let removed = uninstall(
+            settle(&m.ctx, Permit::for_a_test(), None)
+                .expect("nothing to recover")
+                .0,
+        )
+        .expect("uninstalled");
+
+        assert!(removed.home_removed);
+        assert_eq!(m.mem.live().peek(&left), None);
+        assert!(in_use.is_some());
+        assert_eq!(m.mem.live().peek(&m.service), in_use);
+    }
+
+    #[test]
     fn uninstalling_where_nothing_is_scheduled_is_not_a_failure() {
         let m = machine("uninstall-unscheduled");
         let removed = uninstall(
@@ -320,10 +357,6 @@ mod tests {
     /// only copy of that login, and state.json the only index naming it. Uninstalling while
     /// it cannot be saved keeps both, and uninstalling again once it can removes the home.
     #[test]
-    #[cfg_attr(
-        windows,
-        ignore = "W23a: Claude Code's Credential Manager store, which a machine in memory plays"
-    )]
     fn uninstalling_keeps_a_renewed_login_not_saved_yet() {
         use super::super::harness::{lapsed, owner, renews};
         use crate::store::memory::Fault;
