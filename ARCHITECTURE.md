@@ -728,7 +728,10 @@ window loads its site, and whatever the site's pages load, as a browser would.
     uninstall, with no `UPGRADINGPRODUCTCODE`, runs `Pitboard.exe --unregister` and removes
     `%LOCALAPPDATA%\Pitboard App` through WiX's `RemoveFolderEx`; `%LOCALAPPDATA%\Pitboard` is
     the command line's and stays. `LAUNCHAFTERINSTALL=1`, which WinSparkle's update passes,
-    starts `Pitboard.exe --updated` once the install ends. `Pitboard.Installer.Tests` reads the
+    starts `Pitboard.exe --updated` once the install ends. Built with `PitboardShareSigned`,
+    for a signed `PitboardShare.msix`, it also carries `PitboardShare.exe`, its package and
+    logos, and runs `PitboardShare.exe --register` on each install and `--unregister` on each
+    removal, either ignored on failure. `Pitboard.Installer.Tests` reads the
     built MSI's tables with WiX's DTF and the administrative image `msiexec /a` extracts.
   - `Pitboard.Probe` is never shipped. The session machine runs it to measure the app's
     adapters by hand: it posts a notification through `WindowsNotifications` under an

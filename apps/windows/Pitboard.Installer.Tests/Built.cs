@@ -12,6 +12,11 @@ internal static partial class Built
     // The folder Pitboard.exe lies in, in the administrative image msiexec /a extracted from it.
     public static string Image => Path(nameof(Image), "PitboardMsiImage", Directory.Exists);
 
+    // Whether the MSI was built with PitboardShare.exe, as it is when its package is signed.
+    public static bool ShareSigned =>
+        typeof(Built).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .Any(metadata => metadata.Key == "PitboardShareSigned" && metadata.Value == "true");
+
     // The version Cargo.toml names, as the MSI was given it.
     public static string CargoVersion()
     {

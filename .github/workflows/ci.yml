@@ -685,7 +685,8 @@ jobs:
           -Version $env:VERSION
       # ICE validates the MSI as it builds. CI never installs one: msiexec /a extracts its files
       # and registers nothing. The image is Pitboard as an install lays it out, which the UI
-      # tests start in place of the Release folder (CF10).
+      # tests start in place of the Release folder (CF10). The package above is signed, so the
+      # MSI carries PitboardShare.exe, as a signed release's does.
       - name: The MSI and its administrative image
         id: msi
         shell: pwsh
@@ -699,7 +700,7 @@ jobs:
           $app = Join-Path $out 'release'
           $commandLine = Join-Path $env:GITHUB_WORKSPACE 'target\gated\release\pitboard.exe'
           dotnet build Pitboard.Installer -c Release -o (Join-Path $out 'msi') "-p:InstallerPlatform=$env:INSTALLER" `
-            "-p:PitboardApp=$app" "-p:PitboardCommandLine=$commandLine" "-p:PitboardVersion=$env:VERSION"
+            "-p:PitboardApp=$app" "-p:PitboardCommandLine=$commandLine" "-p:PitboardVersion=$env:VERSION" -p:PitboardShareSigned=true
           if ($LASTEXITCODE -ne 0) { throw "dotnet build exited $LASTEXITCODE" }
           $msi = Join-Path $out 'msi\Pitboard.msi'
           $image = Join-Path $out 'msi-image'
@@ -735,7 +736,7 @@ jobs:
           dotnet publish Pitboard.UITests -c Debug -r "$RUNTIME" --self-contained -o "$out/uitests" \
             -p:PitboardAppDebug="$GITHUB_WORKSPACE/apps/windows/Pitboard.App/$BUILT/Pitboard.exe" -p:PitboardAppRelease="$IMAGE/Pitboard.exe"
           dotnet publish Pitboard.Installer.Tests -c Release -r "$RUNTIME" --self-contained -o "$out/installer-tests" \
-            -p:PitboardMsi="$out/msi/Pitboard.msi" -p:PitboardMsiImage="$IMAGE"
+            -p:PitboardMsi="$out/msi/Pitboard.msi" -p:PitboardMsiImage="$IMAGE" -p:PitboardShareSigned=true
       # CF5: the self-contained app needs none of these for the standard user.
       - name: The Windows App Runtime packages this image holds
         shell: pwsh

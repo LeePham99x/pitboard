@@ -6,7 +6,9 @@
     <AcceptEula>wix7</AcceptEula>
     <!-- Windows Installer compares three fields and takes no suffix, so beta N of X.Y.Z is X.Y.Z.N. -->
     <PitboardMsiVersion>$([System.Text.RegularExpressions.Regex]::Replace('$(PitboardVersion)', '^(\d+\.\d+\.\d+)-beta\.(\d+)$', '$1.$2'))</PitboardMsiVersion>
-    <DefineConstants>ProductVersion=$(PitboardMsiVersion);App=$(PitboardApp);CommandLine=$(PitboardCommandLine)</DefineConstants>
+    <!-- PitboardShare.exe and its package go in only when the package is signed, since only a signed one registers. -->
+    <PitboardShareSigned Condition="'$(PitboardShareSigned)' != 'true'">false</PitboardShareSigned>
+    <DefineConstants>ProductVersion=$(PitboardMsiVersion);App=$(PitboardApp);CommandLine=$(PitboardCommandLine);ShareSigned=$(PitboardShareSigned)</DefineConstants>
     <!--
       ICE61 warns that MajorUpgrade replaces the same version, which AllowSameVersionUpgrades asks for: a beta and
       its final share three fields. ICE33 warns of pitboard://'s verb in the Registry table, warnings Microsoft calls

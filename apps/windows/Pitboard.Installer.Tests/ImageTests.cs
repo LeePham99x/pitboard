@@ -19,10 +19,19 @@ public sealed class ImageTests
         Assert.IsEmpty(Directory.GetFiles(Built.Image, "*.pdb", SearchOption.AllDirectories));
     }
 
+    // Windows reads the sparse package's logos from its external location, the install folder.
     [TestMethod]
-    public void AnUnsignedImageHasNoShareTarget()
+    public void TheShareTargetShipsWholeAndOnlyWhenItsPackageIsSigned()
     {
-        Assert.IsEmpty(Directory.GetFiles(Built.Image, "PitboardShare.*"));
-        Assert.IsFalse(File.Exists(Path.Combine(Built.Image, "pitboard_share_ffi.dll")));
+        string[] share =
+        [
+            "PitboardShare.exe", "PitboardShare.msix", "pitboard_share_ffi.dll",
+            @"Assets\Square150x150Logo.png", @"Assets\Square44x44Logo.png", @"Assets\StoreLogo.png",
+        ];
+
+        foreach (var file in share)
+        {
+            Assert.AreEqual(Built.ShareSigned, File.Exists(Path.Combine(Built.Image, file)), file);
+        }
     }
 }

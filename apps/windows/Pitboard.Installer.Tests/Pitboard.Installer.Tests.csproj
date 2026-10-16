@@ -10,5 +10,6 @@
   <ItemGroup>
     <AssemblyMetadata Include="PitboardMsi" Value="$(PitboardMsi)" />
     <AssemblyMetadata Include="PitboardMsiImage" Value="$(PitboardMsiImage)" />
+    <AssemblyMetadata Include="PitboardShareSigned" Value="$(PitboardShareSigned)" />
   </ItemGroup>
 </Project>

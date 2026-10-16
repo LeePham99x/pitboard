@@ -152,6 +152,34 @@ public sealed class PackageTests
         Assert.IsGreaterThan(Sequence(database, "InstallFinalize"), Sequence(database, "LaunchAfterInstall"));
     }
 
+    // Each ignored on failure: the install goes on without the share target.
+    [TestMethod]
+    public void PitboardShareRegistersOnEachInstallAndUnregistersOnEachRemoval()
+    {
+        using var database = Open();
+        var actions = Rows(database, "SELECT `Action`, `Type`, `Source`, `Target` FROM `CustomAction`", 4)
+            .Where(row => row[0] is "RegisterShare" or "UnregisterShare")
+            .ToDictionary(row => row[0]!);
+
+        Assert.AreEqual(Built.ShareSigned ? 2 : 0, actions.Count);
+        if (!Built.ShareSigned)
+        {
+            return;
+        }
+
+        foreach (var (action, target, condition) in new[]
+        {
+            ("RegisterShare", "--register", "NOT REMOVE"),
+            ("UnregisterShare", "--unregister", "REMOVE = \"ALL\""),
+        })
+        {
+            var type = int.Parse(actions[action][1]!, CultureInfo.InvariantCulture);
+            Assert.AreEqual(ExeFromInstalledFile | Deferred | IgnoreExitCode, type & (0x3F | Deferred | IgnoreExitCode), action);
+            Assert.AreEqual($"PitboardShareExe {target}", string.Join(' ', actions[action][2..]));
+            Assert.AreEqual(condition, Condition(database, action));
+        }
+    }
+
     // A RemoveRegistry row acts on an install, so the Run value goes through --unregister instead.
     [TestMethod]
     public void NoRowWritesTheMachinesRegistryOrRemovesTheRunValue()

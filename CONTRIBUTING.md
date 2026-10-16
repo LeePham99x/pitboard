@@ -381,8 +381,9 @@ measure the app's notifications, and checks that it refuses an account without
 there.
 
 The job also builds the MSI, `apps/windows/Pitboard.Installer`, with WiX v7 from the Release
-build and the `pitboard.exe` a 0.x release builds, and ICE validates it as it builds. CI never
-installs an MSI: `msiexec /a` extracts it, `check-windows-app.ps1` checks the files it holds,
+build and the `pitboard.exe` a 0.x release builds, with `PitboardShare.exe` and its package, as
+a signed release carries them, and ICE validates it as it builds. CI never installs an MSI:
+`msiexec /a` extracts it, `check-windows-app.ps1` checks the files it holds,
 the UI test of the release gate starts its `Pitboard.exe`, and `Pitboard.Installer.Tests`
 reads its tables. WiX builds only on Windows. For a change to the version the MSI carries,
 which needs only the .NET SDK:
