@@ -701,37 +701,47 @@ window loads its site, and whatever the site's pages load, as a browser would.
     model's words. `Keyed` keeps a shown row while the model lists it, so `ShownAccount`
     keeps its selection across snapshots. `WindowAlert` is the failure or quit question in
     front of the window, `SheetPage` what the sheet over it shows and sends, and `Countdown`
-    a notice's timer. The account windows' WebView2 glue is mapped under
-    [Account windows](#account-windows).
-  - `Pitboard.Views` is the main window's panes, a WinUI library so the test app shows them
-    as `Pitboard.exe` does. `AccountsPane` lists the accounts under their notices and setup
-    step, each an `AccountRow` with an `AccountMenu`; `ActivityPane` and `MachinePane` are
-    the log and this PC's checks. A notice is a `NoticeBar`, an InfoBar. `DialogHost` shows
-    the window's ContentDialogs one at a time, and `WindowAlerts` puts the model's alerts in
-    one, or leaves them to the sheet's `AlertBar` while a sheet is up. `WindowSheets` puts
-    the model's sheet up as an `AccountSheet`, a ContentDialog that adds an account, follows
-    its sign-in, names, renames or puts away a login left in a file, and tells the model
-    when somebody closes it. `IconMenuFlyout` is the icon's menu as a MenuFlyout.
-    `SettingsPane` is the settings page, in the macOS Settings' sections, each warm-up account
-    a `WarmRow`. `AccountWindow` and `SignInWindow` are the account windows.
+    a notice's timer. `IconCommands` turns the icon's click, its menu and each choice there
+    into an intent or what `IIconTargets` does, and asks before Exit whether Pitboard may
+    quit. `Lifetime` ends Pitboard: as the session ends it removes the icon and stops the
+    updater, the model and the notifications, and at Exit stops the downloads first.
+    `WindowPlacement` keeps where the main window was closed, and `Ui.Guarded` writes the
+    exception that ends a dispatcher callback before throwing it on. The account windows'
+    WebView2 glue is mapped under [Account windows](#account-windows).
+  - `Pitboard.Views` is every window of the app's and what they show, a WinUI library so the
+    test app shows them as `Pitboard.exe` does. `MainWindow` is a `TitleBar` over a
+    `NavigationView`, whose `Frame` shows a page for each of the model's `Pane`s and the
+    settings page, each navigated to with a `PaneContext` and kept for the next visit; it
+    takes Ctrl+N, Ctrl+comma, Ctrl+W, F6 and Shift+F6 from any of them. `AccountsPane` lists
+    the accounts under their notices and setup step, each an `AccountRow` with an
+    `AccountMenu`; `ActivityPane` and `MachinePane` are the log and this PC's checks, and
+    `SettingsPane` the settings page, in the macOS Settings' sections, each warm-up account
+    a `WarmRow`. A notice is a `NoticeBar`, an InfoBar. `DialogHost` shows the ContentDialogs
+    of every window one at a time, each in its window's theme, and `WindowAlerts` puts the
+    model's alerts in one, or leaves them to the sheet's `AlertBar` while a sheet is up.
+    `WindowSheets` puts the model's sheet up as an `AccountSheet`, a ContentDialog that adds
+    an account, follows its sign-in, names, renames or puts away a login left in a file, and
+    tells the model when somebody closes it. `IconMenuFlyout` is the icon's menu as a
+    MenuFlyout, and `MenuHost` the pixel of a window it opens from. `AccountWindow` and
+    `SignInWindow` are the account windows, which `AccountWindows` opens. `WindowChrome`
+    gives each window the app's icon, a title bar in the app mode and a minimum size, and
+    `Styles.xaml` holds the styles the views share.
   - `Pitboard.App` is `Pitboard.exe`, unpackaged and self-contained, carrying the icon that
     `Icon/make-ico.py` writes from the drawings beside it. `Program.Main` decides the
     launch. On `--unregister`, which the MSI's full uninstall runs, `Unregistering` deletes
     the `Run` value naming this `Pitboard.exe` and the notifications' registration, and it
     exits with no window and no single-instance key. On `--unregister-share`, which the
     MSI's removal and rollback run, `SharePackage` removes `PitboardShare`'s package
-    registered for this folder, the same way. `App` makes the model, over this PC or
-    in a Debug build started with `PITBOARD_FIXTURE` a fixture's, keeps the icon, registers
-    for notifications, opens the main window when the model asks, and asks for it on a
-    launch from Start or a shortcut, since Windows puts a new icon in the overflow; a start
-    at sign-in, after an update or from a notification opens none. A Release build asks,
-    through `RegisterApplicationRestart`, to be started with `--updated` after an update
-    Restart Manager closed it for, and never after a crash, a hang or a reboot. It opens the
-    account windows through `AccountWindows`. It stops the model and unregisters on Exit,
-    and as the session ends stops the model, or ends where Restart Manager asks. `MenuHost`
-    is the pixel of a window the icon's menu opens from. `MainWindow` shows a pane for each
-    of the model's `Pane`s and its settings page, and takes Ctrl+N and Ctrl+comma from any
-    of them.
+    registered for this folder, the same way. `App` is the composition root: it makes
+    the model, over this PC or in a Debug build started with `PITBOARD_FIXTURE` a fixture's,
+    the icon, the notifications, the updater, `AccountWindows`, `IconCommands` and
+    `Lifetime`, opens the main window when the model asks, and asks for it on a launch from
+    Start or a shortcut, since Windows puts a new icon in the overflow; a start at sign-in,
+    after an update or from a notification opens none. A Release build asks, through
+    `RegisterApplicationRestart`, to be started with `--updated` after an update Restart
+    Manager closed it for, and never after a crash, a hang or a reboot. Exit closes the main
+    window first, so its placement is kept, and ends through `Lifetime`, which ends what
+    the session's end does too, or ends where Restart Manager asks.
   - `Pitboard.Windows.Tests` is a WinUI app that hosts its own tests, the views' among them
     over snapshots made in C#, and `Pitboard.UITests` drives the built app with FlaUI.
     Neither registers anything with Windows, and neither starts a Restart Manager session,
@@ -2252,7 +2262,7 @@ The Windows app's account windows run in WebView2, over the same decisions from 
   `AccountWindowsShown.menus` and `AccountItem.windows`. `OpenLinkWindow` is the
   **Open link** window, over `AccountWindowsShown.picker`, with its buttons in a
   ContentDialog's order: the default first, Cancel last.
-- `apps/windows/Pitboard.App/AccountWindows.cs` opens a window per store and brings an open
+- `apps/windows/Pitboard.Views/AccountWindows.cs` opens a window per store and brings an open
   one forward, tells the model each opened and closed, closes those the model says close,
   and hands each store asked for to the janitor. It owns `Downloads`, and asks before Quit
   while one is under way. It brings the **Open link** window forward with each link that
@@ -4101,7 +4111,47 @@ Microsoft's documentation.
   `AppWindow.SetIcon`. `MainWindow` does the same, so Mica reaches the title bar, and its
   icon names the window in the title bar and Alt+Tab (`LifecycleTests.TheWindowCarriesPitboardsIcon`).
   The PRI file indexes `Pitboard.ico` as `Files/Pitboard.ico` (run 38774669459), which
-  `ms-appx:///Pitboard.ico` reads.
+  `ms-appx:///Pitboard.ico` reads. The template's pages own their titles, in
+  `TitleTextBlockStyle` at the top of a Grid padded 24,16,24,16 with 24 between its rows, and
+  the NavigationView page (updated 2 October 2026) recommends 12 epx margins for the content
+  in Minimal and 24 otherwise, and navigates its frame only to a page not shown already. So
+  `MainWindow` sets no `Header`: each page carries its title as a Level1 heading, its content
+  24 epx under it and the sides the window sets from `DisplayModeChanged`, and the lists and
+  the settings' scroll viewer reach the window's edges and pad what they hold, which keeps a
+  scroll bar at the edge. Its pages are kept (`NavigationCacheMode.Required`), with no back
+  stack (`MainWindowTests`).
+- `AppWindowTitleBar.PreferredTheme`'s reference gives `Legacy` as its default, and WinUI's
+  window class carries no icon. So `WindowChrome` gives every window of Pitboard's
+  `UseDefaultAppMode` and the app's icon (`WindowChromeTests`,
+  `LifecycleTests.TheAccountAndOpenLinkWindowsCarryPitboardsIcon`).
+  Whether the main window's caption buttons, over content extended into the title bar,
+  follow a switch of mode while Pitboard runs is still to be read in pitboard-win; they
+  stayed black on dark before (shots 21, 23 and 24 of 16 October 2026). The WinUI Gallery
+  sets their colours from `ActualThemeChanged` in its `TitleBarHelper`.
+- Microsoft's window management guidance (updated 11 March 2025) saves a window's monitor,
+  size, place and state as it closes and restores them as it opens, fits a window whose last
+  place no screen holds within one, cascades a new application window from the upper left,
+  and has a resizable window keep a usable minimum. `SetWindowPlacement`'s reference (updated
+  1 July 2025) moves a window its bounds would put wholly off screen onto one. So
+  `WindowPlacement` keeps `GetWindowPlacement`'s restored bounds and whether the window was
+  maximized, a minimized one by the state it comes back to, in `placement.json` in the app's
+  data folder, and `MainWindow` puts them back with `SetWindowPlacement` before its first
+  activation, which shows a window already maximized maximized (microsoft-ui-xaml at
+  `winui3/release/2.5.1`, `DesktopWindowImpl.cpp` `ActivateImpl`). With none saved it opens
+  at Windows' own place, 1100 by 720 epx. Either way `WindowChrome` then fits it within its
+  screen's work area, and keeps it at 640 by 500 epx at least at its screen's scale, as the
+  WinUI Gallery's main window does. Exit closes the window first, so it is kept then too
+  (`WindowPlacementTests`, the `LifecycleTests` of placement).
+- Microsoft's keyboard accelerator page names F6 and Shift+F6 for the next and previous pane
+  and Ctrl+W for Close, and its keyboard accessibility page has the app implement F6 itself,
+  Shift+F6 the same cycle reversed. So F6 and Shift+F6 move between the main window's two
+  regions, its navigation pane and its page, and Ctrl+W closes it as its caption's close does
+  (`LifecycleTests.F6MovesFocusBetweenThePaneAndThePage`, `CtrlWClosesTheWindowAndPitboardKeepsRunning`).
+- Microsoft's ResourceDictionary page (updated 13 October 2026) has `XamlReader.Load` parse in
+  a context that knows no other ResourceDictionary, not even `Application.Resources`, and take
+  no ThemeResource, and has `XamlControlsResources` merged first. So the views' shared styles
+  are `Styles.xaml`, which `App.xaml` and the test app merge after it
+  (`StylesTests.EachSharedStyleIsFoundBeforeAnyWindowShows`).
 - Rust's `std::env::temp_dir` (Rust 1.98.1, `library/std/src/sys/paths/windows.rs`) and
   .NET's `Path.GetTempPath` (dotnet/runtime v10.0.13, `Path.Windows.cs`) both ask
   `GetTempPath2W`, .NET falling back to `GetTempPathW` where it is missing. So the app finds
@@ -4112,6 +4162,15 @@ Microsoft's documentation.
   is up `WindowAlerts` leaves the failure alert and the quit question to the sheet's
   `AlertBar`, an InfoBar, where the macOS app shows them over the sheet.
   `DialogHostTests.OnlyOneContentDialogShowsAtATime` holds it on the runners.
+- The WinUI Gallery's `ContentDialogPage` gives each dialog it makes its page's
+  `ActualTheme`, and an Add account sheet opened after a switch to dark while Pitboard ran
+  drew light under white text, where one opened in dark was right (shots 25 and 28 of 16
+  October 2026). So `DialogHost` gives every dialog its window content's theme and follows
+  `ActualThemeChanged` while it is up (`DialogHostTests.ADialogTakesItsWindowsThemeAndFollowsIt`).
+- An exception that ends a `DispatcherQueue` callback fails fast in `CoreMessagingXP.dll` and
+  reaches no handler. So `Ui.Guarded` wraps each callback the app hands `TryEnqueue`, and
+  writes what ended it, with the `RestrictedDescription` C#/WinRT keeps WinUI's words in,
+  before throwing it on (`UiTests`).
 - A sheet is a ContentDialog, which Microsoft's guidance gives for a question that asks for
   input, with its "do it" actions as the primary and secondary buttons and a safe close
   button that Esc presses ([Dialog controls](https://learn.microsoft.com/windows/apps/design/controls/dialogs-and-flyouts/dialogs),
