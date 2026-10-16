@@ -82,7 +82,11 @@ fn valid_label(label: &str) -> bool {
 }
 
 fn err(e: windows::core::Error) -> String {
-    format!("task scheduler error 0x{:08x}", e.code().0)
+    format!("task scheduler error {}", code(&e))
+}
+
+fn code(e: &windows::core::Error) -> String {
+    format!("0x{:08x}", e.code().0)
 }
 
 /// A connected Task Scheduler service.
@@ -189,20 +193,46 @@ pub(super) fn task(req: &Request) -> Report {
     }
 }
 
-/// The folder, made when missing (and the making recorded in `scratch`).
-fn folder(service: &ITaskService, f: TaskFolder, scratch: &Path) -> Result<ITaskFolder, String> {
+// Made when missing, the making recorded in `scratch`, with GetFolder's code where it was not
+// there and CreateFolder's over it once it is, which another process's making meets.
+fn folder(
+    service: &ITaskService,
+    f: TaskFolder,
+    scratch: &Path,
+) -> Result<(ITaskFolder, Value), String> {
     // SAFETY: `service` is connected; the calls are on live interfaces.
     unsafe {
-        if let Ok(existing) = service.GetFolder(&BSTR::from(folder_path(f))) {
-            return Ok(existing);
-        }
-        let root = service.GetFolder(&BSTR::from(r"\")).map_err(err)?;
-        let leaf = folder_leaf(f).ok_or("the root folder is always there")?;
-        let made = root
-            .CreateFolder(&BSTR::from(leaf), &VARIANT::default())
-            .map_err(err)?;
-        let _ = std::fs::write(made_record(scratch, f), b"made by pitboard-probe");
-        Ok(made)
+        let found = service.GetFolder(&BSTR::from(folder_path(f)));
+        let missing = found.as_ref().err().map(code);
+        let target = match found {
+            Ok(existing) => existing,
+            Err(_) => {
+                let root = service.GetFolder(&BSTR::from(r"\")).map_err(err)?;
+                let leaf = folder_leaf(f).ok_or("the root folder is always there")?;
+                let made = root
+                    .CreateFolder(&BSTR::from(leaf), &VARIANT::default())
+                    .map_err(|e| {
+                        format!(
+                            "{} after GetFolder's {}",
+                            err(e),
+                            missing.as_deref().unwrap_or("?")
+                        )
+                    })?;
+                let _ = std::fs::write(made_record(scratch, f), b"made by pitboard-probe");
+                made
+            }
+        };
+        let again = folder_leaf(f).and_then(|leaf| {
+            service
+                .GetFolder(&BSTR::from(r"\"))
+                .and_then(|root| root.CreateFolder(&BSTR::from(leaf), &VARIANT::default()))
+                .err()
+                .map(|e| code(&e))
+        });
+        Ok((
+            target,
+            json!({ "get_folder_error": missing, "create_again_error": again }),
+        ))
     }
 }
 
@@ -219,7 +249,7 @@ fn register(
             exe.file_name().unwrap_or_default().to_string_lossy()
         ));
     }
-    let target = folder(service, req.folder, scratch)?;
+    let (target, codes) = folder(service, req.folder, scratch)?;
     // SAFETY: `service` is connected; every call is on a live interface it returned.
     unsafe {
         let def = service.NewTask(0).map_err(err)?;
@@ -291,6 +321,7 @@ fn register(
             "start_when_available": req.start_when_available,
             "allow_battery": req.allow_battery,
             "exec": exe.file_name().map(|n| n.to_string_lossy().into_owned()),
+            "folder_codes": codes,
         }))
     }
 }
@@ -319,11 +350,21 @@ fn read(
 ) -> Result<Value, String> {
     // SAFETY: `service` is connected; the calls are on live interfaces.
     unsafe {
-        let Ok(folder) = service.GetFolder(&BSTR::from(folder_path(f))) else {
-            return Ok(json!({ "action": "read", "folder_present": false }));
+        let folder = match service.GetFolder(&BSTR::from(folder_path(f))) {
+            Ok(folder) => folder,
+            Err(e) => {
+                return Ok(
+                    json!({ "action": "read", "folder_present": false, "folder_error": code(&e) }),
+                );
+            }
         };
-        let Ok(task) = folder.GetTask(&BSTR::from(name)) else {
-            return Ok(json!({ "action": "read", "task_present": false }));
+        let task = match folder.GetTask(&BSTR::from(name)) {
+            Ok(task) => task,
+            Err(e) => {
+                return Ok(
+                    json!({ "action": "read", "task_present": false, "task_error": code(&e) }),
+                );
+            }
         };
         let mut user = BSTR::new();
         let principal_is_self = task
@@ -402,24 +443,24 @@ fn delete(
         // A folder goes only when the probe made it (or it is the probe's own) and it is
         // empty: DeleteFolder refuses a folder that still holds a task.
         let record = made_record(scratch, f);
-        let folder_removed = match folder_leaf(f) {
+        let (folder_removed, folder_error) = match folder_leaf(f) {
             Some(leaf) if f == TaskFolder::Probe || record.exists() => {
                 let removed = service
                     .GetFolder(&BSTR::from(r"\"))
-                    .and_then(|root| root.DeleteFolder(&BSTR::from(leaf), 0))
-                    .is_ok();
-                if removed {
+                    .and_then(|root| root.DeleteFolder(&BSTR::from(leaf), 0));
+                if removed.is_ok() {
                     let _ = std::fs::remove_file(&record);
                 }
-                Some(removed)
+                (Some(removed.is_ok()), removed.err().map(|e| code(&e)))
             }
-            _ => None,
+            _ => (None, None),
         };
         Ok(json!({
             "action": "delete",
             "deleted": deleted.is_ok(),
             "error": deleted.err().map(err),
             "folder_removed": folder_removed,
+            "folder_error": folder_error,
         }))
     }
 }
