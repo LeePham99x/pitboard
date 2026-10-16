@@ -81,6 +81,22 @@ public sealed class MenuHostTests
         }
     }
 
+    // The menu closes after its window has: its handler ran on a window with no AppWindow and ended the process.
+    [UITestMethod]
+    public async Task ClosingTheWindowUnderAnOpenMenuRunsNothing()
+    {
+        var up = Up.Over();
+        await up.Opened();
+        var menu = up.Host.Menu!;
+
+        up.Host.Close();
+        await Views.Until(() => !menu.IsOpen, "the menu stayed open");
+        await Views.Drained();
+
+        Assert.IsEmpty(up.Chosen);
+        Assert.IsFalse(up.Cancelled, "a closed window gave focus back");
+    }
+
     private sealed class Up
     {
         private Up(MenuHost host) => Host = host;

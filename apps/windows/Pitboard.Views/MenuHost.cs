@@ -25,6 +25,8 @@ public sealed partial class MenuHost : Window
         AppWindow.SetPresenter(presenter);
         AppWindow.IsShownInSwitchers = false;
         _handle = WindowNative.GetWindowHandle(this);
+        // A menu open as the window closes closes after it, and then has no window to hide or hand a choice from.
+        Closed += (_, _) => _open = null;
     }
 
     internal MenuFlyout? Menu => _open;
