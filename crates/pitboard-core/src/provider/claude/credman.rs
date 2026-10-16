@@ -113,11 +113,15 @@ pub(crate) fn ambiguity(ctx: &Context) -> Option<Error> {
     let target = target(ctx, &service);
     match holds(ctx, &service) {
         Ok(false) => None,
+        // What a person cannot tell either, so the way that loses no login comes first.
         Ok(true) => Some(Error::Unreadable(format!(
             "Credential Manager holds a Claude Code login under `{target}`, and nothing Pitboard \
-             reads says whether Claude Code uses that store or .credentials.json. If it uses \
-             Credential Manager, set `{FORCE}` to `1` in the env of {}; if not, remove that \
-             item in Credential Manager",
+             reads says whether Claude Code uses that store or .credentials.json. Set `{FORCE}` \
+             to `1` in the env of {}: Claude Code then uses Credential Manager too, and a login \
+             in .credentials.json stays behind it, where `pitboard stow` keeps it. Removing \
+             `{target}`, `{target}#m`, `{target}#p` and `{target}#0` onward from Credential \
+             Manager instead deletes the login they hold, which may be the one Claude Code signs \
+             in with",
             claude::config_dir(ctx).join("settings.json").display()
         ))),
         Err(Error::Unreadable(why)) => Some(Error::Unreadable(format!(
@@ -593,10 +597,18 @@ mod tests {
             let Some(Error::Unreadable(said)) = said else {
                 panic!("{piece}: refused as unreadable");
             };
+            let target = format!("{service}/claude-code-user");
             assert!(
                 said.starts_with(&format!(
-                    "Credential Manager holds a Claude Code login under \
-                     `{service}/claude-code-user`"
+                    "Credential Manager holds a Claude Code login under `{target}`"
+                )),
+                "{said}"
+            );
+            assert!(said.contains("`pitboard stow` keeps it"), "{said}");
+            assert!(
+                said.contains(&format!(
+                    "Removing `{target}`, `{target}#m`, `{target}#p` and `{target}#0` onward \
+                     from Credential Manager instead deletes the login they hold"
                 )),
                 "{said}"
             );
