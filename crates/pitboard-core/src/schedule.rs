@@ -148,14 +148,28 @@ fn lasting(program: &Path) -> Result<&Path> {
     Ok(program)
 }
 
-/// Whether `program` is inside the copy macOS makes of an app opened where it was
-/// downloaded, which is there while the app runs and gone once it quits: a path through a
-/// directory named `AppTranslocation`. Neither a schedule nor a link can rely on one, so an
-/// app asks this of the command line inside it, by the rule a schedule is refused by.
+/// Whether `program` is inside a temporary copy: the one macOS makes of an app opened where it
+/// was downloaded, which is there while the app runs and gone once it quits, a path through a
+/// directory named `AppTranslocation`, or the one Windows' Explorer makes of a program opened
+/// inside a zip. Neither a schedule nor a link can rely on one, so an app asks this of the
+/// command line inside it, by the rule a schedule is refused by.
 pub fn in_a_temporary_copy(program: &Path) -> bool {
     program
         .components()
         .any(|part| part.as_os_str() == "AppTranslocation")
+        || opened_from_a_zip(program)
+}
+
+// Explorer's `%TEMP%\Temp1_<zip>.zip`, named as seen and not measured.
+pub(crate) fn opened_from_a_zip(program: &Path) -> bool {
+    program.to_string_lossy().split(['/', '\\']).any(|part| {
+        let name = part.to_ascii_lowercase();
+        let Some(numbered) = name.strip_prefix("temp") else {
+            return false;
+        };
+        let digits = numbered.bytes().take_while(u8::is_ascii_digit).count();
+        digits > 0 && numbered[digits..].starts_with('_') && name.ends_with(".zip")
+    })
 }
 
 /// The Pitboard the installed schedule runs, read back from what `install` wrote. `None`
@@ -522,6 +536,24 @@ mod tests {
             "{refused}"
         );
 
+        let unzipped = home
+            .path()
+            .join("Temp1_pitboard-v0.15.0-x86_64-pc-windows-msvc.zip")
+            .join("pitboard.exe");
+        a_program_at(&unzipped);
+        let refused = install(
+            &ctx.clone().with_schedule_program(unzipped),
+            Permit::for_a_test(),
+        )
+        .expect_err("a copy Explorer made of a zip");
+        assert_eq!(refused.code(), "schedule_program_temporary");
+        assert!(
+            refused
+                .to_string()
+                .contains("Install Pitboard, or extract the zip"),
+            "{refused}"
+        );
+
         assert_eq!(status(&ctx), Installed::No, "nothing was written");
     }
 
@@ -548,6 +580,13 @@ mod tests {
                 "/Users/x/AppTranslocations/Pitboard.app/Contents/Helpers/pitboard",
                 false,
             ),
+            (
+                r"C:\Users\x\AppData\Local\Temp\Temp1_pitboard.zip\pitboard\pitboard.exe",
+                true,
+            ),
+            (r"C:\Users\x\Temp12_Pitboard.ZIP\bin\pitboard.exe", true),
+            (r"C:\Users\x\Temp_pitboard.zip\pitboard.exe", false),
+            (r"C:\Users\x\Temp1_pitboard\pitboard.exe", false),
         ] {
             assert_eq!(in_a_temporary_copy(Path::new(path)), temporary, "{path}");
         }

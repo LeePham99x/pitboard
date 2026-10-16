@@ -230,9 +230,13 @@ pub(super) fn host() -> Arc<dyn Host> {
     Arc::new(Windows)
 }
 
-// Whether a link or a shim started it is W25's to read.
+// RF-E5: the path it was started by, through Scoop's junction or winget's link, which an
+// upgrade keeps.
 pub(super) fn current_program() -> std::io::Result<PathBuf> {
-    std::env::current_exe()
+    let same = |a: &Path, b: &Path| {
+        std::fs::canonicalize(a).is_ok_and(|a| std::fs::canonicalize(b).is_ok_and(|b| a == b))
+    };
+    Ok(super::program::lasting(std::env::current_exe()?, same))
 }
 
 /// Task Scheduler as a machine in memory has it, which W25 writes with the scheduler itself.
