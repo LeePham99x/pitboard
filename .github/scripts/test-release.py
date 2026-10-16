@@ -21,6 +21,7 @@ BUILD_NUMBER = REPO / "apps" / "macos" / "scripts" / "build-number.sh"
 WINGET_HASHES = REPO / ".github" / "scripts" / "check-winget-hashes.py"
 WINDOWS_APPCAST = REPO / ".github" / "scripts" / "windows-appcast.py"
 WINDOWS_VERSIONS = REPO / ".github" / "scripts" / "windows-versions.sh"
+WINDOWS_UPDATE_KEY = REPO / ".github" / "scripts" / "windows-update-key.sh"
 WINDOWS_APP = REPO / "apps" / "windows" / "Pitboard.App" / "Pitboard.App.csproj"
 PACKAGE_WINDOWS = REPO / ".github" / "scripts" / "package-windows.ps1"
 WINDOWS_TARGETS = ("x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc")
@@ -828,6 +829,62 @@ class WindowsVersions(unittest.TestCase):
 
     def test_it_takes_one_argument(self):
         done = run(WINDOWS_VERSIONS)
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("usage:", done.stderr)
+
+
+class WindowsUpdateKey(unittest.TestCase):
+    KEY = base64.b64encode(ed_public(bytes(32))).decode()
+    NEXT = base64.b64encode(ed_public(bytes(range(32)))).decode()
+
+    def checked(self, version, now, previous, was, rotation=""):
+        return run(WINDOWS_UPDATE_KEY, version, now, previous, was, rotation)
+
+    def assertPasses(self, done, said):
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stderr, "")
+        self.assertIn(said, done.stdout)
+
+    def assertRefused(self, done, said):
+        self.assertEqual(done.returncode, 1, done.stdout)
+        self.assertEqual(done.stdout, "")
+        self.assertIn(said, done.stderr)
+
+    def test_the_key_the_last_msi_shipped_passes(self):
+        for version, previous in (("1.0.0-beta.2", "v1.0.0-beta.1"), ("1.0.0", "v1.0.0-rc1")):
+            with self.subTest(version=version):
+                done = self.checked(version, self.KEY, previous, self.KEY)
+                self.assertPasses(done, f"the update key is the one {previous} shipped")
+
+    def test_a_change_the_rotation_names_passes(self):
+        done = self.checked("1.2.0", self.NEXT, "v1.1.0", self.KEY, "1.2.0")
+        self.assertPasses(done, f"declared rotation: v1.1.0 shipped {self.KEY}, 1.2.0 ships {self.NEXT}")
+
+    def test_a_change_nobody_declared_is_refused(self):
+        # The second rung of a rotation ships the first rung's key, so a rotation that names
+        # another version declares nothing for this one.
+        for rotation in ("", "1.1.0", "1.2.0-rc1"):
+            with self.subTest(rotation=rotation):
+                done = self.checked("1.2.0", self.NEXT, "v1.1.0", self.KEY, rotation)
+                self.assertRefused(done, f"this release's update key is {self.NEXT}, and v1.1.0 shipped")
+                self.assertIn("WINDOWS_UPDATE_KEY_ROTATION to 1.2.0", done.stderr)
+
+    def test_with_no_earlier_msi_there_is_nothing_to_compare(self):
+        done = self.checked("1.0.0-beta.1", self.KEY, "", "")
+        self.assertPasses(done, "no earlier release ships an MSI")
+
+    def test_a_release_without_a_key_is_refused(self):
+        for previous, was in (("", ""), ("v1.0.0", self.KEY)):
+            with self.subTest(previous=previous):
+                done = self.checked("1.0.1", "", previous, was)
+                self.assertRefused(done, "carries no update key: WINDOWS_UPDATE_PUBLIC_KEY is not set")
+
+    def test_an_earlier_msi_whose_key_is_not_read_is_refused(self):
+        done = self.checked("1.0.1", self.KEY, "v1.0.0", "")
+        self.assertRefused(done, "no update key was read from v1.0.0's MSI")
+
+    def test_it_takes_five_arguments(self):
+        done = run(WINDOWS_UPDATE_KEY, "1.0.0", self.KEY, "", "")
         self.assertEqual(done.returncode, 2)
         self.assertIn("usage:", done.stderr)
 

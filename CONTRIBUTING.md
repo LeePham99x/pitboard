@@ -120,13 +120,14 @@ The test runs the script under each of `sh`, `dash`, `bash`, `zsh` and `busybox 
 on `PATH`. `TEST_INSTALL_SHELLS` names the ones that must be found, as CI sets it.
 
 For a change to the release's scripts, `release-kind.sh`, `core-unchanged.sh`,
-`check-winget-hashes.py`, `windows-appcast.py` and `windows-versions.sh` in
-`.github/scripts`, `apps/macos/scripts/build-number.sh`, or the cargo-binstall metadata in
-`crates/pitboard/Cargo.toml`:
+`check-winget-hashes.py`, `windows-appcast.py`, `windows-versions.sh` and
+`windows-update-key.sh` in `.github/scripts`, `apps/macos/scripts/build-number.sh`, or the
+cargo-binstall metadata in `crates/pitboard/Cargo.toml`:
 
 ```sh
 shellcheck -s sh .github/scripts/release-kind.sh .github/scripts/core-unchanged.sh \
-  .github/scripts/windows-versions.sh apps/macos/scripts/build-number.sh
+  .github/scripts/windows-versions.sh .github/scripts/windows-update-key.sh \
+  apps/macos/scripts/build-number.sh
 python3 .github/scripts/test-release.py
 ```
 

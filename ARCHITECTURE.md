@@ -816,9 +816,10 @@ window loads its site, and whatever the site's pages load, as a browser would.
     `check-winget-hashes.py` holds komac's winget manifests to a release's `SHA256SUMS`,
     `windows-appcast.py` writes `appcast-windows.xml` for a full release's MSIs and their
     signatures, `windows-versions.sh` gives a Windows build's MSI, file and package numbers,
-    `test-msi-version.sh` tests the version the MSI carries for each version `Cargo.toml` may
-    name, and `test-release.py` tests the five, the app's `build-number.sh` and the
-    cargo-binstall metadata in `crates/pitboard/Cargo.toml`. `package-windows.ps1` zips
+    `windows-update-key.sh` refuses a Windows update key that changed since the last MSI
+    unless a rotation names the release, `test-msi-version.sh` tests the version the MSI
+    carries for each version `Cargo.toml` may name, and `test-release.py` tests the six, the
+    app's `build-number.sh` and the cargo-binstall metadata in `crates/pitboard/Cargo.toml`. `package-windows.ps1` zips
     a Windows build, `check-windows-build.ps1` checks one, `verify-windows-signatures.ps1`
     checks the signature of every program a Windows release hands on, and
     `test-windows-release.ps1` tests all three. `check-windows-app.ps1` checks the Windows app's
