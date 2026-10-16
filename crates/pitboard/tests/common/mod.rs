@@ -337,6 +337,28 @@ impl Env {
         given
     }
 
+    // Every variable a command is started with, for a start std's Command cannot make.
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "the tests' own environment, from which this withholds what Pitboard reads"
+    )]
+    pub(crate) fn environment(&self) -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
+        let given = self.given();
+        let set: Vec<&str> = given.iter().map(|(name, _)| *name).collect();
+        let kept: Vec<_> = std::env::vars_os()
+            .filter(|(name, _)| {
+                !withheld().any(|kept| is(name, kept)) && !set.iter().any(|set| is(name, set))
+            })
+            .collect();
+        kept.into_iter()
+            .chain(
+                given
+                    .into_iter()
+                    .map(|(name, value)| (std::ffi::OsString::from(name), value)),
+            )
+            .collect()
+    }
+
     #[allow(
         clippy::disallowed_methods,
         reason = "the tests' own environment, from which this withholds what Pitboard reads"

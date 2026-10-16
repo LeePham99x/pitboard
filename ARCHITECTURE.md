@@ -929,7 +929,10 @@ window loads its site, and whatever the site's pages load, as a browser would.
   with `--json`, each refuses with `confirmation_needed`, exit 2, before it changes
   anything, unless given `--yes` (`Confirm` in `pitboard/src/main.rs`). On 10 October 2026
   `pitboard stow < /dev/null`, run as a look, deleted the login file behind the keychain.
-  The app asks in its own dialogs and does not go through `Confirm`.
+  The app asks in its own dialogs and does not go through `Confirm`. On Windows std's
+  `is_terminal` also takes a pipe named as an msys or cygwin pty for a terminal (`msys_tty_on`
+  in Rust 1.98.1's `library/std/src/sys/io/is_terminal/windows.rs`), so under mintty, Git
+  Bash's own terminal, they ask as in a console.
 - A Windows build of a release before Pitboard for Windows is released does nothing
   (`release.rs`). The gate every change passes asks first, so no file is written, no store
   of logins changed and no token renewed even by a caller that forgot to ask; every read
