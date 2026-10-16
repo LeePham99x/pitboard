@@ -292,7 +292,8 @@ impl WarmTold {
     /// not said yet.
     fn stands(&mut self, overview: &Overview, moment: &dyn Fn(i64) -> String) -> Vec<Report> {
         let mut reports = Vec::new();
-        match &overview.halted {
+        let turned_on = overview.accounts.iter().any(|choice| choice.on);
+        match overview.halted.as_ref().filter(|_| turned_on) {
             Some(halt) => {
                 if self.halted.as_deref() != Some(halt.code()) {
                     self.halted = Some(halt.code().to_owned());
@@ -1071,6 +1072,19 @@ mod tests {
                 events(&told.untold(held())),
                 ["\"warm_up_held\""],
                 "said again after it warmed up"
+            );
+        }
+
+        // Windows warms up nothing, and a `watch` that warms up nothing has nothing to say of it.
+        #[test]
+        fn why_nothing_is_warmed_up_is_not_said_with_no_account_turned_on() {
+            let mut told = WarmTold::default();
+            let mut off = overview(Some(Halt::Unbuilt), None);
+            off.accounts[0].on = false;
+            assert!(told.untold(stands(off)).is_empty());
+            assert_eq!(
+                events(&told.untold(stands(overview(Some(Halt::Unbuilt), None)))),
+                ["\"warm_up_halted\""]
             );
         }
 

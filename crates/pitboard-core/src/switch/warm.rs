@@ -500,11 +500,21 @@ mod tests {
         assert!(!warm::path(&m.ctx).exists(), "nothing written");
     }
 
+    // Said whether or not an account is turned on, as a setting changes nothing of it.
     #[test]
-    fn nothing_is_warmed_up_on_windows_yet() {
-        let ctx = crate::context::Context::new(std::env::temp_dir().join("pitboard-warm-windows"));
-        let unbuilt = warm::halted(&ctx) == Some(warm::Halt::Unbuilt);
-        assert_eq!(unbuilt, crate::host::OS == crate::host::Os::Windows);
+    fn nothing_is_warmed_up_on_windows_and_the_overview_says_so() {
+        use crate::host::Os;
+        let m = machine("warm-windows");
+        for os in [Os::MacOs, Os::Linux, Os::Windows] {
+            let mut ctx = m.ctx.clone();
+            ctx.os = os;
+            let overview = Pitboard::new(ctx).warm_overview().expect("an overview");
+            assert_eq!(
+                overview.halted == Some(warm::Halt::Unbuilt),
+                os == Os::Windows,
+                "{os:?}"
+            );
+        }
     }
 
     #[test]
@@ -676,7 +686,10 @@ mod tests {
         }
 
         #[test]
-        #[cfg_attr(windows, ignore = "a warm-up runs on macOS and Linux")]
+        #[cfg_attr(
+            windows,
+            ignore = "a warm-up runs on macOS and Linux: Claude Code on Windows reads no token handed to it"
+        )]
         fn a_parked_account_due_is_warmed_up_with_its_access_token_alone() {
             let (m, script) = warming("warm-parked", 0, ANSWERED);
             idle(&m, "there", 20.0);
@@ -772,7 +785,10 @@ mod tests {
         /// under Claude Code's own locks where it would lapse during the run, and saved where
         /// Claude Code keeps it.
         #[test]
-        #[cfg_attr(windows, ignore = "a warm-up runs on macOS and Linux")]
+        #[cfg_attr(
+            windows,
+            ignore = "a warm-up runs on macOS and Linux: Claude Code on Windows reads no token handed to it"
+        )]
         fn the_account_in_use_is_warmed_up_with_its_login_renewed_first_where_it_lapses() {
             let (m, script) = warming("warm-in-use", 0, ANSWERED);
             Pitboard::new(m.ctx.clone())
@@ -803,7 +819,10 @@ mod tests {
         }
 
         #[test]
-        #[cfg_attr(windows, ignore = "a warm-up runs on macOS and Linux")]
+        #[cfg_attr(
+            windows,
+            ignore = "a warm-up runs on macOS and Linux: Claude Code on Windows reads no token handed to it"
+        )]
         fn a_limit_used_up_is_waited_on_and_not_counted() {
             let (m, _) = warming("warm-limit", 1, LIMIT_REACHED);
             idle(&m, "there", 20.0);
@@ -836,7 +855,10 @@ mod tests {
         }
 
         #[test]
-        #[cfg_attr(windows, ignore = "a warm-up runs on macOS and Linux")]
+        #[cfg_attr(
+            windows,
+            ignore = "a warm-up runs on macOS and Linux: Claude Code on Windows reads no token handed to it"
+        )]
         fn a_request_answered_that_starts_nothing_counts_against_the_day() {
             let (m, _) = warming("warm-not-started", 0, ANSWERED);
             idle(&m, "there", 20.0);
@@ -848,7 +870,10 @@ mod tests {
         }
 
         #[test]
-        #[cfg_attr(windows, ignore = "a warm-up runs on macOS and Linux")]
+        #[cfg_attr(
+            windows,
+            ignore = "a warm-up runs on macOS and Linux: Claude Code on Windows reads no token handed to it"
+        )]
         fn asked_for_now_a_running_period_is_said_and_a_held_one_refused() {
             let (m, script) = warming("warm-now", 0, ANSWERED);
             let pitboard = Pitboard::new(m.ctx.clone());
@@ -871,7 +896,10 @@ mod tests {
         }
 
         #[test]
-        #[cfg_attr(windows, ignore = "a warm-up runs on macOS and Linux")]
+        #[cfg_attr(
+            windows,
+            ignore = "a warm-up runs on macOS and Linux: Claude Code on Windows reads no token handed to it"
+        )]
         fn nothing_is_warmed_up_outside_the_span() {
             let (m, script) = warming("warm-span", 0, ANSWERED);
             idle(&m, "there", 20.0);
@@ -932,7 +960,10 @@ mod tests {
         /// for again as late as the measured runs asked before the run counts as starting
         /// nothing.
         #[test]
-        #[cfg_attr(windows, ignore = "a warm-up runs on macOS and Linux")]
+        #[cfg_attr(
+            windows,
+            ignore = "a warm-up runs on macOS and Linux: Claude Code on Windows reads no token handed to it"
+        )]
         fn a_period_the_first_reading_after_the_run_misses_is_asked_about_again() {
             let api = Arc::new(Mutex::new(None::<Arc<crate::api::scripted::ScriptedApi>>));
             let later = Arc::clone(&api);
@@ -966,7 +997,10 @@ mod tests {
         }
 
         #[test]
-        #[cfg_attr(windows, ignore = "a warm-up runs on macOS and Linux")]
+        #[cfg_attr(
+            windows,
+            ignore = "a warm-up runs on macOS and Linux: Claude Code on Windows reads no token handed to it"
+        )]
         fn a_run_past_its_ceiling_waits_its_turn_and_is_not_counted() {
             let timed_out = Ran {
                 exit: None,
@@ -988,7 +1022,10 @@ mod tests {
         }
 
         #[test]
-        #[cfg_attr(windows, ignore = "a warm-up runs on macOS and Linux")]
+        #[cfg_attr(
+            windows,
+            ignore = "a warm-up runs on macOS and Linux: Claude Code on Windows reads no token handed to it"
+        )]
         fn a_refused_login_counts_against_the_day() {
             let (m, _) = warming(
                 "warm-login-refused",
@@ -1009,7 +1046,10 @@ mod tests {
         /// A parked login that cannot be renewed for now, with Anthropic out of reach, waits
         /// its turn like a run that could not reach it: counted for nothing, and nothing run.
         #[test]
-        #[cfg_attr(windows, ignore = "a warm-up runs on macOS and Linux")]
+        #[cfg_attr(
+            windows,
+            ignore = "a warm-up runs on macOS and Linux: Claude Code on Windows reads no token handed to it"
+        )]
         fn a_park_that_cannot_be_renewed_for_now_waits_its_turn() {
             let (m, script) = warming("warm-renew-offline", 0, ANSWERED);
             idle(&m, "there", 20.0);
@@ -1039,7 +1079,10 @@ mod tests {
         /// One warm-up runs at a time: another front end's holds this one back, which counts
         /// for nothing and runs nothing.
         #[test]
-        #[cfg_attr(windows, ignore = "a warm-up runs on macOS and Linux")]
+        #[cfg_attr(
+            windows,
+            ignore = "a warm-up runs on macOS and Linux: Claude Code on Windows reads no token handed to it"
+        )]
         fn a_warm_up_running_elsewhere_holds_this_one_back_uncounted() {
             let (m, script) = warming("warm-in-progress", 0, ANSWERED);
             idle(&m, "there", 20.0);
@@ -1059,7 +1102,10 @@ mod tests {
         /// Where no reading can be had after the run, the period it started is taken on trust,
         /// from when the run began.
         #[test]
-        #[cfg_attr(windows, ignore = "a warm-up runs on macOS and Linux")]
+        #[cfg_attr(
+            windows,
+            ignore = "a warm-up runs on macOS and Linux: Claude Code on Windows reads no token handed to it"
+        )]
         fn with_no_reading_after_it_the_period_started_is_taken_on_trust() {
             let (m, _) = warming("warm-no-reading", 0, ANSWERED);
             idle(&m, "there", 20.0);
@@ -1100,7 +1146,10 @@ mod tests {
         /// With Claude Code not where Pitboard looks, nothing is warmed up, and the overview
         /// says why.
         #[test]
-        #[cfg_attr(windows, ignore = "a warm-up runs on macOS and Linux")]
+        #[cfg_attr(
+            windows,
+            ignore = "a warm-up runs on macOS and Linux: Claude Code on Windows reads no token handed to it"
+        )]
         fn nothing_is_warmed_up_without_claude_code() {
             let mut m = machine("warm-no-program");
             let absent = m.ctx_home().join("bin").join("claude");

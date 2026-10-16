@@ -241,8 +241,9 @@ window loads its site, and whatever the site's pages load, as a browser would.
     in minutes of the clock's time zone (`Clock::zone`), which may run past midnight. It also
     holds `Overview`, each Claude Code account with where it stands, both by itself and for a
     warm-up asked for now (`Choice::now`), and `Halt`, why nothing is warmed up on this
-    machine: Windows, which it is not built for yet, a switch interrupted, a custom OAuth
-    endpoint, managed settings that sign every run of Claude Code in another way, or no
+    machine: Windows, where Claude Code reads no token handed to it
+    (`windows_token_handover`), said whatever is turned on, a switch interrupted, a custom
+    OAuth endpoint, managed settings that sign every run of Claude Code in another way, or no
     program. `decide.rs` is the rule, from the
     reading Anthropic gave, which login of the account is at hand (`Login`), the span and
     `warmed.json`, today's attempts (`Ledger`, by the clock's day): a period running, or one a
@@ -954,13 +955,14 @@ window loads its site, and whatever the site's pages load, as a browser would.
   harness parks through it), which variables a command is passed on, which folders
   of a person's account it is given as scratch ones of its own, what its `PATH` holds after
   the test's programs, what a program's file is called, how npm lays out a package's
-  program, and whether Claude Desktop runs there (`os::claude_desktop_runs_here`).
+  program, whether Claude Desktop runs there (`os::claude_desktop_runs_here`), and whether a
+  warm-up does (`os::warm_ups_run_here`).
 - The whole suite runs on macOS, Linux and Windows. A test put off on a system says why in
   its `ignore` reason, which libtest lists:
   - A test that cannot pass on Windows until a later pull request of the Windows work says
     which: `#[cfg_attr(windows, ignore = "W<n>: …")]`.
   - A test of something one system does not have or do names it, such as
-    `ignore = "a warm-up runs on macOS and Linux"` on Windows and
+    `ignore = "a warm-up runs on macOS and Linux: …"` on Windows and
     `ignore = "a firmlink to the Data volume is macOS's own"` off macOS.
   - A core test of Claude Desktop's folder calls, which Windows refuses, says
     `#[cfg_attr(windows, ignore = "Claude Desktop is macOS only: …")]`. It runs on macOS and

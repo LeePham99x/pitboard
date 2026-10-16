@@ -226,7 +226,7 @@ impl Setting {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Halt {
-    /// Pitboard warms up nothing on this system yet.
+    /// Pitboard warms up nothing on Windows, where Claude Code reads no token handed to it.
     Unbuilt,
     /// A switch was interrupted, and the change that finishes it is somebody's to make.
     SwitchInterrupted,
@@ -252,12 +252,19 @@ impl Halt {
     }
 }
 
+// Claude Code on Windows reads a handed pipe through `/proc` alone (`windows_token_handover`).
+pub(crate) fn unbuilt(os: Os) -> Option<Halt> {
+    match os {
+        Os::Windows => Some(Halt::Unbuilt),
+        Os::MacOs | Os::Linux => None,
+    }
+}
+
 /// Why nothing is warmed up here now, where something says so, asked in the order a change
 /// would refuse over it.
 pub(crate) fn halted(ctx: &Context) -> Option<Halt> {
-    match crate::host::OS {
-        Os::Windows => return Some(Halt::Unbuilt),
-        Os::MacOs | Os::Linux => {}
+    if let Some(halt) = unbuilt(ctx.os) {
+        return Some(halt);
     }
     if crate::switch::unfinished(ctx) == Some(crate::switch::Unfinished::Interrupted) {
         return Some(Halt::SwitchInterrupted);
@@ -346,7 +353,7 @@ pub(crate) fn overview(ctx: &Context, state: &State, setting: &Setting) -> Overv
     let ledger = decide::Ledger::load(ctx);
     Overview {
         range: setting.range,
-        halted: setting.any().then(|| halted(ctx)).flatten(),
+        halted: unbuilt(ctx.os).or_else(|| setting.any().then(|| halted(ctx)).flatten()),
         accounts: state
             .accounts
             .iter()
