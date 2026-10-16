@@ -234,7 +234,7 @@ public sealed partial class SettingsPane : Page
         else
         {
             // A cleared box shows the share again once its change has run.
-            DispatcherQueue.TryEnqueue(Show);
+            DispatcherQueue.TryEnqueue(Ui.Guarded(Show));
         }
     }
 

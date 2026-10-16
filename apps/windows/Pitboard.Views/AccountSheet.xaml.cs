@@ -122,7 +122,7 @@ public sealed partial class AccountSheet : ContentDialog, IDisposable
         // Appears once the tool asks, with the code on the clipboard to paste.
         if (asked)
         {
-            DispatcherQueue.TryEnqueue(() => CodeField.Focus(FocusState.Programmatic));
+            DispatcherQueue.TryEnqueue(Ui.Guarded(() => CodeField.Focus(FocusState.Programmatic)));
         }
 
         ShowFailure(_model.SheetFailure);

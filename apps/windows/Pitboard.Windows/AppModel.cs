@@ -152,5 +152,5 @@ public sealed class ModelListening(DispatcherQueue queue) : ModelListener
 {
     public Action<Snapshot>? Deliver { get; set; }
 
-    public void Changed(Snapshot snapshot) => queue.TryEnqueue(() => Deliver?.Invoke(snapshot));
+    public void Changed(Snapshot snapshot) => queue.TryEnqueue(Ui.Guarded(() => Deliver?.Invoke(snapshot)));
 }

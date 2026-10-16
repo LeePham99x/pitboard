@@ -70,7 +70,7 @@ public partial class App : Application, IIconTargets
         accountWindows.Follow(model.AccountWindows);
         _updates = SparkleUpdates.For(
             _start.Identity.Build, SparkleUpdates.Key(typeof(App).Assembly), _version, _start.DataFolder,
-            action => queue.TryEnqueue(() => action()), accountWindows.MayQuit, () => _lifetime?.End());
+            action => queue.TryEnqueue(Ui.Guarded(action)), accountWindows.MayQuit, () => _lifetime?.End());
         _lifetime = new Lifetime(model, _icon, _updates, notifications, accountWindows.StopDownloads, CloseAndExit);
         _commands = new IconCommands(model, _updates, this);
         PowerManager.SystemSuspendStatusChanged += OnSuspendStatusChanged;
@@ -94,7 +94,7 @@ public partial class App : Application, IIconTargets
         }
 
         // A second launch's handover arrives on a thread of its own.
-        _handovers.Ready(handed => queue.TryEnqueue(() => Handed(handed)));
+        _handovers.Ready(handed => queue.TryEnqueue(Ui.Guarded(() => Handed(handed))));
         _updates.Start();
     }
 
@@ -139,7 +139,7 @@ public partial class App : Application, IIconTargets
             _start.DataFolder, PitboardFfiMethods.WindowsRecordsKey(directory), _start.Identity.LinkScheme);
         var launch = new AppLaunch(_start.Environment, AppLocation: null, Windows: windows);
         // Reopen is called on a thread of the model's, and the window is the UI thread's.
-        var apps = new WindowsApps(() => queue.TryEnqueue(() => _window?.Bring()));
+        var apps = new WindowsApps(() => queue.TryEnqueue(Ui.Guarded(() => _window?.Bring())));
         return AppModel.Listening(
             queue,
             listener => new PitboardModel(launch, listener, apps, notifications, new WindowsLocalTime()));
