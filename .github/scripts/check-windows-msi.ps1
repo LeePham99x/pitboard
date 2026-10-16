@@ -1,5 +1,5 @@
 # Reads an MSI and its administrative image, for CI and the release, and runs none of it.
-# CONTRIBUTING.md lists what it refuses.
+# CONTRIBUTING.md says what it checks.
 param(
     [Parameter(Mandatory)] [string] $Msi,
     # The folder of its administrative image that holds Pitboard.exe, as extract-msi.ps1 prints it.
