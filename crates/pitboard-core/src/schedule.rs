@@ -145,13 +145,22 @@ pub(crate) fn for_its_run(ctx: &Context) -> Context {
 /// The Pitboard the schedule should run: the one the context names, or this one, by the
 /// path it was started by.
 fn program(ctx: &Context) -> Result<PathBuf> {
-    if let Some(program) = ctx.schedule_program() {
-        return lasting(program).map(Path::to_path_buf);
-    }
-    crate::host::current_program().map_err(|source| Error::HomeUnwritable {
-        path: PathBuf::from("the running Pitboard"),
-        source,
-    })
+    program_of(ctx.schedule_program(), crate::host::current_program)
+}
+
+fn program_of(
+    named: Option<&Path>,
+    running: impl FnOnce() -> std::io::Result<PathBuf>,
+) -> Result<PathBuf> {
+    let program = match named {
+        Some(named) => named.to_path_buf(),
+        None => running().map_err(|source| Error::HomeUnwritable {
+            path: PathBuf::from("the running Pitboard"),
+            source,
+        })?,
+    };
+    lasting(&program)?;
+    Ok(program)
 }
 
 /// `program`, where it will still be there when the scheduler runs it. A scheduler starts a
@@ -583,6 +592,29 @@ mod tests {
         );
 
         assert_eq!(status(&ctx), Installed::No, "nothing was written");
+    }
+
+    // pitboard.exe started from inside a zip in Explorer runs from Temp1_*.zip, which goes.
+    #[test]
+    fn the_running_pitboard_is_refused_where_a_named_one_would_be() {
+        let home = Scratch::new();
+        let unzipped = home
+            .path()
+            .join("Temp1_pitboard-v0.15.0-x86_64-pc-windows-msvc.zip")
+            .join("pitboard.exe");
+        a_program_at(&unzipped);
+        let refused = program_of(None, || Ok(unzipped.clone())).expect_err("a copy that goes");
+        assert_eq!(refused.code(), "schedule_program_temporary");
+        let gone = home.path().join("gone").join("pitboard");
+        let refused = program_of(None, || Ok(gone.clone())).expect_err("nothing there");
+        assert_eq!(refused.code(), "schedule_program_missing");
+
+        let installed = home.path().join("bin").join("pitboard");
+        a_program_at(&installed);
+        assert_eq!(
+            program_of(None, || Ok(installed.clone())).expect("one that lasts"),
+            installed
+        );
     }
 
     /// A copy macOS runs from a temporary place is told by a directory of the path, as the
