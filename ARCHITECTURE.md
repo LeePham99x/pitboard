@@ -3084,7 +3084,11 @@ treated, and only the macOS build shows it. The run reads both builds since.
   Pitboard writes in Claude Code's order with one step of its own: while it replaces pieces
   in place, the manifest names a length no base64 has, so Claude Code's read fails, and a
   session keeps the login it has, rather than read a mix. It reads a manifest Claude Code
-  would pass over, or `#p` beside one, as unreadable. Every write goes to Credential Manager
+  would pass over, or `#p` beside one, as unreadable. Only a whole write ends a write that
+  stopped there: a switch whose write failed partway writes the login that was there back,
+  and one killed partway is finished by the next change, which writes the incoming login
+  whole, without the outgoing document's part that is no account's, such as MCP tokens,
+  since nothing reads that back. Every write goes to Credential Manager
   first, and deletes `.credentials.json` only where Credential Manager held no login before,
   as Claude Code's wrapper does; where Credential Manager fails, Claude Code writes the file
   instead and Pitboard writes nothing more, leaving the switch to the journal's recovery. A

@@ -571,6 +571,100 @@ fn a_switch_that_cannot_read_the_store_back_keeps_every_copy_and_its_record() {
     hold(&m, "unverified, then unlocked");
 }
 
+// A write that stopped partway into a store kept in pieces, Claude Code's Credential Manager on
+// Windows, leaves what no read gets past, Claude Code's own included, until a whole login is
+// written over it. The next change writes the login the switch went to, and a read says
+// nothing is stuck; where that login cannot be read, both say why and nothing changes.
+#[test]
+fn a_switch_whose_write_stopped_partway_is_finished_by_writing_its_login_whole() {
+    for park_unreadable in [false, true] {
+        let at = format!("the incoming park unreadable: {park_unreadable}");
+        let m = machine(&format!("left-unfinished-{park_unreadable}"));
+        let settled = settle(&m.ctx, Permit::for_a_test(), None)
+            .expect("nothing to recover yet")
+            .0;
+        let died = fault::killing("switch.park_recorded", || switch(settled, &m.key("there")));
+        assert_eq!(died.unwrap_err(), "switch.park_recorded");
+        m.fault_live(Fault::Unfinished("a write left `#p`".into()));
+        if park_unreadable {
+            let incoming = recorded(&m, "incoming_service").expect("a record");
+            m.mem
+                .vault()
+                .fault(&incoming, Fault::Unreadable("sealed".into()));
+        }
+        let state = state::load(&m.ctx).expect("an account list");
+        let read = stuck(&m.ctx, &state, Asking::Nobody).map(|e| e.to_string());
+        let before = everything(&m);
+
+        match settle(&m.ctx, Permit::for_a_test(), None) {
+            Ok((settled, recovered)) => {
+                drop(settled);
+                assert!(!park_unreadable, "{at}");
+                assert_eq!(read, None, "{at}: the next change finishes it");
+                assert!(recovered.is_some_and(|r| r.finished), "{at}");
+            }
+            Err(refused) => {
+                assert!(park_unreadable, "{at}: {refused}");
+                assert_eq!(refused.code(), "recovery_undetermined");
+                assert_eq!(read, Some(refused.to_string()));
+                assert!(
+                    refused.to_string().contains("could not write `there`'s"),
+                    "{refused}"
+                );
+                assert_eq!(everything(&m), before, "{at}: nothing changed");
+                assert!(journal::pending(&m.ctx));
+                continue;
+            }
+        }
+        let live = m.live().expect("a login");
+        assert_eq!(live["claudeAiOauth"]["refreshToken"], "there-refresh");
+        hold(&m, &at);
+        recover(&m).unwrap_or_else(|e| panic!("{at}: the second recovery refused: {e}"));
+        hold(&m, &format!("{at}, recovered twice"));
+    }
+}
+
+// Claude Code's login past 2400 bytes on both sides of a switch, each in Credential Manager's
+// pieces: killed after any step of writing them, the switch recovers whole, and no `#p` is left.
+#[cfg(windows)]
+#[test]
+fn a_switch_between_logins_in_pieces_killed_after_any_step_recovers_whole() {
+    let big = |name: &str| {
+        let m = machine(name);
+        let mut login = document("here-refresh");
+        login["mcpOAuth"]["some-server"]["token"] = json!("t".repeat(3000));
+        m.sign_in(&login);
+        m
+    };
+    let steps = {
+        let m = big("pieces-counted");
+        let settled = settle(&m.ctx, Permit::for_a_test(), None)
+            .expect("nothing to recover yet")
+            .0;
+        let (switched, steps) =
+            fault::counting("credman.step", || switch(settled, &m.key("there")));
+        switched.expect("switched");
+        steps
+    };
+    assert!(steps > 4, "pieces over pieces, so {steps} steps");
+    for stop in 1..=steps {
+        let at = format!("killed after step {stop} of {steps}");
+        let m = big(&format!("pieces-{stop}"));
+        let settled = settle(&m.ctx, Permit::for_a_test(), None)
+            .expect("nothing to recover yet")
+            .0;
+        let died = fault::killing_nth("credman.step", stop, || switch(settled, &m.key("there")));
+        assert_eq!(died.unwrap_err(), "credman.step", "{at}");
+
+        recover(&m).unwrap_or_else(|e| panic!("{at}: recovery refused: {e}"));
+        hold(&m, &at);
+        assert!(m.live().is_some(), "{at}: a login is signed in");
+        assert_eq!(m.mem.live().peek(&format!("{}#p", m.service)), None, "{at}");
+        recover(&m).unwrap_or_else(|e| panic!("{at}: the second recovery refused: {e}"));
+        hold(&m, &format!("{at}, recovered twice"));
+    }
+}
+
 /// The other window the roadmap named. A renewal reserves a name, writes the fresh login
 /// into it, and records it; killed between the write and the record, the copy is an orphan,
 /// and the renewal runs inside every plain `pitboard`.

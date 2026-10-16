@@ -123,6 +123,10 @@ pub enum Error {
     /// either, and nothing is wrong with what it holds.
     #[error("the credential store could not be read: {}", locked(crate::host::OS))]
     Locked,
+    /// A write of a login kept in several items stopped partway, and what they hold cannot be
+    /// read until a whole login is written over them. Never "no credential" either.
+    #[error("the credential store could not be read: {0}")]
+    Unfinished(String),
     /// A park sealed to this account is there but does not open in this logon: an
     /// administrator's password reset, a profile restored on another PC, or a logon without
     /// the user's key, as over SSH. `code` is `CryptUnprotectData`'s, where there was one.
@@ -139,7 +143,7 @@ pub enum Error {
 impl Error {
     pub fn code(&self) -> &'static str {
         match self {
-            Error::Unreadable(_) => "credential_store_unreadable",
+            Error::Unreadable(_) | Error::Unfinished(_) => "credential_store_unreadable",
             Error::Locked => "credential_store_locked",
             Error::Sealed { .. } => "credential_sealed",
             Error::Malformed(_) => "credential_not_json",

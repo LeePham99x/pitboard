@@ -499,6 +499,20 @@ pub enum Error {
     },
 
     #[error(
+        "an earlier switch from `{from}` to `{to}` stopped partway through writing {}'s login, \
+         which nothing reads until a whole login is written over it, and Pitboard could not \
+         write `{to}`'s ({detail}). Nothing was deleted. Fix that, then try again: Pitboard \
+         finishes the switch first.",
+        tool.name()
+    )]
+    RecoveryUnfinished {
+        tool: ProviderId,
+        from: String,
+        to: String,
+        detail: String,
+    },
+
+    #[error(
         "could not sign in as `{to}` ({detail}); `{from}` is still signed in, nothing was lost."
     )]
     SwitchRolledBack {
@@ -953,7 +967,9 @@ impl Error {
             SessionExpired { .. } => "session_expired",
             IdentityUnverifiable { .. } => "identity_unverifiable",
             SignedInAccountChanged => "signed_in_account_changed",
-            RecoveryUndetermined { .. } | RecoveryStopped { .. } => "recovery_undetermined",
+            RecoveryUndetermined { .. } | RecoveryUnfinished { .. } | RecoveryStopped { .. } => {
+                "recovery_undetermined"
+            }
             RecoveryElsewhere { .. } => "recovery_elsewhere",
             ProgramNotFound { tool } => match tool {
                 ProviderId::Claude => "claude_not_found",

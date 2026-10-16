@@ -1162,6 +1162,8 @@ fn install_with(
     match read() {
         // Unchanged. The write never landed and there is nothing to undo.
         Ok(Some(now)) if now == before_raw => return Err(rolled_back(failure.to_string())),
+        // Written partway, which only a whole write ends. Put back what was there.
+        Err(store::Error::Unfinished(_)) => {}
         // Could not tell. Change nothing further and keep every copy: the caller leaves its
         // record of intent in place so a later run, with a store that answers, decides.
         Err(unreadable) => {
@@ -1418,6 +1420,38 @@ mod tests {
             1,
             "and nothing further is written into a store that cannot be read"
         );
+    }
+
+    // Credential Manager's pieces, a write into which stopped partway: nobody reads them until a
+    // whole login is written over them, which the write of the one that was there is.
+    #[test]
+    fn a_write_left_unfinished_is_rolled_back_by_writing_the_login_that_was_there() {
+        let slot = RefCell::new(Err("left unfinished".to_string()));
+        let result = install_with(
+            ProviderId::Claude,
+            |b| {
+                if b == "new" {
+                    return Err(failing("Element not found. (os error 1168)"));
+                }
+                *slot.borrow_mut() = Ok(b.to_string());
+                Ok(())
+            },
+            || {
+                slot.borrow()
+                    .clone()
+                    .map(Some)
+                    .map_err(store::Error::Unfinished)
+            },
+            "new",
+            "old",
+            "a",
+            "b",
+        );
+        assert!(
+            matches!(result, Err(Error::SwitchRolledBack { .. })),
+            "{result:?}"
+        );
+        assert_eq!(*slot.borrow(), Ok("old".to_string()));
     }
 
     #[test]

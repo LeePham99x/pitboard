@@ -142,7 +142,9 @@ pub(crate) fn read(items: &dyn Items, target: &str) -> Result<Option<String>, Er
         return unreadable("has a manifest `#m` Claude Code does not write");
     };
     if found(items, PENDING)?.is_some() {
-        return unreadable("has pieces a write left unfinished, as its `#p` says");
+        return Err(Error::Unfinished(format!(
+            "`{target}` has pieces a write left unfinished, as its `#p` says"
+        )));
     }
     let mut joined = String::with_capacity(manifest.l);
     for k in 0..manifest.n {
@@ -491,7 +493,12 @@ mod tests {
                     match read(&items, "t") {
                         Ok(Some(read)) => assert!(read == *before || read == *after),
                         Ok(None) => panic!("Pitboard reads no login"),
-                        Err(Error::Unreadable(_)) => {}
+                        Err(Error::Unfinished(_)) => {
+                            write(&items, Permit::for_a_test(), after, "t")
+                                .expect("a whole write finishes it");
+                            assert_eq!(read(&items, "t").unwrap().as_ref(), Some(after));
+                            assert_eq!(claude_code_reads(&items), Ok(Some(after.clone())));
+                        }
                         Err(other) => panic!("{other:?}"),
                     }
                 }
@@ -537,7 +544,7 @@ mod tests {
         let items = Kept::default();
         write(&items, Permit::for_a_test(), &login(9000), "t").unwrap();
         items.set(Permit::for_a_test(), PENDING, "4").unwrap();
-        let Err(Error::Unreadable(why)) = read(&items, "t") else {
+        let Err(Error::Unfinished(why)) = read(&items, "t") else {
             panic!("a leftover #p beside pieces");
         };
         assert_eq!(
