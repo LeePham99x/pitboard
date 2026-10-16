@@ -2109,8 +2109,9 @@ folder is deleted only as the browser process exits, or at a later start where s
 still held its files. Making a profile of the same name before then fails with
 `HRESULT_FROM_WIN32(ERROR_DELETE_PENDING)`. A profile's folder is
 `EBWebView\WV2Profile_<name>` under the user data folder, as
-`CoreWebView2Profile.ProfilePath` read on both runners in run 38819589926. On both runners
-the folder outlived its browser process and went as the next one started (CF7 under
+`CoreWebView2Profile.ProfilePath` read on both runners in run 38819589926. On the runners
+the folder went as its browser process exited, or outlived it and went as the next one
+started, and that next one refused the name for its first seconds either way (CF7 under
 [Windows](#windows)). So `StoreJanitor` answers `StoreDeleted` where the store's folder is
 not there, once a page of the launch has shown its `ProfilePath` there, and otherwise
 answers `StoreHeld`, which keeps the store recorded and has the next read ask again. A store
@@ -2126,9 +2127,11 @@ whose menu items say why with `WindowNoteKind::StoreHeld`. It keeps these in `wi
 too, as `held` beside this directory's stores, so after a restart the first read asks for
 them again and their windows wait until the app answers `StoreDeleted`, then open with the
 sign-in note. Another directory's record of a held store does not keep it either, since its
-deletion is made already. `ProfileTests` holds the contract and the sweep on both images
-(run 38846774768), and `TwoProfilesKeepTheirCookiesApart` that one profile's cookies are not
-another's. On macOS a store WebKit kept holding is still whole, its sign-in included, so an
+deletion is made already. A window whose name WebView2 still refuses keeps a page of the
+default profile running and tries again, for thirty seconds at most, so one opened as
+Pitboard starts waits for that start to let the name go. `ProfileTests` holds the contract
+and the sweep on both images (run 38846774768), and `TwoProfilesKeepTheirCookiesApart` that
+one profile's cookies are not another's. On macOS a store WebKit kept holding is still whole, its sign-in included, so an
 account enrolled again keeps it and its window opens on it.
 
 **Remove website data** leaves the page for a blank one, clears the profile with
@@ -2262,6 +2265,10 @@ Accounts and tokens:
   new environment over the user data folder left it for 20 s; a page of another profile
   started a browser process, and the folder went 5.1 s later. Microsoft's reference has it
   go as the browser process exits, or at a later start where something held its files.
+- CF7, a deleted profile, in run 38852781290: on windows-2025 the folder went as its browser
+  process exited, and the next browser process refused the name at once all the same; on
+  windows-11-arm it outlived its browser process, holding `DIPS`, `DashTrackerDatabase` and
+  `Network Action Predictor` files, and went 5127 ms after the next one started.
 - CF7, on both images in runs 38842851059 and 38846774768: a navigation that
   `NavigationStarting` cancelled still sent its own request, from a page of the fixture's
   scheme and from one on http, with `Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: document`

@@ -30,10 +30,11 @@ public sealed class ProfileTests
         Assert.IsEmpty(await other.CookieManager.GetCookiesAsync(site.Address("/")));
     }
 
-    // Microsoft's contract for CoreWebView2Profile.Delete, as the runners keep it: the name is refused at once, and the
-    // folder goes as a browser process starts after the one that held it exited, not as that one exits.
+    // Microsoft's contract for CoreWebView2Profile.Delete: the name is refused at once, and the folder goes as the browser
+    // process exits or, where something held its files, as a later one starts. A browser process started since refused
+    // the name at first even where the folder had gone at that exit (run 38852781290), and took it again later.
     [UITestMethod]
-    public async Task ADeletedProfilesNameIsRefusedUntilItsFolderGoes()
+    public async Task ADeletedProfilesNameIsRefusedUntilALaterBrowserProcessLetsItGo()
     {
         using var site = new StandInSite();
         await using var webs = await Webs.Make();
@@ -52,15 +53,35 @@ public sealed class ProfileTests
         Console.WriteLine($"CF7: after its browser process exited, a deleted profile's folder {Said(await Goes(folder, TimeSpan.FromSeconds(5)), folder, 5)}");
 
         _ = await webs.Page("other");
-        var gone = await Goes(folder, TimeSpan.FromSeconds(20));
-        Console.WriteLine($"CF7: a page of another profile started a browser process, and the folder {Said(gone, folder, 20)}");
-        Assert.IsNotNull(gone, $"the folder stayed, holding {Entries(folder)}");
-        Assert.IsTrue(await Webs.Loads(await webs.Page("gone"), site.Address("/")), "the name made no profile once its folder had gone");
-        Assert.IsTrue(Directory.Exists(folder));
+        var started = Stopwatch.StartNew();
+        TimeSpan? went = null;
+        CoreWebView2? again = null;
+        var refusals = 0;
+        while (again is null && started.Elapsed < Webs.Patience)
+        {
+            went ??= Directory.Exists(folder) ? null : started.Elapsed;
+            try
+            {
+                again = await webs.Page("gone");
+            }
+            catch (Exception pending) when (pending.HResult == WebEnvironment.DeletePending)
+            {
+                refusals++;
+                await Task.Delay(250);
+            }
+        }
+
+        var took = started.Elapsed;
+        Console.WriteLine(
+            $"CF7: a page of another profile started a browser process; the folder {(went is { } after ? $"had gone after {after.TotalMilliseconds:0} ms" : "was there at the last look")}, "
+            + $"and the name was refused {refusals} times, {(again is null ? "never taken" : $"taken after {took.TotalMilliseconds:0} ms")}");
+        Assert.IsNotNull(again, $"the name was refused for {Webs.Patience.TotalSeconds} s, the folder holding {Entries(folder)}");
+        Assert.IsTrue(await Webs.Loads(again, site.Address("/")), "the name's new profile loaded nothing");
+        Assert.IsEmpty(await again.CookieManager.GetCookiesAsync(site.Address("/")), "the name's new profile kept the old one's cookies");
     }
 
     // The janitor holds a store while its folder is there, and sweeps it with a browser process of its own once the one
-    // that marked it has exited.
+    // that marked it has exited. Once it says the store is deleted, the store's window opens on an empty profile.
     [UITestMethod]
     public async Task TheJanitorHoldsAStoreUntilItsFolderGoes()
     {
@@ -79,6 +100,9 @@ public sealed class ProfileTests
         await Views.Until(() => told.Count == 2, "the janitor did not answer again", Webs.Patience);
 
         CollectionAssert.AreEqual(new[] { (unused, false), (unused, true) }, told, Entries(webs.Web.ProfileFolder(unused)));
+        var again = await webs.Web.Reusing(Webs.Window, () => webs.Page("unused")).WaitAsync(Webs.Patience);
+        Assert.IsTrue(await Webs.Loads(again, site.Address("/")), "the store's new profile loaded nothing");
+        Assert.IsEmpty(await again.CookieManager.GetCookiesAsync(site.Address("/")), "the store's new profile kept the old one's cookies");
     }
 
     // How long a folder took to go, or null where it stayed that long.

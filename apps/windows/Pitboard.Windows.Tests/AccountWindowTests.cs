@@ -175,6 +175,35 @@ public sealed class AccountWindowTests
         }
     }
 
+    // Right after its store's profile was deleted, WebView2 refuses the name for the first seconds of the next browser
+    // process; the window waits for it rather than saying it could not open, and opens with none of the old cookies.
+    [UITestMethod]
+    public async Task AWindowWhoseProfileIsStillBeingDeletedOpensOnceWebView2TakesItsName()
+    {
+        using var site = new StandInSite();
+        await using var webs = await Webs.Make();
+        var store = webs.Name(Main.Store);
+        Assert.IsTrue(await Webs.Loads(await webs.Page(Main.Store), site.Address("/set")), "the stand-in did not load");
+        await webs.Web.MarkDeleted(store, Webs.Window).WaitAsync(Webs.Patience);
+        Assert.IsTrue(await Task.WhenAny(webs.Exited, Task.Delay(Webs.Patience)) == webs.Exited, "the browser process went on running");
+        var sent = new List<Intent>();
+        var window = await Views.Activated(new AccountWindow(store, webs.Web, webs.Downloads, sent.Add));
+        try
+        {
+            window.Follow(Shown(new WaitingShown.Reading("Reading accounts…"), webs.Opened(Main, Home)));
+
+            await Views.Until(
+                () => sent.Contains(new Intent.PageShown(store, Home)) || Views.Texts(window.Content).Contains("Couldn’t open this window"),
+                "the window neither opened nor said why", Webs.Patience);
+            Assert.Contains(new Intent.PageShown(store, Home), sent, string.Join(" ", Views.Texts(window.Content)));
+            Assert.IsEmpty(await Page(window)!.CookieManager.GetCookiesAsync(site.Address("/")));
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
     // A page's window.open opens the sign-in window, a WinUI web view set as WebView2's new window, which keeps
     // window.opener and closes once its page is done.
     [UITestMethod]
