@@ -388,7 +388,13 @@ fn forget_asks_under_mintty_as_in_a_console_and_a_refusal_names_yes() {
         .open(name("to-master"))
         .expect("the pty's output");
     let mut forget = env.command(&["forget", "beta"]);
-    forget.stdin(stdin).stderr(stderr).stdout(Stdio::piped());
+    // mintty's own default. Without TERM anstream writes to a terminal through the console API,
+    // which a pipe refuses.
+    forget
+        .env("TERM", "xterm")
+        .stdin(stdin)
+        .stderr(stderr)
+        .stdout(Stdio::piped());
     let child = forget.spawn().expect("started");
     drop(forget);
 
@@ -402,14 +408,18 @@ fn forget_asks_under_mintty_as_in_a_console_and_a_refusal_names_yes() {
         }
     });
     let mut question = Vec::new();
-    wait_for("the question", || {
+    let started = Instant::now();
+    while !String::from_utf8_lossy(&question).ends_with("[y/N] ") {
+        assert!(
+            started.elapsed() < Duration::from_secs(30),
+            "no question after 30 s: {:?}",
+            String::from_utf8_lossy(&question)
+        );
+        std::thread::sleep(Duration::from_millis(50));
         while let Ok(chunk) = heard.try_recv() {
             question.extend(chunk);
         }
-        String::from_utf8_lossy(&question)
-            .ends_with("[y/N] ")
-            .then_some(())
-    });
+    }
     answer.write_all(b"n\n").expect("answered");
     drop(answer);
     let out = child.wait_with_output().expect("ended");
