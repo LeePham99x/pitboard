@@ -989,7 +989,8 @@ fn a_sign_in_asked_for_at_once_after_a_cancel_starts_once_that_one_has_stopped()
 /// killed. The new sign-in starts once the stop has stopped the tool, waited for it and let go
 /// of the core's one sign-in at a time, and asks for a code while that output is still open.
 /// It waited for the thread of the one cancelled, which ends only once its tool's output has
-/// closed, and showed it as starting all that while.
+/// closed, and showed it as starting all that while. On Windows the cancel ends every
+/// `claude.exe` in the sign-in's job, the one holding that output too.
 #[test]
 fn a_sign_in_after_a_cancel_waits_for_no_output_the_tool_stopped_left_open() {
     let at = signing_in_world_with(
@@ -1021,9 +1022,10 @@ fn a_sign_in_after_a_cancel_waits_for_no_output_the_tool_stopped_left_open() {
     let last = told.last().expect("a snapshot");
     assert_eq!(last.failure, None, "the second sign-in refused");
     assert!(at.claude.is_running(), "the second sign-in's tool");
-    assert!(
+    assert_eq!(
         at.claude.holds_output(),
-        "the first's output still open as the second asks for a code"
+        !cfg!(windows),
+        "the first's output still open as the second asks for a code, but on Windows"
     );
 
     at.model.send(Intent::CancelSignIn);
